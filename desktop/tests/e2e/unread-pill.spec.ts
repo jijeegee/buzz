@@ -86,6 +86,99 @@ async function emitUnreadMessages(
   }
 }
 
+// Emits `count` unread rows inside one page task, for runs too long to emit
+// one round trip at a time.
+async function emitUnreadMessagesInOnePass(
+  page: import("@playwright/test").Page,
+  count: number,
+) {
+  await page.evaluate(
+    ({ total, base, pubkey }) => {
+      const emit = (
+        window as Window & {
+          __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
+            channelName: string;
+            content: string;
+            pubkey: string;
+            createdAt?: number;
+          }) => unknown;
+        }
+      ).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      for (let index = 0; index < total; index += 1) {
+        emit?.({
+          channelName: "general",
+          content: `Unread message ${index + 1}`,
+          pubkey,
+          createdAt: base + index,
+        });
+      }
+    },
+    {
+      total: count,
+      base: unreadTimestamp(),
+      pubkey: TEST_IDENTITIES.alice.pubkey,
+    },
+  );
+}
+
+type SampledFrame = {
+  dividerTop: number | null;
+  rowsShownWithoutDivider: boolean;
+};
+
+// Samples each animation frame: where the "New" divider is (null while it is
+// not visibly painted) and whether general's rows painted without it.
+async function startFrameSampler(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    const frames: SampledFrame[] = [];
+    const sampler = window as Window & {
+      __openAtFrames?: SampledFrame[];
+      __openAtStop?: boolean;
+    };
+    sampler.__openAtFrames = frames;
+    sampler.__openAtStop = false;
+    const step = () => {
+      if (sampler.__openAtStop) return;
+      const timeline = document.querySelector<HTMLElement>(
+        '[data-testid="message-timeline"]',
+      );
+      const title = document.querySelector('[data-testid="chat-title"]');
+      const visible =
+        timeline !== null && getComputedStyle(timeline).visibility !== "hidden";
+      const line = visible
+        ? document.querySelector<HTMLElement>(
+            '[data-testid="message-unread-divider"]',
+          )
+        : null;
+      const rows =
+        visible &&
+        title?.textContent === "general" &&
+        timeline?.querySelector("[data-message-id]") !== null;
+      frames.push({
+        dividerTop:
+          line && timeline
+            ? line.getBoundingClientRect().top -
+              timeline.getBoundingClientRect().top
+            : null,
+        rowsShownWithoutDivider: rows && line === null,
+      });
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+async function stopFrameSampler(page: import("@playwright/test").Page) {
+  return page.evaluate(() => {
+    const sampler = window as Window & {
+      __openAtFrames?: SampledFrame[];
+      __openAtStop?: boolean;
+    };
+    sampler.__openAtStop = true;
+    return sampler.__openAtFrames ?? [];
+  });
+}
+
 // Scroll the timeline up so the viewport is no longer pinned to the bottom.
 // The pill auto-dismisses once the user reaches the bottom of the timeline, so
 // it only stays rendered while scrolled up. Scrolling part-way (rather than to
@@ -99,7 +192,7 @@ async function scrollTimelineUp(page: import("@playwright/test").Page) {
 }
 
 test.describe("unread pill & divider", () => {
-  test("01-unread-pill-visible", async ({ page }) => {
+  test("01-opens-at-first-unread", async ({ page }) => {
     await installMockBridge(page);
     await page.goto("/");
 
@@ -113,38 +206,44 @@ test.describe("unread pill & divider", () => {
 
     await emitUnreadMessages(page, 20);
 
-    // Switch back to general — pill should appear.
+    // Record every frame from the click on: once rows show, the "New" divider
+    // must already sit at its final place under the top chrome.
+    await startFrameSampler(page);
     await page.getByTestId("channel-general").click();
     await expect(page.getByTestId("chat-title")).toHaveText("general");
 
-    // Scroll up so the unreads sit below the fold: the pill is the
-    // "jump to oldest unread" affordance and only stays on screen while the
-    // user is scrolled away from the bottom of the timeline.
-    await scrollTimelineUp(page);
-
-    const pill = page.getByTestId("message-unread-pill");
-    await expect(pill).toBeVisible();
-    await expect(pill).toContainText("20 new messages");
-    await expect(
-      page.getByTestId("message-timeline-sticky-day-divider"),
-    ).toHaveAttribute("data-day-label", /.+/);
-
-    const { pillTop, stickyDayTop } = await page.evaluate(() => {
-      const pill = document.querySelector<HTMLElement>(
-        '[data-testid="message-unread-pill"]',
+    const divider = page.getByTestId("message-unread-divider");
+    await expect(divider).toBeVisible();
+    await page.waitForTimeout(500);
+    const frames = await stopFrameSampler(page);
+    const shown = frames.filter((frame) => frame.dividerTop !== null);
+    expect(shown.length).toBeGreaterThan(5);
+    const first = shown[0].dividerTop ?? 0;
+    for (const frame of shown) {
+      expect(Math.abs((frame.dividerTop ?? 0) - first)).toBeLessThanOrEqual(1);
+    }
+    // No frame showed the general timeline before the divider was in place.
+    expect(frames.filter((frame) => frame.rowsShownWithoutDivider)).toEqual([]);
+    // The divider sits right under the top chrome, not at the bottom.
+    const { dividerTop, timelineTop, chrome } = await page.evaluate(() => {
+      const timeline = document.querySelector<HTMLElement>(
+        '[data-testid="message-timeline"]',
       );
-      const stickyDay = document.querySelector<HTMLElement>(
-        '[data-testid="message-timeline-sticky-day-divider"]',
+      const line = document.querySelector<HTMLElement>(
+        '[data-testid="message-unread-divider"]',
       );
-      if (!pill || !stickyDay) {
-        throw new Error("missing top timeline affordance");
-      }
+      if (!timeline || !line) throw new Error("missing timeline or divider");
       return {
-        pillTop: pill.getBoundingClientRect().top,
-        stickyDayTop: stickyDay.getBoundingClientRect().top,
+        dividerTop: line.getBoundingClientRect().top,
+        timelineTop: timeline.getBoundingClientRect().top,
+        chrome: Number.parseFloat(getComputedStyle(timeline).paddingTop),
       };
     });
-    expect(Math.abs(pillTop - stickyDayTop)).toBeLessThanOrEqual(1);
+    expect(dividerTop - timelineTop).toBeGreaterThanOrEqual(chrome - 1);
+    expect(dividerTop - timelineTop).toBeLessThanOrEqual(chrome + 40);
+    // The first unread is already on screen, so the pill pointing up to it
+    // stays hidden.
+    await expect(page.getByTestId("message-unread-pill")).toHaveCount(0);
   });
 
   test("02-unread-divider-visible", async ({ page }) => {
@@ -171,7 +270,7 @@ test.describe("unread pill & divider", () => {
     await page.waitForTimeout(300);
   });
 
-  test("03-pill-dismissed-after-scroll", async ({ page }) => {
+  test("03-long-unread-run-opens-at-first-unread", async ({ page }) => {
     await installMockBridge(page);
     await page.goto("/");
 
@@ -182,25 +281,22 @@ test.describe("unread pill & divider", () => {
     await page.getByTestId("channel-random").click();
     await expect(page.getByTestId("chat-title")).toHaveText("random");
 
-    await emitUnreadMessages(page, 20);
+    // A run far longer than one screen still opens at its first row, and
+    // "Jump to latest" then takes the reader to the newest one.
+    await emitUnreadMessagesInOnePass(page, 260);
 
     await page.getByTestId("channel-general").click();
     await expect(page.getByTestId("chat-title")).toHaveText("general");
+    await expect(page.getByTestId("message-unread-divider")).toBeVisible();
+    await expect(
+      page.getByText("Unread message 1", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByTestId("message-unread-pill")).toHaveCount(0);
 
-    // Scroll up so the pill is showing, matching scenario 01's starting state.
-    await scrollTimelineUp(page);
-
-    const pill = page.getByTestId("message-unread-pill");
-    await expect(pill).toBeVisible();
-
-    // Click the pill to jump to the oldest unread, which dismisses it.
-    await pill.click();
-
-    // Pill should be dismissed
-    await expect(pill).toHaveCount(0);
-
-    const divider = page.getByTestId("message-unread-divider");
-    await expect(divider).toBeVisible();
+    await page.getByRole("button", { name: /jump to latest/i }).click();
+    await expect(
+      page.getByText("Unread message 260", { exact: true }),
+    ).toBeVisible();
   });
 
   test("04-mark-unread-suppresses-pill", async ({ page }) => {

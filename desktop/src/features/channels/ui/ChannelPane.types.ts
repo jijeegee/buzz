@@ -84,6 +84,8 @@ export type ChannelPaneProps = {
   huddleThreadRepliesError?: boolean;
   onRetryHuddleThreadReplies?: () => void;
   firstUnreadMessageId?: string | null;
+  /** Message the main timeline opens at instead of the bottom. */
+  initialAnchorMessageId?: string | null;
   unreadCount?: number;
   canResetThreadPanelWidth: boolean;
   onCancelEdit?: () => void;

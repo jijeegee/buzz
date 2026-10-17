@@ -87,6 +87,7 @@ import { useChannelProfilePanel } from "./useChannelProfilePanel";
 import { useChannelTargetReset } from "./useChannelTargetReset";
 import { useChannelRouteTarget } from "./useChannelRouteTarget";
 import { useChannelOpenReadState } from "./useChannelOpenReadState";
+import { useChannelOpenAnchor } from "./useChannelOpenAnchor";
 import { useThreadOpenServerRead } from "./useThreadOpenServerRead";
 import { useChannelUnreadState } from "./useChannelUnreadState";
 import type { ChannelScreenProps } from "./ChannelScreen.types";
@@ -468,6 +469,7 @@ export function ChannelScreen({
     handleMarkMessageUnread,
     isMessageUnread,
     markRevealedRepliesRead,
+    openFrontierSeconds,
     openThreadHeadMessage,
     threadFirstUnreadReplyId,
     threadReplyTargetMessage,
@@ -631,8 +633,18 @@ export function ChannelScreen({
       setThreadReplyTargetId,
       setThreadScrollTargetId,
     });
+  const openAnchor = useChannelOpenAnchor({
+    channelId: activeChannelId,
+    messages: messagesQuery.data,
+    frontierSeconds: openFrontierSeconds,
+    firstUnreadMessageId,
+    hasOlderMessages,
+    isFetchingOlder,
+    fetchOlder,
+    opensElsewhere: Boolean(targetMessageId) || isHuddleTranscript,
+  });
   const settledChannelIdRef = React.useRef<string | null>(null);
-  const { settledChannelId, isLoading: isTimelineLoading } =
+  const { settledChannelId, isLoading: isTimelineQueryLoading } =
     resolveTimelineQueryLoadingState(
       settledChannelIdRef.current,
       activeChannelId,
@@ -649,6 +661,9 @@ export function ChannelScreen({
         hasPersistedHydratedChannel(queryClient, activeChannelId),
     );
   settledChannelIdRef.current = settledChannelId;
+  // Hold the skeleton while the open position is still being found, so the
+  // list mounts once, already at that position.
+  const isTimelineLoading = isTimelineQueryLoading || openAnchor.isResolving;
   const { welcomeKickoffStage, welcomeKickoffSettingUp } =
     useWelcomeKickoffStagePresence(
       activeChannel,
@@ -1014,6 +1029,7 @@ export function ChannelScreen({
                   profiles={messageProfiles}
                   ownerProfiles={messageOwnerProfiles}
                   firstUnreadMessageId={firstUnreadMessageId}
+                  initialAnchorMessageId={openAnchor.anchorMessageId}
                   unreadCount={unreadCount}
                   targetMessageId={mainTimelineTargetMessageId}
                   threadAllMessages={displayedThreadAllMessages}
