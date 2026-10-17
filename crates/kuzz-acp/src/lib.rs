@@ -3792,23 +3792,32 @@ async fn run_harness(
                                 continue;
                             }
 
-                            // A task thread this agent closed posts its result
-                            // on the main timeline. Hand it to the main-timeline
-                            // session so work queued behind the task (for
-                            // example "deploy when it's done") continues without
-                            // waiting for the next human mention. Checked before
-                            // the self-authored drop because the result is ours.
-                            if is_own_thread_result(
+                            // A task thread this agent opened or closed hands
+                            // work between its sessions. The kickoff inside the
+                            // new thread starts that thread's session, so the
+                            // work moves there instead of waiting for a human
+                            // reply. The result on the main timeline goes to the
+                            // main-timeline session so work queued behind the
+                            // task (for example "deploy when it's done")
+                            // continues without waiting for the next human
+                            // mention. Checked before the self-authored drop
+                            // because both messages are ours.
+                            let own_task_thread_tag = match own_task_thread_prompt_tag(
                                 &kuzz_event.event,
                                 kind_u32,
                                 &pubkey_hex,
                                 config.session_policy,
-                            ) && !is_dm_channel(kuzz_event.channel_id, &ctx.channel_info).await
-                            {
+                            ) {
+                                Some(tag) => (!is_dm_channel(kuzz_event.channel_id, &ctx.channel_info)
+                                    .await)
+                                    .then_some(tag),
+                                None => None,
+                            };
+                            if let Some(prompt_tag) = own_task_thread_tag {
                                 let ingress = NormalListenerIngress {
                                     kuzz_event,
                                     effective_author: pubkey_hex.clone(),
-                                    prompt_tag: THREAD_RESULT_PROMPT_TAG.to_string(),
+                                    prompt_tag: prompt_tag.to_string(),
                                     edit: None,
                                 };
                                 let session_scope =
@@ -3816,11 +3825,12 @@ async fn run_harness(
                                 tracing::info!(
                                     channel_id = %session_scope.channel_id(),
                                     scope = %session_scope.telemetry_label(),
-                                    "task thread result — queued for the main-timeline session"
+                                    prompt_tag,
+                                    "own task thread handoff — queued for its session"
                                 );
                                 // No 👀 and no steer: this is a notice from
                                 // ourselves, not a request that interrupts. The
-                                // turn still shows 💬 on the result while it runs.
+                                // turn still shows 💬 on the message while it runs.
                                 ingress.push(&mut queue, session_scope);
                                 if pool_ready {
                                     for (scope, thread_tags) in dispatch_pending(
@@ -4700,6 +4710,56 @@ fn event_mentions_agent(event: &nostr::Event, agent_pubkey_hex: &str) -> bool {
 /// Prompt tag (the `<kuzz-event type>`) for a task thread result relayed to
 /// the main-timeline session.
 const THREAD_RESULT_PROMPT_TAG: &str = "thread-result";
+
+/// Prompt tag (the `<kuzz-event type>`) for the kickoff of a task thread this
+/// agent opened, delivered to the new thread's session.
+const THREAD_KICKOFF_PROMPT_TAG: &str = "thread-kickoff";
+
+/// The prompt tag for a task thread handoff this agent posted itself, or
+/// `None` for any other event.
+fn own_task_thread_prompt_tag(
+    event: &nostr::Event,
+    kind_u32: u32,
+    agent_pubkey_hex: &str,
+    policy: scope::SessionPolicy,
+) -> Option<&'static str> {
+    if is_own_thread_result(event, kind_u32, agent_pubkey_hex, policy) {
+        Some(THREAD_RESULT_PROMPT_TAG)
+    } else if is_own_thread_kickoff(event, kind_u32, agent_pubkey_hex, policy) {
+        Some(THREAD_KICKOFF_PROMPT_TAG)
+    } else {
+        None
+    }
+}
+
+/// Whether `event` is the kickoff of a task thread this agent opened from a
+/// channel main timeline with `kuzz threads start`.
+///
+/// The kickoff is a thread reply carrying `kuzz:task` and
+/// `["kuzz:parent", "main"]`, and p-tags its own author so it reaches a
+/// mention-filtered subscription. It is posted by the main-timeline session,
+/// so it routes to a different scope: the thread's own session, which starts
+/// on it. Only the main-and-threads policy has a separate thread session.
+fn is_own_thread_kickoff(
+    event: &nostr::Event,
+    kind_u32: u32,
+    agent_pubkey_hex: &str,
+    policy: scope::SessionPolicy,
+) -> bool {
+    let has_tag = |name: &str, value: Option<&str>| {
+        event.tags.iter().any(|t| {
+            let parts = t.as_slice();
+            parts.first().map(String::as_str) == Some(name)
+                && value.is_none_or(|v| parts.get(1).map(String::as_str) == Some(v))
+        })
+    };
+    policy == scope::SessionPolicy::Thread
+        && kind_u32 == KIND_STREAM_MESSAGE
+        && event.pubkey.to_hex() == agent_pubkey_hex
+        && has_tag("kuzz:task", None)
+        && has_tag("kuzz:parent", Some("main"))
+        && has_tag("e", None)
+}
 
 /// Whether `event` is a task thread result this agent posted on a channel
 /// main timeline with `kuzz threads close`.
@@ -6969,6 +7029,105 @@ mod owner_control_command_tests {
             &agent,
             thread
         ));
+    }
+
+    #[test]
+    fn own_thread_kickoff_requires_policy_author_and_kickoff_tags() {
+        let keys = Keys::generate();
+        let agent = keys.public_key().to_hex();
+        let root = "cd".repeat(32);
+        let sign = |keys: &Keys, tags: Vec<Tag>| {
+            EventBuilder::new(Kind::Custom(KIND_STREAM_MESSAGE as u16), "**Task**")
+                .tags(tags)
+                .sign_with_keys(keys)
+                .unwrap()
+        };
+        let kickoff_tags = || {
+            vec![
+                Tag::parse(["e", root.as_str(), "", "reply"]).unwrap(),
+                Tag::parse(["kuzz:task", "Task"]).unwrap(),
+                Tag::parse(["kuzz:parent", "main"]).unwrap(),
+                Tag::parse(["p", agent.as_str()]).unwrap(),
+            ]
+        };
+        let thread = scope::SessionPolicy::Thread;
+
+        let kickoff = sign(&keys, kickoff_tags());
+        assert_eq!(
+            own_task_thread_prompt_tag(&kickoff, KIND_STREAM_MESSAGE, &agent, thread),
+            Some(THREAD_KICKOFF_PROMPT_TAG)
+        );
+        // It routes to the thread's session, not the main timeline.
+        assert_eq!(
+            scope::SessionScope::derive(thread, Uuid::nil(), false, &kickoff),
+            scope::SessionScope::derive(
+                thread,
+                Uuid::nil(),
+                false,
+                &sign(
+                    &Keys::generate(),
+                    vec![Tag::parse(["e", root.as_str(), "", "reply"]).unwrap()]
+                )
+            )
+        );
+
+        // The channel policy runs the thread in the one shared session.
+        assert_eq!(
+            own_task_thread_prompt_tag(
+                &kickoff,
+                KIND_STREAM_MESSAGE,
+                &agent,
+                scope::SessionPolicy::Channel
+            ),
+            None
+        );
+
+        // Another agent's kickoff belongs to that agent's harness.
+        let other = sign(&Keys::generate(), kickoff_tags());
+        assert!(!is_own_thread_kickoff(
+            &other,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            thread
+        ));
+
+        // A kickoff needs the main parent and a thread root.
+        let no_parent = sign(
+            &keys,
+            vec![
+                Tag::parse(["e", root.as_str(), "", "reply"]).unwrap(),
+                Tag::parse(["kuzz:task", "Task"]).unwrap(),
+            ],
+        );
+        assert!(!is_own_thread_kickoff(
+            &no_parent,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            thread
+        ));
+        let top_level = sign(
+            &keys,
+            vec![
+                Tag::parse(["kuzz:task", "Task"]).unwrap(),
+                Tag::parse(["kuzz:parent", "main"]).unwrap(),
+            ],
+        );
+        assert!(!is_own_thread_kickoff(
+            &top_level,
+            KIND_STREAM_MESSAGE,
+            &agent,
+            thread
+        ));
+
+        // Ordinary self-authored progress in the thread is still dropped.
+        let progress = sign(
+            &keys,
+            vec![Tag::parse(["e", root.as_str(), "", "reply"]).unwrap()],
+        );
+        assert_eq!(
+            own_task_thread_prompt_tag(&progress, KIND_STREAM_MESSAGE, &agent, thread),
+            None
+        );
     }
 
     #[test]
