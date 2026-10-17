@@ -103,9 +103,9 @@ pub fn task_thread_guidance(triggers: &[TaskThreadTrigger]) -> Option<String> {
 As an exception to opening a thread only when a human asks, the owner lets you open a task thread yourself when a top-level main-timeline request you are about to work on is one of these cases:\n\n\
 {cases}\n\
 Anything else stays on the main timeline: answer short questions and quick one-step tasks there directly. \
-Open it with `kuzz threads start --channel <UUID> --from <the request's event id> --title \"…\" --brief -`, the brief being three lines in the requester's language: \
-goal, deliverable, and what counts as done. \
-Work and post progress in that thread, and finish with `kuzz threads close` as in Task Threads."
+Open it with `kuzz threads start --channel <UUID> --from <the request's event id> --title \"…\" --brief -`, the brief being in the requester's language: \
+goal, deliverable, what counts as done, and the context a new session needs to start. \
+A session of you in that thread takes it from there, as in Task Threads, so end your main-timeline turn once the thread is open."
     ))
 }
 

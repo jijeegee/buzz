@@ -3,7 +3,8 @@
 //!
 //! Wire format (kind 9 only, no new relay kinds):
 //! - Kickoff reply in the thread: `["buzz:task", <title>]`,
-//!   `["buzz:parent", "main"]`, and a `p` tag for the requester.
+//!   `["buzz:parent", "main"]`, a `p` tag for the requester, and a `p` tag for
+//!   the opening agent itself so its harness starts the thread's session.
 //! - Result on the channel main timeline: `["buzz:sent-from-thread", <root>,
 //!   <excerpt>]`, `["buzz:thread-closed", <root>]`, a `p` tag for the
 //!   requester, and a `p` tag for the closing agent itself so its harness can
@@ -139,7 +140,13 @@ async fn start(
             broadcast: false,
             files: Vec::new(),
             mentions: vec![requester],
-            extra_tags: vec![tag([TASK_TAG, title])?, tag([PARENT_TAG, PARENT_MAIN])?],
+            extra_tags: vec![
+                tag([TASK_TAG, title])?,
+                tag([PARENT_TAG, PARENT_MAIN])?,
+                // Self-address the kickoff so this agent's own harness starts
+                // the thread's session on it, as `close` does for the result.
+                tag(["p", &client.pubkey().to_hex()])?,
+            ],
         },
     )
     .await?;
