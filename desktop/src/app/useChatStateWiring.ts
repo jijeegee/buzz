@@ -7,6 +7,7 @@ import type { ReadStateServerMirror } from "@/features/channels/readState/readSt
 import {
   applyFollowResponseToChatList,
   applyMarkReadResponseToChatList,
+  applyUnreadMarkToChatList,
   CHAT_LIST_QUERY_KEY,
   type ChatListRow,
 } from "@/features/chats/chatListState";
@@ -120,6 +121,7 @@ export function useChatStateWiring({
   setReadStateServerMirror: (mirror: ReadStateServerMirror | null) => void;
 }): {
   markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void;
+  markThreadUnread: (rootId: string) => boolean;
   mirrorFollow: (rootId: string, state: ChatFollowState) => void;
   serverChats: ServerChats | undefined;
   syncProps: ChatStateSyncProps;
@@ -228,6 +230,23 @@ export function useChatStateWiring({
     [markChannelUnread],
   );
 
+  // A thread's unread mark lives only in the relay's chat state; false tells
+  // the caller to fall back to today's behavior while it is off or unknown.
+  const markThreadUnread = React.useCallback(
+    (rootId: string) => {
+      const writer = writerRef.current;
+      if (!writer || getChatStateCapability(capabilityKey) !== "on") {
+        return false;
+      }
+      writer.queueUnread(`thread:${rootId}`);
+      patchChatLists(queryClient, (state) =>
+        applyUnreadMarkToChatList(state, { thread: rootId }),
+      );
+      return true;
+    },
+    [capabilityKey, queryClient],
+  );
+
   const on = capability === "on";
   const shownRows = on ? rows : undefined;
   const serverChats = React.useMemo<ServerChats | undefined>(
@@ -257,6 +276,7 @@ export function useChatStateWiring({
   );
   return {
     markChannelUnread: markChannelUnreadMirrored,
+    markThreadUnread,
     mirrorFollow,
     serverChats,
     syncProps,

@@ -5,6 +5,7 @@ import {
   applyFollowResponseToChatList,
   applyLiveEventToChatList,
   applyMarkReadResponseToChatList,
+  applyUnreadMarkToChatList,
   chatListQueryKey,
   createEventIdLru,
   mergeRefetchedFirstPage,
@@ -456,4 +457,19 @@ test("the event id LRU reports repeats and forgets the oldest", () => {
   assert.equal(lru.seen("c"), false);
   assert.equal(lru.seen("a"), false);
   assert.equal(lru.seen("c"), true);
+});
+
+test("Mark as unread shows on the thread or room row right away", () => {
+  const rows = [row(), row({ type: "thread" })];
+  const thread = applyUnreadMarkToChatList(state(rows), { thread: ROOT });
+  assert.equal(thread.rows[0].unread_mark, false);
+  assert.equal(thread.rows[1].unread_mark, true);
+  const room = applyUnreadMarkToChatList(state(rows), { channel: ROOM });
+  assert.equal(room.rows[0].unread_mark, true);
+  assert.equal(room.rows[1].unread_mark, false);
+  const unchanged = state(rows);
+  assert.equal(
+    applyUnreadMarkToChatList(unchanged, { thread: OTHER_ROOT }),
+    unchanged,
+  );
 });

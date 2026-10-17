@@ -36,16 +36,11 @@ export function ThreadNameEditor({
       <MessageThreadPanelHeader
         {...headerProps}
         headerTitle={name || headerProps.headerTitle}
-        headerActions={
+        headerTitleAccessory={
           <>
-            {headerProps.headerActions}
-            {error ? (
-              <Button size="sm" variant="ghost" onClick={retry}>
-                Retry name
-              </Button>
-            ) : null}
             <Button
-              size="icon"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              size="icon-xs"
               variant="ghost"
               aria-label={name ? "Rename thread" : "Set thread name"}
               disabled={disabled}
@@ -55,8 +50,13 @@ export function ThreadNameEditor({
                 setOpen(true);
               }}
             >
-              <Pencil className="size-4" />
+              <Pencil />
             </Button>
+            {error ? (
+              <Button size="sm" variant="ghost" onClick={retry}>
+                Retry name
+              </Button>
+            ) : null}
           </>
         }
       />

@@ -212,6 +212,24 @@ export function applyMarkReadResponseToChatList(
 }
 
 /**
+ * Show this device's own "Mark as unread" on a row before the relay answers;
+ * the queued write's response then patches the same row again.
+ */
+export function applyUnreadMarkToChatList(
+  current: ChatListState,
+  target: { thread: string } | { channel: string },
+): ChatListState {
+  return patchRow(
+    current,
+    (row) =>
+      "thread" in target
+        ? row.type === "thread" && row.root_id === target.thread
+        : row.type === "room" && row.channel_id === target.channel,
+    (row) => (row.unread_mark ? row : { ...row, unread_mark: true }),
+  );
+}
+
+/**
  * Patch rows from this device's own `thread_follow` response. Unfollowing
  * drops the row; a newly followed thread not loaded yet needs the relay.
  */

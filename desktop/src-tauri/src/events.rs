@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 mod message_tags;
 
+pub use message_tags::thread_marker_tag;
 use message_tags::{
     append_client_tags, append_quote_tag, append_sent_from_thread_tag, emoji_tags, imeta_tags,
     mention_reference_tags, route_note_tag,
