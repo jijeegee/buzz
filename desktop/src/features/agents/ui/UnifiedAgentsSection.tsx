@@ -120,7 +120,8 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     () => buildUnifiedGroups(personas, agents, isArchived),
     [personas, agents, isArchived],
   );
-  const remoteAgents = useRemoteOwnedAgents();
+  const { agents: remoteAgents, settling: remoteSettling } =
+    useRemoteOwnedAgents();
   const { getAvailability: getRemoteAvailability } = useAgentAvailabilityLookup(
     React.useMemo(
       () => remoteAgents.map((agent) => agent.pubkey),
@@ -128,20 +129,46 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     ),
   );
   // A persona whose only agent runs on another computer shows that agent,
-  // never a Start that would mint a second same-name agent here.
-  const { remoteByPersonaId, remoteWithoutPersona } = React.useMemo(() => {
-    const byPersona = new Map<string, (typeof remoteAgents)[number]>();
-    const without: typeof remoteAgents = [];
-    for (const agent of remoteAgents) {
-      if (isArchived(agent.pubkey)) continue;
-      if (agent.localPersonaId && !byPersona.has(agent.localPersonaId)) {
-        byPersona.set(agent.localPersonaId, agent);
-      } else {
-        without.push(agent);
+  // never a Start that would mint a second same-name agent here. Every other
+  // remote agent (no persona here, an inactive one, or a persona that also
+  // has an agent here) gets a card of its own.
+  const { remoteByPersonaId, remoteStandalone, personasWithoutLocalAgent } =
+    React.useMemo(() => {
+      const withoutLocal = new Set(
+        groups
+          .filter((group) => !pickProfileAgent(group.agents, isArchived))
+          .map((group) => group.persona.id),
+      );
+      const byPersona = new Map<string, (typeof remoteAgents)[number]>();
+      const standalone: typeof remoteAgents = [];
+      for (const agent of remoteAgents) {
+        if (isArchived(agent.pubkey)) continue;
+        const personaId = agent.localPersonaId;
+        if (
+          personaId &&
+          withoutLocal.has(personaId) &&
+          !byPersona.has(personaId)
+        ) {
+          byPersona.set(personaId, agent);
+        } else {
+          standalone.push(agent);
+        }
       }
-    }
-    return { remoteByPersonaId: byPersona, remoteWithoutPersona: without };
-  }, [remoteAgents, isArchived]);
+      return {
+        remoteByPersonaId: byPersona,
+        remoteStandalone: standalone,
+        personasWithoutLocalAgent: withoutLocal,
+      };
+    }, [groups, remoteAgents, isArchived]);
+  // While that is still being read, a persona with no agent here shows as
+  // busy instead of offering Start.
+  const effectiveStartingPersonaIds = React.useMemo(
+    () =>
+      remoteSettling
+        ? new Set([...startingPersonaIds, ...personasWithoutLocalAgent])
+        : startingPersonaIds,
+    [remoteSettling, startingPersonaIds, personasWithoutLocalAgent],
+  );
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   function toggle(key: string) {
     setCollapsed((prev) => {
@@ -218,7 +245,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                   persona={group.persona}
                   restartingAgentPubkey={restartingAgentPubkey}
                   startingAgentPubkey={startingAgentPubkey}
-                  startingPersonaIds={startingPersonaIds}
+                  startingPersonaIds={effectiveStartingPersonaIds}
                   onOpenAgentProfile={onOpenAgentProfile}
                   onOpenPersonaProfile={onOpenPersonaProfile}
                   onRestartAgent={onRestartAgent}
@@ -227,13 +254,17 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                 />
               );
             })}
-            {remoteWithoutPersona.map((agent) => (
+            {remoteStandalone.map((agent) => (
               <RemoteAgentCard
                 agent={agent}
                 getAvailability={getRemoteAvailability}
                 isPending={isActionPending}
                 key={agent.pubkey}
-                persona={null}
+                persona={
+                  personas.find(
+                    (persona) => persona.id === agent.localPersonaId,
+                  ) ?? null
+                }
                 onDuplicatePersona={onDuplicatePersona}
                 onEditPersona={onEditPersona}
                 onOpenAgentProfile={onOpenAgentProfile}

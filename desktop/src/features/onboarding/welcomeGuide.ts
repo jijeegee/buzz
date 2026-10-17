@@ -9,7 +9,10 @@ import {
   listManagedAgents,
   updateManagedAgent,
 } from "@/shared/api/tauri";
+import { fetchRemoteOwnedAgents } from "@/shared/api/agentNameGuard";
+import { remoteAgentPersonaId } from "@/shared/api/remoteOwnedAgents";
 import { discoverAcpRuntimes } from "@/shared/api/tauriAcpDiscovery";
+import { getIdentity } from "@/shared/api/tauriIdentity";
 import { getAgentAccessOwnerOnly } from "@/shared/api/tauriAgentAccess";
 import { getGlobalAgentConfig } from "@/shared/api/tauriGlobalAgentConfig";
 import { listPersonas, setPersonaActive } from "@/shared/api/tauriPersonas";
@@ -315,6 +318,43 @@ export function welcomeTeammateAccessUpdate(
 }
 
 /**
+ * The owner's Welcome Team already runs on another of their computers. One
+ * owner has one Welcome Team: this computer does not make same-name copies.
+ */
+export class WelcomeTeamElsewhereError extends Error {
+  constructor() {
+    super("The Welcome Team runs on another of your computers.");
+    this.name = "WelcomeTeamElsewhereError";
+  }
+}
+
+/**
+ * Whether an agent of one of the [missing] starter personas runs on another
+ * of the owner's computers. A relay that cannot be read counts as no.
+ */
+async function welcomeStarterRunsElsewhere(
+  missingPersonaIds: readonly string[],
+  localAgents: readonly ManagedAgent[],
+  personas: readonly AgentPersona[],
+): Promise<boolean> {
+  if (missingPersonaIds.length === 0) return false;
+  try {
+    const identity = await getIdentity();
+    const remote = await fetchRemoteOwnedAgents(
+      identity.pubkey,
+      localAgents.map((agent) => agent.pubkey),
+    );
+    const missing = new Set(missingPersonaIds);
+    return remote.some((agent) => {
+      const personaId = remoteAgentPersonaId(agent, personas);
+      return personaId !== null && missing.has(personaId);
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Ensure the complete built-in Welcome Team is ready for kickoff.
  * The team itself is Rust-seeded; this only activates personas, creates any
  * missing relay-scoped instances, and adds all three to Welcome as bots.
@@ -338,6 +378,20 @@ async function provisionWelcomeTeam(
   const runtimes = runtimeCatalog.filter(
     (runtime): runtime is AcpRuntime => runtime.availability === "available",
   );
+
+  const missingPersonaIds = WELCOME_TEAM_STARTERS.filter(
+    (starter) =>
+      !pickWelcomeTeamStarterAgentForRelay(existingAgents, starter, relayUrl),
+  ).map((starter) => starter.personaId);
+  if (
+    await welcomeStarterRunsElsewhere(
+      missingPersonaIds,
+      existingAgents,
+      personas,
+    )
+  ) {
+    throw new WelcomeTeamElsewhereError();
+  }
 
   const agents: ManagedAgent[] = [];
   for (const starter of WELCOME_TEAM_STARTERS) {

@@ -3,6 +3,7 @@ import {
   type AgentNameRoster,
   agentNameTakenMessage,
   findAgentNameConflict,
+  nextFreeAgentName,
 } from "@/shared/api/agentNameConflict";
 import { withoutSignedOutDevices } from "@/shared/api/ownerDevices";
 import { relayClient } from "@/shared/api/relayClient";
@@ -70,8 +71,10 @@ async function readRemoteOwnedAgents(
   const owner = normalizePubkey(ownerPubkey);
   const [ownerDevices, devices] = await Promise.all([
     fetchOwnerDevices(owner),
-    listAuthDevices().catch(() => []),
+    // Without the device list, signed-out computers cannot be told apart.
+    listAuthDevices().catch(() => null),
   ]);
+  if (!devices || devices.length === 0) return [];
   const live = withoutSignedOutDevices(
     ownerDevices,
     devices.map((device) => device.id),
@@ -125,6 +128,9 @@ async function loadAgentNameRoster(): Promise<AgentNameRoster> {
       )
       .catch(() => [] as RemoteOwnedAgent[]),
   ]);
+  // A persona switched off (e.g. a built-in replaced by its edited copy)
+  // no longer holds its name.
+  const activePersonas = personas.filter((persona) => persona.isActive);
   return {
     agents: [
       ...agents
@@ -135,14 +141,21 @@ async function loadAgentNameRoster(): Promise<AgentNameRoster> {
           personaId: agent.persona_id ?? null,
         })),
       ...remote
-        .filter((agent) => agent.name !== null)
-        .map((agent) => ({
-          pubkey: agent.pubkey,
-          name: agent.name ?? "",
-          personaId: remoteAgentPersonaId(agent, personas),
-        })),
+        .filter(
+          (agent) =>
+            agent.name !== null && !archived.has(normalizePubkey(agent.pubkey)),
+        )
+        .map((agent) => {
+          const personaId = remoteAgentPersonaId(agent, personas);
+          return {
+            pubkey: agent.pubkey,
+            name: agent.name ?? "",
+            personaId,
+            personaElsewhere: agent.personaId !== null && personaId === null,
+          };
+        }),
     ],
-    personas,
+    personas: activePersonas,
   };
 }
 
@@ -175,4 +188,19 @@ export async function assertAgentNameAvailable(
   }
   const taken = findAgentNameConflict(claim, roster);
   if (taken !== null) throw new Error(agentNameTakenMessage(taken));
+}
+
+/**
+ * `claim.name`, or "name 2", "name 3", … when the owner already has an agent
+ * by that name. For deliberate extra agents of a persona (team deploys). A
+ * roster that cannot be read leaves the name as it is.
+ */
+export async function freeAgentName(
+  claim: Extract<AgentNameClaim, { kind: "agent" }>,
+): Promise<string> {
+  try {
+    return nextFreeAgentName(claim, await loadAgentNameRoster());
+  } catch {
+    return claim.name;
+  }
 }

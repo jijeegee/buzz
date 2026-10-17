@@ -12,6 +12,11 @@ export type AgentNameRoster = {
     name: string;
     /** Persona id on this computer, if the agent was made from one. */
     personaId: string | null;
+    /**
+     * Runs on another computer, made from a persona this computer does not
+     * have (yet). A persona added here under that name is taken to be it.
+     */
+    personaElsewhere?: boolean;
   }[];
   personas: readonly { id: string; displayName: string }[];
 };
@@ -50,6 +55,7 @@ export function findAgentNameConflict(
     ) {
       continue;
     }
+    if (claim.kind === "persona" && agent.personaElsewhere) continue;
     return agent.name;
   }
   for (const persona of roster.personas) {
@@ -58,6 +64,26 @@ export function findAgentNameConflict(
     return persona.displayName;
   }
   return null;
+}
+
+/**
+ * `name` when it is free, else the first free "name 2", "name 3", … (for a
+ * deliberate extra agent of a persona, which may not reuse its name).
+ */
+export function nextFreeAgentName(
+  claim: Extract<AgentNameClaim, { kind: "agent" }>,
+  roster: AgentNameRoster,
+): string {
+  const base = claim.name.trim();
+  if (findAgentNameConflict(claim, roster) === null) return base;
+  for (let suffix = 2; ; suffix++) {
+    const name = `${base} ${suffix}`;
+    // A numbered name is never the persona's own, so it shares with nothing.
+    if (findAgentNameConflict({ ...claim, name, personaId: null }, roster)) {
+      continue;
+    }
+    return name;
+  }
 }
 
 export function agentNameTakenMessage(name: string): string {

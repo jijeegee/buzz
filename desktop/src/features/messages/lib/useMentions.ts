@@ -136,7 +136,7 @@ export function useMentions(
   );
   // The owner's agents on their other computers count as this persona's
   // agent too: offering the persona would mint a second same-name agent.
-  const remoteOwnedAgents = useRemoteOwnedAgents();
+  const { agents: remoteOwnedAgents } = useRemoteOwnedAgents();
   const managedAgentPersonaIdsByPubkey = React.useMemo(() => {
     const byPubkey = new Map<string, string>();
     for (const agent of managedAgentsQuery.data ?? []) {

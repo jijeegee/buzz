@@ -53,9 +53,9 @@ export function RemoteAgentCard({
     deviceLabels.get(deviceRobotTag(agent.deviceId) ?? ""),
   );
   const title =
-    persona?.displayName ??
-    agent.name ??
-    profile?.displayName?.trim() ??
+    persona?.displayName.trim() ||
+    agent.name?.trim() ||
+    profile?.displayName?.trim() ||
     "Agent";
   const avatarUrl =
     profile?.avatarUrl?.trim() || persona?.avatarUrl?.trim() || null;

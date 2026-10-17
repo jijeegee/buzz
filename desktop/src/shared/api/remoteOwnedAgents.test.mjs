@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   findAgentNameConflict,
   agentNameTakenMessage,
+  nextFreeAgentName,
 } from "./agentNameConflict.ts";
 import {
   buildRemoteOwnedAgents,
@@ -223,4 +224,50 @@ test("a persona may not take another agent's or persona's name", () => {
 
 test("the message names the clash", () => {
   assert.match(agentNameTakenMessage(" Fizz "), /named "Fizz"/);
+});
+
+test("a persona arriving for an agent made elsewhere keeps its name", () => {
+  const roster = {
+    agents: [
+      {
+        pubkey: AGENT_3,
+        name: "Scout",
+        personaId: null,
+        personaElsewhere: true,
+      },
+    ],
+    personas: [],
+  };
+  assert.equal(
+    findAgentNameConflict({ kind: "persona", name: "Scout" }, roster),
+    null,
+  );
+  // A new agent still may not take the name.
+  assert.equal(
+    findAgentNameConflict({ kind: "agent", name: "Scout" }, roster),
+    "Scout",
+  );
+});
+
+test("an extra agent of a persona gets the next free number", () => {
+  assert.equal(
+    nextFreeAgentName(
+      { kind: "agent", name: "Honey", personaId: "p-honey" },
+      ROSTER,
+    ),
+    "Honey",
+  );
+  assert.equal(
+    nextFreeAgentName(
+      { kind: "agent", name: " Fizz ", personaId: "p-fizz" },
+      {
+        ...ROSTER,
+        agents: [
+          ...ROSTER.agents,
+          { pubkey: AGENT_3, name: "fizz 2", personaId: "p-fizz" },
+        ],
+      },
+    ),
+    "Fizz 3",
+  );
 });

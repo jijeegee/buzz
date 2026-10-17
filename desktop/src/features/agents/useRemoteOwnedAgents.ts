@@ -13,7 +13,11 @@ import {
   remoteAgentPersonaId,
 } from "@/shared/api/remoteOwnedAgents";
 import { useAuthDevicesQuery } from "@/shared/api/useAuthDeviceNames";
-import { useOwnerDevices } from "@/shared/api/useOwnerDevices";
+import {
+  fetchOwnerDevices,
+  ownerDevicesQueryKey,
+  useOwnerDevices,
+} from "@/shared/api/useOwnerDevices";
 import { KIND_MANAGED_AGENT } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -23,16 +27,34 @@ export type RemoteOwnedAgentHere = RemoteOwnedAgent & {
   localPersonaId: string | null;
 };
 
+export type RemoteOwnedAgentsState = {
+  agents: RemoteOwnedAgentHere[];
+  /**
+   * Still reading which agents run elsewhere (device records, device list
+   * or names). A persona may turn out to have its agent elsewhere, so its
+   * Start waits. Settles on failure too.
+   */
+  settling: boolean;
+};
+
 /**
  * The signed-in user's agents running on their other computers (see
  * `remoteOwnedAgents.ts`). Follows the owner's device records live; the
- * agents' names come from their kind:30177 projections.
+ * agents' names come from their kind:30177 projections. Empty until the
+ * account's device list is known, so signed-out computers never count.
  */
-export function useRemoteOwnedAgents(): RemoteOwnedAgentHere[] {
+export function useRemoteOwnedAgents(): RemoteOwnedAgentsState {
   const identity = useIdentityQuery();
   const owner = normalizePubkey(identity.data?.pubkey ?? "");
   const ownerDevices = useOwnerDevices(owner.length > 0);
   const devices = useAuthDevicesQuery(owner.length > 0);
+  // Same cached query as `useOwnerDevices`, read for its loading state.
+  const ownerDevicesQuery = useQuery({
+    enabled: owner.length > 0,
+    queryKey: ownerDevicesQueryKey(owner),
+    queryFn: () => fetchOwnerDevices(owner),
+    staleTime: 5 * 60_000,
+  });
   const managedAgents = useManagedAgentsQuery();
   const personas = usePersonasQuery();
 
@@ -68,9 +90,18 @@ export function useRemoteOwnedAgents(): RemoteOwnedAgentHere[] {
     staleTime: 60_000,
   });
 
-  return React.useMemo(() => {
+  const settling =
+    owner.length > 0 &&
+    (managedAgents.data === undefined ||
+      ownerDevicesQuery.isPending ||
+      devices.isPending ||
+      (candidates.length > 0 && projections.isPending));
+
+  const agents = React.useMemo(() => {
     // Until this computer's own records load, every agent would look remote.
     if (!owner || managedAgents.data === undefined) return [];
+    // An empty or failed device list cannot drop signed-out computers.
+    if (!devices.data || devices.data.length === 0) return [];
     const remote = buildRemoteOwnedAgents({
       hostDevices: ownerDevices.hostDevices,
       currentDeviceIds,
@@ -86,10 +117,12 @@ export function useRemoteOwnedAgents(): RemoteOwnedAgentHere[] {
   }, [
     owner,
     managedAgents.data,
+    devices.data,
     ownerDevices.hostDevices,
     currentDeviceIds,
     localPubkeys,
     projections.data,
     personas.data,
   ]);
+  return React.useMemo(() => ({ agents, settling }), [agents, settling]);
 }

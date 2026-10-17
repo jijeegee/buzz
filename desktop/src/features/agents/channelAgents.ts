@@ -16,9 +16,13 @@ import {
   listManagedAgents,
   updateManagedAgent,
 } from "@/shared/api/tauri";
-import { fetchRemoteOwnedAgents } from "@/shared/api/agentNameGuard";
+import {
+  fetchRemoteOwnedAgents,
+  freeAgentName,
+} from "@/shared/api/agentNameGuard";
 import { remoteAgentPersonaId } from "@/shared/api/remoteOwnedAgents";
 import { getIdentity } from "@/shared/api/tauriIdentity";
+import { listArchivedIdentities } from "@/shared/api/tauriIdentityArchive";
 import { listPersonas } from "@/shared/api/tauriPersonas";
 import { startManagedAgent } from "@/shared/api/tauriManagedAgents";
 import type {
@@ -130,8 +134,11 @@ export type CreateChannelManagedAgentsResult = {
    * Persona inputs whose agent runs on another of the owner's computers: that
    * agent was added to the channel instead of minting a same-name copy here.
    */
-  remoteAttached?: { name: string; pubkey: string }[];
+  remoteAttached?: RemoteAttachedChannelAgent[];
 };
+
+/** The owner's agent on another computer, added to a channel. */
+export type RemoteAttachedChannelAgent = { name: string; pubkey: string };
 
 export type CreateChannelManagedAgentsOptions = {
   /**
@@ -413,9 +420,18 @@ export async function provisionChannelManagedAgent(
   const resolvedAvatarUrl = await resolveManagedAgentAvatarUrl(input.avatarUrl);
 
   const isProviderMode = input.backend?.type === "provider";
+  // A deliberate extra agent of a persona may not reuse a name the owner
+  // already has: it gets the next free "name 2", "name 3", ….
+  const name = input.forceNewInstance
+    ? await freeAgentName({
+        kind: "agent",
+        name: trimmedName,
+        personaId: input.personaId,
+      })
+    : trimmedName;
 
   const created = await createManagedAgent({
-    name: trimmedName,
+    name,
     acpCommand: "kuzz-acp",
     agentCommand: input.runtime.command,
     harnessOverride: input.harnessOverride ?? false,
@@ -503,7 +519,7 @@ export async function createChannelManagedAgents(
     inputs,
     managedAgents,
   );
-  const remoteAttached: { name: string; pubkey: string }[] = [];
+  const remoteAttached: RemoteAttachedChannelAgent[] = [];
 
   // Sequential loop: each agent must be fully created and its relay membership
   // written before the next starts. Concurrent writes to the replaceable
@@ -564,15 +580,19 @@ async function remoteAgentsForPersonaInputs(
   const byPersonaId = new Map<string, string>();
   if (wanted.length === 0) return byPersonaId;
   try {
-    const [identity, personas] = await Promise.all([
+    const [identity, personas, archived] = await Promise.all([
       getIdentity(),
       listPersonas(),
+      listArchivedIdentities()
+        .then((snapshot) => new Set(snapshot.archived.map(normalizePubkey)))
+        .catch(() => new Set<string>()),
     ]);
     const remote = await fetchRemoteOwnedAgents(
       identity.pubkey,
       managedAgents.map((agent) => agent.pubkey),
     );
     for (const agent of remote) {
+      if (archived.has(normalizePubkey(agent.pubkey))) continue;
       const personaId = remoteAgentPersonaId(agent, personas);
       if (personaId && !byPersonaId.has(personaId)) {
         byPersonaId.set(personaId, agent.pubkey);
