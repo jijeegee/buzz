@@ -1001,6 +1001,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
   int get heldLiveCount => _windowStore.heldLive.length;
 
+  /// The live rows waiting while [hasNewer], newer than every loaded row.
+  List<NostrEvent> get heldLiveEvents => _windowStore.heldLive;
+
   /// The message the window was opened at, when [isInMiddleWindow].
   String? get anchorId => _windowStore.anchorId;
 
@@ -1016,6 +1019,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   /// the pages fail.
   Future<bool> openAt({required int createdAt, String? eventId}) =>
       _openAt(createdAt: createdAt, eventId: eventId);
+
+  /// Whether [openAt] can open a window here at all, once the first page is
+  /// in; when false the newest window stays.
+  Future<bool> canOpenAt() => _canOpenAt();
 
   /// Pages a window opened at a message toward the present. Returns whether
   /// a page was applied.

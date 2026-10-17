@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import type { ReadingPosition } from "@/features/channels/readingPositionStore";
 import {
   isDeferredTimelineSnapshotStale,
   isRenderedTimelineBehindHistoryPrepend,
@@ -123,6 +124,15 @@ type MessageTimelineProps = {
   splitThreadPanelOpen?: boolean;
   /** Event id of the oldest unread top-level message at channel open, or null. */
   firstUnreadMessageId?: string | null;
+  /**
+   * Message the timeline opens at instead of the bottom (the first unread),
+   * decided once per visit before the list first shows.
+   */
+  initialAnchorMessageId?: string | null;
+  /** Where the anchor's row sits when reopening a remembered position. */
+  initialAnchorTopPx?: number | null;
+  /** Reports where the reader is (null at the newest message). */
+  onReadingPositionChange?: (position: ReadingPosition | null) => void;
   /** Count of unread top-level messages at channel open. */
   unreadCount?: number;
   /** Per-thread unread counts keyed by thread root id. */
@@ -213,6 +223,9 @@ const MessageTimelineBase = React.forwardRef<
     onTargetReached,
     splitThreadPanelOpen = false,
     firstUnreadMessageId = null,
+    initialAnchorMessageId = null,
+    initialAnchorTopPx = null,
+    onReadingPositionChange,
     unreadCount = 0,
     threadUnreadCounts,
   }: MessageTimelineProps,
@@ -369,6 +382,9 @@ const MessageTimelineBase = React.forwardRef<
     scrollContainerRef: activeScrollContainerRef,
     splitPanelOpen: splitThreadPanelOpen,
     targetMessageId,
+    initialAnchorMessageId: useTimelineVirtualizer
+      ? initialAnchorMessageId
+      : null,
     virtualCancelBottomIntent: timelineVirtualizerApi?.cancelBottomIntent,
     virtualScrollToMessage: timelineVirtualizerApi?.scrollToMessage,
     virtualScrollToBottom: timelineVirtualizerApi?.scrollToBottom,
@@ -383,6 +399,9 @@ const MessageTimelineBase = React.forwardRef<
     bottomConfirmationChannelRef.current = channelId;
     hasConfirmedVirtualizerBottomRef.current = false;
   }
+  const openedAtAnchorRef = React.useRef(false);
+  openedAtAnchorRef.current =
+    useTimelineVirtualizer && initialAnchorMessageId !== null;
   const suppressNextSemanticBottomRef = React.useRef(false);
   const semanticAtBottomRef = React.useRef(isSemanticallyAtBottom);
   semanticAtBottomRef.current = isSemanticallyAtBottom;
@@ -422,7 +441,12 @@ const MessageTimelineBase = React.forwardRef<
         } else if (!semanticAtBottomRef.current) {
           queueSemanticBottom(true);
         }
-      } else if (hasConfirmedVirtualizerBottomRef.current) {
+      } else if (
+        hasConfirmedVirtualizerBottomRef.current ||
+        openedAtAnchorRef.current
+      ) {
+        // A timeline opened at an anchor is above the floor on purpose, not
+        // in a mount transient.
         onVirtualizerAtBottomStateChange(false);
         if (semanticAtBottomRef.current) {
           suppressNextSemanticBottomRef.current = true;
@@ -512,8 +536,10 @@ const MessageTimelineBase = React.forwardRef<
       setIsUnreadPillDismissed(true);
     }
   }, [isAtBottom]);
+  // A timeline opened at the first unread already shows it under the divider.
   const showUnreadPill =
     !isUnreadPillDismissed &&
+    !openedAtAnchorRef.current &&
     unreadCount > 0 &&
     firstUnreadMessageId !== null &&
     !showTimelineSkeleton;
@@ -658,6 +684,9 @@ const MessageTimelineBase = React.forwardRef<
       channelType={channelType}
       currentPubkey={currentPubkey}
       firstUnreadMessageId={firstUnreadMessageId}
+      initialAnchorMessageId={initialAnchorMessageId}
+      initialAnchorTopPx={initialAnchorTopPx}
+      onReadingPositionChange={onReadingPositionChange}
       followThreadById={followThreadById}
       highlightedMessageId={highlightedMessageId}
       huddleMemberPubkeys={huddleMemberPubkeys}

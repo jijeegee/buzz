@@ -23,6 +23,19 @@ export function requestLandAtLatest(channelId: string): void {
   }
 }
 
+/**
+ * Whether `channelId` has a land-at-latest request it has not picked up yet.
+ * A channel that will land at its newest message must not open elsewhere.
+ */
+export function hasPendingLandAtLatest(channelId: string): boolean {
+  return (
+    request !== null &&
+    request.channelId === channelId &&
+    request.seq > handledSeq &&
+    Date.now() - request.at <= REQUEST_TTL_MS
+  );
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
