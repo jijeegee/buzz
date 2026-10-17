@@ -485,7 +485,7 @@ test.describe("channel activity hover preview", () => {
       page.getByRole("menuitem", { name: "Mark as read" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("menuitem", { name: "Mark unread" }),
+      page.getByRole("menuitem", { name: "Mark as unread" }),
     ).toHaveCount(0);
     await page.getByRole("menuitem", { name: "Mark as read" }).click();
 

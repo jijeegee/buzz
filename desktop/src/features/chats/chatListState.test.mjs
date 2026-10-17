@@ -7,6 +7,7 @@ import {
   applyMarkReadResponseToChatList,
   applyUnreadMarkToChatList,
   chatListQueryKey,
+  isSameChatListAccount,
   createEventIdLru,
   mergeRefetchedFirstPage,
   chatRowContextId,
@@ -471,5 +472,30 @@ test("Mark as unread shows on the thread or room row right away", () => {
   assert.equal(
     applyUnreadMarkToChatList(unchanged, { thread: OTHER_ROOT }),
     unchanged,
+  );
+});
+
+test("a pin change keeps the same chat list account, an account switch does not", () => {
+  const base = chatListQueryKey("wss://relay.example", "AB", []);
+  assert.equal(
+    isSameChatListAccount(
+      base,
+      chatListQueryKey("wss://relay.example", "ab", ["root1"]),
+    ),
+    true,
+  );
+  assert.equal(
+    isSameChatListAccount(
+      base,
+      chatListQueryKey("wss://relay.example", "cd", []),
+    ),
+    false,
+  );
+  assert.equal(
+    isSameChatListAccount(
+      base,
+      chatListQueryKey("wss://other.example", "ab", []),
+    ),
+    false,
   );
 });

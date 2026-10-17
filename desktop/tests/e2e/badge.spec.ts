@@ -794,7 +794,7 @@ test("mark-as-unread via context menu bolds the channel", async ({ page }) => {
   const baselineBadge = await getSettledBadgeState(page);
 
   await page.getByTestId("channel-random").click({ button: "right" });
-  await page.getByText("Mark unread").click();
+  await page.getByText("Mark as unread").click();
 
   await expect(page.getByTestId("channel-random")).toHaveCSS(
     "font-weight",
@@ -955,7 +955,7 @@ test("remote read-state rollback is ignored while local mark-unread still increm
   // Local mark-unread remains an in-session affordance and should still bold
   // the channel immediately without publishing a lower read timestamp.
   await page.getByTestId("channel-random").click({ button: "right" });
-  await page.getByText("Mark unread").click();
+  await page.getByText("Mark as unread").click();
   await expect(page.getByTestId("channel-random")).toHaveCSS(
     "font-weight",
     "700",

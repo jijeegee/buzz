@@ -88,6 +88,17 @@ export function chatListQueryKey(
   ] as const;
 }
 
+/** Two chat list keys for the same relay and account (pins may differ). */
+export function isSameChatListAccount(
+  left: readonly unknown[],
+  right: readonly unknown[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.slice(0, -1).every((part, index) => part === right[index])
+  );
+}
+
 /** The ReadStateManager context a row's read position lives in. */
 export function chatRowContextId(row: ChatListRow): string {
   return row.type === "thread" && row.root_id

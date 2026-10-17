@@ -8,6 +8,7 @@ import {
 import { isJoinedChat, sortChatList } from "@/features/sidebar/lib/chatList";
 import type { Channel } from "@/shared/api/types";
 import { ChatThreadRow } from "./ChatThreadRow";
+import type { ChatThreadRowActions } from "./ChatThreadRowMenu";
 import { SidebarSection, type SidebarSectionRow } from "./SidebarSection";
 
 /** The relay's chats list, present only while its chat-state switch is on. */
@@ -23,6 +24,8 @@ export type ServerChats = {
   forcedUnreadChannelIds?: ReadonlySet<string>;
   /** Threads muted (unfollowed) on this device stay out of the list. */
   mutedRootIds?: ReadonlySet<string>;
+  /** A thread row's menu; without it thread rows have no menu. */
+  threadActions?: ChatThreadRowActions;
 };
 
 type ChatListProps = Omit<
@@ -92,6 +95,7 @@ function buildServerChatRows(
           isDm={channel.channelType === "dm"}
           isMuted={isMuted}
           isPinned={isPinned}
+          actions={server.threadActions}
           onOpenThread={server.onOpenThread}
           row={row}
           unread={unread}

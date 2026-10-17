@@ -114,6 +114,7 @@ import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlay
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { ChatStateSync } from "@/app/ChatStateSync";
 import { useChatStateWiring } from "@/app/useChatStateWiring";
+import { useChatThreadRowActions } from "@/app/useChatThreadRowActions";
 import { useChatsRailNavigation } from "@/app/useChatsRailNavigation";
 import {
   toggleInboxPanel,
@@ -556,6 +557,14 @@ export function AppShell() {
     },
     [unfollowThread, muteThread, mirrorFollow],
   );
+  const serverChats = useChatThreadRowActions({
+    markThreadRead,
+    markThreadUnread: chatState.markThreadUnread,
+    pinThread: chatState.pinThread,
+    serverChats: chatState.serverChats,
+    unfollowThread: handleUnfollowThread,
+    unpinThread: chatState.unpinThread,
+  });
 
   const createChannelMutation = useCreateChannelMutation(),
     createForumMutation = useCreateChannelMutation();
@@ -1019,7 +1028,7 @@ export function AppShell() {
                           starredChannelIds={starredChannelIds}
                           onStarChannel={starChannel}
                           onUnstarChannel={unstarChannel}
-                          serverChats={chatState.serverChats}
+                          serverChats={serverChats}
                         />
                       ) : null}
                       <TerminalContextOverrideProvider

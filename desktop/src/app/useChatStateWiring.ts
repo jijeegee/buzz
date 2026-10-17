@@ -28,6 +28,10 @@ import {
 } from "@/features/chats/chatStateWrites";
 import { mutedStore } from "@/features/channels/unreadMembership";
 import { readThreadFollowRootIds } from "@/features/messages/lib/useThreadFollows";
+import {
+  THREAD_PINS_LANE,
+  useSyncedIdSet,
+} from "@/features/sidebar/lib/syncedIdSetLane";
 import type { ServerChats } from "@/features/sidebar/ui/ChatList";
 import {
   chatImport,
@@ -123,10 +127,20 @@ export function useChatStateWiring({
   markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void;
   markThreadUnread: (rootId: string) => boolean;
   mirrorFollow: (rootId: string, state: ChatFollowState) => void;
+  pinThread: (rootId: string) => void;
   serverChats: ServerChats | undefined;
   syncProps: ChatStateSyncProps;
+  unpinThread: (rootId: string) => void;
 } {
   const queryClient = useQueryClient();
+  // Thread pins sync like channel pins (encrypted to self); the relay is
+  // asked for pinned threads so they stay listed while closed or quiet.
+  const threadPins = useSyncedIdSet(THREAD_PINS_LANE, pubkey, relayUrl);
+  const pinnedThreadIds = threadPins.ids;
+  const pinnedThreadList = React.useMemo(
+    () => [...pinnedThreadIds],
+    [pinnedThreadIds],
+  );
   const capabilityKey = chatStateCapabilityKey(relayUrl, pubkey);
   const capability = React.useSyncExternalStore(
     subscribeChatStateCapability,
@@ -257,6 +271,7 @@ export function useChatStateWiring({
             getReadAt: getOwnReadAt,
             mutedRootIds,
             onOpenThread: openThread,
+            pinnedThreadIds,
             readStateVersion,
             rows: shownRows,
           }
@@ -266,19 +281,29 @@ export function useChatStateWiring({
       getOwnReadAt,
       mutedRootIds,
       openThread,
+      pinnedThreadIds,
       readStateVersion,
       shownRows,
     ],
   );
   const syncProps = React.useMemo<ChatStateSyncProps>(
-    () => ({ capabilityKey, onRows: setRows, pubkey, relayUrl, writerRef }),
-    [capabilityKey, pubkey, relayUrl],
+    () => ({
+      capabilityKey,
+      onRows: setRows,
+      pinnedThreadIds: pinnedThreadList,
+      pubkey,
+      relayUrl,
+      writerRef,
+    }),
+    [capabilityKey, pinnedThreadList, pubkey, relayUrl],
   );
   return {
     markChannelUnread: markChannelUnreadMirrored,
     markThreadUnread,
     mirrorFollow,
+    pinThread: threadPins.add,
     serverChats,
     syncProps,
+    unpinThread: threadPins.remove,
   };
 }

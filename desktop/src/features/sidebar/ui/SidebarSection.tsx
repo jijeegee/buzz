@@ -9,6 +9,7 @@ import {
 } from "@/shared/ui/context-menu";
 
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
+import { roomExitAction } from "@/features/sidebar/lib/chatRowMenu";
 import { ChannelContextMenuItems } from "@/features/sidebar/ui/ChannelContextMenu";
 import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
 import { formatElapsed } from "@/features/agents/ui/agentSessionUtils";
@@ -505,6 +506,11 @@ export function SidebarSection({
                   return <Fragment key={row.key}>{row.node}</Fragment>;
                 }
                 const { channel } = row;
+                const exitAction = roomExitAction(
+                  channel.channelType,
+                  dmParticipantsByChannelId?.[channel.id]?.length ??
+                    Math.max(channel.participantPubkeys.length - 1, 0),
+                );
                 const menuItem = (
                   <SidebarMenuItem
                     key={onMarkChannelUnread ? undefined : channel.id}
@@ -584,10 +590,9 @@ export function SidebarSection({
                             : onDeleteChannel
                         }
                         onLeaveChannel={
-                          channel.channelType === "dm"
-                            ? undefined
-                            : onLeaveChannel
+                          exitAction === "leave" ? onLeaveChannel : undefined
                         }
+                        onHideDm={exitAction === "hide" ? onHideDm : undefined}
                       />
                     </ContextMenuContent>
                   </ContextMenu>

@@ -30,6 +30,8 @@ export function useThreadCloseToggle(): {
     channelId: string;
     rootId: string;
     closed: boolean;
+    /** After each marker reply is sent, including an Undo. */
+    onSent?: () => void;
   }) => void;
 } {
   const queryClient = useQueryClient();
@@ -87,20 +89,25 @@ export function useThreadCloseToggle(): {
       channelId,
       rootId,
       closed,
+      onSent,
     }: {
       channelId: string;
       rootId: string;
       closed: boolean;
+      onSent?: () => void;
     }) => {
       setPending(true);
       send(channelId, rootId, closed ? "closed" : "reopened")
         .then(() => {
+          onSent?.();
           if (!closed) return;
           toast("Thread closed", {
             action: {
               label: "Undo",
               onClick: () => {
-                send(channelId, rootId, "reopened").catch(reportFailure);
+                send(channelId, rootId, "reopened")
+                  .then(() => onSent?.())
+                  .catch(reportFailure);
               },
             },
           });

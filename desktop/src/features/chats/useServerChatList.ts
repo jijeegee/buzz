@@ -5,6 +5,7 @@ import {
   CHAT_LIST_BACKGROUND_ROWS,
   CHAT_LIST_PAGE_SIZE,
   chatListQueryKey,
+  isSameChatListAccount,
   mergeChatListPage,
   mergeRefetchedFirstPage,
   type ChatListState,
@@ -88,6 +89,12 @@ export function useServerChatList({
         throw error;
       }
     },
+    // Pinning a thread changes the key; keep showing the same account's
+    // list meanwhile (never another account's).
+    placeholderData: (previous, previousQuery) =>
+      previousQuery && isSameChatListAccount(previousQuery.queryKey, queryKey)
+        ? previous
+        : undefined,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) =>
       !isChatStateUnavailable(error) && failureCount < 1,
@@ -97,6 +104,7 @@ export function useServerChatList({
   const next = data?.next ?? null;
   const wantsMore =
     fetching &&
+    !query.isPlaceholderData &&
     next !== null &&
     (data?.rows.length ?? 0) < CHAT_LIST_BACKGROUND_ROWS;
   const generation = data?.generation;

@@ -7,7 +7,16 @@ import {
   type ChatRowUnread,
 } from "@/features/chats/chatListState";
 import { cn } from "@/shared/lib/cn";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/shared/ui/context-menu";
 import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
+import {
+  ChatThreadRowMenuItems,
+  type ChatThreadRowActions,
+} from "./ChatThreadRowMenu";
 
 /**
  * One followed (or pinned) thread in the server chats list:
@@ -15,6 +24,7 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
  * threads (pinned only) dimmed with a check mark.
  */
 export function ChatThreadRow({
+  actions,
   channelLabel,
   isDm,
   isMuted,
@@ -23,6 +33,7 @@ export function ChatThreadRow({
   row,
   unread,
 }: {
+  actions?: ChatThreadRowActions;
   channelLabel: string;
   isDm: boolean;
   isMuted: boolean;
@@ -36,7 +47,7 @@ export function ChatThreadRow({
   const place = isDm ? channelLabel : `#${channelLabel}`;
   const hasUnread = unread.count > 0 || unread.marked;
   const dimmed = row.closed || (isMuted && unread.mentions === 0);
-  return (
+  const item = (
     <SidebarMenuItem className="group/menu-item">
       <SidebarMenuButton
         className={cn(
@@ -130,5 +141,20 @@ export function ChatThreadRow({
         ) : null}
       </SidebarMenuButton>
     </SidebarMenuItem>
+  );
+  if (!actions) return item;
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{item}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ChatThreadRowMenuItems
+          actions={actions}
+          hasUnread={hasUnread}
+          isPinned={isPinned}
+          row={row}
+          rootId={rootId}
+        />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

@@ -15,6 +15,8 @@ export type ChatStateSyncProps = {
   capabilityKey: string | null;
   /** The server rows while the capability is on, else undefined. */
   onRows: (rows: readonly ChatListRow[] | undefined) => void;
+  /** Threads pinned on any of my devices; the relay lists them too. */
+  pinnedThreadIds: readonly string[];
   pubkey: string | undefined;
   relayUrl: string | undefined;
   writerRef: React.RefObject<ChatStateWriter | null>;
@@ -29,6 +31,7 @@ export type ChatStateSyncProps = {
 export function ChatStateSync({
   capabilityKey,
   onRows,
+  pinnedThreadIds,
   pubkey,
   relayUrl,
   writerRef,
@@ -50,6 +53,7 @@ export function ChatStateSync({
     capabilityKey,
     connected,
     enabled: on,
+    pinnedThreadIds,
     pubkey,
     relayUrl,
   });
