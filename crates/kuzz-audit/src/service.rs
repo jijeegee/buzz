@@ -27,7 +27,7 @@ fn log_timestamp() -> DateTime<Utc> {
 /// so two communities never serialize each other's audit writes (which would be
 /// both a throughput bottleneck and a cross-tenant timing oracle). The lock is
 /// taken with `pg_advisory_lock(hashtextextended(...))` — see [`AuditService::log`].
-const AUDIT_LOCK_NAMESPACE: &str = "buzz_audit:";
+const AUDIT_LOCK_NAMESPACE: &str = "kuzz_audit:";
 
 /// Append-only, per-community hash-chain audit log backed by Postgres.
 ///

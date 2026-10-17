@@ -46,13 +46,6 @@ use std::time::Duration;
 
 use acp::{AcpClient, EnvVar, McpServer};
 use anyhow::{ensure, Context, Result};
-use kuzz_core::kind::{
-    KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION, KIND_STREAM_MESSAGE,
-};
-use kuzz_core::observer::{
-    decrypt_observer_payload, encrypt_observer_payload, OBSERVER_FRAME_TELEMETRY,
-    OBSERVER_MAX_PLAINTEXT_LEN,
-};
 use clap::Parser;
 use config::{
     AuthAgentArgs, AuthMethodsArgs, AuthenticateArgs, Config, DedupMode, ModelsArgs,
@@ -60,6 +53,13 @@ use config::{
 };
 use filter::SubscriptionRule;
 use futures_util::FutureExt;
+use kuzz_core::kind::{
+    KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION, KIND_STREAM_MESSAGE,
+};
+use kuzz_core::observer::{
+    decrypt_observer_payload, encrypt_observer_payload, OBSERVER_FRAME_TELEMETRY,
+    OBSERVER_MAX_PLAINTEXT_LEN,
+};
 use nostr::{PublicKey, ToBech32};
 use pool::{
     AgentPool, ControlSignal, IdleSwitchResult, OwnedAgent, PromptContext, PromptOutcome,
@@ -257,11 +257,11 @@ async fn is_owner_or_sibling(
 
 /// Return the workflow owner attributed by a relay-signed workflow message.
 ///
-/// `buzz:workflow-owner` alone is not authority: any ordinary event author can
+/// `kuzz:workflow-owner` alone is not authority: any ordinary event author can
 /// forge custom tags. Attribution is accepted only for a cryptographically
 /// valid kind:9 event signed by the active relay's NIP-11 `self` key, with
 /// exactly one canonical workflow marker and owner pubkey. The current agent
-/// must also have exactly one canonical `buzz:workflow-mention` tag; legacy `p`
+/// must also have exactly one canonical `kuzz:workflow-mention` tag; legacy `p`
 /// tags are deliberately ignored as author-gate authority because workflows
 /// retain an owner `p` tag for mentions-feed compatibility.
 fn verified_workflow_owner(
@@ -282,9 +282,9 @@ fn verified_workflow_owner(
         .tags
         .iter()
         .map(|tag| tag.as_slice())
-        .filter(|values| values.first().map(String::as_str) == Some("buzz:workflow"))
+        .filter(|values| values.first().map(String::as_str) == Some("kuzz:workflow"))
         .collect();
-    if markers.as_slice() != [["buzz:workflow", "true"]] {
+    if markers.as_slice() != [["kuzz:workflow", "true"]] {
         return None;
     }
 
@@ -292,7 +292,7 @@ fn verified_workflow_owner(
         .tags
         .iter()
         .map(|tag| tag.as_slice())
-        .filter(|values| values.first().map(String::as_str) == Some("buzz:workflow-owner"))
+        .filter(|values| values.first().map(String::as_str) == Some("kuzz:workflow-owner"))
         .collect();
     let [owner_tag] = owners.as_slice() else {
         return None;
@@ -310,7 +310,7 @@ fn verified_workflow_owner(
         .tags
         .iter()
         .map(|tag| tag.as_slice())
-        .filter(|values| values.first().map(String::as_str) == Some("buzz:workflow-mention"))
+        .filter(|values| values.first().map(String::as_str) == Some("kuzz:workflow-mention"))
         .collect();
     let mut mentioned_pubkeys = HashSet::with_capacity(workflow_mentions.len());
     for mention_tag in workflow_mentions {
@@ -4704,10 +4704,10 @@ const THREAD_RESULT_PROMPT_TAG: &str = "thread-result";
 /// Whether `event` is a task thread result this agent posted on a channel
 /// main timeline with `kuzz threads close`.
 ///
-/// The result carries `buzz:sent-from-thread` and `buzz:thread-closed` and
+/// The result carries `kuzz:sent-from-thread` and `kuzz:thread-closed` and
 /// p-tags its own author so it reaches a mention-filtered subscription. The
-/// close marker inside the thread also carries `buzz:thread-closed` but never
-/// `buzz:sent-from-thread`. Only the main-and-threads policy has a separate
+/// close marker inside the thread also carries `kuzz:thread-closed` but never
+/// `kuzz:sent-from-thread`. Only the main-and-threads policy has a separate
 /// main-timeline session to tell; under the channel policy the thread already
 /// ran in the one shared session.
 fn is_own_thread_result(
@@ -4725,8 +4725,8 @@ fn is_own_thread_result(
     policy == scope::SessionPolicy::Thread
         && kind_u32 == KIND_STREAM_MESSAGE
         && event.pubkey.to_hex() == agent_pubkey_hex
-        && has_tag("buzz:sent-from-thread")
-        && has_tag("buzz:thread-closed")
+        && has_tag("kuzz:sent-from-thread")
+        && has_tag("kuzz:thread-closed")
 }
 
 fn is_owner_control_command(
@@ -6914,8 +6914,8 @@ mod owner_control_command_tests {
         };
         let result_tags = || {
             vec![
-                Tag::parse(["buzz:sent-from-thread", root.as_str(), "Task"]).unwrap(),
-                Tag::parse(["buzz:thread-closed", root.as_str()]).unwrap(),
+                Tag::parse(["kuzz:sent-from-thread", root.as_str(), "Task"]).unwrap(),
+                Tag::parse(["kuzz:thread-closed", root.as_str()]).unwrap(),
                 Tag::parse(["p", agent.as_str()]).unwrap(),
             ]
         };
@@ -6951,7 +6951,7 @@ mod owner_control_command_tests {
             &keys,
             vec![
                 Tag::parse(["e", root.as_str(), "", "reply"]).unwrap(),
-                Tag::parse(["buzz:thread-closed", root.as_str()]).unwrap(),
+                Tag::parse(["kuzz:thread-closed", root.as_str()]).unwrap(),
             ],
         );
         assert!(!is_own_thread_result(
@@ -7788,7 +7788,7 @@ mod workflow_owner_tests {
             tags.push(Tag::parse(marker.iter().copied()).expect("workflow marker"));
         }
         if let Some(owner) = owner {
-            tags.push(Tag::parse(["buzz:workflow-owner", owner]).expect("workflow owner tag"));
+            tags.push(Tag::parse(["kuzz:workflow-owner", owner]).expect("workflow owner tag"));
         }
         for mention in workflow_mentions {
             tags.push(Tag::parse(mention.iter().copied()).expect("workflow mention tag"));
@@ -7826,8 +7826,8 @@ mod workflow_owner_tests {
         let event = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
-            &[&["buzz:workflow-mention", agent.as_str()]],
+            &[&["kuzz:workflow", "true"]],
+            &[&["kuzz:workflow-mention", agent.as_str()]],
             &[owner.as_str(), agent.as_str()],
         );
 
@@ -7846,10 +7846,10 @@ mod workflow_owner_tests {
         let event = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
+            &[&["kuzz:workflow", "true"]],
             &[
-                &["buzz:workflow-mention", agent_a.as_str()],
-                &["buzz:workflow-mention", agent_b.as_str()],
+                &["kuzz:workflow-mention", agent_a.as_str()],
+                &["kuzz:workflow-mention", agent_b.as_str()],
             ],
             &[owner.as_str(), agent_a.as_str(), agent_b.as_str()],
         );
@@ -7869,8 +7869,8 @@ mod workflow_owner_tests {
         let event = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
-            &[&["buzz:workflow-mention", owner.as_str()]],
+            &[&["kuzz:workflow", "true"]],
+            &[&["kuzz:workflow-mention", owner.as_str()]],
             &[owner.as_str()],
         );
 
@@ -7888,7 +7888,7 @@ mod workflow_owner_tests {
         let event = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
+            &[&["kuzz:workflow", "true"]],
             &[],
             &[owner.as_str()],
         );
@@ -7908,8 +7908,8 @@ mod workflow_owner_tests {
         let event = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
-            &[&["buzz:workflow-mention", other.as_str()]],
+            &[&["kuzz:workflow", "true"]],
+            &[&["kuzz:workflow-mention", other.as_str()]],
             &[owner.as_str(), agent.as_str(), other.as_str()],
         );
 
@@ -7925,11 +7925,11 @@ mod workflow_owner_tests {
         let attacker = Keys::generate();
         let owner = Keys::generate().public_key().to_hex();
         let agent = Keys::generate().public_key().to_hex();
-        let mentions = [&["buzz:workflow-mention", agent.as_str()][..]];
+        let mentions = [&["kuzz:workflow-mention", agent.as_str()][..]];
         let forged = workflow_event(
             &attacker,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
+            &[&["kuzz:workflow", "true"]],
             &mentions,
             &[agent.as_str()],
         );
@@ -7941,7 +7941,7 @@ mod workflow_owner_tests {
         let mut tampered = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
+            &[&["kuzz:workflow", "true"]],
             &mentions,
             &[agent.as_str()],
         );
@@ -7958,7 +7958,7 @@ mod workflow_owner_tests {
         let owner = Keys::generate().public_key().to_hex();
         let agent = Keys::generate().public_key().to_hex();
         let relay_hex = relay.public_key().to_hex();
-        let valid_mentions = [&["buzz:workflow-mention", agent.as_str()][..]];
+        let valid_mentions = [&["kuzz:workflow-mention", agent.as_str()][..]];
 
         for event in [
             workflow_event(
@@ -7971,46 +7971,46 @@ mod workflow_owner_tests {
             workflow_event(
                 &relay,
                 None,
-                &[&["buzz:workflow", "true"]],
+                &[&["kuzz:workflow", "true"]],
                 &valid_mentions,
                 &[agent.as_str()],
             ),
             workflow_event(
                 &relay,
                 Some(&owner),
-                &[&["buzz:workflow", "true"], &["buzz:workflow", "true"]],
+                &[&["kuzz:workflow", "true"], &["kuzz:workflow", "true"]],
                 &valid_mentions,
                 &[agent.as_str()],
             ),
             workflow_event(
                 &relay,
                 Some(&owner),
-                &[&["buzz:workflow", "true", "extra"]],
+                &[&["kuzz:workflow", "true", "extra"]],
                 &valid_mentions,
                 &[agent.as_str()],
             ),
             workflow_event(
                 &relay,
                 Some(&owner),
-                &[&["buzz:workflow", "true"]],
-                &[&["buzz:workflow-mention", agent.as_str(), "extra"]],
+                &[&["kuzz:workflow", "true"]],
+                &[&["kuzz:workflow-mention", agent.as_str(), "extra"]],
                 &[agent.as_str()],
             ),
             workflow_event(
                 &relay,
                 Some(&owner),
-                &[&["buzz:workflow", "true"]],
+                &[&["kuzz:workflow", "true"]],
                 &[
-                    &["buzz:workflow-mention", agent.as_str()],
-                    &["buzz:workflow-mention", agent.as_str()],
+                    &["kuzz:workflow-mention", agent.as_str()],
+                    &["kuzz:workflow-mention", agent.as_str()],
                 ],
                 &[agent.as_str()],
             ),
             workflow_event(
                 &relay,
                 Some(&owner),
-                &[&["buzz:workflow", "true"]],
-                &[&["buzz:workflow-mention", "not-a-pubkey"]],
+                &[&["kuzz:workflow", "true"]],
+                &[&["kuzz:workflow-mention", "not-a-pubkey"]],
                 &[agent.as_str()],
             ),
         ] {
@@ -8023,12 +8023,12 @@ mod workflow_owner_tests {
         let duplicate_owner = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
+            &[&["kuzz:workflow", "true"]],
             &valid_mentions,
             &[agent.as_str()],
         );
         let mut tags: Vec<Tag> = duplicate_owner.tags.iter().cloned().collect();
-        tags.push(Tag::parse(["buzz:workflow-owner", owner.as_str()]).expect("duplicate owner"));
+        tags.push(Tag::parse(["kuzz:workflow-owner", owner.as_str()]).expect("duplicate owner"));
         let duplicate_owner =
             EventBuilder::new(Kind::Custom(KIND_STREAM_MESSAGE as u16), "scheduled prompt")
                 .tags(tags)
@@ -8048,9 +8048,9 @@ mod workflow_owner_tests {
         let relay_hex = relay.public_key().to_hex();
         let wrong_kind = EventBuilder::new(Kind::TextNote, "scheduled prompt")
             .tags([
-                Tag::parse(["buzz:workflow", "true"]).expect("marker"),
-                Tag::parse(["buzz:workflow-owner", owner.as_str()]).expect("owner"),
-                Tag::parse(["buzz:workflow-mention", agent.as_str()]).expect("workflow mention"),
+                Tag::parse(["kuzz:workflow", "true"]).expect("marker"),
+                Tag::parse(["kuzz:workflow-owner", owner.as_str()]).expect("owner"),
+                Tag::parse(["kuzz:workflow-mention", agent.as_str()]).expect("workflow mention"),
             ])
             .sign_with_keys(&relay)
             .expect("signed event");
@@ -8062,8 +8062,8 @@ mod workflow_owner_tests {
         let valid = workflow_event(
             &relay,
             Some(&owner),
-            &[&["buzz:workflow", "true"]],
-            &[&["buzz:workflow-mention", agent.as_str()]],
+            &[&["kuzz:workflow", "true"]],
+            &[&["kuzz:workflow-mention", agent.as_str()]],
             &[agent.as_str()],
         );
         assert_eq!(effective_prompt_author(&valid, None, &agent), relay_hex);
@@ -8194,9 +8194,9 @@ mod author_gate_tests {
     ) -> nostr::Event {
         nostr::EventBuilder::new(nostr::Kind::Custom(KIND_STREAM_MESSAGE as u16), "dispatch")
             .tags([
-                nostr::Tag::parse(["buzz:workflow", "true"]).expect("workflow marker"),
-                nostr::Tag::parse(["buzz:workflow-owner", owner]).expect("workflow owner tag"),
-                nostr::Tag::parse(["buzz:workflow-mention", agent]).expect("workflow mention tag"),
+                nostr::Tag::parse(["kuzz:workflow", "true"]).expect("workflow marker"),
+                nostr::Tag::parse(["kuzz:workflow-owner", owner]).expect("workflow owner tag"),
+                nostr::Tag::parse(["kuzz:workflow-mention", agent]).expect("workflow mention tag"),
                 nostr::Tag::parse(["p", agent]).expect("recipient tag"),
             ])
             .sign_with_keys(relay_keys)
@@ -8953,10 +8953,10 @@ mod author_gate_tests {
         let event =
             nostr::EventBuilder::new(nostr::Kind::Custom(KIND_STREAM_MESSAGE as u16), "dispatch")
                 .tags([
-                    nostr::Tag::parse(["buzz:workflow", "true"]).expect("workflow marker"),
-                    nostr::Tag::parse(["buzz:workflow-owner", workflow_owner.as_str()])
+                    nostr::Tag::parse(["kuzz:workflow", "true"]).expect("workflow marker"),
+                    nostr::Tag::parse(["kuzz:workflow-owner", workflow_owner.as_str()])
                         .expect("workflow owner tag"),
-                    nostr::Tag::parse(["buzz:workflow-mention", agent.as_str()])
+                    nostr::Tag::parse(["kuzz:workflow-mention", agent.as_str()])
                         .expect("workflow mention tag"),
                     nostr::Tag::parse(["p", agent.as_str()]).expect("recipient tag"),
                 ])
@@ -8993,8 +8993,8 @@ mod author_gate_tests {
         let event =
             nostr::EventBuilder::new(nostr::Kind::Custom(KIND_STREAM_MESSAGE as u16), "dispatch")
                 .tags([
-                    nostr::Tag::parse(["buzz:workflow", "true"]).expect("workflow marker"),
-                    nostr::Tag::parse(["buzz:workflow-owner", workflow_owner.as_str()])
+                    nostr::Tag::parse(["kuzz:workflow", "true"]).expect("workflow marker"),
+                    nostr::Tag::parse(["kuzz:workflow-owner", workflow_owner.as_str()])
                         .expect("workflow owner tag"),
                     nostr::Tag::parse(["p", agent.as_str()]).expect("legacy owner p tag"),
                 ])
@@ -9033,10 +9033,10 @@ mod author_gate_tests {
         let event =
             nostr::EventBuilder::new(nostr::Kind::Custom(KIND_STREAM_MESSAGE as u16), "dispatch")
                 .tags([
-                    nostr::Tag::parse(["buzz:workflow", "true"]).expect("workflow marker"),
-                    nostr::Tag::parse(["buzz:workflow-owner", workflow_owner.as_str()])
+                    nostr::Tag::parse(["kuzz:workflow", "true"]).expect("workflow marker"),
+                    nostr::Tag::parse(["kuzz:workflow-owner", workflow_owner.as_str()])
                         .expect("workflow owner tag"),
-                    nostr::Tag::parse(["buzz:workflow-mention", agent.as_str()])
+                    nostr::Tag::parse(["kuzz:workflow-mention", agent.as_str()])
                         .expect("workflow mention tag"),
                     nostr::Tag::parse(["p", agent.as_str()]).expect("recipient tag"),
                 ])

@@ -49,7 +49,7 @@ fn tag_error(error: impl std::fmt::Display) -> CliError {
 
 fn protection_pattern(tag: &Tag) -> Option<&str> {
     let values = tag.as_slice();
-    (values.first().map(String::as_str) == Some("buzz-protect"))
+    (values.first().map(String::as_str) == Some("kuzz-protect"))
         .then(|| values.get(1).map(String::as_str))
         .flatten()
 }
@@ -65,7 +65,7 @@ fn build_protection_tag(
     no_delete: bool,
     require_patch: bool,
 ) -> Result<Tag, CliError> {
-    let mut values = vec!["buzz-protect".to_string(), ref_pattern.to_string()];
+    let mut values = vec!["kuzz-protect".to_string(), ref_pattern.to_string()];
     if let Some(role) = push_role {
         values.push(format!("push:{role}"));
     }
@@ -88,7 +88,7 @@ enum RepoChange {
     SetProtection(Box<Tag>),
     RemoveProtection(String),
     /// Bind (or rebind) the repo to a channel: replaces every existing
-    /// `buzz-channel` tag with exactly one carrying the validated UUID.
+    /// `kuzz-channel` tag with exactly one carrying the validated UUID.
     BindChannel(String),
 }
 
@@ -112,7 +112,7 @@ fn build_updated_repo_announcement(
         }
         RepoChange::BindChannel(channel) => {
             crate::validate::validate_uuid(&channel)?;
-            let tag = Tag::parse(["buzz-channel", channel.as_str()]).map_err(tag_error)?;
+            let tag = Tag::parse(["kuzz-channel", channel.as_str()]).map_err(tag_error)?;
             (None, true, Some(tag))
         }
     };
@@ -124,7 +124,7 @@ fn build_updated_repo_announcement(
             if has_tag_name(tag, "auth") {
                 return false;
             }
-            if removed_channel && has_tag_name(tag, "buzz-channel") {
+            if removed_channel && has_tag_name(tag, "kuzz-channel") {
                 return false;
             }
             removed_pattern.is_none() || protection_pattern(tag) != removed_pattern.as_deref()
@@ -169,7 +169,7 @@ fn protection_rules_json(event: &Event) -> Result<serde_json::Value, CliError> {
         .iter()
         .filter_map(|tag| {
             let values = tag.as_slice();
-            (values.first().map(String::as_str) == Some("buzz-protect")).then(|| {
+            (values.first().map(String::as_str) == Some("kuzz-protect")).then(|| {
                 serde_json::json!({
                     "ref": values.get(1).map(String::as_str).unwrap_or(""),
                     "rules": values.get(2..).unwrap_or_default(),
@@ -201,10 +201,10 @@ async fn submit_repo_update(client: &KuzzClient, builder: EventBuilder) -> Resul
 }
 
 /// Build the kind:30617 announcement for `repos create`, including the
-/// `buzz-channel` binding when requested.
+/// `kuzz-channel` binding when requested.
 ///
 /// Pure (no I/O) so the emitted tags are unit-testable. Exactly one
-/// validated `buzz-channel` tag is appended — the tag is the git ACL
+/// validated `kuzz-channel` tag is appended — the tag is the git ACL
 /// (issue #3527: without it the relay 404s every clone/fetch/push), so the
 /// UUID is shape-validated here and its existence/membership is the relay's
 /// authority at git-access time, same posture as `repos bind`.
@@ -235,7 +235,7 @@ pub(crate) fn build_create_announcement(
 
     if let Some(channel) = channel {
         crate::validate::validate_uuid(channel)?;
-        builder = builder.tag(Tag::parse(["buzz-channel", channel]).map_err(tag_error)?);
+        builder = builder.tag(Tag::parse(["kuzz-channel", channel]).map_err(tag_error)?);
     }
     Ok(builder)
 }
@@ -400,7 +400,7 @@ async fn cmd_protect_remove(
 
 /// Bind (or rebind) a repository to a channel — the fix path for issue
 /// #3527's permanently-404 repos. Publishes a read-modify-write update of
-/// the caller's own kind:30617 with exactly one `buzz-channel` tag; all
+/// the caller's own kind:30617 with exactly one `kuzz-channel` tag; all
 /// other metadata (protections, name, description, future tags) is
 /// preserved by the same machinery `repos protect` uses.
 ///
@@ -500,11 +500,11 @@ mod tests {
             vec![
                 tag(&["d", "demo"]),
                 tag(&["name", "Demo"]),
-                tag(&["buzz-channel", "channel-id"]),
+                tag(&["kuzz-channel", "channel-id"]),
                 tag(&["future-metadata", "preserve-me"]),
                 tag(&["auth", &"a".repeat(64), "kind=30617", &"b".repeat(128)]),
-                tag(&["buzz-protect", "refs/heads/main", "push:member"]),
-                tag(&["buzz-protect", "refs/tags/*", "no-delete"]),
+                tag(&["kuzz-protect", "refs/heads/main", "push:member"]),
+                tag(&["kuzz-protect", "refs/tags/*", "no-delete"]),
             ],
             "repository content",
             100,
@@ -529,7 +529,7 @@ mod tests {
         assert!(updated
             .tags
             .iter()
-            .any(|tag| tag.as_slice() == ["buzz-channel", "channel-id"]));
+            .any(|tag| tag.as_slice() == ["kuzz-channel", "channel-id"]));
         assert!(updated
             .tags
             .iter()
@@ -537,7 +537,7 @@ mod tests {
         assert!(updated.tags.iter().any(|tag| {
             tag.as_slice()
                 == [
-                    "buzz-protect",
+                    "kuzz-protect",
                     "refs/heads/main",
                     "push:admin",
                     "no-force-push",
@@ -547,14 +547,14 @@ mod tests {
         assert!(updated
             .tags
             .iter()
-            .any(|tag| { tag.as_slice() == ["buzz-protect", "refs/tags/*", "no-delete"] }));
+            .any(|tag| { tag.as_slice() == ["kuzz-protect", "refs/tags/*", "no-delete"] }));
         assert_eq!(
             updated
                 .tags
                 .iter()
                 .filter(|tag| {
                     let values = tag.as_slice();
-                    values.first().map(String::as_str) == Some("buzz-protect")
+                    values.first().map(String::as_str) == Some("kuzz-protect")
                         && values.get(1).map(String::as_str) == Some("refs/heads/main")
                 })
                 .count(),
@@ -567,8 +567,8 @@ mod tests {
         let existing = signed_repo(
             vec![
                 tag(&["d", "demo"]),
-                tag(&["buzz-protect", "refs/heads/main", "no-delete"]),
-                tag(&["buzz-protect", "refs/heads/release", "push:owner"]),
+                tag(&["kuzz-protect", "refs/heads/main", "no-delete"]),
+                tag(&["kuzz-protect", "refs/heads/release", "push:owner"]),
             ],
             "",
             10,
@@ -589,7 +589,7 @@ mod tests {
         assert!(updated
             .tags
             .iter()
-            .any(|tag| { tag.as_slice() == ["buzz-protect", "refs/heads/release", "push:owner"] }));
+            .any(|tag| { tag.as_slice() == ["kuzz-protect", "refs/heads/release", "push:owner"] }));
     }
 
     #[test]
@@ -602,7 +602,7 @@ mod tests {
         let existing = signed_repo(
             vec![
                 tag(&["d", "demo"]),
-                tag(&["buzz-protect", "refs/heads/main"]),
+                tag(&["kuzz-protect", "refs/heads/main"]),
             ],
             "",
             10,
@@ -627,7 +627,7 @@ mod tests {
         let mut tags = vec![tag(&["d", "demo"])];
         for index in 0..50 {
             tags.push(tag(&[
-                "buzz-protect",
+                "kuzz-protect",
                 &format!("refs/heads/branch-{index}"),
                 "push:member",
             ]));
@@ -652,7 +652,7 @@ mod tests {
             vec![
                 tag(&["d", "demo"]),
                 tag(&[
-                    "buzz-protect",
+                    "kuzz-protect",
                     "refs/heads/main",
                     "push:admin",
                     "future-rule",
@@ -677,7 +677,7 @@ mod tests {
         let existing = signed_repo(
             vec![
                 tag(&["d", "demo"]),
-                tag(&["buzz-protect", "refs/heads/main"]),
+                tag(&["kuzz-protect", "refs/heads/main"]),
             ],
             "",
             10,
@@ -698,10 +698,10 @@ mod tests {
                 tag(&["d", "demo"]),
                 tag(&["name", "Demo"]),
                 // Two stale bindings — e.g. from a buggy or vanilla client.
-                tag(&["buzz-channel", "old-and-broken"]),
-                tag(&["buzz-channel", &uuid::Uuid::new_v4().to_string()]),
+                tag(&["kuzz-channel", "old-and-broken"]),
+                tag(&["kuzz-channel", &uuid::Uuid::new_v4().to_string()]),
                 tag(&["auth", &"a".repeat(64), "kind=30617", &"b".repeat(128)]),
-                tag(&["buzz-protect", "refs/heads/main", "push:admin"]),
+                tag(&["kuzz-protect", "refs/heads/main", "push:admin"]),
                 tag(&["future-metadata", "preserve-me"]),
             ],
             "repository content",
@@ -720,10 +720,10 @@ mod tests {
         let bindings: Vec<_> = updated
             .tags
             .iter()
-            .filter(|tag| tag.as_slice().first().map(String::as_str) == Some("buzz-channel"))
+            .filter(|tag| tag.as_slice().first().map(String::as_str) == Some("kuzz-channel"))
             .collect();
         assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].as_slice(), ["buzz-channel", channel.as_str()]);
+        assert_eq!(bindings[0].as_slice(), ["kuzz-channel", channel.as_str()]);
         // Auth stripped (relay re-stamps); everything else preserved.
         assert!(!updated
             .tags
@@ -732,7 +732,7 @@ mod tests {
         assert!(updated
             .tags
             .iter()
-            .any(|tag| tag.as_slice() == ["buzz-protect", "refs/heads/main", "push:admin"]));
+            .any(|tag| tag.as_slice() == ["kuzz-protect", "refs/heads/main", "push:admin"]));
         assert!(updated
             .tags
             .iter()
@@ -757,7 +757,7 @@ mod tests {
         assert!(updated
             .tags
             .iter()
-            .any(|tag| tag.as_slice() == ["buzz-channel", channel.as_str()]));
+            .any(|tag| tag.as_slice() == ["kuzz-channel", channel.as_str()]));
     }
 
     #[test]
@@ -772,7 +772,7 @@ mod tests {
     }
 
     /// Issue #3527: `repos create --channel` must emit exactly one
-    /// `buzz-channel` tag so the primary create command stops producing
+    /// `kuzz-channel` tag so the primary create command stops producing
     /// repos the relay 404s forever.
     #[test]
     fn create_with_channel_emits_exactly_one_binding_tag() {
@@ -794,10 +794,10 @@ mod tests {
         let bindings: Vec<_> = event
             .tags
             .iter()
-            .filter(|tag| tag.as_slice().first().map(String::as_str) == Some("buzz-channel"))
+            .filter(|tag| tag.as_slice().first().map(String::as_str) == Some("kuzz-channel"))
             .collect();
-        assert_eq!(bindings.len(), 1, "exactly one buzz-channel tag");
-        assert_eq!(bindings[0].as_slice(), ["buzz-channel", channel.as_str()]);
+        assert_eq!(bindings.len(), 1, "exactly one kuzz-channel tag");
+        assert_eq!(bindings[0].as_slice(), ["kuzz-channel", channel.as_str()]);
         // The standard metadata still rides along.
         assert!(event.tags.iter().any(|tag| tag.as_slice() == ["d", "demo"]));
         assert!(event
@@ -817,7 +817,7 @@ mod tests {
             !event
                 .tags
                 .iter()
-                .any(|tag| tag.as_slice().first().map(String::as_str) == Some("buzz-channel")),
+                .any(|tag| tag.as_slice().first().map(String::as_str) == Some("kuzz-channel")),
             "no --channel means no binding tag (vanilla NIP-34 stays possible)"
         );
     }

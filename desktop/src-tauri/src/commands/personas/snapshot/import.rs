@@ -1,4 +1,4 @@
-//! Import-side helpers for `buzz-agent-snapshot v1`.
+//! Import-side helpers for `kuzz-agent-snapshot v1`.
 //!
 //! Extracted from `snapshot.rs` to keep that file under the 1500-line gate.
 //! The Tauri commands here (`preview_agent_snapshot_import`,
@@ -212,7 +212,7 @@ pub(crate) fn resolve_snapshot_import_behavior(
 
 const PNG_MAGIC: [u8; 4] = [0x89, 0x50, 0x4e, 0x47];
 
-/// Decode a `buzz-agent-snapshot v1` manifest from raw bytes.
+/// Decode a `kuzz-agent-snapshot v1` manifest from raw bytes.
 ///
 /// Sniffs by magic bytes (PNG signature) first, then falls back to JSON.
 /// Fails closed on malformed content, wrong format, or unsupported version.
@@ -435,7 +435,7 @@ pub(crate) fn build_agent_snapshot_import_preview(
 
 // ── `confirm_agent_snapshot_import` ──────────────────────────────────────────
 
-/// Import a `buzz-agent-snapshot v1` file as a brand-new agent.
+/// Import a `kuzz-agent-snapshot v1` file as a brand-new agent.
 ///
 /// Phase sequence:
 ///   1. Validate — decode the manifest and reject early on any error.

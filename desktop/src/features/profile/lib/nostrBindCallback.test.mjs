@@ -25,9 +25,9 @@ test("buildNostrBindCallbackUrl returns a UTF-8 base64url payload in the fragmen
   assert.equal(url.origin, "https://example.com");
   assert.equal(url.pathname, "/kuzz");
   assert.equal(url.search, "?source=bind");
-  assert.match(url.hash, /^#buzz_bind=v1\.[A-Za-z0-9_-]+$/);
+  assert.match(url.hash, /^#kuzz_bind=v1\.[A-Za-z0-9_-]+$/);
   assert.equal(decodePayload(result), response);
-  assert.equal(url.searchParams.has("buzz_bind"), false);
+  assert.equal(url.searchParams.has("kuzz_bind"), false);
 });
 
 test("buildNostrBindCallbackUrl replaces an existing fragment", () => {
@@ -36,7 +36,7 @@ test("buildNostrBindCallbackUrl replaces an existing fragment", () => {
     "signed",
   );
 
-  assert.equal(new URL(result).hash, "#buzz_bind=v1.c2lnbmVk");
+  assert.equal(new URL(result).hash, "#kuzz_bind=v1.c2lnbmVk");
 });
 
 test("buildNostrBindCallbackUrl rejects callback URLs beyond the opener ceiling", () => {

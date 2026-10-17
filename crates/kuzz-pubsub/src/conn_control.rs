@@ -14,8 +14,8 @@
 //! The DB ban row remains the durable backstop: even if a disconnect message is
 //! dropped, the next auth attempt is refused at the auth seam.
 
-use kuzz_core::{CommunityId, TenantContext};
 use futures_util::StreamExt;
+use kuzz_core::{CommunityId, TenantContext};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -27,7 +27,7 @@ pub const CONN_CONTROL_SUFFIX: &str = "conn-control";
 
 /// Pattern the subscriber uses to receive connection-control messages for every
 /// community this pod may hold connections for.
-pub const CONN_CONTROL_PATTERN: &str = "buzz:*:conn-control";
+pub const CONN_CONTROL_PATTERN: &str = "kuzz:*:conn-control";
 
 /// Redis pub/sub channel for connection-control messages under `ctx`.
 pub fn conn_control_channel(ctx: &TenantContext) -> String {
@@ -40,7 +40,7 @@ pub fn conn_control_channel(ctx: &TenantContext) -> String {
 /// disconnect commands.  A single channel covers all communities because NIP-FI
 /// deny entries apply across the full issuer domain — the community a user is
 /// connected to at that moment is irrelevant.
-pub const NIP_FI_DISCONNECT_CHANNEL: &str = "buzz:nip-fi:disconnect";
+pub const NIP_FI_DISCONNECT_CHANNEL: &str = "kuzz:nip-fi:disconnect";
 
 /// A NIP-FI admin-disconnect command broadcast cross-pod after the local deny
 /// entry is inserted.  Every pod merges this entry into its own deny map and
@@ -138,7 +138,7 @@ const BACKOFF_INITIAL_SECS: u64 = 1;
 /// Maximum reconnect backoff (30 seconds).
 const BACKOFF_MAX_SECS: u64 = 30;
 
-/// Subscribes to `buzz:*:conn-control` and forwards scoped commands to the
+/// Subscribes to `kuzz:*:conn-control` and forwards scoped commands to the
 /// broadcast. Mirrors [`crate::cache_invalidation::run_cache_invalidation_subscriber`]:
 /// a reconnect loop with exponential backoff. Never returns.
 pub async fn run_conn_control_subscriber(
@@ -299,7 +299,7 @@ mod tests {
         let b = ctx(0xbbbb, "b.example");
         assert_eq!(
             conn_control_channel(&a),
-            format!("buzz:{}:conn-control", a.community())
+            format!("kuzz:{}:conn-control", a.community())
         );
         assert_ne!(conn_control_channel(&a), conn_control_channel(&b));
     }
@@ -314,10 +314,10 @@ mod tests {
     #[test]
     fn parse_rejects_foreign_channels() {
         assert_eq!(
-            parse_conn_control_channel("buzz:not-a-uuid:conn-control"),
+            parse_conn_control_channel("kuzz:not-a-uuid:conn-control"),
             None
         );
-        assert_eq!(parse_conn_control_channel("buzz:*:cache-invalidate"), None);
+        assert_eq!(parse_conn_control_channel("kuzz:*:cache-invalidate"), None);
         let a = ctx(0x1234, "a.example");
         let extended = format!("{}:extra", conn_control_channel(&a));
         assert_eq!(parse_conn_control_channel(&extended), None);
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn nip_fi_disconnect_channel_is_global_not_community_scoped() {
         // Must NOT contain a community UUID segment — it's issuer-global.
-        assert_eq!(NIP_FI_DISCONNECT_CHANNEL, "buzz:nip-fi:disconnect");
+        assert_eq!(NIP_FI_DISCONNECT_CHANNEL, "kuzz:nip-fi:disconnect");
         assert!(!NIP_FI_DISCONNECT_CHANNEL.contains("conn-control"));
     }
 

@@ -5025,11 +5025,11 @@ pub(crate) async fn fetch_project_home_for_channel(
     let filters = [
         serde_json::json!({
             "kinds": [kuzz_core::kind::KIND_PROJECT],
-            "#buzz-channel": [channel],
+            "#kuzz-channel": [channel],
         }),
         serde_json::json!({
             "kinds": [kuzz_core::kind::KIND_GIT_REPO_ANNOUNCEMENT],
-            "#buzz-channel": [channel],
+            "#kuzz-channel": [channel],
         }),
     ];
 
@@ -13369,12 +13369,12 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             json!([{
                 "kind": 30621,
                 "pubkey": owner,
-                "tags": [["d", "app"], ["buzz-channel", channel], ["a", coordinate]]
+                "tags": [["d", "app"], ["kuzz-channel", channel], ["a", coordinate]]
             }]),
             json!([{
                 "kind": 30617,
                 "pubkey": "a".repeat(64),
-                "tags": [["d", "app"], ["buzz-channel", id.to_string()]]
+                "tags": [["d", "app"], ["kuzz-channel", id.to_string()]]
             }]),
         ];
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -13653,7 +13653,7 @@ done"#
                     "created_at": 1_000 - index,
                     "kind": 30621,
                     "pubkey": "b".repeat(64),
-                    "tags": [["d", format!("decoy-{index}")], ["buzz-channel", channel]]
+                    "tags": [["d", format!("decoy-{index}")], ["kuzz-channel", channel]]
                 })
             })
             .collect();
@@ -13662,11 +13662,11 @@ done"#
             serde_json::Value::Array(first_page),
             json!([{
                 "id": "f".repeat(64), "created_at": 1, "kind": 30621, "pubkey": owner,
-                "tags": [["d", "app"], ["buzz-channel", channel], ["a", coordinate]]
+                "tags": [["d", "app"], ["kuzz-channel", channel], ["a", coordinate]]
             }]),
             json!([{
                 "id": "e".repeat(64), "created_at": 1, "kind": 30617, "pubkey": "a".repeat(64),
-                "tags": [["d", "app"], ["buzz-channel", id.to_string()]]
+                "tags": [["d", "app"], ["kuzz-channel", id.to_string()]]
             }]),
         ];
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -13680,7 +13680,7 @@ done"#
                 let request = String::from_utf8_lossy(&buf[..read]);
                 let index = server_requests.fetch_add(1, Ordering::SeqCst);
                 if index > 0 {
-                    assert!(request.contains("#buzz-channel"));
+                    assert!(request.contains("#kuzz-channel"));
                 }
                 let body = responses[index].to_string();
                 let response = format!(

@@ -396,13 +396,28 @@ fn checked_in_v1_fixture_opens_and_reconstructs_aad() {
         HpkePrivateKey::from(hex::decode(&fixture.recipient_private_key_hex).unwrap());
     let secret = hex::decode(&fixture.nostr_secret_key_hex).unwrap();
 
+    // The Kotlin side produced this fixture before the protocol rename, so its
+    // ciphertext is bound to the old HPKE info and AAD domain strings. Those
+    // bytes are fixed by the external vector and live only here; the framing
+    // after the domain is still checked against the current builder.
+    const FIXTURE_HPKE_INFO: &[u8] = b"buzz/nsec-backup/v1"; // kuzz-rename: keep
+    const FIXTURE_AAD_DOMAIN: &[u8] = b"buzz/nsec-backup/aad/v1"; // kuzz-rename: keep
+
     assert_eq!(recipient_public.len(), P256_PUBLIC_KEY_LEN);
-    assert_eq!(
-        hex::encode(fixture.envelope.associated_data().unwrap()),
-        fixture.aad_hex
-    );
-    assert_eq!(
-        open_envelope(&fixture.envelope, &recipient_private).unwrap(),
-        secret
-    );
+    let current_aad = fixture.envelope.associated_data().unwrap();
+    assert!(current_aad.starts_with(AAD_DOMAIN_V1));
+    let fixture_aad = [FIXTURE_AAD_DOMAIN, &current_aad[AAD_DOMAIN_V1.len()..]].concat();
+    assert_eq!(hex::encode(&fixture_aad), fixture.aad_hex);
+    let opened = DH_KEM_P256_HKDF_SHA256_AES_256
+        .open(
+            &EncapsulatedSecret(fixture.envelope.encapsulated_key_bytes().unwrap()),
+            FIXTURE_HPKE_INFO,
+            &fixture_aad,
+            &fixture.envelope.ciphertext_bytes().unwrap(),
+            &recipient_private,
+        )
+        .expect("open checked-in interop fixture");
+    assert_eq!(opened, secret);
+    // Under the current names the same ciphertext must not open.
+    assert!(open_envelope(&fixture.envelope, &recipient_private).is_err());
 }

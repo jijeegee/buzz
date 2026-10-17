@@ -17,12 +17,12 @@
 //! `FOR UPDATE` serializes concurrent claims for one invite across relay
 //! processes — exactly one claimant can win the final slot.
 
+use chrono::{DateTime, Utc};
 use kuzz_core::invite::{
     encode_v2_code, hash_v2_code, MAX_INVITE_TTL_SECS, MAX_INVITE_USES, MIN_INVITE_TTL_SECS,
     V2_SECRET_LEN,
 };
 use kuzz_datastore_tracing::datastore_span;
-use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row as _};
 
 use crate::error::Result;
@@ -838,8 +838,8 @@ mod postgres_tests {
         }
         let mut lifecycle = pool.begin().await.expect("begin lifecycle fixture");
         sqlx::query(
-            "SELECT set_config('buzz.deletion_executor_community', $1, true), \
-                    set_config('buzz.deletion_fence_generation', '0', true)",
+            "SELECT set_config('kuzz.deletion_executor_community', $1, true), \
+                    set_config('kuzz.deletion_fence_generation', '0', true)",
         )
         .bind(target.to_string())
         .execute(&mut *lifecycle)

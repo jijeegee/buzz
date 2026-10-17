@@ -7,7 +7,7 @@
 //!    aborts, at COMMIT, any transaction inserting a channel-bearing `events`
 //!    row with `created_at` more than `floor` seconds before commit time
 //!    (`clock_timestamp()`, evaluated inside commit processing). Enforcement
-//!    is armed per session via the `buzz.created_at_floor` GUC, which the
+//!    is armed per session via the `kuzz.created_at_floor` GUC, which the
 //!    relay's writer pool sets on every connection.
 //! 2. **Ordered heartbeat handshake** (this module): on one pinned writer
 //!    connection, separately-awaited statements sample
@@ -403,17 +403,17 @@ pub async fn verify_floor_guard_behavior(pool: &PgPool) -> crate::Result<()> {
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
 
     // 1. Pool arming (Perci: assert the effective value, not the intent).
-    let armed: String = sqlx::query_scalar("SHOW buzz.created_at_floor")
+    let armed: String = sqlx::query_scalar("SHOW kuzz.created_at_floor")
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
             DbError::InvalidData(format!(
-                "buzz.created_at_floor GUC not set on this pool: {e}"
+                "kuzz.created_at_floor GUC not set on this pool: {e}"
             ))
         })?;
     if armed != CREATED_AT_FLOOR_SECS.to_string() {
         return Err(DbError::InvalidData(format!(
-            "buzz.created_at_floor is '{armed}', expected '{CREATED_AT_FLOOR_SECS}': \
+            "kuzz.created_at_floor is '{armed}', expected '{CREATED_AT_FLOOR_SECS}': \
              pool is not armed"
         )));
     }

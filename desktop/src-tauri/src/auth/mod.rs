@@ -1,7 +1,7 @@
 //! Google account sessions for Desktop: Nostr key recovery and legacy tokens.
 //!
 //! Token mode is opt-in **per community**: it is active only when the
-//! community's relay advertises `buzz_token_auth` in NIP-11 *and* the user has
+//! community's relay advertises `kuzz_token_auth` in NIP-11 *and* the user has
 //! signed in with a legacy token account for that relay. Google key-backup
 //! accounts always use the original local signer, including on expiry. Each relay is its own account
 //! database, so sessions are keyed by the relay's HTTP origin. The refresh

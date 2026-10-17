@@ -10,8 +10,8 @@ pub(crate) use connection_observability::{
 };
 
 use crate::{deletion, event, DbError, EventQuery, Result};
-use kuzz_datastore_tracing::datastore_span;
 use chrono::{DateTime, Utc};
+use kuzz_datastore_tracing::datastore_span;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, QueryBuilder};
 use std::time::Duration;
@@ -614,7 +614,7 @@ impl Db {
     ///
     /// The writer pool arms the commit-time `created_at` floor guard
     /// (migration 0021) on every connection by setting the
-    /// `buzz.created_at_floor` GUC — this is what makes the replica fence
+    /// `kuzz.created_at_floor` GUC — this is what makes the replica fence
     /// proof hold for every insert path that goes through this pool.
     pub async fn new(config: &DbConfig) -> Result<Self> {
         let pool = Self::connect_writer_pool(config).await?;
@@ -673,7 +673,7 @@ impl Db {
                         DbConnectionStep::CreatedAtFloor,
                     );
                     if let Err(error) =
-                        sqlx::query("SELECT set_config('buzz.created_at_floor', $1, false)")
+                        sqlx::query("SELECT set_config('kuzz.created_at_floor', $1, false)")
                         .bind(replica_fence::CREATED_AT_FLOOR_SECS.to_string())
                         .execute(&mut *conn)
                         .await

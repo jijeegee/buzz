@@ -143,7 +143,7 @@ test("stale non-matching snapshot uses the scoped project-home lookup", async ({
   await expect(page.getByTestId("project-home-context-panel")).toBeVisible();
   const usedScopedLookup = await page.evaluate((channelId) => {
     return window.__KUZZ_E2E_PROJECT_QUERY_FILTERS__?.some((filter) =>
-      filter["#buzz-channel"]?.includes(channelId),
+      filter["#kuzz-channel"]?.includes(channelId),
     );
   }, PROJECT_HOME_CHANNEL_ID);
   expect(usedScopedLookup).toBe(true);

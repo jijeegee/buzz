@@ -453,7 +453,7 @@ test("buildTimelineItems: sent-from-thread messages start a fresh author group",
       id: "b",
       pubkey: "author-a",
       createdAt: dayAt(2026, 6, 14, 12, 2),
-      tags: [["buzz:sent-from-thread", "root-event", "Root summary"]],
+      tags: [["kuzz:sent-from-thread", "root-event", "Root summary"]],
     }),
     entry({
       id: "c",

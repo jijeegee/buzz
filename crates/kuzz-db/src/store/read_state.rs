@@ -83,7 +83,7 @@ impl Db {
         let mut events = Vec::with_capacity(count as usize);
         let mut encoded_bytes = 2usize; // JSON array brackets
         let mut hash = Sha256::new();
-        hash.update(b"buzz-read-state-snapshot-v1\0");
+        hash.update(b"kuzz-read-state-snapshot-v1\0");
         hash.update(community.as_uuid().as_bytes());
         hash.update(author.to_bytes());
         for row in rows {

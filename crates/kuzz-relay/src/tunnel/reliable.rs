@@ -694,7 +694,7 @@ mod tests {
     }
 
     async fn clear_keys(directory: &SessionDirectory, community_id: CommunityId, session_id: Uuid) {
-        let base = format!("buzz:{}:tunnel:{}", community_id, session_id);
+        let base = format!("kuzz:{}:tunnel:{}", community_id, session_id);
         let _ = directory
             .release(&SessionLease {
                 community_id,

@@ -2573,8 +2573,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        kuzz_auto_migrate_enabled, connect_audit_pool, dropped_in_memory_keys, idle_timeout_secs,
-        jwks_next_retry_after_failed_refresh, nip_fi_jwks_refresh_loop,
+        connect_audit_pool, dropped_in_memory_keys, idle_timeout_secs,
+        jwks_next_retry_after_failed_refresh, kuzz_auto_migrate_enabled, nip_fi_jwks_refresh_loop,
         refresh_legacy_active_gauge_recency, relay_keypair_from_config,
         run_jwks_refresh_supervisor, run_periodic_until_cancelled, EmissionScope,
         InMemoryMetricKey, PartitionAuditSchedule,

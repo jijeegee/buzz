@@ -15,8 +15,8 @@
 //! can leak by being forgotten.
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use kuzz_core_pkg::kind::KIND_TEAM_CATALOG;
 use image::ImageDecoder;
+use kuzz_core_pkg::kind::KIND_TEAM_CATALOG;
 use nostr::{EventBuilder, Kind, Tag};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
@@ -229,7 +229,7 @@ fn sanitized_respond_to(record: &AgentDefinition) -> Option<String> {
 pub fn member_key_for(record: &AgentDefinition) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(b"buzz:team-catalog:member-key:v1\0");
+    hasher.update(b"kuzz:team-catalog:member-key:v1\0");
     hasher.update(record.id.as_bytes());
     hex::encode(hasher.finalize())
 }

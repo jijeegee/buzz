@@ -34,7 +34,7 @@ use uuid::Uuid;
 
 /// ALPN for the mesh QUIC endpoint. Version bumps get a new ALPN so old and
 /// new pods never half-speak to each other during a rolling deploy.
-pub const ALPN: &[u8] = b"buzz/mesh/1";
+pub const ALPN: &[u8] = b"kuzz/mesh/1";
 
 /// Wire protocol version, first byte of every encoded frame (datagram or
 /// stream frame). Receivers MUST reject unknown versions loudly (count it,

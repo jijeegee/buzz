@@ -1112,7 +1112,7 @@ type MockSubscription = ReturnType<typeof createMockSubscription>;
 
 type MockFilter = {
   "#a"?: string[];
-  "#buzz-channel"?: string[];
+  "#kuzz-channel"?: string[];
   "#d"?: string[];
   "#e"?: string[];
   "#h"?: string[];
@@ -1142,7 +1142,7 @@ function createMockRelayMembershipEvent(): RelayEvent {
 /**
  * Per-user custom emoji sets (kind:30030) the mock WS serves for
  * `listCustomEmoji` REQs. The community palette is the client-side UNION of
- * every member's own set (d=`buzz:custom-emoji`). We serve TWO member-authored
+ * every member's own set (d=`kuzz:custom-emoji`). We serve TWO member-authored
  * sets from distinct pubkeys so the e2e exercises the union/collapse path, not
  * a single relay-owned set. `:kuzz:` is the stable shortcode exercised by
  * custom-emoji.spec.ts (claimed by BOTH members with different URLs, so the
@@ -6500,7 +6500,7 @@ function buildMockProjectEvents(): RelayEvent[] {
           ["name", seed.name],
           ["description", seed.description],
           [
-            "buzz-channel",
+            "kuzz-channel",
             getConfig()?.mock?.projectAccessChannelId ??
               STARTER_PROJECT_HOME_CHANNEL_ID,
           ],
@@ -6594,11 +6594,11 @@ function buildMockProjectEvents(): RelayEvent[] {
           ["a", `${KIND_REPO_ANNOUNCEMENT}:${projectOwner}:kuzz`],
           ["a", `${KIND_REPO_ANNOUNCEMENT}:${ALICE_PUBKEY}:relay-tools`],
           [
-            "buzz-channel",
+            "kuzz-channel",
             getConfig()?.mock?.projectAccessChannelId ??
               STARTER_PROJECT_HOME_CHANNEL_ID,
           ],
-          ["buzz-related-channel", "9dae0116-799b-5071-a0a8-fdd30a91a35d"],
+          ["kuzz-related-channel", "9dae0116-799b-5071-a0a8-fdd30a91a35d"],
         ],
         projectOwner,
         now,
@@ -10941,7 +10941,7 @@ async function handleEditMessage(
     ...emojiTags,
     ...mentionPubkeys.map((pubkey) => ["p", pubkey]),
     ...(mentionTags ?? []),
-    ...(mentionTags ? [["buzz:mention-snapshot"]] : []),
+    ...(mentionTags ? [["kuzz:mention-snapshot"]] : []),
     ...(args.suppressLinkPreviews ? [["link-preview", "none"]] : []),
   ];
   const tags = [["h", args.channelId], ["e", args.eventId], ...extraTags];
@@ -11460,7 +11460,7 @@ function sendToMockSocket(args: {
         window.__KUZZ_E2E_DEFER_FULL_PROJECT_QUERIES__ &&
         !filter.authors &&
         !filter["#a"] &&
-        !filter["#buzz-channel"] &&
+        !filter["#kuzz-channel"] &&
         !filter["#d"] &&
         !filter["#e"] &&
         !filter.ids
@@ -14272,7 +14272,7 @@ export function maybeInstallE2eTauriMocks() {
             (candidate) => candidate.id === input.id,
           );
           const snapshot = {
-            format: "buzz-agent-snapshot",
+            format: "kuzz-agent-snapshot",
             version: 1,
             definition: {
               name: persona?.display_name ?? "E2E Agent",
@@ -15039,7 +15039,7 @@ export function maybeInstallE2eTauriMocks() {
         const jsonBytes = Array.from(
           new TextEncoder().encode(
             JSON.stringify({
-              format: "buzz-agent-snapshot",
+              format: "kuzz-agent-snapshot",
               version: 1,
               definition: { system_prompt: "E2E imported agent prompt." },
               profile: { display_name: "Imported Agent" },

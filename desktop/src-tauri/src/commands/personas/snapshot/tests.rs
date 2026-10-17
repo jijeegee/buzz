@@ -507,7 +507,7 @@ fn import_none_level_with_entries_is_rejected() {
     // Produce JSON bytes with level:none but non-empty entries.  serde happily
     // serializes this — the guard fires in decode_snapshot_from_bytes.
     let raw = serde_json::json!({
-        "format": "buzz-agent-snapshot",
+        "format": "kuzz-agent-snapshot",
         "version": 1,
         "definition": { "name": "test" },
         "profile": { "displayName": "Test" },

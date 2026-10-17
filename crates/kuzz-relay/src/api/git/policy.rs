@@ -6,7 +6,7 @@
 //! 1. Validates HMAC signature + 30s TTL (fail-closed)
 //! 2. Resolves kind:30617 → protection rules
 //! 3. Grants owner authority to the repo key or its verified managed-agent owner
-//! 4. Otherwise resolves the pusher's channel role via buzz-channel binding
+//! 4. Otherwise resolves the pusher's channel role via kuzz-channel binding
 //! 5. Promotes Bot → Member (bots in a channel push as members)
 //! 6. Calls `kuzz_core::git_perms::evaluate_push()`
 //! 7. Returns 200 (allow) or 403 (deny with reasons)
@@ -289,7 +289,7 @@ pub async fn hook_policy_check(
         Ok(parsed) => {
             // Log unknown rules as warnings (helps catch typos).
             for unknown in &parsed.unknown_rules {
-                warn!(repo = %req.repo_id, rule = %unknown, "unknown buzz-protect rule (skipped)");
+                warn!(repo = %req.repo_id, rule = %unknown, "unknown kuzz-protect rule (skipped)");
             }
             parsed.rules
         }
@@ -315,7 +315,7 @@ pub async fn hook_policy_check(
         crate::api::git::binding::RepoBinding::Bound(id) => Some(id),
         crate::api::git::binding::RepoBinding::NotBound => None,
         crate::api::git::binding::RepoBinding::Broken => {
-            warn!(repo = %req.repo_id, "hook callback: broken buzz-channel binding");
+            warn!(repo = %req.repo_id, "hook callback: broken kuzz-channel binding");
             // Deliberately NOT the no_channel_binding token body: the
             // remediation contract is NotBound-only. A broken binding is
             // ambiguity, and ambiguity gets a generic denial (matching the
@@ -369,7 +369,7 @@ pub async fn hook_policy_check(
     } else {
         match channel_id {
             None => {
-                warn!(repo = %req.repo_id, "hook callback: no buzz-channel binding");
+                warn!(repo = %req.repo_id, "hook callback: no kuzz-channel binding");
                 // Declared cross-component contract — see the const docs in
                 // kuzz-core::git_perms for who consumes the token and why
                 // the body also repeats the legacy phrase.
@@ -949,8 +949,8 @@ printf '%s' "$HMAC_INPUT" | openssl dgst -sha256 -hmac "{secret}" -hex 2>/dev/nu
             &keys,
             &format!("repo-{}", uuid::Uuid::new_v4().simple()),
             vec![
-                Tag::parse(["buzz-channel", "not-a-uuid"]).unwrap(),
-                Tag::parse(["buzz-channel", &uuid::Uuid::new_v4().to_string()]).unwrap(),
+                Tag::parse(["kuzz-channel", "not-a-uuid"]).unwrap(),
+                Tag::parse(["kuzz-channel", &uuid::Uuid::new_v4().to_string()]).unwrap(),
             ],
         )
         .await;

@@ -170,7 +170,7 @@ export function focusTargetForRequirement(
 }
 
 /**
- * Inline card rendered when the desktop detects a `buzz:config-nudge`
+ * Inline card rendered when the desktop detects a `kuzz:config-nudge`
  * sentinel in a kind:9 message body.
  *
  * Uses the `Attachment` primitive's built-in `state="error"` destructive-tint
