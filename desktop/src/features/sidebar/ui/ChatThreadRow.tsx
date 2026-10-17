@@ -15,7 +15,9 @@ import {
 } from "@/shared/ui/context-menu";
 import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
 import { ChatRowLines } from "./ChatRowLines";
+import { ChatWorkingLine } from "./SidebarSection";
 import {
   ChatThreadRowMenuItems,
   type ChatThreadRowActions,
@@ -36,6 +38,7 @@ export function ChatThreadRow({
   preview,
   row,
   unread,
+  working,
 }: {
   actions?: ChatThreadRowActions;
   channelLabel: string;
@@ -47,6 +50,8 @@ export function ChatThreadRow({
   preview: ChatRowPreview;
   row: ChatListRow;
   unread: ChatRowUnread;
+  /** Agents working in this thread right now. */
+  working?: ActiveChannelTurnSummary;
 }) {
   const rootId = row.root_id ?? row.key;
   const title = chatThreadTitle(row);
@@ -139,6 +144,14 @@ export function ChatThreadRow({
               <span className="sr-only">thread</span>
               <span className="min-w-0 truncate">{title}</span>
             </>
+          }
+          working={
+            working ? (
+              <ChatWorkingLine
+                summary={working}
+                testId={`chat-thread-working-${rootId}`}
+              />
+            ) : undefined
           }
           titleExtras={
             isPinned ? (

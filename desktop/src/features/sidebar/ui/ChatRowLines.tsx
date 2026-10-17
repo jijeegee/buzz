@@ -15,14 +15,17 @@ export function ChatRowLines({
   preview,
   title,
   titleExtras,
+  working,
 }: {
   badges?: React.ReactNode;
   bold: boolean;
   dimmed: boolean;
   preview: ChatRowPreview;
   title: React.ReactNode;
-  /** Small marks after the name (pin, mute, working). */
+  /** Small marks after the name (pin, mute). */
   titleExtras?: React.ReactNode;
+  /** While an agent works here, shown in place of the latest message. */
+  working?: React.ReactNode;
 }) {
   return (
     <span
@@ -49,14 +52,18 @@ export function ChatRowLines({
         ) : null}
       </span>
       <span className="flex min-w-0 items-center gap-1">
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-xs font-normal",
-            bold ? "text-sidebar-foreground/85" : "text-sidebar-foreground/55",
-          )}
-        >
-          {preview.line ?? ""}
-        </span>
+        {working ?? (
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-xs font-normal",
+              bold
+                ? "text-sidebar-foreground/85"
+                : "text-sidebar-foreground/55",
+            )}
+          >
+            {preview.line ?? ""}
+          </span>
+        )}
         {badges}
       </span>
     </span>

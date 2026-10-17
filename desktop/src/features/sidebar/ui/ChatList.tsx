@@ -1,5 +1,9 @@
 import { useCallback, useMemo, useState, type ComponentProps } from "react";
 import {
+  type ChatWorking,
+  splitChatWorking,
+} from "@/features/chats/chatWorking";
+import {
   chatRowPreviewLine,
   type ChatRowPreview,
 } from "@/features/chats/chatRowPreview";
@@ -79,6 +83,7 @@ function buildServerChatRows(
   props: ChatListProps,
   byChannel: ByChannel | null,
   profiles: UserProfileLookup | undefined,
+  workingByRootId: ChatWorking["threads"],
 ) {
   const self = props.currentPubkey?.toLowerCase();
   const previewOf = (row: ChatListRow, channel: Channel): ChatRowPreview => {
@@ -158,6 +163,7 @@ function buildServerChatRows(
           preview={previewOf(row, channel)}
           row={row}
           unread={unreadOf(row)}
+          working={workingByRootId.get(rootId)}
         />
       ),
     };
@@ -270,15 +276,28 @@ export function ChatList({
     [expandedChannelIds, onToggleExpanded, view],
   );
   const profiles = props.latestAuthorProfiles;
+  const working = useMemo(
+    () =>
+      splitChatWorking(props.activeWorkingByChannelId, serverChats?.rows ?? []),
+    [props.activeWorkingByChannelId, serverChats?.rows],
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion signals that local read positions moved
   const server = useMemo(
     () =>
       serverChats
-        ? buildServerChatRows(serverChats, items, props, byChannel, profiles)
+        ? buildServerChatRows(
+            serverChats,
+            items,
+            props,
+            byChannel,
+            profiles,
+            working.threads,
+          )
         : null,
     [
       byChannel,
       profiles,
+      working.threads,
       props.currentPubkey,
       serverChats,
       serverChats?.readStateVersion,
@@ -301,6 +320,7 @@ export function ChatList({
   return (
     <SidebarSection
       {...props}
+      activeWorkingByChannelId={working.rooms}
       items={items}
       rows={server.rows}
       title="Chats"
