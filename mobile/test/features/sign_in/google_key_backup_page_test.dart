@@ -518,7 +518,7 @@ void main() {
       await tester.tap(find.byKey(const Key('token-sign-in-check')));
       await frames(tester);
       expect(
-        find.textContaining('operator or anyone controlling'),
+        find.textContaining('Kuzz keeps a protected copy'),
         findsOneWidget,
         reason: tester
             .widgetList<Text>(find.byType(Text))

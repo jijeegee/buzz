@@ -201,11 +201,19 @@ pub struct TokenAuthState {
     pub(crate) signed_out: signed_out::SignedOutMarkers,
     /// Background sessions of signed-in accounts that are not active.
     pub(crate) inactive: accounts::InactiveSessions,
-    /// The `/auth/me` name and avatar of each origin's last restored session,
+    /// The `/auth/me` profile of each origin's last restored session,
     /// keyed by origin and the account (signing pubkey) it reported.
-    me_profiles: Mutex<HashMap<(String, PublicKey), (Option<String>, Option<String>)>>,
+    me_profiles: Mutex<HashMap<(String, PublicKey), MeProfile>>,
     /// A sign-in waiting for the user to confirm a new account.
     pending_signup: Mutex<Option<PendingSignup>>,
+}
+
+/// What `/auth/me` said about an account: its Google name, picture and email.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct MeProfile {
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub email: Option<String>,
 }
 
 /// A Google sign-in whose account does not exist yet: the relay created
@@ -220,26 +228,16 @@ pub(crate) struct PendingSignup {
 }
 
 impl TokenAuthState {
-    pub(crate) fn record_me_profile(
-        &self,
-        origin: &str,
-        account: PublicKey,
-        display_name: Option<String>,
-        avatar_url: Option<String>,
-    ) {
+    pub(crate) fn record_me_profile(&self, origin: &str, account: PublicKey, profile: MeProfile) {
         self.me_profiles
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert((origin.to_owned(), account), (display_name, avatar_url));
+            .insert((origin.to_owned(), account), profile);
     }
 
-    /// The name and avatar `/auth/me` returned for `account`'s session on
+    /// The profile `/auth/me` returned for `account`'s session on
     /// `origin`.
-    pub(crate) fn me_profile(
-        &self,
-        origin: &str,
-        account: &PublicKey,
-    ) -> Option<(Option<String>, Option<String>)> {
+    pub(crate) fn me_profile(&self, origin: &str, account: &PublicKey) -> Option<MeProfile> {
         self.me_profiles
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -490,8 +488,13 @@ mod tests {
             nostr::Keys::generate().public_key(),
             nostr::Keys::generate().public_key(),
         );
-        auth.record_me_profile("o", a, Some("A".into()), None);
-        assert_eq!(auth.me_profile("o", &a), Some((Some("A".into()), None)));
+        let profile = MeProfile {
+            display_name: Some("A".into()),
+            email: Some("a@example.com".into()),
+            ..MeProfile::default()
+        };
+        auth.record_me_profile("o", a, profile.clone());
+        assert_eq!(auth.me_profile("o", &a), Some(profile));
         // After a switch to B on the same origin, A's name is never B's.
         assert_eq!(auth.me_profile("o", &b), None);
         assert_eq!(auth.me_profile("other", &a), None);

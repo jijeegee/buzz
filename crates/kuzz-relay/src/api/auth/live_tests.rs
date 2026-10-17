@@ -1217,6 +1217,33 @@ async fn concurrent_first_callbacks_create_one_principal() {
     assert_eq!(identities, 1);
 }
 
+/// `/auth/me` names the Google email of a person's session, so a client
+/// that only holds tokens can show which account it is; bot tokens get none.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn me_returns_google_email_for_people_only() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .expect("pg");
+    let host = community(&pool).await;
+    let inst = instance(&host).await;
+    let subject = uuid::Uuid::new_v4().to_string();
+    let email = format!("{subject}@example.com");
+    let user = login(&inst, &subject, &email, true).await;
+    let (status, body) = me_status(&inst, &user.access).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["email"], email.as_str());
+
+    let bot = create_bot(&inst, &user, "headless").await;
+    let token = bot_token_or_headless(&inst, &user, &bot).await;
+    let (status, body) = me_status(&inst, &token).await;
+    assert_eq!(status, 200);
+    assert!(body["email"].is_null(), "{body}");
+
+    let anonymous = new_user(&inst).await;
+    assert!(me_status(&inst, &anonymous.access).await.1["email"].is_null());
+}
+
 /// The bridge Bearer branch exists only with the flag on: with it off, a
 /// Bearer request is exactly today's unauthenticated request.
 #[tokio::test]
