@@ -12,29 +12,48 @@ class _ConnectionSection extends ConsumerWidget {
     if (config.tokenAuth || nsec == null || nsec.isEmpty) {
       return const SizedBox.shrink();
     }
+    // Recorded only after Google restored or stored this account's key, so
+    // the account is already held by Google (desktop decides the same way).
+    final connected =
+        ref.watch(authProvider).value?.community?.googleBackupAccountId != null;
     return AppListCard(
       label: 'Account',
       verticalPadding: Grid.twelve,
       children: [
-        AppListRow(
-          key: const Key('settings-google-key-backup'),
-          icon: LucideIcons.shield,
-          title: 'Connect Google account',
-          subtitle: 'Use Google to sign in on other devices',
-          trailing: const _RowChevron(),
-          onTap: () => unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => TokenSignInPage(
-                  backupOrigin: normalizeRelayOrigin(config.baseUrl),
-                ),
-              ),
-            ),
+        if (connected)
+          const AppListRow(
+            key: Key('settings-google-connected'),
+            icon: LucideIcons.shieldCheck,
+            title: 'Signed in with Google',
+            subtitle: 'Use the same Google account on your other devices',
+          )
+        else
+          AppListRow(
+            key: const Key('settings-google-key-backup'),
+            icon: LucideIcons.shield,
+            title: 'Connect Google account',
+            subtitle: 'Use Google to sign in on other devices',
+            trailing: const _RowChevron(),
+            onTap: () => unawaited(_connectGoogle(context, config.baseUrl)),
           ),
-        ),
       ],
     );
   }
+}
+
+Future<void> _connectGoogle(BuildContext context, String baseUrl) async {
+  final connected = await Navigator.of(context).push<bool>(
+    MaterialPageRoute<bool>(
+      builder: (_) => TokenSignInPage(
+        backupOrigin: normalizeRelayOrigin(baseUrl),
+        connectGoogle: true,
+      ),
+    ),
+  );
+  if (connected != true || !context.mounted) return;
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('Google account connected')));
 }
 
 class _SignOutSection extends HookConsumerWidget {

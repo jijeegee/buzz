@@ -97,6 +97,58 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
+  testWidgets(
+    'an account already connected to Google is not offered to connect',
+    (tester) async {
+      PackageInfo.setMockInitialValues(
+        appName: 'Kuzz',
+        packageName: 'app.kuzz',
+        version: 'test',
+        buildNumber: '1',
+        buildSignature: '',
+      );
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+
+      await tester.pumpWidget(
+        WidgetHelpers.testable(
+          overrides: [
+            relayConfigProvider.overrideWith(_RelayConfigNotifier.new),
+            relaySessionProvider.overrideWith(_DisconnectedSession.new),
+            authProvider.overrideWith(_GoogleConnectedAuthNotifier.new),
+            savedPrefsProvider.overrideWithValue(prefs),
+            currentCommunityRoleProvider.overrideWithValue(
+              const AsyncData<CommunityMemberRole?>(CommunityMemberRole.member),
+            ),
+          ],
+          child: SettingsPage(
+            profileHeader: const SizedBox.shrink(),
+            invitePageBuilder: (_) => const SizedBox.shrink(),
+          ),
+        ),
+      );
+      await tester.pump();
+      final connected = find.byKey(const Key('settings-google-connected'));
+      await tester.scrollUntilVisible(connected, 200);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: connected,
+          matching: find.text('Signed in with Google'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('settings-google-key-backup')), findsNothing);
+      expect(find.text('Connect Google account'), findsNothing);
+      // A status row, not a button: tapping it opens nothing.
+      await tester.tap(connected);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.text('Continue with Google'), findsNothing);
+    },
+  );
+
   testWidgets('with the built-in server settings have no community controls', (
     tester,
   ) async {
@@ -161,6 +213,21 @@ class _AuthNotifier extends AuthNotifier {
       name: 'Test',
       relayUrl: 'https://relay.test',
       nsec: _RelayConfigNotifier.nsec,
+      addedAt: DateTime.utc(2026),
+    ),
+  );
+}
+
+class _GoogleConnectedAuthNotifier extends AuthNotifier {
+  @override
+  Future<AuthState> build() async => AuthState(
+    status: AuthStatus.authenticated,
+    community: Community(
+      id: 'community',
+      name: 'Test',
+      relayUrl: 'https://relay.test',
+      nsec: _RelayConfigNotifier.nsec,
+      googleBackupAccountId: 'google-account',
       addedAt: DateTime.utc(2026),
     ),
   );

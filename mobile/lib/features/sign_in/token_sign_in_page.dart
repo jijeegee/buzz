@@ -27,6 +27,7 @@ class TokenSignInPage extends HookConsumerWidget {
     this.backupOrigin,
     this.defaultCommunity = false,
     this.resumeSignedOut = false,
+    this.connectGoogle = false,
   });
 
   /// Ordinary first-device entry. Every page without [lockedOrigin] or
@@ -37,6 +38,10 @@ class TokenSignInPage extends HookConsumerWidget {
 
   /// Link/recover a signed identity from Settings, separate from token mode.
   final String? backupOrigin;
+
+  /// Opened from Settings to connect a signed-in account to Google. Pops
+  /// with `true` once the account is connected.
+  final bool connectGoogle;
 
   /// Canonical origin of an existing token community to sign back in to.
   final String? lockedOrigin;
@@ -212,7 +217,7 @@ class TokenSignInPage extends HookConsumerWidget {
       if (!context.mounted) return;
       completing.value = false;
       // Opened on top of onboarding: the authenticated home is underneath.
-      unawaited(Navigator.of(context).maybePop());
+      unawaited(Navigator.of(context).maybePop(connectGoogle ? true : null));
     }
 
     Future<void> signIn() async {
@@ -275,7 +280,7 @@ class TokenSignInPage extends HookConsumerWidget {
 
     return Scaffold(
       appBar: lockedOrigin == null && Navigator.of(context).canPop()
-          ? AppBar(title: const Text('Sign in'))
+          ? AppBar(title: Text(connectGoogle ? 'Google account' : 'Sign in'))
           : null,
       body: SafeArea(
         child: ListView(
@@ -285,6 +290,8 @@ class TokenSignInPage extends HookConsumerWidget {
             Text(
               resumeSignedOut
                   ? 'Sign in again'
+                  : connectGoogle
+                  ? 'Connect Google account'
                   : keyBackup.value
                   ? 'Welcome to Kuzz'
                   : dualMode.value
@@ -302,13 +309,14 @@ class TokenSignInPage extends HookConsumerWidget {
                               'Sign in to pick up where you left off.'
                         : 'Your communities and messages are still on this device. '
                               'Sign in to pick up where you left off.'
+                  : connectGoogle
+                  ? 'Sign in with Google so you can use this account on your '
+                        'other devices. Your profile and conversations stay the '
+                        'same. Kuzz keeps a protected copy of your account for this.'
                   : keyBackup.value
-                  ? 'Sign in on your first device or restore the same Kuzz identity here. '
-                        'If this account has no backup, your current key is linked, '
-                        'or a new key is created on this device. The server encrypts '
-                        'the backup, but its operator or anyone controlling your '
-                        'Google account can recover your key. Signing out cannot '
-                        'revoke a copied key.'
+                  ? 'Sign in with Google to get started. Kuzz keeps a protected '
+                        'copy of your account so the same Google account signs you '
+                        'in on your other devices.'
                   : lockedOrigin == null
                   ? dualMode.value
                         ? 'Return to an account created before key recovery was added. '
@@ -370,7 +378,7 @@ class TokenSignInPage extends HookConsumerWidget {
                 child: Text(
                   accountMismatch.value
                       ? 'Use a different Google account'
-                      : resumeSignedOut
+                      : resumeSignedOut || connectGoogle
                       ? 'Continue with Google'
                       : 'Sign in with Google',
                 ),
