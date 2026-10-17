@@ -7,20 +7,44 @@
 //! single error [`CHAT_STATE_UNAVAILABLE`] so the app keeps today's
 //! device-local behavior.
 //!
+//! Every command names the account it was queued for ([`ChatStateBinding`]).
+//! The relay and the signer are each read once and checked against it; on a
+//! mismatch nothing is sent and the command fails with
+//! [`CHAT_STATE_ACCOUNT_CHANGED`], so writes queued for one account can never
+//! land under another account or on another community's relay.
+//!
 //! Read positions and follows are private per-user state: never log them.
 
 use tauri::State;
 
-use crate::{app_state::AppState, relay::query_relay_value};
+use crate::{
+    app_state::AppState,
+    relay::{
+        assert_expected_relay_scope, assert_expected_signer, query_relay_value_as,
+        relay_api_base_url_with_override,
+    },
+};
 
 /// Error returned when the relay keeps no chat state for this user.
 pub const CHAT_STATE_UNAVAILABLE: &str = "chat_state_unavailable";
+/// Error returned, before any request, when the active relay or signer is no
+/// longer the account the request was queued for.
+pub const CHAT_STATE_ACCOUNT_CHANGED: &str = "chat_state_account_changed";
 /// Largest `chat_list` page the relay serves.
 const MAX_CHAT_LIST_LIMIT: u32 = 200;
 /// Most items one `mark_read` request may carry.
 const MAX_MARK_READ_ITEMS: usize = 100;
 /// Most pinned thread ids one `chat_list` request may name.
 const MAX_PINNED_THREADS: usize = 200;
+
+/// The account a chat-state request belongs to: the community relay and the
+/// user pubkey the caller captured when it queued the request.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStateBinding {
+    relay_url: String,
+    pubkey: String,
+}
 
 /// Keyset cursor returned by the relay as `next`.
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -29,14 +53,15 @@ pub struct ChatListCursor {
     key: String,
 }
 
-/// One read position to store: a room's main timeline (`channel`) or a
-/// thread (`thread`, by root id), read up to `at` (unix seconds).
+/// One room main timeline (`channel`) or thread (`thread`, by root id), read
+/// up to `at` (unix seconds). Without `at` only the unread mark changes.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMarkReadItem {
     kind: ChatMarkReadKind,
     id: String,
-    at: u64,
+    #[serde(default)]
+    at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -63,6 +88,26 @@ impl ChatFollowState {
     }
 }
 
+/// Refuse a request whose account is not the active relay and signer. A blank
+/// binding never matches.
+fn check_binding(
+    binding: &ChatStateBinding,
+    relay_base: &str,
+    signer_hex: &str,
+) -> Result<(), String> {
+    let relay = binding.relay_url.trim();
+    let pubkey = binding.pubkey.trim();
+    let matches = !relay.is_empty()
+        && !pubkey.is_empty()
+        && assert_expected_relay_scope(Some(relay), relay_base).is_ok()
+        && assert_expected_signer(Some(pubkey), signer_hex).is_ok();
+    if matches {
+        Ok(())
+    } else {
+        Err(CHAT_STATE_ACCOUNT_CHANGED.to_string())
+    }
+}
+
 fn build_chat_list_filter(
     limit: u32,
     before: Option<&ChatListCursor>,
@@ -83,22 +128,31 @@ fn build_chat_list_filter(
 }
 
 /// The wire shape of one `mark_read` item. Kept in one place: the relay
-/// takes `{"channel": uuid, "at": secs}` / `{"thread": root, "at": secs}`.
+/// takes `{"channel": uuid, "at": secs}` / `{"thread": root, "at": secs}`,
+/// and no position when only the unread mark changes.
 fn mark_read_item_json(item: &ChatMarkReadItem) -> serde_json::Value {
     let target = match item.kind {
         ChatMarkReadKind::Channel => "channel",
         ChatMarkReadKind::Thread => "thread",
     };
-    serde_json::json!({ target: item.id, "at": item.at })
+    let mut value = serde_json::json!({ target: item.id });
+    if let Some(at) = item.at {
+        value["at"] = serde_json::json!(at);
+    }
+    value
 }
 
-fn build_mark_read_filter(items: &[ChatMarkReadItem]) -> Result<serde_json::Value, String> {
+fn build_mark_read_filter(
+    items: &[ChatMarkReadItem],
+    unread_mark: bool,
+) -> Result<serde_json::Value, String> {
     if items.is_empty() || items.len() > MAX_MARK_READ_ITEMS {
         return Err(format!("mark_read takes 1..={MAX_MARK_READ_ITEMS} items"));
     }
     Ok(serde_json::json!({
         "mark_read": 1,
         "items": items.iter().map(mark_read_item_json).collect::<Vec<_>>(),
+        "unread_mark": unread_mark,
     }))
 }
 
@@ -139,11 +193,16 @@ fn validated_envelope(
 
 async fn query_envelope(
     state: &AppState,
+    binding: &ChatStateBinding,
     filter: serde_json::Value,
     envelope: &str,
     array_key: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let response = query_relay_value(state, &[filter])
+    // One read of each, checked, then used for the request itself.
+    let relay_base = relay_api_base_url_with_override(state);
+    let credential = state.user_credential()?;
+    check_binding(binding, &relay_base, &credential.public_key().to_hex())?;
+    let response = query_relay_value_as(state, &relay_base, &credential, &[filter])
         .await
         .map_err(map_query_error)?;
     validated_envelope(response, envelope, array_key)
@@ -154,6 +213,7 @@ async fn query_envelope(
 /// on every page.
 #[tauri::command]
 pub async fn get_chat_list(
+    binding: ChatStateBinding,
     limit: Option<u32>,
     before: Option<ChatListCursor>,
     pinned_threads: Option<Vec<String>>,
@@ -164,33 +224,76 @@ pub async fn get_chat_list(
         before.as_ref(),
         &pinned_threads.unwrap_or_default(),
     );
-    query_envelope(&state, filter, "chat_list", Some("rows")).await
+    query_envelope(&state, &binding, filter, "chat_list", Some("rows")).await
 }
 
-/// Store read positions for rooms and threads. Positions only move forward.
+/// Store read positions for rooms and threads (positions only move forward)
+/// and set every item's unread mark to `unread_mark`.
 #[tauri::command]
 pub async fn chat_mark_read(
+    binding: ChatStateBinding,
     items: Vec<ChatMarkReadItem>,
+    unread_mark: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let filter = build_mark_read_filter(&items)?;
-    query_envelope(&state, filter, "mark_read", Some("items")).await
+    let filter = build_mark_read_filter(&items, unread_mark.unwrap_or(false))?;
+    query_envelope(&state, &binding, filter, "mark_read", Some("items")).await
 }
 
 /// Follow or unfollow one thread by root id.
 #[tauri::command]
 pub async fn chat_thread_follow(
+    binding: ChatStateBinding,
     root: String,
     follow_state: ChatFollowState,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let filter = build_thread_follow_filter(&root, follow_state);
-    query_envelope(&state, filter, "thread_follow", None).await
+    query_envelope(&state, &binding, filter, "thread_follow", None).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SIGNER: &str = "8cf9a7e7deebdc7d1fe172b9af4c6796b224e43e8f03e80dbd357f6c61fdeff9";
+
+    fn binding(relay_url: &str, pubkey: &str) -> ChatStateBinding {
+        ChatStateBinding {
+            relay_url: relay_url.to_string(),
+            pubkey: pubkey.to_string(),
+        }
+    }
+
+    #[test]
+    fn requests_for_another_account_or_relay_are_refused() {
+        let base = "https://tenant-a.example";
+        assert!(check_binding(&binding("wss://tenant-a.example", SIGNER), base, SIGNER).is_ok());
+        assert!(check_binding(
+            &binding("wss://tenant-a.example", &SIGNER.to_uppercase()),
+            base,
+            SIGNER
+        )
+        .is_ok());
+        for refused in [
+            binding("wss://tenant-b.example", SIGNER),
+            binding("wss://tenant-a.example", &"ab".repeat(32)),
+            binding("", SIGNER),
+            binding("wss://tenant-a.example", " "),
+        ] {
+            assert_eq!(
+                check_binding(&refused, base, SIGNER),
+                Err(CHAT_STATE_ACCOUNT_CHANGED.to_string())
+            );
+        }
+        // Distinct from the 4xx errors the app treats as permanent.
+        assert!(!CHAT_STATE_ACCOUNT_CHANGED.starts_with("relay returned"));
+        let item: ChatStateBinding = serde_json::from_value(
+            serde_json::json!({"relayUrl": "wss://tenant-a.example", "pubkey": SIGNER}),
+        )
+        .expect("camelCase binding");
+        assert!(check_binding(&item, base, SIGNER).is_ok());
+    }
 
     #[test]
     fn disabled_switch_and_old_relays_are_unavailable() {
@@ -255,15 +358,15 @@ mod tests {
             ChatMarkReadItem {
                 kind: ChatMarkReadKind::Channel,
                 id: "11111111-1111-4111-8111-111111111111".to_string(),
-                at: 1_760_000_000,
+                at: Some(1_760_000_000),
             },
             ChatMarkReadItem {
                 kind: ChatMarkReadKind::Thread,
                 id: "cd".repeat(32),
-                at: 1_760_000_001,
+                at: Some(1_760_000_001),
             },
         ];
-        let filter = build_mark_read_filter(&items).expect("valid");
+        let filter = build_mark_read_filter(&items, false).expect("valid");
         assert_eq!(
             filter,
             serde_json::json!({
@@ -272,17 +375,36 @@ mod tests {
                     {"channel": "11111111-1111-4111-8111-111111111111", "at": 1_760_000_000u64},
                     {"thread": "cd".repeat(32), "at": 1_760_000_001u64},
                 ],
+                "unread_mark": false,
             })
         );
-        assert!(build_mark_read_filter(&[]).is_err());
+        assert!(build_mark_read_filter(&[], false).is_err());
         let too_many: Vec<ChatMarkReadItem> = (0..=MAX_MARK_READ_ITEMS)
             .map(|index| ChatMarkReadItem {
                 kind: ChatMarkReadKind::Channel,
                 id: index.to_string(),
-                at: 1,
+                at: Some(1),
             })
             .collect();
-        assert!(build_mark_read_filter(&too_many).is_err());
+        assert!(build_mark_read_filter(&too_many, false).is_err());
+    }
+
+    #[test]
+    fn mark_unread_sends_no_position() {
+        let item: ChatMarkReadItem = serde_json::from_value(serde_json::json!({
+            "kind": "channel",
+            "id": "11111111-1111-4111-8111-111111111111",
+        }))
+        .expect("item without at");
+        let filter = build_mark_read_filter(&[item], true).expect("valid");
+        assert_eq!(
+            filter,
+            serde_json::json!({
+                "mark_read": 1,
+                "items": [{"channel": "11111111-1111-4111-8111-111111111111"}],
+                "unread_mark": true,
+            })
+        );
     }
 
     #[test]
@@ -296,6 +418,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({"kind": "thread", "id": "ab", "at": 3}))
                 .expect("camelCase item");
         assert_eq!(item.kind, ChatMarkReadKind::Thread);
+        assert_eq!(item.at, Some(3));
         let state: ChatFollowState =
             serde_json::from_value(serde_json::json!("followed")).expect("state");
         assert_eq!(state, ChatFollowState::Followed);
