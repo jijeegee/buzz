@@ -56,6 +56,26 @@ impl BlockCaches {
                 .build(),
         }
     }
+
+    /// Test seam: record whether `channel` is a DM without a database.
+    #[cfg(test)]
+    pub(crate) fn seed_dm(&self, community: CommunityId, channel: Uuid, is_dm: bool) {
+        self.dm.insert((community, channel), is_dm);
+    }
+
+    /// Test seam: record who blocked `author` without a database.
+    #[cfg(test)]
+    pub(crate) fn seed_blockers(
+        &self,
+        community: CommunityId,
+        author: [u8; 32],
+        blockers: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        self.blockers.insert(
+            (community, author),
+            Arc::new(blockers.into_iter().collect()),
+        );
+    }
 }
 
 impl Default for BlockCaches {
