@@ -389,7 +389,7 @@ export function AppSidebar({
       variant="sidebar"
     >
       <div
-        className={`relative flex min-h-0 flex-1 flex-col overflow-hidden ${
+        className={`relative mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background shadow-sm ${
           communities.length > 1 ? "md:-ml-[11px] md:w-[calc(100%+11px)]" : ""
         }`}
         data-sidebar-background
