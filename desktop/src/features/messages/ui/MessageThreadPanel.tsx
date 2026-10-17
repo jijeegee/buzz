@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ArrowDown, CircleCheck, LocateFixed } from "lucide-react";
+import { ArrowDown, LocateFixed } from "lucide-react";
 import { ThreadNameEditor } from "./ThreadNameEditor";
 
 import { HuddleTranscriptIntro } from "@/features/huddle/components/HuddleTranscriptIntro";
@@ -16,6 +16,7 @@ import {
 import type { MessageComposerEditTarget } from "@/features/messages/ui/MessageComposer.types";
 import { canManageMessageForCurrentUser } from "@/features/messages/lib/canManageMessage";
 import { canReplyInThread } from "@/features/messages/lib/threadDepth";
+import { isThreadMarkerReply } from "@/features/messages/lib/taskThread";
 import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMentionCopy";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { VideoReviewPresentation } from "@/features/messages/lib/videoReviewContext";
@@ -60,7 +61,8 @@ import {
 import { ThreadGoalHeaderChip } from "@/features/goals/ui/GoalChips";
 import { selectDeferredListRenderState } from "@/features/messages/lib/timelineSnapshot";
 import { selectThreadRowHighlight } from "@/features/messages/lib/threadReplyHighlight";
-import { isTaskThreadClosed } from "@/features/messages/lib/taskThread";
+import { ThreadMarkerLine } from "./ThreadMarkerLine";
+import { useThreadHeaderBar } from "./useThreadHeaderBar";
 
 type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   channel: Channel | null;
@@ -73,6 +75,11 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   huddleMemberPubkeysPending?: boolean;
   /** Present the huddle's parent-channel thread as a dedicated live chat. */
   isHuddleTranscript?: boolean;
+  /**
+   * The Chats thread header bar (Follow, Copy link, Close/Reopen, ⋯). Off
+   * for Projects conversations, which keep their own header.
+   */
+  threadHeaderActions?: boolean;
   editTarget?: MessageComposerEditTarget | null;
   isSending: boolean;
   onCancelEdit?: () => void;
@@ -178,6 +185,7 @@ export function MessageThreadPanel({
   huddleMemberPubkeys,
   huddleMemberPubkeysPending = false,
   isHuddleTranscript = false,
+  threadHeaderActions = true,
   layout = "standalone",
   editTarget,
   enterMotion,
@@ -381,10 +389,24 @@ export function MessageThreadPanel({
     () => deferredThreadReplies.map((entry) => entry.message),
     [deferredThreadReplies],
   );
-  const isClosedTaskThread = React.useMemo(
-    () => !isHuddleTranscript && isTaskThreadClosed(threadMessages),
-    [isHuddleTranscript, threadMessages],
-  );
+  const {
+    closedLine,
+    closedMarkerId,
+    isClosed: isClosedTaskThread,
+    renderHeaderActions,
+  } = useThreadHeaderBar({
+    channelId,
+    currentPubkey,
+    disabled,
+    isFollowingThread,
+    isHuddleTranscript,
+    threadHeaderActions,
+    onFollowThread,
+    onMarkUnread,
+    onUnfollowThread,
+    threadHead,
+    threadMessages,
+  });
   const shouldShowThreadBranchGuides = React.useMemo(
     () => hasNestedThreadBranches(deferredThreadReplies),
     [deferredThreadReplies],
@@ -573,13 +595,7 @@ export function MessageThreadPanel({
       <TooltipContent>Show in channel</TooltipContent>
     </Tooltip>
   ) : null;
-  const goalHeaderChip =
-    goalChip || showInChannelButton ? (
-      <>
-        {showInChannelButton}
-        {goalChip}
-      </>
-    ) : null;
+  const goalHeaderChip = renderHeaderActions(goalChip, showInChannelButton);
 
   const threadScrollRegion = (
     <AuxiliaryPanelBody
@@ -745,6 +761,20 @@ export function MessageThreadPanel({
                       index,
                       isContinuation,
                     } = item;
+                    if (
+                      threadHeaderActions &&
+                      !isHuddleTranscript &&
+                      isThreadMarkerReply(entry.message)
+                    ) {
+                      // The closed line below stands for the current close.
+                      return entry.message.id === closedMarkerId ? null : (
+                        <ThreadMarkerLine
+                          currentPubkey={currentPubkey}
+                          key={entry.message.renderKey ?? entry.message.id}
+                          message={entry.message}
+                        />
+                      );
+                    }
                     const showUnreadDivider =
                       index > 0 && entry.message.id === firstUnreadReplyId;
                     const highlight = selectThreadRowHighlight({
@@ -891,7 +921,7 @@ export function MessageThreadPanel({
               )
             }
           />
-          {isClosedTaskThread ? <TaskThreadClosedBanner /> : null}
+          {closedLine}
         </div>
       </div>
     </AuxiliaryPanelBody>
@@ -965,7 +995,9 @@ export function MessageThreadPanel({
                 isHuddleTranscript
                   ? "Message the huddle"
                   : isClosedTaskThread
-                    ? "Task closed. Start new work in the channel, or reply to reopen"
+                    ? threadHeaderActions
+                      ? "Sending will reopen this thread"
+                      : "Task closed. Start new work in the channel, or reply to reopen"
                     : `Reply in thread to ${threadHead.author}`
               }
               profiles={profiles}
@@ -1058,21 +1090,5 @@ export function MessageThreadPanel({
         {threadScrollRegion}
       </AuxiliaryPanel>
     </VideoReviewNavigationProvider>
-  );
-}
-
-function TaskThreadClosedBanner() {
-  return (
-    <section
-      aria-label="Task closed"
-      className="mt-3 flex items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
-      data-testid="task-thread-closed-banner"
-    >
-      <CircleCheck aria-hidden className="size-4 shrink-0 text-primary" />
-      <span>
-        Task closed. The result was reported in the channel. Start new work
-        there; replying here reopens this thread.
-      </span>
-    </section>
   );
 }

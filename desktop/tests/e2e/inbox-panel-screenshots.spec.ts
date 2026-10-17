@@ -134,7 +134,7 @@ test.describe("inbox panel beside the chat screen", () => {
     // The sidebar Inbox button hides the list; the chat screen stays.
     const inboxButton = page
       .getByTestId("sidebar-primary-menu")
-      .getByRole("button", { name: "Inbox", exact: true });
+      .getByRole("button", { name: "Activity", exact: true });
     await inboxButton.click();
     await expect(page.getByTestId("inbox-panel")).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`/channels/${GENERAL_CHANNEL_ID}`));
@@ -170,7 +170,7 @@ test.describe("inbox panel beside the chat screen", () => {
     // Closing and reopening the panel keeps that choice.
     const inboxButton = page
       .getByTestId("sidebar-primary-menu")
-      .getByRole("button", { name: "Inbox", exact: true });
+      .getByRole("button", { name: "Activity", exact: true });
     await inboxButton.click();
     await expect(page.getByTestId("inbox-panel")).toHaveCount(0);
     await inboxButton.click();

@@ -112,6 +112,10 @@ import { AppShellTrayMenu } from "@/app/useAppShellTrayMenu";
 import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlayProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
+import { ChatStateSync } from "@/app/ChatStateSync";
+import { useChatStateWiring } from "@/app/useChatStateWiring";
+import { useChatThreadRowActions } from "@/app/useChatThreadRowActions";
+import { useChatsRailNavigation } from "@/app/useChatsRailNavigation";
 import {
   toggleInboxPanel,
   useInboxPanelOpen,
@@ -162,6 +166,7 @@ export function AppShell() {
     goChannel,
     goHome,
     goNewMessage,
+    goPeople,
     goProjects,
     goPulse,
     goSettings,
@@ -350,6 +355,13 @@ export function AppShell() {
     selectedView,
     sidebarChannels,
   ]);
+  const handleSelectChats = useChatsRailNavigation({
+    channelsLoaded: channelsQuery.isSuccess && channelsQuery.dataUpdatedAt > 0,
+    goChannel,
+    selectedChannelId,
+    selectedView,
+    sidebarChannels,
+  });
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
   const { activeChannel, terminalContext } = useTerminalContext({
@@ -396,9 +408,10 @@ export function AppShell() {
   const {
     markAllChannelsRead: markAllChannelReadMarkers,
     markChannelRead,
-    markChannelUnread,
+    markChannelUnread: markChannelUnreadLocally,
     clearChannelUnreadSource,
     unreadChannelIds,
+    forcedUnreadChannelIds,
     topLevelUnreadChannelIds,
     unreadChannelCounts,
     highPriorityUnreadChannelIds,
@@ -406,8 +419,10 @@ export function AppShell() {
     getEffectiveTimestamp: getChannelReadAt,
     getOwnTimestamp: getOwnReadAt,
     getChannelAndThreadContexts: getReadContexts,
+    isReadStateInitialized,
     readStateVersion,
     setContextParentResolver,
+    setReadStateServerMirror,
     participatedRootIds,
     authoredRootIds,
     recordThreadInteraction,
@@ -506,21 +521,52 @@ export function AppShell() {
     [followedRootIds, mutedRootIds, participatedRootIds, authoredRootIds],
   );
 
+  const openChatThread = React.useCallback(
+    (channelId: string, rootId: string) =>
+      void goChannel(channelId, { thread: rootId }),
+    [goChannel],
+  );
+  const chatState = useChatStateWiring({
+    channels,
+    forcedUnreadChannelIds,
+    getOwnReadAt,
+    getReadContexts,
+    isReadStateInitialized,
+    markChannelUnread: markChannelUnreadLocally,
+    mutedRootIds,
+    openThread: openChatThread,
+    pubkey: identityQuery.data?.pubkey,
+    readStateVersion,
+    relayUrl: communitiesHook.activeCommunity?.relayUrl,
+    setReadStateServerMirror,
+  });
+  const { markChannelUnread, mirrorFollow } = chatState;
   const handleFollowThread = React.useCallback(
     (rootId: string) => {
       followThread(rootId);
       unmuteThread(rootId);
+      mirrorFollow(rootId, "followed");
     },
-    [followThread, unmuteThread],
+    [followThread, unmuteThread, mirrorFollow],
   );
 
   const handleUnfollowThread = React.useCallback(
     (rootId: string) => {
       unfollowThread(rootId);
       muteThread(rootId);
+      mirrorFollow(rootId, "unfollowed");
     },
-    [unfollowThread, muteThread],
+    [unfollowThread, muteThread, mirrorFollow],
   );
+  const serverChats = useChatThreadRowActions({
+    beforeExplicitThreadRead: chatState.beforeExplicitThreadRead,
+    markThreadRead,
+    markThreadUnread: chatState.markThreadUnread,
+    pinThread: chatState.pinThread,
+    serverChats: chatState.serverChats,
+    unfollowThread: handleUnfollowThread,
+    unpinThread: chatState.unpinThread,
+  });
 
   const createChannelMutation = useCreateChannelMutation(),
     createForumMutation = useCreateChannelMutation();
@@ -745,6 +791,7 @@ export function AppShell() {
           openCreateChannel={handleOpenCreateChannel}
         />
       ) : null}
+      <ChatStateSync {...chatState.syncProps} />
       <ChannelNavigationProvider channels={channels}>
         <AppShellProvider
           value={{
@@ -763,6 +810,8 @@ export function AppShell() {
             getChannelReadAt,
             getThreadReadAt,
             markThreadRead,
+            markThreadUnread: chatState.markThreadUnread,
+            mirrorThreadRead: chatState.mirrorThreadRead,
             getMessageReadAt,
             getChannelActivityItemReadAt,
             markMessageRead,
@@ -921,6 +970,8 @@ export function AppShell() {
                             await goChannel(directMessage.id);
                           }}
                           onSelectAgents={() => void goAgents()}
+                          onSelectChats={handleSelectChats}
+                          onSelectPeople={() => void goPeople()}
                           onSelectChannel={handleSidebarChannelSelect}
                           onOpenSearchResult={handleOpenSearchResult}
                           searchChannels={channels}
@@ -980,6 +1031,7 @@ export function AppShell() {
                           starredChannelIds={starredChannelIds}
                           onStarChannel={starChannel}
                           onUnstarChannel={unstarChannel}
+                          serverChats={serverChats}
                         />
                       ) : null}
                       <TerminalContextOverrideProvider

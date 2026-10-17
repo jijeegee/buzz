@@ -36,6 +36,7 @@ test("first-time project empty state opens project creation", async ({
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   await expect(

@@ -35,12 +35,13 @@ export type InboxFilter =
   | "reminders"
   | "drafts";
 
+// "conversations" (Channels + Threads) is no longer offered: Chats is that
+// view now. A stored value from an older build falls back to "all".
 const INBOX_FILTERS: readonly InboxFilter[] = [
   "all",
   "project",
   "mention",
   "thread",
-  "conversations",
   "needs_action",
   "agent_activity",
   "reminders",

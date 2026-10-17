@@ -118,7 +118,7 @@ test("selected Inbox and Agents rows keep their highlight without bold text", as
 
   const inbox = page
     .getByTestId("sidebar-primary-menu")
-    .getByRole("button", { name: "Inbox", exact: true });
+    .getByRole("button", { name: "Activity", exact: true });
   await expect(inbox).toHaveAttribute("data-active", "true");
   await expect(inbox).toHaveCSS("font-weight", "400");
 
@@ -136,11 +136,9 @@ test("primary navigation rows share the same inactive emphasis", async ({
 
   const primaryMenu = page.getByTestId("sidebar-primary-menu");
   const inactiveRows = [
-    primaryMenu.getByRole("button", { name: "Inbox", exact: true }),
-    page.getByTestId("open-pulse-view"),
-    page.getByTestId("open-projects-view"),
+    primaryMenu.getByRole("button", { name: "Activity", exact: true }),
     page.getByTestId("open-agents-view"),
-    page.getByTestId("open-workflows-view"),
+    page.getByTestId("open-more-menu"),
   ];
 
   for (const row of inactiveRows) {
@@ -152,14 +150,17 @@ test("primary navigation rows share the same inactive emphasis", async ({
     await expect(row.locator("svg")).toHaveCSS("opacity", "0.8");
   }
 
-  const pulse = page.getByTestId("open-pulse-view");
-  await pulse.click();
-  await expect(pulse).toHaveAttribute("data-active", "true");
-  await expect(pulse.locator("[data-sidebar=menu-label]")).toHaveCSS(
+  // Pulse lives in the More menu; the More item shows it active.
+  const more = page.getByTestId("open-more-menu");
+  await more.click();
+  await page.getByTestId("open-more-menu").click();
+  await page.getByTestId("open-pulse-view").click();
+  await expect(more).toHaveAttribute("data-active", "true");
+  await expect(more.locator("[data-sidebar=menu-label]")).toHaveCSS(
     "opacity",
     "1",
   );
-  await expect(pulse.locator("svg")).toHaveCSS("opacity", "1");
+  await expect(more.locator("svg")).toHaveCSS("opacity", "1");
 });
 
 test("hovering a channel keeps its text color", async ({ page }) => {
@@ -214,7 +215,7 @@ test("light mode reserves full opacity for unread text and avatars", async ({
 
   const inbox = page
     .getByTestId("sidebar-primary-menu")
-    .getByRole("button", { name: "Inbox", exact: true });
+    .getByRole("button", { name: "Activity", exact: true });
   await expect(inbox).toHaveCSS("opacity", "1");
   await expect(inbox.locator("[data-sidebar=menu-label]")).toHaveCSS(
     "opacity",
@@ -254,7 +255,7 @@ test("dark mode keeps selected labels regular and channel-level unread labels bo
   await expect(page.locator("html")).toHaveClass(/dark/);
   const inbox = page
     .getByTestId("sidebar-primary-menu")
-    .getByRole("button", { name: "Inbox", exact: true });
+    .getByRole("button", { name: "Activity", exact: true });
   await expect(inbox).toHaveAttribute("data-active", "true");
   await expect(inbox).toHaveCSS("font-weight", "400");
   await expect(page.getByTestId("open-agents-view")).toHaveCSS("opacity", "1");
@@ -794,7 +795,7 @@ test("mark-as-unread via context menu bolds the channel", async ({ page }) => {
   const baselineBadge = await getSettledBadgeState(page);
 
   await page.getByTestId("channel-random").click({ button: "right" });
-  await page.getByText("Mark unread").click();
+  await page.getByText("Mark as unread").click();
 
   await expect(page.getByTestId("channel-random")).toHaveCSS(
     "font-weight",
@@ -955,7 +956,7 @@ test("remote read-state rollback is ignored while local mark-unread still increm
   // Local mark-unread remains an in-session affordance and should still bold
   // the channel immediately without publishing a lower read timestamp.
   await page.getByTestId("channel-random").click({ button: "right" });
-  await page.getByText("Mark unread").click();
+  await page.getByText("Mark as unread").click();
   await expect(page.getByTestId("channel-random")).toHaveCSS(
     "font-weight",
     "700",

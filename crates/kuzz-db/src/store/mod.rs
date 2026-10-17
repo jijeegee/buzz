@@ -12,6 +12,17 @@ pub mod archived_identities;
 pub mod channel;
 /// Channel membership and roster persistence.
 pub mod channel_members;
+/// One-off backfill of server-side chat state from message history.
+pub mod chat_backfill;
+/// First-run upload of device-local read positions and follows.
+pub mod chat_import;
+/// Chats list for one reader, read from server-side chat state.
+pub mod chat_list;
+/// Server-side chat state written with each message (read positions, thread
+/// follows, thread close state).
+pub mod chat_state;
+/// Reader-driven chat state: read positions, unread marks, follows.
+pub mod chat_user_state;
 /// Community lifecycle and host-map persistence.
 pub mod community;
 /// Durable whole-community deletion lifecycle and PostgreSQL adapter.
@@ -77,6 +88,18 @@ mod artifact_postgres_tests;
 
 #[cfg(test)]
 mod channel_history_postgres_tests;
+
+#[cfg(test)]
+mod chat_backfill_postgres_tests;
+
+#[cfg(test)]
+mod chat_import_postgres_tests;
+
+#[cfg(test)]
+mod chat_list_postgres_tests;
+
+#[cfg(test)]
+mod chat_state_postgres_tests;
 
 #[cfg(test)]
 mod inbox_summary_postgres_tests;

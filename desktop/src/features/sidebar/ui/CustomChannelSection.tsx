@@ -13,6 +13,7 @@ import {
 import { useRef, useState } from "react";
 import type * as React from "react";
 
+import type { ChatsViewMode } from "@/features/chats/chatListGroups";
 import type { ChannelSortMode } from "@/features/sidebar/lib/channelSortPreference";
 import {
   ContextMenu,
@@ -138,6 +139,8 @@ export function SectionActionsMenu({
   isLastSection,
   sortMode,
   onSortModeChange,
+  chatsView,
+  onChatsViewChange,
 }: {
   sectionLabel: string;
   testId?: string;
@@ -159,6 +162,9 @@ export function SectionActionsMenu({
   isLastSection?: boolean;
   sortMode?: ChannelSortMode;
   onSortModeChange?: (mode: ChannelSortMode) => void;
+  /** The Chats view switch: All chats | By channel. */
+  chatsView?: ChatsViewMode;
+  onChatsViewChange?: (mode: ChatsViewMode) => void;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const showSectionManagement = Boolean(onRenameSection || onDeleteSection);
@@ -241,6 +247,27 @@ export function SectionActionsMenu({
                 <span>Move down</span>
               </DropdownMenuItem>
             ) : null}
+          </>
+        ) : null}
+        {chatsView && onChatsViewChange ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup
+              onValueChange={(value) =>
+                onChatsViewChange(value as ChatsViewMode)
+              }
+              value={chatsView}
+            >
+              <DropdownMenuRadioItem data-testid="chats-view-all" value="all">
+                All chats
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem
+                data-testid="chats-view-by-channel"
+                value="by-channel"
+              >
+                By channel
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
           </>
         ) : null}
         {showSort ? (

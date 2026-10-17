@@ -2982,7 +2982,7 @@ mod tests {
             ("reactions", 3),
             ("repos", 6),
             ("social", 7),
-            ("threads", 2),
+            ("threads", 3),
             ("upload", 1),
             ("users", 5),
             ("workflows", 8),

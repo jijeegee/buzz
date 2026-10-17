@@ -18,7 +18,7 @@ pub const MAX_INBOX_SUMMARY_LIMIT: u32 = 100;
 pub const INBOX_UNREAD_CAP: i64 = 99;
 
 /// Kinds that make a room or thread row "active" and count as unread.
-const MESSAGE_KINDS: [i32; 4] = [
+pub(crate) const MESSAGE_KINDS: [i32; 4] = [
     KIND_STREAM_MESSAGE as i32,
     KIND_STREAM_MESSAGE_V2 as i32,
     KIND_FORUM_POST as i32,

@@ -17,6 +17,7 @@ test.beforeEach(async ({ page }) => {
 
 async function openReactionTrigger(page: import("@playwright/test").Page) {
   await page.goto("/");
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-workflows-view").click();
   await expect(page.getByTestId("workflows-view")).toBeVisible();
 

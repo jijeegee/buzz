@@ -18,6 +18,8 @@ export async function sendChannelMessage(
   rootEventId?: string | null,
   /** NIP-18 `["q", id, relay, pubkey]`; a reference only, never placement. */
   quoteTag?: string[],
+  /** Thread Close/Reopen toggle marker on a reply in the thread. */
+  threadMarker?: "closed" | "reopened",
 ): Promise<SendChannelMessageResult> {
   const response = await invokeTauri<RawSendChannelMessageResult>(
     "send_channel_message",
@@ -41,6 +43,7 @@ export async function sendChannelMessage(
       // closed when the active identity no longer matches, so a community
       // switch cannot re-sign the captured tenant's content as the new one.
       expectedSignerPubkey: expectedSignerPubkey ?? null,
+      threadMarker: threadMarker ?? null,
     },
   );
   return {

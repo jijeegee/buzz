@@ -52,6 +52,7 @@ async function expectProjectContextGroups(
 
 async function openKuzzProject(page: import("@playwright/test").Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-projects").click();
   const projectEntry = page
@@ -72,6 +73,7 @@ test("repository-only relays keep the Repositories section available", async ({
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   await expect(page.getByTestId("projects-page-tabs")).toBeVisible();
@@ -89,6 +91,7 @@ test("projects activity overview screenshot", async ({ page }) => {
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await expect(page.getByTestId("projects-page-tabs")).toBeVisible();
   const activityHeader = page.getByTestId("projects-page-header");
@@ -120,6 +123,7 @@ test("submitted project context stays compact and expandable", async ({
 }) => {
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
   await page.getByTestId("projects-section-prs").click();
   await page.getByRole("button", { name: "List layout" }).click();
@@ -1212,6 +1216,7 @@ test("projects v3 work-item list metadata", async ({ page }) => {
   });
   await installMockBridge(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("open-more-menu").click();
   await page.getByTestId("open-projects-view").click();
 
   await page.getByTestId("projects-section-all").click();
