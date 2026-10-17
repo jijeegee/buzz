@@ -13,10 +13,10 @@ import {
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/shared/ui/context-menu";
-import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
+import { SidebarMenuItem } from "@/shared/ui/sidebar";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
-import { CHAT_ROW_BUTTON_CLASS, ChatRowLines } from "./ChatRowLines";
+import { ChatConversationRow } from "./ChatRowLines";
 import { ChannelWorkingBadge } from "./SidebarSection";
 import {
   ChatThreadRowMenuItems,
@@ -116,68 +116,59 @@ export function ChatThreadRow({
   );
   const item = (
     <SidebarMenuItem className="group/menu-item">
-      <SidebarMenuButton
-        className={cn(
-          CHAT_ROW_BUTTON_CLASS,
-          indent && "pl-5",
-          isActive
-            ? "group-hover/menu-item:bg-sidebar-active group-hover/menu-item:text-sidebar-active-foreground"
-            : "group-hover/menu-item:bg-sidebar-accent group-hover/menu-item:text-sidebar-foreground",
-        )}
+      <ChatConversationRow
+        ariaLabel={`${place} › ${title}`}
+        avatar={
+          <ConversationLetterAvatar
+            channelId={row.channel_id}
+            channelLabel={channelLabel}
+            isThread
+            testId={`chat-thread-avatar-${rootId}`}
+            thread={{ id: rootId, label: title }}
+          />
+        }
+        badges={badges}
+        bold={hasUnread && !dimmed}
         data-chat-thread-id={rootId}
         data-testid={`chat-thread-${rootId}`}
+        dimmed={dimmed}
+        indent={indent}
         isActive={isActive}
-        onClick={() => onOpenThread(row.channel_id, rootId)}
-        size="lg"
-        tooltip={`${place} › ${title}`}
-        type="button"
-      >
-        <ConversationLetterAvatar
-          channelId={row.channel_id}
-          channelLabel={channelLabel}
-          isThread
-          testId={`chat-thread-avatar-${rootId}`}
-          thread={{ id: rootId, label: title }}
-        />
-        <ChatRowLines
-          badges={badges}
-          bold={hasUnread && !dimmed}
-          dimmed={dimmed}
-          preview={preview}
-          title={
-            <>
-              <span className="max-w-[45%] shrink-0 truncate font-normal text-sidebar-foreground/60">
-                {place}
-              </span>
-              <span
-                aria-hidden="true"
-                className="shrink-0 font-normal text-sidebar-foreground/40"
-              >
-                ›
-              </span>
-              <span className="sr-only">thread</span>
-              <span className="min-w-0 truncate">{title}</span>
-            </>
-          }
-          titleExtras={
-            isPinned ? (
-              <span className="shrink-0">
-                <Pin aria-hidden="true" className="h-3 w-3" />
-                <span className="sr-only">Pinned for you</span>
-              </span>
-            ) : null
-          }
-          working={
-            working ? (
-              <ChannelWorkingBadge
-                channelName={`thread-${rootId}`}
-                isActive={isActive}
-                summary={working}
-              />
-            ) : null
-          }
-        />
-      </SidebarMenuButton>
+        onSelect={() => onOpenThread(row.channel_id, rootId)}
+        preview={preview}
+        title={
+          <>
+            <span className="max-w-[45%] shrink-0 truncate font-normal text-muted-foreground">
+              {place}
+            </span>
+            <span
+              aria-hidden="true"
+              className="shrink-0 font-normal text-muted-foreground/60"
+            >
+              ›
+            </span>
+            <span className="sr-only">thread</span>
+            <span className="min-w-0 truncate">{title}</span>
+          </>
+        }
+        titleExtras={
+          isPinned ? (
+            <span className="shrink-0">
+              <Pin aria-hidden="true" className="h-3 w-3" />
+              <span className="sr-only">Pinned for you</span>
+            </span>
+          ) : null
+        }
+        working={
+          working ? (
+            <ChannelWorkingBadge
+              channelName={`thread-${rootId}`}
+              isActive={isActive}
+              summary={working}
+            />
+          ) : null
+        }
+      />
     </SidebarMenuItem>
   );
   if (!actions) return item;

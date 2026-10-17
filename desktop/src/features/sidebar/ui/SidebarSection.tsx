@@ -37,10 +37,7 @@ import { useAppShell } from "@/app/AppShellContext";
 import { UserNameIndicators } from "@/features/user-status/ui/UserNameIndicators";
 import type { ChatRowPreview } from "@/features/chats/chatRowPreview";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
-import {
-  CHAT_ROW_BUTTON_CLASS,
-  ChatRowLines,
-} from "@/features/sidebar/ui/ChatRowLines";
+import { ChatConversationRow } from "@/features/sidebar/ui/ChatRowLines";
 
 const SECTION_LABEL_BUTTON_CLASS =
   "group/section-label flex w-fit max-w-[calc(100%-3rem)] cursor-pointer appearance-none items-center gap-1 text-left transition-colors hover:text-sidebar-foreground focus-visible:text-sidebar-foreground";
@@ -334,95 +331,84 @@ export function ChannelMenuButton({
   );
 
   const button = preview ? (
-    <SidebarMenuButton
-      className={cn(
-        CHAT_ROW_BUTTON_CLASS,
-        isActive
-          ? "group-hover/menu-item:bg-sidebar-active group-hover/menu-item:text-sidebar-active-foreground"
-          : "group-hover/menu-item:bg-sidebar-accent group-hover/menu-item:text-sidebar-foreground",
-      )}
+    <ChatConversationRow
+      ariaLabel={resolvedLabel}
+      avatar={
+        <SidebarChannelIcon
+          channel={channel}
+          dmParticipants={dmParticipants}
+          large
+          presenceStatus={presenceStatus}
+        />
+      }
       data-channel-id={channel.id}
       data-testid={`channel-${channel.name}`}
       isActive={isActive}
-      onClick={() => onSelectChannel(channel.id)}
-      size="lg"
-      tooltip={resolvedLabel}
-      type="button"
-    >
-      <SidebarChannelIcon
-        channel={channel}
-        dmParticipants={dmParticipants}
-        large
-        presenceStatus={presenceStatus}
-      />
-      <ChatRowLines
-        badges={
-          hasUnread && !isActive ? (
-            unreadCount > 0 ? (
-              <UnreadCountBadge
-                channelName={channel.name}
-                className={cn(
-                  isMuted && "bg-sidebar-foreground/20 text-sidebar-foreground",
-                )}
-                count={unreadCount}
-              />
-            ) : (
-              <UnreadDotBadge channelName={channel.name} />
-            )
-          ) : hasThreadUnread ? (
-            <UnreadDotBadge channelName={channel.name} />
-          ) : null
-        }
-        bold={hasUnread}
-        dimmed={!isActive && Boolean(isMuted) && !hasUnread}
-        preview={preview}
-        title={
-          <>
-            <span className="min-w-0 truncate">
-              {channel.channelType === "dm"
-                ? resolvedLabel
-                : `#${resolvedLabel}`}
-            </span>
-            {channel.channelType === "dm" &&
-            (channel.participantPubkeys.length === 2 ||
-              dmParticipants?.length === 1) ? (
-              <UserNameIndicators
-                pubkey={dmParticipants?.[0]?.pubkey}
-                size="dm"
-              />
-            ) : null}
-          </>
-        }
-        titleExtras={
-          <>
-            {isPinned ? (
-              <span
-                className="shrink-0"
-                data-testid={`chat-pinned-${channel.id}`}
-              >
-                <Pin aria-hidden="true" className="h-3 w-3" />
-                <span className="sr-only">Pinned for you</span>
-              </span>
-            ) : null}
-            {isMuted ? (
-              <BellOff
-                aria-label="Muted"
-                className="h-3 w-3 shrink-0 text-sidebar-foreground/40"
-              />
-            ) : null}
-          </>
-        }
-        working={
-          activeWorking ? (
-            <ChannelWorkingBadge
+      onSelect={() => onSelectChannel(channel.id)}
+      preview={preview}
+      badges={
+        hasUnread && !isActive ? (
+          unreadCount > 0 ? (
+            <UnreadCountBadge
               channelName={channel.name}
-              isActive={isActive}
-              summary={activeWorking}
+              className={cn(
+                isMuted && "bg-sidebar-foreground/20 text-sidebar-foreground",
+              )}
+              count={unreadCount}
             />
-          ) : null
-        }
-      />
-    </SidebarMenuButton>
+          ) : (
+            <UnreadDotBadge channelName={channel.name} />
+          )
+        ) : hasThreadUnread ? (
+          <UnreadDotBadge channelName={channel.name} />
+        ) : null
+      }
+      bold={hasUnread}
+      dimmed={!isActive && Boolean(isMuted) && !hasUnread}
+      title={
+        <>
+          <span className="min-w-0 truncate">
+            {channel.channelType === "dm" ? resolvedLabel : `#${resolvedLabel}`}
+          </span>
+          {channel.channelType === "dm" &&
+          (channel.participantPubkeys.length === 2 ||
+            dmParticipants?.length === 1) ? (
+            <UserNameIndicators
+              pubkey={dmParticipants?.[0]?.pubkey}
+              size="dm"
+            />
+          ) : null}
+        </>
+      }
+      titleExtras={
+        <>
+          {isPinned ? (
+            <span
+              className="shrink-0"
+              data-testid={`chat-pinned-${channel.id}`}
+            >
+              <Pin aria-hidden="true" className="h-3 w-3" />
+              <span className="sr-only">Pinned for you</span>
+            </span>
+          ) : null}
+          {isMuted ? (
+            <BellOff
+              aria-label="Muted"
+              className="h-3 w-3 shrink-0 text-sidebar-foreground/40"
+            />
+          ) : null}
+        </>
+      }
+      working={
+        activeWorking ? (
+          <ChannelWorkingBadge
+            channelName={channel.name}
+            isActive={isActive}
+            summary={activeWorking}
+          />
+        ) : null
+      }
+    />
   ) : (
     <SidebarMenuButton
       className={cn(
