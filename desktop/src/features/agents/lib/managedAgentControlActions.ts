@@ -148,6 +148,64 @@ export async function stopManagedAgentWithRules({
   return {};
 }
 
+/**
+ * Ask an agent running on another of the owner's computers to stop: the
+ * owner's `!shutdown` in a channel it is in makes its harness exit, and the
+ * hosting desktop leaves a cleanly exited agent stopped.
+ */
+export async function stopRemoteOwnedAgent({
+  pubkey,
+  channels,
+  preferredChannelId,
+  relayAgents,
+}: {
+  pubkey: string;
+} & ManagedAgentChannelContext): Promise<ManagedAgentActionResult> {
+  const channelId = resolveManagedAgentChannelId(
+    { pubkey },
+    { channels, preferredChannelId, relayAgents },
+  );
+  if (!channelId) {
+    throw new Error("Cannot stop: agent is not in any channel");
+  }
+  await sendChannelMessage(channelId, "!shutdown", undefined, undefined, [
+    pubkey,
+  ]);
+  return {
+    noticeMessage:
+      "Stop requested. The agent stops on the computer it runs on.",
+  };
+}
+
+/**
+ * Ask the computer an agent runs on to start it: the owner's `!start` in a
+ * channel it is in reaches that computer's Kuzz app (`useRemoteStartListener`),
+ * which starts the stopped agent. Nothing happens while that app is closed.
+ */
+export async function startRemoteOwnedAgent({
+  pubkey,
+  hostName,
+  channels,
+  preferredChannelId,
+  relayAgents,
+}: {
+  pubkey: string;
+  /** The hosting computer's name, when known. */
+  hostName?: string | null;
+} & ManagedAgentChannelContext): Promise<ManagedAgentActionResult> {
+  const channelId = resolveManagedAgentChannelId(
+    { pubkey },
+    { channels, preferredChannelId, relayAgents },
+  );
+  if (!channelId) {
+    throw new Error("Cannot start: agent is not in any channel");
+  }
+  await sendChannelMessage(channelId, "!start", undefined, undefined, [pubkey]);
+  return {
+    noticeMessage: `Start requested. It starts only if Kuzz is open on ${hostName?.trim() || "that computer"} now.`,
+  };
+}
+
 export async function deleteManagedAgentWithRules({
   agent,
   channels,

@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/theme/grid.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
+import '../agents/my_agents_page.dart';
 import '../channels/mentions/thread_agent_audience.dart';
 
 /// Settings → Agents, matching desktop's Agents → Conversations switch.
@@ -24,6 +25,16 @@ class AgentsSettings extends ConsumerWidget {
       label: 'Agents',
       verticalPadding: Grid.twelve,
       children: [
+        AppListRow(
+          key: const ValueKey('settings-my-agents'),
+          icon: LucideIcons.bot,
+          title: 'My agents',
+          subtitle: 'Where your agents run: start, stop and edit them',
+          trailing: const Icon(LucideIcons.chevronRight, size: 18),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => const MyAgentsPage())),
+        ),
         AppListRow(
           key: const ValueKey('settings-automatic-agent-mentions'),
           icon: LucideIcons.atSign,
