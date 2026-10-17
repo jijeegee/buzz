@@ -9,6 +9,8 @@ import {
   type ChatGptPlanStatus,
 } from "@/shared/api/tauriChatGptPlan";
 
+import { useReturnedToApp } from "@/shared/hooks/useReturnedToApp";
+
 import { managedAgentsQueryKey } from "./hooks";
 
 /**
@@ -117,38 +119,13 @@ function useAuthAction<T>(run: () => Promise<T>) {
   };
 }
 
-/** Back in Kuzz this long with the sign-in unfinished: treat it as dropped. */
-export const CHATGPT_RETURN_GRACE_MS = 2000;
-
 /**
- * The browser tab can't be watched, so returning to Kuzz is the signal: the
- * button frees up again while the sign-in keeps listening, so finishing in
- * the browser later still connects. Signing in again replaces it.
+ * Returning to Kuzz frees the button while the sign-in keeps listening, so
+ * finishing in the browser later still connects. Signing in again replaces it.
  */
 export function useChatGptPlanSignIn() {
   const action = useAuthAction<ChatGptPlanSignIn>(signInChatGptPlan);
-  const { isPending, release } = action;
-
-  React.useEffect(() => {
-    if (!isPending) return;
-    let left = !document.hasFocus();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onBlur = () => {
-      left = true;
-      clearTimeout(timer);
-    };
-    const onFocus = () => {
-      if (left) timer = setTimeout(release, CHATGPT_RETURN_GRACE_MS);
-    };
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [isPending, release]);
-
+  useReturnedToApp(action.isPending, action.release);
   return action;
 }
 

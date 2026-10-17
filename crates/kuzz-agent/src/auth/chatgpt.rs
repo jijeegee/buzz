@@ -43,7 +43,7 @@ const SCOPES: &str =
 const CALLBACK_PATH: &str = "/auth/callback";
 /// Preferred loopback port from OpenAI's examples; any port works after it.
 const PREFERRED_PORT: u16 = 1455;
-const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
+const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 const LOCK_TIMEOUT: Duration = Duration::from_secs(60);
 /// Refresh this long before expiry so a long request never starts stale.

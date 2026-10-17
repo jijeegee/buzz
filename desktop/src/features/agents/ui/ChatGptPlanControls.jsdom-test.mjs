@@ -37,7 +37,9 @@ const React = (await import("react")).default;
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { ContinueWithChatGptButton } = await import("./ChatGptPlanControls.tsx");
-const { CHATGPT_RETURN_GRACE_MS } = await import("../useChatGptPlan.ts");
+const { BROWSER_RETURN_GRACE_MS: CHATGPT_RETURN_GRACE_MS } = await import(
+  "../../../shared/hooks/useReturnedToApp.ts"
+);
 
 const wait = (ms) =>
   act(() => new Promise((resolve) => setTimeout(resolve, ms)));
