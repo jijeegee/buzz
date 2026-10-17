@@ -51,6 +51,7 @@ import 'package:kuzz/features/channels/thread_detail_page.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/features/channels/thread_window.dart';
 import 'package:kuzz/features/channels/timeline_message.dart';
+import 'package:kuzz/features/channels/room_position_store.dart';
 import 'package:kuzz/features/channels/window_anchor.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
@@ -88,6 +89,7 @@ part 'thread_reply_refresh_cases.dart';
 part 'channel_detail_page_test/presence_tests.dart';
 part 'channel_detail_page_test/quote_tests.dart';
 part 'channel_detail_page_test/open_at_tests.dart';
+part 'channel_detail_page_test/thread_open_at_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
 const _huddleChannelId = '8d764100-fd8f-44cf-9c98-6d8fbd739b8c';
@@ -521,6 +523,7 @@ void main() {
   presenceTests();
   quoteTests();
   openAtTests();
+  threadOpenAtTests();
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _testPrefs = await SharedPreferences.getInstance();

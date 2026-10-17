@@ -52,7 +52,10 @@ void openAtTests() {
       bool newerPages = true,
       String? initialMessageId,
       int? firstUnread,
+      Widget? home,
     }) => _buildTestable(
+      home: home,
+      huddleCurrentPubkey: 'self',
       messages: const [],
       realMessages: true,
       relaySessionNotifier: session,
@@ -121,6 +124,28 @@ void openAtTests() {
       await tester.pumpAndSettle();
       return rects;
     }
+
+    /// The signed-in account's saved positions, as the page reads them.
+    Future<RoomPositionStore> positionStore(WidgetTester tester) async {
+      await tester.pumpWidget(
+        testable(_WindowRelaySession(rows), home: const SizedBox()),
+      );
+      final store = ProviderScope.containerOf(
+        tester.element(find.byType(SizedBox).first),
+      ).read(roomPositionStoreProvider)!;
+      await tester.pumpWidget(const SizedBox());
+      return store;
+    }
+
+    void saveRow(RoomPositionStore store, int n, {double edge = 0.5}) =>
+        store.record(
+          _channelId,
+          RoomPositionReading.at(
+            id: fixtureId(n),
+            createdAt: 1000 + n,
+            edge: edge,
+          ),
+        );
 
     ChannelMessagesNotifier notifierOf(WidgetTester tester) =>
         ProviderScope.containerOf(
@@ -267,6 +292,99 @@ void openAtTests() {
         findsOneWidget,
       );
       expect(notifierOf(tester).isInMiddleWindow, isFalse);
+    });
+
+    testWidgets('reopening restores the saved position from the first frame', (
+      tester,
+    ) async {
+      useTallView(tester);
+      final store = await positionStore(tester);
+      await tester.pumpWidget(testable(_WindowRelaySession(rows)));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 4; i++) {
+        await tester.drag(messageList, const Offset(0, 300));
+        await tester.pumpAndSettle();
+      }
+      // Scrolling rests, then the position is saved.
+      await tester.pump(roomPositionSaveDelay);
+      final saved = store.read(_channelId);
+      expect(saved, isNotNull);
+      final reading = findRichText('row ${int.parse(saved!.id, radix: 16)}');
+      final before = tester.getRect(reading);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(testable(_WindowRelaySession(rows)));
+      final rects = await visibleRects(tester, reading);
+
+      expect(rects, isNotEmpty);
+      // From the first frame the row is back where the reader left it.
+      for (final rect in rects) {
+        expect(rect, isNotNull);
+        expect(rect!.top, closeTo(before.top, 1));
+      }
+      expect(findRichText('row 299'), findsNothing);
+      expect(notifierOf(tester).isInMiddleWindow, isTrue);
+    });
+
+    testWidgets('unread messages win over a saved position', (tester) async {
+      useTallView(tester);
+      saveRow(await positionStore(tester), 250);
+      await tester.pumpWidget(
+        testable(_WindowRelaySession(rows), firstUnread: 150),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('channel-new-messages-divider')),
+        findsOneWidget,
+      );
+      expect(findRichText('row 150'), findsOneWidget);
+      expect(findRichText('row 250'), findsNothing);
+    });
+
+    testWidgets('a linked message wins over a saved position', (tester) async {
+      useTallView(tester);
+      saveRow(await positionStore(tester), 250);
+      await tester.pumpWidget(
+        testable(_WindowRelaySession(rows), initialMessageId: fixtureId(120)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(findRichText('row 120'), findsOneWidget);
+      expect(findRichText('row 250'), findsNothing);
+    });
+
+    testWidgets('leaving at the newest row forgets the saved position', (
+      tester,
+    ) async {
+      useTallView(tester);
+      final store = await positionStore(tester);
+      saveRow(store, 150);
+      await tester.pumpWidget(testable(_WindowRelaySession(rows)));
+      await tester.pumpAndSettle();
+      expect(findRichText('row 150'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('channel-jump-to-latest')));
+      await tester.pumpAndSettle();
+      expect(findRichText('row 299'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+
+      expect(store.read(_channelId), isNull);
+    });
+
+    testWidgets('a saved row deleted since is forgotten', (tester) async {
+      useTallView(tester);
+      final store = await positionStore(tester);
+      store.record(
+        _channelId,
+        const RoomPositionReading.at(id: 'f00d', createdAt: 1150, edge: 0.5),
+      );
+      await tester.pumpWidget(testable(_WindowRelaySession(rows)));
+      await tester.pumpAndSettle();
+
+      // It still opens where the row was.
+      expect(findRichText('row 150'), findsOneWidget);
+      expect(store.read(_channelId), isNull);
     });
   });
 }

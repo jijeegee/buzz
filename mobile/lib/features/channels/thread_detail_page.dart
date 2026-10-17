@@ -54,14 +54,18 @@ import 'message_long_press_region.dart';
 import 'message_content.dart';
 import 'message_quote.dart';
 import 'message_quote_header.dart';
+import 'new_messages_divider.dart';
 import 'reaction_row.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import 'room_goals_provider.dart';
+import 'room_position_store.dart';
 import 'send_message_provider.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';
 import 'timeline_message.dart';
+import 'unread_badge/observed_unread_event.dart';
+import 'window_anchor.dart';
 
 part 'thread_detail_page/nested_thread_summary_row.dart';
 part 'thread_detail_page/message_list.dart';
@@ -69,6 +73,7 @@ part 'thread_detail_page/sticky_date.dart';
 part 'thread_detail_helpers.dart';
 part 'thread_detail_page/thread_message.dart';
 part 'thread_detail_page/avatar.dart';
+part 'thread_detail_page/open_at.dart';
 
 const _landingHighlightDuration = Duration(seconds: 3);
 const _landingHighlightDelay = Duration(milliseconds: 50);
@@ -159,6 +164,10 @@ class ThreadDetailPage extends HookConsumerWidget {
     // channel store still caches but the page dropped (deleted meanwhile), or
     // one older than the window with a gap before it, must not come back.
     final windowState = ref.watch(threadWindowProvider(repliesArgs))?.state;
+    final windowNotifier = ref.read(threadWindowProvider(repliesArgs).notifier);
+    // Replies after the loaded ones remain on the relay: the window was opened
+    // at a reply and has not paged up to the newest one yet.
+    final windowHasNewer = windowState?.hasNewer ?? false;
     final liveThreadEvents = windowState == null
         ? liveChannelEvents
         : [
@@ -286,8 +295,207 @@ class ThreadDetailPage extends HookConsumerWidget {
     final allReplies = childrenByParent[threadHead.id] ?? const [];
     final liveHead =
         allMsgs.where((m) => m.id == threadHead.id).firstOrNull ?? threadHead;
+
+    // The account this page opened under keeps its positions, even if the
+    // account changes while the page is open.
+    final roomKey = threadRoomKey(channelId, threadHead.id);
+    final roomPositions = useMemoized(
+      () => ref.read(roomPositionStoreProvider),
+    );
+    final savedPosition = useMemoized(() => roomPositions?.read(roomKey));
+    final readState = ref.watch(readStateProvider);
+    // The unread replies of a top-level thread as it opens.
+    final initialUnreadReplies = useRef<List<ObservedUnreadEvent>?>(null);
+    if (initialUnreadReplies.value == null && readState.isReady) {
+      final channelReadAt = readState.effectiveTimestamp(channelId);
+      initialUnreadReplies.value =
+          threadHead.rootId != null
+                ? const []
+                : [
+                    for (final event
+                        in ref
+                                .read(channelsProvider.notifier)
+                                .observedUnreadEventsByChannel[channelId]
+                                ?.values ??
+                            const <ObservedUnreadEvent>[])
+                      if (event.rootId == threadHead.id &&
+                          event.createdAt >
+                              (observedUnreadEventReadAt(
+                                    event,
+                                    channelReadAt,
+                                    (rootId) => readState.effectiveTimestamp(
+                                      threadContextKey(rootId),
+                                    ),
+                                    (messageId) => readState.effectiveTimestamp(
+                                      msgContextKey(messageId),
+                                    ),
+                                  ) ??
+                                  0))
+                        event,
+                  ]
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    }
+    // A link or notification opens at its reply, unread replies at the first
+    // of them, and otherwise a saved position at its reply, instead of the
+    // newest reply. The list waits for that window out of sight rather than
+    // drawing the newest replies first.
+    final openTarget = useMemoized(() {
+      final messageId = initialMessageId;
+      if (messageId != null) {
+        return messageId == threadHead.id
+            ? null
+            : _ThreadOpenTarget(id: messageId);
+      }
+      final unread = initialUnreadReplies.value?.firstOrNull;
+      if (unread != null) {
+        return _ThreadOpenTarget(
+          id: unread.id,
+          createdAt: unread.createdAt,
+          isUnread: true,
+        );
+      }
+      // Unread replies are only known once the read state is: until then a
+      // saved position could hide them.
+      final saved = savedPosition;
+      if (!readState.isReady || saved == null) return null;
+      return _ThreadOpenTarget(
+        id: saved.id,
+        createdAt: saved.createdAt,
+        edge: saved.edge,
+      );
+    });
+    final openPhase = useState(
+      openTarget != null || windowHasNewer
+          ? _ThreadOpenPhase.opening
+          : _ThreadOpenPhase.none,
+    );
+    final isOpenHidden =
+        openPhase.value == _ThreadOpenPhase.opening ||
+        openPhase.value == _ThreadOpenPhase.positioning;
+    final supportsOpenAt = useState<bool?>(null);
+    final openedWindow = useState(false);
+    final didStartOpening = useRef(false);
+    final openedCreatedAt = useRef<int?>(null);
+    // Bumped when this page replaces the window, so its list is drawn anew.
+    final listGeneration = useState(0);
+    final openedGeneration = useRef<int?>(null);
+    // Without newer pages there is no window to open at: show the replies
+    // now rather than after the reply is found.
+    useEffect(() {
+      if (openTarget == null || openPhase.value != _ThreadOpenPhase.opening) {
+        return null;
+      }
+      unawaited(
+        ref
+            .read(relayInfoProvider.future)
+            .then((info) => info?.supports(newerWindowExtension) ?? false)
+            .catchError((Object _) => false)
+            .then((supported) {
+              if (!context.mounted) return;
+              supportsOpenAt.value = supported;
+              if (!supported && openPhase.value == _ThreadOpenPhase.opening) {
+                openPhase.value = _ThreadOpenPhase.none;
+              }
+            }),
+      );
+      return null;
+    }, const []);
+    useEffect(
+      () {
+        if (openPhase.value != _ThreadOpenPhase.opening ||
+            didStartOpening.value) {
+          return null;
+        }
+        final target = openTarget;
+        if (target == null) {
+          // A window left open at a reply by an earlier visit; this visit has
+          // nothing to open at, so it starts at the newest replies.
+          didStartOpening.value = true;
+          unawaited(
+            windowNotifier.jumpToLatest().catchError((Object _) => false).then((
+              _,
+            ) {
+              if (!context.mounted) return;
+              listGeneration.value += 1;
+              openPhase.value = _ThreadOpenPhase.none;
+            }),
+          );
+          return null;
+        }
+        if (supportsOpenAt.value != true) return null;
+        final createdAt =
+            target.createdAt ??
+            [...allMsgs, ...allMessages]
+                .where((message) => message.id == target.id)
+                .firstOrNull
+                ?.createdAt;
+        if (createdAt == null) {
+          // Wait for the replies before giving up on a linked reply; the
+          // newest replies then page back to it as before.
+          if (!canUseMessagesForInitialTarget) return null;
+          didStartOpening.value = true;
+          openPhase.value = _ThreadOpenPhase.none;
+          return null;
+        }
+        didStartOpening.value = true;
+        openedCreatedAt.value = createdAt;
+        unawaited(
+          windowNotifier
+              .openAt(createdAt: createdAt, eventId: target.id)
+              .catchError((Object _) => false)
+              .then((opened) {
+                if (!context.mounted) return;
+                if (!opened) {
+                  openPhase.value = _ThreadOpenPhase.none;
+                  return;
+                }
+                // A saved reply deleted since is not remembered any longer.
+                final events = ref.read(threadWindowProvider(repliesArgs));
+                if (target.edge != null &&
+                    events?.events.any((event) => event.id == target.id) !=
+                        true) {
+                  roomPositions?.clear(roomKey);
+                }
+                openedWindow.value = true;
+              }),
+        );
+        return null;
+      },
+      [
+        supportsOpenAt.value,
+        canUseMessagesForInitialTarget,
+        relayRepliesAvailable,
+      ],
+    );
+    // The window shows once the thread query is in too; a query that failed
+    // leaves the replies at hand, as before.
+    useEffect(() {
+      if (!openedWindow.value ||
+          openPhase.value != _ThreadOpenPhase.opening ||
+          !canUseMessagesForInitialTarget) {
+        return null;
+      }
+      if (!relayRepliesAvailable) {
+        openPhase.value = _ThreadOpenPhase.none;
+        return null;
+      }
+      listGeneration.value += 1;
+      openedGeneration.value = listGeneration.value;
+      openPhase.value = _ThreadOpenPhase.positioning;
+      return null;
+    }, [openedWindow.value, canUseMessagesForInitialTarget]);
+
     final itemScrollController = useMemoized(ItemScrollController.new);
     final itemPositionsListener = useMemoized(ItemPositionsListener.create);
+    final placement = useRef<_ThreadListPlacement?>(null);
+    final renderedReplies = useRef<List<TimelineMessage>?>(null);
+    final holdsNewerReplies = useRef(false);
+    final awaitingPlacementLayout = useRef(false);
+    final isUserScrolling = useRef(false);
+    // Whether the list's center is the newest reply, so replies arriving
+    // below it follow the bottom instead of moving the replies above.
+    final listCenteredAtNewest = useRef(true);
+    final heldRepliesRelease = useState(0);
     // Replies load newest first; older pages fold in on scroll-up.
     final hasOlderReplies = windowState?.hasOlder ?? false;
     final isLoadingOlderReplies = useState(false);
@@ -309,14 +517,15 @@ class ThreadDetailPage extends HookConsumerWidget {
               _isNewerThan(reply, cutoff) &&
               reply.pubkey.toLowerCase() == localPubkey,
         );
-    final replies = cutoff == null || hasPendingLocalReply
+    // A window with newer pages left holds no live replies to wait.
+    final shownReplies =
+        cutoff == null || hasPendingLocalReply || windowHasNewer
         ? allReplies
         : [
             for (final reply in allReplies)
               if (!_isNewerThan(reply, cutoff)) reply,
           ];
-    final hasPendingReplies = replies.length < allReplies.length;
-    final newestReplyId = replies.lastOrNull?.id;
+    final hasPendingReplies = shownReplies.length < allReplies.length;
     final deepLinkPagesWalked = useRef(0);
     final listViewport = useMemoized(LaidOutViewport.new);
     useEffect(() => listViewport.dispose, [listViewport]);
@@ -348,6 +557,9 @@ class ThreadDetailPage extends HookConsumerWidget {
       // The frame that lays out the new position runs first.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         programmaticScrollInFlight.value = false;
+        if (holdsNewerReplies.value && context.mounted) {
+          heldRepliesRelease.value += 1;
+        }
       });
       WidgetsBinding.instance.scheduleFrame();
     }
@@ -371,6 +583,87 @@ class ThreadDetailPage extends HookConsumerWidget {
         ? liveBottomInset
         : detachedBottomInset.value;
     final navigationBottomInset = composerDockHeight.value + settledImeLift;
+
+    final isPositioning = openPhase.value == _ThreadOpenPhase.positioning;
+    final isOpenedWindow =
+        openedGeneration.value != null &&
+        openedGeneration.value == listGeneration.value;
+    var replies = shownReplies;
+    final previousPlacement = placement.value;
+    if (previousPlacement == null ||
+        previousPlacement.generation != listGeneration.value) {
+      // A replaced window gets a new list drawn at its place from the first
+      // frame: at the reply it was opened at, or at the newest reply.
+      final target = openTarget;
+      final targetIndex = isPositioning && target != null
+          ? _threadOpenedAtIndex(replies, target.id, openedCreatedAt.value ?? 0)
+          : null;
+      final topLine = viewportHeight > 0
+          ? 1 - frostedAppBarHeight(context) / viewportHeight
+          : 1.0;
+      placement.value = _ThreadListPlacement(
+        generation: listGeneration.value,
+        epoch: (previousPlacement?.epoch ?? -1) + 1,
+        index: targetIndex ?? 0,
+        alignment: targetIndex == null || targetIndex == 0
+            ? 0
+            : target!.edge ?? (target.isUnread ? topLine - 0.15 : 0.35),
+      );
+      listCenteredAtNewest.value = placement.value!.index == 0;
+      holdsNewerReplies.value = false;
+      awaitingPlacementLayout.value = true;
+    } else if (isOpenedWindow && renderedReplies.value != null) {
+      // Replies paged in (or arriving) below a window opened at a reply would
+      // move every reply on screen. Redraw the list around the reply being
+      // read instead, once nothing is scrolling.
+      final rendered = renderedReplies.value!;
+      final previousNewestIndex = rendered.isEmpty
+          ? null
+          : _reversedReplyIndex(replies, rendered.last.id);
+      final followsTail = isAtLatest.value && listCenteredAtNewest.value;
+      if (previousNewestIndex != null &&
+          previousNewestIndex > 0 &&
+          !followsTail) {
+        if (isPositioning ||
+            isUserScrolling.value ||
+            programmaticScrollInFlight.value ||
+            isNavigatingToLatest.value ||
+            awaitingPlacementLayout.value) {
+          holdsNewerReplies.value = true;
+          replies = rendered;
+        } else {
+          holdsNewerReplies.value = false;
+          final reanchored = _reanchoredThreadPlacement(
+            placement.value!,
+            itemPositionsListener.itemPositions.value,
+            rendered,
+            replies,
+          );
+          if (reanchored != null) {
+            placement.value = reanchored;
+            listCenteredAtNewest.value = reanchored.index == 0;
+            awaitingPlacementLayout.value = true;
+          }
+        }
+      }
+    }
+    renderedReplies.value = replies;
+    final repliesRef = useRef(replies)..value = replies;
+    final newestReplyId = replies.lastOrNull?.id;
+    final target = openTarget;
+    final newRepliesIndex = isOpenedWindow && target != null && target.isUnread
+        ? _threadOpenedAtIndex(replies, target.id, openedCreatedAt.value ?? 0)
+        : null;
+
+    // Replies held back while the list moved come in once it rests.
+    void releaseHeldReplies() {
+      if (!holdsNewerReplies.value) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && holdsNewerReplies.value) {
+          heldRepliesRelease.value += 1;
+        }
+      });
+    }
 
     // Reversed list: item 0 is the newest reply at the bottom; reply `i`
     // (chronological) lives at `replies.length - 1 - i`; the head (or its
@@ -425,6 +718,8 @@ class ThreadDetailPage extends HookConsumerWidget {
         : 0.0;
 
     bool latestIsAtBoundary(Iterable<ItemPosition> positions) {
+      // Replies newer than the loaded ones are still on the relay.
+      if (windowHasNewer) return false;
       final boundary = latestAlignment();
       return positions.any(
         (position) =>
@@ -470,13 +765,50 @@ class ThreadDetailPage extends HookConsumerWidget {
       if (nearTop) requestOlderReplies();
     }
 
+    final isLoadingNewerReplies = useRef(false);
+    final newerLoadFailedAt = useRef<DateTime?>(null);
+    // A window opened at a reply pages toward the present as its newest
+    // loaded replies come into view.
+    void maybeLoadNewerReplies(Iterable<ItemPosition> positions) {
+      if (!windowHasNewer || isLoadingNewerReplies.value) return;
+      final failedAt = newerLoadFailedAt.value;
+      if (failedAt != null &&
+          DateTime.now().difference(failedAt) < const Duration(seconds: 3)) {
+        return;
+      }
+      final newestVisible = positions
+          .map((position) => position.index)
+          .reduce(math.min);
+      if (newestVisible > 2) return;
+      isLoadingNewerReplies.value = true;
+      unawaited(
+        windowNotifier
+            .loadNewer()
+            .catchError((Object _) => false)
+            .then((loaded) {
+              newerLoadFailedAt.value = loaded ? null : DateTime.now();
+            })
+            .whenComplete(() => isLoadingNewerReplies.value = false),
+      );
+    }
+
     useEffect(
       () {
         void onPositionsChanged() {
           final positions = itemPositionsListener.itemPositions.value;
           if (positions.isEmpty) return;
+          if (awaitingPlacementLayout.value) {
+            awaitingPlacementLayout.value = false;
+            releaseHeldReplies();
+          }
+          // Out of sight, the list is still settling where it opens.
+          if (openPhase.value == _ThreadOpenPhase.opening ||
+              openPhase.value == _ThreadOpenPhase.positioning) {
+            return;
+          }
           updateStickyDateHeader(positions);
           maybeLoadOlderReplies(positions);
+          maybeLoadNewerReplies(positions);
           if (isNavigatingToLatest.value) return;
           final atLatest = latestIsAtBoundary(positions);
           if (atLatest && programmaticScrollInFlight.value) return;
@@ -487,7 +819,7 @@ class ThreadDetailPage extends HookConsumerWidget {
             newestShownCutoff.value = null;
           } else if (userDetached.value) {
             if (isAtLatest.value) isAtLatest.value = false;
-            newestShownCutoff.value ??= replies.lastOrNull;
+            if (!windowHasNewer) newestShownCutoff.value ??= replies.lastOrNull;
           }
         }
 
@@ -504,6 +836,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         hasOlderReplies,
         timelineBottomInset,
         newestReplyId,
+        windowHasNewer,
       ],
     );
 
@@ -513,7 +846,30 @@ class ThreadDetailPage extends HookConsumerWidget {
       return null;
     }, [threadHead.id]);
 
+    // A window opened at a reply reaches the newest replies by replacing it.
+    final isJumpingToLatestWindow = useRef(false);
+    void jumpToLatestWindow() {
+      if (isJumpingToLatestWindow.value) return;
+      isJumpingToLatestWindow.value = true;
+      didJumpToInitialMessage.value = true;
+      unawaited(
+        windowNotifier
+            .jumpToLatest()
+            .catchError((Object _) => false)
+            .then((changed) {
+              if (!changed || !context.mounted) return;
+              listGeneration.value += 1;
+              userDetached.value = false;
+              detachedByDrag.value = false;
+              isAtLatest.value = true;
+              newestShownCutoff.value = null;
+            })
+            .whenComplete(() => isJumpingToLatestWindow.value = false),
+      );
+    }
+
     void scrollToThreadLatest({bool animate = true}) {
+      if (windowHasNewer) return jumpToLatestWindow();
       if (!itemScrollController.isAttached) return;
       // An explicit Latest supersedes a still-pending Inbox/Activity deep
       // link, so a late thread query cannot jump back to the linked reply.
@@ -543,11 +899,13 @@ class ThreadDetailPage extends HookConsumerWidget {
           }
           if (context.mounted && itemScrollController.isAttached) {
             itemScrollController.jumpTo(index: 0);
+            listCenteredAtNewest.value = true;
           }
         } finally {
           if (context.mounted) {
             isNavigatingToLatest.value = false;
             isAtLatest.value = true;
+            releaseHeldReplies();
           }
         }
       });
@@ -565,19 +923,127 @@ class ThreadDetailPage extends HookConsumerWidget {
     // Item 0 normally stays put on its own; this covers a list last moved by
     // an index jump.
     void realignLatestAfterLayoutChange() {
-      if (!isAtLatest.value || isNavigatingToLatest.value) return;
+      if (!isAtLatest.value || isNavigatingToLatest.value || isOpenHidden) {
+        return;
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted ||
             !itemScrollController.isAttached ||
             !isAtLatest.value ||
             isNavigatingToLatest.value ||
+            openPhase.value == _ThreadOpenPhase.opening ||
+            openPhase.value == _ThreadOpenPhase.positioning ||
             latestIsAtBoundary(itemPositionsListener.itemPositions.value)) {
           return;
         }
         // Index 0 at alignment 0 already sits on the list's bottom padding.
         itemScrollController.jumpTo(index: 0);
+        listCenteredAtNewest.value = true;
       });
     }
+
+    // At the newest reply, a list drawn around an older reply is redrawn
+    // around the newest one (no visible change), so replies arriving below
+    // it follow the bottom.
+    void anchorAtNewestReply() {
+      if (listCenteredAtNewest.value) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted ||
+            listCenteredAtNewest.value ||
+            !itemScrollController.isAttached ||
+            !latestIsAtBoundary(itemPositionsListener.itemPositions.value)) {
+          return;
+        }
+        listCenteredAtNewest.value = true;
+        itemScrollController.jumpTo(index: 0);
+      });
+    }
+
+    // While out of sight, settle the window opened at a reply so it fills
+    // the list: the newest reply is not lifted off the composer, the head not
+    // pulled under the app bar, and the first unread sits at the top.
+    useEffect(() {
+      if (!isPositioning) return null;
+      final target = openTarget;
+      var done = false;
+      var steps = 0;
+      var index = placement.value?.index ?? 0;
+      var alignment = placement.value?.alignment ?? 0.0;
+      Timer? fallback;
+
+      void finish() {
+        if (done) return;
+        done = true;
+        fallback?.cancel();
+        if (!context.mounted) return;
+        final atNewest = index == 0 && !windowNotifier.hasNewer;
+        isAtLatest.value = atNewest;
+        userDetached.value = !atNewest;
+        detachedByDrag.value = false;
+        listCenteredAtNewest.value = index == 0;
+        didJumpToInitialMessage.value = true;
+        if (target != null &&
+            target.id == initialMessageId &&
+            repliesRef.value.any((reply) => reply.id == target.id)) {
+          initialTargetReadyForHighlight.value = true;
+        }
+        openPhase.value = _ThreadOpenPhase.opened;
+        final positions = itemPositionsListener.itemPositions.value;
+        if (positions.isNotEmpty) updateStickyDateHeader(positions);
+      }
+
+      void jump(int nextIndex, double nextAlignment) {
+        index = nextIndex;
+        alignment = nextAlignment;
+        itemScrollController.jumpTo(index: nextIndex, alignment: nextAlignment);
+      }
+
+      void step() {
+        if (done || !context.mounted) return;
+        // The head closes the top end of the list.
+        final count = repliesRef.value.length + 1;
+        final positions = itemPositionsListener.itemPositions.value
+            .where((position) => position.index < count)
+            .toList();
+        if (positions.isEmpty || !itemScrollController.isAttached) return;
+        if (index == 0 || steps >= 4) return finish();
+        steps += 1;
+        final height = listViewport.height.value;
+        if (height <= 0) return finish();
+        final tolerance = 1.5 / height;
+        final topLine = 1 - frostedAppBarHeight(context) / height;
+        ItemPosition? positionOf(int itemIndex) => positions
+            .where((position) => position.index == itemIndex)
+            .firstOrNull;
+
+        final newest = positionOf(0);
+        if (newest != null &&
+            newest.itemLeadingEdge > latestAlignment() + tolerance) {
+          return jump(0, 0);
+        }
+        final anchor = positionOf(index);
+        if (target != null && target.isUnread && anchor != null) {
+          final shift = topLine - anchor.itemTrailingEdge;
+          if (shift.abs() > tolerance) return jump(index, alignment + shift);
+        }
+        final head = positionOf(count - 1);
+        if (head != null && head.itemTrailingEdge < topLine - tolerance) {
+          return jump(index, alignment + topLine - head.itemTrailingEdge);
+        }
+        finish();
+      }
+
+      void onPositionsChanged() => scheduleMicrotask(step);
+
+      itemPositionsListener.itemPositions.addListener(onPositionsChanged);
+      // The list never reports a position when nothing lays out.
+      fallback = Timer(const Duration(seconds: 1), finish);
+      return () {
+        done = true;
+        fallback?.cancel();
+        itemPositionsListener.itemPositions.removeListener(onPositionsChanged);
+      };
+    }, [isPositioning]);
 
     useEffect(() {
       realignLatestAfterLayoutChange();
@@ -604,6 +1070,7 @@ class ThreadDetailPage extends HookConsumerWidget {
       initialHighlightTargetIndex.value = null;
       initialTargetReadyForHighlight.value = false;
       detachForProgrammaticScroll();
+      listCenteredAtNewest.value = false;
       unawaited(
         itemScrollController
             .scrollTo(
@@ -635,7 +1102,11 @@ class ThreadDetailPage extends HookConsumerWidget {
         // error before consuming the one-shot jump. During loading, the fallback
         // main-timeline list can contain only the linked reply; after an error,
         // that hydrated snapshot is the best available target list.
-        if (messageId == null || !canUseMessagesForInitialTarget) return null;
+        if (messageId == null ||
+            !canUseMessagesForInitialTarget ||
+            openPhase.value != _ThreadOpenPhase.none) {
+          return null;
+        }
         final targetIndex = indexForMessage(messageId);
         if (targetIndex == null) {
           // Replies load newest first: walk back a few pages for a linked
@@ -663,6 +1134,7 @@ class ThreadDetailPage extends HookConsumerWidget {
           didJumpToInitialMessage.value = true;
           detachForProgrammaticScroll();
           itemScrollController.jumpTo(index: targetIndex, alignment: 0.35);
+          listCenteredAtNewest.value = targetIndex == 0;
           settleProgrammaticScroll();
           initialHighlightTargetIndex.value = targetIndex;
         });
@@ -675,6 +1147,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         replies.length,
         hasOlderReplies,
         isLoadingOlderReplies.value,
+        openPhase.value,
       ],
     );
 
@@ -709,7 +1182,6 @@ class ThreadDetailPage extends HookConsumerWidget {
       [initialHighlightTargetIndex.value, initialTargetReadyForHighlight.value],
     );
 
-    final readState = ref.watch(readStateProvider);
     final visibleReplyReadKey = replies
         .map((reply) => '${reply.id}:${reply.createdAt}')
         .join(',');
@@ -721,6 +1193,13 @@ class ThreadDetailPage extends HookConsumerWidget {
           ref
               .read(readStateProvider.notifier)
               .markContextRead(msgContextKey(reply.id), reply.createdAt);
+        }
+        // Opening a thread at its first unread reply still reads all of them.
+        for (final event
+            in initialUnreadReplies.value ?? const <ObservedUnreadEvent>[]) {
+          ref
+              .read(readStateProvider.notifier)
+              .markContextRead(msgContextKey(event.id), event.createdAt);
         }
       });
       return null;
@@ -783,6 +1262,27 @@ class ThreadDetailPage extends HookConsumerWidget {
         Navigator.canPop(context) &&
         Theme.of(context).platform == TargetPlatform.iOS;
 
+    final saveRoomPosition = useRoomPositionSaving(
+      store: roomPositions,
+      roomKey: roomKey,
+      read: () {
+        if (openPhase.value == _ThreadOpenPhase.opening ||
+            openPhase.value == _ThreadOpenPhase.positioning) {
+          return null;
+        }
+        final positions = itemPositionsListener.itemPositions.value;
+        if (positions.isEmpty || repliesRef.value.isEmpty) return null;
+        if (latestIsAtBoundary(positions)) {
+          return const RoomPositionReading.atLatest();
+        }
+        return _threadReadingPosition(
+          positions,
+          repliesRef.value,
+          bottom: latestAlignment(),
+        );
+      },
+    );
+
     return FrostedScaffold(
       resizeToAvoidBottomInset: !usesFixedAndroidImeViewport,
       appBar: FrostedAppBar(
@@ -832,42 +1332,69 @@ class ThreadDetailPage extends HookConsumerWidget {
           Column(
             children: [
               Expanded(
-                child: QuoteJumpScope(
-                  channelId: channelId,
-                  jumpToMessage: jumpToQuotedMessage,
-                  child: _ThreadMessageList(
-                    viewport: listViewport,
-                    onUserScrollStart: () {
-                      userDetached.value = true;
-                      detachedByDrag.value = true;
-                    },
-                    activeScrollPosition: activeScrollPosition,
-                    itemScrollController: itemScrollController,
-                    itemPositionsListener: itemPositionsListener,
-                    bottomInset: timelineBottomInset,
-                    replies: replies,
-                    relayReplyState: relayReplyState,
-                    hasOlderReplies: hasOlderReplies,
-                    isLoadingOlderReplies: isLoadingOlderReplies.value,
-                    onRetryReplies: () =>
-                        ref.invalidate(threadRepliesProvider(repliesArgs)),
-                    localSendAnimations: localSendAnimations,
-                    showsHead: showsHead,
-                    headIsDeleted: liveDeletionHidesHead,
-                    head: liveHead,
-                    stickyDayTimestamp: stickyDayTimestamp,
-                    channelNames: channelNamesMap,
-                    channelId: channelId,
-                    currentPubkey: currentPubkey,
-                    highlightedMessageId: highlightedMessageId.value,
-                    allMessages: allMsgs,
-                    isMember: isMember,
-                    isArchived: isArchived,
-                    composerFocusNode: composerFocusNode,
-                    restoreComposerFocus: () =>
-                        restoreComposerFocus.value?.call(),
-                    childrenByParent: childrenByParent,
-                    quoteScope: isMember && !isArchived ? quoteScope : null,
+                // Out of sight while the list settles where it opens.
+                child: Opacity(
+                  key: const ValueKey('thread-open-reveal'),
+                  opacity: isOpenHidden ? 0 : 1,
+                  child: IgnorePointer(
+                    ignoring: isOpenHidden,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification.depth != 0) return false;
+                        if (notification is ScrollStartNotification) {
+                          isUserScrolling.value = true;
+                        } else if (notification is ScrollEndNotification) {
+                          isUserScrolling.value = false;
+                          anchorAtNewestReply();
+                          releaseHeldReplies();
+                          saveRoomPosition();
+                        }
+                        return false;
+                      },
+                      child: QuoteJumpScope(
+                        channelId: channelId,
+                        jumpToMessage: jumpToQuotedMessage,
+                        child: _ThreadMessageList(
+                          viewport: listViewport,
+                          onUserScrollStart: () {
+                            userDetached.value = true;
+                            detachedByDrag.value = true;
+                          },
+                          activeScrollPosition: activeScrollPosition,
+                          itemScrollController: itemScrollController,
+                          itemPositionsListener: itemPositionsListener,
+                          placement: placement.value!,
+                          newRepliesIndex: newRepliesIndex,
+                          bottomInset: timelineBottomInset,
+                          replies: replies,
+                          relayReplyState: relayReplyState,
+                          hasOlderReplies: hasOlderReplies,
+                          isLoadingOlderReplies: isLoadingOlderReplies.value,
+                          onRetryReplies: () => ref.invalidate(
+                            threadRepliesProvider(repliesArgs),
+                          ),
+                          localSendAnimations: localSendAnimations,
+                          showsHead: showsHead,
+                          headIsDeleted: liveDeletionHidesHead,
+                          head: liveHead,
+                          stickyDayTimestamp: stickyDayTimestamp,
+                          channelNames: channelNamesMap,
+                          channelId: channelId,
+                          currentPubkey: currentPubkey,
+                          highlightedMessageId: highlightedMessageId.value,
+                          allMessages: allMsgs,
+                          isMember: isMember,
+                          isArchived: isArchived,
+                          composerFocusNode: composerFocusNode,
+                          restoreComposerFocus: () =>
+                              restoreComposerFocus.value?.call(),
+                          childrenByParent: childrenByParent,
+                          quoteScope: isMember && !isArchived
+                              ? quoteScope
+                              : null,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -926,7 +1453,9 @@ class ThreadDetailPage extends HookConsumerWidget {
                         // composer while reading further up returns there.
                         onFocusRequested: () {
                           if (detachedByDrag.value) return;
-                          if (!isAtLatest.value || hasPendingReplies) {
+                          if (!isAtLatest.value ||
+                              hasPendingReplies ||
+                              windowHasNewer) {
                             scrollToThreadLatest(animate: false);
                           }
                         },
@@ -936,6 +1465,10 @@ class ThreadDetailPage extends HookConsumerWidget {
                               mentionPubkeys, {
                               mediaTags = const <List<String>>[],
                             }) async {
+                              // Sending returns the reader to the newest
+                              // reply, past replies not loaded yet.
+                              roomPositions?.clear(roomKey);
+                              if (windowNotifier.hasNewer) jumpToLatestWindow();
                               // Thread reply tags place the message; the
                               // quote only adds a `q` reference.
                               await sendMessage.call(
@@ -973,8 +1506,9 @@ class ThreadDetailPage extends HookConsumerWidget {
                 id: 'thread',
                 visible:
                     hasFetchedReplies &&
+                    !isOpenHidden &&
                     !isNavigatingToLatest.value &&
-                    (!isAtLatest.value || hasPendingReplies),
+                    (!isAtLatest.value || hasPendingReplies || windowHasNewer),
                 onPressed: scrollToThreadLatest,
               ),
             ),
