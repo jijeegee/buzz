@@ -32,6 +32,7 @@ import 'account_page.dart';
 import 'agents_settings.dart';
 import 'devices_page.dart';
 import 'experiments_settings.dart';
+import 'people_settings.dart';
 import 'theme_picker_page.dart';
 import '../sign_in/token_sign_in_page.dart';
 
@@ -240,6 +241,8 @@ class SettingsPage extends HookConsumerWidget {
                   _AccountSection(origin: googleKeyOrigin, googleKey: true)
                 else
                   const _ProtectAccountSection(),
+                const PeopleSettings(),
+                const SupportSettings(),
                 const _SignOutSection(),
                 // The built-in server cannot be removed from the device.
                 if (!hasBuiltInServer) const _RemoveCommunitySection(),
