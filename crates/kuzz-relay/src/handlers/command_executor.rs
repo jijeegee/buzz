@@ -392,7 +392,11 @@ async fn handle_dm_open(
             warn!(channel = %channel.id, "DM open: discovery emission failed: {e}");
         }
 
+        let silent = opener_blockers(tenant, state, &self_bytes).await;
         for participant in &all_bytes {
+            if silent.skips(participant) {
+                continue;
+            }
             if let Err(e) = emit_membership_notification(
                 tenant,
                 state,
@@ -426,6 +430,41 @@ async fn handle_dm_open(
             })
         ),
     })
+}
+
+/// Participants who blocked a DM's opener: their membership starts hidden
+/// (see `kuzz_db::dm::create_dm`) and they get no "added" notification, so the
+/// opener cannot tell. A failed lookup skips every other participant's
+/// notification (fail closed); they still see the DM via the chats list.
+enum OpenerBlockers {
+    Known(crate::blocks::PubkeySet, Vec<u8>),
+    Unknown(Vec<u8>),
+}
+
+impl OpenerBlockers {
+    fn skips(&self, participant: &[u8]) -> bool {
+        match self {
+            Self::Known(blockers, opener) => {
+                participant != opener.as_slice()
+                    && <[u8; 32]>::try_from(participant).is_ok_and(|pk| blockers.contains(&pk))
+            }
+            Self::Unknown(opener) => participant != opener.as_slice(),
+        }
+    }
+}
+
+async fn opener_blockers(
+    tenant: &TenantContext,
+    state: &AppState,
+    opener: &[u8],
+) -> OpenerBlockers {
+    match state.blockers_of_cached(tenant.community(), opener).await {
+        Ok(blockers) => OpenerBlockers::Known(blockers, opener.to_vec()),
+        Err(e) => {
+            warn!("DM open: block list lookup failed; skipping notifications: {e}");
+            OpenerBlockers::Unknown(opener.to_vec())
+        }
+    }
 }
 
 async fn handle_dm_add_member(
@@ -536,7 +575,11 @@ async fn handle_dm_add_member(
             warn!(channel = %new_channel.id, "DM add_member: discovery emission failed: {e}");
         }
 
+        let silent = opener_blockers(tenant, state, &self_bytes).await;
         for participant_bytes in &all_bytes {
+            if silent.skips(participant_bytes) {
+                continue;
+            }
             if let Err(e) = emit_membership_notification(
                 tenant,
                 state,

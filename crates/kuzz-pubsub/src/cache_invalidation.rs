@@ -76,6 +76,14 @@ pub enum CacheInvalidation {
     /// Drop all membership / accessible / visibility caches. Mirrors
     /// `invalidate_channel_deleted`.
     ChannelDeleted,
+    /// Drop the cached block lists of both sides of a block or unblock.
+    /// Mirrors `invalidate_block`.
+    Block {
+        /// Pubkey of the person who blocked.
+        blocker: Vec<u8>,
+        /// Pubkey of the person blocked.
+        blocked: Vec<u8>,
+    },
 }
 
 /// A cache invalidation received from a community-scoped Redis channel.

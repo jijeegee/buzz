@@ -90,10 +90,13 @@ pub async fn run_matcher(state: Arc<AppState>) {
 }
 
 /// Per-batch state shared by every job: the community's active leases and
-/// the exact (channel, lease author) membership pairs the jobs can consult.
+/// the exact (channel, lease author) membership pairs the jobs can consult,
+/// and the (lease author, event author) silent-block pairs: a person never
+/// gets a push for an event by someone they blocked, in any channel.
 struct MatchContext {
     leases: Vec<kuzz_db::push::MatchLease>,
     memberships: std::collections::HashSet<(uuid::Uuid, Vec<u8>)>,
+    blocked_pairs: std::collections::HashSet<(Vec<u8>, Vec<u8>)>,
 }
 
 async fn load_match_context(
@@ -117,9 +120,23 @@ async fn load_match_context(
         .await?
         .into_iter()
         .collect();
+    let mut event_authors: Vec<Vec<u8>> = batch
+        .jobs
+        .iter()
+        .map(|job| job.event.event.pubkey.to_bytes().to_vec())
+        .collect();
+    event_authors.sort_unstable();
+    event_authors.dedup();
+    let blocked_pairs = state
+        .db
+        .block_pairs(batch.community, &authors, &event_authors)
+        .await?
+        .into_iter()
+        .collect();
     Ok(MatchContext {
         leases,
         memberships,
+        blocked_pairs,
     })
 }
 
@@ -248,7 +265,15 @@ fn match_job(
     context: &MatchContext,
 ) -> anyhow::Result<Vec<kuzz_db::push::WakeRequest>> {
     let mut wakes = Vec::new();
+    let event_author = job.event.event.pubkey.to_bytes().to_vec();
     for lease in &context.leases {
+        if !context.blocked_pairs.is_empty()
+            && context
+                .blocked_pairs
+                .contains(&(lease.author.clone(), event_author.clone()))
+        {
+            continue;
+        }
         let author_hex = hex::encode(&lease.author);
         if !reader_authorized_for_event(&job.event.event, &author_hex) {
             continue;

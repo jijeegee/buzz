@@ -95,6 +95,52 @@ where
     drop_count
 }
 
+/// Silent block (live delivery): in a DM, drop the connections of everyone
+/// who blocked the event's author. The author is never told. `None` means a
+/// lookup failed and the DM event must not be delivered (fail closed).
+async fn drop_dm_blockers(
+    state: &AppState,
+    community_id: CommunityId,
+    stored_event: &StoredEvent,
+    channel_id: uuid::Uuid,
+    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
+) -> Option<Vec<(crate::subscription::ConnId, crate::subscription::SubId)>> {
+    if matches.is_empty() {
+        return Some(matches);
+    }
+    match state.dm_channels_cached(community_id, [channel_id]).await {
+        Ok(dms) if dms.contains(&channel_id) => {}
+        Ok(_) => return Some(matches),
+        Err(e) => {
+            warn!(%channel_id, "fan-out block filter: channel type lookup failed: {e}");
+            return None;
+        }
+    }
+    let author = stored_event.event.pubkey.to_bytes();
+    let blockers = match state.blockers_of_cached(community_id, &author).await {
+        Ok(blockers) => blockers,
+        Err(e) => {
+            warn!(%channel_id, "fan-out block filter: blockers lookup failed: {e}");
+            return None;
+        }
+    };
+    if blockers.is_empty() {
+        return Some(matches);
+    }
+    Some(
+        matches
+            .into_iter()
+            .filter(|(conn_id, _)| {
+                state
+                    .conn_manager
+                    .pubkey_for_conn(*conn_id)
+                    .and_then(|pk| <[u8; 32]>::try_from(pk.as_slice()).ok())
+                    .is_none_or(|pk| !blockers.contains(&pk))
+            })
+            .collect(),
+    )
+}
+
 /// Drop recipients without access before fan-out on a private channel.
 ///
 /// Open and channel-less events skip membership filtering (open channel-scoped
@@ -201,6 +247,11 @@ pub async fn filter_fanout_by_access(
     let Some(channel_id) = stored_event.channel_id else {
         return matches;
     };
+    let matches =
+        match drop_dm_blockers(state, community_id, stored_event, channel_id, matches).await {
+            Some(matches) => matches,
+            None => return Vec::new(),
+        };
     // Fence 3 (§4.8 phase-2): the threaded value is used only when it was
     // resolved under exactly this (community_id, channel_id); anything else
     // falls through to the fresh lookup. Fence 1: absence of a usable threaded

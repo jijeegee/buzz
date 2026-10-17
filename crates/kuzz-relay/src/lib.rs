@@ -21,6 +21,8 @@ pub(crate) mod nip_fi_upgrade;
 pub mod api;
 /// WebSocket audio relay for huddle voice channels.
 pub mod audio;
+/// Silent blocks: cached block lists and read/delivery filters.
+pub mod blocks;
 /// Relay configuration from environment variables.
 pub mod config;
 /// Runtime conformance harness — abstract trace emission at the

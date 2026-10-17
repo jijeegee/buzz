@@ -385,6 +385,11 @@ pub async fn handle_req(
         let mut seen_ids: HashSet<nostr::EventId> = HashSet::new();
         let mut total_sent: usize = 0;
 
+        // Silent block: hide DM events from authors this reader blocked.
+        let blocked_dm_reader = state
+            .blocked_dm_reader(conn.tenant.community(), &pubkey_bytes)
+            .await;
+
         // Phase 1 — pure query construction, in filter order.
         let filter_queries: Vec<(usize, Option<uuid::Uuid>, EventQuery)> = filters
             .iter()
@@ -423,6 +428,7 @@ pub async fn handle_req(
                 if filter_can_match_shared_gated_kinds(filter) {
                     params.shared_gated_reader = Some(pubkey_bytes.clone());
                 }
+                params.blocked_dm_reader = blocked_dm_reader.clone();
                 (idx, per_filter_channel, params)
             })
             .collect();
@@ -830,7 +836,7 @@ async fn handle_search_req(
 
             if !hit_ids.is_empty() {
                 let id_refs: Vec<&[u8]> = hit_ids.iter().map(|b| b.as_slice()).collect();
-                let events = match state
+                let mut events = match state
                     .db
                     .get_events_by_ids_routed("req_search_hydrate", tenant.community(), &id_refs)
                     .await
@@ -903,6 +909,19 @@ async fn handle_search_req(
                         break;
                     }
                 };
+                // Silent block: drop DM hits from authors this reader blocked.
+                if let Err(e) = state
+                    .retain_unblocked_for_reader(
+                        tenant.community(),
+                        reader_pubkey_bytes,
+                        &mut events,
+                        crate::blocks::stored_event_author_channel,
+                    )
+                    .await
+                {
+                    warn!(sub_id = %sub_id, "NIP-50 block filter failed: {e}");
+                    break;
+                }
                 let event_map: std::collections::HashMap<[u8; 32], &kuzz_core::StoredEvent> =
                     events
                         .iter()
@@ -961,16 +980,18 @@ async fn handle_search_req(
 
 /// Convert a single NIP-01 filter into an [`EventQuery`] for the database.
 ///
-/// Public wrapper for use by the HTTP bridge and COUNT handler.
-/// Resolves accessible channels for the given pubkey and builds the query.
+/// Public wrapper for use by the HTTP bridge and COUNT handler. Hides DM
+/// events from authors the reader blocked (silent block).
 pub async fn build_event_query_from_filter(
     filter: &Filter,
-    _pubkey_bytes: &[u8],
-    _state: &AppState,
+    pubkey_bytes: &[u8],
+    state: &AppState,
     community: kuzz_core::tenant::CommunityId,
 ) -> EventQuery {
     let channel_id = extract_channel_id_from_filter(filter);
-    filter_to_query_params(filter, channel_id, community)
+    let mut query = filter_to_query_params(filter, channel_id, community);
+    query.blocked_dm_reader = state.blocked_dm_reader(community, pubkey_bytes).await;
+    query
 }
 
 /// Maximum SQL candidate rows a non-pushable COUNT filter may inspect before

@@ -1205,6 +1205,8 @@ pub struct AppState {
     /// Per-community channel visibility string, used to gate the private-channel fan-out
     /// access check so open channels stay zero-cost. Invalidated on a flip.
     pub channel_visibility_cache: Arc<moka::sync::Cache<(CommunityId, Uuid), String>>,
+    /// Silent-block lists and DM-ness of channels (see [`crate::blocks`]).
+    pub blocks: Arc<crate::blocks::BlockCaches>,
 
     /// Bounded channel for audit logging, absent when audit logging is disabled.
     pub audit_tx: Option<mpsc::Sender<kuzz_audit::NewAuditEntry>>,
@@ -1483,6 +1485,7 @@ impl AppState {
                     .support_invalidation_closures()
                     .build(),
             ),
+            blocks: Arc::new(crate::blocks::BlockCaches::new()),
             audit_tx: audit_enabled.then_some(audit_tx),
             media_storage: Arc::new(media_storage),
             storage_sweep: Arc::new(tokio::sync::Mutex::new(
@@ -1741,7 +1744,11 @@ impl AppState {
     /// Fire-and-forget publish of a cache-key drop to all other pods. Failures
     /// are logged and swallowed — the REQ denial-path DB confirmation is the
     /// backstop, so a missed publish degrades to a <=10s TTL wait, never a leak.
-    fn spawn_cache_invalidation(&self, tenant: &TenantContext, invalidation: CacheInvalidation) {
+    pub(crate) fn spawn_cache_invalidation(
+        &self,
+        tenant: &TenantContext,
+        invalidation: CacheInvalidation,
+    ) {
         let pubsub = Arc::clone(&self.pubsub);
         let tenant = tenant.clone();
         tokio::spawn(async move {
@@ -1773,6 +1780,9 @@ impl AppState {
             }
             CacheInvalidation::ChannelDeleted => {
                 self.invalidate_channel_deleted_local(community_id);
+            }
+            CacheInvalidation::Block { blocker, blocked } => {
+                self.invalidate_block_local(community_id, &blocker, &blocked);
             }
         }
     }
