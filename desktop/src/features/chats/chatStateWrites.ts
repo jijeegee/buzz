@@ -162,6 +162,15 @@ export class ChatStateWriter {
     if (capability === "on") this.schedule(MARK_READ_BATCH_MS);
   }
 
+  /**
+   * An explicit Mark as read follows: send it even at a position already
+   * sent, since another device may have marked the context unread since.
+   */
+  forgetSent(contextId: string): void {
+    const target = markTargetForContext(contextId);
+    if (target) this.sent.delete(itemKey(target));
+  }
+
   /** Mirror "Mark as unread" for a room or thread context. */
   queueUnread(contextId: string): void {
     if (this.disposed || this.deps.capability() === "off") return;

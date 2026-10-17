@@ -128,7 +128,7 @@ export function useChatStateWiring({
   markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void;
   markThreadUnread: (rootId: string) => boolean;
   /** Before an explicit thread Mark as read: let its read through. */
-  clearThreadUnreadGuard: (rootId: string) => void;
+  beforeExplicitThreadRead: (rootId: string) => void;
   mirrorFollow: (rootId: string, state: ChatFollowState) => void;
   pinThread: (rootId: string) => void;
   serverChats: ServerChats | undefined;
@@ -275,8 +275,13 @@ export function useChatStateWiring({
     },
     [capabilityKey, queryClient, threadUnreadGuard],
   );
-  const clearThreadUnreadGuard = React.useCallback(
-    (rootId: string) => threadUnreadGuard.clear(rootId),
+  // An explicit Mark as read: lift the guard and resend even a read at a
+  // position already sent (another device may have marked it unread).
+  const beforeExplicitThreadRead = React.useCallback(
+    (rootId: string) => {
+      threadUnreadGuard.clear(rootId);
+      writerRef.current?.forgetSent(`thread:${rootId}`);
+    },
     [threadUnreadGuard],
   );
 
@@ -319,7 +324,7 @@ export function useChatStateWiring({
   return {
     markChannelUnread: markChannelUnreadMirrored,
     markThreadUnread,
-    clearThreadUnreadGuard,
+    beforeExplicitThreadRead,
     mirrorFollow,
     pinThread: threadPins.add,
     serverChats,

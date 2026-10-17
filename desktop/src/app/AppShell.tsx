@@ -558,7 +558,7 @@ export function AppShell() {
     [unfollowThread, muteThread, mirrorFollow],
   );
   const serverChats = useChatThreadRowActions({
-    clearThreadUnreadGuard: chatState.clearThreadUnreadGuard,
+    beforeExplicitThreadRead: chatState.beforeExplicitThreadRead,
     markThreadRead,
     markThreadUnread: chatState.markThreadUnread,
     pinThread: chatState.pinThread,

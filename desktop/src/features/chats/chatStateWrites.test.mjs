@@ -418,3 +418,20 @@ test("follow choices go out at once, newest per thread, and drop when refused", 
   await refused.timers.advance(MARK_READ_BATCH_MS * 100);
   assert.equal(calls, 1);
 });
+
+test("after forgetSent, an explicit read at an already sent position is sent again", async () => {
+  const h = harness();
+  h.writer.queueRead(`thread:${ROOT}`, 100);
+  await h.timers.advance(MARK_READ_BATCH_MS);
+  assert.equal(h.calls.length, 1);
+  // Same position again: deduped.
+  h.writer.queueRead(`thread:${ROOT}`, 100);
+  await h.timers.advance(MARK_READ_BATCH_MS * 3);
+  assert.equal(h.calls.length, 1);
+  // Another device marked it unread; the row's Mark as read resends.
+  h.writer.forgetSent(`thread:${ROOT}`);
+  h.writer.queueRead(`thread:${ROOT}`, 100);
+  await h.timers.advance(MARK_READ_BATCH_MS * 3);
+  assert.equal(h.calls.length, 2);
+  assert.deepEqual(h.calls[1], [{ at: 100, id: ROOT, kind: "thread" }]);
+});
