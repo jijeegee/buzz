@@ -12,6 +12,7 @@ class _AgentSettingsForm extends HookConsumerWidget {
     final description = useTextEditingController(text: initial.description);
     final instructions = useTextEditingController(text: initial.instructions);
     final model = useTextEditingController(text: initial.model);
+    final lockedName = useTextEditingController(text: loaded.agentName);
     final fields = useMemoized(
       () => Listenable.merge([name, description, instructions, model]),
       [name, description, instructions, model],
@@ -40,10 +41,13 @@ class _AgentSettingsForm extends HookConsumerWidget {
           loaded,
           draft,
         );
+        final savedName = loaded.nameEditable
+            ? draft.name.trim()
+            : loaded.agentName.trim();
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              'Saved. ${draft.name.trim()} picks up the change on its '
+              'Saved. $savedName picks up the change on its '
               'computer.',
             ),
           ),
@@ -89,13 +93,23 @@ class _AgentSettingsForm extends HookConsumerWidget {
                   ),
                 ),
               ),
-            TextField(
-              key: const Key('agent-settings-name'),
-              controller: name,
-              enabled: !saving.value,
-              textInputAction: TextInputAction.next,
-              decoration: decoration('Name'),
-            ),
+            if (loaded.nameEditable)
+              TextField(
+                key: const Key('agent-settings-name'),
+                controller: name,
+                enabled: !saving.value,
+                textInputAction: TextInputAction.next,
+                decoration: decoration('Name'),
+              )
+            else
+              TextField(
+                key: const Key('agent-settings-name-locked'),
+                controller: lockedName,
+                enabled: false,
+                decoration: decoration(
+                  'Name',
+                ).copyWith(helperText: agentSettingsNameLockedMessage),
+              ),
             const SizedBox(height: Grid.xs),
             TextField(
               key: const Key('agent-settings-description'),
@@ -103,6 +117,8 @@ class _AgentSettingsForm extends HookConsumerWidget {
               enabled: !saving.value,
               minLines: 1,
               maxLines: 3,
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.next,
               decoration: decoration(
                 'Description',
                 hint: 'A short public description',

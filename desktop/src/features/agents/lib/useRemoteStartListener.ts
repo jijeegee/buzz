@@ -6,10 +6,7 @@ import { managedAgentsQueryKey } from "@/features/agents/hooks";
 import { relayClient } from "@/shared/api/relayClient";
 import { listManagedAgents } from "@/shared/api/tauri";
 import { startManagedAgent } from "@/shared/api/tauriManagedAgents";
-import {
-  KIND_STREAM_MESSAGE,
-  KIND_STREAM_MESSAGE_V2,
-} from "@/shared/constants/kinds";
+import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { remoteStartTargets } from "./remoteStartCommand";
 
@@ -35,7 +32,7 @@ export function useRemoteStartListener(
       .subscribeLive(
         {
           authors: [ownerPubkey],
-          kinds: [KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_V2],
+          kinds: [KIND_STREAM_MESSAGE],
           since: Math.floor(Date.now() / 1_000),
           limit: 50,
         },

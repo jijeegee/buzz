@@ -181,8 +181,8 @@ void main() {
       expect(send.calls, [('c1', '!start', _fizz)]);
       expect(
         find.text(
-          'Start requested. Fizz starts on Office PC when that computer’s '
-          'Kuzz app is open.',
+          'Start requested. Fizz starts only if Kuzz is open on Office PC '
+          'now.',
         ),
         findsOneWidget,
       );

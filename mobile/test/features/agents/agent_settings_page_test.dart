@@ -178,6 +178,33 @@ void main() {
     expect(find.byType(AgentSettingsPage), findsNothing);
   });
 
+  testWidgets('a differently named agent keeps its name', (tester) async {
+    // "Fizz 2" of definition "Fizz": renaming the definition would rename
+    // the other agent, so the name is shown but not editable here.
+    final relay = await pump(tester, [
+      _event(EventKind.managedAgent, _fizz, {
+        'name': 'Fizz 2',
+        'persona_id': 'Fizz-Def',
+      }),
+      _definition,
+    ]);
+    expect(find.byKey(const Key('agent-settings-name')), findsNothing);
+    expect(find.byKey(const Key('agent-settings-name-locked')), findsOneWidget);
+    expect(find.text('Fizz 2'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('agent-settings-description')),
+      'Helps out',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('agent-settings-save')));
+    await tester.pumpAndSettle();
+    expect(jsonDecode(relay.published.single.content)['display_name'], 'Fizz');
+    expect(
+      find.text('Saved. Fizz 2 picks up the change on its computer.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a taken name is refused', (tester) async {
     final relay = await pump(tester, [
       _fizzAgent,

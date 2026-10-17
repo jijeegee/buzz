@@ -107,8 +107,8 @@ class MyAgentsPage extends HookConsumerWidget {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              'Start requested. $name starts on $computer when that '
-              'computer’s Kuzz app is open.',
+              'Start requested. $name starts only if Kuzz is open on '
+              '$computer now.',
             ),
           ),
         );

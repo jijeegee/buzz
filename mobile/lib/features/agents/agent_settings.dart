@@ -311,11 +311,13 @@ int nextCreatedAt({required int previous, required int now}) =>
 String _nameKey(String name) => name.trim().toLowerCase();
 
 /// Whether another of the owner's agents or definitions is already named
-/// [name] (trimmed, case-insensitive). The agent [agentPubkey] itself, other
-/// agents linked to the same definition [personaD], and that definition are
-/// not conflicts.
+/// [name] (trimmed, case-insensitive). The agent [agentPubkey] itself, that
+/// definition [personaD], and other agents of it that still carry its
+/// [previousName] (its computer renames them along with it) are not
+/// conflicts.
 bool agentNameConflicts({
   required String name,
+  required String previousName,
   required String owner,
   required String agentPubkey,
   required String personaD,
@@ -334,12 +336,14 @@ bool agentNameConflicts({
     final content = decodeJsonObject(event.content);
     if (content == null) continue;
     final personaId = content['persona_id'];
+    final agentName = _string(content['name']);
     if (personaId is String &&
         personaId.trim().isNotEmpty &&
-        personaDTag(personaId) == personaD) {
+        personaDTag(personaId) == personaD &&
+        agentName == previousName) {
       continue;
     }
-    if (_nameKey(_string(content['name'])) == wanted) return true;
+    if (_nameKey(agentName) == wanted) return true;
   }
   final personas = newestByDTag(
     personaEvents,

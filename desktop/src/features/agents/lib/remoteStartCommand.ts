@@ -1,8 +1,5 @@
 import type { ManagedAgent, RelayEvent } from "@/shared/api/types";
-import {
-  KIND_STREAM_MESSAGE,
-  KIND_STREAM_MESSAGE_V2,
-} from "@/shared/constants/kinds";
+import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 /**
@@ -35,12 +32,9 @@ export function remoteStartTargets(
     ownerPubkey: string;
   },
 ): string[] {
-  if (
-    event.kind !== KIND_STREAM_MESSAGE &&
-    event.kind !== KIND_STREAM_MESSAGE_V2
-  ) {
-    return [];
-  }
+  // kind:9 only, the kind the agent's harness consumes an owner `!start`
+  // in, so a start command never reaches a running agent as a prompt.
+  if (event.kind !== KIND_STREAM_MESSAGE) return [];
   if (event.content.trim() !== REMOTE_START_COMMAND) return [];
   if (normalizePubkey(event.pubkey) !== normalizePubkey(ownerPubkey)) return [];
   if (nowSeconds - event.created_at > REMOTE_START_MAX_AGE_SECONDS) return [];

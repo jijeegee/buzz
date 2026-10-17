@@ -44,6 +44,13 @@ export function findAgentNameConflict(
     claim.kind === "agent" ? (claim.personaId ?? null) : (claim.selfId ?? null);
   const selfPubkey =
     claim.kind === "agent" ? (claim.selfPubkey ?? "").toLowerCase() : "";
+  // Renaming a persona renames only its agents that carry its current name;
+  // one with its own name (e.g. "Fizz 2") keeps it and still holds it.
+  const renamedPersonaName =
+    claim.kind === "persona" && ownPersonaId
+      ? roster.personas.find((persona) => persona.id === ownPersonaId)
+          ?.displayName
+      : undefined;
   for (const agent of roster.agents) {
     if (agentNameKey(agent.name) !== key) continue;
     if (selfPubkey && agent.pubkey.toLowerCase() === selfPubkey) continue;
@@ -51,7 +58,8 @@ export function findAgentNameConflict(
     if (
       claim.kind === "persona" &&
       ownPersonaId &&
-      agent.personaId === ownPersonaId
+      agent.personaId === ownPersonaId &&
+      (renamedPersonaName === undefined || agent.name === renamedPersonaName)
     ) {
       continue;
     }

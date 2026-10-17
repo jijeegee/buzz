@@ -323,9 +323,17 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
                 // edit does (`update_persona`).
                 if let Some(change) = identity_change {
                     if let Some(persona) = personas.iter().find(|record| record.id == persona_id) {
-                        profile_syncs = super::update::sync_linked_agents_after_persona_edit(
+                        // Best-effort, like the catalog refresh below: the
+                        // definition is already saved, and a failure here
+                        // must not skip the refresh and UI notification.
+                        match super::update::sync_linked_agents_after_persona_edit(
                             &app, &state, persona, change,
-                        )?;
+                        ) {
+                            Ok(syncs) => profile_syncs = syncs,
+                            Err(error) => eprintln!(
+                                "kuzz-desktop: linked agents not updated after inbound persona edit: {error}"
+                            ),
+                        }
                     }
                 }
                 drop(personas);

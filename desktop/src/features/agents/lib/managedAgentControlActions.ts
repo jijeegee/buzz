@@ -202,7 +202,7 @@ export async function startRemoteOwnedAgent({
   }
   await sendChannelMessage(channelId, "!start", undefined, undefined, [pubkey]);
   return {
-    noticeMessage: `Start requested. It starts when Kuzz is open on ${hostName?.trim() || "that computer"}.`,
+    noticeMessage: `Start requested. It starts only if Kuzz is open on ${hostName?.trim() || "that computer"} now.`,
   };
 }
 

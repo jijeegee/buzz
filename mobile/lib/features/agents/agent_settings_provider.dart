@@ -67,7 +67,15 @@ class AgentSettingsEditable extends AgentSettingsState {
     required this.personaD,
     required this.event,
     required this.content,
+    required this.agentName,
   });
+
+  /// The tapped agent's own name (its kind:30177 projection).
+  final String agentName;
+
+  /// Renaming the definition renames only agents that carry its name, so a
+  /// differently named agent (e.g. "Fizz 2") keeps its name here.
+  bool get nameEditable => agentName == draft.name;
 
   final String owner;
   final String agentPubkey;
@@ -91,6 +99,9 @@ class AgentSettingsException implements Exception {
 
 const agentSettingsReadOnlyMessage =
     'This agent\'s settings can only be changed on the computer it runs on.';
+
+const agentSettingsNameLockedMessage =
+    'This agent’s name can only be changed on the computer it runs on.';
 
 const agentSettingsChangedMessage =
     'Settings changed on another device. Reopen to see the latest.';
@@ -146,6 +157,7 @@ final agentSettingsProvider = FutureProvider.autoDispose
         personaD: personaD,
         event: personaEvent,
         content: content,
+        agentName: agentName is String ? agentName : name,
       );
     });
 
@@ -204,6 +216,9 @@ Future<void> saveAgentSettings(
   AgentSettingsDraft draft, {
   DateTime? now,
 }) async {
+  if (!loaded.nameEditable && draft.name != loaded.draft.name) {
+    throw const AgentSettingsException(agentSettingsNameLockedMessage);
+  }
   final invalid = validateAgentSettings(draft);
   if (invalid != null) throw AgentSettingsException(invalid);
 
@@ -238,6 +253,7 @@ Future<void> saveAgentSettings(
         personaEvents != null &&
         agentNameConflicts(
           name: draft.name,
+          previousName: loaded.draft.name,
           owner: loaded.owner,
           agentPubkey: loaded.agentPubkey,
           personaD: loaded.personaD,

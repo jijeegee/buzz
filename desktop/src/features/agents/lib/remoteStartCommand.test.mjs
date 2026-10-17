@@ -41,9 +41,9 @@ function targets(event, localAgents = [local(FIZZ), local(HONEY)]) {
 
 test("starts the stopped local agent the owner's !start mentions", () => {
   assert.deepEqual(targets(command()), [FIZZ]);
-  assert.deepEqual(targets(command({ kind: 40002, content: " !start\n" })), [
-    FIZZ,
-  ]);
+  assert.deepEqual(targets(command({ content: " !start\n" })), [FIZZ]);
+  // Only kind:9, which the agent's harness also consumes.
+  assert.deepEqual(targets(command({ kind: 40002 })), []);
 });
 
 test("ignores other messages, senders, and stale commands", () => {

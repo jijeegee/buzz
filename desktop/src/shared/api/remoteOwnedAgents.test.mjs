@@ -222,6 +222,31 @@ test("a persona may not take another agent's or persona's name", () => {
   );
 });
 
+test("renaming a persona onto its own differently named agent clashes", () => {
+  const roster = {
+    agents: [
+      { pubkey: AGENT_3, name: "Fizz", personaId: "p-fizz" },
+      { pubkey: "c".repeat(64), name: "Fizz 2", personaId: "p-fizz" },
+    ],
+    personas: [{ id: "p-fizz", displayName: "Fizz" }],
+  };
+  // "Fizz" would be renamed to "Fizz 2" next to the existing "Fizz 2".
+  assert.equal(
+    findAgentNameConflict(
+      { kind: "persona", name: "fizz 2", selfId: "p-fizz" },
+      roster,
+    ),
+    "Fizz 2",
+  );
+  assert.equal(
+    findAgentNameConflict(
+      { kind: "persona", name: "FIZZ", selfId: "p-fizz" },
+      roster,
+    ),
+    null,
+  );
+});
+
 test("the message names the clash", () => {
   assert.match(agentNameTakenMessage(" Fizz "), /named "Fizz"/);
 });

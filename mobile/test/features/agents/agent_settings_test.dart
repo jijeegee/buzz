@@ -228,6 +228,7 @@ void main() {
       List<NostrEvent> personas = const [],
     }) => agentNameConflicts(
       name: name,
+      previousName: 'Fizz',
       owner: _owner,
       agentPubkey: _fizz,
       personaD: 'fizz-def',
@@ -251,10 +252,10 @@ void main() {
       expect(conflicts('POLLEN', personas: [pollen]), isTrue);
     });
 
-    test('ignores this agent, its definition and agents sharing it', () {
+    test('ignores this agent, its definition and agents renamed with it', () {
       expect(
         conflicts(
-          'Buzzy',
+          'fizz',
           agents: [
             _event(
               kind: EventKind.managedAgent,
@@ -264,19 +265,29 @@ void main() {
             _event(
               kind: EventKind.managedAgent,
               d: _honey,
-              content: {'name': 'Buzzy', 'persona_id': 'Fizz-Def'},
+              content: {'name': 'Fizz', 'persona_id': 'Fizz-Def'},
             ),
           ],
           personas: [
             _event(
               kind: EventKind.persona,
               d: 'fizz-def',
-              content: {'display_name': 'Buzzy'},
+              content: {'display_name': 'Fizz'},
             ),
           ],
         ),
         isFalse,
       );
+    });
+
+    test('a sibling that keeps its own name still holds it', () {
+      // Renaming "Fizz" to "Fizz 2" would leave two agents named "Fizz 2".
+      final sibling = _event(
+        kind: EventKind.managedAgent,
+        d: _honey,
+        content: {'name': 'Fizz 2', 'persona_id': 'fizz-def'},
+      );
+      expect(conflicts('Fizz 2', agents: [sibling]), isTrue);
     });
 
     test('uses only the newest event per d tag and the owner\'s', () {
