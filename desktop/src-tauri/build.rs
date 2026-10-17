@@ -51,17 +51,52 @@ fn main() {
     // Kuzz server environment (see `relay::KuzzEnv`); a typo must not
     // silently fall back to another server.
     let kuzz_env = std::env::var("KUZZ_ENV").unwrap_or_default();
-    match kuzz_env.trim() {
-        "" | "prod" => println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_ENV=prod"),
-        "dev" => println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_ENV=dev"),
+    let prod = match kuzz_env.trim() {
+        "" | "prod" => true,
+        "dev" => false,
         other => panic!("KUZZ_ENV must be `prod` or `dev`, got `{other}`"),
-    }
+    };
+    println!(
+        "cargo:rustc-env=KUZZ_DESKTOP_BUILD_ENV={}",
+        if prod { "prod" } else { "dev" }
+    );
 
-    if let Ok(relay_url) = std::env::var("KUZZ_RELAY_URL") {
+    // The built-in server address (see `relay::server::relay_endpoints`).
+    // Release builds must name it; debug builds and tests without it point at
+    // a placeholder that never resolves.
+    let configured = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    };
+    let relay_url = configured("KUZZ_RELAY_URL");
+    let relay_http = configured("KUZZ_RELAY_HTTP");
+    let release = std::env::var("PROFILE").as_deref() == Ok("release");
+    if release && relay_url.is_none() {
+        panic!(
+            "KUZZ_RELAY_URL must be set for release builds (the server this app connects to, \
+             e.g. wss://relay.example.com)"
+        );
+    }
+    if prod {
+        if let Some(url) = &relay_url {
+            assert!(
+                url.starts_with("wss://"),
+                "KUZZ_RELAY_URL must start with wss:// for prod builds, got `{url}`"
+            );
+        }
+        if let Some(http) = &relay_http {
+            assert!(
+                http.starts_with("https://"),
+                "KUZZ_RELAY_HTTP must start with https:// for prod builds, got `{http}`"
+            );
+        }
+    }
+    if let Some(relay_url) = relay_url {
         println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_RELAY_URL={relay_url}");
     }
-
-    if let Ok(relay_http) = std::env::var("KUZZ_RELAY_HTTP") {
+    if let Some(relay_http) = relay_http {
         println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_RELAY_HTTP={relay_http}");
     }
 

@@ -16,19 +16,25 @@ const _ephemeralChannelId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 void main() {
   setUp(() {
     final previous = debugUnrestrictedServerForTests;
-    // This build's real rule (prod, `https://jihobuzz.duckdns.org:8443`).
+    // This build's real rule (prod, with this test build's KUZZ_RELAY_URL or
+    // the unset placeholder).
     debugUnrestrictedServerForTests = false;
     addTearDown(() => debugUnrestrictedServerForTests = previous);
   });
 
   test('allowConnection follows the built-in server rule', () {
-    expect(allowConnection('test', 'wss://jihobuzz.duckdns.org:8443'), isTrue);
+    final ours = appBuiltInServerOrigin()!;
+    expect(ours, startsWith('https://'));
+    expect(allowConnection('test', ours.replaceFirst('https', 'wss')), isTrue);
     expect(allowConnection('test', 'wss://other.example'), isFalse);
-    expect(allowConnection('test', 'ws://jihobuzz.duckdns.org:8443'), isFalse);
+    expect(allowConnection('test', ours.replaceFirst('https', 'ws')), isFalse);
     expect(allowConnection('test', 'not a url'), isFalse);
   });
 
-  for (final url in ['wss://other.example', 'ws://jihobuzz.duckdns.org:8443']) {
+  for (final url in [
+    'wss://other.example',
+    'ws://kuzz-relay-url-not-set.invalid',
+  ]) {
     test('RelaySocket never opens $url', () async {
       Object? disconnectError;
       var connected = false;

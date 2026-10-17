@@ -817,20 +817,17 @@ mod tests {
     fn reconcile_skips_communities_on_other_servers() {
         let record = record_with_relay("");
         assert!(record.start_on_app_launch);
-        let ours = crate::relay::server::relay_endpoints(crate::relay::server::KuzzEnv::Prod).ws;
-        let communities = [
-            "wss://other.example",
-            ours,
-            "ws://jihobuzz.duckdns.org:8443",
-        ]
-        .into_iter()
-        .map(|relay_url| super::super::ManagedAgentCommunityTarget {
-            relay_url: relay_url.into(),
-        })
-        .collect();
+        let ours = crate::relay::server::relay_endpoints().ws;
+        let downgraded = ours.replacen("wss://", "ws://", 1);
+        let communities = ["wss://other.example", ours.as_str(), downgraded.as_str()]
+            .into_iter()
+            .map(|relay_url| super::super::ManagedAgentCommunityTarget {
+                relay_url: relay_url.into(),
+            })
+            .collect();
         let jobs = reconcile_jobs(communities, &[record], |_| false);
         let relays: Vec<_> = jobs.iter().map(|(_, relay)| relay.as_str()).collect();
-        assert_eq!(relays, vec![ours]);
+        assert_eq!(relays, vec![ours.as_str()]);
     }
 
     #[test]
