@@ -8,8 +8,16 @@ use nostr::{Event, Keys, Kind, SecretKey};
 use zeroize::Zeroizing;
 
 /// Envelope contract version. Changing the AAD requires a new version.
-pub const BACKUP_VERSION: u16 = 1;
-const AAD_DOMAIN: &[u8] = b"buzz/custodial-key-backup/v1";
+pub const BACKUP_VERSION: u16 = 2;
+const AAD_DOMAIN: &[u8] = b"kuzz/custodial-key-backup/v1";
+
+/// Version written before the protocol rename. Only
+/// [`BackupMasterKey::reencrypt_legacy_v1`] reads it.
+pub const LEGACY_V1_BACKUP_VERSION: u16 = 1;
+/// AAD domain of version 1 envelopes. Its only use is the one-shot
+/// `kuzz-admin reencrypt-key-backups` rewrite of rows stored before the
+/// rename; the bytes are fixed by those ciphertexts.
+const LEGACY_V1_AAD_DOMAIN: &[u8] = b"buzz/custodial-key-backup/v1"; // kuzz-rename: keep (v1 ciphertexts)
 
 /// Failure categories intentionally contain no caller-controlled secret data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -91,23 +99,40 @@ impl BackupMasterKey {
         let secret = parse_secret(secret_hex)?;
         let keys = Keys::new(secret);
         let raw = Zeroizing::new(keys.secret_key().to_secret_bytes());
+        self.seal(
+            account,
+            keys.public_key().to_bytes(),
+            raw.as_ref(),
+            BACKUP_VERSION,
+            AAD_DOMAIN,
+        )
+    }
+
+    fn seal(
+        &self,
+        account: &[u8; 32],
+        pubkey: [u8; 32],
+        raw: &[u8],
+        version: u16,
+        domain: &[u8],
+    ) -> Result<EncryptedKeyBackup, BackupError> {
         // rand's thread RNG is securely seeded by the OS, as with OIDC tokens.
         let nonce = rand::random::<[u8; 12]>().to_vec();
         let mut envelope = EncryptedKeyBackup {
-            pubkey: keys.public_key().to_bytes(),
-            version: BACKUP_VERSION,
+            pubkey,
+            version,
             key_id: self.key_id.clone(),
             nonce,
             ciphertext: Vec::new(),
         };
-        let aad = authenticated_data(account, &envelope);
+        let aad = authenticated_data(domain, account, &envelope);
         let cipher =
             Aes256Gcm::new_from_slice(self.key.as_ref()).map_err(|_| BackupError::Configuration)?;
         envelope.ciphertext = cipher
             .encrypt(
                 Nonce::from_slice(&envelope.nonce),
                 Payload {
-                    msg: raw.as_ref(),
+                    msg: raw,
                     aad: &aad,
                 },
             )
@@ -121,7 +146,43 @@ impl BackupMasterKey {
         account: &[u8; 32],
         envelope: &EncryptedKeyBackup,
     ) -> Result<Zeroizing<String>, BackupError> {
-        if envelope.version != BACKUP_VERSION
+        let raw = self.open(account, envelope, BACKUP_VERSION, AAD_DOMAIN)?;
+        Ok(Zeroizing::new(hex::encode(raw.as_slice())))
+    }
+
+    /// Rewrite a version 1 envelope (pre-rename AAD domain) as a current
+    /// version envelope under the same master key, with a fresh nonce. The
+    /// envelope is authenticated, and its key checked against `pubkey`,
+    /// before anything is re-encrypted. Used only by
+    /// `kuzz-admin reencrypt-key-backups`.
+    pub fn reencrypt_legacy_v1(
+        &self,
+        account: &[u8; 32],
+        envelope: &EncryptedKeyBackup,
+    ) -> Result<EncryptedKeyBackup, BackupError> {
+        let raw = self.open(
+            account,
+            envelope,
+            LEGACY_V1_BACKUP_VERSION,
+            LEGACY_V1_AAD_DOMAIN,
+        )?;
+        self.seal(
+            account,
+            envelope.pubkey,
+            raw.as_slice(),
+            BACKUP_VERSION,
+            AAD_DOMAIN,
+        )
+    }
+
+    fn open(
+        &self,
+        account: &[u8; 32],
+        envelope: &EncryptedKeyBackup,
+        version: u16,
+        domain: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, BackupError> {
+        if envelope.version != version
             || envelope.key_id != self.key_id
             || envelope.nonce.len() != 12
             || envelope.ciphertext.len() != 48
@@ -130,7 +191,7 @@ impl BackupMasterKey {
         }
         let cipher =
             Aes256Gcm::new_from_slice(self.key.as_ref()).map_err(|_| BackupError::Configuration)?;
-        let aad = authenticated_data(account, envelope);
+        let aad = authenticated_data(domain, account, envelope);
         let raw = Zeroizing::new(
             cipher
                 .decrypt(
@@ -146,7 +207,7 @@ impl BackupMasterKey {
         if Keys::new(secret).public_key().to_bytes() != envelope.pubkey {
             return Err(BackupError::Decryption);
         }
-        Ok(Zeroizing::new(hex::encode(raw.as_slice())))
+        Ok(raw)
     }
 }
 
@@ -157,10 +218,10 @@ fn parse_secret(raw: &str) -> Result<SecretKey, BackupError> {
     SecretKey::from_hex(raw).map_err(|_| BackupError::InvalidSecret)
 }
 
-fn authenticated_data(account: &[u8; 32], envelope: &EncryptedKeyBackup) -> Vec<u8> {
+fn authenticated_data(domain: &[u8], account: &[u8; 32], envelope: &EncryptedKeyBackup) -> Vec<u8> {
     let mut aad = Vec::with_capacity(160);
     // Fixed-width fields followed by a length-prefixed variable-width key id.
-    aad.extend_from_slice(AAD_DOMAIN);
+    aad.extend_from_slice(domain);
     aad.extend_from_slice(&envelope.version.to_be_bytes());
     aad.extend_from_slice(account);
     aad.extend_from_slice(&envelope.pubkey);

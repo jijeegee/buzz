@@ -21,6 +21,7 @@
 //! the guard against parallel adds (e.g. `xargs -P`).
 
 mod deletions;
+mod key_backups;
 mod storage_snapshot_startup;
 
 use std::future::Future;
@@ -29,12 +30,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
+use clap::{Parser, Subcommand};
 use kuzz_core::kind::KIND_NIP43_MEMBERSHIP_LIST;
 use kuzz_core::tenant::{relay_url_authority, TenantContext};
 use kuzz_db::{partition::PartitionAuditReport, Db, DbConfig};
 use kuzz_media::{BucketSnapshot, MediaConfig, MediaStorage, S3AddressingStyle, SweepError};
 use kuzz_pubsub::{EventTopic, PubSubManager};
-use clap::{Parser, Subcommand};
 use nostr::{EventBuilder, Keys, Kind, Tag};
 use serde::Serialize;
 use sqlx::Row;
@@ -124,6 +125,12 @@ enum Command {
         #[arg(long)]
         relay_key: Option<String>,
     },
+    /// Rewrite custodial key backups stored before the protocol rename
+    /// (version 1) as the current version, using the relay's
+    /// AUTH_KEY_BACKUP_MASTER_KEY / AUTH_KEY_BACKUP_KEY_ID. Runs in one
+    /// transaction, skips rows that are already current and prints counts as
+    /// JSON. Run once after migration 0067, before users log in.
+    ReencryptKeyBackups,
 }
 
 #[derive(Subcommand)]
@@ -190,6 +197,7 @@ async fn run(cli: Cli) -> Result<i32> {
             reconcile_channels(channel, relay_key).await?;
             Ok(0)
         }
+        Command::ReencryptKeyBackups => key_backups::run().await,
     }
 }
 
@@ -914,5 +922,12 @@ mod tests {
             cli.command,
             Command::PartitionAudit { months_ahead: 6 }
         ));
+    }
+
+    #[test]
+    fn parses_reencrypt_key_backups() {
+        let cli = Cli::try_parse_from(["kuzz-admin", "reencrypt-key-backups"])
+            .expect("parse reencrypt-key-backups command");
+        assert!(matches!(cli.command, Command::ReencryptKeyBackups));
     }
 }
