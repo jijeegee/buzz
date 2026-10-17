@@ -133,7 +133,8 @@ fn classify_http_failure(status: u16, detail: &str) -> AgentError {
         403 => AgentError::LlmAuth(
             "ChatGPT plan use is not permitted for this account or region".into(),
         ),
-        429 => AgentError::Llm(usage_limit_message()),
+        // Without OpenAI's limit code a 429 is short-term throttling: retryable.
+        429 => AgentError::Llm("ChatGPT plan is busy; retry shortly".into()),
         503 => AgentError::Llm("ChatGPT plan is temporarily unavailable; retry later".into()),
         _ => AgentError::Llm(format!("ChatGPT plan HTTP {status}")),
     }
@@ -141,7 +142,7 @@ fn classify_http_failure(status: u16, detail: &str) -> AgentError {
 
 fn usage_limit_message() -> String {
     format!(
-        "ChatGPT plan usage limit reached. Manage usage: {}",
+        "ChatGPT plan usage limit for apps like Kuzz reached; try again after it resets. Manage usage: {}",
         crate::auth::chatgpt::MANAGE_USAGE_URL
     )
 }
@@ -500,6 +501,14 @@ mod tests {
         ]}))
         .unwrap();
         assert_eq!(parsed.tool_calls[0].name, "echo");
+    }
+
+    #[test]
+    fn plain_429_stays_retryable_and_is_not_the_plan_limit() {
+        let AgentError::Llm(text) = classify_http_failure(429, "") else {
+            panic!("a plain 429 should be a retryable LLM error");
+        };
+        assert!(!text.contains("usage limit"), "{text}");
     }
 
     #[test]

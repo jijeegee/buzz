@@ -5481,6 +5481,15 @@ fn is_auth_error(error: &acp::AcpError) -> bool {
     message.contains("Re-authenticate") || message.contains("API Error: 401")
 }
 
+/// Returns `true` when the ChatGPT plan's usage limit stopped the turn.
+/// Matches the `kuzz-agent` message for OpenAI's documented limit code.
+fn is_plan_limit_error(error: &acp::AcpError) -> bool {
+    let acp::AcpError::AgentError { message, .. } = error else {
+        return false;
+    };
+    message.contains("ChatGPT plan usage limit")
+}
+
 /// Thread placement for a batch's terminal failure notice.
 ///
 /// Ordinary events keep their own thread tags. An edit follows its verified
@@ -5671,6 +5680,18 @@ fn handle_prompt_result(
                     wasn't found at the provider's endpoint. Open agent settings, select a \
                     different model from the dropdown, and save your changes. Restart the agent \
                     to apply the new configuration, then re-send your request."
+                    .to_string();
+                spawn_failure_notice(rest_client, &batch, content);
+            } else if matches!(&result.outcome, PromptOutcome::Error(e) if is_plan_limit_error(e)) {
+                // The plan limit resets on OpenAI's schedule, not between retries.
+                tracing::warn!(
+                    channel_id = %batch.channel_id,
+                    events = batch.events.len(),
+                    "dead-lettering batch immediately — ChatGPT plan usage limit"
+                );
+                let content = "⚠️ I couldn't reply: your ChatGPT plan's usage limit for apps \
+                    like Kuzz is used up. Re-send after it resets; you can check it at \
+                    https://chatgpt.com/settings/usage"
                     .to_string();
                 spawn_failure_notice(rest_client, &batch, content);
             } else if matches!(&result.outcome, PromptOutcome::Error(e) if is_auth_error(e)) {
@@ -12892,6 +12913,21 @@ mod error_outcome_emission_tests {
             !is_auth_error(&e),
             "usage-credit error must NOT be classified as auth error"
         );
+    }
+
+    #[test]
+    fn is_plan_limit_error_matches_only_the_plan_limit() {
+        let limit = acp::AcpError::AgentError {
+            code: -32000,
+            message: "llm: (gpt-6.1-sol) ChatGPT plan usage limit for apps like Kuzz reached"
+                .into(),
+        };
+        assert!(is_plan_limit_error(&limit));
+        let other = acp::AcpError::AgentError {
+            code: -32000,
+            message: "llm: ChatGPT plan is temporarily unavailable; retry later".into(),
+        };
+        assert!(!is_plan_limit_error(&other));
     }
 
     #[test]

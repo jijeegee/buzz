@@ -63,23 +63,35 @@ export function useChatGptPlanStatus(): Snapshot {
   );
 }
 
+type ActionState<T> = {
+  isPending: boolean;
+  error: unknown;
+  data: T | undefined;
+};
+
 /** Wraps sign-in/out with pending/error state and refreshes dependents. */
 function useAuthAction<T>(run: () => Promise<T>) {
   const queryClient = React.useContext(QueryClientContext);
-  const [state, setState] = React.useState<{
-    isPending: boolean;
-    error: unknown;
-    data: T | undefined;
-  }>({ isPending: false, error: null, data: undefined });
+  const [state, setState] = React.useState<ActionState<T>>({
+    isPending: false,
+    error: null,
+    data: undefined,
+  });
+  // Only the latest attempt owns the state; a released one settles silently.
+  const latest = React.useRef(0);
 
   const mutateAsync = React.useCallback(async () => {
-    setState({ isPending: true, error: null, data: undefined });
+    const attempt = ++latest.current;
+    const settle = (next: ActionState<T>) => {
+      if (attempt === latest.current) setState(next);
+    };
+    settle({ isPending: true, error: null, data: undefined });
     try {
       const data = await run();
-      setState({ isPending: false, error: null, data });
+      settle({ isPending: false, error: null, data });
       return data;
     } catch (error) {
-      setState({ isPending: false, error, data: undefined });
+      settle({ isPending: false, error, data: undefined });
       throw error;
     } finally {
       await load();
@@ -88,6 +100,12 @@ function useAuthAction<T>(run: () => Promise<T>) {
     }
   }, [queryClient, run]);
 
+  /** Stop showing the running attempt; it keeps going in the background. */
+  const release = React.useCallback(() => {
+    latest.current += 1;
+    setState({ isPending: false, error: null, data: undefined });
+  }, []);
+
   return {
     ...state,
     isError: state.error !== null,
@@ -95,11 +113,43 @@ function useAuthAction<T>(run: () => Promise<T>) {
       !state.isPending && state.error === null && state.data !== undefined,
     mutateAsync,
     mutate: () => void mutateAsync().catch(() => {}),
+    release,
   };
 }
 
+/** Back in Kuzz this long with the sign-in unfinished: treat it as dropped. */
+export const CHATGPT_RETURN_GRACE_MS = 2000;
+
+/**
+ * The browser tab can't be watched, so returning to Kuzz is the signal: the
+ * button frees up again while the sign-in keeps listening, so finishing in
+ * the browser later still connects. Signing in again replaces it.
+ */
 export function useChatGptPlanSignIn() {
-  return useAuthAction<ChatGptPlanSignIn>(signInChatGptPlan);
+  const action = useAuthAction<ChatGptPlanSignIn>(signInChatGptPlan);
+  const { isPending, release } = action;
+
+  React.useEffect(() => {
+    if (!isPending) return;
+    let left = !document.hasFocus();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onBlur = () => {
+      left = true;
+      clearTimeout(timer);
+    };
+    const onFocus = () => {
+      if (left) timer = setTimeout(release, CHATGPT_RETURN_GRACE_MS);
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [isPending, release]);
+
+  return action;
 }
 
 export function useChatGptPlanSignOut() {

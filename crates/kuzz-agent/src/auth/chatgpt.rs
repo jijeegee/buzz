@@ -283,13 +283,25 @@ impl ChatGptLogin {
 
     /// Run the browser sign-in and save the result.
     pub async fn sign_in(&self, opener: &dyn BrowserOpener) -> Result<ChatGptSignIn, AgentError> {
+        self.sign_in_until(opener, std::future::pending()).await
+    }
+
+    /// [`Self::sign_in`] that `cancel` can stop while the browser is open.
+    /// Once OpenAI answers, the sign-in finishes so its result is never lost.
+    pub async fn sign_in_until(
+        &self,
+        opener: &dyn BrowserOpener,
+        cancel: impl std::future::Future<Output = ()>,
+    ) -> Result<ChatGptSignIn, AgentError> {
         let host_id = self.host_id()?;
         // Re-authorize the saved client only while signed in (to re-request
         // plan consent). After sign-out or a dead session a fresh registration
         // lets the user pick any ChatGPT account.
         let saved = self.read().filter(Credentials::signed_in);
         let first_sign_in = !self.notice_path().exists();
-        let attempt = self.authorize(opener, &host_id, saved.as_ref()).await?;
+        let attempt = self
+            .authorize(opener, &host_id, saved.as_ref(), cancel)
+            .await?;
         let token = self
             .exchange(
                 &attempt.client_id,
@@ -405,6 +417,7 @@ impl ChatGptLogin {
         opener: &dyn BrowserOpener,
         host_id: &str,
         saved: Option<&Credentials>,
+        cancel: impl std::future::Future<Output = ()>,
     ) -> Result<Authorization, AgentError> {
         use axum::{extract::Query, response::Html, routing::get, Router};
         use tokio::sync::oneshot;
@@ -453,7 +466,7 @@ impl ChatGptLogin {
                 }
             }),
         );
-        let _server = AbortOnDrop(tokio::spawn(async move {
+        let mut server = AbortOnDrop(tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
         }));
 
@@ -496,10 +509,18 @@ impl ChatGptLogin {
             .open(&url)
             .map_err(|_| auth_error("could not open the browser"))?;
 
-        let params = tokio::time::timeout(SIGN_IN_TIMEOUT, rx)
-            .await
-            .map_err(|_| auth_error("sign-in timed out"))?
-            .map_err(|_| auth_error("sign-in was interrupted"))?;
+        let params = tokio::select! {
+            biased;
+            () = cancel => {
+                // Close the listener first so the next sign-in can bind the port.
+                server.0.abort();
+                let _ = (&mut server.0).await;
+                return Err(auth_error("sign-in was cancelled"));
+            }
+            received = tokio::time::timeout(SIGN_IN_TIMEOUT, rx) => received
+                .map_err(|_| auth_error("sign-in timed out"))?
+                .map_err(|_| auth_error("sign-in was interrupted"))?,
+        };
         if params.get("error").map(String::as_str) == Some("access_denied") {
             return Err(auth_error("sign-in was cancelled"));
         }
@@ -964,6 +985,47 @@ mod tests {
         creds.scopes.retain(|s| s != PLAN_SCOPE);
         login.write(&creds).unwrap();
         assert!(matches!(login.bearer().await, Err(AgentError::LlmAuth(_))));
+    }
+
+    struct CapturingOpener(std::sync::Mutex<Option<String>>);
+
+    impl BrowserOpener for CapturingOpener {
+        fn open(&self, url: &str) -> Result<(), String> {
+            *self.0.lock().unwrap() = Some(url.to_owned());
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_sign_in_frees_its_port_and_saves_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let login = ChatGptLogin::for_test(dir.path(), "http://127.0.0.1:9");
+        let opener = CapturingOpener(std::sync::Mutex::new(None));
+        let (cancel, cancelled) = tokio::sync::oneshot::channel::<()>();
+        let sign_in = login.sign_in_until(&opener, async move {
+            let _ = cancelled.await;
+        });
+        let cancel_once_open = async {
+            while opener.0.lock().unwrap().is_none() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            cancel.send(()).unwrap();
+        };
+        let (result, ()) = tokio::join!(sign_in, cancel_once_open);
+        assert!(result.unwrap_err().to_string().contains("cancelled"));
+
+        let url = opener.0.lock().unwrap().clone().unwrap();
+        let redirect = url::Url::parse(&url)
+            .unwrap()
+            .query_pairs()
+            .find(|(k, _)| k == "redirect_uri")
+            .map(|(_, v)| v.into_owned())
+            .unwrap();
+        let port = url::Url::parse(&redirect).unwrap().port().unwrap();
+        tokio::net::TcpListener::bind(("127.0.0.1", port))
+            .await
+            .expect("the cancelled sign-in must release its listener");
+        assert!(!login.credentials_path().exists());
     }
 
     #[test]
