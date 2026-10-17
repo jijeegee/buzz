@@ -39,7 +39,11 @@ export function applyContactChange(
 
 export type ContactListIo = {
   read: (owner: string) => Promise<ContactListResponse>;
-  write: (contacts: Contact[]) => Promise<unknown>;
+  /** `keep`: the read list's content and non-`p` tags, written back as-is. */
+  write: (
+    contacts: Contact[],
+    keep: { content?: string; otherTags?: string[][] },
+  ) => Promise<unknown>;
   /** Unix milliseconds; injectable for tests. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -75,7 +79,10 @@ export function editContactList(
       if (last !== undefined && Math.floor(now() / 1000) <= last) {
         await (io.sleep ?? defaultSleep)((last + 1) * 1000 - now() + 5);
       }
-      await io.write(next);
+      await io.write(next, {
+        content: current.content,
+        otherTags: current.otherTags,
+      });
       lastWriteSecond.set(key, Math.floor(now() / 1000));
       return true;
     });

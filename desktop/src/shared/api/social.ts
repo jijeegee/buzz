@@ -144,15 +144,22 @@ export async function getContactList(
     pubkey: raw.pubkey,
     createdAt: raw.created_at,
     contacts,
+    content: raw.content ?? "",
+    otherTags: raw.tags.filter((t) => t[0] !== "p"),
   };
 }
 
+/**
+ * Publish the whole contact list. Pass the previous list's `content` and
+ * `otherTags` so editing friends keeps them.
+ */
 export async function setContactList(
   contacts: Array<{
     pubkey: string;
     relayUrl?: string;
     petname?: string;
   }>,
+  keep: { content?: string; otherTags?: string[][] } = {},
 ): Promise<PublishNoteResult> {
   const raw = await invokeTauri<RawPublishNoteResult>("set_contact_list", {
     contacts: contacts.map((c) => ({
@@ -160,6 +167,8 @@ export async function setContactList(
       relay_url: c.relayUrl ?? null,
       petname: c.petname ?? null,
     })),
+    content: keep.content ?? null,
+    otherTags: keep.otherTags ?? null,
   });
   return {
     eventId: raw.event_id,

@@ -762,10 +762,26 @@ pub fn build_unarchive_identity_request(
 /// Maximum contacts per contact list event.
 const MAX_CONTACTS: usize = 10_000;
 
+/// Maximum non-`p` tags carried over from the previous contact list.
+const MAX_CONTACT_LIST_OTHER_TAGS: usize = 1_000;
+
 /// Kind 3 — NIP-02 contact list (replaceable, full snapshot).
+///
+/// `content` and `other_tags` carry over what the previous list held besides
+/// its `p` tags (another client's relay map, `t` tags...), so editing one
+/// friend does not wipe them. `p` entries in `other_tags` are ignored.
 pub fn build_contact_list(
     contacts: &[(&str, Option<&str>, Option<&str>)],
+    content: &str,
+    other_tags: &[Vec<String>],
 ) -> Result<EventBuilder, String> {
+    check_content(content)?;
+    if other_tags.len() > MAX_CONTACT_LIST_OTHER_TAGS {
+        return Err(format!(
+            "too many tags (max {MAX_CONTACT_LIST_OTHER_TAGS}, got {})",
+            other_tags.len()
+        ));
+    }
     if contacts.len() > MAX_CONTACTS {
         return Err(format!(
             "too many contacts (max {MAX_CONTACTS}, got {})",
@@ -786,7 +802,13 @@ pub fn build_contact_list(
             ])?);
         }
     }
-    Ok(EventBuilder::new(Kind::ContactList, "").tags(tags))
+    for other in other_tags {
+        if other.is_empty() || other[0] == "p" {
+            continue;
+        }
+        tags.push(tag(other.iter().map(String::as_str).collect())?);
+    }
+    Ok(EventBuilder::new(Kind::ContactList, content).tags(tags))
 }
 
 /// Kind 41010 — open (or surface) a DM channel with the given participants.
@@ -1135,5 +1157,37 @@ mod tests {
         );
         assert_eq!(p_tags[0], &vec!["p".to_string(), ALICE_HEX.to_string()]);
         assert_eq!(p_tags[1], &vec!["p".to_string(), BOB_HEX.to_string()]);
+    }
+
+    #[test]
+    fn contact_list_keeps_content_and_other_tags() {
+        const FRIEND: &str = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+        let other_tags = vec![
+            vec!["t".to_string(), "kuzz".to_string()],
+            // A stray p entry in the carried-over tags is not duplicated.
+            vec!["p".to_string(), FRIEND.to_string()],
+            Vec::new(),
+        ];
+        let builder = build_contact_list(
+            &[(FRIEND, Some("wss://hint.example"), Some("Al"))],
+            "{\"wss://relay.example\":{\"read\":true}}",
+            &other_tags,
+        )
+        .unwrap();
+        let event = builder.sign_with_keys(&Keys::generate()).unwrap();
+        assert_eq!(event.content, "{\"wss://relay.example\":{\"read\":true}}");
+        let tags: Vec<Vec<String>> = event.tags.iter().map(|t| t.as_slice().to_vec()).collect();
+        assert_eq!(
+            tags,
+            vec![
+                vec![
+                    "p".to_string(),
+                    FRIEND.to_string(),
+                    "wss://hint.example".to_string(),
+                    "Al".to_string(),
+                ],
+                vec!["t".to_string(), "kuzz".to_string()],
+            ]
+        );
     }
 }

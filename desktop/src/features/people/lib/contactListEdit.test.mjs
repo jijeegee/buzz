@@ -90,3 +90,26 @@ test("a failed change does not block the next one", async () => {
   );
   assert.deepEqual(server.contacts(), [{ pubkey: "aa" }]);
 });
+
+test("an edit writes back the list's content and other tags as they were", async () => {
+  const kept = [];
+  const relays = '{"wss://relay.example":{"read":true}}';
+  const io = {
+    read: async () => ({
+      contacts: [{ pubkey: "aa", relayUrl: "wss://hint", petname: "Al" }],
+      content: relays,
+      otherTags: [["t", "kuzz"]],
+    }),
+    write: async (next, keep) => kept.push({ next, keep }),
+  };
+  await editContactList("me3", { type: "add", pubkeys: ["bb"] }, io);
+  assert.deepEqual(kept, [
+    {
+      next: [
+        { pubkey: "aa", relayUrl: "wss://hint", petname: "Al" },
+        { pubkey: "bb" },
+      ],
+      keep: { content: relays, otherTags: [["t", "kuzz"]] },
+    },
+  ]);
+});
