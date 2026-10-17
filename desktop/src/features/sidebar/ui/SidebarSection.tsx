@@ -531,6 +531,7 @@ export function SidebarSection({
   items,
   rows,
   channelLabels,
+  hideHeader = false,
   isCollapsed,
   isActiveChannel,
   presenceByChannelId,
@@ -562,6 +563,8 @@ export function SidebarSection({
   /** Render these rows in this order instead of `items` (channel rows still use `items`' props). */
   rows?: readonly SidebarSectionRow[];
   channelLabels?: Record<string, string>;
+  /** The column draws its own title (Chats); skip the section label. */
+  hideHeader?: boolean;
   isCollapsed?: boolean;
   isActiveChannel: boolean;
   presenceByChannelId?: Record<string, PresenceStatus>;
@@ -601,7 +604,7 @@ export function SidebarSection({
       className="group/sidebar-section select-none"
       data-section-actions-open={sectionActionsOpen || undefined}
     >
-      <div className="relative">
+      <div className={cn("relative", hideHeader && "hidden")}>
         <SidebarGroupLabel asChild={canToggle}>
           {canToggle ? (
             <button

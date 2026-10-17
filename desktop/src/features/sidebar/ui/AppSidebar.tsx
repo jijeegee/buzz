@@ -28,11 +28,14 @@ import {
 import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
 import { useLatestAuthorProfiles } from "@/features/chats/useLatestAuthorProfiles";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
+import {
+  ChatsColumnTitle,
+  ChatsViewToggle,
+} from "@/features/sidebar/ui/ChatsColumnHeader";
 import { PeopleSidebarList } from "@/features/people/ui/PeopleSidebarList";
 import {
   ChannelGroupSection,
   SectionActionsMenu,
-  SectionQuickAction,
 } from "@/features/sidebar/ui/CustomChannelSection";
 import { CreateChannelDialog } from "@/features/sidebar/ui/CreateChannelDialog";
 import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
@@ -399,6 +402,28 @@ export function AppSidebar({
           className={showPeople ? "hidden" : "contents"}
           data-testid="sidebar-chats-column"
         >
+          <ChatsColumnTitle
+            menu={
+              <SectionActionsMenu
+                sectionLabel="chats"
+                testId="section-actions-chats"
+                visibilityClassName="opacity-100"
+                onOpenChange={setChatActionsMenuOpen}
+                onNewMessage={onNewMessage}
+                hasUnread={chatChannels.some((channel) =>
+                  unreadChannelIds.has(channel.id),
+                )}
+                onMarkAllRead={() => {
+                  for (const channel of chatChannels)
+                    onMarkChannelRead(channel.id, channel.lastMessageAt);
+                }}
+                onBrowse={() => onBrowseChannels?.()}
+                onCreate={handleOpenCreateChannel}
+              />
+            }
+            onBrowseChannels={onBrowseChannels}
+            onNewMessage={onNewMessage}
+          />
           <AppSidebarPinnedHeader
             channelLabels={dmChannelLabels}
             currentPubkey={currentPubkey}
@@ -416,6 +441,9 @@ export function AppSidebar({
             scopeSearchFocusRequest={searchFocusRequests[1]}
             suggestionChannels={channels}
           />
+          {serverChats ? (
+            <ChatsViewToggle onChange={setChatsView} value={chatsView} />
+          ) : null}
 
           <div
             className="relative flex min-h-0 flex-1 flex-col"
@@ -452,37 +480,8 @@ export function AppSidebar({
                     <ChatList
                       currentPubkey={currentPubkey}
                       latestAuthorProfiles={latestAuthorProfiles}
-                      action={
-                        <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5">
-                          <SectionQuickAction
-                            label="New message"
-                            onClick={onNewMessage}
-                            testId="section-actions-chats-quick-create"
-                          />
-                          <SectionActionsMenu
-                            sectionLabel="chats"
-                            testId="section-actions-chats"
-                            onOpenChange={setChatActionsMenuOpen}
-                            onNewMessage={onNewMessage}
-                            hasUnread={chatChannels.some((channel) =>
-                              unreadChannelIds.has(channel.id),
-                            )}
-                            onMarkAllRead={() => {
-                              for (const channel of chatChannels)
-                                onMarkChannelRead(
-                                  channel.id,
-                                  channel.lastMessageAt,
-                                );
-                            }}
-                            onBrowse={() => onBrowseChannels?.()}
-                            onCreate={handleOpenCreateChannel}
-                            chatsView={serverChats ? chatsView : undefined}
-                            onChatsViewChange={setChatsView}
-                          />
-                        </div>
-                      }
+                      hideHeader
                       dmParticipantsByChannelId={dmParticipantsByChannelId}
-                      isCollapsed={collapsedGroups.channels}
                       isActiveChannel={selectedView === "channel"}
                       activeWorkingByChannelId={activeWorkingByChannelId}
                       items={chatChannels}
@@ -493,7 +492,6 @@ export function AppSidebar({
                       onSelectChannel={onSelectChannel}
                       serverChats={serverChats}
                       view={chatsView}
-                      onToggleCollapsed={() => toggleCollapsedGroup("channels")}
                       presenceByChannelId={dmPresenceByChannelId}
                       selectedChannelId={selectedChannelId}
                       sectionActionsOpen={chatActionsMenuOpen}

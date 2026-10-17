@@ -48,8 +48,7 @@ export function PersonRow({
         <div
           className={cn(
             "flex h-12 w-full items-center rounded-md text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent",
-            isSelected &&
-              "bg-sidebar-active text-sidebar-active-foreground hover:bg-sidebar-active",
+            isSelected && "bg-sidebar-accent",
           )}
         >
           <button

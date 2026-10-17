@@ -71,7 +71,6 @@ test("mixed chat activity reorders live while personal pins stay first", async (
   await expect
     .poll(async () => (await names()).slice(0, 2))
     .toEqual(["channel-alice-tyler", "channel-engineering"]);
-  await page.getByTestId("chat-list-section-label").hover();
   await page.getByTestId("section-actions-chats").click();
   await expect(
     page.getByRole("menuitem", { name: "Sort", exact: true }),
