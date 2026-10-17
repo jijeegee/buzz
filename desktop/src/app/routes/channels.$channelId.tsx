@@ -12,7 +12,6 @@ import {
 } from "@/features/profile/ui/UserProfilePanelUtils";
 import { HuddleStartingView } from "@/features/huddle/components/HuddleStartingView";
 import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
-import { cn } from "@/shared/lib/cn";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 import {
   setInboxThreadViewMode,
@@ -20,7 +19,6 @@ import {
   useInboxThreadViewMode,
 } from "@/features/channels/lib/threadViewModePreference";
 import { useInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
-import { InboxPanel } from "@/features/home/ui/InboxPanel";
 
 type ChannelRouteSearch = {
   agentSession?: string;
@@ -113,20 +111,13 @@ function ChannelRouteComponent() {
     </React.Suspense>
   );
 
-  // One stable tree whether or not the panel is out, so toggling the inbox
-  // never remounts the chat screen (scroll, drafts and thread stay put).
+  // The inbox list, when pulled out, lives in the left list column.
   return (
     <div
       className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
       data-testid="channel-route-layout"
     >
-      {inboxPanelOpen ? <InboxPanel /> : null}
-      <div
-        className={cn(
-          "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-          inboxPanelOpen && "border-l border-border/35",
-        )}
-      >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {channelScreen}
       </div>
     </div>

@@ -31,6 +31,11 @@ import {
   ChatsColumnTitle,
   ChatsViewToggle,
 } from "@/features/sidebar/ui/ChatsColumnHeader";
+import { AgentsSidebarList } from "@/features/agents/ui/AgentsSidebarList";
+import { ProjectsSidebarList } from "@/features/projects/ui/ProjectsSidebarList";
+import { PulseSidebarList } from "@/features/pulse/ui/PulseSidebarList";
+import { InboxPanel } from "@/features/home/ui/InboxPanel";
+import { useSidebarListTab } from "@/features/sidebar/lib/sidebarListTab";
 import { PeopleSidebarList } from "@/features/people/ui/PeopleSidebarList";
 import {
   ChannelGroupSection,
@@ -246,7 +251,15 @@ export function AppSidebar({
 
   const [chatsView, setChatsView] = useChatsViewMode();
   // People swaps the list column for the people list (Chats stays mounted).
-  const showPeople = selectedView === "people";
+  // The rail's tab picks this list; the main pane is independent of it.
+  const listTab = useSidebarListTab();
+  const showPeople = listTab === "people";
+  const showActivity = listTab === "activity";
+  const showAgents = listTab === "agents";
+  const showProjects = listTab === "projects";
+  const showPulse = listTab === "pulse";
+  const showOtherList =
+    showPeople || showActivity || showAgents || showProjects || showPulse;
   const { requestLeaveChannel, dialog: leaveChannelDialog } =
     useLeaveChannelDialog();
   const { requestDeleteChannel, dialog: deleteChannelDialog } =
@@ -396,8 +409,14 @@ export function AppSidebar({
         {showPeople ? (
           <PeopleSidebarList currentPubkey={currentPubkey} />
         ) : null}
+        {showActivity ? <InboxPanel /> : null}
+        {showAgents ? (
+          <AgentsSidebarList onCreateAgent={onCreateAgent} />
+        ) : null}
+        {showProjects ? <ProjectsSidebarList /> : null}
+        {showPulse ? <PulseSidebarList /> : null}
         <div
-          className={showPeople ? "hidden" : "contents"}
+          className={showOtherList ? "hidden" : "contents"}
           data-testid="sidebar-chats-column"
         >
           <ChatsColumnTitle
@@ -547,7 +566,7 @@ export function AppSidebar({
         </div>
 
         <div className="relative z-30 shrink-0" data-kuzz-glass-footer-wrap>
-          {unreadBelowCount > 0 && !showPeople ? (
+          {unreadBelowCount > 0 && !showOtherList ? (
             <MoreUnreadButton
               bottomClassName="bottom-full"
               count={unreadBelowCount}

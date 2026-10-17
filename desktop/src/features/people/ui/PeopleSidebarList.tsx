@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
@@ -40,12 +41,16 @@ export function PeopleSidebarList({
   const friends = usePeopleFriends(currentPubkey);
   useSeedFriendsFromDms(currentPubkey);
   const onMessage = useMessagePerson();
-  const { applyPatch, values } = useHistorySearchState(PROFILE_KEYS);
-  const selected = values.profile?.toLowerCase() ?? null;
+  const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const { values } = useHistorySearchState(PROFILE_KEYS);
+  const selected =
+    pathname === "/people" ? (values.profile?.toLowerCase() ?? null) : null;
+  // Opening a person is what changes the main pane, not the tab.
   const onOpenProfile = React.useCallback(
     (pubkey: string) =>
-      applyPatch({ profile: pubkey, profileTab: null, profileView: null }),
-    [applyPatch],
+      void navigate({ to: "/people", search: { profile: pubkey } }),
+    [navigate],
   );
 
   const usersQuery = useInfiniteUserSearchQuery("", {

@@ -37,17 +37,19 @@ export function ConversationLetterAvatar({
     return (
       <span
         aria-hidden="true"
-        className="relative h-9 w-9 shrink-0"
+        // Wider than a plain avatar; the negative margin keeps the row text
+        // lined up with the other rows.
+        className="relative -mr-2 h-9 w-11 shrink-0"
         data-testid={testId}
       >
         <span
-          className="absolute left-0 top-0 flex h-[1.625rem] w-[1.625rem] items-start justify-start rounded-full pl-1.5 pt-0.5 text-[0.625rem] font-semibold text-white"
+          className="absolute left-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-start rounded-full pl-2 text-2xs font-semibold text-white"
           style={{ backgroundColor: `hsl(${hue} 55% 48%)` }}
         >
           {initial}
         </span>
         <span
-          className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full text-2xs font-semibold text-white ring-2 ring-background"
+          className="absolute right-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-background"
           style={{
             backgroundColor: `hsl(${conversationHue(thread.id || thread.label)} 55% 48%)`,
           }}

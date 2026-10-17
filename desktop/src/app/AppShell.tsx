@@ -118,9 +118,10 @@ import { useChatStateWiring } from "@/app/useChatStateWiring";
 import { useChatThreadRowActions } from "@/app/useChatThreadRowActions";
 import { useChatsRailNavigation } from "@/app/useChatsRailNavigation";
 import {
-  toggleInboxPanel,
-  useInboxPanelOpen,
-} from "@/features/home/lib/inboxPanelPreference";
+  listTabForView,
+  setSidebarListTab,
+  useSidebarListTab,
+} from "@/features/sidebar/lib/sidebarListTab";
 const EMPTY_CHANNELS: Channel[] = [];
 export function AppShell() {
   useWebviewZoomShortcuts();
@@ -166,13 +167,9 @@ export function AppShell() {
   const queryClient = useQueryClient();
   useManagedAgentRuntimeReconciliation(communitiesHook.communities); // sync storage snapshot
   const {
-    goAgents,
     goChannel,
     goHome,
     goNewMessage,
-    goPeople,
-    goProjects,
-    goPulse,
     goSettings,
     goWorkflows,
     closeSettings,
@@ -180,7 +177,6 @@ export function AppShell() {
   } = useAppNavigation();
   const { canGoBack, canGoForward, goBack, goForward } =
     useBackForwardControls();
-  const inboxPanelOpen = useInboxPanelOpen();
   const { selectedChannelId, selectedView } = React.useMemo(
     () => deriveShellRoute(location.pathname),
     [location.pathname],
@@ -359,13 +355,25 @@ export function AppShell() {
     selectedView,
     sidebarChannels,
   ]);
+  const locationThread = (location.search as { thread?: unknown }).thread;
+  const selectedThreadRootId =
+    selectedView === "channel" && typeof locationThread === "string"
+      ? locationThread
+      : null;
   const handleSelectChats = useChatsRailNavigation({
     channelsLoaded: channelsQuery.isSuccess && channelsQuery.dataUpdatedAt > 0,
     goChannel,
     selectedChannelId,
+    selectedThreadRootId,
     selectedView,
     sidebarChannels,
   });
+  const sidebarListTab = useSidebarListTab();
+  // A screen opened by route (a link, search, back) shows its own list.
+  React.useEffect(() => {
+    const tab = listTabForView(selectedView);
+    if (tab) setSidebarListTab(tab);
+  }, [selectedView]);
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
   const { activeChannel, terminalContext } = useTerminalContext({
@@ -571,20 +579,15 @@ export function AppShell() {
     unfollowThread: handleUnfollowThread,
     unpinThread: chatState.unpinThread,
   });
-  const openThreadRootId =
-    selectedView === "channel"
-      ? ((location.search as { thread?: unknown }).thread ?? null)
-      : null;
   const serverChats = React.useMemo(
     () =>
       chatThreadRowChats
         ? {
             ...chatThreadRowChats,
-            openRootId:
-              typeof openThreadRootId === "string" ? openThreadRootId : null,
+            openRootId: selectedThreadRootId,
           }
         : chatThreadRowChats,
-    [chatThreadRowChats, openThreadRootId],
+    [chatThreadRowChats, selectedThreadRootId],
   );
 
   const createChannelMutation = useCreateChannelMutation(),
@@ -879,23 +882,16 @@ export function AppShell() {
             {!isHuddleRoom ? (
               <AppNavRail
                 homeBadgeCount={homeBadgeCount + dueReminderBadge}
-                inboxActive={selectedView === "channel" && inboxPanelOpen}
-                onSelectAgents={() => void goAgents()}
+                listTab={sidebarListTab}
+                // Rail tabs switch only the left list; the main pane keeps
+                // what it shows until an item in that list is opened.
+                onSelectAgents={() => setSidebarListTab("agents")}
                 onSelectChats={handleSelectChats}
-                onSelectHome={() => {
-                  // Inbox and Chats are one screen: on a channel the
-                  // Activity button pulls the list out beside the room.
-                  if (selectedView === "channel") {
-                    toggleInboxPanel();
-                    return;
-                  }
-                  void goHome();
-                }}
-                onSelectPeople={() => void goPeople()}
-                onSelectProjects={() => void goProjects()}
-                onSelectPulse={() => void goPulse()}
+                onSelectHome={() => setSidebarListTab("activity")}
+                onSelectPeople={() => setSidebarListTab("people")}
+                onSelectProjects={() => setSidebarListTab("projects")}
+                onSelectPulse={() => setSidebarListTab("pulse")}
                 onSelectWorkflows={() => void goWorkflows()}
-                projectsOverviewActive={location.pathname === "/projects"}
                 selectedView={selectedView}
               />
             ) : null}

@@ -119,7 +119,7 @@ export function ChatThreadRow({
       <SidebarMenuButton
         className={cn(
           CHAT_ROW_BUTTON_CLASS,
-          indent && "pl-8",
+          indent && "pl-5",
           isActive
             ? "group-hover/menu-item:bg-sidebar-active group-hover/menu-item:text-sidebar-active-foreground"
             : "group-hover/menu-item:bg-sidebar-accent group-hover/menu-item:text-sidebar-foreground",
@@ -160,14 +160,12 @@ export function ChatThreadRow({
             </>
           }
           titleExtras={
-            <>
-              {isPinned ? (
-                <span className="shrink-0">
-                  <Pin aria-hidden="true" className="h-3 w-3" />
-                  <span className="sr-only">Pinned for you</span>
-                </span>
-              ) : null}
-            </>
+            isPinned ? (
+              <span className="shrink-0">
+                <Pin aria-hidden="true" className="h-3 w-3" />
+                <span className="sr-only">Pinned for you</span>
+              </span>
+            ) : null
           }
           working={
             working ? (

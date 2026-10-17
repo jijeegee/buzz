@@ -10,6 +10,7 @@ import {
   Zap,
 } from "lucide-react";
 
+import type { SidebarListTab } from "@/features/sidebar/lib/sidebarListTab";
 import { useFeatureEnabled } from "@/shared/features";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -31,7 +32,8 @@ export type NavRailView =
 
 type AppNavRailProps = {
   homeBadgeCount: number;
-  inboxActive?: boolean;
+  /** The list shown in the left column; its tab is the highlighted one. */
+  listTab: SidebarListTab;
   onSelectAgents: () => void;
   onSelectChats: () => void;
   onSelectHome: () => void;
@@ -39,7 +41,6 @@ type AppNavRailProps = {
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
-  projectsOverviewActive: boolean;
   selectedView: NavRailView;
 };
 
@@ -50,7 +51,7 @@ type AppNavRailProps = {
  */
 export function AppNavRail({
   homeBadgeCount,
-  inboxActive = false,
+  listTab,
   onSelectAgents,
   onSelectChats,
   onSelectHome,
@@ -58,10 +59,10 @@ export function AppNavRail({
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
-  projectsOverviewActive,
   selectedView,
 }: AppNavRailProps) {
-  const activityActive = selectedView === "home" || inboxActive;
+  // The workflows screen has no list; its More item stays lit while open.
+  const onWorkflows = selectedView === "workflows";
   return (
     <nav
       aria-label="Main"
@@ -69,21 +70,21 @@ export function AppNavRail({
       data-testid="sidebar-primary-menu"
     >
       <RailButton
-        active={selectedView === "channel" && !inboxActive}
+        active={!onWorkflows && listTab === "chats"}
         icon={<MessagesSquare className="h-5 w-5" />}
         label="Chats"
         onClick={onSelectChats}
         testId="open-chats-view"
       />
       <RailButton
-        active={selectedView === "people"}
+        active={!onWorkflows && listTab === "people"}
         icon={<Users className="h-5 w-5" />}
         label="People"
         onClick={onSelectPeople}
         testId="open-people-view"
       />
       <RailButton
-        active={activityActive}
+        active={!onWorkflows && listTab === "activity"}
         badge={
           homeBadgeCount > 0 ? (
             <span
@@ -100,7 +101,7 @@ export function AppNavRail({
         testId="open-activity-view"
       />
       <RailButton
-        active={selectedView === "agents"}
+        active={!onWorkflows && listTab === "agents"}
         icon={<Bot className="h-5 w-5" />}
         label="Agents"
         onClick={onSelectAgents}
@@ -110,8 +111,7 @@ export function AppNavRail({
         onSelectProjects={onSelectProjects}
         onSelectPulse={onSelectPulse}
         onSelectWorkflows={onSelectWorkflows}
-        projectsOverviewActive={projectsOverviewActive}
-        selectedView={selectedView}
+        active={onWorkflows || listTab === "projects" || listTab === "pulse"}
       />
     </nav>
   );
@@ -160,34 +160,25 @@ const RailButton = React.forwardRef<HTMLButtonElement, RailButtonProps>(
 
 /** Pulse, Projects and Workflows live behind one "More" rail item. */
 function RailMoreMenu({
+  active,
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
-  projectsOverviewActive,
-  selectedView,
 }: Pick<
   AppNavRailProps,
-  | "onSelectProjects"
-  | "onSelectPulse"
-  | "onSelectWorkflows"
-  | "projectsOverviewActive"
-  | "selectedView"
->) {
+  "onSelectProjects" | "onSelectPulse" | "onSelectWorkflows"
+> & { active: boolean }) {
   const pulseEnabled = useFeatureEnabled("pulse");
   const projectsEnabled = useFeatureEnabled("projects");
   const workflowsEnabled = useFeatureEnabled("workflows");
   if (!pulseEnabled && !projectsEnabled && !workflowsEnabled) {
     return null;
   }
-  const moreActive =
-    selectedView === "pulse" ||
-    selectedView === "workflows" ||
-    (selectedView === "projects" && projectsOverviewActive);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <RailButton
-          active={moreActive}
+          active={active}
           icon={<Ellipsis className="h-5 w-5" />}
           label="More"
           testId="open-more-menu"
