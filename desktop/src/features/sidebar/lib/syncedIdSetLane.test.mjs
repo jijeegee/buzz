@@ -5,6 +5,7 @@ import { decodeDoc, encodeDoc } from "./sidebarLaneStore.ts";
 import { mergeTrees } from "./sidebarLwwMap.ts";
 import {
   idSetFromTree,
+  MAX_ID_SET_TOMBSTONES,
   PEOPLE_FAVORITES_LANE,
   setIdInTree,
   THREAD_PINS_LANE,
@@ -45,4 +46,39 @@ test("lanes round-trip through the synced document and stay separate", () => {
     PEOPLE_FAVORITES_LANE.storageKey("pk", "wss://relay.example"),
   );
   assert.equal(decodeDoc(PEOPLE_FAVORITES_LANE, { version: 1 }, 1), null);
+});
+
+test("only the newest removals are kept, so the record stays bounded", async () => {
+  let tree = {};
+  for (let i = 0; i < 60; i++) tree = setIdInTree(tree, `id${i}`, true);
+  for (let i = 0; i < 60; i++) {
+    tree = setIdInTree(tree, `id${i}`, false);
+    // Distinct register versions per removal.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  const kept = Object.keys(tree.i);
+  assert.equal(kept.length, MAX_ID_SET_TOMBSTONES);
+  assert.ok(kept.includes("id59"), "the newest removal is kept");
+  assert.ok(!kept.includes("id0"), "the oldest removal is dropped");
+  // A recent removal still wins over another device's older add.
+  const otherDevice = { i: { id59: [1, "f".repeat(16), true] } };
+  assert.deepEqual(idSetFromTree(mergeTrees(tree, otherDevice)), []);
+});
+
+test("pins match the relay's 200-thread cap; favorites use the same bound", async () => {
+  assert.equal(THREAD_PINS_LANE.maxEntries, 200);
+  assert.equal(PEOPLE_FAVORITES_LANE.maxEntries, 200);
+  assert.equal(THREAD_PINS_LANE.withinLimits({ ids: new Array(201) }), false);
+  // 200 ids plus the kept removals fit in the relay's event size limit.
+  let tree = {};
+  for (let i = 0; i < 200; i++) {
+    tree = setIdInTree(tree, i.toString(16).padStart(64, "0"), true);
+  }
+  for (let i = 0; i < MAX_ID_SET_TOMBSTONES; i++) {
+    const id = (1000 + i).toString(16).padStart(64, "0");
+    tree = setIdInTree(setIdInTree(tree, id, true), id, false);
+  }
+  const plaintext = JSON.stringify(encodeDoc(THREAD_PINS_LANE, tree));
+  // NIP-44 base64 adds about a third.
+  assert.ok(plaintext.length * 1.4 < 65_535, `${plaintext.length} bytes`);
 });
