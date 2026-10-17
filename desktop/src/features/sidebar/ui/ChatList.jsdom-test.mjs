@@ -297,6 +297,20 @@ test("with server chats on, rows, threads and counts come from the relay; off ke
     view.rerender(tree(server(1)));
     assert.equal(view.queryByTestId("channel-unread-dm-b"), null);
 
+    // Marked unread on this device: unread on top of the server row.
+    const dmRow = () =>
+      view.getByTestId("chat-list").querySelector('[data-channel-id="dm-b"]');
+    assert.doesNotMatch(dmRow().className, /font-bold/);
+    view.rerender(
+      tree({ ...server(2), forcedUnreadChannelIds: new Set(["dm-b"]) }),
+    );
+    assert.match(dmRow().className, /font-bold/);
+
+    // A thread muted (unfollowed) on this device stays out of the list.
+    view.rerender(tree({ ...server(3), mutedRootIds: new Set([ROOT]) }));
+    assert.equal(view.queryByTestId(`chat-thread-${ROOT}`), null);
+    assert.ok(view.getByTestId(`chat-thread-${PINNED_ROOT}`));
+
     // Switch off (or unknown): exactly today's list and local counts.
     view.rerender(tree(undefined));
     assert.deepEqual(order(view), ["room-c", "dm-b", "room-a"]);

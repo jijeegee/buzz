@@ -425,8 +425,9 @@ test("unmount disposes both established and pending channel streams", async () =
   }
 });
 
-test("live messages patch every loaded server chats list in place", async () => {
+test("live messages patch the shown server chats list in place, once per event", async () => {
   const { chatListQueryKey } = await import("@/features/chats/chatListState");
+  const { QueryObserver } = await import("@tanstack/react-query");
   const h = await mount(channels(2));
   const key = chatListQueryKey("wss://relay", VIEWER, []);
   const roomRow = (id, at, unread) => ({
@@ -453,23 +454,30 @@ test("live messages patch every loaded server chats list in place", async () => 
     latest: null,
     root: null,
   });
-  try {
-    h.queryClient.setQueryData(key, {
-      generation: 1,
-      next: null,
-      rows: [roomRow("channel-0", 200, 0), roomRow("channel-1", 100, 1)],
+  const initial = {
+    generation: 1,
+    next: null,
+    rows: [roomRow("channel-0", 200, 0), roomRow("channel-1", 100, 1)],
+  };
+  h.queryClient.setQueryData(key, initial);
+  // The sidebar's query observer makes the list "shown".
+  const observer = new QueryObserver(h.queryClient, {
+    queryFn: async () => initial,
+    queryKey: key,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const unsubscribe = observer.subscribe(() => {});
+  const mention = (id) =>
+    message(id, {
+      created_at: 300,
+      tags: [
+        ["h", "channel-1"],
+        ["p", VIEWER],
+      ],
     });
-    await h.deliver(
-      h.subscriptions[1],
-      message("peer-in-1", {
-        created_at: 300,
-        tags: [
-          ["h", "channel-1"],
-          ["p", VIEWER],
-        ],
-      }),
-    );
-    const rows = h.queryClient.getQueryData(key).rows;
+  try {
+    await h.deliver(h.subscriptions[1], mention("peer-in-1"));
+    let rows = h.queryClient.getQueryData(key).rows;
     assert.deepEqual(
       rows.map((row) => [row.key, row.unread, row.unread_mentions]),
       [
@@ -478,7 +486,18 @@ test("live messages patch every loaded server chats list in place", async () => 
       ],
     );
     assert.equal(rows[0].latest.id, "peer-in-1");
+
+    // A second message in the same second, then a repeat of the first
+    // (reconnect replay): the repeat is not counted again.
+    await h.deliver(h.subscriptions[1], mention("peer-in-2"));
+    await h.deliver(h.subscriptions[1], mention("peer-in-1"));
+    rows = h.queryClient.getQueryData(key).rows;
+    assert.deepEqual(
+      [rows[0].key, rows[0].unread, rows[0].unread_mentions],
+      ["channel-1", 3, 2],
+    );
   } finally {
+    unsubscribe();
     h.restore();
   }
 });

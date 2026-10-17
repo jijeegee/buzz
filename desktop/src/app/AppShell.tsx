@@ -112,6 +112,7 @@ import { AppShellTrayMenu } from "@/app/useAppShellTrayMenu";
 import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlayProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
+import { ChatStateSync } from "@/app/ChatStateSync";
 import { useChatStateWiring } from "@/app/useChatStateWiring";
 import {
   toggleInboxPanel,
@@ -397,9 +398,10 @@ export function AppShell() {
   const {
     markAllChannelsRead: markAllChannelReadMarkers,
     markChannelRead,
-    markChannelUnread,
+    markChannelUnread: markChannelUnreadLocally,
     clearChannelUnreadSource,
     unreadChannelIds,
+    forcedUnreadChannelIds,
     topLevelUnreadChannelIds,
     unreadChannelCounts,
     highPriorityUnreadChannelIds,
@@ -514,14 +516,18 @@ export function AppShell() {
     [goChannel],
   );
   const chatState = useChatStateWiring({
+    channels,
+    forcedUnreadChannelIds,
     getOwnReadAt,
+    markChannelUnread: markChannelUnreadLocally,
+    mutedRootIds,
     openThread: openChatThread,
     pubkey: identityQuery.data?.pubkey,
     readStateVersion,
     relayUrl: communitiesHook.activeCommunity?.relayUrl,
     setReadStateServerMirror,
   });
-  const { mirrorFollow } = chatState;
+  const { markChannelUnread, mirrorFollow } = chatState;
   const handleFollowThread = React.useCallback(
     (rootId: string) => {
       followThread(rootId);
@@ -763,6 +769,7 @@ export function AppShell() {
           openCreateChannel={handleOpenCreateChannel}
         />
       ) : null}
+      <ChatStateSync {...chatState.syncProps} />
       <ChannelNavigationProvider channels={channels}>
         <AppShellProvider
           value={{

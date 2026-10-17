@@ -6,6 +6,7 @@ import {
   MARK_READ_BATCH_MS,
   MARK_READ_MAX_ITEMS,
   markReadItemForContext,
+  OWN_WRITE_PING_WINDOW_MS,
 } from "./chatStateWrites.ts";
 
 const ROOM = "9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50";
@@ -42,11 +43,19 @@ function fakeTimers() {
   };
 }
 
-function harness({ capability = "on", markRead, follow } = {}) {
+function harness({
+  capability = "on",
+  markRead,
+  follow,
+  isKnownNonMember,
+} = {}) {
   const timers = fakeTimers();
   const calls = [];
+  const unreadCalls = [];
   const followCalls = [];
+  const written = [];
   let unavailable = 0;
+  const clock = { now: 10_000 };
   const state = { capability };
   const writer = new ChatStateWriter({
     capability: () => state.capability,
@@ -54,25 +63,35 @@ function harness({ capability = "on", markRead, follow } = {}) {
       follow ??
       (async (root, followState) => {
         followCalls.push([root, followState]);
+        return { root, state: followState, thread_follow: 1 };
       }),
+    isKnownNonMember,
     markRead:
       markRead ??
-      (async (items) => {
-        calls.push(items.map((item) => ({ ...item })));
+      (async (items, unreadMark) => {
+        (unreadMark ? unreadCalls : calls).push(
+          items.map((item) => ({ ...item })),
+        );
+        return { items: [], mark_read: 1 };
       }),
+    now: () => clock.now,
     onUnavailable: () => {
       unavailable += 1;
       state.capability = "off";
     },
+    onWritten: (write) => written.push(write),
     timers: timers.host,
   });
   return {
     calls,
+    clock,
     followCalls,
     state,
     timers,
     unavailable: () => unavailable,
+    unreadCalls,
     writer,
+    written,
   };
 }
 
@@ -181,19 +200,22 @@ test("unavailable turns the capability off and drops the queue", async () => {
   assert.deepEqual(h.timers.pending(), []);
 });
 
-test("a refused item (not a member) is dropped and the rest resent", async () => {
+function refusingMarkRead(sent, refusedIds) {
+  return async (items) => {
+    sent.push(items.map((item) => item.id));
+    const index = items.findIndex((item) => refusedIds.includes(item.id));
+    if (index !== -1) {
+      throw new Error(
+        `relay returned 403 Forbidden: mark_read item ${index}: not a member of that room`,
+      );
+    }
+    return { items: [], mark_read: 1 };
+  };
+}
+
+test("a refused room is dropped, remembered for the session and never resent", async () => {
   const sent = [];
-  const h = harness({
-    markRead: async (items) => {
-      sent.push(items.map((item) => item.id));
-      const index = items.findIndex((item) => item.id === DM);
-      if (index !== -1) {
-        throw new Error(
-          `relay returned 403 Forbidden: mark_read item ${index}: not a member of that room`,
-        );
-      }
-    },
-  });
+  const h = harness({ markRead: refusingMarkRead(sent, [DM]) });
   h.writer.queueRead(ROOM, 100);
   h.writer.queueRead(DM, 100);
   h.writer.queueRead(`thread:${ROOT}`, 100);
@@ -202,10 +224,145 @@ test("a refused item (not a member) is dropped and the rest resent", async () =>
     [ROOM, DM, ROOT],
     [ROOM, ROOT],
   ]);
-  // The refused context may be tried again with a later position.
+  // Later reads and unread marks for the refused room are not sent.
+  h.writer.queueRead(DM, 200);
+  h.writer.queueUnread(DM);
+  await h.timers.advance(MARK_READ_BATCH_MS * 3);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(h.unreadCalls, []);
+});
+
+test("a second refusal defers the rest to the next batch instead of k+1 requests", async () => {
+  const sent = [];
+  const others = Array.from(
+    { length: 4 },
+    (_, i) => `${i}a1657ac-f7aa-5db0-b632-d8bbeb6dfb50`,
+  );
+  const h = harness({ markRead: refusingMarkRead(sent, others.slice(0, 3)) });
+  for (const id of others) h.writer.queueRead(id, 100);
+  h.writer.queueRead(ROOM, 100);
+  await h.timers.advance(MARK_READ_BATCH_MS);
+  // First try, then one retry without the first refused room: two requests.
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[1], [others[1], others[2], others[3], ROOM]);
+  await h.timers.advance(MARK_READ_BATCH_MS);
+  assert.deepEqual(sent[2], [others[2], others[3], ROOM]);
+  assert.deepEqual(sent[3], [others[3], ROOM]);
+  await h.timers.advance(MARK_READ_BATCH_MS * 5);
+  assert.equal(sent.length, 4);
+});
+
+test("rooms known not to be joined are never mirrored", async () => {
+  const h = harness({ isKnownNonMember: (item) => item.id === DM });
+  h.writer.queueRead(DM, 100);
+  h.writer.queueRead(ROOM, 100);
+  await h.timers.advance(MARK_READ_BATCH_MS);
+  assert.deepEqual(h.calls, [[{ at: 100, id: ROOM, kind: "channel" }]]);
+});
+
+test("another account or relay drops the queue and stops the writer", async () => {
+  let attempts = 0;
+  const h = harness({
+    markRead: async () => {
+      attempts += 1;
+      throw new Error("chat_state_account_changed");
+    },
+  });
+  h.writer.queueRead(ROOM, 100);
   h.writer.queueRead(DM, 100);
   await h.timers.advance(MARK_READ_BATCH_MS);
-  assert.deepEqual(sent[2], [DM]);
+  assert.equal(attempts, 1);
+  assert.equal(h.writer.isDisposed, true);
+  // Not "permanent", not retried, and nothing more is ever sent.
+  h.writer.queueRead(ROOM, 300);
+  h.writer.setFollow(ROOT, "followed");
+  await h.writer.flush();
+  await h.timers.advance(MARK_READ_BATCH_MS * 100);
+  assert.equal(attempts, 1);
+  assert.deepEqual(h.followCalls, []);
+  assert.deepEqual(h.timers.pending(), []);
+  assert.equal(h.unavailable(), 0);
+});
+
+test("dispose (account switch, reload) drops pending writes without sending", async () => {
+  const h = harness();
+  h.writer.queueRead(ROOM, 100);
+  h.writer.queueUnread(DM);
+  h.writer.setFollow(ROOT, "followed");
+  h.writer.dispose();
+  await h.writer.flush();
+  await h.timers.advance(MARK_READ_BATCH_MS * 5);
+  assert.deepEqual(h.calls, []);
+  assert.deepEqual(h.unreadCalls, []);
+  assert.deepEqual(h.followCalls, []);
+});
+
+test("a flush sends every chunk, including reads queued while it ran", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const sizes = [];
+  const h = harness({
+    markRead: async (items) => {
+      sizes.push(items.length);
+      if (sizes.length === 1) await gate;
+      return { items: [], mark_read: 1 };
+    },
+  });
+  for (let i = 0; i < MARK_READ_MAX_ITEMS * 2 + 3; i += 1) {
+    h.writer.queueRead(`thread:${i.toString(16).padStart(64, "0")}`, 10);
+  }
+  const flushed = h.writer.flush();
+  await Promise.resolve();
+  h.writer.queueRead(ROOM, 50);
+  release();
+  await flushed;
+  assert.deepEqual(sizes, [MARK_READ_MAX_ITEMS, MARK_READ_MAX_ITEMS, 4]);
+});
+
+test("unread marks go out after reads with unread_mark; a later read clears them", async () => {
+  const h = harness();
+  h.writer.queueRead(ROOM, 100);
+  h.writer.queueUnread(ROOM);
+  h.writer.queueUnread(`thread:${ROOT}`);
+  h.writer.queueUnread(`msg:${ROOT}`);
+  await h.timers.advance(MARK_READ_BATCH_MS);
+  // The mark replaced the pending read for the same room.
+  assert.deepEqual(h.calls, []);
+  assert.deepEqual(h.unreadCalls, [
+    [
+      { id: ROOM, kind: "channel" },
+      { id: ROOT, kind: "thread" },
+    ],
+  ]);
+  // Reading again, even at an already-sent position, clears the mark.
+  h.writer.queueRead(ROOM, 100);
+  await h.timers.advance(MARK_READ_BATCH_MS);
+  assert.deepEqual(h.calls, [[{ at: 100, id: ROOM, kind: "channel" }]]);
+});
+
+test("pings during or just after this device's own write are its echo", async () => {
+  let release;
+  const h = harness({
+    markRead: (items) =>
+      new Promise((resolve) => {
+        release = () => resolve({ items, mark_read: 1 });
+      }),
+  });
+  assert.equal(h.writer.explainsPing(), false);
+  h.writer.queueRead(ROOM, 100);
+  await h.timers.advance(MARK_READ_BATCH_MS);
+  // The relay pings before it answers.
+  assert.equal(h.writer.explainsPing(), true);
+  release();
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  assert.equal(h.written.length, 1);
+  assert.equal(h.written[0].type, "mark_read");
+  h.clock.now += OWN_WRITE_PING_WINDOW_MS - 1;
+  assert.equal(h.writer.explainsPing(), true);
+  h.clock.now += 1;
+  assert.equal(h.writer.explainsPing(), false);
 });
 
 test("malformed requests are dropped; network failures retry with backoff", async () => {

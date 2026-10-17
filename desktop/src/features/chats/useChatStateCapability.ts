@@ -41,12 +41,12 @@ export function useChatStateCapability({
   const lastProbeAtRef = React.useRef(0);
 
   const reprobe = React.useCallback(() => {
-    if (!capabilityKey || !connected) return;
+    if (!capabilityKey || !connected || !pubkey || !relayUrl) return;
     lastProbeAtRef.current = Date.now();
     void probeChatStateCapability(capabilityKey, () =>
-      getChatListPage(null, [], 1),
+      getChatListPage({ pubkey, relayUrl }, null, [], 1),
     );
-  }, [capabilityKey, connected]);
+  }, [capabilityKey, connected, pubkey, relayUrl]);
 
   // First probe for this relay + pubkey once connected.
   React.useEffect(() => {

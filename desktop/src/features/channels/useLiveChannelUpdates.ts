@@ -10,11 +10,8 @@ import {
   inboxSummaryShowsAny,
   type InboxSummaryState,
 } from "@/features/home/lib/inboxSummary";
-import {
-  applyLiveEventToChatList,
-  CHAT_LIST_QUERY_KEY,
-  type ChatListState,
-} from "@/features/chats/chatListState";
+import { ChatListLiveSync } from "@/features/chats/chatListSync";
+import { dmVisibilityQueryKey } from "@/features/channels/useHiddenDmIds";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
 import { mergeTimelineCacheMessages } from "@/features/messages/hooks";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
@@ -95,7 +92,6 @@ const LIVE_SUBSCRIPTION_RETRY_MAX_MS = 30_000;
 // non-active channels arrives in bursts, so coalesce the refetch into a single
 // trailing invalidation instead of one per event.
 const CHANNELS_INVALIDATE_DEBOUNCE_MS = 500;
-const CHAT_LIST_INVALIDATE_DEBOUNCE_MS = 300;
 
 // Only "new content" kinds should bump unread state. Shared with the
 // catch-up query in useUnreadChannels so the two paths stay in lockstep.
@@ -192,15 +188,28 @@ export function useLiveChannelUpdates(
   const invalidateChannelsDebounced = React.useCallback(() => {
     channelsInvalidateRef.current?.trigger();
   }, []);
-  // Server chats list rows only the relay can place (new rooms, newly
-  // followed threads, close / reopen): one refetch per burst.
-  const chatListInvalidateRef = React.useRef<TrailingDebounce | null>(null);
-  if (chatListInvalidateRef.current === null) {
-    chatListInvalidateRef.current = createTrailingDebounce(() => {
-      void queryClient.invalidateQueries({ queryKey: CHAT_LIST_QUERY_KEY });
-    }, CHAT_LIST_INVALIDATE_DEBOUNCE_MS);
+  // Server chats list (Chats S4): live patches, and throttled refetches for
+  // rows only the relay can place. Hidden DMs and archived rooms are skipped.
+  const chatListSyncRef = React.useRef<ChatListLiveSync | null>(null);
+  if (chatListSyncRef.current === null) {
+    chatListSyncRef.current = new ChatListLiveSync(queryClient, {
+      isRoomHidden: (channelId) =>
+        queryClient
+          .getQueriesData<unknown>({ queryKey: dmVisibilityQueryKey })
+          .some(([, ids]) => ids instanceof Set && ids.has(channelId)) ||
+        queryClient
+          .getQueriesData<unknown>({ queryKey: channelsQueryKey })
+          .some(
+            ([, list]) =>
+              Array.isArray(list) &&
+              list.some(
+                (channel: Channel) =>
+                  channel.id === channelId && !!channel.archivedAt,
+              ),
+          ),
+    });
   }
-  React.useEffect(() => () => chatListInvalidateRef.current?.cancel(), []);
+  React.useEffect(() => () => chatListSyncRef.current?.dispose(), []);
   const liveChannelIds = React.useMemo(
     () => new Set(channels.map((channel) => channel.id)),
     [channels],
@@ -291,29 +300,14 @@ export function useLiveChannelUpdates(
           queryKey: INBOX_SUMMARY_QUERY_KEY,
         });
       }
-      const deleted = new Set(deletedEventIds(event));
-      const chatListShowsDeleted = queryClient
-        .getQueriesData<ChatListState>({ queryKey: CHAT_LIST_QUERY_KEY })
-        .some(([, list]) =>
-          list?.rows.some(
-            (row) =>
-              (row.latest !== null && deleted.has(row.latest.id)) ||
-              (row.root_id !== null && deleted.has(row.root_id)),
-          ),
-        );
-      if (chatListShowsDeleted) chatListInvalidateRef.current?.trigger();
+      chatListSyncRef.current?.onDeletion(deletedEventIds(event));
     }
 
     if (!liveChannelIds.has(channelId)) {
       if (channelId !== activeChannelId) {
         invalidateChannelsDebounced();
         // A room new to this device (e.g. a first DM) is new to the list too.
-        if (
-          queryClient.getQueriesData({ queryKey: CHAT_LIST_QUERY_KEY }).length >
-          0
-        ) {
-          chatListInvalidateRef.current?.trigger();
-        }
+        chatListSyncRef.current?.refetchForMissingRow(channelId);
       }
       return;
     }
@@ -353,23 +347,12 @@ export function useLiveChannelUpdates(
           normalizedCurrentPubkey,
         ),
     );
-    let chatListNeedsRefetch = false;
-    queryClient.setQueriesData<ChatListState>(
-      { queryKey: CHAT_LIST_QUERY_KEY },
-      (current) => {
-        if (!current) return current;
-        const patch = applyLiveEventToChatList(
-          current,
-          event,
-          channelId,
-          normalizedCurrentPubkey,
-          hasMentionForEvent(event, normalizedCurrentPubkey),
-        );
-        chatListNeedsRefetch ||= patch.refetch;
-        return patch.state;
-      },
+    chatListSyncRef.current?.onMessage(
+      event,
+      channelId,
+      normalizedCurrentPubkey,
+      hasMentionForEvent(event, normalizedCurrentPubkey),
     );
-    if (chatListNeedsRefetch) chatListInvalidateRef.current?.trigger();
 
     // Let the caller observe self-authored trigger events (e.g. to track
     // thread participation) before the author-exclusion guard filters them.
@@ -459,7 +442,7 @@ export function useLiveChannelUpdates(
       void queryClient.invalidateQueries({ queryKey: channelsQueryKey });
       // Messages missed while disconnected never reached the row patcher.
       void queryClient.invalidateQueries({ queryKey: INBOX_SUMMARY_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: CHAT_LIST_QUERY_KEY });
+      chatListSyncRef.current?.refetchNow();
 
       // Update the subscription timestamp so replayed backlog events
       // (which have created_at in the past) are naturally suppressed.

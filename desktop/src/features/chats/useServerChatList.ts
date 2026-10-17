@@ -6,8 +6,13 @@ import {
   CHAT_LIST_PAGE_SIZE,
   chatListQueryKey,
   mergeChatListPage,
+  mergeRefetchedFirstPage,
   type ChatListState,
 } from "@/features/chats/chatListState";
+import {
+  recordChatListPatches,
+  replayChatListPatches,
+} from "@/features/chats/chatListSync";
 import { setChatStateCapability } from "@/features/chats/chatStateCapability";
 import {
   getChatListPage,
@@ -20,9 +25,11 @@ const NO_PINS: readonly string[] = [];
 /**
  * The server chats list while the chat-state capability is on: the first
  * page renders at once, later pages load one after another in the background
- * up to CHAT_LIST_BACKGROUND_ROWS. Live events patch rows in place
- * (useLiveChannelUpdates); the chat-state ping refetches. An "unavailable"
- * answer turns the capability off, which disables this query.
+ * up to CHAT_LIST_BACKGROUND_ROWS. A refetch (ping, reconnect) reloads only
+ * the first page and keeps the older loaded rows. Live events patch rows in
+ * place (chatListSync); patches made while a first page was in flight are
+ * re-applied to it. An "unavailable" answer turns the capability off, which
+ * disables this query.
  */
 export function useServerChatList({
   capabilityKey,
@@ -43,6 +50,10 @@ export function useServerChatList({
   const queryClient = useQueryClient();
   const active = enabled && capabilityKey !== null && !!pubkey && !!relayUrl;
   const fetching = active && connected;
+  const binding = React.useMemo(
+    () => ({ pubkey: pubkey ?? "", relayUrl: relayUrl ?? "" }),
+    [pubkey, relayUrl],
+  );
   const queryKey = chatListQueryKey(
     relayUrl ?? "",
     pubkey ?? "",
@@ -57,14 +68,22 @@ export function useServerChatList({
     enabled: fetching,
     queryKey,
     queryFn: async (): Promise<ChatListState> => {
+      const stopRecording = recordChatListPatches(queryClient);
       try {
         const page = await getChatListPage(
+          binding,
           null,
           pinnedThreadIds,
           CHAT_LIST_PAGE_SIZE,
         );
-        return { ...page, generation: ++chatListGeneration };
+        const merged = mergeRefetchedFirstPage(
+          queryClient.getQueryData<ChatListState>(queryKey),
+          page,
+          ++chatListGeneration,
+        );
+        return replayChatListPatches(merged, stopRecording());
       } catch (error) {
+        stopRecording();
         markUnavailable(error);
         throw error;
       }
@@ -86,7 +105,7 @@ export function useServerChatList({
   React.useEffect(() => {
     if (!wantsMore || next === null) return;
     let cancelled = false;
-    getChatListPage(next, pinnedThreadIds, CHAT_LIST_PAGE_SIZE)
+    getChatListPage(binding, next, pinnedThreadIds, CHAT_LIST_PAGE_SIZE)
       .then((page) => {
         if (cancelled) return;
         queryClient.setQueryData<ChatListState>(queryKey, (current) =>

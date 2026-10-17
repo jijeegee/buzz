@@ -964,8 +964,16 @@ export function useUnreadChannels(
     [membershipVersion],
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: latestVersion is the intentional re-derivation signal
+  const forcedUnreadChannelIds = React.useMemo(
+    () => new Set(Object.keys(forcedUnreadRef.current)) as ReadonlySet<string>,
+    [latestVersion],
+  );
+
   return {
     unreadChannelIds,
+    /** Channels marked unread on this device (manual or Inbox). */
+    forcedUnreadChannelIds,
     topLevelUnreadChannelIds,
     unreadChannelCounts,
     highPriorityUnreadChannelIds,

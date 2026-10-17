@@ -19,6 +19,10 @@ export type ServerChats = {
   /** Changes whenever local read positions change. */
   readStateVersion: number;
   pinnedThreadIds?: ReadonlySet<string>;
+  /** Rooms marked unread on this device: shown unread before the relay agrees. */
+  forcedUnreadChannelIds?: ReadonlySet<string>;
+  /** Threads muted (unfollowed) on this device stay out of the list. */
+  mutedRootIds?: ReadonlySet<string>;
 };
 
 type ChatListProps = Omit<
@@ -64,9 +68,11 @@ function buildServerChatRows(
     if (row.type === "room") {
       if (shown.has(channel.id)) continue;
       shown.add(channel.id);
+      const forced = server.forcedUnreadChannelIds?.has(channel.id) ?? false;
       if (
-        (unread.count > 0 || unread.marked) &&
-        (!isMuted || unread.mentions > 0)
+        forced ||
+        ((unread.count > 0 || unread.marked) &&
+          (!isMuted || unread.mentions > 0))
       ) {
         unreadIds.add(channel.id);
         counts.set(channel.id, unread.count);
@@ -75,7 +81,7 @@ function buildServerChatRows(
       target.push({ kind: "channel", channel });
       continue;
     }
-    if (!row.root_id) continue;
+    if (!row.root_id || server.mutedRootIds?.has(row.root_id)) continue;
     const isPinned = server.pinnedThreadIds?.has(row.root_id) ?? false;
     (isPinned ? pinned : rest).push({
       kind: "custom",

@@ -112,6 +112,165 @@ export function mergeChatListPage(
   };
 }
 
+/**
+ * A refetched first page over the loaded list: rows past the new first page
+ * stay (with their cursor), so a refetch reloads one page, not all of them.
+ */
+export function mergeRefetchedFirstPage(
+  previous: ChatListState | undefined,
+  page: ChatListPage,
+  generation: number,
+): ChatListState {
+  const last = page.rows.at(-1);
+  if (!previous || page.next === null || !last) {
+    return { ...page, generation };
+  }
+  const keys = new Set(page.rows.map((row) => row.key));
+  const older = previous.rows.filter(
+    (row) => !keys.has(row.key) && rowSortDesc(last, row) < 0,
+  );
+  if (older.length === 0) return { ...page, generation };
+  return {
+    generation,
+    next: previous.next,
+    rows: [...page.rows, ...older],
+  };
+}
+
+function patchRow(
+  current: ChatListState,
+  matches: (row: ChatListRow) => boolean,
+  patch: (row: ChatListRow) => ChatListRow | null,
+): ChatListState {
+  let changed = false;
+  const rows: ChatListRow[] = [];
+  for (const row of current.rows) {
+    if (!matches(row)) {
+      rows.push(row);
+      continue;
+    }
+    const next = patch(row);
+    changed ||= next !== row;
+    if (next) rows.push(next);
+  }
+  return changed ? { ...current, rows } : current;
+}
+
+type MarkReadResultLike = {
+  channel?: unknown;
+  thread?: unknown;
+  read_seq?: unknown;
+  unread_mark?: unknown;
+  stored?: unknown;
+};
+
+/**
+ * Patch rows from this device's own `mark_read` response (read position and
+ * unread mark as stored), instead of refetching on the ping it causes.
+ */
+export function applyMarkReadResponseToChatList(
+  current: ChatListState,
+  response: unknown,
+): ChatListState {
+  const items = (response as { items?: unknown } | null)?.items;
+  if (!Array.isArray(items)) return current;
+  let state = current;
+  for (const raw of items as MarkReadResultLike[]) {
+    if (raw?.stored !== true) continue;
+    const readSeq = typeof raw.read_seq === "number" ? raw.read_seq : null;
+    const unreadMark = raw.unread_mark === true;
+    const channel = typeof raw.channel === "string" ? raw.channel : null;
+    const thread = typeof raw.thread === "string" ? raw.thread : null;
+    if (!channel && !thread) continue;
+    state = patchRow(
+      state,
+      (row) =>
+        thread
+          ? row.type === "thread" && row.root_id === thread
+          : row.type === "room" && row.channel_id === channel,
+      (row) => {
+        const caughtUp =
+          readSeq !== null && row.last_seq !== null && readSeq >= row.last_seq;
+        const next: ChatListRow = {
+          ...row,
+          read_seq: readSeq ?? row.read_seq,
+          unread_mark: unreadMark,
+          ...(caughtUp
+            ? {
+                unread: 0,
+                unread_overflow: false,
+                unread_mentions: 0,
+                unread_mentions_overflow: false,
+              }
+            : {}),
+        };
+        return next;
+      },
+    );
+  }
+  return state;
+}
+
+/**
+ * Patch rows from this device's own `thread_follow` response. Unfollowing
+ * drops the row; a newly followed thread not loaded yet needs the relay.
+ */
+export function applyFollowResponseToChatList(
+  current: ChatListState,
+  response: unknown,
+): ChatListLivePatch {
+  const { root, state } = (response ?? {}) as {
+    root?: unknown;
+    state?: unknown;
+  };
+  if (typeof root !== "string") return { state: current, refetch: false };
+  const loaded = current.rows.some(
+    (row) => row.type === "thread" && row.root_id === root,
+  );
+  if (state === "unfollowed") {
+    return {
+      state: patchRow(
+        current,
+        (row) => row.type === "thread" && row.root_id === root,
+        () => null,
+      ),
+      refetch: false,
+    };
+  }
+  if (state !== "followed") return { state: current, refetch: false };
+  if (!loaded) return { state: current, refetch: true };
+  return {
+    state: patchRow(
+      current,
+      (row) => row.type === "thread" && row.root_id === root,
+      (row) =>
+        row.follow_state === "followed"
+          ? row
+          : { ...row, follow_state: "followed" },
+    ),
+    refetch: false,
+  };
+}
+
+/**
+ * Remembers the last `limit` event ids: `seen(id)` is true for a repeat
+ * (reconnect replay, a second subscription) and records the id otherwise.
+ */
+export function createEventIdLru(limit: number) {
+  const ids = new Set<string>();
+  return {
+    seen(id: string): boolean {
+      if (ids.has(id)) return true;
+      ids.add(id);
+      if (ids.size > limit) {
+        const oldest = ids.values().next().value;
+        if (oldest !== undefined) ids.delete(oldest);
+      }
+      return false;
+    },
+  };
+}
+
 export type ChatListLivePatch = {
   state: ChatListState;
   /** The event may add a row only the relay can place: refetch the list. */
@@ -145,6 +304,11 @@ export function applyLiveEventToChatList(
   channelId: string,
   currentPubkey: string,
   mentionsMe: boolean,
+  /**
+   * Re-applying an event that arrived while this list was fetched: the
+   * fetched rows may already count it, so only strictly newer events apply.
+   */
+  replay = false,
 ): ChatListLivePatch {
   const unchanged = { state: current, refetch: false };
   if (!MESSAGE_KINDS.has(event.kind)) return unchanged;
@@ -180,7 +344,12 @@ export function applyLiveEventToChatList(
     }
     const existing = rows[index];
     if (existing.latest?.id === event.id) continue;
-    if (existing.latest && existing.latest.created_at > event.created_at) {
+    if (
+      existing.latest &&
+      (replay
+        ? existing.latest.created_at >= event.created_at
+        : existing.latest.created_at > event.created_at)
+    ) {
       continue;
     }
     const unread = fromMe

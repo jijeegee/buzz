@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyFollowResponseToChatList,
   applyLiveEventToChatList,
+  applyMarkReadResponseToChatList,
   chatListQueryKey,
+  createEventIdLru,
+  mergeRefetchedFirstPage,
   chatRowContextId,
   chatRowUnread,
   chatThreadTitle,
@@ -312,4 +316,144 @@ test("thread titles fall back to the root's first line", () => {
     "abc",
     "x,y",
   ]);
+});
+
+test("own mark_read responses patch rows: caught up clears counts, marks show", () => {
+  const room = row({ last_seq: 10, read_seq: 8, unread: 2 });
+  const thread = row({ type: "thread", last_seq: 12, read_seq: 3, unread: 4 });
+  const current = state([room, thread]);
+  const patched = applyMarkReadResponseToChatList(current, {
+    items: [
+      {
+        channel: ROOM,
+        channel_id: ROOM,
+        read_seq: 10,
+        stored: true,
+        unread_mark: false,
+      },
+      {
+        channel_id: ROOM,
+        read_seq: 3,
+        stored: true,
+        thread: ROOT,
+        unread_mark: true,
+      },
+      // Not stored (no follow row): nothing to patch.
+      {
+        channel_id: ROOM,
+        read_seq: null,
+        stored: false,
+        thread: OTHER_ROOT,
+        unread_mark: false,
+      },
+    ],
+    mark_read: 1,
+  });
+  assert.deepEqual(
+    patched.rows.map((r) => [r.type, r.read_seq, r.unread, r.unread_mark]),
+    [
+      ["room", 10, 0, false],
+      ["thread", 3, 4, true],
+    ],
+  );
+  assert.equal(applyMarkReadResponseToChatList(current, null), current);
+  assert.equal(
+    applyMarkReadResponseToChatList(current, { items: [] }).rows,
+    current.rows,
+  );
+});
+
+test("own follow responses drop unfollowed threads; unknown follows need the relay", () => {
+  const current = state([row(), row({ type: "thread" })]);
+  const unfollowed = applyFollowResponseToChatList(current, {
+    root: ROOT,
+    state: "unfollowed",
+    thread_follow: 1,
+  });
+  assert.deepEqual(
+    unfollowed.state.rows.map((r) => r.type),
+    ["room"],
+  );
+  assert.equal(unfollowed.refetch, false);
+  const followed = applyFollowResponseToChatList(current, {
+    root: ROOT,
+    state: "followed",
+  });
+  assert.equal(followed.state.rows[1].follow_state, "followed");
+  assert.equal(followed.refetch, false);
+  assert.equal(
+    applyFollowResponseToChatList(current, {
+      root: OTHER_ROOT,
+      state: "followed",
+    }).refetch,
+    true,
+  );
+});
+
+test("a refetched first page keeps the older loaded rows and their cursor", () => {
+  const older = row({ channel_id: DM, at: 10 });
+  const previous = state(
+    [row({ at: 100 }), row({ type: "thread", at: 50 }), older],
+    {
+      at_us: 10_000_000,
+      key: DM,
+    },
+  );
+  const merged = mergeRefetchedFirstPage(
+    previous,
+    {
+      next: { at_us: 50_000_000, key: ROOT },
+      rows: [row({ type: "thread", at: 200 }), row({ at: 100 })],
+    },
+    7,
+  );
+  assert.equal(merged.generation, 7);
+  assert.deepEqual(merged.next, previous.next);
+  assert.deepEqual(
+    merged.rows.map((r) => r.key),
+    [ROOT, ROOM, DM],
+  );
+  // A complete first page replaces everything.
+  const complete = mergeRefetchedFirstPage(
+    previous,
+    { next: null, rows: [row()] },
+    8,
+  );
+  assert.deepEqual(
+    complete.rows.map((r) => r.key),
+    [ROOM],
+  );
+  assert.equal(complete.next, null);
+});
+
+test("replayed events apply only when newer than the fetched row", () => {
+  const current = state([row({ at: 100, unread: 2 })]);
+  const same = applyLiveEventToChatList(
+    current,
+    event("other-same-second", 100),
+    ROOM,
+    ME,
+    false,
+    true,
+  );
+  assert.equal(same.state, current);
+  const newer = applyLiveEventToChatList(
+    current,
+    event("newer", 101),
+    ROOM,
+    ME,
+    false,
+    true,
+  );
+  assert.equal(newer.state.rows[0].unread, 3);
+});
+
+test("the event id LRU reports repeats and forgets the oldest", () => {
+  const lru = createEventIdLru(2);
+  assert.equal(lru.seen("a"), false);
+  assert.equal(lru.seen("a"), true);
+  assert.equal(lru.seen("b"), false);
+  assert.equal(lru.seen("c"), false);
+  assert.equal(lru.seen("a"), false);
+  assert.equal(lru.seen("c"), true);
 });
