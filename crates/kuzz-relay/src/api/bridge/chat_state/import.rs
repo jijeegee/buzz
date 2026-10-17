@@ -10,7 +10,9 @@
 //!
 //! `reads` and `follows` may each be omitted; together they carry 1..=500
 //! items, each room, thread, and follow root at most once. `at` is whole Unix
-//! seconds. The reply has one result per item, in request order:
+//! seconds, at most 300 s past the relay's clock (milliseconds are refused),
+//! compared with each message's `created_at` (the signer's time). The reply
+//! has one result per item, in request order:
 //!
 //! ```json
 //! {"chat_import": 1,
@@ -211,7 +213,10 @@ mod tests {
         let root = "ab".repeat(32);
         let read = json!({"channel": CHANNEL, "at": 1});
         let follow = json!({"root": root, "state": "followed"});
+        let now = chrono::Utc::now().timestamp();
         for filter in [
+            json!({"chat_import": 1, "reads": [{"channel": CHANNEL, "at": now * 1000}]}),
+            json!({"chat_import": 1, "reads": [{"thread": root, "at": now + 3600}]}),
             json!({"chat_import": 2, "reads": [read]}),
             json!({"chat_import": 1}),
             json!({"chat_import": 1, "reads": [], "follows": []}),
@@ -232,6 +237,10 @@ mod tests {
         ] {
             assert!(parse(std::slice::from_ref(&filter)).is_err(), "{filter}");
         }
+        assert!(
+            parse(&[json!({"chat_import": 1, "reads": [{"channel": CHANNEL, "at": now}]})]).is_ok(),
+            "now is accepted"
+        );
         assert!(parse(&[]).is_err());
         assert!(parse(&[
             json!({"chat_import": 1, "follows": [follow]}),

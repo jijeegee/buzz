@@ -12,7 +12,8 @@
 //!   → `{"mark_read": 1, "items": [..]}`. Each item names a `channel` or a
 //!   `thread` and optionally one position: a `seq` from `chat_list`, the id
 //!   of the newest `event` the reader has seen, or `at`, whole Unix seconds
-//!   the reader has read up to. Without a position only the unread mark
+//!   the reader has read up to (matched against message `created_at`, the
+//!   signer's time; at most 300 s ahead). Without a position only the unread mark
 //!   changes. All items apply or none do.
 //! - `{"thread_follow": 1, "root": "<root-hex>", "state": "followed" |
 //!   "unfollowed"}` → `{"thread_follow": 1, "root": .., "channel_id": ..,
@@ -251,13 +252,21 @@ fn read_target(object: &Map<String, Value>) -> Result<MarkReadTarget, &'static s
     })
 }
 
-/// A non-negative whole number of Unix seconds.
+/// How far past the relay's clock a read time may be (clock skew).
+const MAX_AT_AHEAD_SECS: i64 = 300;
+
+/// A non-negative whole number of Unix seconds, at most
+/// [`MAX_AT_AHEAD_SECS`] past now. The bound also catches milliseconds sent
+/// by mistake.
 fn unix_seconds(value: &Value) -> Result<DateTime<Utc>, &'static str> {
-    value
+    let secs = value
         .as_u64()
         .and_then(|secs| i64::try_from(secs).ok())
-        .and_then(|secs| DateTime::from_timestamp(secs, 0))
-        .ok_or("at must be non-negative whole Unix seconds")
+        .ok_or("at must be non-negative whole Unix seconds")?;
+    if secs > Utc::now().timestamp() + MAX_AT_AHEAD_SECS {
+        return Err("at is in the future (must be Unix seconds, not milliseconds)");
+    }
+    DateTime::from_timestamp(secs, 0).ok_or("at is out of range")
 }
 
 fn parse_thread_follow(filters: &[Value]) -> Result<(Vec<u8>, FollowState), QueryError> {
@@ -550,8 +559,12 @@ mod tests {
     fn rejects_malformed_mark_reads() {
         let channel = "11111111-1111-4111-8111-111111111111";
         let root = "cd".repeat(32);
+        let now = Utc::now().timestamp();
         for item in [
             json!({}),
+            // Milliseconds by mistake, and more than the allowed skew ahead.
+            json!({"channel": channel, "at": now * 1000}),
+            json!({"channel": channel, "at": now + 3600}),
             json!({"channel": channel, "thread": root}),
             json!({"channel": "nope"}),
             json!({"thread": "abcd"}),
@@ -568,6 +581,11 @@ mod tests {
                 "{item}"
             );
         }
+        // Within the skew is accepted.
+        assert!(parse_mark_read(&[
+            json!({"mark_read": 1, "items": [{"channel": channel, "at": now + 60}]})
+        ])
+        .is_ok());
         assert!(parse_mark_read(&[json!({"mark_read": 1, "items": []})]).is_err());
         let too_many = vec![json!({"channel": channel}); MAX_MARK_READ_ITEMS + 1];
         assert!(parse_mark_read(&[json!({"mark_read": 1, "items": too_many})]).is_err());
