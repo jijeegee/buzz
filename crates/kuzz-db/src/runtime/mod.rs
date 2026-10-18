@@ -697,6 +697,8 @@ impl Db {
                     // milliseconds. Migration/schema-destruction connections
                     // reset lock and statement timeouts before their intentional
                     // long wait (see `with_exclusive_schema_destruction_lock`).
+                    // JIT off: its compile time (tens to hundreds of ms) far
+                    // exceeds what it saves on this workload's short queries.
                     let timeouts = DbConnectionStepAttempt::start(
                         DbPoolRole::Writer,
                         DbConnectionStep::SessionTimeouts,
@@ -705,7 +707,8 @@ impl Db {
                         "SELECT set_config('lock_timeout', $1, false), \
                                 set_config('idle_in_transaction_session_timeout', $2, false), \
                                 set_config('statement_timeout', $3, false), \
-                                set_config('default_transaction_read_only', $4, false)",
+                                set_config('default_transaction_read_only', $4, false), \
+                                set_config('jit', 'off', false)",
                     )
                     .bind(lock_timeout_ms.to_string())
                     .bind(idle_txn_timeout_ms.to_string())
@@ -796,13 +799,18 @@ impl Db {
     /// read-only, so the commit-time trigger from migration 0021 never fires
     /// here and the write fence that depends on READ COMMITTED is never reached.
     fn connect_read_pool(config: &DbConfig, url: &str, max_connections: u32) -> Result<PgPool> {
+        // JIT off, as on the writer pool, sent as a startup parameter so it
+        // costs no extra round trip inside the short reader acquire timeout.
+        let connect_options = url
+            .parse::<sqlx::postgres::PgConnectOptions>()?
+            .options([("jit", "off")]);
         Ok(PgPoolOptions::new()
             .max_connections(max_connections)
             .min_connections(0)
             .acquire_timeout(Self::READER_ACQUIRE_TIMEOUT)
             .max_lifetime(Duration::from_secs(config.max_lifetime_secs))
             .idle_timeout(Duration::from_secs(config.idle_timeout_secs))
-            .connect_lazy(url)?)
+            .connect_lazy_with(connect_options))
     }
 
     /// Spawn a one-shot reader reachability probe that only WARNs.

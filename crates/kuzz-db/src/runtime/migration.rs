@@ -722,7 +722,12 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 71);
+        assert_eq!(migrations.len(), 72);
+        assert_eq!(migrations[71].version, 72);
+        assert!(migrations[71]
+            .sql
+            .as_str()
+            .contains("CREATE OR REPLACE FUNCTION refill_chat_stored_state()"));
         assert_eq!(migrations[70].version, 71);
         assert!(migrations[70]
             .sql

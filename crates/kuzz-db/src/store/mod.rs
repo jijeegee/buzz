@@ -109,4 +109,7 @@ mod chat_list_postgres_tests;
 mod chat_state_postgres_tests;
 
 #[cfg(test)]
+mod chat_stored_state_postgres_tests;
+
+#[cfg(test)]
 mod inbox_summary_postgres_tests;

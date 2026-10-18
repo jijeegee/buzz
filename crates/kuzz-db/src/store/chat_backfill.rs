@@ -11,6 +11,8 @@
 //!   marker closes, a reopen marker or any other reply reopens.
 //! - `channel_members.read_seq`: the room's current sequence for current
 //!   members that have no read position yet (`read_origin = 'backfill'`).
+//! - Stored latest message ids, thread names, and unread counts
+//!   (migration 0072), refilled for the channel after the rows above.
 //! - `thread_follows`: `auto` rows (`follow_origin = 'backfill'`) for current
 //!   members who started, replied in, or were mentioned in (root or reply) a
 //!   thread with a reply inside the follow window; `read_seq` = the thread's
@@ -382,6 +384,14 @@ async fn backfill_channel_tx(
             counts.follow_reads_filled += 1;
         }
     }
+
+    // Stored latest ids, thread names, and unread counts (migration 0072)
+    // for everything written above. Same room lock, so nothing moved.
+    sqlx::query("SELECT refill_chat_stored_state_channel($1, $2)")
+        .bind(community)
+        .bind(channel_id)
+        .execute(&mut **tx)
+        .await?;
 
     Ok(counts)
 }

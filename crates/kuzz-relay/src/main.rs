@@ -660,6 +660,23 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         });
     }
 
+    // Planner statistics for the partitioned `events` parent, which
+    // autovacuum never analyzes: a few minutes after start (and after any
+    // partitions the startup pass created), then every six hours.
+    {
+        let analyze_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(6 * 60 * 60));
+            loop {
+                interval.tick().await;
+                if let Err(error) = analyze_state.db.analyze_events().await {
+                    warn!(%error, "Periodic ANALYZE events failed");
+                }
+            }
+        });
+    }
+
     // NIP-FI JWKS warm + background refresh.
     //
     // Per [FI-TRACE-DEPENDENCY-FAIL-CLOSED]: a JWKS warm failure at startup

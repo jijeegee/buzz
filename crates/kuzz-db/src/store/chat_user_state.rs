@@ -175,6 +175,26 @@ pub(crate) async fn thread_root(
     })
 }
 
+/// Take the room lock that message inserts (sequence trigger) and joins
+/// hold. Whoever creates follow rows takes it before any row lock of the
+/// room, so a new row's unread count (counted by its insert trigger) and a
+/// concurrent message's +1 cannot both miss each other.
+pub(crate) async fn lock_channel(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    channel_id: Uuid,
+) -> Result<()> {
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(
+            'kuzz_channel_membership:' || $1::text || ':' || $2::text, 0))",
+    )
+    .bind(community)
+    .bind(channel_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 /// Lock the reader's current membership row; `false` when not a member.
 pub(crate) async fn lock_membership(
     tx: &mut Transaction<'_, Postgres>,
@@ -450,6 +470,7 @@ impl Db {
         let Some(channel_id) = found.channel() else {
             return Ok(Err(ChatStateDenied::NotMember { index: 0 }));
         };
+        lock_channel(&mut tx, community_uuid, channel_id).await?;
         if !lock_membership(&mut tx, community_uuid, channel_id, reader).await? {
             return Ok(Err(ChatStateDenied::NotMember { index: 0 }));
         }
