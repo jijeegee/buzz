@@ -1,48 +1,59 @@
 import * as React from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutGrid, Plus, Users } from "lucide-react";
+import { LayoutGrid, Plus } from "lucide-react";
 
+import { agentsOfAccount } from "@/features/accounts/lib/accountLabels";
 import {
   useManagedAgentsQuery,
   usePersonasQuery,
 } from "@/features/agents/hooks";
 import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
-import { pickProfileAgent } from "@/features/agents/lib/pickProfileAgent";
+import {
+  groupRemoteAgentsByDevice,
+  localAgentsForList,
+} from "@/features/agents/lib/myAgentDevices";
 import { useAgentAvailabilityLookup } from "@/features/agents/lib/useAgentAvailability";
-import { useTeamsQuery } from "@/features/agents/teamHooks";
-import { buildUnifiedGroups } from "@/features/agents/ui/unifiedAgentGroups";
+import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
 import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { useIdentityQuery } from "@/shared/api/hooks";
-import type { AgentPersona, AgentTeam, ManagedAgent } from "@/shared/api/types";
-import { useAuthDeviceLabels } from "@/shared/api/useAuthDeviceNames";
+import type { AgentPersona, ManagedAgent } from "@/shared/api/types";
+import {
+  useAuthDeviceLabels,
+  useAuthDevicesQuery,
+} from "@/shared/api/useAuthDeviceNames";
 import { deviceRobotTag } from "@/shared/lib/deviceRobot";
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { DeviceRobot } from "./MyAgentsSection";
 
-/** One row: a persona (via its agent, if any) or a standalone agent. */
+/** One row: one real agent, here or on another computer. */
 type AgentListItem = {
   key: string;
   name: string;
   avatarUrl: string | null;
   running: boolean;
-  /** The agent's pubkey, for its device robot; `null` before it is started. */
-  pubkey: string | null;
+  /** The agent's pubkey (lowercase), for its device robot and profile. */
+  pubkey: string;
   /** Used when the agent's profile has no picture. */
   fallbackAvatarUrl?: string | null;
-  /** Second line: the other computer it runs on. */
-  hostLabel?: string;
-  /** Opens the agent's profile; a persona without an agent opens the persona. */
-  target: { profile: string } | { profilePersona: string };
 };
 
-const PROFILE_KEYS = ["profile", "profilePersona"] as const;
+type AgentListSection = {
+  key: string;
+  title: string;
+  /** The computer, for its robot; `null` while this one is not known. */
+  deviceId: string | null;
+  items: AgentListItem[];
+};
+
+const PROFILE_KEYS = ["profile"] as const;
 
 function agentItem(agent: ManagedAgent): AgentListItem {
   return {
@@ -51,16 +62,15 @@ function agentItem(agent: ManagedAgent): AgentListItem {
     name: agent.name,
     pubkey: agent.pubkey.toLowerCase(),
     running: isManagedAgentActive(agent),
-    target: { profile: agent.pubkey.toLowerCase() },
   };
 }
 
 /**
- * The Agents tab's list, in the left column: the same agents the Agents
- * page shows, split into this computer's agents and the ones running on the
- * account's other computers, each marked with its device robot, then the
- * agent teams. This tab sets agents up; picking an agent opens its profile
- * and settings on the right, picking a team shows it on the Agents page.
+ * The Agents tab's list, in the left column: only real agents, the same ones
+ * the Agents page's "My agents" shows, this computer's first and then one
+ * group per other computer, each under that computer's robot. Presets and
+ * teams live on the Agents page. Picking an agent opens its profile and
+ * settings on the right.
  */
 export function AgentsSidebarList({
   onCreateAgent,
@@ -74,11 +84,11 @@ export function AgentsSidebarList({
   const [filter, setFilter] = React.useState("");
   const managedQuery = useManagedAgentsQuery();
   const personasQuery = usePersonasQuery();
-  const teamsQuery = useTeamsQuery();
   const isArchived = useIsArchivedPredicate();
   const viewerPubkey = useIdentityQuery().data?.pubkey ?? null;
-  const { agents: remoteAgents, settling: remoteSettling } =
-    useRemoteOwnedAgents();
+  const currentDeviceId =
+    useAuthDevicesQuery().data?.find((device) => device.current)?.id ?? null;
+  const { agents: remoteAgents } = useRemoteOwnedAgents();
   const { getAvailability: getRemoteAvailability } = useAgentAvailabilityLookup(
     React.useMemo(
       () => remoteAgents.map((agent) => agent.pubkey),
@@ -87,98 +97,65 @@ export function AgentsSidebarList({
   );
   const deviceLabels = useAuthDeviceLabels(remoteAgents.length > 0);
 
-  const sections = React.useMemo(() => {
-    const { groups, ungrouped, unknown } = buildUnifiedGroups(
-      personasQuery.data ?? [],
-      managedQuery.data ?? [],
-      isArchived,
-    );
+  const sections = React.useMemo((): AgentListSection[] => {
     const personaById = new Map<string, AgentPersona>(
       (personasQuery.data ?? []).map((persona) => [persona.id, persona]),
     );
-    const elsewhere = remoteAgents.filter((agent) => !isArchived(agent.pubkey));
-    // Same split as the Agents page: a persona whose only agent runs on
-    // another computer is listed there, not here as a fresh Start.
-    const hostedElsewhere = new Set(
-      elsewhere
-        .map((agent) => agent.localPersonaId)
-        .filter((id): id is string => id !== null),
+    const personaOf = (agent: { localPersonaId: string | null }) =>
+      agent.localPersonaId ? personaById.get(agent.localPersonaId) : undefined;
+    const remoteGroups = groupRemoteAgentsByDevice(
+      remoteAgents.filter((agent) => !isArchived(agent.pubkey)),
+      (deviceId) => deviceLabels.get(deviceRobotTag(deviceId) ?? "")?.name,
+      (agent) => agent.name ?? personaOf(agent)?.displayName ?? "",
     );
-    const personas = groups.flatMap((group): AgentListItem[] => {
-      const agent = pickProfileAgent(group.agents, isArchived);
-      if (!agent && hostedElsewhere.has(group.persona.id)) return [];
-      return [
-        {
-          avatarUrl: agent?.avatarUrl ?? group.persona.avatarUrl,
-          key: `persona:${group.persona.id}`,
-          name: group.persona.displayName,
-          pubkey: agent ? agent.pubkey.toLowerCase() : null,
-          running: agent ? isManagedAgentActive(agent) : false,
-          target: agent
-            ? { profile: agent.pubkey.toLowerCase() }
-            : { profilePersona: group.persona.id },
-        },
-      ];
-    });
-    const remote = elsewhere.map((agent): AgentListItem => {
-      const persona = agent.localPersonaId
-        ? personaById.get(agent.localPersonaId)
-        : undefined;
-      const device = deviceLabels.get(deviceRobotTag(agent.deviceId) ?? "");
-      const availability = getRemoteAvailability(agent.pubkey);
-      return {
-        // Like the page card: the agent's own profile first.
-        avatarUrl: null,
-        fallbackAvatarUrl: persona?.avatarUrl ?? null,
-        hostLabel: device?.name.trim() || "Another device",
-        key: `remote:${agent.pubkey}`,
-        name: persona?.displayName.trim() || agent.name?.trim() || "",
-        pubkey: agent.pubkey,
-        running: availability === "online" || availability === "away",
-        target: { profile: agent.pubkey },
-      };
-    });
     return [
       {
-        key: "personas",
+        key: "local",
         title: "This device",
-        items: [
-          ...personas,
-          ...ungrouped.map(agentItem),
-          ...unknown.map(agentItem),
-        ],
+        deviceId: currentDeviceId,
+        // Like the page: only the active account's agents.
+        items: localAgentsForList(
+          agentsOfAccount(managedQuery.data ?? [], viewerPubkey),
+          isArchived,
+        ).map(agentItem),
       },
-      { key: "remote", title: "Other devices", items: remote },
+      ...remoteGroups.map(
+        (group): AgentListSection => ({
+          key: `device-${group.deviceId}`,
+          title: group.name || "Another device",
+          deviceId: group.deviceId,
+          items: group.agents.map((agent): AgentListItem => {
+            const availability = getRemoteAvailability(agent.pubkey);
+            return {
+              // Like the page card: the agent's own profile first.
+              avatarUrl: null,
+              fallbackAvatarUrl: personaOf(agent)?.avatarUrl ?? null,
+              key: `remote:${agent.pubkey}`,
+              name: agent.name?.trim() || "",
+              pubkey: agent.pubkey.toLowerCase(),
+              running: availability === "online" || availability === "away",
+            };
+          }),
+        }),
+      ),
     ];
   }, [
+    currentDeviceId,
     deviceLabels,
     getRemoteAvailability,
     isArchived,
     managedQuery.data,
     personasQuery.data,
     remoteAgents,
+    viewerPubkey,
   ]);
 
   const needle = filter.trim().toLowerCase();
   const isSelected = (item: AgentListItem) =>
-    onAgentsPage &&
-    ("profile" in item.target
-      ? values.profile?.toLowerCase() === item.target.profile
-      : values.profilePersona === item.target.profilePersona);
+    onAgentsPage && values.profile?.toLowerCase() === item.pubkey;
   const onPick = (item: AgentListItem) =>
-    void navigate({ to: "/agents", search: item.target });
-  const onPickTeam = (team: AgentTeam) => {
-    void navigate({ to: "/agents", search: {} }).then(() =>
-      revealTeamCard(team.id),
-    );
-  };
-  const teams = (teamsQuery.data ?? []).filter(
-    (team) => needle.length === 0 || team.name.toLowerCase().includes(needle),
-  );
-  // Until it is known which agents run elsewhere, a persona could still
-  // move between the groups (and offer a Start for an agent made elsewhere).
-  const isLoading =
-    managedQuery.isLoading || personasQuery.isLoading || remoteSettling;
+    void navigate({ to: "/agents", search: { profile: item.pubkey } });
+  const isLoading = managedQuery.isLoading || personasQuery.isLoading;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="agents-list">
@@ -225,12 +202,15 @@ export function AgentsSidebarList({
               (item) =>
                 needle.length === 0 || item.name.toLowerCase().includes(needle),
             );
-            // My agents always shows (with its empty note); others only when filled.
-            if (items.length === 0 && section.key !== "personas") return null;
+            // This device always shows (with its empty note); others only when filled.
+            if (items.length === 0 && section.key !== "local") return null;
             return (
               <section data-testid={`agents-${section.key}`} key={section.key}>
-                <h3 className="px-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-sidebar-foreground/55">
-                  {section.title}
+                <h3 className="flex min-w-0 items-center gap-1.5 px-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-sidebar-foreground/55">
+                  <span className="flex h-4 w-4 shrink-0 empty:hidden [&_svg]:h-4 [&_svg]:w-4">
+                    <DeviceRobot deviceId={section.deviceId} />
+                  </span>
+                  <span className="truncate">{section.title}</span>
                 </h3>
                 {items.length > 0 ? (
                   <div className="flex flex-col">
@@ -253,83 +233,8 @@ export function AgentsSidebarList({
             );
           })
         )}
-        {!isLoading && teams.length > 0 ? (
-          <section data-testid="agents-teams">
-            <h3 className="px-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-sidebar-foreground/55">
-              Agent teams
-            </h3>
-            <div className="flex flex-col">
-              {teams.map((team) => (
-                <TeamRow
-                  key={team.id}
-                  personas={personasQuery.data ?? []}
-                  team={team}
-                  onPick={onPickTeam}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
       </div>
     </div>
-  );
-}
-
-/**
- * Scrolls the team's card on the Agents page into view once the page has
- * drawn it (the page loads lazily), with a brief ring so it stands out.
- */
-function revealTeamCard(teamId: string) {
-  const deadline = Date.now() + 3000;
-  const attempt = () => {
-    const card = document.querySelector<HTMLElement>(
-      `[data-testid="team-card-${CSS.escape(teamId)}"]`,
-    );
-    if (card) {
-      card.scrollIntoView({ behavior: "smooth", block: "center" });
-      card.classList.add("ring-2", "ring-primary");
-      window.setTimeout(
-        () => card.classList.remove("ring-2", "ring-primary"),
-        1600,
-      );
-      return;
-    }
-    if (Date.now() < deadline) window.requestAnimationFrame(attempt);
-  };
-  window.requestAnimationFrame(attempt);
-}
-
-function TeamRow({
-  personas,
-  team,
-  onPick,
-}: {
-  personas: AgentPersona[];
-  team: AgentTeam;
-  onPick: (team: AgentTeam) => void;
-}) {
-  const members = team.personaIds
-    .map((id) => personas.find((persona) => persona.id === id))
-    .filter((persona): persona is AgentPersona => persona !== undefined);
-  return (
-    <button
-      className="flex h-12 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-      data-testid={`agents-team-row-${team.id}`}
-      onClick={() => onPick(team)}
-      type="button"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-sidebar-foreground/70">
-        <Users aria-hidden="true" className="h-4 w-4" />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-medium">{team.name}</span>
-        <span className="truncate text-xs text-sidebar-foreground/60">
-          {members.length > 0
-            ? members.map((persona) => persona.displayName).join(", ")
-            : `${team.personaIds.length} agents`}
-        </span>
-      </span>
-    </button>
   );
 }
 
@@ -346,58 +251,58 @@ function AgentRow({
 }) {
   // A remote agent has no record here; its own profile has the picture.
   const profile = useUserProfileQuery(
-    item.avatarUrl ? undefined : (item.pubkey ?? undefined),
+    item.avatarUrl ? undefined : item.pubkey,
   ).data;
   const avatarUrl =
     item.avatarUrl ?? profile?.avatarUrl ?? item.fallbackAvatarUrl ?? null;
   const name = item.name || profile?.displayName?.trim() || "Agent";
+  const working = useAgentWorking(item.running ? item.pubkey : null).working;
+  const status = !item.running ? "Stopped" : working ? "Working" : "Running";
   return (
     <button
       aria-current={isSelected || undefined}
       className={cn(
-        "flex h-12 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+        "flex h-11 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         isSelected && "bg-sidebar-accent",
       )}
       data-testid={`agents-row-${item.key}`}
       onClick={() => onPick(item)}
       type="button"
     >
-      <span className="relative shrink-0">
-        <ProfileAvatar
-          avatarUrl={avatarUrl}
-          className="h-9 w-9 text-xs shadow-none"
-          iconClassName="h-4 w-4"
-          label={name}
-          shape="circle"
+      <ProfileAvatar
+        avatarUrl={avatarUrl}
+        className="h-8 w-8 shrink-0 text-xs shadow-none"
+        iconClassName="h-4 w-4"
+        label={name}
+        shape="circle"
+      />
+      <span className="flex min-w-0 flex-1 items-center gap-1">
+        <AgentBadgeIcon
+          agentPubkey={item.pubkey}
+          className="h-4 w-4"
+          fallback="none"
+          othersSee="bot"
+          ownerPubkey={viewerPubkey}
+          testId={`agents-row-robot-${item.key}`}
         />
-        <span
-          aria-label={item.running ? "Running" : "Stopped"}
-          className={cn(
-            "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-background",
-            item.running ? "bg-emerald-500" : "bg-muted-foreground/40",
-          )}
-          role="img"
-        />
+        <span className="min-w-0 truncate font-medium">{name}</span>
       </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-center gap-1">
-          {item.pubkey ? (
-            <AgentBadgeIcon
-              agentPubkey={item.pubkey}
-              className="h-4 w-4"
-              fallback="none"
-              othersSee="bot"
-              ownerPubkey={viewerPubkey}
-              testId={`agents-row-robot-${item.key}`}
-            />
-          ) : null}
-          <span className="min-w-0 truncate font-medium">{name}</span>
-        </span>
-        {item.hostLabel ? (
-          <span className="truncate text-xs text-sidebar-foreground/60">
-            {item.hostLabel}
-          </span>
-        ) : null}
+      <span
+        className="flex shrink-0 items-center gap-1.5 text-2xs text-sidebar-foreground/60"
+        data-testid={`agents-row-status-${item.key}`}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "h-2 w-2 rounded-full",
+            status === "Working"
+              ? "bg-amber-500"
+              : status === "Running"
+                ? "bg-emerald-500"
+                : "bg-muted-foreground/40",
+          )}
+        />
+        {status}
       </span>
     </button>
   );
@@ -408,7 +313,7 @@ function ListSkeleton() {
     <div className="space-y-3 px-2 py-2">
       {[1, 2, 3].map((i) => (
         <div className="flex items-center gap-2.5" key={i}>
-          <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+          <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
           <Skeleton className="h-4 w-28" />
         </div>
       ))}

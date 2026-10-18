@@ -105,6 +105,76 @@ List<MyTeam> myTeamsFrom({
   return teams;
 }
 
+/// One of the owner's agent presets (kind:30175): a template agents are made
+/// from on a computer. It has no status of its own.
+class MyAgentPreset {
+  const MyAgentPreset({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.agentCount,
+  });
+
+  /// The preset's kind:30175 `d` tag.
+  final String id;
+  final String name;
+  final String? description;
+
+  /// How many of the owner's agents (kind:30177) were made from it.
+  final int agentCount;
+}
+
+/// The owner's agent presets from their kind:30175 [personaEvents], each with
+/// how many of their kind:30177 [agentEvents] use it. Built-in presets are
+/// never published, so they are not here. Sorted by name.
+List<MyAgentPreset> myAgentPresetsFrom({
+  required String owner,
+  required List<NostrEvent> personaEvents,
+  required List<NostrEvent> agentEvents,
+}) {
+  final agentCounts = <String, int>{};
+  for (final event in newestByDTag(
+    agentEvents,
+    kind: EventKind.managedAgent,
+    owner: owner,
+  ).values) {
+    final personaId = managedAgentPersonaId(event.content);
+    if (personaId == null) continue;
+    final d = personaDTag(personaId);
+    agentCounts[d] = (agentCounts[d] ?? 0) + 1;
+  }
+  final presets = <MyAgentPreset>[];
+  for (final MapEntry(:key, :value) in newestByDTag(
+    personaEvents,
+    kind: EventKind.persona,
+    owner: owner,
+  ).entries) {
+    final content = decodeJsonObject(value.content);
+    final name = content?['display_name'];
+    if (name is! String || name.trim().isEmpty) continue;
+    final description = content?['description'];
+    presets.add(
+      MyAgentPreset(
+        id: key,
+        name: name.trim(),
+        description: description is String && description.trim().isNotEmpty
+            ? description.trim()
+            : null,
+        agentCount: agentCounts[key] ?? 0,
+      ),
+    );
+  }
+  presets.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return presets;
+}
+
+/// "not used yet", "used by 1 agent", "used by 3 agents", like desktop.
+String presetUsageLabel(int count) => switch (count) {
+  0 => 'not used yet',
+  1 => 'used by 1 agent',
+  _ => 'used by $count agents',
+};
+
 /// Desktop's built-in definitions (`builtin:fizz`) are never published, so
 /// their name comes from the id.
 String? _builtinName(String personaId) {
@@ -115,38 +185,80 @@ String? _builtinName(String personaId) {
   return rest[0].toUpperCase() + rest.substring(1);
 }
 
+/// The signed-in owner's teams (kind:30176), presets (kind:30175) and agents
+/// (kind:30177) from the relay; `null` when signed out or not connected.
+final _myAgentDefinitionsProvider =
+    FutureProvider.autoDispose<
+      ({
+        String owner,
+        List<NostrEvent> teams,
+        List<NostrEvent> personas,
+        List<NostrEvent> agents,
+      })?
+    >((ref) async {
+      final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
+      if (owner == null || owner.isEmpty) return null;
+      // Like the agent directory: wait for a connection, and refetch after
+      // every reconnect (a fetch sent while disconnected is dropped).
+      final status = ref.watch(relaySessionProvider.select((s) => s.status));
+      if (status != SessionStatus.connected) return null;
+      final relay = ref.read(agentSettingsRelayProvider);
+      final results = await Future.wait([
+        relay.fetch(
+          NostrFilter(
+            kinds: const [EventKind.team],
+            authors: [owner],
+            limit: 200,
+          ),
+        ),
+        relay.fetch(
+          NostrFilter(
+            kinds: const [EventKind.persona],
+            authors: [owner],
+            limit: 500,
+          ),
+        ),
+        relay.fetch(
+          NostrFilter(
+            kinds: const [EventKind.managedAgent],
+            authors: [owner],
+            limit: 500,
+          ),
+        ),
+      ]);
+      return (
+        owner: owner,
+        teams: results[0],
+        personas: results[1],
+        agents: results[2],
+      );
+    });
+
 /// The signed-in owner's agent teams; empty when signed out.
 final myTeamsProvider = FutureProvider.autoDispose<List<MyTeam>>((ref) async {
-  final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
-  if (owner == null || owner.isEmpty) return const [];
-  // Like the agent directory: wait for a connection, and refetch after
-  // every reconnect (a fetch sent while disconnected is dropped).
-  final status = ref.watch(relaySessionProvider.select((s) => s.status));
-  if (status != SessionStatus.connected) return const [];
-  final relay = ref.read(agentSettingsRelayProvider);
-  final results = await Future.wait([
-    relay.fetch(
-      NostrFilter(kinds: const [EventKind.team], authors: [owner], limit: 200),
-    ),
-    relay.fetch(
-      NostrFilter(
-        kinds: const [EventKind.persona],
-        authors: [owner],
-        limit: 500,
-      ),
-    ),
-    relay.fetch(
-      NostrFilter(
-        kinds: const [EventKind.managedAgent],
-        authors: [owner],
-        limit: 500,
-      ),
-    ),
-  ]);
+  final events = await ref.watch(_myAgentDefinitionsProvider.future);
+  if (events == null) return const [];
   return myTeamsFrom(
-    owner: owner,
-    teamEvents: results[0],
-    personaEvents: results[1],
-    agentEvents: results[2],
+    owner: events.owner,
+    teamEvents: events.teams,
+    personaEvents: events.personas,
+    agentEvents: events.agents,
   );
 });
+
+/// The signed-in owner's agent presets; empty when signed out.
+final myAgentPresetsProvider = FutureProvider.autoDispose<List<MyAgentPreset>>((
+  ref,
+) async {
+  final events = await ref.watch(_myAgentDefinitionsProvider.future);
+  if (events == null) return const [];
+  return myAgentPresetsFrom(
+    owner: events.owner,
+    personaEvents: events.personas,
+    agentEvents: events.agents,
+  );
+});
+
+/// Refetches teams and presets from the relay.
+void refreshMyAgentDefinitions(WidgetRef ref) =>
+    ref.invalidate(_myAgentDefinitionsProvider);

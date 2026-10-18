@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { agentsOfAccount } from "@/features/accounts/lib/accountLabels";
+import { freeAgentName } from "@/shared/api/agentNameGuard";
 import { useIdentityQuery } from "@/shared/api/hooks";
 
 import {
@@ -251,6 +252,12 @@ export function useManagedAgentActions() {
         globalConfig.preferred_runtime,
       );
       const input = await buildInstanceInputForDefinition(persona, runtime);
+      // A preset can make several agents: the next one is "Fizz 2".
+      input.name = await freeAgentName({
+        kind: "agent",
+        name: input.name,
+        personaId: persona.id,
+      });
 
       const created = await createAgentMutation.mutateAsync(input);
       toast.success("Agent created");
