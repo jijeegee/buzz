@@ -9,6 +9,7 @@ import '../../shared/auth/account/account_api.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -265,7 +266,7 @@ class PeoplePage extends HookConsumerWidget {
     }
 
     return FrostedScaffold(
-      backgroundColor: context.colors.surface,
+      backgroundColor: conversationListBackground(context),
       appBar: FrostedAppBar(
         automaticallyImplyLeading: false,
         horizontalInset: Grid.gutter,

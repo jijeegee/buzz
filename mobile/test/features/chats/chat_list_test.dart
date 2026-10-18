@@ -214,6 +214,124 @@ void main() {
     });
   });
 
+  group('preview clean-up (desktop summarizeMessageLinkContent)', () {
+    test('control characters and line breaks become one space', () {
+      expect(
+        summarizeMessageText('one\n\ntwo\tthree\u0007four'),
+        'one two three four',
+      );
+      expect(summarizeMessageText('a\u0085b'), 'a b');
+    });
+
+    test('spoilers, images and addresses go; links keep their text', () {
+      expect(summarizeMessageText('see ||the end|| now'), 'see now');
+      expect(
+        summarizeMessageText('pic ![alt](https://x.io/a.png) here'),
+        'pic here',
+      );
+      expect(
+        summarizeMessageText('read [the plan](https://x.io/p) today'),
+        'read the plan today',
+      );
+      expect(
+        summarizeMessageText('go to https://example.com/x?y=1 now'),
+        'go to now',
+      );
+      expect(summarizeMessageText('open <kuzz://channel/abc>'), 'open');
+    });
+
+    test('markdown marks go', () {
+      expect(
+        summarizeMessageText('**bold** _it_ `code` ~~x~~'),
+        'bold it code x',
+      );
+      expect(summarizeMessageText('# Title\n> quote'), 'Title quote');
+    });
+
+    test('nothing left reads No message text', () {
+      expect(summarizeMessageText('   '), noMessageTextLabel);
+      expect(summarizeMessageText('https://example.com'), noMessageTextLabel);
+    });
+
+    test('past 160 characters it is cut at a word with an ellipsis', () {
+      final long = List.filled(40, 'word').join(' ');
+      final cut = summarizeMessageText(long);
+      expect(cut.endsWith('…'), isTrue);
+      expect(cut.runes.length, lessThanOrEqualTo(160));
+      expect(cut, '${List.filled(31, 'word').join(' ')}…');
+      // No space late enough: a hard cut at 159.
+      final solid = 'x' * 200;
+      expect(summarizeMessageText(solid), '${'x' * 159}…');
+      expect(summarizeMessageText('y' * 160), 'y' * 160);
+    });
+
+    test('a blocked person\'s message never shows its text', () {
+      final event = _event(id: 'x', at: 1, content: 'secret');
+      expect(
+        chatRowPreviewText(event, isBlocked: (pubkey) => pubkey == _them),
+        blockedMessageLabel,
+      );
+      expect(chatRowPreviewText(event, isBlocked: (_) => false), 'secret');
+    });
+
+    test('no author name in front of the text', () {
+      expect(
+        chatRowPreviewText(_event(id: 'x', at: 1, content: 'hi there')),
+        'hi there',
+      );
+    });
+  });
+
+  group('pinned threads', () {
+    test('a pinned thread comes first with the starred rooms', () {
+      final rows = [
+        _room(_channel, 30),
+        _thread(_channel, _root, 10),
+        _room(_other, 20),
+      ];
+      expect(
+        orderChatRows(
+          rows,
+          {_other},
+          pinnedThreadIds: {_root},
+        ).map((row) => row.key),
+        [_other, _root, _channel],
+      );
+    });
+
+    test('By channel always shows pinned threads, first', () {
+      final threads = [
+        for (var i = 0; i < 4; i++) _thread(_channel, '$i' * 64, 40 - i),
+      ];
+      final pinned = {'3' * 64, '2' * 64, '1' * 64};
+      final entries = groupChatRowsByChannel(
+        orderChatRows(threads, {}),
+        expandedChannelIds: {},
+        unreadOf: (row) => row.unread,
+        pinnedThreadIds: pinned,
+      );
+      final shown = [
+        for (final entry in entries.whereType<ChatGroupThread>()) entry.row.key,
+      ];
+      expect(shown, ['1' * 64, '2' * 64, '3' * 64]);
+      expect((entries.last as ChatGroupMore).hidden, 1);
+    });
+
+    test('the filter sends pinned threads only when there are some', () {
+      expect(
+        buildChatListFilter(limit: 50).containsKey('pinned_threads'),
+        isFalse,
+      );
+      expect(
+        buildChatListFilter(
+          limit: 50,
+          pinnedThreads: [_root],
+        )['pinned_threads'],
+        [_root],
+      );
+    });
+  });
+
   group('unread', () {
     test('this device having read past the latest hides the count', () {
       final row = _room(

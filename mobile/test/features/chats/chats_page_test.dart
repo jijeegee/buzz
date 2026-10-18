@@ -77,7 +77,14 @@ void main() {
     expect(find.text('see you soon'), findsOneWidget);
     expect(find.byKey(ValueKey('chat-row-unread-$_dm')), findsOneWidget);
     // All names a thread with its channel, as desktop does.
-    expect(find.textContaining('› Thread 1'), findsOneWidget);
+    expect(find.text('Thread 1'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(ValueKey('chat-row-${'1' * 64}')),
+        matching: find.text('#general'),
+      ),
+      findsOneWidget,
+    );
     final dmTop = tester.getTopLeft(find.byKey(ValueKey('chat-row-$_dm'))).dy;
     final threadTop = tester
         .getTopLeft(find.byKey(ValueKey('chat-row-${'1' * 64}')))
