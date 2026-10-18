@@ -76,6 +76,18 @@ impl BlockCaches {
             Arc::new(blockers.into_iter().collect()),
         );
     }
+
+    /// Test seam: record whom `reader` blocked without a database.
+    #[cfg(test)]
+    pub(crate) fn seed_blocked(
+        &self,
+        community: CommunityId,
+        reader: [u8; 32],
+        blocked: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        self.blocked
+            .insert((community, reader), Arc::new(blocked.into_iter().collect()));
+    }
 }
 
 impl Default for BlockCaches {
@@ -249,6 +261,44 @@ impl AppState {
                 blocked.contains(&author) && dms.contains(&channel)
             })
         });
+        Ok(())
+    }
+
+    /// Thread summaries of one channel as `reader` sees them: in a DM, replies
+    /// and participants from people `reader` blocked are taken out, so a
+    /// summary never promises replies the thread view hides. `summaries`
+    /// pairs each summarized event id with its summary.
+    pub async fn hide_blocked_in_thread_summaries(
+        &self,
+        community: CommunityId,
+        reader: &[u8],
+        channel: Uuid,
+        summaries: Vec<(Vec<u8>, &mut kuzz_db::thread::ThreadSummary)>,
+    ) -> Result<(), DbError> {
+        if summaries.is_empty() {
+            return Ok(());
+        }
+        let blocked = self.blocked_by_cached(community, reader).await?;
+        if blocked.is_empty()
+            || !self
+                .dm_channels_cached(community, [channel])
+                .await?
+                .contains(&channel)
+        {
+            return Ok(());
+        }
+        let targets: Vec<Vec<u8>> = summaries.iter().map(|(id, _)| id.clone()).collect();
+        let blocked_list: Vec<Vec<u8>> = blocked.iter().map(|k| k.to_vec()).collect();
+        let hidden = self
+            .db
+            .blocked_thread_replies(community, &targets, &blocked_list)
+            .await?;
+        for (id, summary) in summaries {
+            let hidden_here = hidden.iter().find(|h| h.target == id);
+            summary.without_blocked(hidden_here, |p| {
+                key32(p).is_some_and(|key| blocked.contains(&key))
+            });
+        }
         Ok(())
     }
 }
