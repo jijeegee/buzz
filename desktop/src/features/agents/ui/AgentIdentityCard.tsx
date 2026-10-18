@@ -83,7 +83,7 @@ export function AgentIdentityCard({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {labelBadge ? (
             <span className="flex min-w-0 items-center gap-1">
-              <span className="pointer-events-auto flex shrink-0">
+              <span className="pointer-events-auto flex shrink-0 empty:hidden">
                 {labelBadge}
               </span>
               <span className="min-w-0 truncate font-semibold text-foreground tracking-normal">

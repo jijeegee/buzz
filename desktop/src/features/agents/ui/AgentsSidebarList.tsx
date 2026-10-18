@@ -34,6 +34,8 @@ type AgentListItem = {
   running: boolean;
   /** The agent's pubkey, for its device robot; `null` before it is started. */
   pubkey: string | null;
+  /** Used when the agent's profile has no picture. */
+  fallbackAvatarUrl?: string | null;
   /** Second line: the other computer it runs on. */
   hostLabel?: string;
   /** Opens the agent's profile; a persona without an agent opens the persona. */
@@ -75,7 +77,8 @@ export function AgentsSidebarList({
   const teamsQuery = useTeamsQuery();
   const isArchived = useIsArchivedPredicate();
   const viewerPubkey = useIdentityQuery().data?.pubkey ?? null;
-  const { agents: remoteAgents } = useRemoteOwnedAgents();
+  const { agents: remoteAgents, settling: remoteSettling } =
+    useRemoteOwnedAgents();
   const { getAvailability: getRemoteAvailability } = useAgentAvailabilityLookup(
     React.useMemo(
       () => remoteAgents.map((agent) => agent.pubkey),
@@ -124,10 +127,12 @@ export function AgentsSidebarList({
       const device = deviceLabels.get(deviceRobotTag(agent.deviceId) ?? "");
       const availability = getRemoteAvailability(agent.pubkey);
       return {
-        avatarUrl: persona?.avatarUrl ?? null,
+        // Like the page card: the agent's own profile first.
+        avatarUrl: null,
+        fallbackAvatarUrl: persona?.avatarUrl ?? null,
         hostLabel: device?.name.trim() || "Another device",
         key: `remote:${agent.pubkey}`,
-        name: persona?.displayName.trim() || agent.name?.trim() || "Agent",
+        name: persona?.displayName.trim() || agent.name?.trim() || "",
         pubkey: agent.pubkey,
         running: availability === "online" || availability === "away",
         target: { profile: agent.pubkey },
@@ -170,7 +175,10 @@ export function AgentsSidebarList({
   const teams = (teamsQuery.data ?? []).filter(
     (team) => needle.length === 0 || team.name.toLowerCase().includes(needle),
   );
-  const isLoading = managedQuery.isLoading || personasQuery.isLoading;
+  // Until it is known which agents run elsewhere, a persona could still
+  // move between the groups (and offer a Start for an agent made elsewhere).
+  const isLoading =
+    managedQuery.isLoading || personasQuery.isLoading || remoteSettling;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="agents-list">
@@ -340,7 +348,9 @@ function AgentRow({
   const profile = useUserProfileQuery(
     item.avatarUrl ? undefined : (item.pubkey ?? undefined),
   ).data;
-  const avatarUrl = item.avatarUrl ?? profile?.avatarUrl ?? null;
+  const avatarUrl =
+    item.avatarUrl ?? profile?.avatarUrl ?? item.fallbackAvatarUrl ?? null;
+  const name = item.name || profile?.displayName?.trim() || "Agent";
   return (
     <button
       aria-current={isSelected || undefined}
@@ -357,7 +367,7 @@ function AgentRow({
           avatarUrl={avatarUrl}
           className="h-9 w-9 text-xs shadow-none"
           iconClassName="h-4 w-4"
-          label={item.name}
+          label={name}
           shape="circle"
         />
         <span
@@ -381,7 +391,7 @@ function AgentRow({
               testId={`agents-row-robot-${item.key}`}
             />
           ) : null}
-          <span className="min-w-0 truncate font-medium">{item.name}</span>
+          <span className="min-w-0 truncate font-medium">{name}</span>
         </span>
         {item.hostLabel ? (
           <span className="truncate text-xs text-sidebar-foreground/60">
