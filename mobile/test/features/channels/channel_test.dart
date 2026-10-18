@@ -2,6 +2,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kuzz/features/channels/channel.dart';
 
 void main() {
+  group('isOneToOneDm', () {
+    Channel channel(String type, List<String> pubkeys) => Channel(
+      id: 'c',
+      name: 'c',
+      channelType: type,
+      visibility: 'private',
+      description: '',
+      createdBy: 'me',
+      createdAt: DateTime(2025),
+      memberCount: pubkeys.length,
+      participantPubkeys: pubkeys,
+    );
+
+    test('is a DM of exactly two distinct people', () {
+      expect(channel('dm', ['me', 'ann']).isOneToOneDm, isTrue);
+      expect(channel('dm', ['me', 'ANN', 'ann', ' ']).isOneToOneDm, isTrue);
+      expect(channel('dm', ['me', 'ann', 'bob']).isOneToOneDm, isFalse);
+      expect(channel('dm', ['me']).isOneToOneDm, isFalse);
+      expect(channel('stream', ['me', 'ann']).isOneToOneDm, isFalse);
+    });
+  });
+
   group('Channel.fromJson', () {
     test('parses a full channel response', () {
       final json = {

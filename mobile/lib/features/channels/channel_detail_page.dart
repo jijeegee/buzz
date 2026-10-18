@@ -87,7 +87,9 @@ import 'reaction_row.dart';
 import 'recent_emoji_provider.dart';
 import 'room_position_store.dart';
 import 'send_message_provider.dart';
+import '../people/blocked_dm_bar.dart';
 import '../people/blocked_message_gate.dart';
+import '../people/blocked_users_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';
@@ -258,6 +260,21 @@ int? _channelReadTimestamp({
   }
 
   return dateTimeToUnixSeconds(channel.lastMessageAt);
+}
+
+/// The other person in a one-to-one DM when I blocked them.
+String? _blockedCounterpart(
+  Channel channel, {
+  required String? currentPubkey,
+  required Set<String> blocked,
+}) {
+  final me = currentPubkey?.toLowerCase();
+  for (final pubkey in channel.participantPubkeys) {
+    final normalized = pubkey.trim().toLowerCase();
+    if (normalized.isEmpty || normalized == me) continue;
+    if (blocked.contains(normalized)) return normalized;
+  }
+  return null;
 }
 
 bool _isOneToOneAgentDm(Channel channel, Set<String> agentPubkeys) {
@@ -492,6 +509,16 @@ class ChannelDetailPage extends HookConsumerWidget {
         !resolvedChannel.isForum &&
         resolvedChannel.isMember &&
         !resolvedChannel.isArchived;
+    // In a one-to-one DM with someone I blocked a bar with Unblock stands in
+    // for the composer.
+    final blockedCounterpart = isOneToOneDm
+        ? _blockedCounterpart(
+            resolvedChannel,
+            currentPubkey: currentPubkey,
+            blocked: ref.watch(blockedPubkeysProvider),
+          )
+        : null;
+    final showsComposeBar = showsComposer && blockedCounterpart == null;
     final profileOwnedAgentPubkeys = <String>[];
     for (final participantPubkey in resolvedChannel.participantPubkeys) {
       final normalized = participantPubkey.trim().toLowerCase();
@@ -1122,13 +1149,13 @@ class ChannelDetailPage extends HookConsumerWidget {
                               composerBottomInset: showsComposer
                                   ? composerDockHeight.value
                                   : 0,
-                              composerFocusNode: showsComposer
+                              composerFocusNode: showsComposeBar
                                   ? composerFocusNode
                                   : null,
-                              restoreComposerFocus: showsComposer
+                              restoreComposerFocus: showsComposeBar
                                   ? () => restoreComposerFocus.value?.call()
                                   : null,
-                              quoteScope: showsComposer ? quoteScope : null,
+                              quoteScope: showsComposeBar ? quoteScope : null,
                             );
                           },
                         ),
@@ -1181,45 +1208,49 @@ class ChannelDetailPage extends HookConsumerWidget {
                                 entries: typingEntries,
                               ),
                       ),
-                      ComposerQuoteChip(scope: quoteScope),
-                      ComposeBar(
-                        channelId: channel.id,
-                        channelMainAgentAudience: !resolvedChannel.isDm,
-                        focusNode: composerFocusNode,
-                        onFocusRestorerChanged: (restoreFocus) =>
-                            restoreComposerFocus.value = restoreFocus,
-                        channelName: resolvedChannel.isDm
-                            ? ''
-                            : resolvedChannel.name,
-                        onSend:
-                            (
-                              content,
-                              mentionPubkeys, {
-                              mediaTags = const <List<String>>[],
-                            }) async {
-                              // Sending returns the reader to the newest row.
-                              roomPositions?.clear(channel.id);
-                              // Main timeline: top-level message (no thread
-                              // tags) plus the optional quote reference.
-                              await sendMessage.call(
-                                channelId: channel.id,
-                                content: content,
-                                mentionPubkeys: mentionPubkeys,
-                                channel: resolvedChannel,
-                                mediaTags: mediaTags,
-                                quote: pendingQuote,
-                              );
-                              if (pendingQuote != null && context.mounted) {
-                                ref
-                                    .read(
-                                      composerQuoteProvider(
-                                        quoteScope,
-                                      ).notifier,
-                                    )
-                                    .clearIf(pendingQuote);
-                              }
-                            },
-                      ),
+                      if (blockedCounterpart != null)
+                        BlockedDmBar(pubkey: blockedCounterpart)
+                      else ...[
+                        ComposerQuoteChip(scope: quoteScope),
+                        ComposeBar(
+                          channelId: channel.id,
+                          channelMainAgentAudience: !resolvedChannel.isDm,
+                          focusNode: composerFocusNode,
+                          onFocusRestorerChanged: (restoreFocus) =>
+                              restoreComposerFocus.value = restoreFocus,
+                          channelName: resolvedChannel.isDm
+                              ? ''
+                              : resolvedChannel.name,
+                          onSend:
+                              (
+                                content,
+                                mentionPubkeys, {
+                                mediaTags = const <List<String>>[],
+                              }) async {
+                                // Sending returns the reader to the newest row.
+                                roomPositions?.clear(channel.id);
+                                // Main timeline: top-level message (no thread
+                                // tags) plus the optional quote reference.
+                                await sendMessage.call(
+                                  channelId: channel.id,
+                                  content: content,
+                                  mentionPubkeys: mentionPubkeys,
+                                  channel: resolvedChannel,
+                                  mediaTags: mediaTags,
+                                  quote: pendingQuote,
+                                );
+                                if (pendingQuote != null && context.mounted) {
+                                  ref
+                                      .read(
+                                        composerQuoteProvider(
+                                          quoteScope,
+                                        ).notifier,
+                                      )
+                                      .clearIf(pendingQuote);
+                                }
+                              },
+                        ),
+                      ],
                     ],
                   ),
                 ),

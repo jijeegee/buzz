@@ -38,6 +38,7 @@ import 'package:kuzz/features/channels/channel_stars/channel_stars_storage.dart'
 import 'package:kuzz/features/channels/channel_typing_provider.dart';
 import 'package:kuzz/features/channels/members_sheet.dart';
 import 'package:kuzz/features/channels/composer_dock_size_reporter.dart';
+import 'package:kuzz/features/channels/compose_bar.dart';
 import 'package:kuzz/features/channels/date_formatters.dart';
 import 'package:kuzz/features/channels/day_divider.dart';
 import 'package:kuzz/features/channels/emoji_picker.dart';
@@ -57,6 +58,7 @@ import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/features/channels/unread_badge/observed_unread_event.dart';
 import 'package:kuzz/features/channels/small_avatar.dart';
+import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/features/profile/profile_provider.dart';
 import 'package:kuzz/features/profile/presence_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
@@ -276,6 +278,7 @@ Widget _buildTestable({
   List<NostrEvent> huddleLifecycle = const [],
   String? huddleCurrentPubkey,
   http.Client? mediaClient,
+  Set<String>? blocked,
   Widget? home,
 }) {
   final resolvedChannel = channel ?? _testChannel;
@@ -417,6 +420,10 @@ Widget _buildTestable({
       if (huddleCurrentPubkey != null)
         currentPubkeyProvider.overrideWith((ref) => huddleCurrentPubkey),
       appLifecycleProvider.overrideWith(_TestAppLifecycleNotifier.new),
+      if (blocked != null)
+        blockedUsersProvider.overrideWith(
+          () => _FakeBlockedUsersNotifier(blocked),
+        ),
       // Compose bar drafts persist through SharedPreferences.
       savedPrefsProvider.overrideWithValue(_testPrefs),
     ],
@@ -9908,6 +9915,105 @@ void main() {
     });
   });
 
+  group('Blocked people', () {
+    Channel dm(List<String> pubkeys) => Channel(
+      id: _channelId,
+      name: 'DM',
+      channelType: 'dm',
+      visibility: 'private',
+      description: 'Direct message',
+      createdBy: 'self',
+      createdAt: DateTime(2025),
+      memberCount: pubkeys.length,
+      participants: [for (final pubkey in pubkeys) pubkey],
+      participantPubkeys: pubkeys,
+      isMember: true,
+    );
+    final aliceMessage = _textMsg(
+      id: 'from-alice',
+      pubkey: 'alice',
+      content: 'Sent before the block',
+    );
+    const users = {
+      'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
+      'bob': UserProfile(pubkey: 'bob', displayName: 'Bob'),
+    };
+
+    testWidgets('a one-to-one DM shows their messages and swaps the composer '
+        'for Unblock', (tester) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [aliceMessage],
+          channel: dm(const ['self', 'alice']),
+          users: users,
+          huddleCurrentPubkey: 'self',
+          blocked: const {'alice'},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // What Alice sent before the block reads as usual.
+      expect(find.text('Sent before the block'), findsOneWidget);
+      expect(find.text('Message from a blocked user'), findsNothing);
+      expect(find.text('You blocked Alice.'), findsOneWidget);
+      expect(find.byType(ComposeBar), findsNothing);
+
+      await tester.tap(find.byKey(const Key('blocked-dm-unblock')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('blocked-dm-bar')), findsNothing);
+      expect(find.byType(ComposeBar), findsOneWidget);
+      expect(find.text('Unblocked Alice'), findsOneWidget);
+    });
+
+    testWidgets('the Unblock bar never names someone by their key', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: const [],
+          channel: dm(const ['self', 'alice']),
+          huddleCurrentPubkey: 'self',
+          blocked: const {'alice'},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('You blocked this user.'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('blocked-dm-bar')),
+          matching: find.textContaining('alice'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a group DM folds their messages and keeps the composer', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [aliceMessage],
+          channel: dm(const ['self', 'alice', 'bob']),
+          users: users,
+          huddleCurrentPubkey: 'self',
+          blocked: const {'alice'},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sent before the block'), findsNothing);
+      expect(find.text('Message from a blocked user'), findsOneWidget);
+      expect(find.byKey(const Key('blocked-dm-bar')), findsNothing);
+      expect(find.byType(ComposeBar), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('blocked-message')));
+      await tester.pumpAndSettle();
+      expect(find.text('Sent before the block'), findsOneWidget);
+    });
+  });
+
   group('App bar', () {
     testWidgets('aligns the Channel Details iOS back control with channels', (
       tester,
@@ -15755,6 +15861,21 @@ class _FakeProfileNotifier extends ProfileNotifier {
   // Fixed fixture identity must be available before DM presence is tracked.
   Future<UserProfile?> build() =>
       SynchronousFuture(const UserProfile(pubkey: 'self', displayName: 'Self'));
+}
+
+/// The people I blocked, in memory; Unblock takes them off at once.
+class _FakeBlockedUsersNotifier extends BlockedUsersNotifier {
+  _FakeBlockedUsersNotifier(this.initial);
+
+  final Set<String> initial;
+
+  @override
+  Future<Set<String>> build() async => {...initial};
+
+  @override
+  Future<void> unblock(String pubkey) async {
+    state = AsyncData({...?state.value}..remove(pubkey));
+  }
 }
 
 class _FakeChannelStarsNotifier extends ChannelStarsNotifier {

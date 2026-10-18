@@ -9,8 +9,9 @@ import '../../shared/relay/relay.dart';
 /// The people I blocked, stored on the server and readable only by me.
 ///
 /// Blocking is quiet: the blocked person is not told. The server stops
-/// delivering their direct messages and pushes to me; in shared channels the
-/// app folds their messages (see `BlockedMessageGate`). Without an account
+/// pushes from them and, in a one-to-one DM, never delivers what they send
+/// while blocked (what they sent before stays). In channels and group DMs
+/// the app folds their messages (see `BlockedMessageGate`). Without an account
 /// (an older key-only community) the list is empty and cannot change.
 ///
 /// The list belongs to the signed-in account: switching accounts or signing

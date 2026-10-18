@@ -4,18 +4,39 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/theme/theme.dart';
+import '../channels/channels_provider.dart';
 import 'blocked_users_provider.dart';
 
+/// Whether messages from people I blocked fold in the room [channelId]:
+/// everywhere but a one-to-one DM. There the server already leaves out what
+/// the other person sent while blocked, and what they sent before stays
+/// readable. Group DMs and channels fold; so does a room not loaded yet.
+final foldsBlockedAuthorsProvider = Provider.family<bool, String>(
+  (ref, channelId) => !ref.watch(
+    channelsProvider.select(
+      (channels) =>
+          channels.value?.any(
+            (channel) => channel.id == channelId && channel.isOneToOneDm,
+          ) ??
+          false,
+    ),
+  ),
+);
+
 /// Shows [child] (a message) unless [authorPubkey] is blocked. A blocked
-/// author's message collapses to one line that reveals it on tap.
+/// author's message collapses to one line that reveals it on tap, except in
+/// a one-to-one DM (see [foldsBlockedAuthorsProvider]) when [channelId] is
+/// given.
 class BlockedMessageGate extends HookConsumerWidget {
   const BlockedMessageGate({
     super.key,
     required this.authorPubkey,
+    this.channelId,
     required this.child,
   });
 
   final String authorPubkey;
+  final String? channelId;
   final Widget child;
 
   @override
@@ -26,6 +47,10 @@ class BlockedMessageGate extends HookConsumerWidget {
     );
     final revealed = useState(false);
     if (!blocked || revealed.value) return child;
+    final room = channelId;
+    if (room != null && !ref.watch(foldsBlockedAuthorsProvider(room))) {
+      return child;
+    }
     final color = context.colors.onSurfaceVariant;
     return Semantics(
       button: true,

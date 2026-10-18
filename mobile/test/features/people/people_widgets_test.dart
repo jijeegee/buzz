@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/people/blocked_message_gate.dart';
 import 'package:kuzz/features/people/people_page.dart';
 import 'package:kuzz/features/people/person_actions.dart';
@@ -472,6 +474,67 @@ void main() {
     expect(find.text('hidden'), findsOneWidget);
   });
 
+  testWidgets('a blocked author\'s message stays shown in a one-to-one DM '
+      'and folds in a group DM', (tester) async {
+    api.blocked.add(ann);
+    Channel dm(String id, List<String> pubkeys) => Channel(
+      id: id,
+      name: 'DM',
+      channelType: 'dm',
+      visibility: 'private',
+      description: '',
+      createdBy: bob,
+      createdAt: DateTime(2025),
+      memberCount: pubkeys.length,
+      participantPubkeys: pubkeys,
+      isMember: true,
+    );
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ...peopleOverrides(
+            session: session,
+            api: api,
+            names: {ann: 'Ann', bob: 'Bob'},
+          ),
+          channelsProvider.overrideWith(
+            () => _FixedChannels([
+              dm('one', [bob, ann]),
+              dm('group', [bob, ann, cat]),
+            ]),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(
+            body: Column(
+              children: [
+                BlockedMessageGate(
+                  authorPubkey: ann,
+                  channelId: 'one',
+                  child: const Text('before the block'),
+                ),
+                BlockedMessageGate(
+                  authorPubkey: ann,
+                  channelId: 'group',
+                  child: const Text('in the group'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('before the block'), findsOneWidget);
+    expect(find.text('in the group'), findsNothing);
+    expect(find.text('Message from a blocked user'), findsOneWidget);
+  });
+
   group('settings pages', () {
     testWidgets('Blocked users lists names and unblocks', (tester) async {
       api.blocked.addAll([bob, ann]);
@@ -568,4 +631,13 @@ void main() {
       expect(kuzzIdError('ada_1'), isNull);
     });
   });
+}
+
+class _FixedChannels extends ChannelsNotifier {
+  _FixedChannels(this.channels);
+
+  final List<Channel> channels;
+
+  @override
+  Future<List<Channel>> build() async => channels;
 }

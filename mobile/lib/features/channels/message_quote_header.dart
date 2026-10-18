@@ -10,6 +10,7 @@ import 'channel_identity_names_provider.dart';
 import 'message_quote.dart';
 import 'quoted_message_provider.dart';
 import 'timeline_message.dart';
+import '../people/blocked_message_gate.dart';
 import '../people/blocked_users_provider.dart';
 
 /// Compact header for a message carrying a NIP-18 `q` tag.
@@ -63,9 +64,12 @@ class MessageQuoteHeader extends ConsumerWidget {
     // so a relay-signed message still names its real author.
     final authorPubkey = (reference.authorPubkey ?? quoted.pubkey)
         .toLowerCase();
+    // As the room folds the quoted author's own messages: not in a
+    // one-to-one DM, where what they sent before the block stays readable.
     if (ref.watch(
-      blockedPubkeysProvider.select((ids) => ids.contains(authorPubkey)),
-    )) {
+          blockedPubkeysProvider.select((ids) => ids.contains(authorPubkey)),
+        ) &&
+        ref.watch(foldsBlockedAuthorsProvider(quotedChannelId))) {
       return const _QuoteHeaderPlaceholder(text: 'Message from a blocked user');
     }
     if (ref.watch(userCacheProvider.select((cache) => cache[authorPubkey])) ==

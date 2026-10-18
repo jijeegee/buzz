@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:kuzz/features/channels/channel_identity_names_provider.dart';
+import 'package:kuzz/features/people/blocked_message_gate.dart';
 import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/features/channels/composer_quote_chip.dart';
 import 'package:kuzz/features/channels/composer_quote_provider.dart';
@@ -265,8 +266,11 @@ void main() {
     List<Override> overrides({
       QuotedMessage? fetched,
       Set<String> blocked = const {},
+      bool? foldsBlocked,
     }) => [
       blockedPubkeysProvider.overrideWithValue(blocked),
+      if (foldsBlocked != null)
+        foldsBlockedAuthorsProvider(_channelId).overrideWithValue(foldsBlocked),
       userCacheProvider.overrideWith(
         () => _FixedUserCacheNotifier({
           _alice: UserProfile(pubkey: _alice, displayName: 'Alice'),
@@ -287,6 +291,7 @@ void main() {
       List<List<String>>? tags,
       QuoteJumpScope Function(Widget child)? wrap,
       Set<String> blocked = const {},
+      bool? foldsBlocked,
     }) async {
       final header = MessageQuoteHeader(
         channelId: _channelId,
@@ -300,7 +305,11 @@ void main() {
       );
       await tester.pumpWidget(
         WidgetHelpers.testable(
-          overrides: overrides(fetched: fetched, blocked: blocked),
+          overrides: overrides(
+            fetched: fetched,
+            blocked: blocked,
+            foldsBlocked: foldsBlocked,
+          ),
           child: wrap?.call(header) ?? header,
         ),
       );
@@ -364,6 +373,22 @@ void main() {
       expect(find.text('Message from a blocked user'), findsOneWidget);
       expect(find.text('Secret text'), findsNothing);
       expect(find.text('Alice'), findsNothing);
+    });
+
+    testWidgets('shows a quote of a blocked author in a one-to-one DM', (
+      tester,
+    ) async {
+      await pumpHeader(
+        tester,
+        blocked: {_alice.toLowerCase()},
+        foldsBlocked: false,
+        loadedMessages: [
+          _message(id: _quotedId, pubkey: _alice, content: 'Before the block'),
+        ],
+      );
+      expect(find.text('Message from a blocked user'), findsNothing);
+      expect(find.text('Before the block'), findsOneWidget);
+      expect(find.text('Alice'), findsOneWidget);
     });
 
     testWidgets('scrolls in place when the enclosing list shows it', (

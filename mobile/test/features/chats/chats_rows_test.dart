@@ -411,6 +411,41 @@ void main() {
     expect(find.text(blockedMessageLabel), findsOneWidget);
   });
 
+  testWidgets('a one-to-one DM shows what someone I blocked sent before; a '
+      'group DM does not', (tester) async {
+    final me = 'a' * 64;
+    await _pump(
+      tester,
+      [
+        _room(
+          _general,
+          'dm',
+          100,
+          type: 'dm',
+          members: [me, _them],
+          preview: 'sent before the block',
+        ),
+        _room(
+          _group,
+          'group',
+          90,
+          type: 'dm',
+          members: [me, _them, _other],
+          preview: 'secret in the group',
+        ),
+      ],
+      extra: [
+        blockedPubkeysProvider.overrideWithValue({_them}),
+        chatRowVisibleLatestProvider.overrideWith((ref, key) async => null),
+      ],
+    );
+    await tester.pump();
+
+    expect(find.text('sent before the block'), findsOneWidget);
+    expect(find.text('secret in the group'), findsNothing);
+    expect(find.text(blockedMessageLabel), findsOneWidget);
+  });
+
   testWidgets('a pinned thread shows a pin', (tester) async {
     await _pump(
       tester,

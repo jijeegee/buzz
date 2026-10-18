@@ -7,6 +7,15 @@ const Object _sentinel = Object();
 const privateChannelAddDeniedMessage =
     'Only channel members can add people to a private channel.';
 
+/// Whether a DM's [members] (me included) are exactly two people.
+bool isOneToOneDmMembers(Iterable<String> members) =>
+    members
+        .map((pubkey) => pubkey.trim().toLowerCase())
+        .where((pubkey) => pubkey.isNotEmpty)
+        .toSet()
+        .length ==
+    2;
+
 @immutable
 class Channel {
   final String id;
@@ -86,6 +95,10 @@ class Channel {
   bool get isStream => channelType == 'stream';
   bool get isForum => channelType == 'forum';
   bool get isDm => channelType == 'dm';
+
+  /// A DM between exactly two people (me and one other).
+  bool get isOneToOneDm => isDm && isOneToOneDmMembers(participantPubkeys);
+
   bool get isPrivate => visibility == 'private';
   bool get canJoin => visibility == 'open' && !isArchived && !isMember && !isDm;
 
