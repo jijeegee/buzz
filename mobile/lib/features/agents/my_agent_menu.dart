@@ -38,25 +38,36 @@ class MyAgentMenu extends ConsumerWidget {
             openMyAgentSettings(context, agent.pubkey, name);
         }
       },
-      itemBuilder: (_) => [
-        PopupMenuItem(
-          key: ValueKey('my-agent-menu-start-${agent.pubkey}'),
-          value: _MenuChoice.start,
-          enabled: !busy && myAgentCanStart(agent, status),
-          child: const Text('Start'),
-        ),
-        PopupMenuItem(
-          key: ValueKey('my-agent-menu-stop-${agent.pubkey}'),
-          value: _MenuChoice.stop,
-          enabled: !busy && myAgentCanStop(agent, status),
-          child: const Text('Stop'),
-        ),
-        PopupMenuItem(
-          key: ValueKey('my-agent-menu-edit-${agent.pubkey}'),
-          value: _MenuChoice.edit,
-          child: const Text('Edit'),
-        ),
-      ],
+      itemBuilder: (menuContext) {
+        final canStart = !busy && myAgentCanStart(agent, status);
+        final canStop = !busy && myAgentCanStop(agent, status);
+        // The app's popup theme draws every label in one colour, so an item
+        // that cannot be pressed would look pressable; dim it here.
+        final dimmed = TextStyle(
+          color: Theme.of(
+            menuContext,
+          ).colorScheme.onSurface.withValues(alpha: 0.38),
+        );
+        return [
+          PopupMenuItem(
+            key: ValueKey('my-agent-menu-start-${agent.pubkey}'),
+            value: _MenuChoice.start,
+            enabled: canStart,
+            child: Text('Start', style: canStart ? null : dimmed),
+          ),
+          PopupMenuItem(
+            key: ValueKey('my-agent-menu-stop-${agent.pubkey}'),
+            value: _MenuChoice.stop,
+            enabled: canStop,
+            child: Text('Stop', style: canStop ? null : dimmed),
+          ),
+          PopupMenuItem(
+            key: ValueKey('my-agent-menu-edit-${agent.pubkey}'),
+            value: _MenuChoice.edit,
+            child: const Text('Edit'),
+          ),
+        ];
+      },
     );
   }
 }
