@@ -73,6 +73,9 @@ export const KIND_AGENT_HOST_DEVICES = 30180;
 // The owner's chosen robot (shape + colour) for one of their devices; d = the
 // device id. Author-only like 30180.
 export const KIND_DEVICE_ROBOT = 30181;
+// A team: a group of the owner's real agents, any computer; d = the team id.
+// Author-only like 30181. Not KIND_TEAM (30176), which is a team preset.
+export const KIND_AGENT_TEAM = 30182;
 export const KIND_USER_STATUS = 30315;
 export const KIND_AGENT_OBSERVER_FRAME = 24200;
 export const KIND_AGENT_TURN_METRIC = 44200;

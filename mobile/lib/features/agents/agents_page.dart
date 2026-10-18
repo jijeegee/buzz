@@ -20,6 +20,7 @@ import '../profile/presence_cache_provider.dart';
 import 'agent_row.dart';
 import 'agent_team_page.dart';
 import 'my_agent_actions.dart';
+import 'my_agent_status_dot.dart';
 import 'my_agent_tile.dart';
 import 'my_agents.dart';
 import 'my_teams.dart';
@@ -32,9 +33,9 @@ part 'agents_page/team_row.dart';
 /// desktop's Agents page, with the same two tabs. "My agents": only the
 /// owner's real agents, grouped by the computer each runs on (with that
 /// computer's robot); tapping one opens its settings, its menu starts, stops
-/// or edits it. "Presets": the templates agents are made from, and team
-/// presets, with no status. Agents run on computers, so they are created
-/// there.
+/// or edits it; then the owner's teams of those agents. "Presets": the
+/// templates agents are made from, and team presets, with no status. Agents
+/// run on computers, so they are created there.
 class AgentsPage extends HookConsumerWidget {
   const AgentsPage({this.tabReselection, super.key});
 
@@ -50,9 +51,12 @@ class AgentsPage extends HookConsumerWidget {
     final robots = ref.watch(deviceRobotOverridesProvider);
     final tab = useState(_AgentsTab.myAgents);
     final onPresets = tab.value == _AgentsTab.presets;
+    final teamPresetsAsync = onPresets
+        ? ref.watch(myTeamPresetsProvider)
+        : const AsyncValue<List<MyTeamPreset>>.data([]);
     final teamsAsync = onPresets
-        ? ref.watch(myTeamsProvider)
-        : const AsyncValue<List<MyTeam>>.data([]);
+        ? const AsyncValue<List<MyAgentTeam>>.data([])
+        : ref.watch(myAgentTeamsProvider);
     final presetsAsync = onPresets
         ? ref.watch(myAgentPresetsProvider)
         : const AsyncValue<List<MyAgentPreset>>.data([]);
@@ -127,7 +131,12 @@ class AgentsPage extends HookConsumerWidget {
       });
 
     final agentsByPubkey = {for (final agent in agents) agent.pubkey: agent};
-    String memberName(MyTeamMember member) {
+    String? agentName(String pubkey) {
+      final agent = agentsByPubkey[pubkey];
+      return agent == null ? null : nameOf(agent);
+    }
+
+    String memberName(MyTeamPresetMember member) {
       for (final pubkey in member.agentPubkeys) {
         final agent = agentsByPubkey[pubkey];
         if (agent != null) return nameOf(agent);
@@ -135,9 +144,15 @@ class AgentsPage extends HookConsumerWidget {
       return member.name ?? 'Missing agent';
     }
 
-    final teams = [
-      for (final team in teamsAsync.value ?? const <MyTeam>[])
+    final teamPresets = [
+      for (final team in teamPresetsAsync.value ?? const <MyTeamPreset>[])
         if (matches(team.name) || team.members.map(memberName).any(matches))
+          team,
+    ];
+    final teams = [
+      for (final team in teamsAsync.value ?? const <MyAgentTeam>[])
+        if (matches(team.name) ||
+            team.agentPubkeys.map(agentName).nonNulls.any(matches))
           team,
     ];
     final presets = [
@@ -175,9 +190,16 @@ class AgentsPage extends HookConsumerWidget {
       if (pubkeys.isNotEmpty) {
         ref.read(presenceCacheProvider.notifier).track(pubkeys);
       }
-      // Teams and presets are only watched (and fetched) on Presets.
+      // Team presets and presets are only watched (and fetched) on Presets,
+      // teams on My agents.
       if (onPresets) {
-        await ref.read(myTeamsProvider.future).catchError((_) => <MyTeam>[]);
+        await ref
+            .read(myTeamPresetsProvider.future)
+            .catchError((_) => <MyTeamPreset>[]);
+      } else {
+        await ref
+            .read(myAgentTeamsProvider.future)
+            .catchError((_) => <MyAgentTeam>[]);
       }
     }
 
@@ -246,9 +268,9 @@ class AgentsPage extends HookConsumerWidget {
                 context,
                 loading:
                     (presetsAsync.isLoading && !presetsAsync.hasValue) ||
-                    (teamsAsync.isLoading && !teamsAsync.hasValue),
+                    (teamPresetsAsync.isLoading && !teamPresetsAsync.hasValue),
                 presets: presets,
-                teams: teams,
+                teams: teamPresets,
                 memberName: memberName,
                 filtering: needle.isNotEmpty,
                 note: note,
@@ -282,6 +304,15 @@ class AgentsPage extends HookConsumerWidget {
                 for (final agent in groups[deviceId]!)
                   MyAgentTile(agent: agent, name: nameOf(agent)),
               ],
+              if (teams.isNotEmpty) ...[
+                const AgentsSectionTitle('Teams'),
+                for (final team in teams)
+                  _TeamRow(
+                    key: ValueKey('agents-team-${team.id}'),
+                    team: team,
+                    agentName: agentName,
+                  ),
+              ],
             ],
           ],
         ),
@@ -298,8 +329,8 @@ List<Widget> _presetsChildren(
   BuildContext context, {
   required bool loading,
   required List<MyAgentPreset> presets,
-  required List<MyTeam> teams,
-  required String Function(MyTeamMember) memberName,
+  required List<MyTeamPreset> teams,
+  required String Function(MyTeamPresetMember) memberName,
   required bool filtering,
   required Widget Function(String text, {Key? key}) note,
 }) => [
@@ -341,8 +372,8 @@ List<Widget> _presetsChildren(
   if (teams.isNotEmpty) ...[
     const AgentsSectionTitle('Team presets'),
     for (final team in teams)
-      _TeamRow(
-        key: ValueKey('agents-team-${team.id}'),
+      _TeamPresetRow(
+        key: ValueKey('agents-team-preset-${team.id}'),
         team: team,
         memberNames: [for (final m in team.members) memberName(m)],
       ),

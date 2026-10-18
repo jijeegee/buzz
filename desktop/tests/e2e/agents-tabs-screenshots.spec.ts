@@ -90,4 +90,42 @@ test.describe("Agents page tabs", () => {
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/02-presets.png` });
   });
+
+  test("03-teams: make a team of real agents and add it to a channel", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await installMockBridge(page, MOCK);
+    await gotoAgentsView(page);
+
+    const myAgents = page.getByTestId("agents-my-agents");
+    await myAgents.getByTestId("new-my-team-card").click();
+    const dialog = page.getByTestId("my-team-dialog");
+    await dialog.getByTestId("my-team-name").fill("Build crew");
+    await dialog
+      .getByTestId(`my-team-agent-${TEST_IDENTITIES.alice.pubkey}`)
+      .check();
+    await dialog
+      .getByTestId(`my-team-agent-${TEST_IDENTITIES.tyler.pubkey}`)
+      .check();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/03-team-dialog.png` });
+    await dialog.getByTestId("my-team-save").click();
+    await expect(dialog).toHaveCount(0);
+
+    const team = myAgents.getByText("Build crew");
+    await expect(team).toBeVisible();
+    await team.scrollIntoViewIfNeeded();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/03-teams.png` });
+
+    // Team presets: Set up on…, no Add to channel.
+    await page.getByTestId("agents-tab-presets").click();
+    await page.getByTestId("team-set-up-team-welcome").click();
+    await expect(
+      page.getByTestId("team-set-up-here-team-welcome"),
+    ).toBeVisible();
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/04-team-preset-set-up.png` });
+  });
 });

@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { EllipsisVertical } from "lucide-react";
 
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { cn } from "@/shared/lib/cn";
+import { DropdownMenuTrigger } from "@/shared/ui/dropdown-menu";
 
 export type AgentTileStatus = "working" | "running" | "stopped" | "error";
 
@@ -150,5 +152,20 @@ export function DeviceHeading({
         </span>
       ) : null}
     </h3>
+  );
+}
+
+/** The ⋯ button that opens a tile's menu; put inside a `DropdownMenu`. */
+export function TileMenuTrigger({ label }: { label: string }) {
+  return (
+    <DropdownMenuTrigger asChild>
+      <button
+        aria-label={label}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        type="button"
+      >
+        <EllipsisVertical className="h-4 w-4" />
+      </button>
+    </DropdownMenuTrigger>
   );
 }

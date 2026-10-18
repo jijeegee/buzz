@@ -13,29 +13,29 @@ use kuzz_auth::Scope;
 use kuzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
     is_relay_admin_kind, KIND_AGENT_ENGRAM, KIND_AGENT_HOST_DEVICES, KIND_AGENT_PROFILE,
-    KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST,
-    KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION, KIND_DEVICE_ROBOT,
-    KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
-    KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
-    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
-    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
-    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_TREE, KIND_HUDDLE_ENDED,
-    KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT,
-    KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM,
-    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
-    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
-    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
-    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
-    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
-    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST,
-    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
-    KIND_PROJECT, KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
-    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
-    KIND_THREAD_NAME, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
-    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_AGENT_TEAM, KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH,
+    KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION,
+    KIND_DEVICE_ROBOT, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST,
+    KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST,
+    KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
+    KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED,
+    KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_TREE,
+    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
+    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
+    KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
+    KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
+    KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST,
+    KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP,
+    KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
+    KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
+    KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
+    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT,
+    KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
+    KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2,
+    KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME,
+    KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use kuzz_core::tenant::TenantContext;
 use kuzz_core::verification::verify_event;
@@ -571,7 +571,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_CONTACT_LIST | KIND_READ_STATE | KIND_USER_STATUS | KIND_AGENT_ENGRAM
         | KIND_EVENT_REMINDER | KIND_PERSONA | KIND_TEAM | KIND_MANAGED_AGENT
         | KIND_PRIVATE_MANAGED_AGENT | KIND_AGENT_HOST_DEVICES | KIND_DEVICE_ROBOT
-        | KIND_TEAM_CATALOG
+        | KIND_AGENT_TEAM | KIND_TEAM_CATALOG
         | super::push_lease::KIND_PUSH_LEASE => {
             Ok(Scope::UsersWrite)
         }
@@ -797,6 +797,8 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_AGENT_HOST_DEVICES
             // Device robot appearance (30181): owner-authored, keyed by (pubkey, kind, device id).
             | KIND_DEVICE_ROBOT
+            // Agent team (30182): owner-authored, keyed by (pubkey, kind, team id).
+            | KIND_AGENT_TEAM
             | KIND_TEAM_CATALOG
             // NIP-34: git events use `a` tags (repo reference), not `h` tags (channel scope).
             // Parameterized replaceable kinds are keyed by (pubkey, kind, d_tag).
@@ -2222,6 +2224,76 @@ fn validate_device_id_d_tag(event: &Event) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// Most agents one team may hold.
+const AGENT_TEAM_MAX_MEMBERS: usize = 64;
+/// Longest team name and description, in characters.
+const AGENT_TEAM_MAX_NAME_CHARS: usize = 200;
+const AGENT_TEAM_MAX_DESCRIPTION_CHARS: usize = 2_000;
+
+/// Validate a `kind:30182` agent team: one UUID `d` tag and content
+/// `{"v":1,"name":"…","agent_pubkeys":["<hex>",...]}` with a non-empty name
+/// and at most [`AGENT_TEAM_MAX_MEMBERS`] lowercase hex pubkeys.
+fn validate_agent_team(event: &Event) -> Result<(), &'static str> {
+    let mut d: Option<&str> = None;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        if parts.first().map(String::as_str) != Some("d") {
+            continue;
+        }
+        if d.is_some() {
+            return Err("duplicate d tag");
+        }
+        d = Some(parts.get(1).map(String::as_str).unwrap_or(""));
+    }
+    if Uuid::parse_str(d.ok_or("missing d tag")?).is_err() {
+        return Err("d tag must be a team id");
+    }
+    let content: serde_json::Value =
+        serde_json::from_str(&event.content).map_err(|_| "content must be JSON")?;
+    if content.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err("unsupported content version");
+    }
+    if !content
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|name| !name.trim().is_empty())
+    {
+        return Err("team needs a name");
+    }
+    if content
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|name| name.chars().count() > AGENT_TEAM_MAX_NAME_CHARS)
+    {
+        return Err("team name is too long");
+    }
+    match content.get("description") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::String(description))
+            if description.chars().count() <= AGENT_TEAM_MAX_DESCRIPTION_CHARS => {}
+        Some(_) => return Err("description must be text up to 2000 characters"),
+    }
+    let members = content
+        .get("agent_pubkeys")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("agent_pubkeys must be a list")?;
+    if members.len() > AGENT_TEAM_MAX_MEMBERS {
+        return Err("too many agents");
+    }
+    let all_hex = members.iter().all(|member| {
+        member.as_str().is_some_and(|pubkey| {
+            pubkey.len() == 64
+                && pubkey
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+    });
+    if !all_hex {
+        return Err("agent_pubkeys must be lowercase hex pubkeys");
+    }
+    Ok(())
+}
+
 /// Validate a `kind:30181` device robot: a device-id `d` tag and content
 /// `{"v":1|2,"shape":"<name>","color":<index>}`. Shape names and palette size
 /// belong to clients; the relay only bounds them.
@@ -3198,6 +3270,10 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_EVENT_REMINDER {
         validate_event_reminder(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_AGENT_TEAM {
+        validate_agent_team(&event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
     if kind_u32 == KIND_DEVICE_ROBOT {
@@ -4416,6 +4492,84 @@ mod postgres_tests {
         assert!(is_global_only_kind(KIND_AGENT_HOST_DEVICES));
         assert!(!requires_h_channel_scope(KIND_AGENT_HOST_DEVICES));
         assert!(kuzz_core::kind::AUTHOR_ONLY_KINDS.contains(&KIND_AGENT_HOST_DEVICES));
+    }
+
+    #[test]
+    fn agent_team_is_owner_written_readable_and_validated() {
+        const TEAM: &str = "bd5fcb77-c83d-4590-b6e6-78db532c66f3";
+        let event = make_dummy_event();
+        assert_eq!(
+            required_scope_for_kind(KIND_AGENT_TEAM, &event),
+            Ok(Scope::UsersWrite)
+        );
+        assert!(is_global_only_kind(KIND_AGENT_TEAM));
+        // Readable by the owner's agents, like personas.
+        assert!(!kuzz_core::kind::AUTHOR_ONLY_KINDS.contains(&KIND_AGENT_TEAM));
+        let team = |content: &str, tags: &[&[&str]]| {
+            validate_agent_team(&make_event_with_tags(KIND_AGENT_TEAM, content, tags))
+        };
+        let member = "a".repeat(64);
+        let ok = format!(r#"{{"v":1,"name":"Build","agent_pubkeys":["{member}"]}}"#);
+        assert_eq!(team(&ok, &[&["d", TEAM]]), Ok(()));
+        assert_eq!(
+            team(
+                r#"{"v":1,"name":"Empty","agent_pubkeys":[]}"#,
+                &[&["d", TEAM]]
+            ),
+            Ok(())
+        );
+        assert_eq!(team(&ok, &[]), Err("missing d tag"));
+        assert_eq!(
+            team(&ok, &[&["d", "build"]]),
+            Err("d tag must be a team id")
+        );
+        assert_eq!(
+            team(&ok, &[&["d", TEAM], &["d", TEAM]]),
+            Err("duplicate d tag")
+        );
+        assert_eq!(
+            team(r#"{"v":2,"name":"B","agent_pubkeys":[]}"#, &[&["d", TEAM]]),
+            Err("unsupported content version")
+        );
+        assert_eq!(
+            team(r#"{"v":1,"name":" ","agent_pubkeys":[]}"#, &[&["d", TEAM]]),
+            Err("team needs a name")
+        );
+        assert_eq!(
+            team(r#"{"v":1,"name":"B"}"#, &[&["d", TEAM]]),
+            Err("agent_pubkeys must be a list")
+        );
+        let upper = format!(
+            r#"{{"v":1,"name":"B","agent_pubkeys":["{}"]}}"#,
+            "A".repeat(64)
+        );
+        assert_eq!(
+            team(&upper, &[&["d", TEAM]]),
+            Err("agent_pubkeys must be lowercase hex pubkeys")
+        );
+        let many = format!(
+            r#"{{"v":1,"name":"B","agent_pubkeys":[{}]}}"#,
+            vec![format!("\"{member}\""); 65].join(",")
+        );
+        assert_eq!(team(&many, &[&["d", TEAM]]), Err("too many agents"));
+        // Name length in characters: 200 Korean characters fit.
+        let korean = format!(
+            r#"{{"v":1,"name":"{}","agent_pubkeys":[]}}"#,
+            "팀".repeat(200)
+        );
+        assert_eq!(team(&korean, &[&["d", TEAM]]), Ok(()));
+        let long = format!(
+            r#"{{"v":1,"name":"{}","agent_pubkeys":[]}}"#,
+            "팀".repeat(201)
+        );
+        assert_eq!(team(&long, &[&["d", TEAM]]), Err("team name is too long"));
+        assert_eq!(
+            team(
+                r#"{"v":1,"name":"B","description":5,"agent_pubkeys":[]}"#,
+                &[&["d", TEAM]]
+            ),
+            Err("description must be text up to 2000 characters")
+        );
     }
 
     #[test]

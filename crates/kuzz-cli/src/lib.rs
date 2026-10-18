@@ -322,6 +322,9 @@ enum Cmd {
     /// Agent engram management — persistent memory per NIP-AE
     #[command(subcommand)]
     Mem(MemCmd),
+    /// List and change the owner's teams of agents (agents on any computer)
+    #[command(subcommand)]
+    Teams(TeamsCmd),
     /// Persona pack operations (local, no relay connection needed)
     #[command(subcommand)]
     Pack(PackCmd),
@@ -2155,6 +2158,71 @@ pub enum MediaCmd {
     },
 }
 
+/// Subcommands for `kuzz teams`.
+///
+/// A team is a named group of the owner's real agents, which may run on
+/// different computers. Agents read their owner's teams; only the owner's
+/// key can change them.
+#[derive(Subcommand)]
+pub enum TeamsCmd {
+    /// List teams with their agents' names and status
+    #[command(after_help = "Examples:\n  kuzz teams list")]
+    List {
+        /// Whose teams (hex pubkey). Default: your owner, or you.
+        #[arg(long)]
+        owner: Option<String>,
+    },
+    /// Show one team by id or name
+    #[command(after_help = "Examples:\n  kuzz teams show --team \"Build crew\"")]
+    Show {
+        /// Team id or name
+        #[arg(long)]
+        team: String,
+        /// Whose teams (hex pubkey). Default: your owner, or you.
+        #[arg(long)]
+        owner: Option<String>,
+    },
+    /// Create a team of existing agents
+    #[command(
+        after_help = "Examples:\n  kuzz teams create --name \"Build crew\" --agent <hex> --agent <hex>"
+    )]
+    Create {
+        /// Team name
+        #[arg(long)]
+        name: String,
+        /// Short description
+        #[arg(long)]
+        description: Option<String>,
+        /// Agent pubkey (hex). Repeat for more agents; up to 64.
+        #[arg(long = "agent")]
+        agents: Vec<String>,
+    },
+    /// Add agents to a team
+    AddAgent {
+        /// Team id or name
+        #[arg(long)]
+        team: String,
+        /// Agent pubkey (hex). Repeat for more agents.
+        #[arg(long = "agent", required = true)]
+        agents: Vec<String>,
+    },
+    /// Remove agents from a team (the agents keep running)
+    RemoveAgent {
+        /// Team id or name
+        #[arg(long)]
+        team: String,
+        /// Agent pubkey (hex). Repeat for more agents.
+        #[arg(long = "agent", required = true)]
+        agents: Vec<String>,
+    },
+    /// Delete a team (its agents are not touched)
+    Delete {
+        /// Team id or name
+        #[arg(long)]
+        team: String,
+    },
+}
+
 /// Subcommands for `kuzz mem`.
 #[derive(Subcommand)]
 pub enum MemCmd {
@@ -2559,6 +2627,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Media(sub) => commands::upload::dispatch_media(sub, &client).await,
         Cmd::Upload(sub) => commands::upload::dispatch(sub, &client).await,
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
+        Cmd::Teams(sub) => commands::teams::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
         Cmd::Pack(_) | Cmd::Auth(_) => unreachable!("handled above"),
     }
@@ -2765,6 +2834,7 @@ mod tests {
             "reactions",
             "repos",
             "social",
+            "teams",
             "threads",
             "upload",
             "users",

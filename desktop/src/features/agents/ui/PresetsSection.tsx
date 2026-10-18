@@ -1,7 +1,7 @@
 import * as React from "react";
 import {
+  ChevronDown,
   CopyPlus,
-  EllipsisVertical,
   Plus,
   Share2,
   Trash2,
@@ -13,6 +13,7 @@ import { presetUsageLabel } from "@/features/agents/lib/myAgentDevices";
 import { resolveTeamPersonas } from "@/features/agents/lib/teamPersonas";
 import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
+import { useAuthDevicesQuery } from "@/shared/api/useAuthDeviceNames";
 import type { AgentPersona, AgentTeam, ManagedAgent } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 import {
@@ -23,7 +24,11 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { Skeleton } from "@/shared/ui/skeleton";
-import { AGENT_TILE_GRID_CLASS, AgentTile } from "./AgentTile";
+import {
+  AGENT_TILE_GRID_CLASS,
+  AgentTile,
+  TileMenuTrigger as MenuTrigger,
+} from "./AgentTile";
 
 type PresetsSectionProps = {
   agents: ManagedAgent[];
@@ -44,7 +49,9 @@ type PresetsSectionProps = {
   onImportPreset: () => void;
   onOpenPersonaProfile: (persona: AgentPersona) => void;
   onSharePersona: (persona: AgentPersona) => void;
-  onAddTeamToChannel: (team: AgentTeam) => void;
+  /** The team preset being set up on this computer, if any. */
+  settingUpTeamId: string | null;
+  onSetUpTeam: (team: AgentTeam) => void;
   onCreateTeam: () => void;
   onDeleteTeam: (team: AgentTeam) => void;
   onDuplicateTeam: (team: AgentTeam) => void;
@@ -70,20 +77,6 @@ function SectionTitle({
       </div>
       {action}
     </div>
-  );
-}
-
-function MenuTrigger({ label }: { label: string }) {
-  return (
-    <DropdownMenuTrigger asChild>
-      <button
-        aria-label={label}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        type="button"
-      >
-        <EllipsisVertical className="h-4 w-4" />
-      </button>
-    </DropdownMenuTrigger>
   );
 }
 
@@ -294,8 +287,9 @@ function AgentPresetTile({
 function TeamPresetTile({
   isPending,
   personas,
+  settingUpTeamId,
   team,
-  onAddTeamToChannel,
+  onSetUpTeam,
   onDeleteTeam,
   onDuplicateTeam,
   onEditTeam,
@@ -346,14 +340,16 @@ function TeamPresetTile({
       badge="Team preset"
       buttons={
         <>
-          <Button
-            data-testid={`team-add-to-channel-${team.id}`}
-            disabled={isPending || resolution.hasMissingPersonas}
-            onClick={() => onAddTeamToChannel(team)}
-            size="xs"
-          >
-            Add to channel
-          </Button>
+          <SetUpOnMenu
+            disabled={
+              isPending ||
+              settingUpTeamId !== null ||
+              resolution.resolvedPersonas.length === 0
+            }
+            isSettingUp={settingUpTeamId === team.id}
+            team={team}
+            onSetUpHere={() => onSetUpTeam(team)}
+          />
           <Button
             disabled={isPending}
             onClick={() => onEditTeam(team)}
@@ -375,6 +371,68 @@ function TeamPresetTile({
       subtitle={count === 1 ? "1 preset" : `${count} presets`}
       onOpen={() => onEditTeam(team)}
     />
+  );
+}
+
+/**
+ * "Set up on…": pick the computer to make this team preset's agents on, plus
+ * a team of them. Only this computer can be set up from here; another one
+ * is set up in Kuzz on that computer.
+ */
+function SetUpOnMenu({
+  disabled,
+  isSettingUp,
+  team,
+  onSetUpHere,
+}: {
+  disabled: boolean;
+  isSettingUp: boolean;
+  team: AgentTeam;
+  onSetUpHere: () => void;
+}) {
+  const devices = useAuthDevicesQuery().data ?? [];
+  const here = devices.find((device) => device.current);
+  const others = devices.filter((device) => !device.current);
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          data-testid={`team-set-up-${team.id}`}
+          disabled={disabled}
+          size="xs"
+        >
+          {isSettingUp ? "Setting up…" : "Set up on…"}
+          <ChevronDown className="h-3 w-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <DropdownMenuItem
+          data-testid={`team-set-up-here-${team.id}`}
+          onClick={onSetUpHere}
+        >
+          <span className="flex flex-col">
+            <span>This computer{here?.name ? ` · ${here.name}` : ""}</span>
+            <span className="text-2xs text-muted-foreground">
+              Makes {team.personaIds.length === 1 ? "its agent" : "its agents"}{" "}
+              here, and a team of them
+            </span>
+          </span>
+        </DropdownMenuItem>
+        {others.map((device) => (
+          <DropdownMenuItem disabled key={device.id}>
+            <span className="flex flex-col">
+              <span>{device.name || "Another computer"}</span>
+              <span className="text-2xs text-muted-foreground">
+                Open Kuzz on that computer to set it up there
+              </span>
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

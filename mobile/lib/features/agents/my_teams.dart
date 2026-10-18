@@ -4,9 +4,9 @@ import '../../shared/relay/relay.dart';
 import 'agent_settings.dart';
 import 'agent_settings_provider.dart';
 
-/// One agent definition in a team, and the owner's agents made from it.
-class MyTeamMember {
-  const MyTeamMember({
+/// One agent preset in a team preset, and the owner's agents made from it.
+class MyTeamPresetMember {
+  const MyTeamPresetMember({
     required this.personaD,
     required this.name,
     required this.agentPubkeys,
@@ -22,9 +22,10 @@ class MyTeamMember {
   final List<String> agentPubkeys;
 }
 
-/// One of the owner's agent teams (kind:30176), as desktop publishes it.
-class MyTeam {
-  const MyTeam({
+/// One of the owner's team presets (kind:30176), as desktop publishes it:
+/// a set of agent presets agents are made from on a computer.
+class MyTeamPreset {
+  const MyTeamPreset({
     required this.id,
     required this.name,
     required this.description,
@@ -34,14 +35,14 @@ class MyTeam {
   final String id;
   final String name;
   final String? description;
-  final List<MyTeamMember> members;
+  final List<MyTeamPresetMember> members;
 }
 
-/// The owner's teams from their kind:30176 [teamEvents], with each member's
+/// The owner's team presets from their kind:30176 [teamEvents], with each member's
 /// name from its kind:30175 definition and its agents from kind:30177
 /// (`persona_id`). Built-in teams are never published, so they are not here.
 /// Sorted by name.
-List<MyTeam> myTeamsFrom({
+List<MyTeamPreset> myTeamPresetsFrom({
   required String owner,
   required List<NostrEvent> teamEvents,
   required List<NostrEvent> personaEvents,
@@ -68,7 +69,7 @@ List<MyTeam> myTeamsFrom({
     if (personaId == null) continue;
     (agentsByPersona[personaDTag(personaId)] ??= []).add(key.toLowerCase());
   }
-  final teams = <MyTeam>[];
+  final teams = <MyTeamPreset>[];
   for (final MapEntry(:key, :value) in newestByDTag(
     teamEvents,
     kind: EventKind.team,
@@ -80,18 +81,18 @@ List<MyTeam> myTeamsFrom({
     final description = content?['description'];
     final personaIds = content?['persona_ids'];
     final seen = <String>{};
-    final members = <MyTeamMember>[
+    final members = <MyTeamPresetMember>[
       if (personaIds is List)
         for (final id in personaIds)
           if (id is String && id.trim().isNotEmpty && seen.add(personaDTag(id)))
-            MyTeamMember(
+            MyTeamPresetMember(
               personaD: personaDTag(id),
               name: personaNames[personaDTag(id)] ?? _builtinName(id),
               agentPubkeys: [...?agentsByPersona[personaDTag(id)]]..sort(),
             ),
     ];
     teams.add(
-      MyTeam(
+      MyTeamPreset(
         id: key,
         name: name.trim(),
         description: description is String && description.trim().isNotEmpty
@@ -234,11 +235,13 @@ final _myAgentDefinitionsProvider =
       );
     });
 
-/// The signed-in owner's agent teams; empty when signed out.
-final myTeamsProvider = FutureProvider.autoDispose<List<MyTeam>>((ref) async {
+/// The signed-in owner's team presets; empty when signed out.
+final myTeamPresetsProvider = FutureProvider.autoDispose<List<MyTeamPreset>>((
+  ref,
+) async {
   final events = await ref.watch(_myAgentDefinitionsProvider.future);
   if (events == null) return const [];
-  return myTeamsFrom(
+  return myTeamPresetsFrom(
     owner: events.owner,
     teamEvents: events.teams,
     personaEvents: events.personas,
@@ -259,6 +262,94 @@ final myAgentPresetsProvider = FutureProvider.autoDispose<List<MyAgentPreset>>((
   );
 });
 
-/// Refetches teams and presets from the relay.
-void refreshMyAgentDefinitions(WidgetRef ref) =>
-    ref.invalidate(_myAgentDefinitionsProvider);
+/// Refetches teams, team presets and presets from the relay.
+void refreshMyAgentDefinitions(WidgetRef ref) {
+  ref.invalidate(_myAgentDefinitionsProvider);
+  ref.invalidate(myAgentTeamsProvider);
+}
+
+/// Most agents a team can have; the relay refuses more.
+const myAgentTeamMaxAgents = 64;
+
+/// One of the owner's teams (kind:30182): a group of their real agents,
+/// which may run on different computers. Made in the Kuzz app on a computer.
+class MyAgentTeam {
+  const MyAgentTeam({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.agentPubkeys,
+  });
+
+  final String id;
+  final String name;
+  final String? description;
+
+  /// Lowercase pubkeys of its agents, in the team's order.
+  final List<String> agentPubkeys;
+}
+
+final _hexPubkey = RegExp(r'^[0-9a-f]{64}$');
+
+/// The owner's teams from their kind:30182 [teamEvents]: the newest of each,
+/// sorted by name. Agents are lowercased and deduplicated; anything that is
+/// not a pubkey is dropped.
+List<MyAgentTeam> myAgentTeamsFrom({
+  required String owner,
+  required List<NostrEvent> teamEvents,
+}) {
+  final teams = <MyAgentTeam>[];
+  for (final MapEntry(:key, :value) in newestByDTag(
+    teamEvents,
+    kind: EventKind.agentTeam,
+    owner: owner,
+  ).entries) {
+    final content = decodeJsonObject(value.content);
+    final name = content?['name'];
+    if (name is! String || name.trim().isEmpty) continue;
+    final description = content?['description'];
+    final listed = content?['agent_pubkeys'];
+    final seen = <String>{};
+    teams.add(
+      MyAgentTeam(
+        id: key,
+        name: name.trim(),
+        description: description is String && description.trim().isNotEmpty
+            ? description.trim()
+            : null,
+        agentPubkeys: [
+          if (listed is List)
+            for (final pubkey in listed)
+              if (pubkey is String &&
+                  _hexPubkey.hasMatch(pubkey.toLowerCase()) &&
+                  seen.add(pubkey.toLowerCase()))
+                pubkey.toLowerCase(),
+        ],
+      ),
+    );
+  }
+  teams.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return teams;
+}
+
+/// The signed-in owner's teams (kind:30182) from the relay; empty when
+/// signed out or not connected.
+final myAgentTeamsProvider = FutureProvider.autoDispose<List<MyAgentTeam>>((
+  ref,
+) async {
+  final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
+  if (owner == null || owner.isEmpty) return const [];
+  // Refetch after every reconnect, like the definitions above.
+  final status = ref.watch(relaySessionProvider.select((s) => s.status));
+  if (status != SessionStatus.connected) return const [];
+  final events = await ref
+      .read(agentSettingsRelayProvider)
+      .fetch(
+        NostrFilter(
+          kinds: const [EventKind.agentTeam],
+          authors: [owner],
+          limit: 200,
+        ),
+      );
+  return myAgentTeamsFrom(owner: owner, teamEvents: events);
+});

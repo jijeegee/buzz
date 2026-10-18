@@ -9,13 +9,14 @@ import 'my_agent_tile.dart';
 import 'my_agents.dart';
 import 'my_teams.dart';
 
-/// One of the owner's agent teams: its description and its agents, each
-/// with its status, computer and Start / Stop / Edit menu. Teams are made
-/// and added to channels in the Kuzz app on a computer.
+/// One of the owner's teams: its description and its agents, each with its
+/// status, computer and Start / Stop / Edit menu. Agents can be on
+/// different computers. Teams are made and added to channels in the Kuzz app
+/// on a computer.
 class AgentTeamPage extends ConsumerWidget {
   const AgentTeamPage({super.key, required this.team});
 
-  final MyTeam team;
+  final MyAgentTeam team;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,6 +30,7 @@ class AgentTeamPage extends ConsumerWidget {
       return agent.directoryName ?? shortPubkey(agent.pubkey);
     }
 
+    final removed = team.agentPubkeys.where((p) => !agents.containsKey(p));
     final muted = context.textTheme.bodySmall?.copyWith(
       color: context.colors.onSurfaceVariant,
     );
@@ -48,34 +50,34 @@ class AgentTeamPage extends ConsumerWidget {
                 child: Text(description, style: context.textTheme.bodyMedium),
               ),
             const AgentsSectionTitle('Agents'),
-            if (team.members.isEmpty)
+            if (team.agentPubkeys.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
                 child: Text('This team has no agents yet.', style: muted),
               ),
-            for (final member in team.members)
-              if (member.agentPubkeys.where(agents.containsKey).isEmpty)
-                ListTile(
-                  key: ValueKey('agent-team-member-${member.personaD}'),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: Grid.gutter,
-                  ),
-                  title: Text(member.name ?? 'Missing agent'),
-                  subtitle: Text(
-                    member.name == null
-                        ? 'Removed from your agents'
-                        : 'Not on any of your computers',
-                    style: muted,
-                  ),
-                )
-              else
-                for (final pubkey in member.agentPubkeys)
-                  if (agents[pubkey] case final agent?)
-                    MyAgentTile(
-                      agent: agent,
-                      name: nameOf(agent),
-                      showComputer: true,
-                    ),
+            for (final pubkey in team.agentPubkeys)
+              if (agents[pubkey] case final agent?)
+                MyAgentTile(
+                  agent: agent,
+                  name: nameOf(agent),
+                  showComputer: true,
+                ),
+            if (removed.isNotEmpty)
+              ListTile(
+                key: const ValueKey('agent-team-removed'),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: Grid.gutter,
+                ),
+                title: Text(
+                  removed.length == 1
+                      ? '1 agent was removed'
+                      : '${removed.length} agents were removed',
+                ),
+                subtitle: Text(
+                  'No longer on any of your computers',
+                  style: muted,
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 Grid.gutter,

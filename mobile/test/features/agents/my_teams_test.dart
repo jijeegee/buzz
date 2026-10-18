@@ -31,7 +31,7 @@ NostrEvent _event(
 
 void main() {
   test('reads teams with member names and agents', () {
-    final teams = myTeamsFrom(
+    final teams = myTeamPresetsFrom(
       owner: _owner,
       teamEvents: [
         _event(EventKind.team, 'team-b', {
@@ -78,7 +78,7 @@ void main() {
   });
 
   test('uses the newest version of a team', () {
-    final teams = myTeamsFrom(
+    final teams = myTeamPresetsFrom(
       owner: _owner,
       teamEvents: [
         _event(EventKind.team, 't', {'name': 'Old'}, createdAt: 1),
@@ -116,5 +116,40 @@ void main() {
     expect(presetUsageLabel(0), 'not used yet');
     expect(presetUsageLabel(1), 'used by 1 agent');
     expect(presetUsageLabel(2), 'used by 2 agents');
+  });
+
+  test('reads teams of real agents, newest of each, sorted by name', () {
+    final teams = myAgentTeamsFrom(
+      owner: _owner,
+      teamEvents: [
+        _event(EventKind.agentTeam, 't1', {
+          'v': 1,
+          'name': 'Old',
+          'agent_pubkeys': [_fizz],
+        }, createdAt: 1),
+        _event(EventKind.agentTeam, 't1', {
+          'v': 1,
+          'name': ' Build ',
+          'description': ' Ships it ',
+          'agent_pubkeys': [_honey, _fizz.toUpperCase(), _honey, 'nope'],
+        }),
+        _event(EventKind.agentTeam, 't2', {
+          'v': 1,
+          'name': 'Docs',
+          'agent_pubkeys': <String>[],
+        }),
+        // No name: skipped. Another owner's: not ours.
+        _event(EventKind.agentTeam, 't3', {'v': 1, 'name': ' '}),
+        _event(EventKind.agentTeam, 't4', {
+          'v': 1,
+          'name': 'Theirs',
+        }, author: _other),
+      ],
+    );
+    expect([for (final t in teams) t.name], ['Build', 'Docs']);
+    expect(teams.first.description, 'Ships it');
+    expect(teams.first.agentPubkeys, [_honey, _fizz]);
+    expect(teams.last.description, isNull);
+    expect(teams.last.agentPubkeys, isEmpty);
   });
 }

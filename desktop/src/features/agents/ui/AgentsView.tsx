@@ -5,7 +5,6 @@ import {
   subscribeSnapshotImport,
 } from "@/features/agents/openSnapshotImportFromUrlEvent";
 import { AddAgentToChannelDialog } from "./AddAgentToChannelDialog";
-import { AddTeamToChannelDialog } from "./AddTeamToChannelDialog";
 import { AgentDefaultsDialog } from "./AgentDefaultsDialog";
 import { AgentDialog } from "./AgentDialog";
 import { CommunityCatalogDialog } from "./CommunityCatalogDialog";
@@ -20,6 +19,7 @@ import { TeamDeleteDialog } from "./TeamDeleteDialog";
 import { TeamDialog } from "./TeamDialog";
 import { MyAgentsSection } from "./MyAgentsSection";
 import { PresetsSection } from "./PresetsSection";
+import { useTeamPresetMigration } from "@/features/agents/lib/teamPresetMigration";
 import { useFeedbackToasts } from "@/shared/hooks/useToastEffect";
 import { useManagedAgentActions } from "./useManagedAgentActions";
 import { usePersonaActions } from "./usePersonaActions";
@@ -59,6 +59,8 @@ export function AgentsView() {
   const inheritedDefaults = getInheritedAgentDefaults(globalConfig, bakedEnv);
   const agents = useManagedAgentActions();
   const personas = usePersonaActions();
+  // Old teams' agents become real teams, once.
+  useTeamPresetMigration();
   // Start/stop/create results and preset delete/deactivate results.
   useFeedbackToasts(agents.actionNoticeMessage, agents.actionErrorMessage);
   useFeedbackToasts(
@@ -90,16 +92,10 @@ export function AgentsView() {
     setIsAiDefaultsOpen(open);
   }
 
-  const teamActions = useTeamActions(
-    {
-      setActionNoticeMessage: agents.setActionNoticeMessage,
-      setActionErrorMessage: agents.setActionErrorMessage,
-    },
-    {
-      refetchManagedAgents: agents.refetchManagedAgents,
-      refetchRelayAgents: agents.refetchRelayAgents,
-    },
-  );
+  const teamActions = useTeamActions({
+    setActionNoticeMessage: agents.setActionNoticeMessage,
+    setActionErrorMessage: agents.setActionErrorMessage,
+  });
 
   // Parent-owned unified catalog state per Thufir's corrective:
   // - discriminated launch target so both sections refetch on open
@@ -315,7 +311,15 @@ export function AgentsView() {
                   ? teamActions.teamsQuery.error
                   : null
               }
-              onAddTeamToChannel={teamActions.setTeamToAddToChannel}
+              settingUpTeamId={agents.settingUpTeamId}
+              onSetUpTeam={(team) => {
+                void agents
+                  .handleSetUpTeamPreset(team, personas.libraryPersonas)
+                  .then((made) => {
+                    // Show the new agents and their team.
+                    if (made) setTab("agents");
+                  });
+              }}
               onCreateAgent={(persona) => {
                 void agents.handleStartPersona(persona);
               }}
@@ -635,19 +639,6 @@ export function AgentsView() {
           }}
           open={teamActions.teamToDelete !== null}
           team={teamActions.teamToDelete}
-        />
-      ) : null}
-      {teamActions.teamToAddToChannel ? (
-        <AddTeamToChannelDialog
-          onDeployed={teamActions.handleTeamDeployed}
-          onOpenChange={(open) => {
-            if (!open) {
-              teamActions.setTeamToAddToChannel(null);
-            }
-          }}
-          open={teamActions.teamToAddToChannel !== null}
-          personas={personas.libraryPersonas}
-          team={teamActions.teamToAddToChannel}
         />
       ) : null}
       {teamActions.teamToShare ? (

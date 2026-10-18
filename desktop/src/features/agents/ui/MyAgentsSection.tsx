@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
 import { resolveAgentCardModelLabel } from "@/features/agents/lib/agentCardModelLabel";
@@ -9,12 +11,20 @@ import {
   localAgentsForList,
 } from "@/features/agents/lib/myAgentDevices";
 import {
+  deleteMyTeam,
+  type MyTeam,
+  saveMyTeam,
+  useMyTeamsLiveUpdates,
+  useMyTeamsQuery,
+} from "@/features/agents/lib/myTeams";
+import {
   type AgentAvailabilityReader,
   useAgentAvailabilityLookup,
 } from "@/features/agents/lib/useAgentAvailability";
 import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import { normalizeDeviceId } from "@/shared/api/ownerDevices";
 import type { AgentPersona, ManagedAgent } from "@/shared/api/types";
 import {
@@ -38,6 +48,13 @@ import {
   type AgentTileStatus,
   DeviceHeading,
 } from "./AgentTile";
+import {
+  AddMyTeamToChannelDialog,
+  type MyTeamDraft,
+  MyTeamDeleteDialog,
+  MyTeamDialog,
+} from "./MyTeamDialogs";
+import { MyTeamsSection, type TeamAgent } from "./MyTeamsSection";
 import { RemoteAgentCard } from "./RemoteAgentCard";
 
 type MyAgentsSectionProps = {
@@ -126,6 +143,42 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
     [deviceLabels, isArchived, personaById, remoteAgents],
   );
 
+  const teamAgents = React.useMemo((): TeamAgent[] => {
+    const here = currentDevice?.name
+      ? `This device · ${currentDevice.name}`
+      : "This device";
+    return [
+      ...localAgents.map((agent) => ({
+        pubkey: agent.pubkey.toLowerCase(),
+        name: agent.name,
+        computer: here,
+        running: isManagedAgentActive(agent),
+      })),
+      ...remoteGroups.flatMap((group) =>
+        group.agents.map((agent) => {
+          const availability = getRemoteAvailability(agent.pubkey);
+          return {
+            pubkey: agent.pubkey.toLowerCase(),
+            name:
+              agent.name?.trim() ||
+              (agent.localPersonaId
+                ? personaById.get(agent.localPersonaId)?.displayName
+                : undefined) ||
+              "Agent",
+            computer: group.name || "Another device",
+            running: availability === "online" || availability === "away",
+          };
+        }),
+      ),
+    ];
+  }, [
+    currentDevice?.name,
+    getRemoteAvailability,
+    localAgents,
+    personaById,
+    remoteGroups,
+  ]);
+
   if (isAgentsLoading) return <TilesSkeleton />;
 
   return (
@@ -197,12 +250,97 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
         ))
       )}
 
+      <MyTeams agents={teamAgents} />
+
       {agentsError ? (
         <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {agentsError.message}
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** The Teams part of My agents, with its create/edit and channel dialogs. */
+function MyTeams({ agents }: { agents: readonly TeamAgent[] }) {
+  const queryClient = useQueryClient();
+  const owner = useIdentityQuery().data?.pubkey ?? "";
+  const teamsQuery = useMyTeamsQuery();
+  useMyTeamsLiveUpdates();
+  const [editing, setEditing] = React.useState<MyTeam | "new" | null>(null);
+  const [adding, setAdding] = React.useState<MyTeam | null>(null);
+  const [deleting, setDeleting] = React.useState<MyTeam | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const agentsByPubkey = React.useMemo(
+    () => new Map(agents.map((agent) => [agent.pubkey, agent])),
+    [agents],
+  );
+
+  async function save(draft: MyTeamDraft) {
+    setIsSaving(true);
+    try {
+      const team = editing && editing !== "new" ? editing : null;
+      await saveMyTeam(queryClient, owner, { id: team?.id, ...draft });
+      toast.success(team ? `Saved ${draft.name.trim()}.` : "Team created.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function remove(team: MyTeam) {
+    try {
+      await deleteMyTeam(queryClient, owner, team);
+      toast.success(`Deleted ${team.name}. Its agents stay.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not delete the team.",
+      );
+    }
+  }
+
+  return (
+    <>
+      <MyTeamsSection
+        agentsByPubkey={agentsByPubkey}
+        error={teamsQuery.error}
+        isLoading={teamsQuery.isLoading}
+        teams={teamsQuery.data ?? []}
+        onAddToChannel={setAdding}
+        onCreate={() => setEditing("new")}
+        onDelete={setDeleting}
+        onEdit={setEditing}
+      />
+      <MyTeamDialog
+        agents={agents}
+        isSaving={isSaving}
+        open={editing !== null}
+        team={editing === "new" ? null : editing}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+        onSave={save}
+      />
+      <MyTeamDeleteDialog
+        team={deleting}
+        onConfirm={(team) => {
+          setDeleting(null);
+          void remove(team);
+        }}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+      />
+      {adding ? (
+        <AddMyTeamToChannelDialog
+          agentsByPubkey={agentsByPubkey}
+          team={adding}
+          onAdded={(message) => toast.success(message)}
+          onOpenChange={(open) => {
+            if (!open) setAdding(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
