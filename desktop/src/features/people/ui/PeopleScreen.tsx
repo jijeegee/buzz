@@ -1,6 +1,5 @@
 import * as React from "react";
 import { MessageSquare, Star, UserMinus, UserPlus, Users } from "lucide-react";
-import { toast } from "sonner";
 
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { usePeopleFavorites } from "@/features/people/PeopleFavoritesContext";
@@ -13,6 +12,11 @@ import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { PersonSafetyMenu } from "./PersonSafetyMenu";
+import {
+  addFriendWithToast,
+  RemoveFriendDialog,
+  type RemoveFriendTarget,
+} from "./RemoveFriendDialog";
 
 const PEOPLE_PANEL_SEARCH_KEYS = ["profile"] as const;
 
@@ -66,15 +70,18 @@ function PersonProfile({
   const isSelf = currentPubkey?.toLowerCase() === pubkey;
   const blocked = isBlocked(pubkey);
 
+  const [removeTarget, setRemoveTarget] =
+    React.useState<RemoveFriendTarget | null>(null);
+
   const toggleFriend = () => {
+    if (isFriend) {
+      setRemoveTarget({ pubkey, name });
+      return;
+    }
     setPending(true);
-    (isFriend ? friends.removeFriend(pubkey) : friends.addFriend(pubkey))
-      .catch((error: unknown) =>
-        toast.error(
-          error instanceof Error ? error.message : "Could not update friends",
-        ),
-      )
-      .finally(() => setPending(false));
+    void addFriendWithToast(friends.addFriend, pubkey, name).finally(() =>
+      setPending(false),
+    );
   };
 
   return (
@@ -154,6 +161,11 @@ function PersonProfile({
           You blocked this person.
         </p>
       ) : null}
+      <RemoveFriendDialog
+        onClose={() => setRemoveTarget(null)}
+        onRemoveFriend={friends.removeFriend}
+        target={removeTarget}
+      />
     </div>
   );
 }
