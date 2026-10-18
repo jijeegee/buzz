@@ -9,12 +9,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
+import '../../shared/mentions/mention_tags.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/read_state/read_state_provider.dart';
+import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
-import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -26,10 +28,11 @@ import '../channels/channel_stars/channel_stars_provider.dart';
 import '../channels/channels_page.dart';
 import '../channels/channels_provider.dart';
 import '../channels/dm_channel_labels.dart';
-import '../channels/message_content.dart';
+import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
 import 'chat_list_provider.dart';
+import 'thread_pins_provider.dart';
 
 part 'chats_page/rows.dart';
 
@@ -67,14 +70,17 @@ final chatsViewModeProvider =
 /// The rows the Chats screen lists: the relay's rows (archived ones left
 /// out) plus this device's rooms the relay did not send, at the end. When
 /// the relay keeps no chat state, every room comes from this device.
+///
+/// With no list yet (first install or just signed in, nothing saved), this
+/// device's rooms show newest first until the relay's list replaces them,
+/// rather than a loading spinner. Null while there is nothing to show yet.
 final chatsRowsProvider = Provider<List<ChatListRow>?>((ref) {
   final list = ref.watch(chatListProvider);
   final channels = ref.watch(channelsProvider).value;
   final failed = chatListFailed(list);
   final serverRows = failed ? const <ChatListRow>[] : list.value?.rows;
-  if (serverRows == null) return null;
   final listed = {
-    for (final row in serverRows)
+    for (final row in serverRows ?? const <ChatListRow>[])
       if (!row.isThread) row.channelId,
   };
   final hiddenDms = ref.read(channelsProvider.notifier).hiddenDmIds;
@@ -85,6 +91,7 @@ final chatsRowsProvider = Provider<List<ChatListRow>?>((ref) {
           (channel.isDm || (channel.isStream && channel.isMember)))
         localChatRow(channel),
   ]..sort((a, b) => b.atUs.compareTo(a.atUs));
+  if (serverRows == null) return localRooms.isEmpty ? null : localRooms;
   return [
     for (final row in serverRows)
       if (!row.archived &&
@@ -159,6 +166,7 @@ class ChatsPage extends HookConsumerWidget {
           in ref.watch(channelMutesProvider).store.channels.entries)
         if (entry.value.muted) entry.key,
     };
+    final pinnedThreads = ref.watch(threadPinsProvider);
     final readState = ref.watch(readStateProvider);
     final expanded = useState(<String>{});
     final scrollController = useScrollController();
@@ -232,11 +240,11 @@ class ChatsPage extends HookConsumerWidget {
       );
     }
 
+    // Pull to refresh waits for the Chats list only; the channel list
+    // reloads behind it.
     Future<void> refresh() async {
-      await Future.wait([
-        refreshChatList(ref),
-        ref.read(channelsProvider.notifier).refresh(),
-      ]);
+      ref.read(channelsProvider.notifier).refresh().ignore();
+      await refreshChatList(ref);
     }
 
     int unreadOf(ChatListRow row) {
@@ -261,14 +269,32 @@ class ChatsPage extends HookConsumerWidget {
         ),
       );
     } else {
-      final ordered = orderChatRows(rows, starred);
+      final ordered = orderChatRows(
+        rows,
+        starred,
+        pinnedThreadIds: pinnedThreads,
+      );
       final entries = mode == ChatsViewMode.byChannel
           ? groupChatRowsByChannel(
               ordered,
               expandedChannelIds: expanded.value,
               unreadOf: unreadOf,
+              pinnedThreadIds: pinnedThreads,
             )
           : [for (final row in ordered) _AllEntry(row)];
+      // Channels with an unread open thread: their room row shows a dot.
+      final threadUnreadChannels = {
+        for (final row in rows)
+          if (row.isThread &&
+              !row.closed &&
+              chatRowUnread(
+                row,
+                readState.effectiveTimestamp(chatRowContextId(row)),
+              ).isUnread)
+            row.channelId,
+      };
+      bool pinnedRow(ChatListRow row) =>
+          isPinnedChatRow(row, starred, pinnedThreads);
       body = BeeRefreshIndicator(
         edgeOffset: topSectionHeight,
         onRefresh: refresh,
@@ -293,8 +319,11 @@ class ChatsPage extends HookConsumerWidget {
                       currentPubkey: currentPubkey,
                       showChannelInTitle: true,
                       indent: false,
-                      pinned: !row.isThread && starred.contains(row.channelId),
+                      pinned: pinnedRow(row),
                       muted: muted.contains(row.channelId),
+                      threadUnread: threadUnreadChannels.contains(
+                        row.channelId,
+                      ),
                       onTap: () => unawaited(openRow(row)),
                     ),
                     ChatGroupRoom(:final channelId, :final row) =>
@@ -313,8 +342,11 @@ class ChatsPage extends HookConsumerWidget {
                               currentPubkey: currentPubkey,
                               showChannelInTitle: true,
                               indent: false,
-                              pinned: starred.contains(row.channelId),
+                              pinned: pinnedRow(row),
                               muted: muted.contains(row.channelId),
+                              threadUnread: threadUnreadChannels.contains(
+                                row.channelId,
+                              ),
                               onTap: () => unawaited(openRow(row)),
                             ),
                     ChatGroupThread(:final row) => _ChatRow(
@@ -324,8 +356,9 @@ class ChatsPage extends HookConsumerWidget {
                       currentPubkey: currentPubkey,
                       showChannelInTitle: false,
                       indent: true,
-                      pinned: false,
+                      pinned: pinnedRow(row),
                       muted: muted.contains(row.channelId),
+                      threadUnread: false,
                       onTap: () => unawaited(openRow(row)),
                     ),
                     ChatGroupMore() => _MoreThreadsRow(
@@ -350,7 +383,7 @@ class ChatsPage extends HookConsumerWidget {
     }
 
     return FrostedScaffold(
-      backgroundColor: context.colors.surface,
+      backgroundColor: conversationListBackground(context),
       appBar: FrostedAppBar(
         automaticallyImplyLeading: false,
         horizontalInset: Grid.gutter,

@@ -2,52 +2,19 @@ part of '../chats_page.dart';
 
 /// Half of the avatar column, as desktop's By channel indent.
 const double _threadIndent = (activityAvatarSize + messageAvatarContentGap) / 2;
-const double _threadCircleSize = activityAvatarSize * 0.62;
 
-/// A colour fixed per id, as the Activity conversation avatars use.
-Color _hueFor(String seed) {
-  var hash = 0;
-  for (final unit in seed.codeUnits) {
-    hash = (hash * 31 + unit) & 0x7fffffff;
-  }
-  return HSLColor.fromAHSL(1, (hash % 360).toDouble(), 0.55, 0.48).toColor();
-}
+/// The `@` badge colour (desktop `sky-600`).
+const Color _mentionBadgeColor = Color(0xFF0284C7);
 
 /// "3:05 PM" today, "Yesterday", else "Oct 12" (as Activity rows).
-String chatRowTimestamp(int unixSeconds, {DateTime? now}) {
-  if (unixSeconds <= 0) return '';
-  final current = now ?? DateTime.now();
-  final date = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000);
-  final today = DateTime(current.year, current.month, current.day);
-  final day = DateTime(date.year, date.month, date.day);
-  final dayDiff = today.difference(day).inDays;
-  if (dayDiff == 0) {
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${date.hour < 12 ? 'AM' : 'PM'}';
-  }
-  if (dayDiff == 1) return 'Yesterday';
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final label = '${months[date.month - 1]} ${date.day}';
-  return date.year == current.year ? label : '$label, ${date.year}';
-}
+String chatRowTimestamp(int unixSeconds, {DateTime? now}) =>
+    unixSeconds <= 0 ? '' : conversationTimestamp(unixSeconds, now: now);
 
-/// One Chats row, in the Activity (Inbox) row's look: avatar | name + time |
-/// latest message in up to two lines, with @ and the unread count under the
-/// time. No author in the preview.
+/// One Chats row: the Activity conversation row ([ConversationRowLayout])
+/// with desktop's Chats row rules: avatar | title, then the latest message in
+/// up to two lines | a right column with the time on top and @ and the unread
+/// count under it.
+/// The preview never runs under the right column. No author in the preview.
 class _ChatRow extends HookConsumerWidget {
   const _ChatRow({
     super.key,
@@ -58,6 +25,7 @@ class _ChatRow extends HookConsumerWidget {
     required this.indent,
     required this.pinned,
     required this.muted,
+    required this.threadUnread,
     required this.onTap,
   });
 
@@ -72,124 +40,234 @@ class _ChatRow extends HookConsumerWidget {
   final bool indent;
   final bool pinned;
   final bool muted;
+
+  /// A room row whose channel has an unread listed thread (a dot when the
+  /// room itself has nothing to count).
+  final bool threadUnread;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final unread = watchChatRowUnread(ref, row);
+    final rowUnread = watchChatRowUnread(ref, row);
+    // Desktop: a muted room counts as unread only with a mention for me;
+    // otherwise it shows no count and dims.
+    final unread =
+        !row.isThread &&
+            muted &&
+            rowUnread.mentions == 0 &&
+            !rowUnread.mentionsOverflow
+        ? ChatRowUnread.none
+        : rowUnread;
     final roomName = _roomName(ref, row, channel, currentPubkey);
-    final title = row.isThread
-        ? showChannelInTitle
-              ? '$roomName › ${chatThreadTitle(row)}'
-              : chatThreadTitle(row)
-        : roomName;
+    final threadTitle = row.isThread ? chatThreadTitle(row) : null;
     final latest = row.latest;
-    final preview = latest == null ? '' : chatRowPreviewText(latest);
+    final preview = latest == null ? '' : _watchPreview(ref, latest);
     final mutedColor = context.colors.onSurfaceVariant;
-    final bold = unread.isUnread;
+    final background = conversationListBackground(context);
+    final hasUnread = unread.isUnread;
+    // Desktop: a room dims when muted with nothing unread; a thread when
+    // closed, or muted without a mention for me.
+    final dimmed = row.isThread
+        ? row.closed || (muted && unread.mentions == 0)
+        : muted && !hasUnread;
+    final bold = row.isThread ? hasUnread && !dimmed : hasUnread;
 
     final Widget avatar = row.isThread
-        ? _ThreadAvatar(channelId: row.channelId, rootId: row.rootId ?? row.key)
+        ? ConversationThreadAvatar(
+            key: const ValueKey('chat-thread-avatar'),
+            channelSeed: row.channelId,
+            channelLabel: _bareRoomName(row, channel),
+            threadSeed: row.rootId ?? row.key,
+            threadLabel: threadTitle!,
+            ringColor: background,
+          )
         : row.isDm
-        ? _DmAvatar(row: row, channel: channel, currentPubkey: currentPubkey)
-        : _ChannelAvatar(channelId: row.channelId);
+        ? _DmAvatar(
+            row: row,
+            channel: channel,
+            currentPubkey: currentPubkey,
+            ringColor: background,
+          )
+        : ConversationLetterAvatar(
+            seed: row.channelId,
+            label: _bareRoomName(row, channel),
+            avatarKey: const ValueKey('chat-channel-avatar'),
+          );
+
+    final titleStyle = activityUsernameTextStyle.copyWith(
+      color: context.colors.onSurface,
+    );
+    final Widget title = row.isThread && showChannelInTitle
+        ? LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth * 0.45,
+                  ),
+                  child: Text(
+                    roomName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: titleStyle.copyWith(
+                      color: mutedColor,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+                Text(
+                  ' › ',
+                  style: titleStyle.copyWith(
+                    color: mutedColor.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                Flexible(
+                  child: Text(
+                    threadTitle!,
+                    key: ValueKey('chat-row-title-${row.key}'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: titleStyle,
+                  ),
+                ),
+              ],
+            ),
+          )
+        : Text(
+            threadTitle ?? roomName,
+            key: ValueKey('chat-row-title-${row.key}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: titleStyle,
+          );
+
+    final titleLineHeight = conversationTitleLineHeight(context);
+    final content = ConversationRowLayout(
+      startInset: indent ? _threadIndent : 0,
+      avatar: avatar,
+      title: SizedBox(
+        height: titleLineHeight,
+        child: Row(
+          children: [
+            Flexible(child: title),
+            if (row.isThread && row.closed) ...[
+              const SizedBox(width: Grid.quarter),
+              Icon(
+                LucideIcons.circleCheck,
+                key: ValueKey('chat-row-closed-${row.key}'),
+                size: 13,
+                color: mutedColor,
+              ),
+            ],
+            if (pinned) ...[
+              const SizedBox(width: Grid.quarter),
+              Icon(
+                LucideIcons.pin,
+                key: ValueKey('chat-row-pinned-${row.key}'),
+                size: 12,
+                color: mutedColor,
+              ),
+            ],
+            if (muted && !row.isThread) ...[
+              const SizedBox(width: Grid.quarter),
+              Icon(
+                LucideIcons.bellOff,
+                key: ValueKey('chat-row-muted-${row.key}'),
+                size: 12,
+                color: mutedColor,
+              ),
+            ],
+          ],
+        ),
+      ),
+      preview: preview.isEmpty
+          ? null
+          : Text(
+              preview,
+              key: ValueKey('chat-row-preview-${row.key}'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: activityPreviewTextStyle.copyWith(
+                color: bold ? context.colors.onSurface : mutedColor,
+                fontWeight: bold ? FontWeight.w600 : null,
+              ),
+            ),
+      side: Column(
+        key: ValueKey('chat-row-meta-${row.key}'),
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          SizedBox(
+            height: titleLineHeight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  chatRowTimestamp(latest?.createdAt ?? row.at),
+                  key: ValueKey('chat-row-time-${row.key}'),
+                  style: activityTimestampTextStyle.copyWith(color: mutedColor),
+                ),
+              ],
+            ),
+          ),
+          _RowBadges(
+            rowKey: row.key,
+            unread: unread,
+            muted: muted,
+            threadUnread: threadUnread && !row.isDm && !row.isThread,
+          ),
+        ],
+      ),
+    );
 
     return Opacity(
-      opacity: muted ? 0.5 : 1,
+      key: ValueKey('chat-row-opacity-${row.key}'),
+      opacity: dimmed ? 0.5 : 1,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           key: ValueKey('chat-row-tap-${row.key}'),
           onTap: onTap,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              Grid.gutter + (indent ? _threadIndent : 0),
-              Grid.twelve,
-              Grid.gutter,
-              Grid.twelve,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                avatar,
-                const SizedBox(width: messageAvatarContentGap),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              title,
-                              key: ValueKey('chat-row-title-${row.key}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: activityUsernameTextStyle.copyWith(
-                                color: context.colors.onSurface,
-                              ),
-                            ),
-                          ),
-                          if (pinned) ...[
-                            const SizedBox(width: Grid.quarter),
-                            Icon(LucideIcons.pin, size: 12, color: mutedColor),
-                          ],
-                          if (muted) ...[
-                            const SizedBox(width: Grid.quarter),
-                            Icon(
-                              LucideIcons.bellOff,
-                              size: 12,
-                              color: mutedColor,
-                            ),
-                          ],
-                          const Spacer(),
-                          const SizedBox(width: Grid.xxs),
-                          Text(
-                            chatRowTimestamp(latest?.createdAt ?? row.at),
-                            style: activityTimestampTextStyle.copyWith(
-                              color: mutedColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: Grid.quarter),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: preview.isEmpty
-                                ? const SizedBox(height: 1)
-                                : MessageContent(
-                                    key: ValueKey(
-                                      'chat-row-preview-${row.key}',
-                                    ),
-                                    content: preview,
-                                    tags: latest?.tags ?? const [],
-                                    maxLines: 2,
-                                    baseStyle: activityPreviewTextStyle
-                                        .copyWith(
-                                          color: bold
-                                              ? context.colors.onSurface
-                                              : mutedColor,
-                                          fontWeight: bold
-                                              ? FontWeight.w600
-                                              : null,
-                                        ),
-                                  ),
-                          ),
-                          _UnreadBadges(rowKey: row.key, unread: unread),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: content,
         ),
       ),
     );
   }
+
+  /// The cleaned preview with each `@mention` by its cached name.
+  String _watchPreview(WidgetRef ref, NostrEvent latest) {
+    final author = latest.pubkey.toLowerCase();
+    final blocked = ref.watch(
+      blockedPubkeysProvider.select(
+        (ids) => ids.any((id) => id.toLowerCase() == author),
+      ),
+    );
+    final text = chatRowPreviewText(latest, isBlocked: (_) => blocked);
+    if (blocked) return text;
+    final tagged = mentionedPubkeysFromTags(latest.tags);
+    if (tagged.isEmpty) return text;
+    final directory = ref.watch(agentDirectoryDisplayNamesProvider);
+    final names = <String, String>{};
+    for (final pubkey in tagged) {
+      final name = ref.watch(
+        userCacheProvider.select((cache) => cache[pubkey]?.displayName),
+      );
+      final resolved = name?.trim().isNotEmpty == true
+          ? name!
+          : directory[pubkey];
+      if (resolved != null) names[pubkey] = resolved;
+    }
+    return resolvePreviewMentions(text, latest.tags, names);
+  }
+}
+
+/// The room's name without `#`: the channel's, or the DM's people.
+String _bareRoomName(ChatListRow row, Channel? channel) {
+  final name = channel?.name.trim().isNotEmpty == true
+      ? channel!.name.trim()
+      : row.channelName.trim();
+  return name;
 }
 
 /// A room's name: `#channel`, or the DM's people.
@@ -200,9 +278,7 @@ String _roomName(
   String? currentPubkey,
 ) {
   if (!row.isDm) {
-    final name = channel?.name.trim().isNotEmpty == true
-        ? channel!.name.trim()
-        : row.channelName.trim();
+    final name = _bareRoomName(row, channel);
     return name.isEmpty ? '#channel' : '#$name';
   }
   if (channel != null) {
@@ -225,21 +301,29 @@ String _roomName(
   return labels.isEmpty ? row.channelName : labels.join(', ');
 }
 
-class _UnreadBadges extends StatelessWidget {
-  const _UnreadBadges({required this.rowKey, required this.unread});
+/// Under the time: `@` when a mention waits, then the unread count (grey when
+/// muted), a dot for a row marked unread, or a dot for unread threads.
+class _RowBadges extends StatelessWidget {
+  const _RowBadges({
+    required this.rowKey,
+    required this.unread,
+    required this.muted,
+    required this.threadUnread,
+  });
 
   final String rowKey;
   final ChatRowUnread unread;
+  final bool muted;
+  final bool threadUnread;
 
   @override
   Widget build(BuildContext context) {
     final hasMentions = unread.mentions > 0 || unread.mentionsOverflow;
     final hasCount = unread.count > 0 || unread.overflow;
-    if (!hasMentions && !hasCount && !unread.marked) {
-      return const SizedBox.shrink();
-    }
+    final dot = !hasCount && (unread.marked || threadUnread);
+    if (!hasMentions && !hasCount && !dot) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(left: Grid.xxs, top: Grid.quarter),
+      padding: const EdgeInsets.only(top: conversationTitlePreviewGap),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -247,27 +331,34 @@ class _UnreadBadges extends StatelessWidget {
             _Pill(
               key: ValueKey('chat-row-mention-$rowKey'),
               label: '@',
-              color: context.colors.primary,
-              foreground: context.colors.onPrimary,
+              color: _mentionBadgeColor,
+              foreground: Colors.white,
             ),
-          if (hasMentions && (hasCount || unread.marked))
-            const SizedBox(width: Grid.quarter),
+          if (hasMentions && (hasCount || dot))
+            const SizedBox(width: Grid.half),
           if (hasCount)
             _Pill(
               key: ValueKey('chat-row-unread-$rowKey'),
               label: formatChatCount(unread.count, unread.overflow),
-              color: context.colors.error,
-              foreground: context.colors.onError,
+              color: muted
+                  ? context.colors.onSurface.withValues(alpha: 0.2)
+                  : context.colors.primary,
+              foreground: muted
+                  ? context.colors.onSurface
+                  : context.colors.onPrimary,
             )
-          else if (unread.marked)
+          else if (dot)
             Container(
-              key: ValueKey('chat-row-marked-$rowKey'),
+              key: ValueKey(
+                unread.marked
+                    ? 'chat-row-marked-$rowKey'
+                    : 'chat-row-thread-unread-$rowKey',
+              ),
               width: 8,
               height: 8,
-              margin: const EdgeInsets.only(top: Grid.quarter),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: context.colors.error,
+                color: context.colors.primary,
               ),
             ),
         ],
@@ -290,8 +381,9 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    constraints: const BoxConstraints(minWidth: 18),
-    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+    padding: const EdgeInsets.symmetric(horizontal: 5),
+    alignment: Alignment.center,
     decoration: BoxDecoration(
       color: color,
       borderRadius: BorderRadius.circular(Radii.full),
@@ -302,93 +394,26 @@ class _Pill extends StatelessWidget {
       style: context.textTheme.labelSmall?.copyWith(
         color: foreground,
         fontWeight: FontWeight.w700,
-        height: 1.3,
+        height: 1.2,
       ),
     ),
   );
 }
 
-/// A channel: its colour, with `#`.
-class _ChannelAvatar extends StatelessWidget {
-  const _ChannelAvatar({required this.channelId});
-
-  final String channelId;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    key: const ValueKey('chat-channel-avatar'),
-    width: activityAvatarSize,
-    height: activityAvatarSize,
-    decoration: BoxDecoration(
-      color: _hueFor(channelId),
-      borderRadius: BorderRadius.circular(Grid.twelve),
-    ),
-    alignment: Alignment.center,
-    child: const Icon(LucideIcons.hash, size: 18, color: Colors.white),
-  );
-}
-
-/// A thread: two circles of the same size, overlapping, centred in the
-/// avatar column; the back one in the channel's colour, the front one in
-/// the thread's.
-class _ThreadAvatar extends StatelessWidget {
-  const _ThreadAvatar({required this.channelId, required this.rootId});
-
-  final String channelId;
-  final String rootId;
-
-  @override
-  Widget build(BuildContext context) {
-    const offset = activityAvatarSize - _threadCircleSize;
-    final ring = Border.all(color: context.colors.surface, width: 2);
-    return SizedBox.square(
-      key: const ValueKey('chat-thread-avatar'),
-      dimension: activityAvatarSize,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: offset / 2,
-            child: Container(
-              width: _threadCircleSize,
-              height: _threadCircleSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _hueFor(channelId).withValues(alpha: 0.55),
-                border: ring,
-              ),
-            ),
-          ),
-          Positioned(
-            left: offset,
-            top: offset / 2,
-            child: Container(
-              width: _threadCircleSize,
-              height: _threadCircleSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _hueFor(rootId),
-                border: ring,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A DM: the other person; a group DM: the first two people, overlapping.
+/// A DM: the other person; a group DM: the first two people side by side,
+/// overlapping, as thread avatars.
 class _DmAvatar extends HookConsumerWidget {
   const _DmAvatar({
     required this.row,
     required this.channel,
     required this.currentPubkey,
+    required this.ringColor,
   });
 
   final ChatListRow row;
   final Channel? channel;
   final String? currentPubkey;
+  final Color ringColor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -417,30 +442,11 @@ class _DmAvatar extends HookConsumerWidget {
         size: activityAvatarSize,
       );
     }
-    const size = _threadCircleSize + 2;
-    const offset = activityAvatarSize - size;
-    return SizedBox.square(
-      dimension: activityAvatarSize,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            child: _PersonAvatar(pubkey: people[0], size: size),
-          ),
-          Positioned(
-            left: offset,
-            top: offset,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: context.colors.surface, width: 2),
-              ),
-              child: _PersonAvatar(pubkey: people[1], size: size - 4),
-            ),
-          ),
-        ],
-      ),
+    return ConversationAvatarPair(
+      key: const ValueKey('chat-group-dm-avatar'),
+      ringColor: ringColor,
+      back: _PersonAvatar(pubkey: people[0], size: conversationPairCircleSize),
+      front: _PersonAvatar(pubkey: people[1], size: conversationPairCircleSize),
     );
   }
 }
@@ -456,24 +462,14 @@ class _PersonAvatar extends ConsumerWidget {
     final profile = ref.watch(
       userCacheProvider.select((cache) => cache[pubkey]),
     );
-    final isAgent =
-        ref.watch(knownAgentPubkeysProvider).contains(pubkey) ||
-        profile?.isAgent == true;
-    final initial =
-        profile?.initial ?? (pubkey.isNotEmpty ? pubkey[0].toUpperCase() : '?');
-    return AvatarImage(
-      imageUrl: profile?.avatarUrl,
-      radius: size / 2,
-      backgroundColor: context.colors.primaryContainer,
-      fallback: Text(
-        initial,
-        style: TextStyle(
-          fontSize: size * 0.34,
-          fontWeight: FontWeight.w600,
-          color: context.colors.onPrimaryContainer,
-        ),
-      ),
-      isAgent: isAgent,
+    return ConversationPersonAvatar(
+      pubkey: pubkey,
+      profile: profile,
+      isAgent:
+          ref.watch(knownAgentPubkeysProvider).contains(pubkey) ||
+          profile?.isAgent == true,
+      size: size,
+      fontSize: size / 3,
     );
   }
 }
@@ -496,11 +492,19 @@ class _ChannelHeaderRow extends StatelessWidget {
         : fallbackName.trim();
     return Padding(
       padding: const EdgeInsets.fromLTRB(Grid.gutter, Grid.xs, Grid.gutter, 0),
-      child: Text(
-        name.isEmpty ? '#channel' : '#$name',
-        style: activityUsernameTextStyle.copyWith(
-          color: context.colors.onSurface,
-        ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name.isEmpty ? '#channel' : '#$name',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: activityUsernameTextStyle.copyWith(
+                color: context.colors.onSurface,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -530,7 +534,7 @@ class _MoreThreadsRow extends StatelessWidget {
               _threadIndent +
               activityAvatarSize +
               messageAvatarContentGap,
-          Grid.xxs,
+          0,
           Grid.gutter,
           Grid.twelve,
         ),
@@ -541,8 +545,8 @@ class _MoreThreadsRow extends StatelessWidget {
               const SizedBox(width: Grid.xxs),
               _Pill(
                 label: formatChatCount(more.hiddenUnread, false),
-                color: context.colors.error,
-                foreground: context.colors.onError,
+                color: context.colors.primary,
+                foreground: context.colors.onPrimary,
               ),
             ],
           ],

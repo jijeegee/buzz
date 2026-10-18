@@ -146,34 +146,5 @@ class _DraftsList extends ConsumerWidget {
 
 /// Inbox list timestamp — desktop's `formatInboxTimestamp`:
 /// time today, "Yesterday", short date this year, dated otherwise.
-String _inboxTimestamp(int unixSeconds, {DateTime? now}) {
-  final current = now ?? DateTime.now();
-  final date = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000);
-  final today = DateTime(current.year, current.month, current.day);
-  final day = DateTime(date.year, date.month, date.day);
-  final dayDiff = today.difference(day).inDays;
-
-  if (dayDiff == 0) {
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${date.hour < 12 ? 'AM' : 'PM'}';
-  }
-  if (dayDiff == 1) return 'Yesterday';
-
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final label = '${months[date.month - 1]} ${date.day}';
-  return date.year == current.year ? label : '$label, ${date.year}';
-}
+String _inboxTimestamp(int unixSeconds, {DateTime? now}) =>
+    conversationTimestamp(unixSeconds, now: now);

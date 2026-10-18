@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -10,6 +11,7 @@ import '../../shared/theme/theme_provider.dart';
 import '../channels/channel_live_events.dart';
 import 'chat_list.dart';
 import 'chat_state_writer.dart';
+import 'thread_pins_provider.dart';
 
 /// Ephemeral kind the relay sends to all of a user's devices when their chat
 /// state changes (a read, unread mark or follow on another device).
@@ -29,6 +31,11 @@ String _cacheKey(RelayConfig config, String pubkey) =>
 
 /// A first page that failed for a passing reason is retried this soon.
 const _firstPageRetryDelay = Duration(seconds: 5);
+
+/// How long one `chat_list` page may take: desktop's `/query` deadline.
+/// Longer than the phone's other queries (8s), so a slow relay still fills
+/// the list with previews; the screen shows this device's rooms meanwhile.
+const chatListQueryTimeout = Duration(seconds: 30);
 
 /// The Chats list from the relay's `chat_list`: rooms and live threads,
 /// newest first, with server unread counts. The last first page is saved on
@@ -52,6 +59,8 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
   DateTime _loadedAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _reloadTimer;
   bool _backgrounded = false;
+  bool _firstPageInFlight = false;
+  bool _pinsChangedDuringLoad = false;
 
   @override
   Future<ChatListState> build() async {
@@ -91,6 +100,19 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
       }
     });
     unawaited(_subscribePing(pubkey, generation));
+    // The relay keeps pinned threads listed while quiet or closed; a changed
+    // pin set reloads the list with it.
+    ref.listen(threadPinsProvider, (previous, next) {
+      // Any change reloads, as desktop (the pins are part of its query key).
+      if (setEquals(previous, next)) return;
+      // Never drop a first page still loading (it can take a while on a
+      // slow relay): reload once it is done.
+      if (_firstPageInFlight) {
+        _pinsChangedDuringLoad = true;
+        return;
+      }
+      _reloadSoon(generation, immediate: true);
+    });
 
     if (cached != null && !state.hasValue) {
       // Draw the saved copy at once; the first page replaces it.
@@ -134,10 +156,18 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
     _backgrounded = false;
     final buffered = _eventsDuringLoad = [];
     final ChatListPage page;
+    _firstPageInFlight = true;
     try {
       page = await _fetchPage(null);
     } finally {
       if (identical(_eventsDuringLoad, buffered)) _eventsDuringLoad = null;
+      if (generation == _generation) {
+        _firstPageInFlight = false;
+        if (_pinsChangedDuringLoad) {
+          _pinsChangedDuringLoad = false;
+          Timer.run(() => _reloadSoon(generation, immediate: true));
+        }
+      }
     }
     var list = mergeRefetchedFirstPage(state.value, page);
     var reload = false;
@@ -189,8 +219,12 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
     final response = await ref
         .read(relaySessionProvider.notifier)
         .queryRelayJson([
-          buildChatListFilter(limit: chatListPageSize, before: before),
-        ]);
+          buildChatListFilter(
+            limit: chatListPageSize,
+            before: before,
+            pinnedThreads: ref.read(threadPinsProvider).toList()..sort(),
+          ),
+        ], timeout: chatListQueryTimeout);
     return parseChatListResponse(response);
   }
 
@@ -324,14 +358,11 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
   }
 }
 
-/// One retry for a transient failure; none when the relay keeps no chat
-/// state or a statement deadline would repeat.
-Duration? _chatListRetry(int retryCount, Object error) {
-  if (retryCount > 0 ||
-      isChatStateDisabledError(error) ||
-      isRelayDeadlineError(error)) {
-    return null;
-  }
+/// One retry for a failure that may pass, timeouts included (the relay or
+/// the request running out of time); none when the relay keeps no chat
+/// state.
+Duration? chatListRetry(int retryCount, Object error) {
+  if (retryCount > 0 || isChatStateDisabledError(error)) return null;
   return const Duration(seconds: 1);
 }
 
@@ -346,7 +377,7 @@ final chatListOwnerProvider = Provider<String?>((ref) {
 final chatListForOwnerProvider = AsyncNotifierProvider.autoDispose
     .family<ChatListNotifier, ChatListState, String>(
       ChatListNotifier.new,
-      retry: _chatListRetry,
+      retry: chatListRetry,
     );
 
 /// The signed-in account's Chats list.

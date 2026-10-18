@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import '../../shared/read_state/read_state_format.dart';
@@ -514,14 +516,24 @@ ChatRowUnread chatRowUnread(ChatListRow row, int? ownReadAt) {
 String formatChatCount(int count, bool overflow) =>
     overflow || count > chatUnreadCap ? '$chatUnreadCap+' : '$count';
 
-/// Pinned rows first (pinned rooms by star), each group newest first; then
+/// Whether a row is pinned: a room by its star, a thread by its pin.
+bool isPinnedChatRow(
+  ChatListRow row,
+  Set<String> pinnedRoomIds,
+  Set<String> pinnedThreadIds,
+) => row.isThread
+    ? pinnedThreadIds.contains(row.rootId ?? row.key)
+    : pinnedRoomIds.contains(row.channelId);
+
+/// Pinned rows first (rooms by star, threads by pin), newest first; then
 /// everything else by activity.
 List<ChatListRow> orderChatRows(
   Iterable<ChatListRow> rows,
-  Set<String> pinnedRoomIds,
-) {
+  Set<String> pinnedRoomIds, {
+  Set<String> pinnedThreadIds = const {},
+}) {
   bool isPinned(ChatListRow row) =>
-      !row.isThread && pinnedRoomIds.contains(row.channelId);
+      isPinnedChatRow(row, pinnedRoomIds, pinnedThreadIds);
   final sorted = [...rows]..sort(_rowSortDesc);
   return [...sorted.where(isPinned), ...sorted.where((row) => !isPinned(row))];
 }
@@ -539,15 +551,63 @@ String chatThreadTitle(ChatListRow row) {
   return firstLine.length > 80 ? '${firstLine.substring(0, 80)}…' : firstLine;
 }
 
+/// Shown instead of a blocked person's message.
+const blockedMessageLabel = 'Message from a blocked user';
+
+/// Shown for a message with no text left after clean-up.
+const noMessageTextLabel = 'No message text';
+
+const _previewMaxLength = 160;
+
+final _spoiler = RegExp(r'\|\|[^|]*(?:\|(?!\|)[^|]*)*\|\|');
+final _markdownImage = RegExp(r'!\[[^\]]*\]\([^)]*\)');
+final _markdownLink = RegExp(r'\[([^\]]+)\]\([^)]*\)');
+final _bareUrl = RegExp(r'<?(?:https?|kuzz)://\S+>?');
+final _markdownMarks = RegExp(r'[`*_~>#|]');
+final _whitespace = RegExp(r'\s+');
+
+/// A message as one plain line, as desktop's `summarizeMessageLinkContent`:
+/// control characters and line breaks become spaces, spoilers, images and
+/// addresses go, links keep their text, markdown marks go, and past 160
+/// characters it is cut at a word with "…". Empty reads "No message text".
+String summarizeMessageText(String content) {
+  final plain = String.fromCharCodes([
+    for (final rune in content.runes)
+      rune <= 0x1f || (rune >= 0x7f && rune <= 0x9f) ? 0x20 : rune,
+  ]);
+  final normalized = plain
+      .replaceAll(_spoiler, ' ')
+      .replaceAll(_markdownImage, ' ')
+      .replaceAllMapped(_markdownLink, (match) => match.group(1)!)
+      .replaceAll(_bareUrl, ' ')
+      .replaceAll(_markdownMarks, ' ')
+      .replaceAll(_whitespace, ' ')
+      .trim();
+  if (normalized.isEmpty) return noMessageTextLabel;
+  final characters = normalized.runes.toList();
+  if (characters.length <= _previewMaxLength) return normalized;
+  final clipped = String.fromCharCodes(characters.take(_previewMaxLength - 1));
+  final lastSpace = clipped.lastIndexOf(' ');
+  final snippet = lastSpace > 96 ? clipped.substring(0, lastSpace) : clipped;
+  return '${snippet.trimRight()}…';
+}
+
 /// The latest message's text alone, as other messengers show it: no author
-/// name. A message with only attachments reads "Photo".
-String chatRowPreviewText(NostrEvent event) {
-  final text = event.content.trim();
-  if (text.isNotEmpty) return text;
-  if (event.tags.any((tag) => tag.isNotEmpty && tag[0] == 'imeta')) {
+/// name. A message with only attachments reads "Photo"; one from someone I
+/// blocked never shows its text. Mirrors desktop's `chatRowPreviewLine`.
+String chatRowPreviewText(
+  NostrEvent event, {
+  bool Function(String pubkey)? isBlocked,
+}) {
+  if (isBlocked?.call(event.pubkey.toLowerCase()) ?? false) {
+    return blockedMessageLabel;
+  }
+  final text = summarizeMessageText(event.content);
+  if (text == noMessageTextLabel &&
+      event.tags.any((tag) => tag.isNotEmpty && tag[0] == 'imeta')) {
     return 'Photo';
   }
-  return '';
+  return text;
 }
 
 /// One entry of the By channel view.
@@ -593,13 +653,15 @@ final class ChatGroupMore extends ChatGroupEntry {
 }
 
 /// Groups ordered rows by channel: each channel once, at the position of its
-/// newest row, followed by its threads newest first. Only
-/// [byChannelVisibleThreads] threads show unless the channel is in
-/// [expandedChannelIds]. [unreadOf] gives a row's shown unread count.
+/// newest row, followed by its threads newest first (pinned threads first and
+/// always shown). Only [byChannelVisibleThreads] threads show unless the
+/// channel is in [expandedChannelIds]. [unreadOf] gives a row's shown unread
+/// count.
 List<ChatGroupEntry> groupChatRowsByChannel(
   List<ChatListRow> ordered, {
   required Set<String> expandedChannelIds,
   required int Function(ChatListRow row) unreadOf,
+  Set<String> pinnedThreadIds = const {},
 }) {
   final rooms = <String, ChatListRow>{};
   final threads = <String, List<ChatListRow>>{};
@@ -618,18 +680,20 @@ List<ChatGroupEntry> groupChatRowsByChannel(
   final entries = <ChatGroupEntry>[];
   for (final channelId in order) {
     entries.add(ChatGroupRoom(channelId: channelId, row: rooms[channelId]));
-    final list = threads[channelId] ?? const <ChatListRow>[];
+    final all = threads[channelId] ?? const <ChatListRow>[];
+    bool pinned(ChatListRow row) =>
+        pinnedThreadIds.contains(row.rootId ?? row.key);
+    final list = [...all.where(pinned), ...all.where((row) => !pinned(row))];
+    final limit = math.max(byChannelVisibleThreads, all.where(pinned).length);
     final expanded = expandedChannelIds.contains(channelId);
-    final visible = expanded
-        ? list
-        : list.take(byChannelVisibleThreads).toList();
+    final visible = expanded ? list : list.take(limit).toList();
     entries.addAll(visible.map(ChatGroupThread.new));
-    if (list.length > byChannelVisibleThreads) {
-      final hidden = list.skip(byChannelVisibleThreads);
+    if (list.length > limit) {
+      final hidden = list.skip(limit);
       entries.add(
         ChatGroupMore(
           channelId: channelId,
-          hidden: list.length - byChannelVisibleThreads,
+          hidden: list.length - limit,
           hiddenUnread: hidden.fold(0, (sum, row) => sum + unreadOf(row)),
           expanded: expanded,
         ),

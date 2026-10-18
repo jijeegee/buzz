@@ -289,195 +289,164 @@ class _InboxRow extends HookConsumerWidget {
                       key: ValueKey('inbox-row-${item.id}'),
                       onTap: onTap,
                       onLongPress: () => _showRowActions(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Grid.gutter,
-                          vertical: Grid.twelve,
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (room != null)
-                              _ConversationRoomAvatar(
+                      child: ConversationRowLayout(
+                        avatar: room != null
+                            ? _ConversationRoomAvatar(
                                 room: room,
                                 knownAgentPubkeys: knownAgentPubkeys,
                               )
-                            else
-                              _RowAvatar(
+                            : ConversationPersonAvatar(
                                 pubkey: item.item.pubkey,
                                 profile: profile,
                                 isAgent: isAgent,
                               ),
-                            const SizedBox(width: messageAvatarContentGap),
-                            Expanded(
-                              child: Column(
+                        // Room name + time + unread dot, or sender + dot +
+                        // timestamp over the contextual label.
+                        title: roomTitle != null
+                            ? Text(
+                                roomTitle,
+                                key: ValueKey(
+                                  'activity-conversation-${item.id}',
+                                ),
+                                style: activityUsernameTextStyle.copyWith(
+                                  color: context.colors.onSurface,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  if (roomTitle != null)
-                                    // Room name + time + unread dot.
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            roomTitle,
-                                            key: ValueKey(
-                                              'activity-conversation-${item.id}',
-                                            ),
-                                            style: activityUsernameTextStyle
-                                                .copyWith(
-                                                  color:
-                                                      context.colors.onSurface,
-                                                ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: MessageAuthorMeta(
+                                          displayName: senderLabel,
+                                          username: messageUsernameLabel(
+                                            profile,
                                           ),
-                                        ),
-                                        const SizedBox(width: Grid.xxs),
-                                        if (unreadCountLabel != null) ...[
-                                          Text(
-                                            unreadCountLabel,
-                                            key: ValueKey(
-                                              'inbox-unread-count-${item.id}',
-                                            ),
-                                            style: activityTimestampTextStyle
-                                                .copyWith(color: mutedColor),
-                                          ),
-                                          const SizedBox(width: Grid.xxs),
-                                        ],
-                                        Text(
-                                          _inboxTimestamp(
+                                          timestamp: _inboxTimestamp(
                                             item.latestActivityAt,
                                           ),
-                                          style: activityTimestampTextStyle
-                                              .copyWith(color: mutedColor),
-                                        ),
-                                        if (!isDone) ...[
-                                          const SizedBox(width: Grid.xxs),
-                                          Container(
-                                            key: ValueKey(
-                                              'inbox-unread-dot-${item.id}',
-                                            ),
-                                            width: 6,
-                                            height: 6,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: context.colors.primary,
-                                            ),
+                                          nameColor: context.colors.onSurface,
+                                          metadataColor: mutedColor,
+                                          nameStyle: activityUsernameTextStyle,
+                                          timestampStyle:
+                                              activityTimestampTextStyle,
+                                          displayNameKey: ValueKey(
+                                            'activity-author-${item.id}',
                                           ),
-                                        ],
-                                      ],
-                                    )
-                                  else ...[
-                                    // Sender + unread dot + timestamp.
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: MessageAuthorMeta(
-                                            displayName: senderLabel,
-                                            username: messageUsernameLabel(
-                                              profile,
-                                            ),
-                                            timestamp: _inboxTimestamp(
-                                              item.latestActivityAt,
-                                            ),
-                                            nameColor: context.colors.onSurface,
-                                            metadataColor: mutedColor,
-                                            nameStyle:
-                                                activityUsernameTextStyle,
-                                            timestampStyle:
-                                                activityTimestampTextStyle,
-                                            displayNameKey: ValueKey(
-                                              'activity-author-${item.id}',
-                                            ),
-                                            usernameKey: ValueKey(
-                                              'activity-username-${item.id}',
-                                            ),
-                                            timestampKey: ValueKey(
-                                              'activity-timestamp-${item.id}',
-                                            ),
+                                          usernameKey: ValueKey(
+                                            'activity-username-${item.id}',
+                                          ),
+                                          timestampKey: ValueKey(
+                                            'activity-timestamp-${item.id}',
                                           ),
                                         ),
-                                        if (!isDone) ...[
-                                          const SizedBox(width: Grid.xxs),
-                                          Container(
-                                            key: ValueKey(
-                                              'inbox-unread-dot-${item.id}',
-                                            ),
-                                            width: 6,
-                                            height: 6,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: context.colors.primary,
-                                            ),
+                                      ),
+                                      if (!isDone) ...[
+                                        const SizedBox(width: Grid.xxs),
+                                        Container(
+                                          key: ValueKey(
+                                            'inbox-unread-dot-${item.id}',
                                           ),
-                                        ],
+                                          width: 6,
+                                          height: 6,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: context.colors.primary,
+                                          ),
+                                        ),
                                       ],
-                                    ),
-                                    const SizedBox(height: Grid.quarter),
-                                    // Contextual label: "Mentioned in #channel" etc.
-                                    Row(
-                                      children: [
+                                    ],
+                                  ),
+                                  const SizedBox(height: Grid.quarter),
+                                  // Contextual label: "Mentioned in #channel" etc.
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          label.text,
+                                          style: activityContextTextStyle
+                                              .copyWith(color: labelColor),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (label.channelLabel != null) ...[
+                                        const SizedBox(width: Grid.half),
                                         Flexible(
-                                          child: Text(
-                                            label.text,
-                                            style: activityContextTextStyle
-                                                .copyWith(color: labelColor),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (label.channelLabel != null) ...[
-                                          const SizedBox(width: Grid.half),
-                                          Flexible(
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal:
-                                                        Grid.half +
-                                                        Grid.quarter,
-                                                    vertical: Grid.quarter / 2,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal:
+                                                  Grid.half + Grid.quarter,
+                                              vertical: Grid.quarter / 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: context
+                                                  .colors
+                                                  .surfaceContainerHighest,
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                    Grid.half,
                                                   ),
-                                              decoration: BoxDecoration(
-                                                color: context
-                                                    .colors
-                                                    .surfaceContainerHighest,
-                                                borderRadius:
-                                                    BorderRadius.circular(
-                                                      Grid.half,
-                                                    ),
-                                              ),
-                                              child: Text(
-                                                channelChipLabel ??
-                                                    '#${label.channelLabel}',
-                                                style: activityContextTextStyle
-                                                    .copyWith(
-                                                      color: mutedColor,
-                                                    ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
+                                            ),
+                                            child: Text(
+                                              channelChipLabel ??
+                                                  '#${label.channelLabel}',
+                                              style: activityContextTextStyle
+                                                  .copyWith(color: mutedColor),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                        ],
-                                      ],
-                                    ),
-                                  ],
-                                  const SizedBox(height: Grid.half),
-                                  // Message preview.
-                                  MessageContent(
-                                    content: item.item.displayContent,
-                                    mentionNames: mentionNames,
-                                    mentionLabels: contextualLabels,
-                                    agentMentionPubkeys: agentMentionPubkeys,
-                                    tags: item.item.tags,
-                                    maxLines: 2,
-                                    baseStyle: activityPreviewTextStyle
-                                        .copyWith(
-                                          color: context.colors.onSurface,
                                         ),
+                                      ],
+                                    ],
                                   ),
                                 ],
                               ),
+                        titleTrailing: [
+                          if (roomTitle != null) ...[
+                            if (unreadCountLabel != null) ...[
+                              Text(
+                                unreadCountLabel,
+                                key: ValueKey('inbox-unread-count-${item.id}'),
+                                style: activityTimestampTextStyle.copyWith(
+                                  color: mutedColor,
+                                ),
+                              ),
+                              const SizedBox(width: Grid.xxs),
+                            ],
+                            Text(
+                              _inboxTimestamp(item.latestActivityAt),
+                              style: activityTimestampTextStyle.copyWith(
+                                color: mutedColor,
+                              ),
                             ),
+                            if (!isDone) ...[
+                              const SizedBox(width: Grid.xxs),
+                              Container(
+                                key: ValueKey('inbox-unread-dot-${item.id}'),
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: context.colors.primary,
+                                ),
+                              ),
+                            ],
                           ],
+                        ],
+                        // Message preview.
+                        preview: MessageContent(
+                          content: item.item.displayContent,
+                          mentionNames: mentionNames,
+                          mentionLabels: contextualLabels,
+                          agentMentionPubkeys: agentMentionPubkeys,
+                          tags: item.item.tags,
+                          maxLines: 2,
+                          baseStyle: activityPreviewTextStyle.copyWith(
+                            color: context.colors.onSurface,
+                          ),
                         ),
                       ),
                     ),
@@ -597,38 +566,6 @@ class _InboxSwipeAction extends StatelessWidget {
   );
 }
 
-class _RowAvatar extends StatelessWidget {
-  final String pubkey;
-  final UserProfile? profile;
-  final bool isAgent;
-
-  const _RowAvatar({
-    required this.pubkey,
-    required this.profile,
-    required this.isAgent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final initial =
-        profile?.initial ?? (pubkey.isNotEmpty ? pubkey[0].toUpperCase() : '?');
-    return AvatarImage(
-      imageUrl: profile?.avatarUrl,
-      radius: activityAvatarSize / 2,
-      backgroundColor: context.colors.primaryContainer,
-      fallback: Text(
-        initial,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: context.colors.onPrimaryContainer,
-        ),
-      ),
-      isAgent: isAgent,
-    );
-  }
-}
-
 /// Room avatar for the Channels + Threads view. A DM room's picture is the
 /// other participant's profile; channel and thread rooms share the channel's
 /// letter on a color fixed per channel, and a thread adds a badge.
@@ -664,7 +601,7 @@ class _ConversationRoomAvatar extends HookConsumerWidget {
 
     switch (room) {
       case DmConversationRoom(:final personPubkey):
-        return _RowAvatar(
+        return ConversationPersonAvatar(
           pubkey: personPubkey,
           profile: personProfile,
           isAgent:
@@ -673,81 +610,17 @@ class _ConversationRoomAvatar extends HookConsumerWidget {
               personProfile?.isAgent == true,
         );
       case ChannelConversationRoom(:final channelId, :final channelName):
-        return _ChannelLetterAvatar(
+        return ConversationLetterAvatar(
           seed: channelId.isEmpty ? channelName : channelId,
           label: channelName,
           isThread: false,
         );
       case ThreadConversationRoom(:final channelId, :final channelName):
-        return _ChannelLetterAvatar(
+        return ConversationLetterAvatar(
           seed: channelId.isEmpty ? channelName : channelId,
           label: channelName,
           isThread: true,
         );
     }
-  }
-}
-
-class _ChannelLetterAvatar extends StatelessWidget {
-  final String seed;
-  final String label;
-  final bool isThread;
-
-  const _ChannelLetterAvatar({
-    required this.seed,
-    required this.label,
-    required this.isThread,
-  });
-  @override
-  Widget build(BuildContext context) {
-    var hash = 0;
-    for (final unit in seed.codeUnits) {
-      hash = (hash * 31 + unit) & 0x7fffffff;
-    }
-    final color = HSLColor.fromAHSL(1, (hash % 360).toDouble(), 0.55, 0.48);
-    final trimmed = label.trim();
-    final initial = trimmed.isEmpty
-        ? '#'
-        : String.fromCharCode(trimmed.runes.first).toUpperCase();
-    return SizedBox.square(
-      dimension: activityAvatarSize,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          CircleAvatar(
-            key: const ValueKey('activity-conversation-avatar'),
-            radius: activityAvatarSize / 2,
-            backgroundColor: color.toColor(),
-            child: Text(
-              initial,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          if (isThread)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: context.colors.surface,
-                  border: Border.all(color: context.colors.outlineVariant),
-                ),
-                child: Icon(
-                  LucideIcons.messagesSquare,
-                  size: 10,
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 }
