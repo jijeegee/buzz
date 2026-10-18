@@ -7,6 +7,9 @@ import { ComposerDockBackdrop } from "@/features/messages/ui/ComposerDockBackdro
 import { ComposerUploadProgressOverlay } from "@/features/messages/ui/ComposerUploadProgressOverlay";
 import { MessageComposer } from "@/features/messages/ui/MessageComposer";
 import { ComposerTimeoutBanner } from "@/features/moderation/ui/ComposerTimeoutBanner";
+import { BlockedDmComposerBanner } from "@/features/channels/ui/BlockedDmComposerBanner";
+import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
+import { blockedDmPeer } from "@/features/people/lib/blockedDm";
 import { useTimeoutActive } from "@/features/moderation/lib/timeoutStore";
 import { isModerationDm } from "@/features/moderation/lib/moderationDm";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
@@ -280,7 +283,11 @@ export const ChannelPane = React.memo(function ChannelPane({
     currentPubkey,
     relaySelfQuery.data,
   );
+  // A 1:1 DM with someone I blocked: no typing or sending until I unblock.
+  const { isBlocked } = useBlockedPeople();
+  const blockedPeer = blockedDmPeer(activeChannel, currentPubkey, isBlocked);
   const isComposerDisabled =
+    blockedPeer !== null ||
     !activeChannel?.isMember ||
     activeChannel.archivedAt !== null ||
     activeChannel.channelType === "forum" ||
@@ -356,7 +363,8 @@ export const ChannelPane = React.memo(function ChannelPane({
       Boolean(activeChannel?.isMember) &&
       !activeChannel?.archivedAt &&
       activeChannel?.channelType !== "forum" &&
-      !isModerationDmChannel,
+      !isModerationDmChannel &&
+      blockedPeer === null,
     sendMain: handleSendMessage,
     sendThread: onSendThreadReply,
     threadHeadId: threadHeadMessage?.id ?? null,
@@ -795,6 +803,14 @@ export const ChannelPane = React.memo(function ChannelPane({
                       </WelcomeComposerGuidanceLayer>
                     ) : null}
                     {timeoutActive ? <ComposerTimeoutBanner /> : null}
+                    {blockedPeer && activeChannel && !timeoutActive ? (
+                      <BlockedDmComposerBanner
+                        channel={activeChannel}
+                        currentPubkey={currentPubkey}
+                        peer={blockedPeer}
+                        profiles={profiles}
+                      />
+                    ) : null}
                     <ComposerDockBackdrop gutterClassName="inset-x-5" />
                     <MessageComposer
                       audienceContext={
@@ -829,18 +845,20 @@ export const ChannelPane = React.memo(function ChannelPane({
                       placeholder={
                         timeoutActive
                           ? "You're timed out by community moderators."
-                          : isModerationDmChannel
-                            ? "This channel is read-only."
-                            : activeChannel?.archivedAt
-                              ? "Archived channels are read-only."
-                              : activeChannel?.channelType === "forum"
-                                ? "Forum posting is not wired in this pass."
-                                : activeChannel
-                                  ? activeChannel.channelType === "dm" &&
-                                    directMessageIntro
-                                    ? `Message ${directMessageIntro.displayName}`
-                                    : `Message #${activeChannel.name}`
-                                  : "Select a channel"
+                          : blockedPeer
+                            ? "You can't send messages to someone you blocked."
+                            : isModerationDmChannel
+                              ? "This channel is read-only."
+                              : activeChannel?.archivedAt
+                                ? "Archived channels are read-only."
+                                : activeChannel?.channelType === "forum"
+                                  ? "Forum posting is not wired in this pass."
+                                  : activeChannel
+                                    ? activeChannel.channelType === "dm" &&
+                                      directMessageIntro
+                                      ? `Message ${directMessageIntro.displayName}`
+                                      : `Message #${activeChannel.name}`
+                                    : "Select a channel"
                       }
                       showTopBorder={false}
                     />

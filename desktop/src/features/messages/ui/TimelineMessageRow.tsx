@@ -5,10 +5,10 @@ import { THREAD_REPLY_ROW_MARGIN_INLINE_REM } from "@/features/messages/lib/thre
 import type { buildVideoReviewContextForMessage } from "@/features/messages/lib/videoReviewContext";
 import { canManageMessageForCurrentUser } from "@/features/messages/lib/canManageMessage";
 import type { TimelineMessage } from "@/features/messages/types";
-import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { cn } from "@/shared/lib/cn";
 import { BlockedMessageNotice } from "./BlockedMessageNotice";
+import { useFoldsBlockedAuthor } from "./blockedFoldScope";
 import { MessageRow } from "./MessageRow";
 import { MessageThreadSummaryRow } from "./MessageThreadSummaryRow";
 import { SystemMessageRow } from "./SystemMessageRow";
@@ -125,10 +125,11 @@ export function MessageRowItem({
   videoReviewContext,
 }: MessageRowItemProps) {
   const { message, summary } = entry;
-  const { isBlocked } = useBlockedPeople();
+  const foldsAuthor = useFoldsBlockedAuthor(message.pubkey);
   const [revealed, setRevealed] = React.useState(false);
-  // A blocked author's message folds to one line until I choose to see it.
-  const folded = !revealed && isBlocked(message.pubkey);
+  // A blocked author's message folds to one line until I choose to see it
+  // (channels and group DMs; a 1:1 DM shows what the server sends).
+  const folded = !revealed && foldsAuthor;
   const notice = <BlockedMessageNotice onShow={() => setRevealed(true)} />;
   const canManage = canManageMessageForCurrentUser(
     message,

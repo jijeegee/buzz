@@ -1,7 +1,7 @@
 import * as React from "react";
 
-import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { BlockedMessageNotice } from "./BlockedMessageNotice";
+import { useFoldsBlockedAuthor } from "./blockedFoldScope";
 import { MessageRow } from "./MessageRow";
 
 type MessageThreadRowProps = Omit<
@@ -11,12 +11,12 @@ type MessageThreadRowProps = Omit<
 
 /**
  * The canonical message-row presentation used inside channel threads. A
- * blocked author's reply folds to one line until shown.
+ * blocked author's reply folds to one line until shown (not in a 1:1 DM).
  */
 export function MessageThreadRow(props: MessageThreadRowProps) {
-  const { isBlocked } = useBlockedPeople();
+  const foldsAuthor = useFoldsBlockedAuthor(props.message.pubkey);
   const [revealed, setRevealed] = React.useState(false);
-  if (!revealed && isBlocked(props.message.pubkey)) {
+  if (!revealed && foldsAuthor) {
     return <BlockedMessageNotice onShow={() => setRevealed(true)} />;
   }
   return <MessageRow {...props} layoutVariant="thread-reply" />;
