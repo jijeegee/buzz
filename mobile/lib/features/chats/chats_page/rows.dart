@@ -26,6 +26,7 @@ class _ChatRow extends HookConsumerWidget {
     required this.pinned,
     required this.muted,
     required this.threadUnread,
+    this.working,
     required this.onTap,
   });
 
@@ -45,6 +46,8 @@ class _ChatRow extends HookConsumerWidget {
   /// room itself has nothing to count).
   final bool threadUnread;
 
+  /// Agents working in this chat now (left of the time).
+  final ChatWorkingSummary? working;
   final VoidCallback onTap;
 
   @override
@@ -203,6 +206,10 @@ class _ChatRow extends HookConsumerWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (working case final working?) ...[
+                  _WorkingBadge(rowKey: row.key, summary: working),
+                  const SizedBox(width: Grid.half),
+                ],
                 Text(
                   chatRowTimestamp(latest?.createdAt ?? row.at),
                   key: ValueKey('chat-row-time-${row.key}'),
@@ -367,6 +374,58 @@ class _RowBadges extends StatelessWidget {
   }
 }
 
+/// "● 3m 12s" in a light pill while agents work, ticking each second;
+/// "(N)" when several agents work (desktop's channel working badge).
+class _WorkingBadge extends HookWidget {
+  const _WorkingBadge({required this.rowKey, required this.summary});
+
+  final String rowKey;
+  final ChatWorkingSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = useState(DateTime.now().millisecondsSinceEpoch);
+    useEffect(() {
+      final timer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => now.value = DateTime.now().millisecondsSinceEpoch,
+      );
+      return timer.cancel;
+    }, const []);
+    final primary = context.colors.primary;
+    return Container(
+      key: ValueKey('chat-row-working-$rowKey'),
+      height: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(Radii.full),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: primary),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            chatWorkingLabel(summary, now.value),
+            style: TextStyle(
+              fontSize: 11,
+              height: 1,
+              fontWeight: FontWeight.w500,
+              color: primary,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Pill extends StatelessWidget {
   const _Pill({
     super.key,
@@ -480,10 +539,14 @@ class _ChannelHeaderRow extends StatelessWidget {
     super.key,
     required this.channel,
     required this.fallbackName,
+    this.working,
   });
 
   final Channel? channel;
   final String fallbackName;
+
+  /// Agents working in the channel's room now.
+  final ChatWorkingSummary? working;
 
   @override
   Widget build(BuildContext context) {
@@ -504,6 +567,13 @@ class _ChannelHeaderRow extends StatelessWidget {
               ),
             ),
           ),
+          if (working case final working?) ...[
+            const SizedBox(width: Grid.xxs),
+            _WorkingBadge(
+              rowKey: 'channel-${channel?.id ?? fallbackName}',
+              summary: working,
+            ),
+          ],
         ],
       ),
     );

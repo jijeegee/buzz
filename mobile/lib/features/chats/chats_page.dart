@@ -32,6 +32,7 @@ import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
 import 'chat_list_provider.dart';
+import 'chat_working.dart';
 import 'thread_pins_provider.dart';
 
 part 'chats_page/rows.dart';
@@ -142,6 +143,19 @@ final chatsHaveUnreadProvider = Provider<bool>((ref) {
   );
 });
 
+/// Agents working per row, from my agents' observer turns.
+ChatWorking _watchWorking(WidgetRef ref, List<ChatListRow>? rows) {
+  if (rows == null || rows.isEmpty) return ChatWorking.none;
+  // Observer turns only, as desktop's Chats list (typing counts there only
+  // for the open channel, which the phone's list never shows beside it).
+  return splitChatWorking(ref.watch(activeAgentTurnsProvider), rows);
+}
+
+extension on ChatWorking {
+  ChatWorkingSummary? of(ChatListRow row) =>
+      row.isThread ? threads[row.rootId ?? row.key] : rooms[row.channelId];
+}
+
 class ChatsPage extends HookConsumerWidget {
   const ChatsPage({this.tabReselection, super.key});
 
@@ -167,6 +181,7 @@ class ChatsPage extends HookConsumerWidget {
         if (entry.value.muted) entry.key,
     };
     final pinnedThreads = ref.watch(threadPinsProvider);
+    final working = _watchWorking(ref, rows);
     final readState = ref.watch(readStateProvider);
     final expanded = useState(<String>{});
     final scrollController = useScrollController();
@@ -324,6 +339,7 @@ class ChatsPage extends HookConsumerWidget {
                       threadUnread: threadUnreadChannels.contains(
                         row.channelId,
                       ),
+                      working: working.of(row),
                       onTap: () => unawaited(openRow(row)),
                     ),
                     ChatGroupRoom(:final channelId, :final row) =>
@@ -331,6 +347,7 @@ class ChatsPage extends HookConsumerWidget {
                           ? _ChannelHeaderRow(
                               key: ValueKey('chat-channel-$channelId'),
                               channel: channelById[channelId],
+                              working: working.rooms[channelId],
                               fallbackName:
                                   _firstThreadOf(entries, index)?.channelName ??
                                   '',
@@ -347,6 +364,7 @@ class ChatsPage extends HookConsumerWidget {
                               threadUnread: threadUnreadChannels.contains(
                                 row.channelId,
                               ),
+                              working: working.of(row),
                               onTap: () => unawaited(openRow(row)),
                             ),
                     ChatGroupThread(:final row) => _ChatRow(
@@ -359,6 +377,7 @@ class ChatsPage extends HookConsumerWidget {
                       pinned: pinnedRow(row),
                       muted: muted.contains(row.channelId),
                       threadUnread: false,
+                      working: working.of(row),
                       onTap: () => unawaited(openRow(row)),
                     ),
                     ChatGroupMore() => _MoreThreadsRow(
