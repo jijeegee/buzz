@@ -78,35 +78,32 @@ pub struct ThreadSummary {
     pub participants: Vec<Vec<u8>>,
 }
 
-/// Replies from blocked authors inside one event's stored thread counters
-/// ([`Db::blocked_thread_replies`]).
+/// Replies hidden from one reader by block periods inside one event's stored
+/// thread counters ([`Db::blocked_thread_replies`]).
 #[derive(Debug, Clone)]
 pub struct BlockedThreadReplies {
     /// The event whose summary the counters belong to.
     pub target: Vec<u8>,
-    /// Counted direct replies (part of `reply_count`) from blocked authors.
+    /// Counted direct replies (part of `reply_count`) hidden from the reader.
     pub direct: i32,
-    /// Counted replies at any depth (part of `descendant_count`) from
-    /// blocked authors.
+    /// Counted replies at any depth (part of `descendant_count`) hidden from
+    /// the reader.
     pub descendants: i32,
-    /// Latest reply from anyone else, `None` when there is none.
+    /// Latest reply the reader can see, `None` when there is none.
     pub last_other_reply_at: Option<DateTime<Utc>>,
+    /// Authors whose live replies here are all hidden from the reader: they
+    /// are no participants to the reader.
+    pub hidden_authors: Vec<Vec<u8>>,
 }
 
 impl ThreadSummary {
-    /// This summary without the replies in `hidden` and without `blocked`
-    /// participants.
-    pub fn without_blocked(
-        &mut self,
-        hidden: Option<&BlockedThreadReplies>,
-        is_blocked: impl Fn(&[u8]) -> bool,
-    ) {
-        if let Some(hidden) = hidden {
-            self.reply_count = (self.reply_count - hidden.direct).max(0);
-            self.descendant_count = (self.descendant_count - hidden.descendants).max(0);
-            self.last_reply_at = hidden.last_other_reply_at;
-        }
-        self.participants.retain(|p| !is_blocked(p));
+    /// This summary without the replies and participants in `hidden`.
+    pub fn without_blocked(&mut self, hidden: &BlockedThreadReplies) {
+        self.reply_count = (self.reply_count - hidden.direct).max(0);
+        self.descendant_count = (self.descendant_count - hidden.descendants).max(0);
+        self.last_reply_at = hidden.last_other_reply_at;
+        self.participants
+            .retain(|p| !hidden.hidden_authors.iter().any(|h| h == p));
     }
 }
 
@@ -1087,18 +1084,18 @@ impl Db {
             .collect()
     }
 
-    /// What the stored thread counters of `targets` hold from `blocked`
-    /// authors, so a reader who blocked them sees counts for replies they can
-    /// open. Only targets with at least one live counted reply from `blocked`
-    /// are returned.
+    /// What the stored thread counters of `targets` hold that `reader` may not
+    /// see: replies the server received from someone while `reader` blocked
+    /// them (block periods). Callers ask only for 1:1 DM threads. Only targets
+    /// with at least one such reply are returned.
     #[datastore_span(name = "blocked_thread_replies", system = "postgresql")]
     pub async fn blocked_thread_replies(
         &self,
         community_id: CommunityId,
+        reader: &[u8],
         targets: &[Vec<u8>],
-        blocked: &[Vec<u8>],
     ) -> Result<Vec<BlockedThreadReplies>> {
-        if targets.is_empty() || blocked.is_empty() {
+        if targets.is_empty() {
             return Ok(Vec::new());
         }
         let mut connection = crate::observability::acquire_writer(
@@ -1108,35 +1105,42 @@ impl Db {
         .await?;
         // Counted replies are live non-markers (as the counters keep them);
         // the last reply time, like last_reply_at, counts every reply.
-        let rows = sqlx::query(
+        let rows = sqlx::query(concat!(
             r#"
-            SELECT t.target,
-                count(*) FILTER (WHERE x.counted AND x.blocked
-                                 AND x.parent_event_id = t.target)::int AS direct,
-                count(*) FILTER (WHERE x.counted AND x.blocked
-                                 AND x.root_event_id = t.target)::int AS descendants,
-                max(x.received_at) FILTER (WHERE NOT x.blocked) AS last_other_reply_at
-            FROM unnest($2::bytea[]) AS t(target)
-            CROSS JOIN LATERAL (
-                SELECT tm.parent_event_id, tm.root_event_id, e.received_at,
-                    e.pubkey = ANY($3) AS blocked,
+            WITH x AS (
+                SELECT t.target, tm.parent_event_id, tm.root_event_id, e.received_at,
+                    e.pubkey, e.deleted_at IS NULL AS live, "#,
+            crate::blocks::hidden_by_block_period!("$1", "$3", "e"),
+            r#" AS hidden,
                     e.deleted_at IS NULL AND NOT EXISTS (
                         SELECT 1 FROM jsonb_array_elements(e.tags) mt
                         WHERE mt->>0 IN ($4, $5) AND COALESCE(mt->>1, '') <> ''
                     ) AS counted
-                FROM thread_metadata tm
+                FROM unnest($2::bytea[]) AS t(target)
+                JOIN thread_metadata tm ON tm.community_id = $1 AND tm.depth > 0
+                    AND (tm.parent_event_id = t.target OR tm.root_event_id = t.target)
                 JOIN events e ON e.community_id = tm.community_id
                     AND e.created_at = tm.event_created_at AND e.id = tm.event_id
-                WHERE tm.community_id = $1 AND tm.depth > 0
-                  AND (tm.parent_event_id = t.target OR tm.root_event_id = t.target)
-            ) x
-            GROUP BY t.target
-            HAVING count(*) FILTER (WHERE x.counted AND x.blocked) > 0
-            "#,
-        )
+            ),
+            gone AS (
+                SELECT x.target, x.pubkey FROM x WHERE x.live
+                GROUP BY x.target, x.pubkey HAVING bool_and(x.hidden)
+            )
+            SELECT x.target,
+                count(*) FILTER (WHERE x.counted AND x.hidden
+                                 AND x.parent_event_id = x.target)::int AS direct,
+                count(*) FILTER (WHERE x.counted AND x.hidden
+                                 AND x.root_event_id = x.target)::int AS descendants,
+                max(x.received_at) FILTER (WHERE NOT x.hidden) AS last_other_reply_at,
+                ARRAY(SELECT g.pubkey FROM gone g WHERE g.target = x.target) AS hidden_authors
+            FROM x
+            GROUP BY x.target
+            HAVING count(*) FILTER (WHERE x.hidden) > 0
+            "#
+        ))
         .bind(community_id.as_uuid())
         .bind(targets)
-        .bind(blocked)
+        .bind(reader)
         .bind(crate::chat_state::THREAD_CLOSED_TAG)
         .bind(crate::chat_state::THREAD_REOPENED_TAG)
         .fetch_all(&mut *connection)
@@ -1148,6 +1152,7 @@ impl Db {
                     direct: row.try_get("direct")?,
                     descendants: row.try_get("descendants")?,
                     last_other_reply_at: row.try_get("last_other_reply_at")?,
+                    hidden_authors: row.try_get("hidden_authors")?,
                 })
             })
             .collect()
