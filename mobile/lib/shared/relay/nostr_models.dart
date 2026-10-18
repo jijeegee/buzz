@@ -33,6 +33,9 @@ abstract final class EventKind {
   /// Kind:30175 owner-authored agent definition ("persona"); `d` is its slug.
   static const persona = 30175;
 
+  /// Kind:30176 owner-authored agent team; `d` is the team id.
+  static const team = 30176;
+
   /// Kind:30177 owner-authored managed agent; `d` is the agent's pubkey.
   static const managedAgent = 30177;
 
