@@ -627,6 +627,26 @@ impl Db {
         audit_partition_catalog_report(&self.pool, months_ahead).await
     }
 
+    /// Refresh planner statistics for `events` and all its partitions.
+    ///
+    /// Autovacuum analyzes only leaf partitions, never the partitioned parent,
+    /// and skips empty partitions, so without this the planner guesses row
+    /// counts for the parent (measured 6.8x too high on prod, enough to turn
+    /// on JIT for the chats list). `ANALYZE` samples a bounded number of rows
+    /// and does not block reads or writes.
+    #[datastore_span(name = "analyze_events", system = "postgresql")]
+    pub async fn analyze_events(&self) -> Result<()> {
+        let mut connection = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::Bootstrap,
+        )
+        .await?;
+        sqlx::query("ANALYZE events")
+            .execute(&mut *connection)
+            .await?;
+        Ok(())
+    }
+
     /// Ensures monthly partitions exist for the next N months when creation is enabled.
     #[datastore_span(name = "ensure_future_partitions", system = "postgresql")]
     pub async fn ensure_future_partitions(

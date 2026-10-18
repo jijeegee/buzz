@@ -1868,6 +1868,8 @@ async fn insert_event_with_thread_metadata_on_pool(
             .await?;
     let mut outcome = crate::chat_state::ChatStateWriteOutcome::default();
     if chat_state && was_inserted {
+        // Mentions first: the stored mention counts read them.
+        crate::insert_mentions_in_transaction(&mut tx, community_id, event, channel_id).await?;
         outcome = crate::chat_state::apply_message_write(
             &mut tx,
             community_id,
@@ -1877,7 +1879,6 @@ async fn insert_event_with_thread_metadata_on_pool(
             stored_event.received_at,
         )
         .await?;
-        crate::insert_mentions_in_transaction(&mut tx, community_id, event, channel_id).await?;
     }
     tx.commit().await?;
     Ok((stored_event, was_inserted, outcome))

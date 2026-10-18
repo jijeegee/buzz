@@ -32,7 +32,7 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::chat_user_state::{
-    lock_membership, seq_at, thread_root, FollowState, MarkReadTarget, ThreadRoot,
+    lock_channel, lock_membership, seq_at, thread_root, FollowState, MarkReadTarget, ThreadRoot,
 };
 use crate::{observability, Db, Result};
 
@@ -222,6 +222,13 @@ impl Db {
             }
         }
         steps.sort();
+        // Rooms where this upload may create follow rows take the room lock
+        // before the membership row lock (see `lock_channel`).
+        let follow_rooms: HashSet<Uuid> = steps
+            .iter()
+            .filter(|(_, _, step, _)| matches!(step, Step::Follow(_)))
+            .map(|(channel, _, _, _)| *channel)
+            .collect();
 
         let mut members: HashMap<Uuid, bool> = HashMap::new();
         let mut inserted: Inserted = HashMap::new();
@@ -230,6 +237,9 @@ impl Db {
             let member = match members.get(&channel) {
                 Some(member) => *member,
                 None => {
+                    if follow_rooms.contains(&channel) {
+                        lock_channel(&mut tx, community, channel).await?;
+                    }
                     let member = lock_membership(&mut tx, community, channel, reader).await?;
                     members.insert(channel, member);
                     member

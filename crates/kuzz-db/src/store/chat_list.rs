@@ -2,8 +2,12 @@
 //! state that the S1 write path keeps.
 //!
 //! One statement returns a page of the reader's rooms and live threads mixed
-//! newest first. Unread counts are computed for the page only, from the
-//! channel sequence index, and stop at [`CHAT_UNREAD_CAP`] + 1.
+//! newest first. Latest message, thread name, and unread counts are the
+//! stored values migration 0072 added (Telegram's dialog model), so a row
+//! costs a few key lookups. Two cases still search messages as before: the
+//! stored latest message is deleted or (in a DM) from someone the reader
+//! blocked, and a pinned thread the reader has no follow row for. Counts
+//! stop at [`CHAT_UNREAD_CAP`] + 1. Close and reopen markers count nowhere.
 //!
 //! - Rooms: current memberships of live channels, minus hidden DMs. Archived
 //!   rooms stay only while they have something unread or an unread mark.
@@ -144,12 +148,14 @@ macro_rules! not_marker {
     };
 }
 
-/// Main-timeline messages: not a reply, or a broadcast reply.
+/// Main-timeline messages: not a reply, or a broadcast reply that is not a
+/// close or reopen marker.
 macro_rules! main_timeline {
     () => {
         "NOT EXISTS (
             SELECT 1 FROM thread_metadata r
-            WHERE r.community_id = $1 AND r.event_id = e.id AND r.depth > 0 AND NOT r.broadcast)"
+            WHERE r.community_id = $1 AND r.event_id = e.id AND r.depth > 0
+              AND (NOT r.broadcast OR chat_is_thread_marker(e.tags, r.root_event_id)))"
     };
 }
 
@@ -169,22 +175,6 @@ macro_rules! not_blocked_dm {
         "NOT (m.channel_type = 'dm' AND EXISTS (
             SELECT 1 FROM user_blocks ub
             WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))"
-    };
-}
-
-/// Room unread candidates for page row `p`.
-macro_rules! room_unread_from {
-    () => {
-        concat!(
-            " FROM events e
-            WHERE e.community_id = $1 AND e.channel_id = p.channel_id
-              AND e.channel_sequence > COALESCE(p.read_seq, 0)
-              AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
-              AND ",
-            main_timeline!(),
-            " AND ",
-            not_blocked_dm!()
-        )
     };
 }
 
@@ -211,7 +201,8 @@ const CHAT_LIST_SQL: &str = concat!(
 WITH my AS MATERIALIZED (
     SELECT cm.channel_id, c.channel_type::text AS channel_type, c.name AS channel_name,
            c.archived_at, cm.joined_at, cm.hidden_at, cm.read_seq, cm.unread_mark,
-           c.main_last_seq, c.main_last_at
+           c.main_last_seq, c.main_last_at, c.main_last_event_id,
+           cm.unread_count, cm.unread_mentions
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
     WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
@@ -221,7 +212,9 @@ rooms AS (
     SELECT 'room'::text AS row_kind, m.channel_id, NULL::bytea AS root_id,
            COALESCE(m.main_last_at, m.joined_at) AS at, m.channel_id::text AS row_key,
            m.main_last_seq AS last_seq, m.read_seq, m.unread_mark,
-           NULL::text AS follow_state, FALSE AS closed
+           NULL::text AS follow_state, FALSE AS closed,
+           m.main_last_event_id AS last_event_id, NULL::text AS stored_name,
+           m.unread_count AS stored_unread, m.unread_mentions AS stored_mentions
     FROM my m
     WHERE m.hidden_at IS NULL
       AND (m.archived_at IS NULL OR m.unread_mark
@@ -232,13 +225,16 @@ pinned AS (
 ),
 candidates AS (
     SELECT tf.root_event_id AS root_id, tf.channel_id, tf.follow_state, tf.read_seq,
-           tf.unread_mark, NULL::timestamptz AS root_at
+           tf.unread_mark, NULL::timestamptz AS root_at,
+           tf.unread_count AS stored_unread, tf.unread_mentions AS stored_mentions
     FROM thread_follows tf
     WHERE tf.community_id = $1 AND tf.pubkey = $2 AND tf.follow_state <> 'unfollowed'
     UNION ALL
-    -- Pinned threads the reader does not follow (no row, or unfollowed).
+    -- Pinned threads the reader does not follow (no row, or unfollowed):
+    -- counted from messages below.
     SELECT pr.root_id, root.channel_id, tf.follow_state, tf.read_seq,
-           COALESCE(tf.unread_mark, FALSE), root.created_at
+           COALESCE(tf.unread_mark, FALSE), root.created_at,
+           NULL::integer, NULL::integer
     FROM pinned pr
     CROSS JOIN LATERAL (
         SELECT e.channel_id, e.created_at FROM events e
@@ -253,7 +249,8 @@ threads AS (
     SELECT 'thread'::text, t.channel_id, t.root_id,
            COALESCE(ts.last_at, t.root_at, m.joined_at), encode(t.root_id, 'hex'),
            ts.last_seq, t.read_seq, t.unread_mark, t.follow_state,
-           ts.closed_at IS NOT NULL
+           ts.closed_at IS NOT NULL,
+           ts.last_event_id, ts.name, t.stored_unread, t.stored_mentions
     FROM candidates t
     JOIN my m ON m.channel_id = t.channel_id AND m.hidden_at IS NULL
     LEFT JOIN thread_state ts ON ts.community_id = $1 AND ts.root_event_id = t.root_id
@@ -279,7 +276,18 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
           AND o.removed_at IS NULL AND o.pubkey <> $2
         ORDER BY o.joined_at, o.pubkey LIMIT $13
     ) ELSE ARRAY[]::bytea[] END AS dm_members,
-    CASE WHEN p.row_kind = 'room' THEN (
+    CASE WHEN p.last_event_id IS NULL THEN NULL ELSE COALESCE((
+        -- The stored latest message, unless it is gone or (in a DM) from
+        -- someone the reader blocked; then search as before.
+        SELECT "#,
+    event_json!(),
+    r#" FROM events e
+        WHERE e.community_id = $1 AND e.id = p.last_event_id AND e.deleted_at IS NULL
+          AND "#,
+    not_blocked_dm!(),
+    r#"
+        ORDER BY e.created_at DESC LIMIT 1
+    ), CASE WHEN p.row_kind = 'room' THEN (
         SELECT "#,
     event_json!(),
     r#" FROM events e
@@ -303,7 +311,7 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
     not_blocked_dm!(),
     r#"
         ORDER BY e.channel_sequence DESC LIMIT 1
-    ) END AS latest,
+    ) END) END AS latest,
     CASE WHEN p.row_kind = 'thread' THEN (
         SELECT "#,
     event_json!(),
@@ -311,29 +319,15 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
         WHERE e.community_id = $1 AND e.id = p.root_id AND e.deleted_at IS NULL
         ORDER BY e.created_at DESC LIMIT 1
     ) END AS root,
-    CASE WHEN p.row_kind = 'thread' THEN (
-        SELECT NULLIF(e.content, '') FROM events e
-        WHERE e.community_id = $1 AND e.channel_id = p.channel_id AND e.kind = $14
-          AND e.deleted_at IS NULL
-          AND e.tags @> jsonb_build_array(jsonb_build_array('e', encode(p.root_id, 'hex')))
-        ORDER BY e.created_at DESC, e.id DESC LIMIT 1
-    ) END AS thread_name,
-    CASE WHEN p.row_kind = 'room' THEN (
-        SELECT count(*) FROM (SELECT 1"#,
-    room_unread_from!(),
-    r#" LIMIT $12) n
-    ) ELSE (
+    p.stored_name AS thread_name,
+    -- Stored counts for rooms and follow rows; pinned threads without a
+    -- follow row are counted from messages.
+    CASE WHEN p.stored_unread IS NOT NULL THEN p.stored_unread::bigint ELSE (
         SELECT count(*) FROM (SELECT 1"#,
     thread_unread_from!(),
     r#" LIMIT $12) n
     ) END AS unread,
-    CASE WHEN p.row_kind = 'room' THEN (
-        SELECT count(*) FROM (SELECT 1"#,
-    room_unread_from!(),
-    " AND ",
-    mentions_reader!(),
-    r#" LIMIT $12) n
-    ) ELSE (
+    CASE WHEN p.stored_mentions IS NOT NULL THEN p.stored_mentions::bigint ELSE (
         SELECT count(*) FROM (SELECT 1"#,
     thread_unread_from!(),
     " AND ",
@@ -399,7 +393,6 @@ impl Db {
             .bind(reader.to_hex())
             .bind(CHAT_UNREAD_CAP + 1)
             .bind(MAX_DM_MEMBERS)
-            .bind(kuzz_core::kind::KIND_THREAD_NAME as i32)
             .fetch_all(&mut *conn)
             .await?;
         let has_more = rows.len() > query.limit as usize;

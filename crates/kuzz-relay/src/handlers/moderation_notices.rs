@@ -174,13 +174,27 @@ pub async fn send_moderation_notice(
     .sign_with_keys(&state.relay_keypair)
     .map_err(|e| anyhow::anyhow!("failed to sign moderation notice: {e}"))?;
 
-    let (stored, _inserted) = state
+    // Same write path as user messages, so the DM's stored latest message
+    // and the recipient's unread count move with it.
+    let (stored, _inserted, chat_state) = state
         .db
-        .insert_event(tenant.community(), &event, Some(dm_channel_id))
+        .insert_event_with_thread_metadata_and_chat_state(
+            tenant.community(),
+            &event,
+            Some(dm_channel_id),
+            None,
+        )
         .await?;
 
     let kind_u32 = event_kind_u32(&stored.event);
     dispatch_persistent_event(tenant, state, &stored, kind_u32, &relay_pubkey_hex, None).await;
+    for viewer in &chat_state.unhidden_dm_members {
+        if let Err(e) =
+            super::side_effects::publish_dm_visibility_snapshot(tenant, state, viewer).await
+        {
+            warn!("DM visibility snapshot after moderation notice failed: {e}");
+        }
+    }
 
     Ok(())
 }

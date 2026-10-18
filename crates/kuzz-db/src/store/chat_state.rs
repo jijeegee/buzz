@@ -3,10 +3,21 @@
 //! Runs inside the message insert transaction, after the event row, its
 //! thread metadata, and its channel sequence exist. Only message kinds change
 //! state; reactions, edits, deletes, and system events never reach this code.
-//! Every statement is a single-row (or one-room bounded) upsert keyed by the
-//! message's own channel, so the cost per message does not grow with room
-//! size. The channel advisory lock taken by the sequence trigger is already
-//! held, so writes for one channel are serialized in sequence order.
+//! Every statement is keyed by the message's own channel. The stored unread
+//! update below touches one row per room member (or thread follower), so its
+//! cost grows with room size (about 0.1-0.3 ms in the largest prod rooms).
+//! The channel advisory lock taken by the sequence trigger is already held,
+//! so writes for one channel are serialized in sequence order.
+//!
+//! Stored unread counts (migration 0072): each new message adds one to the
+//! unread count (and the mention count when it mentions the reader) of every
+//! other reader who has not read it, capped at [`STORED_UNREAD_CAP`]. That is
+//! one update per room member (rooms) or follow row (threads). Mentions are
+//! saved before this runs, so the mention check reads `event_mentions`. Lock
+//! order inside the transaction: room lock (sequence trigger), then
+//! `channel_members` rows, then `thread_follows` rows. Database triggers keep
+//! the counts right for everything else (reads, joins, follows, deletes,
+//! blocks).
 //!
 //! Follow rows and read positions are private per-user state: never log them.
 
@@ -18,6 +29,10 @@ use uuid::Uuid;
 
 use crate::error::Result;
 use crate::event::ThreadMetadataParams;
+
+/// Stored unread and mention counts stop here (the chats list shows "99+").
+/// Must match the `LIMIT 100` in the migration 0072 count functions.
+pub const STORED_UNREAD_CAP: i32 = 100;
 
 /// Tag on a reply that closes its thread: `["kuzz:thread-closed", <root>]`.
 ///
@@ -174,6 +189,8 @@ pub(crate) async fn apply_message_write(
             .execute(&mut **tx)
             .await?;
 
+            add_room_unread(tx, community, channel_id, event_id, author, seq).await?;
+
             // The author has read the room up to their own message. That is
             // the reader's own read: a later first-run upload must not move it.
             sqlx::query(
@@ -228,6 +245,13 @@ async fn apply_reply(
     received_at: DateTime<Utc>,
     marker: Option<ThreadMarker>,
 ) -> Result<bool> {
+    // Every existing follow row of the thread counts this reply, before the
+    // root check (the old count did not look at the root) and before new
+    // rows below, whose insert trigger counts it already.
+    if marker.is_none() {
+        add_thread_unread(tx, community, root, event.id.as_bytes(), author, seq).await?;
+    }
+
     // The root must be a live event in this same channel. Its author and
     // mentions seed follows.
     let root_row = sqlx::query(
@@ -280,11 +304,16 @@ async fn apply_reply(
 
     // Any other reply moves the thread forward and reopens it.
     sqlx::query(
-        "INSERT INTO thread_state (community_id, root_event_id, channel_id, last_seq, last_at) \
-         VALUES ($1, $2, $3, $4, $5) \
+        "INSERT INTO thread_state \
+             (community_id, root_event_id, channel_id, last_seq, last_at, last_event_id) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
          ON CONFLICT (community_id, root_event_id) DO UPDATE \
          SET last_seq = GREATEST(COALESCE(thread_state.last_seq, 0), EXCLUDED.last_seq), \
              last_at = GREATEST(thread_state.last_at, EXCLUDED.last_at), \
+             last_event_id = CASE \
+                 WHEN COALESCE(thread_state.last_seq, 0) < EXCLUDED.last_seq \
+                   OR thread_state.last_event_id IS NULL \
+                 THEN EXCLUDED.last_event_id ELSE thread_state.last_event_id END, \
              closed_at = NULL, closed_by = NULL",
     )
     .bind(community)
@@ -292,6 +321,7 @@ async fn apply_reply(
     .bind(channel_id)
     .bind(seq)
     .bind(received_at)
+    .bind(event.id.as_bytes().as_slice())
     .execute(&mut **tx)
     .await?;
 
@@ -355,6 +385,9 @@ async fn apply_reply(
            FROM channel_members cm \
           WHERE cm.community_id = $1 AND cm.channel_id = $3 AND cm.pubkey = ANY($4) \
             AND cm.removed_at IS NULL \
+            AND NOT EXISTS (SELECT 1 FROM thread_follows tf \
+                             WHERE tf.community_id = $1 AND tf.root_event_id = $2 \
+                               AND tf.pubkey = cm.pubkey) \
          ON CONFLICT (community_id, root_event_id, pubkey) DO NOTHING",
     )
     .bind(community)
@@ -366,6 +399,84 @@ async fn apply_reply(
     .execute(&mut **tx)
     .await?;
     Ok(true)
+}
+
+/// Add one unread (and one mention when the message mentions them) for the
+/// room's current members who have not read `seq`, except the author and, in
+/// a DM, members who blocked the author. Rows already at the cap are still
+/// updated (a no-op value change) so the row lock is always taken: a
+/// concurrent mark-read then waits for this transaction and recounts with the
+/// message visible, instead of resetting to 0 while the message is in flight.
+async fn add_room_unread(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    channel_id: Uuid,
+    event_id: &[u8],
+    author: &[u8],
+    seq: i64,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE channel_members cm \
+            SET unread_count = LEAST(cm.unread_count + 1, $6), \
+                unread_mentions = CASE WHEN EXISTS ( \
+                        SELECT 1 FROM event_mentions em \
+                         WHERE em.community_id = $1 AND em.event_id = $3 \
+                           AND em.pubkey_hex = encode(cm.pubkey, 'hex')) \
+                    THEN LEAST(cm.unread_mentions + 1, $6) ELSE cm.unread_mentions END \
+          WHERE cm.community_id = $1 AND cm.channel_id = $2 AND cm.removed_at IS NULL \
+            AND cm.pubkey <> $4 AND COALESCE(cm.read_seq, 0) < $5 \
+            AND NOT EXISTS ( \
+                SELECT 1 FROM channels c \
+                  JOIN user_blocks ub ON ub.community_id = c.community_id \
+                 WHERE c.community_id = $1 AND c.id = $2 AND c.channel_type = 'dm' \
+                   AND ub.blocker = cm.pubkey AND ub.blocked = $4)",
+    )
+    .bind(community)
+    .bind(channel_id)
+    .bind(event_id)
+    .bind(author)
+    .bind(seq)
+    .bind(STORED_UNREAD_CAP)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// [`add_room_unread`] for every follow row of thread `root` (any follow
+/// state; the row's own room decides the DM block rule).
+async fn add_thread_unread(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    root: &[u8],
+    event_id: &[u8],
+    author: &[u8],
+    seq: i64,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE thread_follows tf \
+            SET unread_count = LEAST(tf.unread_count + 1, $6), \
+                unread_mentions = CASE WHEN EXISTS ( \
+                        SELECT 1 FROM event_mentions em \
+                         WHERE em.community_id = $1 AND em.event_id = $3 \
+                           AND em.pubkey_hex = encode(tf.pubkey, 'hex')) \
+                    THEN LEAST(tf.unread_mentions + 1, $6) ELSE tf.unread_mentions END \
+          WHERE tf.community_id = $1 AND tf.root_event_id = $2 \
+            AND tf.pubkey <> $4 AND COALESCE(tf.read_seq, 0) < $5 \
+            AND NOT EXISTS ( \
+                SELECT 1 FROM channels c \
+                  JOIN user_blocks ub ON ub.community_id = c.community_id \
+                 WHERE c.community_id = $1 AND c.id = tf.channel_id AND c.channel_type = 'dm' \
+                   AND ub.blocker = tf.pubkey AND ub.blocked = $4)",
+    )
+    .bind(community)
+    .bind(root)
+    .bind(event_id)
+    .bind(author)
+    .bind(seq)
+    .bind(STORED_UNREAD_CAP)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// A new message in a DM brings it back for every other member who hid it,
