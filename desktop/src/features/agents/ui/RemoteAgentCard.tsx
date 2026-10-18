@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { AgentCardRobot } from "./AgentCardRobot";
 import { AgentIdentityCard } from "./AgentIdentityCard";
 import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 
@@ -100,6 +101,7 @@ export function RemoteAgentCard({
       avatarUrl={avatarUrl}
       dataTestId={`remote-agent-row-${agent.pubkey}`}
       label={title}
+      labelBadge={<AgentCardRobot pubkey={agent.pubkey} />}
       subtitle={hostLabel}
       onClick={() => onOpenAgentProfile(agent.pubkey)}
     />

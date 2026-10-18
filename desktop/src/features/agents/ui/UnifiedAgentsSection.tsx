@@ -26,6 +26,7 @@ import {
   useProtectedBestiePubkey,
 } from "@protected-feature-components";
 import { IdentityCardSkeleton } from "@/shared/ui/identity-card-skeleton";
+import { AgentCardRobot } from "./AgentCardRobot";
 import { AgentIdentityCard } from "./AgentIdentityCard";
 import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 import { StandaloneAgentActionsMenu } from "./AgentStartOnLaunchMenuItem";
@@ -79,6 +80,14 @@ const AGENT_CARD_COLUMN_CLASS = "w-full";
 export const AGENT_CARD_GRID_COLUMNS_CLASS =
   "grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5";
 export const IDENTITY_CARD_GRID_CLASS = `${AGENT_CARD_COLUMN_CLASS} ${AGENT_CARD_GRID_COLUMNS_CLASS} grid gap-3`;
+
+function DeviceGroupHeading({ title }: { title: string }) {
+  return (
+    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {title}
+    </h3>
+  );
+}
 
 export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
   const {
@@ -192,6 +201,7 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
 
       {!isLoading ? (
         <div className="space-y-3" data-testid="unified-agents-groups">
+          <DeviceGroupHeading title="This device" />
           <div className={IDENTITY_CARD_GRID_CLASS}>
             <CreateIdentityCard
               ariaLabel="New agent"
@@ -201,20 +211,9 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
             />
             {groups.map((group) => {
               const profileAgent = pickProfileAgent(group.agents, isArchived);
-              const remoteAgent = remoteByPersonaId.get(group.persona.id);
-              if (!profileAgent && remoteAgent) {
-                return (
-                  <RemoteAgentCard
-                    agent={remoteAgent}
-                    getAvailability={getRemoteAvailability}
-                    isPending={isActionPending || isPersonasPending}
-                    key={group.persona.id}
-                    persona={group.persona}
-                    onDuplicatePersona={onDuplicatePersona}
-                    onEditPersona={onEditPersona}
-                    onOpenAgentProfile={onOpenAgentProfile}
-                  />
-                );
+              // Its only agent runs on another computer: listed there.
+              if (!profileAgent && remoteByPersonaId.has(group.persona.id)) {
+                return null;
               }
               return (
                 <AgentPersonaCard
@@ -254,22 +253,6 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                 />
               );
             })}
-            {remoteStandalone.map((agent) => (
-              <RemoteAgentCard
-                agent={agent}
-                getAvailability={getRemoteAvailability}
-                isPending={isActionPending}
-                key={agent.pubkey}
-                persona={
-                  personas.find(
-                    (persona) => persona.id === agent.localPersonaId,
-                  ) ?? null
-                }
-                onDuplicatePersona={onDuplicatePersona}
-                onEditPersona={onEditPersona}
-                onOpenAgentProfile={onOpenAgentProfile}
-              />
-            ))}
           </div>
 
           {unknown.length > 0 ? (
@@ -309,6 +292,47 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
               onStartAgent={onStartAgent}
               onToggleStartOnLaunch={onToggleStartOnLaunch}
             />
+          ) : null}
+
+          {remoteByPersonaId.size > 0 || remoteStandalone.length > 0 ? (
+            <div className="space-y-3 pt-3" data-testid="agents-other-devices">
+              <DeviceGroupHeading title="Other devices" />
+              <div className={IDENTITY_CARD_GRID_CLASS}>
+                {groups.map((group) => {
+                  const remoteAgent = remoteByPersonaId.get(group.persona.id);
+                  if (!remoteAgent) return null;
+                  if (pickProfileAgent(group.agents, isArchived)) return null;
+                  return (
+                    <RemoteAgentCard
+                      agent={remoteAgent}
+                      getAvailability={getRemoteAvailability}
+                      isPending={isActionPending || isPersonasPending}
+                      key={group.persona.id}
+                      persona={group.persona}
+                      onDuplicatePersona={onDuplicatePersona}
+                      onEditPersona={onEditPersona}
+                      onOpenAgentProfile={onOpenAgentProfile}
+                    />
+                  );
+                })}
+                {remoteStandalone.map((agent) => (
+                  <RemoteAgentCard
+                    agent={agent}
+                    getAvailability={getRemoteAvailability}
+                    isPending={isActionPending}
+                    key={agent.pubkey}
+                    persona={
+                      personas.find(
+                        (persona) => persona.id === agent.localPersonaId,
+                      ) ?? null
+                    }
+                    onDuplicatePersona={onDuplicatePersona}
+                    onEditPersona={onEditPersona}
+                    onOpenAgentProfile={onOpenAgentProfile}
+                  />
+                ))}
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -439,6 +463,7 @@ function AgentPersonaCard({
         ) : null
       }
       label={title}
+      labelBadge={agent ? <AgentCardRobot pubkey={agent.pubkey} /> : null}
       subtitle={subtitle}
       onClick={() => {
         // The card's main click always opens the PERSONA target, never an
@@ -541,6 +566,7 @@ function StandaloneAgentCard({
         <ProtectedBestieCardBadge agent={agent} isBestie={isBestie} />
       }
       label={title}
+      labelBadge={<AgentCardRobot pubkey={agent.pubkey} />}
       subtitle={
         // Definition-less instance: no authored description exists, so fall
         // back to the model label.
