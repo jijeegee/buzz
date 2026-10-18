@@ -262,21 +262,6 @@ int? _channelReadTimestamp({
   return dateTimeToUnixSeconds(channel.lastMessageAt);
 }
 
-/// The other person in a one-to-one DM when I blocked them.
-String? _blockedCounterpart(
-  Channel channel, {
-  required String? currentPubkey,
-  required Set<String> blocked,
-}) {
-  final me = currentPubkey?.toLowerCase();
-  for (final pubkey in channel.participantPubkeys) {
-    final normalized = pubkey.trim().toLowerCase();
-    if (normalized.isEmpty || normalized == me) continue;
-    if (blocked.contains(normalized)) return normalized;
-  }
-  return null;
-}
-
 bool _isOneToOneAgentDm(Channel channel, Set<String> agentPubkeys) {
   final participants = channel.participantPubkeys
       .map((pubkey) => pubkey.trim().toLowerCase())
@@ -510,15 +495,20 @@ class ChannelDetailPage extends HookConsumerWidget {
         resolvedChannel.isMember &&
         !resolvedChannel.isArchived;
     // In a one-to-one DM with someone I blocked a bar with Unblock stands in
-    // for the composer.
+    // for the composer, and their typing is not shown.
     final blockedCounterpart = isOneToOneDm
-        ? _blockedCounterpart(
+        ? blockedDmCounterpart(
             resolvedChannel,
             currentPubkey: currentPubkey,
             blocked: ref.watch(blockedPubkeysProvider),
           )
         : null;
     final showsComposeBar = showsComposer && blockedCounterpart == null;
+    final visibleTypingEntries = blockedCounterpart == null
+        ? typingEntries
+        : typingEntries
+              .where((e) => e.pubkey.toLowerCase() != blockedCounterpart)
+              .toList();
     final profileOwnedAgentPubkeys = <String>[];
     for (final participantPubkey in resolvedChannel.participantPubkeys) {
       final normalized = participantPubkey.trim().toLowerCase();
@@ -1170,11 +1160,11 @@ class ChannelDetailPage extends HookConsumerWidget {
                       : const Duration(milliseconds: 180),
                   curve: Curves.easeOutCubic,
                   alignment: Alignment.bottomCenter,
-                  child: typingEntries.isEmpty
+                  child: visibleTypingEntries.isEmpty
                       ? const SizedBox.shrink()
                       : ChannelTypingIndicator(
                           channelId: resolvedChannel.id,
-                          entries: typingEntries,
+                          entries: visibleTypingEntries,
                         ),
                 ),
                 if (!resolvedChannel.isDm)
@@ -1201,11 +1191,11 @@ class ChannelDetailPage extends HookConsumerWidget {
                             : const Duration(milliseconds: 180),
                         curve: Curves.easeOutCubic,
                         alignment: Alignment.bottomCenter,
-                        child: typingEntries.isEmpty
+                        child: visibleTypingEntries.isEmpty
                             ? const SizedBox.shrink()
                             : ChannelTypingIndicator(
                                 channelId: resolvedChannel.id,
-                                entries: typingEntries,
+                                entries: visibleTypingEntries,
                               ),
                       ),
                       if (blockedCounterpart != null)

@@ -3,10 +3,30 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/theme/theme.dart';
+import '../channels/channel.dart';
 import 'person_actions.dart';
 import 'person_row.dart';
 
-/// Stands in for the composer in a one-to-one DM with someone I blocked:
+/// The other person in [channel] when it is a one-to-one DM and I blocked
+/// them; null otherwise. Such a DM shows [BlockedDmBar] instead of its
+/// composers and leaves out that person's typing.
+String? blockedDmCounterpart(
+  Channel? channel, {
+  required String? currentPubkey,
+  required Set<String> blocked,
+}) {
+  if (channel == null || !channel.isOneToOneDm) return null;
+  final me = currentPubkey?.toLowerCase();
+  for (final pubkey in channel.participantPubkeys) {
+    final normalized = pubkey.trim().toLowerCase();
+    if (normalized.isEmpty || normalized == me) continue;
+    if (blocked.contains(normalized)) return normalized;
+  }
+  return null;
+}
+
+/// Stands in for the composer (room or thread) in a one-to-one DM with
+/// someone I blocked:
 /// "You blocked Ann." (their name) and an Unblock button. Unblocking takes
 /// the same path as Settings > Blocked users; once the list no longer has
 /// them the page shows the composer again.

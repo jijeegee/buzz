@@ -9989,6 +9989,83 @@ void main() {
       );
     });
 
+    TypingEntry aliceTyping({String? threadHeadId}) => TypingEntry(
+      pubkey: 'alice',
+      expiresAtMs: DateTime.now().millisecondsSinceEpoch + 8000,
+      threadHeadId: threadHeadId,
+    );
+
+    testWidgets('a one-to-one DM hides their typing', (tester) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: const [],
+          channel: dm(const ['self', 'alice']),
+          users: users,
+          huddleCurrentPubkey: 'self',
+          blocked: const {'alice'},
+          typing: [aliceTyping()],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Alice is typing…'), findsNothing);
+    });
+
+    testWidgets('a group DM shows a blocked person typing', (tester) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: const [],
+          channel: dm(const ['self', 'alice', 'bob']),
+          users: users,
+          huddleCurrentPubkey: 'self',
+          blocked: const {'alice'},
+          typing: [aliceTyping()],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Alice is typing…'), findsOneWidget);
+    });
+
+    testWidgets('a thread in a one-to-one DM swaps its reply composer for '
+        'Unblock and hides their typing', (tester) async {
+      final root = _textMsg(id: 'root', pubkey: 'self', content: 'Root');
+      final head = formatTimeline([root]).single;
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [root],
+          channel: dm(const ['self', 'alice']),
+          users: users,
+          huddleCurrentPubkey: 'self',
+          blocked: const {'alice'},
+          typing: [aliceTyping(threadHeadId: 'root')],
+          threadReplies: const {'root': []},
+          home: ThreadDetailPage(
+            threadHead: head,
+            allMessages: [head],
+            channelId: _channelId,
+            currentPubkey: 'self',
+            isMember: true,
+            isArchived: false,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('You blocked Alice.'), findsOneWidget);
+      expect(find.byType(ComposeBar), findsNothing);
+      expect(find.text('Alice is typing…'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('blocked-dm-unblock')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.byKey(const Key('blocked-dm-bar')), findsNothing);
+      expect(find.byType(ComposeBar), findsOneWidget);
+      expect(find.text('Alice is typing…'), findsOneWidget);
+    });
+
     testWidgets('a group DM folds their messages and keeps the composer', (
       tester,
     ) async {
