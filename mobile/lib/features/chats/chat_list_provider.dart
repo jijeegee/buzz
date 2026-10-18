@@ -9,6 +9,7 @@ import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
 import '../channels/channel_live_events.dart';
+import '../people/blocked_users_provider.dart';
 import 'chat_list.dart';
 import 'chat_state_writer.dart';
 import 'thread_pins_provider.dart';
@@ -279,6 +280,14 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
           if (tag.length > 1 && tag[0] == 'e') tag[1],
       ];
       return (state: current, reload: chatListShowsAny(current, targets));
+    }
+    // A message from someone I blocked neither moves a row nor counts as
+    // unread, and never becomes its preview.
+    final author = event.pubkey.toLowerCase();
+    if (ref
+        .read(blockedPubkeysProvider)
+        .any((id) => id.toLowerCase() == author)) {
+      return (state: current, reload: false);
     }
     final result = applyLiveEventToChatList(
       current,

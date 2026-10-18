@@ -22,6 +22,24 @@ String personName(UserProfile? profile, [PersonSummary? summary]) {
   return 'Unknown';
 }
 
+/// What friends, block and report prompts call someone whose name is not
+/// known (yet): never "Unknown" and never a fragment of their key.
+const unnamedPersonLabel = 'this user';
+
+/// [name] as friends, block and report prompts show it mid-sentence:
+/// [unnamedPersonLabel] when blank or "Unknown".
+String personActionName(String? name) {
+  final trimmed = name?.trim() ?? '';
+  if (trimmed.isEmpty || trimmed == 'Unknown') return unnamedPersonLabel;
+  return trimmed;
+}
+
+/// [personActionName] at the start of a sentence.
+String personActionSubject(String? name) {
+  final who = personActionName(name);
+  return who == unnamedPersonLabel ? 'This user' : who;
+}
+
 /// The cached profile of [pubkey], watched alone.
 UserProfile? watchPersonProfile(WidgetRef ref, String pubkey) =>
     ref.watch(userCacheProvider.select((cache) => cache[pubkey]));

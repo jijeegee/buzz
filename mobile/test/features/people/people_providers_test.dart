@@ -149,6 +149,35 @@ void main() {
 
       expect(container.read(friendIdsProvider).value, {ann, bob});
     });
+
+    test('a change from another device arrives live', () async {
+      final container = containerFor();
+      session.follow(peopleKeys.public, [ann], createdAt: 100);
+      container.listen(friendIdsProvider, (_, _) {});
+      await pumpEventQueue();
+      expect(container.read(friendIdsProvider).value, {ann});
+
+      session.follow(peopleKeys.public, [ann, bob], createdAt: 200);
+      session.deliver(session.contacts.last);
+      await pumpEventQueue();
+      expect(container.read(friendIdsProvider).value, {ann, bob});
+    });
+
+    test('returning to the foreground re-reads the list', () async {
+      final container = containerFor();
+      session.follow(peopleKeys.public, [ann], createdAt: 100);
+      container.listen(friendIdsProvider, (_, _) {});
+      await pumpEventQueue();
+
+      // Changed elsewhere while the event was missed.
+      session.follow(peopleKeys.public, [bob], createdAt: 200);
+      final lifecycle =
+          container.read(appLifecycleProvider.notifier) as ManualLifecycle;
+      lifecycle.set(AppLifecycleState.paused);
+      lifecycle.set(AppLifecycleState.resumed);
+      await pumpEventQueue();
+      expect(container.read(friendIdsProvider).value, {bob});
+    });
   });
 
   group('blocked users', () {
@@ -202,6 +231,36 @@ void main() {
       await pumpEventQueue();
       expect(container.read(blockedPubkeysProvider), {ann});
       expect(api.calls, ['list', 'list', 'list']);
+    });
+
+    test('a good list is re-read quietly on resume', () async {
+      api.blocked.add(ann);
+      final container = containerFor();
+      final states = <AsyncValue<Set<String>>>[];
+      container.listen(blockedUsersProvider, (_, next) => states.add(next));
+      expect(await container.read(blockedUsersProvider.future), {ann});
+
+      // Blocked on another device.
+      api.blocked.add(bob);
+      final lifecycle =
+          container.read(appLifecycleProvider.notifier) as ManualLifecycle;
+      lifecycle.set(AppLifecycleState.paused);
+      lifecycle.set(AppLifecycleState.resumed);
+      await pumpEventQueue();
+      expect(container.read(blockedPubkeysProvider), {ann, bob});
+      expect(states.where((s) => s.isLoading), isEmpty);
+    });
+
+    test('a failed refresh keeps the list shown', () async {
+      api.blocked.add(ann);
+      final container = containerFor();
+      container.listen(blockedUsersProvider, (_, _) {});
+      expect(await container.read(blockedUsersProvider.future), {ann});
+
+      api.listFailures = 1;
+      await container.read(blockedUsersProvider.notifier).refresh();
+      expect(container.read(blockedUsersProvider).value, {ann});
+      expect(container.read(blockedUsersProvider).hasError, isFalse);
     });
 
     test('a refused block leaves the list unchanged', () async {

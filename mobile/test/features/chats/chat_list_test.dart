@@ -274,6 +274,54 @@ void main() {
       expect(chatRowPreviewText(event, isBlocked: (_) => false), 'secret');
     });
 
+    test('a blocked latest falls back to the newest visible message', () {
+      bool blocked(String pubkey) => pubkey == _them;
+      final events = [
+        _event(id: 'old', at: 10, pubkey: _me, content: 'mine'),
+        _event(id: 'mid', at: 20, pubkey: _them, content: 'secret'),
+        _event(
+          id: 'reply',
+          at: 25,
+          pubkey: _me,
+          tags: [
+            ['e', _root, '', 'root'],
+            ['e', _root, '', 'reply'],
+          ],
+        ),
+        _event(id: 'later', at: 40, pubkey: _me, content: 'after'),
+      ];
+      // A room: top-level only, no newer than the row's latest.
+      expect(
+        latestVisibleChatMessage(
+          events,
+          rootId: null,
+          before: 30,
+          isBlocked: blocked,
+        )?.id,
+        'old',
+      );
+      // A thread: its root and replies only.
+      expect(
+        latestVisibleChatMessage(
+          events,
+          rootId: _root,
+          before: 30,
+          isBlocked: blocked,
+        )?.id,
+        'reply',
+      );
+      // Nothing visible stored: no stand-in.
+      expect(
+        latestVisibleChatMessage(
+          [events[1]],
+          rootId: null,
+          before: 30,
+          isBlocked: blocked,
+        ),
+        isNull,
+      );
+    });
+
     test('no author name in front of the text', () {
       expect(
         chatRowPreviewText(_event(id: 'x', at: 1, content: 'hi there')),

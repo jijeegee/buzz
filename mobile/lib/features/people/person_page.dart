@@ -88,22 +88,35 @@ class PersonPage extends HookConsumerWidget {
 
     Future<void> toggleFriend() async {
       if (busy.value) return;
+      final removing = isFriend;
+      final who = personActionName(name);
+      if (removing && !await confirmRemoveFriend(context, who)) return;
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       busy.value = true;
       try {
         final controller = ref.read(friendsControllerProvider);
-        await (isFriend ? controller.remove(pk) : controller.add(pk));
+        await (removing ? controller.remove(pk) : controller.add(pk));
       } catch (error) {
         showError(
           friendlyError(
             error,
-            fallback: isFriend
+            fallback: removing
                 ? 'Couldn’t remove friend. Try again.'
                 : 'Couldn’t add friend. Try again.',
           ),
         );
+        return;
       } finally {
         if (context.mounted) busy.value = false;
       }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            removing ? 'Removed $who from friends' : 'Added $who to friends',
+          ),
+        ),
+      );
     }
 
     void toggleFavorite() {

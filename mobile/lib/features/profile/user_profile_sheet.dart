@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart' show ProviderListenable;
@@ -108,40 +107,35 @@ class UserProfileSheet extends HookConsumerWidget {
       ref.read(userCacheProvider.notifier).preload([pk]);
       return null;
     }, [pk]);
-    final copied = useState(false);
     final isOpeningDirectMessage = useState(false);
     final isBlocked = ref.watch(
       blockedPubkeysProvider.select((ids) => ids.contains(pk)),
     );
     final canBlock = ref.watch(accountOriginProvider) != null;
 
-    // Canonical npub for the copy action; null when [pubkey] is not a valid
-    // identity, in which case the copy tile is disabled — an invalid key is
-    // never placed on the clipboard.
-    final npub = fullNpub(pubkey);
-
     // The contextual label from the opening surface, so the sheet names the
     // identity exactly as the row that was tapped.
     final opener = names;
-    final displayName =
-        (opener != null ? ref.watch(opener) : watchIdentityNames(ref, {pk}))
-            .labelFor(pk);
+    final identityNames = opener != null
+        ? ref.watch(opener)
+        : watchIdentityNames(ref, {pk});
+    final displayName = identityNames.labelFor(pk);
+    // Block and report prompts never name someone by a key fragment: no
+    // same-name key suffix, and until a real name loads, "this user".
+    final qualifier = identityNames.resolve(pk)?.qualifier;
+    final plainName = qualifier != null && displayName.endsWith(' · $qualifier')
+        ? displayName.substring(0, displayName.length - ' · $qualifier'.length)
+        : displayName;
+    final actionName = plainName == shortPubkey(pk) ? '' : plainName;
     final avatarUrl = profile?.avatarUrl;
     final nip05 = profile?.nip05Handle;
     final initial =
         profile?.initial ?? (pubkey.isNotEmpty ? pubkey[0].toUpperCase() : '?');
 
-    Future<void> copyPublicKey() async {
-      if (npub == null) return;
-      await Clipboard.setData(ClipboardData(text: npub));
-      if (!context.mounted) return;
-      copied.value = true;
-      _showProfileCopyToast(context);
-      unawaited(
-        Future<void>.delayed(const Duration(seconds: 2), () {
-          if (context.mounted) copied.value = false;
-        }),
-      );
+    // A snack bar shows on the page behind this sheet, so the sheet closes
+    // before a block, unblock or report confirmation appears.
+    void closeSheet() {
+      if (context.mounted) Navigator.of(context).pop();
     }
 
     Future<void> openDirectMessage() async {
@@ -292,9 +286,9 @@ class UserProfileSheet extends HookConsumerWidget {
 
                     const SizedBox(height: Grid.xs + Grid.half),
 
-                    Row(
-                      children: [
-                        if (pk != currentPubkey) ...[
+                    if (pk != currentPubkey) ...[
+                      Row(
+                        children: [
                           Expanded(
                             child: KuzzActionTile(
                               icon: isOpeningDirectMessage.value
@@ -308,21 +302,8 @@ class UserProfileSheet extends HookConsumerWidget {
                               onTap: openDirectMessage,
                             ),
                           ),
-                          const SizedBox(width: Grid.twelve),
                         ],
-                        Expanded(
-                          child: KuzzActionTile(
-                            icon: copied.value
-                                ? LucideIcons.check
-                                : LucideIcons.key,
-                            label: copied.value ? 'Copied' : 'Copy public key',
-                            isEnabled: npub != null,
-                            onTap: copyPublicKey,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (pk != currentPubkey) ...[
+                      ),
                       const SizedBox(height: Grid.twelve),
                       Row(
                         children: [
@@ -338,13 +319,15 @@ class UserProfileSheet extends HookConsumerWidget {
                                           context,
                                           ref,
                                           pubkey: pk,
-                                          name: displayName,
+                                          name: actionName,
+                                          onStarted: closeSheet,
                                         )
                                       : confirmAndBlock(
                                           context,
                                           ref,
                                           pubkey: pk,
-                                          name: displayName,
+                                          name: actionName,
+                                          onConfirmed: closeSheet,
                                         ),
                                 ),
                               ),
@@ -360,7 +343,8 @@ class UserProfileSheet extends HookConsumerWidget {
                                 showReportSheet(
                                   context,
                                   pubkey: pk,
-                                  name: displayName,
+                                  name: actionName,
+                                  onSent: closeSheet,
                                 ),
                               ),
                             ),
@@ -403,47 +387,6 @@ class UserProfileSheet extends HookConsumerWidget {
       ),
     );
   }
-}
-
-/// Shows clipboard feedback above the bottom-sheet route. A regular SnackBar
-/// belongs to the page Scaffold, which sits behind the modal sheet.
-void _showProfileCopyToast(BuildContext context) {
-  final overlay = Overlay.of(context, rootOverlay: true);
-  final colors = context.colors;
-  final textStyle = context.textTheme.bodyMedium?.copyWith(
-    color: colors.onInverseSurface,
-  );
-  late final OverlayEntry entry;
-  entry = OverlayEntry(
-    builder: (overlayContext) => Positioned(
-      left: Grid.gutter,
-      right: Grid.gutter,
-      bottom: MediaQuery.viewPaddingOf(overlayContext).bottom + Grid.xs,
-      child: Material(
-        color: colors.inverseSurface,
-        elevation: 6,
-        borderRadius: BorderRadius.circular(Radii.lg),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Grid.xs,
-            vertical: Grid.twelve,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(LucideIcons.check, size: 18, color: colors.onInverseSurface),
-              const SizedBox(width: Grid.xxs),
-              Text('Public key copied', style: textStyle),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-  overlay.insert(entry);
-  Future<void>.delayed(const Duration(seconds: 2), () {
-    if (entry.mounted) entry.remove();
-  });
 }
 
 /// The read-only version of the presence control in Settings. A viewed profile

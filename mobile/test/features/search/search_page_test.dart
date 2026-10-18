@@ -3,6 +3,7 @@ import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/channels/message_content.dart';
 import 'package:kuzz/features/channels/small_avatar.dart';
+import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/features/profile/profile_provider.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_profile.dart';
@@ -968,6 +969,55 @@ void main() {
     expect(content.mentionNames, const {agentPubkey: 'Helper Bot'});
     expect(content.agentMentionPubkeys, contains(agentPubkey));
     expect(find.byIcon(LucideIcons.bot), findsOneWidget);
+  });
+
+  testWidgets('leaves out messages from people I blocked', (tester) async {
+    SearchHit hit(String id, String author, String content) => SearchHit(
+      eventId: id,
+      content: content,
+      kind: 9,
+      pubkey: author,
+      createdAt: 1,
+      score: 1,
+    );
+    final state = SearchState(
+      query: 'plan',
+      messageResults: [
+        hit('message-1', 'blocked-pubkey', 'secret plan'),
+        hit('message-2', 'author-pubkey', 'open plan'),
+      ],
+    );
+
+    await tester.pumpWidget(
+      WidgetHelpers.testable(
+        overrides: [
+          searchProvider.overrideWith(() => _FakeSearchNotifier(state)),
+          recentSearchesProvider.overrideWith(
+            () => _FakeRecentSearchesNotifier(const []),
+          ),
+          profileProvider.overrideWith(() => _FakeProfileNotifier()),
+          channelsProvider.overrideWith(() => _FakeChannelsNotifier(const [])),
+          userCacheProvider.overrideWith(
+            () => _FakeUserCacheNotifier(
+              const UserProfile(pubkey: 'author-pubkey'),
+            ),
+          ),
+          knownAgentPubkeysProvider.overrideWith((ref) => const {}),
+          blockedPubkeysProvider.overrideWithValue(const {'blocked-pubkey'}),
+        ],
+        child: const SearchPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('search-message-row-message-1')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('search-message-row-message-2')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('does not label an unjoined channel as having zero members', (

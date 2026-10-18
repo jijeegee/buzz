@@ -242,7 +242,9 @@ class _ChatRow extends HookConsumerWidget {
     );
   }
 
-  /// The cleaned preview with each `@mention` by its cached name.
+  /// The cleaned preview with each `@mention` by its cached name. When the
+  /// latest message is from someone I blocked, the newest earlier one stored
+  /// on this device stands in; with none, a neutral line.
   String _watchPreview(WidgetRef ref, NostrEvent latest) {
     final author = latest.pubkey.toLowerCase();
     final blocked = ref.watch(
@@ -250,8 +252,25 @@ class _ChatRow extends HookConsumerWidget {
         (ids) => ids.any((id) => id.toLowerCase() == author),
       ),
     );
-    final text = chatRowPreviewText(latest, isBlocked: (_) => blocked);
-    if (blocked) return text;
+    if (blocked) {
+      final visible = ref
+          .watch(
+            chatRowVisibleLatestProvider((
+              channelId: row.channelId,
+              rootId: row.isThread ? row.rootId : null,
+              before: latest.createdAt,
+            )),
+          )
+          .value;
+      if (visible == null) return blockedMessageLabel;
+      return _watchMentions(ref, visible);
+    }
+    return _watchMentions(ref, latest);
+  }
+
+  /// [event]'s cleaned preview with each `@mention` by its cached name.
+  String _watchMentions(WidgetRef ref, NostrEvent latest) {
+    final text = chatRowPreviewText(latest);
     final tagged = mentionedPubkeysFromTags(latest.tags);
     if (tagged.isEmpty) return text;
     final directory = ref.watch(agentDirectoryDisplayNamesProvider);

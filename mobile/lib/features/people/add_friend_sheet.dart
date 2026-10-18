@@ -8,6 +8,8 @@ import '../../shared/auth/account/account_api.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import '../channels/channel.dart';
+import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';
 import 'blocked_users_provider.dart';
 import 'friends_provider.dart';
@@ -17,13 +19,21 @@ import 'person_row.dart';
 
 /// "Add friend": type someone's exact Kuzz ID or email, find that one
 /// person, add them. No partial search, so nobody's email can be guessed.
-Future<void> showAddFriendSheet(BuildContext context) =>
-    showKuzzModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      title: 'Add friend',
-      builder: (_) => const AddFriendSheet(),
-    );
+/// After adding, "Message" closes the sheet and opens our conversation.
+Future<void> showAddFriendSheet(BuildContext context) async {
+  final channel = await showKuzzModalBottomSheet<Channel>(
+    context: context,
+    isScrollControlled: true,
+    title: 'Add friend',
+    builder: (_) => const AddFriendSheet(),
+  );
+  if (channel == null || !context.mounted) return;
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => ChannelDetailPage(channel: channel),
+    ),
+  );
+}
 
 class AddFriendSheet extends HookConsumerWidget {
   const AddFriendSheet({super.key});
@@ -33,6 +43,9 @@ class AddFriendSheet extends HookConsumerWidget {
     final controller = useTextEditingController();
     final searching = useState(false);
     final adding = useState(false);
+    // Who was just added here: shown as "Added" with a Message button.
+    final added = useState<String?>(null);
+    final opening = useState(false);
     final found = useState<PersonSummary?>(null);
     final message = useState<String?>(null);
     final generation = useRef(0);
@@ -89,11 +102,33 @@ class AddFriendSheet extends HookConsumerWidget {
         }
         return;
       }
-      if (context.mounted) adding.value = false;
+      if (context.mounted) {
+        adding.value = false;
+        added.value = person.pubkey;
+      }
+    }
+
+    Future<void> openMessage(PersonSummary person) async {
+      if (opening.value) return;
+      opening.value = true;
+      try {
+        final channel = await ref
+            .read(channelActionsProvider)
+            .openDm(pubkeys: [person.pubkey]);
+        if (context.mounted) Navigator.of(context).pop(channel);
+      } catch (error) {
+        if (!context.mounted) return;
+        opening.value = false;
+        message.value = friendlyError(
+          error,
+          fallback: 'Couldn’t open the conversation. Try again.',
+        );
+      }
     }
 
     final person = found.value;
     final isFriend = person != null && friends.contains(person.pubkey);
+    final justAdded = person != null && added.value == person.pubkey;
 
     return SafeArea(
       top: false,
@@ -174,7 +209,28 @@ class AddFriendSheet extends HookConsumerWidget {
                 subtitle: person.username == null
                     ? null
                     : Text('@${person.username}'),
-                trailing: isFriend
+                trailing: justAdded
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Semantics(
+                            liveRegion: true,
+                            child: const Text(
+                              'Added',
+                              key: Key('add-friend-added'),
+                            ),
+                          ),
+                          const SizedBox(width: Grid.xxs),
+                          FilledButton.tonal(
+                            key: const Key('add-friend-open-dm'),
+                            onPressed: opening.value
+                                ? null
+                                : () => unawaited(openMessage(person)),
+                            child: const Text('Message'),
+                          ),
+                        ],
+                      )
+                    : isFriend
                     ? const Text('Friend')
                     : FilledButton.tonal(
                         key: const Key('add-friend-add'),

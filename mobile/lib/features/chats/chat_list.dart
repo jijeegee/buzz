@@ -610,6 +610,32 @@ String chatRowPreviewText(
   return text;
 }
 
+/// The newest message among [events] (one channel's) that a row could show
+/// instead of its latest when that one is from someone I blocked: no newer
+/// than [before], not from a blocked author, and in the row's place: the
+/// thread under [rootId], or the room's main timeline when [rootId] is null.
+NostrEvent? latestVisibleChatMessage(
+  Iterable<NostrEvent> events, {
+  required String? rootId,
+  required int before,
+  required bool Function(String pubkey) isBlocked,
+}) {
+  NostrEvent? best;
+  for (final event in events) {
+    if (!_messageKinds.contains(event.kind) || event.createdAt > before) {
+      continue;
+    }
+    if (isBlocked(event.pubkey.toLowerCase())) continue;
+    final eventRoot = threadReferenceOf(event.tags).rootId;
+    final inPlace = rootId != null
+        ? event.id == rootId || eventRoot == rootId
+        : eventRoot == null || isBroadcastReply(event.tags);
+    if (!inPlace) continue;
+    if (best == null || event.createdAt > best.createdAt) best = event;
+  }
+  return best;
+}
+
 /// One entry of the By channel view.
 abstract class ChatGroupEntry {
   const ChatGroupEntry();

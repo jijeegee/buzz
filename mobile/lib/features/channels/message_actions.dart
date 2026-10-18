@@ -997,7 +997,7 @@ void _reportMessage({
     showReportSheet(
       context,
       pubkey: author,
-      name: name == 'Unknown' ? 'this person' : name,
+      name: personActionName(name),
       eventId: message.id,
     ),
   );
