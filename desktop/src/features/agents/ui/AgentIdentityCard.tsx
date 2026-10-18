@@ -12,6 +12,8 @@ type AgentIdentityCardProps = {
   footerAccessory?: ReactNode;
   dataTestId: string;
   label: string;
+  /** Shown just before the name: the robot of the device the agent runs on. */
+  labelBadge?: ReactNode;
   /**
    * Second line under the agent name: the effective description when one
    * resolves (owner-authored — see `lib/agentDescription.ts`),
@@ -31,6 +33,7 @@ export function AgentIdentityCard({
   dataTestId,
   footerAccessory,
   label,
+  labelBadge,
   subtitle,
   onClick,
   statusBadge,
@@ -78,9 +81,20 @@ export function AgentIdentityCard({
 
       <div className="pointer-events-none absolute right-3 bottom-3 left-3 z-30 flex min-w-0 items-end gap-2 text-left text-sm leading-5">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="min-w-0 truncate font-semibold text-foreground tracking-normal">
-            {label}
-          </span>
+          {labelBadge ? (
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="pointer-events-auto flex shrink-0 empty:hidden">
+                {labelBadge}
+              </span>
+              <span className="min-w-0 truncate font-semibold text-foreground tracking-normal">
+                {label}
+              </span>
+            </span>
+          ) : (
+            <span className="min-w-0 truncate font-semibold text-foreground tracking-normal">
+              {label}
+            </span>
+          )}
           {subtitle ? (
             <span className="line-clamp-2 min-w-0 text-xs font-normal text-muted-foreground">
               {subtitle}
