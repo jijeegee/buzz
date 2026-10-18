@@ -8989,7 +8989,7 @@ void main() {
     });
 
     testWidgets(
-      'profile sheet heading falls back to the compact npub for blank cached names',
+      'profile sheet heading falls back to a neutral label for blank cached names',
       (tester) async {
         const alicePubkey =
             'a11ce00000000000000000000000000000000000000000000000000000000000';
@@ -8999,8 +8999,8 @@ void main() {
         // The membership row opens the sheet for the joined member (bob).
         // His cached display name is relay-valid but blank (empty and
         // whitespace-only), so the heading must resolve through the shared
-        // nonblank-name label contract — the compact npub of the b0b key,
-        // never a blank heading. Keyed remounts keep each ProviderScope
+        // nonblank-name label contract to a neutral "Kuzz user" — never a
+        // blank heading and never a key. Keyed remounts keep each ProviderScope
         // (and its user-cache override) fresh between scenarios.
         for (final blankName in const ['', '   ']) {
           await tester.pumpWidget(
@@ -9046,9 +9046,16 @@ void main() {
           expect(
             find.descendant(
               of: find.byType(UserProfileSheet),
-              matching: find.text('npub1kzc…uyv8'),
+              matching: find.text('Kuzz user'),
             ),
             findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: find.byType(UserProfileSheet),
+              matching: find.textContaining('npub'),
+            ),
+            findsNothing,
           );
           // The full hex key is never rendered either.
           expect(find.text(bobPubkey), findsNothing);

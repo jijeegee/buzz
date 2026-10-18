@@ -10,6 +10,7 @@ import 'package:kuzz/features/settings/blocked_users_page.dart';
 import 'package:kuzz/features/settings/kuzz_id_page.dart';
 import 'package:kuzz/features/settings/people_settings.dart';
 import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/identity_names/identity_names_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:kuzz/shared/widgets/bee_refresh_indicator.dart';
@@ -33,6 +34,7 @@ void main() {
     Set<String> favorites = const {},
     List<String> agents = const [],
     bool withAccount = true,
+    Map<String, String>? names,
   }) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
@@ -44,7 +46,7 @@ void main() {
           api: withAccount ? api : null,
           favorites: favorites,
           agents: agents,
-          names: {ann: 'Ann', bob: 'Bob', cat: 'Cat', dan: 'Dan'},
+          names: names ?? {ann: 'Ann', bob: 'Bob', cat: 'Cat', dan: 'Dan'},
         ),
         child: MaterialApp(theme: AppTheme.light(), home: page),
       ),
@@ -316,6 +318,42 @@ void main() {
       expect(find.text('Report sent to the moderators'), findsOneWidget);
     });
 
+    testWidgets('a same-name key suffix stays out of the prompts', (
+      tester,
+    ) async {
+      // Two people named Ann: the opener's context tells them apart with a
+      // key suffix, which the Block prompt leaves out.
+      await pumpPage(
+        tester,
+        Consumer(
+          builder: (context, ref, _) => Scaffold(
+            body: TextButton(
+              onPressed: () {
+                final opened = ref.read(identityNameSourcesProvider).scope([
+                  ann,
+                  dan,
+                ]);
+                showUserProfileSheet(
+                  context,
+                  ann,
+                  names: liveIdentityNamesProvider(opened),
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+        names: {ann: 'Ann', dan: 'Ann'},
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Ann · '), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('profile-sheet-block')));
+      await tester.pumpAndSettle();
+      expect(find.text('Block Ann?'), findsOneWidget);
+    });
+
     testWidgets('an unnamed person is never named by a key fragment', (
       tester,
     ) async {
@@ -326,6 +364,11 @@ void main() {
       await tester.tap(find.byKey(const Key('profile-sheet-block')));
       await tester.pumpAndSettle();
       expect(find.text('Block this user?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      // The heading is neutral too.
+      expect(find.text('Kuzz user'), findsOneWidget);
+      expect(find.textContaining('npub'), findsNothing);
     });
   });
 

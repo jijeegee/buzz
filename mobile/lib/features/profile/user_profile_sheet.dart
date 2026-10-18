@@ -55,6 +55,9 @@ void showUserProfileSheet(
   });
 }
 
+/// The sheet's heading for someone whose name has not loaded: never a key.
+const unnamedProfileHeading = 'Kuzz user';
+
 class UserProfileSheet extends HookConsumerWidget {
   final String pubkey;
 
@@ -119,14 +122,21 @@ class UserProfileSheet extends HookConsumerWidget {
     final identityNames = opener != null
         ? ref.watch(opener)
         : watchIdentityNames(ref, {pk});
-    final displayName = identityNames.labelFor(pk);
+    final label = identityNames.labelFor(pk);
     // Block and report prompts never name someone by a key fragment: no
     // same-name key suffix, and until a real name loads, "this user".
     final qualifier = identityNames.resolve(pk)?.qualifier;
-    final plainName = qualifier != null && displayName.endsWith(' · $qualifier')
-        ? displayName.substring(0, displayName.length - ' · $qualifier'.length)
-        : displayName;
-    final actionName = plainName == shortPubkey(pk) ? '' : plainName;
+    final plainName = qualifier != null && label.endsWith(' · $qualifier')
+        ? label.substring(0, label.length - ' · $qualifier'.length)
+        : label;
+    final unnamed = plainName == shortPubkey(pk);
+    final actionName = unnamed ? '' : plainName;
+    // The heading never shows a key either: someone with no name yet is a
+    // "Kuzz user" (not "Unknown", which the presence chip below already
+    // uses); a malformed identity keeps its own neutral label.
+    final displayName = unnamed && plainName != unknownIdentityLabel
+        ? unnamedProfileHeading
+        : label;
     final avatarUrl = profile?.avatarUrl;
     final nip05 = profile?.nip05Handle;
     final initial =

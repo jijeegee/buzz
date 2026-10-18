@@ -8,8 +8,11 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/lucide_star_icon.dart';
 
+/// What People surfaces call someone with no name yet — never a key.
+const unknownPersonLabel = 'Unknown';
+
 /// A person's name for People surfaces: display name, then handle, then
-/// "Unknown" — never a key.
+/// [unknownPersonLabel] — never a key.
 String personName(UserProfile? profile, [PersonSummary? summary]) {
   final name = profile?.displayName?.trim();
   if (name != null && name.isNotEmpty) return name;
@@ -19,7 +22,7 @@ String personName(UserProfile? profile, [PersonSummary? summary]) {
   if (handle != null && handle.isNotEmpty) return handle;
   final username = summary?.username;
   if (username != null && username.isNotEmpty) return '@$username';
-  return 'Unknown';
+  return unknownPersonLabel;
 }
 
 /// What friends, block and report prompts call someone whose name is not
@@ -30,7 +33,9 @@ const unnamedPersonLabel = 'this user';
 /// [unnamedPersonLabel] when blank or "Unknown".
 String personActionName(String? name) {
   final trimmed = name?.trim() ?? '';
-  if (trimmed.isEmpty || trimmed == 'Unknown') return unnamedPersonLabel;
+  if (trimmed.isEmpty || trimmed == unknownPersonLabel) {
+    return unnamedPersonLabel;
+  }
   return trimmed;
 }
 
