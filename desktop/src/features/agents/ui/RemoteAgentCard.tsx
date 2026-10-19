@@ -2,7 +2,6 @@ import * as React from "react";
 import { CopyPlus, EllipsisVertical, Pencil, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 
-import { useRelayAgentsQuery } from "@/features/agents/hooks";
 import {
   type ManagedAgentActionResult,
   startRemoteOwnedAgent,
@@ -10,10 +9,9 @@ import {
 } from "@/features/agents/lib/managedAgentControlActions";
 import type { AgentAvailabilityReader } from "@/features/agents/lib/useAgentAvailability";
 import type { RemoteOwnedAgentHere } from "@/features/agents/useRemoteOwnedAgents";
-import { useChannelsQuery } from "@/features/channels/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import { agentHostDeviceLabel } from "@/features/profile/ui/AgentBadgeIcon";
-import type { AgentPersona, Channel, RelayAgent } from "@/shared/api/types";
+import type { AgentPersona } from "@/shared/api/types";
 import { useAuthDeviceLabels } from "@/shared/api/useAuthDeviceNames";
 import { deviceRobotTag } from "@/shared/lib/deviceRobot";
 import {
@@ -183,25 +181,16 @@ type RemoteAgentCommandInput = { pubkey: string; hostName?: string | null };
 
 function useRemoteAgentCommand(
   command: (
-    input: RemoteAgentCommandInput & {
-      channels: Channel[];
-      relayAgents: RelayAgent[];
-    },
+    input: RemoteAgentCommandInput,
   ) => Promise<ManagedAgentActionResult>,
   verb: "start" | "stop",
 ) {
-  const channelsQuery = useChannelsQuery();
-  const relayAgentsQuery = useRelayAgentsQuery();
   const [isPending, setIsPending] = React.useState(false);
   const run = React.useCallback(
     async (input: RemoteAgentCommandInput) => {
       setIsPending(true);
       try {
-        const result = await command({
-          ...input,
-          channels: channelsQuery.data ?? [],
-          relayAgents: relayAgentsQuery.data ?? [],
-        });
+        const result = await command(input);
         if (result.noticeMessage) toast.success(result.noticeMessage);
       } catch (error) {
         toast.error(
@@ -213,7 +202,7 @@ function useRemoteAgentCommand(
         setIsPending(false);
       }
     },
-    [channelsQuery.data, command, relayAgentsQuery.data, verb],
+    [command, verb],
   );
   return { isPending, run };
 }

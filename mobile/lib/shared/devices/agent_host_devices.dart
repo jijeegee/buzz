@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../auth/account/account_api.dart';
-import '../auth/token/token_session_provider.dart';
 import '../relay/relay.dart';
 import 'device_robot.dart';
 
@@ -297,7 +296,7 @@ final deviceRobotAutoAssignProvider = Provider<void>((ref) {
   final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
   if (owner == null || owner.isEmpty) return;
   if (ref.watch(ownDeviceEventsLoadedProvider) != owner) return;
-  final origin = ref.watch(activeTokenOriginProvider);
+  final origin = ref.watch(accountOriginProvider);
   if (origin == null) return;
   final devices = ref.watch(accountDevicesProvider(origin)).value;
   if (devices == null || devices.isEmpty) return;
@@ -318,7 +317,7 @@ final deviceRobotAutoAssignProvider = Provider<void>((ref) {
 final agentHostDevicesProvider = Provider<Map<String, String>>((ref) {
   final owner = ref.watch(myPubkeyProvider);
   if (owner == null || owner.isEmpty) return const {};
-  final origin = ref.watch(activeTokenOriginProvider);
+  final origin = ref.watch(accountOriginProvider);
   final devices = origin == null
       ? null
       : ref.watch(accountDevicesProvider(origin)).value;
@@ -386,11 +385,11 @@ final deviceRobotOverridesProvider = Provider<Map<String, DeviceRobotVariant>>((
 });
 
 /// Relay device id (lowercase) → its name, from the token relay's device
-/// list (`GET /auth/devices`); empty without a token relay or on failure.
+/// list (`GET /auth/devices`); empty without an account or on failure.
 final agentHostDeviceNamesProvider = Provider.autoDispose<Map<String, String>>((
   ref,
 ) {
-  final origin = ref.watch(activeTokenOriginProvider);
+  final origin = ref.watch(accountOriginProvider);
   if (origin == null) return const {};
   final devices = ref.watch(accountDevicesProvider(origin)).value;
   return {
@@ -402,7 +401,7 @@ final agentHostDeviceNamesProvider = Provider.autoDispose<Map<String, String>>((
 /// The relay device id (lowercase) this app is signed in on, from the token
 /// relay's device list; `null` without a token relay or on failure.
 final currentAccountDeviceIdProvider = Provider.autoDispose<String?>((ref) {
-  final origin = ref.watch(activeTokenOriginProvider);
+  final origin = ref.watch(accountOriginProvider);
   if (origin == null) return null;
   final devices = ref.watch(accountDevicesProvider(origin)).value;
   for (final device in devices ?? const <AccountDevice>[]) {
