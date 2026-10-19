@@ -678,7 +678,7 @@ for (const replacement of [
     await panel.getByTestId("send-message").click();
     await expect(panel.getByTestId("edit-target")).toHaveCount(0);
     await openMenu();
-    await page.getByRole("menuitem", { name: "Send to channel" }).click();
+    await page.getByRole("menuitem", { name: "Send to group" }).click();
     await expect.poll(() => recipients(page, replacement)).toEqual([expected]);
     await waitForAnimations(page);
     await page.screenshot({
@@ -779,7 +779,7 @@ for (const mixed of [false, true]) {
     await panel.getByTestId("send-message").click();
     await expect(panel.getByTestId("edit-target")).toHaveCount(0);
     await openMenu();
-    await page.getByRole("menuitem", { name: "Send to channel" }).click();
+    await page.getByRole("menuitem", { name: "Send to group" }).click();
     await expect.poll(() => recipients(page, replacement)).toEqual([expected]);
     await waitForAnimations(page);
     await page.screenshot({

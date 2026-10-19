@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { X } from "lucide-react";
+import { SmilePlus, X } from "lucide-react";
 
 import { EmojiPicker } from "@/features/custom-emoji/ui/EmojiPicker";
 import {
@@ -115,7 +115,7 @@ function SectionNameDialog({
                     {icon ? (
                       <StatusEmoji className="h-5 w-5" value={icon} />
                     ) : (
-                      <span className="text-sm font-medium">#</span>
+                      <SmilePlus className="h-4 w-4 text-muted-foreground" />
                     )}
                   </button>
                 </PopoverTrigger>
@@ -188,7 +188,7 @@ export function CreateSectionDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Create section"
-      description="Sections let you group related channels in the sidebar."
+      description="Sections let you organize related groups in the sidebar."
       initialValue=""
       confirmLabel="Create"
       isConfirmDisabled={(trimmed) => trimmed.length === 0}
@@ -246,11 +246,11 @@ export function DeleteSectionAlertDialog({
   onConfirm,
 }: DeleteSectionAlertDialogProps) {
   const channelLabel =
-    channelCount === 1 ? "1 channel" : `${channelCount} channels`;
+    channelCount === 1 ? "1 group" : `${channelCount} groups`;
   const description =
     channelCount === 0
-      ? `Delete section "${sectionName}"? It has no channels.`
-      : `Delete section "${sectionName}"? Its ${channelLabel} will move back to the default Channels group.`;
+      ? `Delete section "${sectionName}"? It has no groups.`
+      : `Delete section "${sectionName}"? Its ${channelLabel} will move back to the default Groups section.`;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -298,7 +298,7 @@ export function LeaveChannelAlertDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {isConversation ? "Leave conversation" : "Leave channel"}
+            {isConversation ? "Leave conversation" : "Leave group"}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {isConversation

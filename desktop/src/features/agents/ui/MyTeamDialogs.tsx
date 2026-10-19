@@ -129,7 +129,7 @@ export function MyTeamDialog({
             <DialogTitle>{team ? "Edit team" : "New team"}</DialogTitle>
             <DialogDescription>
               A team is a group of your agents, on any of your computers. Adding
-              it to a channel adds these agents.
+              it to a group adds these agents.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
@@ -303,8 +303,8 @@ export function AddMyTeamToChannelDialog({
       const added = result.added.length;
       onAdded(
         added === 0
-          ? `${team.name} is already in #${channel.name}.`
-          : `Added ${added === 1 ? "1 agent" : `${added} agents`} of ${team.name} to #${channel.name}.`,
+          ? `${team.name} is already in ${channel.name}.`
+          : `Added ${added === 1 ? "1 agent" : `${added} agents`} of ${team.name} to ${channel.name}.`,
       );
       onOpenChange(false);
     } catch {
@@ -325,9 +325,9 @@ export function AddMyTeamToChannelDialog({
       >
         <div className="flex max-h-[85vh] flex-col">
           <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
-            <DialogTitle>Add {team?.name ?? "team"} to a channel</DialogTitle>
+            <DialogTitle>Add {team?.name ?? "team"} to a group</DialogTitle>
             <DialogDescription>
-              Adds these agents to the channel. No new agents are made.
+              Adds these agents to the group. No new agents are made.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
@@ -349,7 +349,7 @@ export function AddMyTeamToChannelDialog({
                 className="text-sm font-medium"
                 htmlFor="my-team-channel-id"
               >
-                Channel
+                Group
               </label>
               <select
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs"
@@ -359,7 +359,7 @@ export function AddMyTeamToChannelDialog({
                 value={channelId}
               >
                 {channels.length === 0 ? (
-                  <option value="">No channels available</option>
+                  <option value="">No groups available</option>
                 ) : null}
                 {channels.map((other) => (
                   <option key={other.id} value={other.id}>
@@ -409,7 +409,7 @@ export function AddMyTeamToChannelDialog({
               size="sm"
               type="button"
             >
-              {mutation.isPending ? "Adding…" : "Add to channel"}
+              {mutation.isPending ? "Adding…" : "Add to group"}
             </Button>
           </div>
         </div>
@@ -435,7 +435,7 @@ export function MyTeamDeleteDialog({
           <AlertDialogTitle>Delete team?</AlertDialogTitle>
           <AlertDialogDescription>
             {team
-              ? `Delete "${team.name}". Its agents keep running and stay in their channels.`
+              ? `Delete "${team.name}". Its agents keep running and stay in their groups.`
               : "Delete this team."}
           </AlertDialogDescription>
         </AlertDialogHeader>

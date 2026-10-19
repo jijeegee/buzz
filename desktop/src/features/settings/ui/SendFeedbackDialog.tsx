@@ -168,7 +168,7 @@ export function SendFeedbackDialog({
             data-testid="feedback-privacy-disclosure"
           >
             Feedback is sent privately to this Kuzz deployment and is not posted
-            to a channel. Attachments are uploaded before you send.
+            to a group. Attachments are uploaded before you send.
           </p>
         </DialogHeader>
 

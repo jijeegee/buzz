@@ -221,7 +221,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            When this is off, only people in your channels can find you.
+            When this is off, only people in your groups can find you.
           </p>
         </div>
         <Switch
@@ -251,7 +251,7 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
 
   return (
     <SettingsOptionGroup
-      description="Blocked people can't reach you, and their messages in shared channels are hidden."
+      description="Blocked people can't reach you, and their messages in shared groups are hidden."
       title="Blocked users"
     >
       {blockedQuery.isLoading ? (

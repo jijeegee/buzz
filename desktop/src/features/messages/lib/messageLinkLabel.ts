@@ -3,7 +3,7 @@ export type MessageLinkLabelVariant = "default" | "sent-from-thread";
 export const MESSAGE_LINK_PREFIX = "Thread in";
 
 export function getMessageLinkChannelLabel(channelName: string): string {
-  return `#${channelName}`;
+  return `${channelName}`;
 }
 
 export function getMessageLinkLabel({

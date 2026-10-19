@@ -558,14 +558,14 @@ function describeSystemEvent(
       if (!payload.target) return null;
       return {
         title: membershipTitle,
-        action: "joined, then left the channel",
+        action: "joined, then left the group",
       };
     case "member_joined": {
       if (!payload.actor || !payload.target) return null;
       if (normalizePubkey(payload.actor) === normalizePubkey(payload.target)) {
         return {
           title: membershipTitle,
-          action: "joined the channel",
+          action: "joined the group",
         };
       }
       return {
@@ -587,12 +587,12 @@ function describeSystemEvent(
     case "member_left":
       return {
         title: actorName,
-        action: "left the channel",
+        action: "left the group",
       };
     case "member_removed":
       return {
         title: actorName,
-        action: <>removed {targetName} from the channel</>,
+        action: <>removed {targetName} from the group</>,
       };
     case "topic_changed":
       return {
@@ -612,17 +612,17 @@ function describeSystemEvent(
     case "channel_created":
       return {
         title: actorName,
-        action: "created this channel",
+        action: "created this group",
       };
     case "channel_archived":
       return {
         title: actorName,
-        action: "archived this channel",
+        action: "archived this group",
       };
     case "channel_unarchived":
       return {
         title: actorName,
-        action: "unarchived this channel",
+        action: "unarchived this group",
       };
     case "message_deleted": {
       // Room-facing tombstone. When a moderator removed the message, the relay

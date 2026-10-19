@@ -54,24 +54,22 @@ export function ProjectChannelManagement({
               ownerControlAgentPubkey,
               project,
             });
-            toast.success(`Channel "#${result.channel.name}" created.`);
+            toast.success(`Group "${result.channel.name}" created.`);
             await goChannel(result.channel.id);
           }}
           onOpenChange={setCreateOpen}
           testId="create-project-channel-dialog"
-          title="Create a project channel"
+          title="Create a project group"
         />
       ) : null}
       <Button
-        aria-label="Add channel"
+        aria-label="Add group"
         className="h-6 w-6 shrink-0 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         data-testid="add-project-channel"
         disabled={!canEdit}
         onClick={() => setCreateOpen(true)}
         size="icon"
-        title={
-          canEdit ? "Add channel" : "Only the project owner can add channels"
-        }
+        title={canEdit ? "Add group" : "Only the project owner can add groups"}
         type="button"
         variant="ghost"
       >

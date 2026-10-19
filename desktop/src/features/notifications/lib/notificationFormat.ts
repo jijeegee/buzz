@@ -15,7 +15,7 @@ export function resolveNotificationChannelLabel(
   if (!channelId) return null;
   const channel = channels.find((c) => c.id === channelId);
   const name = channel?.name?.trim();
-  return name ? `#${name}` : null;
+  return name ? `${name}` : null;
 }
 
 /**
@@ -92,7 +92,7 @@ export function formatMessageNotification(opts: {
     return { title: senderName ?? channelName ?? "Direct message", body };
   }
 
-  const channelLabel = channelName ? `#${channelName}` : null;
+  const channelLabel = channelName ? `${channelName}` : null;
   const prefix =
     source === "mention"
       ? senderName

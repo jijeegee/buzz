@@ -752,7 +752,7 @@ export function useAttachManagedAgentToChannelMutation(
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return attachManagedAgentToChannel(effectiveChannelId, rest);
@@ -819,7 +819,7 @@ export function useEnsureChannelAgentPresetMutation(channelId: string | null) {
       input: EnsureChannelAgentPresetInput,
     ): Promise<EnsureChannelAgentPresetResult> => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return ensureChannelAgentPresetInChannel(channelId, input);
@@ -843,7 +843,7 @@ export function useCreateChannelManagedAgentMutation(channelId: string | null) {
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       const result = await createChannelManagedAgents(effectiveChannelId, [
@@ -905,7 +905,7 @@ export function useProvisionChannelManagedAgentMutation(
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       const [managedAgents, members, personas] = await Promise.all([
@@ -954,7 +954,7 @@ export function useCreateChannelManagedAgentsMutation(
       inputs: readonly CreateChannelManagedAgentInput[],
     ): Promise<CreateChannelManagedAgentsResult> => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return createChannelManagedAgents(channelId, inputs);

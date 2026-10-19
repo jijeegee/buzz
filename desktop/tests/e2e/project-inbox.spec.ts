@@ -167,7 +167,7 @@ test("Kuzz Git pull request renders and stays actionable in Inbox", async ({
     .toBe(1);
   await expect(
     detail.getByRole("button", {
-      name: "Open author-claimed origin channel #general",
+      name: "Open author-claimed origin group general",
     }),
   ).toBeVisible();
   const metadataPhrases = detail.locator("[data-project-metadata-phrase]");

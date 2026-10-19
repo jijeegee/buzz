@@ -296,7 +296,7 @@ test.describe("channel activity hover preview", () => {
     expect(enterScale).toBe("1");
 
     const heading = popover.getByRole("heading", {
-      name: "Channel activity",
+      name: "Group activity",
     });
     await expect(heading).toBeVisible();
     await expect(heading).toHaveCSS("backdrop-filter", /blur/);

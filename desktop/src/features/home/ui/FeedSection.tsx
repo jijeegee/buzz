@@ -90,7 +90,7 @@ function feedHeadline(item: FeedItem) {
         return "Agent update";
       }
 
-      return "Channel update";
+      return "Group update";
   }
 }
 
@@ -181,7 +181,7 @@ export function FeedSection({
               >
                 {canOpenChannel ? (
                   <button
-                    aria-label={`Open ${item.channelName || "channel"}`}
+                    aria-label={`Open ${item.channelName || "group"}`}
                     className="absolute inset-0"
                     data-testid={`home-feed-open-${item.id}`}
                     onClick={() => {
@@ -224,7 +224,7 @@ export function FeedSection({
                   </span>
                   {item.channelName ? (
                     <span className="text-2xs text-primary/80">
-                      #{item.channelName}
+                      {item.channelName}
                     </span>
                   ) : null}
                   <span className="ml-auto shrink-0 text-2xs text-muted-foreground/60">

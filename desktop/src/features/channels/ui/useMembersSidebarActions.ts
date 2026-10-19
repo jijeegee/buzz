@@ -278,10 +278,10 @@ export function useMembersSidebarActions({
       },
       actionKey: "bulk-remove",
       agents: removableManagedBots,
-      failureMessage: "Failed to remove bot from channel.",
+      failureMessage: "Failed to remove bot from group.",
       onSettled: invalidateSidebarQueries,
       successMessage: (count) =>
-        `Removed ${formatCountLabel(count, "managed bot", "managed bots")} from this channel.`,
+        `Removed ${formatCountLabel(count, "managed bot", "managed bots")} from this group.`,
     });
   }
 
@@ -310,7 +310,7 @@ export function useMembersSidebarActions({
 
   async function removeManagedBotMembership(pubkey: string) {
     if (!channelId) {
-      throw new Error("No channel selected.");
+      throw new Error("No group selected.");
     }
 
     await removeChannelMember(channelId, pubkey);

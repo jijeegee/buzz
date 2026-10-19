@@ -36,4 +36,4 @@ export function canAddChannelMembers({
 
 /** Explains a denied add so the user isn't left guessing at a missing button. */
 export const PRIVATE_CHANNEL_ADD_DENIED_MESSAGE =
-  "Only channel members can add people to a private channel.";
+  "Only group members can add people to a private group.";

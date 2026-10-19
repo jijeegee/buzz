@@ -274,12 +274,19 @@ function SidebarChannelIcon({
       <ConversationLetterAvatar
         channelId={channel.id}
         channelLabel={channel.name}
+        isPrivate={channel.visibility === "private"}
         isThread={false}
         testId={`chat-row-avatar-${channel.id}`}
       />
     );
   }
-  return <ChannelGlyph channel={channel} className={className} />;
+  return (
+    <ChannelGlyph
+      avatarClassName={className}
+      channel={channel}
+      className={className}
+    />
+  );
 }
 
 export function ChannelMenuButton({
@@ -368,7 +375,7 @@ export function ChannelMenuButton({
       title={
         <>
           <span className="min-w-0 truncate">
-            {channel.channelType === "dm" ? resolvedLabel : `#${resolvedLabel}`}
+            {channel.channelType === "dm" ? resolvedLabel : `${resolvedLabel}`}
           </span>
           {channel.channelType === "dm" &&
           (channel.participantPubkeys.length === 2 ||

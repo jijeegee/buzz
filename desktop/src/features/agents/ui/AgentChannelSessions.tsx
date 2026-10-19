@@ -179,13 +179,13 @@ export function AgentChannelSessionsRow({
         )}
       >
         <button
-          aria-label={`Open #${channel.name}`}
+          aria-label={`Open ${channel.name}`}
           className="group flex min-w-0 flex-1 items-center gap-3 self-stretch px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
           data-testid={`user-profile-channel-link-${channel.name}`}
           onClick={() => onOpenChannel(channel.id)}
           type="button"
         >
-          <span className="min-w-0 flex-1 truncate">#{channel.name}</span>
+          <span className="min-w-0 flex-1 truncate">{channel.name}</span>
           <ArrowUpRight
             aria-hidden="true"
             className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"

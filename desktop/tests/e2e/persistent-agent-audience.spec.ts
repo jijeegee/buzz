@@ -950,7 +950,7 @@ test("a manual mention persists when automatic mentions are enabled", async ({
     "Morgarita will be mentioned automatically",
   );
   await expect(autoPinConfirmation).not.toContainText(
-    "Future messages in this channel will include this agent.",
+    "Future messages in this group will include this agent.",
   );
   await expect(autoPinConfirmation).toHaveAttribute("data-side", "left");
   await expect(autoPinConfirmation.locator("span")).toHaveCSS(

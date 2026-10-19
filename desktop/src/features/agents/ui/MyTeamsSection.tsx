@@ -51,7 +51,7 @@ export function MyTeamsSection({
   return (
     <div className="space-y-3" data-testid="agents-my-teams">
       <DeviceHeading
-        detail="groups of my agents · adding a team to a channel adds these agents"
+        detail="groups of my agents · adding a team to a group adds these agents"
         robot={<Users className="h-4 w-4 text-muted-foreground" />}
         title="Teams"
       />
@@ -193,7 +193,7 @@ function TeamTile({
           onClick={() => onAddToChannel(team)}
           size="xs"
         >
-          Add to channel
+          Add to group
         </Button>
         <Button
           data-testid={`my-team-edit-${team.id}`}

@@ -29,7 +29,7 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
-const UNKNOWN_CHANNEL_LABEL = "Unknown channel";
+const UNKNOWN_CHANNEL_LABEL = "Unknown group";
 
 /** Author identity + source channel resolved for a reminder's target. */
 export type ReminderSource = {
@@ -112,7 +112,7 @@ function formatReminderSourceLocation(source: ReminderSource): string {
   if (!source.channel) return source.channelLabel;
   return source.channel.channelType === "dm"
     ? `DM with ${source.channelLabel}`
-    : `#${source.channelLabel}`;
+    : `${source.channelLabel}`;
 }
 
 function ReminderRow({

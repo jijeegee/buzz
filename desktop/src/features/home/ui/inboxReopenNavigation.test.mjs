@@ -500,7 +500,7 @@ test("pointer activation issues one reopen, shows pending, then navigates", asyn
     const openButton = inbox.container.querySelector(
       '[data-testid="home-inbox-item-' +
         SOURCE_EVENT_ID +
-        '"] [aria-label="Open in channel"]',
+        '"] [aria-label="Open in group"]',
     );
     assert.ok(openButton, "row open-in-channel action must render");
 
@@ -565,8 +565,8 @@ test("context-menu activation shows pending, suppresses duplicates, then navigat
     });
     const openItem = [
       ...dom.window.document.querySelectorAll('[role="menuitem"]'),
-    ].find((node) => /Open in channel/.test(node.textContent));
-    assert.ok(openItem, "context menu must offer Open in channel");
+    ].find((node) => /Open in group/.test(node.textContent));
+    assert.ok(openItem, "context menu must offer Open in group");
     await act(async () => {
       click(openItem);
     });
@@ -632,7 +632,7 @@ test("failed reopen surfaces a keyboard-operable Retry that then navigates", asy
     const openButton = inbox.container.querySelector(
       '[data-testid="home-inbox-item-' +
         SOURCE_EVENT_ID +
-        '"] [aria-label="Open in channel"]',
+        '"] [aria-label="Open in group"]',
     );
     await act(async () => {
       click(openButton);
@@ -721,7 +721,7 @@ test("a failed reopen from an unselected row exposes its own keyboard Retry that
     const openButton = inbox.container.querySelector(
       '[data-testid="home-inbox-item-' +
         SOURCE_EVENT_ID +
-        '"] [aria-label="Open in channel"]',
+        '"] [aria-label="Open in group"]',
     );
     assert.ok(
       openButton,

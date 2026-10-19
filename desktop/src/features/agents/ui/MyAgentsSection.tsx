@@ -459,7 +459,7 @@ function LocalAgentTile({
             size="xs"
             variant="outline"
           >
-            Add to channel
+            Add to group
           </Button>
         </>
       }

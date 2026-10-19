@@ -191,7 +191,7 @@ function ConversationPreview() {
               spacing.
             </p>
             <p className="mt-conversation-paragraph">
-              The same rhythm carries through channels, threads, DMs, and Inbox.
+              The same rhythm carries through groups, threads, DMs, and Inbox.
             </p>
           </ConversationDensityPreviewMessage>
         </div>
@@ -384,12 +384,12 @@ const THREAD_VIEW_MODE_OPTIONS: {
   {
     value: "focus",
     label: "Focus",
-    description: "Threads open over the channel",
+    description: "Threads open over the group",
   },
   {
     value: "split",
     label: "Split",
-    description: "Threads open in a side panel next to the channel",
+    description: "Threads open in a side panel next to the group",
   },
 ];
 

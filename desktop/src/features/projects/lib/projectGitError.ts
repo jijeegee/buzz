@@ -30,7 +30,7 @@ export function projectCloneErrorPresentation(
     return {
       title: "Repository access restricted",
       description:
-        "You need access to the repository’s channel before you can clone it.",
+        "You need access to the repository’s group before you can clone it.",
     };
   }
   if (

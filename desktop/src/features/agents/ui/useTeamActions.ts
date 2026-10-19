@@ -163,7 +163,7 @@ export function useTeamActions(actions: ActionMessages) {
     actions.setActionErrorMessage(null);
     setTeamDialogState({
       title: "Create team",
-      description: "Group agents together for quick deployment to channels.",
+      description: "Bundle agents together for quick deployment to groups.",
       submitLabel: "Create team",
       initialValues: {
         name: "",

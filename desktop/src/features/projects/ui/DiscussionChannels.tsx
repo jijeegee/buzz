@@ -1,4 +1,4 @@
-import { Hash } from "lucide-react";
+import { Users } from "lucide-react";
 import * as React from "react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -229,15 +229,15 @@ export function DiscussedInChannels({
               <button
                 aria-label={
                   latestHit
-                    ? `Open conversation in #${name}`
-                    : `Open channel #${name}`
+                    ? `Open conversation in ${name}`
+                    : `Open group ${name}`
                 }
                 className="absolute inset-0"
                 onClick={openConversation}
                 title={
                   latestHit
-                    ? `Open the latest conversation in #${name}`
-                    : `Open #${name}`
+                    ? `Open the latest conversation in ${name}`
+                    : `Open ${name}`
                 }
                 type="button"
               />
@@ -263,10 +263,10 @@ export function DiscussedInChannels({
                   <button
                     className="pointer-events-auto font-medium text-foreground hover:underline"
                     onClick={() => void goChannel(channel.id)}
-                    title={`Open #${name}`}
+                    title={`Open ${name}`}
                     type="button"
                   >
-                    #{name}
+                    {name}
                   </button>
                   <span className="text-xs text-muted-foreground">
                     {" "}
@@ -397,15 +397,15 @@ export function DiscussionChannelsPanel({
   const profiles = profilesQuery.data?.profiles;
 
   if (isLoading) {
-    return <KuzzLoadingState label="Loading channel discussions" />;
+    return <KuzzLoadingState label="Loading group discussions" />;
   }
   if (channels.length === 0) {
     return (
       <ProjectPanelState
         className="px-4"
-        description="Paste this repository, review, or task link in a channel and it will appear here."
+        description="Paste this repository, review, or task link in a group and it will appear here."
         testId="project-discussion-channels-panel"
-        title="No linked channels yet"
+        title="No linked groups yet"
       />
     );
   }
@@ -414,7 +414,7 @@ export function DiscussionChannelsPanel({
     selectionItemFromChannel({
       channelId: channel.id,
       people: channel.participants,
-      title: `#${channelName(channel.id, channel.name)}`,
+      title: `${channelName(channel.id, channel.name)}`,
     }),
   );
 
@@ -437,7 +437,9 @@ export function DiscussionChannelsPanel({
                 }`}
                 dateSeconds={channel.lastActivityAt}
                 dateTestId="project-channel-row-date"
-                icon={<Hash className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                icon={
+                  <Users className="h-3.5 w-3.5 text-muted-foreground/70" />
+                }
                 onClick={() =>
                   openDiscussionHit({
                     channelId: channel.id,
@@ -454,16 +456,16 @@ export function DiscussionChannelsPanel({
                   item: selectionItemFromChannel({
                     channelId: channel.id,
                     people: channel.participants,
-                    title: `#${name}`,
+                    title: `${name}`,
                   }),
                   rangeItems,
                 }}
                 testId="project-channel-row"
-                title={`#${name}`}
+                title={`${name}`}
                 titleAttr={
                   latestHit
-                    ? `Open the latest conversation in #${name}`
-                    : `Open #${name}`
+                    ? `Open the latest conversation in ${name}`
+                    : `Open ${name}`
                 }
               />
             </li>

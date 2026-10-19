@@ -334,7 +334,7 @@ function AddSubscriptionForm({
             className="mb-1.5 block text-sm font-medium"
             htmlFor="local-archive-channel-select"
           >
-            Channel
+            Group
           </label>
           <select
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -343,7 +343,7 @@ function AddSubscriptionForm({
             onChange={(e) => setSelectedChannelId(e.target.value)}
             value={selectedChannelId}
           >
-            <option value="">Select a channel…</option>
+            <option value="">Select a group…</option>
             {channels.map((ch) => (
               <option key={ch.id} value={ch.id}>
                 {ch.name}
@@ -559,20 +559,20 @@ export function LocalArchiveSettingsCard() {
         {/* Channel subscriptions */}
         <div data-testid="local-archive-subscriptions">
           {isLoading ? (
-            <SettingsOptionGroup title="Channel subscriptions">
+            <SettingsOptionGroup title="Group subscriptions">
               <div className="px-4 py-3 text-sm font-normal text-muted-foreground">
                 Loading…
               </div>
             </SettingsOptionGroup>
           ) : channelSubs.length === 0 ? (
-            <SettingsOptionGroup title="Channel subscriptions">
+            <SettingsOptionGroup title="Group subscriptions">
               <div className="px-4 py-3 text-sm font-normal text-muted-foreground">
-                No channel subscriptions yet. Add one below.
+                No group subscriptions yet. Add one below.
               </div>
             </SettingsOptionGroup>
           ) : (
             <SettingsOptionGroup
-              title={`Channel subscriptions (${channelSubs.length})`}
+              title={`Group subscriptions (${channelSubs.length})`}
             >
               {channelSubs.map((sub) => {
                 const key = `${sub.scopeType}:${sub.scopeValue}`;
@@ -622,18 +622,18 @@ export function LocalArchiveSettingsCard() {
                 setIsAddingOpen(false);
                 void reload();
               }}
-              title="Add channel subscription"
+              title="Add group subscription"
             />
           ) : (
-            <SettingsOptionGroup title="Add channel subscription">
+            <SettingsOptionGroup title="Add group subscription">
               <SettingsOptionRow>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">Subscribe to a channel</p>
+                  <p className="text-sm font-medium">Subscribe to a group</p>
                   <p
                     className="text-xs text-muted-foreground/70"
                     data-settings-subcopy
                   >
-                    Choose a channel and select which event types to archive.
+                    Choose a group and select which event types to archive.
                   </p>
                 </div>
                 <Button

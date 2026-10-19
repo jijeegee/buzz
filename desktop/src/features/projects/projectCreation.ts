@@ -109,7 +109,7 @@ function normalizeProjectAnnouncementInput({
   }
   const normalizedProjectChannelId = projectChannelId.trim();
   if (!isValidProjectChannelId(normalizedProjectChannelId)) {
-    throw new Error("Project channel is invalid.");
+    throw new Error("Project group is invalid.");
   }
 
   return {

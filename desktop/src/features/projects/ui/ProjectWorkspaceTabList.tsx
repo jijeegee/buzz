@@ -57,7 +57,7 @@ export function ProjectTabsList({
           <ProjectTabLabel>Review</ProjectTabLabel>
         </TabsTrigger>
         <TabsTrigger className={PROJECT_TAB_TRIGGER_CLASS} value="channels">
-          <ProjectTabLabel>Channels</ProjectTabLabel>
+          <ProjectTabLabel>Groups</ProjectTabLabel>
         </TabsTrigger>
         <TabsTrigger className={PROJECT_TAB_TRIGGER_CLASS} value="contributors">
           <ProjectTabLabel>Contributors</ProjectTabLabel>

@@ -25,11 +25,11 @@ const channel = {
 test("channelTooltipFooter adds archived status without changing existing metadata", () => {
   assert.equal(
     channelTooltipFooter(channel),
-    "Private channel · Forum · Archived",
+    "Private group · Forum · Archived",
   );
   assert.equal(
     channelTooltipFooter({ ...channel, archivedAt: null }),
-    "Private channel · Forum",
+    "Private group · Forum",
   );
 });
 
@@ -40,6 +40,6 @@ test("channelTooltipFooter uses just now for activity within a minute", () => {
       archivedAt: null,
       lastMessageAt: new Date().toISOString(),
     }),
-    "Private channel · Forum · Active just now",
+    "Private group · Forum · Active just now",
   );
 });

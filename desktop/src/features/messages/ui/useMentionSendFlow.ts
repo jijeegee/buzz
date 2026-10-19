@@ -1004,7 +1004,7 @@ export function useMentionSendFlow({
   const deliverAutoRoute = React.useCallback<AutoRouteDeliver>(
     async (message, pubkeys, isCurrent, route) => {
       const messageChannelId = message.tags.find((tag) => tag[0] === "h")?.[1];
-      if (!messageChannelId) throw new Error("Message has no channel.");
+      if (!messageChannelId) throw new Error("Message has no group.");
       const readiness = await ensureManagedAgentMentionsReady(
         pubkeys,
         messageChannelId,

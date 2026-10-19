@@ -82,7 +82,7 @@ test("builds a plain-language workflow card label", () => {
       },
       { actionChannelLabel: "releases" },
     ),
-    "When a message is posted, send “Deploying now” in #releases",
+    "When a message is posted, send “Deploying now” in releases",
   );
 
   assert.equal(

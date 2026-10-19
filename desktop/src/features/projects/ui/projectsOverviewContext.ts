@@ -273,7 +273,7 @@ export function projectsOverviewContext(
     return {
       action: {
         kind: "channel",
-        label: "Add channel",
+        label: "Add group",
         testId: "projects-overview-add-channel",
       },
       detailsTitle: "Details",
@@ -282,7 +282,7 @@ export function projectsOverviewContext(
         {
           count: channelCount,
           icon: "channels",
-          label: "Channels",
+          label: "Groups",
           section: "channels",
         },
         {
@@ -298,7 +298,7 @@ export function projectsOverviewContext(
           section: "repositories",
         },
       ],
-      title: "Channels",
+      title: "Groups",
     };
   }
 
@@ -389,7 +389,7 @@ export function projectsOverviewContext(
         {
           count: channelCount,
           icon: "channels",
-          label: "Channels",
+          label: "Groups",
           section: "channels",
         },
         {
@@ -429,7 +429,7 @@ export function projectsOverviewContext(
       {
         count: channelCount,
         icon: "channels",
-        label: "Channels",
+        label: "Groups",
         section: "channels",
       },
     ],

@@ -177,7 +177,7 @@ export function PeopleSidebarList({
           )}
         </Section>
         {searching ? (
-          <Section testId="people-in-channels" title="In your channels">
+          <Section testId="people-in-channels" title="In your groups">
             {directory.inChannels.length > 0 ? (
               directory.inChannels.map((user) => renderRow(user, "channel"))
             ) : shared.isLoading ? (
@@ -186,7 +186,7 @@ export function PeopleSidebarList({
               <p className="px-2 py-3 text-xs text-sidebar-foreground/60">
                 {shared.error
                   ? shared.error.message
-                  : "No one in your channels matches that name. Use Add friend to find someone by Kuzz ID or email."}
+                  : "No one in your groups matches that name. Use Add friend to find someone by Kuzz ID or email."}
               </p>
             )}
           </Section>

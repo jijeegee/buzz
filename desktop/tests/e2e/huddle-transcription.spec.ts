@@ -1723,7 +1723,7 @@ test("closes add-agent dialog when parent membership is already satisfied", asyn
 
   await expect(dialog).toHaveCount(0);
   await expect(
-    page.getByText("Added to huddle, but parent channel failed:"),
+    page.getByText("Added to huddle, but parent group failed:"),
   ).toHaveCount(0);
 });
 

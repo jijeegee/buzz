@@ -229,7 +229,7 @@ function RelayMemberRow({
       {canRemove ? (
         <SettingsConfirmDialog
           confirmLabel="Remove"
-          description={`${displayName} will lose access to this community's channels and conversations. You can invite them again later.`}
+          description={`${displayName} will lose access to this community's groups and conversations. You can invite them again later.`}
           destructive
           onConfirm={() =>
             void mutateWithToast(

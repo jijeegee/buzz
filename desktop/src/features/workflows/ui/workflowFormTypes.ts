@@ -118,7 +118,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   call_webhook: "Call Webhook",
   request_approval: "Request Approval",
   add_reaction: "Add Reaction",
-  set_channel_topic: "Set Channel Topic",
+  set_channel_topic: "Set Group Topic",
 };
 
 const EXACT_HEX_64 = /^[0-9a-fA-F]{64}$/;

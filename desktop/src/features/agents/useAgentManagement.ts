@@ -147,7 +147,7 @@ export function useAgentManagement() {
       )
     ) {
       throw new Error(
-        "An agent can only manage agents from a channel you both belong to.",
+        "An agent can only manage agents from a group you both belong to.",
       );
     }
   }
@@ -196,7 +196,7 @@ export function useAgentManagement() {
         );
         await createdAgentAttachment.presentCreatedAgent(created, {
           id: request.request.channelId,
-          name: targetChannel?.name ?? "this channel",
+          name: targetChannel?.name ?? "this group",
         });
       }
 

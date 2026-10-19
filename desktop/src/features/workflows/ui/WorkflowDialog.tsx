@@ -581,7 +581,7 @@ export function WorkflowDialog({
                   ? "Update when this workflow runs and what it does."
                   : mode === "duplicate"
                     ? "Copy this workflow and adjust its details."
-                    : "Automate actions when something happens in a channel."}
+                    : "Automate actions when something happens in a group."}
               </DialogDescription>
               <div className="flex items-center gap-2">
                 <WorkflowNameEditor
@@ -707,7 +707,7 @@ export function WorkflowDialog({
                     />
                     {channels.length === 0 ? (
                       <p className="text-center text-xs text-muted-foreground">
-                        Join or create a channel before adding a workflow.
+                        Join or create a group before adding a workflow.
                       </p>
                     ) : null}
                   </div>

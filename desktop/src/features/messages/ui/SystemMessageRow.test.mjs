@@ -151,7 +151,7 @@ test("grouped duplicate arrival targets render one unique added member", async (
     screen
       .getByTestId("system-message-avatar-stack")
       .getAttribute("aria-label"),
-    "1 channel member",
+    "1 group member",
   );
 });
 
@@ -411,7 +411,7 @@ test("a duplicate self-join followed by leaving renders one lifecycle summary", 
   const row = screen.getByTestId("system-message-row");
   assert.equal(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 
@@ -433,7 +433,7 @@ test("more than two duplicate self-joins before leaving still render one lifecyc
   const row = screen.getByTestId("system-message-row");
   assert.equal(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 
@@ -453,7 +453,7 @@ test("a single self-join followed by leaving keeps the two-event lifecycle copy"
   const row = screen.getByTestId("system-message-row");
   assert.equal(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 
@@ -480,7 +480,7 @@ test("an addition before the departing member's self-join is not a lifecycle sum
   const row = screen.getByTestId("system-message-row");
   assert.notEqual(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 

@@ -159,12 +159,12 @@ function StepConfigFields({
           </div>
           {workflowChannelId ? (
             <p className="text-xs text-muted-foreground">
-              Messages post to the workflow channel selected above.
+              Messages post to the workflow group selected above.
             </p>
           ) : (
             <div className="space-y-1.5">
               <FieldLabel htmlFor={`${prefix}-channel`}>
-                Channel override (optional)
+                Group override (optional)
               </FieldLabel>
               <Input
                 autoCapitalize="off"
@@ -173,16 +173,16 @@ function StepConfigFields({
                 onChange={(event) =>
                   onUpdate({ ...step, channel: event.target.value })
                 }
-                placeholder="Channel UUID"
+                placeholder="Group UUID"
                 value={step.channel ?? ""}
               />
               <p className="text-xs text-muted-foreground">
-                Defaults to the channel that triggered the workflow. Webhook and
-                manual triggers require a channel.
+                Defaults to the group that triggered the workflow. Webhook and
+                manual triggers require a group.
               </p>
               {triggerType === "webhook" && !(step.channel ?? "").trim() ? (
                 <p className="text-xs text-amber-700">
-                  This step will fail for webhook-triggered runs until a channel
+                  This step will fail for webhook-triggered runs until a group
                   override is set.
                 </p>
               ) : null}
@@ -374,7 +374,7 @@ function StepConfigFields({
               onChange={(event) =>
                 onUpdate({ ...step, topic: event.target.value })
               }
-              placeholder="New channel topic"
+              placeholder="New group topic"
               value={step.topic ?? ""}
             />
           </div>
@@ -503,7 +503,7 @@ export function WorkflowStepCard({
                 onChange={(event) =>
                   onUpdate({ ...step, name: event.target.value })
                 }
-                placeholder="e.g. Notify deployment channel"
+                placeholder="e.g. Notify deployment group"
                 value={step.name ?? ""}
               />
             </div>

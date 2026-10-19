@@ -61,7 +61,7 @@ export function ChatThreadRow({
 }) {
   const rootId = row.root_id ?? row.key;
   const title = chatThreadTitle(row);
-  const place = isDm ? channelLabel : `#${channelLabel}`;
+  const place = isDm ? channelLabel : `${channelLabel}`;
   const hasUnread = unread.count > 0 || unread.marked;
   const dimmed = row.closed || (isMuted && unread.mentions === 0);
   const badges = (

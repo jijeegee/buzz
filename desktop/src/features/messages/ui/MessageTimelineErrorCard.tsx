@@ -16,8 +16,7 @@ export function MessageTimelineErrorCard({
         Couldn&apos;t load messages
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
-        The channel history didn&apos;t load. Check your connection and try
-        again.
+        The group history didn&apos;t load. Check your connection and try again.
       </p>
       {onRetry ? (
         <Button

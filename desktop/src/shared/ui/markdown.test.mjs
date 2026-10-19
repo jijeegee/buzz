@@ -1266,7 +1266,7 @@ test("authored Kuzz permalink labels remain ordinary links", () => {
   assert.match(html, />the compatibility message</);
   assert.match(html, /aria-label="Open message: the compatibility message"/);
   assert.match(html, />design discussion</);
-  assert.match(html, /aria-label="Open channel: design discussion"/);
+  assert.match(html, /aria-label="Open group: design discussion"/);
   assert.doesNotMatch(html, /\[object Object\]/);
   assert.match(html, />the issue</);
   assert.equal((html.match(/underline-offset-4/g) ?? []).length, 4);

@@ -204,11 +204,11 @@ test("focus and split preserve reading context and interaction ownership", async
   const anchorId = await scrollToMiddleVisibleMessage(body, rootId);
 
   const focusModeToggle = page.getByRole("button", {
-    name: "Show thread beside channel",
+    name: "Show thread beside group",
   });
   await focusModeToggle.hover();
   await expect(
-    page.getByRole("tooltip", { name: "Show thread beside channel" }),
+    page.getByRole("tooltip", { name: "Show thread beside group" }),
   ).toBeVisible();
   await focusModeToggle.click();
   await expect(drawer).toHaveCount(0);

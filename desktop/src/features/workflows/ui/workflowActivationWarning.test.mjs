@@ -12,7 +12,7 @@ test("warns when a message trigger matches every message", () => {
     getWorkflowActivationWarning(workflowYaml("  on: message_posted")),
     {
       description:
-        "It will run for every new message in this channel. Review the trigger before turning it on.",
+        "It will run for every new message in this group. Review the trigger before turning it on.",
       title: "This workflow may run often",
     },
   );

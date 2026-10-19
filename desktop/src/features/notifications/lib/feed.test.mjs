@@ -30,7 +30,7 @@ test("enriches a feed notification with its loaded channel name", () => {
 
   assert.equal(item.channelName, "ship-room");
   assert.equal(item.channelType, "stream");
-  assert.equal(notificationTitle(item), "Needs Action in #ship-room");
+  assert.equal(notificationTitle(item), "Needs Action in ship-room");
 });
 
 test("preserves feed-provided channel metadata", () => {
@@ -41,7 +41,7 @@ test("preserves feed-provided channel metadata", () => {
   const item = enrichFeedItemChannel(original, channels);
 
   assert.equal(item, original);
-  assert.equal(notificationTitle(item), "Needs Action in #backend-name");
+  assert.equal(notificationTitle(item), "Needs Action in backend-name");
 });
 
 test("falls back safely when the channel list has not loaded the channel", () => {

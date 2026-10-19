@@ -40,22 +40,22 @@ export function getChannelIntroKind(
   projectHome = false,
 ): string {
   if (projectHome) {
-    return "project channel";
+    return "project group";
   }
 
   const isPrivate = channel.visibility === "private";
   const isEphemeral = isEphemeralChannel(channel);
 
   if (isPrivate && isEphemeral) {
-    return "private ephemeral channel";
+    return "private ephemeral group";
   }
   if (isPrivate) {
-    return "private channel";
+    return "private group";
   }
   if (isEphemeral) {
-    return "ephemeral channel";
+    return "ephemeral group";
   }
-  return "regular channel";
+  return "regular group";
 }
 
 export function getChannelIntroDescription(channel: Channel): string | null {

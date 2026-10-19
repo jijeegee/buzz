@@ -18,6 +18,7 @@ import {
   type ChannelSortMode,
   sortChannelsForSidebar,
 } from "@/features/sidebar/lib/channelSortPreference";
+import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import { ListSortDescending } from "@/shared/ui/icons";
 import {
   Dialog,
@@ -53,6 +54,12 @@ import {
 } from "@/features/sidebar/ui/CreateChannelFormFields";
 
 type BrowserTab = "all" | "joined" | "archived";
+
+/**
+ * Public groups you are not in only show once the search has this many
+ * characters, so the dialog never lists every public group on the server.
+ */
+export const FIND_GROUPS_MIN_QUERY_LENGTH = 2;
 type ChannelSort = ChannelSortMode | "members";
 
 const CHANNEL_SORT_OPTIONS: { label: string; value: ChannelSort }[] = [
@@ -110,7 +117,9 @@ export function ChannelBrowserDialog({
   isCreatingChannel = false,
 }: ChannelBrowserDialogProps) {
   const [query, setQuery] = React.useState("");
-  const [activeTab, setActiveTab] = React.useState<BrowserTab>("all");
+  const isForumMode = channelTypeFilter === "forum";
+  const defaultTab: BrowserTab = isForumMode ? "all" : "joined";
+  const [activeTab, setActiveTab] = React.useState<BrowserTab>(defaultTab);
   const [sort, setSort] = React.useState<ChannelSort>("alpha");
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
   const [joiningChannelId, setJoiningChannelId] = React.useState<string | null>(
@@ -139,18 +148,20 @@ export function ChannelBrowserDialog({
   // can never disagree for a frame while the fuzzy filter catches up.
   const normalizedQuery = trimmedQuery.toLowerCase();
 
-  const isForumMode = channelTypeFilter === "forum";
   const canCreate = Boolean(onCreateChannel);
   const createKind = isForumMode ? "forum" : "stream";
-  const browseTitle = isForumMode ? "Add a forum" : "Browse channels";
+  const browseTitle = isForumMode ? "Add a forum" : "Find groups";
   const searchPlaceholder = canCreate
     ? isForumMode
       ? "Search or create a forum"
-      : "Search or create a channel"
+      : "Search or create a group"
     : isForumMode
       ? "Search forums by name or description"
-      : "Search channels by name or description";
-  const entityLabel = isForumMode ? "forum" : "channel";
+      : "Search groups by name or description";
+  const entityLabel = isForumMode ? "forum" : "group";
+  // Groups: public groups you are not in need a 2+ character search.
+  const canSeePublicGroups =
+    isForumMode || trimmedQuery.length >= FIND_GROUPS_MIN_QUERY_LENGTH;
 
   const noopCreate = React.useCallback(async () => {}, []);
   const createForm = useCreateChannelForm({
@@ -201,6 +212,15 @@ export function ChannelBrowserDialog({
     [currentChannels],
   );
 
+  // Groups found by search that you are not in yet (2+ characters only).
+  const publicMatches = React.useMemo(
+    () =>
+      isForumMode || !canSeePublicGroups || deferredQuery.length === 0
+        ? []
+        : currentChannels.filter((channel) => !channel.isMember),
+    [canSeePublicGroups, currentChannels, deferredQuery, isForumMode],
+  );
+
   const archivedChannels = React.useMemo(
     () => matchingChannels.filter((channel) => channel.archivedAt !== null),
     [matchingChannels],
@@ -215,35 +235,59 @@ export function ChannelBrowserDialog({
 
   const isSearching = deferredQuery.length > 0;
 
-  const orderedVisibleChannels = React.useMemo(() => {
-    const sorted =
-      sort === "members"
-        ? [...visibleChannels].sort(
-            (a, b) =>
-              b.memberCount - a.memberCount ||
-              a.name.localeCompare(b.name, undefined, {
-                sensitivity: "base",
-              }),
-          )
-        : sortChannelsForSidebar(visibleChannels, sort);
+  const orderChannels = React.useCallback(
+    (list: Channel[]) => {
+      const sorted =
+        sort === "members"
+          ? [...list].sort(
+              (a, b) =>
+                b.memberCount - a.memberCount ||
+                a.name.localeCompare(b.name, undefined, {
+                  sensitivity: "base",
+                }),
+            )
+          : sortChannelsForSidebar(list, sort);
 
-    if (!isSearching) return sorted;
+      if (!isSearching) return sorted;
 
-    return sorted.sort(
-      (a, b) =>
-        (matchScoreById.get(a.id) ?? Number.POSITIVE_INFINITY) -
-        (matchScoreById.get(b.id) ?? Number.POSITIVE_INFINITY),
-    );
-  }, [isSearching, matchScoreById, sort, visibleChannels]);
+      return sorted.sort(
+        (a, b) =>
+          (matchScoreById.get(a.id) ?? Number.POSITIVE_INFINITY) -
+          (matchScoreById.get(b.id) ?? Number.POSITIVE_INFINITY),
+      );
+    },
+    [isSearching, matchScoreById, sort],
+  );
+
+  const orderedVisibleChannels = React.useMemo(
+    () => orderChannels(visibleChannels),
+    [orderChannels, visibleChannels],
+  );
+
+  // "My groups" lists joined groups; public search results follow below.
+  const orderedPublicMatches = React.useMemo(
+    () =>
+      activeTab === "joined" && !isForumMode
+        ? orderChannels(publicMatches)
+        : [],
+    [activeTab, isForumMode, orderChannels, publicMatches],
+  );
+  const listedChannels = React.useMemo(
+    () =>
+      orderedPublicMatches.length > 0
+        ? [...orderedVisibleChannels, ...orderedPublicMatches]
+        : orderedVisibleChannels,
+    [orderedPublicMatches, orderedVisibleChannels],
+  );
 
   const selectedSortLabel =
     CHANNEL_SORT_OPTIONS.find((option) => option.value === sort)?.label ??
     "Alphabetical";
 
-  const allTabLabel = isForumMode ? "All forums" : "All channels";
+  const allTabLabel = isForumMode ? "All forums" : "All groups";
 
   // Whether an exact name match already exists — if so we don't offer to
-  // create a duplicate, mirroring how you'd never make two "#general"s.
+  // create a duplicate, mirroring how you'd never make two "general"s.
   const hasExactMatch = React.useMemo(
     () =>
       channels.some(
@@ -263,7 +307,7 @@ export function ChannelBrowserDialog({
   // The create row is present from the moment the dialog opens (so it's clear
   // you can browse *or* create), then specializes to "Create «query»" as you
   // type. It only hides when the query is an exact match for an existing name
-  // — creating a duplicate "#general" makes no sense.
+  // — creating a duplicate "general" makes no sense.
   const showCreateRow = canCreate && !hasExactMatch;
 
   // The create row participates in keyboard navigation as a virtual item so
@@ -272,7 +316,7 @@ export function ChannelBrowserDialog({
   // keeping keyboard order identical to visual order.
   const channelNavOffset = showCreateRow ? 1 : 0;
   const createRowIndex = showCreateRow ? 0 : null;
-  const navItemCount = orderedVisibleChannels.length + channelNavOffset;
+  const navItemCount = listedChannels.length + channelNavOffset;
   const isCreateRowSelected =
     createRowIndex !== null && selectedIndex === createRowIndex;
 
@@ -336,7 +380,7 @@ export function ChannelBrowserDialog({
   React.useEffect(() => {
     if (!open) {
       setQuery("");
-      setActiveTab("all");
+      setActiveTab(defaultTab);
       setSort("alpha");
       setSelectedIndex(null);
       setJoiningChannelId(null);
@@ -344,7 +388,7 @@ export function ChannelBrowserDialog({
       setCreateInitialName("");
       return;
     }
-  }, [open]);
+  }, [defaultTab, open]);
 
   React.useEffect(() => {
     setSelectedIndex((current) => {
@@ -390,25 +434,31 @@ export function ChannelBrowserDialog({
   // occupying index 0 when present.
   const selectedItem =
     selectedIndex !== null && !isCreateRowSelected
-      ? orderedVisibleChannels[selectedIndex - channelNavOffset]
+      ? listedChannels[selectedIndex - channelNavOffset]
       : undefined;
+  const needsLongerQuery =
+    !isForumMode && activeTab === "joined" && !canSeePublicGroups;
   const emptyTitle =
     deferredQuery.length > 0
       ? `No ${entityLabel}s match your search`
       : activeTab === "archived"
         ? `No archived ${entityLabel}s`
         : activeTab === "joined"
-          ? `No joined ${entityLabel}s`
+          ? isForumMode
+            ? `No joined ${entityLabel}s`
+            : "No groups yet"
           : `No ${entityLabel}s to browse`;
   const emptyDescription =
-    deferredQuery.length > 0
+    deferredQuery.length > 0 && !needsLongerQuery
       ? canCreate
         ? `No ${entityLabel} by that name yet — create it to get started.`
         : "Try a different name or keyword."
       : activeTab === "archived"
         ? `Archived ${entityLabel}s you have joined will appear here.`
         : activeTab === "joined"
-          ? `${entityLabel[0].toUpperCase()}${entityLabel.slice(1)}s you join will appear here.`
+          ? isForumMode
+            ? `${entityLabel[0].toUpperCase()}${entityLabel.slice(1)}s you join will appear here.`
+            : `Type ${FIND_GROUPS_MIN_QUERY_LENGTH} or more letters to find public groups.`
           : `All open ${entityLabel}s are available in the sidebar. Create a new ${entityLabel} to get started.`;
 
   return (
@@ -491,19 +541,16 @@ export function ChannelBrowserDialog({
                         // actionable item (no channel matches) — Enter creates.
                         if (
                           showCreateRow &&
-                          (isCreateRowSelected ||
-                            orderedVisibleChannels.length === 0)
+                          (isCreateRowSelected || listedChannels.length === 0)
                         ) {
                           event.preventDefault();
                           enterCreateMode(trimmedQuery);
                           return;
                         }
 
-                        if (orderedVisibleChannels.length > 0) {
+                        if (listedChannels.length > 0) {
                           event.preventDefault();
-                          handleSelect(
-                            selectedItem ?? orderedVisibleChannels[0],
-                          );
+                          handleSelect(selectedItem ?? listedChannels[0]);
                         }
                       }
                     }}
@@ -573,23 +620,26 @@ export function ChannelBrowserDialog({
                         transform: `translate3d(${tabIndicator.left}px, 0, 0) scaleX(${tabIndicator.width})`,
                       }}
                     />
+                    {isForumMode ? (
+                      <TabsTrigger
+                        className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-2 text-sm font-medium shadow-none transition-colors duration-150 ease-out data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                        ref={(element) => {
+                          tabTriggerRefs.current.all = element;
+                        }}
+                        value="all"
+                      >
+                        {allTabLabel}
+                      </TabsTrigger>
+                    ) : null}
                     <TabsTrigger
                       className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-2 text-sm font-medium shadow-none transition-colors duration-150 ease-out data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                      ref={(element) => {
-                        tabTriggerRefs.current.all = element;
-                      }}
-                      value="all"
-                    >
-                      {allTabLabel}
-                    </TabsTrigger>
-                    <TabsTrigger
-                      className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-2 text-sm font-medium shadow-none transition-colors duration-150 ease-out data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                      data-testid="channel-browser-tab-joined"
                       ref={(element) => {
                         tabTriggerRefs.current.joined = element;
                       }}
                       value="joined"
                     >
-                      Joined
+                      {isForumMode ? "Joined" : "My groups"}
                     </TabsTrigger>
                     <TabsTrigger
                       className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-2 text-sm font-medium shadow-none transition-colors duration-150 ease-out data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
@@ -615,33 +665,74 @@ export function ChannelBrowserDialog({
                     </div>
                   ) : null}
 
-                  {orderedVisibleChannels.length === 0 ? (
+                  {listedChannels.length === 0 ? (
                     <BrowseState
                       description={emptyDescription}
                       icon={deferredQuery.length > 0 ? Search : Compass}
                       title={emptyTitle}
                     />
                   ) : (
-                    <div className="overflow-hidden rounded-xl border border-border/70 bg-background/70 shadow-xs divide-y divide-border/55">
-                      {orderedVisibleChannels.map((channel, index) => (
-                        <ChannelCard
-                          channel={channel}
-                          isJoining={joiningChannelId === channel.id}
-                          isSelected={
-                            index + channelNavOffset === selectedIndex
-                          }
-                          key={channel.id}
-                          onJoin={
-                            !channel.isMember
-                              ? () => {
-                                  void handleJoin(channel.id);
-                                }
-                              : undefined
-                          }
-                          onSelect={() => handleSelect(channel)}
-                        />
-                      ))}
-                    </div>
+                    <>
+                      {[
+                        {
+                          key: "listed",
+                          label: null,
+                          offset: 0,
+                          rows: orderedVisibleChannels,
+                        },
+                        {
+                          key: "public",
+                          label: "Public groups",
+                          offset: orderedVisibleChannels.length,
+                          rows: orderedPublicMatches,
+                        },
+                      ].map((section) =>
+                        section.rows.length === 0 ? null : (
+                          <div
+                            className={section.offset > 0 ? "mt-4" : undefined}
+                            data-testid={`channel-browser-section-${section.key}`}
+                            key={section.key}
+                          >
+                            {section.label ? (
+                              <p className="mb-2 px-1 text-xs font-medium text-muted-foreground">
+                                {section.label}
+                              </p>
+                            ) : null}
+                            <div className="overflow-hidden rounded-xl border border-border/70 bg-background/70 shadow-xs divide-y divide-border/55">
+                              {section.rows.map((channel, index) => (
+                                <ChannelCard
+                                  channel={channel}
+                                  isJoining={joiningChannelId === channel.id}
+                                  isSelected={
+                                    section.offset +
+                                      index +
+                                      channelNavOffset ===
+                                    selectedIndex
+                                  }
+                                  key={channel.id}
+                                  onJoin={
+                                    !channel.isMember
+                                      ? () => {
+                                          void handleJoin(channel.id);
+                                        }
+                                      : undefined
+                                  }
+                                  onSelect={() => handleSelect(channel)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ),
+                      )}
+                      {needsLongerQuery && orderedVisibleChannels.length > 0 ? (
+                        <p
+                          className="mt-3 px-1 text-xs text-muted-foreground"
+                          data-testid="channel-browser-search-hint"
+                        >
+                          {`Type ${FIND_GROUPS_MIN_QUERY_LENGTH} or more letters to find public groups.`}
+                        </p>
+                      ) : null}
+                    </>
                   )}
                 </div>
               </div>
@@ -683,13 +774,13 @@ function CreateChannelRow({
       {hasQuery ? (
         <span className="min-w-0 text-sm">
           <span className="font-medium text-foreground">
-            Create {entityLabel}{" "}
+            {entityLabel === "forum" ? "Create forum" : "New group"}{" "}
           </span>
           <span className="font-semibold text-foreground">“{query}”</span>
         </span>
       ) : (
         <span className="min-w-0 text-sm font-medium text-foreground">
-          Create a new {entityLabel}
+          {entityLabel === "forum" ? "Create a new forum" : "New group"}
         </span>
       )}
     </button>
@@ -790,9 +881,12 @@ function ChannelCard({
       >
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-sm font-normal text-muted-foreground">
-              #
-            </span>
+            <GroupLetterAvatar
+              channelId={channel.id}
+              isPrivate={channel.visibility === "private"}
+              label={channel.name}
+              size="sm"
+            />
             <p className="min-w-0 truncate text-base font-medium tracking-tight">
               {channel.name}
             </p>

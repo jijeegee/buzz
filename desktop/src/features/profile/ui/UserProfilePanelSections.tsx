@@ -277,7 +277,7 @@ export function ProfileSummaryView({
       items.push({ id: "runtime", label: "Runtime" });
     }
     if (showChannelsTab) {
-      items.push({ id: "channels", label: "Channels" });
+      items.push({ id: "channels", label: "Groups" });
     }
     if (showMemoriesTab) {
       items.push({

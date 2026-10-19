@@ -22,7 +22,7 @@ export function ThreadClosedLine({
       >
         <CircleCheck aria-hidden className="size-4 shrink-0 text-primary" />
         <span>
-          Task closed. The result was reported in the channel. Start new work
+          Task closed. The result was reported in the group. Start new work
           there; replying here reopens this thread.
         </span>
       </section>
