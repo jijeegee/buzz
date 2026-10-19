@@ -132,7 +132,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
         'deep-link: channel $channelId not found in workspace; dropping link',
       );
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('Channel not found in this workspace')),
+        const SnackBar(content: Text('Group not found in this workspace')),
       );
       return;
     }

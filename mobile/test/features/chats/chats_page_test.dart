@@ -84,7 +84,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(ValueKey('chat-row-${'1' * 64}')),
-        matching: find.text('#general'),
+        matching: find.text('general'),
       ),
       findsOneWidget,
     );

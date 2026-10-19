@@ -814,7 +814,7 @@ void main() {
       );
       expect(find.byType(TextField), findsOneWidget);
       expect(find.byIcon(LucideIcons.atSign), findsOneWidget);
-      expect(find.byIcon(LucideIcons.hash), findsOneWidget);
+      expect(find.byIcon(LucideIcons.users), findsOneWidget);
       expect(find.byIcon(LucideIcons.smilePlus), findsOneWidget);
       expect(find.byIcon(LucideIcons.aLargeSmall), findsOneWidget);
     });
@@ -1653,7 +1653,7 @@ void main() {
       await tester.tap(find.byIcon(LucideIcons.atSign));
       tester.widget<TextField>(find.byType(TextField)).controller!.clear();
       await tester.pump();
-      await tester.tap(find.byIcon(LucideIcons.hash));
+      await tester.tap(find.byIcon(LucideIcons.users));
       await tester.pump();
       await tester.tap(find.byIcon(LucideIcons.aLargeSmall));
       await tester.pumpAndSettle();
@@ -1689,7 +1689,7 @@ void main() {
         ),
       );
       await _expandComposer(tester);
-      await tester.tap(find.byIcon(LucideIcons.hash));
+      await tester.tap(find.byIcon(LucideIcons.users));
       await tester.pumpAndSettle();
 
       final surface = find.byKey(const ValueKey('channel-suggestions-popover'));

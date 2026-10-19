@@ -2497,7 +2497,7 @@ void main() {
       await tester.tap(find.byIcon(LucideIcons.ellipsis));
       await tester.pumpAndSettle();
       expect(find.text('Role'), findsOneWidget);
-      expect(find.text('Remove from channel'), findsOneWidget);
+      expect(find.text('Remove from group'), findsOneWidget);
     });
 
     testWidgets('action tiles expose button and enabled semantics', (
@@ -2981,7 +2981,7 @@ void main() {
 
       expect(find.text('Message…'), findsNothing);
       expect(
-        find.text('This channel is archived and read-only on mobile.'),
+        find.text('This group is archived and read-only on mobile.'),
         findsOneWidget,
       );
     });
@@ -3057,7 +3057,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('Join this channel from Manage to participate.'),
+        find.text('Join this group from Manage to participate.'),
         findsOneWidget,
       );
       expect(find.text('Message…'), findsNothing);
@@ -3071,16 +3071,16 @@ void main() {
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Join channel'));
+      await tester.tap(find.text('Join group'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Join channel'), findsNothing);
+      expect(find.text('Join group'), findsNothing);
       expect(
-        find.text('Join this channel from Manage to participate.'),
+        find.text('Join this group from Manage to participate.'),
         findsNothing,
       );
 
-      expect(find.text('Message #general'), findsOneWidget);
+      expect(find.text('Message general'), findsOneWidget);
     });
 
     testWidgets('Leave lives on the detail page instead of Manage', (
@@ -3103,7 +3103,7 @@ void main() {
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Leave channel').last);
+      await tester.tap(find.text('Leave group').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Leave'));
       await tester.pumpAndSettle();
@@ -3160,7 +3160,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Manage channel'), findsNothing);
+      expect(find.text('Manage group'), findsNothing);
     });
 
     testWidgets('Edit updates name and description without legacy fields', (
@@ -3199,7 +3199,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Mute'), findsOneWidget);
-      expect(find.text('Leave channel'), findsNothing);
+      expect(find.text('Leave group'), findsNothing);
       expect(find.text('Topic'), findsNothing);
       expect(find.text('Purpose'), findsNothing);
       expect(find.text('Canvas'), findsOneWidget);
@@ -3211,7 +3211,7 @@ void main() {
         find.byKey(const ValueKey('manage-channel-description')),
       );
       expect(nameField.decoration?.labelText, isNull);
-      expect(nameField.decoration?.hintText, 'Channel name');
+      expect(nameField.decoration?.hintText, 'Group name');
       expect(nameField.decoration?.border, InputBorder.none);
       expect(descriptionField.decoration?.labelText, isNull);
       expect(descriptionField.decoration?.hintText, 'Description');
@@ -3350,7 +3350,7 @@ void main() {
         find.byKey(const ValueKey('channel-jump-to-latest')),
         findsNothing,
       );
-      await tester.tap(find.text('Message #general'));
+      await tester.tap(find.text('Message general'));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('channel-jump-to-latest')),
@@ -3453,7 +3453,7 @@ void main() {
       );
       expect(find.byType(BottomSheet), findsNothing);
       expect(find.text('Copy text'), findsNothing);
-      expect(findRichText('joined the channel'), findsOneWidget);
+      expect(findRichText('joined the group'), findsOneWidget);
       expect(hapticCalls, hasLength(1));
       expect(hapticCalls.single.arguments, 'HapticFeedbackType.mediumImpact');
 
@@ -3490,9 +3490,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final messageCenter = tester.getCenter(
-        findRichText('joined the channel'),
-      );
+      final messageCenter = tester.getCenter(findRichText('joined the group'));
       final reactionRect = tester.getRect(find.byType(ReactionRow));
       final reactionCenter = reactionRect.center;
       final reactionPillTop = Offset(
@@ -4725,7 +4723,7 @@ void main() {
           closeTo(tester.getTopLeft(composerDock).dy, 1),
         );
 
-        await tester.tap(find.text('Message #general'));
+        await tester.tap(find.text('Message general'));
         for (var frame = 0; frame < 15; frame += 1) {
           await tester.pump(const Duration(milliseconds: 16));
           expect(
@@ -4872,7 +4870,7 @@ void main() {
       );
       final composerDock = find.byKey(const ValueKey('channel-composer-dock'));
 
-      await tester.tap(find.text('Message #general'));
+      await tester.tap(find.text('Message general'));
       await tester.pumpAndSettle();
 
       expect(
@@ -5227,7 +5225,7 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          await tester.tap(find.text('Message #general'));
+          await tester.tap(find.text('Message general'));
           await tester.pump();
           tester.view.viewInsets = const FakeViewPadding(bottom: 300);
           await tester.pump();
@@ -5356,7 +5354,7 @@ void main() {
           final collapsedGap = latestGap();
           expect(collapsedGap, closeTo(Grid.xs, 0.5));
 
-          await tester.tap(find.text('Message #general'));
+          await tester.tap(find.text('Message general'));
           await tester.pump();
           await tester.pump();
           tester.view.viewInsets = const FakeViewPadding(bottom: 300);
@@ -5805,7 +5803,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Alice'), findsOneWidget);
-      final createdAction = findRichText('created this channel');
+      final createdAction = findRichText('created this group');
       expect(createdAction, findsOneWidget);
       expect(
         tester.getSize(find.byType(CircleAvatar)),
@@ -5825,7 +5823,7 @@ void main() {
       expect(timestampRect.left, greaterThan(nameRect.right));
       final createdText = tester.widget<RichText>(createdAction);
       expect(
-        effectiveFontSizeForText(createdText.text, 'created this channel'),
+        effectiveFontSizeForText(createdText.text, 'created this group'),
         systemMessageBodyTextStyle.fontSize,
       );
     });
@@ -8883,7 +8881,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Bob'), findsOneWidget);
-      expect(findRichText('joined the channel'), findsOneWidget);
+      expect(findRichText('joined the group'), findsOneWidget);
       expect(
         tester.getSize(find.byType(CircleAvatar)),
         const Size.square(messageAvatarSize),
@@ -9492,7 +9490,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Bob left the channel'), findsOneWidget);
+      expect(find.text('Bob left the group'), findsOneWidget);
     });
 
     testWidgets(
@@ -9563,7 +9561,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Alice removed Bob from the channel'), findsOneWidget);
+      expect(find.text('Alice removed Bob from the group'), findsOneWidget);
     });
 
     testWidgets('renders topic_changed system event', (tester) async {
@@ -9941,7 +9939,7 @@ void main() {
       expect(find.byType(TextField), findsNothing);
       expect(find.byIcon(LucideIcons.arrowUp).hitTestable(), findsOneWidget);
 
-      await tester.tap(find.text('Message #general'));
+      await tester.tap(find.text('Message general'));
       await tester.pumpAndSettle();
 
       expect(find.byType(TextField), findsOneWidget);
@@ -9952,7 +9950,7 @@ void main() {
       await tester.pumpWidget(_buildTestable(messages: []));
       await tester.pumpAndSettle();
 
-      expect(find.text('Message #general'), findsOneWidget);
+      expect(find.text('Message general'), findsOneWidget);
     });
   });
 
@@ -10290,8 +10288,8 @@ void main() {
 
       expect(find.text('general'), findsOneWidget);
       expect(find.text('5 members'), findsOneWidget);
-      // The hash icon appears in the app bar and in the compose bar toolbar.
-      expect(find.byIcon(LucideIcons.hash), findsAtLeastNWidgets(1));
+      // A group shows its letter avatar, never a hash.
+      expect(find.byIcon(LucideIcons.hash), findsNothing);
       expect(
         tester.getSize(find.byKey(const ValueKey('channel-header-avatar'))),
         const Size.square(40),
@@ -10340,15 +10338,11 @@ void main() {
         BorderSide.strokeAlignOutside,
       );
       expect(
-        tester
-            .widget<Icon>(
-              find.descendant(
-                of: find.byKey(const ValueKey('channel-header-avatar')),
-                matching: find.byIcon(LucideIcons.hash),
-              ),
-            )
-            .color,
-        AppTheme.light().colorScheme.primary,
+        find.descendant(
+          of: find.byKey(const ValueKey('channel-header-avatar')),
+          matching: find.text('G'),
+        ),
+        findsOneWidget,
       );
       expect(
         tester.getRect(find.byKey(const ValueKey('channel-header-name'))).left -
@@ -10376,7 +10370,7 @@ void main() {
         AppTheme.light().colorScheme.onSurface.withValues(alpha: 0.65),
       );
       expect(find.byTooltip('View members'), findsNothing);
-      expect(find.byTooltip('Channel actions'), findsNothing);
+      expect(find.byTooltip('Group actions'), findsNothing);
 
       await tester.tap(
         find.byKey(const ValueKey('channel-header-settings-trigger')),
@@ -10797,10 +10791,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Alice'), findsNWidgets(2));
-      expect(findRichText('created this channel'), findsOneWidget);
+      expect(findRichText('created this group'), findsOneWidget);
       expect(findRichText('Welcome everyone!'), findsOneWidget);
       expect(find.text('Bob'), findsNWidgets(2));
-      expect(findRichText('joined the channel'), findsOneWidget);
+      expect(findRichText('joined the group'), findsOneWidget);
       expect(findRichText('Thanks for the invite!'), findsOneWidget);
     });
   });
@@ -12085,7 +12079,7 @@ void main() {
       await tester.tap(find.text('random'));
       await tester.pump();
 
-      expect(find.text('Channel could not be opened'), findsOneWidget);
+      expect(find.text('Group could not be opened'), findsOneWidget);
     });
 
     testWidgets('tapping a channel link inside a thread opens that channel', (

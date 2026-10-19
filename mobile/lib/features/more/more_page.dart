@@ -136,8 +136,8 @@ class MorePage extends ConsumerWidget {
           const Divider(height: Grid.xs),
           item(
             key: const ValueKey('more-channels'),
-            icon: LucideIcons.hash,
-            title: 'Channels',
+            icon: LucideIcons.users,
+            title: 'Groups',
             onTap: () => push(
               (_) => ChannelsPage(
                 settingsPageBuilder: settingsPageBuilder,

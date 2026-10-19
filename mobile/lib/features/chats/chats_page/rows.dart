@@ -95,6 +95,7 @@ class _ChatRow extends HookConsumerWidget {
         : ConversationLetterAvatar(
             seed: row.channelId,
             label: _bareRoomName(row, channel),
+            isPrivate: channel?.isPrivate ?? false,
             avatarKey: const ValueKey('chat-channel-avatar'),
           );
 
@@ -269,7 +270,7 @@ class _ChatRow extends HookConsumerWidget {
   }
 }
 
-/// The room's name without `#`: the channel's, or the DM's people.
+/// The room's bare name: the channel's, or the DM's people.
 String _bareRoomName(ChatListRow row, Channel? channel) {
   final name = channel?.name.trim().isNotEmpty == true
       ? channel!.name.trim()
@@ -277,7 +278,7 @@ String _bareRoomName(ChatListRow row, Channel? channel) {
   return name;
 }
 
-/// A room's name: `#channel`, or the DM's people.
+/// A room's name: the group's, or the DM's people.
 String _roomName(
   WidgetRef ref,
   ChatListRow row,
@@ -286,7 +287,7 @@ String _roomName(
 ) {
   if (!row.isDm) {
     final name = _bareRoomName(row, channel);
-    return name.isEmpty ? '#channel' : '#$name';
+    return name.isEmpty ? 'Group' : name;
   }
   if (channel != null) {
     return resolveDmChannelDisplayLabel(
@@ -559,7 +560,7 @@ class _ChannelHeaderRow extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              name.isEmpty ? '#channel' : '#$name',
+              name.isEmpty ? 'Group' : name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: activityUsernameTextStyle.copyWith(
@@ -697,7 +698,7 @@ class _ChatsEmptyState extends StatelessWidget {
               OutlinedButton(
                 key: const ValueKey('chats-empty-find-channels'),
                 onPressed: onFindChannels,
-                child: const Text('Find channels'),
+                child: const Text('Find groups'),
               ),
               const SizedBox(width: Grid.xs),
               FilledButton(

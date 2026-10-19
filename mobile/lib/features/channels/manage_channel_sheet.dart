@@ -117,7 +117,7 @@ class ManageChannelSheet extends HookConsumerWidget {
               outlineKey: const ValueKey('manage-channel-name-outline'),
               controller: nameController,
               enabled: canEditDetails && !isSavingDetails.value,
-              hintText: 'Channel name',
+              hintText: 'Group name',
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: Grid.xs),
@@ -134,7 +134,7 @@ class ManageChannelSheet extends HookConsumerWidget {
             if (canonicalName.isEmpty) ...[
               const SizedBox(height: Grid.half),
               Text(
-                'Channel name is required.',
+                'Group name is required.',
                 style: context.textTheme.bodySmall?.copyWith(
                   color: context.colors.error,
                 ),
@@ -204,7 +204,7 @@ class ManageChannelSheet extends HookConsumerWidget {
                       Text(
                         canvas.content?.trim().isNotEmpty == true
                             ? canvas.content!
-                            : 'No canvas set for this channel.',
+                            : 'No canvas set for this group.',
                         style: context.textTheme.bodyMedium?.copyWith(
                           color: context.colors.onSurfaceVariant,
                         ),
@@ -229,11 +229,11 @@ class ManageChannelSheet extends HookConsumerWidget {
                 loading: () => const Center(
                   child: KuzzLoadingIndicator(
                     size: 40,
-                    semanticLabel: 'Loading channel canvas',
+                    semanticLabel: 'Loading group canvas',
                   ),
                 ),
                 error: (error, _) => Text(
-                  'Couldn’t load the channel canvas.',
+                  'Couldn’t load the group canvas.',
                   style: context.textTheme.bodySmall?.copyWith(
                     color: context.colors.error,
                   ),

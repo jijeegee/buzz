@@ -23,7 +23,7 @@ final class DmConversationRoom extends ConversationRoom {
   const DmConversationRoom({required this.title, required this.personPubkey});
 }
 
-/// A channel's main timeline: the channel's letter avatar and `#name`.
+/// A channel's main timeline: the group's letter avatar and name.
 final class ChannelConversationRoom extends ConversationRoom {
   final String channelId;
   final String channelName;
@@ -94,7 +94,7 @@ ConversationRoom resolveConversationRoom(
 String conversationRoomTitle(ConversationRoom room, {String? threadName}) =>
     switch (room) {
       DmConversationRoom(:final title) => title,
-      ChannelConversationRoom(:final channelName) => '#$channelName',
+      ChannelConversationRoom(:final channelName) => channelName,
       ThreadConversationRoom(:final channelName) =>
-        '#$channelName › ${threadName ?? 'Thread'}',
+        '$channelName › ${threadName ?? 'Thread'}',
     };

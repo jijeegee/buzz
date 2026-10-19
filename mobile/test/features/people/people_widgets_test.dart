@@ -94,7 +94,7 @@ void main() {
       await tester.pump(peopleSearchDebounce);
       await tester.pumpAndSettle();
       expect(api.calls.where((c) => c.startsWith('shared')), ['shared b']);
-      expect(find.text('In your channels'), findsOneWidget);
+      expect(find.text('In your groups'), findsOneWidget);
       // Bob is already listed as a friend; Bert is blocked.
       expect(find.byKey(ValueKey('people-shared-$bob')), findsNothing);
       expect(find.byKey(ValueKey('people-shared-$dan')), findsOneWidget);

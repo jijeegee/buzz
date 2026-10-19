@@ -258,7 +258,7 @@ void main() {
 
     final row = find.byKey(ValueKey('chat-row-$_root'));
     expect(
-      find.descendant(of: row, matching: find.text('#general')),
+      find.descendant(of: row, matching: find.text('general')),
       findsOneWidget,
     );
     expect(
@@ -281,7 +281,7 @@ void main() {
     expect(thread.center.dy, closeTo(channel.center.dy, 0.01));
     // The front circle and its ring stay clear of the title.
     final title = tester.getRect(
-      find.descendant(of: row, matching: find.text('#general')),
+      find.descendant(of: row, matching: find.text('general')),
     );
     expect(thread.right + 2, lessThan(title.left));
     expect(find.text('G'), findsOneWidget);

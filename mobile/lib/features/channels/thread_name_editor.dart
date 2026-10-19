@@ -60,7 +60,7 @@ class ThreadNameEditor extends HookConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Visible to everyone in this channel. Up to 40 English or 20 Korean characters. Leave empty to remove the name.',
+                'Visible to everyone in this group. Up to 40 English or 20 Korean characters. Leave empty to remove the name.',
               ),
               const SizedBox(height: Grid.md),
               TextField(

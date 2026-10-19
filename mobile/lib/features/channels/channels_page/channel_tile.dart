@@ -51,11 +51,11 @@ class _ChannelTile extends ConsumerWidget {
                 alignment: Alignment.centerLeft,
                 child: channel.isDm
                     ? _DmAvatar(channel: channel, currentPubkey: currentPubkey)
-                    : Icon(
-                        channelIcon(channel),
+                    : GroupAvatar(
                         key: ValueKey('channel-icon-${channel.id}'),
+                        channel: channel,
                         size: _kChannelIconSize,
-                        color: contentColor,
+                        iconColor: contentColor,
                       ),
               ),
             ),
@@ -124,7 +124,7 @@ class _ChannelTile extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(Radii.sm),
                   ),
                   child: Text(
-                    'Open',
+                    'Public',
                     style: context.textTheme.labelSmall?.copyWith(
                       color: context.colors.primary,
                       fontWeight: FontWeight.w600,

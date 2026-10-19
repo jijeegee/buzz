@@ -68,7 +68,7 @@ void chatsParityTests(Widget Function(List<Override>) app) {
       await tester.longPress(find.text('direct'));
       await tester.pumpAndSettle();
       expect(find.text('Pin'), findsOneWidget);
-      expect(find.text('Mute channel'), findsOneWidget);
+      expect(find.text('Mute chat'), findsOneWidget);
       await tester.tap(find.text('Pin'));
       await tester.pumpAndSettle();
       order(['direct', 'newer', 'older']);

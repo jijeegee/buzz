@@ -82,7 +82,7 @@ void main() {
       senderLabel: 'Me',
     );
     expect(room, isA<ChannelConversationRoom>());
-    expect(conversationRoomTitle(room), '#kuzz');
+    expect(conversationRoomTitle(room), 'kuzz');
   });
 
   test('a thread reply is the thread room named after the thread', () {
@@ -101,9 +101,9 @@ void main() {
     expect((room as ThreadConversationRoom).threadRootId, 'root1');
     expect(
       conversationRoomTitle(room, threadName: 'Activity filter'),
-      '#kuzz › Activity filter',
+      'kuzz › Activity filter',
     );
-    expect(conversationRoomTitle(room), '#kuzz › Thread');
+    expect(conversationRoomTitle(room), 'kuzz › Thread');
   });
 
   test('an unloaded channel falls back to the feed channel name', () {
@@ -113,6 +113,6 @@ void main() {
       currentPubkey: me,
       senderLabel: 'Me',
     );
-    expect(conversationRoomTitle(room), '#kuzz');
+    expect(conversationRoomTitle(room), 'kuzz');
   });
 }

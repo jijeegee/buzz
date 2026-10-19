@@ -342,12 +342,12 @@ Future<_NonMemberMentionChoice?> _promptNonMemberMention(
   return showKuzzDialog<_NonMemberMentionChoice>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Mention people outside this channel?'),
+      title: const Text('Mention people outside this group?'),
       content: Text(
         canInvite
-            ? '${names.join(', ')} $verb not in this channel. Invite them to '
-                  'the channel, or send without inviting them.'
-            : '${names.join(', ')} $verb not in this channel. '
+            ? '${names.join(', ')} $verb not in this group. Invite them to '
+                  'the group, or send without inviting them.'
+            : '${names.join(', ')} $verb not in this group. '
                   '$privateChannelAddDeniedMessage You can still send without '
                   'inviting them.',
       ),

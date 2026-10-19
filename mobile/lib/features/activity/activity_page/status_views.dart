@@ -139,7 +139,7 @@ class _EmptyFilterState extends StatelessWidget {
       ),
       InboxFilter.activity => (
         LucideIcons.activity,
-        'No recent channel activity',
+        'No recent group activity',
       ),
       InboxFilter.agentActivity => (LucideIcons.bot, 'No agent updates'),
       _ => (LucideIcons.bell, 'No activity yet'),

@@ -36,11 +36,20 @@ class _ChannelLinkMd extends InlineMd {
     final channelName = raw.substring(1);
     final opensChannel = channelId != null && onChannelTap != null;
     final child = _TokenPill(
-      icon: LucideIcons.hash,
+      icon: channelId == null ? LucideIcons.users : null,
+      leading: channelId == null
+          ? null
+          : ConversationLetterAvatar(
+              key: const ValueKey('group-pill-avatar'),
+              seed: channelId,
+              label: channelName,
+              size: (config.style?.fontSize ?? 16) * 0.95,
+              avatarKey: null,
+            ),
       interactive: opensChannel,
       semanticLabel: opensChannel
-          ? 'Open channel $channelName'
-          : 'Channel $channelName',
+          ? 'Open group $channelName'
+          : 'Group $channelName',
       text: channelName,
       textStyle: config.style?.copyWith(fontWeight: FontWeight.w500),
     );
@@ -57,6 +66,9 @@ class _ChannelLinkMd extends InlineMd {
 
 class _TokenPill extends StatelessWidget {
   final IconData? icon;
+
+  /// Shown before [text] in place of [icon].
+  final Widget? leading;
   final bool interactive;
   final String? semanticLabel;
   final String text;
@@ -65,6 +77,7 @@ class _TokenPill extends StatelessWidget {
   const _TokenPill({
     super.key,
     this.icon,
+    this.leading,
     this.interactive = false,
     this.semanticLabel,
     required this.text,
@@ -87,7 +100,10 @@ class _TokenPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (icon != null) ...[
+          if (leading case final leading?) ...[
+            leading,
+            const SizedBox(width: Grid.quarter + 1),
+          ] else if (icon != null) ...[
             Icon(icon, size: fontSize * 0.95, color: context.colors.primary),
             const SizedBox(width: Grid.quarter + 1),
           ],

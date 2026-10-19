@@ -54,7 +54,7 @@ class _ChannelAppBarTitle extends ConsumerWidget {
       button: true,
       label: 'Open settings for ${channel.name}, $memberLabel',
       child: Tooltip(
-        message: 'Open channel settings',
+        message: 'Open group settings',
         child: InkWell(
           key: const ValueKey('channel-header-settings-trigger'),
           borderRadius: BorderRadius.circular(Radii.md),
@@ -77,11 +77,16 @@ class _ChannelAppBarTitle extends ConsumerWidget {
                     ),
                   ),
                 ),
-                child: Icon(
-                  channelIcon(channel),
-                  size: 20,
-                  color: context.colors.primary,
-                ),
+                child: channel.isDm || channel.isForum
+                    ? GroupAvatar(
+                        channel: channel,
+                        size: 20,
+                        iconColor: context.colors.primary,
+                      )
+                    : GroupAvatar(
+                        channel: channel,
+                        size: _channelHeaderAvatarSize,
+                      ),
               ),
               const SizedBox(width: Grid.twelve),
               Expanded(

@@ -761,7 +761,7 @@ String _friendlyStarterSetupError(Object error) {
       message.contains('Connection refused') ||
       message.contains('Network is unreachable') ||
       message.contains('No route to host')) {
-    return 'Starter channels could not reach the relay. Check your connection and retry setup.';
+    return 'Starter groups could not reach the relay. Check your connection and retry setup.';
   }
-  return 'Starter channels could not be set up. Retry setup to try again.';
+  return 'Starter groups could not be set up. Retry setup to try again.';
 }

@@ -76,7 +76,7 @@ class FeedItem {
       default:
         if (category == 'mention') return 'Mention';
         if (category == 'agent_activity') return 'Agent update';
-        return 'Channel update';
+        return 'Group update';
     }
   }
 

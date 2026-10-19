@@ -253,7 +253,7 @@ void main() {
         actorPubkey: 'pk1',
         targetPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice joined the channel');
+      expect(event.describe(resolve), 'Alice joined the group');
     });
 
     test('member_joined by other', () {
@@ -270,7 +270,7 @@ void main() {
         type: SystemEventType.memberLeft,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice left the channel');
+      expect(event.describe(resolve), 'Alice left the group');
     });
 
     test('member_removed', () {
@@ -279,7 +279,7 @@ void main() {
         actorPubkey: 'pk1',
         targetPubkey: 'pk2',
       );
-      expect(event.describe(resolve), 'Alice removed Bob from the channel');
+      expect(event.describe(resolve), 'Alice removed Bob from the group');
     });
 
     test('topic_changed', () {
@@ -358,7 +358,7 @@ void main() {
         type: SystemEventType.channelCreated,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice created this channel');
+      expect(event.describe(resolve), 'Alice created this group');
     });
 
     test('channel_archived', () {
@@ -366,7 +366,7 @@ void main() {
         type: SystemEventType.channelArchived,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice archived this channel');
+      expect(event.describe(resolve), 'Alice archived this group');
     });
 
     test('channel_unarchived', () {
@@ -374,7 +374,7 @@ void main() {
         type: SystemEventType.channelUnarchived,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice unarchived this channel');
+      expect(event.describe(resolve), 'Alice unarchived this group');
     });
 
     test('goals_changed', () {
