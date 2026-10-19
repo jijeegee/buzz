@@ -97,7 +97,7 @@ export async function addProjectChannel(
     } catch (cleanupError) {
       throw new AggregateError(
         [error, cleanupError],
-        "Kuzz could not verify the project after creating the channel, and could not remove the unlinked channel. Delete it manually, then refresh and try again.",
+        "Kuzz could not verify the project after creating the group, and could not remove the unlinked group. Delete it manually, then refresh and try again.",
       );
     }
     throw error;
@@ -107,13 +107,13 @@ export async function addProjectChannel(
     removeCreatedChannelAndThrow(
       error instanceof Error
         ? error
-        : new Error("Could not verify the project after creating the channel."),
+        : new Error("Could not verify the project after creating the group."),
     ),
   );
   if (!confirmedLiveHead || confirmedLiveHead.id !== liveHead.id) {
     await removeCreatedChannelAndThrow(
       new Error(
-        "This project was updated by another session while the channel was being created. Refresh and try again.",
+        "This project was updated by another session while the group was being created. Refresh and try again.",
       ),
     );
   }
@@ -155,7 +155,7 @@ export async function addProjectChannel(
           ? new Error("Projects aren't available in this community yet.")
           : error instanceof Error
             ? error
-            : new Error("Could not link the channel to this project."),
+            : new Error("Could not link the group to this project."),
       );
     }
   }

@@ -45,7 +45,7 @@ function configuredStepDetail(
     }
     case "send_message": {
       const text = quoted(step.text);
-      const channel = channelLabel ? `#${channelLabel}` : null;
+      const channel = channelLabel ? `${channelLabel}` : null;
       if (text && channel) return `${text} in ${channel}`;
       return text ?? channel;
     }

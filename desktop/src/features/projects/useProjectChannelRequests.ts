@@ -133,12 +133,12 @@ export function useProjectChannelRequests() {
     const owner = normalizePubkey(project.owner);
     const agent = normalizePubkey(sourceAgentPubkey);
     if ((!identity || normalizePubkey(identity) !== owner) && agent !== owner) {
-      setError("Only the project owner can approve this channel.");
+      setError("Only the project owner can approve this group.");
       return;
     }
     if (request.request.templateName && !template) {
       setError(
-        `Channel template "${request.request.templateName}" is not available on this device.`,
+        `Group template "${request.request.templateName}" is not available on this device.`,
       );
       return;
     }
@@ -154,13 +154,13 @@ export function useProjectChannelRequests() {
         ttlSeconds: request.request.ttlSeconds,
         visibility: request.request.visibility,
       });
-      toast.success(`Channel "#${request.request.name}" created.`);
+      toast.success(`Group "${request.request.name}" created.`);
       advanceRequestQueue();
     } catch (nextError) {
       setError(
         nextError instanceof Error
           ? nextError.message
-          : "Failed to create the project channel.",
+          : "Failed to create the project group.",
       );
     }
   }

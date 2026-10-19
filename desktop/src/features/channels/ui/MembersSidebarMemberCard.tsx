@@ -448,7 +448,7 @@ function MemberActionsMenu({
               onClick={() => onRemoveMember(member)}
             >
               <Trash2 className="h-4 w-4" />
-              Remove from channel
+              Remove from group
             </DropdownMenuItem>
           </>
         ) : null}

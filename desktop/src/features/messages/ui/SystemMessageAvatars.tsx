@@ -174,7 +174,7 @@ export function MembershipAvatarStack({
   if (visiblePubkeys.length === 0) return null;
   return (
     <div
-      aria-label={`${visiblePubkeys.length} channel member${visiblePubkeys.length === 1 ? "" : "s"}`}
+      aria-label={`${visiblePubkeys.length} group member${visiblePubkeys.length === 1 ? "" : "s"}`}
       className="relative z-10 flex shrink-0 items-center justify-center"
       data-testid="system-message-avatar-stack"
       role="img"

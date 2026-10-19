@@ -14,7 +14,7 @@ export function projectsSectionTitle(filter: ProjectsFilter) {
   if (filter === "prs") return "Reviews";
   if (filter === "issues") return "Tasks";
   if (filter === "repositories") return "Repositories";
-  if (filter === "channels") return "Channels";
+  if (filter === "channels") return "Groups";
   return "Projects";
 }
 

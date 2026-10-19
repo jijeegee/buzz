@@ -128,7 +128,7 @@ export function ProjectsToolbar({
     { label: "Repositories", value: "repositories" },
     { label: "Tasks", value: "issues" },
     { label: "Reviews", value: "prs" },
-    { label: "Channels", value: "channels" },
+    { label: "Groups", value: "channels" },
   ];
 
   return (

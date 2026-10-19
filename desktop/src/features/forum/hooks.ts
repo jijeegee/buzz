@@ -95,7 +95,7 @@ export function useCreateForumPostMutation(channel: Channel | null) {
       mediaTags?: string[][];
     }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return sendChannelMessage(
@@ -123,7 +123,7 @@ export function useDeleteForumPostMutation(channel: Channel | null) {
   return useMutation({
     mutationFn: async ({ eventId }: { eventId: string }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
       await deleteMessage(channel.id, eventId);
     },
@@ -146,7 +146,7 @@ export function useDeleteForumReplyMutation(
   return useMutation({
     mutationFn: async ({ eventId }: { eventId: string }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
       await deleteMessage(channel.id, eventId);
     },
@@ -181,7 +181,7 @@ export function useCreateForumReplyMutation(channel: Channel | null) {
       mediaTags?: string[][];
     }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return sendChannelMessage(

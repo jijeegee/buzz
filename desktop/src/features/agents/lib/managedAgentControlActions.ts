@@ -132,7 +132,7 @@ export async function stopManagedAgentWithRules({
       relayAgents,
     });
     if (!channelId) {
-      throw new Error("Cannot stop: agent is not in any channel");
+      throw new Error("Cannot stop: agent is not in any group");
     }
 
     await sendChannelMessage(channelId, "!shutdown", undefined, undefined, [
@@ -254,7 +254,7 @@ export async function deleteManagedAgentWithRules({
     } else {
       if (!skipRemoteDeleteConfirm) {
         const confirmed = window.confirm(
-          "This agent is deployed but not in any channel. " +
+          "This agent is deployed but not in any group. " +
             "Deleting removes the local management record; the remote deployment may still be running. Continue?",
         );
         if (!confirmed) {

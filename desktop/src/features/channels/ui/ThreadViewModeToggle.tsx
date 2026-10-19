@@ -28,7 +28,7 @@ const THREAD_VIEW_MODE_TOGGLE = {
   focus: {
     // Viewing the drawer → offer the pane.
     icon: Columns2,
-    label: "Show thread beside channel",
+    label: "Show thread beside group",
     target: "split",
   },
   split: {

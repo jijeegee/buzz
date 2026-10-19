@@ -329,7 +329,7 @@ export function ProjectHomeContextPanel({
           />
         }
         testId="project-home-context-channel"
-        title="Channels"
+        title="Groups"
       >
         {listedChannels.length > 0 ? (
           listedChannels.map((binding) => {

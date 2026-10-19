@@ -77,7 +77,7 @@ export function resolveInboxConversationRoom(
     };
   }
 
-  const channelLabel = item.channelLabel?.trim() || "channel";
+  const channelLabel = item.channelLabel?.trim() || "group";
   const threadId = getInboxThreadRootId(item);
   return threadId
     ? { kind: "thread", channelId, channelLabel, threadId }
@@ -93,8 +93,8 @@ export function formatInboxConversationRoomTitle(
     case "dm":
       return room.title;
     case "channel":
-      return `#${room.channelLabel}`;
+      return `${room.channelLabel}`;
     case "thread":
-      return `#${room.channelLabel} › ${threadName || "Thread"}`;
+      return `${room.channelLabel} › ${threadName || "Thread"}`;
   }
 }

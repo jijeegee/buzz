@@ -203,7 +203,7 @@ export function CreateChannelFormFields({
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setIsCreateTemplateOpen(true)}>
               <Plus className="size-4" />
-              Create new channel template…
+              Create new group template…
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

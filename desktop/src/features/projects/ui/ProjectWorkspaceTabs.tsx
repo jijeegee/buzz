@@ -392,7 +392,7 @@ export function WorkspaceTabs({
       <ProjectSectionHeader
         className={PROJECT_SECTION_HEADER_CLASS}
         icon={Users}
-        title="Channels"
+        title="Groups"
       />
     ) : selectedTab === "contributors" ? (
       <ProjectSectionHeader

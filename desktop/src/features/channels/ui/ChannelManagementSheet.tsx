@@ -525,7 +525,7 @@ export function ChannelManagementSheet({
               <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
                 <DialogTitle>
                   Edit {nextVisibility === "private" ? "private" : "public"}{" "}
-                  channel
+                  group
                 </DialogTitle>
               </DialogHeader>
 
@@ -775,7 +775,7 @@ function ChannelManagementPanelContent({
         transparent={transparentChrome}
       >
         <AuxiliaryPanelHeaderGroup
-          backButtonAriaLabel="Back to channel"
+          backButtonAriaLabel="Back to group"
           backButtonTestId="channel-management-back"
           mode={mode}
           onBack={
@@ -792,12 +792,12 @@ function ChannelManagementPanelContent({
                   ? "Goals"
                   : activeView === "workflows"
                     ? "Workflows"
-                    : "Channel Settings"}
+                    : "Group Settings"}
             </AuxiliaryPanelTitle>
           </DialogPrimitive.Title>
         </AuxiliaryPanelHeaderGroup>
         <DialogPrimitive.Description className="sr-only">
-          Channel settings
+          Group settings
         </DialogPrimitive.Description>
       </AuxiliaryPanelHeader>
 
@@ -860,7 +860,7 @@ function ChannelManagementPanelContent({
                 value={`${memberCount} member${memberCount === 1 ? "" : "s"}`}
               />
               <CopyFieldRow
-                label="Channel ID"
+                label="Group ID"
                 testId="channel-management-channel-id"
                 value={resolvedChannel.id}
               />
@@ -888,7 +888,7 @@ function ChannelManagementPanelContent({
               <div className="space-y-3">
                 <IngressRow
                   description={canvasPreview}
-                  helpText="Use the canvas as a shared space for notes, plans, and other channel information."
+                  helpText="Use the canvas as a shared space for notes, plans, and other group information."
                   icon={BookOpenText}
                   label="Canvas"
                   onClick={() => setActiveView("canvas")}
@@ -931,13 +931,13 @@ function ChannelManagementPanelContent({
               <FieldGroup testId="channel-management-actions">
                 {canJoin ? (
                   <ActionFieldRow
-                    description="Add this channel to your sidebar"
+                    description="Add this group to your sidebar"
                     disabled={joinChannelMutation.isPending}
                     icon={DoorOpen}
                     label={
                       joinChannelMutation.isPending
-                        ? "Joining channel..."
-                        : "Join channel"
+                        ? "Joining group..."
+                        : "Join group"
                     }
                     onClick={() => {
                       void joinChannelMutation.mutateAsync();
@@ -951,8 +951,8 @@ function ChannelManagementPanelContent({
                     icon={DoorClosed}
                     label={
                       leaveChannelMutation.isPending
-                        ? "Leaving channel..."
-                        : "Leave channel"
+                        ? "Leaving group..."
+                        : "Leave group"
                     }
                     onClick={() => {
                       void leaveChannelMutation.mutateAsync().then(() => {
@@ -969,8 +969,8 @@ function ChannelManagementPanelContent({
                       icon={ArchiveRestore}
                       label={
                         unarchiveChannelMutation.isPending
-                          ? "Restoring channel..."
-                          : "Unarchive channel"
+                          ? "Restoring group..."
+                          : "Unarchive group"
                       }
                       onClick={() => {
                         void unarchiveChannelMutation.mutateAsync();
@@ -983,8 +983,8 @@ function ChannelManagementPanelContent({
                       icon={Archive}
                       label={
                         archiveChannelMutation.isPending
-                          ? "Archiving channel..."
-                          : "Archive channel"
+                          ? "Archiving group..."
+                          : "Archive group"
                       }
                       onClick={() => {
                         void archiveChannelMutation.mutateAsync();
@@ -1008,7 +1008,7 @@ function ChannelManagementPanelContent({
                         destructive
                         disabled={deleteChannelMutation.isPending}
                         icon={Trash2}
-                        label="Delete channel"
+                        label="Delete group"
                         testId="channel-management-delete"
                       />
                     }

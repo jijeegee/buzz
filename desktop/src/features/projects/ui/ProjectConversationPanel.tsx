@@ -195,8 +195,8 @@ export function ProjectConversationPanel({
   const layoutProps = {
     canResetWidth,
     enterMotion: !canShowThread,
-    headerTitle: channelLabel ? `#${channelLabel}` : "Thread",
-    headerTitleAriaLabel: channelLabel ? `Open #${channelLabel}` : undefined,
+    headerTitle: channelLabel ? `${channelLabel}` : "Thread",
+    headerTitleAriaLabel: channelLabel ? `Open ${channelLabel}` : undefined,
     isFocusMode: false,
     isSinglePanelView: !isOverlay,
     layout: "standalone" as const,

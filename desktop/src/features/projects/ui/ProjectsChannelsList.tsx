@@ -55,8 +55,8 @@ export function ProjectsChannelsList({
       .sort((left, right) => {
         const leftChannel = channelsById.get(left.channelId);
         const rightChannel = channelsById.get(right.channelId);
-        const leftName = leftChannel?.name ?? "Channel unavailable";
-        const rightName = rightChannel?.name ?? "Channel unavailable";
+        const leftName = leftChannel?.name ?? "Group unavailable";
+        const rightName = rightChannel?.name ?? "Group unavailable";
         const leftActivity =
           lastMessageAtSeconds(leftChannel?.lastMessageAt) ?? 0;
         const rightActivity =
@@ -94,12 +94,12 @@ export function ProjectsChannelsList({
     >();
     for (const row of rows) {
       const channel = channelsById.get(row.channelId);
-      const name = channel?.name ?? "Channel unavailable";
+      const name = channel?.name ?? "Group unavailable";
       const rowKey = projectRelatedChannelDisplayRowKey(row);
       const item = selectionItemFromChannel({
         channelId: row.channelId,
         people: channel?.participantPubkeys ?? channel?.participants ?? [],
-        title: channel ? `#${name}` : name,
+        title: channel ? `${name}` : name,
       });
       items.set(rowKey, { ...item, id: `${item.id}:${rowKey}` });
     }
@@ -130,7 +130,7 @@ export function ProjectsChannelsList({
   }, [rows]);
 
   if (channelsQuery.isLoading && rows.length === 0) {
-    return <KuzzLoadingState label="Loading project channels" />;
+    return <KuzzLoadingState label="Loading project groups" />;
   }
   if (rows.length === 0) {
     const searching = Boolean(searchQuery.trim());
@@ -139,10 +139,10 @@ export function ProjectsChannelsList({
         description={
           searching
             ? "Try a different search."
-            : "Link a discussion channel to a project or repository and it will appear here."
+            : "Link a discussion group to a project or repository and it will appear here."
         }
         panel={false}
-        title={searching ? "No matching channels" : "No project channels yet"}
+        title={searching ? "No matching groups" : "No project groups yet"}
       />
     );
   }
@@ -171,13 +171,13 @@ export function ProjectsChannelsList({
             {group.rows.map((row) => {
               const rowKey = projectRelatedChannelDisplayRowKey(row);
               const channel = channelsById.get(row.channelId);
-              const name = channel?.name ?? "Channel unavailable";
+              const name = channel?.name ?? "Group unavailable";
               const lastActivityAt = lastMessageAtSeconds(
                 channel?.lastMessageAt,
               );
               const repositoryLabel =
                 row.repositoryNames.length === 0
-                  ? "Project channel"
+                  ? "Project group"
                   : row.repositoryNames.length === 1
                     ? row.repositoryNames[0]
                     : `${row.repositoryNames.length} repositories`;
@@ -207,7 +207,7 @@ export function ProjectsChannelsList({
                     description={
                       channel
                         ? listRowDescription(channel.description, name)
-                        : "Channel details are unavailable"
+                        : "Group details are unavailable"
                     }
                     icon={
                       channel ? (
@@ -226,9 +226,9 @@ export function ProjectsChannelsList({
                         : undefined
                     }
                     testId="project-channel-row"
-                    title={channel ? `#${name}` : name}
+                    title={channel ? `${name}` : name}
                     titleAttr={
-                      channel ? `Open #${name}` : "Open unavailable channel"
+                      channel ? `Open ${name}` : "Open unavailable group"
                     }
                   />
                 </li>

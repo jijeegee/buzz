@@ -7,7 +7,7 @@ import type {
 
 export const WELCOME_CHANNEL_NAME = "Welcome";
 export const WELCOME_CHANNEL_DESCRIPTION =
-  "A private channel for getting oriented in this community.";
+  "A private group for getting oriented in this community.";
 /** The public channel older setups joined every new member to. New accounts
  *  no longer join it; members who already did keep its welcome experience. */
 export const STARTER_WELCOME_CHANNEL_NAME = "welcome-everyone";

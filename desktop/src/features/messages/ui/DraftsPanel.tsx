@@ -42,7 +42,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 const SENT_DRAFT_PREFIX = "sent:";
 const THREAD_DRAFT_PREFIX = "thread:";
-const UNKNOWN_CHANNEL_LABEL = "Unknown channel";
+const UNKNOWN_CHANNEL_LABEL = "Unknown group";
 
 export type DraftListEntry = {
   draft: DraftState;
@@ -301,7 +301,7 @@ export function SendConfirmDialog({
   onConfirm,
   open,
 }: SendConfirmDialogProps) {
-  const destination = isDm ? channelLabel : `#${channelLabel}`;
+  const destination = isDm ? channelLabel : `${channelLabel}`;
   return (
     <AlertDialog
       onOpenChange={(nextOpen) => {
@@ -361,7 +361,7 @@ function DraftRow({
   const channelLabel = source.channel
     ? isDm
       ? source.label
-      : `#${source.label}`
+      : `${source.label}`
     : UNKNOWN_CHANNEL_LABEL;
 
   return (
@@ -424,7 +424,7 @@ function DraftRow({
                   ? "Open draft"
                   : isOrphaned
                     ? "Thread deleted"
-                    : "No channel link"
+                    : "No group link"
               }
               onClick={() => onOpen(entry)}
             >
@@ -437,7 +437,7 @@ function DraftRow({
                   ? "Send message"
                   : isOrphaned
                     ? "Thread deleted"
-                    : "No channel link"
+                    : "No group link"
               }
               onClick={() => onSend(entry)}
             >

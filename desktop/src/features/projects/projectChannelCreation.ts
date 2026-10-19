@@ -23,17 +23,17 @@ export function buildProjectRelatedChannelPatchTemplate({
 }): { alreadyBound: boolean; project: ProjectEventTemplate } {
   const normalizedOwner = ownerPubkey.trim().toLowerCase();
   if (normalizedOwner !== liveHead.pubkey.toLowerCase()) {
-    throw new Error("Only the project owner can add channels.");
+    throw new Error("Only the project owner can add groups.");
   }
   const normalizedChannelId = channelId.trim();
   if (!isValidProjectChannelId(normalizedChannelId)) {
-    throw new Error("Project channel is invalid.");
+    throw new Error("Project group is invalid.");
   }
   const homeChannelId = liveHead.tags.find(
     (tag) => tag[0] === "kuzz-channel",
   )?.[1];
   if (homeChannelId === normalizedChannelId) {
-    throw new Error("That channel is already this project's home.");
+    throw new Error("That group is already this project's home.");
   }
   const existingRelated = liveHead.tags
     .filter((tag) => tag[0] === PROJECT_RELATED_CHANNEL_TAG)
@@ -52,7 +52,7 @@ export function buildProjectRelatedChannelPatchTemplate({
   }
   if (existingRelated.length >= MAX_PROJECT_RELATED_CHANNELS) {
     throw new Error(
-      `A project cannot contain more than ${MAX_PROJECT_RELATED_CHANNELS} extra channels.`,
+      `A project cannot contain more than ${MAX_PROJECT_RELATED_CHANNELS} extra groups.`,
     );
   }
   const tags = [

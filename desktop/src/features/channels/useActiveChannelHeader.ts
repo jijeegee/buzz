@@ -92,7 +92,7 @@ export function useActiveChannelHeader(
           currentPubkey,
           activeDmProfilesQuery.data?.profiles,
         )
-      : "Channels",
+      : "Groups",
     activeDmAvatarUrl,
     activeDmHeaderParticipants,
     activeDmPresenceStatus,

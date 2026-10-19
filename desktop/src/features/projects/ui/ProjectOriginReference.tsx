@@ -25,7 +25,7 @@ export function ProjectOriginReference({
             : // Resolved via a bounded per-id lookup ({@link useChannelReference}),
               // so an unresolved id is a private, deleted, or otherwise
               // inaccessible channel — a non-member open channel still names it.
-              `Origin channel ${channelId} is not visible to you. Origin is set by the author and isn't verified.`
+              `Origin group ${channelId} is not visible to you. Origin is set by the author and isn't verified.`
         }
       >
         <span
@@ -36,15 +36,15 @@ export function ProjectOriginReference({
         </span>
         {isOpenable ? (
           <button
-            aria-label={`Open author-claimed origin channel #${channel.name}`}
+            aria-label={`Open author-claimed origin group ${channel.name}`}
             className="min-w-0 truncate font-medium text-foreground underline-offset-2 hover:underline"
             onClick={() => void goChannel(channel.id)}
             type="button"
           >
-            #{channel.name}
+            {channel.name}
           </button>
         ) : (
-          <span className="shrink-0 whitespace-nowrap">a private channel</span>
+          <span className="shrink-0 whitespace-nowrap">a private group</span>
         )}
         <span
           className="shrink-0 whitespace-nowrap"

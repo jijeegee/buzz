@@ -216,7 +216,7 @@ function getResultSectionKey(result: SearchResult): SearchResultSectionKey {
 function getSectionTitle(sectionKey: SearchResultSectionKey) {
   switch (sectionKey) {
     case "channels":
-      return "Channels";
+      return "Groups";
     case "direct-messages":
       return "Direct messages";
     case "people":
@@ -247,7 +247,7 @@ function SearchHitContextLine({ label }: { label: SearchHitContextLabel }) {
           )}
           data-channel-link=""
         >
-          <span className="truncate">#{label.channelLabel}</span>
+          <span className="truncate">{label.channelLabel}</span>
         </span>
       ) : null}
     </span>
@@ -445,7 +445,7 @@ export function TopbarSearch({
         kind: "action",
         action: {
           id: "browse-channels",
-          title: "Browse channels",
+          title: "Find groups",
         },
       });
     }
@@ -455,7 +455,7 @@ export function TopbarSearch({
         kind: "action",
         action: {
           id: "create-channel",
-          title: "Create a new channel",
+          title: "New group",
         },
       });
     }

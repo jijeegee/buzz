@@ -52,7 +52,7 @@ export function ChannelHero({
       )}
       {channel.channelType !== "dm" && onEdit ? (
         <button
-          aria-label="Edit channel"
+          aria-label="Edit group"
           className="group flex max-w-full flex-col items-center rounded-lg px-8 py-1 text-center focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="channel-management-edit"
           onClick={onEdit}

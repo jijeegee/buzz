@@ -631,7 +631,7 @@ export function useChannelDetailsQuery(
     queryKey: ["channels", channelId ?? "none", "detail"],
     queryFn: async () => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return getChannelDetails(channelId);
@@ -649,7 +649,7 @@ export function useChannelMembersQuery(
     queryKey: ["channels", channelId ?? "none", "members"],
     queryFn: async () => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return getChannelMembers(channelId);
@@ -664,7 +664,7 @@ export function useUpdateChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: (input: Omit<UpdateChannelInput, "channelId">) => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return updateChannel({ ...input, channelId });
@@ -707,7 +707,7 @@ export function useSetChannelTopicMutation(channelId: string | null) {
   return useMutation({
     mutationFn: (input: Omit<SetChannelTopicInput, "channelId">) => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return setChannelTopic({ ...input, channelId });
@@ -725,7 +725,7 @@ export function useSetChannelPurposeMutation(channelId: string | null) {
   return useMutation({
     mutationFn: (input: Omit<SetChannelPurposeInput, "channelId">) => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return setChannelPurpose({ ...input, channelId });
@@ -743,7 +743,7 @@ export function useArchiveChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       await archiveChannel(channelId);
@@ -767,7 +767,7 @@ export function useUnarchiveChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       await unarchiveChannel(channelId);
@@ -791,7 +791,7 @@ export function useDeleteChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       await deleteChannel(channelId);
@@ -833,7 +833,7 @@ export function useAddChannelMembersMutation(channelId: string | null) {
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return addChannelMembers({ ...rest, channelId: effectiveChannelId });
@@ -867,7 +867,7 @@ export function useRemoveChannelMemberMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async (pubkey: string) => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       await removeChannelMember(channelId, pubkey);
@@ -888,7 +888,7 @@ export function useJoinChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       await joinChannel(channelId);
@@ -905,7 +905,7 @@ export function useLeaveChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       await leaveChannel(channelId);

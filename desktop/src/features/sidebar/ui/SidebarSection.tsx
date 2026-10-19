@@ -375,7 +375,7 @@ export function ChannelMenuButton({
       title={
         <>
           <span className="min-w-0 truncate">
-            {channel.channelType === "dm" ? resolvedLabel : `#${resolvedLabel}`}
+            {channel.channelType === "dm" ? resolvedLabel : `${resolvedLabel}`}
           </span>
           {channel.channelType === "dm" &&
           (channel.participantPubkeys.length === 2 ||

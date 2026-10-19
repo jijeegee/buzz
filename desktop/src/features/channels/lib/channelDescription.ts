@@ -11,12 +11,12 @@ export function getChannelDetail(channel: Channel): string | null {
 
 export function getChannelDescription(channel: Channel | null): string {
   if (!channel) {
-    return "Connect to browse channels and read messages.";
+    return "Connect to find groups and read messages.";
   }
 
   const prefixes = [
     channel.archivedAt ? "Archived." : null,
-    !channel.isMember ? "Read-only until you join this open channel." : null,
+    !channel.isMember ? "Read-only until you join this open group." : null,
   ].filter((value) => value && value.trim().length > 0);
 
   // Show only the first non-empty field to avoid duplication when
@@ -29,5 +29,5 @@ export function getChannelDescription(channel: Channel | null): string {
   const prefixText = prefixes.join(" ");
   const parts = [prefixText || null, detail ?? null].filter(Boolean);
 
-  return parts.length > 0 ? parts.join("\n") : "Channel details and activity.";
+  return parts.length > 0 ? parts.join("\n") : "Group details and activity.";
 }

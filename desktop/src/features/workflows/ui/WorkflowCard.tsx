@@ -305,7 +305,7 @@ export function WorkflowCard({
                 className="truncate text-xs font-semibold text-foreground"
                 data-testid="workflow-card-channel"
               >
-                #{channelName}
+                {channelName}
               </p>
             ) : null}
             <p

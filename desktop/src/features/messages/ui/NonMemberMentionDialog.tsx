@@ -63,17 +63,17 @@ export function NonMemberMentionDialog({
       >
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Mention people outside this channel?
+            Mention people outside this group?
           </AlertDialogTitle>
           <AlertDialogDescription>
             {names.join(", ")} {names.length === 1 ? "is" : "are"} not in this
-            channel.{" "}
+            group.{" "}
             {onDoNothing
               ? canInvite
-                ? "Invite them to the channel, or send without inviting them."
+                ? "Add them to the group, or send without inviting them."
                 : `${PRIVATE_CHANNEL_ADD_DENIED_MESSAGE} You can still send without inviting them.`
               : canInvite
-                ? "Invite them to the channel, or cancel to keep your draft."
+                ? "Add them to the group, or cancel to keep your draft."
                 : PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
           </AlertDialogDescription>
         </AlertDialogHeader>

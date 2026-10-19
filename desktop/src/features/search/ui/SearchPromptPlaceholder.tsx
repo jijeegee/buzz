@@ -3,7 +3,7 @@ import * as React from "react";
 
 const SEARCH_PROMPT_WORDS = [
   "everything",
-  "a channel",
+  "a group",
   "a message",
   "a thread",
   "an agent",

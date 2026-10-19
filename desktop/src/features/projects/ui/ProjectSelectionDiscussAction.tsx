@@ -41,7 +41,7 @@ export function ProjectSelectionDiscussAction({
         variant="ghost"
       >
         <MessageSquare className="h-3.5 w-3.5" />
-        Discuss in a channel
+        Discuss in a group
         <ChevronDown
           className={cn(
             "ml-auto h-3.5 w-3.5 transition-transform",
@@ -68,7 +68,7 @@ export function ProjectSelectionDiscussAction({
                 variant="ghost"
               >
                 <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">#{name}</span>
+                <span className="min-w-0 flex-1 truncate">{name}</span>
                 {count > 1 ? (
                   <span className="shrink-0 tabular-nums text-muted-foreground">
                     {count}
@@ -86,7 +86,7 @@ export function ProjectSelectionDiscussAction({
             variant="ghost"
           >
             <Search className="h-3.5 w-3.5 text-muted-foreground" />
-            Search channels…
+            Search groups…
           </Button>
         </div>
       ) : null}

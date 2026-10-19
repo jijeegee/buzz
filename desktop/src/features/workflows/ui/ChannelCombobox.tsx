@@ -57,17 +57,17 @@ type ChannelComboboxProps = {
 
 export function ChannelCombobox({
   allowEmpty = false,
-  ariaLabel = "Channel",
+  ariaLabel = "Group",
   channels,
   defaultOpen = false,
   disabled,
-  emptyLabel = "Choose a channel",
+  emptyLabel = "Choose a group",
   id,
   isChannelDisabled,
   onAutoOpen,
   onChange,
   readOnly = false,
-  readOnlyTooltip = "The channel can't be changed after a workflow is created.",
+  readOnlyTooltip = "The group can't be changed after a workflow is created.",
   required = false,
   variant = "header",
   value,
@@ -185,7 +185,7 @@ export function ChannelCombobox({
   const selectedLabel = selected
     ? (channelLabels.get(selected.id) ?? selected.name)
     : value
-      ? "Unavailable channel"
+      ? "Unavailable group"
       : emptyLabel;
 
   if (readOnly) {
@@ -276,7 +276,7 @@ export function ChannelCombobox({
               setHighlightedIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search channels..."
+            placeholder="Search groups..."
             role="combobox"
             spellCheck={false}
             value={query}
@@ -312,7 +312,7 @@ export function ChannelCombobox({
           ) : null}
           {filtered.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-              No channels found.
+              No groups found.
             </p>
           ) : (
             filtered.map((channel) => {

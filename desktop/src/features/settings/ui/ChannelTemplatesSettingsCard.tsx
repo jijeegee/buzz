@@ -103,11 +103,11 @@ export function ChannelTemplatesSettingsCard() {
   return (
     <section className="min-w-0" data-testid="settings-channel-templates">
       <SettingsSectionHeader
-        title="Channel templates"
+        title="Group templates"
         description={
           <>
-            Save reusable channel configurations and apply them when creating
-            new channels.
+            Save reusable group configurations and apply them when creating new
+            groups.
           </>
         }
         action={
@@ -132,8 +132,7 @@ export function ChannelTemplatesSettingsCard() {
       ) : templates.length === 0 ? (
         <SettingsOptionGroup title="Templates">
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No templates yet. Create one to save a reusable channel
-            configuration.
+            No templates yet. Create one to save a reusable group configuration.
           </div>
         </SettingsOptionGroup>
       ) : (
@@ -451,8 +450,8 @@ export function TemplateFormDialog({
         title={isEditing ? "Edit template" : "Create template"}
         description={
           isEditing
-            ? "Update this channel template configuration."
-            : "Save a reusable channel configuration."
+            ? "Update this group template configuration."
+            : "Save a reusable group configuration."
         }
         footer={
           <div className="flex w-full items-center justify-end gap-2">

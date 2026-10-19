@@ -138,7 +138,7 @@ export async function initializeStarterChannels(
       reason:
         error instanceof Error
           ? error.message
-          : "Failed to set up starter channels",
+          : "Failed to set up starter groups",
     };
   }
 }
@@ -571,7 +571,7 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
 
   const showStarterRetryToast = React.useCallback(
     (reason: string) => {
-      toast.error("Couldn't set up starter channels", {
+      toast.error("Couldn't set up starter groups", {
         id: STARTER_CHANNEL_SETUP_TOAST_ID,
         action: {
           label: "Retry",

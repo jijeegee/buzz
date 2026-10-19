@@ -86,7 +86,7 @@ function AccessRestrictedDescription({
   if (!isOpenable) {
     return (
       <>
-        Repository access is granted through a channel you can’t see. Ask{" "}
+        Repository access is granted through a group you can’t see. Ask{" "}
         <RepositoryOwnerReference
           ownerAvatarUrl={ownerAvatarUrl}
           ownerIsAgent={ownerIsAgent}
@@ -101,14 +101,14 @@ function AccessRestrictedDescription({
     <>
       Repository access is granted through{" "}
       <button
-        aria-label={`Open repository access channel #${channel.name}`}
+        aria-label={`Open repository access group ${channel.name}`}
         className="font-medium text-foreground underline-offset-2 hover:underline"
         onClick={() => void goChannel(channel.id)}
         type="button"
       >
-        #{channel.name}
+        {channel.name}
       </button>
-      , and you’re not a member. Join the channel or ask{" "}
+      , and you’re not a member. Join the group or ask{" "}
       <RepositoryOwnerReference
         ownerAvatarUrl={ownerAvatarUrl}
         ownerIsAgent={ownerIsAgent}

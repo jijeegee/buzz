@@ -298,7 +298,7 @@ export function useChannelMessagesQuery(channel: Channel | null) {
     enabled: channel !== null && channel.channelType !== "forum",
     queryKey,
     queryFn: async ({ signal }) => {
-      if (!channel) throw new Error("No channel selected.");
+      if (!channel) throw new Error("No group selected.");
       // Persisted heads seed asynchronously; wait for that seed so a channel
       // opened during boot takes the hydrated path instead of racing it with
       // a cold relay fetch.
@@ -527,13 +527,13 @@ export function useSendMessageMutation(
 
       if (effectiveChannel == null) {
         if (capturedChannelId != null) {
-          throw new Error("Channel is no longer available.");
+          throw new Error("Group is no longer available.");
         }
-        throw new Error("This channel does not support message sending yet.");
+        throw new Error("This group does not support message sending yet.");
       }
 
       if (effectiveChannel.channelType === "forum") {
-        throw new Error("This channel does not support message sending yet.");
+        throw new Error("This group does not support message sending yet.");
       }
 
       if (!identity) {
@@ -816,7 +816,7 @@ export function useDeleteMessageMutation(channel: Channel | null) {
   return useMutation<void, Error, { eventId: string }>({
     mutationFn: async ({ eventId }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
       cancelAutoRoute(eventId);
       await deleteMessage(channel.id, eventId);
@@ -854,7 +854,7 @@ export function useEditMessageMutation(channel: Channel | null) {
   >({
     mutationFn: async ({ eventId, content, mediaTags, mentionPubkeys }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
       // A Smart routing pick still in flight must not land on the old text.
       cancelAutoRoute(eventId);

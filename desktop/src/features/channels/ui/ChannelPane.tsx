@@ -558,7 +558,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     );
   const wrapThreadPanel = (panel: React.ReactNode) => (
     <ThreadPanelSurface
-      channelName={activeChannel?.name ?? "channel"}
+      channelName={activeChannel?.name ?? "group"}
       covered={threadSurface.covered}
       hasActiveEdit={threadEditTarget !== null}
       isFocusDrawer={useFocusThreadDrawer}
@@ -576,7 +576,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   const wrapIdlePanel = (panel: React.ReactNode) =>
     useFocusIdleDrawer && onCloseIdleAuxiliaryPanel ? (
       <FocusThreadDrawer
-        channelName={activeChannel?.name ?? "channel"}
+        channelName={activeChannel?.name ?? "group"}
         key="idle-auxiliary-surface"
         label={idleAuxiliaryTitle || "Panel"}
         onClose={onCloseIdleAuxiliaryPanel}
@@ -634,7 +634,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       ) : null}
       {!isSinglePanelView ? (
         <section
-          aria-label="Channel messages and composer"
+          aria-label="Group messages and composer"
           className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           inert={channelIsCovered ? true : undefined}
           data-testid="channel-drop-zone"
@@ -698,9 +698,9 @@ export const ChannelPane = React.memo(function ChannelPane({
                 emptyTitle={
                   activeChannel
                     ? activeChannel.channelType === "forum"
-                      ? "Forum channels are next"
+                      ? "Forum groups are next"
                       : "No messages yet"
-                    : "No channel selected"
+                    : "No group selected"
                 }
                 isError={isTimelineError}
                 isLoading={isHuddleTranscript ? false : isTimelineLoading}
@@ -803,7 +803,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                           : null
                       }
                       channelId={activeChannel?.id ?? null}
-                      channelName={activeChannel?.name ?? "channel"}
+                      channelName={activeChannel?.name ?? "group"}
                       channelType={activeChannel?.channelType ?? null}
                       containerClassName="px-5 pb-0"
                       layoutMode="dock"
@@ -830,17 +830,17 @@ export const ChannelPane = React.memo(function ChannelPane({
                         timeoutActive
                           ? "You're timed out by community moderators."
                           : isModerationDmChannel
-                            ? "This channel is read-only."
+                            ? "This group is read-only."
                             : activeChannel?.archivedAt
-                              ? "Archived channels are read-only."
+                              ? "Archived groups are read-only."
                               : activeChannel?.channelType === "forum"
                                 ? "Forum posting is not wired in this pass."
                                 : activeChannel
                                   ? activeChannel.channelType === "dm" &&
                                     directMessageIntro
                                     ? `Message ${directMessageIntro.displayName}`
-                                    : `Message #${activeChannel.name}`
-                                  : "Select a channel"
+                                    : `Message ${activeChannel.name}`
+                                  : "Select a group"
                       }
                       showTopBorder={false}
                     />
@@ -895,7 +895,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                   channel={activeChannel}
                   onOpenGoalLink={onOpenGoalLink}
                   channelId={activeChannel?.id ?? null}
-                  channelName={activeChannel?.name ?? "channel"}
+                  channelName={activeChannel?.name ?? "group"}
                   currentPubkey={currentPubkey}
                   disabled={isComposerDisabled}
                   editTarget={threadEditTarget}

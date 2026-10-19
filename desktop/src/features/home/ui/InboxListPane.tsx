@@ -128,7 +128,7 @@ function InboxLabel({
           data-channel-link=""
         >
           <span className="truncate">
-            #{label.channelLabel}
+            {label.channelLabel}
             {threadId ? ` › ${threadName || "Thread"}` : null}
           </span>
         </span>
@@ -407,10 +407,10 @@ export function InboxListPane({
     const hasReopenError = isReopenErrored?.(item.item.channelId) ?? false;
     const canOpen = hasChannelTarget && !isReopening;
     const openLabel = !hasChannelTarget
-      ? "No channel link"
+      ? "No group link"
       : isReopening
         ? "Reopening…"
-        : "Open in channel";
+        : "Open in group";
     const typeLabel = getInboxTypeLabel(item);
     const threadRootId = getInboxThreadRootId(item);
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
@@ -508,7 +508,7 @@ export function InboxListPane({
                   ? hasActiveReminder
                     ? "Reminder set"
                     : "Remind me later"
-                  : "Cannot remind without a channel"
+                  : "Cannot remind without a group"
               }
               onClick={() => onRemindLater(item)}
             >

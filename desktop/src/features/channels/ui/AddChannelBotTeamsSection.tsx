@@ -132,8 +132,8 @@ export function AddChannelBotTeamsSection({
                         >
                           <Check className="h-4 w-4" />
                           {allInChannel
-                            ? "All in channel"
-                            : `${inChannelCount} in channel`}
+                            ? "All in group"
+                            : `${inChannelCount} in group`}
                         </span>
                       ) : null}
                     </SelectionChipButton>

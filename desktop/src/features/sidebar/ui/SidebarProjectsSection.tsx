@@ -344,7 +344,7 @@ function SidebarProjectsSectionContent() {
                                 onClick={() => {
                                   void goChannel(channel.id);
                                 }}
-                                tooltip={`#${channel.name}`}
+                                tooltip={`${channel.name}`}
                                 type="button"
                               >
                                 <GroupLetterAvatar
@@ -353,7 +353,7 @@ function SidebarProjectsSectionContent() {
                                   label={channel.name}
                                 />
                                 <SidebarMenuLabel>
-                                  {`#${channel.name}`}
+                                  {`${channel.name}`}
                                 </SidebarMenuLabel>
                               </SidebarMenuButton>
                             </SidebarMenuItem>
@@ -614,8 +614,8 @@ function SidebarProjectRow({
               aria-expanded={isExpanded}
               aria-label={
                 isExpanded
-                  ? `Hide channels in ${project.name}`
-                  : `Show channels in ${project.name}`
+                  ? `Hide groups in ${project.name}`
+                  : `Show groups in ${project.name}`
               }
               data-testid={`sidebar-project-expand-${project.dtag}`}
               onClick={(event) => {
