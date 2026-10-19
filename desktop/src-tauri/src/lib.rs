@@ -65,10 +65,11 @@ pub use commands::print_agent_access_owner_only_probe_if_requested;
 use commands::*;
 use deep_link::{
     acknowledge_pending_community_deep_link, acknowledge_pending_entity_deep_link,
-    acknowledge_pending_navigation_deep_link, clear_pending_navigation_deep_links,
-    handle_deep_link_url, take_pending_community_deep_link, take_pending_entity_deep_link,
+    acknowledge_pending_group_join_deep_link, acknowledge_pending_navigation_deep_link,
+    clear_pending_navigation_deep_links, handle_deep_link_url, take_pending_community_deep_link,
+    take_pending_entity_deep_link, take_pending_group_join_deep_link,
     take_pending_navigation_deep_link, PendingCommunityDeepLinks, PendingEntityDeepLinks,
-    PendingNavigationDeepLinks,
+    PendingGroupJoinDeepLinks, PendingNavigationDeepLinks,
 };
 use huddle::{
     add_agent_to_huddle,
@@ -233,6 +234,7 @@ pub fn run() {
         .manage(PendingCommunityDeepLinks::default())
         .manage(PendingNavigationDeepLinks::default())
         .manage(PendingEntityDeepLinks::default())
+        .manage(PendingGroupJoinDeepLinks::default())
         .manage(BuilderlabSession::default())
         .manage(BuilderlabLogin::default())
         .manage(commands::pairing::PairingHandle::new())
@@ -581,6 +583,8 @@ pub fn run() {
             clear_pending_navigation_deep_links,
             take_pending_entity_deep_link,
             acknowledge_pending_entity_deep_link,
+            take_pending_group_join_deep_link,
+            acknowledge_pending_group_join_deep_link,
             start_builderlab_login,
             cancel_builderlab_login,
             get_builderlab_auth,
@@ -946,6 +950,7 @@ pub fn run() {
             get_active_workspace,
             fetch_workspace_icon,
             fetch_join_policy,
+            groups_request,
             set_prevent_sleep_active,
             get_agent_memory,
             relay_reconnect_hook,

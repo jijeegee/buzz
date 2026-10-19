@@ -1,5 +1,4 @@
 import * as React from "react";
-import { LogIn } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useMediaUpload } from "@/features/messages/lib/useMediaUpload";
@@ -63,7 +62,6 @@ import {
   shouldUseFocusIdleDrawer,
 } from "@/features/channels/ui/ChannelPane.helpers";
 import { HuddleStartingView, HuddleTranscriptIntro } from "@/features/huddle";
-import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
 import { useSearchHighlightProps } from "@/features/channels/ui/useSearchHighlightProps";
 import { useChannelIntro } from "@/features/channels/ui/useChannelIntro";
 import type { ChannelPaneProps } from "@/features/channels/ui/ChannelPane.types";
@@ -741,34 +739,22 @@ export const ChannelPane = React.memo(function ChannelPane({
                 threadUnreadCounts={threadUnreadCounts}
               />
               {isNonMemberView ? (
+                // Public group preview: read-only timeline, and one
+                // full-width Join group in place of the composer.
                 <div
                   data-testid="join-banner"
-                  className="flex items-center gap-3 border-t border-border/80 bg-card/50 px-5 py-3"
+                  className="border-t border-border/80 bg-card/50 px-5 py-3"
                 >
-                  <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
-                    {activeChannel ? (
-                      <ChannelGlyph
-                        channel={activeChannel}
-                        className="h-4 w-4 shrink-0"
-                      />
-                    ) : null}
-                    <span className="truncate">
-                      Viewing{" "}
-                      <span className="font-medium text-foreground">
-                        {activeChannel?.name}
-                      </span>
-                    </span>
-                  </div>
                   <Button
+                    className="w-full"
+                    data-testid="join-group-button"
                     disabled={isJoining}
                     onClick={() => {
                       void onJoinChannel?.();
                     }}
-                    size="sm"
                     variant="default"
                   >
-                    <LogIn className="mr-1.5 h-4 w-4" />
-                    {isJoining ? "Joining..." : "Join to participate"}
+                    {isJoining ? "Joining..." : "Join group"}
                   </Button>
                 </div>
               ) : (

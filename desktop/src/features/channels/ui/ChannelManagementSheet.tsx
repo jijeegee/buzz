@@ -72,6 +72,8 @@ import {
   ChannelTypeSettings,
 } from "./ChannelTypeSettings";
 import { ChannelPermissionsSettings } from "./ChannelPermissionsSettings";
+import { GroupSharingSettings } from "@/features/groups/ui/GroupSharingSettings";
+import { GroupVisibilityConfirmDialog } from "@/features/groups/ui/GroupVisibilityConfirmDialog";
 import {
   ActionFieldRow,
   ChannelHero,
@@ -191,6 +193,8 @@ export function ChannelManagementSheet({
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
+  const [isVisibilityConfirmOpen, setIsVisibilityConfirmOpen] =
+    React.useState(false);
   const [hasUserEditedChannelDraft, setHasUserEditedChannelDraft] =
     React.useState(false);
   const [activeView, setActiveView] = React.useState<ManagementView>("summary");
@@ -355,7 +359,12 @@ export function ChannelManagementSheet({
     setIsEditDialogOpen(false);
   }
 
-  async function handleSaveChannelEdits() {
+  async function handleSaveChannelEdits(visibilityConfirmed = false) {
+    // Public <-> private changes who can find and read the group: confirm.
+    if (nextVisibility !== currentVisibility && !visibilityConfirmed) {
+      setIsVisibilityConfirmOpen(true);
+      return;
+    }
     try {
       if (nameDirty || descriptionDirty || lifecycleDirty) {
         await updateChannelDetailsMutation.mutateAsync({
@@ -639,7 +648,7 @@ export function ChannelManagementSheet({
                 <Button
                   data-testid="channel-management-save-changes"
                   disabled={!canSaveChannelEdits}
-                  onClick={() => void handleSaveChannelEdits()}
+                  onClick={() => void handleSaveChannelEdits(false)}
                   size="sm"
                   type="button"
                 >
@@ -650,6 +659,12 @@ export function ChannelManagementSheet({
           </DialogContent>
         </Dialog>
       ) : null}
+      <GroupVisibilityConfirmDialog
+        nextVisibility={nextVisibility}
+        onConfirm={() => void handleSaveChannelEdits(true)}
+        onOpenChange={setIsVisibilityConfirmOpen}
+        open={isVisibilityConfirmOpen}
+      />
     </DialogPrimitive.Root>
   );
 }
@@ -867,6 +882,17 @@ function ChannelManagementPanelContent({
                 value={resolvedChannel.id}
               />
             </FieldGroup>
+
+            {resolvedChannel.channelType !== "dm" && !isArchived ? (
+              <GroupSharingSettings
+                canManage={canEditChannel}
+                channelId={resolvedChannel.id}
+                isMember={members.some(
+                  (member) => member.pubkey === currentPubkey,
+                )}
+                visibility={resolvedChannel.visibility}
+              />
+            ) : null}
 
             <ChannelGoalsSwitchRow
               canToggle={canToggleGoals}

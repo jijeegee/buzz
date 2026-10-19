@@ -91,6 +91,8 @@ export type AddChannelMembersInput = {
 };
 export type AddChannelMembersResult = {
   added: string[];
+  /** Sent an invitation instead of being added (`invite-sent:`). */
+  invited: string[];
   errors: Array<{
     pubkey: string;
     error: string;

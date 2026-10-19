@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import type { ChannelTemplate, RelayEvent } from "../../src/shared/api/types";
 import type { MockManagedAgentSeed } from "../../src/testing/e2eBridge";
+import type { MockGroupsConfig } from "../../src/testing/e2eGroupsMock";
 import { FEATURE_OVERRIDES_STORAGE_KEY, PREVIEW_FEATURE_IDS } from "./features";
 
 export const TEST_IDENTITIES = {
@@ -148,6 +149,8 @@ type MockInstallRuntimeResult = {
 type MockBridgeOptions = {
   /** Tauri window label exposed to the app. Defaults to the main window. */
   windowLabel?: string;
+  /** Seeds for the relay groups routes (`groups_request`). */
+  groups?: MockGroupsConfig;
   ttsSettings?: {
     version: number;
     agentTextToSpeech: boolean;

@@ -219,12 +219,13 @@ test("channel browser matches a scattered subsequence", async ({ page }) => {
   await page.goto("/");
 
   await openChannelBrowser(page);
-  // "sls" is neither a substring nor a prefix of "sales" — it only matches as
-  // an in-order subsequence (s·a·l·e·s). Proves fuzzy matching end-to-end.
-  await page.getByTestId("channel-browser-search").fill("sls");
+  // "gnrl" is neither a substring nor a prefix of "general" — it only matches
+  // as an in-order subsequence. Fuzzy matching covers your own groups; public
+  // groups you are not in come from the server search instead.
+  await page.getByTestId("channel-browser-search").fill("gnrl");
 
-  await expect(page.getByTestId("browse-channel-sales")).toBeVisible();
-  await expect(page.getByTestId("browse-channel-general")).toHaveCount(0);
+  await expect(page.getByTestId("browse-channel-general")).toBeVisible();
+  await expect(page.getByTestId("browse-channel-engineering")).toHaveCount(0);
 });
 
 test("channel browser ranks the best match first", async ({ page }) => {
