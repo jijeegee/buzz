@@ -168,6 +168,12 @@ pub struct Config {
     pub pairing_relay_url: Option<String>,
     /// Maximum number of concurrent WebSocket connections.
     pub max_connections: usize,
+    /// Maximum concurrently open WebSocket connections from one client IP
+    /// (`KUZZ_WS_MAX_OPEN_PER_IP`, default 200, `0` disables).
+    pub ws_max_open_per_ip: u32,
+    /// Maximum new WebSocket connections from one client IP per minute
+    /// (`KUZZ_WS_NEW_PER_IP_PER_MIN`, default 600, `0` disables).
+    pub ws_new_per_ip_per_min: u64,
     /// Maximum number of concurrently executing message handlers.
     pub max_concurrent_handlers: usize,
     /// Per-connection outbound message buffer size (number of messages).
@@ -747,6 +753,15 @@ impl Config {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(10_000);
+
+        let ws_max_open_per_ip = std::env::var("KUZZ_WS_MAX_OPEN_PER_IP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(crate::ip_connection_limit::DEFAULT_MAX_OPEN_PER_IP);
+        let ws_new_per_ip_per_min = std::env::var("KUZZ_WS_NEW_PER_IP_PER_MIN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(crate::ip_connection_limit::DEFAULT_NEW_PER_IP_PER_MIN);
 
         let max_concurrent_handlers = std::env::var("KUZZ_MAX_CONCURRENT_HANDLERS")
             .ok()
@@ -1391,6 +1406,8 @@ impl Config {
             relay_url,
             pairing_relay_url,
             max_connections,
+            ws_max_open_per_ip,
+            ws_new_per_ip_per_min,
             max_concurrent_handlers,
             send_buffer_size,
             max_frame_bytes,

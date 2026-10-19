@@ -609,6 +609,20 @@ async fn upload_blob_result(
         // get the same NIP-FI shape as pre-body ones.
         .map_err(|e| media_denial(e, strictness))?;
 
+    // The uploader may open the blob before any message references it.
+    state
+        .db
+        .record_media_upload(
+            auth.tenant.community(),
+            &descriptor.sha256,
+            &auth.auth_event.pubkey.to_bytes(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("recording media uploader failed: {e}");
+            media_denial(MediaError::Internal, strictness)
+        })?;
+
     rewrite_descriptor_urls_for_tenant(
         &mut descriptor,
         &state.config.relay_url,
@@ -722,8 +736,9 @@ fn extract_blossom_read_proof(
 }
 
 /// Kind-24242 Blossom read authorization: NIP-FI admission with Blossom
-/// extraction as the NIP-98 closure, then the membership gate. `Ok(Some)` is
-/// the admission's own denial response, to be returned as-is.
+/// extraction as the NIP-98 closure, then the membership gate. Returns the
+/// proven reader, or `Err` with the admission's own denial response, to be
+/// returned as-is.
 #[allow(clippy::result_large_err)] // Response is the natural error type for axum closures
 async fn authorize_blossom_read(
     state: &AppState,
@@ -731,7 +746,7 @@ async fn authorize_blossom_read(
     headers: &HeaderMap,
     sha256: &str,
     strictness: BlossomStrictness,
-) -> Result<Option<Response>, MediaDenial> {
+) -> Result<Result<nostr::PublicKey, Response>, MediaDenial> {
     // In Enforce mode: extraction failure → NIP-FI denial bytes (MissingEvidence/
     // EvidenceRejected).  In Off mode: MediaError propagates unchanged [FI-INV-15].
     use crate::nip_fi_http::admit_nip_fi_http_on_state;
@@ -743,11 +758,65 @@ async fn authorize_blossom_read(
             .map_err(|e| e.into_response())
     }) {
         Ok(a) => a,
-        Err(resp) => return Ok(Some(resp)),
+        Err(resp) => return Ok(Err(resp)),
     };
     let auth_event = admission.into_extra();
     enforce_blossom_read_membership(state, tenant, &auth_event, headers, strictness).await?;
-    Ok(None)
+    Ok(Ok(auth_event.pubkey))
+}
+
+/// Media read admission shared by GET and HEAD: the token door or the
+/// kind-24242 door proves the reader, then the attachment permission check
+/// decides whether that reader may open this blob. `Err` is a denial response
+/// to return as-is.
+#[allow(clippy::result_large_err)] // Response is the natural error type for axum closures
+async fn admit_media_read(
+    state: &AppState,
+    tenant: &TenantContext,
+    headers: &HeaderMap,
+    sha256: &str,
+    strictness: BlossomStrictness,
+) -> Result<Result<(), Response>, MediaDenial> {
+    let token_principal =
+        match token_auth::media_token_principal(state, tenant, headers, strictness).await {
+            Ok(principal) => principal,
+            Err(resp) => return Ok(Err(resp)),
+        };
+    let reader = match token_principal {
+        Some(principal) => principal.as_bytes().to_vec(),
+        None => match authorize_blossom_read(state, tenant, headers, sha256, strictness).await? {
+            Ok(pubkey) => pubkey.to_bytes().to_vec(),
+            Err(resp) => return Ok(Err(resp)),
+        },
+    };
+    enforce_media_read_access(state, tenant, &reader, sha256, strictness).await?;
+    Ok(Ok(()))
+}
+
+/// Attachment permission: the reader uploaded the blob or can currently read
+/// an event that references it ([`crate::media_access`]). Anyone else gets the
+/// same 404 as a missing blob, so a hash never confirms that a file exists.
+async fn enforce_media_read_access(
+    state: &AppState,
+    tenant: &TenantContext,
+    reader: &[u8],
+    sha256: &str,
+    strictness: BlossomStrictness,
+) -> Result<(), MediaDenial> {
+    match crate::media_access::reader_may_open(state, tenant.community(), reader, sha256).await {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            metrics::counter!("kuzz_media_read_denied_total", "reason" => "no_access").increment(1);
+            Err(media_denial(MediaError::NotFound, strictness))
+        }
+        Err(e) => {
+            tracing::error!("media read access lookup failed: {e}");
+            Err(media_denial(
+                MediaError::AuthorizationUnavailable,
+                strictness,
+            ))
+        }
+    }
 }
 
 /// Post-admission membership gate for media reads.
@@ -876,17 +945,8 @@ pub(crate) async fn get_blob(
         .unwrap_or(&sha256_ext)
         .to_owned();
     let strictness = blossom_strictness_from_state(&state);
-    let token_principal =
-        match token_auth::media_token_principal(&state, &tenant, &req_headers, strictness).await {
-            Ok(principal) => principal,
-            Err(resp) => return Ok(resp),
-        };
-    if token_principal.is_none() {
-        if let Some(resp) =
-            authorize_blossom_read(&state, &tenant, &req_headers, &sha256, strictness).await?
-        {
-            return Ok(resp);
-        }
+    if let Err(resp) = admit_media_read(&state, &tenant, &req_headers, &sha256, strictness).await? {
+        return Ok(resp);
     }
     serve_blob_for_tenant(&state, &tenant, &sha256_ext, &req_headers)
         .await
@@ -1165,17 +1225,8 @@ pub(crate) async fn head_blob(
         .unwrap_or(&sha256_ext)
         .to_owned();
     let strictness = blossom_strictness_from_state(&state);
-    let token_principal =
-        match token_auth::media_token_principal(&state, &tenant, &headers, strictness).await {
-            Ok(principal) => principal,
-            Err(resp) => return Ok(resp),
-        };
-    if token_principal.is_none() {
-        if let Some(resp) =
-            authorize_blossom_read(&state, &tenant, &headers, &sha256, strictness).await?
-        {
-            return Ok(resp);
-        }
+    if let Err(resp) = admit_media_read(&state, &tenant, &headers, &sha256, strictness).await? {
+        return Ok(resp);
     }
     let cache_control = blob_cache_control();
 
@@ -2198,11 +2249,11 @@ mod tests {
 
         /// Build an AppState with NIP-FI Enforce and a real injected P-256 verifier.
         async fn media_enforce_test_state() -> Option<Arc<AppState>> {
+            use jsonwebtoken::{jwk::JwkSet, Algorithm};
             use kuzz_auth::{
                 AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
                 IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
             };
-            use jsonwebtoken::{jwk::JwkSet, Algorithm};
 
             let mut config = crate::config::Config::for_test();
             config.database_url = crate::test_support::database_url();
@@ -3908,18 +3959,12 @@ mod tests {
         // tag), so reverting `blossom_strictness_from_state` to Permissive
         // turns the Enforce denials into the 415 the Off cases pin.
 
-        fn permissive_only_upload_proofs(keys: &Keys, host: &str) -> [(String, &'static str); 2] {
+        fn permissive_only_upload_proofs(keys: &Keys, _host: &str) -> [(String, &'static str); 1] {
             let sha = sha256_hex(AUDIO_BODY);
-            [
-                (
-                    blossom_upload_auth_value_with(keys, Some(host), &sha, 300),
-                    "300s lifetime",
-                ),
-                (
-                    blossom_upload_auth_value_with(keys, None, &sha, 55),
-                    "no server tag",
-                ),
-            ]
+            [(
+                blossom_upload_auth_value_with(keys, None, &sha, 55),
+                "no server tag",
+            )]
         }
 
         fn mutate_state(state: &mut Arc<AppState>, f: impl FnOnce(&mut crate::config::Config)) {
@@ -3993,6 +4038,20 @@ mod tests {
                     );
                 }
             }
+            // The 60-second window applies in Off too: a long-lived proof is
+            // refused before the body is read.
+            let sha = sha256_hex(AUDIO_BODY);
+            let long_lived =
+                blossom_upload_auth_value_with(&Keys::generate(), Some(&host), &sha, 300);
+            for route in UPLOAD_ROUTES {
+                let (status, _, body) =
+                    upload_request(&rt, &state, route, &host, &[&long_lived], None);
+                assert_eq!(
+                    status,
+                    StatusCode::UNAUTHORIZED,
+                    "Off {route}: 300s; body {body:?}"
+                );
+            }
         }
 
         /// GET and HEAD each derive strictness independently; HEAD carries the
@@ -4020,7 +4079,16 @@ mod tests {
             }
 
             let (rt, state, host) = media_fixture(media_off_test_state());
-            let proof = blossom_get_auth_value_with(&keys, &host, &sha, 300);
+            let long_lived = blossom_get_auth_value_with(&keys, &host, &sha, 300);
+            for (method, _) in READ_METHODS {
+                let (status, _, body) = media_read(&rt, &state, method, &host, &long_lived, None);
+                assert_eq!(
+                    status,
+                    StatusCode::UNAUTHORIZED,
+                    "Off {method} keeps the 60-second window; body {body:?}"
+                );
+            }
+            let proof = blossom_get_auth_value_with(&keys, &host, &sha, 55);
             for (method, _) in READ_METHODS {
                 let (status, _, body) = media_read(&rt, &state, method, &host, &proof, None);
                 assert_eq!(

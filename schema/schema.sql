@@ -625,6 +625,29 @@ CREATE TABLE user_blocks (
 );
 CREATE INDEX idx_user_blocks_blocked ON user_blocks (community_id, blocked);
 
+-- ── Media access ──────────────────────────────────────────────────────────────
+-- Attachment permissions (migration 0074): a blob is readable by its uploaders
+-- and by whoever can currently read an event that references it. NULL
+-- `channel_id` means a community-wide event (profile, emoji set, shared persona).
+
+CREATE TABLE media_uploads (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    sha256       TEXT NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    uploader     BYTEA NOT NULL CHECK (length(uploader) = 32),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, sha256, uploader)
+);
+
+CREATE TABLE media_references (
+    community_id     UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    sha256           TEXT NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    event_id         BYTEA NOT NULL CHECK (length(event_id) = 32),
+    event_created_at TIMESTAMPTZ NOT NULL,
+    channel_id       UUID,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, sha256, event_id)
+);
+
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.
 
@@ -1870,6 +1893,8 @@ SELECT attach_community_write_fence('event_mentions');
 SELECT attach_community_write_fence('events');
 SELECT attach_community_write_fence('git_repo_names');
 SELECT attach_community_write_fence('join_policy_acceptances');
+SELECT attach_community_write_fence('media_references');
+SELECT attach_community_write_fence('media_uploads');
 SELECT attach_community_write_fence('moderation_actions');
 SELECT attach_community_write_fence('moderation_reports');
 SELECT attach_community_write_fence('parameterized_event_watermarks');
