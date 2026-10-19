@@ -861,6 +861,7 @@ async fn handle_channel_window_filter(
                     limit,
                     cursor.clone(),
                     kind_filter.as_deref(),
+                    Some(reader),
                 )
                 .await
         }
@@ -873,6 +874,7 @@ async fn handle_channel_window_filter(
                     limit,
                     cursor.clone(),
                     kind_filter.as_deref(),
+                    Some(reader),
                 )
                 .await
         }
@@ -1163,6 +1165,7 @@ async fn handle_sequence_window_filter(
             limit,
             cursor,
             kind_filter.as_deref(),
+            Some(reader),
         )
         .await
         .map_err(|e| internal_error(&format!("channel window error: {e}")))?;

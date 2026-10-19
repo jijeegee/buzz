@@ -115,7 +115,10 @@ impl Fixture {
         let q = self.query(reader);
         let rows = event::query_events(&self.pool, &q).await.expect("query");
         let count = event::count_events(&self.pool, &q).await.expect("count");
-        (rows.into_iter().map(|s| s.event.id.to_hex()).collect(), count)
+        (
+            rows.into_iter().map(|s| s.event.id.to_hex()).collect(),
+            count,
+        )
     }
 }
 
@@ -168,14 +171,13 @@ async fn members_only_room_hides_rows_from_before_the_current_join() {
 #[ignore = "requires Postgres"]
 async fn open_rooms_show_all_history_to_members_and_visitors() {
     let f = Fixture::new(ChannelVisibility::Open).await;
-    let policy: String = sqlx::query_scalar(
-        "SELECT history_policy FROM channels WHERE community_id=$1 AND id=$2",
-    )
-    .bind(f.scope.as_uuid())
-    .bind(f.channel)
-    .fetch_one(&f.pool)
-    .await
-    .unwrap();
+    let policy: String =
+        sqlx::query_scalar("SELECT history_policy FROM channels WHERE community_id=$1 AND id=$2")
+            .bind(f.scope.as_uuid())
+            .bind(f.channel)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
     assert_eq!(policy, "since_join", "new rooms default to since_join");
     let before = f.send("before join").await;
     f.join().await;
@@ -183,4 +185,66 @@ async fn open_rooms_show_all_history_to_members_and_visitors() {
     let all = (vec![before, after], 2);
     assert_eq!(f.read(Some(&f.member)).await, all);
     assert_eq!(f.read(Some(&Keys::generate())).await, all);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn channel_windows_hide_rows_from_before_the_join() {
+    use crate::thread::{
+        get_channel_window_by_sequence_for_reader, get_channel_window_for_reader, SequenceCursor,
+    };
+    use kuzz_core::thread_window::Direction;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let before = f.send("before join").await;
+    f.join().await;
+    let after = f.send("after join").await;
+    let ids = |w: crate::thread::ChannelWindow| -> Vec<String> {
+        w.rows
+            .into_iter()
+            .map(|r| r.stored_event.event.id.to_hex())
+            .collect()
+    };
+    let member = f.member.public_key().to_bytes();
+    let reader = Some(member.as_slice());
+
+    let by_time = get_channel_window_for_reader(
+        &f.pool,
+        f.scope,
+        f.channel,
+        10,
+        None,
+        None,
+        Direction::Older,
+        reader,
+    )
+    .await
+    .unwrap();
+    assert!(!by_time.has_more);
+    assert_eq!(ids(by_time), [after.clone()]);
+    let by_seq = get_channel_window_by_sequence_for_reader(
+        &f.pool,
+        f.scope,
+        f.channel,
+        10,
+        SequenceCursor::After(0),
+        None,
+        reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids(by_seq), [after.clone()]);
+    // No reader: unchanged.
+    let all = get_channel_window_by_sequence_for_reader(
+        &f.pool,
+        f.scope,
+        f.channel,
+        10,
+        SequenceCursor::After(0),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids(all), [before, after]);
 }

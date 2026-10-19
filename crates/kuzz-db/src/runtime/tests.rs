@@ -1166,7 +1166,7 @@ async fn channel_window_routes_head_to_writer_and_cursor_pages_to_replica() {
         m1.id.as_bytes().to_vec(),
     );
     let (newer, _) = db
-        .get_channel_window_newer_with_session(cid, channel, 10, m1_cursor, None)
+        .get_channel_window_newer_with_session(cid, channel, 10, m1_cursor, None, None)
         .await
         .expect("newer window");
     let newer_contents: Vec<String> = newer
@@ -1387,7 +1387,7 @@ async fn read_session_degrades_to_writer_when_replica_connection_dies() {
         .expect("head window");
     let cursor = head.next_cursor.expect("has_more implies next_cursor");
     let (_window, mut session) = db
-        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None)
+        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None, None)
         .await
         .expect("routed cursor window");
     assert!(
@@ -1471,7 +1471,7 @@ async fn routed_request_holds_one_snapshot_across_page_and_aux() {
 
     // Route the cursor page to the replica and HOLD the session.
     let (window, mut session) = db
-        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None)
+        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None, None)
         .await
         .expect("routed cursor window");
     assert!(
