@@ -1,4 +1,4 @@
-import { Lock, MessagesSquare } from "lucide-react";
+import { Lock, MessagesSquare, Users } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 
@@ -163,7 +163,7 @@ export function GroupLetterAvatar({
       data-testid={testId}
       style={{ backgroundColor: conversationColor(channelId || label || "") }}
     >
-      {initial || "?"}
+      {initial || <Users className={dims.icon} />}
       {isPrivate ? (
         <span
           className={cn(

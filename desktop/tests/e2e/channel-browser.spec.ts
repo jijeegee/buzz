@@ -52,7 +52,9 @@ test("keyboard shortcut opens the channel browser dialog", async ({ page }) => {
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
 });
 
-test("channel browser shows channels not yet joined", async ({ page }) => {
+test("Find groups lists My groups and hides public groups until 2 characters", async ({
+  page,
+}) => {
   await page.goto("/");
 
   await openChannelBrowser(page);
@@ -60,13 +62,43 @@ test("channel browser shows channels not yet joined", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Find groups" }),
   ).toBeVisible();
+  await expect(page.getByTestId("channel-browser-tab-joined")).toHaveText(
+    "My groups",
+  );
+  await expect(page.getByRole("tab", { name: "All groups" })).toHaveCount(0);
 
-  // "design" and "sales" are open channels the mock user is NOT a member of
-  await expect(page.getByTestId("browse-channel-design")).toBeVisible();
-  await expect(page.getByTestId("browse-channel-sales")).toBeVisible();
-
-  // "general" is a channel the mock user IS a member of — shown in "Joined" section
+  // "general" is a group the mock user IS a member of: always listed.
   await expect(page.getByTestId("browse-channel-general")).toBeVisible();
+  // "design" and "sales" are public groups the mock user is NOT in: never
+  // listed without a search.
+  await expect(page.getByTestId("browse-channel-design")).toHaveCount(0);
+  await expect(page.getByTestId("browse-channel-sales")).toHaveCount(0);
+  await expect(page.getByTestId("channel-browser-search-hint")).toBeVisible();
+
+  // One character is not enough to reveal public groups.
+  await page.getByTestId("channel-browser-search").fill("d");
+  await expect(page.getByTestId("browse-channel-deep-history")).toBeVisible();
+  await expect(page.getByTestId("browse-channel-design")).toHaveCount(0);
+  await expect(page.getByTestId("channel-browser-section-public")).toHaveCount(
+    0,
+  );
+
+  // Two characters show matching public groups under "Public groups".
+  await page.getByTestId("channel-browser-search").fill("de");
+  const publicSection = page.getByTestId("channel-browser-section-public");
+  await expect(publicSection).toContainText("Public groups");
+  await expect(
+    publicSection.getByTestId("browse-channel-design"),
+  ).toBeVisible();
+  await expect(publicSection.getByTestId("browse-channel-sales")).toHaveCount(
+    0,
+  );
+  await expect(
+    page
+      .getByTestId("channel-browser-section-listed")
+      .getByTestId("browse-channel-deep-history"),
+  ).toBeVisible();
+  await expect(page.getByTestId("channel-browser-search-hint")).toHaveCount(0);
 });
 
 test("channel browser sorts alphabetically or by member count", async ({
@@ -77,39 +109,36 @@ test("channel browser sorts alphabetically or by member count", async ({
   await openChannelBrowser(page);
   const rows = page.locator('[data-testid^="browse-channel-"]');
 
+  // Without a search only My groups are listed (no public groups).
   await expect(rows).toHaveText([
-    /#agents/,
-    /#all-replies/,
-    /#kuzz/,
-    /#deep-history/,
-    /#design/,
-    /#engineering/,
-    /#general/,
-    /#random/,
-    /#sales/,
-    /#secret-projects/,
-    /#welcome-everyone/,
+    /agents/,
+    /all-replies/,
+    /deep-history/,
+    /engineering/,
+    /general/,
+    /kuzz/,
+    /random/,
+    /secret-projects/,
+    /welcome-everyone/,
   ]);
 
   await page.getByTestId("channel-browser-sort").click();
   await page.getByTestId("channel-browser-sort-members").click();
 
   await expect(rows).toHaveText([
-    /#general/,
-    /#agents/,
-    /#engineering/,
-    /#random/,
-    /#all-replies/,
-    /#deep-history/,
-    /#design/,
-    /#sales/,
-    /#secret-projects/,
-    /#kuzz/,
-    /#welcome-everyone/,
+    /general/,
+    /agents/,
+    /engineering/,
+    /random/,
+    /all-replies/,
+    /deep-history/,
+    /secret-projects/,
+    /kuzz/,
+    /welcome-everyone/,
   ]);
   await expect(page.getByTestId("channel-browser-sort")).toHaveAttribute(
     "aria-label",
-    "Sort channels: Most members",
+    "Sort groups: Most members",
   );
 });
 
@@ -123,21 +152,19 @@ test("channel browser sorts by recent activity", async ({ page }) => {
   await page.getByTestId("channel-browser-sort-recent").click();
 
   await expect(rows).toHaveText([
-    /#all-replies/,
-    /#deep-history/,
-    /#general/,
-    /#agents/,
-    /#sales/,
-    /#engineering/,
-    /#design/,
-    /#kuzz/,
-    /#random/,
-    /#secret-projects/,
-    /#welcome-everyone/,
+    /all-replies/,
+    /deep-history/,
+    /general/,
+    /agents/,
+    /engineering/,
+    /kuzz/,
+    /random/,
+    /secret-projects/,
+    /welcome-everyone/,
   ]);
   await expect(page.getByTestId("channel-browser-sort")).toHaveAttribute(
     "aria-label",
-    "Sort channels: Recent",
+    "Sort groups: Recent",
   );
 });
 
@@ -308,7 +335,7 @@ test("create affordance is visible on open before typing", async ({ page }) => {
   // create — not just after you start typing.
   const createRow = page.getByTestId("channel-browser-create-row");
   await expect(createRow).toBeVisible();
-  await expect(createRow).toContainText("Create a new channel");
+  await expect(createRow).toContainText("New group");
 });
 
 test("typing a partial match surfaces a persistent create row", async ({
@@ -453,6 +480,8 @@ test("joining a channel from browser adds it to the sidebar", async ({
   // Open browser and join
   await openChannelBrowser(page);
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
+  // Public groups you are not in only show for a 2+ character search.
+  await page.getByTestId("channel-browser-search").fill("design");
   await page
     .getByTestId("browse-channel-design")
     .getByRole("button", { name: "Join" })

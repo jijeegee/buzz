@@ -793,7 +793,7 @@ function ChannelManagementPanelContent({
                   ? "Goals"
                   : activeView === "workflows"
                     ? "Workflows"
-                    : "Group Settings"}
+                    : "Group settings"}
             </AuxiliaryPanelTitle>
           </DialogPrimitive.Title>
         </AuxiliaryPanelHeaderGroup>
