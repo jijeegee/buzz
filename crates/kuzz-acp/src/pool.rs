@@ -216,6 +216,15 @@ pub struct SessionState {
     /// pool uses this fence to discard that stale provider session before the
     /// worker becomes claimable again.
     scope_owner_generations: HashMap<SessionScope, u64>,
+    /// Sessions [`invalidate_all`](Self::invalidate_all) dropped because the
+    /// adapter process died or timed out. Their transcripts are intact, so
+    /// the main loop hands them to the ledger for reattach when it replaces
+    /// the worker (see [`take_held_sessions`](Self::take_held_sessions)).
+    released_sessions: Vec<(SessionScope, String)>,
+    /// The scope and provider session the current turn runs on, set once the
+    /// turn has its session. Failure paths drop the session handle before the
+    /// worker returns; this says which session the dead worker was driving.
+    pub(crate) turn_session: Option<(SessionScope, String)>,
 }
 
 impl SessionState {
@@ -332,7 +341,7 @@ impl SessionState {
 
     /// Invalidate all sessions and turn counters (e.g. after agent exit).
     pub fn invalidate_all(&mut self) {
-        self.sessions.clear();
+        self.released_sessions.extend(self.sessions.drain());
         self.turn_counts.clear();
         self.heartbeat_session = None;
         self.heartbeat_turn_count = 0;
@@ -342,6 +351,23 @@ impl SessionState {
         self.roster_sections.clear();
         self.deliveries.clear();
         self.scope_owner_generations.clear();
+    }
+
+    /// Every provider session this worker held when it went away: those
+    /// dropped by [`invalidate_all`](Self::invalidate_all) plus any still
+    /// live. Called once, as the worker is replaced.
+    /// The session the current (or last) turn ran on in `scope`.
+    pub(crate) fn turn_session(&self, scope: &SessionScope) -> Option<&str> {
+        self.turn_session
+            .as_ref()
+            .filter(|(turn_scope, _)| turn_scope == scope)
+            .map(|(_, session_id)| session_id.as_str())
+    }
+
+    pub(crate) fn take_held_sessions(&mut self) -> Vec<(SessionScope, String)> {
+        let mut held = std::mem::take(&mut self.released_sessions);
+        held.extend(self.sessions.drain());
+        held
     }
 
     /// Record the layer 0 goals a successful turn left `scope`'s session with.
@@ -576,6 +602,9 @@ pub struct AgentPool {
     /// Best-effort: stale entries (rotation, crash/respawn) self-heal on the
     /// next dispatch and are pruned on channel-wide session invalidation.
     session_owners: HashMap<SessionScope, SessionOwner>,
+    /// Scopes whose session an idle model switch dropped from its worker. The
+    /// conversation is intact, so dispatch lets the next session reattach it.
+    pending_reattach: HashSet<SessionScope>,
     /// Monotonic validity fence assigned whenever a scope is dispatched. The
     /// generation distinguishes a newly forked owner from every older copy of
     /// that scope's provider session.
@@ -648,15 +677,32 @@ fn apply_completed_before_control_signal(
     state: &mut SessionState,
     source: &PromptSource,
     control_signal: &ControlSignal,
+    session_ledger: Option<&crate::session_ledger::SessionLedger>,
 ) {
-    // Rotate and SwitchModel both invalidate so the next turn creates a fresh
-    // session. For SwitchModel the caller has already set `desired_model`, so
-    // the fresh session applies the new model on its next creation.
-    if matches!(
-        control_signal,
-        ControlSignal::Rotate | ControlSignal::SwitchModel { .. }
-    ) {
-        state.invalidate(source);
+    // Rotate and SwitchModel both invalidate so the next turn opens the
+    // session again. Rotate starts a fresh one (the main loop already removed
+    // it from the ledger). SwitchModel reattaches the same conversation and
+    // applies the `desired_model` the caller set, so changing the model within
+    // one adapter never loses the conversation.
+    match control_signal {
+        ControlSignal::Rotate => state.invalidate(source),
+        ControlSignal::SwitchModel { .. } => {
+            state.invalidate(source);
+            allow_reattach(source, session_ledger);
+        }
+        _ => {}
+    }
+}
+
+/// Let the next session opened for `source`'s scope reattach the recorded
+/// conversation. Used where a turn drops its in-memory session handle on
+/// purpose (a cancel, a model switch) while the conversation itself is fine.
+fn allow_reattach(
+    source: &PromptSource,
+    session_ledger: Option<&crate::session_ledger::SessionLedger>,
+) {
+    if let (PromptSource::Channel(scope), Some(ledger)) = (source, session_ledger) {
+        ledger.allow_handoff(scope);
     }
 }
 
@@ -1194,6 +1240,7 @@ impl AgentPool {
             join_set: JoinSet::new(),
             task_map: HashMap::new(),
             session_owners: HashMap::new(),
+            pending_reattach: HashSet::new(),
             next_scope_owner_generation: 1,
             held_since: HashMap::new(),
         }
@@ -1615,6 +1662,22 @@ impl AgentPool {
         &mut self.agents
     }
 
+    /// Whether an idle model switch left `scope` waiting to reattach its
+    /// conversation; clears the mark.
+    pub fn take_pending_reattach(&mut self, scope: &SessionScope) -> bool {
+        self.pending_reattach.remove(scope)
+    }
+
+    /// Scopes whose provider session the pool records worker `agent_index`
+    /// as owning.
+    pub fn scopes_owned_by(&self, agent_index: usize) -> Vec<SessionScope> {
+        self.session_owners
+            .iter()
+            .filter(|(_, owner)| owner.agent_index == agent_index)
+            .map(|(scope, _)| scope.clone())
+            .collect()
+    }
+
     /// Remove the session for `channel_id` from all idle agents.
     ///
     /// Called when the agent is removed from a channel — stale sessions
@@ -1749,6 +1812,9 @@ impl AgentPool {
         agent.state.invalidate_scope(&scope);
         self.session_owners.remove(&scope);
         self.held_since.remove(&scope);
+        // Same adapter, new model: the next turn reattaches the conversation
+        // and applies the model (see `take_pending_reattach`).
+        self.pending_reattach.insert(scope);
         IdleSwitchResult::Switched
     }
 }
@@ -3358,6 +3424,7 @@ pub async fn run_prompt_task(
         Some(b) => PromptSource::Channel(b.scope.clone()),
         None => PromptSource::Heartbeat,
     };
+    agent.state.turn_session = None;
     let observer_channel_id = source.channel_id();
     // Thread conversation context requires the canonical root to distinguish
     // concurrent threads in the same channel's activity.
@@ -3908,6 +3975,9 @@ pub async fn run_prompt_task(
             }
         }
     };
+    if let PromptSource::Channel(scope) = &source {
+        agent.state.turn_session = Some((scope.clone(), session_id.clone()));
+    }
     agent.acp.set_observer_context(observer::context_for_turn(
         observer_channel_id,
         Some(session_id.clone()),
@@ -4513,6 +4583,13 @@ pub async fn run_prompt_task(
                             Ok(stop_reason) => {
                                 log_stop_reason(&source, &stop_reason);
                                 agent.state.invalidate(&source);
+                                // A cancelled turn leaves the conversation
+                                // intact: the requeued or next turn continues
+                                // it (and applies a switched model). Only a
+                                // rotate starts over.
+                                if !matches!(control_signal, ControlSignal::Rotate) {
+                                    allow_reattach(&source, ctx.session_ledger.as_deref());
+                                }
                                 let retry_batch =
                                     requeue_cancelled_batch(&ctx, control_signal, batch);
 
@@ -4629,6 +4706,7 @@ pub async fn run_prompt_task(
                             &mut agent.state,
                             &source,
                             &control_signal,
+                            ctx.session_ledger.as_deref(),
                         );
                         let usage = agent.acp.take_turn_usage();
                         publish_agent_turn_metric(
@@ -4700,12 +4778,11 @@ pub async fn run_prompt_task(
                 agent.state.heartbeat_standing_context_sent = true;
             }
 
-            let should_rotate = matches!(
-                stop_reason,
-                StopReason::MaxTokens | StopReason::MaxTurnRequests
-            );
-
-            let should_rotate = should_rotate || {
+            // `MaxTokens` / `MaxTurnRequests` end one response, not the
+            // session: Claude Code and Codex compact long sessions themselves,
+            // so the session continues. Only the operator's explicit turn
+            // limit rotates it.
+            let should_rotate = {
                 let limit = ctx.max_turns_per_session;
                 if limit > 0 {
                     match &source {
@@ -4727,9 +4804,15 @@ pub async fn run_prompt_task(
             if should_rotate {
                 tracing::info!(
                     target: "pool::session",
-                    "rotating session for {source:?} after {stop_reason:?}",
+                    "rotating session for {source:?} after {} turns",
+                    ctx.max_turns_per_session,
                 );
                 agent.state.invalidate(&source);
+                // A deliberate rotation: never reattach the old session.
+                if let (PromptSource::Channel(scope), Some(ledger)) = (&source, &ctx.session_ledger)
+                {
+                    ledger.remove(scope);
+                }
             }
 
             let core_stop = acp_stop_to_core(&stop_reason);
@@ -11432,6 +11515,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             &mut s,
             &PromptSource::Channel(SessionScope::Conversation { channel_id: ch_a }),
             &ControlSignal::Rotate,
+            None,
         );
 
         assert!(!s.sessions.contains_key(&conv(ch_a)));
@@ -11453,6 +11537,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             &mut s,
             &PromptSource::Channel(SessionScope::Conversation { channel_id: ch_a }),
             &ControlSignal::Cancel,
+            None,
         );
 
         assert_eq!(s.sessions.get(&conv(ch_a)).unwrap(), "sess-a");
@@ -11596,12 +11681,64 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 model_id: "gpt-5".into(),
                 request_id: None,
             },
+            None,
         );
 
         assert!(!s.has_channel_state(&ch_a));
         // ch_b untouched — the switch is channel-scoped.
         assert_eq!(s.sessions.get(&conv(ch_b)).unwrap(), "sess-b");
         assert_eq!(*s.turn_counts.get(&conv(ch_b)).unwrap(), 3);
+    }
+
+    #[test]
+    fn switch_model_reattaches_the_conversation_and_rotate_does_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ledger = crate::session_ledger::SessionLedger::open(dir.path().join("sessions.json"));
+        let (mut s, ch_a, ch_b) = make_state();
+        ledger.record(&conv(ch_a), "sess-a", "id", "/c");
+        ledger.record(&conv(ch_b), "sess-b", "id", "/c");
+
+        apply_completed_before_control_signal(
+            &mut s,
+            &PromptSource::Channel(conv(ch_a)),
+            &ControlSignal::SwitchModel {
+                model_id: "gpt-5".into(),
+                request_id: None,
+            },
+            Some(&ledger),
+        );
+        assert!(!s.has_channel_state(&ch_a));
+        assert_eq!(
+            ledger.take_resumable(&conv(ch_a), "id", "/c"),
+            Some("sess-a".into()),
+            "same adapter, new model: the next session continues the conversation"
+        );
+
+        apply_completed_before_control_signal(
+            &mut s,
+            &PromptSource::Channel(conv(ch_b)),
+            &ControlSignal::Rotate,
+            Some(&ledger),
+        );
+        assert!(!s.has_channel_state(&ch_b));
+        assert!(ledger.take_resumable(&conv(ch_b), "id", "/c").is_none());
+    }
+
+    #[test]
+    fn held_sessions_include_those_dropped_when_the_adapter_died() {
+        let (mut s, ch_a, ch_b) = make_state();
+        s.invalidate_all();
+        assert!(s.sessions.is_empty());
+        let mut held = s.take_held_sessions();
+        held.sort_by(|a, b| a.1.cmp(&b.1));
+        assert_eq!(
+            held,
+            vec![
+                (conv(ch_a), "sess-a".to_string()),
+                (conv(ch_b), "sess-b".to_string())
+            ]
+        );
+        assert!(s.take_held_sessions().is_empty(), "handed over once");
     }
 
     // ── requeue_cancelled_batch ────────────────────────────────────────────

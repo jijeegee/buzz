@@ -4157,6 +4157,12 @@ async fn run_harness(
                             "idle pool sleep bound reached — tearing pool back to lazy state"
                         );
                         shutdown_agent_pool(&mut pool).await;
+                        // No worker holds a session any more and every
+                        // transcript is intact: the next turn in each scope
+                        // continues its session instead of starting over.
+                        if let Some(ledger) = &ctx.session_ledger {
+                            ledger.rearm_all();
+                        }
                         // Return to the exact pre-wake lazy state: empty slots,
                         // Listening lifecycle. The top-of-loop wake path re-wakes
                         // on the next accepted event. No second lifecycle.
@@ -4313,6 +4319,7 @@ async fn run_harness(
                     &mut respawn_tasks,
                     observer.clone(),
                     Some(&ctx.rest_client),
+                    ctx.session_ledger.as_ref(),
                 ) == LoopAction::Exit
                 {
                     break;
@@ -4328,6 +4335,7 @@ async fn run_harness(
                     &respawn_tx,
                     &mut respawn_tasks,
                     observer.clone(),
+                    ctx.session_ledger.as_ref(),
                 ) == LoopAction::Exit
                 {
                     break;
@@ -4356,6 +4364,7 @@ async fn run_harness(
                     &respawn_tx,
                     &mut respawn_tasks,
                     observer.clone(),
+                    ctx.session_ledger.as_ref(),
                 );
                 if pool.live_count() == 0 && !any_respawn_in_flight(&crash_history) {
                     tracing::error!("all agents dead — exiting");
@@ -5424,6 +5433,11 @@ fn dispatch_pending(
         // the worker-return event retries immediately instead of waiting for a
         // fresh timeout window.
         pool.clear_hold(&scope);
+        if pool.take_pending_reattach(&scope) {
+            if let Some(ledger) = &ctx.session_ledger {
+                ledger.allow_handoff(&scope);
+            }
+        }
         if let Some((held_for, owner_index)) = forked_after_hold {
             // The owner is mid-turn on another scope, so this scope's session
             // is idle: let the claimed worker reattach it.
@@ -5642,6 +5656,7 @@ fn handle_prompt_result(
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
     rest_client: Option<&relay::RestClient>,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
 ) -> LoopAction {
     let before = pool.task_map().len();
     let agent_index = result.agent.index;
@@ -5873,6 +5888,12 @@ fn handle_prompt_result(
         }
         // Fatal outcomes: the agent subprocess is dead or poisoned — respawn it.
         PromptOutcome::AgentExited | PromptOutcome::Timeout(_) => {
+            // The hard turn cap ends a long turn, not a broken session: the
+            // retried turn continues it. Exits and idle stalls count.
+            let failed_turn = !matches!(
+                result.outcome,
+                PromptOutcome::Timeout(TimeoutKind::Hard { .. })
+            );
             tracing::warn!(
                 agent = agent_index,
                 outcome = outcome_label,
@@ -5896,6 +5917,12 @@ fn handle_prompt_result(
             };
             emit_turn_error(&death_message, None);
 
+            let released = worker_session_releases(
+                &mut result.agent,
+                result.source.scope(),
+                failed_turn,
+                session_ledger,
+            );
             let index = result.agent.index;
             let slot_history = &mut crash_history[index];
             if !spawn_respawn_task(
@@ -5905,6 +5932,7 @@ fn handle_prompt_result(
                 respawn_tx,
                 respawn_tasks,
                 observer.clone(),
+                SessionReleases::new(session_ledger, released),
             ) {
                 // Circuit open — slot stays empty until maintenance refill.
                 if pool.live_count() == 0 && !any_respawn_in_flight(crash_history) {
@@ -5923,6 +5951,8 @@ fn handle_prompt_result(
         // removed channel) is decided above — the message stays fate-neutral
         // since it must be true in every case.
         PromptOutcome::CancelDrainTimeout(grace) => {
+            // The turn was being cancelled on request; the session did not fail.
+            let failed_turn = false;
             tracing::warn!(
                 agent = agent_index,
                 outcome = outcome_label,
@@ -5936,6 +5966,12 @@ fn handle_prompt_result(
             );
             emit_turn_error(&death_message, None);
 
+            let released = worker_session_releases(
+                &mut result.agent,
+                result.source.scope(),
+                failed_turn,
+                session_ledger,
+            );
             let index = result.agent.index;
             let slot_history = &mut crash_history[index];
             if !spawn_respawn_task(
@@ -5945,6 +5981,7 @@ fn handle_prompt_result(
                 respawn_tx,
                 respawn_tasks,
                 observer.clone(),
+                SessionReleases::new(session_ledger, released),
             ) {
                 // Circuit open — slot stays empty until maintenance refill.
                 if pool.live_count() == 0 && !any_respawn_in_flight(crash_history) {
@@ -6016,6 +6053,12 @@ fn handle_prompt_result(
                 );
                 emit_turn_error(&e.to_string(), error_code);
 
+                let released = worker_session_releases(
+                    &mut result.agent,
+                    result.source.scope(),
+                    true,
+                    session_ledger,
+                );
                 let index = result.agent.index;
                 let slot_history = &mut crash_history[index];
                 if !spawn_respawn_task(
@@ -6025,6 +6068,7 @@ fn handle_prompt_result(
                     respawn_tx,
                     respawn_tasks,
                     observer,
+                    SessionReleases::new(session_ledger, released),
                 ) && pool.live_count() == 0
                     && !any_respawn_in_flight(crash_history)
                 {
@@ -6061,6 +6105,7 @@ fn recover_panicked_agent(
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
 ) {
     let task_id = join_error.id();
     let Some(meta) = pool.task_map_mut().remove(&task_id) else {
@@ -6068,6 +6113,23 @@ fn recover_panicked_agent(
         return;
     };
     let i = meta.agent_index;
+
+    // The panicked task dropped the worker and its session map; the scopes
+    // the pool still records it as owning are the sessions it held. They are
+    // re-armed once the replacement starts, after the dropped adapter exited.
+    let released: Vec<SessionRelease> = session_ledger
+        .map(|ledger| {
+            pool.scopes_owned_by(i)
+                .into_iter()
+                .filter_map(|scope| {
+                    let session_id = ledger.session_id(&scope)?;
+                    let failed = meta.scope.as_ref() == Some(&scope);
+                    Some((scope, session_id, failed))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let releases = SessionReleases::new(session_ledger, released);
 
     // Requeue BEFORE mark_complete (same rationale as handle_prompt_result).
     if let Some(batch) = meta.recoverable_batch {
@@ -6130,6 +6192,7 @@ fn recover_panicked_agent(
     let delay = match slot.record_crash() {
         CrashVerdict::CircuitOpen => {
             tracing::error!(agent = i, "circuit open after panic — not respawning");
+            releases.apply();
             return;
         }
         CrashVerdict::HalfOpenProbe => {
@@ -6157,6 +6220,7 @@ fn recover_panicked_agent(
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
         }
+        releases.apply();
         let result = spawn_and_init(&cmd, &args, &env, has_codex, i, observer).await;
         guard.send(result);
     });
@@ -6174,6 +6238,7 @@ fn drain_ready_join_results(
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
 ) -> LoopAction {
     while let Some(Some(join_result)) = pool.join_set.join_next().now_or_never() {
         if let Err(join_error) = join_result {
@@ -6190,6 +6255,7 @@ fn drain_ready_join_results(
                 respawn_tx,
                 respawn_tasks,
                 observer.clone(),
+                session_ledger,
             );
             if pool.live_count() == 0 && !any_respawn_in_flight(crash_history) {
                 return LoopAction::Exit;
@@ -6369,6 +6435,81 @@ fn default_heartbeat_prompt() -> String {
 /// The result comes back through `respawn_tx` so the main loop stays responsive.
 ///
 /// Returns `true` if a respawn task was spawned, `false` if the circuit is open.
+/// A session a replaced worker held: scope, provider session id, and whether
+/// its turn took the worker down.
+type SessionRelease = (scope::SessionScope, String, bool);
+
+/// Sessions to re-arm once the worker that held them is gone. Applied only
+/// after the old adapter process tree has been shut down, so the next worker
+/// never reattaches a session the old one might still be writing.
+struct SessionReleases {
+    ledger: Option<Arc<session_ledger::SessionLedger>>,
+    released: Vec<SessionRelease>,
+}
+
+impl SessionReleases {
+    fn new(
+        ledger: Option<&Arc<session_ledger::SessionLedger>>,
+        released: Vec<SessionRelease>,
+    ) -> Self {
+        Self {
+            ledger: ledger.cloned(),
+            released,
+        }
+    }
+
+    fn apply(self) {
+        let Some(ledger) = self.ledger else {
+            return;
+        };
+        for (scope, session_id, failed) in self.released {
+            ledger.release(&scope, Some(&session_id), failed);
+        }
+    }
+}
+
+/// The worker is about to be replaced; its provider sessions are intact on
+/// disk, so the next turn in each of its scopes may reattach instead of
+/// starting over. `in_flight` is the scope whose turn was running; `failed`
+/// says that turn took the worker down, and a session that keeps doing so is
+/// forgotten by the ledger.
+fn worker_session_releases(
+    agent: &mut OwnedAgent,
+    in_flight: Option<&scope::SessionScope>,
+    failed: bool,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
+) -> Vec<SessionRelease> {
+    let Some(ledger) = session_ledger else {
+        return Vec::new();
+    };
+    let mut released: Vec<SessionRelease> = agent
+        .state
+        .take_held_sessions()
+        .into_iter()
+        .map(|(scope, session_id)| {
+            let is_in_flight = in_flight == Some(&scope);
+            (scope, session_id, failed && is_in_flight)
+        })
+        .collect();
+    // Failure paths drop the running scope's handle before the worker returns.
+    // Blame only the session this turn actually ran on, or the one it was
+    // reattaching; a turn that was creating a new session leaves the recorded
+    // one alone.
+    if let Some(scope) = in_flight {
+        if !released.iter().any(|(held, _, _)| held == scope) {
+            let session_id = agent
+                .state
+                .turn_session(scope)
+                .map(str::to_owned)
+                .or_else(|| ledger.claimed(scope));
+            if let Some(session_id) = session_id {
+                released.push((scope.clone(), session_id, failed));
+            }
+        }
+    }
+    released
+}
+
 fn spawn_respawn_task(
     old_agent: OwnedAgent,
     config: &Config,
@@ -6376,6 +6517,7 @@ fn spawn_respawn_task(
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
+    releases: SessionReleases,
 ) -> bool {
     let index = old_agent.index;
 
@@ -6383,6 +6525,13 @@ fn spawn_respawn_task(
     let delay = match slot.record_crash() {
         CrashVerdict::CircuitOpen => {
             tracing::error!(agent = index, "circuit open — not respawning");
+            // No replacement, but a later refill may serve these scopes.
+            respawn_tasks.spawn(async move {
+                let mut agent = old_agent;
+                agent.acp.shutdown().await;
+                drop(agent);
+                releases.apply();
+            });
             return false;
         }
         CrashVerdict::HalfOpenProbe => {
@@ -6408,6 +6557,7 @@ fn spawn_respawn_task(
         let mut agent = old_agent;
         agent.acp.shutdown().await;
         drop(agent);
+        releases.apply();
 
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
@@ -11633,6 +11783,43 @@ mod error_outcome_emission_tests {
         }
     }
 
+    #[tokio::test]
+    async fn a_dead_worker_is_blamed_only_for_the_session_its_turn_used() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ledger = Arc::new(session_ledger::SessionLedger::open(
+            dir.path().join("sessions.json"),
+        ));
+        let scope = scope::SessionScope::Main {
+            channel_id: Uuid::new_v4(),
+        };
+        ledger.record(&scope, "s", "id", "/c");
+
+        // The turn was creating a new session: the recorded one is untouched.
+        let mut agent = dummy_agent(0).await;
+        assert!(worker_session_releases(&mut agent, Some(&scope), true, Some(&ledger)).is_empty());
+
+        // The turn ran on `s` and its handle was dropped before returning.
+        agent.state.turn_session = Some((scope.clone(), "s".into()));
+        assert_eq!(
+            worker_session_releases(&mut agent, Some(&scope), true, Some(&ledger)),
+            vec![(scope.clone(), "s".to_string(), true)]
+        );
+
+        // The turn died while reattaching `s`.
+        agent.state.turn_session = None;
+        ledger.release(&scope, Some("s"), false);
+        assert_eq!(ledger.take_resumable(&scope, "id", "/c"), Some("s".into()));
+        let released = worker_session_releases(&mut agent, Some(&scope), true, Some(&ledger));
+        assert_eq!(released, vec![(scope.clone(), "s".to_string(), true)]);
+
+        // Re-armed only once applied (after the old adapter is gone).
+        let releases = SessionReleases::new(Some(&ledger), released);
+        assert!(ledger.take_resumable(&scope, "id", "/c").is_none());
+        releases.apply();
+        assert_eq!(ledger.take_resumable(&scope, "id", "/c"), Some("s".into()));
+        agent.acp.shutdown().await;
+    }
+
     fn bind_agent_scope_owner(
         pool: &mut AgentPool,
         agent: &mut OwnedAgent,
@@ -11713,6 +11900,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             None,
             None,
+            None,
         );
 
         let returned = pool.agents_mut()[0].as_ref().expect("returned agent");
@@ -11791,6 +11979,7 @@ mod error_outcome_emission_tests {
             &mut crash_history,
             &respawn_tx,
             &mut respawn_tasks,
+            None,
             None,
             None,
         );
@@ -11914,6 +12103,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             None,
             None,
+            None,
         );
 
         let returned = pool.agents_mut()[0].as_ref().expect("returned agent");
@@ -11982,6 +12172,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12057,6 +12248,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
         );
 
         let panic = observer
@@ -12149,6 +12341,7 @@ mod error_outcome_emission_tests {
             &mut crash_history,
             &respawn_tx,
             &mut respawn_tasks,
+            None,
             None,
         );
 
@@ -12252,6 +12445,7 @@ mod error_outcome_emission_tests {
                 &mut respawn_tasks,
                 Some(observer.clone()),
                 None,
+                None,
             );
             let events = observer.snapshot();
             let turn_error = events.iter().find(|e| e.kind == "turn_error").unwrap();
@@ -12345,6 +12539,7 @@ mod error_outcome_emission_tests {
                 &mut crash_history,
                 &respawn_tx,
                 &mut respawn_tasks,
+                None,
                 None,
                 None,
             );
@@ -12456,6 +12651,7 @@ mod error_outcome_emission_tests {
                 &mut respawn_tasks,
                 None,
                 None,
+                None,
             );
             (
                 queue.pending_channels(),
@@ -12550,6 +12746,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12647,6 +12844,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12768,6 +12966,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12905,6 +13104,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             Some(observer.clone()),
             None,
+            None,
         );
 
         // No batch to merge — the queue has nothing pending for any channel.
@@ -13034,6 +13234,7 @@ mod error_outcome_emission_tests {
                 &mut crash_history,
                 &respawn_tx,
                 &mut respawn_tasks,
+                None,
                 None,
                 None,
             ),
@@ -13203,6 +13404,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             None,
             None,
+            None,
         );
 
         // The batch must not be requeued: pending_channels returns 0.
@@ -13311,6 +13513,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             Some(observer.clone()),
             Some(&rest),
+            None,
         );
 
         // The batch must not be requeued: pending_channels returns 0.
@@ -13580,6 +13783,7 @@ mod error_outcome_emission_tests {
             &mut crash_history,
             &respawn_tx,
             &mut respawn_tasks,
+            None,
             None,
             None,
         );
