@@ -1,3 +1,5 @@
+import 'dart:math' show max, min;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -135,6 +137,9 @@ class ConversationLetterAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final badgeSize = (size * 0.381).clamp(10.0, 16.0);
+    // A third of the circle (14 at the row's 42) shrinks the letter to a
+    // few pixels in pills and pickers; small circles get up to half of it.
+    final letterSize = max(size / 3, min(size / 2, 14.0));
     final badgeIcon = isThread
         ? LucideIcons.messagesSquare
         : isPrivate
@@ -157,7 +162,7 @@ class ConversationLetterAvatar extends StatelessWidget {
             child: Text(
               conversationInitial(label),
               style: TextStyle(
-                fontSize: size / 3,
+                fontSize: letterSize,
                 fontWeight: FontWeight.w600,
                 color: Colors.white,
               ),
