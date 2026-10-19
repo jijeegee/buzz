@@ -73,18 +73,18 @@ test("channel intro shares description-over-purpose derivation with the header",
 });
 
 test("getChannelIntroKind names project homes ahead of regular streams", () => {
-  assert.equal(getChannelIntroKind(channel(), true), "project channel");
-  assert.equal(getChannelIntroKind(channel(), false), "regular channel");
+  assert.equal(getChannelIntroKind(channel(), true), "project group");
+  assert.equal(getChannelIntroKind(channel(), false), "regular group");
 });
 
 test("getChannelIntroKind keeps private and ephemeral labels for other streams", () => {
   assert.equal(
     getChannelIntroKind(channel({ visibility: "private" })),
-    "private channel",
+    "private group",
   );
   assert.equal(
     getChannelIntroKind(channel({ ttlSeconds: 3600 })),
-    "ephemeral channel",
+    "ephemeral group",
   );
 });
 

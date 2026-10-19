@@ -275,7 +275,7 @@ test("with server chats on, rows, threads and counts come from the relay; off ke
       "room-c",
     ]);
     const thread = view.getByTestId(`chat-thread-${ROOT}`);
-    assert.match(thread.textContent, /#room-a/);
+    assert.match(thread.textContent, /room-a/);
     assert.match(thread.textContent, /Launch plan/);
     assert.match(
       view.getByTestId(`chat-thread-unread-${ROOT}`).textContent,

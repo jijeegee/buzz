@@ -383,7 +383,7 @@ async function expectWelcomeView(page: Page) {
   await expect(page.getByTestId("message-unread-pill")).toHaveCount(0);
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "private welcome channel",
+    "private welcome group",
   );
   await expect(
     page.getByTestId("message-channel-intro").getByRole("button"),

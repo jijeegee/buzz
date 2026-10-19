@@ -64,7 +64,7 @@ test.describe("channel muting", () => {
     await expect(page.getByTestId("chat-title")).toHaveText("random");
 
     await page.getByTestId("channel-general").click({ button: "right" });
-    const muteItem = page.getByRole("menuitem", { name: "Mute channel" });
+    const muteItem = page.getByRole("menuitem", { name: "Mute group" });
     await expect(muteItem).toBeVisible();
     await muteItem.evaluate((el) =>
       Promise.all(
@@ -175,7 +175,7 @@ test.describe("channel muting", () => {
     await expect(page.getByTestId("chat-title")).toHaveText("random");
 
     await page.getByTestId("channel-engineering").click({ button: "right" });
-    const unmuteItem = page.getByRole("menuitem", { name: "Unmute channel" });
+    const unmuteItem = page.getByRole("menuitem", { name: "Unmute group" });
     await expect(unmuteItem).toBeVisible();
     await unmuteItem.evaluate((el) =>
       Promise.all(

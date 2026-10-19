@@ -1519,7 +1519,7 @@ test("create channel template selector matches the lifecycle controls", async ({
   await expect(templateControl).toHaveText("None");
   await templateControl.click();
   await expect(
-    page.getByRole("menuitem", { name: "Create new channel template…" }),
+    page.getByRole("menuitem", { name: "Create new group template…" }),
   ).toBeVisible();
   await page.getByRole("menuitemradio", { name: "Project kickoff" }).click();
 
@@ -1575,7 +1575,7 @@ test("create channel exposes templates when the library is empty", async ({
   await expect(templateControl).toHaveText("None");
   await templateControl.click();
   await page
-    .getByRole("menuitem", { name: "Create new channel template…" })
+    .getByRole("menuitem", { name: "Create new group template…" })
     .click();
 
   await expect(
@@ -1889,7 +1889,7 @@ test("empty channel shows intro actions", async ({ page }) => {
   await expect(page.getByTestId("chat-title")).toHaveText("random");
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "This is the beginning of the regular channel.",
+    "This is the beginning of the regular group.",
   );
   await expect(
     page.getByTestId("channel-intro-action-create-channel"),
@@ -1954,7 +1954,7 @@ test("short channel with messages shows intro actions on open", async ({
   await expect(page.getByTestId("message-timeline")).toContainText(message);
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "This is the beginning of the regular channel.",
+    "This is the beginning of the regular group.",
   );
   await expect(
     page.getByTestId("channel-intro-action-create-agent"),
@@ -2848,7 +2848,7 @@ test("manage channel shows member avatars and owner-only row controls", async ({
   const canvasInfo = page.getByTestId("channel-canvas-ingress-info");
   await canvasInfo.hover();
   await expect(page.getByRole("tooltip")).toHaveText(
-    "Use the canvas as a shared space for notes, plans, and other channel information.",
+    "Use the canvas as a shared space for notes, plans, and other group information.",
   );
   const nameEdit = page.getByTestId("channel-management-edit");
   await expect(nameEdit).toBeVisible();
@@ -3036,13 +3036,13 @@ test("manage channel updates visibility and ephemeral lifecycle independently", 
     .getByTestId("channel-management-permissions-option-private")
     .click();
   await expect(
-    page.getByRole("dialog", { name: "Edit private channel" }),
+    page.getByRole("dialog", { name: "Edit private group" }),
   ).toBeVisible();
   await expect(
     page.getByTestId("channel-management-permissions"),
   ).toHaveAccessibleName("Visibility: Private");
   await page.getByTestId("channel-management-channel-type").click();
-  await page.getByLabel("Temporary channel").click();
+  await page.getByLabel("Temporary group").click();
   await expect(page.getByTestId("channel-management-ttl")).toBeVisible();
   await expect(saveChangesButton).toBeEnabled();
 
@@ -3095,13 +3095,13 @@ test("manage channel updates visibility and ephemeral lifecycle independently", 
   await page.getByTestId("channel-management-permissions").click();
   await page.getByTestId("channel-management-permissions-option-open").click();
   await expect(
-    page.getByRole("dialog", { name: "Edit public channel" }),
+    page.getByRole("dialog", { name: "Edit public group" }),
   ).toBeVisible();
   await expect(
     page.getByTestId("channel-management-permissions"),
   ).toHaveAccessibleName("Visibility: Public");
   await page.getByTestId("channel-management-channel-type").click();
-  await page.getByLabel("Ongoing channel").click();
+  await page.getByLabel("Ongoing group").click();
   await expect(saveChangesButton).toBeEnabled();
 
   const commandCountBeforeDisable = (await readCommandPayloadLog(page)).length;
@@ -3953,7 +3953,7 @@ test("Inbox detail title and source action navigate to the conversation", async 
   const detail = page.getByTestId("home-inbox-detail");
   await expect(detail.getByRole("heading")).toHaveText("Message in #general");
   await expect(
-    detail.getByRole("button", { name: "Open in channel" }),
+    detail.getByRole("button", { name: "Open in group" }),
   ).toBeVisible();
   await detail.getByTestId("home-inbox-context-title").click();
 
@@ -4593,7 +4593,7 @@ test("members sidebar can invite and remove managed agents", async ({
   await expect(page.getByText("Members", { exact: true })).toBeVisible();
   await expect(page.getByText(/Members · \d+/)).toHaveCount(0);
   await expect(
-    page.getByText("Not in this channel", { exact: true }),
+    page.getByText("Not in this group", { exact: true }),
   ).toBeVisible();
 
   await page.getByTestId("channel-management-search-users").fill("char");

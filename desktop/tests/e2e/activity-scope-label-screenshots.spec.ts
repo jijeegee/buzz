@@ -136,7 +136,7 @@ test.describe("activity panel scope label", () => {
       await agentName.evaluate((element) => element.clientWidth),
     );
     const scope = page.getByTestId("agent-session-scope-label");
-    await expect(scope).toHaveText("Activity · All channels");
+    await expect(scope).toHaveText("Activity · All groups");
     const recency = page.getByTestId("agent-session-recency-label");
     await expect(recency).toHaveText("No updates yet");
     await expect(recency).toBeVisible();
@@ -150,7 +150,7 @@ test.describe("activity panel scope label", () => {
 
     await page.getByTestId("agent-session-settings-menu-trigger").click();
     await page.getByTestId("agent-session-toggle-raw-feed").click();
-    await expect(scope).toHaveText("Raw ACP activity · All channels");
+    await expect(scope).toHaveText("Raw ACP activity · All groups");
     await expect(recency).toBeVisible();
     expect(await recency.evaluate((element) => element.clientWidth)).toBe(
       recencyWidth,

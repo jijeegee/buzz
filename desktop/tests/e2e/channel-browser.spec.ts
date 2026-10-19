@@ -58,7 +58,7 @@ test("channel browser shows channels not yet joined", async ({ page }) => {
   await openChannelBrowser(page);
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Browse channels" }),
+    page.getByRole("heading", { name: "Find groups" }),
   ).toBeVisible();
 
   // "design" and "sales" are open channels the mock user is NOT a member of
@@ -173,7 +173,7 @@ test("channel browser shows no results for unmatched search", async ({
   await openChannelBrowser(page);
   await page.getByTestId("channel-browser-search").fill("zzz-nonexistent");
 
-  await expect(page.getByText("No channels match your search")).toBeVisible();
+  await expect(page.getByText("No groups match your search")).toBeVisible();
 });
 
 test("channel browser fuzzy-matches a subsequence", async ({ page }) => {
@@ -345,7 +345,7 @@ test("no-match search pins a create row above the empty state", async ({
   await openChannelBrowser(page);
   await page.getByTestId("channel-browser-search").fill("zzz-nonexistent");
 
-  await expect(page.getByText("No channels match your search")).toBeVisible();
+  await expect(page.getByText("No groups match your search")).toBeVisible();
   const createRow = page.getByTestId("channel-browser-create-row");
   await expect(createRow).toBeVisible();
   await expect(createRow).toContainText("zzz-nonexistent");

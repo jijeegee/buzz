@@ -57,7 +57,7 @@ test("thread reply leads with the sender when resolved", () => {
       channelName: "ship-room",
       content: "done!",
     }).title,
-    "Taylor replied in #ship-room",
+    "Taylor replied in ship-room",
   );
 });
 
@@ -69,7 +69,7 @@ test("thread reply preserves legacy copy when the sender is unknown", () => {
       channelName: "ship-room",
       content: "done!",
     }).title,
-    "Reply in #ship-room",
+    "Reply in ship-room",
   );
   assert.deepEqual(
     formatMessageNotification({
@@ -90,7 +90,7 @@ test("mention titles match the home-feed conventions", () => {
       channelName: "ship-room",
       content: "@wes look",
     }).title,
-    "Taylor mentioned you in #ship-room",
+    "Taylor mentioned you in ship-room",
   );
   assert.equal(
     formatMessageNotification({
@@ -99,7 +99,7 @@ test("mention titles match the home-feed conventions", () => {
       channelName: "ship-room",
       content: "@wes look",
     }).title,
-    "@Mention in #ship-room",
+    "@Mention in ship-room",
   );
 });
 
@@ -112,7 +112,7 @@ test("approval and needs-action titles match the home-feed conventions", () => {
       content: "",
     }),
     {
-      title: "Taylor requested approval in #ops",
+      title: "Taylor requested approval in ops",
       body: "A workflow is waiting for your approval.",
     },
   );
