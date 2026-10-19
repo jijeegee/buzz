@@ -36,7 +36,6 @@ pub const THREAD_REOPENED_TAG: &str = "kuzz:thread-reopened";
 const SENT_FROM_THREAD_TAG: &str = "kuzz:sent-from-thread";
 /// Parent scope value for a task thread started from the channel main timeline.
 const PARENT_MAIN: &str = "main";
-const MAX_TITLE_CHARS: usize = 120;
 /// Matches Desktop's sent-from-thread excerpt limit.
 const MAX_EXCERPT_CHARS: usize = 64;
 
@@ -53,7 +52,7 @@ pub enum ThreadsCmd {
         /// Top-level message that becomes the thread root (64-char hex)
         #[arg(long, value_name = "EVENT_ID")]
         from: String,
-        /// Task title; also set as the shared thread name when it fits
+        /// Shared task/thread title (up to 40 English or 20 Korean characters)
         #[arg(long)]
         title: String,
         /// Kickoff details (use '-' to read from stdin)
@@ -169,9 +168,8 @@ async fn start(
 
     // The shared thread name makes the task visible in reply summaries and the
     // sidebar. It is best effort: an older relay rejects the kind.
-    let name = thread_name_for(title);
-    let thread_name = match set_thread_name(client, channel, from, &name).await {
-        Ok(_) => Some(name),
+    let thread_name = match set_thread_name(client, channel, from, title).await {
+        Ok(_) => Some(title),
         Err(e) => {
             eprintln!("warning: could not set the thread name ({e})");
             None
@@ -440,35 +438,15 @@ fn tag_name(tag: &serde_json::Value) -> Option<&str> {
 
 fn validate_title(title: &str) -> Result<&str, CliError> {
     let title = title.trim();
-    if title.is_empty()
-        || title.chars().count() > MAX_TITLE_CHARS
-        || title.chars().any(char::is_control)
-    {
-        return Err(CliError::Usage(format!(
-            "--title must be one non-empty line of at most {MAX_TITLE_CHARS} characters"
-        )));
+    if title.is_empty() {
+        return Err(CliError::Usage("--title must not be empty".into()));
     }
+    kuzz_core::thread_name::validate_thread_name(title).map_err(|error| {
+        CliError::Usage(format!(
+            "--title: {error}; use a short title and put details in --brief"
+        ))
+    })?;
     Ok(title)
-}
-
-/// Fit a title into the shared thread-name budget (ASCII one unit, other
-/// characters two, 40 units), ending clipped names with an ellipsis.
-fn thread_name_for(title: &str) -> String {
-    let weight = |c: char| if c.is_ascii() { 1 } else { 2 };
-    let max = kuzz_core::thread_name::MAX_THREAD_NAME_WEIGHT;
-    if title.chars().map(weight).sum::<usize>() <= max {
-        return title.to_string();
-    }
-    let mut used = weight('…');
-    let mut name = String::new();
-    for c in title.chars() {
-        if used + weight(c) > max {
-            break;
-        }
-        used += weight(c);
-        name.push(c);
-    }
-    format!("{}…", name.trim_end())
 }
 
 /// Single-line excerpt of markdown content for the sent-from-thread tag, or
@@ -630,14 +608,32 @@ mod tests {
     }
 
     #[test]
-    fn thread_name_fits_the_shared_budget() {
-        assert_eq!(thread_name_for("Quote rendering"), "Quote rendering");
-        assert_eq!(thread_name_for(&"가".repeat(20)), "가".repeat(20));
-        let clipped = thread_name_for(&"가".repeat(30));
-        assert_eq!(clipped, format!("{}…", "가".repeat(19)));
-        assert!(kuzz_core::thread_name::validate_thread_name(&clipped).is_ok());
-        let clipped = thread_name_for(&"word ".repeat(20));
-        assert!(kuzz_core::thread_name::validate_thread_name(&clipped).is_ok());
+    fn task_title_is_preserved_or_rejected_never_clipped() {
+        for title in ["a".repeat(40), "가".repeat(20), "가a".repeat(13)] {
+            assert_eq!(validate_title(&title).unwrap(), title);
+        }
+        for title in ["a".repeat(41), "가".repeat(21), "가a".repeat(14)] {
+            let error = validate_title(&title).unwrap_err().to_string();
+            assert!(error.contains("40 English or 20 Korean"));
+            assert!(error.contains("--brief"));
+        }
+    }
+
+    #[tokio::test]
+    async fn start_rejects_long_title_before_loading_or_publishing() {
+        let client = KuzzClient::new(
+            "http://127.0.0.1:1".into(),
+            nostr::Keys::generate(),
+            None,
+            None,
+        )
+        .unwrap();
+        // Invalid root arguments would fail before any network request if the
+        // title check moved after root loading. The title error must win.
+        let error = start(&client, "invalid", "invalid", &"가".repeat(21), None, None)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("40 English or 20 Korean"));
     }
 
     #[test]
@@ -645,7 +641,7 @@ mod tests {
         assert_eq!(validate_title("  작업 스레드  ").unwrap(), "작업 스레드");
         assert!(validate_title("").is_err());
         assert!(validate_title("two\nlines").is_err());
-        assert!(validate_title(&"a".repeat(MAX_TITLE_CHARS + 1)).is_err());
+        assert!(validate_title(&"a".repeat(41)).is_err());
     }
 
     #[test]
