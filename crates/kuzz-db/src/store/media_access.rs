@@ -18,6 +18,9 @@ use crate::Db;
 /// Most blob hashes one event may link, and one access check may name.
 pub const MAX_MEDIA_HASHES_PER_EVENT: usize = 64;
 
+/// Most blob hashes one cleanup check may name.
+pub const MAX_CLEANUP_HASHES_PER_CALL: usize = 1000;
+
 fn check_hashes(hashes: &[String]) -> Result<()> {
     if hashes.len() > MAX_MEDIA_HASHES_PER_EVENT {
         return Err(DbError::InvalidData(format!(
@@ -43,7 +46,9 @@ fn check_key(name: &str, key: &[u8]) -> Result<()> {
 }
 
 impl Db {
-    /// Record that `uploader` uploaded the blob `sha256`. Idempotent.
+    /// Record that `uploader` uploaded the blob `sha256`. Uploading the same
+    /// bytes again refreshes the time, so the unused-file cleanup waits its
+    /// grace period from the latest upload.
     #[datastore_span(name = "record_media_upload", system = "postgresql")]
     pub async fn record_media_upload(
         &self,
@@ -55,7 +60,7 @@ impl Db {
         check_key("uploader", uploader)?;
         sqlx::query(
             "INSERT INTO media_uploads (community_id, sha256, uploader) VALUES ($1, $2, $3) \
-             ON CONFLICT DO NOTHING",
+             ON CONFLICT (community_id, sha256, uploader) DO UPDATE SET created_at = now()",
         )
         .bind(community.as_uuid())
         .bind(sha256)
@@ -164,5 +169,156 @@ impl Db {
             .media_hashes_readable_by(community, reader, &[sha256.to_owned()])
             .await?;
         Ok(!readable.is_empty())
+    }
+}
+
+impl Db {
+    /// The subset of `hashes` that is still in use in `community`, for the
+    /// unused-file cleanup. Errs toward keeping: a blob is in use if it was
+    /// uploaded after `grace_cutoff`, or any event that is live or was deleted
+    /// after `grace_cutoff` names it anywhere in its content or tags (every
+    /// kind, including private ones the read links skip), or a reported event,
+    /// a profile picture, the community icon, a blob report, a feedback
+    /// attachment or a workflow definition names it.
+    ///
+    /// The indexed checks run first; only the hashes they leave are matched
+    /// against event text, in one pass over the community's events that pulls
+    /// out every run of 64 or more hex digits and joins it to those hashes.
+    #[datastore_span(name = "media_hashes_in_use", system = "postgresql")]
+    pub async fn media_hashes_in_use(
+        &self,
+        community: CommunityId,
+        hashes: &[String],
+        grace_cutoff: DateTime<Utc>,
+    ) -> Result<Vec<String>> {
+        if hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+        if hashes.len() > MAX_CLEANUP_HASHES_PER_CALL {
+            return Err(DbError::InvalidData(format!(
+                "at most {MAX_CLEANUP_HASHES_PER_CALL} media hashes per cleanup check"
+            )));
+        }
+        for chunk in hashes.chunks(MAX_MEDIA_HASHES_PER_EVENT) {
+            check_hashes(chunk)?;
+        }
+        let mut tx = self.pool.begin().await?;
+        // A background job must never hold the database for long.
+        sqlx::query("SET LOCAL statement_timeout = '120s'")
+            .execute(&mut *tx)
+            .await?;
+        let in_use: Vec<String> = sqlx::query_scalar(
+            r#"
+            WITH h AS (SELECT DISTINCT unnest($2::text[]) AS sha),
+            cheap AS (
+                SELECT h.sha FROM h
+                WHERE EXISTS (
+                        SELECT 1 FROM media_uploads u
+                        WHERE u.community_id = $1 AND u.sha256 = h.sha AND u.created_at > $3)
+                   OR EXISTS (
+                        SELECT 1 FROM media_references r
+                        JOIN events e
+                          ON e.community_id = r.community_id
+                         AND e.created_at = r.event_created_at
+                         AND e.id = r.event_id
+                        WHERE r.community_id = $1 AND r.sha256 = h.sha
+                          AND (e.deleted_at IS NULL OR e.deleted_at > $3))
+                   OR EXISTS (
+                        SELECT 1 FROM moderation_reports m
+                        WHERE m.community_id = $1
+                          AND m.target_blob_sha256 = decode(h.sha, 'hex'))
+                   OR EXISTS (
+                        SELECT 1 FROM moderation_reports m
+                        JOIN events e
+                          ON e.community_id = m.community_id AND e.id = m.target_event_id
+                        WHERE m.community_id = $1
+                          AND (strpos(e.content, h.sha) > 0 OR strpos(e.tags::text, h.sha) > 0))
+                   OR EXISTS (
+                        SELECT 1 FROM communities co
+                        WHERE co.id = $1 AND strpos(COALESCE(co.icon, ''), h.sha) > 0)
+                   OR EXISTS (
+                        SELECT 1 FROM users us
+                        WHERE us.community_id = $1
+                          AND strpos(COALESCE(us.avatar_url, ''), h.sha) > 0)
+                   OR EXISTS (
+                        SELECT 1 FROM principals p
+                        WHERE strpos(COALESCE(p.avatar_url, ''), h.sha) > 0)
+                   OR EXISTS (
+                        SELECT 1 FROM product_feedback f
+                        WHERE f.community_id = $1 AND strpos(f.tags::text, h.sha) > 0)
+                   OR EXISTS (
+                        SELECT 1 FROM workflows w
+                        WHERE w.community_id = $1 AND strpos(w.definition::text, h.sha) > 0)
+            ),
+            rest AS (SELECT sha FROM h EXCEPT SELECT sha FROM cheap),
+            runs AS (
+                SELECT DISTINCT m.run[1] AS run
+                FROM events e
+                CROSS JOIN LATERAL regexp_matches(
+                    e.content || ' ' || e.tags::text, '[0-9a-f]{64,}', 'g') AS m(run)
+                WHERE e.community_id = $1
+                  AND (e.deleted_at IS NULL OR e.deleted_at > $3)
+                  AND EXISTS (SELECT 1 FROM rest)
+            ),
+            scanned AS (
+                SELECT rest.sha FROM rest JOIN runs ON runs.run = rest.sha
+                UNION
+                SELECT rest.sha FROM rest
+                JOIN runs ON length(runs.run) > 64 AND strpos(runs.run, rest.sha) > 0
+            )
+            SELECT sha FROM cheap UNION SELECT sha FROM scanned
+            "#,
+        )
+        .bind(community.as_uuid())
+        .bind(hashes)
+        .bind(grace_cutoff)
+        .fetch_all(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(in_use)
+    }
+
+    /// Drop `community`'s stale uploader and reference rows for a cleaned-up
+    /// blob: uploads from before `grace_cutoff`, and references whose event is
+    /// gone or was deleted before it. Rows written meanwhile stay.
+    #[datastore_span(name = "forget_media", system = "postgresql")]
+    pub async fn forget_media(
+        &self,
+        community: CommunityId,
+        sha256: &str,
+        grace_cutoff: DateTime<Utc>,
+    ) -> Result<()> {
+        check_hashes(std::slice::from_ref(&sha256.to_owned()))?;
+        let mut tx = self.pool.begin().await?;
+        for statement in [
+            "DELETE FROM media_uploads \
+             WHERE community_id = $1 AND sha256 = $2 AND created_at <= $3",
+            "DELETE FROM media_references r \
+             WHERE r.community_id = $1 AND r.sha256 = $2 \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM events e \
+                   WHERE e.community_id = r.community_id \
+                     AND e.created_at = r.event_created_at \
+                     AND e.id = r.event_id \
+                     AND (e.deleted_at IS NULL OR e.deleted_at > $3))",
+        ] {
+            sqlx::query(statement)
+                .bind(community.as_uuid())
+                .bind(sha256)
+                .bind(grace_cutoff)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Every community id, whatever its state. The cleanup checks each one's
+    /// sidecar before removing shared blob bytes.
+    #[datastore_span(name = "all_community_ids", system = "postgresql")]
+    pub async fn all_community_ids(&self) -> Result<Vec<Uuid>> {
+        Ok(sqlx::query_scalar("SELECT id FROM communities")
+            .fetch_all(&self.pool)
+            .await?)
     }
 }
