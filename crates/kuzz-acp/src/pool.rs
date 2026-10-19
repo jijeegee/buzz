@@ -48,6 +48,14 @@ use crate::scope::SessionScope;
 /// the turn as "recently active" (eligible for requeue instead of dead-letter).
 const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(60);
 
+/// Check-ins a channel turn still working at the hard cap gets before it is
+/// paused and the requester asked whether to continue (with the 2-hour cap,
+/// a pause after about 8 hours).
+pub(crate) const TURN_CHECKIN_LIMIT: u32 = 3;
+
+/// How long a paused turn may take to stop before the adapter is replaced.
+const CHECKIN_PAUSE_GRACE: Duration = Duration::from_secs(60);
+
 /// Maximum canonical thread roots remembered by one live ACP session.
 ///
 /// Evicting the oldest root only causes a future prompt to include redundant
@@ -4529,6 +4537,13 @@ pub async fn run_prompt_task(
         prompt_label(&source)
     );
 
+    // A channel turn still working at the hard cap is checked in on instead
+    // of cut off; heartbeats keep the plain hard timeout.
+    agent.acp.set_turn_checkin_limit(match &source {
+        PromptSource::Channel(_) => TURN_CHECKIN_LIMIT,
+        PromptSource::Heartbeat => 0,
+    });
+
     // When control_rx is Some (channel tasks), wrap the prompt in select! so
     // the main loop can cancel, interrupt, or rotate it. Heartbeats
     // (control_rx=None) take the simple await path — they are not controllable.
@@ -4944,6 +4959,89 @@ pub async fn run_prompt_task(
                     );
                 }
             }
+        }
+        Err(AcpError::CheckinLimit { checkins }) => {
+            // Still working after every check-in: pause the turn, keep the
+            // session, and ask the requester. Their reply continues the same
+            // conversation; the batch is not retried.
+            tracing::warn!(
+                target: "pool::prompt",
+                "turn still working after {checkins} check-ins — pausing session {session_id}"
+            );
+            if let Some(batch) = batch.as_ref() {
+                spawn_turn_paused_notice(&ctx.rest_client, batch, agent.acp.turn_elapsed());
+            }
+            let cancelled = agent
+                .acp
+                .cancel_with_cleanup_grace(&session_id, CHECKIN_PAUSE_GRACE)
+                .await;
+            let usage = agent.acp.take_turn_usage();
+            publish_agent_turn_metric(
+                &ctx,
+                usage,
+                observer_channel_id,
+                &session_id,
+                &turn_id,
+                Some(kuzz_core::agent_turn_metric::StopReason::Cancelled),
+            )
+            .await;
+            let outcome = match cancelled {
+                Ok(stop_reason) => {
+                    log_stop_reason(&source, &stop_reason);
+                    // The session keeps this request, so record it as
+                    // delivered: the requester's reply must continue it, not
+                    // re-send it as new.
+                    if let PromptSource::Channel(scope) = &source {
+                        let standing_sent = !agent.has_system_prompt_support();
+                        record_scope_delivery_success(
+                            &mut agent,
+                            scope.clone(),
+                            standing_sent,
+                            &pending_delivered_event_ids,
+                            &pending_hydrated_thread_roots,
+                        );
+                        agent
+                            .state
+                            .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
+                        agent
+                            .state
+                            .mark_live_text_seen(scope.clone(), &live_now.text);
+                        agent
+                            .state
+                            .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
+                        agent
+                            .state
+                            .mark_prompt_goals_in_messages(scope, prompt_goals_in_messages);
+                        if let Some(ledger) = &ctx.session_ledger {
+                            ledger.touch(scope, &session_id);
+                            ledger.set_standing(
+                                scope,
+                                &session_id,
+                                &crate::live_settings::StandingHashes::new(
+                                    &live_now.text,
+                                    layer0_now.as_deref(),
+                                ),
+                            );
+                        }
+                    }
+                    PromptOutcome::Ok(stop_reason)
+                }
+                Err(AcpError::AgentExited) => {
+                    agent.state.invalidate_all();
+                    PromptOutcome::AgentExited
+                }
+                Err(e) => {
+                    // Did not stop in time: replace the adapter. The session
+                    // is reattached by the next turn.
+                    tracing::warn!(
+                        target: "pool::prompt",
+                        "paused turn did not stop ({e}) — replacing the agent process"
+                    );
+                    agent.state.invalidate_all();
+                    PromptOutcome::CancelDrainTimeout(CHECKIN_PAUSE_GRACE)
+                }
+            };
+            send_prompt_result(&result_tx, &turn_id, agent, source, outcome, None);
         }
         Err(AcpError::HardTimeout { silence }) => {
             let recently_active = silence < RECENT_ACTIVITY_WINDOW;
@@ -7125,12 +7223,76 @@ pub(crate) async fn post_failure_notice(
     }
 }
 
+/// The notice telling the requester a long turn was paused after its last
+/// check-in, and that replying continues it.
+pub(crate) fn turn_paused_notice(elapsed: Duration) -> String {
+    let hours = (elapsed.as_secs() + 1800) / 3600;
+    let elapsed = if hours >= 1 {
+        format!("about {hours} hour{}", if hours == 1 { "" } else { "s" })
+    } else {
+        let minutes = (elapsed.as_secs() + 30) / 60;
+        format!(
+            "about {minutes} minute{}",
+            if minutes == 1 { "" } else { "s" }
+        )
+    };
+    format!(
+        "⏸️ This request has been running for {elapsed}, so I paused it. \
+         Reply here if I should continue — I'll pick up where I left off."
+    )
+}
+
+/// Best-effort: post [`turn_paused_notice`] in the paused request's thread,
+/// notifying the person who sent it.
+fn spawn_turn_paused_notice(
+    rest: &crate::relay::RestClient,
+    batch: &FlushBatch,
+    elapsed: Duration,
+) {
+    let Some(last) = batch.events.last() else {
+        return;
+    };
+    let thread_tags = last.routing_thread_tags();
+    let requester = last.event.pubkey.to_hex();
+    let rest = rest.clone();
+    let channel_id = batch.channel_id;
+    let content = turn_paused_notice(elapsed);
+    tokio::spawn(async move {
+        let Some(event) = build_notice_event(
+            &rest.keys,
+            channel_id,
+            &thread_tags,
+            &content,
+            &[&requester],
+        ) else {
+            return;
+        };
+        match tokio::time::timeout(Duration::from_secs(5), rest.submit_event(&event)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(channel = %channel_id, "turn paused notice failed: {e}"),
+            Err(_) => tracing::warn!(channel = %channel_id, "turn paused notice timed out"),
+        }
+    });
+}
+
 /// Build the signed failure-notice event published by [`post_failure_notice`].
 pub(crate) fn build_failure_notice_event(
     keys: &crate::identity::AgentIdentity,
     channel_id: Uuid,
     thread_tags: &ThreadTags,
     content: &str,
+) -> Option<nostr::Event> {
+    build_notice_event(keys, channel_id, thread_tags, content, &[])
+}
+
+/// A signed kind:9 notice from the agent, threaded per `thread_tags`,
+/// notifying `mentions` (hex pubkeys).
+pub(crate) fn build_notice_event(
+    keys: &crate::identity::AgentIdentity,
+    channel_id: Uuid,
+    thread_tags: &ThreadTags,
+    content: &str,
+    mentions: &[&str],
 ) -> Option<nostr::Event> {
     let thread_ref = thread_tags.root_event_id.as_deref().and_then(|root| {
         let root_id = nostr::EventId::from_hex(root).ok()?;
@@ -7148,7 +7310,7 @@ pub(crate) fn build_failure_notice_event(
         channel_id,
         content,
         thread_ref.as_ref(),
-        &[],
+        mentions,
         false,
         &[],
         &[],
@@ -7286,6 +7448,20 @@ async fn clear_reactions(rest: crate::relay::RestClient, event_ids: Vec<String>)
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn turn_paused_notice_rounds_to_hours() {
+        let text = turn_paused_notice(Duration::from_secs(8 * 3600));
+        assert!(
+            text.starts_with("⏸️ This request has been running for about 8 hours, so I paused it."),
+            "{text}"
+        );
+        assert!(text.contains("Reply here if I should continue"), "{text}");
+        let one = turn_paused_notice(Duration::from_secs(3600));
+        assert!(one.contains("about 1 hour,"), "{one}");
+        let short = turn_paused_notice(Duration::from_secs(4 * 60));
+        assert!(short.contains("about 4 minutes,"), "{short}");
+    }
     use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
     use serde_json::json;
 
