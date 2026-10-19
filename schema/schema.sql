@@ -2407,7 +2407,7 @@ $$;
 -- order number `seq`. Only members-only rooms (not `open`) whose policy is
 -- `since_join` cut; legacy-stamped memberships keep all history. Reader access
 -- to the channel itself is checked elsewhere; this only removes pre-join rows.
-CREATE FUNCTION channel_event_before_join(p_cid UUID, p_chid UUID, p_seq BIGINT, p_reader BYTEA)
+CREATE OR REPLACE FUNCTION channel_event_before_join(p_cid UUID, p_chid UUID, p_seq BIGINT, p_reader BYTEA)
 RETURNS BOOLEAN
 LANGUAGE sql STABLE PARALLEL SAFE AS $$
     SELECT p_chid IS NOT NULL AND EXISTS (

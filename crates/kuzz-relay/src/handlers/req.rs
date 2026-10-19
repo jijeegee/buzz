@@ -464,6 +464,7 @@ pub async fn handle_req_paged(
                     params.shared_gated_reader = Some(pubkey_bytes.clone());
                 }
                 params.blocked_dm_reader = blocked_dm_reader.clone();
+                params.history_reader = Some(pubkey_bytes.clone());
                 (idx, per_filter_channel, params)
             })
             .collect();
@@ -1052,7 +1053,8 @@ async fn handle_search_req(
 /// Convert a single NIP-01 filter into an [`EventQuery`] for the database.
 ///
 /// Public wrapper for use by the HTTP bridge and COUNT handler. Hides DM
-/// events from authors the reader blocked (silent block).
+/// events from authors the reader blocked (silent block) and rows from
+/// before the reader joined a `since_join` room.
 pub async fn build_event_query_from_filter(
     filter: &Filter,
     pubkey_bytes: &[u8],
@@ -1062,6 +1064,8 @@ pub async fn build_event_query_from_filter(
     let channel_id = extract_channel_id_from_filter(filter);
     let mut query = filter_to_query_params(filter, channel_id, community);
     query.blocked_dm_reader = state.blocked_dm_reader(community, pubkey_bytes).await;
+    // since_join rooms: never page or count rows from before the reader joined.
+    query.history_reader = Some(pubkey_bytes.to_vec());
     query
 }
 
