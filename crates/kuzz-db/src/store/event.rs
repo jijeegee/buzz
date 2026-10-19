@@ -129,6 +129,13 @@ pub struct EventQuery {
     /// (`user_block_periods`), before ORDER/LIMIT so history pages and counts
     /// never include them.
     pub blocked_dm_reader: Option<Vec<u8>>,
+    /// Keep only rows whose `channel_sequence` is strictly greater than this
+    /// order number. Requires [`EventQuery::channel_id`]: the number only
+    /// orders events within one channel.
+    pub after_sequence: Option<i64>,
+    /// Order by `channel_sequence ASC` (the server's acceptance order) instead
+    /// of `created_at DESC, id ASC`. Requires [`EventQuery::channel_id`].
+    pub order_by_sequence: bool,
 }
 
 impl EventQuery {
@@ -162,6 +169,8 @@ impl EventQuery {
             max_limit: None,
             shared_gated_reader: None,
             blocked_dm_reader: None,
+            after_sequence: None,
+            order_by_sequence: false,
         }
     }
 }
@@ -613,6 +622,13 @@ async fn query_events_on_inner(
         ));
     }
 
+    // Order numbers are per channel; across channels they mean nothing.
+    if (q.after_sequence.is_some() || q.order_by_sequence) && q.channel_id.is_none() {
+        return Err(DbError::InvalidData(
+            "after_sequence and order_by_sequence require channel_id".to_string(),
+        ));
+    }
+
     // Empty list means "match nothing" — return empty immediately.
     if q.kinds.as_deref().is_some_and(|k| k.is_empty()) {
         return Ok(vec![]);
@@ -857,6 +873,11 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
         }
     }
 
+    if let Some(after) = q.after_sequence {
+        qb.push(format!(" AND {col_prefix}channel_sequence > "))
+            .push_bind(after);
+    }
+
     if let Some(ref d) = q.d_tag {
         qb.push(format!(" AND {col_prefix}d_tag = "))
             .push_bind(d.clone());
@@ -905,7 +926,15 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
     // same second.  No existing index covers this trailing column — Postgres
     // sorts in memory, which is fine at current scale.  If query performance
     // degrades, add a composite index like `(pubkey, kind, created_at DESC, id ASC)`.
-    if e_tag_fence {
+    if q.order_by_sequence {
+        // One channel (checked by the caller), so the order number is unique
+        // and idx_events_community_channel_sequence serves it per partition.
+        if e_tag_fence {
+            qb.push(") SELECT * FROM m ORDER BY channel_sequence ASC LIMIT ");
+        } else {
+            qb.push(format!(" ORDER BY {col_prefix}channel_sequence ASC LIMIT "));
+        }
+    } else if e_tag_fence {
         qb.push(") SELECT * FROM m ORDER BY created_at DESC, id ASC LIMIT ");
     } else {
         qb.push(format!(

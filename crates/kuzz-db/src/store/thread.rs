@@ -128,7 +128,30 @@ pub struct ChannelWindow {
     /// Composite keyset cursor `(created_at, id)` of the last retained row —
     /// the scan position, captured before event reconstruction so a page whose
     /// tail row fails to reconstruct still advances. `Some` iff `has_more`.
+    /// Always `None` for an order-number window.
     pub next_cursor: Option<(DateTime<Utc>, Vec<u8>)>,
+    /// Order-number window only: `channel_sequence` of the last retained raw
+    /// row, the next page's cursor. `Some` iff `has_more`.
+    pub next_sequence: Option<i64>,
+}
+
+/// Which keyset a routed channel-window read pages by.
+enum WindowKeyset {
+    /// The `(created_at, id)` window.
+    Time(Option<(DateTime<Utc>, Vec<u8>)>, Direction),
+    /// The `channel_sequence` window.
+    Sequence(SequenceCursor),
+}
+
+/// Cursor of an order-number channel window ([`get_channel_window_by_sequence`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequenceCursor {
+    /// The newest rows, highest order number first.
+    Head,
+    /// Rows with a lower order number, highest first.
+    Before(i64),
+    /// Rows with a higher order number, lowest first.
+    After(i64),
 }
 
 /// Raw thread_metadata row -- used when processing deletes or computing ancestry.
@@ -728,6 +751,135 @@ pub(crate) async fn get_channel_window_on(
         None
     };
 
+    Ok(ChannelWindow {
+        rows: window_rows_with_summaries(conn, community_id, db_rows).await?,
+        has_more,
+        next_cursor,
+        next_sequence: None,
+    })
+}
+
+/// One channel window in server acceptance order (`channel_sequence`), with
+/// the same top-level predicate, thread summaries and `limit + 1` exhaustion
+/// probe as [`get_channel_window`]. The (created_at, id) window is untouched.
+pub async fn get_channel_window_by_sequence(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    limit: u32,
+    cursor: SequenceCursor,
+    kind_filter: Option<&[u32]>,
+) -> Result<ChannelWindow> {
+    let mut conn = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::SubscriptionHistory,
+    )
+    .await?;
+    get_channel_window_by_sequence_on(
+        &mut conn,
+        community_id,
+        channel_id,
+        limit,
+        cursor,
+        kind_filter,
+    )
+    .await
+}
+
+/// [`get_channel_window_by_sequence`] on a specific session.
+pub(crate) async fn get_channel_window_by_sequence_on(
+    conn: &mut sqlx::PgConnection,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    limit: u32,
+    cursor: SequenceCursor,
+    kind_filter: Option<&[u32]>,
+) -> Result<ChannelWindow> {
+    let mut sql = String::from(
+        r#"
+        SELECT
+            e.id,
+            e.pubkey,
+            e.created_at,
+            e.kind,
+            e.tags,
+            e.content,
+            e.sig,
+            e.received_at,
+            e.channel_id,
+            e.channel_sequence,
+            tm.reply_count,
+            tm.descendant_count,
+            tm.last_reply_at
+        FROM events e
+        LEFT JOIN thread_metadata tm
+            ON tm.community_id = e.community_id
+           AND tm.event_created_at = e.created_at
+           AND tm.event_id         = e.id
+        WHERE e.community_id = $1
+          AND e.channel_id = $2
+          AND e.deleted_at IS NULL
+          AND (
+                tm.depth IS NULL
+             OR tm.depth = 0
+             OR (tm.depth = 1 AND tm.broadcast = true)
+          )
+        "#,
+    );
+    let (bound, order) = match cursor {
+        SequenceCursor::Head => (None, "DESC"),
+        SequenceCursor::Before(seq) => (Some(("<", seq)), "DESC"),
+        SequenceCursor::After(seq) => (Some((">", seq)), "ASC"),
+    };
+    let limit_idx = if let Some((op, _)) = bound {
+        sql.push_str(&format!(" AND e.channel_sequence {op} $3"));
+        4
+    } else {
+        3
+    };
+    if let Some(kinds) = kind_filter.filter(|kinds| !kinds.is_empty()) {
+        let list = kinds
+            .iter()
+            .map(|k| k.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        sql.push_str(&format!(" AND e.kind IN ({list})"));
+    }
+    sql.push_str(&format!(
+        " ORDER BY e.channel_sequence {order} LIMIT ${limit_idx}"
+    ));
+
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .bind(community_id.as_uuid())
+        .bind(channel_id);
+    if let Some((_, seq)) = bound {
+        q = q.bind(seq);
+    }
+    // The +1 probe row is the server-internal has_more evidence.
+    q = q.bind(limit as i64 + 1);
+    let mut db_rows = q.fetch_all(&mut *conn).await?;
+
+    let has_more = db_rows.len() > limit as usize;
+    db_rows.truncate(limit as usize);
+    let next_sequence = match db_rows.last() {
+        Some(row) if has_more => Some(row.try_get::<i64, _>("channel_sequence")?),
+        _ => None,
+    };
+
+    Ok(ChannelWindow {
+        rows: window_rows_with_summaries(conn, community_id, db_rows).await?,
+        has_more,
+        next_cursor: None,
+        next_sequence,
+    })
+}
+
+/// Reconstruct channel-window rows and batch their thread participants.
+async fn window_rows_with_summaries(
+    conn: &mut sqlx::PgConnection,
+    community_id: CommunityId,
+    db_rows: Vec<sqlx::postgres::PgRow>,
+) -> Result<Vec<ChannelWindowRow>> {
     let mut rows = Vec::with_capacity(db_rows.len());
     for row in db_rows {
         let reply_count: Option<i32> = row.try_get("reply_count")?;
@@ -812,11 +964,7 @@ pub(crate) async fn get_channel_window_on(
         }
     }
 
-    Ok(ChannelWindow {
-        rows,
-        has_more,
-        next_cursor,
-    })
+    Ok(rows)
 }
 
 /// Look up a single thread_metadata row by event_id.
@@ -1214,9 +1362,8 @@ impl Db {
             community_id,
             channel_id,
             limit,
-            cursor,
+            WindowKeyset::Time(cursor, Direction::Older),
             kind_filter,
-            Direction::Older,
         )
         .await
     }
@@ -1237,9 +1384,31 @@ impl Db {
             community_id,
             channel_id,
             limit,
-            Some(cursor),
+            WindowKeyset::Time(Some(cursor), Direction::Newer),
             kind_filter,
-            Direction::Newer,
+        )
+        .await
+    }
+
+    /// A channel window in server acceptance order
+    /// ([`crate::thread::get_channel_window_by_sequence`]). No order-number
+    /// page has a timestamp upper bound to prove, so it routes like a head
+    /// page (bounded staleness, writer by default).
+    #[datastore_span(name = "get_channel_window_by_sequence", system = "postgresql")]
+    pub async fn get_channel_window_by_sequence_with_session(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        limit: u32,
+        cursor: SequenceCursor,
+        kind_filter: Option<&[u32]>,
+    ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
+        self.channel_window_routed(
+            community_id,
+            channel_id,
+            limit,
+            WindowKeyset::Sequence(cursor),
+            kind_filter,
         )
         .await
     }
@@ -1249,20 +1418,20 @@ impl Db {
         community_id: CommunityId,
         channel_id: Uuid,
         limit: u32,
-        cursor: Option<(DateTime<Utc>, Vec<u8>)>,
+        keyset: WindowKeyset,
         kind_filter: Option<&[u32]>,
-        direction: Direction,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
-        let newer = direction == Direction::Newer;
-        let path: &'static str = match (newer, cursor.is_some()) {
-            (true, _) => "channel_newer",
-            (false, true) => "channel_cursor",
-            (false, false) => "channel_head",
-        };
-        let predicate = if newer {
-            RoutePredicate::Bounded
-        } else {
-            RoutePredicate::from_channel_cursor(channel_id, &cursor)
+        let (path, predicate): (&'static str, _) = match &keyset {
+            WindowKeyset::Time(_, Direction::Newer) => ("channel_newer", RoutePredicate::Bounded),
+            WindowKeyset::Time(cursor, Direction::Older) => (
+                if cursor.is_some() {
+                    "channel_cursor"
+                } else {
+                    "channel_head"
+                },
+                RoutePredicate::from_channel_cursor(channel_id, cursor),
+            ),
+            WindowKeyset::Sequence(_) => ("channel_seq", RoutePredicate::Bounded),
         };
         match self
             .route_read(
@@ -1273,17 +1442,32 @@ impl Db {
             .await
         {
             RouteDecision::Replica(mut tx, _entry, reason) => {
-                match crate::thread::get_channel_window_on(
-                    &mut tx,
-                    community_id,
-                    channel_id,
-                    limit,
-                    cursor.clone(),
-                    kind_filter,
-                    direction,
-                )
-                .await
-                {
+                let window = match &keyset {
+                    WindowKeyset::Time(cursor, direction) => {
+                        crate::thread::get_channel_window_on(
+                            &mut tx,
+                            community_id,
+                            channel_id,
+                            limit,
+                            cursor.clone(),
+                            kind_filter,
+                            *direction,
+                        )
+                        .await
+                    }
+                    WindowKeyset::Sequence(cursor) => {
+                        crate::thread::get_channel_window_by_sequence_on(
+                            &mut tx,
+                            community_id,
+                            channel_id,
+                            limit,
+                            *cursor,
+                            kind_filter,
+                        )
+                        .await
+                    }
+                };
+                match window {
                     Ok(window) => {
                         Self::record_route(path, "replica", reason);
                         return Ok((
@@ -1314,16 +1498,31 @@ impl Db {
             }
             RouteDecision::Writer => {}
         }
-        let window = crate::thread::get_channel_window(
-            &self.pool,
-            community_id,
-            channel_id,
-            limit,
-            cursor,
-            kind_filter,
-            direction,
-        )
-        .await?;
+        let window = match keyset {
+            WindowKeyset::Time(cursor, direction) => {
+                crate::thread::get_channel_window(
+                    &self.pool,
+                    community_id,
+                    channel_id,
+                    limit,
+                    cursor,
+                    kind_filter,
+                    direction,
+                )
+                .await?
+            }
+            WindowKeyset::Sequence(cursor) => {
+                crate::thread::get_channel_window_by_sequence(
+                    &self.pool,
+                    community_id,
+                    channel_id,
+                    limit,
+                    cursor,
+                    kind_filter,
+                )
+                .await?
+            }
+        };
         Ok((
             window,
             ReadSession {

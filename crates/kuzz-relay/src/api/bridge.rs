@@ -21,6 +21,7 @@ use kuzz_auth::{LimitType, Nip98ReplayGuard, NipFiMode, DEFAULT_REPLAY_TTL_SECS}
 use kuzz_core::TenantContext;
 
 use crate::handlers::ingest::{IngestAuth, IngestError};
+use crate::handlers::sequence_page;
 use crate::nip_fi_http::{admit_nip_fi_http_on_state, Nip98Proof};
 use crate::state::AppState;
 
@@ -738,7 +739,7 @@ async fn handle_channel_window_filter(
     reader: &[u8],
     events: &mut Vec<Value>,
 ) -> Result<(), (StatusCode, Json<Value>)> {
-    use kuzz_core::kind::{KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS};
+    use kuzz_core::kind::KIND_WINDOW_BOUNDS;
 
     let Some(ch_id) = extract_channel_from_filter(filter) else {
         return Err(api_error(
@@ -746,8 +747,30 @@ async fn handle_channel_window_filter(
             "top_level requires exactly one #h channel",
         ));
     };
+    let sequence_cursor = window_sequence_cursor(raw, filter)?;
     if !accessible_channels.contains(&ch_id) {
+        // An order-number window must not read as "nothing new".
+        if sequence_cursor.is_some() {
+            return Err(api_error(
+                StatusCode::FORBIDDEN,
+                "restricted: order \"seq\" requires a channel you can access",
+            ));
+        }
         return Ok(());
+    }
+    if let Some(cursor) = sequence_cursor {
+        return handle_sequence_window_filter(
+            state,
+            tenant,
+            raw,
+            filter,
+            ch_id,
+            cursor,
+            accessible_channels,
+            reader,
+            events,
+        )
+        .await;
     }
 
     // Composite request cursor: `until` + `before_id`, both or neither. The
@@ -857,6 +880,79 @@ async fn handle_channel_window_filter(
     let (mut window, mut session) =
         window.map_err(|e| internal_error(&format!("channel window error: {e}")))?;
 
+    push_window_rows(
+        state,
+        tenant,
+        raw,
+        ch_id,
+        accessible_channels,
+        reader,
+        &mut window,
+        &mut session,
+        events,
+    )
+    .await?;
+    let sign_overlay = |kind: u32, tags: Vec<nostr::Tag>, content: String| {
+        sign_window_overlay(state, kind, tags, content)
+    };
+    let parse_tag = window_overlay_tag;
+    let ch_hex = ch_id.to_string();
+
+    // 4. Window bounds: exactly one 39006 per window response — the only
+    //    authority on exhaustion. `rows < limit` proves nothing on an
+    //    exact-multiple final page.
+    //    A newer page names its direction in both `d` and content; an older
+    //    page's bounds stay byte-identical to before the newer direction.
+    let cursor_suffix = match &cursor {
+        Some((ts, id)) if newer => format!("after:{}:{}", ts.timestamp(), hex::encode(id)),
+        Some((ts, id)) => format!("{}:{}", ts.timestamp(), hex::encode(id)),
+        None => "head".to_owned(),
+    };
+    let d_val = format!("{ch_hex}:{cursor_suffix}");
+    let next_cursor = window.next_cursor.as_ref().map(|(ts, id)| {
+        serde_json::json!({
+            "created_at": ts.timestamp(),
+            "id": hex::encode(id),
+        })
+    });
+    let content = if newer {
+        serde_json::json!({
+            "direction": "newer",
+            "has_more": window.has_more,
+            "next_cursor": next_cursor,
+        })
+    } else {
+        serde_json::json!({
+            "has_more": window.has_more,
+            "next_cursor": next_cursor,
+        })
+    };
+    let tags = vec![parse_tag(["d", &d_val])?, parse_tag(["h", &ch_hex])?];
+    let overlay = sign_overlay(KIND_WINDOW_BOUNDS, tags, content.to_string())?;
+    let v = serde_json::to_value(&overlay)
+        .map_err(|e| internal_error(&format!("window overlay serialize: {e}")))?;
+    events.push(v);
+
+    Ok(())
+}
+
+/// Window steps shared by both window orders: rows in page order, the aux
+/// closure (`include_aux`), and `39005` thread-summary overlays
+/// (`include_summaries`).
+#[allow(clippy::too_many_arguments)]
+async fn push_window_rows(
+    state: &AppState,
+    tenant: &kuzz_core::TenantContext,
+    raw: &Value,
+    ch_id: uuid::Uuid,
+    accessible_channels: &[uuid::Uuid],
+    reader: &[u8],
+    window: &mut kuzz_db::thread::ChannelWindow,
+    session: &mut kuzz_db::ReadSession,
+    events: &mut Vec<Value>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    use kuzz_core::kind::KIND_THREAD_SUMMARY;
+
     // 1. Rows, in keyset order.
     let mut row_ids_hex = Vec::with_capacity(window.rows.len());
     for row in &window.rows {
@@ -884,7 +980,7 @@ async fn handle_channel_window_filter(
             let aux_events = query_all_pages(
                 aux_query,
                 AUX_PAGE_LIMIT,
-                &mut AuxReader::Session(&mut session),
+                &mut AuxReader::Session(&mut *session),
             )
             .await
             .map_err(|e| db_read_error("window aux error", &e))?;
@@ -909,14 +1005,9 @@ async fn handle_channel_window_filter(
     }
 
     let sign_overlay = |kind: u32, tags: Vec<nostr::Tag>, content: String| {
-        nostr::EventBuilder::new(nostr::Kind::Custom(kind as u16), content)
-            .tags(tags)
-            .sign_with_keys(&state.relay_keypair)
-            .map_err(|e| internal_error(&format!("window overlay sign: {e}")))
+        sign_window_overlay(state, kind, tags, content)
     };
-    let parse_tag = |parts: [&str; 2]| {
-        nostr::Tag::parse(parts).map_err(|e| internal_error(&format!("window overlay tag: {e}")))
-    };
+    let parse_tag = window_overlay_tag;
     let ch_hex = ch_id.to_string();
 
     // 3. Thread-summary overlays: one relay-signed 39005 per row with replies.
@@ -957,41 +1048,288 @@ async fn handle_channel_window_filter(
         }
     }
 
-    // 4. Window bounds: exactly one 39006 per window response — the only
-    //    authority on exhaustion. `rows < limit` proves nothing on an
-    //    exact-multiple final page.
-    //    A newer page names its direction in both `d` and content; an older
-    //    page's bounds stay byte-identical to before the newer direction.
-    let cursor_suffix = match &cursor {
-        Some((ts, id)) if newer => format!("after:{}:{}", ts.timestamp(), hex::encode(id)),
-        Some((ts, id)) => format!("{}:{}", ts.timestamp(), hex::encode(id)),
-        None => "head".to_owned(),
-    };
-    let d_val = format!("{ch_hex}:{cursor_suffix}");
-    let next_cursor = window.next_cursor.as_ref().map(|(ts, id)| {
-        serde_json::json!({
-            "created_at": ts.timestamp(),
-            "id": hex::encode(id),
-        })
-    });
-    let content = if newer {
-        serde_json::json!({
-            "direction": "newer",
-            "has_more": window.has_more,
-            "next_cursor": next_cursor,
-        })
-    } else {
-        serde_json::json!({
-            "has_more": window.has_more,
-            "next_cursor": next_cursor,
-        })
-    };
-    let tags = vec![parse_tag(["d", &d_val])?, parse_tag(["h", &ch_hex])?];
-    let overlay = sign_overlay(KIND_WINDOW_BOUNDS, tags, content.to_string())?;
-    let v = serde_json::to_value(&overlay)
-        .map_err(|e| internal_error(&format!("window overlay serialize: {e}")))?;
-    events.push(v);
+    Ok(())
+}
 
+fn sign_window_overlay(
+    state: &AppState,
+    kind: u32,
+    tags: Vec<nostr::Tag>,
+    content: String,
+) -> Result<nostr::Event, (StatusCode, Json<Value>)> {
+    nostr::EventBuilder::new(nostr::Kind::Custom(kind as u16), content)
+        .tags(tags)
+        .sign_with_keys(&state.relay_keypair)
+        .map_err(|e| internal_error(&format!("window overlay sign: {e}")))
+}
+
+fn window_overlay_tag(parts: [&str; 2]) -> Result<nostr::Tag, (StatusCode, Json<Value>)> {
+    nostr::Tag::parse(parts).map_err(|e| internal_error(&format!("window overlay tag: {e}")))
+}
+
+/// A `top_level` window's `order: "seq"` mode: rows paged by
+/// `channel_sequence` with a `before_seq` (older, highest first) or
+/// `after_seq` (newer, lowest first) cursor, or the newest rows with neither.
+/// `None` when `order` is absent — the (created_at, id) window, unchanged.
+fn window_sequence_cursor(
+    raw: &Value,
+    filter: &nostr::Filter,
+) -> Result<Option<kuzz_db::thread::SequenceCursor>, (StatusCode, Json<Value>)> {
+    use kuzz_db::thread::SequenceCursor;
+
+    let seq_field = |key: &str| match raw.get(key) {
+        None => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .and_then(|n| i64::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| {
+                api_error(
+                    StatusCode::BAD_REQUEST,
+                    &format!("top_level: {key} must be a non-negative integer"),
+                )
+            }),
+    };
+    match raw.get("order") {
+        None if raw.get("before_seq").is_some() || raw.get("after_seq").is_some() => {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "top_level: before_seq/after_seq require order \"seq\"",
+            ));
+        }
+        None => return Ok(None),
+        Some(order) if order.as_str() == Some("seq") => {}
+        Some(_) => {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "top_level: order must be \"seq\" when present",
+            ));
+        }
+    }
+    if filter.since.is_some()
+        || filter.until.is_some()
+        || raw.get("before_id").is_some()
+        || raw.get("after_id").is_some()
+    {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "top_level: order \"seq\" pages by before_seq/after_seq, not since/until/before_id/after_id",
+        ));
+    }
+    match (seq_field("before_seq")?, seq_field("after_seq")?) {
+        (Some(_), Some(_)) => Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "top_level: before_seq and after_seq conflict",
+        )),
+        (Some(before), None) => Ok(Some(SequenceCursor::Before(before))),
+        (None, Some(after)) => Ok(Some(SequenceCursor::After(after))),
+        (None, None) => Ok(Some(SequenceCursor::Head)),
+    }
+}
+
+/// Serve a `top_level` window in `order: "seq"` mode: the same rows, aux
+/// closure and summaries as the time-ordered window, closed by one `39006`
+/// whose `d` is `<channel>:seq:<head|before:N|after:N>` and whose content is
+/// `{"order":"seq","direction","has_more","next_seq","sequences"}`;
+/// `sequences` lists `[event_id, seq]` for every row.
+#[allow(clippy::too_many_arguments)]
+async fn handle_sequence_window_filter(
+    state: &AppState,
+    tenant: &kuzz_core::TenantContext,
+    raw: &Value,
+    filter: &nostr::Filter,
+    ch_id: uuid::Uuid,
+    cursor: kuzz_db::thread::SequenceCursor,
+    accessible_channels: &[uuid::Uuid],
+    reader: &[u8],
+    events: &mut Vec<Value>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    use kuzz_db::thread::SequenceCursor;
+
+    let limit = filter
+        .limit
+        .map(|l| (l as u32).min(BRIDGE_WINDOW_MAX_LIMIT))
+        .unwrap_or(BRIDGE_WINDOW_DEFAULT_LIMIT)
+        .max(1);
+    let kind_filter: Option<Vec<u32>> = filter
+        .kinds
+        .as_ref()
+        .map(|ks| ks.iter().map(|k| k.as_u16() as u32).collect());
+    let (mut window, mut session) = state
+        .db
+        .get_channel_window_by_sequence_with_session(
+            tenant.community(),
+            ch_id,
+            limit,
+            cursor,
+            kind_filter.as_deref(),
+        )
+        .await
+        .map_err(|e| internal_error(&format!("channel window error: {e}")))?;
+    // Drop silently blocked DM rows before their numbers are listed.
+    state
+        .retain_unblocked_for_reader(tenant.community(), reader, &mut window.rows, |row| {
+            crate::blocks::stored_event_author_channel(&row.stored_event)
+        })
+        .await
+        .map_err(|e| db_read_error("block list lookup error", &e))?;
+    let sequences: Vec<(String, i64)> = window
+        .rows
+        .iter()
+        .filter_map(|row| {
+            let se = &row.stored_event;
+            Some((se.event.id.to_hex(), se.channel_sequence?))
+        })
+        .collect();
+    push_window_rows(
+        state,
+        tenant,
+        raw,
+        ch_id,
+        accessible_channels,
+        reader,
+        &mut window,
+        &mut session,
+        events,
+    )
+    .await?;
+
+    let (suffix, direction) = match cursor {
+        SequenceCursor::Head => ("head".to_owned(), "older"),
+        SequenceCursor::Before(seq) => (format!("before:{seq}"), "older"),
+        SequenceCursor::After(seq) => (format!("after:{seq}"), "newer"),
+    };
+    let ch_hex = ch_id.to_string();
+    let content = serde_json::json!({
+        "order": "seq",
+        "direction": direction,
+        "has_more": window.has_more,
+        "next_seq": window.next_sequence,
+        "sequences": sequences,
+    });
+    let tags = vec![
+        window_overlay_tag(["d", &format!("{ch_hex}:seq:{suffix}")])?,
+        window_overlay_tag(["h", &ch_hex])?,
+    ];
+    let overlay = sign_window_overlay(
+        state,
+        kuzz_core::kind::KIND_WINDOW_BOUNDS,
+        tags,
+        content.to_string(),
+    )?;
+    events.push(
+        serde_json::to_value(&overlay)
+            .map_err(|e| internal_error(&format!("window overlay serialize: {e}")))?,
+    );
+    Ok(())
+}
+
+/// Serve one `after_seq` filter on the bridge `/query` path: the channel's
+/// events after the order number in acceptance order, then one relay-signed
+/// `39006` bounds event whose `sequences` pairs give each returned event's
+/// number (raw signed events cannot carry it).
+///
+/// Every reader filter applies before the page is cut (SQL) or before its
+/// numbers are listed (goal trees, result-level read auth); `last_seq` and
+/// `has_more` come from the database page, so hidden rows still advance it.
+#[allow(clippy::too_many_arguments)]
+async fn handle_after_seq_filter(
+    state: &AppState,
+    tenant: &kuzz_core::TenantContext,
+    raw: &Value,
+    filter: &nostr::Filter,
+    after: i64,
+    accessible_channels: &[uuid::Uuid],
+    reader: &[u8],
+    events: &mut Vec<Value>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let channel = extract_channel_from_filter(filter)
+        .filter(|channel| accessible_channels.contains(channel))
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::FORBIDDEN,
+                "restricted: after_seq requires a channel you can access",
+            )
+        })?;
+    let read_route = resolve_read_route(raw).map_err(|()| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "consistency must be \"strong\" when present",
+        )
+    })?;
+
+    let mut query = crate::handlers::req::build_event_query_from_filter(
+        filter,
+        reader,
+        state,
+        tenant.community(),
+    )
+    .await;
+    if let Some(kuzz_channel) = extract_kuzz_channel(raw) {
+        query.custom_tag = Some(("kuzz-channel".into(), kuzz_channel.into()));
+    }
+    if crate::handlers::req::filter_can_match_shared_gated_kinds(filter) {
+        query.shared_gated_reader = Some(reader.to_vec());
+    }
+    let limit = sequence_page::page_limit(filter);
+    sequence_page::apply(&mut query, after, limit);
+    let mut rows = match read_route {
+        ReadRoute::Writer => state.db.query_events(&query).await,
+        ReadRoute::Routed => {
+            state
+                .db
+                .query_events_routed("bridge_after_seq", &query)
+                .await
+        }
+    }
+    .map_err(|e| db_read_error("after_seq query error", &e))?;
+    let bounds = sequence_page::finish(&mut rows, after, limit);
+
+    let goals_off = crate::handlers::req::channels_with_goals_off(
+        state,
+        tenant.community(),
+        rows.iter()
+            .map(|se| (se.event.kind.as_u16() as u32, se.channel_id)),
+    )
+    .await
+    .map_err(|e| db_read_error("goals setting lookup error", &e))?;
+    let mut page: Vec<Value> = Vec::with_capacity(rows.len() + 1);
+    let mut sequence_of = std::collections::HashMap::new();
+    for se in rows {
+        if !kuzz_core::filter::filters_match(std::slice::from_ref(filter), &se)
+            || !crate::handlers::req::event_visible_to_reader(&se.event, reader)
+            || crate::handlers::req::goal_tree_hidden(
+                &goals_off,
+                se.event.kind.as_u16() as u32,
+                se.channel_id,
+            )
+        {
+            continue;
+        }
+        let Some(sequence) = se.channel_sequence else {
+            continue;
+        };
+        let v = serde_json::to_value(&se.event)
+            .map_err(|e| internal_error(&format!("after_seq serialize: {e}")))?;
+        sequence_of.insert(se.event.id.to_hex(), sequence);
+        page.push(v);
+    }
+    hide_blocked_dm_authors(state, tenant, reader, &mut page).await?;
+    let sequences: Vec<(String, i64)> = page
+        .iter()
+        .filter_map(|v| {
+            let id = v.get("id")?.as_str()?;
+            Some((id.to_owned(), *sequence_of.get(id)?))
+        })
+        .collect();
+    let overlay =
+        sequence_page::bounds_event(&state.relay_keypair, channel, after, bounds, &sequences)
+            .map_err(|e| internal_error(&e))?;
+    page.push(
+        serde_json::to_value(&overlay)
+            .map_err(|e| internal_error(&format!("after_seq bounds serialize: {e}")))?,
+    );
+    events.extend(page);
     Ok(())
 }
 
@@ -1540,6 +1878,36 @@ async fn query_events_authed(
     // depth_limit, feed_types) that nostr::Filter silently drops.
     let raw_filters: Vec<Value> = serde_json::from_slice(body)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
+    // `after_seq` grammar is rejected before any DB work or other query
+    // mode (those answer early and would drop the cursor silently); window filters
+    // validate their own order-number cursors.
+    let after_seqs: Vec<Option<i64>> = raw_filters
+        .iter()
+        .map(|raw| {
+            if extension_flag(raw, "top_level") {
+                Ok(None)
+            } else {
+                sequence_page::parse_after_seq(raw)
+            }
+        })
+        .collect::<Result<_, _>>()
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
+    // A sibling filter may also switch the whole request into another mode.
+    if after_seqs.iter().any(Option::is_some)
+        && (inbox_summary::requested(&raw_filters)
+            || chat_state::requested(&raw_filters).is_some()
+            || read_state_snapshot::requested(&raw_filters)
+            || raw_filters.iter().any(|raw| {
+                raw.get("artifact").is_some()
+                    || raw.get("thread_window").is_some()
+                    || extension_flag(raw, "resolve_thread_roots")
+            }))
+    {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "after_seq cannot mix with other query modes",
+        ));
+    }
     if let Some(result) = super::artifact::query(state, tenant, &pubkey, &raw_filters, false).await
     {
         return result;
@@ -1671,6 +2039,29 @@ async fn query_events_authed(
             );
             handled.insert(idx);
         }
+    }
+
+    // Order-number pages (`after_seq`): one channel, acceptance order, plus
+    // one bounds event per filter.
+    for (idx, (raw, filter)) in raw_filters.iter().zip(filters.iter()).enumerate() {
+        let Some(after) = after_seqs[idx] else {
+            continue;
+        };
+        if handled.contains(&idx) {
+            continue;
+        }
+        handle_after_seq_filter(
+            state,
+            tenant,
+            raw,
+            filter,
+            after,
+            &accessible_channels,
+            &pubkey_bytes,
+            &mut events,
+        )
+        .await?;
+        handled.insert(idx);
     }
 
     // Channel-window filters (`top_level: true`) — the GUI read-model surface.
@@ -3208,6 +3599,9 @@ fn ban_json(b: &kuzz_db::moderation::BanRecord) -> Value {
 #[cfg(test)]
 #[path = "artifact_postgres_tests.rs"]
 mod artifact_postgres_tests;
+
+#[cfg(test)]
+mod sequence_page_postgres_tests;
 
 #[cfg(test)]
 mod postgres_tests {

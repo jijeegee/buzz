@@ -53,6 +53,8 @@ pub enum ClientMessage {
         filters: Vec<Filter>,
         /// Optional per-filter composite cursor tiebreaks from raw extension fields.
         before_ids: Vec<Option<Vec<u8>>>,
+        /// Optional per-filter `after_seq` order-number cursors (one channel).
+        after_seqs: Vec<Option<i64>>,
     },
     /// A CLOSE message cancelling an active subscription.
     Close(String),
@@ -209,10 +211,18 @@ impl ClientMessage {
                         Ok(Some(bytes))
                     })
                     .collect::<Result<Vec<_>>>()?;
+                let after_seqs = filter_values
+                    .iter()
+                    .map(|value| {
+                        crate::handlers::sequence_page::parse_after_seq(value)
+                            .map_err(RelayError::InvalidMessage)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
                 Ok(ClientMessage::Req {
                     sub_id,
                     filters,
                     before_ids,
+                    after_seqs,
                 })
             }
             "COUNT" => {

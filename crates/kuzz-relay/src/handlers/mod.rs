@@ -38,6 +38,8 @@ pub mod report;
 pub mod report_resolution;
 /// REQ handler — subscribe, deliver historical events, then EOSE.
 pub mod req;
+/// `after_seq` filter extension shared by REQ and HTTP `/query`.
+pub(crate) mod sequence_page;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
 #[cfg(test)]

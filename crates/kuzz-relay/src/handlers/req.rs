@@ -55,6 +55,20 @@ pub async fn handle_req(
     conn: Arc<ConnectionState>,
     state: Arc<AppState>,
 ) {
+    handle_req_paged(sub_id, filters, before_ids, Vec::new(), conn, state).await;
+}
+
+/// [`handle_req`] with per-filter `after_seq` order-number cursors: such a
+/// filter's history is that channel's events after the number, in acceptance
+/// order, closed by a relay-signed `kind:39006` bounds event before EOSE.
+pub async fn handle_req_paged(
+    sub_id: String,
+    filters: Vec<Filter>,
+    before_ids: Vec<Option<Vec<u8>>>,
+    after_seqs: Vec<Option<i64>>,
+    conn: Arc<ConnectionState>,
+    state: Arc<AppState>,
+) {
     let (conn_id, pubkey_bytes, token_channel_ids) = {
         match conn.auth_state_snapshot() {
             AuthState::Authenticated(ctx) => {
@@ -204,6 +218,20 @@ pub async fn handle_req(
         conn.send(RelayMessage::closed(
             &sub_id,
             "restricted: not a channel member",
+        ));
+        return;
+    }
+    // An order-number page is for one channel the reader can open; never
+    // answer it with an empty page that looks like "nothing new".
+    let after_seq_denied = filters.iter().enumerate().any(|(idx, filter)| {
+        after_seqs.get(idx).copied().flatten().is_some()
+            && !extract_channel_id_from_filter(filter)
+                .is_some_and(|channel| accessible_channels.contains(&channel))
+    });
+    if after_seq_denied {
+        conn.send(RelayMessage::closed(
+            &sub_id,
+            "restricted: after_seq requires a channel you can access",
         ));
         return;
     }
@@ -416,6 +444,13 @@ pub async fn handle_req(
                 let mut params =
                     filter_to_query_params(filter, per_filter_channel, conn.tenant.community());
                 params.before_id = before_ids.get(idx).cloned().flatten();
+                if let Some(after) = after_seqs.get(idx).copied().flatten() {
+                    super::sequence_page::apply(
+                        &mut params,
+                        after,
+                        super::sequence_page::page_limit(filter),
+                    );
+                }
                 apply_channel_scope_to_query(
                     &mut params,
                     filter,
@@ -453,7 +488,7 @@ pub async fn handle_req(
         // Phase 3 — post-processing, strictly in filter order.
         while let Some((idx, per_filter_channel, filter_events)) = results.next().await {
             let filter = &filters[idx];
-            let events = match filter_events {
+            let mut events = match filter_events {
                 Ok(evs) => evs,
                 Err(e) => {
                     warn!(conn_id = %conn_id, sub_id = %sub_id, "Historical query failed: {e}");
@@ -526,6 +561,13 @@ pub async fn handle_req(
                 }
             };
 
+            let after_seq = after_seqs.get(idx).copied().flatten();
+            let page_bounds = after_seq.map(|after| {
+                let limit = super::sequence_page::page_limit(filter);
+                super::sequence_page::finish(&mut events, after, limit)
+            });
+            let mut page_sequences: Vec<(String, i64)> = Vec::new();
+
             for stored in &events {
                 // Per-filter NIP-01 matching — use the current filter only, not the
                 // full filter set. OR semantics across filters are handled by the outer
@@ -557,6 +599,12 @@ pub async fn handle_req(
                     continue;
                 }
 
+                if page_bounds.is_some() {
+                    if let Some(sequence) = stored.channel_sequence {
+                        page_sequences.push((stored.event.id.to_hex(), sequence));
+                    }
+                }
+
                 // Dedup AFTER acceptance — an event that fails filter A's constraints
                 // must remain eligible for filter B (NIP-01 OR semantics).
                 if !seen_ids.insert(stored.event.id) {
@@ -570,6 +618,29 @@ pub async fn handle_req(
                 total_sent += 1;
                 if total_sent.is_multiple_of(100) {
                     tokio::task::yield_now().await;
+                }
+            }
+
+            if let (Some(after), Some(bounds), Some(channel)) =
+                (after_seq, page_bounds, per_filter_channel)
+            {
+                match super::sequence_page::bounds_event(
+                    &state.relay_keypair,
+                    channel,
+                    after,
+                    bounds,
+                    &page_sequences,
+                ) {
+                    Ok(bounds) => {
+                        if !conn.send(RelayMessage::event(&sub_id, &bounds)) {
+                            return false;
+                        }
+                    }
+                    Err(e) => {
+                        warn!(conn_id = %conn_id, sub_id = %sub_id, "after_seq bounds failed: {e}");
+                        conn.send(RelayMessage::eose(&sub_id));
+                        return false;
+                    }
                 }
             }
         }
@@ -4055,7 +4126,165 @@ mod tests {
         }
     }
 
+    /// An `after_seq` REQ sends that channel's events after the number in
+    /// acceptance order, then one relay-signed 39006 bounds, then EOSE; a
+    /// channel the reader cannot open is refused, not answered empty.
+    async fn after_seq_req_pages_in_acceptance_order_body() {
+        use nostr::{EventBuilder, Filter, Keys, Kind, Tag, Timestamp};
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::mpsc;
+        use tokio_util::sync::CancellationToken;
+        use uuid::Uuid;
+
+        let state =
+            crate::state::tests::test_state_with_database_url(&crate::test_support::database_url())
+                .await;
+        let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+            .await
+            .expect("Postgres");
+        let host = format!("req-after-seq-{}.local", Uuid::new_v4());
+        state.db.ensure_configured_community(&host).await.unwrap();
+        let tenant = crate::tenant::bind_community(&state.db, &host)
+            .await
+            .unwrap();
+        let community = tenant.community();
+        let reader = Keys::generate();
+        let (channel, private) = (Uuid::new_v4(), Uuid::new_v4());
+        for (id, visibility) in [(channel, "open"), (private, "private")] {
+            sqlx::query("INSERT INTO channels(community_id,id,name,visibility,channel_type,created_by) VALUES($1,$2,$2::text,$3::channel_visibility,'stream',$4)")
+                .bind(community.as_uuid()).bind(id).bind(visibility).bind(Keys::generate().public_key().as_bytes().as_slice()).execute(&pool).await.unwrap();
+        }
+        sqlx::query("INSERT INTO channel_members(community_id,channel_id,pubkey,role) VALUES($1,$2,$3,'member')")
+            .bind(community.as_uuid()).bind(channel).bind(reader.public_key().as_bytes().as_slice()).execute(&pool).await.unwrap();
+        let mut sent = Vec::new();
+        // Accepted out of time order (2026-03, 2026-01, 2026-05).
+        for ts in [1_772_366_400u64, 1_767_268_800, 1_777_636_800] {
+            let event = EventBuilder::new(Kind::Custom(9), format!("at {ts}"))
+                .tags([Tag::parse(["h", &channel.to_string()]).unwrap()])
+                .custom_created_at(Timestamp::from(ts))
+                .sign_with_keys(&reader)
+                .unwrap();
+            let (stored, _) = state
+                .db
+                .insert_event(community, &event, Some(channel))
+                .await
+                .unwrap();
+            sent.push((event.id.to_hex(), stored.channel_sequence.unwrap()));
+        }
+
+        let (send_tx, mut rx) = mpsc::channel::<axum::extract::ws::Message>(16);
+        let cancel = CancellationToken::new();
+        let conn = Arc::new(crate::connection::ConnectionState {
+            conn_id: Uuid::new_v4(),
+            tenant: tenant.clone(),
+            remote_addr: "127.0.0.1:1234".parse().unwrap(),
+            auth_state: std::sync::Mutex::new(crate::connection::AuthState::Authenticated(
+                kuzz_auth::AuthContext {
+                    pubkey: reader.public_key(),
+                    scopes: vec![],
+                    channel_ids: None,
+                    auth_method: kuzz_auth::AuthMethod::Nip42,
+                    agent_owner_pubkey: None,
+                    token: None,
+                },
+            )),
+            subscriptions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            send_tx,
+            ctrl_tx: mpsc::channel(8).0,
+            terminal_ctrl_tx: mpsc::channel(1).0,
+            cancel: cancel.clone(),
+            backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            grace_limit: 3,
+            kuzz_seq: true,
+            nip_fi_assertion: None,
+            session_deadline: None,
+            nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),
+            community_control: crate::state::CommunityConnectionControl::new(cancel),
+        });
+        let mut drain = || {
+            let mut out = Vec::new();
+            while let Ok(axum::extract::ws::Message::Text(text)) = rx.try_recv() {
+                out.push(serde_json::from_str::<serde_json::Value>(&text).unwrap());
+            }
+            out
+        };
+        let filter = |ch: Uuid| {
+            Filter::new()
+                .kind(Kind::Custom(9))
+                .custom_tag(
+                    nostr::SingleLetterTag::lowercase(nostr::Alphabet::H),
+                    ch.to_string(),
+                )
+                .limit(2)
+        };
+
+        handle_req_paged(
+            "s".into(),
+            vec![filter(channel)],
+            vec![None],
+            vec![Some(0)],
+            Arc::clone(&conn),
+            Arc::clone(&state),
+        )
+        .await;
+        let frames = drain();
+        assert_eq!(frames.len(), 4, "two events, bounds, EOSE: {frames:?}");
+        for (frame, (id, seq)) in frames[..2].iter().zip(&sent) {
+            assert_eq!(frame[2]["id"], *id);
+            assert_eq!(frame[3], serde_json::json!({"channel_sequence": seq}));
+        }
+        let bounds: nostr::Event = serde_json::from_value(frames[2][2].clone()).unwrap();
+        bounds.verify().unwrap();
+        assert_eq!(bounds.kind, Kind::Custom(39006));
+        assert_eq!(bounds.pubkey, state.relay_keypair.public_key());
+        let content: serde_json::Value = serde_json::from_str(&bounds.content).unwrap();
+        assert_eq!(
+            content,
+            serde_json::json!({"order": "seq", "after_seq": 0, "last_seq": sent[1].1,
+                "has_more": true, "sequences": [[sent[0].0, sent[0].1], [sent[1].0, sent[1].1]]})
+        );
+        assert_eq!(frames[3], serde_json::json!(["EOSE", "s"]));
+
+        handle_req_paged(
+            "s2".into(),
+            vec![filter(channel)],
+            vec![None],
+            vec![Some(sent[1].1)],
+            Arc::clone(&conn),
+            Arc::clone(&state),
+        )
+        .await;
+        let frames = drain();
+        assert_eq!(frames.len(), 3, "{frames:?}");
+        assert_eq!(frames[0][2]["id"], sent[2].0);
+        let content: serde_json::Value =
+            serde_json::from_str(frames[1][2]["content"].as_str().unwrap()).unwrap();
+        assert_eq!(content["has_more"], false);
+        assert_eq!(content["last_seq"], sent[2].1);
+
+        handle_req_paged(
+            "denied".into(),
+            vec![filter(private)],
+            vec![None],
+            vec![Some(0)],
+            Arc::clone(&conn),
+            Arc::clone(&state),
+        )
+        .await;
+        let frames = drain();
+        assert_eq!(frames.len(), 1, "{frames:?}");
+        assert_eq!(frames[0][0], "CLOSED");
+        assert!(!conn.subscriptions.lock().await.contains_key("denied"));
+    }
+
     mod postgres_tests {
+        #[tokio::test]
+        #[ignore = "requires Postgres"]
+        async fn after_seq_req_pages_in_acceptance_order() {
+            super::after_seq_req_pages_in_acceptance_order_body().await;
+        }
+
         #[tokio::test]
         #[ignore = "requires Postgres"]
         async fn history_frames_carry_sequence_for_opted_in_connections() {
