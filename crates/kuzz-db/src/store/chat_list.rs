@@ -171,13 +171,15 @@ macro_rules! mentions_reader {
     };
 }
 
-/// Not a DM message from someone the reader blocked (silent block). `m` is
-/// the reader's membership row for the same room.
+/// Not a 1:1 DM message received from someone while the reader blocked
+/// them (silent block). `m` is the reader's membership row for the same room.
 macro_rules! not_blocked_dm {
     () => {
-        "NOT (m.channel_type = 'dm' AND EXISTS (
-            SELECT 1 FROM user_blocks ub
-            WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))"
+        concat!(
+            "NOT (m.dm_blocked AND ",
+            crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+            ")"
+        )
     };
 }
 
@@ -202,19 +204,22 @@ macro_rules! thread_unread_from {
 const CHAT_LIST_SQL: &str = concat!(
     r#"
 WITH blk AS MATERIALIZED (
-    SELECT ub.blocked FROM user_blocks ub WHERE ub.community_id = $1 AND ub.blocker = $2
+    -- Everyone the reader blocked at any time (open or closed periods).
+    SELECT DISTINCT bp.blocked FROM user_block_periods bp
+    WHERE bp.community_id = $1 AND bp.blocker = $2
 ),
 my AS MATERIALIZED (
     SELECT cm.channel_id, c.channel_type::text AS channel_type, c.name AS channel_name,
            c.archived_at, cm.joined_at, cm.hidden_at, cm.read_seq, cm.unread_mark,
            c.main_last_seq, c.main_last_at, c.main_last_event_id,
            cm.unread_count, cm.unread_mentions,
-           -- A DM someone the reader blocked is or was in: its stored latest
-           -- may be theirs, so ordering is searched below.
+           -- A 1:1 DM with someone the reader blocks or once blocked: its
+           -- stored latest may be a message hidden from the reader, so
+           -- ordering is searched below.
            (c.channel_type = 'dm' AND EXISTS (
                SELECT 1 FROM blk JOIN channel_members bm ON bm.community_id = $1
                    AND bm.channel_id = cm.channel_id AND bm.pubkey = blk.blocked
-           )) AS dm_blocked
+           ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
     WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
@@ -228,16 +233,18 @@ rooms AS (
            v.last_event_id, NULL::text AS stored_name,
            m.unread_count AS stored_unread, m.unread_mentions AS stored_mentions
     FROM my m
-    -- In a DM with someone the reader blocked, their messages neither sort
-    -- nor revive an archived room: use the latest main message from anyone
-    -- else (deleted ones too, as the stored values never move back).
+    -- In such a DM, messages hidden by a block neither sort nor revive an
+    -- archived room: use the latest main message the reader can see
+    -- (deleted ones too, as the stored values never move back).
     LEFT JOIN LATERAL (
         SELECT e.channel_sequence, e.received_at, e.id FROM events e
         WHERE m.dm_blocked AND e.community_id = $1 AND e.channel_id = m.channel_id
           AND e.kind = ANY($3) AND "#,
     main_timeline!(),
     r#"
-          AND NOT EXISTS (SELECT 1 FROM blk WHERE blk.blocked = e.pubkey)
+          AND NOT "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#"
         ORDER BY e.channel_sequence DESC LIMIT 1
     ) l ON TRUE
     CROSS JOIN LATERAL (
@@ -284,7 +291,7 @@ threads AS (
     JOIN my m ON m.channel_id = t.channel_id AND m.hidden_at IS NULL
     LEFT JOIN thread_state ts ON ts.community_id = $1 AND ts.root_event_id = t.root_id
         AND ts.channel_id = t.channel_id
-    -- Same as rooms: replies from someone the reader blocked do not count.
+    -- Same as rooms: replies hidden by a block do not count.
     LEFT JOIN LATERAL (
         SELECT e.channel_sequence, e.received_at, e.id FROM thread_metadata r
         JOIN events e ON e.community_id = r.community_id
@@ -292,7 +299,9 @@ threads AS (
         WHERE m.dm_blocked AND r.community_id = $1 AND r.root_event_id = t.root_id
           AND r.depth > 0 AND e.kind = ANY($3)
           AND NOT chat_is_thread_marker(e.tags, t.root_id)
-          AND NOT EXISTS (SELECT 1 FROM blk WHERE blk.blocked = e.pubkey)
+          AND NOT "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#"
         ORDER BY e.channel_sequence DESC LIMIT 1
     ) l ON TRUE
     CROSS JOIN LATERAL (

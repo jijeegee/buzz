@@ -722,13 +722,17 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 73);
-        // 0073 ships with the friends/block-periods work; this branch skips it.
-        assert_eq!(migrations[72].version, 74);
-        assert!(migrations[72]
+        assert_eq!(migrations.len(), 74);
+        assert_eq!(migrations[73].version, 74);
+        assert!(migrations[73]
             .sql
             .as_str()
             .contains("CREATE TABLE media_references"));
+        assert_eq!(migrations[72].version, 73);
+        assert!(migrations[72]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE IF NOT EXISTS user_block_periods"));
         assert_eq!(migrations[71].version, 72);
         assert!(migrations[71]
             .sql
@@ -2190,6 +2194,7 @@ mod postgres_tests {
                 "media_references",
                 "media_uploads",
                 "thread_state",
+                "user_block_periods",
                 "user_blocks",
             ]
             .map(str::to_owned),

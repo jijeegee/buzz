@@ -124,9 +124,10 @@ pub struct EventQuery {
     /// SQL pushdown is sound.  Keeping `event_visible_to_reader` as post-filter
     /// defense-in-depth catches any residual mismatch.
     pub shared_gated_reader: Option<Vec<u8>>,
-    /// Silent-block reader: when set, exclude DM-channel events whose author
-    /// this reader blocked (`user_blocks`), before ORDER/LIMIT so history
-    /// pages and counts never include them.
+    /// Silent-block reader: when set, exclude 1:1 DM events the server
+    /// received from someone while this reader blocked them
+    /// (`user_block_periods`), before ORDER/LIMIT so history pages and counts
+    /// never include them.
     pub blocked_dm_reader: Option<Vec<u8>>,
 }
 
@@ -612,26 +613,45 @@ async fn query_events_on_inner(
     Ok(out)
 }
 
-/// Silent-block pushdown: hide DM events authored by people the reader
-/// blocked. Channel-less events and non-DM channels are untouched.
+/// Silent-block pushdown: hide 1:1 DM events the server received from
+/// someone while the reader blocked them (`user_block_periods`). Messages
+/// from before a block or after an unblock, channel-less events, group DMs
+/// and other channels are untouched.
+///
+/// The author set and the reader's 1:1 DMs are hashed once per query; only
+/// rows passing both probe the period index.
 fn push_blocked_dm_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
     let Some(ref reader) = q.blocked_dm_reader else {
         return;
     };
+    let community = q.community_id.as_uuid();
     qb.push(format!(
         " AND NOT ({col_prefix}channel_id IS NOT NULL \
-         AND {col_prefix}pubkey IN (SELECT ub.blocked FROM user_blocks ub \
-         WHERE ub.community_id = "
+         AND {col_prefix}pubkey IN (SELECT bp.blocked FROM user_block_periods bp \
+         WHERE bp.community_id = "
     ));
-    qb.push_bind(q.community_id.as_uuid());
-    qb.push(" AND ub.blocker = ");
+    qb.push_bind(community);
+    qb.push(" AND bp.blocker = ");
     qb.push_bind(reader.clone());
     qb.push(format!(
-        ") AND {col_prefix}channel_id IN (SELECT c.id FROM channels c \
-         WHERE c.channel_type = 'dm' AND c.community_id = "
+        ") AND {col_prefix}channel_id IN (SELECT me.channel_id FROM channel_members me \
+         WHERE me.community_id = "
     ));
-    qb.push_bind(q.community_id.as_uuid());
-    qb.push("))");
+    qb.push_bind(community);
+    qb.push(" AND me.pubkey = ");
+    qb.push_bind(reader.clone());
+    qb.push(
+        " AND dm_is_one_to_one(me.community_id, me.channel_id)) \
+         AND EXISTS (SELECT 1 FROM user_block_periods bp WHERE bp.community_id = ",
+    );
+    qb.push_bind(community);
+    qb.push(" AND bp.blocker = ");
+    qb.push_bind(reader.clone());
+    qb.push(format!(
+        " AND bp.blocked = {col_prefix}pubkey \
+         AND bp.started_at <= {col_prefix}received_at \
+         AND (bp.ended_at IS NULL OR {col_prefix}received_at < bp.ended_at)))"
+    ));
 }
 
 /// SQL for [`query_events_on`], after its match-nothing early returns.
