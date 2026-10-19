@@ -1,17 +1,12 @@
 import type { AddCommunityPrefillRequest } from "@/features/communities/addCommunityPrefill";
-import type { LeaveCommunityResult } from "@/features/communities/leaveCommunity";
 import type { Community } from "@/features/communities/types";
 import type { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
-import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
 import type { ServerChats } from "@/features/sidebar/ui/ChatList";
-import type { UserStatusInput } from "@/features/user-status/types";
 import type {
   Channel,
   ChannelVisibility,
-  PresenceStatus,
   Profile,
   SearchHit,
-  UserStatus,
 } from "@/shared/api/types";
 
 export type CollapsibleSidebarGroup =
@@ -34,7 +29,6 @@ export type AppSidebarProps = {
   isCreatingForum: boolean;
   profile?: Profile;
   relayConnectionCard: ReturnType<typeof useSidebarRelayConnectionCard>;
-  selfPresenceStatus: PresenceStatus;
   errorMessage?: string;
   selectedChannelId: string | null;
   selectedView:
@@ -69,8 +63,6 @@ export type AppSidebarProps = {
     templateId?: string;
     addDefaultAi?: boolean;
   }) => Promise<void>;
-  onOpenAddCommunity: () => void;
-  onSendFeedback?: () => void;
   onHideDm: (channelId: string) => void;
   onMarkChannelUnread: (channelId: string) => void;
   onMarkChannelRead: (
@@ -80,12 +72,6 @@ export type AppSidebarProps = {
   onMarkAllChannelsRead: () => void;
   onBrowseChannels?: (onCreated?: (channelId: string) => void) => void;
   onOpenDm: (input: { pubkeys: string[] }) => Promise<void>;
-  onUpdateCommunity: (
-    id: string,
-    updates: Partial<Pick<Community, "name" | "relayUrl" | "token">>,
-  ) => void;
-  onLeaveCommunity: (id: string) => Promise<LeaveCommunityResult | undefined>;
-  onRemoveCommunityFromDevice: (id: string) => Promise<void>;
   onCreateAgent: () => void;
   onSelectHome: () => void;
   onSelectChannel: (channelId: string) => void;
@@ -93,13 +79,6 @@ export type AppSidebarProps = {
   /** Full channel set for global search, including channels outside the joined sidebar list. */
   searchChannels: Channel[];
   searchFocusRequests: readonly [global: number, channel: number];
-  onSelectSettings: (section?: SettingsSection) => void;
-  onSetPresenceStatus?: (status: "online" | "away" | "offline") => void;
-  onSetUserStatus: (status: UserStatusInput) => void;
-  onClearUserStatus: () => void;
-  onSwitchCommunity: (id: string) => void;
-  selfUserStatus?: UserStatus;
-  isPresencePending?: boolean;
   onNewMessage: () => void;
   onBackgroundClick?: () => void;
   isCreateChannelOpen?: boolean;

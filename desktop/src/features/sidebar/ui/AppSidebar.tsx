@@ -42,7 +42,6 @@ import {
   SectionActionsMenu,
 } from "@/features/sidebar/ui/CustomChannelSection";
 import { CreateChannelDialog } from "@/features/sidebar/ui/CreateChannelDialog";
-import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
 import { HuddleProfileControl } from "@/features/huddle";
 import type {
   AppSidebarProps,
@@ -63,8 +62,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarMenu,
-  SidebarMenuItem,
   SidebarRail,
   useSidebar,
 } from "@/shared/ui/sidebar";
@@ -83,7 +80,6 @@ export function AppSidebar({
   isCreatingForum,
   profile,
   relayConnectionCard,
-  selfPresenceStatus,
   errorMessage,
   selectedChannelId,
   selectedView,
@@ -96,30 +92,18 @@ export function AppSidebar({
   onAddCommunityOpenChange,
   onCreateChannel,
   onCreateForum,
-  onOpenAddCommunity,
-  onSendFeedback,
   onHideDm,
   onMarkChannelUnread,
   onMarkChannelRead,
   onMarkAllChannelsRead,
   onBrowseChannels,
   onOpenDm,
-  onUpdateCommunity,
-  onLeaveCommunity,
-  onRemoveCommunityFromDevice,
   onCreateAgent,
   onSelectHome,
   onSelectChannel,
   onOpenSearchResult,
   searchChannels,
   searchFocusRequests,
-  onSelectSettings,
-  onSetPresenceStatus,
-  onSetUserStatus,
-  onClearUserStatus,
-  onSwitchCommunity,
-  selfUserStatus,
-  isPresencePending,
   onNewMessage,
   isCreateChannelOpen: isCreateChannelOpenProp,
   isHuddleCompanionOpen = false,
@@ -350,10 +334,6 @@ export function AppSidebar({
     isLoading,
     streamChannels,
   });
-  const resolvedDisplayName =
-    profile?.displayName?.trim() ||
-    fallbackDisplayName?.trim() ||
-    "Current identity";
   const isCreatingAny =
     createDialogKind === "stream"
       ? isCreatingChannel
@@ -610,29 +590,6 @@ export function AppSidebar({
               onHuddleEnded={onHuddleEnded}
               visible={isHuddleCompanionOpen}
             />
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarProfileCard
-                  activeCommunity={activeCommunity}
-                  isPresencePending={isPresencePending}
-                  onOpenAddCommunity={onOpenAddCommunity}
-                  onOpenSettings={onSelectSettings}
-                  onSendFeedback={onSendFeedback}
-                  onLeaveCommunity={onLeaveCommunity}
-                  onRemoveCommunityFromDevice={onRemoveCommunityFromDevice}
-                  onSetPresenceStatus={onSetPresenceStatus}
-                  onSetUserStatus={onSetUserStatus}
-                  onClearUserStatus={onClearUserStatus}
-                  onSwitchCommunity={onSwitchCommunity}
-                  onUpdateCommunity={onUpdateCommunity}
-                  profile={profile}
-                  resolvedDisplayName={resolvedDisplayName}
-                  selfPresenceStatus={selfPresenceStatus}
-                  selfUserStatus={selfUserStatus}
-                  communities={communities}
-                />
-              </SidebarMenuItem>
-            </SidebarMenu>
           </SidebarFooter>
         </div>
       </div>

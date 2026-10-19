@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
-// The sidebar profile card and its menu with a built-in server: no server
+// The rail profile button and its menu with a built-in server: no server
 // name or community actions, and "Invite people" only for members who can
 // invite. Without a built-in server (E2E/upstream) the switcher stays.
 
@@ -185,21 +185,19 @@ test("built-in server: owners and admins get Invite people", async () => {
   }
 });
 
-test("built-in server: a status shows without the server name on hover", async () => {
+test("built-in server: the rail avatar names the status, not the server", async () => {
   await renderCard({
     builtIn: BUILT_IN,
     role: "member",
     userStatus: { text: "Focusing", emoji: "" },
   });
-  assert.ok(
-    document.querySelector('[data-testid="sidebar-profile-user-status"]'),
-  );
+  const trigger = document.querySelector('[data-testid="open-settings"]');
+  assert.equal(trigger?.getAttribute("title"), "Jiho · Focusing");
   assert.equal(container.textContent.includes("jihobuzz"), false);
 });
 
 test("without a built-in server the upstream switcher stays", async () => {
   await renderCard({ builtIn: null, role: "admin" });
-  assert.ok(container.textContent.includes("jihobuzz"));
   await openMenu();
   assert.ok(document.querySelector('[data-testid="community-switcher"]'));
   assert.equal(

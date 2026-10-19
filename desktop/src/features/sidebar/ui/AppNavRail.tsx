@@ -41,13 +41,16 @@ type AppNavRailProps = {
   onSelectProjects: () => void;
   onSelectPulse: () => void;
   onSelectWorkflows: () => void;
+  /** The signed-in profile button, pinned to the bottom of the rail. */
+  profileSlot?: React.ReactNode;
   selectedView: NavRailView;
 };
 
 /**
  * The app's main tabs as a narrow column of icons with labels, left of the
  * list: Chats · People · Activity · Agents · More (Pulse, Projects,
- * Workflows). The list beside it follows the selected tab.
+ * Workflows). The list beside it follows the selected tab. The profile
+ * button sits at the bottom, apart from the list.
  */
 export function AppNavRail({
   homeBadgeCount,
@@ -59,6 +62,7 @@ export function AppNavRail({
   onSelectProjects,
   onSelectPulse,
   onSelectWorkflows,
+  profileSlot,
   selectedView,
 }: AppNavRailProps) {
   // The workflows screen has no list; its More item stays lit while open.
@@ -113,6 +117,9 @@ export function AppNavRail({
         onSelectWorkflows={onSelectWorkflows}
         active={onWorkflows || listTab === "projects" || listTab === "pulse"}
       />
+      {profileSlot ? (
+        <div className="mt-auto w-full pt-2">{profileSlot}</div>
+      ) : null}
     </nav>
   );
 }
