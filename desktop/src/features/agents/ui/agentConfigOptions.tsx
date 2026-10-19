@@ -24,6 +24,17 @@ export const BLOCK_BUILD_HIDDEN_PROVIDER_IDS: ReadonlySet<string> = new Set([
   "databricks",
 ]);
 
+const NO_HIDDEN_PROVIDER_IDS: ReadonlySet<string> = new Set();
+
+/** The provider ids to hide: Block builds bake in `KUZZ_AGENT_PROVIDER`. */
+export function buildHiddenProviderIds(
+  bakedEnvKeys: readonly string[] | undefined,
+): ReadonlySet<string> {
+  return (bakedEnvKeys ?? []).includes("KUZZ_AGENT_PROVIDER")
+    ? BLOCK_BUILD_HIDDEN_PROVIDER_IDS
+    : NO_HIDDEN_PROVIDER_IDS;
+}
+
 export const PERSONA_FIELD_SHELL_CLASS =
   "rounded-xl border border-input bg-muted/40 transition-colors duration-150 ease-out hover:border-muted-foreground/40 focus-within:border-muted-foreground/50";
 export const PERSONA_FIELD_CONTROL_CLASS =

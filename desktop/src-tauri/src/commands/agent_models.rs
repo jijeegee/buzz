@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use nostr::Keys;
 use serde::Deserialize;
@@ -188,6 +188,14 @@ pub struct DiscoverAgentModelsInput {
     /// Merged below user `env_vars` so user overrides always win.
     #[serde(default)]
     pub definition_env: BTreeMap<String, String>,
+    /// The saved agent being edited, if any. A Hermes agent lists models from
+    /// its own Hermes profile once that profile exists.
+    #[serde(default)]
+    pub agent_pubkey: Option<String>,
+    /// The model saved on the agent being edited, kept visible even when the
+    /// harness no longer offers it.
+    #[serde(default)]
+    pub persisted_model: Option<String>,
 }
 
 /// Query available models from an unsaved agent configuration.
@@ -229,7 +237,39 @@ pub async fn discover_agent_models(
         &input.definition_env,
         &input.env_vars,
     );
-    let merged_env = discovery_env_with_baked_floor(merged_env);
+    let mut merged_env = discovery_env_with_baked_floor(merged_env);
+    let is_hermes = crate::managed_agents::hermes_profile::is_hermes_command(agent_command);
+    // The agent's user env layer: env var NAMES the user gave this agent, which
+    // count as Hermes API keys the user set up.
+    let agent_env_keys: BTreeSet<String> = input
+        .env_vars
+        .iter()
+        .chain(input.definition_env.iter())
+        .filter(|(_, value)| !value.trim().is_empty())
+        .map(|(key, _)| key.clone())
+        .collect();
+    if is_hermes {
+        // A saved Hermes agent runs from its own profile (copied from the
+        // user's Hermes when it first started), so list that profile's models.
+        // A never-started agent has none yet: use the user's Hermes, which the
+        // profile will be copied from.
+        if let Some(pubkey) = input.agent_pubkey.as_deref().filter(|pk| !pk.is_empty()) {
+            if let Ok(Some(profile)) =
+                crate::managed_agents::hermes_profile::require_for_spawn(agent_command, pubkey, "")
+            {
+                merged_env.insert(
+                    crate::managed_agents::hermes_profile::HERMES_HOME_ENV_VAR.to_string(),
+                    profile.dir.display().to_string(),
+                );
+            }
+        }
+    }
+    let persisted_model = input
+        .persisted_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(str::to_string);
     // Recover a build-provided provider when the form has none, so the create
     // dialog discovers live models instead of falling through to the subprocess.
     let effective_provider = effective_discovery_provider(
@@ -276,6 +316,7 @@ pub async fn discover_agent_models(
             agent_default_model: None,
             selected_model: None,
             supports_switching: true,
+            harness_providers: None,
         });
     }
     #[cfg(not(feature = "mesh-llm"))]
@@ -322,7 +363,27 @@ pub async fn discover_agent_models(
         return Ok(models);
     }
 
-    run_agent_models_command(resolved_acp, resolved_agent, agent_args, None, merged_env).await
+    let hermes_home = is_hermes
+        .then(|| crate::managed_agents::hermes_providers::discovery_home(&merged_env))
+        .flatten();
+    let mut response = run_agent_models_command(
+        resolved_acp,
+        resolved_agent,
+        agent_args,
+        persisted_model,
+        merged_env,
+    )
+    .await?;
+    // Hermes lists providers it borrowed from outside Hermes too; offer only
+    // the ones the user set up in Hermes. Read after the run: Hermes records
+    // credentials it loaded while listing.
+    if let Some(setup) = hermes_home
+        .as_deref()
+        .and_then(|home| crate::managed_agents::hermes_providers::read_setup(home, &agent_env_keys))
+    {
+        crate::managed_agents::hermes_providers::apply_setup(&mut response, &setup);
+    }
+    Ok(response)
 }
 
 #[derive(Debug, Deserialize)]
@@ -519,6 +580,7 @@ async fn discover_openai_compatible_models(
             agent_default_model: None,
             selected_model,
             supports_switching: true,
+            harness_providers: None,
         }));
     }
     let relay_mesh =
@@ -570,6 +632,7 @@ async fn discover_openai_compatible_models(
         agent_default_model: None,
         selected_model,
         supports_switching: true,
+        harness_providers: None,
     }))
 }
 
@@ -718,6 +781,7 @@ async fn discover_anthropic_models(
         agent_default_model: None,
         selected_model,
         supports_switching: true,
+        harness_providers: None,
     }))
 }
 
@@ -818,6 +882,7 @@ pub(super) fn normalize_agent_models(
         agent_default_model,
         selected_model: persisted_model,
         supports_switching,
+        harness_providers: None,
     }
 }
 

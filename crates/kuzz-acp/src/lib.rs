@@ -85,7 +85,10 @@ fn is_subcommand(name: &str) -> bool {
 }
 
 /// Timeout for lightweight helper subcommands (spawn + initialize + model/method probes).
-const MODELS_TIMEOUT: Duration = Duration::from_secs(10);
+/// Hermes builds its model list from every connected provider during
+/// `session/new`, which took 9-12s cold on a real Windows install, so 10s
+/// dropped the model picker intermittently. Fast adapters return well within it.
+const MODELS_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Timeout for `kuzz-acp authenticate`. Browser-based vendor auth can require
 /// human interaction, so it must not share the short probe timeout.

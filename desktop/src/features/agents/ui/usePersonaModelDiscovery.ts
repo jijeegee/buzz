@@ -5,6 +5,7 @@ import { discoverAgentModels } from "@/shared/api/agentModels";
 import type {
   AcpRuntimeCatalogEntry,
   AgentModelsResponse,
+  HarnessProviderInfo,
 } from "@/shared/api/types";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import {
@@ -13,6 +14,13 @@ import {
 } from "./personaModelDiscoveryStatus";
 import type { PersonaModelOption } from "./agentConfigOptions";
 import { providerRequiresExplicitModel } from "./agentConfigOptions";
+import {
+  HARNESS_NOT_SET_UP_MODEL_DESCRIPTION,
+  HARNESS_UNAVAILABLE_MODEL_DESCRIPTION,
+  harnessProviderOfModel,
+  modelForHarnessProvider,
+  modelOptionsForHarnessProvider,
+} from "./harnessProviderOptions";
 import {
   disambiguateModelLabels,
   resolveModelLabel,
@@ -83,7 +91,12 @@ export function getDiscoveredPersonaModelOptions(
     ...disambiguateModelLabels(
       explicitModels.map((model) => ({
         id: model.id,
-        label: resolveModelLabel(model.id, model.name, provider),
+        label:
+          model.description === HARNESS_UNAVAILABLE_MODEL_DESCRIPTION
+            ? `${resolveModelLabel(model.id, model.name, provider)} (not available in Hermes)`
+            : model.description === HARNESS_NOT_SET_UP_MODEL_DESCRIPTION
+              ? `${resolveModelLabel(model.id, model.name, provider)} (not set up in Hermes)`
+              : resolveModelLabel(model.id, model.name, provider),
         ...(model.supportedEfforts?.length
           ? { supportedEfforts: model.supportedEfforts }
           : {}),
@@ -173,18 +186,36 @@ export function isSuccessfulEmptyDiscovery({
   );
 }
 
+/** The provider row for a harness that owns its providers (Hermes). */
+export type HarnessProviderChoice = {
+  providers: readonly HarnessProviderInfo[];
+  /** The provider of the current model (the default one when unset). */
+  selectedId: string | undefined;
+  /** The model to store when the user picks `providerId`. */
+  modelFor: (providerId: string) => string;
+};
+
 export function usePersonaModelDiscovery({
+  agentPubkey,
   envVars,
   isCustomProviderEditing,
+  model,
   modelFieldVisible,
   open,
+  persistedModel,
   provider,
   selectedRuntime,
 }: {
+  /** The saved agent being edited, so a Hermes agent lists its own profile. */
+  agentPubkey?: string;
   envVars: EnvVarsValue;
   isCustomProviderEditing: boolean;
+  /** The current model choice; picks which harness provider's models show. */
+  model?: string;
   modelFieldVisible: boolean;
   open: boolean;
+  /** The model saved on the agent, kept listed even if no longer offered. */
+  persistedModel?: string;
   provider: string;
   selectedRuntime: AcpRuntimeCatalogEntry | undefined;
 }) {
@@ -246,15 +277,19 @@ export function usePersonaModelDiscovery({
       agentArgs: modelDiscoveryArgsKey,
       provider: trimmedProvider,
       envVars: modelDiscoveryEnvKey,
+      agentPubkey: agentPubkey ?? null,
+      persistedModel: persistedModel?.trim() || null,
       // Reload the ChatGPT plan's model list right after sign-in or sign-out.
       chatGptSignedIn: chatGptSignedIn,
     });
   }, [
+    agentPubkey,
     canDiscoverModelOptions,
     chatGptSignedIn,
     discoveryAgentCommand,
     modelDiscoveryArgsKey,
     modelDiscoveryEnvKey,
+    persistedModel,
     trimmedProvider,
   ]);
 
@@ -313,6 +348,10 @@ export function usePersonaModelDiscovery({
         provider: trimmedProvider || undefined,
         envVars,
         definitionEnv: selectedRuntimeDefinitionEnv ?? {},
+        ...(agentPubkey ? { agentPubkey } : {}),
+        ...(persistedModel?.trim()
+          ? { persistedModel: persistedModel.trim() }
+          : {}),
       })
         .then((response) => {
           if (modelDiscoveryRequestRef.current !== requestId) {
@@ -375,6 +414,7 @@ export function usePersonaModelDiscovery({
       }
     };
   }, [
+    agentPubkey,
     discoveryAgentCommand,
     envVars,
     modelDiscoveryKey,
@@ -382,6 +422,7 @@ export function usePersonaModelDiscovery({
     selectedRuntimeDefaultArgs,
     selectedRuntimeDefinitionEnv,
     selectedRuntimeLabel,
+    persistedModel,
     shouldDebounceModelDiscovery,
     trimmedProvider,
   ]);
@@ -396,7 +437,7 @@ export function usePersonaModelDiscovery({
       : modelDiscoveryStatusKey === modelDiscoveryKey
         ? modelDiscoveryStatus
         : null;
-  const discoveredModelOptions = React.useMemo(
+  const allDiscoveredModelOptions = React.useMemo(
     () =>
       getDiscoveredPersonaModelOptions(
         activeModelDiscoveryData,
@@ -404,6 +445,36 @@ export function usePersonaModelDiscovery({
       ),
     [activeModelDiscoveryData, trimmedProvider],
   );
+  // A harness that owns its providers lists models of every provider the user
+  // set up in it; show only the current model's provider's models.
+  const harnessProviders = activeModelDiscoveryData?.harnessProviders;
+  const harnessProviderChoice = React.useMemo<HarnessProviderChoice | null>(
+    () =>
+      harnessProviders && harnessProviders.length > 0
+        ? {
+            providers: harnessProviders,
+            selectedId: harnessProviderOfModel(model ?? "", harnessProviders),
+            modelFor: (providerId) =>
+              modelForHarnessProvider(
+                providerId,
+                allDiscoveredModelOptions ?? [],
+                harnessProviders,
+              ),
+          }
+        : null,
+    [allDiscoveredModelOptions, harnessProviders, model],
+  );
+  const discoveredModelOptions = React.useMemo(() => {
+    if (allDiscoveredModelOptions === null || harnessProviderChoice === null) {
+      return allDiscoveredModelOptions;
+    }
+    const scoped = modelOptionsForHarnessProvider(
+      allDiscoveredModelOptions,
+      harnessProviderChoice.providers,
+      harnessProviderChoice.selectedId,
+    );
+    return scoped.length > 0 ? scoped : allDiscoveredModelOptions;
+  }, [allDiscoveredModelOptions, harnessProviderChoice]);
   const modelDiscoveryPending = deriveModelDiscoveryPending({
     modelDiscoveryLoading,
     modelDiscoveryKey,
@@ -418,6 +489,7 @@ export function usePersonaModelDiscovery({
 
   return {
     discoveredModelOptions,
+    harnessProviderChoice,
     modelDiscoveryLoading: modelDiscoveryPending,
     modelDiscoveryStatus:
       modelDiscoveryPending || discoveredModelOptions !== null
