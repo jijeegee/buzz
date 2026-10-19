@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 import {
   type KlipyGif,
   type KlipyResponse,
@@ -16,7 +17,7 @@ function customerId(relayUrl: string): string {
   if (typeof window === "undefined") return globalThis.crypto.randomUUID();
 
   try {
-    const storageKey = `${KLIPY_CUSTOMER_ID_STORAGE_KEY_PREFIX}${relayUrl}`;
+    const storageKey = `${KLIPY_CUSTOMER_ID_STORAGE_KEY_PREFIX}${relayStorageScope(relayUrl, relayUrl)}`;
     const existing = window.localStorage.getItem(storageKey);
     if (existing) return existing;
 

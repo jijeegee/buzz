@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 import type { Project } from "@/features/projects/projectModels";
 import { isExplicitProject } from "@/features/projects/projectModels";
 import { isProjectOwnedByCurrentUser } from "@/features/projects/lib/projectsViewHelpers";
@@ -18,7 +19,10 @@ function scopedPreferenceKey(
   relayOrigin: string | null,
   currentPubkey?: string,
 ) {
-  return `${baseKey}:${encodeURIComponent(relayOrigin ?? "unknown")}:${currentPubkey ?? "anonymous"}`;
+  const relay = relayOrigin
+    ? relayStorageScope(relayOrigin, relayOrigin)
+    : "unknown";
+  return `${baseKey}:${encodeURIComponent(relay)}:${currentPubkey ?? "anonymous"}`;
 }
 
 function expandedProjectsStorageKey(

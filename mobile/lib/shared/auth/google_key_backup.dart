@@ -8,6 +8,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../community/community.dart';
 import '../community/community_provider.dart';
 import '../community/community_storage.dart';
+import '../relay/service_address.dart';
 import 'token/token.dart';
 
 /// A safe, body-free explanation of a custody operation failure.
@@ -47,7 +48,7 @@ class PendingBackupKeyStore {
     : _storage = storage ?? const FlutterSecureStorage();
   final FlutterSecureStorage _storage;
   String _key(String origin, String account) =>
-      'kuzz.key-backup.pending.v1:${jsonEncode([origin, account])}';
+      'kuzz.key-backup.pending.v1:${jsonEncode([storageScopeFor(origin), account])}';
   Future<String?> read(String origin, String account) =>
       _storage.read(key: _key(origin, account));
   Future<void> write(String origin, String account, String nsec) =>

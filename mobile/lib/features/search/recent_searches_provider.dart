@@ -17,14 +17,17 @@ class RecentSearchesNotifier extends Notifier<List<String>> {
   List<String> build() {
     final config = ref.watch(relayConfigProvider);
     final pubkey = ref.watch(myPubkeyProvider) ?? 'anon';
-    _prefsKey = '$_recentSearchesPrefsKey:${config.baseUrl}:$pubkey';
+    _prefsKey =
+        '$_recentSearchesPrefsKey:${storageScopeFor(config.baseUrl)}:$pubkey';
 
     final prefs = ref.read(savedPrefsProvider);
     final stored =
         readMigratedPref<List<String>>(
           prefs,
           canonicalKey: _prefsKey,
-          legacyKey: '$_recentSearchesPrefsKey:${config.storedOrigin}:$pubkey',
+          legacyKey:
+              '$_recentSearchesPrefsKey:'
+              '${storageScopeFor(config.storedOrigin)}:$pubkey',
           read: prefs.getStringList,
           write: prefs.setStringList,
         ) ??

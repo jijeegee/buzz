@@ -242,7 +242,7 @@ fn read(path: &Path) -> Result<HashMap<MarkerKey, Marker>, String> {
                 return Err("invalid stopped agent".to_owned());
             }
             Ok((
-                (entry.origin, identity),
+                (super::service::live(&entry.origin), identity),
                 Marker {
                     stopped_agents: entry.stopped_agents,
                 },
@@ -259,7 +259,7 @@ fn write(path: Option<&Path>, origins: &HashMap<MarkerKey, Marker>) -> Result<()
     let mut entries: Vec<MarkerEntry> = origins
         .iter()
         .map(|((origin, account), marker)| MarkerEntry {
-            origin: origin.clone(),
+            origin: super::service::stored(origin),
             identity: account.map(|key| key.to_hex()),
             stopped_agents: marker.stopped_agents.clone(),
         })

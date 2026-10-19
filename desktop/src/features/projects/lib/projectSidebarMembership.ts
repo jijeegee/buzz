@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 const PROJECT_SIDEBAR_MEMBERSHIP_PREFIX = "kuzz.sidebar.projects.membership.v1";
 export const PROJECT_SIDEBAR_MEMBERSHIP_EVENT =
   "kuzz:project-sidebar-membership-change";
@@ -32,7 +33,7 @@ export function projectSidebarMembershipStorageKey(
   relayOrigin: string,
   pubkey: string,
 ) {
-  return `${PROJECT_SIDEBAR_MEMBERSHIP_PREFIX}.${encodeURIComponent(relayOrigin)}.${pubkey.toLowerCase()}`;
+  return `${PROJECT_SIDEBAR_MEMBERSHIP_PREFIX}.${encodeURIComponent(relayStorageScope(relayOrigin, relayOrigin))}.${pubkey.toLowerCase()}`;
 }
 
 export function parseProjectSidebarMembershipPayload(
