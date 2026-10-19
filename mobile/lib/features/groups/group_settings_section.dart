@@ -467,6 +467,7 @@ class InviteLinkSheet extends HookConsumerWidget {
     if (current == null) {
       content = failed.value
           ? Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   'Couldn’t load the invite link.',
@@ -478,15 +479,20 @@ class InviteLinkSheet extends HookConsumerWidget {
                 ),
               ],
             )
-          : const Center(child: KuzzLoadingIndicator());
+          : const Padding(
+              padding: EdgeInsets.symmetric(vertical: Grid.sm),
+              child: Center(child: KuzzLoadingIndicator()),
+            );
     } else {
       content = Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
             padding: const EdgeInsets.all(Grid.twelve),
             decoration: BoxDecoration(
-              color: context.colors.surfaceContainerHighest,
+              color: context.colors.surface,
+              border: Border.all(color: context.colors.outlineVariant),
               borderRadius: BorderRadius.circular(Radii.card),
             ),
             child: SelectableText(

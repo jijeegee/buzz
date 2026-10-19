@@ -288,6 +288,7 @@ class GroupInvitationTile extends HookConsumerWidget {
         vertical: Grid.xxs,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GroupAvatar(channel: group.toChannel(), size: 44),
           const SizedBox(width: Grid.twelve),
@@ -311,19 +312,25 @@ class GroupInvitationTile extends HookConsumerWidget {
                     color: context.colors.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(height: Grid.xxs),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      key: ValueKey('invitation-decline-${invitation.id}'),
+                      onPressed: busy.value ? null : () => unawaited(decline()),
+                      child: const Text('Decline'),
+                    ),
+                    const SizedBox(width: Grid.xxs),
+                    FilledButton(
+                      key: ValueKey('invitation-join-${invitation.id}'),
+                      onPressed: busy.value ? null : () => unawaited(join()),
+                      child: const Text('Join'),
+                    ),
+                  ],
+                ),
               ],
             ),
-          ),
-          const SizedBox(width: Grid.xxs),
-          TextButton(
-            key: ValueKey('invitation-decline-${invitation.id}'),
-            onPressed: busy.value ? null : () => unawaited(decline()),
-            child: const Text('Decline'),
-          ),
-          FilledButton(
-            key: ValueKey('invitation-join-${invitation.id}'),
-            onPressed: busy.value ? null : () => unawaited(join()),
-            child: const Text('Join'),
           ),
         ],
       ),
