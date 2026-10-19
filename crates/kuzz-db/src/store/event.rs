@@ -1725,10 +1725,7 @@ pub(crate) async fn insert_event_with_thread_metadata_tx(
     let was_inserted = inserted_sequence.is_some();
     let channel_sequence = match inserted_sequence {
         Some(sequence) => known_channel_sequence(sequence),
-        None => {
-            stored_channel_sequence(&mut **tx, community_id, created_at, id_bytes.as_slice())
-                .await?
-        }
+        None => stored_channel_sequence(tx, community_id, created_at, id_bytes.as_slice()).await?,
     };
 
     if was_inserted {
