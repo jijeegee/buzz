@@ -447,6 +447,79 @@ async fn actor_owns_any_owner_agent(
     Ok(false)
 }
 
+/// A kind:9000 add that became an invitation. Ingest turns it into an `OK`
+/// false whose message starts with [`INVITE_SENT_PREFIX`].
+#[derive(Debug, thiserror::Error)]
+#[error("invitation sent")]
+pub struct InvitationSent;
+
+/// `OK` message prefix for a kind:9000 add the target's "who can add me"
+/// setting turned into an invitation.
+pub const INVITE_SENT_PREFIX: &str = "invite-sent:";
+
+/// Whether `actor` is in `target`'s latest contact list (kind:3): the target
+/// added the actor as a friend.
+async fn is_friend_of(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    target: &[u8],
+    actor: &[u8],
+) -> anyhow::Result<bool> {
+    let Some(contacts) = state
+        .db
+        .get_latest_global_replaceable(
+            tenant.community(),
+            kuzz_core::kind::KIND_CONTACT_LIST as i32,
+            target,
+        )
+        .await?
+    else {
+        return Ok(false);
+    };
+    let actor_hex = hex::encode(actor);
+    Ok(contacts.event.tags.iter().any(|tag| {
+        let parts = tag.as_slice();
+        parts.len() >= 2 && parts[0] == "p" && parts[1].eq_ignore_ascii_case(&actor_hex)
+    }))
+}
+
+/// Group invite policy and the target's "who can add me" setting for a
+/// third-party add of a person who is not yet a member. Refused adds by a
+/// member become a pending invitation and fail with [`InvitationSent`]; when
+/// the target blocked the actor nothing is stored, but the actor sees the
+/// same answer.
+async fn check_person_add(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    actor_role: Option<MemberRole>,
+    actor: &[u8],
+    target: &[u8],
+) -> anyhow::Result<()> {
+    let community = tenant.community();
+    let invite_policy = state
+        .db
+        .group_invite_policy(community, channel_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("channel not found"))?;
+    let add_policy = state.db.group_add_policy(community, target).await?;
+    let friend = add_policy != "everyone" && is_friend_of(tenant, state, target, actor).await?;
+    match channel_authz::decide_person_add(&invite_policy, actor_role, &add_policy, friend)? {
+        channel_authz::PersonAddDecision::Allow => Ok(()),
+        channel_authz::PersonAddDecision::SendInvitation => {
+            if !state.db.is_blocked_by(community, target, actor).await? {
+                // TODO(groups): push the invitation live; v1 clients refresh
+                // the invitation list on focus / Chats open.
+                state
+                    .db
+                    .upsert_group_invitation(community, channel_id, actor, target)
+                    .await?;
+            }
+            Err(InvitationSent.into())
+        }
+    }
+}
+
 /// Validate an admin kind event BEFORE storage.
 pub async fn validate_admin_event(
     tenant: &TenantContext,
@@ -520,16 +593,40 @@ pub async fn validate_admin_event(
                 PutUserDecision::Allow => Ok(()),
                 // Third-party add: check channel_add_policy on the target.
                 PutUserDecision::CheckAddPolicy => {
-                    if let Some((policy, owner)) = state
+                    let agent_policy = state
                         .db
                         .get_agent_channel_policy(tenant.community(), &target_pubkey)
-                        .await?
-                    {
+                        .await?;
+                    if let Some((policy, owner)) = &agent_policy {
                         channel_authz::decide_channel_add_policy(
-                            &policy,
+                            policy,
                             owner.as_deref(),
                             &actor_bytes,
                         )?;
+                    }
+
+                    // People (not agents) joining a group get stranger
+                    // protection and the group's invite policy. Agents keep
+                    // only their channel_add_policy above; role changes of
+                    // existing members are unaffected.
+                    let is_group = matches!(channel.channel_type.as_str(), "stream" | "forum");
+                    let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
+                    if is_group && !already_member {
+                        let target_is_agent = agent_policy
+                            .as_ref()
+                            .is_some_and(|(_, owner)| owner.is_some())
+                            || state.db.is_bot_principal(&target_pubkey).await?;
+                        if !target_is_agent {
+                            check_person_add(
+                                tenant,
+                                state,
+                                channel_id,
+                                actor_role,
+                                &actor_bytes,
+                                &target_pubkey,
+                            )
+                            .await?;
+                        }
                     }
 
                     Ok(())
@@ -1489,28 +1586,54 @@ async fn handle_put_user(
 
     let actor_bytes = event.pubkey.to_bytes().to_vec();
 
+    add_channel_member(
+        tenant,
+        state,
+        channel_id,
+        &target_pubkey,
+        role,
+        Some(&actor_bytes),
+        &actor_bytes,
+    )
+    .await?;
+
+    info!(channel = %channel_id, target = %hex::encode(&target_pubkey), "NIP-29 PUT_USER processed");
+    Ok(())
+}
+
+/// Add `target` to the channel and publish everything a membership change
+/// publishes: the `member_joined` system message (`actor` added `target`;
+/// equal for a self-join), the NIP-29 discovery events (kind:39002 member
+/// list) and the member-added notification. Every join path uses this —
+/// kind:9000, kind:9021, group invite links and accepted invitations — so
+/// they look identical to clients.
+///
+/// `invited_by` is passed to [`kuzz_db::Db::add_member`], which enforces the
+/// private-channel inviter rule. A pending group invitation for `target` is
+/// settled as accepted.
+pub(crate) async fn add_channel_member(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    target: &[u8],
+    role: MemberRole,
+    invited_by: Option<&[u8]>,
+    actor: &[u8],
+) -> anyhow::Result<()> {
     state
         .db
-        .add_member(
-            tenant.community(),
-            channel_id,
-            &target_pubkey,
-            role,
-            Some(&actor_bytes),
-        )
+        .add_member(tenant.community(), channel_id, target, role, invited_by)
         .await?;
-    state.invalidate_membership(tenant, channel_id, &target_pubkey);
+    state.invalidate_membership(tenant, channel_id, target);
 
-    let actor_hex = hex::encode(&actor_bytes);
-    let target_hex = hex::encode(&target_pubkey);
     emit_system_message(
         tenant,
         state,
         channel_id,
         serde_json::json!({
             "type": "member_joined",
-            "actor": actor_hex,
-            "target": target_hex,
+            "actor": hex::encode(actor),
+            "target": hex::encode(target),
         }),
         chrono::Utc::now(),
     )
@@ -1524,8 +1647,8 @@ async fn handle_put_user(
         tenant,
         state,
         channel_id,
-        &target_pubkey,
-        &actor_bytes,
+        target,
+        actor,
         KIND_MEMBER_ADDED_NOTIFICATION,
     )
     .await
@@ -1533,7 +1656,13 @@ async fn handle_put_user(
         warn!(channel = %channel_id, error = %e, "membership notification emission failed");
     }
 
-    info!(channel = %channel_id, target = %target_hex, "NIP-29 PUT_USER processed");
+    if let Err(e) = state
+        .db
+        .settle_group_invitations(tenant.community(), channel_id, target)
+        .await
+    {
+        warn!(channel = %channel_id, error = %e, "settling group invitations failed");
+    }
     Ok(())
 }
 
@@ -2176,48 +2305,16 @@ async fn handle_join_request(
     }
 
     // Add as member (idempotent — add_member handles duplicates).
-    state
-        .db
-        .add_member(
-            tenant.community(),
-            channel_id,
-            &actor_bytes,
-            kuzz_db::channel::MemberRole::Member,
-            None,
-        )
-        .await?;
-    state.invalidate_membership(tenant, channel_id, &actor_bytes);
-
-    let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
+    add_channel_member(
         tenant,
         state,
         channel_id,
-        serde_json::json!({
-            "type": "member_joined",
-            "actor": actor_hex,
-            "target": actor_hex,
-        }),
-        chrono::Utc::now(),
+        &actor_bytes,
+        MemberRole::Member,
+        None,
+        &actor_bytes,
     )
     .await?;
-
-    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
-        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
-    }
-
-    if let Err(e) = emit_membership_notification(
-        tenant,
-        state,
-        channel_id,
-        &actor_bytes,
-        &actor_bytes,
-        kuzz_core::kind::KIND_MEMBER_ADDED_NOTIFICATION,
-    )
-    .await
-    {
-        warn!("membership notification for join failed: {e}");
-    }
 
     info!(channel = %channel_id, "kind:9021 join processed");
     Ok(())

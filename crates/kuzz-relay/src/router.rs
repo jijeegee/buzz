@@ -372,6 +372,48 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             post(api::invites::accept_policy),
         )
         .route("/api/invites/claim", post(api::invites::claim_invite))
+        // Groups: search + public addresses, invite links, "who can add me"
+        // and invitations (Bearer / NIP-98 + relay membership, like /query).
+        .route("/api/groups/search", get(api::groups::search))
+        .route(
+            "/api/groups/by-handle/{handle}",
+            get(api::groups::by_handle),
+        )
+        .route(
+            "/api/groups/invite/{code}",
+            get(api::groups::preview_invite),
+        )
+        .route(
+            "/api/groups/invite/{code}/join",
+            post(api::groups::join_invite),
+        )
+        .route("/api/groups/{id}", get(api::groups::get_group))
+        .route("/api/groups/{id}/handle", put(api::groups::put_handle))
+        .route(
+            "/api/groups/{id}/invite-link",
+            get(api::groups::get_invite_link),
+        )
+        .route(
+            "/api/groups/{id}/invite-link/reset",
+            post(api::groups::reset_invite_link),
+        )
+        .route(
+            "/api/groups/{id}/invite-policy",
+            get(api::groups::get_invite_policy).put(api::groups::put_invite_policy),
+        )
+        .route(
+            "/api/me/group-add-policy",
+            get(api::groups::get_add_policy).put(api::groups::put_add_policy),
+        )
+        .route("/api/group-invitations", get(api::groups::list_invitations))
+        .route(
+            "/api/group-invitations/{id}/accept",
+            post(api::groups::accept_invitation),
+        )
+        .route(
+            "/api/group-invitations/{id}/decline",
+            post(api::groups::decline_invitation),
+        )
         // NIP-FI admin command API — authenticated by signed command JWT,
         // NOT by NIP-98.  Self-contained auth inside the handler.
         .route("/api/nip-fi/disconnect", post(api::nip_fi::disconnect))

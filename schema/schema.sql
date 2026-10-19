@@ -108,6 +108,10 @@ CREATE TABLE channels (
     main_last_seq   BIGINT,
     main_last_at    TIMESTAMPTZ,
     main_last_event_id BYTEA,
+    -- Public address of an open group and who may invite (migration 0075).
+    handle          TEXT CONSTRAINT chk_channels_handle CHECK (handle ~ '^[a-z0-9_]{3,32}$'),
+    invite_policy   TEXT NOT NULL DEFAULT 'members'
+        CONSTRAINT chk_channels_invite_policy CHECK (invite_policy IN ('members', 'admins')),
     PRIMARY KEY (community_id, id),
     CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
 );
@@ -117,6 +121,8 @@ CREATE UNIQUE INDEX idx_channels_nip29_group ON channels (community_id, nip29_gr
     WHERE nip29_group_id IS NOT NULL;
 CREATE UNIQUE INDEX idx_channels_dm_hash ON channels (community_id, participant_hash)
     WHERE participant_hash IS NOT NULL;
+CREATE UNIQUE INDEX idx_channels_handle ON channels (community_id, lower(handle))
+    WHERE handle IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX idx_channels_community_type ON channels (community_id, channel_type);
 CREATE INDEX idx_channels_community_visibility ON channels (community_id, visibility);
 CREATE INDEX idx_channels_created_by ON channels (community_id, created_by);
@@ -663,6 +669,51 @@ CREATE TABLE media_references (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (community_id, sha256, event_id)
 );
+
+-- ── Groups ────────────────────────────────────────────────────────────────────
+-- Invite links, "who can add me" and invitations (migration 0075).
+
+CREATE TABLE group_invite_links (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    channel_id   UUID NOT NULL,
+    code         TEXT NOT NULL CHECK (code ~ '^[A-Za-z0-9_-]{22,64}$'),
+    created_by   BYTEA NOT NULL CHECK (length(created_by) = 32),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at   TIMESTAMPTZ,
+    PRIMARY KEY (community_id, code),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX idx_group_invite_links_active
+    ON group_invite_links (community_id, channel_id) WHERE revoked_at IS NULL;
+
+CREATE TABLE group_add_settings (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    pubkey       BYTEA NOT NULL CHECK (length(pubkey) = 32),
+    policy       TEXT NOT NULL DEFAULT 'friends' CHECK (policy IN ('friends', 'everyone')),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, pubkey)
+);
+
+CREATE TABLE group_invitations (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    id           UUID NOT NULL DEFAULT gen_random_uuid(),
+    channel_id   UUID NOT NULL,
+    inviter      BYTEA NOT NULL CHECK (length(inviter) = 32),
+    invitee      BYTEA NOT NULL CHECK (length(invitee) = 32),
+    status       TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'accepted', 'declined', 'expired')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    responded_at TIMESTAMPTZ,
+    PRIMARY KEY (community_id, id),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE,
+    CONSTRAINT group_invitations_not_self CHECK (inviter <> invitee)
+);
+CREATE UNIQUE INDEX idx_group_invitations_pending
+    ON group_invitations (community_id, channel_id, invitee) WHERE status = 'pending';
+CREATE INDEX idx_group_invitations_invitee
+    ON group_invitations (community_id, invitee) WHERE status = 'pending';
 
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.
@@ -1908,6 +1959,9 @@ SELECT attach_community_write_fence('delivery_log');
 SELECT attach_community_write_fence('event_mentions');
 SELECT attach_community_write_fence('events');
 SELECT attach_community_write_fence('git_repo_names');
+SELECT attach_community_write_fence('group_add_settings');
+SELECT attach_community_write_fence('group_invitations');
+SELECT attach_community_write_fence('group_invite_links');
 SELECT attach_community_write_fence('join_policy_acceptances');
 SELECT attach_community_write_fence('media_references');
 SELECT attach_community_write_fence('media_uploads');

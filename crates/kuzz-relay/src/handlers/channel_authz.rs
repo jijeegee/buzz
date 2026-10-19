@@ -193,6 +193,45 @@ pub fn decide_channel_add_policy(
     }
 }
 
+/// The outcome of a third-party add of a person (not an agent) who is not yet
+/// a member of a group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersonAddDecision {
+    /// Add them now.
+    Allow,
+    /// Do not add them: send an invitation they can accept or decline.
+    SendInvitation,
+}
+
+/// Decide a third-party add of a person who is not yet a member of a group
+/// (`stream`/`forum`), after [`decide_put_user`] returned
+/// [`PutUserDecision::CheckAddPolicy`]. Agents keep their own
+/// [`decide_channel_add_policy`] and never reach this.
+///
+/// - `invite_policy` `admins`: only owners/admins may add anyone.
+/// - The target's `add_policy` (`friends` by default) admits the actor when
+///   it is `everyone` or the target lists the actor as a friend
+///   (`actor_is_friend`). Otherwise the add becomes an invitation, which only
+///   an active member may send. Owners/admins get no bypass: stranger
+///   protection applies to everyone.
+pub fn decide_person_add(
+    invite_policy: &str,
+    actor_role: Option<MemberRole>,
+    add_policy: &str,
+    actor_is_friend: bool,
+) -> Result<PersonAddDecision, ChannelAuthzError> {
+    if invite_policy == "admins" && !actor_role.is_some_and(|role| role.is_elevated()) {
+        return Err(ChannelAuthzError::ActorNotAuthorized);
+    }
+    if add_policy == "everyone" || actor_is_friend {
+        return Ok(PersonAddDecision::Allow);
+    }
+    if actor_role.is_none() {
+        return Err(ChannelAuthzError::NotActiveMember);
+    }
+    Ok(PersonAddDecision::SendInvitation)
+}
+
 /// What authority `actor` holds to remove *somebody else* (kind:9001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoveOtherDecision {
@@ -636,6 +675,68 @@ mod tests {
                 classify_remove_other(&members, &pk(*actor)),
                 *expected,
                 "roster {entries:?} actor {actor}"
+            );
+        }
+    }
+
+    #[test]
+    fn person_add_table() {
+        use PersonAddDecision::{Allow, SendInvitation};
+        let owner = Some(MemberRole::Owner);
+        let admin = Some(MemberRole::Admin);
+        let member = Some(MemberRole::Member);
+        type Case = (
+            &'static str,
+            Option<MemberRole>,
+            &'static str,
+            bool,
+            Result<PersonAddDecision, ChannelAuthzError>,
+        );
+        let cases: &[Case] = &[
+            // Friends policy: a friend adds directly, a stranger invites.
+            ("members", member, "friends", true, Ok(Allow)),
+            ("members", member, "friends", false, Ok(SendInvitation)),
+            // Owners and admins get no bypass.
+            ("members", owner, "friends", false, Ok(SendInvitation)),
+            ("members", admin, "friends", false, Ok(SendInvitation)),
+            // Everyone policy: anyone allowed to add may add.
+            ("members", member, "everyone", false, Ok(Allow)),
+            ("members", None, "everyone", false, Ok(Allow)),
+            ("members", None, "friends", true, Ok(Allow)),
+            // A non-member (open group) cannot send an invitation.
+            (
+                "members",
+                None,
+                "friends",
+                false,
+                Err(ChannelAuthzError::NotActiveMember),
+            ),
+            // Unknown add policy fails safe to an invitation.
+            ("members", member, "bogus", false, Ok(SendInvitation)),
+            // Admins-only groups: members are refused before any policy.
+            (
+                "admins",
+                member,
+                "everyone",
+                true,
+                Err(ChannelAuthzError::ActorNotAuthorized),
+            ),
+            (
+                "admins",
+                None,
+                "everyone",
+                true,
+                Err(ChannelAuthzError::ActorNotAuthorized),
+            ),
+            ("admins", admin, "everyone", false, Ok(Allow)),
+            ("admins", owner, "friends", true, Ok(Allow)),
+            ("admins", owner, "friends", false, Ok(SendInvitation)),
+        ];
+        for (invite_policy, actor_role, add_policy, friend, expected) in cases {
+            assert_eq!(
+                &decide_person_add(invite_policy, *actor_role, add_policy, *friend),
+                expected,
+                "invite_policy={invite_policy} actor={actor_role:?} add_policy={add_policy} friend={friend}"
             );
         }
     }

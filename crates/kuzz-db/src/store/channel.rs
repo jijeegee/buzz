@@ -546,9 +546,13 @@ pub async fn update_channel(
         set_parts.push(format!("description = ${param_idx}"));
         param_idx += 1;
     }
-    if updates.visibility.is_some() {
+    if let Some(ref vis) = updates.visibility {
         set_parts.push(format!("visibility = ${param_idx}::channel_visibility"));
         param_idx += 1;
+        // A private group has no public address.
+        if vis == "private" {
+            set_parts.push("handle = NULL".to_string());
+        }
     }
     if let Some(ref ttl) = updates.ttl_seconds {
         // Set ttl_seconds, then reset the deadline from now (or clear both).
