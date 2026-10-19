@@ -416,6 +416,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: Some(deadline),
             nip_fi_gate: gate,

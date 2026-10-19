@@ -1,5 +1,6 @@
 //! NIP-01 client/relay message parsing and formatting.
 
+use kuzz_core::event::StoredEvent;
 use nostr::{Event, Filter};
 use serde_json::Value;
 
@@ -303,6 +304,12 @@ impl ClientMessage {
 /// Helpers for formatting NIP-01 relay-to-client messages as JSON strings.
 pub struct RelayMessage;
 
+/// The trailing object opted-in (`?kuzz_seq=1`) connections get on EVENT and
+/// OK frames. NIP-01 parsers ignore extra trailing elements.
+pub(crate) fn sequence_extra(channel_sequence: i64) -> Value {
+    serde_json::json!({ "channel_sequence": channel_sequence })
+}
+
 impl RelayMessage {
     /// Format an AUTH challenge message.
     pub fn auth_challenge(challenge: &str) -> String {
@@ -326,9 +333,43 @@ impl RelayMessage {
         serde_json::json!(["EOSE", sub_id]).to_string()
     }
 
+    /// Format an EVENT message for a stored event. Connections that opted in
+    /// with `?kuzz_seq=1` get the channel order number as a 4th element when
+    /// it is known; everything else gets the plain NIP-01 frame.
+    pub fn stored_event(sub_id: &str, stored: &StoredEvent, kuzz_seq: bool) -> String {
+        match stored.channel_sequence.filter(|_| kuzz_seq) {
+            Some(sequence) => {
+                let event_json = serde_json::to_value(&stored.event).expect(
+                    "SAFETY: nostr::Event serialization is infallible for well-formed events",
+                );
+                serde_json::json!(["EVENT", sub_id, event_json, sequence_extra(sequence)])
+                    .to_string()
+            }
+            None => Self::event(sub_id, &stored.event),
+        }
+    }
+
     /// Format an OK message acknowledging an EVENT submission.
     pub fn ok(event_id: &str, accepted: bool, message: &str) -> String {
         serde_json::json!(["OK", event_id, accepted, message]).to_string()
+    }
+
+    /// Format an OK message carrying the channel order number as a 4th
+    /// element, for connections that opted in with `?kuzz_seq=1`.
+    pub fn ok_with_sequence(
+        event_id: &str,
+        accepted: bool,
+        message: &str,
+        channel_sequence: i64,
+    ) -> String {
+        serde_json::json!([
+            "OK",
+            event_id,
+            accepted,
+            message,
+            sequence_extra(channel_sequence)
+        ])
+        .to_string()
     }
 
     /// Format a CLOSED message indicating a subscription was terminated by the relay.
@@ -344,6 +385,84 @@ impl RelayMessage {
 
 #[cfg(test)]
 mod tests {
+    use super::RelayMessage;
+    use kuzz_core::event::StoredEvent;
+    use nostr::JsonUtil as _;
+
+    fn signed_event() -> nostr::Event {
+        nostr::EventBuilder::text_note("hi")
+            .sign_with_keys(&nostr::Keys::generate())
+            .expect("sign")
+    }
+
+    #[test]
+    fn legacy_event_and_ok_frames_are_unchanged() {
+        let event = signed_event();
+        // `RelayMessage::event` serializes through `Value` (sorted keys).
+        let event_json = serde_json::to_value(&event).unwrap().to_string();
+        let mut stored = StoredEvent::new(event.clone(), Some(uuid::Uuid::new_v4()));
+        stored.channel_sequence = Some(7);
+        let legacy = format!(r#"["EVENT","s",{event_json}]"#);
+        // Not opted in: byte-identical to the plain frame even with a sequence.
+        assert_eq!(RelayMessage::stored_event("s", &stored, false), legacy);
+        assert_eq!(RelayMessage::event("s", &event), legacy);
+        assert_eq!(
+            RelayMessage::ok("ab", true, "duplicate: already have this event"),
+            r#"["OK","ab",true,"duplicate: already have this event"]"#
+        );
+        // Opted in but no known sequence: still the plain frame.
+        stored.channel_sequence = None;
+        assert_eq!(RelayMessage::stored_event("s", &stored, true), legacy);
+    }
+
+    #[test]
+    fn opted_in_frames_carry_the_sequence_as_a_fourth_element() {
+        let event = signed_event();
+        // `RelayMessage::event` serializes through `Value` (sorted keys).
+        let event_json = serde_json::to_value(&event).unwrap().to_string();
+        let mut stored = StoredEvent::new(event, Some(uuid::Uuid::new_v4()));
+        stored.channel_sequence = Some(42);
+        assert_eq!(
+            RelayMessage::stored_event("s", &stored, true),
+            format!(r#"["EVENT","s",{event_json},{{"channel_sequence":42}}]"#)
+        );
+        assert_eq!(
+            RelayMessage::ok_with_sequence("ab", true, "", 42),
+            r#"["OK","ab",true,"",{"channel_sequence":42}]"#
+        );
+    }
+
+    /// kuzz-acp and other Rust clients parse with the `nostr` crate; its
+    /// RelayMessage parser must tolerate the trailing object.
+    #[test]
+    fn nostr_crate_parses_frames_with_a_fourth_element() {
+        let event = signed_event();
+        let mut stored = StoredEvent::new(event.clone(), Some(uuid::Uuid::new_v4()));
+        stored.channel_sequence = Some(9);
+        match nostr::RelayMessage::from_json(RelayMessage::stored_event("s", &stored, true))
+            .expect("4-element EVENT parses")
+        {
+            nostr::RelayMessage::Event {
+                subscription_id,
+                event: parsed,
+            } => {
+                assert_eq!(subscription_id.as_str(), "s");
+                assert_eq!(parsed.id, event.id);
+            }
+            other => panic!("expected EVENT, got {other:?}"),
+        }
+        let ok = RelayMessage::ok_with_sequence(&event.id.to_hex(), true, "", 9);
+        match nostr::RelayMessage::from_json(ok).expect("5-element OK parses") {
+            nostr::RelayMessage::Ok {
+                event_id, status, ..
+            } => {
+                assert_eq!(event_id, event.id);
+                assert!(status);
+            }
+            other => panic!("expected OK, got {other:?}"),
+        }
+    }
+
     #[test]
     fn non_artifact_extensions_keep_existing_ws_behavior() {
         for command in ["REQ", "COUNT"] {

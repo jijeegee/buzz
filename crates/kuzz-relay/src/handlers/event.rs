@@ -59,23 +59,43 @@ fn event_frame_bytes_for_sub(sub_id: &str, event_json: &str) -> Arc<Bytes> {
     Arc::new(Bytes::from(event_frame_for_sub(sub_id, event_json)))
 }
 
-fn fanout_frame_cache<'a, I>(sub_ids: I, event_json: &str) -> HashMap<&'a str, Arc<Bytes>>
+/// `["EVENT",sub,event,{"channel_sequence":N}]` for `?kuzz_seq=1` connections.
+fn seq_event_frame_for_sub(sub_id: &str, event_json: &str, channel_sequence: i64) -> String {
+    format!(
+        r#"["EVENT","{}",{},{{"channel_sequence":{}}}]"#,
+        sub_id, event_json, channel_sequence
+    )
+}
+
+/// One subscription's frames for one fan-out cycle. The sequence variant is
+/// built only when an opted-in connection receives it.
+struct FanoutFrame {
+    plain: Arc<Bytes>,
+    seq: std::sync::OnceLock<Arc<Bytes>>,
+}
+
+fn fanout_frame_cache<'a, I>(sub_ids: I, event_json: &str) -> HashMap<&'a str, FanoutFrame>
 where
     I: IntoIterator<Item = &'a str>,
 {
     let mut frames = HashMap::new();
     for sub_id in sub_ids {
-        frames
-            .entry(sub_id)
-            .or_insert_with(|| event_frame_bytes_for_sub(sub_id, event_json));
+        frames.entry(sub_id).or_insert_with(|| FanoutFrame {
+            plain: event_frame_bytes_for_sub(sub_id, event_json),
+            seq: std::sync::OnceLock::new(),
+        });
     }
     frames
 }
 
+/// Send each recipient its cached frame. With a known `channel_sequence`,
+/// connections that opted in with `?kuzz_seq=1` get the 4-element frame.
 fn send_fanout_frames<'a, I>(
     state: &AppState,
     recipients: I,
-    frames: &HashMap<&'a str, Arc<Bytes>>,
+    frames: &HashMap<&'a str, FanoutFrame>,
+    event_json: &str,
+    channel_sequence: Option<i64>,
 ) -> u32
 where
     I: IntoIterator<Item = (crate::subscription::ConnId, &'a str)>,
@@ -85,10 +105,22 @@ where
         let frame = frames
             .get(sub_id)
             .expect("fan-out frame cache covers every recipient subscription id");
-        if !state
-            .conn_manager
-            .send_to_text_bytes(conn_id, Arc::clone(frame))
-        {
+        let seq_frame = channel_sequence.map(|sequence| {
+            move || {
+                Arc::clone(frame.seq.get_or_init(|| {
+                    Arc::new(Bytes::from(seq_event_frame_for_sub(
+                        sub_id, event_json, sequence,
+                    )))
+                }))
+            }
+        });
+        if !state.conn_manager.send_fanout_text_bytes(
+            conn_id,
+            &frame.plain,
+            seq_frame
+                .as_ref()
+                .map(|build| build as &dyn Fn() -> Arc<Bytes>),
+        ) {
             drop_count += 1;
         }
     }
@@ -411,6 +443,8 @@ pub(crate) async fn fan_out_event_to_local_subscribers(
             .iter()
             .map(|(conn_id, sub_id)| (*conn_id, sub_id.as_str())),
         &frames,
+        &event_json,
+        stored.channel_sequence,
     );
     if drop_count > 0 {
         tracing::warn!(
@@ -472,6 +506,8 @@ pub async fn fan_out_pubsub_event(state: &Arc<AppState>, channel_event: kuzz_pub
             .iter()
             .map(|(conn_id, sub_id)| (*conn_id, sub_id.as_str())),
         &frames,
+        &event_json,
+        stored.channel_sequence,
     );
     if drop_count > 0 {
         tracing::warn!(
@@ -623,7 +659,13 @@ async fn dispatch_persistent_event_inner(
         .map(|(target_conn_id, sub_id)| (*target_conn_id, sub_id.as_str()))
         .collect();
     let frames = fanout_frame_cache(recipients.iter().map(|(_, sub_id)| *sub_id), &event_json);
-    let drop_count = send_fanout_frames(state, recipients, &frames);
+    let drop_count = send_fanout_frames(
+        state,
+        recipients,
+        &frames,
+        &event_json,
+        stored_event.channel_sequence,
+    );
     if drop_count > 0 {
         tracing::warn!(
             event_id = %event_id_hex,
@@ -1023,11 +1065,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
             }
             metrics::histogram!("kuzz_event_processing_seconds")
                 .record(start.elapsed().as_secs_f64());
-            conn.send(RelayMessage::ok(
-                &result.event_id,
-                result.accepted,
-                &result.message,
-            ));
+            conn.send(ingest_ok_frame(conn.kuzz_seq, &result));
         }
         Err(e) => {
             // Sanitize internal errors — don't leak DB/system details over WS.
@@ -1040,6 +1078,20 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
             reject(reason);
             conn.send(RelayMessage::ok(&event_id_hex, false, &msg));
         }
+    }
+}
+
+/// OK for a persistent ingest result. Opted-in (`?kuzz_seq=1`) connections
+/// also get the channel order number, including for `duplicate:` retries.
+fn ingest_ok_frame(kuzz_seq: bool, result: &super::ingest::IngestResult) -> String {
+    match result.channel_sequence.filter(|_| kuzz_seq) {
+        Some(sequence) => RelayMessage::ok_with_sequence(
+            &result.event_id,
+            result.accepted,
+            &result.message,
+            sequence,
+        ),
+        None => RelayMessage::ok(&result.event_id, result.accepted, &result.message),
     }
 }
 
@@ -1510,17 +1562,48 @@ mod tests {
 
         assert_eq!(frames.len(), 2, "duplicate sub ids share one cached frame");
         assert_eq!(
-            frames.get("same").expect("same frame").as_ref().as_ref(),
+            frames
+                .get("same")
+                .expect("same frame")
+                .plain
+                .as_ref()
+                .as_ref(),
             format!(r#"["EVENT","same",{}]"#, event_json).as_bytes()
         );
 
         let next_cycle = super::fanout_frame_cache(["same"], event_json);
         assert!(
             !Arc::ptr_eq(
-                frames.get("same").expect("same frame"),
-                next_cycle.get("same").expect("same frame in next cycle")
+                &frames.get("same").expect("same frame").plain,
+                &next_cycle
+                    .get("same")
+                    .expect("same frame in next cycle")
+                    .plain
             ),
             "fan-out frame sharing must not escape a single cycle"
+        );
+    }
+
+    #[test]
+    fn ingest_ok_frame_adds_sequence_only_when_opted_in() {
+        let result = |message: &str, channel_sequence| super::super::ingest::IngestResult {
+            event_id: "ab".to_string(),
+            accepted: true,
+            message: message.to_string(),
+            channel_sequence,
+        };
+        let duplicate = result("duplicate: already have this event", Some(3));
+        assert_eq!(
+            super::ingest_ok_frame(false, &duplicate),
+            r#"["OK","ab",true,"duplicate: already have this event"]"#
+        );
+        assert_eq!(
+            super::ingest_ok_frame(true, &duplicate),
+            r#"["OK","ab",true,"duplicate: already have this event",{"channel_sequence":3}]"#
+        );
+        assert_eq!(
+            super::ingest_ok_frame(true, &result("", None)),
+            r#"["OK","ab",true,""]"#
         );
     }
 
@@ -1719,6 +1802,7 @@ mod tests {
             cancel: CancellationToken::new(),
             backpressure_count: Arc::new(AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: None,
             nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
@@ -1811,6 +1895,7 @@ mod tests {
                 cancel: CancellationToken::new(),
                 backpressure_count: Arc::new(AtomicU8::new(0)),
                 grace_limit: 3,
+                kuzz_seq: false,
                 nip_fi_assertion: None,
                 session_deadline: None,
                 nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
@@ -1973,6 +2058,7 @@ mod tests {
                 cancel: CancellationToken::new(),
                 backpressure_count: Arc::new(AtomicU8::new(0)),
                 grace_limit: 3,
+                kuzz_seq: false,
                 nip_fi_assertion: None,
                 session_deadline: None,
                 nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
@@ -2149,6 +2235,7 @@ mod tests {
                 cancel: CancellationToken::new(),
                 backpressure_count: Arc::new(AtomicU8::new(0)),
                 grace_limit: 3,
+                kuzz_seq: false,
                 nip_fi_assertion: None,
                 session_deadline: None,
                 nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
@@ -2511,6 +2598,73 @@ mod tests {
             let delivered = event_from_ws_message(rx.try_recv().expect("presence delivered"));
             assert_eq!(delivered.id, event_id);
             assert!(rx.try_recv().is_err(), "presence is delivered once");
+        }
+
+        fn text_frame(msg: Message) -> String {
+            let Message::Text(text) = msg else {
+                panic!("expected text ws message");
+            };
+            text.to_string()
+        }
+
+        /// Redis and same-pod fan-out: only `?kuzz_seq=1` connections get the
+        /// 4-element frame, and only for events with a known sequence; legacy
+        /// connections keep byte-identical frames.
+        #[tokio::test]
+        async fn fanout_adds_sequence_only_for_opted_in_connections() {
+            let state = test_state().await;
+            let community = kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil());
+            let tenant = kuzz_core::tenant::TenantContext::resolved(community, "seq.test");
+            let (_, mut legacy) = register_presence_sub(&state, "presence");
+            let (opted_id, mut opted) = register_presence_sub(&state, "presence");
+            state.conn_manager.set_kuzz_seq(opted_id);
+
+            let expect_frames = |event: &nostr::Event, sequence: Option<i64>| {
+                let json = serde_json::to_string(event).unwrap();
+                let plain = format!(r#"["EVENT","presence",{json}]"#);
+                let seq = match sequence {
+                    Some(n) => format!(r#"["EVENT","presence",{json},{{"channel_sequence":{n}}}]"#),
+                    None => plain.clone(),
+                };
+                (plain, seq)
+            };
+
+            for sequence in [Some(5), None] {
+                let event = presence_event("online");
+                let (plain, seq) = expect_frames(&event, sequence);
+                fan_out_pubsub_event(
+                    &state,
+                    ChannelEvent {
+                        community_id: community,
+                        topic: EventTopic::Global,
+                        event,
+                        channel_sequence: sequence,
+                    },
+                )
+                .await;
+                assert_eq!(text_frame(legacy.try_recv().expect("legacy")), plain);
+                assert_eq!(text_frame(opted.try_recv().expect("opted")), seq);
+
+                let event = presence_event("away");
+                let (plain, seq) = expect_frames(&event, sequence);
+                let mut stored = kuzz_core::StoredEvent::new(event, None);
+                stored.channel_sequence = sequence;
+                let author = stored.event.pubkey.to_hex();
+                super::super::dispatch_persistent_event_inner(
+                    &tenant,
+                    &state,
+                    &stored,
+                    KIND_PRESENCE_UPDATE,
+                    &author,
+                    false,
+                    None,
+                )
+                .await;
+                assert_eq!(text_frame(legacy.try_recv().expect("legacy")), plain);
+                assert_eq!(text_frame(opted.try_recv().expect("opted")), seq);
+            }
+            assert!(legacy.try_recv().is_err());
+            assert!(opted.try_recv().is_err());
         }
 
         #[tokio::test]
@@ -3684,6 +3838,7 @@ mod tests {
                 cancel: cancel.clone(),
                 backpressure_count: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
                 grace_limit: 3,
+                kuzz_seq: false,
                 nip_fi_assertion: None,
                 session_deadline: Some(deadline),
                 nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::new(deadline, cancel),
@@ -3862,6 +4017,7 @@ mod tests {
                 cancel: cancel.clone(),
                 backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
                 grace_limit: 3,
+                kuzz_seq: false,
                 nip_fi_assertion: None,
                 session_deadline: Some(deadline),
                 nip_fi_gate: gate,
@@ -4058,6 +4214,7 @@ mod tests {
                 cancel: cancel.clone(),
                 backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
                 grace_limit: 3,
+                kuzz_seq: false,
                 nip_fi_assertion: None,
                 session_deadline: Some(deadline),
                 nip_fi_gate: gate,

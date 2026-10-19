@@ -235,6 +235,9 @@ impl RelayInfo {
             "nip-ar".to_string(),
             // Channel and thread windows page toward newer rows (`since` + `after_id`).
             "nip-cw-newer".to_string(),
+            // `?kuzz_seq=1` WebSocket opt-in: EVENT/OK frames for channel
+            // events carry a trailing `{"channel_sequence":N}`.
+            "kuzz-seq".to_string(),
         ];
         let gif = gif_provider.map(|provider| {
             supported_extensions.push("kuzz-gif".to_string());
@@ -574,6 +577,24 @@ mod tests {
             None,
         );
         assert_eq!(info.software, "https://github.com/block/buzz");
+    }
+
+    #[test]
+    fn build_advertises_kuzz_seq_extension() {
+        let info = RelayInfo::build(
+            None,
+            None,
+            RelayCapabilityFlags::default(),
+            DEFAULT_MAX_FRAME_BYTES,
+            None,
+            None,
+            None,
+        );
+        let json = serde_json::to_value(&info).expect("serialize");
+        assert!(json["supported_extensions"]
+            .as_array()
+            .expect("extensions")
+            .contains(&serde_json::json!("kuzz-seq")));
     }
 
     #[test]

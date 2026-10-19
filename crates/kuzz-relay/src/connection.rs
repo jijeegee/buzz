@@ -112,6 +112,10 @@ pub struct ConnectionState {
     pub backpressure_count: Arc<AtomicU8>,
     /// Configurable slow-client grace limit (from `Config::slow_client_grace_limit`).
     pub grace_limit: u8,
+    /// Opted in with `?kuzz_seq=1` on the WebSocket URL: EVENT and OK frames
+    /// for channel events carry `{"channel_sequence":N}` as a trailing element.
+    /// Fixed at upgrade; mirrored into the connection manager for fan-out.
+    pub kuzz_seq: bool,
     /// Lifecycle control shared with the community registry; the auth
     /// handler's post-registration deny check routes its denial through it.
     /// [FI-TRACE-DENY-SET]
@@ -377,6 +381,12 @@ pub(crate) fn compute_session_deadline(
     }
 }
 
+/// True when the WebSocket URL query opts in to channel order numbers
+/// (`kuzz_seq=1`). Any other value, or its absence, keeps legacy frames.
+pub(crate) fn kuzz_seq_requested(query: Option<&str>) -> bool {
+    query.is_some_and(|q| q.split('&').any(|pair| pair == "kuzz_seq=1"))
+}
+
 /// Acquires a connection semaphore permit, sends the NIP-42 AUTH challenge,
 /// then drives the send, heartbeat, and receive loops until the connection closes.
 pub async fn handle_connection(
@@ -386,6 +396,7 @@ pub async fn handle_connection(
     tenant: TenantContext,
     nip_fi_assertion: Option<kuzz_auth::VerifiedAssertion>,
     connection_time: chrono::DateTime<chrono::Utc>,
+    kuzz_seq: bool,
 ) {
     let conn_id = Uuid::new_v4();
     let cancel = CancellationToken::new();
@@ -467,6 +478,7 @@ pub async fn handle_connection(
                 control,
                 nip_fi_assertion,
                 connection_time,
+                kuzz_seq,
                 Some((
                     pre_gate,
                     pre_terminal_ctrl_tx,
@@ -531,6 +543,7 @@ async fn handle_active_connection(
     control: CommunityConnectionControl,
     nip_fi_assertion: Option<kuzz_auth::VerifiedAssertion>,
     connection_time: chrono::DateTime<chrono::Utc>,
+    kuzz_seq: bool,
     // Fix 3: pre-built gate/expiry/channels from `handle_connection`, armed
     // BEFORE the `is_community_active` bootstrap await. `None` is not currently
     // produced by any caller but retained for future test extensibility.
@@ -634,6 +647,7 @@ async fn handle_active_connection(
         cancel: cancel.clone(),
         backpressure_count: Arc::clone(&backpressure_count),
         grace_limit: state.config.slow_client_grace_limit,
+        kuzz_seq,
         nip_fi_assertion,
         session_deadline,
         nip_fi_gate: nip_fi_gate.clone(),
@@ -677,6 +691,10 @@ async fn handle_active_connection(
         state.config.slow_client_grace_limit,
         control.clone(),
     );
+    // Before any frame is read, so no subscription can see a legacy frame.
+    if kuzz_seq {
+        state.conn_manager.set_kuzz_seq(conn_id);
+    }
 
     let (ws_send, ws_recv) = socket.split();
 
@@ -1372,6 +1390,19 @@ pub(crate) mod tests {
     use tokio::sync::Notify;
     use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+    #[test]
+    fn kuzz_seq_opt_in_needs_exactly_kuzz_seq_1() {
+        for query in [None, Some(""), Some("foo=bar"), Some("kuzz_seq=0")] {
+            assert!(!kuzz_seq_requested(query), "{query:?}");
+        }
+        for query in [Some("kuzz_seq=true"), Some("kuzz_seq"), Some("xkuzz_seq=1")] {
+            assert!(!kuzz_seq_requested(query), "{query:?}");
+        }
+        for query in ["kuzz_seq=1", "foo=bar&kuzz_seq=1", "kuzz_seq=1&unknown=x"] {
+            assert!(kuzz_seq_requested(Some(query)), "{query}");
+        }
+    }
+
     /// A test connection together with the receiving end of each outbound queue.
     pub(crate) struct TestConn {
         /// The connection under test.
@@ -1414,6 +1445,7 @@ pub(crate) mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion,
             session_deadline: None,
             nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),
@@ -1833,6 +1865,7 @@ pub(crate) mod tests {
                             control,
                             None,
                             chrono::Utc::now(),
+                            false,
                             None,
                         )
                         .await;
@@ -2825,6 +2858,7 @@ pub(crate) mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: None,
             nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),
@@ -3091,6 +3125,7 @@ pub(crate) mod tests {
                                     control,
                                     Some(assertion_i),
                                     conn_time,
+                                    false,
                                     Some((pre_gate, pre_tx, pre_rx, Some(pre_expiry))),
                                 )
                                 .await
@@ -3215,6 +3250,7 @@ pub(crate) mod tests {
                                     tenant_i,
                                     Some(assertion_i),
                                     conn_time,
+                                    false,
                                 )
                                 .await
                             })

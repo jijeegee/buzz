@@ -705,7 +705,7 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
         });
         b.push(
             "SELECT e.id, e.pubkey, e.created_at, e.kind, e.tags, e.content, \
-             e.sig, e.received_at, e.channel_id \
+             e.sig, e.received_at, e.channel_id, e.channel_sequence \
              FROM events e \
              INNER JOIN event_mentions m \
                 ON e.community_id = m.community_id AND e.id = m.event_id \
@@ -724,8 +724,8 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
             ""
         });
         b.push(
-            "SELECT id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id \
-             FROM events WHERE community_id = ",
+            "SELECT id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id, \
+             channel_sequence FROM events WHERE community_id = ",
         );
         b.push_bind(q.community_id.as_uuid());
         b.push(" AND deleted_at IS NULL");
@@ -997,6 +997,13 @@ pub(crate) fn row_to_stored_event(row: sqlx::postgres::PgRow) -> Result<Option<S
     let received_at: DateTime<Utc> = row.try_get("received_at")?;
 
     let channel_id: Option<Uuid> = row.try_get("channel_id")?;
+    // Only `query_events` selects the order number; other readers share this
+    // decoder without it.
+    let channel_sequence = match row.try_get::<i64, _>("channel_sequence") {
+        Ok(sequence) => known_channel_sequence(sequence),
+        Err(sqlx::Error::ColumnNotFound(_)) => None,
+        Err(e) => return Err(e.into()),
+    };
 
     // kind is stored as i32 (Postgres INT) but Nostr uses u16. Values > 65535 are corrupt.
     let kind_u16 = u16::try_from(kind_i32)
@@ -1021,12 +1028,9 @@ pub(crate) fn row_to_stored_event(row: sqlx::postgres::PgRow) -> Result<Option<S
         }
     };
 
-    Ok(Some(StoredEvent::with_received_at(
-        event,
-        received_at,
-        channel_id,
-        true,
-    )))
+    let mut stored = StoredEvent::with_received_at(event, received_at, channel_id, true);
+    stored.channel_sequence = channel_sequence;
+    Ok(Some(stored))
 }
 
 /// Count events matching the given query parameters (NIP-45 COUNT support).
