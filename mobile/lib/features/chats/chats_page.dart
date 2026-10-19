@@ -20,6 +20,7 @@ import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_view_switch.dart';
 import '../channels/channel.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';
@@ -438,8 +439,21 @@ class ChatsPage extends HookConsumerWidget {
           ),
           child: SizedBox(
             height: switchHeight,
-            child: _ViewModeSwitch(
-              mode: mode,
+            child: KuzzViewSwitch<ChatsViewMode>(
+              semanticsLabel: 'Chats view',
+              options: const [
+                KuzzViewOption(
+                  value: ChatsViewMode.all,
+                  label: 'All chats',
+                  key: ValueKey('chats-view-all'),
+                ),
+                KuzzViewOption(
+                  value: ChatsViewMode.byChannel,
+                  label: 'By channel',
+                  key: ValueKey('chats-view-byChannel'),
+                ),
+              ],
+              selected: mode,
               onChanged: (next) =>
                   ref.read(chatsViewModeProvider.notifier).set(next),
             ),
