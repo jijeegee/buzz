@@ -8,6 +8,9 @@
 library;
 
 import '../relay/relay_validation.dart';
+import 'group_links.dart';
+
+export 'group_links.dart';
 
 /// A parsed deep link supported by the app.
 sealed class KuzzDeepLink {
@@ -48,6 +51,24 @@ class InviteDeepLink extends KuzzDeepLink {
   @override
   String toString() =>
       'InviteDeepLink(relay: $relayUrl, code: $code, policyReceipt: $policyReceipt)';
+}
+
+/// A parsed group join link: `kuzz://join/<code>` or `kuzz://join/@<handle>`.
+class GroupJoinDeepLink extends KuzzDeepLink {
+  /// The invite code or public address the link points to.
+  final GroupLinkTarget target;
+
+  const GroupJoinDeepLink(this.target);
+
+  @override
+  bool operator ==(Object other) =>
+      other is GroupJoinDeepLink && other.target == target;
+
+  @override
+  int get hashCode => target.hashCode;
+
+  @override
+  String toString() => 'GroupJoinDeepLink($target)';
 }
 
 /// A parsed channel-only deep link.
@@ -292,9 +313,17 @@ InviteDeepLink? parseInviteDeepLink(Uri uri) {
 
 /// Parse any supported Kuzz deep link.
 KuzzDeepLink? parseKuzzDeepLink(Uri uri) =>
+    _parseGroupJoin(uri) ??
     parseInviteDeepLink(uri) ??
     parseChannelDeepLink(uri) ??
     parseMessageDeepLink(uri);
+
+GroupJoinDeepLink? _parseGroupJoin(Uri uri) => switch (parseGroupJoinDeepLink(
+  uri,
+)) {
+  final target? => GroupJoinDeepLink(target),
+  null => null,
+};
 
 /// A validated Kuzz repository, pull request, or issue permalink.
 class EntityDeepLink extends KuzzDeepLink {

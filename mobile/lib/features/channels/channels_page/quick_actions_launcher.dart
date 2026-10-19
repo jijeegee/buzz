@@ -95,6 +95,8 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
           }
         case _QuickAction.browseChannels:
           await showBrowseChannelsSheet(context);
+        case _QuickAction.joinWithLink:
+          await showJoinWithLinkSheet(context);
       }
     }
 
