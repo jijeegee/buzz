@@ -251,7 +251,7 @@ export function ChatList({
       sortChatList(props.items.filter(isListedChat), props.starredChannelIds),
     [props.items, props.starredChannelIds],
   );
-  // "+ 5 more" clicks per channel, for this session only.
+  // "+ 10 more" clicks per channel, for this session only.
   const [expandedSteps, setExpandedSteps] = useState<
     ReadonlyMap<string, number>
   >(() => new Map());

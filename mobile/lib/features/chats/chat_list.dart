@@ -16,10 +16,10 @@ const chatListBackgroundRows = 400;
 const chatUnreadCap = 99;
 
 /// Threads shown under their channel in By channel before "+ N more".
-const byChannelVisibleThreads = 2;
+const byChannelVisibleThreads = 3;
 
-/// Threads each "+ 5 more" tap reveals under a channel.
-const byChannelThreadStep = 5;
+/// Threads each "+ 10 more" tap reveals under a channel.
+const byChannelThreadStep = 10;
 
 /// Message kinds the relay counts (kuzz-db `MESSAGE_KINDS`).
 const _messageKinds = {9, 40002, 45001, 45003};
@@ -636,7 +636,7 @@ final class ChatGroupThread extends ChatGroupEntry {
   final ChatListRow row;
 }
 
-/// "+ N more threads", "+ 5 more · N left" and "Show less" under a channel.
+/// "+ N more threads", "+ 10 more · N left" and "Show less" under a channel.
 final class ChatGroupMore extends ChatGroupEntry {
   const ChatGroupMore({
     required this.channelId,
@@ -661,7 +661,7 @@ final class ChatGroupMore extends ChatGroupEntry {
 /// newest row, followed by its threads newest first (pinned threads first and
 /// always shown). [byChannelVisibleThreads] threads show, plus
 /// [byChannelThreadStep] more per step in [expandedSteps] (channel id to
-/// "+ 5 more" taps). [unreadOf] gives a row's shown unread count.
+/// "+ 10 more" taps). [unreadOf] gives a row's shown unread count.
 List<ChatGroupEntry> groupChatRowsByChannel(
   List<ChatListRow> ordered, {
   required Map<String, int> expandedSteps,

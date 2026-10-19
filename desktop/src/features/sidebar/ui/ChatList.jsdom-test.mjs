@@ -449,15 +449,15 @@ test("By channel groups threads under their channel and expands in place", async
   }
 });
 
-test("By channel reveals 5 more threads per click, then Show less returns to 3", async () => {
+test("By channel reveals 10 more threads per click, then Show less returns to 3", async () => {
   const client = new QueryClient({
     defaultOptions: {
       queries: { enabled: false, retry: false, gcTime: Infinity },
     },
   });
   client.setQueryData(["identity"], { pubkey: "owner" });
-  // 18 threads; only the oldest one has unread (3) and a mention.
-  const roots = Array.from({ length: 18 }, (_, index) =>
+  // 28 threads; only the oldest one has unread (3) and a mention.
+  const roots = Array.from({ length: 28 }, (_, index) =>
     index.toString(16).padStart(64, "0"),
   );
   const rows = [
@@ -469,8 +469,8 @@ test("By channel reveals 5 more threads per click, then Show less returns to 3",
         root_id: root,
         thread_name: `T${index + 1}`,
         at: 800 - index * 10,
-        unread: index === 17 ? 3 : 0,
-        unread_mentions: index === 17 ? 1 : 0,
+        unread: index === 27 ? 3 : 0,
+        unread_mentions: index === 27 ? 1 : 0,
       }),
     ),
   ];
@@ -511,30 +511,30 @@ test("By channel reveals 5 more threads per click, then Show less returns to 3",
     assert.equal(threads(view), 3);
     assert.equal(
       more(view).textContent,
-      "+ 15 more threads@ 1 unread mention3 unread messages",
+      "+ 25 more threads@ 1 unread mention3 unread messages",
     );
     assert.equal(less(view), null);
     fireEvent.click(more(view));
-    assert.equal(threads(view), 8);
+    assert.equal(threads(view), 13);
     assert.equal(
       more(view).textContent,
-      "+ 5 more · 10 left@ 1 unread mention3 unread messages",
+      "+ 10 more · 15 left@ 1 unread mention3 unread messages",
     );
     assert.equal(less(view).textContent, "Show less");
     fireEvent.click(more(view));
-    assert.equal(threads(view), 13);
+    assert.equal(threads(view), 23);
     assert.equal(
       more(view).textContent,
       "+ 5 more@ 1 unread mention3 unread messages",
     );
     fireEvent.click(more(view));
-    assert.equal(threads(view), 18);
+    assert.equal(threads(view), 28);
     assert.equal(more(view), null);
     assert.equal(less(view).textContent, "Show less");
     fireEvent.click(less(view));
     assert.equal(threads(view), 3);
     assert.equal(less(view), null);
-    assert.match(more(view).textContent, /^\+ 15 more threads/);
+    assert.match(more(view).textContent, /^\+ 25 more threads/);
   } finally {
     cleanup();
     client.clear();

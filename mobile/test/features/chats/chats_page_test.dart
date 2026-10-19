@@ -95,7 +95,7 @@ void main() {
     expect(dmTop, lessThan(threadTop));
   });
 
-  testWidgets('By channel folds threads past two and expands in place', (
+  testWidgets('By channel folds threads past three and expands in place', (
     tester,
   ) async {
     await pumpChats(tester);
@@ -105,30 +105,30 @@ void main() {
 
     expect(find.text('Thread 1'), findsOneWidget);
     expect(find.text('Thread 2'), findsOneWidget);
-    expect(find.text('Thread 3'), findsNothing);
+    expect(find.text('Thread 3'), findsOneWidget);
+    expect(find.text('Thread 4'), findsNothing);
     final more = find.byKey(const ValueKey('chat-more-$_channel'));
     expect(more, findsOneWidget);
 
     await tester.tap(more);
     await tester.pumpAndSettle();
 
-    expect(find.text('Thread 3'), findsOneWidget);
     expect(find.text('Thread 4'), findsOneWidget);
     expect(find.text('Show less'), findsOneWidget);
     expect(find.textContaining('more'), findsNothing);
   });
 
-  testWidgets('By channel shows 5 more threads per tap, then Show less', (
+  testWidgets('By channel shows 10 more threads per tap, then Show less', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 4000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    // 17 threads: 2 shown, 15 hidden; the oldest has 3 unread.
+    // 28 threads: 3 shown, 25 hidden; the oldest has 3 unread.
     await pumpChats(
       tester,
       chatRows: [
-        for (var i = 1; i <= 17; i++) _thread(i, unread: i == 17 ? 3 : 0),
+        for (var i = 1; i <= 28; i++) _thread(i, unread: i == 28 ? 3 : 0),
       ],
     );
     await tester.tap(find.byKey(const ValueKey('chats-view-byChannel')));
@@ -138,15 +138,15 @@ void main() {
     int threads() =>
         find.textContaining(RegExp(r'^Thread \d+$')).evaluate().length;
 
-    expect(threads(), 2);
-    expect(find.text('+ 15 more threads'), findsOneWidget);
+    expect(threads(), 3);
+    expect(find.text('+ 25 more threads'), findsOneWidget);
     expect(find.descendant(of: show, matching: find.text('3')), findsOneWidget);
     expect(less, findsNothing);
 
     await tester.tap(show);
     await tester.pumpAndSettle();
-    expect(threads(), 7);
-    expect(find.text('+ 5 more · 10 left'), findsOneWidget);
+    expect(threads(), 13);
+    expect(find.text('+ 10 more · 15 left'), findsOneWidget);
     expect(find.descendant(of: show, matching: find.text('3')), findsOneWidget);
     expect(
       find.descendant(of: less, matching: find.text('Show less')),
@@ -155,19 +155,19 @@ void main() {
 
     await tester.tap(show);
     await tester.pumpAndSettle();
-    expect(threads(), 12);
+    expect(threads(), 23);
     expect(find.text('+ 5 more'), findsOneWidget);
 
     await tester.tap(show);
     await tester.pumpAndSettle();
-    expect(threads(), 17);
+    expect(threads(), 28);
     expect(show, findsNothing);
     expect(find.text('Show less'), findsOneWidget);
 
     await tester.tap(less);
     await tester.pumpAndSettle();
-    expect(threads(), 2);
-    expect(find.text('+ 15 more threads'), findsOneWidget);
+    expect(threads(), 3);
+    expect(find.text('+ 25 more threads'), findsOneWidget);
   });
 
   testWidgets('a chat that is not loaded yet says so instead of opening', (

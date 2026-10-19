@@ -3,8 +3,8 @@ import type { ChatListRow, ChatRowUnread } from "./chatListState";
 /** Live threads shown under a channel before "+ N more threads". */
 export const BY_CHANNEL_VISIBLE_THREADS = 3;
 
-/** Threads each "+ 5 more" click reveals under a channel. */
-export const BY_CHANNEL_THREAD_STEP = 5;
+/** Threads each "+ 10 more" click reveals under a channel. */
+export const BY_CHANNEL_THREAD_STEP = 10;
 
 export type ChatsViewMode = "all" | "by-channel";
 
@@ -81,7 +81,7 @@ export function groupChatRowsByChannel(
     unreadOf,
     visibleThreads = BY_CHANNEL_VISIBLE_THREADS,
   }: {
-    /** Channel id to "+ 5 more" clicks so far, for this session. */
+    /** Channel id to "+ 10 more" clicks so far, for this session. */
     expandedSteps: ReadonlyMap<string, number>;
     isPinnedRoom: (channelId: string) => boolean;
     isPinnedThread: (rootId: string) => boolean;

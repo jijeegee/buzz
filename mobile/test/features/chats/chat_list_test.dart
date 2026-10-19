@@ -146,9 +146,9 @@ void main() {
       ]);
     });
 
-    test('By channel shows two threads and folds the rest', () {
+    test('By channel shows three threads and folds the rest', () {
       final threads = [
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < 5; i++)
           _thread(_channel, '$i' * 64, 40 - i, unread: i),
       ];
       final ordered = orderChatRows([...threads, _room(_other, 50)], {});
@@ -157,16 +157,17 @@ void main() {
         expandedSteps: {},
         unreadOf: (row) => row.unread,
       );
-      expect(folded, hasLength(5));
+      expect(folded, hasLength(6));
       expect((folded[0] as ChatGroupRoom).channelId, _other);
       final header = folded[1] as ChatGroupRoom;
       expect(header.channelId, _channel);
       expect(header.row, isNull);
       expect((folded[2] as ChatGroupThread).row.key, '0' * 64);
       expect((folded[3] as ChatGroupThread).row.key, '1' * 64);
-      final more = folded[4] as ChatGroupMore;
+      expect((folded[4] as ChatGroupThread).row.key, '2' * 64);
+      final more = folded[5] as ChatGroupMore;
       expect(more.hidden, 2);
-      expect(more.hiddenUnread, 2 + 3);
+      expect(more.hiddenUnread, 3 + 4);
       expect(more.expanded, isFalse);
 
       final expanded = groupChatRowsByChannel(
@@ -174,22 +175,22 @@ void main() {
         expandedSteps: {_channel: 1},
         unreadOf: (row) => row.unread,
       );
-      expect(expanded.whereType<ChatGroupThread>(), hasLength(4));
+      expect(expanded.whereType<ChatGroupThread>(), hasLength(5));
       final open = expanded.last as ChatGroupMore;
       expect(open.expanded, isTrue);
       expect(open.hidden, 0);
       expect(open.hiddenUnread, 0);
     });
 
-    test('By channel shows 5 more threads per step, summing the rest', () {
-      // 17 threads: 2 shown, 15 hidden; the oldest has 3 unread.
+    test('By channel shows 10 more threads per step, summing the rest', () {
+      // 28 threads: 3 shown, 25 hidden; the oldest has 3 unread.
       final threads = [
-        for (var i = 0; i < 17; i++)
+        for (var i = 0; i < 28; i++)
           _thread(
             _channel,
             i.toRadixString(16).padLeft(64, '0'),
             100 - i,
-            unread: i == 16 ? 3 : 0,
+            unread: i == 27 ? 3 : 0,
           ),
       ];
       final ordered = orderChatRows(threads, {});
@@ -206,16 +207,16 @@ void main() {
       }
 
       final (shown0, more0) = at(0);
-      expect((shown0, more0.hidden, more0.expanded), (2, 15, false));
+      expect((shown0, more0.hidden, more0.expanded), (3, 25, false));
       expect(more0.hiddenUnread, 3);
       final (shown1, more1) = at(1);
-      expect((shown1, more1.hidden, more1.expanded), (7, 10, true));
+      expect((shown1, more1.hidden, more1.expanded), (13, 15, true));
       expect(more1.hiddenUnread, 3);
       final (shown2, more2) = at(2);
-      expect((shown2, more2.hidden), (12, 5));
+      expect((shown2, more2.hidden), (23, 5));
       final (shown3, more3) = at(3);
-      expect((shown3, more3.hidden, more3.hiddenUnread), (17, 0, 0));
-      expect(at(9).$1, 17);
+      expect((shown3, more3.hidden, more3.hiddenUnread), (28, 0, 0));
+      expect(at(9).$1, 28);
     });
 
     test('thread title falls back to the root first line', () {

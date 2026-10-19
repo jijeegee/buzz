@@ -183,7 +183,7 @@ class ChatsPage extends HookConsumerWidget {
     final pinnedThreads = ref.watch(threadPinsProvider);
     final working = _watchWorking(ref, rows);
     final readState = ref.watch(readStateProvider);
-    // "+ 5 more" taps per channel, for this session only.
+    // "+ 10 more" taps per channel, for this session only.
     final expanded = useState(<String, int>{});
     final scrollController = useScrollController();
     final reducedMotion = MediaQuery.disableAnimationsOf(context);

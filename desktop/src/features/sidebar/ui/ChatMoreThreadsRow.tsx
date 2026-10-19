@@ -7,7 +7,7 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
  * By channel: "+ N more threads" under a channel's first threads, with the
  * hidden threads' summed unread and @, so hidden unread is never invisible.
  * A hidden thread marked unread with nothing to count shows a dot.
- * Each click shows 5 more: "+ 5 more · N left" (or "+ N more" for the last
+ * Each click shows 10 more: "+ 10 more · N left" (or "+ N more" for the last
  * ones) beside "Show less"; with every thread shown, only "Show less".
  */
 export function ChatMoreThreadsRow({

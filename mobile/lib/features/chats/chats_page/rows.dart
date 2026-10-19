@@ -580,8 +580,8 @@ class _ChannelHeaderRow extends StatelessWidget {
   }
 }
 
-/// "+ N more threads" under a channel in By channel. Each tap shows 5 more:
-/// "+ 5 more · N left" (or "+ N more" for the last ones) beside "Show less";
+/// "+ N more threads" under a channel in By channel. Each tap shows 10 more:
+/// "+ 10 more · N left" (or "+ N more" for the last ones) beside "Show less";
 /// with every thread shown, only "Show less".
 class _MoreThreadsRow extends StatelessWidget {
   const _MoreThreadsRow({

@@ -74,11 +74,11 @@ test("a channel shows its main row and up to 3 newest threads, then a summed mor
   ]);
 });
 
-test("each step shows 5 more threads; the more line sums only the still hidden", () => {
-  // 18 threads: t18 newest; t1 and t2 have unread, t1 a mention.
+test("each step shows 10 more threads; the more line sums only the still hidden", () => {
+  // 28 threads: t28 newest; t1 and t2 have unread, t1 a mention.
   const rows = [
     room("c1", 100),
-    ...Array.from({ length: 18 }, (_, i) => 18 - i).map((n) =>
+    ...Array.from({ length: 28 }, (_, i) => 28 - i).map((n) =>
       thread("c1", `t${n}`, n, n <= 2 ? 1 : 0, n === 1 ? 1 : 0),
     ),
   ];
@@ -92,13 +92,13 @@ test("each step shows 5 more threads; the more line sums only the still hidden",
   const threads = (entries) =>
     entries.entries.filter((e) => e.kind === "row").length - 1;
   assert.equal(threads(at(0)), 3);
-  assert.equal(shape(at(0)).at(-1), "more:c1:15:shut:2:1");
-  assert.equal(threads(at(1)), 8);
-  assert.equal(shape(at(1)).at(-1), "more:c1:10:open:2:1");
-  assert.equal(threads(at(2)), 13);
+  assert.equal(shape(at(0)).at(-1), "more:c1:25:shut:2:1");
+  assert.equal(threads(at(1)), 13);
+  assert.equal(shape(at(1)).at(-1), "more:c1:15:open:2:1");
+  assert.equal(threads(at(2)), 23);
   assert.equal(shape(at(2)).at(-1), "more:c1:5:open:2:1");
   // Fully shown: nothing hidden, so no unread to sum; only Show less.
-  assert.equal(threads(at(3)), 18);
+  assert.equal(threads(at(3)), 28);
   assert.equal(shape(at(3)).at(-1), "more:c1:0:open:0:0");
   // Steps past the end stay fully shown.
   assert.deepEqual(shape(at(9)), shape(at(3)));
