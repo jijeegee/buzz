@@ -710,3 +710,152 @@ async fn put_user_respects_who_can_add_me_and_invitations() {
     .await;
     assert_eq!(ok[2], true, "{ok}");
 }
+
+/// An agent adds its own owner directly (no invitation), and the invitation
+/// spam limits: a recent decline suppresses re-invites for 7 days, and one
+/// inviter may create at most 50 invitations per community per 24 hours.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn agent_adds_owner_and_invitation_spam_limits() {
+    use kuzz_db::channel::ChannelVisibility;
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let scope = community_id(&inst).await;
+    let alice = new_user(&inst).await;
+    let erin = new_user(&inst).await;
+    let zed = new_user(&inst).await;
+
+    // The agent's own room; adding its owner (default `friends`, and the
+    // owner never listed the agent in kind:3) goes straight through.
+    let bot = create_bot(&inst, &alice, "this_device").await;
+    let token = bot_token(&inst, &alice, &bot).await;
+    let mut bot_ws = inst.ws().await;
+    assert_eq!(auth_ws(&mut bot_ws, &token).await[2], true);
+    let bot_room = kuzz_db::channel::create_channel(
+        &pool,
+        scope,
+        "agent room",
+        kuzz_db::channel::ChannelType::Stream,
+        ChannelVisibility::Open,
+        None,
+        &key(&bot),
+        None,
+    )
+    .await
+    .unwrap()
+    .id;
+    let ok = put_user(&mut bot_ws, bot_room, &alice.principal).await;
+    assert_eq!(ok[2], true, "{ok}");
+    assert!(is_member(&pool, scope, bot_room, &alice.principal).await);
+    // Someone else's person is still protected from the agent.
+    let ok = put_user(&mut bot_ws, bot_room, &erin.principal).await;
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+    assert!(!is_member(&pool, scope, bot_room, &erin.principal).await);
+
+    // Decline cooldown.
+    let room = group(&pool, scope, &alice, "Runners", ChannelVisibility::Open).await;
+    let mut alice_ws = authed_ws(&inst, &alice).await;
+    assert_eq!(
+        put_user(&mut alice_ws, room, &erin.principal).await[2],
+        false
+    );
+    let pending = |who: &Login| {
+        let who = who.access.clone();
+        let inst = &inst;
+        async move {
+            let response = inst
+                .get("/api/group-invitations")
+                .bearer_auth(who)
+                .send()
+                .await
+                .unwrap();
+            response.json::<Value>().await.unwrap()
+        }
+    };
+    let list = pending(&erin).await;
+    let mine: Vec<&Value> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["channel"]["id"] == room.to_string())
+        .collect();
+    let invitation = mine[0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        post(
+            &inst,
+            &erin,
+            &format!("/api/group-invitations/{invitation}/decline")
+        )
+        .await
+        .0,
+        200
+    );
+    let ok = put_user(&mut alice_ws, room, &erin.principal).await;
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+    let count_for_room = |list: &Value| {
+        list.as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["channel"]["id"] == room.to_string())
+            .count()
+    };
+    assert_eq!(
+        count_for_room(&pending(&erin).await),
+        0,
+        "no re-invite spam"
+    );
+    sqlx::query(
+        "UPDATE group_invitations SET responded_at = now() - interval '8 days' \
+         WHERE community_id = $1 AND id = $2",
+    )
+    .bind(scope.as_uuid())
+    .bind(uuid::Uuid::parse_str(&invitation).unwrap())
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        put_user(&mut alice_ws, room, &erin.principal).await[2],
+        false
+    );
+    assert_eq!(
+        count_for_room(&pending(&erin).await),
+        1,
+        "allowed after 7 days"
+    );
+
+    // Daily cap: fill alice's 24h budget to exactly 50.
+    let sent: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM group_invitations WHERE community_id = $1 AND inviter = $2 \
+         AND created_at > now() - interval '24 hours'",
+    )
+    .bind(scope.as_uuid())
+    .bind(key(&alice.principal))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for _ in sent..kuzz_db::groups::INVITATIONS_PER_DAY {
+        sqlx::query(
+            "INSERT INTO group_invitations (community_id, channel_id, inviter, invitee) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(scope.as_uuid())
+        .bind(room)
+        .bind(key(&alice.principal))
+        .bind(nostr::Keys::generate().public_key().to_bytes().to_vec())
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let ok = put_user(&mut alice_ws, room, &zed.principal).await;
+    assert_eq!(ok[2], false, "{ok}");
+    assert_eq!(
+        ok_message(&ok),
+        "rate-limited: too many invitations, try later"
+    );
+    assert!(pending(&zed).await.as_array().unwrap().is_empty());
+    // Refreshing an existing pending invitation is not a new one.
+    let ok = put_user(&mut alice_ws, room, &erin.principal).await;
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+}

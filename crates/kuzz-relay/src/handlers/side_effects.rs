@@ -457,6 +457,16 @@ pub struct InvitationSent;
 /// setting turned into an invitation.
 pub const INVITE_SENT_PREFIX: &str = "invite-sent:";
 
+/// A kind:9000 add refused because the actor already sent
+/// [`kuzz_db::groups::INVITATIONS_PER_DAY`] invitations in the last 24 hours.
+/// Ingest answers with [`INVITATIONS_RATE_LIMITED`] verbatim.
+#[derive(Debug, thiserror::Error)]
+#[error("too many invitations")]
+pub struct InvitationRateLimited;
+
+/// `OK` message for [`InvitationRateLimited`].
+pub const INVITATIONS_RATE_LIMITED: &str = "rate-limited: too many invitations, try later";
+
 /// Whether `actor` is in `target`'s latest contact list (kind:3): the target
 /// added the actor as a friend.
 async fn is_friend_of(
@@ -503,17 +513,44 @@ async fn check_person_add(
         .await?
         .ok_or_else(|| anyhow::anyhow!("channel not found"))?;
     let add_policy = state.db.group_add_policy(community, target).await?;
-    let friend = add_policy != "everyone" && is_friend_of(tenant, state, target, actor).await?;
+    let friend = if add_policy == "everyone" {
+        false
+    } else {
+        let actor_agent_owner = state
+            .db
+            .get_agent_channel_policy(community, actor)
+            .await?
+            .and_then(|(_, owner)| owner);
+        channel_authz::admits_as_friend(false, actor_agent_owner.as_deref(), target)
+            || is_friend_of(tenant, state, target, actor).await?
+    };
     match channel_authz::decide_person_add(&invite_policy, actor_role, &add_policy, friend)? {
         channel_authz::PersonAddDecision::Allow => Ok(()),
         channel_authz::PersonAddDecision::SendInvitation => {
-            if !state.db.is_blocked_by(community, target, actor).await? {
-                // TODO(groups): push the invitation live; v1 clients refresh
-                // the invitation list on focus / Chats open.
-                state
-                    .db
-                    .upsert_group_invitation(community, channel_id, actor, target)
-                    .await?;
+            let blocked = state.db.is_blocked_by(community, target, actor).await?;
+            let write_state = state
+                .db
+                .group_invitation_write_state(community, channel_id, actor, target)
+                .await?;
+            match channel_authz::decide_invitation_write(
+                blocked,
+                write_state.declined_recently,
+                write_state.already_pending,
+                write_state.sent_last_day,
+                kuzz_db::groups::INVITATIONS_PER_DAY,
+            ) {
+                channel_authz::InvitationWrite::Skip => {}
+                channel_authz::InvitationWrite::RateLimited => {
+                    return Err(InvitationRateLimited.into())
+                }
+                channel_authz::InvitationWrite::Upsert => {
+                    // TODO(groups): push the invitation live; v1 clients
+                    // refresh the invitation list on focus / Chats open.
+                    state
+                        .db
+                        .upsert_group_invitation(community, channel_id, actor, target)
+                        .await?;
+                }
             }
             Err(InvitationSent.into())
         }

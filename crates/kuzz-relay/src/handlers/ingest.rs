@@ -3194,6 +3194,10 @@ async fn ingest_event_inner(
                         "{} not added; they were sent an invitation to join",
                         crate::handlers::side_effects::INVITE_SENT_PREFIX
                     ))
+                } else if e.is::<crate::handlers::side_effects::InvitationRateLimited>() {
+                    IngestError::Rejected(
+                        crate::handlers::side_effects::INVITATIONS_RATE_LIMITED.to_owned(),
+                    )
                 } else {
                     IngestError::Rejected(format!("invalid: {e}"))
                 }

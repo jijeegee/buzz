@@ -714,6 +714,9 @@ CREATE UNIQUE INDEX idx_group_invitations_pending
     ON group_invitations (community_id, channel_id, invitee) WHERE status = 'pending';
 CREATE INDEX idx_group_invitations_invitee
     ON group_invitations (community_id, invitee) WHERE status = 'pending';
+-- Per-inviter daily invitation cap.
+CREATE INDEX idx_group_invitations_inviter
+    ON group_invitations (community_id, inviter, created_at);
 
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.

@@ -232,6 +232,55 @@ pub fn decide_person_add(
     Ok(PersonAddDecision::SendInvitation)
 }
 
+/// Whether "who can add me" treats `actor` as the target's friend: the target
+/// lists the actor in their kind:3 contact list, or the actor is an agent the
+/// target owns (agents routinely add their owner to rooms they create).
+pub fn admits_as_friend(
+    in_target_contacts: bool,
+    actor_agent_owner: Option<&[u8]>,
+    target: &[u8],
+) -> bool {
+    in_target_contacts || actor_agent_owner == Some(target)
+}
+
+/// What a refused add writes. See [`decide_invitation_write`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvitationWrite {
+    /// Store nothing, but answer "invitation sent" anyway.
+    Skip,
+    /// Create the pending invitation, or refresh the existing one.
+    Upsert,
+    /// The inviter hit the daily cap: refuse the add.
+    RateLimited,
+}
+
+/// Decide what a refused add (an invitation) writes:
+///
+/// - the target blocks the actor, or declined an invitation to this group
+///   recently → [`InvitationWrite::Skip`] (no row, no notification spam; the
+///   actor still sees "invitation sent");
+/// - a pending invitation exists → refresh it (does not count toward the cap);
+/// - the inviter already created `cap` invitations in the last 24 hours →
+///   [`InvitationWrite::RateLimited`];
+/// - otherwise create one.
+pub fn decide_invitation_write(
+    target_blocks_actor: bool,
+    declined_recently: bool,
+    already_pending: bool,
+    sent_last_day: i64,
+    cap: i64,
+) -> InvitationWrite {
+    if target_blocks_actor || declined_recently {
+        InvitationWrite::Skip
+    } else if already_pending {
+        InvitationWrite::Upsert
+    } else if sent_last_day >= cap {
+        InvitationWrite::RateLimited
+    } else {
+        InvitationWrite::Upsert
+    }
+}
+
 /// What authority `actor` holds to remove *somebody else* (kind:9001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoveOtherDecision {
@@ -737,6 +786,39 @@ mod tests {
                 &decide_person_add(invite_policy, *actor_role, add_policy, *friend),
                 expected,
                 "invite_policy={invite_policy} actor={actor_role:?} add_policy={add_policy} friend={friend}"
+            );
+        }
+    }
+
+    #[test]
+    fn own_agent_counts_as_friend() {
+        let owner = [1u8; 32];
+        let other = [2u8; 32];
+        assert!(admits_as_friend(true, None, &owner));
+        assert!(admits_as_friend(false, Some(&owner), &owner));
+        assert!(!admits_as_friend(false, Some(&other), &owner));
+        assert!(!admits_as_friend(false, None, &owner));
+    }
+
+    #[test]
+    fn invitation_write_table() {
+        use InvitationWrite::{RateLimited, Skip, Upsert};
+        // (blocks, declined_recently, already_pending, sent_last_day) -> write
+        let cases = [
+            ((false, false, false, 0), Upsert),
+            ((false, false, false, 49), Upsert),
+            ((false, false, false, 50), RateLimited),
+            ((false, false, true, 50), Upsert),
+            ((false, true, false, 0), Skip),
+            ((false, true, true, 99), Skip),
+            ((true, false, false, 0), Skip),
+            ((true, false, false, 99), Skip),
+        ];
+        for ((blocks, declined, pending, sent), expected) in cases {
+            assert_eq!(
+                decide_invitation_write(blocks, declined, pending, sent, 50),
+                expected,
+                "blocks={blocks} declined={declined} pending={pending} sent={sent}"
             );
         }
     }

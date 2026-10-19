@@ -21,6 +21,12 @@ pub const MAX_GROUP_SEARCH: i64 = 20;
 /// Days a pending invitation stays usable.
 pub const INVITATION_TTL_DAYS: i32 = 30;
 
+/// Days after a decline during which the same group cannot re-invite.
+pub const DECLINE_COOLDOWN_DAYS: i32 = 7;
+
+/// Most invitations one inviter may create in one community per 24 hours.
+pub const INVITATIONS_PER_DAY: i64 = 50;
+
 /// One group as the groups API shows it to `viewer`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroupSummary {
@@ -70,6 +76,17 @@ pub struct GroupInvitation {
     pub inviter: Vec<u8>,
     /// When the invitation was (last) sent.
     pub created_at: DateTime<Utc>,
+}
+
+/// See [`Db::group_invitation_write_state`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvitationWriteState {
+    /// The invitee already has an unexpired pending invitation to the group.
+    pub already_pending: bool,
+    /// The invitee declined one to this group within the cooldown.
+    pub declined_recently: bool,
+    /// Invitations the inviter created or refreshed in the last 24 hours.
+    pub sent_last_day: i64,
 }
 
 /// One pending invitation row, before the group is checked.
@@ -472,6 +489,49 @@ impl Db {
         .bind(invitee)
         .fetch_one(&self.pool)
         .await?)
+    }
+
+    /// What decides whether a refused add may write an invitation, read in
+    /// one round trip: whether `invitee` already has an unexpired pending
+    /// invitation to the group, whether they declined one to the group within
+    /// [`DECLINE_COOLDOWN_DAYS`], and how many invitations `inviter` created
+    /// or refreshed in this community in the last 24 hours.
+    #[datastore_span(name = "group_invitation_write_state", system = "postgresql")]
+    pub async fn group_invitation_write_state(
+        &self,
+        community: CommunityId,
+        channel_id: Uuid,
+        inviter: &[u8],
+        invitee: &[u8],
+    ) -> Result<InvitationWriteState> {
+        let (already_pending, declined_recently, sent_last_day): (bool, bool, i64) =
+            sqlx::query_as(
+                "SELECT \
+                   EXISTS (SELECT 1 FROM group_invitations \
+                            WHERE community_id = $1 AND channel_id = $2 AND invitee = $4 \
+                              AND status = 'pending' \
+                              AND created_at > now() - make_interval(days => $5)), \
+                   EXISTS (SELECT 1 FROM group_invitations \
+                            WHERE community_id = $1 AND channel_id = $2 AND invitee = $4 \
+                              AND status = 'declined' \
+                              AND responded_at > now() - make_interval(days => $6)), \
+                   (SELECT count(*) FROM group_invitations \
+                     WHERE community_id = $1 AND inviter = $3 \
+                       AND created_at > now() - interval '24 hours')",
+            )
+            .bind(community.as_uuid())
+            .bind(channel_id)
+            .bind(inviter)
+            .bind(invitee)
+            .bind(INVITATION_TTL_DAYS)
+            .bind(DECLINE_COOLDOWN_DAYS)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(InvitationWriteState {
+            already_pending,
+            declined_recently,
+            sent_last_day,
+        })
     }
 
     /// The reader's usable pending invitations, newest first: not expired,
