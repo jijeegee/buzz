@@ -19,6 +19,8 @@ import {
   sortChannelsForSidebar,
 } from "@/features/sidebar/lib/channelSortPreference";
 import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import type { GroupSummary } from "@/features/groups/groupsApi";
+import { useGroupSearch } from "@/features/groups/hooks";
 import { ListSortDescending } from "@/shared/ui/icons";
 import {
   Dialog,
@@ -54,6 +56,24 @@ import {
 } from "@/features/sidebar/ui/CreateChannelFormFields";
 
 type BrowserTab = "all" | "joined" | "archived";
+
+/** What a browser row needs: a local channel or a server search result. */
+type BrowseRow = Pick<
+  Channel,
+  "id" | "name" | "description" | "memberCount" | "isMember" | "visibility"
+> & { archivedAt: string | null };
+
+function searchResultRow(group: GroupSummary): BrowseRow {
+  return {
+    id: group.id,
+    name: group.name,
+    description: group.description ?? "",
+    memberCount: group.memberCount,
+    isMember: group.isMember,
+    visibility: "open",
+    archivedAt: null,
+  };
+}
 
 /**
  * Public groups you are not in only show once the search has this many
@@ -212,13 +232,11 @@ export function ChannelBrowserDialog({
     [currentChannels],
   );
 
-  // Groups found by search that you are not in yet (2+ characters only).
-  const publicMatches = React.useMemo(
-    () =>
-      isForumMode || !canSeePublicGroups || deferredQuery.length === 0
-        ? []
-        : currentChannels.filter((channel) => !channel.isMember),
-    [canSeePublicGroups, currentChannels, deferredQuery, isForumMode],
+  // Public groups come from the server search (2+ characters, debounced, at
+  // most 20), never from a download of every open group.
+  const groupSearch = useGroupSearch(
+    query,
+    open && mode === "browse" && !isForumMode && activeTab === "joined",
   );
 
   const archivedChannels = React.useMemo(
@@ -264,15 +282,24 @@ export function ChannelBrowserDialog({
     [orderChannels, visibleChannels],
   );
 
-  // "My groups" lists joined groups; public search results follow below.
-  const orderedPublicMatches = React.useMemo(
-    () =>
-      activeTab === "joined" && !isForumMode
-        ? orderChannels(publicMatches)
-        : [],
-    [activeTab, isForumMode, orderChannels, publicMatches],
-  );
-  const listedChannels = React.useMemo(
+  // "My groups" lists joined groups; public search results follow below in
+  // server order, minus anything already listed above.
+  const orderedPublicMatches = React.useMemo(() => {
+    if (activeTab !== "joined" || isForumMode || !canSeePublicGroups) return [];
+    const listedIds = new Set(orderedVisibleChannels.map((row) => row.id));
+    return groupSearch.groups
+      .filter((group) => !listedIds.has(group.id))
+      .map(searchResultRow);
+  }, [
+    activeTab,
+    canSeePublicGroups,
+    groupSearch.groups,
+    isForumMode,
+    orderedVisibleChannels,
+  ]);
+  const isSearchingPublicGroups =
+    activeTab === "joined" && !isForumMode && groupSearch.isLoading;
+  const listedChannels = React.useMemo<BrowseRow[]>(
     () =>
       orderedPublicMatches.length > 0
         ? [...orderedVisibleChannels, ...orderedPublicMatches]
@@ -412,7 +439,7 @@ export function ChannelBrowserDialog({
     }
   }
 
-  function handleSelect(channel: Channel) {
+  function handleSelect(channel: BrowseRow) {
     onOpenChange(false);
     onSelectChannel(channel.id);
   }
@@ -665,7 +692,14 @@ export function ChannelBrowserDialog({
                     </div>
                   ) : null}
 
-                  {listedChannels.length === 0 ? (
+                  {listedChannels.length === 0 && isSearchingPublicGroups ? (
+                    <p
+                      className="px-1 py-6 text-center text-sm text-muted-foreground"
+                      data-testid="channel-browser-searching"
+                    >
+                      Searching...
+                    </p>
+                  ) : listedChannels.length === 0 ? (
                     <BrowseState
                       description={emptyDescription}
                       icon={deferredQuery.length > 0 ? Search : Compass}
@@ -710,6 +744,7 @@ export function ChannelBrowserDialog({
                                     selectedIndex
                                   }
                                   key={channel.id}
+                                  joinAlwaysVisible={section.key === "public"}
                                   onJoin={
                                     !channel.isMember
                                       ? () => {
@@ -724,6 +759,14 @@ export function ChannelBrowserDialog({
                           </div>
                         ),
                       )}
+                      {groupSearch.error ? (
+                        <p
+                          className="mt-3 px-1 text-xs text-muted-foreground"
+                          data-testid="channel-browser-search-error"
+                        >
+                          Couldn't search public groups. Try again.
+                        </p>
+                      ) : null}
                       {needsLongerQuery && orderedVisibleChannels.length > 0 ? (
                         <p
                           className="mt-3 px-1 text-xs text-muted-foreground"
@@ -849,12 +892,14 @@ function ChannelCard({
   channel,
   isJoining,
   isSelected,
+  joinAlwaysVisible = false,
   onJoin,
   onSelect,
 }: {
-  channel: Channel;
+  channel: BrowseRow;
   isJoining: boolean;
   isSelected: boolean;
+  joinAlwaysVisible?: boolean;
   onJoin?: () => void;
   onSelect: () => void;
 }) {
@@ -911,7 +956,7 @@ function ChannelCard({
       {!channel.isMember && onJoin ? (
         <Button
           className={
-            isJoining
+            isJoining || joinAlwaysVisible
               ? "shrink-0"
               : "shrink-0 opacity-0 transition-opacity duration-150 ease-out group-hover/channel-row:opacity-100 group-focus-within/channel-row:opacity-100"
           }
@@ -925,6 +970,19 @@ function ChannelCard({
           variant="default"
         >
           {isJoining ? "Joining..." : "Join"}
+        </Button>
+      ) : joinAlwaysVisible ? (
+        <Button
+          className="shrink-0"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Open
         </Button>
       ) : null}
     </div>

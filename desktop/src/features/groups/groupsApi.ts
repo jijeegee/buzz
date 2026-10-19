@@ -78,7 +78,11 @@ const segment = encodeURIComponent;
  */
 export function groupsErrorStatus(error: unknown): number | null {
   const text =
-    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
   const match = /^HTTP (\d{3})\b/.exec(text);
   return match ? Number(match[1]) : null;
 }
@@ -86,7 +90,11 @@ export function groupsErrorStatus(error: unknown): number | null {
 /** The server's error text without the `HTTP nnn:` prefix. */
 export function groupsErrorText(error: unknown): string {
   const text =
-    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
   return text.replace(/^HTTP \d{3}:?\s*/, "");
 }
 
@@ -121,7 +129,11 @@ export function getGroupInviteLink(groupId: string): Promise<GroupInviteLink> {
 export function resetGroupInviteLink(
   groupId: string,
 ): Promise<GroupInviteLink> {
-  return request("POST", `/api/groups/${segment(groupId)}/invite-link/reset`, {});
+  return request(
+    "POST",
+    `/api/groups/${segment(groupId)}/invite-link/reset`,
+    {},
+  );
 }
 
 export function previewGroupInvite(code: string): Promise<GroupInvitePreview> {

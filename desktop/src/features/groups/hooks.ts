@@ -78,7 +78,10 @@ export function useGroupDetailQuery(groupId: string | null, enabled = true) {
 }
 
 /** `GET /api/groups/{id}/invite-link` (created on first call). */
-export function useGroupInviteLinkQuery(groupId: string | null, enabled: boolean) {
+export function useGroupInviteLinkQuery(
+  groupId: string | null,
+  enabled: boolean,
+) {
   const account = useAccountKey();
   return useQuery({
     enabled: enabled && Boolean(account) && groupId !== null,

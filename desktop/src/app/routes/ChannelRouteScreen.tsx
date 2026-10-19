@@ -322,10 +322,7 @@ export function ChannelRouteScreen({
     };
   }, [queryClient, selectedPostId, targetMessageId, targetThreadRootId]);
 
-  if (
-    !activeChannel &&
-    (channelsQuery.isPending || reference.isResolving)
-  ) {
+  if (!activeChannel && (channelsQuery.isPending || reference.isResolving)) {
     if (isHuddleTranscript) {
       return <HuddleStartingView />;
     }

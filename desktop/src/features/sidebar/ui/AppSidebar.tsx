@@ -27,6 +27,7 @@ import {
 } from "@/features/sidebar/ui/MoreUnreadButton";
 import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
+import { InvitationsEntry } from "@/features/groups/ui/InvitationsEntry";
 import {
   ChatsColumnTitle,
   ChatsViewToggle,
@@ -443,6 +444,10 @@ export function AppSidebar({
           {serverChats ? (
             <ChatsViewToggle onChange={setChatsView} value={chatsView} />
           ) : null}
+          <InvitationsEntry
+            onOpenGroup={onSelectChannel}
+            refreshKey={showOtherList}
+          />
 
           <div
             className="relative flex min-h-0 flex-1 flex-col"

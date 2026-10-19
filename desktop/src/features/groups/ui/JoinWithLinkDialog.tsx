@@ -93,7 +93,8 @@ export function JoinWithLinkDialog({
       const group = await lookUp(target);
       if (lookupId === lookupRef.current) setFound(group);
     } catch (lookupError) {
-      if (lookupId === lookupRef.current) setError(lookupErrorText(lookupError));
+      if (lookupId === lookupRef.current)
+        setError(lookupErrorText(lookupError));
     } finally {
       if (lookupId === lookupRef.current) setIsLooking(false);
     }
@@ -123,10 +124,12 @@ export function JoinWithLinkDialog({
     setIsJoining(true);
     setJoinError(null);
     try {
-      const channelId =
-        found.target.kind === "code"
-          ? (await joinGroupByInvite(found.target.code)).channelId
-          : (await joinChannel(found.id), found.id);
+      let channelId = found.id;
+      if (found.target.kind === "code") {
+        channelId = (await joinGroupByInvite(found.target.code)).channelId;
+      } else {
+        await joinChannel(found.id);
+      }
       await queryClient.invalidateQueries({ queryKey: channelsQueryKey });
       openGroup(channelId);
     } catch (failure) {

@@ -361,7 +361,10 @@ function listenForQueuedDeepLinks(
           }
         }
       } catch (error: unknown) {
-        console.warn(`Failed to drain pending ${queue.label} deep links`, error);
+        console.warn(
+          `Failed to drain pending ${queue.label} deep links`,
+          error,
+        );
       } finally {
         drainRunning = false;
         if (drainRequested) drain();

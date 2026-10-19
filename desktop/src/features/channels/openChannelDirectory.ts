@@ -264,7 +264,9 @@ export function useChannelReferences(
     return resolved;
   }, [fetchQueries, ids, knownById]);
 
-  const isResolving = fetchQueries.some((query) => query.fetchStatus !== "idle");
+  const isResolving = fetchQueries.some(
+    (query) => query.fetchStatus !== "idle",
+  );
   return { channelsById: useStableMap(channelsById), isReady, isResolving };
 }
 

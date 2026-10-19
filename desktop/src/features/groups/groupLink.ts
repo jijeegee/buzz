@@ -65,7 +65,9 @@ export function parseGroupLink(input: string): GroupLinkTarget | null {
 }
 
 /** `<host>/g/@` for the public address field, from the community URL. */
-export function publicAddressPrefix(relayUrl: string | null | undefined): string {
+export function publicAddressPrefix(
+  relayUrl: string | null | undefined,
+): string {
   if (!relayUrl) return "/g/@";
   try {
     return `${new URL(relayUrl).host}/g/@`;
@@ -84,4 +86,26 @@ export function normalizeGroupHandle(input: string): string {
 
 export function isValidGroupHandle(handle: string): boolean {
   return HANDLE_RE.test(handle);
+}
+
+export const PUBLIC_ADDRESS_TAKEN_TEXT = "This address is taken.";
+export const PUBLIC_ADDRESS_INVALID_TEXT =
+  "Use 3-32 characters: a-z, 0-9 and _.";
+export const PUBLIC_ADDRESS_RESERVED_TEXT = "This address is reserved.";
+
+/**
+ * The message for a failed public-address save: 409 is taken; a 400 that
+ * mentions "reserved" is reserved; any other 400 is the shape rule.
+ */
+export function publicAddressErrorText(
+  status: number | null,
+  serverText: string,
+): string | null {
+  if (status === 409) return PUBLIC_ADDRESS_TAKEN_TEXT;
+  if (status === 400) {
+    return /reserved/i.test(serverText)
+      ? PUBLIC_ADDRESS_RESERVED_TEXT
+      : PUBLIC_ADDRESS_INVALID_TEXT;
+  }
+  return null;
 }

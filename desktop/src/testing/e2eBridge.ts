@@ -21,6 +21,10 @@ import type {
 } from "@/shared/api/tauriObservedUnread";
 import type { UnreadCatchUpChannelResult } from "@/shared/api/tauriUnreadCatchUp";
 import { relayClient } from "@/shared/api/relayClient";
+import {
+  handleMockGroupsRequest,
+  type MockGroupsConfig,
+} from "@/testing/e2eGroupsMock";
 import { activateRateLimit } from "@/shared/api/relayRateLimitGate";
 import { resolveAgentParallelism } from "@/features/agents/lib/agentParallelism";
 import { awaitLiveSwitchOutcome } from "@/features/agents/lib/liveSwitchOutcome";
@@ -236,6 +240,8 @@ type E2eConfig = {
       name?: string;
       expiresAt: string;
     } | null;
+    /** Seeds for the relay groups routes (`groups_request`). */
+    groups?: MockGroupsConfig;
     /** Optional policy returned by the native join-policy discovery command. */
     joinPolicy?: {
       terms_markdown?: string;
@@ -13265,6 +13271,15 @@ export function maybeInstallE2eTauriMocks() {
         return;
       case "fetch_join_policy":
         return activeConfig?.mock?.joinPolicy ?? null;
+      case "groups_request":
+        return handleMockGroupsRequest(
+          activeConfig?.mock?.groups,
+          payload as { method: string; path: string; body: unknown },
+        );
+      case "take_pending_group_join_deep_link":
+        return null;
+      case "acknowledge_pending_group_join_deep_link":
+        return false;
       case "fetch_link_preview_metadata": {
         if (activeConfig?.mock?.deferLinkPreviewMetadata) {
           await new Promise<void>((resolve) => {
