@@ -82,6 +82,7 @@ class GroupInvitationsNotifier extends AsyncNotifier<List<GroupInvitation>> {
 final groupInvitationsProvider =
     AsyncNotifierProvider<GroupInvitationsNotifier, List<GroupInvitation>>(
       GroupInvitationsNotifier.new,
+      retry: noGroupsRetry,
     );
 
 /// "Invitations · N" at the top of Chats; nothing when there are none.

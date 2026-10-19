@@ -23,6 +23,7 @@ import 'groups_api.dart';
 final groupInfoProvider = FutureProvider.autoDispose
     .family<GroupSummary, String>(
       (ref, id) => ref.watch(groupsApiProvider).group(id),
+      retry: noGroupsRetry,
     );
 
 /// `<host>/g/@`, the fixed part of a public address.

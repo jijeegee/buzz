@@ -663,6 +663,7 @@ class _FakeChannelActions extends ChannelActions {
     String? name,
     String? description,
     bool? goalsEnabled,
+    String? visibility,
   }) async {
     if (goalsEnabled != null) {
       goalsUpdates.add(goalsEnabled);

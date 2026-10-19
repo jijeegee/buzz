@@ -310,6 +310,10 @@ class GroupsApi {
   }
 }
 
+/// Groups providers do not retry on their own: a refused request (no
+/// access, gone) stays refused, and the screens refresh when opened.
+Duration? noGroupsRetry(int retryCount, Object error) => null;
+
 /// HTTP client for the groups routes.
 final groupsHttpClientProvider = Provider<http.Client>((ref) {
   final client = http.Client();

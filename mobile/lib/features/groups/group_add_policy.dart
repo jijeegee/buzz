@@ -13,6 +13,7 @@ import 'groups_api.dart';
 /// Who can add me to groups: `friends` (default) or `everyone`.
 final groupAddPolicyProvider = FutureProvider.autoDispose<String>(
   (ref) => ref.watch(groupsApiProvider).addPolicy(),
+  retry: noGroupsRetry,
 );
 
 /// Settings → Friends & privacy → "Who can add me to groups".
