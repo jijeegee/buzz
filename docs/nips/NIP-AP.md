@@ -128,6 +128,17 @@ therefore remains local rather than synchronizing its path to another device.
 The `shared` tag is catalog presentation, not confidentiality: all kind:30175
 content remains plaintext, including non-catalog heads.
 
+### Audience never travels
+
+Who may command an agent is owner-local. A shared head MUST omit
+`respond_to` (or carry `"owner-only"`) and MUST omit `respond_to_allowlist`
+(or carry `[]`). Foreign catalog readers MUST ignore both fields and create
+copies owner-only. On an owner's existing definition, a shared head MUST NOT
+change the local `respond_to` or allowlist, since the head never carries them;
+an insert from a shared head starts owner-only. Non-catalog heads keep both
+fields for owner-to-self synchronization. Shareable snapshot files and
+`kind:30178` member projections carry no audience fields at all.
+
 Writers serialize optional `acp_command` after `system_prompt` and before
 `avatar_url`; omission preserves the existing reference vector's bytes.
 
@@ -260,7 +271,7 @@ Kind `30178` is the **shareable projection of a team**: owner-authored, paramete
 
 **The `d` tag is a team id, not a persona slug.** It is either a UUID or a built-in identifier such as `builtin-team:welcome`. The colon is illegal under the persona slug grammar, and rewriting ids to fit would break NIP-33 addressing against the team's own `kind:30176` head — so the relay applies a laxer rule (see below) to `30178` than to `30175`.
 
-**Content carries only sanitized fields.** No environment variables, no `respond_to` allowlist pubkeys, no source or local ids, no filesystem paths, no secrets. Sharing a team makes the team's and every member's instructions community-readable plaintext.
+**Content carries only sanitized fields.** No environment variables, no `respond_to` mode or allowlist pubkeys, no source or local ids, no filesystem paths, no secrets. Sharing a team makes the team's and every member's instructions community-readable plaintext.
 
 ## Relay behavior
 
@@ -270,6 +281,7 @@ Kind `30178` is the **shareable projection of a team**: owner-authored, paramete
 - The relay stores persona events globally (`channel_id = NULL`); they are not channel-scoped.
 - The relay is NOT required to validate that `content` parses as valid `PersonaEventContent` JSON. Relays are dumb stores per Nostr convention; content validation is a client responsibility.
 - The relay MUST enforce that the `d` tag is non-empty (standard NIP-33 requirement for parameterized replaceable events).
+- The relay MUST reject a shared `kind:30175` whose JSON content carries `respond_to` other than `null`/`"owner-only"` or a non-empty `respond_to_allowlist` (see "Audience never travels"). Unshared heads are not checked.
 - The relay MUST enforce shared-tag shape: if a `shared` tag is present, it MUST consist of **exactly two elements** — `["shared", "true"]`. Extra elements (e.g. `["shared","true","extra"]`), wrong values (`["shared","false"]`), missing values (`["shared"]`), or duplicate `shared` tags are all rejected with `invalid:`. The two-element exact-shape constraint is required so that the relay's SQL visibility clause (`tags @> '[["shared","true"]]'`) never matches a stored malformed tag via JSONB containment supersets.
 
 ### Ingest validation: kind:30178
@@ -278,6 +290,7 @@ Kind `30178` is stored globally and its content is unvalidated, exactly as for `
 
 - The relay MUST enforce the same `shared`-tag exact shape as `30175`, for the same reason: the read gate and the SQL containment clause must agree on every stored event.
 - The relay MUST enforce **exactly one** `d` tag whose value is non-empty, at most 64 characters, and free of Unicode control characters and whitespace. Tags are counted by their first element, so a valueless `["d"]` counts toward the total and fails the value check on its own — otherwise `["d"]` alongside `["d","<team-id>"]` would pass, and a consumer that reads `["d"]` as an empty-valued first `d` tag would address the event at `""` while this relay addresses it at `<team-id>`. Without the non-empty check, generic NIP-33 storage maps a missing or empty `d` to the empty coordinate, collapsing every team into the single `(pubkey_o, 30178, "")` slot — last-write-wins data loss. The character bound keeps the value usable as a NIP-33 coordinate and as a log field.
+- The relay MUST reject a shared `30178` whose JSON content has a `members` entry carrying `respond_to` other than `null`/`"owner-only"` or a non-empty `respond_to_allowlist`.
 - The relay MUST NOT apply the persona slug grammar to a `30178` `d` tag; team ids legitimately contain characters (notably `:`) that the slug grammar forbids.
 
 ### Access control: author-only-unless-shared

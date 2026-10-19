@@ -1684,6 +1684,11 @@ fn validate_persona_envelope(event: &Event) -> Result<(), String> {
     const LABEL: &str = "persona event";
     validate_shared_tag(event, LABEL)?;
     let d = single_bounded_d_tag(event, LABEL)?;
+    if kuzz_core::kind::event_is_shared(event) {
+        if let Ok(content) = serde_json::from_str::<serde_json::Value>(&event.content) {
+            reject_shared_audience(&content, LABEL)?;
+        }
+    }
     // Slug grammar: ^[a-z0-9][a-z0-9_-]{0,63}$
     let bytes = d.as_bytes();
     if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
@@ -1715,7 +1720,42 @@ fn validate_team_catalog_envelope(event: &Event) -> Result<(), String> {
     const LABEL: &str = "team-catalog event";
     validate_shared_tag(event, LABEL)?;
     single_bounded_d_tag(event, LABEL)?;
+    if kuzz_core::kind::event_is_shared(event) {
+        if let Ok(content) = serde_json::from_str::<serde_json::Value>(&event.content) {
+            let members = content.get("members").and_then(serde_json::Value::as_array);
+            for member in members.into_iter().flatten() {
+                reject_shared_audience(member, LABEL)?;
+            }
+        }
+    }
     Ok(())
+}
+
+/// Rejects a community-readable agent definition that would hand its readers
+/// a wider audience than owner-only.
+///
+/// Who may command an agent never travels between owners: shared kind:30175
+/// heads and kind:30178 members must not carry `respond_to` other than
+/// `owner-only`, nor any `respond_to_allowlist` entry. Clients drop both on
+/// write and ignore them on read; this is the relay's layer of that defense.
+/// Unshared heads are author-only device sync and keep both fields.
+fn reject_shared_audience(definition: &serde_json::Value, label: &str) -> Result<(), String> {
+    match definition.get("respond_to") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::String(mode)) if mode == "owner-only" => {}
+        Some(other) => {
+            return Err(format!(
+                "shared {label} must not carry respond_to {other} (only owner-only)"
+            ));
+        }
+    }
+    match definition.get("respond_to_allowlist") {
+        None | Some(serde_json::Value::Null) => Ok(()),
+        Some(serde_json::Value::Array(list)) if list.is_empty() => Ok(()),
+        Some(_) => Err(format!(
+            "shared {label} must not carry a respond_to_allowlist"
+        )),
+    }
 }
 
 /// Maximum number of member `a` tags on a kind:30621 project.
@@ -5625,6 +5665,43 @@ mod postgres_tests {
         let ev = make_team_catalog(&[&["d", "team-1"], &["shared", "true"], &["shared", "true"]]);
         let err = validate_team_catalog_envelope(&ev).unwrap_err();
         assert!(err.contains("at most one"), "got: {err}");
+    }
+
+    #[test]
+    fn shared_persona_rejects_a_wider_audience() {
+        let shared: &[&[&str]] = &[&["d", "p"], &["shared", "true"]];
+        for body in [
+            r#"{"display_name":"x","respond_to":"anyone"}"#,
+            r#"{"display_name":"x","respond_to":"allowlist"}"#,
+            r#"{"display_name":"x","respond_to_allowlist":["aa"]}"#,
+        ] {
+            let ev = make_event_with_tags(KIND_PERSONA, body, shared);
+            let err = validate_persona_envelope(&ev).unwrap_err();
+            assert!(err.contains("respond_to"), "{body}: {err}");
+            // The same body stays legal as author-only device sync.
+            let private = make_event_with_tags(KIND_PERSONA, body, &[&["d", "p"]]);
+            assert!(validate_persona_envelope(&private).is_ok(), "{body}");
+        }
+        for body in [
+            r#"{"display_name":"x"}"#,
+            r#"{"display_name":"x","respond_to":"owner-only","respond_to_allowlist":[]}"#,
+        ] {
+            let ev = make_event_with_tags(KIND_PERSONA, body, shared);
+            assert!(validate_persona_envelope(&ev).is_ok(), "{body}");
+        }
+    }
+
+    #[test]
+    fn shared_team_catalog_rejects_a_member_with_a_wider_audience() {
+        let shared: &[&[&str]] = &[&["d", "team-1"], &["shared", "true"]];
+        let body = r#"{"v":1,"name":"T","members":[{"member_key":"a","display_name":"A"},{"member_key":"b","display_name":"B","respond_to":"anyone"}]}"#;
+        let ev = make_event_with_tags(KIND_TEAM_CATALOG, body, shared);
+        let err = validate_team_catalog_envelope(&ev).unwrap_err();
+        assert!(err.contains("respond_to"), "{err}");
+
+        let clean = r#"{"v":1,"name":"T","members":[{"member_key":"a","display_name":"A"}]}"#;
+        let ev = make_event_with_tags(KIND_TEAM_CATALOG, clean, shared);
+        assert!(validate_team_catalog_envelope(&ev).is_ok());
     }
 
     #[test]

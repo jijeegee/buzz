@@ -1,4 +1,3 @@
-import * as React from "react";
 import { AlertCircle, Upload } from "lucide-react";
 
 import type {
@@ -29,8 +28,8 @@ type TeamSnapshotImportDialogProps = {
   result: TeamSnapshotImportResult | null;
   /** Error from the confirm mutation, if any. */
   confirmError: string | null;
-  /** Called with keepAllowlist when user clicks Import. */
-  onConfirm: (keepAllowlist: boolean) => void;
+  /** Called when user clicks Import. */
+  onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
 };
 
@@ -45,15 +44,6 @@ export function TeamSnapshotImportDialog({
   onConfirm,
   onOpenChange,
 }: TeamSnapshotImportDialogProps) {
-  const [keepAllowlist, setKeepAllowlist] = React.useState(false);
-
-  // Reset choice whenever the dialog opens with new data.
-  React.useEffect(() => {
-    if (open) {
-      setKeepAllowlist(false);
-    }
-  }, [open]);
-
   const phase = deriveImportPhase(result, isConfirming);
 
   return (
@@ -75,7 +65,7 @@ export function TeamSnapshotImportDialog({
                   <Button
                     data-testid="team-snapshot-import-confirm"
                     disabled={isConfirming}
-                    onClick={() => onConfirm(keepAllowlist)}
+                    onClick={() => onConfirm()}
                     size="sm"
                     type="button"
                     variant="default"
@@ -109,11 +99,7 @@ export function TeamSnapshotImportDialog({
 
         {phase === "preview" ? (
           <div className="space-y-3">
-            <PreviewBody
-              preview={preview}
-              keepAllowlist={keepAllowlist}
-              onKeepAllowlistChange={setKeepAllowlist}
-            />
+            <PreviewBody preview={preview} />
             {confirmError ? (
               <div
                 className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -138,15 +124,7 @@ export function TeamSnapshotImportDialog({
 
 // ── Preview body ──────────────────────────────────────────────────────────────
 
-function PreviewBody({
-  preview,
-  keepAllowlist,
-  onKeepAllowlistChange,
-}: {
-  preview: TeamSnapshotImportPreview;
-  keepAllowlist: boolean;
-  onKeepAllowlistChange: (v: boolean) => void;
-}) {
+function PreviewBody({ preview }: { preview: TeamSnapshotImportPreview }) {
   return (
     <div className="space-y-4 py-1">
       {/* Team identity */}
@@ -165,6 +143,7 @@ function PreviewBody({
       <p className="text-sm text-muted-foreground">
         A new team will be created with fresh keypairs for all members. The
         imported team is independent of the source — identity never travels.
+        Every member starts as owner-only.
       </p>
 
       {/* Member list */}
@@ -185,46 +164,6 @@ function PreviewBody({
                 ) : null}
               </div>
             ))}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Allowlist section */}
-      {preview.hasSourceAllowlist ? (
-        <div
-          className="space-y-2 rounded-md border border-border p-3"
-          data-testid="team-snapshot-import-allowlist-section"
-        >
-          <p className="text-sm font-medium">Respond-to allowlist</p>
-          <p className="text-xs text-muted-foreground">
-            This snapshot lists people from another workspace who may not exist
-            here.
-          </p>
-          <div className="flex flex-col gap-1.5">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                checked={!keepAllowlist}
-                data-testid="team-snapshot-import-allowlist-clear"
-                name="allowlist-choice"
-                onChange={() => onKeepAllowlistChange(false)}
-                type="radio"
-              />
-              <span className="text-sm">
-                <strong>Clear</strong> — start with empty allowlists (safer)
-              </span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                checked={keepAllowlist}
-                data-testid="team-snapshot-import-allowlist-keep"
-                name="allowlist-choice"
-                onChange={() => onKeepAllowlistChange(true)}
-                type="radio"
-              />
-              <span className="text-sm">
-                <strong>Keep</strong> — copy source allowlists to new members
-              </span>
-            </label>
           </div>
         </div>
       ) : null}

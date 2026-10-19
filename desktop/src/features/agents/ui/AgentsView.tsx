@@ -458,8 +458,8 @@ export function AgentsView() {
           isConfirming={personas.isSnapshotImportConfirming}
           result={personas.snapshotImportResult}
           confirmError={personas.snapshotImportConfirmError}
-          onConfirm={(keepAllowlist) => {
-            void personas.handleConfirmSnapshotImport(keepAllowlist);
+          onConfirm={() => {
+            void personas.handleConfirmSnapshotImport();
           }}
           onOpenChange={(open) => {
             if (!open) {
@@ -674,8 +674,8 @@ export function AgentsView() {
           isConfirming={teamActions.isTeamSnapshotImportConfirming}
           result={teamActions.teamSnapshotImportResult}
           confirmError={teamActions.teamSnapshotImportConfirmError}
-          onConfirm={(keepAllowlist) => {
-            void teamActions.handleConfirmTeamSnapshotImport(keepAllowlist);
+          onConfirm={() => {
+            void teamActions.handleConfirmTeamSnapshotImport();
           }}
           onOpenChange={(open) => {
             if (!open) {

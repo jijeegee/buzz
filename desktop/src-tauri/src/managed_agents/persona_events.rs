@@ -207,6 +207,11 @@ pub fn build_persona_event(record: &AgentDefinition) -> Result<EventBuilder, Str
             }
             Some(_) => None,
         };
+        // Who may command the agent never leaves the owner's devices: a
+        // community-readable head carries no audience, and the relay rejects
+        // one that does.
+        content.respond_to = None;
+        content.respond_to_allowlist = Vec::new();
     }
 
     let content_json = serde_json::to_string(&content)

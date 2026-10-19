@@ -286,6 +286,26 @@ fn shared_persona_event_has_exact_tag_and_round_trips() {
 }
 
 #[test]
+fn shared_persona_event_carries_no_audience() {
+    let mut record = sample_persona();
+    record.respond_to = Some("allowlist".to_string());
+    record.respond_to_allowlist = vec!["a".repeat(64)];
+
+    let private = build_persona_event(&record)
+        .unwrap()
+        .sign_with_keys(&nostr::Keys::generate())
+        .unwrap();
+    assert!(private.content.contains("respond_to"), "device sync keeps it");
+
+    record.shared = true;
+    let shared = build_persona_event(&record)
+        .unwrap()
+        .sign_with_keys(&nostr::Keys::generate())
+        .unwrap();
+    assert!(!shared.content.contains("respond_to"), "{}", shared.content);
+}
+
+#[test]
 fn round_trip_serialization() {
     let mut record = sample_persona();
     record.acp_command = Some("kuzz-janet-acp".to_string());

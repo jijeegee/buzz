@@ -255,6 +255,57 @@ async fn is_owner_or_sibling(
     is_sibling
 }
 
+/// Author policy used to label fetched context messages by trust.
+///
+/// Mirrors the listener's raw-author gate so a context message is trusted
+/// exactly when its author could have triggered the agent directly.
+pub(crate) struct ContextAuthorTrust {
+    respond_to: RespondTo,
+    allowlist: HashSet<String>,
+    owner_cache: OwnerCache,
+}
+
+impl ContextAuthorTrust {
+    pub(crate) fn new(
+        respond_to: RespondTo,
+        allowlist: HashSet<String>,
+        owner: Option<String>,
+    ) -> Self {
+        Self {
+            respond_to,
+            allowlist,
+            owner_cache: OwnerCache::new(owner),
+        }
+    }
+
+    /// The subset of `authors` allowed to instruct this agent.
+    pub(crate) async fn trusted_authors<'a>(
+        &self,
+        authors: impl IntoIterator<Item = &'a str>,
+        is_dm: bool,
+        rest_client: &relay::RestClient,
+    ) -> HashSet<String> {
+        let authors: HashSet<&str> = authors.into_iter().collect();
+        let checks = authors.into_iter().map(|author| async move {
+            inbound_author_gate::context_author_allowed(
+                &self.respond_to,
+                &self.allowlist,
+                author,
+                is_dm,
+                &self.owner_cache,
+                rest_client,
+            )
+            .await
+            .then(|| author.to_string())
+        });
+        futures_util::future::join_all(checks)
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+}
+
 /// Return the workflow owner attributed by a relay-signed workflow message.
 ///
 /// `kuzz:workflow-owner` alone is not authority: any ordinary event author can
@@ -413,6 +464,29 @@ mod inbound_author_gate {
                     || is_owner_or_sibling(author, owner_cache, rest_client).await
             }
         }
+    }
+
+    /// Raw-author policy for labeling fetched context messages.
+    ///
+    /// Labeling only: it never admits an event, so exposing it does not open
+    /// a path around workflow attribution in the listener gate.
+    pub(crate) async fn context_author_allowed(
+        respond_to: &RespondTo,
+        allowlist: &HashSet<String>,
+        author: &str,
+        is_dm: bool,
+        owner_cache: &OwnerCache,
+        rest_client: &relay::RestClient,
+    ) -> bool {
+        author_allowed(
+            respond_to,
+            allowlist,
+            author,
+            is_dm,
+            owner_cache,
+            rest_client,
+        )
+        .await
     }
 
     #[cfg(test)]
@@ -7971,6 +8045,24 @@ mod owner_cache_tests {
     fn get_returns_cached_value() {
         let cache = OwnerCache::new(Some("ab".repeat(32)));
         assert_eq!(cache.get(), Some("ab".repeat(32)).as_deref());
+    }
+
+    #[tokio::test]
+    async fn context_trust_follows_author_gate() {
+        let owner = "a".repeat(64);
+        let stranger = "b".repeat(64);
+        let rest = relay::RestClient {
+            http: reqwest::Client::new(),
+            base_url: "http://127.0.0.1:0".into(),
+            keys: nostr::Keys::generate().into(),
+            auth_tag_json: None,
+        };
+        let trust =
+            ContextAuthorTrust::new(RespondTo::OwnerOnly, HashSet::new(), Some(owner.clone()));
+        let trusted = trust
+            .trusted_authors([owner.as_str(), stranger.as_str()], false, &rest)
+            .await;
+        assert_eq!(trusted, HashSet::from([owner]));
     }
 }
 

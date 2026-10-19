@@ -19,8 +19,6 @@ function makePreview(overrides = {}) {
     avatarUrl: null,
     memoryLevel: "none",
     memoryEntryCount: 0,
-    hasSourceAllowlist: false,
-    sourceAllowlistCount: 0,
     ...overrides,
   };
 }
@@ -41,25 +39,6 @@ function makeResult(overrides = {}) {
   };
 }
 
-// ── Preview: allowlist warning ────────────────────────────────────────────────
-
-test("preview_has_source_allowlist_is_true_when_allowlist_non_empty", () => {
-  const preview = makePreview({
-    hasSourceAllowlist: true,
-    sourceAllowlistCount: 2,
-  });
-  assert.equal(preview.hasSourceAllowlist, true);
-  assert.equal(preview.sourceAllowlistCount, 2);
-});
-
-test("preview_has_source_allowlist_is_false_when_allowlist_empty", () => {
-  const preview = makePreview({
-    hasSourceAllowlist: false,
-    sourceAllowlistCount: 0,
-  });
-  assert.equal(preview.hasSourceAllowlist, false);
-});
-
 // ── Preview: memory warning ───────────────────────────────────────────────────
 
 test("preview_memory_entry_count_drives_warning_display", () => {
@@ -72,23 +51,6 @@ test("preview_memory_entry_count_drives_warning_display", () => {
   });
   assert.equal(withMemory.memoryEntryCount, 3);
   assert.equal(withMemory.memoryLevel, "everything");
-});
-
-// ── Allowlist: default is clear (server-side enforced) ───────────────────────
-
-test("allowlist_default_is_clear", () => {
-  // keepAllowlist defaults to false in the dialog — safe default.
-  const keepAllowlist = false;
-  const sourceAllowlist = ["aabb".repeat(16)];
-  const appliedAllowlist = keepAllowlist ? sourceAllowlist : [];
-  assert.deepEqual(appliedAllowlist, []);
-});
-
-test("allowlist_keep_preserves_source", () => {
-  const keepAllowlist = true;
-  const sourceAllowlist = ["aabb".repeat(16)];
-  const appliedAllowlist = keepAllowlist ? sourceAllowlist : [];
-  assert.deepEqual(appliedAllowlist, sourceAllowlist);
 });
 
 // ── Result: full success ──────────────────────────────────────────────────────

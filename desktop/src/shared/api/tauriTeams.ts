@@ -170,8 +170,6 @@ export type TeamSnapshotMemberPreview = {
   displayName: string;
   systemPrompt: string | null;
   avatarUrl: string | null;
-  hasSourceAllowlist: boolean;
-  sourceAllowlistCount: number;
 };
 
 export type TeamSnapshotImportPreview = {
@@ -179,12 +177,10 @@ export type TeamSnapshotImportPreview = {
   description: string | null;
   instructions: string | null;
   members: TeamSnapshotMemberPreview[];
-  hasSourceAllowlist: boolean;
 };
 
 export type TeamSnapshotImportConfirm = {
   fileBytes: number[];
-  keepAllowlist: boolean;
 };
 
 export type TeamSnapshotImportMemberResult = {

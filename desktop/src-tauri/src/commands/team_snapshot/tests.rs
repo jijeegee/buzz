@@ -21,8 +21,6 @@ fn member(name: &str) -> AgentSnapshot {
             model: None,
             provider: None,
             parallelism: Some(2),
-            respond_to: Some("allowlist".to_string()),
-            respond_to_allowlist: vec!["ab".repeat(32)],
             name_pool: vec![],
             idle_timeout_seconds: None,
             max_turn_duration_seconds: None,
@@ -151,7 +149,7 @@ fn team_export_round_trip_preserves_team_and_excludes_member_memory() {
         Some("A careful reviewer.")
     );
     assert_eq!(decoded.members[1].profile.about, None);
-    let imported = build_import_definitions(&decoded, false, "now").unwrap();
+    let imported = build_import_definitions(&decoded, "now").unwrap();
     assert_eq!(imported[0].acp_command.as_deref(), Some("kuzz-janet-acp"));
     assert_eq!(
         imported[0].clone().into_agent_record().acp_command,
@@ -339,7 +337,7 @@ fn team_import_definitions_are_built_for_all_members() {
         &encode_team_snapshot_json(&snapshot(vec![memory_bearing, member("Bob")])).unwrap(),
     )
     .unwrap();
-    let definitions = build_import_definitions(&decoded, false, "now").unwrap();
+    let definitions = build_import_definitions(&decoded, "now").unwrap();
     let team = build_import_team(
         &decoded,
         definitions
@@ -375,16 +373,17 @@ fn team_import_definitions_are_built_for_all_members() {
 }
 
 #[test]
-fn team_import_keeps_or_clears_every_member_allowlist_with_one_toggle() {
-    let source = snapshot(vec![member("Alice"), member("Bob")]);
-    let kept = build_import_definitions(&source, true, "now").unwrap();
-    let cleared = build_import_definitions(&source, false, "now").unwrap();
+fn team_import_starts_every_member_owner_only_even_from_legacy_file() {
+    let mut value = serde_json::to_value(snapshot(vec![member("Alice"), member("Bob")])).unwrap();
+    for member in value["members"].as_array_mut().unwrap() {
+        let definition = member["definition"].as_object_mut().unwrap();
+        definition.insert("respondTo".into(), "anyone".into());
+        definition.insert("respondToAllowlist".into(), serde_json::json!(["ab".repeat(32)]));
+    }
+    let decoded = decode_team_snapshot_from_bytes(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let definitions = build_import_definitions(&decoded, "now").unwrap();
 
-    assert!(kept.iter().all(|definition| {
-        definition.respond_to.as_deref() == Some("allowlist")
-            && definition.respond_to_allowlist == vec!["ab".repeat(32)]
-    }));
-    assert!(cleared.iter().all(|definition| {
+    assert!(definitions.iter().all(|definition| {
         definition.respond_to.is_none() && definition.respond_to_allowlist.is_empty()
     }));
 }

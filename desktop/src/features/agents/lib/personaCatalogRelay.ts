@@ -2,7 +2,6 @@ import type {
   AcpSessionPolicy,
   AgentPersona,
   CatalogSourceCoordinate,
-  RespondToMode,
 } from "@/shared/api/types";
 import { invokeTauri } from "@/shared/api/tauri";
 
@@ -21,7 +20,6 @@ type CatalogAgentProjection = {
   /** Definition-level thinking effort; Rust omits it while unset. */
   effortLevel?: string | null;
   namePool: string[];
-  respondTo: RespondToMode | null;
   parallelism: number | null;
   sessionPolicy: AcpSessionPolicy;
 };
@@ -91,7 +89,9 @@ function publicationToPersona(
     shared: true,
     sourceTeam: null,
     envVars: {},
-    respondTo: publication.agent.respondTo,
+    // A catalog head never carries who may command the agent; the copy starts
+    // owner-only.
+    respondTo: null,
     respondToAllowlist: [],
     parallelism: publication.agent.parallelism,
     sessionPolicy: publication.agent.sessionPolicy,

@@ -257,6 +257,16 @@ export function useAgentManagement() {
     );
   }, [currentPersona, request]);
 
+  // Saved access the owner is reviewing the draft against, seeded the same way
+  // as the draft itself so allowlist normalization matches.
+  const editSavedAccess = React.useMemo(
+    () =>
+      currentPersona
+        ? (editPersonaDialogState(currentPersona).initialValues.behavior ?? {})
+        : {},
+    [currentPersona],
+  );
+
   const editError = React.useMemo(() => {
     if (request?.action !== "update") return error;
     if (error) return error;
@@ -273,6 +283,7 @@ export function useAgentManagement() {
     request,
     createInitialValues,
     editInitialValues,
+    editSavedAccess,
     editError,
     error,
     ...createdAgentAttachment,

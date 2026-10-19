@@ -124,8 +124,6 @@ fn make_snapshot(
             model: None,
             provider: None,
             parallelism: None,
-            respond_to: None,
-            respond_to_allowlist: vec![],
             name_pool: vec![],
             idle_timeout_seconds: None,
             max_turn_duration_seconds: None,
@@ -554,26 +552,28 @@ fn import_memory_bearing_snapshot_is_accepted() {
     assert_eq!(snapshot.memory.entries.len(), 2);
 }
 
-// ── Import: allowlist surfacing + enforcement ─────────────────────────────
+// ── Import: access settings never travel ─────────────────────────────────
 
-/// A snapshot with non-empty respond_to_allowlist sets has_source_allowlist.
+/// A file written by an older version still carrying `respond_to` /
+/// `respond_to_allowlist` decodes with both dropped, and re-encoding does not
+/// bring them back.
 #[test]
-fn import_preview_flags_non_empty_source_allowlist() {
+fn import_drops_legacy_access_fields() {
     use crate::managed_agents::agent_snapshot::encode_snapshot_json;
-    let mut snapshot = make_snapshot(MemoryLevel::None, vec![]);
-    snapshot.definition.respond_to_allowlist = vec!["aabbcc".repeat(11)[..64].to_string()]; // 64 hex chars
-    let bytes = encode_snapshot_json(&snapshot).unwrap();
-    let decoded = decode_snapshot_from_bytes(&bytes).unwrap();
-    assert!(
-        !decoded.definition.respond_to_allowlist.is_empty(),
-        "source allowlist must survive encode/decode"
+    let snapshot = make_snapshot(MemoryLevel::None, vec![]);
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&encode_snapshot_json(&snapshot).unwrap()).unwrap();
+    let definition = value["definition"].as_object_mut().unwrap();
+    definition.insert("respondTo".into(), "anyone".into());
+    definition.insert(
+        "respondToAllowlist".into(),
+        serde_json::json!(["aabbcc".repeat(11)[..64].to_string()]),
     );
-    // Simulate preview logic:
-    let has_source_allowlist = !decoded.definition.respond_to_allowlist.is_empty();
-    assert!(
-        has_source_allowlist,
-        "preview must flag non-empty source allowlist"
-    );
+    let legacy = serde_json::to_vec(&value).unwrap();
+
+    let decoded = decode_snapshot_from_bytes(&legacy).unwrap();
+    let reencoded = String::from_utf8(encode_snapshot_json(&decoded).unwrap()).unwrap();
+    assert!(!reencoded.contains("respondTo"), "{reencoded}");
 }
 
 #[test]
@@ -593,213 +593,21 @@ fn import_preview_includes_exported_definition_metadata() {
 }
 
 // ── Import: resolve_snapshot_import_behavior — the production selection path
-//
-// All tests below call `resolve_snapshot_import_behavior` directly.  This is
-// the same function invoked by `confirm_agent_snapshot_import`, so the tests
-// exercise the exact production code path, not a reconstruction of it.
 
-/// Uppercase hex pubkeys are lowercased and duplicates are removed before the
-/// resolved allowlist is persisted.
+/// Every import is minted owner-only with an empty allowlist.
 #[test]
-fn import_allowlist_uppercase_is_normalized_and_deduplicated() {
-    let upper = "AABBCC".repeat(11)[..64].to_string();
-    let lower = upper.to_ascii_lowercase();
-    // allowlist-mode source + keep=true: normalization applies.
-    let minted = resolve_snapshot_import_behavior(
-        Some("allowlist"),
-        &[upper.clone(), upper.clone()], // uppercase + duplicate
-        None,
-        true, // keep
-    )
-    .unwrap();
-    assert_eq!(
-        minted.respond_to_allowlist,
-        vec![lower],
-        "uppercase must be lowercased, duplicate removed"
-    );
-}
-
-/// A malformed pubkey in the raw allowlist is rejected before any key
-/// generation or write.
-#[test]
-fn import_allowlist_malformed_pubkey_is_rejected() {
-    let bad = "notahexpubkey".to_string();
-    let err = resolve_snapshot_import_behavior(Some("allowlist"), &[bad], None, true).unwrap_err();
-    assert!(
-        err.contains("invalid pubkey"),
-        "malformed pubkey must be rejected before key generation: {err}"
-    );
-}
-
-/// keep_allowlist = false on a non-allowlist source (anyone) with an empty
-/// list preserves the source mode — no list was present so the toggle was
-/// never shown.
-#[test]
-fn import_non_allowlist_mode_preserved_when_keep_false() {
-    use crate::managed_agents::RespondTo;
-    let minted = resolve_snapshot_import_behavior(
-        Some("anyone"),
-        &[], // no allowlist — toggle never shown
-        None,
-        false,
-    )
-    .unwrap();
-    assert_eq!(
-        minted.respond_to,
-        RespondTo::Anyone,
-        "anyone mode must be preserved when list is empty (toggle not shown)"
-    );
-    assert!(
-        minted.respond_to_allowlist.is_empty(),
-        "anyone mode must have no allowlist"
-    );
-}
-
-#[test]
-fn import_catalog_owner_only_without_allowlist_succeeds() {
-    let minted = resolve_snapshot_import_behavior(Some("owner-only"), &[], None, false).unwrap();
-
+fn import_is_always_owner_only() {
+    let minted = resolve_snapshot_import_behavior(Some(4)).unwrap();
     assert_eq!(minted.respond_to, RespondTo::OwnerOnly);
     assert!(minted.respond_to_allowlist.is_empty());
-}
-
-/// Non-allowlist mode with a non-empty list and keep=true: preserve mode + list.
-/// The toggle WAS shown (list is non-empty) so keep_allowlist applies.
-#[test]
-fn import_non_allowlist_mode_with_nonempty_list_keep_preserves_mode_and_list() {
-    use crate::managed_agents::RespondTo;
-    let raw = "aabbcc".repeat(11)[..64].to_string();
-    let minted = resolve_snapshot_import_behavior(
-        Some("anyone"),
-        std::slice::from_ref(&raw),
-        None,
-        true, // keep
-    )
-    .unwrap();
-    assert_eq!(
-        minted.respond_to,
-        RespondTo::Anyone,
-        "anyone mode must be preserved on keep=true"
-    );
-    assert_eq!(
-        minted.respond_to_allowlist,
-        vec![raw],
-        "list must be preserved on keep=true"
-    );
-}
-
-/// Non-allowlist mode with a non-empty list and keep=false: Clear preserves
-/// the source mode but empties the list.  Non-allowlist modes are valid
-/// without entries — no mode downgrade occurs.
-#[test]
-fn import_non_allowlist_mode_with_nonempty_list_clear_preserves_mode_empties_list() {
-    use crate::managed_agents::RespondTo;
-    let raw = "aabbcc".repeat(11)[..64].to_string();
-    let minted = resolve_snapshot_import_behavior(
-        Some("anyone"),
-        &[raw],
-        None,
-        false, // clear
-    )
-    .unwrap();
-    assert_eq!(
-        minted.respond_to,
-        RespondTo::Anyone,
-        "non-allowlist mode must be preserved on clear (mode is valid without entries)"
-    );
-    assert!(
-        minted.respond_to_allowlist.is_empty(),
-        "cleared list must be empty"
-    );
-}
-
-/// keep_allowlist = true with a valid non-empty allowlist-mode snapshot
-/// preserves the mode and the full allowlist.
-#[test]
-fn import_allowlist_keep_with_valid_list_succeeds() {
-    use crate::managed_agents::RespondTo;
-    let raw = "aabbcc".repeat(11)[..64].to_string();
-    let minted = resolve_snapshot_import_behavior(
-        Some("allowlist"),
-        std::slice::from_ref(&raw),
-        None,
-        true, // keep
-    )
-    .unwrap();
-    assert_eq!(minted.respond_to, RespondTo::Allowlist);
-    assert_eq!(minted.respond_to_allowlist, vec![raw]);
-}
-
-/// keep_allowlist = false on an allowlist-mode source with a non-empty list
-/// downgrades to owner-only and clears the allowlist.
-#[test]
-fn import_allowlist_clear_downgrades_to_owner_only() {
-    use crate::managed_agents::RespondTo;
-    let raw = "aabbcc".repeat(11)[..64].to_string();
-    let minted = resolve_snapshot_import_behavior(
-        Some("allowlist"),
-        &[raw],
-        None,
-        false, // clear
-    )
-    .unwrap();
-    assert_eq!(
-        minted.respond_to,
-        RespondTo::OwnerOnly,
-        "clear on allowlist-mode must yield owner-only"
-    );
-    assert!(
-        minted.respond_to_allowlist.is_empty(),
-        "cleared allowlist must be empty"
-    );
-}
-
-/// Allowlist-mode snapshot with an empty list and keep=false (the default
-/// when no UI choice was shown) is rejected before any key generation.
-/// This is the primary defect path that the prior implementation missed.
-#[test]
-fn import_empty_allowlist_mode_rejected_with_keep_false() {
-    let err = resolve_snapshot_import_behavior(
-        Some("allowlist"),
-        &[], // empty — no entries to keep or clear
-        None,
-        false, // keep=false is the default: UI never showed a choice
-    )
-    .unwrap_err();
-    assert!(
-        err.contains("allowlist is empty"),
-        "empty allowlist-mode + keep=false must be rejected before key generation: {err}"
-    );
-}
-
-/// Allowlist-mode snapshot with an empty list and keep=true is also rejected.
-/// The user explicitly said Keep, but there is nothing to keep.
-#[test]
-fn import_empty_allowlist_mode_rejected_with_keep_true() {
-    let err = resolve_snapshot_import_behavior(
-        Some("allowlist"),
-        &[], // empty
-        None,
-        true, // keep=true: user said Keep, but the list is empty
-    )
-    .unwrap_err();
-    assert!(
-        err.contains("allowlist is empty"),
-        "empty allowlist-mode + keep=true must be rejected before key generation: {err}"
-    );
+    assert_eq!(minted.parallelism, Some(4));
 }
 
 /// Out-of-range parallelism (0 and 33) is rejected.
 #[test]
 fn import_out_of_range_parallelism_is_rejected() {
     for bad_par in [0u32, 33u32] {
-        let err = resolve_snapshot_import_behavior(
-            None, // no respond_to (defaults to owner-only)
-            &[],
-            Some(bad_par),
-            false,
-        )
-        .unwrap_err();
+        let err = resolve_snapshot_import_behavior(Some(bad_par)).unwrap_err();
         assert!(
             err.contains("out of range"),
             "parallelism {bad_par} must be rejected: {err}"
