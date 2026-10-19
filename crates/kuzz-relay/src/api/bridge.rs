@@ -2216,12 +2216,13 @@ async fn query_events_authed(
         let thread_cursor = extract_thread_cursor(raw);
         let thread_replies = state
             .db
-            .get_thread_replies(
+            .get_thread_replies_for_reader(
                 tenant.community(),
                 &root_bytes,
                 Some(depth),
                 limit,
                 thread_cursor.as_deref(),
+                Some(&pubkey_bytes),
             )
             .await
             .map_err(|e| internal_error(&format!("thread query error: {e}")))?;

@@ -337,6 +337,29 @@ pub async fn get_thread_replies(
     limit: u32,
     cursor: Option<&[u8]>,
 ) -> Result<Vec<ThreadReply>> {
+    get_thread_replies_for_reader(
+        pool,
+        community_id,
+        root_event_id,
+        depth_limit,
+        limit,
+        cursor,
+        None,
+    )
+    .await
+}
+
+/// [`get_thread_replies`] without replies from before `history_reader`
+/// joined a `since_join` room (`channel_event_before_join`).
+pub(crate) async fn get_thread_replies_for_reader(
+    pool: &PgPool,
+    community_id: CommunityId,
+    root_event_id: &[u8],
+    depth_limit: Option<u32>,
+    limit: u32,
+    cursor: Option<&[u8]>,
+    history_reader: Option<&[u8]>,
+) -> Result<Vec<ThreadReply>> {
     let mut conn = crate::observability::acquire_writer(
         pool,
         crate::observability::WriterOperation::SubscriptionHistory,
@@ -349,6 +372,7 @@ pub async fn get_thread_replies(
         depth_limit,
         limit,
         cursor,
+        history_reader,
     )
     .await
 }
@@ -364,6 +388,7 @@ pub(crate) async fn get_thread_replies_on(
     depth_limit: Option<u32>,
     limit: u32,
     cursor: Option<&[u8]>,
+    history_reader: Option<&[u8]>,
 ) -> Result<Vec<ThreadReply>> {
     // Decode cursor bytes -> keyset (timestamp, optional event_id) for the
     // WHERE condition. Layout: 8-byte BE i64 seconds, then the raw event_id.
@@ -447,6 +472,14 @@ pub(crate) async fn get_thread_replies_on(
             None => {}
         }
 
+        if history_reader.is_some() {
+            sql.push_str(&format!(
+                " AND NOT channel_event_before_join(e.community_id, e.channel_id, \
+                 e.channel_sequence, ${param_idx})"
+            ));
+            param_idx += 1;
+        }
+
         sql.push_str(&format!(
             " ORDER BY tm.event_created_at ASC, tm.event_id ASC LIMIT ${param_idx}"
         ));
@@ -466,6 +499,9 @@ pub(crate) async fn get_thread_replies_on(
                 q = q.bind(*ts);
             }
             None => {}
+        }
+        if let Some(reader) = history_reader {
+            q = q.bind(reader.to_vec());
         }
         q = q.bind(remaining as i32);
 
@@ -1170,6 +1206,28 @@ impl Db {
         limit: u32,
         cursor: Option<&[u8]>,
     ) -> Result<Vec<crate::thread::ThreadReply>> {
+        self.get_thread_replies_for_reader(
+            community_id,
+            root_event_id,
+            depth_limit,
+            limit,
+            cursor,
+            None,
+        )
+        .await
+    }
+
+    /// [`Db::get_thread_replies`] without replies from before
+    /// `history_reader` joined a `since_join` room.
+    pub async fn get_thread_replies_for_reader(
+        &self,
+        community_id: CommunityId,
+        root_event_id: &[u8],
+        depth_limit: Option<u32>,
+        limit: u32,
+        cursor: Option<&[u8]>,
+        history_reader: Option<&[u8]>,
+    ) -> Result<Vec<crate::thread::ThreadReply>> {
         let (path, predicate): (&'static str, RoutePredicate) = match cursor {
             Some(_) => (
                 "thread_cursor",
@@ -1194,6 +1252,7 @@ impl Db {
                 depth_limit,
                 limit,
                 cursor,
+                history_reader,
             )
             .await
             {
@@ -1229,13 +1288,14 @@ impl Db {
                 }
             }
         }
-        crate::thread::get_thread_replies(
+        crate::thread::get_thread_replies_for_reader(
             &self.pool,
             community_id,
             root_event_id,
             depth_limit,
             limit,
             cursor,
+            history_reader,
         )
         .await
     }
