@@ -2188,7 +2188,7 @@ async fn routed_reads_are_confined_to_the_requested_community() {
     );
 
     let rows = db
-        .query_feed_activity_routed("sep_feed", cid_a, &both, None, 50)
+        .query_feed_activity_routed("sep_feed", cid_a, &both, None, 50, None)
         .await
         .expect("routed activity");
     assert_a_only(&rows, "a-replica-only", "query_feed_activity_routed");

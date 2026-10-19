@@ -2153,6 +2153,7 @@ async fn query_events_authed(
                         &accessible_channels,
                         since,
                         remaining,
+                        Some(&pubkey_bytes),
                     )
                     .await
                     .map_err(|e| internal_error(&format!("feed activity error: {e}")))?,
