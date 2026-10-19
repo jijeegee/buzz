@@ -29,7 +29,8 @@ void main() {
     WidgetTester tester, {
     required List<MyAgent> agents,
     Map<String, String> presence = const {},
-    List<MyTeam> teams = const [],
+    List<MyAgentTeam> teams = const [],
+    List<MyTeamPreset> teamPresets = const [],
     List<MyAgentPreset> presets = const [],
     String? currentDevice = 'phone',
   }) async {
@@ -41,7 +42,8 @@ void main() {
           agentDirectoryProvider.overrideWith(
             (ref) async => const <AgentDirectoryEntry>[],
           ),
-          myTeamsProvider.overrideWith((ref) async => teams),
+          myAgentTeamsProvider.overrideWith((ref) async => teams),
+          myTeamPresetsProvider.overrideWith((ref) async => teamPresets),
           myAgentPresetsProvider.overrideWith((ref) async => presets),
           presenceCacheProvider.overrideWith(() => _FakePresence(presence)),
           userCacheProvider.overrideWith(
@@ -274,21 +276,22 @@ void main() {
     expect(find.text('AGENT PRESETS'), findsNothing);
   });
 
-  testWidgets('Presets lists team presets and opens one', (tester) async {
+  testWidgets('Presets lists team presets, view only', (tester) async {
     await pump(
       tester,
-      agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a'),
-      ],
-      presence: {_fizz: 'online'},
-      teams: [
-        MyTeam(
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
+      teamPresets: [
+        MyTeamPreset(
           id: 'research',
           name: 'Research',
           description: 'Finds and checks sources.',
           members: [
-            MyTeamMember(personaD: 'fizz', name: 'Fizz', agentPubkeys: [_fizz]),
-            const MyTeamMember(
+            MyTeamPresetMember(
+              personaD: 'fizz',
+              name: 'Fizz',
+              agentPubkeys: [_fizz],
+            ),
+            const MyTeamPresetMember(
               personaD: 'writer',
               name: 'Writer',
               agentPubkeys: [],
@@ -297,7 +300,7 @@ void main() {
         ),
       ],
     );
-    // Teams are not on My agents.
+    // Team presets are not on My agents.
     expect(find.text('Research'), findsNothing);
     await tester.tap(find.byKey(const Key('agents-tab-presets')));
     await tester.pumpAndSettle();
@@ -306,10 +309,53 @@ void main() {
     expect(find.text('Fizz · Writer'), findsOneWidget);
     await tester.tap(find.text('Research'));
     await tester.pumpAndSettle();
+    expect(find.byType(AgentTeamPage), findsNothing);
+  });
+
+  testWidgets('My agents lists teams with status and opens one', (
+    tester,
+  ) async {
+    final gone = '9' * 64;
+    await pump(
+      tester,
+      agents: [
+        MyAgent(pubkey: _fizz, deviceId: 'pc-a'),
+        MyAgent(pubkey: _honey, deviceId: 'pc-b'),
+      ],
+      presence: {_fizz: 'online', _honey: 'offline'},
+      teams: [
+        MyAgentTeam(
+          id: 'build',
+          name: 'Build crew',
+          description: 'Ships the app.',
+          agentPubkeys: [_fizz, _honey, gone],
+        ),
+      ],
+    );
+    expect(find.text('TEAMS'), findsOneWidget);
+    expect(find.text('Build crew'), findsOneWidget);
+    expect(find.text('Fizz · Honey · 1 removed'), findsOneWidget);
+    expect(
+      find.byKey(ValueKey('agents-team-dot-build-$_fizz')),
+      findsOneWidget,
+    );
+    expect(find.byKey(ValueKey('agents-team-dot-build-$gone')), findsNothing);
+
+    // Not on Presets.
+    await tester.tap(find.byKey(const Key('agents-tab-presets')));
+    await tester.pumpAndSettle();
+    expect(find.text('Build crew'), findsNothing);
+    await tester.tap(find.byKey(const Key('agents-tab-agents')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Build crew'));
+    await tester.pumpAndSettle();
     expect(find.byType(AgentTeamPage), findsOneWidget);
-    expect(find.text('Finds and checks sources.'), findsOneWidget);
+    expect(find.text('Ships the app.'), findsOneWidget);
+    // Agents on different computers, each with its status.
     expect(find.text('Online · Office PC'), findsOneWidget);
-    expect(find.text('Not on any of your computers'), findsOneWidget);
+    expect(find.text('Stopped · Mac mini'), findsOneWidget);
+    expect(find.text('1 agent was removed'), findsOneWidget);
   });
 }
 

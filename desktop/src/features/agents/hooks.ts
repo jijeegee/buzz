@@ -6,6 +6,7 @@ import {
   discoverAcpAuthMethods,
 } from "@/shared/api/tauriAgentAuth";
 import {
+  addAgentsToChannel,
   attachManagedAgentToChannel,
   createChannelManagedAgents,
   ensureChannelAgentPresetInChannel,
@@ -77,6 +78,7 @@ import type {
   AcpRuntime,
   AgentPersona,
   Channel,
+  ChannelRole,
   CreateManagedAgentInput,
   CreatePersonaInput,
   GlobalAgentConfig,
@@ -786,6 +788,24 @@ export function useAttachManagedAgentToChannelMutation(
       // the list to discover that target instead of decorating the source DM.
       invalidateAgentQueriesInBackground(queryClient, effectiveChannelId, {
         refetchChannels: isCachedDmChannel(queryClient, effectiveChannelId),
+      });
+    },
+  });
+}
+
+/** Add a team's existing agents to a channel (see `addAgentsToChannel`). */
+export function useAddAgentsToChannelMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: {
+      channelId: string;
+      pubkeys: readonly string[];
+      role?: Exclude<ChannelRole, "owner">;
+    }) => addAgentsToChannel(input.channelId, input.pubkeys, input.role),
+    onSettled: (_data, _err, variables) => {
+      invalidateAgentQueriesInBackground(queryClient, variables.channelId, {
+        refetchChannels: true,
       });
     },
   });

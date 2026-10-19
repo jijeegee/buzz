@@ -73,6 +73,7 @@ import {
   KIND_HUDDLE_STARTED,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
+  KIND_AGENT_TEAM,
   KIND_PERSONA,
   KIND_PROJECT_ANNOUNCEMENT,
   KIND_REPO_ANNOUNCEMENT,
@@ -3365,6 +3366,8 @@ const deferredSendMessageLiveEchoes: Array<{
 const mockUserStatuses: RelayEvent[] = [];
 const mockReminderEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
+/** Owner-signed teams (kind:30182), newest per `d`. */
+const mockAgentTeamEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];
 let mockRelayMembers: RawRelayMember[] = [];
 const mockSockets = new Map<number, MockSocket>();
@@ -3554,6 +3557,7 @@ function resetMockSaveSubscriptions(config: E2eConfig | undefined) {
 
 function resetMockPersonaCatalogEvents(config: E2eConfig | undefined) {
   mockPersonaEvents.length = 0;
+  mockAgentTeamEvents.length = 0;
   for (const event of config?.mock?.personaCatalogEvents ?? []) {
     mockPersonaEvents.push({
       ...event,
@@ -5739,8 +5743,7 @@ async function handleGetThreadWindows(
       .filter((event) => MOCK_THREAD_WINDOW_KINDS.has(event.kind))
       .sort(
         (left, right) =>
-          right.created_at - left.created_at ||
-          left.id.localeCompare(right.id),
+          right.created_at - left.created_at || left.id.localeCompare(right.id),
       );
     const cursor = thread.cursor ?? null;
     const afterCursor = cursor
@@ -11400,6 +11403,16 @@ function sendToMockSocket(args: {
       return;
     }
 
+    if (filter.kinds?.includes(KIND_AGENT_TEAM)) {
+      const authors = filter.authors?.map((author) => author.toLowerCase());
+      for (const event of mockAgentTeamEvents) {
+        if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
+        sendWsText(socket.handler, ["EVENT", subId, event]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
     if (filter.kinds?.includes(KIND_PERSONA)) {
       const authors = filter.authors?.map((author) => author.toLowerCase());
       const sourceIds = filter["#d"];
@@ -11607,6 +11620,29 @@ function sendToMockSocket(args: {
         if (idx >= 0) mockReminderEvents.splice(idx, 1);
       }
       mockReminderEvents.push(event);
+      sendWsText(socket.handler, ["OK", event.id, true, ""]);
+      return;
+    }
+
+    if (event.kind === KIND_AGENT_TEAM) {
+      const teamId = event.tags.find((tag) => tag[0] === "d")?.[1];
+      if (!teamId) {
+        sendWsText(socket.handler, [
+          "OK",
+          event.id,
+          false,
+          "invalid: missing d tag",
+        ]);
+        return;
+      }
+      const index = mockAgentTeamEvents.findIndex(
+        (existing) =>
+          existing.pubkey === event.pubkey &&
+          existing.tags.find((tag) => tag[0] === "d")?.[1] === teamId,
+      );
+      if (index >= 0) mockAgentTeamEvents.splice(index, 1);
+      mockAgentTeamEvents.push(event);
+      emitMockGlobalEvent(event);
       sendWsText(socket.handler, ["OK", event.id, true, ""]);
       return;
     }

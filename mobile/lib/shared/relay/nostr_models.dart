@@ -45,6 +45,10 @@ abstract final class EventKind {
 
   /// Kind:30181 owner-authored robot choice for one relay device (`d`).
   static const deviceRobot = 30181;
+
+  /// Kind:30182 owner-authored team of the owner's real agents; `d` is the
+  /// team id, content `{"v":1,"name","description"?,"agent_pubkeys"}`.
+  static const agentTeam = 30182;
   static const eventReminder = 30300;
   static const userStatus = 30315;
   static const dmVisibility = 30622;
