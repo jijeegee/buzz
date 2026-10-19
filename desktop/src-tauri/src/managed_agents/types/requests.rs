@@ -181,8 +181,10 @@ pub struct UpdatePersonaRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CreateManagedAgentRequest {
     pub name: String,
-    #[serde(default)]
-    pub persona_id: Option<String>,
+    /// The preset to make the agent from. Its settings are copied into the
+    /// agent at create; the id is kept only as a label.
+    #[serde(default, alias = "personaId")]
+    pub source_preset_id: Option<String>,
     /// Optional deployment-time team binding for runtime instruction layering.
     #[serde(default)]
     pub team_id: Option<String>,
@@ -259,6 +261,10 @@ pub struct UpdateManagedAgentRequest {
     /// Absent = don't touch. Present = rename the agent.
     #[serde(default)]
     pub name: Option<String>,
+    /// Absent = don't touch. null = clear. "text" = set the agent's own
+    /// public description (its kind:0 `about`).
+    #[serde(default, deserialize_with = "crate::util::double_option")]
+    pub description: Option<Option<String>>,
     /// Absent = don't touch. null = clear to agent default. "id" = set.
     #[serde(default)]
     pub model: Option<Option<String>>,
@@ -282,14 +288,6 @@ pub struct UpdateManagedAgentRequest {
     pub acp_command: Option<String>,
     #[serde(default)]
     pub agent_command: Option<String>,
-    /// True when the accompanying `agent_command` is a runtime/Custom command
-    /// the user deliberately picked for a linked persona (i.e. the dialog is
-    /// not inheriting). Distinguishes a real pin — including one that maps to
-    /// the persona's own runtime — from a persona-authoritative restatement,
-    /// so a same-runtime pick is preserved instead of being dropped back to
-    /// inherit. Ignored when `agent_command` is absent or the inherit sentinel.
-    #[serde(default)]
-    pub harness_override: bool,
     #[serde(default)]
     pub agent_args: Option<Vec<String>>,
     /// Accepted for wire compatibility; not applied to the stored record.

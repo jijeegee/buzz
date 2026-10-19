@@ -10,7 +10,7 @@ const SIBLING = "b".repeat(64);
 const agent = {
   pubkey: PK,
   name: "Remote",
-  personaId: "persona",
+  sourcePresetId: "persona",
   status: "deployed",
   backend: { type: "provider", id: "fixture", config: {} },
   backendAgentId: "receipt",
@@ -144,8 +144,6 @@ function mount(
     const availability = useAgentAvailabilityLookup(keys);
     const deletion = useProfileAgentDeletion({
       channels: [channel],
-      managedAgents: agents,
-      managedAgent: agents[0],
       relayAgents: agents.map((row) => ({
         ...directory[0],
         pubkey: row.pubkey,
@@ -419,7 +417,7 @@ test("Agents deletion rechecks availability after channel discovery, not the cli
   assert.match(confirms[0], /availability is unknown/);
 });
 
-test("profile persona deletion cannot infer Offline for an unqueried sibling", async () => {
+test("profile deletion offers no preset cascade: agents made from a preset are never deleted with it", async () => {
   setup();
   handlers.set("get_presence", () => ({}));
   const surface = mount("profile", {
@@ -429,17 +427,9 @@ test("profile persona deletion cannot infer Offline for an unqueried sibling", a
   await waitFor(() =>
     assert.equal(surface.current().getAvailability(PK), "offline"),
   );
-  assert.equal(surface.current().getAvailability(SIBLING), undefined);
-  await act(() =>
-    surface.current().deleteManagedAgentsForPersona({ id: "persona" }),
-  );
-  const requests = effects().filter(
-    ([name]) => name === "send_channel_message",
-  );
-  assert.equal(requests.length, 1);
-  assert.deepEqual(requests[0][1].mentionPubkeys, [SIBLING]);
-  assert.match(confirms[0], /is offline/);
-  assert.match(confirms[1], /availability is unknown/);
+  assert.equal(surface.current().deleteManagedAgentsForPersona, undefined);
+  assert.deepEqual(effects(), []);
+  assert.deepEqual(confirms, []);
 });
 
 test("successful cached snapshot remains authoritative during refetch; only settled error revokes it", async () => {

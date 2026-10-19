@@ -7,12 +7,11 @@ use super::relay_mesh::{
     RELAY_MESH_API_BASE_URL, RELAY_MESH_API_KEY_PLACEHOLDER, RELAY_MESH_AUTO_MODEL_ID,
     RELAY_MESH_PROVIDER_ID,
 };
-use super::types::{AgentDefinition, ManagedAgentRecord};
+use super::types::ManagedAgentRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigSource {
-    Definition,
     Global,
     InstanceLegacy,
 }
@@ -58,55 +57,8 @@ impl EffectiveAgentConfig {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum EffectiveConfigResult {
-    Resolved(EffectiveAgentConfig),
-    OrphanedInstance {
-        record_pubkey: String,
-        missing_persona_id: String,
-    },
-}
-
 fn non_blank(v: Option<&str>) -> Option<&str> {
     v.filter(|s| !s.trim().is_empty())
-}
-
-fn resolve_linked(
-    definition: &AgentDefinition,
-    global: &GlobalAgentConfig,
-) -> EffectiveAgentConfig {
-    let model = match non_blank(definition.model.as_deref()) {
-        Some(m) => ResolvedField {
-            value: Some(m.to_owned()),
-            source: ConfigSource::Definition,
-        },
-        None => ResolvedField {
-            value: global.model.clone(),
-            source: ConfigSource::Global,
-        },
-    };
-
-    let provider = match non_blank(definition.provider.as_deref()) {
-        Some(p) => ResolvedField {
-            value: Some(p.to_owned()),
-            source: ConfigSource::Definition,
-        },
-        None => ResolvedField {
-            value: global.provider.clone(),
-            source: ConfigSource::Global,
-        },
-    };
-
-    let system_prompt = ResolvedField {
-        value: non_blank(Some(definition.system_prompt.as_str())).map(str::to_owned),
-        source: ConfigSource::Definition,
-    };
-
-    EffectiveAgentConfig {
-        model,
-        provider,
-        system_prompt,
-    }
 }
 
 /// The API key value the relay-mesh preset wrote before the Jun-11 rename
@@ -168,9 +120,9 @@ fn mesh_preset_env_model_id(env_vars: &BTreeMap<String, String>) -> Option<Strin
 ///   field at all;
 /// - before that, the mesh preset written straight into `env_vars`.
 ///
-/// Consulted only by [`resolve_definition_less`]: a record with no definition
-/// has nothing authoritative to be overridden by, so its own bytes are the
-/// highest-precedence signal it has. A linked instance never reaches here.
+/// Consulted only by [`resolve_effective_config`], and only for a record
+/// never made from a preset: a copied record's blank provider means "global
+/// default" (as it did while linked), never mesh.
 fn legacy_record_mesh_model_id(record: &ManagedAgentRecord) -> Option<String> {
     match &record.relay_mesh {
         // The marker itself is the mesh signal; a blank `model_ref` still means
@@ -185,7 +137,11 @@ fn legacy_record_mesh_model_id(record: &ManagedAgentRecord) -> Option<String> {
     }
 }
 
-fn resolve_definition_less(
+/// Resolve the model, provider and prompt `record` launches with: the agent's
+/// own values, a blank model/provider falling back to the global default. An
+/// agent owns every setting it runs with — the preset it was made from is a
+/// label only and is never read here.
+pub fn resolve_effective_config(
     record: &ManagedAgentRecord,
     global: &GlobalAgentConfig,
 ) -> EffectiveAgentConfig {
@@ -228,7 +184,7 @@ fn resolve_definition_less(
     // never consulted. Only a record that never carried a provider at all
     // falls back, and both fields move together so the single mesh gate
     // (`relay_mesh_model_id`) and the spawned model agree.
-    if non_blank(record.provider.as_deref()).is_none() {
+    if non_blank(record.provider.as_deref()).is_none() && record.source_preset_id.is_none() {
         if let Some(model_ref) = legacy_record_mesh_model_id(record) {
             config.provider = ResolvedField {
                 value: Some(RELAY_MESH_PROVIDER_ID.to_owned()),
@@ -244,74 +200,22 @@ fn resolve_definition_less(
     config
 }
 
-pub fn resolve_effective_config(
-    record: &ManagedAgentRecord,
-    definitions: &[AgentDefinition],
-    global: &GlobalAgentConfig,
-) -> EffectiveConfigResult {
-    match &record.persona_id {
-        Some(pid) => match definitions.iter().find(|d| d.id == *pid) {
-            Some(def) => EffectiveConfigResult::Resolved(resolve_linked(def, global)),
-            None => EffectiveConfigResult::OrphanedInstance {
-                record_pubkey: record.pubkey.clone(),
-                missing_persona_id: pid.clone(),
-            },
-        },
-        None => EffectiveConfigResult::Resolved(resolve_definition_less(record, global)),
-    }
-}
-
 pub fn resolve_effective_model_provider_pair(
     record: &ManagedAgentRecord,
-    definitions: &[AgentDefinition],
     global: &GlobalAgentConfig,
-) -> Option<(Option<String>, Option<String>)> {
-    match resolve_effective_config(record, definitions, global) {
-        EffectiveConfigResult::Resolved(cfg) => Some((cfg.model.value, cfg.provider.value)),
-        EffectiveConfigResult::OrphanedInstance { .. } => None,
-    }
+) -> (Option<String>, Option<String>) {
+    let cfg = resolve_effective_config(record, global);
+    (cfg.model.value, cfg.provider.value)
 }
 
 /// The relay-mesh preflight decision for `record`, resolved the same way
-/// spawn resolves its mesh env: through `resolve_effective_config` (which
-/// folds in the definition → global fallback). A linked instance's own
-/// `provider`/`model`/`relay_mesh` bytes never contribute; a definition-less
-/// legacy record may fall back to them via `legacy_record_mesh_model_id`,
-/// which is confined to `resolve_definition_less`.
-///
-/// `None` covers both "not a mesh agent" and "orphaned instance" — an orphan
-/// never spawns (see `require_resolved`), so it never needs a mesh preflight
-/// either; the caller's own orphan handling downstream is unaffected, this
-/// just avoids tripping mesh bootstrap for a start that will be refused.
+/// spawn resolves its mesh env (`resolve_effective_config`). `None` when it is
+/// not a mesh agent.
 pub fn resolve_effective_relay_mesh_model_id(
     record: &ManagedAgentRecord,
-    definitions: &[AgentDefinition],
     global: &GlobalAgentConfig,
 ) -> Option<String> {
-    match resolve_effective_config(record, definitions, global) {
-        EffectiveConfigResult::Resolved(cfg) => cfg.relay_mesh_model_id(),
-        EffectiveConfigResult::OrphanedInstance { .. } => None,
-    }
-}
-
-/// The single user-facing message for a linked instance whose definition no
-/// longer exists. Shared by every path that must refuse to act on an orphan:
-/// the spawn boundary (`spawn_agent_child`), the interactive start command,
-/// and provider deploy.
-pub const ORPHANED_INSTANCE_ERROR: &str =
-    "This agent's configuration is missing — it may still be \
-     syncing or was deleted on another device.";
-
-impl EffectiveConfigResult {
-    /// Unwrap into the resolved config, or the shared orphan-refusal error.
-    pub fn require_resolved(self) -> Result<EffectiveAgentConfig, String> {
-        match self {
-            EffectiveConfigResult::Resolved(cfg) => Ok(cfg),
-            EffectiveConfigResult::OrphanedInstance { .. } => {
-                Err(ORPHANED_INSTANCE_ERROR.to_string())
-            }
-        }
-    }
+    resolve_effective_config(record, global).relay_mesh_model_id()
 }
 
 #[cfg(test)]

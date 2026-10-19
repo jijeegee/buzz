@@ -56,6 +56,14 @@ pub(crate) fn managed_agents_store_path<R: tauri::Runtime>(
     Ok(managed_agents_base_dir(app)?.join("managed-agents.json"))
 }
 
+/// The preset store: templates agents are made from. Separate from the agent
+/// store; nothing in it is read when an agent runs.
+pub(crate) const PRESETS_FILE: &str = "presets.json";
+
+pub(crate) fn presets_store_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    Ok(managed_agents_base_dir(app)?.join(PRESETS_FILE))
+}
+
 fn managed_agents_logs_dir<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     let dir = managed_agents_base_dir(app)?.join("logs");
     fs::create_dir_all(&dir).map_err(|error| format!("failed to create logs dir: {error}"))?;
@@ -252,72 +260,77 @@ pub(crate) fn spawn_key_refusal(record: &ManagedAgentRecord) -> Option<String> {
     })
 }
 
-/// Read the raw unified store — keyed instances AND key-less definitions —
-/// with fail-loud parse handling. Internal seam; public readers filter.
+/// Read the agent store with fail-loud parse handling. Internal seam.
+///
+/// Returns the agents only. Key-less rows are presets an older desktop kept
+/// in this file; `migration::preset_store` copied them to `presets.json` and
+/// they stay here, unread, so an older desktop started on these files still
+/// finds its presets (see [`write_agent_store`]). Removed together with that
+/// migration.
 fn load_agent_store<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Vec<ManagedAgentRecord>, String> {
     let path = managed_agents_store_path(app)?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let content = fs::read_to_string(&path)
-        .map_err(|error| format!("failed to read agent store: {error}"))?;
-    serde_json::from_str::<Vec<ManagedAgentRecord>>(&content)
-        .map(|mut records| {
+    let rows = read_store_rows(&path)?;
+    rows.into_iter()
+        .filter(is_agent_row)
+        .map(|row| {
+            let mut record: ManagedAgentRecord = serde_json::from_value(row)?;
             // Stored by service scope; live by the current server origin.
-            for record in &mut records {
-                if let Some(origin) = record.bot_origin.as_mut() {
-                    *origin = crate::auth::service::live(origin);
-                }
+            if let Some(origin) = record.bot_origin.as_mut() {
+                *origin = crate::auth::service::live(origin);
             }
-            records
+            Ok(record)
         })
+        .collect::<Result<Vec<_>, serde_json::Error>>()
         .map_err(|error| {
-            // Fail loudly and preserve the evidence: a later in-app save rewrites
-            // this file wholesale, which would silently destroy a malformed hand
-            // edit. Best-effort file-authoring contract (see managed_agents::
-            // reconcile): the broken content survives as `.invalid` for the user
-            // to recover, and the parse error propagates instead of being
-            // swallowed into an empty store.
             backup_invalid_store(&path);
             format!("failed to parse agent store (preserved as .invalid): {error}")
         })
 }
 
-/// Load the keyed agent *instances*. Key-less definitions (former personas,
-/// folded into the same store) are filtered out so every pre-fold call site
-/// keeps seeing exactly the records it always did.
+/// The store file's rows as raw JSON (empty when the file does not exist).
+fn read_store_rows(path: &Path) -> Result<Vec<serde_json::Value>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content =
+        fs::read_to_string(path).map_err(|error| format!("failed to read agent store: {error}"))?;
+    serde_json::from_str::<Vec<serde_json::Value>>(&content).map_err(|error| {
+        // Fail loudly and preserve the evidence: a later in-app save rewrites
+        // this file wholesale, which would silently destroy a malformed hand
+        // edit. Best-effort file-authoring contract (see managed_agents::
+        // reconcile): the broken content survives as `.invalid` for the user
+        // to recover, and the parse error propagates instead of being
+        // swallowed into an empty store.
+        backup_invalid_store(path);
+        format!("failed to parse agent store (preserved as .invalid): {error}")
+    })
+}
+
+/// An agent row has its own key; a key-less row is a leftover preset row.
+pub(crate) fn is_agent_row(row: &serde_json::Value) -> bool {
+    row.get("pubkey")
+        .and_then(|value| value.as_str())
+        .is_some_and(|pubkey| !pubkey.is_empty())
+}
+
+/// Load the agents.
 pub fn load_managed_agents<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Vec<ManagedAgentRecord>, String> {
     let mut records = load_agent_store(app)?;
-    records.retain(|record| !record.pubkey.is_empty());
     hydrate_keys(&mut records);
     Ok(records)
 }
 
-/// The agent instances without their keys: for readers that need only
+/// The agents without their keys: for readers that need only
 /// record fields (the routing hold check runs on every summary poll) and must
 /// not pay a keyring read per record.
 pub(crate) fn load_managed_agents_without_keys<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Vec<ManagedAgentRecord>, String> {
-    let mut records = load_agent_store(app)?;
-    records.retain(|record| !record.pubkey.is_empty());
-    Ok(records)
-}
-
-/// Load the key-less agent *definitions* (former personas) from the unified
-/// store. The persona compatibility shim (`load_personas`) presents these in
-/// the legacy shape via `to_definition_view`.
-pub(crate) fn load_agent_definitions<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<Vec<ManagedAgentRecord>, String> {
-    let mut records = load_agent_store(app)?;
-    records.retain(|record| record.pubkey.is_empty());
-    Ok(records)
+    load_agent_store(app)
 }
 
 /// Preserve a malformed store file as `<name>.invalid` before the error path
@@ -401,19 +414,14 @@ fn hydrate_keys_with(store: &impl KeyStore, records: &mut [ManagedAgentRecord]) 
     }
 }
 
-/// Save the keyed agent *instances*, preserving the key-less definitions that
-/// share the unified store: callers pass exactly the records they loaded via
-/// [`load_managed_agents`], and this re-reads the definition half from disk
-/// before the wholesale rewrite so a definition is never dropped by an
-/// instance-side save (and vice versa via [`save_agent_definitions`]).
+/// Save the agents: callers pass exactly the records they loaded via
+/// [`load_managed_agents`].
 pub fn save_managed_agents<R: tauri::Runtime>(
     app: &AppHandle<R>,
     records: &[ManagedAgentRecord],
 ) -> Result<(), String> {
-    let definitions = load_agent_definitions(app).unwrap_or_default();
     let mut sorted = records.to_vec();
-    // A caller-supplied key-less record would collide with the definition
-    // half re-read below; instances always carry a pubkey.
+    // Every agent has a key; a key-less record is not an agent.
     sorted.retain(|record| !record.pubkey.is_empty());
     sorted.sort_by(|left, right| {
         left.name
@@ -427,7 +435,7 @@ pub fn save_managed_agents<R: tauri::Runtime>(
     // keyring is unreachable, the key stays inline.
     persist_agent_keys(&mut sorted);
 
-    write_agent_store(app, definitions, sorted)?;
+    write_agent_store(app, sorted)?;
     // Prompt and team edits reach running agents through their live settings.
     super::live_settings::schedule_live_settings_sync(app);
     // A created, moved or deleted agent changes the list this device hosts.
@@ -435,41 +443,31 @@ pub fn save_managed_agents<R: tauri::Runtime>(
     Ok(())
 }
 
-/// Save the key-less agent *definitions*, preserving the keyed instances —
-/// the definition-side mirror of [`save_managed_agents`].
-pub(crate) fn save_agent_definitions<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    definitions: &[ManagedAgentRecord],
-) -> Result<(), String> {
-    let mut instances = load_agent_store(app)?;
-    instances.retain(|record| !record.pubkey.is_empty());
-    let mut definitions = definitions.to_vec();
-    definitions.retain(|record| record.pubkey.is_empty());
-    write_agent_store(app, definitions, instances)?;
-    // Persona prompt edits reach running agents through their live settings.
-    super::live_settings::schedule_live_settings_sync(app);
-    Ok(())
-}
-
-/// Serialize definitions + instances into the single unified store file.
-/// Definitions sort first (by slug) for stable diffs; instances keep the
-/// name/pubkey order their save path established.
+/// Serialize the agents into the store file, in the name/pubkey order their
+/// save path established. Leftover preset rows (see [`load_agent_store`]) are
+/// carried through unchanged, ahead of the agents as before.
 fn write_agent_store<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    mut definitions: Vec<ManagedAgentRecord>,
-    instances: Vec<ManagedAgentRecord>,
+    mut agents: Vec<ManagedAgentRecord>,
 ) -> Result<(), String> {
-    definitions.sort_by(|left, right| left.slug.cmp(&right.slug));
-    let mut all = definitions;
-    all.extend(instances);
-    for record in &mut all {
+    for record in &mut agents {
         if let Some(origin) = record.bot_origin.as_mut() {
             *origin = crate::auth::service::stored(origin);
         }
     }
 
     let path = managed_agents_store_path(app)?;
-    let payload = serde_json::to_vec_pretty(&all)
+    let mut rows: Vec<serde_json::Value> = read_store_rows(&path)?
+        .into_iter()
+        .filter(|row| !is_agent_row(row))
+        .collect();
+    for record in &agents {
+        rows.push(
+            serde_json::to_value(record)
+                .map_err(|error| format!("failed to serialize agent store: {error}"))?,
+        );
+    }
+    let payload = serde_json::to_vec_pretty(&rows)
         .map_err(|error| format!("failed to serialize agent store: {error}"))?;
 
     // `managed-agents.json` carries plaintext agent nsecs in the keyringless

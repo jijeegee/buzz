@@ -7,7 +7,6 @@ import {
   useAvailableAcpRuntimes,
   useCreateChannelManagedAgentMutation,
   useManagedAgentsQuery,
-  usePersonasQuery,
   useProvisionChannelManagedAgentMutation,
 } from "@/features/agents/hooks";
 import { resolvePersonaRuntime } from "@/features/agents/lib/resolvePersonaRuntime";
@@ -122,7 +121,6 @@ export function useMentionSendFlow({
     useProvisionChannelManagedAgentMutation(channelId);
   const availableRuntimesQuery = useAvailableAcpRuntimes();
   const managedAgentsQuery = useManagedAgentsQuery();
-  const personasQuery = usePersonasQuery();
   // Detached (publish-first) agent wake, bound to the community and identity
   // active at this render so a start that outlives a community switch fails
   // closed instead of spawning against the new tenant. The send path never
@@ -140,9 +138,6 @@ export function useMentionSendFlow({
       agents.map((agent) => [normalizePubkey(agent.pubkey), agent]),
     );
   }, [managedAgentsQuery.data, managedAgentsQuery.refetch]);
-  const getPersonas = React.useCallback(async () => {
-    return personasQuery.data ?? (await personasQuery.refetch()).data ?? [];
-  }, [personasQuery.data, personasQuery.refetch]);
   const getAvailableRuntimes = React.useCallback(async (): Promise<
     AcpRuntime[]
   > => {
@@ -165,7 +160,6 @@ export function useMentionSendFlow({
   const ensureManagedAgentMentionsReady = useEnsureAgentMentionsReady({
     attachAgentToChannel: attachAgentMutation.mutateAsync,
     getManagedAgentsByPubkey,
-    getPersonas,
     memberPubkeys: mentions.memberPubkeys,
   });
   const createMentionedPersonaAgents = React.useCallback(

@@ -52,38 +52,43 @@ sealed class AgentSettingsState {
   const AgentSettingsState();
 }
 
-/// The agent has no owner definition the phone can edit (built-in and team
-/// agents, or one whose definition is not on the relay).
+/// The phone cannot edit this agent (not on the relay, not the signed-in
+/// owner's, or published by an older computer); [message] says why.
 class AgentSettingsReadOnly extends AgentSettingsState {
-  const AgentSettingsReadOnly({required this.name});
+  const AgentSettingsReadOnly({
+    required this.name,
+    this.message = agentSettingsReadOnlyMessage,
+  });
   final String name;
+  final String message;
 }
 
-/// The agent's owner definition (kind:30175), ready to edit.
+/// The agent's own settings (kind:30177), ready to edit.
 class AgentSettingsEditable extends AgentSettingsState {
   const AgentSettingsEditable({
     required this.owner,
     required this.agentPubkey,
-    required this.personaD,
     required this.event,
     required this.content,
     required this.agentName,
   });
 
-  /// The tapped agent's own name (its kind:30177 projection).
+  /// The agent's name as shown (falls back to its profile name).
   final String agentName;
-
-  /// Renaming the definition renames only agents that carry its name, so a
-  /// differently named agent (e.g. "Fizz 2") keeps its name here.
-  bool get nameEditable => agentName == draft.name;
 
   final String owner;
   final String agentPubkey;
-  final String personaD;
 
-  /// The definition event as loaded; a save refuses if it was replaced.
+  /// The agent event as loaded; a save refuses if it was replaced.
   final NostrEvent event;
   final Map<String, dynamic> content;
+
+  /// The `d` tag of the preset the agent was made from, if any. A label
+  /// only: the agent may keep sharing that preset's name.
+  String? get sourcePresetD => switch (sourcePresetIdOf(content)) {
+    final id? => personaDTag(id),
+    null => null,
+  };
 
   AgentSettingsDraft get draft => AgentSettingsDraft.fromContent(content);
 }
@@ -100,15 +105,15 @@ class AgentSettingsException implements Exception {
 const agentSettingsReadOnlyMessage =
     'This agent\'s settings can only be changed on the computer it runs on.';
 
-const agentSettingsNameLockedMessage =
-    'This agent’s name can only be changed on the computer it runs on.';
+const agentSettingsUpdateComputerMessage =
+    'Update Kuzz on your computer to edit this agent here.';
 
 const agentSettingsChangedMessage =
     'Settings changed on another device. Reopen to see the latest.';
 
-/// Loads the editable definition of the agent with this pubkey, or
-/// [AgentSettingsReadOnly] named after its kind:30177 projection (falls back
-/// to [AgentSettingsArgs.fallbackName]).
+/// Loads the editable settings of the agent with this pubkey, or
+/// [AgentSettingsReadOnly] named after its kind:30177 event (falls back to
+/// [AgentSettingsArgs.fallbackName]).
 final agentSettingsProvider = FutureProvider.autoDispose
     .family<AgentSettingsState, AgentSettingsArgs>((ref, args) async {
       final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
@@ -117,47 +122,29 @@ final agentSettingsProvider = FutureProvider.autoDispose
       }
       final relay = ref.read(agentSettingsRelayProvider);
       final agentPubkey = args.agentPubkey.toLowerCase();
-      final agentEvents = await relay.fetch(
-        NostrFilter(
-          kinds: const [EventKind.managedAgent],
-          authors: [owner],
-          tags: {
-            '#d': [agentPubkey],
-          },
-          limit: 10,
-        ),
-      );
-      final agentEvent = newestByDTag(
-        agentEvents,
-        kind: EventKind.managedAgent,
-        owner: owner,
-      )[agentPubkey];
-      final agentContent = agentEvent == null
+      final agentEvent = await _fetchAgent(relay, owner, agentPubkey);
+      final content = agentEvent == null
           ? null
           : decodeJsonObject(agentEvent.content);
-      final agentName = agentContent?['name'];
+      final agentName = content?['name'];
       final name = agentName is String && agentName.trim().isNotEmpty
           ? agentName.trim()
           : args.fallbackName;
-      final personaId = agentEvent == null
-          ? null
-          : managedAgentPersonaId(agentEvent.content);
-      if (personaId == null) return AgentSettingsReadOnly(name: name);
-      final personaD = personaDTag(personaId);
-      final personaEvent = await _fetchPersona(relay, owner, personaD);
-      final content = personaEvent == null
-          ? null
-          : decodeJsonObject(personaEvent.content);
-      if (personaEvent == null || content == null) {
+      if (agentEvent == null || content == null) {
         return AgentSettingsReadOnly(name: name);
+      }
+      if (!agentContentEditable(content)) {
+        return AgentSettingsReadOnly(
+          name: name,
+          message: agentSettingsUpdateComputerMessage,
+        );
       }
       return AgentSettingsEditable(
         owner: owner,
         agentPubkey: agentPubkey,
-        personaD: personaD,
-        event: personaEvent,
+        event: agentEvent,
         content: content,
-        agentName: agentName is String ? agentName : name,
+        agentName: name,
       );
     });
 
@@ -182,47 +169,41 @@ class AgentSettingsArgs {
   int get hashCode => Object.hash(agentPubkey, fallbackName);
 }
 
-Future<NostrEvent?> _fetchPersona(
+Future<NostrEvent?> _fetchAgent(
   AgentSettingsRelay relay,
   String owner,
-  String personaD,
+  String agentPubkey,
 ) async {
   final events = await relay.fetch(
     NostrFilter(
-      kinds: const [EventKind.persona],
+      kinds: const [EventKind.managedAgent],
       authors: [owner],
       tags: {
-        '#d': [personaD],
+        '#d': [agentPubkey],
       },
       limit: 10,
     ),
   );
-  return newestEvent(
-    events.where(
-      (e) =>
-          e.kind == EventKind.persona &&
-          e.pubkey.toLowerCase() == owner &&
-          e.getTagValue('d') == personaD,
-    ),
-  );
+  return newestByDTag(
+    events,
+    kind: EventKind.managedAgent,
+    owner: owner,
+  )[agentPubkey];
 }
 
-/// Publish [draft] over [loaded]'s definition. Throws
+/// Publish [draft] over [loaded]'s agent event. Throws
 /// [AgentSettingsException] with a user-facing message when the draft is
-/// invalid, the name is taken, or the definition changed since it loaded.
+/// invalid, the name is taken, or the agent changed since it loaded.
 Future<void> saveAgentSettings(
   AgentSettingsRelay relay,
   AgentSettingsEditable loaded,
   AgentSettingsDraft draft, {
   DateTime? now,
 }) async {
-  if (!loaded.nameEditable && draft.name != loaded.draft.name) {
-    throw const AgentSettingsException(agentSettingsNameLockedMessage);
-  }
   final invalid = validateAgentSettings(draft);
   if (invalid != null) throw AgentSettingsException(invalid);
 
-  final head = await _fetchPersona(relay, loaded.owner, loaded.personaD);
+  final head = await _fetchAgent(relay, loaded.owner, loaded.agentPubkey);
   if (head == null || head.id != loaded.event.id) {
     throw const AgentSettingsException(agentSettingsChangedMessage);
   }
@@ -253,10 +234,9 @@ Future<void> saveAgentSettings(
         personaEvents != null &&
         agentNameConflicts(
           name: draft.name,
-          previousName: loaded.draft.name,
           owner: loaded.owner,
           agentPubkey: loaded.agentPubkey,
-          personaD: loaded.personaD,
+          sourcePresetD: loaded.sourcePresetD,
           agentEvents: agentEvents,
           personaEvents: personaEvents,
         )) {
@@ -268,8 +248,8 @@ Future<void> saveAgentSettings(
       (now ?? DateTime.now()).millisecondsSinceEpoch ~/
       Duration.millisecondsPerSecond;
   await relay.publish(
-    kind: EventKind.persona,
-    content: patchedPersonaContent(loaded.content, draft),
+    kind: EventKind.managedAgent,
+    content: patchedAgentContent(loaded.content, draft),
     tags: copyTags(head.tags),
     createdAt: nextCreatedAt(previous: head.createdAt, now: nowSeconds),
   );

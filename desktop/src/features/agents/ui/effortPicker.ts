@@ -22,27 +22,6 @@ export const EFFORT_FALLBACK_HELPER_TEXT = "Options may vary by model.";
 export const EFFORT_DEFAULT_LABEL = "Adapter default";
 
 /**
- * Sentinel label for a linked instance: clearing its own column falls back to
- * the definition ("template" in the dialogs) default, not straight to the
- * adapter.
- */
-export const EFFORT_TEMPLATE_DEFAULT_LABEL = "Template default";
-
-/**
- * Sentinel label for an instance surface: when the linked template actually
- * sets an effort, clearing the instance column falls back to it, so the row
- * names that tier; an unlinked instance or a template without an effort
- * clears straight to the adapter default.
- */
-export function effortSentinelLabel(
-  template: { effortLevel: string | null } | null | undefined,
-): string {
-  return template?.effortLevel != null
-    ? EFFORT_TEMPLATE_DEFAULT_LABEL
-    : EFFORT_DEFAULT_LABEL;
-}
-
-/**
  * Pure gating + option compute for the effort write control.
  *
  * The picker is a LOCAL-only, Save-gated write control: the create dialog

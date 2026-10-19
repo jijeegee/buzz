@@ -32,7 +32,7 @@ mod pending;
 use pending::build_agent_archive_request;
 pub(crate) use pending::{retain_managed_agent_pending, tombstone_managed_agent_pending};
 
-/// Build a summary from fresh disk state (personas, global config).
+/// Build a summary from fresh disk state (global config, routing).
 /// For one-shot command paths only — the 5s list poll calls
 /// `build_managed_agent_summary` directly with stores loaded once per call,
 /// not once per record.
@@ -48,7 +48,6 @@ pub(super) fn summarize_from_disk(
         app,
         record,
         runtimes,
-        &load_personas(app).unwrap_or_default(),
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
         crate::managed_agents::visible_owner_hex(app, record),
@@ -103,36 +102,14 @@ pub(super) async fn start_local_agent_pairs_with_preflight(
     if record_snapshot.backend != BackendKind::Local {
         return Err(format!("agent {pubkey} is not a local agent"));
     }
-    let personas_for_preflight = load_personas(app).unwrap_or_default();
     let global_for_preflight =
         crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
     let mesh_model_id =
         crate::managed_agents::effective_config::resolve_effective_relay_mesh_model_id(
             &record_snapshot,
-            &personas_for_preflight,
             &global_for_preflight,
         );
     ensure_relay_mesh_for_record(app, mesh_model_id.as_deref(), false).await?;
-
-    {
-        let _store_guard = state
-            .managed_agents_store_lock
-            .lock()
-            .map_err(|e| e.to_string())?;
-        let mut records = load_managed_agents(app)?;
-        let record = find_managed_agent_mut(&mut records, pubkey)?;
-        let personas = load_personas(app).unwrap_or_default();
-        if let Some(persona_id) = record.persona_id.clone() {
-            if let Some(persona) = personas.iter().find(|persona| persona.id == persona_id) {
-                crate::managed_agents::persona_events::apply_persona_snapshot(record, persona);
-                record.updated_at = crate::util::now_iso();
-            }
-        }
-        save_managed_agents(app, &records)?;
-        if let Some(saved_record) = records.iter().find(|record| record.pubkey == pubkey) {
-            retain_managed_agent_pending(app, state, saved_record);
-        }
-    }
 
     let mut errors = Vec::new();
     for relay_url in relay_urls {
@@ -259,18 +236,12 @@ where
     let pubkey = bot_pubkey.as_str();
 
     // Preflight against the same resolution spawn uses — `resolve_effective_config`
-    // (definition → global fallback). A linked instance's own `provider`/`model`/
-    // `relay_mesh` bytes never contribute: this reads the CURRENT definition
-    // directly, so a definition edit that flips `provider` to/from relay-mesh
-    // between saves is reflected here without needing a prospective re-snapshot;
-    // for a global-inherited blank definition, it also folds in the global
-    // default, which record-byte sniffing could never see.
-    let personas = load_personas(app).unwrap_or_default();
+    // (the agent's own settings → global fallback). For a blank agent it also
+    // folds in the global default, which record-byte sniffing could never see.
     let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
     let mesh_model_id =
         crate::managed_agents::effective_config::resolve_effective_relay_mesh_model_id(
             &record_snapshot,
-            &personas,
             &global,
         );
     preflight(mesh_model_id).await?;
@@ -314,27 +285,6 @@ where
     if record.backend != BackendKind::Local {
         return Err(format!("agent {pubkey} is no longer a local agent"));
     }
-    // Re-snapshot the persona onto the record at every spawn so the agent always
-    // starts with the current persona config (system_prompt, model, provider,
-    // runtime). This clears the "out of date" drift badge without requiring a
-    // delete+recreate. See `apply_persona_snapshot` for the precedence and
-    // env-override self-heal rules.
-    // Load personas once: used for snapshot application below and summary build
-    // at the end — avoids a second disk read for the same file in the same call.
-    let personas = load_personas(app).unwrap_or_default();
-    if let Some(persona_id) = record.persona_id.clone() {
-        match personas.iter().find(|p| p.id == persona_id) {
-            Some(persona) => {
-                crate::managed_agents::persona_events::apply_persona_snapshot(record, persona);
-                record.updated_at = crate::util::now_iso();
-            }
-            None => {
-                return Err(
-                    crate::managed_agents::effective_config::ORPHANED_INSTANCE_ERROR.to_string(),
-                );
-            }
-        }
-    }
     start_managed_agent_process(
         app,
         record,
@@ -355,7 +305,6 @@ where
         app,
         record,
         &runtimes,
-        &personas,
         &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
         crate::managed_agents::visible_owner_hex(app, record),
@@ -416,9 +365,8 @@ async fn managed_agent_summaries(
             state.clear_agent_session_caches(pubkey);
         }
 
-        let personas = load_personas(&app).unwrap_or_default();
         // One disk read for the whole list — build_managed_agent_summary takes
-        // personas and config as parameters precisely so this poll-every-5s
+        // the config as a parameter precisely so this poll-every-5s
         // call does not re-read them per record.
         let global_config =
             crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
@@ -442,7 +390,6 @@ async fn managed_agent_summaries(
                     &app,
                     record,
                     &runtimes,
-                    &personas,
                     &global_config,
                     routing_mode,
                     owner,
@@ -461,13 +408,13 @@ pub async fn create_managed_agent(
     state: State<'_, AppState>,
 ) -> Result<CreateManagedAgentResponse, String> {
     let name = input.name.trim().to_string();
-    let requested_persona_id = input
-        .persona_id
+    let requested_preset_id = input
+        .source_preset_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string);
-    validate_create_definition(&name, requested_persona_id.as_deref(), &input)?;
+    validate_create_definition(&name, &input)?;
     if let Some(parallelism) = input.parallelism {
         if !(1..=32).contains(&parallelism) {
             return Err("parallelism must be between 1 and 32".to_string());
@@ -512,9 +459,9 @@ pub async fn create_managed_agent(
         for pubkey in &exited_pubkeys {
             state.clear_agent_session_caches(pubkey);
         }
-        if let Some(persona_id) = requested_persona_id.as_deref() {
+        if let Some(preset_id) = requested_preset_id.as_deref() {
             let personas = load_personas(&app)?;
-            ensure_persona_is_active(&personas, persona_id)?;
+            ensure_persona_is_active(&personas, preset_id)?;
         }
         let keys = Keys::generate();
         let pubkey = keys.public_key().to_hex();
@@ -628,48 +575,16 @@ pub async fn create_managed_agent(
             None
         };
 
-        // Load personas once for harness/pack/avatar resolution below.
-        let personas = load_personas(&app).unwrap_or_default();
-
-        // Harness resolution: the persona's runtime is authoritative. A
-        // persona-backed create stores an `agent_command_override` ONLY when the
-        // user deliberately picked a divergent runtime (`harness_override`) —
-        // e.g. AddChannelBotDialog's runtime selector. A divergence WITHOUT that
-        // flag is a missing-runtime fallback from `resolvePersonaRuntime`, not a
-        // pin, and must inherit so it doesn't freeze on the fallback harness once
-        // the persona's runtime is installed. A persona-less create always
-        // preserves the picked command as a real pin.
-        let agent_command_override = crate::managed_agents::create_time_agent_command_override(
-            requested_persona_id.as_deref(),
-            &personas,
-            input.agent_command.as_deref(),
-            input.harness_override,
-        );
-        // The create-time snapshot used for arg/mcp/avatar derivations and
-        // legacy reconcile. Authoritative spawn resolution re-derives this via
-        // `effective_agent_command` at use-time.
-        let agent_command = crate::managed_agents::effective_agent_command(
-            requested_persona_id.as_deref(),
-            &personas,
-            agent_command_override.as_deref(),
-        );
-        let agent_args = normalize_agent_args(
-            &agent_command,
-            input
-                .agent_args
-                .iter()
-                .map(|arg| arg.trim().to_string())
-                .filter(|arg| !arg.is_empty())
-                .collect::<Vec<_>>(),
-        );
-
-        // Derive MCP command exclusively from the runtime catalog — the
-        // per-record field is never read at spawn time so user-supplied input
-        // is silently discarded. Always sourcing from the catalog ensures
-        // new agents pick up the correct value without any stored override.
-        let mcp_command = match crate::managed_agents::known_acp_runtime(&agent_command) {
-            Some(p) => p.mcp_command.unwrap_or("").to_string(),
-            None => String::new(),
+        // The preset the agent is made from. Everything it needs is copied
+        // into the record below; the agent never reads the preset again.
+        let preset = match requested_preset_id.as_deref() {
+            Some(preset_id) => Some(
+                load_personas(&app)?
+                    .into_iter()
+                    .find(|preset| preset.id == preset_id)
+                    .ok_or_else(|| format!("agent {preset_id} not found"))?,
+            ),
+            None => None,
         };
 
         let team_id = input
@@ -678,94 +593,47 @@ pub async fn create_managed_agent(
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        if let Some(team_id) = &team_id {
-            if !load_teams(&app)?.iter().any(|team| &team.id == team_id) {
-                return Err(format!("team {team_id} not found"));
-            }
-        }
-
-        // Resolve the avatar URL once at creation and persist it on the record.
-        // Explicit input wins, then the persona's own avatar, then the runtime
-        // fallback. Storing it lets reconciliation compare against what was
-        // actually published instead of re-deriving it.
-        let persona_avatar_url = requested_persona_id.as_ref().and_then(|persona_id| {
-            personas
-                .iter()
-                .find(|persona| persona.id == *persona_id)?
-                .avatar_url
-                .clone()
-        });
-        let resolved_avatar_url = resolve_created_avatar_url(
-            input.avatar_url.as_deref(),
-            persona_avatar_url,
-            &agent_command,
-        );
-
-        // Pin the persona config onto the record at create. After this, spawn
-        // and deploy read these snapshotted fields, never the live persona, so
-        // the agent stays on the config it was created with across restarts;
-        // delete+respawn re-runs create and rewrites the snapshot. env_vars are
-        // NOT pinned: `record.env_vars` holds agent-level overrides only
-        // (input.env_vars), and the live persona env is merged underneath at
-        // read time (spawn / readiness / deploy) so persona credential edits
-        // refresh on the next spawn like prompt/model/provider already do.
-        let linked_persona = requested_persona_id.as_deref().and_then(|pid| {
-            load_personas(&app)
-                .ok()?
+        // The team's instructions are copied too: editing or deleting the
+        // team later never changes this agent.
+        let team_instructions = match &team_id {
+            Some(team_id) => load_teams(&app)?
                 .into_iter()
-                .find(|persona| persona.id == pid)
-        });
-        let persona_snapshot = linked_persona
-            .as_ref()
-            .map(crate::managed_agents::persona_events::persona_snapshot);
-        let snapshot_prompt = persona_snapshot
-            .as_ref()
-            .and_then(|s| s.system_prompt.clone());
-        let snapshot_model = persona_snapshot.as_ref().and_then(|s| s.model.clone());
-        let snapshot_provider = persona_snapshot.as_ref().and_then(|s| s.provider.clone());
-        let snapshot_source_version = persona_snapshot.as_ref().map(|s| s.source_version.clone());
-        let effective_provider = snapshot_provider
-            .or_else(|| input.provider.as_deref().and_then(trim_to_optional_string));
-        let mut effective_model =
-            snapshot_model.or_else(|| input.model.as_deref().and_then(trim_to_optional_string));
-        if effective_provider.as_deref() == Some(crate::managed_agents::RELAY_MESH_PROVIDER_ID)
-            && effective_model.is_none()
-        {
-            effective_model = Some(crate::managed_agents::RELAY_MESH_AUTO_MODEL_ID.to_string());
-        }
+                .find(|team| &team.id == team_id)
+                .ok_or_else(|| format!("team {team_id} not found"))?
+                .instructions
+                .as_deref()
+                .and_then(trim_to_optional_string),
+            None => None,
+        };
 
-        // Mint-time behavioral quad: explicit input wins, then the linked
-        // definition's NIP-AP defaults, then client defaults. The ONLY parse
-        // point for definition behavioral strings — fails loudly on a bad
-        // mode/range instead of minting an agent the author didn't describe.
+        // Mint-time behavioral quad: explicit input wins, then the preset's
+        // NIP-AP defaults, then client defaults. The ONLY parse point for
+        // definition behavioral strings — fails loudly on a bad mode/range
+        // instead of minting an agent the author didn't describe.
         let minted = crate::managed_agents::resolve_mint_behavioral_defaults(
             input.respond_to,
             respond_to_allowlist.clone(),
             input.parallelism,
-            linked_persona.as_ref(),
+            preset.as_ref(),
         )?;
-        let record = ManagedAgentRecord {
+        let mut record = ManagedAgentRecord {
             pubkey: pubkey.clone(),
             name: name.clone(),
             description: None,
-            persona_id: requested_persona_id.clone(),
+            source_preset_id: None,
+            legacy_persona_id: None,
             team_id,
             private_key_nsec: private_key_nsec.clone(),
             auth_tag: auth_tag.clone(),
             relay_url: resolved_relay_url.clone(),
-            avatar_url: resolved_avatar_url.clone(),
-            acp_command: linked_persona
-                .as_ref()
-                .and_then(|persona| persona.acp_command.as_deref())
-                .or(input.acp_command.as_deref())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or(DEFAULT_ACP_COMMAND)
-                .to_string(),
-            agent_command,
-            agent_command_override,
-            agent_args,
-            mcp_command,
+            // Explicit input wins; the preset's avatar fills in below, then
+            // the runtime fallback.
+            avatar_url: input.avatar_url.as_deref().and_then(trim_to_optional_string),
+            acp_command: DEFAULT_ACP_COMMAND.to_string(),
+            agent_command: String::new(),
+            agent_command_override: None,
+            agent_args: Vec::new(),
+            mcp_command: String::new(),
             // KUZZ_ACP_TURN_TIMEOUT is deprecated and ignored by the harness;
             // store the schema default only. Use idle_timeout_seconds or
             // max_turn_duration_seconds for actual turn-length control.
@@ -775,17 +643,10 @@ pub async fn create_managed_agent(
             max_turn_duration_seconds: input.max_turn_duration_seconds.filter(|s| *s > 0),
             parallelism: minted.parallelism.unwrap_or(DEFAULT_AGENT_PARALLELISM),
             session_policy: minted.session_policy,
-            system_prompt: snapshot_prompt.or_else(|| {
-                input
-                    .system_prompt
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-            }),
-            model: effective_model.clone(),
-            provider: effective_provider.clone(),
-            persona_source_version: snapshot_source_version,
+            system_prompt: None,
+            model: None,
+            provider: None,
+            team_instructions,
             // Provider agents are managed externally — force false.
             start_on_app_launch: if input.backend != BackendKind::Local {
                 false
@@ -800,8 +661,7 @@ pub async fn create_managed_agent(
             backend_agent_id: None,
             provider_policy_pending: false,
             provider_binary_path,
-            persona_team_dir: None,
-            persona_name_in_team: None,
+            // The dialog's env and effort; the preset's fill in underneath.
             env_vars: input.env_vars.clone(),
             created_at: now_iso(),
             updated_at: now_iso(),
@@ -812,32 +672,78 @@ pub async fn create_managed_agent(
             last_error_code: None,
             respond_to: minted.respond_to,
             respond_to_allowlist: minted.respond_to_allowlist.clone(),
-            display_name: None,
-            slug: None,
             runtime: None,
-            name_pool: Vec::new(),
-            is_builtin: false,
-            is_active: true,
-            shared: false,
-            source_team: None,
-            source_team_persona_slug: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            definition_respond_to: None,
-            definition_respond_to_allowlist: Vec::new(),
-            definition_parallelism: None,
-            relay_mesh: if effective_provider.as_deref()
-                == Some(crate::managed_agents::RELAY_MESH_PROVIDER_ID)
-            {
-                effective_model
-                    .clone()
-                    .map(|model_ref| RelayMeshConfig { model_ref })
-            } else {
-                relay_mesh.clone()
-            },
+            relay_mesh: None,
             effort_level,
             bot_origin: bot_origin.clone(),
         };
+        if let Some(preset) = &preset {
+            crate::managed_agents::persona_events::copy_preset_into_agent(&mut record, preset);
+        }
+
+        // The dialog's explicit choices win over the preset's.
+        if let Some(acp_command) = input.acp_command.as_deref().and_then(trim_to_optional_string) {
+            record.acp_command = acp_command;
+        }
+        if let Some(prompt) = input.system_prompt.as_deref().and_then(trim_to_optional_string) {
+            record.system_prompt = Some(prompt);
+        }
+        if let Some(model) = input.model.as_deref().and_then(trim_to_optional_string) {
+            record.model = Some(model);
+        }
+        if let Some(provider) = input.provider.as_deref().and_then(trim_to_optional_string) {
+            record.provider = Some(provider);
+        }
+        let relay_mesh_provider =
+            record.provider.as_deref() == Some(crate::managed_agents::RELAY_MESH_PROVIDER_ID);
+        if relay_mesh_provider && record.model.is_none() {
+            record.model = Some(crate::managed_agents::RELAY_MESH_AUTO_MODEL_ID.to_string());
+        }
+        record.relay_mesh = if relay_mesh_provider {
+            record
+                .model
+                .clone()
+                .map(|model_ref| RelayMeshConfig { model_ref })
+        } else {
+            relay_mesh.clone()
+        };
+
+        // Harness: the agent's own runtime (copied from the preset) is the
+        // base. A preset-made agent stores an `agent_command_override` ONLY
+        // when the user deliberately picked a divergent runtime
+        // (`harness_override`); a divergence WITHOUT that flag is a
+        // missing-runtime fallback from `resolvePersonaRuntime`, not a pin, so
+        // the agent runs its own runtime once it is installed. An agent made
+        // without a preset always keeps the picked command as a real pin.
+        record.agent_command_override = crate::managed_agents::create_time_agent_command_override(
+            preset.is_some(),
+            &crate::managed_agents::record_runtime_command(&record),
+            input.agent_command.as_deref(),
+            input.harness_override,
+        );
+        record.agent_command = crate::managed_agents::record_agent_command(&record);
+        record.agent_args = normalize_agent_args(
+            &record.agent_command,
+            input
+                .agent_args
+                .iter()
+                .map(|arg| arg.trim().to_string())
+                .filter(|arg| !arg.is_empty())
+                .collect::<Vec<_>>(),
+        );
+        // Derive MCP command exclusively from the runtime catalog — the
+        // per-record field is never read at spawn time so user-supplied input
+        // is silently discarded.
+        record.mcp_command = match crate::managed_agents::known_acp_runtime(&record.agent_command) {
+            Some(p) => p.mcp_command.unwrap_or("").to_string(),
+            None => String::new(),
+        };
+        // Resolve the avatar URL once at creation and persist it on the
+        // record, so reconciliation compares against what was published.
+        record.avatar_url =
+            resolve_created_avatar_url(record.avatar_url.as_deref(), None, &record.agent_command);
+        let resolved_avatar_url = record.avatar_url.clone();
+
         // Every agent's owner is recorded with it (a Google-session community
         // mints no NIP-OA tag), so no later start borrows whichever account
         // happens to be active then.
@@ -860,7 +766,7 @@ pub async fn create_managed_agent(
         // is_builtin/persona-membership gate).
         retain_managed_agent_pending(&app, &state, record);
         // Effective owner-authored description for the kind:0 `about`.
-        let profile_about = crate::managed_agents::record_effective_description(record, &personas);
+        let profile_about = crate::managed_agents::record_effective_description(record);
         Ok((
             summarize_from_disk(&app, record, &runtimes)?,
             resolved_avatar_url,
@@ -1077,11 +983,7 @@ pub async fn start_managed_agent(
 
         let record = find_managed_agent_mut(&mut records, &pubkey)?;
 
-        // Resolve the effective harness for the avatar-fallback derivation in
-        // profile reconcile (the create-time snapshot may be empty or stale for
-        // a persona-inherited harness).
-        let reconcile_personas = load_personas(&app).unwrap_or_default();
-        let mut reconcile = profile_reconcile_data(record, &reconcile_personas);
+        let mut reconcile = profile_reconcile_data(record);
         // Pin the startup relay (the bound, caller-validated read) so the
         // fire-and-forget task can never resolve a post-switch workspace.
         // Mirrors `load_pending_profile_reconciliations`.
@@ -1416,7 +1318,7 @@ async fn delete_managed_agent_locally(
             // Tombstone after confirmed removal (inside lock; every published
             // agent tombstones). The NIP-IA kind:9035 archive request — which
             // stops the identity appearing in member pickers and autocomplete —
-            // is enqueued in the SAME transaction, its `persona_id` derived from
+            // is enqueued in the SAME transaction, its preset label derived from
             // the retained 30177 head.
             tombstone_managed_agent_pending(&app, &state, &pubkey);
         }

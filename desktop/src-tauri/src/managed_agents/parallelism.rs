@@ -68,7 +68,9 @@ mod tests {
             description: None,
             pubkey: String::new(),
             name: "r".to_string(),
-            persona_id: None,
+            source_preset_id: None,
+            legacy_persona_id: None,
+            team_instructions: None,
             private_key_nsec: String::new(),
             auth_tag: None,
             relay_url: String::new(),
@@ -85,7 +87,6 @@ mod tests {
             system_prompt: None,
             model: None,
             provider: None,
-            persona_source_version: None,
             start_on_app_launch: false,
             is_default_ai: false,
             auto_restart_on_config_change: true,
@@ -95,8 +96,6 @@ mod tests {
             provider_policy_pending: false,
             provider_binary_path: None,
             team_id: None,
-            persona_team_dir: None,
-            persona_name_in_team: None,
             env_vars: std::collections::BTreeMap::new(),
             created_at: String::new(),
             updated_at: String::new(),
@@ -107,57 +106,10 @@ mod tests {
             last_error_code: None,
             respond_to: Default::default(),
             respond_to_allowlist: vec![],
-            display_name: None,
-            slug: None,
             runtime: runtime.map(str::to_string),
-            name_pool: Vec::new(),
-            is_builtin: false,
-            is_active: true,
-            shared: false,
-            source_team: None,
-            source_team_persona_slug: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            definition_respond_to: None,
-            definition_respond_to_allowlist: Vec::new(),
-            definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
             bot_origin: None,
-        }
-    }
-
-    fn persona_def(
-        id: &str,
-        runtime: Option<&str>,
-    ) -> crate::managed_agents::types::AgentDefinition {
-        use crate::managed_agents::types::AgentDefinition;
-        AgentDefinition {
-            effort_level: None,
-            session_policy: Default::default(),
-            description: None,
-            id: id.to_string(),
-            display_name: String::new(),
-            avatar_url: None,
-            system_prompt: String::new(),
-            acp_command: None,
-            runtime: runtime.map(str::to_string),
-            model: None,
-            provider: None,
-            name_pool: vec![],
-            is_builtin: false,
-            is_active: true,
-            shared: false,
-            source_team: None,
-            source_team_persona_slug: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            env_vars: std::collections::BTreeMap::new(),
-            respond_to: None,
-            respond_to_allowlist: vec![],
-            parallelism: None,
-            created_at: String::new(),
-            updated_at: String::new(),
         }
     }
 
@@ -217,7 +169,7 @@ mod tests {
     fn override_direction_openclaw_runtime_goose_override_is_uncapped() {
         let mut record = record_with(Some("openclaw"), 10);
         record.agent_command_override = Some("goose".to_string());
-        let cmd = crate::managed_agents::record_agent_command(&record, &[]);
+        let cmd = crate::managed_agents::record_agent_command(&record);
         assert_eq!(cmd, "goose");
         assert_eq!(super::effective_parallelism(&cmd, record.parallelism), 10);
     }
@@ -227,48 +179,8 @@ mod tests {
     fn override_direction_goose_runtime_openclaw_override_is_capped() {
         let mut record = record_with(Some("goose"), 10);
         record.agent_command_override = Some("openclaw".to_string());
-        let cmd = crate::managed_agents::record_agent_command(&record, &[]);
+        let cmd = crate::managed_agents::record_agent_command(&record);
         assert_eq!(cmd, "openclaw");
-        assert_eq!(
-            super::effective_parallelism(&cmd, record.parallelism),
-            super::OPENCLAW_MAX_PARALLELISM
-        );
-    }
-
-    // ── Summary: persona-inherited runtime (runtime=None) ─────────────────────
-    //
-    // Covers the case where runtime was cleared by an "inherit from persona"
-    // update: summary must resolve via the LIVE persona, not stale agent_command.
-
-    /// Stale agent_command="openclaw", live persona=goose → summary resolves goose → uncapped.
-    #[test]
-    fn summary_persona_inherited_stale_openclaw_live_goose_is_uncapped() {
-        let persona = persona_def("p-goose", Some("goose"));
-        let mut record = record_with(None, 10);
-        record.persona_id = Some("p-goose".to_string());
-        record.agent_command = "openclaw".to_string();
-        let cmd =
-            crate::managed_agents::record_agent_command(&record, std::slice::from_ref(&persona));
-        assert_eq!(
-            cmd, "goose",
-            "live persona must win over stale agent_command"
-        );
-        assert_eq!(super::effective_parallelism(&cmd, record.parallelism), 10);
-    }
-
-    /// Stale agent_command="goose", live persona=openclaw → summary resolves openclaw → capped.
-    #[test]
-    fn summary_persona_inherited_stale_goose_live_openclaw_is_capped() {
-        let persona = persona_def("p-openclaw", Some("openclaw"));
-        let mut record = record_with(None, 10);
-        record.persona_id = Some("p-openclaw".to_string());
-        record.agent_command = "goose".to_string();
-        let cmd =
-            crate::managed_agents::record_agent_command(&record, std::slice::from_ref(&persona));
-        assert_eq!(
-            cmd, "openclaw",
-            "live persona must win over stale agent_command"
-        );
         assert_eq!(
             super::effective_parallelism(&cmd, record.parallelism),
             super::OPENCLAW_MAX_PARALLELISM
@@ -277,41 +189,28 @@ mod tests {
 
     // ── Snapshot export: requested-definition / effective-instance contract ───
 
-    fn snapshot_record(
-        runtime: Option<&str>,
-        parallelism: u32,
-        definition_parallelism: Option<u32>,
-    ) -> ManagedAgentRecord {
+    fn snapshot_record(runtime: Option<&str>, parallelism: u32) -> ManagedAgentRecord {
         use crate::managed_agents::types::{BackendKind, RespondTo};
         use std::collections::BTreeMap;
         let mut r = record_with(runtime, parallelism);
         r.name = "snap-test".to_string();
-        r.definition_parallelism = definition_parallelism;
         r.backend = BackendKind::Local;
         r.respond_to = RespondTo::OwnerOnly;
         r.env_vars = BTreeMap::new();
         r
     }
 
-    /// Snapshot export carries the requested definition parallelism verbatim.
+    /// Snapshot export carries the agent's requested parallelism verbatim
+    /// (not clamped to the harness cap).
     #[test]
-    fn snapshot_export_carries_requested_definition_parallelism() {
+    fn snapshot_export_carries_requested_parallelism() {
         use crate::managed_agents::agent_snapshot::{build_snapshot, MemoryLevel};
-        // definition_parallelism=Some(10) stored → exported as 10 unchanged.
         let snap = build_snapshot(
-            &snapshot_record(Some("openclaw"), 10, Some(10)),
+            &snapshot_record(Some("openclaw"), 10),
             MemoryLevel::None,
             vec![],
             None,
         );
         assert_eq!(snap.definition.parallelism, Some(10));
-        // No definition_parallelism stored → falls back to record.parallelism.
-        let snap2 = build_snapshot(
-            &snapshot_record(Some("openclaw"), 10, None),
-            MemoryLevel::None,
-            vec![],
-            None,
-        );
-        assert_eq!(snap2.definition.parallelism, Some(10));
     }
 }

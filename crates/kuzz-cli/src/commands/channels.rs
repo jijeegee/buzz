@@ -710,10 +710,24 @@ struct ResolvedAgent {
 
 /// Minimal projection of a kind:30177 event's content needed for roster
 /// resolution. Other fields (system_prompt, model, ...) are irrelevant here.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct ManagedAgentContent {
+    /// The preset the agent was made from (a label, not a link).
+    #[serde(default)]
+    source_preset_id: Option<String>,
+    /// The same label as published by older desktops.
     #[serde(default)]
     persona_id: Option<String>,
+}
+
+impl ManagedAgentContent {
+    /// The preset slug this agent was made from: `source_preset_id`, falling
+    /// back to `persona_id` for events from older desktops.
+    fn preset_label(self) -> Option<String> {
+        self.source_preset_id
+            .filter(|id| !id.trim().is_empty())
+            .or(self.persona_id)
+    }
 }
 
 /// Outcome of the pure F4 cardinality rule alone (see
@@ -808,8 +822,9 @@ async fn fetch_team_persona_slugs(
 /// Scan all kind:30177 (managed-agent) events authored by `owner`, keyset-
 /// paginated (`until` + `before_id`, never `page`/offset — 30177 is
 /// parameterized-replaceable and offset drift can silently skip a live
-/// instance across requests). Returns every event whose `content.persona_id`
-/// is in `slugs`, keyed by the event's `d` tag (the agent pubkey).
+/// instance across requests). Returns every event whose preset label
+/// (`content.source_preset_id`, or `persona_id` from older desktops) is in
+/// `slugs`, keyed by the event's `d` tag (the agent pubkey).
 async fn scan_managed_agents_by_owner(
     client: &KuzzClient,
     owner: &str,
@@ -831,8 +846,8 @@ async fn scan_managed_agents_by_owner(
             .get("content")
             .and_then(|c| c.as_str())
             .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or(ManagedAgentContent { persona_id: None });
-        let Some(persona_id) = content.persona_id else {
+            .unwrap_or_default();
+        let Some(persona_id) = content.preset_label() else {
             continue;
         };
         if slugs.contains(persona_id.as_str()) {
@@ -2002,7 +2017,7 @@ mod tests {
         cmd_set_add_policy, fetch_candidate_hints, finalize_roster_resolution, format_candidate,
         hints_from_results, join_bounded_queries, name_matches, resolve_roster_with_archive_filter,
         validate_ttl_seconds, validate_update_channel_fields, ArchivedExclusion, CandidateHint,
-        ChannelSummary, ResolvedAgent, RosterResolution, SkippedSlug,
+        ChannelSummary, ManagedAgentContent, ResolvedAgent, RosterResolution, SkippedSlug,
     };
     use crate::client::KuzzClient;
     use crate::CliError;
@@ -2240,6 +2255,29 @@ mod tests {
     }
 
     // --- Template roster cardinality (F4) ---
+
+    #[test]
+    fn managed_agent_preset_label_prefers_source_preset_id() {
+        let label = |json: &str| {
+            serde_json::from_str::<ManagedAgentContent>(json)
+                .expect("content parses")
+                .preset_label()
+        };
+        assert_eq!(
+            label(r#"{"name":"Fizz","source_preset_id":"fizz","persona_id":"old"}"#).as_deref(),
+            Some("fizz")
+        );
+        // Older desktops publish the label as `persona_id`.
+        assert_eq!(
+            label(r#"{"name":"Fizz","persona_id":"old"}"#).as_deref(),
+            Some("old")
+        );
+        assert_eq!(
+            label(r#"{"source_preset_id":" ","persona_id":"old"}"#).as_deref(),
+            Some("old")
+        );
+        assert_eq!(label(r#"{"name":"Fizz","system_prompt":"x"}"#), None);
+    }
 
     fn agent(persona_id: &str, pubkey: &str) -> ResolvedAgent {
         ResolvedAgent {

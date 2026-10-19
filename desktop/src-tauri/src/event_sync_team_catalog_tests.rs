@@ -66,10 +66,18 @@ fn write_stores(base_dir: &Path, teams: &[TeamRecord], personas: &[AgentDefiniti
     )
     .unwrap();
     std::fs::write(
-        base_dir.join("personas.json"),
+        base_dir.join(crate::managed_agents::PRESETS_FILE),
         serde_json::to_string(personas).unwrap(),
     )
     .unwrap();
+    mark_presets_moved(base_dir);
+}
+
+/// The marker `migration::preset_store` leaves once presets live in
+/// `presets.json`; preset readers refuse to run without it.
+fn mark_presets_moved(base_dir: &Path) {
+    std::fs::write(base_dir.join("presets.json.moved"), b"").unwrap();
+    assert!(crate::migration::presets_moved(base_dir));
 }
 
 /// Retain a catalog head for `team`/`members`, as the share toggle would.
@@ -249,28 +257,21 @@ fn test_team_with_no_head_is_skipped() {
     assert!(head(base.path(), &keys).is_none());
 }
 
+/// Until the presets have been moved into `presets.json` the member list is
+/// unknown; the reconcile must refuse rather than read zero members and
+/// retract every shared team.
 #[test]
-fn test_members_are_read_from_the_unified_agent_store_after_the_fold() {
+fn test_reconcile_refuses_before_presets_are_moved() {
     let base = tempfile::tempdir().unwrap();
     let keys = nostr::Keys::generate();
     retain_head(base.path(), &keys, &team(), &[member("m1", "Original.")]);
-    // Post-fold there is no personas.json; definitions are key-less records in
-    // managed-agents.json. Reading only personas.json would see zero members
-    // and retract every shared team on the next boot.
     std::fs::write(
         base.path().join("teams.json"),
         serde_json::to_string(&[team()]).unwrap(),
     )
     .unwrap();
-    let folded: Vec<crate::managed_agents::ManagedAgentRecord> =
-        vec![member("m1", "Original.").into_agent_record()];
-    std::fs::write(
-        base.path().join("managed-agents.json"),
-        serde_json::to_string(&folded).unwrap(),
-    )
-    .unwrap();
 
-    assert_eq!(reconcile(base.path(), &keys).unwrap(), 0);
+    assert!(reconcile(base.path(), &keys).is_err());
 
     let after = head(base.path(), &keys).unwrap();
     assert!(head_is_shared(&after), "the team must not be retracted");

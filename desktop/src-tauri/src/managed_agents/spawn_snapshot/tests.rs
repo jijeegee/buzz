@@ -7,14 +7,12 @@ use std::collections::BTreeMap;
 /// proxy for it.
 fn snapshot_with_policy(
     record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
     workspace_relay: &str,
     global: &GlobalAgentConfig,
     enforced_owner_only: bool,
 ) -> serde_json::Value {
     prospective_spawn_config_snapshot(
         record,
-        personas,
         workspace_relay,
         global,
         enforced_owner_only,
@@ -25,17 +23,16 @@ fn snapshot_with_policy(
 
 fn snapshot(
     record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
     workspace_relay: &str,
     global: &GlobalAgentConfig,
 ) -> serde_json::Value {
-    snapshot_with_policy(record, personas, workspace_relay, global, false)
+    snapshot_with_policy(record, workspace_relay, global, false)
 }
 
-/// `snapshot` with the fixed no-persona/default-global shape the effort
-/// tests share, so their call sites read as `snap(&record)` instead of wrapping.
+/// `snapshot` with the fixed default-global shape the effort tests share, so
+/// their call sites read as `snap(&record)` instead of wrapping.
 fn snap(record: &ManagedAgentRecord) -> serde_json::Value {
-    snapshot(record, &[], "wss://ws.example", &Default::default())
+    snapshot(record, "wss://ws.example", &Default::default())
 }
 
 fn record() -> ManagedAgentRecord {
@@ -44,7 +41,9 @@ fn record() -> ManagedAgentRecord {
         description: None,
         pubkey: "p".repeat(64),
         name: "agent".into(),
-        persona_id: None,
+        source_preset_id: None,
+        legacy_persona_id: None,
+        team_instructions: None,
         private_key_nsec: "nsec1fake".into(),
         auth_tag: None,
         relay_url: "ws://localhost:3000".into(),
@@ -61,7 +60,6 @@ fn record() -> ManagedAgentRecord {
         system_prompt: Some("You are a test agent.".into()),
         model: None,
         provider: None,
-        persona_source_version: None,
         env_vars: BTreeMap::new(),
         start_on_app_launch: false,
         is_default_ai: false,
@@ -72,8 +70,6 @@ fn record() -> ManagedAgentRecord {
         provider_policy_pending: false,
         provider_binary_path: None,
         team_id: None,
-        persona_team_dir: None,
-        persona_name_in_team: None,
         created_at: "now".into(),
         updated_at: "now".into(),
         last_started_at: None,
@@ -83,53 +79,10 @@ fn record() -> ManagedAgentRecord {
         last_error_code: None,
         respond_to: Default::default(),
         respond_to_allowlist: vec![],
-        display_name: None,
-        slug: None,
         runtime: None,
-        name_pool: Vec::new(),
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: Vec::new(),
-        definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
         bot_origin: None,
-    }
-}
-
-fn persona(id: &str, runtime: Option<&str>, prompt: &str) -> AgentDefinition {
-    AgentDefinition {
-        effort_level: None,
-        session_policy: Default::default(),
-        description: None,
-        id: id.into(),
-        display_name: id.into(),
-        avatar_url: None,
-        system_prompt: prompt.into(),
-        acp_command: None,
-        runtime: runtime.map(str::to_string),
-        model: None,
-        provider: None,
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        env_vars: BTreeMap::new(),
-        respond_to: None,
-        respond_to_allowlist: Vec::new(),
-        parallelism: None,
-        created_at: "now".into(),
-        updated_at: "now".into(),
     }
 }
 
@@ -137,30 +90,8 @@ fn persona(id: &str, runtime: Option<&str>, prompt: &str) -> AgentDefinition {
 fn snapshot_is_deterministic() {
     let rec = record();
     assert_eq!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&rec, &[], "wss://ws.example", &Default::default())
-    );
-}
-
-#[test]
-fn materializing_runtime_keeps_snapshot_stable() {
-    // Migration cutover invariant (Phase 1A): materializing the linked
-    // persona's runtime onto the record must NOT change the spawn snapshot —
-    // otherwise every running persona-linked agent would show a spurious
-    // restart badge right after migration. Pre-migration the command resolves
-    // through the persona fallback; post-migration through record.runtime.
-    // Same persona, same runtime, same command → equal snapshots.
-    let personas = vec![persona("p1", Some("goose"), "Persona prompt.")];
-
-    let mut pre = record();
-    pre.persona_id = Some("p1".into());
-
-    let mut post = pre.clone();
-    post.runtime = Some("goose".into());
-
-    assert_eq!(
-        snapshot(&pre, &personas, "wss://ws.example", &Default::default()),
-        snapshot(&post, &personas, "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&rec, "wss://ws.example", &Default::default())
     );
 }
 
@@ -172,8 +103,8 @@ fn record_env_var_edit_changes_snapshot() {
         .env_vars
         .insert("SOME_KEY".into(), "some-value".into());
     assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -183,53 +114,41 @@ fn record_prompt_edit_does_not_change_snapshot_but_model_and_provider_do() {
     // so editing it must not badge. Model and provider still need a new
     // process.
     let rec = record();
-    let base = snapshot(&rec, &[], "wss://ws.example", &Default::default());
+    let base = snapshot(&rec, "wss://ws.example", &Default::default());
     let mut edited = record();
     edited.system_prompt = Some("Edited prompt.".into());
     assert_eq!(
         base,
-        snapshot(&edited, &[], "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default()),
         "a prompt edit applies live"
     );
     let mut model = record();
     model.model = Some("other-model".into());
     assert_ne!(
         base,
-        snapshot(&model, &[], "wss://ws.example", &Default::default()),
+        snapshot(&model, "wss://ws.example", &Default::default()),
         "a model edit still requires a restart"
     );
     let mut provider = record();
     provider.provider = Some("other-provider".into());
     assert_ne!(
         base,
-        snapshot(&provider, &[], "wss://ws.example", &Default::default()),
+        snapshot(&provider, "wss://ws.example", &Default::default()),
         "a provider edit still requires a restart"
     );
 }
 
 #[test]
 fn team_instruction_edit_reaches_live_settings() {
-    // Teams are not a snapshot input at all: their instructions reach running
-    // agents through the live settings file.
+    // Team instructions are not a snapshot input at all: the agent's own copy
+    // reaches the running process through the live settings file.
     let mut rec = record();
     rec.team_id = Some("team-1".into());
-    let team = |instructions: &str| TeamRecord {
-        id: "team-1".into(),
-        instructions: Some(instructions.into()),
-        ..serde_json::from_value(serde_json::json!({
-            "id": "team-1",
-            "name": "Team",
-            "persona_ids": [],
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-01T00:00:00Z",
-        }))
-        .expect("minimal team record")
-    };
-    let live = |team: TeamRecord| {
+    let live = |instructions: &str| {
+        let mut rec = rec.clone();
+        rec.team_instructions = Some(instructions.into());
         crate::managed_agents::live_settings::current_live_settings(
             &rec,
-            &[],
-            &[team],
             &Default::default(),
             "",
             "",
@@ -238,41 +157,39 @@ fn team_instruction_edit_reaches_live_settings() {
         )
         .team_instructions
     };
-    assert_eq!(live(team("Ship small.")).as_deref(), Some("Ship small."));
-    assert_eq!(live(team("Ship fast.")).as_deref(), Some("Ship fast."));
+    assert_eq!(live("Ship small.").as_deref(), Some("Ship small."));
+    assert_eq!(live("Ship fast.").as_deref(), Some("Ship fast."));
 }
 
 #[test]
-fn persona_runtime_edit_changes_snapshot() {
-    // The harness command resolves live personas at spawn, so a persona
+fn record_runtime_edit_changes_snapshot() {
+    // The harness command resolves from the agent's own runtime at spawn, so a
     // runtime change means a restart WOULD change what runs → badge trips.
-    let mut rec = record();
-    rec.persona_id = Some("pers".into());
-    let before = [persona("pers", Some("goose"), "prompt")];
-    let after = [persona("pers", Some("claude"), "prompt")];
+    let mut before = record();
+    before.runtime = Some("goose".into());
+    let mut after = record();
+    after.runtime = Some("claude".into());
     assert_ne!(
-        snapshot(&rec, &before, "wss://ws.example", &Default::default()),
-        snapshot(&rec, &after, "wss://ws.example", &Default::default())
+        snapshot(&before, "wss://ws.example", &Default::default()),
+        snapshot(&after, "wss://ws.example", &Default::default())
     );
 }
 
 #[test]
-fn persona_prompt_edit_reaches_live_settings_not_the_snapshot() {
-    // A persona prompt edit reaches the running agent through its live
-    // settings file on its next message, so the badge must not trip.
-    let mut rec = record();
-    rec.persona_id = Some("pers".into());
-    let before = [persona("pers", Some("goose"), "old prompt")];
-    let after = [persona("pers", Some("goose"), "new prompt")];
+fn record_prompt_edit_reaches_live_settings_not_the_snapshot() {
+    // A prompt edit reaches the running agent through its live settings file
+    // on its next message, so the badge must not trip.
+    let mut before = record();
+    before.system_prompt = Some("old prompt".into());
+    let mut after = record();
+    after.system_prompt = Some("new prompt".into());
     assert_eq!(
-        snapshot(&rec, &before, "wss://ws.example", &Default::default()),
-        snapshot(&rec, &after, "wss://ws.example", &Default::default())
+        snapshot(&before, "wss://ws.example", &Default::default()),
+        snapshot(&after, "wss://ws.example", &Default::default())
     );
-    let live = |personas: &[AgentDefinition]| {
+    let live = |rec: &ManagedAgentRecord| {
         crate::managed_agents::live_settings::current_live_settings(
-            &rec,
-            personas,
-            &[],
+            rec,
             &Default::default(),
             "",
             "",
@@ -296,8 +213,8 @@ fn workspace_relay_change_trips_snapshot_even_for_stored_record_relay() {
         "fixture should carry a legacy pin"
     );
     assert_ne!(
-        snapshot(&rec, &[], "wss://relay-a.example", &Default::default()),
-        snapshot(&rec, &[], "wss://relay-b.example", &Default::default())
+        snapshot(&rec, "wss://relay-a.example", &Default::default()),
+        snapshot(&rec, "wss://relay-b.example", &Default::default())
     );
 }
 
@@ -310,8 +227,8 @@ fn stored_record_relay_does_not_affect_snapshot() {
     a.relay_url = String::new();
     b.relay_url = "wss://legacy-pin.example".into();
     assert_eq!(
-        snapshot(&a, &[], "wss://ws.example", &Default::default()),
-        snapshot(&b, &[], "wss://ws.example", &Default::default())
+        snapshot(&a, "wss://ws.example", &Default::default()),
+        snapshot(&b, "wss://ws.example", &Default::default())
     );
 }
 
@@ -328,7 +245,7 @@ fn owner_only_mode_and_allowlist_edits_do_not_change_effective_snapshot() {
     allowlist_edited.respond_to_allowlist = vec!["b".repeat(64)];
 
     let effective_before =
-        snapshot_with_policy(&before, &[], "wss://ws.example", &Default::default(), true);
+        snapshot_with_policy(&before, "wss://ws.example", &Default::default(), true);
     for (label, edited) in [
         ("respond-to mode", mode_edited),
         ("respond-to allowlist", allowlist_edited),
@@ -337,7 +254,6 @@ fn owner_only_mode_and_allowlist_edits_do_not_change_effective_snapshot() {
             effective_before,
             snapshot_with_policy(
                 &edited,
-                &[],
                 "wss://ws.example",
                 &Default::default(),
                 true,
@@ -360,14 +276,14 @@ fn oss_mode_and_allowlist_edits_change_effective_snapshot() {
     allowlist_edited.respond_to_allowlist = vec!["b".repeat(64)];
 
     let effective_before =
-        snapshot_with_policy(&before, &[], "wss://ws.example", &Default::default(), false);
+        snapshot_with_policy(&before, "wss://ws.example", &Default::default(), false);
     for (label, edited) in [
         ("respond-to mode", mode_edited),
         ("respond-to allowlist", allowlist_edited),
     ] {
         assert_ne!(
             effective_before,
-            snapshot_with_policy(&edited, &[], "wss://ws.example", &Default::default(), false,),
+            snapshot_with_policy(&edited, "wss://ws.example", &Default::default(), false,),
             "OSS spawn must retain restart drift for effective {label} edits",
         );
     }
@@ -380,8 +296,8 @@ fn respond_to_allowlist_edit_changes_snapshot() {
     edited.respond_to = RespondTo::Allowlist;
     edited.respond_to_allowlist = vec!["a".repeat(64)];
     assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -393,8 +309,8 @@ fn allowlist_ignored_when_mode_is_not_allowlist() {
     let mut edited = record();
     edited.respond_to_allowlist = vec!["a".repeat(64)];
     assert_eq!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -411,8 +327,8 @@ fn allowlist_normalization_equivalent_edits_do_not_change_snapshot() {
         "a".repeat(64),                  // duplicate
     ];
     assert_eq!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -424,8 +340,8 @@ fn allowlist_content_edit_still_changes_snapshot() {
     let mut edited = rec.clone();
     edited.respond_to_allowlist = vec!["b".repeat(64)];
     assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -435,8 +351,8 @@ fn explicit_max_turn_duration_changes_snapshot_from_none() {
     let mut edited = record();
     edited.max_turn_duration_seconds = Some(7200);
     assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -446,8 +362,8 @@ fn non_default_max_turn_duration_changes_snapshot() {
     let mut edited = record();
     edited.max_turn_duration_seconds = Some(42);
     assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -462,45 +378,8 @@ fn non_spawn_bookkeeping_fields_do_not_change_snapshot() {
     edited.last_started_at = Some("later".into());
     edited.last_exit_code = Some(0);
     assert_eq!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default())
-    );
-}
-
-#[test]
-fn resnapshot_does_not_clobber_record_quad_with_definition_absent_quad() {
-    // B5 drift row 3: the prospective re-snapshot copies ONLY
-    // prompt/model/provider/env from the linked definition. An instance
-    // whose owner hand-set respond_to/allowlist/parallelism must
-    // snapshot identically whether or not its definition carries a quad —
-    // activation of the definition-level defaults must never reach through
-    // spawn and overwrite instance state.
-    let quadless_definition = vec![persona("p1", Some("goose"), "Persona prompt.")];
-
-    let mut rec = record();
-    rec.persona_id = Some("p1".into());
-    rec.respond_to = RespondTo::Allowlist;
-    rec.respond_to_allowlist = vec!["a".repeat(64)];
-    rec.parallelism = 4;
-
-    let mut definition_with_quad = quadless_definition.clone();
-    definition_with_quad[0].respond_to = Some("anyone".into());
-    definition_with_quad[0].parallelism = Some(8);
-
-    assert_eq!(
-        snapshot(
-            &rec,
-            &quadless_definition,
-            "wss://ws.example",
-            &Default::default()
-        ),
-        snapshot(
-            &rec,
-            &definition_with_quad,
-            "wss://ws.example",
-            &Default::default()
-        ),
-        "definition quad must not leak into the spawn snapshot of an existing instance"
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default())
     );
 }
 
@@ -514,99 +393,33 @@ fn empty_prompt_snapshots_like_absent_prompt() {
     let mut empty = record();
     empty.system_prompt = Some(String::new());
     assert_eq!(
-        snapshot(&absent, &[], "wss://ws.example", &Default::default()),
-        snapshot(&empty, &[], "wss://ws.example", &Default::default()),
+        snapshot(&absent, "wss://ws.example", &Default::default()),
+        snapshot(&empty, "wss://ws.example", &Default::default()),
     );
 }
 
-/// (a) A definition-runtime edit must change the snapshot for a
-/// materialized, override-free record — the prospective re-snapshot now
-/// copies the persona's runtime onto the record before snapshotting.
+/// A command override (pin) wins over the agent's runtime, so a runtime
+/// edit under a pin changes nothing that runs — the badge must NOT fire.
 #[test]
-fn definition_runtime_edit_changes_snapshot_for_materialized_record() {
-    let mut rec = record();
-    rec.persona_id = Some("pers".into());
-    rec.runtime = Some("goose".into()); // materialized runtime on instance
-
-    let before = [persona("pers", Some("goose"), "prompt")];
-    let after = [persona("pers", Some("claude"), "prompt")];
-    assert_ne!(
-        snapshot(&rec, &before, "wss://ws.example", &Default::default()),
-        snapshot(&rec, &after, "wss://ws.example", &Default::default()),
-        "definition runtime edit must badge a materialized, override-free instance"
-    );
-}
-
-/// (c) A pin naming a KNOWN runtime no longer beats a changed definition
-/// runtime — apply_persona_snapshot clears the stale pin, so the badge fires.
-#[test]
-fn known_runtime_pin_yields_to_definition_runtime_change() {
-    let mut rec = record();
-    rec.persona_id = Some("pers".into());
-    rec.runtime = Some("goose".into()); // materialized runtime
-    rec.agent_command_override = Some("goose".into()); // create-time pin
-
-    let before = [persona("pers", Some("goose"), "prompt")];
-    let after = [persona("pers", Some("claude"), "prompt")];
-    assert_ne!(
-        snapshot(&rec, &before, "wss://ws.example", &Default::default()),
-        snapshot(&rec, &after, "wss://ws.example", &Default::default()),
-        "stale known-runtime pin must not shadow a definition runtime edit"
-    );
-}
-
-/// (c2) A custom-command override (no matching known runtime) still beats a
-/// changed definition runtime — the badge must NOT fire for such a pin.
-#[test]
-fn custom_command_override_beats_definition_runtime_change() {
-    let mut rec = record();
-    rec.persona_id = Some("pers".into());
-    rec.runtime = Some("goose".into()); // materialized runtime
-    rec.agent_command_override = Some("/opt/custom/my-agent".into());
-
-    let before = [persona("pers", Some("goose"), "prompt")];
-    let after = [persona("pers", Some("claude"), "prompt")];
+fn command_override_beats_record_runtime_change() {
+    let mut before = record();
+    before.runtime = Some("goose".into());
+    before.agent_command_override = Some("/opt/custom/my-agent".into());
+    let mut after = before.clone();
+    after.runtime = Some("claude".into());
     assert_eq!(
-        snapshot(&rec, &before, "wss://ws.example", &Default::default()),
-        snapshot(&rec, &after, "wss://ws.example", &Default::default()),
-        "custom command override must win regardless of definition runtime change"
+        snapshot(&before, "wss://ws.example", &Default::default()),
+        snapshot(&after, "wss://ws.example", &Default::default()),
+        "a command override must win regardless of a runtime change"
     );
 }
 
-/// (d) When the linked definition is absent the prospective re-snapshot is
-/// skipped entirely: the materialized runtime must still reach the snapshot.
-#[test]
-fn missing_definition_leaves_materialized_runtime_in_snapshot() {
-    let mut rec = record();
-    rec.persona_id = Some("missing".into());
-    rec.runtime = Some("goose".into()); // materialized runtime
-
-    let no_personas: &[AgentDefinition] = &[];
-
-    let mut no_runtime = rec.clone();
-    no_runtime.runtime = None;
-
-    assert_ne!(
-        snapshot(&rec, no_personas, "wss://ws.example", &Default::default()),
-        snapshot(
-            &no_runtime,
-            no_personas,
-            "wss://ws.example",
-            &Default::default()
-        ),
-        "materialized runtime must still reach the snapshot when definition is absent"
-    );
-}
-
-// ── Global default trips drift for linked inherited agents ───────────────
+// ── Global default vs the agent's own model ────────────────────────────────────────────
 
 #[test]
-fn global_model_change_trips_snapshot_for_linked_inherited_agent() {
+fn global_model_change_trips_snapshot_for_agent_without_own_model() {
     let mut rec = record();
-    rec.persona_id = Some("p1".into());
-    rec.model = Some("stale-record-model".into());
-
-    let personas = vec![persona("p1", Some("goose"), "prompt")];
+    rec.runtime = Some("goose".into());
 
     let global_a = GlobalAgentConfig {
         model: Some("model-a".to_string()),
@@ -619,27 +432,44 @@ fn global_model_change_trips_snapshot_for_linked_inherited_agent() {
         ..Default::default()
     };
 
-    let snapshot_a = snapshot(&rec, &personas, "wss://ws.example", &global_a);
-    let snapshot_b = snapshot(&rec, &personas, "wss://ws.example", &global_b);
+    let snapshot_a = snapshot(&rec, "wss://ws.example", &global_a);
+    let snapshot_b = snapshot(&rec, "wss://ws.example", &global_b);
 
     assert_ne!(
         snapshot_a, snapshot_b,
-        "changing the global default must drift a linked inherited agent"
+        "changing the global default must drift an agent that inherits it"
+    );
+}
+
+#[test]
+fn agent_model_wins_over_global_model_change() {
+    let mut rec = record();
+    rec.runtime = Some("goose".into());
+    rec.model = Some("agent-model".into());
+    rec.provider = Some("agent-prov".into());
+
+    let global_a = GlobalAgentConfig {
+        model: Some("model-a".to_string()),
+        provider: Some("prov-a".to_string()),
+        ..Default::default()
+    };
+    let global_b = GlobalAgentConfig {
+        model: Some("model-b".to_string()),
+        provider: Some("prov-b".to_string()),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        snapshot(&rec, "wss://ws.example", &global_a),
+        snapshot(&rec, "wss://ws.example", &global_b),
+        "an agent's own model/provider must shadow the global default"
     );
 }
 
 #[test]
 fn global_model_change_trips_snapshot_without_model_env_var() {
     let mut rec = record();
-    rec.persona_id = Some("p1".into());
     rec.agent_command = "some-harness-without-model-env".into();
-
-    let personas = vec![{
-        let mut p = persona("p1", None, "prompt");
-        p.model = None;
-        p.provider = None;
-        p
-    }];
 
     let global_a = GlobalAgentConfig {
         model: Some("model-a".to_string()),
@@ -650,8 +480,8 @@ fn global_model_change_trips_snapshot_without_model_env_var() {
         ..Default::default()
     };
 
-    let snapshot_a = snapshot(&rec, &personas, "wss://ws.example", &global_a);
-    let snapshot_b = snapshot(&rec, &personas, "wss://ws.example", &global_b);
+    let snapshot_a = snapshot(&rec, "wss://ws.example", &global_a);
+    let snapshot_b = snapshot(&rec, "wss://ws.example", &global_b);
 
     assert_ne!(
         snapshot_a, snapshot_b,
@@ -660,70 +490,22 @@ fn global_model_change_trips_snapshot_without_model_env_var() {
 }
 
 #[test]
-fn linked_instance_stale_prompt_bytes_are_inert_at_snapshot_time() {
-    // Regression for the split-resolve defect: prompt used to be read from
-    // the record's own (possibly Phase-A-snapshot-stale) bytes while
-    // model/provider were resolved live from the definition. A definition
-    // edit landing between a caller's snapshot apply and spawn could hand a
-    // fresh model/provider to a stale prompt, and the drift check (which already
-    // resolved model/provider live) would silently agree with a spawn that
-    // wrote the stale prompt. Now both come from one `resolve_effective_config`
-    // call, so a record whose own `system_prompt` bytes disagree with the
-    // live definition must snapshot exactly as if the record carried the
-    // definition's prompt verbatim — the record's prompt bytes are inert for
-    // a linked instance.
-    let mut rec = record();
-    rec.persona_id = Some("p1".into());
-    rec.system_prompt = Some("stale prompt on record".into());
-
-    let mut matching_bytes = rec.clone();
-    matching_bytes.system_prompt = Some("live prompt".into());
-
-    let personas = [persona("p1", Some("goose"), "live prompt")];
-
-    assert_eq!(
-        snapshot(&rec, &personas, "wss://ws.example", &Default::default()),
-        snapshot(
-            &matching_bytes,
-            &personas,
-            "wss://ws.example",
-            &Default::default()
-        ),
-        "record's own system_prompt bytes must not affect the snapshot of a linked instance"
-    );
-}
-
-#[test]
-fn display_name_edit_changes_snapshot() {
-    // The spawn writes KUZZ_ACP_SESSION_TITLE from display_name-or-name, so a
+fn name_edit_changes_snapshot() {
+    // The spawn writes KUZZ_ACP_SESSION_TITLE from the agent's name, so a
     // rename must trip the badge: the running process keeps the old title
     // until it restarts, and the operator has to be told that.
     let rec = record();
     let mut renamed = record();
-    renamed.display_name = Some("Fizz".into());
-    assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&renamed, &[], "wss://ws.example", &Default::default()),
-        "a display-name rename changes the spawned session title and must badge"
-    );
-}
-
-#[test]
-fn name_edit_changes_snapshot_when_display_name_is_absent() {
-    // With no display_name the title falls back to the unique handle, so the
-    // handle is what the env write carries and what must be snapshotted.
-    let rec = record();
-    let mut renamed = record();
     renamed.name = "agent-2".into();
     assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&renamed, &[], "wss://ws.example", &Default::default()),
-        "the fallback title source must reach the snapshot too"
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&renamed, "wss://ws.example", &Default::default()),
+        "a rename changes the spawned session title and must badge"
     );
 }
 
 #[test]
-fn display_name_edit_does_not_change_snapshot_under_an_explicit_title_override() {
+fn name_edit_does_not_change_snapshot_under_an_explicit_title_override() {
     // User env is written AFTER the Kuzz-set title (last-wins), so an explicit
     // KUZZ_ACP_SESSION_TITLE is what the child actually runs with. Renaming the
     // record changes nothing about the spawned process, so badging it would be
@@ -733,10 +515,10 @@ fn display_name_edit_does_not_change_snapshot_under_an_explicit_title_override()
     rec.env_vars
         .insert("KUZZ_ACP_SESSION_TITLE".into(), "Pinned Title".into());
     let mut renamed = rec.clone();
-    renamed.display_name = Some("Fizz".into());
+    renamed.name = "Fizz".into();
     assert_eq!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&renamed, &[], "wss://ws.example", &Default::default()),
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&renamed, "wss://ws.example", &Default::default()),
         "a rename shadowed by an explicit title override must not badge"
     );
 }
@@ -753,35 +535,9 @@ fn title_override_edit_changes_snapshot() {
         .env_vars
         .insert("KUZZ_ACP_SESSION_TITLE".into(), "Other Title".into());
     assert_ne!(
-        snapshot(&rec, &[], "wss://ws.example", &Default::default()),
-        snapshot(&edited, &[], "wss://ws.example", &Default::default()),
+        snapshot(&rec, "wss://ws.example", &Default::default()),
+        snapshot(&edited, "wss://ws.example", &Default::default()),
         "editing an explicit title override must badge"
-    );
-}
-
-#[test]
-fn linked_instance_definition_prompt_edit_applies_live_but_model_edit_badges() {
-    // A definition prompt edit reaches running instances through their live
-    // settings file, so it must not badge; a definition model edit still
-    // needs a new process.
-    let mut rec = record();
-    rec.persona_id = Some("p1".into());
-    rec.system_prompt = Some("stale".into());
-
-    let before = [persona("p1", Some("goose"), "old definition prompt")];
-    let after = [persona("p1", Some("goose"), "new definition prompt")];
-    assert_eq!(
-        snapshot(&rec, &before, "wss://ws.example", &Default::default()),
-        snapshot(&rec, &after, "wss://ws.example", &Default::default()),
-        "a definition prompt edit applies live"
-    );
-
-    let mut new_model = persona("p1", Some("goose"), "old definition prompt");
-    new_model.model = Some("other-model".into());
-    assert_ne!(
-        snapshot(&rec, &before, "wss://ws.example", &Default::default()),
-        snapshot(&rec, &[new_model], "wss://ws.example", &Default::default()),
-        "a definition model edit still requires a restart"
     );
 }
 
@@ -822,7 +578,7 @@ fn spawn_snapshot_changes_when_definition_default_args_change() {
     r.runtime = Some("my-def".into());
     r.agent_args = vec![]; // no instance args → definition args are used
 
-    let s1 = snapshot(&r, &[], "ws://relay", &Default::default());
+    let s1 = snapshot(&r, "ws://relay", &Default::default());
 
     // Update to v2 args and re-warm (simulating save + transactional refresh).
     fs::write(
@@ -832,7 +588,7 @@ fn spawn_snapshot_changes_when_definition_default_args_change() {
     .unwrap();
     warm_harness_registry_from_dir(Some(dir.path()));
 
-    let s2 = snapshot(&r, &[], "ws://relay", &Default::default());
+    let s2 = snapshot(&r, "ws://relay", &Default::default());
 
     assert_ne!(
         s1, s2,
@@ -865,7 +621,7 @@ fn spawn_snapshot_changes_when_definition_env_changes() {
     let mut r = record();
     r.runtime = Some("env-def".into());
 
-    let s1 = snapshot(&r, &[], "ws://relay", &Default::default());
+    let s1 = snapshot(&r, "ws://relay", &Default::default());
 
     // Update to include env and re-warm.
     fs::write(
@@ -875,7 +631,7 @@ fn spawn_snapshot_changes_when_definition_env_changes() {
     .unwrap();
     warm_harness_registry_from_dir(Some(dir.path()));
 
-    let s2 = snapshot(&r, &[], "ws://relay", &Default::default());
+    let s2 = snapshot(&r, "ws://relay", &Default::default());
 
     assert_ne!(s1, s2, "adding definition env must change the snapshot");
 }
@@ -909,8 +665,8 @@ fn spawn_snapshot_instance_args_win_over_definition_args() {
     r_no_instance.runtime = Some("arg-def".into());
     r_no_instance.agent_args = vec![];
 
-    let snapshot_instance = snapshot(&r_instance, &[], "ws://relay", &Default::default());
-    let snapshot_no_instance = snapshot(&r_no_instance, &[], "ws://relay", &Default::default());
+    let snapshot_instance = snapshot(&r_instance, "ws://relay", &Default::default());
+    let snapshot_no_instance = snapshot(&r_no_instance, "ws://relay", &Default::default());
 
     assert_ne!(
         snapshot_instance, snapshot_no_instance,
@@ -940,8 +696,8 @@ fn openclaw_above_cap_parallelism_snapshots_equal() {
     at_8.parallelism = 8;
 
     assert_eq!(
-        snapshot(&at_10, &[], "wss://ws.example", &Default::default()),
-        snapshot(&at_8, &[], "wss://ws.example", &Default::default()),
+        snapshot(&at_10, "wss://ws.example", &Default::default()),
+        snapshot(&at_8, "wss://ws.example", &Default::default()),
         "parallelism 10 and 8 both clamp to 5 for OpenClaw — snapshots must be equal, no restart badge"
     );
 }
@@ -961,8 +717,8 @@ fn openclaw_cap_crossing_parallelism_snapshots_differ() {
     at_3.parallelism = 3;
 
     assert_ne!(
-        snapshot(&at_8, &[], "wss://ws.example", &Default::default()),
-        snapshot(&at_3, &[], "wss://ws.example", &Default::default()),
+        snapshot(&at_8, "wss://ws.example", &Default::default()),
+        snapshot(&at_3, "wss://ws.example", &Default::default()),
         "parallelism 8 (clamps to 5) and 3 (runs as 3) must produce different snapshots"
     );
 }

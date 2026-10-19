@@ -37,7 +37,12 @@ use super::{ManagedAgentRecord, RespondTo};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedAgentEventContent {
     pub name: String,
+    /// Label: the preset this agent was made from (display/lookups only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_preset_id: Option<String>,
+    /// Older clients' live preset link. Read as a label only when
+    /// `source_preset_id` is absent; never written.
+    #[serde(default, skip_serializing)]
     pub persona_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_prompt: Option<String>,
@@ -45,11 +50,9 @@ pub struct ManagedAgentEventContent {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
-    /// `persona_content_hash` of the persona snapshot pinned at create time.
-    /// Public drift indicator (not a secret) — lets other clients flag a stale
-    /// snapshot without re-reading the source persona.
+    /// The agent's own public description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub persona_source_version: Option<String>,
+    pub description: Option<String>,
     pub parallelism: u32,
     /// Inbound author gate mode (wire string).
     pub respond_to: RespondTo,
@@ -68,38 +71,16 @@ pub struct ManagedAgentEventContent {
 /// operational start/stop produces an identical projection and never
 /// republishes.
 pub fn agent_event_content(record: &ManagedAgentRecord) -> ManagedAgentEventContent {
-    // Slimmed projection (NIP-AP "Slimming: kind:30177"): definition-linked
-    // instances resolve prompt/model/provider/source_version through their
-    // kind:30175 definition, so those fields are omitted from the wire.
-    // Definition-less instances ARE their own definition and keep emitting
-    // the quad — old readers parse a slimmed event successfully and would
-    // otherwise overwrite their local snapshot with absent values, with no
-    // restore path. This branch retires once every record is
-    // definition-backed (B5 backfill).
-    let definition_linked = record.persona_id.is_some();
+    // Every agent owns its settings, so the full prompt/model/provider and
+    // description always travel; the preset it was made from is a label.
     ManagedAgentEventContent {
         name: record.name.clone(),
-        persona_id: record.persona_id.clone(),
-        system_prompt: if definition_linked {
-            None
-        } else {
-            record.system_prompt.clone()
-        },
-        model: if definition_linked {
-            None
-        } else {
-            record.model.clone()
-        },
-        provider: if definition_linked {
-            None
-        } else {
-            record.provider.clone()
-        },
-        persona_source_version: if definition_linked {
-            None
-        } else {
-            record.persona_source_version.clone()
-        },
+        source_preset_id: record.source_preset_id.clone(),
+        persona_id: None,
+        system_prompt: record.system_prompt.clone(),
+        model: record.model.clone(),
+        provider: record.provider.clone(),
+        description: record.description.clone(),
         parallelism: record.parallelism,
         respond_to: record.respond_to,
         respond_to_allowlist: record.respond_to_allowlist.clone(),
@@ -111,12 +92,8 @@ pub fn agent_event_content(record: &ManagedAgentRecord) -> ManagedAgentEventCont
 /// Returns an unsigned `EventBuilder` — the caller signs and submits. The
 /// `d_tag` is the agent's pubkey.
 pub fn build_agent_event(record: &ManagedAgentRecord) -> Result<EventBuilder, String> {
-    super::validate_managed_agent_definition_text(
-        &record.name,
-        record.persona_id.as_deref(),
-        record.system_prompt.as_deref(),
-    )
-    .map_err(|error| format!("Managed agent definition is unsafe to publish: {error}"))?;
+    super::validate_managed_agent_definition_text(&record.name, record.system_prompt.as_deref())
+        .map_err(|error| format!("Managed agent definition is unsafe to publish: {error}"))?;
     let content = serde_json::to_string(&agent_event_content(record))
         .map_err(|e| format!("failed to serialize managed-agent content: {e}"))?;
     let tags =
@@ -168,7 +145,9 @@ mod tests {
             description: None,
             pubkey: "agentpubkeyhex".to_string(),
             name: "Test Agent".to_string(),
-            persona_id: Some("persona-1".to_string()),
+            source_preset_id: Some("persona-1".to_string()),
+            legacy_persona_id: None,
+            team_instructions: None,
             private_key_nsec: "nsec1secretdonotpublish".to_string(),
             auth_tag: Some("authtagsecret".to_string()),
             relay_url: "wss://relay.example".to_string(),
@@ -185,7 +164,6 @@ mod tests {
             system_prompt: Some("You are a test agent.".to_string()),
             model: Some("claude-opus-4".to_string()),
             provider: Some("anthropic".to_string()),
-            persona_source_version: Some("abc123".to_string()),
             env_vars: BTreeMap::from([("OPENAI_API_KEY".to_string(), "sk-secret".to_string())]),
             start_on_app_launch: true,
             is_default_ai: false,
@@ -199,8 +177,6 @@ mod tests {
             provider_policy_pending: false,
             provider_binary_path: Some("/path/to/binary".to_string()),
             team_id: None,
-            persona_team_dir: None,
-            persona_name_in_team: None,
             created_at: "2025-01-01T00:00:00Z".to_string(),
             updated_at: "2025-01-01T00:00:00Z".to_string(),
             last_started_at: Some("2025-01-02T00:00:00Z".to_string()),
@@ -212,20 +188,7 @@ mod tests {
             respond_to_allowlist: vec!["79be667e".to_string()],
             // Unified-model fields carry real values so the exclusion test
             // proves they are absent from the wire, not vacuously empty.
-            display_name: Some("Display Name Secretish".to_string()),
-            slug: Some("sample-slug".to_string()),
             runtime: Some("goose".to_string()),
-            name_pool: vec!["poolname".to_string()],
-            is_builtin: true,
-            is_active: false,
-            shared: false,
-            source_team: None,
-            source_team_persona_slug: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            definition_respond_to: None,
-            definition_respond_to_allowlist: Vec::new(),
-            definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
             bot_origin: None,
@@ -243,26 +206,28 @@ mod tests {
     #[test]
     fn publication_rejects_unsafe_definition_less_name_and_prompt() {
         let mut unsafe_name = sample_agent();
-        unsafe_name.persona_id = None;
         unsafe_name.name = "Review\u{200B}er".to_string();
         let error = build_agent_event(&unsafe_name)
             .expect_err("publication must reject an invisible agent name");
         assert!(error.contains("U+200B"), "unexpected error: {error}");
 
         let mut unsafe_prompt = sample_agent();
-        unsafe_prompt.persona_id = None;
         unsafe_prompt.system_prompt = Some("Review\u{202E} code.".to_string());
         let error = build_agent_event(&unsafe_prompt)
             .expect_err("publication must reject bidi formatting in instructions");
         assert!(error.contains("U+202E"), "unexpected error: {error}");
     }
 
+    /// The agent owns its prompt even when made from a preset, so the prompt
+    /// is published and validated like any other.
     #[test]
-    fn publication_ignores_inert_linked_record_prompt() {
-        let mut linked = sample_agent();
-        linked.system_prompt = Some("stale\u{200B} prompt".to_string());
-        build_agent_event(&linked)
-            .expect("linked record prompt is omitted in favor of the validated persona");
+    fn publication_validates_prompt_of_agent_made_from_preset() {
+        let mut from_preset = sample_agent();
+        assert!(from_preset.source_preset_id.is_some());
+        from_preset.system_prompt = Some("stale\u{200B} prompt".to_string());
+        let error = build_agent_event(&from_preset)
+            .expect_err("an agent made from a preset publishes its own prompt");
+        assert!(error.contains("U+200B"), "unexpected error: {error}");
     }
 
     #[test]
@@ -331,41 +296,43 @@ mod tests {
         // Identity fields — must appear.
         assert!(json.contains("\"name\""));
         assert!(json.contains("Test Agent"));
-        assert!(json.contains("persona_id"));
-        // Slimmed projection: a definition-linked record resolves its prompt
-        // through the definition, so the wire must NOT carry it.
-        assert!(
-            !json.contains("system_prompt"),
-            "definition-linked projection must omit system_prompt"
-        );
+        assert!(json.contains("\"source_preset_id\":\"persona-1\""));
+        assert!(!json.contains("persona_id"), "legacy link is never written");
+        // The agent owns its prompt, so it always travels.
+        assert!(json.contains("system_prompt"));
     }
 
-    /// Slimming (NIP-AP): definition-linked records omit the definition quad;
-    /// definition-less records keep emitting it (they ARE their own
-    /// definition — old readers would otherwise wipe fields with no restore
-    /// path).
+    /// Every agent owns its settings: prompt/model/provider travel whether or
+    /// not the agent was made from a preset.
     #[test]
-    fn projection_slims_definition_quad_only_when_linked() {
-        let linked = sample_agent(); // persona_id: Some
-        let json = serde_json::to_string(&agent_event_content(&linked)).unwrap();
-        assert!(!json.contains("system_prompt"));
-        assert!(!json.contains("\"model\""));
-        assert!(!json.contains("\"provider\""));
-        assert!(!json.contains("persona_source_version"));
-        // Instance fields stay on the wire.
-        assert!(json.contains("parallelism"));
-        assert!(json.contains("respond_to"));
+    fn projection_carries_prompt_model_provider_with_or_without_preset() {
+        for source_preset_id in [Some("persona-1".to_string()), None] {
+            let mut agent = sample_agent();
+            agent.source_preset_id = source_preset_id;
+            let json = serde_json::to_string(&agent_event_content(&agent)).unwrap();
+            assert!(json.contains("system_prompt"));
+            assert!(json.contains("\"model\""));
+            assert!(json.contains("\"provider\""));
+            assert!(json.contains("parallelism"));
+            assert!(json.contains("respond_to"));
+            assert!(!json.contains("persona_source_version"));
+        }
+    }
 
-        let mut standalone = sample_agent();
-        standalone.persona_id = None;
-        let json = serde_json::to_string(&agent_event_content(&standalone)).unwrap();
-        assert!(json.contains("system_prompt"), "standalone keeps prompt");
-        assert!(json.contains("\"model\""), "standalone keeps model");
-        assert!(json.contains("\"provider\""), "standalone keeps provider");
-        assert!(
-            json.contains("persona_source_version"),
-            "standalone keeps source_version"
-        );
+    /// An older client's `persona_id` is read (as a label) but never written.
+    #[test]
+    fn legacy_persona_id_is_read_but_not_written() {
+        let parsed: ManagedAgentEventContent = serde_json::from_value(serde_json::json!({
+            "name": "Agent",
+            "persona_id": "old-preset",
+            "parallelism": 1,
+            "respond_to": "owner-only",
+        }))
+        .unwrap();
+        assert_eq!(parsed.persona_id.as_deref(), Some("old-preset"));
+        assert_eq!(parsed.source_preset_id, None);
+        let json = serde_json::to_string(&parsed).unwrap();
+        assert!(!json.contains("persona_id"), "{json}");
     }
 
     #[test]
@@ -402,23 +369,10 @@ mod tests {
         edited.parallelism += 1;
         assert_ne!(agent_event_content(&agent), agent_event_content(&edited));
 
-        // Definition-level edit surfaces only for definition-less records —
-        // linked records resolve the prompt through their definition.
-        let mut standalone = sample_agent();
-        standalone.persona_id = None;
-        let mut edited = standalone.clone();
+        // A prompt edit surfaces too, preset label or not.
+        let mut edited = agent.clone();
         edited.system_prompt = Some("A different prompt.".to_string());
-        assert_ne!(
-            agent_event_content(&standalone),
-            agent_event_content(&edited)
-        );
-        let mut linked_edit = sample_agent();
-        linked_edit.system_prompt = Some("A different prompt.".to_string());
-        assert_eq!(
-            agent_event_content(&sample_agent()),
-            agent_event_content(&linked_edit),
-            "a linked record's local prompt snapshot is not wire state"
-        );
+        assert_ne!(agent_event_content(&agent), agent_event_content(&edited));
     }
 
     /// The inbound structural guard: a foreign event whose content JSON crams

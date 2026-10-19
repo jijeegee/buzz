@@ -390,15 +390,12 @@ use crate::managed_agents::spawn_snapshot::{
 };
 use crate::managed_agents::AcpSessionPolicy;
 
-/// Build the prospective snapshot for a linked record under one definition policy.
+/// Build the prospective snapshot for an agent with its own session policy.
 fn snapshot_under(policy: AcpSessionPolicy) -> SpawnConfigSnapshot {
     let mut record = record();
-    record.persona_id = Some("policy-persona".into());
-    let mut definition = persona("policy-persona", None, "You are a test agent.");
-    definition.session_policy = policy;
+    record.session_policy = policy;
     prospective_spawn_config_snapshot(
         &record,
-        &[definition],
         "wss://ws.example",
         &Default::default(),
         false,
@@ -412,18 +409,15 @@ fn policy_transition_diff(
     stamped: &SpawnConfigSnapshot,
     current: &SpawnConfigSnapshot,
 ) -> Vec<RestartDiffEntry> {
-    eligible_restart_diff(
-        false,
-        Some(TrackedSpawnState {
-            stamped,
-            current,
-            stamped_availability: None,
-            current_availability: None,
-        }),
-    )
+    eligible_restart_diff(Some(TrackedSpawnState {
+        stamped,
+        current,
+        stamped_availability: None,
+        current_availability: None,
+    }))
 }
 
-/// Prospective snapshot for a definition-less record with the routing star
+/// Prospective snapshot for a record with the routing star
 /// set or cleared under `mode`, the role resolved through the production
 /// `routing_role_for` exactly as the summary builder resolves it.
 fn snapshot_with_star(
@@ -435,7 +429,6 @@ fn snapshot_with_star(
     let role = crate::managed_agents::channel_routing::routing_role_for(&record, mode, None);
     prospective_spawn_config_snapshot(
         &record,
-        &[],
         "wss://ws.example",
         &Default::default(),
         false,
@@ -480,7 +473,7 @@ fn moving_the_routing_star_or_mode_while_running_requires_restart() {
 
 #[test]
 fn toggling_session_policy_while_running_requires_restart() {
-    // A definition edit must reach the real config-drift path. The harness
+    // A session-policy edit must reach the real config-drift path. The harness
     // reads KUZZ_ACP_SESSION_POLICY only at launch, so an existing process
     // keeps its old policy until the normal restart affordance is used.
     let channel = snapshot_under(AcpSessionPolicy::Channel);
@@ -516,12 +509,12 @@ fn unchanged_session_policy_does_not_require_restart() {
 }
 
 #[test]
-fn definitionless_instance_retains_its_stored_session_policy() {
+fn agent_runs_with_its_own_session_policy() {
     let mut instance = record();
     instance.session_policy = AcpSessionPolicy::Thread;
 
     assert_eq!(
-        crate::managed_agents::effective_acp_session_policy(&instance, &[]),
+        crate::managed_agents::effective_acp_session_policy(&instance),
         AcpSessionPolicy::Thread
     );
 }

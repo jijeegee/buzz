@@ -1,32 +1,29 @@
 /**
  * Cancel-safety + Save-gated effort acceptance pins (production seam).
  *
- * The pin→inherit effort/runtime clear is derived entirely inside the backend's
- * locked save, keyed off the `agentCommand: ""` sentinel that
- * `resolveAgentCommandUpdate` produces at SUBMIT. Cancel-safety is therefore a
- * UI-wiring invariant: toggling the inherit checkbox mutates only local dialog
- * state, and the real Cancel button must route to `onOpenChange`, never to the
- * submit path — so no `update_managed_agent` (and thus no column/env clear) is
- * ever dispatched when the user backs out.
+ * Cancel-safety is a UI-wiring invariant: editing fields mutates only local
+ * dialog state, and the real Cancel button must route to `onOpenChange`, never
+ * to the submit path — so no `update_managed_agent` is ever dispatched when the
+ * user backs out.
  *
  * Why a full production render rather than a hand-written miniature: the seam
  * being pinned is the DIALOG FOOTER's wiring (Cancel → handleOpenChange, Save →
  * handleSubmit → update_managed_agent). A miniature that re-implements a fake
  * Cancel/Save cannot catch a regression that rewires the real Cancel button to
- * handleSubmit. This test mounts the actual `AgentInstanceEditDialog`, expands
- * Advanced, toggles the inherit checkbox, clicks the REAL Cancel button, and
- * asserts the mocked `update_managed_agent` IPC boundary recorded zero calls —
- * so rewiring Cancel to handleSubmit() makes it fail. The companion test clicks
- * the REAL Save button and asserts the same boundary receives exactly one call
- * carrying the `agentCommand: ""` inherit sentinel.
+ * handleSubmit. This test mounts the actual `AgentInstanceEditDialog`, edits
+ * fields, clicks the REAL Cancel button, and asserts the mocked
+ * `update_managed_agent` IPC boundary recorded zero calls — so rewiring Cancel
+ * to handleSubmit() makes it fail. The companion test clicks the REAL Save
+ * button and asserts the same boundary receives exactly one call carrying the
+ * agent's own values (an agent made from a preset owns its settings; the
+ * dialog never reads or inherits the preset).
  *
  * The effort-write tests (Carl r8 P1 / P3) pin the SUBMIT wiring the pure
  * `resolveEffortSubmission` unit tests cannot reach: they mount the dialog with
  * an effort-capable config surface, drive the REAL effort dropdown, and assert
  * the `update_managed_agent` IPC boundary carries `effortLevel` in its payload.
  * Selection alone and Cancel dispatch no effort write (a selection-time write
- * would fail these); a pin→inherit Save suppresses effortLevel (dropping the
- * inherit-transition guard fails it); and an ordinary effort Save proves
+ * would fail these); and an ordinary effort Save proves
  * `effortLevel` is in the locked update payload so an access-change-triggered
  * restart snapshots the new effort atomically (P3: no separate setter race).
  */
@@ -63,16 +60,14 @@ const ipcHandlers = new Map();
 
 const AGENT_PK = "d".repeat(64);
 
-// A goose-pinned instance linked to a claude persona — the pin→inherit
-// transition. `agentCommandOverride` non-null means it opens PINNED (inherit
-// checkbox unchecked); toggling inherit ON produces the `agentCommand: ""`
-// clear sentinel at submit. Claude persona keeps the prospective runtime
-// credential-free so the Save sanity case is enabled.
+// A goose agent made from a claude preset. The preset is a label only: the
+// dialog must save the agent's own values, never the preset's.
 function rawAgent(overrides = {}) {
   return {
     pubkey: AGENT_PK,
     name: "pinned-instance",
-    persona_id: "p1",
+    source_preset_id: "p1",
+    description: null,
     runtime: "goose",
     relay_url: "wss://relay.example",
     acp_command: "acp",
@@ -88,8 +83,6 @@ function rawAgent(overrides = {}) {
     avatar_url: null,
     model: null,
     provider: null,
-    persona_out_of_date: false,
-    persona_orphaned: false,
     needs_restart: false,
     env_vars: {},
     status: "running",
@@ -315,7 +308,8 @@ function toCamelAgent(raw) {
   return {
     pubkey: raw.pubkey,
     name: raw.name,
-    personaId: raw.persona_id,
+    sourcePresetId: raw.source_preset_id,
+    description: raw.description,
     runtime: raw.runtime,
     relayUrl: raw.relay_url,
     acpCommand: raw.acp_command,
@@ -332,8 +326,6 @@ function toCamelAgent(raw) {
     model: raw.model,
     modelSource: null,
     provider: raw.provider,
-    personaOutOfDate: raw.persona_out_of_date,
-    personaOrphaned: raw.persona_orphaned,
     needsRestart: raw.needs_restart,
     restartDiff: [],
     envVars: raw.env_vars,
@@ -355,28 +347,6 @@ function toCamelAgent(raw) {
     respondToAllowlist: raw.respond_to_allowlist,
     effortLevel: raw.effort_level ?? null,
   };
-}
-
-async function expandAdvancedAndToggleInherit() {
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
-  });
-  const checkbox = dom.window.document.getElementById(
-    "edit-agent-inherit-harness",
-  );
-  assert.ok(
-    checkbox,
-    "inherit checkbox must render for a persona-linked agent inside Advanced",
-  );
-  assert.equal(
-    checkbox.checked,
-    false,
-    "a harness-pinned agent must open with inherit unchecked",
-  );
-  await act(async () => {
-    fireEvent.click(checkbox);
-  });
-  assert.equal(checkbox.checked, true, "inherit toggle must flip to checked");
 }
 
 before(async () => {
@@ -456,7 +426,27 @@ afterEach(() => {
 
 after(() => dom.window.close());
 
-test("inherit toggle then Cancel dispatches no update_managed_agent", async () => {
+async function editDescriptionAndPrompt() {
+  const description = dom.window.document.getElementById(
+    "edit-agent-description",
+  );
+  assert.ok(description, "the description field must render");
+  await act(async () => {
+    fireEvent.change(description, {
+      target: { value: "Writes release notes" },
+    });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+  });
+  const prompt = dom.window.document.getElementById("edit-agent-system-prompt");
+  assert.ok(prompt, "the agent's own system prompt must render in Advanced");
+  await act(async () => {
+    fireEvent.change(prompt, { target: { value: "Be terse." } });
+  });
+}
+
+test("edits then Cancel dispatch no update_managed_agent", async () => {
   installIpc();
   let openChange;
   await act(async () => {
@@ -465,7 +455,7 @@ test("inherit toggle then Cancel dispatches no update_managed_agent", async () =
     });
   });
 
-  await expandAdvancedAndToggleInherit();
+  await editDescriptionAndPrompt();
 
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -479,17 +469,22 @@ test("inherit toggle then Cancel dispatches no update_managed_agent", async () =
   assert.equal(
     ipcCalls.filter((c) => c.cmd === "update_managed_agent").length,
     0,
-    "Cancel after toggling inherit must not dispatch update_managed_agent — rewiring Cancel to handleSubmit() breaks this",
+    "Cancel after editing must not dispatch update_managed_agent — rewiring Cancel to handleSubmit() breaks this",
   );
 });
 
-test("inherit toggle then Save dispatches the agentCommand:'' inherit sentinel", async () => {
+test("Save sends the agent's own values, never the preset's or an inherit sentinel", async () => {
   installIpc();
   await act(async () => {
     renderDialog(() => {});
   });
 
-  await expandAdvancedAndToggleInherit();
+  assert.equal(
+    dom.window.document.getElementById("edit-agent-inherit-harness"),
+    null,
+    "there is no inherit-from-preset toggle",
+  );
+  await editDescriptionAndPrompt();
 
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -497,11 +492,20 @@ test("inherit toggle then Save dispatches the agentCommand:'' inherit sentinel",
 
   const updates = ipcCalls.filter((c) => c.cmd === "update_managed_agent");
   assert.equal(updates.length, 1, "Save must dispatch exactly one update");
+  const input = updates[0].args.input;
+  assert.equal(input.pubkey, AGENT_PK);
+  assert.equal(input.description, "Writes release notes");
   assert.equal(
-    updates[0].args.input.agentCommand,
-    "",
-    "Save on the pin→inherit transition must carry the empty-command sentinel the backend clears the column on",
+    input.systemPrompt,
+    "Be terse.",
+    "the agent's own prompt is saved even though it was made from a preset",
   );
+  assert.equal(
+    input.agentCommand,
+    undefined,
+    "an unchanged command is not sent, and there is no empty inherit sentinel",
+  );
+  assert.equal("harnessOverride" in input, false);
 });
 
 // ── Effort write is Save-gated: real dialog wiring, controlled deferred IPC ────
@@ -661,36 +665,6 @@ test("effort Save includes effortLevel inside update_managed_agent payload", asy
     effort[0].args.input.effortLevel,
     "high",
     "the persisted value is the picked effort level",
-  );
-});
-
-test("pin→inherit Save with a picked effort does not write effortLevel", async () => {
-  installEffortIpc();
-  await act(async () => {
-    renderDialog(() => {});
-  });
-
-  await selectEffort("High");
-  await expandAdvancedAndToggleInherit();
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  });
-
-  const updates = ipcCalls.filter((c) => c.cmd === "update_managed_agent");
-  assert.equal(
-    updates.length,
-    1,
-    "the pin→inherit Save dispatches the locked update",
-  );
-  assert.equal(
-    updates[0].args.input.agentCommand,
-    "",
-    "the pin→inherit transition carries the clear sentinel",
-  );
-  assert.equal(
-    effortCalls().length,
-    0,
-    "the inherit-transition guard must suppress the effort write so it cannot restore the just-cleared pin — dropping the guard fails this",
   );
 });
 
@@ -1201,13 +1175,13 @@ test("close-X dismissal is blocked while the locked update with effort is in fli
   );
 });
 
-test("auto-restart and inherit checkboxes are disabled while the locked update with effort is in flight", async () => {
+test("the auto-restart checkbox is disabled while the locked update with effort is in flight", async () => {
   const { resolveUpdate } = installEffortIpc({ deferUpdate: true });
   await act(async () => {
     renderDialog(() => {});
   });
 
-  // Expand Advanced to reveal the checkboxes before Save.
+  // Expand Advanced to reveal the checkbox before Save.
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
   });
@@ -1218,26 +1192,15 @@ test("auto-restart and inherit checkboxes are disabled while the locked update w
     await new Promise((resolve) => setTimeout(resolve, 5));
   });
 
-  // Locked update is still pending. Both checkboxes must be disabled so a
+  // Locked update is still pending. The checkbox must be disabled so a
   // post-snapshot state mutation cannot silently be discarded on close.
   const autoRestart = dom.window.document.getElementById(
     "edit-agent-auto-restart",
-  );
-  const inheritHarness = dom.window.document.getElementById(
-    "edit-agent-inherit-harness",
   );
   assert.ok(autoRestart, "auto-restart checkbox must be present in Advanced");
   assert.ok(
     autoRestart.disabled,
     "auto-restart checkbox must be disabled while a Save is in flight — a post-snapshot toggle would be silently discarded on close",
-  );
-  assert.ok(
-    inheritHarness,
-    "inherit-harness checkbox must be present in Advanced",
-  );
-  assert.ok(
-    inheritHarness.disabled,
-    "inherit-harness checkbox must be disabled while a Save is in flight",
   );
 
   await act(async () => {

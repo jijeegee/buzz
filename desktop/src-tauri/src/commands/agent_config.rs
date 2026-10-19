@@ -13,8 +13,8 @@ use crate::{
             },
         },
         current_instance_id, is_reserved_env_key, is_safe_to_reveal, is_well_formed_env_key,
-        known_acp_runtime, load_managed_agents, load_personas, resolve_effective_agent_env,
-        save_managed_agents, sync_managed_agent_processes, AgentDefinition, GlobalAgentConfig,
+        known_acp_runtime, load_managed_agents, resolve_effective_agent_env,
+        save_managed_agents, sync_managed_agent_processes, GlobalAgentConfig,
         KnownAcpRuntime, ManagedAgentRecord, ManagedAgentRuntimeKey, MAX_ENV_VALUE_BYTES,
     },
 };
@@ -60,88 +60,52 @@ fn non_blank(v: Option<&str>) -> Option<String> {
 
 /// Build a sanitized `InheritedConfigTiers` snapshot at the command boundary.
 ///
-/// Persona env, global env, and harness definition env are sanitized with
-/// spawn-equivalent rules. Structured fields are normalized (blank → None).
-/// A missing persona (orphaned link) yields empty persona tiers — the panel
-/// still renders from record/global while spawn independently refuses.
+/// Global env and harness definition env are sanitized with spawn-equivalent
+/// rules. Structured fields are normalized (blank → None). An agent owns the
+/// settings copied from its preset, so the preset tiers are always empty.
 fn build_inherited_tiers(
-    record_persona_id: Option<&str>,
     record_runtime: Option<&str>,
-    personas: &[AgentDefinition],
     global: &GlobalAgentConfig,
 ) -> InheritedConfigTiers {
-    let persona = record_persona_id.and_then(|pid| personas.iter().find(|p| p.id == pid));
-
-    let persona_env = persona
-        .map(|p| sanitize_inherited_env(&p.env_vars))
-        .unwrap_or_default();
     let global_env = sanitize_inherited_env(&global.env_vars);
 
-    // Definition env: same resolution as spawn (record.runtime → persona.runtime → "").
+    // Definition env: same resolution as spawn (record.runtime → "").
     // Reserved keys stripped; no malformed-key / NUL / oversize check needed because
     // harness definitions are local admin-authored JSON, not user-provided data — but
     // we apply `sanitize_inherited_env` for defense-in-depth (same rules as the other tiers).
     let definition_env = {
-        let runtime_id = record_runtime
-            .or_else(|| persona.and_then(|p| p.runtime.as_deref()))
-            .unwrap_or("");
+        let runtime_id = record_runtime.unwrap_or("");
         crate::managed_agents::custom_harnesses::lookup_loaded_harness_by_id(runtime_id)
             .map(|def| sanitize_inherited_env(&def.env))
             .unwrap_or_default()
     };
 
-    let persona_model = persona.and_then(|p| non_blank(p.model.as_deref()));
-    let persona_provider = persona.and_then(|p| non_blank(p.provider.as_deref()));
-    let persona_prompt = persona.and_then(|p| non_blank(Some(&p.system_prompt)));
-    let persona_effort = persona.and_then(|p| non_blank(p.effort_level.as_deref()));
-    let global_effort = non_blank(global.effort_level.as_deref());
-    let global_model = non_blank(global.model.as_deref());
-    let global_provider = non_blank(global.provider.as_deref());
-
     InheritedConfigTiers {
-        persona_env,
+        persona_env: Default::default(),
         global_env,
         definition_env,
-        persona_model,
-        persona_provider,
-        persona_prompt,
-        persona_effort,
-        global_effort,
-        global_model,
-        global_provider,
+        persona_model: None,
+        persona_provider: None,
+        persona_prompt: None,
+        persona_effort: None,
+        global_effort: non_blank(global.effort_level.as_deref()),
+        global_model: non_blank(global.model.as_deref()),
+        global_provider: non_blank(global.provider.as_deref()),
     }
 }
 
-/// Resolve the config surface with inherited persona and global tiers applied.
-///
-/// Persona-linked instances have their system_prompt/model/provider cleared
-/// first (definition-authoritative): stale materialized snapshots can never
-/// shadow live persona values. The reader then resolves each field through its
-/// full candidate list (record env > ACP > persona env > global env > structured
-/// persona/global > config file) via `resolve_with_override`.
+/// Resolve the config surface with the inherited global tier applied. The
+/// reader resolves each field through its full candidate list (record env >
+/// ACP > global env > structured global > config file) via
+/// `resolve_with_override`.
 fn resolve_config_surface(
-    mut record: ManagedAgentRecord,
-    personas: &[AgentDefinition],
+    record: ManagedAgentRecord,
     runtime_meta: Option<&KnownAcpRuntime>,
     session_cache: Option<&SessionConfigCache>,
     global: &GlobalAgentConfig,
     claude_config_dir: Option<&std::path::Path>,
 ) -> RuntimeConfigSurface {
-    // Linked instances are definition-authoritative: clear stale materialized
-    // model/provider/prompt so they can never masquerade as KuzzExplicit and
-    // shadow definition values. Env var overrides are untouched.
-    if record.persona_id.is_some() {
-        record.system_prompt = None;
-        record.model = None;
-        record.provider = None;
-    }
-
-    let tiers = build_inherited_tiers(
-        record.persona_id.as_deref(),
-        record.runtime.as_deref(),
-        personas,
-        global,
-    );
+    let tiers = build_inherited_tiers(record.runtime.as_deref(), global);
 
     read_config_surface(
         &record,
@@ -286,8 +250,7 @@ pub async fn get_agent_config_surface(
             .ok_or_else(|| format!("agent {pubkey} not found"))?
     };
 
-    let personas = load_personas(&app).unwrap_or_default();
-    let effective_cmd = crate::managed_agents::record_agent_command(&record, &personas);
+    let effective_cmd = crate::managed_agents::record_agent_command(&record);
     let runtime_meta = known_acp_runtime(&effective_cmd);
     let runtime_key = ManagedAgentRuntimeKey::new(
         pubkey.clone(),
@@ -310,7 +273,7 @@ pub async fn get_agent_config_surface(
     let claude_config_dir: Option<std::path::PathBuf> = if runtime_meta
         .is_some_and(|m| m.id == "claude")
     {
-        let effective_env = resolve_effective_agent_env(&record, &personas, runtime_meta, &global);
+        let effective_env = resolve_effective_agent_env(&record,runtime_meta, &global);
         // Treat empty or blank CLAUDE_CONFIG_DIR as unset, matching Claude's
         // `CLAUDE_CONFIG_DIR || homedir()` resolver semantics.
         effective_env
@@ -324,7 +287,6 @@ pub async fn get_agent_config_surface(
 
     Ok(resolve_config_surface(
         record,
-        &personas,
         runtime_meta,
         session_cache.as_ref(),
         &global,

@@ -729,7 +729,7 @@ fn key_backup_bot_conflict(
 }
 
 fn record_label(record: &ManagedAgentRecord) -> &str {
-    record.display_name.as_deref().unwrap_or(&record.name)
+    &record.name
 }
 
 fn bot_display_name(record: &ManagedAgentRecord) -> String {

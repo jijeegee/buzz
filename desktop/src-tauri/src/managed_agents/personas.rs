@@ -34,8 +34,6 @@ const HONEY_SYSTEM_PROMPT: &str = "You are Honey, a warm and thoughtful communic
 pub(crate) const POLLEN_PERSONA_ID: &str = "builtin:bumble";
 pub(crate) const POLLEN_DISPLAY_NAME: &str = "Pollen";
 pub(crate) const POLLEN_SYSTEM_PROMPT: &str = "You are Pollen, a curious and adventurous researcher. Explore questions, compare options, check assumptions, and explain what you find clearly. Be candid when uncertain and favor useful evidence. Add occasional bee wordplay or 🐝🔎—keep it playful, never chaotic.";
-pub(crate) const POLLEN_LEGACY_DISPLAY_NAME: &str = "Bumble";
-pub(crate) const POLLEN_LEGACY_SYSTEM_PROMPT: &str = "You are Bumble, a curious and adventurous researcher. Explore questions, compare options, check assumptions, and explain what you find clearly. Be candid when uncertain and favor useful evidence. Add occasional bee wordplay or 🐝🔎—keep it playful, never chaotic.";
 // The embedded bytes are unchanged by the display-name migration. Keep the
 // original storage symbol as the compatibility source and expose the current
 // product name everywhere it is consumed.
@@ -43,7 +41,7 @@ const POLLEN_AVATAR: &str = BUMBLE_AVATAR;
 
 /// Stable id of the built-in Host persona the Channel routing card offers
 /// when Host mode has no agent to route with.
-const HOST_PERSONA_ID: &str = "builtin:host";
+pub(crate) const HOST_PERSONA_ID: &str = "builtin:host";
 
 /// Kept minimal on purpose: the dispatcher base prompt the harness prepends
 /// in Host mode already carries every routing rule.
@@ -148,7 +146,7 @@ const RETIRED_PERSONAS: &[(&str, &str)] = &[
     ),
 ];
 
-fn built_in_persona_records(now: &str) -> Vec<AgentDefinition> {
+pub(crate) fn built_in_persona_records(now: &str) -> Vec<AgentDefinition> {
     BUILT_IN_PERSONAS
         .iter()
         .map(|persona| AgentDefinition {
@@ -181,6 +179,7 @@ fn built_in_persona_records(now: &str) -> Vec<AgentDefinition> {
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn built_in_persona_definition(id: &str, now: &str) -> Option<AgentDefinition> {
     built_in_persona_records(now)
         .into_iter()
@@ -347,18 +346,10 @@ pub fn validate_persona_deletion(
 pub fn validate_persona_activation_change(
     persona: &AgentDefinition,
     active: bool,
-    referenced_by_managed_agent: bool,
     referenced_by_team: bool,
 ) -> Result<(), String> {
     if !persona.is_builtin {
         return Err("Only built-in agents can be added to or removed from My Agents.".to_string());
-    }
-
-    if !active && referenced_by_managed_agent {
-        return Err(format!(
-            "{} is still assigned to a managed agent. Remove or reassign those agents first.",
-            persona.display_name
-        ));
     }
 
     if !active && referenced_by_team {
@@ -375,15 +366,7 @@ pub fn load_personas<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Vec<AgentDefinition>, String> {
     let now = now_iso();
-
-    // Post-fold: definitions live in the unified agent store, presented in
-    // the legacy shape. Pre-fold stores are converted by
-    // `fold_personas_into_agent_store` in boot migrations before any caller
-    // reaches this shim.
-    let records = crate::managed_agents::storage::load_agent_definitions(app)?
-        .iter()
-        .filter_map(|record| record.to_definition_view())
-        .collect();
+    let records = load_personas_from_path(&super::storage::presets_store_path(app)?)?;
 
     let (records, changed) = merge_personas(records, &now);
     if changed {
@@ -393,24 +376,10 @@ pub fn load_personas<R: tauri::Runtime>(
     Ok(records)
 }
 
-/// [`load_personas`] without its write-back: for background readers that
-/// must not race a concurrent persona save.
-pub(crate) fn load_personas_readonly<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<Vec<AgentDefinition>, String> {
-    let records = crate::managed_agents::storage::load_agent_definitions(app)?
-        .iter()
-        .filter_map(|record| record.to_definition_view())
-        .collect();
-    Ok(merge_personas(records, &now_iso()).0)
-}
-
-/// Read the raw persona records at `path` — no built-in merge, no write-back.
-/// The single disk-read seam for persona definitions: `load_personas` layers
-/// the built-in merge on top, and the boot-time readers that need raw records
-/// without an `AppHandle` (`event_sync`, `migration::load_persona_runtimes`)
-/// call it directly. The A2 store fold retargets THIS function at the unified
-/// store; its callers stay unchanged.
+/// Read the raw preset records at `path` — no built-in merge, no write-back.
+/// The single disk-read seam for presets: `load_personas` layers the built-in
+/// merge on top, and boot-time readers without an `AppHandle` call it
+/// directly.
 pub(crate) fn load_personas_from_path(
     path: &std::path::Path,
 ) -> Result<Vec<AgentDefinition>, String> {
@@ -432,13 +401,13 @@ pub fn save_personas<R: tauri::Runtime>(
     // A new persona belongs to the account that made it.
     super::ensure_definition_owners(app, &sorted);
 
-    // Post-fold: persona saves write key-less definition records into the
-    // unified agent store (instances preserved by `save_agent_definitions`).
-    let definitions: Vec<_> = sorted
-        .into_iter()
-        .map(|persona| persona.into_agent_record())
-        .collect();
-    crate::managed_agents::storage::save_agent_definitions(app, &definitions)
+    let payload = serde_json::to_vec_pretty(&sorted)
+        .map_err(|error| format!("failed to serialize presets: {error}"))?;
+    // A preset's env can hold provider keys: owner-only like the agent store.
+    super::storage::atomic_write_json_restricted(
+        &super::storage::presets_store_path(app)?,
+        &payload,
+    )
 }
 
 #[cfg(test)]

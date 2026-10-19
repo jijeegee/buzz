@@ -27,7 +27,7 @@ function makeAgent(overrides = {}) {
   return {
     pubkey: PUB_A,
     name: WELCOME_GUIDE_AGENT_NAME,
-    personaId: null,
+    sourcePresetId: null,
     relayUrl: RELAY_A,
     acpCommand: "kuzz-acp",
     agentCommand: "kuzz-agent",
@@ -74,7 +74,7 @@ test("pickWelcomeGuideAgent reuses a legacy Kit guide", () => {
 test("pickWelcomeGuideAgent prefers a running legacy guide over stopped builtin Fizz", () => {
   const stoppedBuiltinFizz = makeAgent({
     pubkey: PUB_A,
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
     status: "stopped",
   });
   const runningLegacyKit = makeAgent({
@@ -98,7 +98,7 @@ test("pickWelcomeGuideAgent ignores non-Kit agents with the legacy prompt", () =
   });
   const fizz = makeAgent({
     pubkey: PUB_C,
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
   });
 
   assert.equal(pickWelcomeGuideAgent([nonKit, fizz]), fizz);
@@ -107,13 +107,13 @@ test("pickWelcomeGuideAgent ignores non-Kit agents with the legacy prompt", () =
 test("pickWelcomeGuideAgentForRelay ignores Fizz agents from other communities", () => {
   const otherCommunityFizz = makeAgent({
     pubkey: PUB_A,
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
     relayUrl: RELAY_A,
     status: "running",
   });
   const currentCommunityFizz = makeAgent({
     pubkey: PUB_B,
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
     relayUrl: RELAY_B,
     status: "stopped",
   });
@@ -130,7 +130,7 @@ test("pickWelcomeGuideAgentForRelay ignores Fizz agents from other communities",
 test("pickWelcomeGuideAgentForRelay returns null when Fizz only exists in another community", () => {
   const otherCommunityFizz = makeAgent({
     pubkey: PUB_A,
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
     relayUrl: RELAY_A,
   });
 
@@ -202,7 +202,7 @@ test("all Welcome starters use the onboarding runtime preference", async () => {
 
     assert.equal(input.agentCommand, "claude-code-acp");
     assert.equal(input.harnessOverride, true);
-    assert.equal(input.personaId, starter.personaId);
+    assert.equal(input.sourcePresetId, starter.personaId);
     assert.equal(input.teamId, WELCOME_TEAM_ID);
     assert.equal(input.relayUrl, RELAY_A);
     assert.equal(input.spawnAfterCreate, false);
@@ -213,7 +213,7 @@ test("all Welcome starters use the onboarding runtime preference", async () => {
 test("existing Welcome starter rematerializes runtime-specific fields atomically", () => {
   const existing = makeAgent({
     pubkey: PUB_A,
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
     agentCommand: "claude-agent-acp",
     agentCommandOverride: "claude-agent-acp",
     agentArgs: ["--old"],
@@ -245,7 +245,7 @@ test("existing Welcome starter rematerializes runtime-specific fields atomically
 
 test("existing Welcome starter clears stale model and provider for Claude", () => {
   const existing = makeAgent({
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
     agentCommand: "codex-acp",
     agentArgs: [],
     model: "gpt-5.6-sol",
@@ -273,7 +273,7 @@ test("existing Welcome starter clears stale model and provider for Claude", () =
 
 test("existing Welcome starter needs no update when runtime already matches", () => {
   const existing = makeAgent({
-    personaId: WELCOME_GUIDE_PERSONA_ID,
+    sourcePresetId: WELCOME_GUIDE_PERSONA_ID,
     agentCommand: "codex-acp",
     agentArgs: ["--same"],
   });
@@ -303,7 +303,7 @@ test("welcome team starter definitions and role identities are stable", () => {
 test("starter matching ignores user agents with a Welcome persona", () => {
   const honey = WELCOME_TEAM_STARTERS[1];
   const userHoney = makeAgent({
-    personaId: honey.personaId,
+    sourcePresetId: honey.personaId,
     teamId: null,
   });
 
@@ -317,7 +317,7 @@ test("starter matching uses persona identity rather than display name", () => {
   const honey = WELCOME_TEAM_STARTERS[1];
   const renamedHoney = makeAgent({
     name: "Honey the Helper",
-    personaId: honey.personaId,
+    sourcePresetId: honey.personaId,
   });
   const nameOnlyHoney = makeAgent({ name: honey.name, pubkey: PUB_B });
 
@@ -334,12 +334,12 @@ test("starter matching uses persona identity rather than display name", () => {
 test("starter matching is relay scoped and normalizes trailing slashes", () => {
   const pollen = WELCOME_TEAM_STARTERS[2];
   const otherRelay = makeAgent({
-    personaId: pollen.personaId,
+    sourcePresetId: pollen.personaId,
     relayUrl: RELAY_B,
     status: "running",
   });
   const matchingRelay = makeAgent({
-    personaId: pollen.personaId,
+    sourcePresetId: pollen.personaId,
     relayUrl: `${RELAY_A}/`,
     pubkey: PUB_B,
   });
@@ -356,14 +356,14 @@ test("starter matching is relay scoped and normalizes trailing slashes", () => {
 
 test("starter matching prefers running, then deployed instances", () => {
   const fizz = WELCOME_TEAM_STARTERS[0];
-  const stopped = makeAgent({ personaId: fizz.personaId });
+  const stopped = makeAgent({ sourcePresetId: fizz.personaId });
   const deployed = makeAgent({
-    personaId: fizz.personaId,
+    sourcePresetId: fizz.personaId,
     pubkey: PUB_B,
     status: "deployed",
   });
   const running = makeAgent({
-    personaId: fizz.personaId,
+    sourcePresetId: fizz.personaId,
     pubkey: PUB_C,
     status: "running",
   });

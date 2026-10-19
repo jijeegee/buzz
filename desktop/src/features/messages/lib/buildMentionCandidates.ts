@@ -195,7 +195,7 @@ export function buildMentionCandidates({
       isAgent: true,
       isActiveAgent: agent.status === "running" || agent.status === "deployed",
       isManagedAgent: true,
-      personaId: agent.personaId ?? undefined,
+      personaId: agent.sourcePresetId ?? undefined,
       personaName:
         personaNameByPubkey.get(normalizePubkey(agent.pubkey)) ?? null,
       ownerPubkey: currentPubkey,

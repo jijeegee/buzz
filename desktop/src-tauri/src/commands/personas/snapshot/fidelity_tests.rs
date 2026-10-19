@@ -9,15 +9,15 @@ use crate::managed_agents::{
 };
 use std::collections::BTreeMap;
 
-fn make_definition(slug: &str) -> ManagedAgentRecord {
+fn make_record(name: &str) -> ManagedAgentRecord {
     ManagedAgentRecord {
         session_policy: Default::default(),
         description: None,
         pubkey: String::new(),
-        slug: Some(slug.to_string()),
-        name: slug.to_string(),
-        display_name: None,
-        persona_id: None,
+        name: name.to_string(),
+        source_preset_id: None,
+        legacy_persona_id: None,
+        team_instructions: None,
         private_key_nsec: String::new(),
         auth_tag: None,
         relay_url: String::new(),
@@ -34,7 +34,6 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         system_prompt: None,
         model: None,
         provider: None,
-        persona_source_version: None,
         env_vars: BTreeMap::new(),
         start_on_app_launch: false,
         is_default_ai: false,
@@ -45,8 +44,6 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         provider_policy_pending: false,
         provider_binary_path: None,
         team_id: None,
-        persona_team_dir: None,
-        persona_name_in_team: None,
         created_at: String::new(),
         updated_at: String::new(),
         last_started_at: None,
@@ -57,17 +54,6 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         respond_to: RespondTo::default(),
         respond_to_allowlist: vec![],
         runtime: None,
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: false,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: vec![],
-        definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
         bot_origin: None,
@@ -113,7 +99,7 @@ fn make_snapshot(
 
 #[test]
 fn inherited_runtime_provider_and_model_are_materialized_for_export() {
-    let mut record = make_definition("wren");
+    let mut record: SnapshotSource = (&make_record("wren")).into();
     let global = crate::managed_agents::GlobalAgentConfig {
         preferred_runtime: Some("goose".to_string()),
         provider: Some("databricks_v2".to_string()),
@@ -130,7 +116,7 @@ fn inherited_runtime_provider_and_model_are_materialized_for_export() {
 
 #[test]
 fn explicit_runtime_provider_and_model_win_over_global_defaults() {
-    let mut record = make_definition("wren");
+    let mut record: SnapshotSource = (&make_record("wren")).into();
     record.runtime = Some("claude".to_string());
     record.provider = Some("anthropic".to_string());
     record.model = Some("claude-opus-5".to_string());

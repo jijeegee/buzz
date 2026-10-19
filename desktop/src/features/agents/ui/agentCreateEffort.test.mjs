@@ -136,8 +136,6 @@ function rawAgent(input) {
     avatar_url: null,
     model: null,
     provider: null,
-    persona_out_of_date: false,
-    persona_orphaned: false,
     needs_restart: false,
     env_vars: {},
     status: "running",

@@ -25,7 +25,7 @@
 
 use super::super::export_util::save_bytes_with_dialog;
 use super::snapshot::{
-    materialize_snapshot_description, memory_entries_from_listing, parse_memory_level,
+    memory_entries_from_listing, parse_memory_level,
     resolve_from_lists, validate_snapshot_encode_size,
 };
 use crate::{
@@ -39,7 +39,7 @@ use crate::{
         agent_snapshot_envelope::{
             decrypt_envelope, encode_locked_snapshot_png, parse_chunk_payload, ChunkPayload,
         },
-        load_agent_definitions, load_global_agent_config, load_managed_agents, load_personas,
+        load_global_agent_config, load_managed_agents, load_personas,
         save_global_agent_config, validate_global_config,
     },
 };
@@ -261,17 +261,16 @@ pub fn load_agent_card(stored_file_name: String, app: AppHandle) -> Result<Strin
 
 // ── Key resolution ────────────────────────────────────────────────────────────
 
-/// Pure layering: global env < persona env < agent record env, then the
-/// process environment as a development fallback. Returns the first
-/// non-empty value for `key`.
+/// Pure layering: global env < agent record env, then the process
+/// environment as a development fallback. Returns the first non-empty value
+/// for `key`.
 pub(crate) fn resolve_env_from_layers(
     key: &str,
     global_env: &std::collections::BTreeMap<String, String>,
-    persona_env: &std::collections::BTreeMap<String, String>,
     record_env: &std::collections::BTreeMap<String, String>,
     process_value: Option<String>,
 ) -> Option<String> {
-    for layer in [record_env, persona_env, global_env] {
+    for layer in [record_env, global_env] {
         if let Some(v) = layer.get(key) {
             let v = v.trim();
             if !v.is_empty() {
@@ -282,12 +281,11 @@ pub(crate) fn resolve_env_from_layers(
     process_value.filter(|k| !k.trim().is_empty())
 }
 
-/// Pure classification: same four env inputs as `resolve_env_from_layers`,
-/// returns which layer supplies `OPENAI_API_KEY` (agent > persona > global >
-/// process > none).
+/// Pure classification: same env inputs as `resolve_env_from_layers`,
+/// returns which layer supplies `OPENAI_API_KEY` (agent > global > process >
+/// none).
 pub(crate) fn resolve_key_layer(
     global_env: &std::collections::BTreeMap<String, String>,
-    persona_env: &std::collections::BTreeMap<String, String>,
     record_env: &std::collections::BTreeMap<String, String>,
     process_value: Option<String>,
 ) -> &'static str {
@@ -297,9 +295,6 @@ pub(crate) fn resolve_key_layer(
     };
     if nonempty(record_env) {
         return "agent";
-    }
-    if nonempty(persona_env) {
-        return "persona";
     }
     if nonempty(global_env) {
         return "global";
@@ -493,21 +488,12 @@ pub fn card_mint_key_status(
         .map_err(|e| e.to_string())?;
 
     let instances = load_managed_agents(&app)?;
-    let definitions = load_agent_definitions(&app)?;
-    let (record, _) = resolve_from_lists(&id, &instances, &definitions)?;
+    let presets = load_personas(&app)?;
+    let (record, _) = resolve_from_lists(&id, &instances, &presets)?;
 
     let global = load_global_agent_config(&app).unwrap_or_default();
-    let personas = load_personas(&app).unwrap_or_default();
-    let persona_env = record
-        .persona_id
-        .as_deref()
-        .and_then(|pid| personas.iter().find(|p| p.id == pid))
-        .map(|p| p.env_vars.clone())
-        .unwrap_or_default();
-
     Ok(resolve_key_layer(
         &global.env_vars,
-        &persona_env,
         &record.env_vars,
         std::env::var("OPENAI_API_KEY").ok(),
     )
@@ -525,7 +511,7 @@ pub fn card_mint_key_status(
 /// When `memory_level` is `"core"` or `"everything"`, the owner's decrypted
 /// memory for the agent is embedded in the manifest — same levels and fetch
 /// as snapshot export. The memory source is always the resolved instance
-/// itself (derived, never caller-supplied), so it requires a linked instance;
+/// itself (derived, never caller-supplied), so it requires an agent;
 /// bare definitions can only mint `"none"` (the default).
 ///
 /// Returns the final, chunk-injected, round-trip-verified `.agent.png` bytes.
@@ -549,24 +535,14 @@ pub async fn mint_agent_card(
             .map_err(|e| e.to_string())?;
 
         let instances = load_managed_agents(&app)?;
-        let definitions = load_agent_definitions(&app)?;
-        let (record, is_definition) =
-            resolve_from_lists(&id, &instances, &definitions).map(|(r, d)| (r.clone(), d))?;
-        let mut record = record;
-        materialize_snapshot_description(&mut record, is_definition, &definitions);
+        let presets = load_personas(&app)?;
+        let (record, is_definition) = resolve_from_lists(&id, &instances, &presets)?;
+        let record = record;
         let global = load_global_agent_config(&app).unwrap_or_default();
-        let personas = load_personas(&app).unwrap_or_default();
-        let persona_env = record
-            .persona_id
-            .as_deref()
-            .and_then(|pid| personas.iter().find(|p| p.id == pid))
-            .map(|p| p.env_vars.clone())
-            .unwrap_or_default();
 
         let api_key = resolve_env_from_layers(
             "OPENAI_API_KEY",
             &global.env_vars,
-            &persona_env,
             &record.env_vars,
             std::env::var("OPENAI_API_KEY").ok(),
         )
@@ -579,7 +555,6 @@ pub async fn mint_agent_card(
         let base_url = resolve_env_from_layers(
             "OPENAI_BASE_URL",
             &global.env_vars,
-            &persona_env,
             &record.env_vars,
             std::env::var("OPENAI_BASE_URL").ok(),
         );
@@ -637,10 +612,7 @@ pub async fn mint_agent_card(
         memory_entries_from_listing(listing, memory_level)
     };
 
-    let display_name = record
-        .display_name
-        .clone()
-        .unwrap_or_else(|| record.name.clone());
+    let display_name = record.name.clone();
 
     // ── Prefer the agent's own kind:0 profile picture ────────────────────────
     // The record's `avatar_url` is a stale presentation snapshot: with

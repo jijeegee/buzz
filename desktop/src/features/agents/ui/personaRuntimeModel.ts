@@ -50,44 +50,21 @@ export function shouldClearModelForRuntimeChange(
 }
 
 /**
- * Resolve the `agentCommand` field to send on Save for the harness pin.
+ * Resolve the `agentCommand` field to send on Save.
  *
- * The backend treats an empty string as the "inherit from persona" sentinel
- * (clears the override) and any concrete command as an explicit pin.
- * `undefined` means "leave the record's command alone".
- *
- * - Inheriting: send the sentinel only if there's a pin to clear, so a
- *   name-only edit leaves the record untouched.
- * - Pinning: normally send the command only when it diverges from the resolved
- *   value the dialog opened with, so an unchanged save stays a no-op. The
- *   exception is an inherit→pin transition (no override at open): the command
- *   field is prefilled with the resolved effective command, so accepting it
- *   as-is leaves it equal to `agentCommand` — without forcing the pin the
- *   update would be omitted and the agent would keep inheriting. An empty
- *   command never reaches the force branch (the caller blocks Save for an empty
- *   pinned custom command; catalog runtimes always set a concrete command).
+ * Every agent owns its command, so the command is sent only when it diverges
+ * from the one the dialog opened with; `undefined` leaves it alone, so an
+ * unchanged save stays a no-op. An empty custom command never reaches here
+ * (the caller blocks Save for it; catalog runtimes always set a command).
  */
 export function resolveAgentCommandUpdate(input: {
-  inheritHarness: boolean;
   /** The command currently in the (possibly prefilled) input. */
   agentCommand: string;
-  /** The resolved effective command the dialog opened with. */
+  /** The command the dialog opened with. */
   originalAgentCommand: string;
-  /** The persisted override, or null when the agent was inheriting. */
-  agentCommandOverride: string | null;
 }): string | undefined {
-  if (input.inheritHarness) {
-    return input.agentCommandOverride != null ? "" : undefined;
-  }
-  const pinnedCommand = input.agentCommand.trim();
-  const pinningFromInherit = input.agentCommandOverride == null;
-  if (
-    pinnedCommand !== input.originalAgentCommand ||
-    (pinningFromInherit && pinnedCommand.length > 0)
-  ) {
-    return pinnedCommand;
-  }
-  return undefined;
+  const command = input.agentCommand.trim();
+  return command !== input.originalAgentCommand ? command : undefined;
 }
 
 /**
@@ -97,25 +74,14 @@ export function resolveAgentCommandUpdate(input: {
  * Save never reach it, and no write is dispatched independently of the dialog
  * outcome.
  *
- * `inheritTransition` is the pin→inherit case (the empty-command sentinel
- * `resolveAgentCommandUpdate` returns). The locked `update_managed_agent` save
- * already clears the record effort column AND its env aliases on that
- * transition; re-persisting the picker value here would restore the very pin
- * the transition just cleared — the r8 race. So the transition suppresses the
- * effort write entirely, regardless of the picked value.
- *
- * Otherwise persist only a real change: an unchanged selection is a no-op, so
- * a name-only edit never rewrites the effort column.
+ * Persist only a real change: an unchanged selection is a no-op, so a
+ * name-only edit never rewrites the effort column.
  */
 export function resolveEffortSubmission(input: {
   effortLevel: string | null;
   originalEffortLevel: string | null;
-  inheritTransition: boolean;
 }): { persist: boolean; level: string | null } {
-  if (
-    input.inheritTransition ||
-    input.effortLevel === input.originalEffortLevel
-  ) {
+  if (input.effortLevel === input.originalEffortLevel) {
     return { persist: false, level: null };
   }
   return { persist: true, level: input.effortLevel };
@@ -137,118 +103,16 @@ export function hasMissingRequiredEnvKey(
   return requiredEnvKeys.some((key) => (envVars[key] ?? "").length === 0);
 }
 
-/**
- * Resolve the provider and env-vars to PERSIST on Save.
- *
- * This dialog edits an agent INSTANCE's own fields (`record.provider`/
- * `record.env_vars`), which remain the source of truth for a definition-less
- * (legacy) instance and for any local/display state before the next resolve.
- * For a LINKED instance, spawn/deploy resolve the effective provider/model
- * from the definition, never from the record's own `provider`/`model` bytes
- * (see `effective_config::resolve_effective_config` on the desktop backend) —
- * so persisting `record.provider` here only matters for definition-less
- * instances and for keeping the record's display/legacy fields consistent;
- * it does not change what a linked instance spawns with.
- *
- * The one case this function still has to handle carefully is the
- * inherit-TRANSITION-from-a-harness-pin: a previously harness-pinned agent
- * (e.g. Claude — `agent.agentCommandOverride != null` at dialog open) has its
- * `provider` cleared and carries no persona credential, then the user checks
- * "Inherit runtime from template" for a provider-backed persona (e.g.
- * kuzz-agent/Anthropic). Persisting the local (empty) provider + credential-
- * less env would leave a definition-less instance's record fields blank.
- * Only in that case — inheriting AND the local provider is empty AND the agent
- * was harness-pinned at open — do we substitute the persona snapshot: the
- * persona's provider and the persona-layered env (`{ ...personaEnv,
- * ...agentEnv }`, agent layer wins to mirror spawn-time layering).
- *
- * A NON-empty local provider while inheriting (e.g. an Anthropic-persona agent
- * the user re-points to Databricks) is a deliberate edit and passes through
- * unchanged — we never overwrite it with the persona provider.
- *
- * MODEL follows the same transition rule. kuzz-agent/goose readiness requires a
- * model, but a Claude-pinned agent's record often carries no model (Claude
- * resolves its own). On the inherit-transition to a provider-backed persona with
- * a set `persona.model`, persisting the empty local model would save a
- * record-level model gap — so we substitute `personaModel` in that same case. A
- * non-empty local model (deliberate pick) always passes through; an empty local
- * model in steady state stays empty (runtime default), same authoritative
- * logic.
- *
- * An EMPTY local provider while inheriting on an agent that was ALREADY
- * inheriting at open (`agentWasHarnessPinned` false) is ALSO authoritative: the
- * user either never set one or deliberately picked the "Default" option to
- * clear a saved override, so we persist `null` (runtime default) rather than
- * resurrect the persona provider — otherwise the Default option could never
- * actually clear an inherited agent's provider override.
- *
- * Provider is normalized: trimmed, empty → `null`.
- */
-export function resolveInheritedRuntimeSubmission(input: {
-  inheritHarness: boolean;
-  /**
-   * Whether the agent was harness-pinned (`agentCommandOverride != null`) at
-   * dialog open. Distinguishes the inherit-transition (was pinned, now
-   * inheriting) from steady-state inherit (was already inheriting), so an empty
-   * provider in steady state clears the override instead of resurrecting the
-   * persona provider.
-   */
-  agentWasHarnessPinned: boolean;
-  /** Local provider edit state (from the agent record, user-editable). */
-  provider: string;
-  /** The linked persona's provider, or empty when none/unset. */
-  personaProvider: string;
-  /** Local model edit state (from the agent record, user-editable). */
-  model: string;
-  /** The linked persona's model, or empty/null when none/unset. */
-  personaModel: string | null;
-  /** Local env-vars edit state (the agent's own layer). */
-  envVars: Record<string, string>;
-  /** The persona's env vars, layered under the agent's own on transition. */
-  personaEnvVars: Record<string, string>;
-}): {
-  provider: string | null;
-  model: string | null;
-  envVars: Record<string, string>;
-} {
-  const localProvider = input.provider.trim();
-  const localModel = input.model.trim();
-  // Substitute the persona snapshot ONLY on the true inherit-transition: the
-  // agent was harness-pinned at open, is now inheriting, and has an empty local
-  // provider. Otherwise the local edit state is authoritative — a non-empty
-  // provider is a deliberate pick, and an empty provider on an already-
-  // inheriting agent is a deliberate clear (Default) — and passes through.
-  if (
-    input.inheritHarness &&
-    input.agentWasHarnessPinned &&
-    localProvider.length === 0
-  ) {
-    return {
-      provider: input.personaProvider.trim() || null,
-      // Fill an empty local model from the persona so a provider-backed runtime
-      // isn't saved model-less; a deliberate local model still wins.
-      model: localModel || input.personaModel?.trim() || null,
-      envVars: { ...input.personaEnvVars, ...input.envVars },
-    };
-  }
-  return {
-    provider: localProvider || null,
-    model: localModel || null,
-    envVars: input.envVars,
-  };
-}
-
 /** Inputs for {@link computeEditAgentFormValidity} — all pre-derived primitives. */
 export interface EditAgentFormValidityInput {
   name: string;
   parallelism: string;
-  /** The command already persisted on the agent (empty when inheriting). */
+  /** The ACP command already persisted on the agent. */
   agentAcpCommand: string;
   acpCommand: string;
   respondTo: string;
   respondToAllowlistLength: number;
   selectedRuntimeId: string;
-  inheritHarness: boolean;
   agentCommand: string;
   /**
    * Whether a runtime/provider-required credential key is still unset. When
@@ -268,9 +132,8 @@ export interface EditAgentFormValidityInput {
  * - parallelism / timeout must be blank or parseable integers;
  * - a previously-set ACP command cannot be cleared to empty (spawn failure);
  * - allowlist respond-to mode needs at least one entry;
- * - a pinned "Custom command" runtime (custom selection with inheritance
- *   cleared) must carry a concrete command — an empty command would spawn a
- *   runtime with no command.
+ * - a "Custom command" runtime must carry a concrete command — an empty
+ *   command would spawn a runtime with no command.
  * - a runtime/provider-required credential key must be present — persisting
  *   with a missing key would crash-loop the agent on next start.
  */
@@ -286,9 +149,7 @@ export function computeEditAgentFormValidity(
   const respondToValid =
     input.respondTo !== "allowlist" || input.respondToAllowlistLength > 0;
   const customCommandValid = !(
-    input.selectedRuntimeId === "custom" &&
-    !input.inheritHarness &&
-    input.agentCommand.trim() === ""
+    input.selectedRuntimeId === "custom" && input.agentCommand.trim() === ""
   );
 
   return (

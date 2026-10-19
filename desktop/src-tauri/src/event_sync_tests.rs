@@ -1,13 +1,18 @@
 use super::*;
 
-/// Helper: write a `personas.json` directly in `base_dir` (the migration
-/// reads `base_dir/personas.json`, where `base_dir` is the `agents` dir).
+/// Helper: write the preset store in `base_dir` (the `agents` dir) as it is
+/// after the boot move: `presets.json` plus its done marker.
 fn write_base_personas(base_dir: &Path, records: &serde_json::Value) {
     std::fs::write(
-        base_dir.join("personas.json"),
+        base_dir.join(crate::managed_agents::PRESETS_FILE),
         serde_json::to_string_pretty(records).unwrap(),
     )
     .unwrap();
+    mark_presets_moved(base_dir);
+}
+
+fn mark_presets_moved(base_dir: &Path) {
+    std::fs::write(base_dir.join("presets.json.moved"), b"").unwrap();
 }
 
 fn one_persona() -> serde_json::Value {
@@ -172,6 +177,8 @@ fn migrate_personas_edited_persona_re_retains_pending() {
 #[test]
 fn migrate_personas_no_file_is_noop() {
     let base = tempfile::tempdir().unwrap();
+    // A fresh install: the boot move found nothing and marked itself done.
+    mark_presets_moved(base.path());
     let keys = nostr::Keys::generate();
     assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 0);
 }
@@ -468,6 +475,7 @@ fn deletion_reconcile_leaves_managed_agent_head_untouched() {
     drop(conn);
 
     // No persona/team records either, so the sweep tombstones nothing.
+    mark_presets_moved(base.path());
     assert_eq!(
         reconcile_deleted_heads_at(base.path(), &keys, &db_path).unwrap(),
         0

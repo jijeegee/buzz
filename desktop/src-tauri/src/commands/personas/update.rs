@@ -7,18 +7,14 @@ use tauri::AppHandle;
 use crate::{
     app_state::AppState,
     managed_agents::{
-        apply_persona_behavior, apply_persona_effort_level, effective_agent_command,
-        load_managed_agents, load_personas, managed_agent_avatar_url, save_managed_agents,
-        save_personas, try_regenerate_nest, validate_agent_definition_text, AgentDefinition,
-        ManagedAgentRecord, UpdatePersonaRequest,
+        apply_persona_behavior, apply_persona_effort_level, load_personas, save_personas,
+        try_regenerate_nest, validate_agent_definition_text, AgentDefinition, ManagedAgentRecord,
+        UpdatePersonaRequest,
     },
     util::now_iso,
 };
 
 use super::{normalize_description, pending, retain_persona_pending, trim_optional, trim_required};
-
-#[cfg(test)]
-mod name_propagation_tests;
 
 /// Return value of the `update_persona` command. Uses flatten so all
 /// `AgentDefinition` fields appear at the top level of the JSON response —
@@ -29,89 +25,7 @@ pub struct UpdatePersonaResult {
     persona: AgentDefinition,
 }
 
-/// Propagate a persona definition's display_name rename to linked agent instances.
-/// Only instances whose current `name` equals `old_display_name` are updated;
-/// pool-named instances (e.g. "Birch", "Compass") keep their individualised name.
-/// Updates both `record.name` (relay display name) and `record.display_name`.
-/// Returns the pubkeys of the records that were renamed.
-fn propagate_persona_name_rename(
-    records: &mut [ManagedAgentRecord],
-    persona_id: &str,
-    old_display_name: &str,
-    new_display_name: &str,
-) -> Vec<String> {
-    let mut renamed = Vec::new();
-    for record in records.iter_mut() {
-        if record.persona_id.as_deref() != Some(persona_id) {
-            continue;
-        }
-        if record.name != old_display_name {
-            continue; // pool-named instance — keep its individualised name
-        }
-        record.name = new_display_name.to_string();
-        record.display_name = Some(new_display_name.to_string());
-        renamed.push(record.pubkey.clone());
-    }
-    renamed
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct LinkedProfileUpdate {
-    /// Whether this update changed bytes in the managed-agent record.
-    record_changed: bool,
-    /// Whether this instance needs a complete kind:0 replacement event.
-    profile_sync_required: bool,
-    /// Avatar to publish with the complete kind:0 replacement event.
-    profile_avatar: Option<String>,
-}
-
-/// Apply the persisted portion of a persona identity edit to one linked
-/// instance and resolve the avatar for the complete kind:0 replacement.
-///
-/// Description-only edits deliberately leave the record unchanged, but still
-/// need a non-empty avatar projection for legacy records whose `avatar_url`
-/// has not yet been backfilled. The persona avatar is authoritative there;
-/// the effective command icon is the final fallback.
-fn prepare_linked_profile_update(
-    record: &mut ManagedAgentRecord,
-    persona: &AgentDefinition,
-    renamed: bool,
-    avatar_changed: bool,
-    about_changed: bool,
-) -> LinkedProfileUpdate {
-    let mut record_changed = renamed;
-    if avatar_changed {
-        let effective_cmd = effective_agent_command(
-            record.persona_id.as_deref(),
-            std::slice::from_ref(persona),
-            record.agent_command_override.as_deref(),
-        );
-        record.avatar_url = persona
-            .avatar_url
-            .clone()
-            .or_else(|| managed_agent_avatar_url(&effective_cmd));
-        record_changed = true;
-    }
-
-    let effective_cmd = effective_agent_command(
-        record.persona_id.as_deref(),
-        std::slice::from_ref(persona),
-        record.agent_command_override.as_deref(),
-    );
-    let profile_avatar = record
-        .avatar_url
-        .clone()
-        .or_else(|| persona.avatar_url.clone())
-        .or_else(|| managed_agent_avatar_url(&effective_cmd));
-
-    LinkedProfileUpdate {
-        record_changed,
-        profile_sync_required: record_changed || about_changed,
-        profile_avatar,
-    }
-}
-
-/// How a linked agent's profile reaches the relay.
+/// How an agent's profile reaches the relay.
 pub(crate) enum ProfileSyncTarget {
     /// Key agent: publish kind:0 signed with its key.
     Keys(nostr::Keys),
@@ -157,8 +71,9 @@ pub async fn update_persona(
     Ok(UpdatePersonaResult { persona })
 }
 
-/// Save an edited persona, hand the saved record to `retain` while the store
-/// lock is still held, then sync the relay profiles of linked agent instances.
+/// Save an edited persona and hand the saved record to `retain` while the
+/// store lock is still held. Agents made from the preset are not touched: they
+/// own their settings.
 ///
 /// `retain` is the only difference between the two update commands:
 /// [`update_persona`] enqueues best-effort, while
@@ -171,10 +86,9 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
 ) -> Result<(AgentDefinition, R), String> {
     use tauri::Manager;
 
-    // Phase 1: synchronous save (persona record + linked agent avatar updates)
-    let (result, retained, profile_sync_params) = tokio::task::spawn_blocking({
+    let (result, retained) = tokio::task::spawn_blocking({
         let app = app.clone();
-        move || -> Result<(AgentDefinition, R, ProfileSyncParams), String> {
+        move || -> Result<(AgentDefinition, R), String> {
             let state = app.state::<AppState>();
             let display_name = trim_required(&input.display_name, "Display name")?;
             let system_prompt = input.system_prompt.clone();
@@ -210,18 +124,6 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
             };
             let persona = &mut personas[index];
 
-            // Track what changed so we can propagate to linked agent records.
-            let avatar_changed = persona.avatar_url != avatar_url;
-            let name_changed = persona.display_name != display_name;
-            let old_display_name = persona.display_name.clone();
-            // The kind:0 `about` is the authored description, so a
-            // description edit changes what should be published.
-            let old_about =
-                crate::managed_agents::effective_agent_description(persona.description.as_deref());
-            let new_about =
-                crate::managed_agents::effective_agent_description(description.as_deref());
-            let about_changed = old_about != new_about;
-
             persona.display_name = display_name;
             persona.avatar_url = avatar_url;
             persona.description = description;
@@ -247,154 +149,55 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
             let result = persona.clone();
             save_personas(&app, &personas)?;
             if let Some((builtin_id, me)) = &edited_builtin {
-                // The copy replaces the built-in for this account only: the
-                // built-in leaves its agents and its agents move to the copy.
+                // The copy replaces the built-in in this account's preset list.
                 crate::managed_agents::set_builtin_inactive(&app, builtin_id, me, true)?;
-                let mut records = load_managed_agents(&app)?;
-                let moved = crate::managed_agents::move_account_agents(
-                    &mut records,
-                    builtin_id,
-                    &result.id,
-                    me,
-                    |record| crate::managed_agents::visible_owner_hex(&app, record),
-                );
-                if !moved.is_empty() {
-                    save_managed_agents(&app, &records)?;
-                    for record in records.iter().filter(|r| moved.contains(&r.pubkey)) {
-                        crate::commands::agents::retain_managed_agent_pending(&app, &state, record);
-                    }
-                }
             }
 
             let retained = retain(&app, &state, &result)?;
             try_regenerate_nest(&app);
 
-            // If the avatar, display_name, or effective description changed,
-            // propagate to linked agent records and collect relay profile sync
-            // params for the async phase. An about-only change touches no
-            // record bytes but still republishes each linked kind:0 profile.
-            let sync_params = sync_linked_agents_after_persona_edit(
-                &app,
-                &state,
-                &result,
-                LinkedIdentityChange {
-                    old_display_name: name_changed.then_some(old_display_name),
-                    avatar_changed,
-                    about_changed,
-                },
-            )?;
-
-            Ok((result, retained, sync_params))
+            Ok((result, retained))
         }
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {e}"))??;
 
-    // Phase 2: await relay profile sync for linked agents whose avatar,
-    // display_name, or effective description (kind:0 about) was just
-    // updated. We await (rather than fire-and-forget)
-    // so the frontend cache invalidation that follows the mutation settlement
-    // sees the fresh relay profile. Best-effort — failures are logged, not surfaced.
-    publish_linked_profiles(&app, profile_sync_params, "persona update").await;
-
     Ok((result, retained))
 }
 
-/// What changed in a persona's identity, for its linked agent instances.
-pub(super) struct LinkedIdentityChange {
-    /// The previous display name when the persona was renamed.
-    pub(super) old_display_name: Option<String>,
-    pub(super) avatar_changed: bool,
-    pub(super) about_changed: bool,
-}
-
-/// Carry a saved persona's rename, avatar or description change to its
-/// linked agent instances on this computer: rename the ones that still carry
-/// the old name, save them, retain their kind:30177 projections and collect
-/// their kind:0 profile syncs for [`publish_linked_profiles`]. Runs under the
-/// managed-agents store lock. Shared by the local edit and an edit that
-/// arrives from another of the owner's devices (inbound kind:30175).
-pub(super) fn sync_linked_agents_after_persona_edit<R: tauri::Runtime>(
-    app: &AppHandle<R>,
+/// The kind:0 profile sync for `record` with its current name, avatar and
+/// description, or `None` when it has no sync target (unreadable key).
+pub(super) fn agent_profile_sync(
     state: &AppState,
-    persona: &AgentDefinition,
-    change: LinkedIdentityChange,
-) -> Result<ProfileSyncParams, String> {
-    let name_changed = change.old_display_name.is_some();
-    if !name_changed && !change.avatar_changed && !change.about_changed {
-        return Ok(Vec::new());
-    }
-    let new_about =
-        crate::managed_agents::effective_agent_description(persona.description.as_deref());
-    let mut records = load_managed_agents(app)?;
-    let mut params: ProfileSyncParams = Vec::new();
-    let mut agents_modified = false;
+    record: &ManagedAgentRecord,
+) -> Option<(
+    ProfileSyncTarget,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+)> {
+    let target = profile_sync_target(record)?;
     let workspace_relay = crate::relay::relay_ws_url_with_override(state);
-
-    // Propagate the display_name rename to instances that still
-    // carry the old definition display_name (pool-named instances
-    // keep their individualised name) in one pass; the loop below
-    // only decides which records need a relay profile sync.
-    let renamed: Vec<String> = match &change.old_display_name {
-        Some(old_display_name) => propagate_persona_name_rename(
-            &mut records,
-            &persona.id,
-            old_display_name,
-            &persona.display_name,
-        ),
-        None => Vec::new(),
-    };
-
-    for record in records.iter_mut() {
-        if record.persona_id.as_deref() != Some(&persona.id) {
-            continue;
-        }
-        let was_renamed = renamed.contains(&record.pubkey);
-        let update = prepare_linked_profile_update(
+    let avatar = record.avatar_url.clone().or_else(|| {
+        crate::managed_agents::managed_agent_avatar_url(&crate::managed_agents::record_agent_command(
             record,
-            persona,
-            was_renamed,
-            change.avatar_changed,
-            change.about_changed,
-        );
-
-        agents_modified = agents_modified || update.record_changed;
-        if update.profile_sync_required {
-            if let Some(target) = profile_sync_target(record) {
-                let relay_url =
-                    crate::relay::effective_agent_relay_url(&record.relay_url, &workspace_relay);
-                params.push((
-                    target,
-                    relay_url,
-                    record.name.clone(),
-                    update.profile_avatar,
-                    new_about.clone(),
-                    record.auth_tag.clone(),
-                ));
-            }
-        }
-    }
-
-    if agents_modified {
-        save_managed_agents(app, &records)?;
-        // Keep retained kind:30177 identity records in lockstep with
-        // the rename (#2423): `record.name` is part of the published
-        // identity projection, so skipping this strands the relay on
-        // the stale name→pubkey binding until the next boot reconcile.
-        // Avatar-only edits are excluded — the avatar is not in the
-        // projection, so retaining would be a guaranteed no-op.
-        for record in records.iter().filter(|r| renamed.contains(&r.pubkey)) {
-            crate::commands::agents::retain_managed_agent_pending(app, state, record);
-        }
-    }
-
-    Ok(params)
+        ))
+    });
+    Some((
+        target,
+        crate::relay::effective_agent_relay_url(&record.relay_url, &workspace_relay),
+        record.name.clone(),
+        avatar,
+        crate::managed_agents::record_effective_description(record),
+        record.auth_tag.clone(),
+    ))
 }
 
-/// Await relay profile sync for linked agents whose avatar, display_name, or
-/// effective description (kind:0 about) was just updated. Best-effort —
-/// failures are logged, not surfaced.
-pub(super) async fn publish_linked_profiles(
+/// Await relay profile sync for agents whose name or description (kind:0
+/// about) was just updated. Best-effort — failures are logged, not surfaced.
+pub(super) async fn publish_agent_profiles(
     app: &AppHandle,
     params: ProfileSyncParams,
     after: &str,

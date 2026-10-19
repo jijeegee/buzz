@@ -178,17 +178,8 @@ pub fn default_agent_command() -> String {
 ///
 /// Resolution order:
 ///   1. explicit override (non-empty) — a deliberate per-instance pin;
-///   2. the record's own `runtime` id mapped to its primary command via the
-///      authoritative three-tier lookup (static builtins → static preset list
-///      → loaded registry) — preset harnesses (e.g. openclaw) resolve
-///      correctly even with a cold registry;
-///   3. legacy fallback: the linked persona's `runtime` (records created
-///      before the unified model carry `persona_id` but no `runtime`);
-///   4. `default_agent_command()`.
-pub fn record_agent_command(
-    record: &crate::managed_agents::types::ManagedAgentRecord,
-    personas: &[crate::managed_agents::types::AgentDefinition],
-) -> String {
+///   2. the agent's own runtime ([`record_runtime_command`]).
+pub fn record_agent_command(record: &crate::managed_agents::types::ManagedAgentRecord) -> String {
     if let Some(pin) = record
         .agent_command_override
         .as_deref()
@@ -197,61 +188,24 @@ pub fn record_agent_command(
     {
         return pin.to_string();
     }
-
-    if let Some(id) = record.runtime.as_deref() {
-        // Three-tier lookup: static builtins → static presets → loaded registry.
-        // Using the shared resolver ensures preset harnesses (e.g. openclaw)
-        // resolve correctly even without a warm registry.
-        if let Some(cmd) = presets::command_for_runtime_id(id) {
-            return cmd;
-        }
-    }
-
-    effective_agent_command(record.persona_id.as_deref(), personas, None)
+    record_runtime_command(record)
 }
 
-/// Resolve the agent command (harness) for a spawn/deploy/summary. The linked
-/// persona wins so persona harness edits propagate on the next spawn. An
-/// explicit per-instance override (`agent_command_override`) takes precedence.
-///
-/// Resolution order:
-///   1. explicit override (non-empty) — a deliberate per-instance pin;
-///   2. the linked persona's `runtime` id mapped to its primary command via
-///      the authoritative three-tier lookup (static builtins → static preset
-///      list → loaded registry);
-///   3. `default_agent_command()` — no persona/runtime, or persona deleted.
-pub fn effective_agent_command(
-    persona_id: Option<&str>,
-    personas: &[crate::managed_agents::types::AgentDefinition],
-    agent_command_override: Option<&str>,
-) -> String {
-    if let Some(pin) = agent_command_override
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        return pin.to_string();
-    }
-
-    let runtime_id = persona_id
-        .and_then(|pid| personas.iter().find(|p| p.id == pid))
-        .and_then(|persona| persona.runtime.as_deref());
-
-    if let Some(id) = runtime_id {
-        // Three-tier lookup: static builtins → static presets → loaded registry.
-        if let Some(cmd) = presets::command_for_runtime_id(id) {
-            return cmd;
-        }
-    }
-
-    default_agent_command()
+/// The command the agent's own `runtime` id runs, ignoring any pin: the
+/// authoritative three-tier lookup (static builtins → static preset list →
+/// loaded registry) — preset harnesses (e.g. openclaw) resolve correctly even
+/// with a cold registry — else `default_agent_command()`.
+pub fn record_runtime_command(record: &crate::managed_agents::types::ManagedAgentRecord) -> String {
+    record
+        .runtime
+        .as_deref()
+        .and_then(presets::command_for_runtime_id)
+        .unwrap_or_else(default_agent_command)
 }
 
 mod overrides;
 pub use overrides::remove_record_effort_aliases;
-pub use overrides::{
-    apply_agent_command_update, apply_env_vars_then_effort_transition,
-    create_time_agent_command_override,
-};
+pub use overrides::{apply_agent_command_update, create_time_agent_command_override};
 
 /// Prefix of the typed dangling-harness error produced by
 /// `try_record_agent_command` / `resolve_effective_harness_descriptor`.
@@ -283,12 +237,11 @@ pub(crate) fn dangling_harness_display(id: &str) -> String {
 }
 
 /// Spawn-time variant of `record_agent_command` that returns a typed error when
-/// a record's `runtime` id or persona's `runtime` id is set but unresolvable
+/// a record's `runtime` id is set but unresolvable
 /// (definition deleted after agent was created). Returns `Err("DANGLING_HARNESS_ID:<id>")`.
 /// When there is no runtime id at all, falls through to `default_agent_command()` intentionally.
 pub fn try_record_agent_command(
     record: &crate::managed_agents::types::ManagedAgentRecord,
-    personas: &[crate::managed_agents::types::AgentDefinition],
 ) -> Result<String, String> {
     // Explicit pin always wins — if the user set a raw override, honour it.
     if let Some(pin) = record
@@ -306,18 +259,6 @@ pub fn try_record_agent_command(
             return Ok(cmd);
         }
         return Err(format!("DANGLING_HARNESS_ID:{id}"));
-    }
-
-    // Persona-level runtime id.
-    if let Some(persona_id) = record.persona_id.as_deref() {
-        if let Some(persona) = personas.iter().find(|p| p.id == persona_id) {
-            if let Some(id) = persona.runtime.as_deref() {
-                if let Some(cmd) = presets::command_for_runtime_id(id) {
-                    return Ok(cmd);
-                }
-                return Err(format!("DANGLING_HARNESS_ID:{id}"));
-            }
-        }
     }
 
     // No runtime id set — legacy agent; use the safe default.

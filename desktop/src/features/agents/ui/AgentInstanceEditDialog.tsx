@@ -11,7 +11,6 @@ import {
   useAcpRuntimesQuery,
   useAgentConfigSurface,
   useBakedBuildEnvKeysQuery,
-  usePersonasQuery,
   useStartManagedAgentMutation,
   useUpdateManagedAgentMutation,
 } from "@/features/agents/hooks";
@@ -29,7 +28,6 @@ import { ChooserDialogContent } from "@/shared/ui/chooser-dialog-content";
 import { Dialog } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 import { setManagedAgentAutoRestart } from "@/shared/api/tauriManagedAgents";
-import { effortSentinelLabel } from "./effortPicker";
 import { EditAgentAdvancedFields } from "./EditAgentAdvancedFields";
 import { KuzzAgentModelTuningFields } from "./kuzzAgentModelTuningFields";
 import { isKuzzAgentRuntime } from "./kuzzAgentConfig";
@@ -40,7 +38,6 @@ import {
   CUSTOM_PROVIDER_DROPDOWN_VALUE,
   formatRuntimeOptionLabel,
   getDefaultLlmModelLabel,
-  getDefaultPersonaRuntime,
   getPersonaProviderOptions,
   isMissingRequiredDropdownField,
   NO_RUNTIME_DROPDOWN_VALUE,
@@ -61,7 +58,6 @@ import {
   isEditAgentProviderSaveValid,
   resolveAgentCommandUpdate,
   resolveEffortSubmission,
-  resolveInheritedRuntimeSubmission,
   resolveRuntimeProviderCapability,
 } from "./personaRuntimeModel";
 import {
@@ -85,7 +81,6 @@ import {
   getBakedModelInheritLabel,
   getBakedProviderInheritLabel,
 } from "./bakedEnvHelpers";
-import { getProviderApiKeyEnvVar } from "./agentConfigOptions";
 import { useAgentDialogDefaults } from "./useAgentDialogDefaults";
 import { AgentAiDefaultsNotice } from "./AgentAiDefaults";
 import { AgentDefaultsDialog } from "./AgentDefaultsDialog";
@@ -104,7 +99,6 @@ export function AgentInstanceEditDialog({
   agent,
   initialFocus,
   open,
-  onEditLinkedPersona,
   onOpenChange,
   onUpdated,
 }: {
@@ -112,8 +106,6 @@ export function AgentInstanceEditDialog({
   /** Optional field to scroll/focus when the dialog opens from a card deep-link. */
   initialFocus?: EditAgentFocusTarget;
   open: boolean;
-  /** Present only when the linked definition is editable (non-built-in, resolved). Caller closes this dialog and enters definition-edit. */
-  onEditLinkedPersona?: () => void;
   onOpenChange: (open: boolean) => void;
   onUpdated?: (agent: ManagedAgent) => void;
 }) {
@@ -130,15 +122,13 @@ export function AgentInstanceEditDialog({
   const runtimes = runtimesQuery.data ?? [];
 
   const [name, setName] = React.useState(agent.name);
+  const [description, setDescription] = React.useState(agent.description ?? "");
   const [aiDefaultsOpen, setAiDefaultsOpen] = React.useState(false);
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [acpCommand, setAcpCommand] = React.useState(agent.acpCommand);
   const [agentCommand, setAgentCommand] = React.useState(agent.agentCommand);
   const [originalAgentCommand, setOriginalAgentCommand] = React.useState(
     agent.agentCommand,
-  );
-  const [inheritHarness, setInheritHarness] = React.useState(
-    agent.personaId != null && agent.agentCommandOverride == null,
   );
   const [agentArgs, setAgentArgs] = React.useState(agent.agentArgs.join(","));
   const [parallelism, setParallelism] = React.useState(
@@ -159,15 +149,6 @@ export function AgentInstanceEditDialog({
   // #4625); `effortTouched` = user picked, so an untouched Save writes nothing.
   const [effortLevel, setEffortLevel] = React.useState<string | null>(null);
   const effortTouched = React.useRef(false);
-  const personasQuery = usePersonasQuery();
-  const linkedPersona = React.useMemo(
-    () =>
-      agent.personaId
-        ? (personasQuery.data?.find((p) => p.id === agent.personaId) ?? null)
-        : null,
-    [agent.personaId, personasQuery.data],
-  );
-  const inheritedEnvVars = linkedPersona?.envVars ?? {};
   const [respondTo, setRespondTo] = React.useState<RespondToMode>(
     agent.respondTo,
   );
@@ -193,12 +174,10 @@ export function AgentInstanceEditDialog({
   React.useEffect(() => {
     if (open) {
       setName(agent.name);
+      setDescription(agent.description ?? "");
       setAcpCommand(agent.acpCommand);
       setAgentCommand(agent.agentCommand);
       setOriginalAgentCommand(agent.agentCommand);
-      setInheritHarness(
-        agent.personaId != null && agent.agentCommandOverride == null,
-      );
       setAgentArgs(agent.agentArgs.join(","));
       setParallelism(String(agent.parallelism));
       setSystemPrompt(agent.systemPrompt ?? "");
@@ -285,36 +264,8 @@ export function AgentInstanceEditDialog({
   }, [runtimes, originalAgentCommand]);
 
   // The runtime id active after submit — the single prospective id feeding BOTH
-  // the block-save gate and submit so they always agree. Inheriting resolves
-  // from the LINKED PERSONA's runtime (what runs once the override is cleared),
-  // falling back to dual-match (command path, then id) when no persona.
-  const prospectiveRuntimeId = React.useMemo(() => {
-    if (!inheritHarness) {
-      return selectedRuntime?.id ?? selectedRuntimeId;
-    }
-    const personaRuntimeId = linkedPersona?.runtime?.trim();
-    if (personaRuntimeId) {
-      return (
-        runtimes.find((r) => r.id === personaRuntimeId)?.id ?? personaRuntimeId
-      );
-    }
-    return (
-      runtimes.find((r) => r.command?.trim() === agent.agentCommand.trim())
-        ?.id ??
-      runtimes.find((r) => r.id === agent.agentCommand.trim())?.id ??
-      // Fall back to the app default runtime so discovery can run for agents
-      // whose persona has no runtime set (e.g. freshly-added catalog builtins).
-      getDefaultPersonaRuntime(runtimes)?.id ??
-      ""
-    );
-  }, [
-    inheritHarness,
-    linkedPersona?.runtime,
-    runtimes,
-    agent.agentCommand,
-    selectedRuntime?.id,
-    selectedRuntimeId,
-  ]);
+  // the block-save gate and submit so they always agree.
+  const prospectiveRuntimeId = selectedRuntime?.id ?? selectedRuntimeId;
 
   const llmProviderFieldVisible =
     runtimeSupportsLlmProviderSelection(prospectiveRuntimeId);
@@ -371,31 +322,16 @@ export function AgentInstanceEditDialog({
     return () => cancelAnimationFrame(id);
   }, [open, initialFocus, agent.pubkey, llmProviderFieldVisible]);
 
-  // Provider + env to PERSIST on submit — also fed to the credential gate so gate, saved record,
-  // and spawn snapshot all agree on one resolved value. See resolveInheritedRuntimeSubmission.
-  const inheritedSubmission = React.useMemo(
-    () =>
-      resolveInheritedRuntimeSubmission({
-        inheritHarness,
-        // Inherit-transition vs. Default-clear — see resolveInheritedRuntimeSubmission.
-        agentWasHarnessPinned: agent.agentCommandOverride != null,
-        provider,
-        personaProvider: linkedPersona?.provider ?? "",
-        model,
-        personaModel: linkedPersona?.model ?? null,
-        envVars,
-        personaEnvVars: inheritedEnvVars,
-      }),
-    [
-      inheritHarness,
-      agent.agentCommandOverride,
-      provider,
-      linkedPersona?.provider,
-      model,
-      linkedPersona?.model,
+  // Provider + model + env to PERSIST on submit — also fed to the credential
+  // gate so gate, saved record, and spawn all agree on one value. The agent
+  // owns every field: nothing is inherited from the preset it was made from.
+  const submission = React.useMemo(
+    () => ({
+      provider: provider.trim() || null,
+      model: model.trim() || null,
       envVars,
-      inheritedEnvVars,
-    ],
+    }),
+    [provider, model, envVars],
   );
 
   const {
@@ -405,7 +341,7 @@ export function AgentInstanceEditDialog({
       model: inheritedModelDefault,
     },
     inheritedEnvVars: inheritedEnvVarsForAdvanced,
-  } = useAgentDialogDefaults({ inheritedEnvVars, open });
+  } = useAgentDialogDefaults({ open });
 
   // Runtime/provider-required credential state for the PROSPECTIVE post-submit runtime.
   // globalProvider/globalEnvVars: fallback for empty per-agent provider; keys satisfied globally don't block Save.
@@ -413,11 +349,10 @@ export function AgentInstanceEditDialog({
     useRequiredCredentialState({
       open,
       prospectiveRuntimeId,
-      provider: inheritedSubmission.provider ?? "",
+      provider: submission.provider ?? "",
       globalProvider: inheritedProviderDefault.value,
-      envVars: inheritedSubmission.envVars,
+      envVars: submission.envVars,
       globalEnvVars: globalConfig.env_vars,
-      personaEnvVars: inheritHarness ? inheritedEnvVars : undefined,
     });
 
   const { data: bakedEnvKeys } = useBakedBuildEnvKeysQuery({ enabled: open });
@@ -426,18 +361,15 @@ export function AgentInstanceEditDialog({
   });
 
   // Merge global env as the base layer so credential keys satisfied via global
-  // config (e.g. ANTHROPIC_API_KEY) are available to model discovery. Use
-  // `inheritedSubmission.envVars` (the same snapshot the credential gate
-  // validates) rather than raw `envVars`, so an inherit-transition that layers
-  // in persona env vars is reflected in discovery. Agent-local env takes
-  // precedence, matching the agent → global → file spawn-path precedence.
+  // config (e.g. ANTHROPIC_API_KEY) are available to model discovery.
+  // Agent-local env takes precedence, matching the agent → global → file
+  // spawn-path precedence.
   const envVarsForDiscovery = React.useMemo(
-    () => ({ ...globalConfig.env_vars, ...inheritedSubmission.envVars }),
-    [globalConfig.env_vars, inheritedSubmission.envVars],
+    () => ({ ...globalConfig.env_vars, ...submission.envVars }),
+    [globalConfig.env_vars, submission.envVars],
   );
   const effectiveProvider =
-    (inheritedSubmission.provider ?? "").trim() ||
-    inheritedProviderDefault.value;
+    (submission.provider ?? "").trim() || inheritedProviderDefault.value;
   const providerForDiscovery = llmProviderFieldVisible ? effectiveProvider : "";
 
   const {
@@ -459,20 +391,13 @@ export function AgentInstanceEditDialog({
 
   // D2/D3: the top-level API key owns display while the readiness gate keeps the
   // complete required-key list; advancedRequiredEnvKeys drives EnvVarsEditor
-  // display only. The effective snapshot covers persona inheritance during an
-  // instance inherit transition.
-  const providerApiKeyEnvVar = getProviderApiKeyEnvVar(effectiveProvider);
-  const personaSatisfied =
-    providerApiKeyEnvVar != null &&
-    !(providerApiKeyEnvVar in envVars) &&
-    (inheritedEnvVars[providerApiKeyEnvVar] ?? "").length > 0;
+  // display only.
   const apiKeyFieldState = useProviderApiKeyFieldState({
     bakedEnvKeys,
-    effectiveEnvVars: inheritedSubmission.envVars,
+    effectiveEnvVars: submission.envVars,
     envVars,
     fileSatisfiedEnvKeys,
     globalEnvVars: globalConfig.env_vars,
-    personaSatisfied,
     provider: effectiveProvider,
     requiredEnvKeys,
   });
@@ -542,21 +467,6 @@ export function AgentInstanceEditDialog({
     setSelectedRuntimeId(resolvedRuntimeId);
     effortTouched.current = false;
     setEffortLevel(null);
-    const isCustomCommand = resolvedRuntimeId === "custom";
-
-    // Only pin the harness when the selection can actually supply a command:
-    //   - "Custom command": the Advanced command input becomes editable, so the
-    //     user provides the command.
-    //   - a catalog entry with a concrete command: we set it below.
-    // A catalog entry with command:null (availability adapter_missing /
-    // not_installed) can't produce a runnable command — clearing inheritance
-    // there would omit agentCommand on Save (command unchanged) while the
-    // provider/model logic treats the new runtime as effective, so an inherited
-    // Claude agent could persist a Databricks provider while still running
-    // Claude. Keep inheriting in that case.
-    if (isCustomCommand || nextRuntime?.command) {
-      setInheritHarness(false);
-    }
 
     // When switching to a catalog-known runtime, update the agent command to
     // its resolved command so the command field stays consistent.
@@ -645,7 +555,6 @@ export function AgentInstanceEditDialog({
       respondTo,
       respondToAllowlistLength: respondToAllowlist.length,
       selectedRuntimeId,
-      inheritHarness,
       agentCommand,
       requiredEnvKeyMissing,
     }) &&
@@ -662,19 +571,12 @@ export function AgentInstanceEditDialog({
         .split(",")
         .map((v) => v.trim())
         .filter((v) => v.length > 0);
-      // Model to persist — from the shared inherited-submission snapshot so a
-      // provider-backed inherit-transition carries the persona model (readiness
-      // requires one) and a deliberate local model still wins.
-      const normalizedModel = inheritedSubmission.model;
+      const normalizedModel = submission.model;
 
-      // Harness pin resolution — see resolveAgentCommandUpdate for the full
-      // sentinel/pin/no-op contract, including the inherit→pin transition where
-      // the prefilled command equals the original but must still be pinned.
+      // Send the command only when it changed (see resolveAgentCommandUpdate).
       const agentCommandUpdate = resolveAgentCommandUpdate({
-        inheritHarness,
         agentCommand,
         originalAgentCommand: agent.agentCommand,
-        agentCommandOverride: agent.agentCommandOverride ?? null,
       });
 
       // Classify the effective post-submit runtime's provider capability as a
@@ -690,14 +592,18 @@ export function AgentInstanceEditDialog({
         runtimeSupportsLlmProviderSelection(prospectiveRuntimeId),
       );
 
-      // Provider + env to persist — the shared inherited-submission snapshot
-      // (same values the credential gate validates), so gate ↔ record ↔ spawn
-      // all agree. See resolveInheritedRuntimeSubmission.
-      const normalizedSubmitProvider = inheritedSubmission.provider;
-      const submitEnvVars = inheritedSubmission.envVars;
+      // Provider + env to persist — the same snapshot the credential gate
+      // validates, so gate ↔ record ↔ spawn all agree.
+      const normalizedSubmitProvider = submission.provider;
+      const submitEnvVars = submission.envVars;
+      const normalizedDescription = description.trim() || null;
       const input: UpdateManagedAgentInput = {
         pubkey: agent.pubkey,
         name: name.trim() !== agent.name ? name.trim() : undefined,
+        description:
+          normalizedDescription !== (agent.description ?? null)
+            ? normalizedDescription
+            : undefined,
         // relayUrl deliberately never submitted: the legacy per-record pin is
         // ignored (#2122) and the stored value is preserved as-is.
         acpCommand:
@@ -705,12 +611,6 @@ export function AgentInstanceEditDialog({
             ? acpCommand.trim()
             : undefined,
         agentCommand: agentCommandUpdate,
-        // A non-inheriting selection is a deliberate pin — signal it so the
-        // backend preserves a Custom/runtime command even when it maps to the
-        // linked persona's own runtime (otherwise it would be dropped back to
-        // inherit). Omitted (falsy) when inheriting or on a name-only edit.
-        harnessOverride:
-          agentCommandUpdate != null ? !inheritHarness : undefined,
         agentArgs:
           parsedArgs.join(",") !== agent.agentArgs.join(",")
             ? parsedArgs
@@ -719,34 +619,27 @@ export function AgentInstanceEditDialog({
           parsedParallelism > 0 && parsedParallelism !== agent.parallelism
             ? parsedParallelism
             : undefined,
-        // Linked instances defer model/provider/systemPrompt to the definition.
         systemPrompt:
-          linkedPersona != null
-            ? undefined
-            : (systemPrompt.trim() || null) !== agent.systemPrompt
-              ? systemPrompt.trim() || null
-              : undefined,
+          (systemPrompt.trim() || null) !== agent.systemPrompt
+            ? systemPrompt.trim() || null
+            : undefined,
         model:
-          linkedPersona != null
-            ? undefined
-            : normalizedModel !== (agent.model ?? null)
-              ? normalizedModel
-              : undefined,
+          normalizedModel !== (agent.model ?? null)
+            ? normalizedModel
+            : undefined,
         // Tri-state provider persistence keyed on providerRuntimeCapability
         // (see the classification comment above for the capable/locked/unknown
         // contract). llmProviderFieldVisible is UX visibility only; not used here.
         provider:
-          linkedPersona != null
-            ? undefined
-            : providerRuntimeCapability === "capable"
-              ? normalizedSubmitProvider !== (agent.provider ?? null)
-                ? normalizedSubmitProvider
+          providerRuntimeCapability === "capable"
+            ? normalizedSubmitProvider !== (agent.provider ?? null)
+              ? normalizedSubmitProvider
+              : undefined
+            : providerRuntimeCapability === "locked"
+              ? (agent.provider ?? null) !== null
+                ? null
                 : undefined
-              : providerRuntimeCapability === "locked"
-                ? (agent.provider ?? null) !== null
-                  ? null
-                  : undefined
-                : undefined, // "unknown" → omit always
+              : undefined, // "unknown" → omit always
         envVars: envVarsEqual(submitEnvVars, agent.envVars)
           ? undefined
           : submitEnvVars,
@@ -769,7 +662,6 @@ export function AgentInstanceEditDialog({
       const effortSubmission = resolveEffortSubmission({
         effortLevel,
         originalEffortLevel: launchEffortLevel,
-        inheritTransition: agentCommandUpdate === "",
       });
       // Include effort in the locked update when touched (tri-state: absent =
       // don't touch; null = clear; string = set). Only when effortSubmission.persist.
@@ -962,25 +854,6 @@ export function AgentInstanceEditDialog({
               onUploadPendingChange={setIsAvatarUploadPending}
               onSelectAvatar={setAvatarUrl}
             />
-            {onEditLinkedPersona ? (
-              <Button
-                className="w-full"
-                disabled={isSaving}
-                onClick={() => {
-                  handleOpenChange(false);
-                  onEditLinkedPersona();
-                }}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Edit avatar
-              </Button>
-            ) : (
-              <p className="text-center text-xs text-muted-foreground">
-                Avatar is shared identity
-              </p>
-            )}
           </div>
           <div className="space-y-5">
             <div className="space-y-1.5">
@@ -1007,6 +880,32 @@ export function AgentInstanceEditDialog({
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Agent name"
                   value={name}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label
+                className="text-sm font-medium text-foreground"
+                htmlFor="edit-agent-description"
+              >
+                Description
+              </label>
+              <div
+                className={cn(
+                  "flex min-h-11 items-center px-3",
+                  PERSONA_FIELD_SHELL_CLASS,
+                )}
+              >
+                <Input
+                  className={cn(
+                    "h-8 px-0 py-0 leading-6",
+                    PERSONA_FIELD_CONTROL_CLASS,
+                  )}
+                  disabled={isSaving}
+                  id="edit-agent-description"
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="What this agent does"
+                  value={description}
                 />
               </div>
             </div>
@@ -1052,7 +951,7 @@ export function AgentInstanceEditDialog({
                 open={isAddHarnessOpen}
               />
             </div>
-            {selectedRuntimeId === "custom" && !inheritHarness ? (
+            {selectedRuntimeId === "custom" ? (
               <div className="space-y-1.5">
                 <label
                   className="text-sm font-medium text-foreground"
@@ -1091,7 +990,6 @@ export function AgentInstanceEditDialog({
                 config: runtimeTouched.current
                   ? undefined
                   : configSurfaceQuery.data,
-                defaultLabel: effortSentinelLabel(linkedPersona),
                 onChange: (level) => {
                   effortTouched.current = true;
                   setEffortLevel(level);
@@ -1135,12 +1033,12 @@ export function AgentInstanceEditDialog({
             {isKuzzAgentRuntime(prospectiveRuntimeId) ? (
               <KuzzAgentModelTuningFields
                 catalogEfforts={discoveredModelOptions?.find(
-                  (option) => option.id === (inheritedSubmission.model ?? ""),
+                  (option) => option.id === (submission.model ?? ""),
                 )}
                 disabled={isSaving}
                 envVars={envVars}
                 inheritedEnvVars={inheritedEnvVarsForAdvanced}
-                model={inheritedSubmission.model ?? ""}
+                model={submission.model ?? ""}
                 onEnvVarChange={(key, value) => {
                   setEnvVars((prev) => {
                     const next = { ...prev };
@@ -1161,8 +1059,8 @@ export function AgentInstanceEditDialog({
                 if (!isSaving) setAiDefaultsOpen(true);
               }}
               triggerRef={aiDefaultsTriggerRef}
-              explicitModel={inheritedSubmission.model ?? ""}
-              explicitProvider={inheritedSubmission.provider ?? ""}
+              explicitModel={submission.model ?? ""}
+              explicitProvider={submission.provider ?? ""}
               inheritedModel={inheritedModelDefault}
               inheritedProvider={inheritedProviderDefault}
             />
@@ -1183,7 +1081,7 @@ export function AgentInstanceEditDialog({
               >
                 <span>Advanced</span>
                 <AdvancedRequiredBadge
-                  envVars={inheritedSubmission.envVars}
+                  envVars={submission.envVars}
                   requiredEnvKeys={advancedRequiredEnvKeys}
                   testId="edit-agent-advanced-required-badge"
                 />
@@ -1221,8 +1119,6 @@ export function AgentInstanceEditDialog({
                           : undefined
                       }
                       inheritedEnvVars={inheritedEnvVarsForAdvanced}
-                      inheritHarness={inheritHarness}
-                      linkedPersona={linkedPersona}
                       modelTuningRuntimeId={prospectiveRuntimeId}
                       parallelism={parallelism}
                       requiredEnvKeys={advancedRequiredEnvKeys}
@@ -1233,7 +1129,6 @@ export function AgentInstanceEditDialog({
                       onAgentArgsChange={setAgentArgs}
                       onAutoRestartChange={setAutoRestartOnConfigChange}
                       onEnvVarsChange={setEnvVars}
-                      onInheritHarnessChange={setInheritHarness}
                       onParallelismChange={setParallelism}
                       onSystemPromptChange={setSystemPrompt}
                     />

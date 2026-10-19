@@ -140,8 +140,8 @@ export function useMentions(
   const managedAgentPersonaIdsByPubkey = React.useMemo(() => {
     const byPubkey = new Map<string, string>();
     for (const agent of managedAgentsQuery.data ?? []) {
-      if (agent.personaId) {
-        byPubkey.set(normalizePubkey(agent.pubkey), agent.personaId);
+      if (agent.sourcePresetId) {
+        byPubkey.set(normalizePubkey(agent.pubkey), agent.sourcePresetId);
       }
     }
     for (const agent of remoteOwnedAgents) {
@@ -215,8 +215,8 @@ export function useMentions(
     const personaById = new Map(personas.map((p) => [p.id, p.displayName]));
     const lookup = new Map<string, string>();
     for (const agent of agents) {
-      if (agent.personaId) {
-        const name = personaById.get(agent.personaId);
+      if (agent.sourcePresetId) {
+        const name = personaById.get(agent.sourcePresetId);
         if (name) lookup.set(normalizePubkey(agent.pubkey), name);
       }
     }

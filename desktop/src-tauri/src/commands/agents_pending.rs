@@ -31,6 +31,15 @@ pub(crate) fn retain_managed_agent_pending<R: tauri::Runtime>(
 
     let result = (|| -> Result<(), String> {
         let scope = crate::managed_agents::retention::active_retention_scope(app, state)?;
+        let owner = crate::managed_agents::agent_owner_hex(app, record);
+        if !crate::managed_agents::may_publish_agent(
+            owner.as_deref(),
+            &scope.owner_keys.public_key().to_hex(),
+        ) {
+            // Another signed-in account's agent: it publishes when that
+            // account is active (boot reconcile).
+            return Ok(());
+        }
         let conn = open_retention_db(&scope.db_path)?;
         // Shared engine with the boot-time reconcile: projection content diff
         // (no republish for runtime-only churn) + monotonic created_at bump
@@ -169,14 +178,14 @@ pub(crate) fn tombstone_managed_agent_at(
     }
 }
 
-/// Extract `persona_id` from a retained kind:30177 head's content projection.
-/// Absent (definition-less agent) or unparseable content yields `None`, so the
-/// archive request falls back to an empty payload — exactly what the record's
-/// `None` persona_id produced before this was derived from the head.
+/// Extract the preset label from a retained kind:30177 head's content
+/// projection: `source_preset_id`, else an older client's `persona_id`.
+/// Absent (no preset) or unparseable content yields `None`, so the archive
+/// request falls back to an empty payload.
 fn persona_id_from_head(content: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(content)
-        .ok()?
-        .get("persona_id")?
+    let head = serde_json::from_str::<serde_json::Value>(content).ok()?;
+    head.get("source_preset_id")
+        .or_else(|| head.get("persona_id"))?
         .as_str()
         .map(str::to_owned)
 }

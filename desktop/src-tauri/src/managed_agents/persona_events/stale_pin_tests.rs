@@ -1,11 +1,11 @@
-//! Stale-pin drop tests for `apply_persona_snapshot`.
+//! Stale-pin drop tests for `copy_preset_into_agent`.
 //!
 //! Covers the `canonical_harness_command` resolver used to classify a
 //! create-time `agent_command_override` before deciding whether it should be
 //! dropped when the persona switches to a different harness.
 
 use super::tests::{sample_persona, sample_record};
-use crate::managed_agents::persona_events::apply_persona_snapshot;
+use crate::managed_agents::persona_events::copy_preset_into_agent;
 use crate::managed_agents::types::AgentDefinition;
 
 // ── Stale-pin drop: OpenClaw↔Goose (preset↔builtin) ─────────────────────────
@@ -13,10 +13,10 @@ use crate::managed_agents::types::AgentDefinition;
 /// Persona→OpenClaw: stale Goose override dropped.
 /// Regression for the original preset stale-pin fix.
 #[test]
-fn apply_persona_snapshot_goose_to_openclaw_drops_stale_goose_pin() {
+fn copy_preset_goose_to_openclaw_drops_stale_goose_pin() {
     let mut record = sample_record();
     record.agent_command_override = Some("goose".to_string());
-    apply_persona_snapshot(
+    copy_preset_into_agent(
         &mut record,
         &AgentDefinition {
             effort_level: None,
@@ -33,10 +33,10 @@ fn apply_persona_snapshot_goose_to_openclaw_drops_stale_goose_pin() {
 
 /// Persona→Goose: stale OpenClaw override dropped.
 #[test]
-fn apply_persona_snapshot_openclaw_to_goose_drops_stale_openclaw_pin() {
+fn copy_preset_openclaw_to_goose_drops_stale_openclaw_pin() {
     let mut record = sample_record();
     record.agent_command_override = Some("openclaw".to_string());
-    apply_persona_snapshot(
+    copy_preset_into_agent(
         &mut record,
         &AgentDefinition {
             effort_level: None,
@@ -63,11 +63,11 @@ fn apply_persona_snapshot_openclaw_to_goose_drops_stale_openclaw_pin() {
 /// custom/unknown pin and kept it — the agent kept running Claude instead of
 /// OpenClaw.
 #[test]
-fn apply_persona_snapshot_claude_alias_pin_to_openclaw_drops_stale_alias() {
+fn copy_preset_claude_alias_pin_to_openclaw_drops_stale_alias() {
     let mut record = sample_record();
     // "claude-code-acp" is an alias of the Claude runtime (id="claude").
     record.agent_command_override = Some("claude-code-acp".to_string());
-    apply_persona_snapshot(
+    copy_preset_into_agent(
         &mut record,
         &AgentDefinition {
             effort_level: None,
@@ -88,11 +88,11 @@ fn apply_persona_snapshot_claude_alias_pin_to_openclaw_drops_stale_alias() {
 /// harness as the new persona runtime. The pin must NOT be dropped — it is a
 /// deliberate per-instance configuration (e.g. a specific goose binary path).
 #[test]
-fn apply_persona_snapshot_same_harness_path_pin_is_kept() {
+fn copy_preset_same_harness_path_pin_is_kept() {
     let mut record = sample_record();
     // Explicit path override for goose — same harness as the persona runtime.
     record.agent_command_override = Some("/usr/local/bin/goose".to_string());
-    apply_persona_snapshot(
+    copy_preset_into_agent(
         &mut record,
         &AgentDefinition {
             effort_level: None,
@@ -121,7 +121,7 @@ fn apply_persona_snapshot_same_harness_path_pin_is_kept() {
 /// which reads the in-process registry — so we must populate it via
 /// `update_loaded_harness_registry` under `registry_test_lock()`.
 #[test]
-fn apply_persona_snapshot_goose_to_custom_harness_drops_stale_goose_pin() {
+fn copy_preset_goose_to_custom_harness_drops_stale_goose_pin() {
     use crate::managed_agents::custom_harnesses::{
         registry_test_lock, update_loaded_harness_registry, HarnessDefinition,
     };
@@ -142,7 +142,7 @@ fn apply_persona_snapshot_goose_to_custom_harness_drops_stale_goose_pin() {
 
     let mut record = sample_record();
     record.agent_command_override = Some("goose".to_string());
-    apply_persona_snapshot(
+    copy_preset_into_agent(
         &mut record,
         &AgentDefinition {
             effort_level: None,

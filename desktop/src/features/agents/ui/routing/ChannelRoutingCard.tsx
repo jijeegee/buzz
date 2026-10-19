@@ -97,7 +97,7 @@ export function ChannelRoutingCard({
   const nameOf = React.useMemo(() => routingNameOf(agents), [agents]);
   // An existing Host instance is already in the picker; offer no second one.
   const canCreateHost = !agents.some(
-    (agent) => agent.personaId === HOST_PERSONA_ID,
+    (agent) => agent.sourcePresetId === HOST_PERSONA_ID,
   );
   const selectedMode = draftMode ?? status?.mode ?? null;
   const pickerOptions = React.useMemo(

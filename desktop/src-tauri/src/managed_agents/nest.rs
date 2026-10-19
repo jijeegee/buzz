@@ -545,7 +545,7 @@ pub fn render_dynamic_section(
                 .to_string();
         for agent in live {
             let role = agent
-                .persona_id
+                .source_preset_id
                 .as_deref()
                 .and_then(|pid| personas.iter().find(|p| p.id == pid))
                 .map(|p| p.display_name.as_str())

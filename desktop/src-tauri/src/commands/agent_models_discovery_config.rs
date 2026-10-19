@@ -22,11 +22,9 @@ pub(super) struct AgentModelDiscoveryConfig {
     pub(super) command: String,
     /// Effective harness args (descriptor-resolved).
     pub(super) args: Vec<String>,
-    /// Model from the authoritative resolver spawn uses — linked instances
-    /// read their definition, never stale `record.model` bytes.
+    /// Model from the same resolver spawn uses.
     pub(super) model: Option<String>,
-    /// Provider from the same authoritative resolver — never stale
-    /// `record.provider` bytes for linked instances.
+    /// Provider from the same resolver.
     pub(super) provider: Option<String>,
     /// The runtime's provider env var (e.g. `GOOSE_PROVIDER`), so discovery
     /// can recover the provider from the env when the resolver yields none.
@@ -41,12 +39,9 @@ pub(super) struct AgentModelDiscoveryConfig {
 ///
 /// Command/args/env come from `resolve_effective_harness_descriptor` (the same
 /// resolver as `spawn_agent_child`); model/provider come from
-/// `resolve_effective_model_provider` (#1968's definition-authoritative
-/// contract) — linked instances read their definition, never a stale
-/// materialized `record.model`/`record.provider`, so discovery cannot query a
-/// provider this agent will not actually launch with. Definition-less
-/// instances keep their own record values, matching spawn's
-/// `resolve_definition_less` arm. When the resolver yields no provider,
+/// `resolve_effective_model_provider` (the agent's own → global), so discovery
+/// cannot query a provider this agent will not actually launch with. When the
+/// resolver yields no provider,
 /// `effective_discovery_provider` recovers the provider the agent will
 /// actually launch with from the runtime's own provider env var, read out of
 /// the descriptor env (which already layers definition/persona/global values
@@ -57,13 +52,10 @@ pub(super) struct AgentModelDiscoveryConfig {
 /// `model_discovery_error`.
 pub(super) fn agent_model_discovery_config(
     record: &crate::managed_agents::ManagedAgentRecord,
-    personas: &[crate::managed_agents::AgentDefinition],
     global: &crate::managed_agents::GlobalAgentConfig,
 ) -> Result<AgentModelDiscoveryConfig, String> {
-    let descriptor =
-        crate::managed_agents::resolve_effective_harness_descriptor(record, personas, global)?;
-    let (model, provider) =
-        crate::managed_agents::resolve_effective_model_provider(record, personas, global);
+    let descriptor = crate::managed_agents::resolve_effective_harness_descriptor(record, global)?;
+    let (model, provider) = crate::managed_agents::resolve_effective_model_provider(record, global);
     let provider_env_var =
         known_acp_runtime(&descriptor.command).and_then(|meta| meta.provider_env_var);
 

@@ -955,8 +955,10 @@ type RawManagedAgent = {
   pubkey: string;
   owner_pubkey?: string | null;
   name: string;
-  persona_id: string | null;
-  /** Record-level harness/runtime pin (`null` when inheriting from the persona). */
+  /** The preset this agent was made from: a label only. */
+  source_preset_id: string | null;
+  description?: string | null;
+  /** Record-level harness/runtime pin. */
   runtime: string | null;
   relay_url: string;
   acp_command: string;
@@ -1973,7 +1975,8 @@ function cloneManagedAgent(agent: MockManagedAgent): RawManagedAgent {
     pubkey: agent.pubkey,
     owner_pubkey: agent.owner_pubkey ?? null,
     name: agent.name,
-    persona_id: agent.persona_id,
+    source_preset_id: agent.source_preset_id,
+    description: agent.description ?? null,
     runtime: agent.runtime ?? null,
     relay_url: agent.relay_url,
     acp_command: agent.acp_command,
@@ -2533,7 +2536,7 @@ function buildSeededManagedAgent(seed: MockManagedAgentSeed): MockManagedAgent {
   return {
     pubkey: seed.pubkey,
     name: seed.name,
-    persona_id: seed.personaId ?? null,
+    source_preset_id: seed.personaId ?? null,
     // The signed-in account made it; each account sees only its own agents.
     owner_pubkey: MOCK_IDENTITY_PUBKEY,
     // Native serde always emits this key (`null` when unpinned) — the bridge
@@ -9249,14 +9252,8 @@ async function handleDeletePersona(args: { id: string }): Promise<void> {
     );
   }
 
+  // Deletes the preset only: agents made from it keep running.
   mockPersonas = mockPersonas.filter((candidate) => candidate.id !== args.id);
-  const now = new Date().toISOString();
-  for (const agent of mockManagedAgents) {
-    if (agent.persona_id === args.id) {
-      agent.persona_id = null;
-      agent.updated_at = now;
-    }
-  }
 }
 
 async function handleSetPersonaActive(args: {
@@ -9270,14 +9267,6 @@ async function handleSetPersonaActive(args: {
   if (!persona.is_builtin) {
     throw new Error(
       "Only built-in agents can be added to or removed from My Agents.",
-    );
-  }
-  if (
-    !args.active &&
-    mockManagedAgents.some((agent) => agent.persona_id === args.id)
-  ) {
-    throw new Error(
-      `${persona.display_name} is still assigned to a managed agent. Remove or reassign those agents first.`,
     );
   }
   if (
@@ -9764,7 +9753,7 @@ async function handleCreateManagedAgent(
   args: {
     input: {
       name: string;
-      personaId?: string;
+      sourcePresetId?: string;
       relayUrl?: string;
       acpCommand?: string;
       agentCommand?: string;
@@ -9797,15 +9786,15 @@ async function handleCreateManagedAgent(
     await new Promise((resolve) => window.setTimeout(resolve, delayMs));
   }
 
-  if (args.input.personaId) {
-    ensureMockPersonaIsActive(args.input.personaId);
+  if (args.input.sourcePresetId) {
+    ensureMockPersonaIsActive(args.input.sourcePresetId);
   }
-  // Mint-parity with resolve_mint_behavioral_defaults: an explicit input
-  // wins; otherwise the linked definition's stored quad applies (mode+list
-  // travel together); otherwise the schema default.
-  const linkedPersona = args.input.personaId
-    ? (mockPersonas.find((persona) => persona.id === args.input.personaId) ??
-      null)
+  // Create copies the source preset, then applies the sent fields: an
+  // explicit input wins; otherwise the preset's value; otherwise the default.
+  const linkedPersona = args.input.sourcePresetId
+    ? (mockPersonas.find(
+        (persona) => persona.id === args.input.sourcePresetId,
+      ) ?? null)
     : null;
   const mintRespondTo =
     args.input.respondTo ??
@@ -9819,11 +9808,7 @@ async function handleCreateManagedAgent(
     args.input.parallelism,
     linkedPersona?.parallelism,
   );
-  const personaAvatarUrl =
-    args.input.personaId === undefined
-      ? null
-      : (mockPersonas.find((persona) => persona.id === args.input.personaId)
-          ?.avatar_url ?? null);
+  const personaAvatarUrl = linkedPersona?.avatar_url ?? null;
   const avatarUrl = args.input.avatarUrl?.trim() || personaAvatarUrl;
   const name = args.input.name.trim();
   const now = new Date().toISOString();
@@ -9842,9 +9827,9 @@ async function handleCreateManagedAgent(
   const managedAgent: MockManagedAgent = {
     pubkey,
     name,
-    persona_id: args.input.personaId ?? null,
-    // Create never pins a harness id — the record inherits from the persona.
-    runtime: null,
+    source_preset_id: args.input.sourcePresetId ?? null,
+    description: linkedPersona?.description ?? null,
+    runtime: linkedPersona?.runtime ?? null,
     relay_url: args.input.relayUrl ?? DEFAULT_RELAY_WS_URL,
     acp_command: args.input.acpCommand ?? "kuzz-acp",
     agent_command: agentCommand,
@@ -9854,7 +9839,8 @@ async function handleCreateManagedAgent(
     idle_timeout_seconds: args.input.idleTimeoutSeconds ?? null,
     max_turn_duration_seconds: args.input.maxTurnDurationSeconds ?? null,
     parallelism: mintParallelism,
-    system_prompt: args.input.systemPrompt?.trim() || null,
+    system_prompt:
+      args.input.systemPrompt?.trim() || linkedPersona?.system_prompt || null,
     avatar_url: avatarUrl,
     model: args.input.model?.trim() || linkedPersona?.model || null,
     provider: args.input.provider?.trim() || linkedPersona?.provider || null,
@@ -10325,6 +10311,7 @@ async function handleUpdateManagedAgent(args: {
     name?: string;
     model?: string | null;
     systemPrompt?: string | null;
+    description?: string | null;
     envVars?: Record<string, string>;
     respondTo?: "owner-only" | "allowlist" | "anyone";
     respondToAllowlist?: string[];
@@ -10332,6 +10319,9 @@ async function handleUpdateManagedAgent(args: {
   };
 }): Promise<{ agent: RawManagedAgent; profile_sync_error: string | null }> {
   const agent = getMockManagedAgent(args.input.pubkey);
+  if (args.input.description !== undefined) {
+    agent.description = args.input.description;
+  }
   if (args.input.name !== undefined) {
     agent.name = args.input.name;
   }

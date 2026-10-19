@@ -156,7 +156,6 @@ fn a_held_gainer_has_no_restart_badge_until_the_old_host_restarts() {
     let snapshot = |role| {
         prospective_spawn_config_snapshot(
             &host,
-            &[],
             "wss://ws.example",
             &Default::default(),
             false,
@@ -164,15 +163,12 @@ fn a_held_gainer_has_no_restart_badge_until_the_old_host_restarts() {
         )
     };
     let badge = |stamped: RoutingRole, current: RoutingRole| {
-        eligible_restart_diff(
-            false,
-            Some(TrackedSpawnState {
-                stamped: &snapshot(stamped),
-                current: &snapshot(current),
-                stamped_availability: None,
-                current_availability: None,
-            }),
-        )
+        eligible_restart_diff(Some(TrackedSpawnState {
+            stamped: &snapshot(stamped),
+            current: &snapshot(current),
+            stamped_availability: None,
+            current_availability: None,
+        }))
         .into_iter()
         .map(|entry| entry.field)
         .collect::<Vec<_>>()

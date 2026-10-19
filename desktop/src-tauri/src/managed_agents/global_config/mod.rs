@@ -1,9 +1,8 @@
 //! Global agent configuration defaults.
 //!
 //! A single `global-agent-config.json` record that applies to ALL managed
-//! agents. For a linked instance, the definition wins over global; for a
-//! definition-less (legacy) instance, the record's own fields win over
-//! global. Global is always the lowest user-settable layer.
+//! agents. An agent's own fields win over global. Global is always the
+//! lowest user-settable layer.
 //!
 //! # Precedence (low → high)
 //!
@@ -31,7 +30,7 @@ use crate::managed_agents::env_vars::{
     validate_user_env_keys, DERIVED_PROVIDER_MODEL_ENV_KEYS, MAX_ENV_VALUE_BYTES,
 };
 use crate::managed_agents::storage::{atomic_write_json_restricted, managed_agents_base_dir};
-use crate::managed_agents::types::{AgentDefinition, ManagedAgentRecord};
+use crate::managed_agents::types::ManagedAgentRecord;
 
 /// The global agent configuration record.
 ///
@@ -40,9 +39,7 @@ use crate::managed_agents::types::{AgentDefinition, ManagedAgentRecord};
 ///
 /// `env_vars` is the lowest user-settable env layer — global < persona < agent.
 /// `provider` / `model` are fallback defaults, resolved via
-/// `effective_config::resolve_effective_config`: for a linked instance,
-/// definition → global (the record's own `provider`/`model` bytes are never
-/// consulted); for a definition-less instance, instance → global.
+/// `effective_config::resolve_effective_config`: the agent's own → global.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GlobalAgentConfig {
     /// Global env vars injected into ALL agents unconditionally.
@@ -241,26 +238,16 @@ pub fn save_global_agent_config(app: &AppHandle, config: &GlobalAgentConfig) -> 
 
 /// Resolve the effective model and provider for an agent.
 ///
-/// Delegates to `effective_config::resolve_effective_config` which enforces
-/// definition-authoritative semantics for linked instances:
-///   - **Linked:** definition → global. Record bytes are never consulted.
-///   - **Definition-less:** instance → global.
-///   - **Orphaned:** returns `(None, None)`. This function is a display/
-///     readiness/hash convenience, not the spawn gate — an orphan must never
-///     reach a real spawn regardless of what this returns, because
-///     `spawn_agent_child` refuses orphans itself via
-///     `effective_config::resolve_effective_config(...).require_resolved()`
-///     before resolving model/provider/prompt for the process env.
+/// Delegates to `effective_config::resolve_effective_config`: the agent's own
+/// values, blank falling back to global.
 ///
 /// Returns owned `String`s because the effective value may come from a
 /// tier that outlives none of the input borrows (e.g. global config).
 pub(crate) fn resolve_effective_model_provider(
     record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
     global: &GlobalAgentConfig,
 ) -> (Option<String>, Option<String>) {
-    super::effective_config::resolve_effective_model_provider_pair(record, personas, global)
-        .unwrap_or((None, None))
+    super::effective_config::resolve_effective_model_provider_pair(record, global)
 }
 
 #[cfg(test)]

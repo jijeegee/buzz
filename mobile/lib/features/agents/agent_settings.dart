@@ -2,19 +2,20 @@ import 'dart:convert';
 
 import '../../shared/relay/relay.dart';
 
-/// Pure helpers for editing an agent's definition from the phone.
+/// Pure helpers for editing an agent's settings from the phone.
 ///
-/// An owner's agent (kind:30177, `d` = agent pubkey) links to its definition
-/// (kind:30175, `d` = slug) through `persona_id`. The phone edits the
-/// definition's name, description, instructions and model and republishes it;
-/// the agent's computer picks the change up. Rules mirror desktop's
-/// `managed_agents/persona_events.rs` and `definition_validation.rs`.
+/// An owner's agent (kind:30177, `d` = agent pubkey) carries its own settings.
+/// The phone edits its name, description, instructions and model and
+/// republishes it; the agent's computer picks the change up. The preset
+/// (kind:30175) it was made from is only a label (`source_preset_id`) and is
+/// never edited here. Rules mirror desktop's `managed_agents/agent_events.rs`
+/// and `definition_validation.rs`.
 
 const maxAgentNameChars = 128;
 const maxAgentInstructionsBytes = 64 * 1024;
 const maxAgentDescriptionChars = 280;
 
-/// The editable fields of an agent definition.
+/// The editable fields of an agent.
 class AgentSettingsDraft {
   const AgentSettingsDraft({
     required this.name,
@@ -28,10 +29,10 @@ class AgentSettingsDraft {
   final String instructions;
   final String model;
 
-  /// Read from a kind:30175 content map.
+  /// Read from a kind:30177 content map.
   factory AgentSettingsDraft.fromContent(Map<String, dynamic> content) =>
       AgentSettingsDraft(
-        name: _string(content['display_name']),
+        name: _string(content['name']),
         description: _string(content['description']),
         instructions: _string(content['system_prompt']),
         model: _string(content['model']),
@@ -51,7 +52,7 @@ class AgentSettingsDraft {
 
 String _string(Object? value) => value is String ? value : '';
 
-/// Desktop's `normalize_d_tag`: the kind:30175 `d` tag of a `persona_id`.
+/// Desktop's `normalize_d_tag`: the kind:30175 `d` tag of a preset id.
 String personaDTag(String raw) {
   final buffer = StringBuffer();
   for (final rune in raw.runes) {
@@ -111,11 +112,26 @@ Map<String, dynamic>? decodeJsonObject(String content) {
   }
 }
 
-/// The `persona_id` of a kind:30177 [content], if any.
-String? managedAgentPersonaId(String content) {
-  final value = decodeJsonObject(content)?['persona_id'];
-  return value is String && value.trim().isNotEmpty ? value : null;
+/// The preset a kind:30177 [content] was made from (a label only):
+/// `source_preset_id`, or `persona_id` from an older computer; `null` when
+/// it names none.
+String? managedAgentSourcePresetId(String content) =>
+    sourcePresetIdOf(decodeJsonObject(content));
+
+/// [managedAgentSourcePresetId] of decoded kind:30177 [content].
+String? sourcePresetIdOf(Map<String, dynamic>? content) {
+  for (final key in const ['source_preset_id', 'persona_id']) {
+    final value = content?[key];
+    if (value is String && value.trim().isNotEmpty) return value;
+  }
+  return null;
 }
+
+/// Whether the phone may edit an agent with kind:30177 [content]. An older
+/// computer publishes agents linked to a preset without their instructions;
+/// saving such an event would publish a blank prompt, so it stays read-only.
+bool agentContentEditable(Map<String, dynamic> content) =>
+    content['system_prompt'] is String;
 
 /// Why [draft] cannot be saved, or `null` when it can.
 String? validateAgentSettings(AgentSettingsDraft draft) {
@@ -247,38 +263,17 @@ bool _isDefaultIgnorable(int rune) =>
     (rune >= 0x1D173 && rune <= 0x1D17A) ||
     (rune >= 0xE0000 && rune <= 0xE0FFF);
 
-/// Desktop's kind:30175 field order (`PersonaEventContent`); other keys
-/// follow in their original order.
-const _personaFieldOrder = [
-  'display_name',
-  'system_prompt',
-  'acp_command',
-  'avatar_url',
-  'runtime',
-  'model',
-  'provider',
-  'name_pool',
-  'respond_to',
-  'respond_to_allowlist',
-  'parallelism',
-  'description',
-  'session_policy',
-  'effort_level',
-];
-
-/// [loaded] kind:30175 content with [draft] applied, as desktop writes it:
+/// [loaded] kind:30177 content with [draft] applied, as desktop writes it:
 /// trimmed name; instructions verbatim; description and model trimmed and
-/// left out when blank. Every other key is kept.
-String patchedPersonaContent(
+/// left out when blank (desktop reads absent as "none"). Every other key is
+/// kept as loaded, in its original order.
+String patchedAgentContent(
   Map<String, dynamic> loaded,
   AgentSettingsDraft draft,
 ) {
   final patched = Map<String, dynamic>.of(loaded)
-    ..['display_name'] = draft.name.trim();
-  // Desktop writes the prompt whenever the definition has one, even empty.
-  if (draft.instructions.isNotEmpty || loaded.containsKey('system_prompt')) {
-    patched['system_prompt'] = draft.instructions;
-  }
+    ..['name'] = draft.name.trim()
+    ..['system_prompt'] = draft.instructions;
   for (final (key, value) in [
     ('description', draft.description.trim()),
     ('model', draft.model.trim()),
@@ -289,14 +284,7 @@ String patchedPersonaContent(
       patched[key] = value;
     }
   }
-  final ordered = <String, dynamic>{
-    for (final key in _personaFieldOrder)
-      if (patched.containsKey(key)) key: patched[key],
-  };
-  for (final MapEntry(:key, :value) in patched.entries) {
-    ordered.putIfAbsent(key, () => value);
-  }
-  return jsonEncode(ordered);
+  return jsonEncode(patched);
 }
 
 /// A copy of [tags] for the republished event (same `d`, `shared`, …).
@@ -310,17 +298,15 @@ int nextCreatedAt({required int previous, required int now}) =>
 
 String _nameKey(String name) => name.trim().toLowerCase();
 
-/// Whether another of the owner's agents or definitions is already named
-/// [name] (trimmed, case-insensitive). The agent [agentPubkey] itself, that
-/// definition [personaD], and other agents of it that still carry its
-/// [previousName] (its computer renames them along with it) are not
+/// Whether another of the owner's agents or presets is already named [name]
+/// (trimmed, case-insensitive). The agent [agentPubkey] itself and the preset
+/// it was made from ([sourcePresetD], whose name it may share) are not
 /// conflicts.
 bool agentNameConflicts({
   required String name,
-  required String previousName,
   required String owner,
   required String agentPubkey,
-  required String personaD,
+  required String? sourcePresetD,
   required Iterable<NostrEvent> agentEvents,
   required Iterable<NostrEvent> personaEvents,
 }) {
@@ -335,15 +321,7 @@ bool agentNameConflicts({
     if (d.toLowerCase() == agentPubkey.toLowerCase()) continue;
     final content = decodeJsonObject(event.content);
     if (content == null) continue;
-    final personaId = content['persona_id'];
-    final agentName = _string(content['name']);
-    if (personaId is String &&
-        personaId.trim().isNotEmpty &&
-        personaDTag(personaId) == personaD &&
-        agentName == previousName) {
-      continue;
-    }
-    if (_nameKey(agentName) == wanted) return true;
+    if (_nameKey(_string(content['name'])) == wanted) return true;
   }
   final personas = newestByDTag(
     personaEvents,
@@ -351,7 +329,7 @@ bool agentNameConflicts({
     owner: owner,
   );
   for (final MapEntry(key: d, value: event) in personas.entries) {
-    if (d == personaD) continue;
+    if (d == sourcePresetD) continue;
     final content = decodeJsonObject(event.content);
     if (content == null) continue;
     if (_nameKey(_string(content['display_name'])) == wanted) return true;

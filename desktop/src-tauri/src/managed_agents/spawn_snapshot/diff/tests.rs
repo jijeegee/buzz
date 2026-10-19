@@ -460,27 +460,23 @@ fn no_sentinel_reaches_the_owning_process_debug_output() {
 // ── B1: the eligible vector is the single source of the badge ────────────
 
 fn eligible(
-    orphaned: bool,
     stamped: &SpawnConfigSnapshot,
     current: &SpawnConfigSnapshot,
     stamped_availability: Option<AcpAvailabilityStatus>,
     current_availability: Option<AcpAvailabilityStatus>,
 ) -> (bool, Vec<RestartDiffEntry>) {
-    let entries = eligible_restart_diff(
-        orphaned,
-        Some(TrackedSpawnState {
-            stamped,
-            current,
-            stamped_availability: stamped_availability.as_ref(),
-            current_availability,
-        }),
-    );
+    let entries = eligible_restart_diff(Some(TrackedSpawnState {
+        stamped,
+        current,
+        stamped_availability: stamped_availability.as_ref(),
+        current_availability,
+    }));
     (!entries.is_empty(), entries)
 }
 
 #[test]
 fn no_drift_yields_no_badge_and_no_entries() {
-    let (needs_restart, entries) = eligible(false, &base(), &base(), None, None);
+    let (needs_restart, entries) = eligible(&base(), &base(), None, None);
     assert!(!needs_restart);
     assert!(entries.is_empty());
 }
@@ -489,7 +485,7 @@ fn no_drift_yields_no_badge_and_no_entries() {
 fn snapshot_drift_yields_a_badge_and_that_entry() {
     let mut current = base();
     current.model = Some("claude-4".into());
-    let (needs_restart, entries) = eligible(false, &base(), &current, None, None);
+    let (needs_restart, entries) = eligible(&base(), &current, None, None);
     assert!(needs_restart);
     assert_eq!(fields(&entries), vec!["model"]);
 }
@@ -497,7 +493,6 @@ fn snapshot_drift_yields_a_badge_and_that_entry() {
 #[test]
 fn availability_drift_alone_yields_a_badge_and_its_synthetic_entry() {
     let (needs_restart, entries) = eligible(
-        false,
         &base(),
         &base(),
         Some(AcpAvailabilityStatus::Available),
@@ -515,33 +510,10 @@ fn availability_drift_alone_yields_a_badge_and_its_synthetic_entry() {
 }
 
 #[test]
-fn orphan_with_snapshot_drift_yields_no_badge_and_no_entries() {
-    let mut current = base();
-    current.model = Some("claude-4".into());
-    let (needs_restart, entries) = eligible(true, &base(), &current, None, None);
-    assert!(!needs_restart);
-    assert!(entries.is_empty());
-}
-
-#[test]
-fn orphan_with_availability_drift_yields_no_badge_and_no_entries() {
-    let (needs_restart, entries) = eligible(
-        true,
-        &base(),
-        &base(),
-        Some(AcpAvailabilityStatus::Available),
-        Some(AcpAvailabilityStatus::AdapterOutdated),
-    );
-    assert!(!needs_restart);
-    assert!(entries.is_empty());
-}
-
-#[test]
 fn unstamped_availability_is_not_drift() {
     // A runtime without a version gate stamps no availability; comparing that
     // absence against a freshly cached value must not invent a badge.
     let (needs_restart, entries) = eligible(
-        false,
         &base(),
         &base(),
         None,
@@ -558,18 +530,13 @@ fn unstamped_agent_yields_no_badge_and_no_entries() {
     // stamped. With nothing to compare against there is no drift to report, and
     // the badge derives from that emptiness. Distinct from the case above,
     // where a real pair IS tracked and only its availability stamp is absent.
-    for orphaned in [false, true] {
-        let entries = eligible_restart_diff(orphaned, None);
-        let needs_restart = !entries.is_empty();
-        assert!(
-            entries.is_empty(),
-            "unstamped agent (orphaned={orphaned}) must report no changed fields"
-        );
-        assert!(
-            !needs_restart,
-            "unstamped agent (orphaned={orphaned}) must not light the badge"
-        );
-    }
+    let entries = eligible_restart_diff(None);
+    let needs_restart = !entries.is_empty();
+    assert!(
+        entries.is_empty(),
+        "unstamped agent must report no changed fields"
+    );
+    assert!(!needs_restart, "unstamped agent must not light the badge");
 }
 
 // ── B5 effort lifecycle: restart-diff and re-stamp ───────────────────────
@@ -582,7 +549,7 @@ fn tracked_running_old_effort_edited_to_new_yields_effort_level_diff() {
     let stamped = base(); // effort_level = high
     let mut current = base();
     current.effort_level = Some("low".into());
-    let (needs_restart, entries) = eligible(false, &stamped, &current, None, None);
+    let (needs_restart, entries) = eligible(&stamped, &current, None, None);
     assert!(needs_restart);
     assert_eq!(fields(&entries), vec!["effort_level"]);
     assert_eq!(
@@ -601,7 +568,7 @@ fn restart_restamps_effort_and_clears_the_badge() {
     let mut restamped = base();
     restamped.effort_level = Some("low".into());
     let current = restamped.clone();
-    let (needs_restart, entries) = eligible(false, &restamped, &current, None, None);
+    let (needs_restart, entries) = eligible(&restamped, &current, None, None);
     assert!(!needs_restart);
     assert!(entries.is_empty());
 }

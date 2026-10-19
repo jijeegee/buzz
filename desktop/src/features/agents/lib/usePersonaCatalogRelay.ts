@@ -123,9 +123,9 @@ export function useUpdatePersonaAndPublishMutation(communityId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdatePersonaInput) => updatePersonaAndPublish(input),
-    onSettled: async (_data, _error, variables) => {
+    onSettled: async () => {
       await Promise.all([
-        invalidatePersonaEditCaches(queryClient, variables.id),
+        invalidatePersonaEditCaches(queryClient),
         queryClient.invalidateQueries({
           queryKey: personaCatalogQueryKey(communityId),
         }),

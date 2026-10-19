@@ -1,6 +1,5 @@
-use super::{set_default_ai, AgentDefinition, CatalogSource, ManagedAgentRecord};
+use super::{set_default_ai, AgentDefinition, ManagedAgentRecord};
 use crate::managed_agents::AcpSessionPolicy;
-use std::path::PathBuf;
 
 #[test]
 fn persona_record_defaults_active_when_field_is_missing() {
@@ -335,37 +334,20 @@ fn persona_record_serializes_new_field_names() {
     assert!(!json.contains("source_pack"));
 }
 
+/// Stores written before the preset unlink carry the live link as
+/// `persona_id`; it must load into `legacy_persona_id` (read only by the boot
+/// unlink migration) and keep its on-disk name on save.
 #[test]
-fn managed_agent_record_deserializes_old_pack_path_fields_via_alias() {
-    let record: ManagedAgentRecord = serde_json::from_str(
-        r#"{
-            "pubkey": "abcd1234",
-            "name": "test-agent",
-            "private_key_nsec": "nsec1fake",
-            "relay_url": "wss://localhost:3000",
-            "acp_command": "kuzz-acp",
-            "agent_command": "goose",
-            "agent_args": [],
-            "mcp_command": "",
-            "turn_timeout_seconds": 320,
-            "system_prompt": null,
-            "persona_pack_path": "/path/to/agents/packs/my-pack",
-            "persona_name_in_pack": "agent-one",
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "last_started_at": null,
-            "last_stopped_at": null,
-            "last_exit_code": null,
-            "last_error": null
-        }"#,
-    )
-    .expect("old-format agent with persona_pack_path should deserialize via alias");
+fn managed_agent_record_reads_legacy_persona_id_into_legacy_field() {
+    let mut value = serde_json::to_value(sample_agent_record()).expect("serialize fixture");
+    value["persona_id"] = serde_json::json!("custom:helper");
+    let record: ManagedAgentRecord =
+        serde_json::from_value(value).expect("legacy persona_id should deserialize");
 
-    assert_eq!(
-        record.persona_team_dir,
-        Some(PathBuf::from("/path/to/agents/packs/my-pack"))
-    );
-    assert_eq!(record.persona_name_in_team.as_deref(), Some("agent-one"));
+    assert_eq!(record.legacy_persona_id.as_deref(), Some("custom:helper"));
+    assert_eq!(record.source_preset_id, None);
+    let json = serde_json::to_value(&record).expect("serialize");
+    assert_eq!(json["persona_id"], "custom:helper");
 }
 
 #[test]
@@ -608,7 +590,7 @@ fn summary_always_carries_is_default_ai_on_the_wire() {
     assert_eq!(wire.get("is_default_ai"), Some(&serde_json::json!(false)));
 }
 
-// ── AgentDefinition ↔ ManagedAgentRecord fold mapping (Phase 1A) ─────────────────────
+// ── Preset (AgentDefinition) fixture ─────────────────────────────────────────
 
 fn sample_persona() -> AgentDefinition {
     AgentDefinition {
@@ -662,84 +644,6 @@ fn persona_record_without_catalog_source_deserializes_and_omits_it() {
         !json.contains("catalog_source"),
         "absent provenance must stay absent on disk: {json}"
     );
-}
-
-#[test]
-fn persona_catalog_source_survives_the_agent_store_fold() {
-    // Provenance is only useful if it is still there on the next launch, and
-    // `save_personas` funnels every definition through `into_agent_record`.
-    let mut persona = sample_persona();
-    persona.catalog_source = Some(CatalogSource {
-        owner_pubkey: "a".repeat(64),
-        persona_id: "helper".to_string(),
-    });
-
-    let view = persona
-        .clone()
-        .into_agent_record()
-        .to_definition_view()
-        .expect("slugged record must present a persona view");
-
-    assert_eq!(view.catalog_source, persona.catalog_source);
-}
-
-#[test]
-fn persona_into_agent_record_is_keyless_and_slugged() {
-    let record = sample_persona().into_agent_record();
-    assert!(record.pubkey.is_empty(), "fold must not mint identity");
-    assert!(record.private_key_nsec.is_empty());
-    assert_eq!(record.slug.as_deref(), Some("custom:helper"));
-    assert_eq!(record.display_name.as_deref(), Some("Helper"));
-    assert_eq!(record.system_prompt.as_deref(), Some("You help."));
-    assert_eq!(record.runtime.as_deref(), Some("goose"));
-    assert_eq!(record.source_team.as_deref(), Some("team-1"));
-    assert_eq!(record.env_vars.get("K").map(String::as_str), Some("v"));
-}
-
-#[test]
-fn alternate_acp_command_survives_the_agent_store_fold() {
-    let mut persona = sample_persona();
-    persona.acp_command = Some("kuzz-janet-acp".to_string());
-
-    let view = persona
-        .clone()
-        .into_agent_record()
-        .to_definition_view()
-        .expect("slugged record must present a persona view");
-
-    assert_eq!(view.acp_command, persona.acp_command);
-}
-
-#[test]
-fn persona_view_round_trips_through_agent_record() {
-    let persona = sample_persona();
-    let view = persona
-        .clone()
-        .into_agent_record()
-        .to_definition_view()
-        .expect("slugged record must present a persona view");
-    assert_eq!(
-        serde_json::to_value(&view).unwrap(),
-        serde_json::to_value(&persona).unwrap(),
-        "fold + view must round-trip every persona field"
-    );
-}
-
-#[test]
-fn keyed_record_without_slug_has_no_persona_view() {
-    let mut record = sample_persona().into_agent_record();
-    record.slug = None;
-    assert!(
-        record.to_definition_view().is_none(),
-        "instances (no slug) are not definitions"
-    );
-}
-
-#[test]
-fn empty_prompt_folds_to_none() {
-    let mut persona = sample_persona();
-    persona.system_prompt = String::new();
-    assert_eq!(persona.into_agent_record().system_prompt, None);
 }
 
 // ── Mint-time behavioral defaults (B5 quad activation) ──────────────────────
@@ -877,7 +781,8 @@ fn summary_fixture(
         pubkey: "aa".repeat(32),
         name: "test".into(),
         owner_pubkey: None,
-        persona_id: None,
+        source_preset_id: None,
+        description: None,
         runtime: None,
         team_id: None,
         relay_url: String::new(),
@@ -895,8 +800,6 @@ fn summary_fixture(
         model: None,
         model_source: None,
         provider: None,
-        persona_out_of_date: false,
-        persona_orphaned: false,
         // Both fields derive from one vector in `build_managed_agent_summary`;
         // the fixture reproduces that rule rather than letting them disagree.
         needs_restart: !restart_diff.is_empty(),
@@ -959,22 +862,4 @@ fn summary_with_drift_serializes_restart_diff_entries() {
             "change": { "kind": "value", "before": "gpt-5", "after": "claude-4" },
         }]))
     );
-}
-
-#[test]
-fn persona_effort_level_survives_the_agent_store_fold() {
-    // The definition default lives on the unified record's `effort_level`
-    // column and must come back out of `to_definition_view`; dropping it in
-    // either direction would silently reset every linked instance's effort on
-    // the next launch.
-    let mut persona = sample_persona();
-    persona.effort_level = Some("high".to_string());
-
-    let record = persona.clone().into_agent_record();
-    assert_eq!(record.effort_level.as_deref(), Some("high"));
-
-    let view = record
-        .to_definition_view()
-        .expect("slugged record must present a persona view");
-    assert_eq!(view.effort_level.as_deref(), Some("high"));
 }

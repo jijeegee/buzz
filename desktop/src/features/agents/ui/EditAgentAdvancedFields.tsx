@@ -10,7 +10,7 @@ import {
   PERSONA_LABEL_OPTIONAL_CLASS,
 } from "./agentConfigOptions";
 import type { AcpCommandCandidate } from "@/shared/api/acpCommands";
-import type { AcpRuntimeCatalogEntry, AgentPersona } from "@/shared/api/types";
+import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
 import { NumericTuningFields } from "./kuzzAgentModelTuningFields";
 import {
   isKuzzAgentRuntime,
@@ -42,8 +42,6 @@ export function EditAgentAdvancedFields({
   hiddenEnvKeys = [],
   focusKey,
   inheritedEnvVars,
-  inheritHarness,
-  linkedPersona,
   modelTuningRuntimeId,
   parallelism,
   requiredEnvKeys,
@@ -53,7 +51,6 @@ export function EditAgentAdvancedFields({
   onAcpCommandChange,
   onAgentArgsChange,
   onEnvVarsChange,
-  onInheritHarnessChange,
   onParallelismChange,
   onAutoRestartChange,
   onSystemPromptChange,
@@ -69,12 +66,10 @@ export function EditAgentAdvancedFields({
   /** When set, EnvVarsEditor scrolls and focuses this key's input on mount. */
   focusKey?: string;
   inheritedEnvVars: Record<string, string>;
-  inheritHarness: boolean;
-  linkedPersona: AgentPersona | null;
   /**
    * The actual/prospective runtime id used to decide whether to show the
    * kuzz-agent effort-tuning field. Uses `prospectiveRuntimeId` from
-   * EditAgentDialog — the resolved runtime, not the "inherit"/"custom" sentinel.
+   * EditAgentDialog — the resolved runtime, not the "custom" sentinel.
    */
   modelTuningRuntimeId: string;
   parallelism: string;
@@ -101,7 +96,6 @@ export function EditAgentAdvancedFields({
   onAcpCommandChange: (value: string) => void;
   onAgentArgsChange: (value: string) => void;
   onEnvVarsChange: (value: EnvVarsValue) => void;
-  onInheritHarnessChange: (value: boolean) => void;
   onParallelismChange: (value: string) => void;
   onAutoRestartChange: (value: boolean) => void;
   onSystemPromptChange: (value: string) => void;
@@ -153,32 +147,6 @@ export function EditAgentAdvancedFields({
 
   return (
     <div className="space-y-5 pt-2">
-      {/* Inherit runtime from template */}
-      {linkedPersona ? (
-        <div className="space-y-1.5">
-          <label
-            className="flex items-center gap-2 text-sm font-medium"
-            htmlFor="edit-agent-inherit-harness"
-          >
-            <input
-              checked={inheritHarness}
-              disabled={disabled}
-              id="edit-agent-inherit-harness"
-              onChange={(event) => onInheritHarnessChange(event.target.checked)}
-              type="checkbox"
-            />
-            Inherit runtime from template
-          </label>
-          <p className="text-xs text-muted-foreground">
-            {inheritHarness
-              ? `Uses the ${linkedPersona.displayName} template's runtime${
-                  linkedPersona.runtime ? ` (${linkedPersona.runtime})` : ""
-                }. Editing the template and respawning propagates the new runtime.`
-              : "Pins this agent to a specific runtime command, overriding the template's runtime."}
-          </p>
-        </div>
-      ) : null}
-
       {/* Auto-restart on config change (Chunk F) */}
       <div className="space-y-1.5">
         <label
@@ -283,52 +251,47 @@ export function EditAgentAdvancedFields({
           active community relay — so offering a knob here would advertise a
           setting with no effect. The stored field is preserved untouched. */}
 
-      {/* Definition-less legacy agents keep a direct ACP command control. */}
-      {linkedPersona == null ? (
-        <div className="space-y-1.5">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="edit-agent-acp-command"
-          >
-            ACP command
-          </label>
-          <PersonaDropdownField
+      {/* Every agent owns its ACP command. */}
+      <div className="space-y-1.5">
+        <label
+          className="text-sm font-medium text-foreground"
+          htmlFor="edit-agent-acp-command"
+        >
+          ACP command
+        </label>
+        <PersonaDropdownField
+          disabled={disabled}
+          id="edit-agent-acp-command"
+          onValueChange={onAcpCommandChange}
+          options={acpCommandPicker.options}
+          placeholder="Choose an ACP command"
+          value={acpCommandPicker.selectValue}
+        />
+      </div>
+
+      {/* Every agent owns its instructions (copied from its preset at creation). */}
+      <div className="space-y-1.5">
+        <label
+          className="text-sm font-medium text-foreground"
+          htmlFor="edit-agent-system-prompt"
+        >
+          System prompt
+          <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+        </label>
+        <div className={PERSONA_FIELD_SHELL_CLASS}>
+          <Textarea
+            className={cn(
+              "min-h-24 resize-y px-3 py-3 leading-5",
+              PERSONA_FIELD_CONTROL_CLASS,
+            )}
             disabled={disabled}
-            id="edit-agent-acp-command"
-            onValueChange={onAcpCommandChange}
-            options={acpCommandPicker.options}
-            placeholder="Choose an ACP command"
-            value={acpCommandPicker.selectValue}
+            id="edit-agent-system-prompt"
+            onChange={(event) => onSystemPromptChange(event.target.value)}
+            placeholder="Leave blank to send no ACP system prompt"
+            value={systemPrompt}
           />
         </div>
-      ) : null}
-
-      {/* System prompt override — hidden for linked instances; the persona
-          definition is authoritative and the backend will reject any override. */}
-      {linkedPersona == null && (
-        <div className="space-y-1.5">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="edit-agent-system-prompt"
-          >
-            System prompt override
-            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
-          </label>
-          <div className={PERSONA_FIELD_SHELL_CLASS}>
-            <Textarea
-              className={cn(
-                "min-h-24 resize-y px-3 py-3 leading-5",
-                PERSONA_FIELD_CONTROL_CLASS,
-              )}
-              disabled={disabled}
-              id="edit-agent-system-prompt"
-              onChange={(event) => onSystemPromptChange(event.target.value)}
-              placeholder="Leave blank to send no ACP system prompt"
-              value={systemPrompt}
-            />
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Env vars */}
       <EnvVarsEditor
@@ -336,9 +299,9 @@ export function EditAgentAdvancedFields({
         fileSatisfiedKeys={fileSatisfiedEnvKeys}
         hiddenKeys={effectiveHiddenKeys}
         focusKey={focusKey}
-        helperText="Per-agent env vars. Override the template's vars on collision."
+        helperText="Per-agent env vars. Override global defaults on collision."
         inheritedFrom={inheritedEnvVars}
-        inheritedLabel="template / global defaults"
+        inheritedLabel="global defaults"
         keyAnnotations={CARD_MINT_KEY_ANNOTATIONS}
         onChange={onEnvVarsChange}
         requiredKeys={requiredEnvKeys}

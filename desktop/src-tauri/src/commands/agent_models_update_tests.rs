@@ -64,8 +64,8 @@ fn local_record() -> ManagedAgentRecord {
 // Deletion proof for the apply call: removing the `apply_effort_update` call
 // inside `apply_record_field_updates` leaves `effort_level == None` on local-set.
 //
-// Deletion proof for the env_vars step: removing `apply_env_vars_then_effort_transition`
-// inside `apply_record_field_updates` leaves the env alias in `env_vars` on local-set.
+// Deletion proof for the env_vars step: removing the `env_vars` write inside
+// `apply_record_field_updates` leaves the caller map unapplied.
 //
 // Ordering proof: `env_vars` with a stale alias is applied BEFORE effort so the
 // alias is stripped; reversing the order leaves both the alias and the new column.
@@ -80,7 +80,7 @@ fn local_record() -> ManagedAgentRecord {
 #[test]
 fn non_local_set_is_rejected_and_record_not_mutated() {
     let mut record = provider_record(false);
-    let err = apply_record_field_updates(&mut record, None, false, Some(Some("high".to_string())))
+    let err = apply_record_field_updates(&mut record, None, Some(Some("high".to_string())))
         .expect_err("non-local record must reject effort writes");
     assert!(
         err.contains("an instance-level effort override is local-only"),
@@ -98,7 +98,7 @@ fn non_local_clear_is_rejected_and_record_not_mutated() {
     // Clear (None inner value) is also rejected for non-local records — the
     // outer Some signals presence; the inner None is the clear sentinel.
     let mut record = provider_record(false);
-    let err = apply_record_field_updates(&mut record, None, false, Some(None))
+    let err = apply_record_field_updates(&mut record, None, Some(None))
         .expect_err("non-local record effort clear must also be rejected");
     assert!(err.contains("an instance-level effort override is local-only"));
     assert_eq!(
@@ -117,7 +117,7 @@ fn local_set_writes_column_and_sweeps_stale_alias() {
         .env_vars
         .insert("GOOSE_THINKING_EFFORT".to_string(), "low".to_string());
 
-    let _ = apply_record_field_updates(&mut record, None, false, Some(Some("high".to_string())))
+    let _ = apply_record_field_updates(&mut record, None, Some(Some("high".to_string())))
         .expect("local record must accept effort set");
 
     assert_eq!(
@@ -139,7 +139,7 @@ fn local_clear_zeroes_column_and_sweeps_alias() {
         .env_vars
         .insert("GOOSE_THINKING_EFFORT".to_string(), "high".to_string());
 
-    apply_record_field_updates(&mut record, None, false, Some(None))
+    apply_record_field_updates(&mut record, None, Some(None))
         .expect("local record must accept effort clear");
 
     assert_eq!(
@@ -157,15 +157,14 @@ fn absent_effort_is_noop_for_any_backend() {
     // A missing effortLevel field (the common case) must never be rejected and
     // must never touch the column — this is the don't-touch path.
     let mut local = local_record();
-    apply_record_field_updates(&mut local, None, false, None)
-        .expect("absent effort must pass for local");
+    apply_record_field_updates(&mut local, None, None).expect("absent effort must pass for local");
     assert_eq!(
         local.effort_level, None,
         "absent effort must not touch local column"
     );
 
     let mut provider = provider_record(true);
-    apply_record_field_updates(&mut provider, None, false, None)
+    apply_record_field_updates(&mut provider, None, None)
         .expect("absent effort must pass for provider");
     assert_eq!(
         provider.effort_level, None,
@@ -183,13 +182,8 @@ fn env_vars_applied_before_effort_ordering_invariant() {
     let mut env_vars = std::collections::BTreeMap::new();
     env_vars.insert("GOOSE_THINKING_EFFORT".to_string(), "low".to_string());
 
-    apply_record_field_updates(
-        &mut record,
-        Some(&env_vars),
-        false,
-        Some(Some("high".to_string())),
-    )
-    .expect("ordering test must succeed for local record");
+    apply_record_field_updates(&mut record, Some(&env_vars), Some(Some("high".to_string())))
+        .expect("ordering test must succeed for local record");
 
     assert_eq!(
         record.effort_level.as_deref(),
@@ -221,7 +215,7 @@ fn effort_write_sweeps_acp_sentinel_in_env_vars() {
         "KUZZ_ACP_EFFORT_LEVEL".to_string(),
         "old-sentinel".to_string(),
     );
-    apply_record_field_updates(&mut record, None, false, Some(Some("high".to_string())))
+    apply_record_field_updates(&mut record, None, Some(Some("high".to_string())))
         .expect("local record must accept effort set");
     assert_eq!(
         record.effort_level.as_deref(),
@@ -244,7 +238,7 @@ fn effort_clear_sweeps_acp_sentinel_in_env_vars() {
         "KUZZ_ACP_EFFORT_LEVEL".to_string(),
         "old-sentinel".to_string(),
     );
-    apply_record_field_updates(&mut record, None, false, Some(None))
+    apply_record_field_updates(&mut record, None, Some(None))
         .expect("local record must accept effort clear");
     assert_eq!(
         record.effort_level, None,
@@ -353,7 +347,7 @@ fn record_field_updates_persist_effort_to_disk() {
         .iter_mut()
         .find(|r| r.pubkey == "test-effort-agent")
         .expect("seeded record must load");
-    let applied = apply_record_field_updates(record, None, false, Some(Some("high".to_string())))
+    let applied = apply_record_field_updates(record, None, Some(Some("high".to_string())))
         .expect("local record must accept effort set");
     stamp_record_updated_at(record, applied);
     save_managed_agents(app.handle(), &records).unwrap();

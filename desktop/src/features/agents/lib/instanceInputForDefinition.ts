@@ -93,22 +93,18 @@ export type BackendIntent = {
  * surface that creates a running instance from a definition builds its
  * CreateManagedAgentInput here so the mapping cannot drift per-site.
  *
- * - harnessOverride uses the backend-aligned formula: true only when the
- *   definition has no runtime preference or the picked runtime matches it
- *   (`create_time_agent_command_override` stores None when picked ==
- *   inherited; on fallback `harness_override: false` keeps the definition
- *   authoritative).
+ * The backend copies every setting of the preset (`sourcePresetId`) into the
+ * new agent, then applies the fields sent here. So this sends only what is
+ * not the preset's own value; omitted = the preset's value. After creation
+ * the agent runs from its own copy and `sourcePresetId` is a label only.
+ *
+ * - agentCommand is sent only when the picked runtime is deliberate: the
+ *   definition has no runtime preference or the picked runtime matches it.
+ *   A fallback runtime is omitted so the preset's runtime is copied.
  * - avatarUrl goes through resolveManagedAgentAvatarUrl (base64 data URIs
  *   upload via the injectable `upload`; other URLs pass through unchanged).
- * - envVars are never seeded from the definition: record.env_vars is
- *   agent overrides only and spawn merges the live definition env
- *   underneath. Seeding would manufacture pseudo-overrides that mask
- *   later definition edits made before the first spawn. (Mesh preset env is
- *   the deliberate exception: it is instance-override state, not
- *   definition env.)
- * - effortLevel is never seeded either: the create dialog's pick is the
- *   definition's `effortLevel` default, which spawn resolves live beneath the
- *   instance column, so a later definition edit propagates on restart.
+ * - systemPrompt, model, provider, envVars and effortLevel are never sent:
+ *   the backend copies them from the preset.
  */
 export async function buildInstanceInputForDefinition(
   persona: AgentPersona,
@@ -123,8 +119,7 @@ export async function buildInstanceInputForDefinition(
 
   const base = {
     name: persona.displayName,
-    personaId: persona.id,
-    systemPrompt: persona.systemPrompt,
+    sourcePresetId: persona.id,
     avatarUrl,
   };
 
@@ -142,21 +137,16 @@ export async function buildInstanceInputForDefinition(
     };
   }
 
+  const harnessOverride = !persona.runtime || persona.runtime === runtime.id;
   return {
     ...base,
     acpCommand: persona.acpCommand || "kuzz-acp",
-    agentCommand: runtime.command,
-    // Do NOT seed agentArgs from runtime.defaultArgs: record.agent_args must
-    // remain empty so spawn resolves args live from the definition on every
-    // start.  Seeding here would freeze the args at create-time, silently
-    // ignoring any later definition-arg edits (Thufir F5 / phase B-5).
-    // envVars are intentionally never seeded for the same reason (see comment
-    // at top of this function).
+    ...(harnessOverride && { agentCommand: runtime.command }),
+    // Do NOT seed agentArgs from runtime.defaultArgs: the backend resolves
+    // the runtime's args when the agent starts.
     agentArgs: [],
     mcpCommand: runtime.mcpCommand ?? "",
-    harnessOverride: !persona.runtime || persona.runtime === runtime.id,
-    model: persona.model ?? undefined,
-    provider: persona.provider ?? undefined,
+    harnessOverride,
     spawnAfterCreate: true,
     startOnAppLaunch: true,
     backend: { type: "local" },

@@ -107,7 +107,7 @@ export function PresetsSection(props: PresetsSectionProps) {
       if (!personaId || isArchived(pubkey)) return;
       counts.set(personaId, (counts.get(personaId) ?? 0) + 1);
     };
-    for (const agent of agents) count(agent.personaId, agent.pubkey);
+    for (const agent of agents) count(agent.sourcePresetId, agent.pubkey);
     for (const agent of remoteAgents) count(agent.localPersonaId, agent.pubkey);
     return counts;
   }, [agents, isArchived, remoteAgents]);

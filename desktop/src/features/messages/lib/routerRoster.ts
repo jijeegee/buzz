@@ -1,4 +1,3 @@
-import { effectiveAgentDescription } from "@/features/agents/lib/agentDescription";
 import type { RouterRosterEntry } from "@/shared/api/tauriMessageRouting";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -9,7 +8,7 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
  * caps before anything reaches the model.
  *
  * Description priority (first non-blank wins):
- * 1. the linked persona's authored `description` (my managed agents);
+ * 1. my managed agent's own `description`;
  * 2. the agent's kind:0 `about` (the same public text for anyone's agent);
  * 3. the first {@link SYSTEM_PROMPT_PREFIX_CHARS} characters of my own
  *    agent's system prompt (never someone else's — it is private);
@@ -29,14 +28,8 @@ export type RosterIdentity = {
 
 export type RosterManagedAgent = {
   pubkey: string;
-  personaId: string | null;
-  systemPrompt: string | null;
-};
-
-export type RosterPersona = {
-  id: string;
   description: string | null;
-  systemPrompt: string;
+  systemPrompt: string | null;
 };
 
 function clip(text: string, max: number): string {
@@ -53,7 +46,6 @@ export function buildRouterRoster({
   identities,
   managedAgents,
   memberPubkeys,
-  personas,
   selfPubkey,
 }: {
   /** kind:0 `about` per normalized pubkey, for whatever is loaded. */
@@ -62,14 +54,12 @@ export function buildRouterRoster({
   managedAgents: readonly RosterManagedAgent[];
   /** Normalized pubkeys of the channel's members. */
   memberPubkeys: ReadonlySet<string>;
-  personas: readonly RosterPersona[];
   selfPubkey: string | null;
 }): RouterRosterEntry[] {
   const self = selfPubkey ? normalizePubkey(selfPubkey) : null;
   const managedByPubkey = new Map(
     managedAgents.map((agent) => [normalizePubkey(agent.pubkey), agent]),
   );
-  const personaById = new Map(personas.map((persona) => [persona.id, persona]));
   const seen = new Set<string>();
   const roster: RouterRosterEntry[] = [];
   for (const identity of identities) {
@@ -86,12 +76,9 @@ export function buildRouterRoster({
     }
     seen.add(pubkey);
     const managed = managedByPubkey.get(pubkey);
-    const persona = managed?.personaId
-      ? personaById.get(managed.personaId)
-      : undefined;
-    const ownPrompt = nonBlank(persona?.systemPrompt ?? managed?.systemPrompt);
+    const ownPrompt = nonBlank(managed?.systemPrompt);
     const description =
-      nonBlank(persona ? effectiveAgentDescription(persona) : null) ??
+      nonBlank(managed?.description) ??
       nonBlank(aboutByPubkey.get(pubkey)) ??
       (managed && ownPrompt
         ? clip(ownPrompt, SYSTEM_PROMPT_PREFIX_CHARS)

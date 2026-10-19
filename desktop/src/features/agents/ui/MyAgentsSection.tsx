@@ -204,8 +204,8 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
                 agent={agent}
                 key={agent.pubkey}
                 persona={
-                  agent.personaId
-                    ? (personaById.get(agent.personaId) ?? null)
+                  agent.sourcePresetId
+                    ? (personaById.get(agent.sourcePresetId) ?? null)
                     : null
                 }
               />
@@ -361,6 +361,7 @@ function LocalAgentTile({
   onToggleStartOnLaunch,
 }: MyAgentsSectionProps & {
   agent: ManagedAgent;
+  /** The preset this agent was made from: a display label only. */
   persona: AgentPersona | null;
 }) {
   const profile = useUserProfileQuery(agent.pubkey).data;
@@ -379,16 +380,15 @@ function LocalAgentTile({
         : "stopped";
   const modelLabel = resolveAgentCardModelLabel({
     agent,
-    personaModel: persona?.model,
-    provider: persona?.provider ?? agent.provider,
+    personaModel: undefined,
+    provider: agent.provider,
     defaultModel,
   });
-  const description = agent.personaOrphaned
-    ? "Configuration missing"
-    : (friendlyError ??
-      [modelLabel, persona ? `from preset ${persona.displayName}` : null]
-        .filter(Boolean)
-        .join(" · "));
+  const description =
+    friendlyError ??
+    [modelLabel, persona ? `from preset ${persona.displayName}` : null]
+      .filter(Boolean)
+      .join(" · ");
   const isBusy =
     isActionPending ||
     startingAgentPubkey === agent.pubkey ||
@@ -406,7 +406,7 @@ function LocalAgentTile({
           onToggleStartOnLaunch={onToggleStartOnLaunch}
         />
       }
-      avatarUrl={profile?.avatarUrl ?? agent.avatarUrl ?? persona?.avatarUrl}
+      avatarUrl={profile?.avatarUrl ?? agent.avatarUrl}
       buttons={
         <>
           {isActive ? (

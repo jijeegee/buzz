@@ -25,7 +25,7 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
 type LocalAgentName = {
   pubkey: string;
   name: string;
-  persona_id?: string | null;
+  source_preset_id?: string | null;
 };
 
 /** An unreachable relay must not hold up creating an agent. */
@@ -138,7 +138,7 @@ async function loadAgentNameRoster(): Promise<AgentNameRoster> {
         .map((agent) => ({
           pubkey: agent.pubkey,
           name: agent.name,
-          personaId: agent.persona_id ?? null,
+          personaId: agent.source_preset_id ?? null,
         })),
       ...remote
         .filter(

@@ -37,10 +37,6 @@ pub(crate) struct ProfileReconcileData {
     /// The agent's command (e.g. "goose"). Used as fallback when no profile
     /// exists on the relay during avatar backfill.
     pub(crate) agent_command: String,
-    /// Persona ID if this agent was created from a persona. Used during avatar
-    /// backfill to recover the correct avatar from the persona record when the
-    /// relay profile has been corrupted.
-    pub(crate) persona_id: Option<String>,
     /// Expected kind:0 `about` — the agent's effective public description
     /// (owner-authored when present; see
     /// `managed_agents::record_effective_description`). `None` publishes an
@@ -90,7 +86,6 @@ pub(super) fn resolve_reconcile_relay(
 
 pub(crate) fn profile_reconcile_data(
     record: &crate::managed_agents::ManagedAgentRecord,
-    personas: &[crate::managed_agents::AgentDefinition],
 ) -> ProfileReconcileData {
     ProfileReconcileData {
         private_key_nsec: record.private_key_nsec.clone(),
@@ -100,9 +95,8 @@ pub(crate) fn profile_reconcile_data(
         avatar_url: record.avatar_url.clone(),
         auth_tag: record.auth_tag.clone(),
         pubkey: record.pubkey.clone(),
-        agent_command: crate::managed_agents::record_agent_command(record, personas),
-        persona_id: record.persona_id.clone(),
-        about: crate::managed_agents::record_effective_description(record, personas),
+        agent_command: crate::managed_agents::record_agent_command(record),
+        about: crate::managed_agents::record_effective_description(record),
     }
 }
 
@@ -124,7 +118,6 @@ pub(crate) fn load_pending_profile_reconciliations(
     let relay_key = crate::migration::profile_reconcile_relay_key(workspace_relay)?;
     let pending = crate::migration::read_profile_reconcile_queue(&queue_path)?;
     let records = crate::managed_agents::load_managed_agents(app)?;
-    let personas = crate::managed_agents::load_personas(app).unwrap_or_default();
     Ok(records
         .iter()
         // A queue write deliberately precedes the migrated agent-store write.
@@ -141,7 +134,7 @@ pub(crate) fn load_pending_profile_reconciliations(
             })
         })
         .map(|record| {
-            let mut data = profile_reconcile_data(record, &personas);
+            let mut data = profile_reconcile_data(record);
             // Pin the relay captured by the caller. Otherwise a fast community
             // switch could make a queued task for A run on B.
             data.target_relay_url = Some(workspace_relay.to_string());
@@ -221,19 +214,10 @@ pub(crate) async fn reconcile_agent_profile<R: tauri::Runtime>(
     let expected_avatar = match data.avatar_url.as_deref() {
         Some(url) => url.to_string(),
         None => {
-            // Legacy record: the relay profile may have been corrupted by the
-            // old reconciliation code (it overwrote the persona avatar with the
-            // command default), so the persona record is the authoritative source.
-            let persona_avatar = data.persona_id.as_ref().and_then(|pid| {
-                load_personas(app)
-                    .ok()?
-                    .into_iter()
-                    .find(|p| p.id == *pid)?
-                    .avatar_url
-            });
-
+            // Legacy record (pre-`avatar_url`): recover from the relay's
+            // picture, then the command icon.
             let backfilled = resolve_legacy_avatar(
-                persona_avatar,
+                None,
                 existing.as_ref().and_then(|info| info.picture.clone()),
                 &data.agent_command,
             );

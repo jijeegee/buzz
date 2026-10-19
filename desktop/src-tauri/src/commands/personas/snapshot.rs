@@ -16,9 +16,9 @@ use crate::{
     managed_agents::{
         agent_snapshot::{
             build_snapshot, encode_snapshot_json, encode_snapshot_png, AgentSnapshotMemoryEntry,
-            MemoryLevel,
+            MemoryLevel, SnapshotSource,
         },
-        load_agent_definitions, load_managed_agents, ManagedAgentRecord,
+        load_managed_agents, load_personas, AgentDefinition, ManagedAgentRecord,
     },
 };
 
@@ -33,53 +33,31 @@ pub use import::{confirm_agent_snapshot_import, preview_agent_snapshot_import};
 /// `AppHandle`.
 ///
 /// Search order:
-///   1. Keyed instances: match `id` against `pubkey` (exact) then `slug`.
-///   2. Keyless definitions: match `id` against `slug`.
+///   1. Agents: match `id` against `pubkey`.
+///   2. Presets: match `id` against the preset id.
 ///
-/// Returns `(definition_record, is_definition)`.  `is_definition` is `true`
-/// when the result came from the definitions slice — the caller must not call
-/// `get_agent_memory` against it (definitions have no keypair).
-pub(crate) fn resolve_from_lists<'a>(
+/// Returns `(source, is_definition)`. `is_definition` is `true` for a preset
+/// — the caller must not call `get_agent_memory` against it (a preset has no
+/// keypair).
+pub(crate) fn resolve_from_lists(
     id: &str,
-    instances: &'a [ManagedAgentRecord],
-    definitions: &'a [ManagedAgentRecord],
-) -> Result<(&'a ManagedAgentRecord, bool), String> {
-    if let Some(record) = instances
-        .iter()
-        .find(|a| a.pubkey == id || a.slug.as_deref() == Some(id))
-    {
-        return Ok((record, false));
+    instances: &[ManagedAgentRecord],
+    presets: &[AgentDefinition],
+) -> Result<(SnapshotSource, bool), String> {
+    if let Some(record) = instances.iter().find(|a| a.pubkey == id) {
+        return Ok((record.into(), false));
     }
-    if let Some(record) = definitions.iter().find(|a| a.slug.as_deref() == Some(id)) {
-        return Ok((record, true));
+    if let Some(preset) = presets.iter().find(|preset| preset.id == id) {
+        return Ok((preset.into(), true));
     }
     Err(format!("agent {id:?} not found"))
-}
-
-/// Materialize persona-owned display metadata onto a cloned instance for
-/// portable snapshot construction. Keyless definition records already carry
-/// their own description.
-pub(crate) fn materialize_snapshot_description(
-    record: &mut ManagedAgentRecord,
-    is_definition: bool,
-    definitions: &[ManagedAgentRecord],
-) {
-    if is_definition {
-        return;
-    }
-    if let Some(persona_id) = record.persona_id.as_deref() {
-        record.description = definitions
-            .iter()
-            .find(|definition| definition.slug.as_deref() == Some(persona_id))
-            .and_then(|definition| definition.description.clone());
-    }
 }
 
 /// Validate that `memory_source_pubkey` is an appropriate source for a
 /// memory-bearing snapshot export.
 ///
 /// For definition exports (`is_definition == true`), the instance must be
-/// known and its `persona_id` must equal `def_slug`.
+/// known and made from it (its `source_preset_id` label equals `def_slug`).
 /// For direct instance exports, the pubkey must match the instance itself.
 ///
 /// Returns the validated pubkey string on success.
@@ -100,12 +78,12 @@ pub(crate) fn validate_memory_source(
 
     if is_definition {
         // Definition export: the supplied pubkey must be a keyed instance
-        // whose persona_id equals the definition slug.
+        // made from the definition (label equals the definition slug).
         let linked = instances
             .iter()
             .find(|a| a.pubkey == mpk)
             .ok_or_else(|| format!("memory_source_pubkey {mpk:?} is not a known agent"))?;
-        if linked.persona_id.as_deref() != Some(def_id) {
+        if linked.source_preset_id.as_deref() != Some(def_id) {
             return Err(format!(
                 "memory_source_pubkey {mpk:?} is not linked to definition {def_id:?}"
             ));
@@ -210,7 +188,7 @@ fn parse_format_is_png(s: &str) -> Result<bool, String> {
 }
 
 fn materialize_portable_runtime_defaults(
-    record: &mut ManagedAgentRecord,
+    record: &mut SnapshotSource,
     global: &crate::managed_agents::GlobalAgentConfig,
 ) {
     if record
@@ -265,11 +243,8 @@ pub(crate) async fn materialize_snapshot_bytes(
             .map_err(|e| e.to_string())?;
 
         let instances = load_managed_agents(&app)?;
-        let definitions = load_agent_definitions(&app)?;
-        let (def_record, is_definition) = resolve_from_lists(&id, &instances, &definitions)
-            .map(|(r, is_def)| (r.clone(), is_def))?;
-        let mut def_record = def_record;
-        materialize_snapshot_description(&mut def_record, is_definition, &definitions);
+        let presets = load_personas(&app)?;
+        let (mut def_record, is_definition) = resolve_from_lists(&id, &instances, &presets)?;
         // A snapshot is a verbatim portable copy of the effective runtime,
         // provider, and model configuration, not a pointer to the sender's
         // machine-wide defaults. This does not translate or substitute values
@@ -279,11 +254,7 @@ pub(crate) async fn materialize_snapshot_bytes(
 
         let memory_pubkey = if memory_level != MemoryLevel::None {
             let mpk = memory_source_pubkey.as_deref().unwrap_or("");
-            let def_id = if is_definition {
-                def_record.slug.as_deref().unwrap_or("")
-            } else {
-                &def_record.pubkey
-            };
+            let def_id = if is_definition { id.as_str() } else { &def_record.pubkey };
             Some(validate_memory_source(
                 mpk,
                 is_definition,
@@ -297,10 +268,7 @@ pub(crate) async fn materialize_snapshot_bytes(
         (def_record, memory_pubkey)
     };
 
-    let display_name = record
-        .display_name
-        .clone()
-        .unwrap_or_else(|| record.name.clone());
+    let display_name = record.name.clone();
 
     // ── Resolve avatar bytes ─────────────────────────────────────────────────
     // If the avatar_url is a data URL we decode it inline; otherwise we keep

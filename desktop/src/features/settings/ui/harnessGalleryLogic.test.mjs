@@ -53,47 +53,22 @@ describe("isEditableEntry", () => {
 // ── countAgentsReferencingHarness ─────────────────────────────────────────────
 
 describe("countAgentsReferencingHarness", () => {
-  it("counts direct record-level runtime pins", () => {
+  it("counts agents whose own runtime is the harness", () => {
     const agents = [
-      { runtime: "my-harness", personaId: null },
-      { runtime: "other", personaId: null },
-      { runtime: "my-harness", personaId: "p1" },
+      { runtime: "my-harness", sourcePresetId: null },
+      { runtime: "other", sourcePresetId: null },
+      { runtime: "my-harness", sourcePresetId: "p1" },
     ];
-    assert.equal(countAgentsReferencingHarness("my-harness", agents, []), 2);
+    assert.equal(countAgentsReferencingHarness("my-harness", agents), 2);
   });
 
-  it("counts persona-inherited references when record runtime is null", () => {
-    const agents = [{ runtime: null, personaId: "p1" }];
-    const personas = [{ id: "p1", runtime: "my-harness" }];
-    assert.equal(
-      countAgentsReferencingHarness("my-harness", agents, personas),
-      1,
-    );
-  });
-
-  it("record-level pin shadows persona runtime (no double counting, pin wins)", () => {
-    // Agent pinned to "other" whose persona uses "my-harness" does NOT count:
-    // the effective harness is the pin.
-    const agents = [{ runtime: "other", personaId: "p1" }];
-    const personas = [{ id: "p1", runtime: "my-harness" }];
-    assert.equal(
-      countAgentsReferencingHarness("my-harness", agents, personas),
-      0,
-    );
-  });
-
-  it("agents with no runtime and no persona do not count", () => {
-    const agents = [{ runtime: null, personaId: null }];
-    assert.equal(countAgentsReferencingHarness("my-harness", agents, []), 0);
-  });
-
-  it("persona reference to a different harness does not count", () => {
-    const agents = [{ runtime: null, personaId: "p1" }];
-    const personas = [{ id: "p1", runtime: "other" }];
-    assert.equal(
-      countAgentsReferencingHarness("my-harness", agents, personas),
-      0,
-    );
+  it("agents with no runtime do not count, whatever preset they came from", () => {
+    // The source preset is a label only; agents never inherit its runtime.
+    const agents = [
+      { runtime: null, sourcePresetId: null },
+      { runtime: null, sourcePresetId: "p1" },
+    ];
+    assert.equal(countAgentsReferencingHarness("my-harness", agents), 0);
   });
 });
 
@@ -130,37 +105,25 @@ describe("deleteConfirmState", () => {
   const failed = { isPending: false, isError: true, data: undefined };
 
   it("disables confirm while agents query is still loading", () => {
-    const state = deleteConfirmState("h1", "My Harness", pending, settled([]));
-    assert.equal(state.canConfirm, false);
-    assert.match(state.message, /Checking which agents/);
-  });
-
-  it("disables confirm while personas query is still loading", () => {
-    const state = deleteConfirmState("h1", "My Harness", settled([]), pending);
+    const state = deleteConfirmState("h1", "My Harness", pending);
     assert.equal(state.canConfirm, false);
     assert.match(state.message, /Checking which agents/);
   });
 
   it("query failure does not claim zero dependents", () => {
-    const state = deleteConfirmState("h1", "My Harness", failed, settled([]));
+    const state = deleteConfirmState("h1", "My Harness", failed);
     assert.equal(state.canConfirm, true);
     assert.match(state.message, /Couldn't check/);
     assert.doesNotMatch(state.message, /^Delete My Harness\?$/);
   });
 
-  it("persona query failure also reports unknown blast radius", () => {
-    const state = deleteConfirmState("h1", "My Harness", settled([]), failed);
-    assert.equal(state.canConfirm, true);
-    assert.match(state.message, /Couldn't check/);
-  });
-
-  it("settled queries produce the counted warning and enable confirm", () => {
+  it("settled query produces the counted warning and enables confirm", () => {
     const agents = settled([
-      { runtime: "h1", personaId: null },
-      { runtime: null, personaId: "p1" },
+      { runtime: "h1", sourcePresetId: null },
+      { runtime: "h1", sourcePresetId: "p1" },
+      { runtime: null, sourcePresetId: "p1" },
     ]);
-    const personas = settled([{ id: "p1", runtime: "h1" }]);
-    const state = deleteConfirmState("h1", "My Harness", agents, personas);
+    const state = deleteConfirmState("h1", "My Harness", agents);
     assert.equal(state.canConfirm, true);
     assert.equal(
       state.message,
@@ -168,13 +131,8 @@ describe("deleteConfirmState", () => {
     );
   });
 
-  it("settled queries with zero dependents use the plain confirmation", () => {
-    const state = deleteConfirmState(
-      "h1",
-      "My Harness",
-      settled([]),
-      settled([]),
-    );
+  it("settled query with zero dependents uses the plain confirmation", () => {
+    const state = deleteConfirmState("h1", "My Harness", settled([]));
     assert.equal(state.canConfirm, true);
     assert.equal(state.message, "Delete My Harness?");
   });

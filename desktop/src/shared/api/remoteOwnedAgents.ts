@@ -7,7 +7,8 @@ import { KIND_MANAGED_AGENT } from "@/shared/constants/kinds";
  *
  * Every computer lists the agents it hosts (kind:30180, `ownerDevices.ts`)
  * and publishes each agent's projection (kind:30177, `d` = agent pubkey,
- * content carries `name` and `persona_id`). Personas sync to every computer,
+ * content carries `name` and `source_preset_id`, or `persona_id` from older
+ * builds). Personas sync to every computer,
  * but the agent itself stays where it was made: this computer has no key for
  * it and must show it as that computer's agent, never as a startable copy.
  */
@@ -18,7 +19,8 @@ export type RemoteOwnedAgent = {
   deviceId: string;
   /** Agent name from its projection; `null` until the projection is known. */
   name: string | null;
-  /** Persona id on the hosting computer (its local id, not this one's). */
+  /** Id of the preset it was made from on the hosting computer (its local
+   *  id, not this one's): a label only, never a live link. */
   personaId: string | null;
 };
 
@@ -48,10 +50,17 @@ function parseProjection(
     return null;
   }
   if (typeof content !== "object" || content === null) return null;
-  const { name, persona_id: personaId } = content as {
+  const {
+    name,
+    source_preset_id: sourcePresetId,
+    persona_id: legacyPersonaId,
+  } = content as {
     name?: unknown;
+    source_preset_id?: unknown;
     persona_id?: unknown;
   };
+  // Older builds publish the label as `persona_id`.
+  const personaId = sourcePresetId ?? legacyPersonaId;
   return {
     pubkey,
     name: typeof name === "string" && name.trim() ? name.trim() : null,

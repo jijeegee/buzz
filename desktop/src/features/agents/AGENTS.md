@@ -179,11 +179,11 @@ with a TypeScript lookup table or an id comparison in a component.
    computer, including files, accounts, and connected tools"; remote names "the
    server it runs on, including any accounts and tools available there" —
    deliberately *not* the owner's files, which aren't theirs to describe on a
-   host they don't own. **For a persona-linked deployed agent, the profile Edit
-   dialog seeds access from the exact clicked instance and saves access through
-   `update_managed_agent`; persona behavior remains the definition default, but
-   must never bypass the instance command's stop, persist, publish, and restart
-   boundary.** An unknown location falls back to the local wording — never hedge
+   host they don't own. **For a deployed agent, the profile Edit dialog seeds
+   access from the exact clicked agent and saves access through
+   `update_managed_agent`; it must never bypass the instance command's stop,
+   persist, publish, and restart boundary. An agent made from a preset owns its
+   access; the preset's value is only the copy taken at create.** An unknown location falls back to the local wording — never hedge
    with "computer or server". A remote host requires an
    installed `kuzz-backend-*` provider, and without one `WhereToRunSection`
    never renders, so "server" would name a concept the owner has never been
@@ -300,16 +300,14 @@ with a TypeScript lookup table or an id comparison in a component.
 
    **Where each write goes.** Create embeds the pick in `create_persona`
    (`CreatePersonaRequest.effort_level`, trimmed, blank = unset) — the
-   definition default — and deliberately never on `create_managed_agent`
-   (`buildInstanceInputForDefinition` seeds no effort), so the instance
-   inherits live and a later definition edit propagates on restart like
-   model/provider. Edit of a definition sends `UpdatePersonaRequest.effort_level`
+   definition default — and `buildInstanceInputForDefinition` seeds no effort
+   on `create_managed_agent`: the backend copies the preset's effort into the
+   new agent. A later preset edit never changes existing agents. Edit of a definition sends `UpdatePersonaRequest.effort_level`
    tri-state (absent = keep, `null` = clear, string = set; a harness switch
    clears, a hidden picker on an unchanged harness sends nothing). The instance
    dialog embeds `effortLevel` tri-state in the locked `update_managed_agent`
-   (PR #4625), atomic with any access-policy restart; its sentinel reads
-   "Template default" only when the linked template actually sets one
-   (`effortSentinelLabel`). Global AI Defaults writes
+   (PR #4625), atomic with any access-policy restart; its sentinel always reads
+   the adapter default (there is no template tier to inherit). Global AI Defaults writes
    `GlobalAgentConfig.effort_level` through `set_global_agent_config`. Every
    boundary that can write a level validates it with
    `validate_effort_level_text` (no blank, no control/NUL characters, ≤ 64
@@ -393,10 +391,10 @@ with a TypeScript lookup table or an id comparison in a component.
    (`managed_agents/agent_description.rs`, `effective_agent_description` /
    `record_effective_description`) feeds the publish path, where
    `profile_needs_sync` compares `about` (None == empty) so description edits
-   reconcile instead of being clobbered. Persona-linked instances do not own a
-   second description copy; snapshot export materializes the definition value
-   only into the portable snapshot, and a dangling link resolves no description
-   rather than reviving stale instance metadata. The agents-page card face shows the
+   reconcile instead of being clobbered. An agent made from a preset owns its
+   own `description` (copied from the preset at create, edited in the agent's
+   Edit dialog); display surfaces read the agent's value and never fall back to
+   the preset's. The agents-page card face shows the
    authored description as its second line, falling back to the model label
    when none exists (`UnifiedAgentsSection.tsx` composes it;
    `AgentIdentityCard` takes a presentational `subtitle`). The community catalog
@@ -426,7 +424,7 @@ with a TypeScript lookup table or an id comparison in a component.
 
 17. **Databricks model discovery has one shared catalog authority.** Desktop and ACP call the shared `kuzz-agent` discovery library; Desktop passes the effective merged `DATABRICKS_MODEL_FILTER` explicitly, and the library applies it to raw workspace endpoint IDs and Unity Catalog model-service FQNs after the additive union. A successful filtered-empty catalog is authoritative: it stays empty, disables switching, and never falls through to configured or known-model fallback. Verified provider-qualified exact records in `scripts/model-capabilities.json` take precedence for UC FQNs: `data_workflow_tools.goose.goose-claude-opus-5-5` uses Anthropic Messages, adaptive thinking, and `output_config.effort` (default medium). This does not confer capabilities on other namespaces or similarly named services. Uncurated UC FQNs do not inherit family effort capabilities: Claude service components select Anthropic Messages and expose no effort choices, while GPT-5-or-newer service components select OpenAI Responses with neutral fallback effort capabilities; other uncurated FQNs use MLflow Chat Completions. Catalog/schema components never infer routing. Keep exact-record precedence and fallback rules identical in the Rust and TypeScript capability interpreters and shared corpus. Effort inheritance, persistence, and clearing semantics are unchanged. Global Defaults preserves the discovered model ID as the selected value while its closed trigger renders the provider-scoped display label; do not force the raw persisted ID over that label.
 
-18. **ACP transport is persona-owned before deployment.** Select `acp_command` in the persona create/edit form beside the harness. Deployment inherits that value; linked instances do not expose a competing post-deploy override. Legacy definitions without the field use `kuzz-acp`; definition-less agents retain their stored command. Switching a linked definition back to stock resets the instance transport on the next spawn. Shared persona events and restart snapshots carry the field so edits apply on the next spawn.
+18. **ACP transport is chosen in the preset, then owned by each agent.** Select `acp_command` in the persona create/edit form beside the harness. Create copies that value into the agent; the agent's Edit dialog then edits its own copy. Legacy definitions without the field use `kuzz-acp`; agents retain their stored command. Shared persona events and restart snapshots carry the field so edits apply on the next spawn.
 
 19. **ACP command selection is convention-based.** The editor always offers
     stock `kuzz-acp` and installed executable `kuzz-*-acp` aliases discovered
@@ -705,7 +703,7 @@ with a TypeScript lookup table or an id comparison in a component.
     CLI), the call itself, and the JSONL comparison log
     (`<app-data>/agents/routing-log/desktop.jsonl`, rotated at 5 MB). The
     roster's capability text comes from `messages/lib/routerRoster.ts`:
-    persona description → kind:0 `about` → my own agent's system-prompt
+    my agent's own description → kind:0 `about` → my own agent's system-prompt
     prefix → name only. The router model is the `message-routing` entry in
     Settings › Models › Task models, stored in
     `<app-data>/agents/task-models.json` (never `GlobalAgentConfig`, so a

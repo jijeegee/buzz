@@ -8,7 +8,6 @@ import {
   useDeleteCustomHarnessMutation,
   useInstallAcpRuntimeMutation,
   useManagedAgentsQuery,
-  usePersonasQuery,
 } from "@/features/agents/hooks";
 import { useInstallOutputLine } from "@/features/agents/lib/useInstallOutputLine";
 import { RuntimeIcon } from "@/features/onboarding/ui/RuntimeIcon";
@@ -332,15 +331,13 @@ export function HarnessRow({
   const del = useDeleteCustomHarnessMutation();
   // Blast-radius data for the delete confirmation — only fetched while the
   // confirmation is open, so the row list doesn't poll agents. Confirm stays
-  // disabled until both queries settle (deleteConfirmState) so a quick click
+  // disabled until the query settles (deleteConfirmState) so a quick click
   // can't beat the "N agents will stop launching" warning.
   const agentsQuery = useManagedAgentsQuery({ enabled: confirmingDelete });
-  const personasQuery = usePersonasQuery({ enabled: confirmingDelete });
   const confirmState = deleteConfirmState(
     runtime.id,
     runtime.label,
     agentsQuery,
-    personasQuery,
   );
 
   function handleInstall() {

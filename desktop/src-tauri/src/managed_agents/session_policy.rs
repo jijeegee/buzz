@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::atomic::AtomicBool};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{AgentDefinition, ManagedAgentRecord};
+use super::ManagedAgentRecord;
 use crate::app_state::AppState;
 
 pub(crate) const ACP_SESSION_POLICY_ENV_VAR: &str = "KUZZ_ACP_SESSION_POLICY";
@@ -85,20 +85,9 @@ pub(crate) fn insert_acp_session_policy_env(
     );
 }
 
-/// Resolve the policy that a launch would use. Linked instances inherit the
-/// current definition, so an edit takes effect on restart without rewriting
-/// already-deployed records. Orphaned and definition-less instances retain
-/// the last policy stored on their record.
-pub(crate) fn effective_acp_session_policy(
-    record: &ManagedAgentRecord,
-    definitions: &[AgentDefinition],
-) -> AcpSessionPolicy {
-    record
-        .persona_id
-        .as_deref()
-        .and_then(|id| definitions.iter().find(|definition| definition.id == id))
-        .map(|definition| definition.session_policy)
-        .unwrap_or(record.session_policy)
+/// Resolve the policy that a launch would use: the agent's own.
+pub(crate) fn effective_acp_session_policy(record: &ManagedAgentRecord) -> AcpSessionPolicy {
+    record.session_policy
 }
 
 #[cfg(test)]

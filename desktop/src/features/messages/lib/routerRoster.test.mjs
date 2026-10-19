@@ -21,13 +21,12 @@ function build(overrides = {}) {
     identities: [],
     managedAgents: [],
     memberPubkeys: new Set(),
-    personas: [],
     selfPubkey: ME,
     ...overrides,
   });
 }
 
-test("description priority: persona description > kind:0 about > own system prompt > none", () => {
+test("description priority: agent description > kind:0 about > own system prompt > none", () => {
   const roster = build({
     identities: [
       agent(1, "Coder"),
@@ -38,24 +37,16 @@ test("description priority: persona description > kind:0 about > own system prom
     ],
     memberPubkeys: new Set([pk(1), pk(2), pk(3), pk(4), pk(5)]),
     managedAgents: [
-      { pubkey: pk(1), personaId: "p-coder", systemPrompt: null },
-      { pubkey: pk(2), personaId: "p-trans", systemPrompt: null },
+      { pubkey: pk(1), description: " Writes code. ", systemPrompt: null },
+      { pubkey: pk(2), description: "   ", systemPrompt: null },
       {
         pubkey: pk(3),
-        personaId: null,
+        description: null,
         systemPrompt: "You take notes. ".repeat(30),
       },
     ],
-    personas: [
-      {
-        id: "p-coder",
-        description: " Writes code. ",
-        systemPrompt: "secret A",
-      },
-      { id: "p-trans", description: "   ", systemPrompt: "Translate Korean." },
-    ],
     aboutByPubkey: new Map([
-      [pk(1), "about loses to the persona description"],
+      [pk(1), "about loses to the agent description"],
       [pk(2), "Translates between Korean and English."],
       [pk(4), "Looks things up on the web."],
     ]),

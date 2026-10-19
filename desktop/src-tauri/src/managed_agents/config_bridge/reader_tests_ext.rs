@@ -533,7 +533,7 @@ fn claude_default_config_dir_reports_static_settings_path() {
 use crate::managed_agents::config_bridge::effort::effort_launch_projection;
 
 /// Drive the projection from the SAME record + global env the reader sees, so
-/// the two resolvers are compared on identical inputs. Persona/definition tiers
+/// the two resolvers are compared on identical inputs. Definition tiers
 /// use distinct input shapes across the two layers and are covered separately;
 /// record-native/column/legacy and global are expressible identically here,
 /// which is exactly where the authority-order contract is decisive.
@@ -544,8 +544,6 @@ fn projection_value(
     effort_launch_projection(
         record,
         Some(test_runtime()),
-        &[],
-        None,
         global_env,
         None,
         None,

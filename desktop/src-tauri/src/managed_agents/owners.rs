@@ -54,6 +54,24 @@ pub(crate) fn agent_owner_hex<R: tauri::Runtime>(
     })
 }
 
+/// [`agent_owner_hex`] for the agent store in `base_dir`, without an app
+/// handle (boot-time readers).
+pub(crate) fn agent_owner_hex_in_dir(
+    base_dir: &Path,
+    record: &ManagedAgentRecord,
+) -> Option<String> {
+    attested_owner_hex(record).or_else(|| {
+        read_owners(&base_dir.join(FILE_NAME)).remove(&record.pubkey.to_ascii_lowercase())
+    })
+}
+
+/// Whether `signer_hex` may publish `record`'s settings: it owns the agent,
+/// or the agent's owner is unknown (older agents; published as before).
+/// Another account's agent publishes when that account is active.
+pub(crate) fn may_publish_agent(owner_hex: Option<&str>, signer_hex: &str) -> bool {
+    owner_hex.is_none_or(|owner| owner.eq_ignore_ascii_case(signer_hex))
+}
+
 /// Record `owner` for the agent `agent_pubkey` (at creation, or the first
 /// time a server bot's owner is learned). An existing entry is kept.
 pub(crate) fn record_agent_owner<R: tauri::Runtime>(
@@ -517,43 +535,6 @@ pub(crate) fn builtin_copy(builtin: &super::AgentDefinition, now: &str) -> super
     copy
 }
 
-/// Whether an agent of the account `me` is made from the persona `id`. Only
-/// these keep the account from removing a built-in from its agents; another
-/// account's agents made from it keep using it.
-pub(crate) fn account_uses_persona(
-    records: &[ManagedAgentRecord],
-    id: &str,
-    me: Option<&str>,
-    owner_of: impl Fn(&ManagedAgentRecord) -> Option<String>,
-) -> bool {
-    records.iter().any(|record| {
-        record.persona_id.as_deref() == Some(id) && owned_by_viewer(owner_of(record).as_deref(), me)
-    })
-}
-
-/// Move the account `me`'s agents made from the built-in persona `from` to
-/// its copy `to`; other accounts' agents keep the built-in. Returns the moved
-/// agents' pubkeys.
-pub(crate) fn move_account_agents(
-    records: &mut [ManagedAgentRecord],
-    from: &str,
-    to: &str,
-    me: &str,
-    owner_of: impl Fn(&ManagedAgentRecord) -> Option<String>,
-) -> Vec<String> {
-    let mut moved = Vec::new();
-    for record in records
-        .iter_mut()
-        .filter(|record| record.persona_id.as_deref() == Some(from))
-    {
-        if owned_by_viewer(owner_of(record).as_deref(), Some(me)) {
-            record.persona_id = Some(to.to_string());
-            moved.push(record.pubkey.clone());
-        }
-    }
-    moved
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,10 +558,16 @@ mod tests {
     }
 
     fn persona(id: &str, builtin: bool) -> crate::managed_agents::AgentDefinition {
-        let mut stored = record("", None);
-        stored.slug = Some(id.into());
-        stored.is_builtin = builtin;
-        stored.to_definition_view().unwrap()
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "display_name": "a",
+            "avatar_url": null,
+            "system_prompt": "",
+            "is_builtin": builtin,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+        }))
+        .unwrap()
     }
 
     #[test]
@@ -663,13 +650,15 @@ mod tests {
     #[ignore]
     fn dry_run_persona_owner_migration_on_a_store_copy() {
         let dir = std::path::PathBuf::from(std::env::var("KUZZ_OWNERS_DRY_RUN_DIR").unwrap());
-        let store: Vec<ManagedAgentRecord> =
+        let agents: Vec<ManagedAgentRecord> =
             serde_json::from_slice(&std::fs::read(dir.join("managed-agents.json")).unwrap())
                 .unwrap();
+        let definitions: Vec<crate::managed_agents::AgentDefinition> = serde_json::from_slice(
+            &std::fs::read(dir.join(crate::managed_agents::PRESETS_FILE)).unwrap(),
+        )
+        .unwrap();
         let path = dir.join(FILE_NAME);
         let recorded = read_owners(&path);
-        let (definitions, agents): (Vec<_>, Vec<_>) =
-            store.iter().partition(|record| record.pubkey.is_empty());
         let agent_owners: Vec<String> = agents
             .iter()
             .filter_map(|record| {
@@ -689,10 +678,6 @@ mod tests {
         }
         let previous = main_owner(agent_owners.into_iter());
         println!("previous account: {:?}", previous);
-        let definitions: Vec<_> = definitions
-            .iter()
-            .filter_map(|record| record.to_definition_view())
-            .collect();
         let owners = record_definition_owners(&path, &definitions, previous.as_deref()).unwrap();
         for definition in &definitions {
             println!(
@@ -841,13 +826,6 @@ mod tests {
         assert!(bot_owners(None, &[], origin, owner_of).is_empty());
     }
 
-    /// An agent made from the persona `persona_id`.
-    fn agent_of(persona_id: &str) -> ManagedAgentRecord {
-        let mut agent = record(&nostr::Keys::generate().public_key().to_hex(), None);
-        agent.persona_id = Some(persona_id.into());
-        agent
-    }
-
     #[test]
     fn an_edited_built_in_becomes_the_editing_accounts_own_copy() {
         let dir = tempfile::tempdir().unwrap();
@@ -855,15 +833,6 @@ mod tests {
         let a = nostr::Keys::generate().public_key().to_hex();
         let b = nostr::Keys::generate().public_key().to_hex();
         let fizz = persona("builtin:fizz", true);
-        let a_agent = agent_of("builtin:fizz");
-        let b_agent = agent_of("builtin:fizz");
-        let owner_of = |record: &ManagedAgentRecord| {
-            Some(if record.pubkey == a_agent.pubkey {
-                a.clone()
-            } else {
-                b.clone()
-            })
-        };
         record_definition_owners(&path, std::slice::from_ref(&fizz), Some(&a)).unwrap();
 
         // A edits Fizz: the edit lands on A's copy, the built-in stays as is.
@@ -872,8 +841,6 @@ mod tests {
         let definitions = vec![fizz.clone(), copy.clone()];
         let owners = record_definition_owners(&path, &definitions, Some(&a)).unwrap();
         set_builtin_inactive_at(&path, "builtin:fizz", &a, true).unwrap();
-        let mut records = vec![a_agent.clone(), b_agent.clone()];
-        let moved = move_account_agents(&mut records, "builtin:fizz", &copy.id, &a, owner_of);
 
         assert_ne!(copy.id, fizz.id);
         assert!(!copy.is_builtin && copy.is_active && !copy.shared);
@@ -902,10 +869,6 @@ mod tests {
             view(&b),
             vec![(fizz.id.clone(), true, fizz.system_prompt.clone())]
         );
-        // Only A's agent moved to the copy.
-        assert_eq!(moved, vec![a_agent.pubkey.clone()]);
-        assert_eq!(records[0].persona_id.as_deref(), Some(copy.id.as_str()));
-        assert_eq!(records[1].persona_id.as_deref(), Some("builtin:fizz"));
     }
 
     #[test]
@@ -930,34 +893,6 @@ mod tests {
         assert!(!read_owners(&path)
             .keys()
             .any(|key| key.starts_with("inactive:")));
-    }
-
-    #[test]
-    fn only_the_accounts_own_agents_keep_it_from_removing_a_built_in() {
-        let a = nostr::Keys::generate().public_key().to_hex();
-        let b = nostr::Keys::generate().public_key().to_hex();
-        let b_agent = agent_of("builtin:fizz");
-        let owner_of = |_: &ManagedAgentRecord| Some(b.clone());
-        let records = vec![b_agent];
-        // B's agent uses Fizz: A may still remove it, B may not.
-        assert!(!account_uses_persona(
-            &records,
-            "builtin:fizz",
-            Some(&a),
-            owner_of
-        ));
-        assert!(account_uses_persona(
-            &records,
-            "builtin:fizz",
-            Some(&b),
-            owner_of
-        ));
-        assert!(!account_uses_persona(
-            &records,
-            "builtin:honey",
-            Some(&b),
-            owner_of
-        ));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
@@ -54,8 +54,8 @@ export function ManagedAgentRow({
   const isLocal = agent.backend.type === "local";
   const runtimeSource =
     agent.backend.type === "provider" ? `Remote (${agent.backend.id})` : null;
-  const personaLabel = agent.personaId
-    ? (personaLabelsById[agent.personaId] ?? null)
+  const personaLabel = agent.sourcePresetId
+    ? (personaLabelsById[agent.sourcePresetId] ?? null)
     : null;
   const presenceStatus = presenceLookup[agent.pubkey.trim().toLowerCase()];
   const activeTurns = useAgentWorking(agent.pubkey).channels;
@@ -243,18 +243,6 @@ function AgentSummary({
               <Badge variant="secondary">{personaLabel}</Badge>
             ) : null}
             <AgentOriginBadge agent={agent} />
-            {agent.personaOrphaned ? (
-              <Badge className="gap-1" variant="warning">
-                <AlertTriangle className="h-3 w-3" />
-                Configuration missing
-              </Badge>
-            ) : null}
-            {agent.personaOutOfDate ? (
-              <Badge className="gap-1" variant="warning">
-                <AlertTriangle className="h-3 w-3" />
-                Out of date
-              </Badge>
-            ) : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {agent.backend.type === "local" ? (
@@ -265,21 +253,10 @@ function AgentSummary({
               <span>Remote deployment</span>
             )}
           </div>
-          {agent.personaOrphaned ? (
-            <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
-              This agent's configuration is missing — it may still be syncing or
-              was deleted on another device.
-            </p>
-          ) : agent.needsRestart ? (
+          {agent.needsRestart ? (
             <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
               Configuration changed since this agent started. Restart to apply
               it.
-            </p>
-          ) : null}
-          {agent.personaOutOfDate ? (
-            <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
-              Template updated since this agent was created. Respawn to apply
-              the new configuration.
             </p>
           ) : null}
           {channelNames.length > 0 ? (

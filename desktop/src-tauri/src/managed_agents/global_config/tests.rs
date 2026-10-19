@@ -4,7 +4,7 @@ use super::{
     normalize_global_config_fields, resolve_effective_model_provider, strip_empty_env_vars,
     validate_global_config, GlobalAgentConfig,
 };
-use crate::managed_agents::{AgentDefinition, BackendKind, ManagedAgentRecord, RespondTo};
+use crate::managed_agents::{BackendKind, ManagedAgentRecord, RespondTo};
 
 fn config_with_env(pairs: &[(&str, &str)]) -> GlobalAgentConfig {
     GlobalAgentConfig {
@@ -304,7 +304,9 @@ fn bare_record() -> ManagedAgentRecord {
         description: None,
         pubkey: "agent".to_string(),
         name: "Agent".to_string(),
-        persona_id: None,
+        source_preset_id: None,
+        legacy_persona_id: None,
+        team_instructions: None,
         private_key_nsec: "".to_string(),
         auth_tag: None,
         relay_url: "ws://localhost:3000".to_string(),
@@ -321,7 +323,6 @@ fn bare_record() -> ManagedAgentRecord {
         system_prompt: None,
         model: None,
         provider: None,
-        persona_source_version: None,
         env_vars: BTreeMap::new(),
         start_on_app_launch: false,
         is_default_ai: false,
@@ -331,8 +332,6 @@ fn bare_record() -> ManagedAgentRecord {
         provider_policy_pending: false,
         provider_binary_path: None,
         team_id: None,
-        persona_team_dir: None,
-        persona_name_in_team: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
         last_started_at: None,
@@ -342,160 +341,64 @@ fn bare_record() -> ManagedAgentRecord {
         last_error_code: None,
         respond_to: RespondTo::OwnerOnly,
         respond_to_allowlist: vec![],
-        display_name: None,
-        slug: None,
         runtime: None,
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
         relay_mesh: None,
         effort_level: None,
         auto_restart_on_config_change: false,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: vec![],
-        definition_parallelism: None,
         bot_origin: None,
     }
 }
 
-fn persona(id: &str, model: Option<&str>, provider: Option<&str>) -> AgentDefinition {
-    AgentDefinition {
-        effort_level: None,
-        session_policy: Default::default(),
-        description: None,
-        id: id.to_string(),
-        display_name: "Test Persona".to_string(),
-        avatar_url: None,
-        system_prompt: "".to_string(),
-        acp_command: None,
-        runtime: None,
-        model: model.map(str::to_string),
-        provider: provider.map(str::to_string),
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        env_vars: BTreeMap::new(),
-        respond_to: None,
-        respond_to_allowlist: vec![],
-        parallelism: None,
-        created_at: "".to_string(),
-        updated_at: "".to_string(),
-    }
-}
-
-/// Linked instance: definition (persona) wins — stale record bytes are
-/// ignored. This is the core model-inheritance fix.
+/// The agent's own model/provider win over the global defaults.
 #[test]
-fn resolve_definition_wins_over_stale_record_for_linked_instance() {
+fn resolve_agent_values_win_over_global() {
     let mut record = bare_record();
-    record.persona_id = Some("p1".to_string());
-    record.model = Some("stale-record-model".to_string());
-    record.provider = Some("stale-record-provider".to_string());
-    let personas = vec![persona(
-        "p1",
-        Some("persona-model"),
-        Some("persona-provider"),
-    )];
+    record.model = Some("agent-model".to_string());
+    record.provider = Some("agent-provider".to_string());
     let global = GlobalAgentConfig {
         model: Some("global-model".to_string()),
         provider: Some("global-provider".to_string()),
         ..Default::default()
     };
 
-    let (model, provider) = resolve_effective_model_provider(&record, &personas, &global);
+    let (model, provider) = resolve_effective_model_provider(&record, &global);
 
-    assert_eq!(
-        model.as_deref(),
-        Some("persona-model"),
-        "definition model must win over stale record"
-    );
-    assert_eq!(
-        provider.as_deref(),
-        Some("persona-provider"),
-        "definition provider must win over stale record"
-    );
+    assert_eq!(model.as_deref(), Some("agent-model"));
+    assert_eq!(provider.as_deref(), Some("agent-provider"));
 }
 
-/// Tier 2 — persona fallback: record has no model/provider; the linked
-/// persona's values must be used. Fails against an implementation that skips
-/// persona lookup and returns global or None directly.
+/// Global fallback: an agent made from a preset but carrying no model/provider
+/// of its own gets the global defaults (the preset label is never read). This
+/// is the core bug Fix 1 addresses — a global-only agent was Ready per
+/// readiness but spawned without model/provider.
 #[test]
-fn resolve_persona_fallback_when_record_has_none() {
+fn resolve_global_fallback_for_preset_made_agent_without_values() {
     let mut record = bare_record();
-    record.persona_id = Some("p1".to_string());
-    // record.model and record.provider are None
-    let personas = vec![persona(
-        "p1",
-        Some("persona-model"),
-        Some("persona-provider"),
-    )];
+    record.source_preset_id = Some("p1".to_string());
     let global = GlobalAgentConfig {
         model: Some("global-model".to_string()),
         provider: Some("global-provider".to_string()),
         ..Default::default()
     };
 
-    let (model, provider) = resolve_effective_model_provider(&record, &personas, &global);
-
-    assert_eq!(
-        model.as_deref(),
-        Some("persona-model"),
-        "persona model must be used when record has none"
-    );
-    assert_eq!(
-        provider.as_deref(),
-        Some("persona-provider"),
-        "persona provider must be used when record has none"
-    );
-}
-
-/// Tier 3 — global fallback: record and persona both have no model/provider;
-/// global defaults must fill in. This is the core bug Fix 1 addresses — a
-/// global-only agent was Ready per readiness but spawned without model/provider.
-/// Fails against the pre-fix runtime.rs spawn path that read only record.model.
-#[test]
-fn resolve_global_fallback_when_record_and_persona_have_none() {
-    let mut record = bare_record();
-    record.persona_id = Some("p1".to_string());
-    // record.model / provider = None; persona.model / provider = None
-    let personas = vec![persona("p1", None, None)];
-    let global = GlobalAgentConfig {
-        model: Some("global-model".to_string()),
-        provider: Some("global-provider".to_string()),
-        ..Default::default()
-    };
-
-    let (model, provider) = resolve_effective_model_provider(&record, &personas, &global);
+    let (model, provider) = resolve_effective_model_provider(&record, &global);
 
     assert_eq!(
         model.as_deref(),
         Some("global-model"),
-        "global model must be used when record and persona have none"
+        "global model must be used when the agent has none"
     );
     assert_eq!(
         provider.as_deref(),
         Some("global-provider"),
-        "global provider must be used when record and persona have none"
+        "global provider must be used when the agent has none"
     );
 }
 
-/// Tier 4 — no persona linked: record.persona_id is None, record has no
-/// model/provider; global defaults must still fill in (persona lookup skipped).
 #[cfg(feature = "mesh-llm")]
 #[test]
 fn inherited_shared_compute_translates_to_supported_agent_transport() {
     let record = bare_record();
-    let personas: Vec<AgentDefinition> = vec![];
     let global = GlobalAgentConfig {
         model: Some("auto".to_string()),
         provider: Some(super::super::RELAY_MESH_PROVIDER_ID.to_string()),
@@ -503,12 +406,8 @@ fn inherited_shared_compute_translates_to_supported_agent_transport() {
     };
     let runtime = super::super::known_acp_runtime("kuzz-agent").expect("kuzz-agent runtime");
 
-    let effective = super::super::readiness::resolve_effective_agent_env(
-        &record,
-        &personas,
-        Some(runtime),
-        &global,
-    );
+    let effective =
+        super::super::readiness::resolve_effective_agent_env(&record, Some(runtime), &global);
 
     assert_eq!(
         effective.env.get("KUZZ_AGENT_PROVIDER").map(String::as_str),
@@ -528,16 +427,15 @@ fn inherited_shared_compute_translates_to_supported_agent_transport() {
 }
 
 #[test]
-fn resolve_global_fallback_when_no_persona_linked() {
-    let record = bare_record(); // persona_id = None, model/provider = None
-    let personas: Vec<AgentDefinition> = vec![];
+fn resolve_global_fallback_when_agent_has_no_values() {
+    let record = bare_record(); // model/provider = None
     let global = GlobalAgentConfig {
         model: Some("global-model".to_string()),
         provider: Some("global-provider".to_string()),
         ..Default::default()
     };
 
-    let (model, provider) = resolve_effective_model_provider(&record, &personas, &global);
+    let (model, provider) = resolve_effective_model_provider(&record, &global);
 
     assert_eq!(model.as_deref(), Some("global-model"));
     assert_eq!(provider.as_deref(), Some("global-provider"));
@@ -551,26 +449,22 @@ fn resolve_global_fallback_when_no_persona_linked() {
 /// not a fresh `Command`, so it witnesses the actual Desktop→harness layering.
 #[test]
 fn git_config_stripped_from_every_env_layer_before_descriptor() {
-    // Seed the attacker value at all three user-settable layers: global,
-    // live persona, and per-agent overrides.
-    let mut persona = persona("p", Some("model"), Some("anthropic"));
-    persona.env_vars = [
+    // Seed the attacker value at both user-settable layers: global and the
+    // agent's own env.
+    let mut record = bare_record();
+    record.model = Some("model".to_string());
+    record.provider = Some("anthropic".to_string());
+    record.env_vars = [
         ("GIT_CONFIG_COUNT".to_string(), "0".to_string()),
         (
             "GIT_CONFIG_KEY_0".to_string(),
             "credential.helper".to_string(),
         ),
-        ("BENIGN".to_string(), "persona".to_string()),
+        ("GIT_CONFIG_GLOBAL".to_string(), "/dev/null".to_string()),
+        ("BENIGN".to_string(), "agent".to_string()),
     ]
     .into_iter()
     .collect();
-    let personas = vec![persona];
-
-    let mut record = bare_record();
-    record.persona_id = Some("p".to_string());
-    record.env_vars = [("GIT_CONFIG_GLOBAL".to_string(), "/dev/null".to_string())]
-        .into_iter()
-        .collect();
 
     let global = GlobalAgentConfig {
         env_vars: [("GIT_CONFIG_SYSTEM".to_string(), "/dev/null".to_string())]
@@ -580,12 +474,8 @@ fn git_config_stripped_from_every_env_layer_before_descriptor() {
     };
     let runtime = super::super::known_acp_runtime("kuzz-agent").expect("kuzz-agent runtime");
 
-    let effective = super::super::readiness::resolve_effective_agent_env(
-        &record,
-        &personas,
-        Some(runtime),
-        &global,
-    );
+    let effective =
+        super::super::readiness::resolve_effective_agent_env(&record, Some(runtime), &global);
 
     for key in effective.env.keys() {
         assert!(
@@ -596,23 +486,20 @@ fn git_config_stripped_from_every_env_layer_before_descriptor() {
     // Non-reserved overrides still flow through — the strip is surgical.
     assert_eq!(
         effective.env.get("BENIGN").map(String::as_str),
-        Some("persona")
+        Some("agent")
     );
 }
 
 /// `KUZZ_GIT_IDENTITY` reaches the harness only through this resolved env, and
 /// the harness reads it once at startup. A per-agent value must therefore beat
-/// the persona and global values here, in both directions.
+/// the global value here, in both directions.
 #[test]
-fn per_agent_git_identity_mode_beats_persona_and_global() {
+fn per_agent_git_identity_mode_beats_global() {
     let runtime = super::super::known_acp_runtime("kuzz-agent").expect("kuzz-agent runtime");
     for (agent, global) in [("user", "agent"), ("agent", "user")] {
-        let mut persona = persona("p", Some("model"), Some("anthropic"));
-        persona.env_vars = [("KUZZ_GIT_IDENTITY".to_string(), global.to_string())]
-            .into_iter()
-            .collect();
         let mut record = bare_record();
-        record.persona_id = Some("p".to_string());
+        record.model = Some("model".to_string());
+        record.provider = Some("anthropic".to_string());
         record.env_vars = [("KUZZ_GIT_IDENTITY".to_string(), agent.to_string())]
             .into_iter()
             .collect();
@@ -624,7 +511,6 @@ fn per_agent_git_identity_mode_beats_persona_and_global() {
         };
         let effective = super::super::readiness::resolve_effective_agent_env(
             &record,
-            &[persona],
             Some(runtime),
             &global_config,
         );
@@ -639,11 +525,10 @@ fn per_agent_git_identity_mode_beats_persona_and_global() {
 /// Guards against a resolver that synthesizes phantom defaults.
 #[test]
 fn resolve_all_none_when_no_source_provides_values() {
-    let record = bare_record(); // persona_id = None, model/provider = None
-    let personas: Vec<AgentDefinition> = vec![];
+    let record = bare_record(); // model/provider = None
     let global = GlobalAgentConfig::default(); // model/provider = None
 
-    let (model, provider) = resolve_effective_model_provider(&record, &personas, &global);
+    let (model, provider) = resolve_effective_model_provider(&record, &global);
 
     assert_eq!(
         model, None,
@@ -655,32 +540,30 @@ fn resolve_all_none_when_no_source_provides_values() {
     );
 }
 
-/// Each field resolves independently: definition model=None → global fills
-/// model; definition has provider → definition wins for provider. Stale
-/// record bytes are ignored for linked instances.
+/// Each field resolves independently: agent model=None → global fills model;
+/// agent has a provider → the agent's provider wins.
 #[test]
-fn resolve_each_field_resolves_independently_through_tiers() {
+fn resolve_each_field_resolves_independently() {
     let mut record = bare_record();
-    record.persona_id = Some("p1".to_string());
-    record.model = Some("stale-record-model".to_string());
-    let personas = vec![persona("p1", None, Some("persona-provider"))];
+    record.source_preset_id = Some("p1".to_string());
+    record.provider = Some("agent-provider".to_string());
     let global = GlobalAgentConfig {
         model: Some("global-model".to_string()),
         provider: Some("global-provider".to_string()),
         ..Default::default()
     };
 
-    let (model, provider) = resolve_effective_model_provider(&record, &personas, &global);
+    let (model, provider) = resolve_effective_model_provider(&record, &global);
 
     assert_eq!(
         model.as_deref(),
         Some("global-model"),
-        "definition model=None → global fills model; stale record ignored"
+        "agent model=None → global fills model"
     );
     assert_eq!(
         provider.as_deref(),
-        Some("persona-provider"),
-        "definition provider wins"
+        Some("agent-provider"),
+        "agent provider wins"
     );
 }
 
@@ -710,55 +593,21 @@ fn populated_global_config_round_trips() {
 
 // ── record_agent_command runtime resolution (regression) ─────────────────────
 
-/// When a record carries `runtime: Some("claude")` and the linked persona has
-/// `runtime: Some("goose")`, `record_agent_command` must use the RECORD runtime
-/// (`"claude-agent-acp"`) — not the persona runtime (`"goose"`).
+/// `record_agent_command` resolves from the agent's own `runtime`; the preset
+/// label is never consulted.
 ///
 /// This is the invariant that `collect_respawn_candidates` / the under-lock
 /// re-check in `restart_setup_listener_agent` rely on: the NotReady→Ready
 /// evaluation must use the runtime the agent actually spawns with.
 #[test]
-fn record_runtime_wins_over_persona_runtime_for_command_resolution() {
+fn record_runtime_decides_command_resolution() {
     let mut record = bare_record();
     record.runtime = Some("claude".to_string());
-    record.persona_id = Some("p1".to_string());
+    record.source_preset_id = Some("p1".to_string());
 
-    let persona = AgentDefinition {
-        effort_level: None,
-        session_policy: Default::default(),
-        description: None,
-        id: "p1".to_string(),
-        display_name: "Goose persona".to_string(),
-        avatar_url: None,
-        system_prompt: "".to_string(),
-        acp_command: None,
-        runtime: Some("goose".to_string()),
-        model: None,
-        provider: None,
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        env_vars: BTreeMap::new(),
-        respond_to: None,
-        respond_to_allowlist: vec![],
-        parallelism: None,
-        created_at: "".to_string(),
-        updated_at: "".to_string(),
-    };
+    let cmd = crate::managed_agents::record_agent_command(&record);
 
-    let cmd = crate::managed_agents::record_agent_command(&record, &[persona]);
-
-    // record.runtime = "claude" → primary command is "claude-agent-acp"
-    // (NOT the persona runtime "goose" → "goose")
-    assert_eq!(
-        cmd, "claude-agent-acp",
-        "record runtime must override persona runtime in command resolution"
-    );
+    assert_eq!(cmd, "claude-agent-acp");
 }
 
 // ── Global default thinking effort ────────────────────────────────────────────

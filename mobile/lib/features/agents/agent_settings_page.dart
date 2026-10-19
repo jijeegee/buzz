@@ -15,10 +15,9 @@ import 'my_agent_status_card.dart';
 
 part 'agent_settings_page/agent_settings_form.dart';
 
-/// Edit one of the owner's agents from the phone: name, description,
-/// instructions and model of its definition (kind:30175). The agent's
-/// computer picks up the saved definition. Agents without an owner
-/// definition (built-in or team agents) are shown read-only.
+/// Edit one of the owner's agents from the phone: its own name,
+/// description, instructions and model (kind:30177). The agent's computer
+/// picks up the change. Agents the phone cannot edit are shown read-only.
 class AgentSettingsPage extends ConsumerWidget {
   const AgentSettingsPage({
     super.key,
@@ -41,10 +40,8 @@ class AgentSettingsPage extends ConsumerWidget {
     return switch (state) {
       AsyncData(value: final AgentSettingsEditable loaded) =>
         _AgentSettingsForm(key: ValueKey(loaded.event.id), loaded: loaded),
-      AsyncData(value: AgentSettingsReadOnly(:final name)) => _ReadOnly(
-        agentPubkey: agentPubkey,
-        name: name,
-      ),
+      AsyncData(value: AgentSettingsReadOnly(:final name, :final message)) =>
+        _ReadOnly(agentPubkey: agentPubkey, name: name, message: message),
       AsyncError() => Scaffold(
         appBar: AppBar(title: const Text('Agent settings')),
         body: LoadErrorView(
@@ -61,10 +58,15 @@ class AgentSettingsPage extends ConsumerWidget {
 }
 
 class _ReadOnly extends StatelessWidget {
-  const _ReadOnly({required this.agentPubkey, required this.name});
+  const _ReadOnly({
+    required this.agentPubkey,
+    required this.name,
+    required this.message,
+  });
 
   final String agentPubkey;
   final String name;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +82,7 @@ class _ReadOnly extends StatelessWidget {
             ),
             AppListCard(
               key: const Key('agent-settings-read-only'),
-              description: agentSettingsReadOnlyMessage,
+              description: message,
               children: [
                 AppListRowRaw(
                   leading: const SizedBox.shrink(),

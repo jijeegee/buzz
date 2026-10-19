@@ -1,6 +1,6 @@
 use super::{
     bestie_assignment::recover_pending_assignment_cleanup, find_managed_agent_mut,
-    kill_stale_tracked_processes, load_managed_agents, load_personas, managed_agents_base_dir,
+    kill_stale_tracked_processes, load_managed_agents, managed_agents_base_dir,
     save_managed_agents, spawn_agent_child, sync_managed_agent_processes, BackendKind,
     ManagedAgentProcess,
 };
@@ -26,65 +26,6 @@ enum SpawnOutcome {
     Failed(String),
 }
 type AgentSpawnResult = (String, SpawnOutcome);
-
-/// Backfill the pinned persona snapshot for pre-existing agents created before
-/// the record became the spawn source of truth. Runs once at launch, before
-/// `restore_managed_agents_on_launch` spawns anything, so no agent boots from an
-/// empty snapshot.
-///
-/// Only records with a `persona_id` but no `persona_source_version` are touched.
-/// Records that already have a `persona_source_version` — including those whose
-/// `model`/`provider` were clobbered by the old unconditional snapshot code before
-/// this fix — are skipped here; they self-heal on the next manual start via the
-/// start-path re-snapshot in `start_local_agent_with_preflight`.
-/// If the linked persona is gone, we log loudly and leave the record untouched —
-/// it stays orphaned and `spawn_agent_child` refuses to start it (see
-/// `effective_config::resolve_effective_config`'s `OrphanedInstance` arm).
-pub fn backfill_persona_snapshots(app: &tauri::AppHandle) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let _store_guard = state
-        .managed_agents_store_lock
-        .lock()
-        .map_err(|error| error.to_string())?;
-
-    let mut records = load_managed_agents(app)?;
-    let needs_backfill = records
-        .iter()
-        .any(|r| r.persona_id.is_some() && r.persona_source_version.is_none());
-    if !needs_backfill {
-        return Ok(());
-    }
-
-    let personas = load_personas(app)?;
-    let mut changed = false;
-    for record in records.iter_mut() {
-        let Some(persona_id) = record.persona_id.clone() else {
-            continue;
-        };
-        if record.persona_source_version.is_some() {
-            continue;
-        }
-        let Some(persona) = personas.iter().find(|p| p.id == persona_id) else {
-            eprintln!(
-                "kuzz-desktop: persona-snapshot backfill: agent {} links persona {persona_id} which no longer exists; leaving it orphaned — spawn will refuse it",
-                record.pubkey
-            );
-            continue;
-        };
-        // Layer precedence at read time: persona env < agent env. When the
-        // persona leaves model/provider blank, the record's own configured
-        // values are preserved — a blank persona must not clobber a
-        // user-configured agent. See `apply_persona_snapshot`.
-        super::persona_events::apply_persona_snapshot(record, persona);
-        record.updated_at = util::now_iso();
-        changed = true;
-    }
-
-    if changed {
-        save_managed_agents(app, &records)?;
-    }
-    Ok(())
-}
 
 /// Schedule launch restore: captures admission now, at scheduling, and
 /// returns the deferred restore that runs under that snapshot. A community
@@ -231,33 +172,6 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
         }
         agents_to_start = to_start;
 
-        // Re-snapshot persona config for agents about to be restored, matching
-        // the interactive spawn path so auto-start agents also pick up the
-        // current persona on app launch.
-        let personas_for_snapshot = super::load_personas(app).unwrap_or_default();
-        for record in records.iter_mut() {
-            if !agents_to_start.iter().any(|r| r.pubkey == record.pubkey) {
-                continue;
-            }
-            let Some(persona_id) = record.persona_id.clone() else {
-                continue;
-            };
-            let Some(persona) = personas_for_snapshot.iter().find(|p| p.id == persona_id) else {
-                // Orphaned: no current persona to re-snapshot from. Leave the
-                // record as-is — `spawn_agent_child` (Phase B below) refuses to
-                // spawn it and Phase C persists the refusal to `last_error`.
-                continue;
-            };
-            super::persona_events::apply_persona_snapshot(record, persona);
-            record.updated_at = util::now_iso();
-            changed = true;
-        }
-        // Re-collect to_start from the updated records so Phase B spawns the refreshed config.
-        agents_to_start = records
-            .iter()
-            .filter(|r| agents_to_start.iter().any(|s| s.pubkey == r.pubkey))
-            .cloned()
-            .collect();
 
         if changed {
             save_managed_agents(app, &records)?;
@@ -271,15 +185,13 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
     #[cfg(feature = "mesh-llm")]
     let mut agents_to_start = {
         // Preflight against the same resolution spawn uses — `resolve_effective_config`
-        // (definition → global fallback). A linked instance's own `provider`/`model`/
-        // `relay_mesh` bytes never contribute. See `start_local_agent_with_preflight`
-        // in `commands/agents.rs` for the identical rationale on the interactive path.
-        let personas = load_personas(app).unwrap_or_default();
+        // (the agent's own settings → global fallback). See
+        // `start_local_agent_with_preflight` in `commands/agents.rs`.
         let global = super::load_global_agent_config(app).unwrap_or_default();
         let mut mesh_preflight_failures = std::collections::HashSet::new();
         for record in &agents_to_start {
             let mesh_model_id = super::effective_config::resolve_effective_relay_mesh_model_id(
-                record, &personas, &global,
+                record, &global,
             );
             if mesh_model_id.is_none() {
                 continue;
@@ -553,7 +465,6 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
     // releasing the lock. This mirrors the fire-and-forget pattern in
     // start_managed_agent — ensuring boot-restored agents get the same profile
     // self-healing as UI-started agents.
-    let reconcile_personas = super::load_personas(app).unwrap_or_default();
     let reconcile_items: Vec<(String, crate::commands::ProfileReconcileData)> =
         successfully_spawned
             .iter()
@@ -562,8 +473,7 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
                 // Resolve the effective harness for the avatar-fallback
                 // derivation (the snapshot may be empty/stale for an inherited
                 // harness). Mirrors the UI start path.
-                let effective_command =
-                    crate::managed_agents::record_agent_command(record, &reconcile_personas);
+                let effective_command = crate::managed_agents::record_agent_command(record);
                 Some((
                     pubkey.clone(),
                     crate::commands::ProfileReconcileData {
@@ -578,11 +488,7 @@ fn spawn_and_register_restored_agents<R: tauri::Runtime>(
                         auth_tag: record.auth_tag.clone(),
                         pubkey: record.pubkey.clone(),
                         agent_command: effective_command,
-                        persona_id: record.persona_id.clone(),
-                        about: crate::managed_agents::record_effective_description(
-                            record,
-                            &reconcile_personas,
-                        ),
+                        about: crate::managed_agents::record_effective_description(record),
                     },
                 ))
             })

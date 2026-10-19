@@ -65,14 +65,23 @@ class _FakeRelay implements AgentSettingsRelay {
   }
 }
 
-final _definition = _event(
-  EventKind.persona,
-  'fizz-def',
+/// The preset Fizz was made from; never edited from agent settings.
+final _preset = _event(EventKind.persona, 'fizz-def', {
+  'display_name': 'Fizz',
+  'system_prompt': 'Preset prompt.',
+});
+
+final _fizzAgent = _event(
+  EventKind.managedAgent,
+  _fizz,
   {
-    'display_name': 'Fizz',
+    'name': 'Fizz',
     'system_prompt': 'Be helpful.',
     'model': 'opus',
-    'name_pool': ['x'],
+    'provider': 'anthropic',
+    'parallelism': 2,
+    'respond_to': 'owner-only',
+    'source_preset_id': 'Fizz-Def',
     'unknown': true,
   },
   createdAt: 4102444800, // far future: created_at must step past it
@@ -80,11 +89,6 @@ final _definition = _event(
     ['shared', 'true'],
   ],
 );
-
-final _fizzAgent = _event(EventKind.managedAgent, _fizz, {
-  'name': 'Fizz',
-  'persona_id': 'Fizz-Def',
-});
 
 void main() {
   Future<_FakeRelay> pump(WidgetTester tester, List<NostrEvent> events) async {
@@ -120,28 +124,39 @@ void main() {
     return relay;
   }
 
-  testWidgets('an agent without a definition is read-only', (tester) async {
-    await pump(tester, [
-      _event(EventKind.managedAgent, _fizz, {
-        'name': 'Fizz',
-        'persona_id': null,
-      }),
-    ]);
+  testWidgets('an agent not on the relay is read-only', (tester) async {
+    await pump(tester, [_preset]);
     expect(find.byKey(const Key('agent-settings-read-only')), findsOneWidget);
-    expect(find.text('Fizz'), findsOneWidget);
+    expect(find.text('Fizz from profile'), findsOneWidget);
     expect(find.text(agentSettingsReadOnlyMessage), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
   });
 
-  testWidgets('a missing definition is read-only too', (tester) async {
-    await pump(tester, [_fizzAgent]);
-    expect(find.text(agentSettingsReadOnlyMessage), findsOneWidget);
+  testWidgets('an agent linked by an older computer is read-only', (
+    tester,
+  ) async {
+    // Its event names the preset but carries no instructions of its own;
+    // saving it would publish a blank prompt.
+    final relay = await pump(tester, [
+      _event(EventKind.managedAgent, _fizz, {
+        'name': 'Fizz',
+        'persona_id': 'Fizz-Def',
+        'parallelism': 1,
+      }),
+      _preset,
+    ]);
+    expect(find.byKey(const Key('agent-settings-read-only')), findsOneWidget);
+    expect(find.text('Fizz'), findsOneWidget);
+    expect(find.text(agentSettingsUpdateComputerMessage), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(relay.published, isEmpty);
   });
 
-  testWidgets('save publishes the patched definition', (tester) async {
-    final relay = await pump(tester, [_fizzAgent, _definition]);
+  testWidgets('save publishes the agent\'s own patched event', (tester) async {
+    final relay = await pump(tester, [_fizzAgent, _preset]);
     final save = find.byKey(const Key('agent-settings-save'));
     expect(tester.widget<TextButton>(save).onPressed, isNull);
+    expect(find.text('Be helpful.'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const Key('agent-settings-name')),
@@ -151,6 +166,10 @@ void main() {
       find.byKey(const Key('agent-settings-description')),
       'Helps out',
     );
+    await tester.enterText(
+      find.byKey(const Key('agent-settings-instructions')),
+      'New rules.',
+    );
     await tester.enterText(find.byKey(const Key('agent-settings-model')), '');
     await tester.pump();
     await tester.tap(save);
@@ -158,19 +177,23 @@ void main() {
 
     expect(relay.published, hasLength(1));
     final event = relay.published.single;
-    expect(event.kind, EventKind.persona);
+    expect(event.kind, EventKind.managedAgent);
     expect(event.tags, [
-      ['d', 'fizz-def'],
+      ['d', _fizz],
       ['shared', 'true'],
     ]);
-    expect(event.createdAt, _definition.createdAt + 1);
+    expect(event.createdAt, _fizzAgent.createdAt + 1);
     expect(jsonDecode(event.content), {
-      'display_name': 'Buzzy',
-      'system_prompt': 'Be helpful.',
-      'name_pool': ['x'],
-      'description': 'Helps out',
+      'name': 'Buzzy',
+      'system_prompt': 'New rules.',
+      'provider': 'anthropic',
+      'parallelism': 2,
+      'respond_to': 'owner-only',
+      'source_preset_id': 'Fizz-Def',
       'unknown': true,
+      'description': 'Helps out',
     });
+    expect(relay.published.where((e) => e.kind == EventKind.persona), isEmpty);
     expect(
       find.text('Saved. Buzzy picks up the change on its computer.'),
       findsOneWidget,
@@ -178,37 +201,37 @@ void main() {
     expect(find.byType(AgentSettingsPage), findsNothing);
   });
 
-  testWidgets('a differently named agent keeps its name', (tester) async {
-    // "Fizz 2" of definition "Fizz": renaming the definition would rename
-    // the other agent, so the name is shown but not editable here.
+  testWidgets('an older persona_id label still edits the agent', (
+    tester,
+  ) async {
     final relay = await pump(tester, [
       _event(EventKind.managedAgent, _fizz, {
         'name': 'Fizz 2',
         'persona_id': 'Fizz-Def',
+        'system_prompt': 'Own prompt.',
       }),
-      _definition,
+      _preset,
     ]);
-    expect(find.byKey(const Key('agent-settings-name')), findsNothing);
-    expect(find.byKey(const Key('agent-settings-name-locked')), findsOneWidget);
-    expect(find.text('Fizz 2'), findsOneWidget);
     await tester.enterText(
-      find.byKey(const Key('agent-settings-description')),
-      'Helps out',
+      find.byKey(const Key('agent-settings-name')),
+      'Fizz',
     );
     await tester.pump();
     await tester.tap(find.byKey(const Key('agent-settings-save')));
     await tester.pumpAndSettle();
-    expect(jsonDecode(relay.published.single.content)['display_name'], 'Fizz');
-    expect(
-      find.text('Saved. Fizz 2 picks up the change on its computer.'),
-      findsOneWidget,
-    );
+    // Sharing the name of the preset it was made from is fine.
+    expect(relay.published.single.kind, EventKind.managedAgent);
+    expect(jsonDecode(relay.published.single.content), {
+      'name': 'Fizz',
+      'persona_id': 'Fizz-Def',
+      'system_prompt': 'Own prompt.',
+    });
   });
 
   testWidgets('a taken name is refused', (tester) async {
     final relay = await pump(tester, [
       _fizzAgent,
-      _definition,
+      _preset,
       _event(EventKind.managedAgent, _honey, {'name': 'Honey'}),
     ]);
     await tester.enterText(
@@ -227,15 +250,14 @@ void main() {
     );
   });
 
-  testWidgets('a definition changed elsewhere is not overwritten', (
-    tester,
-  ) async {
-    final relay = await pump(tester, [_fizzAgent, _definition]);
+  testWidgets('an agent changed elsewhere is not overwritten', (tester) async {
+    final relay = await pump(tester, [_fizzAgent, _preset]);
     relay.events = [
-      _fizzAgent,
-      _event(EventKind.persona, 'fizz-def', {
-        'display_name': 'Fizz 2',
+      _event(EventKind.managedAgent, _fizz, {
+        'name': 'Fizz 2',
+        'system_prompt': 'Other.',
       }, createdAt: 4102444900),
+      _preset,
     ];
     await tester.enterText(
       find.byKey(const Key('agent-settings-instructions')),

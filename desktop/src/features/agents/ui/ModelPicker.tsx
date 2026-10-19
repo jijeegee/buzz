@@ -52,16 +52,14 @@ export function ModelPicker({
   const isRunning = agent.status === "running" || agent.status === "deployed";
   const activeTurns = useActiveAgentTurns(agent.pubkey);
   // A live switch rides the agent's running session(s) instead of persisting a
-  // new default. It applies only to a persona-linked running agent with at
-  // least one active turn — those are the channels the desktop can name in the
-  // `switch_model` frame (the ModelPicker has no other channel context). The
-  // harness then routes each named channel itself: a channel still mid-turn
-  // cancel-switch-requeues; one that finished between send and receipt takes
-  // the idle invalidate-and-reapply path. A persona-linked agent that is
-  // running but wholly idle has no nameable channel here, so it falls through
-  // to persisting the default (the only reachable lever from this surface).
-  const isLiveSwitch =
-    agent.personaId !== null && isRunning && activeTurns.length > 0;
+  // new default. It applies to a running agent with at least one active turn —
+  // those are the channels the desktop can name in the `switch_model` frame
+  // (the ModelPicker has no other channel context). The harness then routes
+  // each named channel itself: a channel still mid-turn cancel-switch-requeues;
+  // one that finished between send and receipt takes the idle
+  // invalidate-and-reapply path. An agent that is running but wholly idle has
+  // no nameable channel here, so it falls through to persisting the default.
+  const isLiveSwitch = isRunning && activeTurns.length > 0;
 
   const fetchModels = React.useCallback(async () => {
     setLoading(true);
@@ -218,7 +216,7 @@ export function ModelPicker({
         return;
       }
 
-      // Non-live path (idle, stopped, or non-persona): persist the default.
+      // Non-live path (idle or stopped): persist the agent's own model.
       await updateManagedAgent({
         pubkey: agent.pubkey,
         model: modelId === modelsData?.agentDefaultModel ? null : modelId,

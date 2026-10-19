@@ -15,12 +15,13 @@ fn minimal_record() -> ManagedAgentRecord {
         description: None,
         pubkey: "deadbeef".to_string(),
         name: "Test Agent".to_string(),
-        display_name: Some("Test Agent Display".to_string()),
-        persona_id: Some("SENTINEL_PERSONA_ID".to_string()), // MUST NOT appear in snapshot
-        team_id: Some("SENTINEL_TEAM_ID".to_string()),       // MUST NOT appear in snapshot
-        private_key_nsec: "nsec1secret".to_string(),         // MUST NOT appear in snapshot
-        auth_tag: Some("auth-tag-secret".to_string()),       // MUST NOT appear in snapshot
-        relay_url: "wss://relay.example.com".to_string(),    // MUST NOT appear in snapshot
+        source_preset_id: Some("SENTINEL_PERSONA_ID".to_string()), // MUST NOT appear in snapshot
+        legacy_persona_id: None,
+        team_instructions: None,
+        team_id: Some("SENTINEL_TEAM_ID".to_string()), // MUST NOT appear in snapshot
+        private_key_nsec: "nsec1secret".to_string(),   // MUST NOT appear in snapshot
+        auth_tag: Some("auth-tag-secret".to_string()), // MUST NOT appear in snapshot
+        relay_url: "wss://relay.example.com".to_string(), // MUST NOT appear in snapshot
         avatar_url: Some("https://example.com/avatar.png".to_string()),
         acp_command: "/usr/local/bin/acp".to_string(), // MUST NOT appear in snapshot
         agent_command: "goose".to_string(),            // MUST NOT appear in snapshot
@@ -34,7 +35,6 @@ fn minimal_record() -> ManagedAgentRecord {
         system_prompt: Some("You are a test agent.".to_string()),
         model: Some("claude-opus-4".to_string()),
         provider: Some("anthropic".to_string()),
-        persona_source_version: Some("v1.0".to_string()), // MUST NOT appear
         env_vars: {
             let mut m = BTreeMap::new();
             m.insert("API_KEY".to_string(), "secret123".to_string()); // MUST NOT appear
@@ -52,8 +52,6 @@ fn minimal_record() -> ManagedAgentRecord {
         backend_agent_id: Some("SENTINEL_BACKEND_AGENT_ID".to_string()), // MUST NOT appear
         provider_policy_pending: false,
         provider_binary_path: Some("/usr/bin/SENTINEL_PROVIDER_BINARY".to_string()), // MUST NOT appear
-        persona_team_dir: Some(std::path::PathBuf::from("SENTINEL_TEAM_DIR")), // MUST NOT appear
-        persona_name_in_team: Some("SENTINEL_NAME_IN_TEAM".to_string()),       // MUST NOT appear
         created_at: "2024-01-01T00:00:00Z".to_string(),
         updated_at: "2024-01-02T00:00:00Z".to_string(),
         last_started_at: Some("2024-01-03T00:00:00Z".to_string()), // MUST NOT appear
@@ -63,19 +61,7 @@ fn minimal_record() -> ManagedAgentRecord {
         last_error_code: Some(42), // MUST NOT appear
         respond_to: RespondTo::default(),
         respond_to_allowlist: vec!["pubkey1hex".to_string()],
-        slug: Some("test-agent".to_string()),
         runtime: Some("goose".to_string()),
-        name_pool: vec!["Alice".to_string(), "Bob".to_string()],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: Some("team-id-123".to_string()), // MUST NOT appear
-        source_team_persona_slug: Some("lep".to_string()), // MUST NOT appear
-        definition_respond_to: Some("allowlist".to_string()),
-        catalog_source: None,
-        team_catalog_source: None,
-        definition_respond_to_allowlist: vec!["abc123def".to_string()],
-        definition_parallelism: Some(4),
         relay_mesh: None,
         effort_level: None,
         bot_origin: None,
@@ -523,30 +509,18 @@ fn secret_exclusion_runtime_state_absent() {
 fn secret_exclusion_lineage_ids_absent() {
     let record = minimal_record();
     let json = snapshot_json_string(&record);
+    // sourcePresetId (the preset label) and the legacy personaId
     assert!(
-        !json.contains("team-id-123"),
-        "source_team value must not appear"
+        !json.contains("sourcePresetId") && !json.contains("source_preset_id"),
+        "sourcePresetId field must not appear"
     );
-    assert!(
-        !json.contains("sourceTeam") && !json.contains("source_team"),
-        "sourceTeam field must not appear"
-    );
-    assert!(
-        !json.contains("sourceTeamPersonaSlug"),
-        "sourceTeamPersonaSlug must not appear"
-    );
-    assert!(
-        !json.contains("personaSourceVersion") && !json.contains("persona_source_version"),
-        "personaSourceVersion must not appear"
-    );
-    // personaId
     assert!(
         !json.contains("personaId") && !json.contains("persona_id"),
         "personaId field must not appear"
     );
     assert!(
         !json.contains("SENTINEL_PERSONA_ID"),
-        "personaId value must not appear"
+        "source preset id value must not appear"
     );
     // teamId
     assert!(
@@ -557,24 +531,6 @@ fn secret_exclusion_lineage_ids_absent() {
         !json.contains("SENTINEL_TEAM_ID"),
         "teamId value must not appear"
     );
-    // personaTeamDir
-    assert!(
-        !json.contains("personaTeamDir") && !json.contains("persona_team_dir"),
-        "personaTeamDir field must not appear"
-    );
-    assert!(
-        !json.contains("SENTINEL_TEAM_DIR"),
-        "personaTeamDir value must not appear"
-    );
-    // personaNameInTeam
-    assert!(
-        !json.contains("personaNameInTeam") && !json.contains("persona_name_in_team"),
-        "personaNameInTeam field must not appear"
-    );
-    assert!(
-        !json.contains("SENTINEL_NAME_IN_TEAM"),
-        "personaNameInTeam value must not appear"
-    );
 }
 
 // ── Definition field presence tests ──────────────────────────────────────
@@ -584,7 +540,7 @@ fn definition_fields_present_in_snapshot() {
     let record = minimal_record();
     let snapshot = build_snapshot(&record, MemoryLevel::None, vec![], None);
 
-    assert_eq!(snapshot.definition.name, "Test Agent Display");
+    assert_eq!(snapshot.definition.name, "Test Agent");
     assert!(!snapshot.definition.source_is_builtin);
     assert_eq!(
         snapshot.definition.system_prompt.as_deref(),
@@ -593,7 +549,8 @@ fn definition_fields_present_in_snapshot() {
     assert_eq!(snapshot.definition.runtime.as_deref(), Some("goose"));
     assert_eq!(snapshot.definition.model.as_deref(), Some("claude-opus-4"));
     assert_eq!(snapshot.definition.provider.as_deref(), Some("anthropic"));
-    assert_eq!(snapshot.definition.name_pool, vec!["Alice", "Bob"]);
+    // Agents have no name pool; only a preset export carries one.
+    assert!(snapshot.definition.name_pool.is_empty());
     // Who may command the agent never goes into a shareable file.
     let json = String::from_utf8(encode_snapshot_json(&snapshot).unwrap()).unwrap();
     assert!(!json.contains("respondTo"), "{json}");
@@ -604,7 +561,7 @@ fn profile_fields_present_in_snapshot() {
     let mut record = minimal_record();
     record.description = Some("  A careful test agent.  ".to_string());
     let snapshot = build_snapshot(&record, MemoryLevel::None, vec![], None);
-    assert_eq!(snapshot.profile.display_name, "Test Agent Display");
+    assert_eq!(snapshot.profile.display_name, "Test Agent");
     assert_eq!(
         snapshot.profile.about.as_deref(),
         Some("A careful test agent.")

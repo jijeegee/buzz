@@ -509,13 +509,10 @@ pub async fn confirm_agent_snapshot_import(
         let record = ManagedAgentRecord {
             pubkey: pubkey.clone(),
             name: display_name.clone(),
-            display_name: None,
-            // Linked definitions remain the sole description authority. Do
-            // not persist a second instance copy that can go stale after an
-            // edit or survive a later definition deletion.
-            description: None,
-            slug: None,
-            persona_id: Some(persona_id.clone()),
+            // The agent owns a copy; the preset can change or go later.
+            description: persona.description.clone(),
+            source_preset_id: Some(persona_id.clone()),
+            legacy_persona_id: None,
             private_key_nsec: private_key_nsec.clone(),
             auth_tag: auth_tag.clone(),
             relay_url: String::new(), // resolves to workspace relay at runtime
@@ -540,7 +537,7 @@ pub async fn confirm_agent_snapshot_import(
             system_prompt: snapshot.definition.system_prompt.clone(),
             model: snapshot.definition.model.clone(),
             provider: snapshot.definition.provider.clone(),
-            persona_source_version: None,
+            team_instructions: None,
             env_vars: std::collections::BTreeMap::new(),
             start_on_app_launch: false,
             is_default_ai: false,
@@ -551,8 +548,6 @@ pub async fn confirm_agent_snapshot_import(
             provider_policy_pending: false,
             provider_binary_path: None,
             team_id: None,
-            persona_team_dir: None,
-            persona_name_in_team: None,
             created_at: now.clone(),
             updated_at: now.clone(),
             last_started_at: None,
@@ -565,20 +560,9 @@ pub async fn confirm_agent_snapshot_import(
             // are always consistent at mint time.
             respond_to: minted.respond_to,
             respond_to_allowlist: minted.respond_to_allowlist.clone(),
-            is_builtin: false,
-            is_active: true,
-            shared: false,
-            source_team: None,
-            source_team_persona_slug: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            definition_respond_to: respond_to_wire.clone(),
-            definition_respond_to_allowlist: minted.respond_to_allowlist.clone(),
-            definition_parallelism: minted_parallelism,
             relay_mesh: None,
             effort_level: None,
             runtime: snapshot.definition.runtime.clone(),
-            name_pool: snapshot.definition.name_pool.clone(),
             bot_origin: None,
         };
 

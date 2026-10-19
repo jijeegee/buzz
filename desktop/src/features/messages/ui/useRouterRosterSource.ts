@@ -1,10 +1,7 @@
 import { useQueries } from "@tanstack/react-query";
 import * as React from "react";
 
-import {
-  useManagedAgentsQuery,
-  usePersonasQuery,
-} from "@/features/agents/hooks";
+import { useManagedAgentsQuery } from "@/features/agents/hooks";
 import {
   buildRouterRoster,
   MAX_ROUTER_ROSTER,
@@ -22,7 +19,7 @@ export type RouterRosterSnapshot = {
 
 /**
  * Smart routing's roster inputs for one composer: the channel's agent
- * members (from the mention identities), my managed agents' personas, and
+ * members (from the mention identities), my managed agents, and
  * the kind:0 `about` of the others (same `user-profile` cache the profile
  * panel uses). Nothing is fetched unless `enabled` (Smart routing applied),
  * so other modes pay nothing. `getRoster` reads the latest inputs at call
@@ -40,7 +37,6 @@ export function useRouterRosterSource({
   selfPubkey: string | null;
 }): () => RouterRosterSnapshot {
   const managedAgents = useManagedAgentsQuery({ enabled }).data;
-  const personas = usePersonasQuery({ enabled }).data;
   const identities = enabled ? getIdentities() : [];
   const managedPubkeys = new Set(
     (managedAgents ?? []).map((agent) => normalizePubkey(agent.pubkey)),
@@ -73,7 +69,6 @@ export function useRouterRosterSource({
     getIdentities,
     managedAgents,
     memberPubkeys,
-    personas,
     selfPubkey,
   });
   latestRef.current = {
@@ -86,7 +81,6 @@ export function useRouterRosterSource({
     getIdentities,
     managedAgents,
     memberPubkeys,
-    personas,
     selfPubkey,
   };
 
@@ -99,7 +93,6 @@ export function useRouterRosterSource({
         identities,
         managedAgents: latest.managedAgents ?? [],
         memberPubkeys: latest.memberPubkeys,
-        personas: latest.personas ?? [],
         selfPubkey: latest.selfPubkey,
       }),
       humans: routerHumanNames(identities, latest.memberPubkeys),

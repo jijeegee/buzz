@@ -47,7 +47,7 @@ use std::collections::BTreeMap;
 use super::LEGACY_THINKING_EFFORT_KEY;
 use crate::managed_agents::custom_harnesses::HarnessDefinition;
 use crate::managed_agents::discovery::{EffortNormalization, KnownAcpRuntime};
-use crate::managed_agents::types::{AgentDefinition, ManagedAgentRecord};
+use crate::managed_agents::types::ManagedAgentRecord;
 
 /// The retained ACP-startup transport key. Claude, Codex, keyless ACP adapters,
 /// and any unknown/custom runtime route the effective effort through this key
@@ -148,7 +148,6 @@ pub(crate) fn apply_launch_effort(
     env: &mut BTreeMap<String, String>,
     record: &ManagedAgentRecord,
     runtime: Option<&KnownAcpRuntime>,
-    personas: &[AgentDefinition],
     global_env: &BTreeMap<String, String>,
     global_effort: Option<&str>,
     harness_def: Option<&HarnessDefinition>,
@@ -157,8 +156,6 @@ pub(crate) fn apply_launch_effort(
     effort_launch_projection(
         record,
         runtime,
-        personas,
-        record.persona_id.as_deref(),
         global_env,
         global_effort,
         harness_def,
@@ -345,7 +342,7 @@ pub(crate) fn snapshot_suppress_keys(runtime: Option<&KnownAcpRuntime>) -> Vec<&
 /// Build the single effective-effort projection for a launch.
 ///
 /// `global_env`+`global_effort` (`GlobalAgentConfig::env_vars` /
-/// `::effort_level`), `persona_id`+`personas`, `harness_def`, and `baked_env`
+/// `::effort_level`), `harness_def`, and `baked_env`
 /// supply the same per-tier inputs the layered spawn env is built from; the
 /// projection re-reads them so an invalid high-tier value skips as absent and a
 /// lower tier can win (which a merged last-wins env map cannot express).
@@ -353,8 +350,6 @@ pub(crate) fn snapshot_suppress_keys(runtime: Option<&KnownAcpRuntime>) -> Vec<&
 pub(crate) fn effort_launch_projection(
     record: &ManagedAgentRecord,
     runtime: Option<&KnownAcpRuntime>,
-    personas: &[AgentDefinition],
-    persona_id: Option<&str>,
     global_env: &BTreeMap<String, String>,
     global_effort: Option<&str>,
     harness_def: Option<&HarnessDefinition>,
@@ -403,8 +398,6 @@ pub(crate) fn effort_launch_projection(
         record,
         native_key,
         &norm,
-        personas,
-        persona_id,
         global_env,
         global_effort,
         harness_def,
@@ -425,14 +418,12 @@ fn resolve_effective_effort(
     record: &ManagedAgentRecord,
     native_key: Option<&str>,
     norm: &impl Fn(&str) -> Option<String>,
-    personas: &[AgentDefinition],
-    persona_id: Option<&str>,
     global_env: &BTreeMap<String, String>,
     global_effort: Option<&str>,
     harness_def: Option<&HarnessDefinition>,
     baked_env: &BTreeMap<String, String>,
 ) -> Option<String> {
-    use crate::managed_agents::env_vars::{is_reserved_env_key, live_persona_env, merged_user_env};
+    use crate::managed_agents::env_vars::{is_reserved_env_key, merged_user_env};
 
     // Sanitize env tiers exactly as the layered spawn env does (reserved/
     // malformed/NUL filtering), so the resolved authority matches what launches.
@@ -462,37 +453,7 @@ fn resolve_effective_effort(
             }
         }
     }
-    // 4. persona — same shape as the record tier: native env strictly above
-    //    the structured column, legacy alias strictly below it. The env map is
-    //    sanitized like the layered spawn env. The column needs no native key,
-    //    so it is the definition-level authority for Claude/Codex/Hermes.
-    let persona_env = merged_user_env(&BTreeMap::new(), &live_persona_env(personas, persona_id));
-    if let Some(nk) = native_key {
-        if let Some(raw) = get_ci(&persona_env, nk) {
-            if let Some(v) = norm(raw) {
-                return Some(v);
-            }
-        }
-    }
-    if let Some(raw) = persona_id
-        .and_then(|pid| personas.iter().find(|p| p.id == pid))
-        .and_then(|p| p.effort_level.as_deref())
-    {
-        if let Some(v) = norm(raw) {
-            return Some(v);
-        }
-    }
-    //    Persona legacy alias — only when the native key differs from it.
-    if let Some(nk) = native_key {
-        if nk != LEGACY_THINKING_EFFORT_KEY {
-            if let Some(raw) = get_ci(&persona_env, LEGACY_THINKING_EFFORT_KEY) {
-                if let Some(v) = norm(raw) {
-                    return Some(v);
-                }
-            }
-        }
-    }
-    // 5. global — same shape as the record and persona tiers: the native env
+    // 4. global — same shape as the record tier: the native env
     //    key above the structured column (Global AI Defaults picker). The
     //    column needs no native key, so it still resolves for Claude/Codex/Hermes.
     if let Some(nk) = native_key {
@@ -508,7 +469,7 @@ fn resolve_effective_effort(
     }
     // Env tiers below require a native key to read.
     let nk = native_key?;
-    // 6. definition (native only) — author-controlled; reserved keys stripped.
+    // 5. definition (native only) — author-controlled; reserved keys stripped.
     if let Some(def) = harness_def {
         let def_env: BTreeMap<String, String> = def
             .env
@@ -520,7 +481,7 @@ fn resolve_effective_effort(
             return Some(v);
         }
     }
-    // 7. baked build floor (native only).
+    // 6. baked build floor (native only).
     if let Some(raw) = get_ci(baked_env, nk) {
         if let Some(v) = norm(raw) {
             return Some(v);
@@ -542,8 +503,6 @@ pub(crate) fn apply_spawn_effort_env(
     cmd: &mut std::process::Command,
     record: &ManagedAgentRecord,
     runtime: Option<&KnownAcpRuntime>,
-    personas: &[AgentDefinition],
-    persona_id: Option<&str>,
     global_env: &BTreeMap<String, String>,
     global_effort: Option<&str>,
     baked_env: &BTreeMap<String, String>,
@@ -552,8 +511,6 @@ pub(crate) fn apply_spawn_effort_env(
     let launch = effort_launch_projection(
         record,
         runtime,
-        personas,
-        persona_id,
         global_env,
         global_effort,
         None,

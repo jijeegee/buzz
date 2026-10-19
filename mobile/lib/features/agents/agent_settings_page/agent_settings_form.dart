@@ -12,7 +12,6 @@ class _AgentSettingsForm extends HookConsumerWidget {
     final description = useTextEditingController(text: initial.description);
     final instructions = useTextEditingController(text: initial.instructions);
     final model = useTextEditingController(text: initial.model);
-    final lockedName = useTextEditingController(text: loaded.agentName);
     final fields = useMemoized(
       () => Listenable.merge([name, description, instructions, model]),
       [name, description, instructions, model],
@@ -41,9 +40,7 @@ class _AgentSettingsForm extends HookConsumerWidget {
           loaded,
           draft,
         );
-        final savedName = loaded.nameEditable
-            ? draft.name.trim()
-            : loaded.agentName.trim();
+        final savedName = draft.name.trim();
         messenger.showSnackBar(
           SnackBar(
             content: Text(
@@ -97,23 +94,13 @@ class _AgentSettingsForm extends HookConsumerWidget {
                   ),
                 ),
               ),
-            if (loaded.nameEditable)
-              TextField(
-                key: const Key('agent-settings-name'),
-                controller: name,
-                enabled: !saving.value,
-                textInputAction: TextInputAction.next,
-                decoration: decoration('Name'),
-              )
-            else
-              TextField(
-                key: const Key('agent-settings-name-locked'),
-                controller: lockedName,
-                enabled: false,
-                decoration: decoration(
-                  'Name',
-                ).copyWith(helperText: agentSettingsNameLockedMessage),
-              ),
+            TextField(
+              key: const Key('agent-settings-name'),
+              controller: name,
+              enabled: !saving.value,
+              textInputAction: TextInputAction.next,
+              decoration: decoration('Name'),
+            ),
             const SizedBox(height: Grid.xs),
             TextField(
               key: const Key('agent-settings-description'),

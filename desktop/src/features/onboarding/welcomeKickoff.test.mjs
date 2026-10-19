@@ -23,7 +23,7 @@ import {
 function agent(name, personaId, pubkey) {
   return {
     name,
-    personaId,
+    sourcePresetId: personaId,
     teamId: "builtin-team:welcome",
     pubkey,
     relayUrl: "ws://localhost:3000",

@@ -363,7 +363,7 @@ pub(crate) fn is_kuzz_profile_dir(root: &Path, dir: &Path) -> bool {
 
 /// The agent name shown in Hermes profile errors and descriptions.
 pub(crate) fn agent_label(record: &ManagedAgentRecord) -> &str {
-    record.display_name.as_deref().unwrap_or(&record.name)
+    &record.name
 }
 
 fn refusal(agent_label: &str, profile: &str, reason: &str) -> String {
@@ -389,20 +389,15 @@ fn profile_for(pubkey: &str, agent_label: &str) -> Result<HermesProfile, String>
 /// may wait on it. `spawn_agent_child`, which runs under those locks, only
 /// checks the result via [`require_for_spawn`].
 ///
-/// The harness is resolved both from the record as stored and with the linked
-/// persona re-snapshotted onto it, because some callers re-snapshot before
-/// spawning and some do not, and `record.runtime` outranks the persona's
-/// runtime. Either one resolving to Hermes prepares the profile, so the spawn
-/// check passes whichever the caller's spawn sees. A record whose harness
-/// cannot be resolved at all is left to the spawn path, which refuses it with
-/// its own error.
+/// The harness is resolved from the record exactly as spawn resolves it. A
+/// record whose harness cannot be resolved at all is left to the spawn path,
+/// which refuses it with its own error.
 pub(crate) fn prepare_for_start<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     record: &ManagedAgentRecord,
 ) -> Result<(), String> {
-    let personas = super::load_personas(app).unwrap_or_default();
     let global = super::load_global_agent_config(app).unwrap_or_default();
-    let Some(hermes_command) = hermes_command_for_start(record, &personas, &global) else {
+    let Some(hermes_command) = hermes_command_for_start(record,&global) else {
         return Ok(());
     };
     let label = agent_label(record);
@@ -415,29 +410,15 @@ pub(crate) fn prepare_for_start<R: tauri::Runtime>(
     .map_err(|reason| refusal(label, &profile.name, &reason))
 }
 
-/// The Hermes agent command a start of `record` may spawn, if any: resolved
-/// from the record as stored and from the record with its persona
-/// re-snapshotted (see [`prepare_for_start`]).
+/// The Hermes agent command a start of `record` may spawn, if any.
 pub(crate) fn hermes_command_for_start(
     record: &ManagedAgentRecord,
-    personas: &[super::AgentDefinition],
     global: &super::GlobalAgentConfig,
 ) -> Option<String> {
-    let resnapshotted = record.persona_id.as_deref().and_then(|persona_id| {
-        let persona = personas.iter().find(|persona| persona.id == persona_id)?;
-        let mut record = record.clone();
-        super::persona_events::apply_persona_snapshot(&mut record, persona);
-        Some(record)
-    });
-    let command = [Some(record), resnapshotted.as_ref()]
-        .into_iter()
-        .flatten()
-        .filter_map(|candidate| {
-            super::resolve_effective_harness_descriptor(candidate, personas, global).ok()
-        })
+    super::resolve_effective_harness_descriptor(record, global)
+        .ok()
         .map(|descriptor| descriptor.command)
-        .find(|command| is_hermes_command(command));
-    command
+        .filter(|command| is_hermes_command(command))
 }
 
 /// The profile a spawn of `effective_command` must launch with: `Ok(None)` for

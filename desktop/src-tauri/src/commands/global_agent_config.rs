@@ -17,7 +17,7 @@ use crate::{
     app_state::AppState,
     managed_agents::{
         agent_readiness, current_instance_id, find_managed_agent_mut, known_acp_runtime,
-        load_global_agent_config, load_managed_agents, load_personas, record_agent_command,
+        load_global_agent_config, load_managed_agents, record_agent_command,
         resolve_effective_agent_env, save_global_agent_config, save_managed_agents,
         stop_managed_agent_process, sync_managed_agent_processes, validate_global_config,
         AgentReadiness, BackendKind, GlobalAgentConfig,
@@ -84,22 +84,21 @@ pub async fn set_global_agent_config(
         // Pre-filter: identify agents that look eligible before taking any locks.
         // This is a hint only; definitive eligibility check happens under lock
         // in Phase 2.
-        let (candidates, personas_snapshot) =
-            collect_restart_candidates(&app_for_write, &old_global, &new_global);
+        let candidates = collect_restart_candidates(&app_for_write, &old_global, &new_global);
 
-        Ok::<_, String>((new_global, old_global, candidates, personas_snapshot))
+        Ok::<_, String>((new_global, old_global, candidates))
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {e}"))??;
-    let (new_global, old_global, candidates, personas_snapshot) = phase1;
+    let (new_global, old_global, candidates) = phase1;
 
     // ── Phase 2: async restart (outside spawn_blocking) ──────────────────
     //
     // For each candidate: stop under the lock (re-verifying eligibility after
     // sync_managed_agent_processes), then start via start_local_agent_with_preflight
     // — the same path as a manual restart.  This ensures owner_hex is computed
-    // and passed (NIP-OA auth_tag fallback), the persona is re-snapshotted, and
-    // last_error is persisted on failure.
+    // and passed (NIP-OA auth_tag fallback) and last_error is persisted on
+    // failure.
     //
     // Errors are non-fatal; the caller always receives the saved config.
     // failed_restart_count surfaces stops that succeeded but respawn failed.
@@ -107,14 +106,8 @@ pub async fn set_global_agent_config(
     let mut failed_restart_count: u32 = 0;
     if !candidates.is_empty() {
         for pubkey in &candidates {
-            let outcome = restart_local_agent_on_config_change(
-                &app,
-                pubkey,
-                &old_global,
-                &new_global,
-                &personas_snapshot,
-            )
-            .await;
+            let outcome =
+                restart_local_agent_on_config_change(&app, pubkey, &old_global, &new_global).await;
             match outcome {
                 RestartOutcome::Restarted => restarted_count += 1,
                 RestartOutcome::FailedAfterStop => failed_restart_count += 1,
@@ -142,11 +135,10 @@ enum RestartOutcome {
 }
 
 /// Collect pubkeys of local agents that should be restarted after a global
-/// config change, together with the personas snapshot used for the scan.
+/// config change.
 ///
 /// Pre-lock hint used by Phase 1 of `set_global_agent_config`. Eligibility is
-/// re-verified under lock in Phase 2. The personas snapshot is threaded to
-/// `restart_local_agent_on_config_change` so it is not reloaded per agent.
+/// re-verified under lock in Phase 2.
 ///
 /// An agent is a candidate when it is a local backend with a recorded PID, and
 /// either:
@@ -159,23 +151,14 @@ fn collect_restart_candidates(
     app: &AppHandle,
     old_global: &GlobalAgentConfig,
     new_global: &GlobalAgentConfig,
-) -> (Vec<String>, Vec<crate::managed_agents::AgentDefinition>) {
+) -> Vec<String> {
     let records = match load_managed_agents(app) {
         Ok(r) => r,
         Err(e) => {
             eprintln!(
                 "kuzz-desktop: set_global_agent_config: failed to load agents for restart scan: {e}"
             );
-            return (Vec::new(), Vec::new());
-        }
-    };
-    let all_personas = match load_personas(app) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "kuzz-desktop: set_global_agent_config: failed to load personas for restart scan: {e}"
-            );
-            return (Vec::new(), Vec::new());
+            return Vec::new();
         }
     };
     use tauri::Manager;
@@ -185,7 +168,7 @@ fn collect_restart_candidates(
         .lock()
         .unwrap_or_else(|error| error.into_inner());
 
-    let candidates = records
+    records
         .iter()
         .filter(|record| {
             if record.backend != BackendKind::Local {
@@ -198,12 +181,10 @@ fn collect_restart_candidates(
             if !has_live_runtime {
                 return false;
             }
-            let effective_cmd = record_agent_command(record, &all_personas);
+            let effective_cmd = record_agent_command(record);
             let runtime_meta = known_acp_runtime(&effective_cmd);
-            let old_effective =
-                resolve_effective_agent_env(record, &all_personas, runtime_meta, old_global);
-            let new_effective =
-                resolve_effective_agent_env(record, &all_personas, runtime_meta, new_global);
+            let old_effective = resolve_effective_agent_env(record, runtime_meta, old_global);
+            let new_effective = resolve_effective_agent_env(record, runtime_meta, new_global);
             let old_ready = matches!(agent_readiness(&old_effective), AgentReadiness::Ready);
             let new_ready = matches!(agent_readiness(&new_effective), AgentReadiness::Ready);
             // For a Ready+running agent: the process must be alive now and the
@@ -216,9 +197,7 @@ fn collect_restart_candidates(
             should_restart_on_config_change(old_ready, new_ready, env_changed)
         })
         .map(|r| r.pubkey.clone())
-        .collect();
-
-    (candidates, all_personas)
+        .collect()
 }
 
 /// Stop-then-start a local agent whose effective env changed under the new
@@ -249,14 +228,12 @@ async fn restart_local_agent_on_config_change(
     pubkey: &str,
     old_global: &GlobalAgentConfig,
     new_global: &GlobalAgentConfig,
-    personas_snapshot: &[crate::managed_agents::AgentDefinition],
 ) -> RestartOutcome {
     // ── Step 1: stop under lock, re-verifying eligibility ─────────────────
     let app_for_stop = app.clone();
     let pubkey_owned = pubkey.to_string();
     let old_global_clone = old_global.clone();
     let new_global_clone = new_global.clone();
-    let personas_owned = personas_snapshot.to_vec();
     use tauri::Manager;
     // Captured before the stop: a community removed meanwhile refuses the start.
     let admission = crate::managed_agents::AdmissionSnapshot::capture(&app.state::<AppState>());
@@ -306,15 +283,10 @@ async fn restart_local_agent_on_config_change(
         // Re-check the eligibility predicate under lock:
         //   (old NotReady && new Ready)  OR  (old Ready && env changed)
         // TODO: busy/mid-turn deferral would slot in here
-        //
-        // Reuse personas_snapshot from Phase 1 — avoids loading personas again
-        // per agent when the save-command personas haven't changed.
-        let effective_cmd = record_agent_command(record, &personas_owned);
+        let effective_cmd = record_agent_command(record);
         let runtime_meta = known_acp_runtime(&effective_cmd);
-        let old_effective =
-            resolve_effective_agent_env(record, &personas_owned, runtime_meta, &old_global_clone);
-        let new_effective =
-            resolve_effective_agent_env(record, &personas_owned, runtime_meta, &new_global_clone);
+        let old_effective = resolve_effective_agent_env(record, runtime_meta, &old_global_clone);
+        let new_effective = resolve_effective_agent_env(record, runtime_meta, &new_global_clone);
         let old_ready = matches!(agent_readiness(&old_effective), AgentReadiness::Ready);
         let new_ready = matches!(agent_readiness(&new_effective), AgentReadiness::Ready);
         // Under lock, the alive check was already done above via process_is_running.
