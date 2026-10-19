@@ -108,7 +108,8 @@ fn parser_projects_types_and_foreign_allowlists_exactly() {
     assert_eq!(projection.runtime.as_deref(), Some(" goose "));
     assert_eq!(projection.provider, None);
     assert_eq!(projection.name_pool, vec!["Reviewer"]);
-    assert_eq!(projection.respond_to.as_deref(), Some("owner-only"));
+    // The head says `allowlist`; the projection carries no audience at all.
+    assert!(!serde_json::to_string(&projection).unwrap().contains("respond"));
     assert_eq!(projection.parallelism, Some(4));
     assert_eq!(projection.session_policy, AcpSessionPolicy::Thread);
 
@@ -259,7 +260,6 @@ fn serialized_catalog_matches_the_typescript_contract() {
             model: Some("m1".into()),
             provider: Some("p1".into()),
             name_pool: vec!["Ada".into(), "Lin".into()],
-            respond_to: Some("mentions".into()),
             parallelism: Some(2),
             session_policy: AcpSessionPolicy::Thread,
         },
@@ -280,7 +280,6 @@ fn serialized_catalog_matches_the_typescript_contract() {
             "model": "m1",
             "provider": "p1",
             "namePool": ["Ada", "Lin"],
-            "respondTo": "mentions",
             "parallelism": 2,
             "sessionPolicy": "thread",
         },

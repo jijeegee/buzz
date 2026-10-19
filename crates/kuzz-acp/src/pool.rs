@@ -1194,6 +1194,9 @@ pub struct PromptContext {
     pub channel_info: ChannelInfoResolver,
     /// Max messages to include in thread/DM context. 0 = disabled.
     pub context_message_limit: u32,
+    /// Author policy that marks context messages from people who cannot
+    /// instruct this agent as untrusted.
+    pub context_author_trust: crate::ContextAuthorTrust,
     /// How much thread / main-timeline history a fresh session's first turn
     /// reads, as given at launch; see `system_prompt` and
     /// [`crate::context_history`].
@@ -4330,6 +4333,18 @@ pub async fn run_prompt_task(
 
         let profile_lookup =
             fetch_prompt_profile_lookup(b, conversation_context.as_ref(), &ctx.rest_client).await;
+        let trusted_context_authors = match conversation_context.as_ref() {
+            Some(context) => Some(
+                ctx.context_author_trust
+                    .trusted_authors(
+                        context.messages().iter().map(|msg| msg.pubkey.as_str()),
+                        is_dm,
+                        &ctx.rest_client,
+                    )
+                    .await,
+            ),
+            None => None,
+        };
         // The goals now; sent below only when the session does not hold them.
         // The thread this turn belongs to: the fetched thread, or a thread
         // session's own root on its first turn.
@@ -4440,6 +4455,7 @@ pub async fn run_prompt_task(
                 settings_update: settings_update.as_deref(),
                 conversation_context: conversation_context.as_ref(),
                 conversation_context_had_session_events,
+                trusted_context_authors: trusted_context_authors.as_ref(),
                 profile_lookup: profile_lookup.as_ref(),
                 has_system_prompt_support: agent.has_system_prompt_support(),
                 base_prompt: standing.base_prompt,
@@ -13233,6 +13249,11 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 },
             ),
             context_message_limit: 0,
+            context_author_trust: crate::ContextAuthorTrust::new(
+                Default::default(),
+                Default::default(),
+                owner_pubkey.map(|owner| owner.to_hex()),
+            ),
             context_history: crate::context_history::ContextHistory::Recent,
             max_turns_per_session: 0,
             permission_mode: PermissionMode::Default,

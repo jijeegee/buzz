@@ -441,12 +441,6 @@ type MockBridgeOptions = {
    */
   teamSnapshotConfirmErrors?: (string | null)[];
   /**
-   * When true, `preview_team_snapshot_import` returns a preview with
-   * `hasSourceAllowlist: true` so the allowlist section renders in the
-   * import dialog.
-   */
-  teamSnapshotPreviewHasSourceAllowlist?: boolean;
-  /**
    * When set to a non-empty string, `fetch_snapshot_bytes` throws with this
    * message — lets specs prove malformed/hash/size-mismatch error paths.
    */

@@ -110,11 +110,9 @@ test("team_snapshot_import_confirm_fail_renders_error_and_retry_succeeds", async
   });
 });
 
-// ── (b) Allowlist payload passthrough ───────────────────────────────────────
+// ── (b) Owner-only import payload ───────────────────────────────────────────
 
-test("team_snapshot_import_clear_allowlist_sends_keepAllowlist_false", async ({
-  page,
-}) => {
+test("team_snapshot_import_confirm_sends_only_file_bytes", async ({ page }) => {
   await installMockBridge(page, {
     personas: [
       {
@@ -130,7 +128,6 @@ test("team_snapshot_import_clear_allowlist_sends_keepAllowlist_false", async ({
         personaId: ANALYST_PERSONA_ID,
       },
     ],
-    teamSnapshotPreviewHasSourceAllowlist: true,
   });
   await gotoAgentsPage(page);
 
@@ -143,84 +140,22 @@ test("team_snapshot_import_clear_allowlist_sends_keepAllowlist_false", async ({
 
   const dialog = page.getByTestId("team-snapshot-import-dialog");
   await expect(dialog).toBeVisible({ timeout: 5000 });
-
-  // The allowlist section must be visible.
-  await expect(
-    dialog.getByTestId("team-snapshot-import-allowlist-section"),
-  ).toBeVisible();
-
-  // Select Clear (default) and click Import.
-  await dialog.getByTestId("team-snapshot-import-allowlist-clear").click();
   await dialog.getByTestId("team-snapshot-import-confirm").click();
 
-  // Wait for result phase.
   await expect(dialog.getByText("Team imported")).toBeVisible({
     timeout: 5000,
   });
 
-  // Verify the command log shows confirm_team_snapshot_import with keepAllowlist: false.
+  // Imports are always owner-only: the confirm payload carries no access choice.
   const log = await readCommandLog(page);
   const confirmEntry = log.find(
     (e) => e.command === "confirm_team_snapshot_import",
   );
   expect(confirmEntry).toBeTruthy();
   const confirmPayload = confirmEntry?.payload as
-    | { input?: { keepAllowlist?: boolean } }
+    | { input?: Record<string, unknown> }
     | undefined;
-  expect(confirmPayload?.input?.keepAllowlist).toBe(false);
-});
-
-test("team_snapshot_import_keep_allowlist_sends_keepAllowlist_true", async ({
-  page,
-}) => {
-  await installMockBridge(page, {
-    personas: [
-      {
-        id: ANALYST_PERSONA_ID,
-        displayName: "Analyst",
-        systemPrompt: "You are an analyst.",
-      },
-    ],
-    managedAgents: [
-      {
-        pubkey: ANALYST_PUBKEY,
-        name: "Analyst",
-        personaId: ANALYST_PERSONA_ID,
-      },
-    ],
-    teamSnapshotPreviewHasSourceAllowlist: true,
-  });
-  await gotoAgentsPage(page);
-
-  const fileInput = page.getByTestId("team-snapshot-import-input");
-  await fileInput.setInputFiles({
-    name: "test.team.json",
-    mimeType: "application/json",
-    buffer: Buffer.from(TEAM_SNAPSHOT_BYTES),
-  });
-
-  const dialog = page.getByTestId("team-snapshot-import-dialog");
-  await expect(dialog).toBeVisible({ timeout: 5000 });
-
-  // Select Keep.
-  await dialog.getByTestId("team-snapshot-import-allowlist-keep").click();
-  await dialog.getByTestId("team-snapshot-import-confirm").click();
-
-  // Wait for result phase.
-  await expect(dialog.getByText("Team imported")).toBeVisible({
-    timeout: 5000,
-  });
-
-  // Verify keepAllowlist: true in the command log.
-  const log = await readCommandLog(page);
-  const confirmEntry = log.find(
-    (e) => e.command === "confirm_team_snapshot_import",
-  );
-  expect(confirmEntry).toBeTruthy();
-  const confirmPayload = confirmEntry?.payload as
-    | { input?: { keepAllowlist?: boolean } }
-    | undefined;
-  expect(confirmPayload?.input?.keepAllowlist).toBe(true);
+  expect(Object.keys(confirmPayload?.input ?? {})).toEqual(["fileBytes"]);
 });
 
 // ── (c) Sharing parity ──────────────────────────────────────────────────────

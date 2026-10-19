@@ -79,7 +79,14 @@ export function duplicatePersonaDialogState(
       // them if they want a blank template.
       namePool: persona.namePool ?? [],
       envVars: persona.envVars ?? {},
-      ...behaviorEntry(persona),
+      // Security: a copy never carries wider access than owner-only. The
+      // source's respond-to mode and allowlist are dropped; the owner can
+      // widen the duplicate manually after reviewing it.
+      ...behaviorEntry({
+        ...persona,
+        respondTo: persona.respondTo == null ? persona.respondTo : "owner-only",
+        respondToAllowlist: [],
+      }),
     },
   };
 }

@@ -95,6 +95,8 @@ import { buildRuntimeModelProviderPayload } from "./agentDefinitionSubmitPayload
 import { AgentDefinitionDialogFooter } from "./AgentDefinitionDialogFooter";
 import { AgentDefinitionDialogShell } from "./AgentDefinitionDialogShell";
 import { AddCustomHarnessDialog } from "./AddCustomHarnessDialog";
+import { DraftAccessWideningBanner } from "./DraftAccessWideningBanner";
+import type { RespondToAccess } from "../lib/respondToWidening";
 import {
   ADD_CUSTOM_HARNESS_OPTION,
   runtimeDropdownAction,
@@ -122,6 +124,12 @@ type AgentDefinitionDialogProps = {
   createRunSection?: React.ReactNode;
   /** Extra create-mode submit gate (e.g. incomplete provider config). */
   createSubmitBlocked?: boolean;
+  /**
+   * Set when reviewing an agent-authored draft: the saved access to compare
+   * against (null for a draft that creates a new agent). Widening shows a
+   * warning at the top of the dialog.
+   */
+  draftReview?: { savedAccess: RespondToAccess | null };
 };
 export type AgentDefinitionSubmitOptions = {
   publishCatalogUpdates: boolean;
@@ -143,6 +151,7 @@ export function AgentDefinitionDialog({
   publishCatalogUpdatesOnSave = false,
   createRunSection,
   createSubmitBlocked = false,
+  draftReview,
 }: AgentDefinitionDialogProps) {
   const runtimesLoading = runtimeCatalogStatus === "loading";
   const acpCommandsQuery = useAcpCommandsQuery({ enabled: open });
@@ -816,6 +825,12 @@ export function AgentDefinitionDialog({
       onChangeCapture={() => setHasUserChanges(true)}
       onSubmit={handleSubmitForm}
     >
+      {draftReview ? (
+        <DraftAccessWideningBanner
+          draftAccess={behaviorDraft}
+          savedAccess={draftReview.savedAccess}
+        />
+      ) : null}
       <AgentCreationPreview
         avatarUrl={previewAvatarUrl}
         disabled={isPending || isAvatarUploadPending}

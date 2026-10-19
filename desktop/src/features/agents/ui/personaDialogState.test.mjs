@@ -279,10 +279,39 @@ test("edit and duplicate seed the behavior group from a quad-bearing persona", (
     editPersonaDialogState(persona).initialValues.behavior,
     expected,
   );
+  // A duplicate keeps parallelism/session policy but never the access grant.
   assert.deepEqual(
     duplicatePersonaDialogState(persona).initialValues.behavior,
-    expected,
+    {
+      respondTo: "owner-only",
+      respondToAllowlist: undefined,
+      parallelism: 4,
+      sessionPolicy: "thread",
+    },
   );
+});
+
+test("duplicatePersonaDialogState starts owner-only even from an anyone persona", () => {
+  const state = duplicatePersonaDialogState({
+    id: "persona-open",
+    displayName: "Open",
+    avatarUrl: null,
+    systemPrompt: "Open.",
+    runtime: null,
+    model: null,
+    provider: null,
+    isBuiltIn: false,
+    isActive: true,
+    respondTo: "anyone",
+    respondToAllowlist: ["d".repeat(64)],
+    parallelism: null,
+    sessionPolicy: "channel",
+    createdAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2025-01-02T00:00:00Z",
+  });
+
+  assert.equal(state.initialValues.behavior.respondTo, "owner-only");
+  assert.equal(state.initialValues.behavior.respondToAllowlist, undefined);
 });
 
 test("a linked instance overrides stale definition access in the edit dialog", () => {

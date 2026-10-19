@@ -107,7 +107,7 @@ export function useTeamActions(actions: ActionMessages) {
     }) => previewTeamSnapshotImport(fileBytes, fileName),
   });
   const confirmTeamSnapshotImportMutation = useMutation({
-    mutationFn: (input: { fileBytes: number[]; keepAllowlist: boolean }) =>
+    mutationFn: (input: { fileBytes: number[] }) =>
       confirmTeamSnapshotImport(input),
   });
 
@@ -346,7 +346,7 @@ export function useTeamActions(actions: ActionMessages) {
     }
   }
 
-  async function handleConfirmTeamSnapshotImport(keepAllowlist: boolean) {
+  async function handleConfirmTeamSnapshotImport() {
     if (!teamSnapshotImportState) {
       return;
     }
@@ -354,7 +354,6 @@ export function useTeamActions(actions: ActionMessages) {
     try {
       const result = await confirmTeamSnapshotImportMutation.mutateAsync({
         fileBytes: teamSnapshotImportState.fileBytes,
-        keepAllowlist,
       });
       setTeamSnapshotImportResult(result);
       void queryClient.invalidateQueries({ queryKey: personasQueryKey });

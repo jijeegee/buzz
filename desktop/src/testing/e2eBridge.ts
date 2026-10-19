@@ -537,12 +537,6 @@ type E2eConfig = {
      */
     teamSnapshotConfirmErrors?: (string | null)[];
     /**
-     * When true, `preview_team_snapshot_import` returns a preview with
-     * `hasSourceAllowlist: true` so the allowlist section renders in the
-     * import dialog.
-     */
-    teamSnapshotPreviewHasSourceAllowlist?: boolean;
-    /**
      * When set to a non-empty string, `fetch_snapshot_bytes` throws with this
      * message — lets specs prove malformed/hash/size-mismatch error paths.
      */
@@ -14358,9 +14352,6 @@ export function maybeInstallE2eTauriMocks() {
           avatarUrl: null,
           memoryLevel: "none",
           memoryEntryCount: 0,
-          hasSourceAllowlist: false,
-          sourceAllowlistCount: 0,
-          sourceAllowlist: [],
           manifestJson: "{}",
           locked: false,
         };
@@ -14398,8 +14389,6 @@ export function maybeInstallE2eTauriMocks() {
       }
       case "preview_team_snapshot_import": {
         // Return a minimal preview — no writes performed.
-        const previewHasAllowlist =
-          activeConfig?.mock?.teamSnapshotPreviewHasSourceAllowlist ?? false;
         return {
           name: "Imported Team",
           description: null,
@@ -14409,11 +14398,8 @@ export function maybeInstallE2eTauriMocks() {
               displayName: "Team Member",
               systemPrompt: null,
               avatarUrl: null,
-              hasSourceAllowlist: previewHasAllowlist,
-              sourceAllowlistCount: previewHasAllowlist ? 3 : 0,
             },
           ],
-          hasSourceAllowlist: previewHasAllowlist,
         };
       }
       case "confirm_team_snapshot_import": {
