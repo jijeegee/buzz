@@ -2509,6 +2509,24 @@ pub async fn ingest_event(
 ///   client ceiling (60 s, CANVAS_MAX_FUTURE_SKEW_SECS) < canvas relay bound (300 s) < relay general bound (900 s)
 const CANVAS_MAX_INGEST_FUTURE_SECS: i64 = 300;
 
+/// Most tags a client-submitted event may carry. Each `p` tag becomes an
+/// `event_mentions` row and a notification fan-out target, so an unbounded
+/// tag list lets one event force thousands of writes. Relay-signed events
+/// (e.g. kind 39002 member rosters) do not pass through client ingest.
+const MAX_CLIENT_EVENT_TAGS: usize = 2_000;
+
+/// Rejects a client event carrying more than [`MAX_CLIENT_EVENT_TAGS`] tags.
+/// Pure, and checked before any DB work so an oversized event costs nothing.
+fn check_client_event_tag_count(event: &Event) -> Result<(), IngestError> {
+    if event.tags.len() > MAX_CLIENT_EVENT_TAGS {
+        return Err(IngestError::Rejected(format!(
+            "invalid: event has {} tags, maximum is {MAX_CLIENT_EVENT_TAGS}",
+            event.tags.len()
+        )));
+    }
+    Ok(())
+}
+
 /// Returns `Ok(())` if the canvas event timestamp is within the allowed future
 /// window, or `Err` with a rejection message otherwise.
 ///
@@ -2531,6 +2549,8 @@ async fn ingest_event_inner(
     let event_id_hex = event.id.to_hex();
     let kind_u32 = event_kind_u32(&event);
     debug!(event_id = %event_id_hex, kind = kind_u32, "ingest_event");
+
+    check_client_event_tag_count(&event)?;
 
     // Durable community write fence: persistent ingest is a DB write the
     // deletion engine cannot exclude via serving-write leases (those cover
@@ -6141,6 +6161,23 @@ mod postgres_tests {
         let err = validate_agent_turn_metric_envelope(&ev).unwrap_err();
         // error comes from validate_engram_nip44_content with label replaced
         assert!(err.contains("agent-turn-metric"), "got: {err}");
+    }
+
+    #[test]
+    fn client_event_tag_count_is_capped() {
+        let keys = nostr::Keys::generate();
+        let signed = |count: usize| {
+            let tags = (0..count).map(|i| nostr::Tag::hashtag(i.to_string()));
+            nostr::EventBuilder::new(nostr::Kind::TextNote, "x")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .expect("sign")
+        };
+        assert!(check_client_event_tag_count(&signed(MAX_CLIENT_EVENT_TAGS)).is_ok());
+        assert!(matches!(
+            check_client_event_tag_count(&signed(MAX_CLIENT_EVENT_TAGS + 1)),
+            Err(IngestError::Rejected(m)) if m.contains("tags")
+        ));
     }
 
     /// The HTTP bridge's `submit_event` 400 arm and the WS `EVENT` handler's
