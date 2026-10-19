@@ -44,6 +44,7 @@ import '../../shared/profile/user_profile.dart';
 import '../forum/forum_posts_view.dart';
 import 'android_ime_lift.dart';
 import 'channel.dart';
+import 'group_avatar.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_link_navigation.dart';
@@ -986,7 +987,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                       Navigator.of(context).pop();
                     }
                   },
-                  tooltip: 'Channel actions',
+                  tooltip: 'Group actions',
                   icon: const Icon(LucideIcons.ellipsisVertical, size: 22),
                 ),
               ]

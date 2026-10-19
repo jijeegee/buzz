@@ -186,7 +186,7 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                       ? Center(
                           child: Text(
                             normalizedQuery.isEmpty
-                                ? 'Everyone available is already in this channel.'
+                                ? 'Everyone available is already in this group.'
                                 : 'No matching people or agents.',
                             textAlign: TextAlign.center,
                           ),

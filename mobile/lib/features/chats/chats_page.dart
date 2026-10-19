@@ -416,8 +416,8 @@ class ChatsPage extends HookConsumerWidget {
         actions: [
           IconButton(
             key: const ValueKey('chats-browse-channels'),
-            tooltip: 'Browse channels',
-            icon: const Icon(LucideIcons.hash, size: 20),
+            tooltip: 'Find groups',
+            icon: const Icon(LucideIcons.usersRound, size: 20),
             onPressed: () => unawaited(showBrowseChannelsSheet(context)),
           ),
           IconButton(
@@ -449,7 +449,7 @@ class ChatsPage extends HookConsumerWidget {
                 ),
                 KuzzViewOption(
                   value: ChatsViewMode.byChannel,
-                  label: 'By channel',
+                  label: 'By group',
                   key: ValueKey('chats-view-byChannel'),
                 ),
               ],

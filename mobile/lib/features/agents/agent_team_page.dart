@@ -86,7 +86,7 @@ class AgentTeamPage extends ConsumerWidget {
                 0,
               ),
               child: Text(
-                'Change teams and add them to channels in the Kuzz app on '
+                'Change teams and add them to groups in the Kuzz app on '
                 'your computer.',
                 style: muted,
               ),

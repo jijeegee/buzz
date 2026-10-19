@@ -51,7 +51,7 @@ class _MentionSuggestions extends StatelessWidget {
                   style: context.textTheme.titleSmall,
                 ),
                 subtitle: Text(
-                  'Address selected agents in channel and thread replies',
+                  'Address selected agents in group and thread replies',
                   style: context.textTheme.labelSmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -159,7 +159,7 @@ class _MentionSuggestionAvatar extends ConsumerWidget {
 
 /// The secondary info line under a mention suggestion — mirrors desktop's
 /// `MentionAutocomplete` subtitle: bot icon + "agent" (or an "admin" badge
-/// for human admins), then "managed by …" / "not in channel". The device
+/// for human admins), then "managed by …" / "not in group". The device
 /// robot sits on the avatar ([_MentionSuggestionAvatar]).
 abstract final class _MentionSuggestionInfo {
   static Widget? build(
@@ -177,11 +177,11 @@ abstract final class _MentionSuggestionInfo {
 
     final String? detail;
     if (ownerLabel != null && notInChannel) {
-      detail = 'managed by $ownerLabel \u00b7 not in channel';
+      detail = 'managed by $ownerLabel \u00b7 not in group';
     } else if (ownerLabel != null) {
       detail = 'managed by $ownerLabel';
     } else if (notInChannel) {
-      detail = 'not in channel';
+      detail = 'not in group';
     } else {
       detail = null;
     }
@@ -279,10 +279,13 @@ class _ChannelSuggestions extends StatelessWidget {
               horizontalTitleGap: 0,
               leading: SizedBox.square(
                 dimension: 36,
-                child: Icon(
-                  LucideIcons.hash,
-                  size: 20,
-                  color: context.colors.onSurfaceVariant,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: GroupAvatar(
+                    channel: channel,
+                    size: 24,
+                    iconColor: context.colors.onSurfaceVariant,
+                  ),
                 ),
               ),
               title: Text(channel.name, style: context.textTheme.bodyLarge),

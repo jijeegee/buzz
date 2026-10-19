@@ -124,7 +124,7 @@ class ChannelActions {
   void _ensureCommunityValid() {
     if (_isCommunityValid?.call() == false) {
       throw StateError(
-        'Channel action cancelled because the active community changed',
+        'Group action cancelled because the active community changed',
       );
     }
   }
@@ -253,8 +253,7 @@ class ChannelActions {
     _ensureCommunityValid();
     return channels.firstWhere(
       (channel) => channel.id == channelId,
-      orElse: () =>
-          throw Exception('Channel was created but is not visible yet'),
+      orElse: () => throw Exception('Group was created but is not visible yet'),
     );
   }
 

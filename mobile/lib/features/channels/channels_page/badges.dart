@@ -58,10 +58,7 @@ class _ErrorView extends StatelessWidget {
               color: context.colors.error,
             ),
             const SizedBox(height: Grid.xs),
-            Text(
-              'Could not load channels',
-              style: context.textTheme.titleMedium,
-            ),
+            Text('Could not load groups', style: context.textTheme.titleMedium),
             const SizedBox(height: Grid.xxs),
             Text(
               _userMessage(error),

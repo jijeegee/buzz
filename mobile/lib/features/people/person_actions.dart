@@ -54,7 +54,7 @@ Future<bool> confirmBlock(BuildContext context, String name) async {
       title: Text('Block $name?'),
       content: const Text(
         'They won’t be told. You won’t get their direct messages, their '
-        'messages in shared channels are hidden, and they are removed from '
+        'messages in shared groups are hidden, and they are removed from '
         'your friends. You can unblock them in Settings.',
       ),
       actions: [

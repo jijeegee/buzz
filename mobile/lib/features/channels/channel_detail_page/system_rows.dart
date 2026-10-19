@@ -29,7 +29,7 @@ class _SystemMessageRow extends HookConsumerWidget {
     final sourceMessages = groupedMessages ?? [message];
     final groupedMembership = _membershipDisplayEvent(sourceMessages);
     final messageStyleAction = switch (systemEvent.type) {
-      SystemEventType.channelCreated => 'created this channel',
+      SystemEventType.channelCreated => 'created this group',
       SystemEventType.huddleStarted => 'started a huddle',
       SystemEventType.huddleEnded => 'ended the huddle',
       _ => null,
@@ -332,7 +332,7 @@ class _MembershipSystemMessageContent extends StatelessWidget {
     final actionSpans = <InlineSpan>[
       TextSpan(
         text: event.isSelfJoin
-            ? 'joined the channel'
+            ? 'joined the group'
             // No "was": the name renders on the line above via
             // MessageAuthorMeta, so this reads as a status line rather than a
             // sentence continuing across the metadata row. Matches desktop's

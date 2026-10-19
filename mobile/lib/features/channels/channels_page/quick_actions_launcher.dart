@@ -67,14 +67,8 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
       return null;
     }, [visible]);
 
-    Future<void> openChannel(Channel channel) async {
-      if (!context.mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ChannelDetailPage(channel: channel),
-        ),
-      );
-    }
+    Future<void> openChannel(Channel channel) =>
+        _openChannelPage(context, channel);
 
     Future<void> selectQuickAction(_QuickAction action) async {
       quickActionsOpen.value = false;
@@ -85,17 +79,7 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
 
       switch (action) {
         case _QuickAction.createChannel:
-          final created = await showKuzzModalBottomSheet<Channel>(
-            context: context,
-            title: 'Create a new channel',
-            constraints: _quickActionSheetConstraints(context),
-            isScrollControlled: true,
-            showDragHandle: true,
-            builder: (_) => const _CreateChannelSheet(channelType: 'stream'),
-          );
-          if (created != null && context.mounted) {
-            await openChannel(created);
-          }
+          await _showNewGroupSheet(context);
         case _QuickAction.newDm:
           final opened = await showKuzzModalBottomSheet<Channel>(
             context: context,
@@ -110,14 +94,7 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
             await openChannel(opened);
           }
         case _QuickAction.browseChannels:
-          await showKuzzModalBottomSheet<void>(
-            context: context,
-            title: 'Browse channels',
-            constraints: _quickActionSheetConstraints(context),
-            isScrollControlled: true,
-            showDragHandle: true,
-            builder: (_) => const _BrowseChannelsSheet(),
-          );
+          await showBrowseChannelsSheet(context);
       }
     }
 
@@ -194,16 +171,49 @@ BoxConstraints _quickActionSheetConstraints(BuildContext context) {
   );
 }
 
-/// Opens Browse channels, as the quick action does.
-Future<void> showBrowseChannelsSheet(BuildContext context) =>
-    showKuzzModalBottomSheet<void>(
-      context: context,
-      title: 'Browse channels',
-      constraints: _quickActionSheetConstraints(context),
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => const _BrowseChannelsSheet(),
-    );
+Future<void> _openChannelPage(BuildContext context, Channel channel) async {
+  if (!context.mounted) return;
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => ChannelDetailPage(channel: channel),
+    ),
+  );
+}
+
+/// Opens New group, then the group it created.
+Future<void> _showNewGroupSheet(BuildContext context) async {
+  final created = await showKuzzModalBottomSheet<Channel>(
+    context: context,
+    title: 'New group',
+    constraints: _quickActionSheetConstraints(context),
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => const _CreateChannelSheet(channelType: 'stream'),
+  );
+  if (created != null && context.mounted) {
+    await _openChannelPage(context, created);
+  }
+}
+
+/// Opens Find groups, as the quick action does, then the group picked
+/// there or New group.
+Future<void> showBrowseChannelsSheet(BuildContext context) async {
+  final result = await showKuzzModalBottomSheet<Object>(
+    context: context,
+    title: 'Find groups',
+    constraints: _quickActionSheetConstraints(context),
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => const _BrowseChannelsSheet(),
+  );
+  if (!context.mounted) return;
+  switch (result) {
+    case final Channel channel:
+      await _openChannelPage(context, channel);
+    case _FindGroupsAction.newGroup:
+      await _showNewGroupSheet(context);
+  }
+}
 
 /// Opens New message and returns the DM it opened, if any.
 Future<Channel?> showNewMessageSheet(

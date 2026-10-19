@@ -113,14 +113,14 @@ class _DraftsList extends ConsumerWidget {
         final draft = drafts[index];
         final channel = channelById[draft.channelId];
         final destination = channel == null
-            ? 'Unavailable channel'
+            ? 'Unavailable group'
             : channel.isDm
             ? resolveDmChannelDisplayLabel(
                 channel,
                 currentPubkey: myPubkey,
                 names: names,
               )
-            : '#${channel.name}';
+            : channel.name;
         return ListTile(
           key: ValueKey('draft-row-${draft.key}'),
           leading: Icon(

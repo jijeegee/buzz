@@ -1,3 +1,5 @@
+import 'dart:math' show max, min;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -8,7 +10,7 @@ import '../theme/theme.dart';
 import 'avatar_image.dart';
 
 /// The look shared by the Activity and Chats conversation rows: a colour
-/// fixed per id, the row time, person and channel avatars, and `@name`
+/// fixed per id, the row time, person and group avatars, and `@name`
 /// lookup for plain-text previews. Data and layout stay with each list.
 
 /// Background of the Chats and People lists: white in a light theme (not the
@@ -61,11 +63,11 @@ String conversationTimestamp(int unixSeconds, {DateTime? now}) {
   return date.year == current.year ? label : '$label, ${date.year}';
 }
 
-/// First letter of [label], upper-cased; `#` when blank.
+/// First letter of [label], upper-cased; `?` when blank.
 String conversationInitial(String label) {
   final trimmed = label.trim();
   return trimmed.isEmpty
-      ? '#'
+      ? '?'
       : String.fromCharCode(trimmed.runes.first).toUpperCase();
 }
 
@@ -107,65 +109,91 @@ class ConversationPersonAvatar extends StatelessWidget {
   }
 }
 
-/// A channel's picture: its first letter on its colour. [isThread] adds a
-/// small speech-bubble badge (the Activity thread rows).
+/// A group's picture: its first letter on its colour. [isThread] adds a
+/// small speech-bubble badge (the Activity thread rows); [isPrivate] a small
+/// lock badge on the corner.
 class ConversationLetterAvatar extends StatelessWidget {
   const ConversationLetterAvatar({
     super.key,
     required this.seed,
     required this.label,
     this.isThread = false,
+    this.isPrivate = false,
+    this.size = activityAvatarSize,
     this.avatarKey = const ValueKey('activity-conversation-avatar'),
   });
 
   final String seed;
   final String label;
   final bool isThread;
+  final bool isPrivate;
+
+  /// Diameter of the circle.
+  final double size;
 
   /// Key of the circle itself.
-  final Key avatarKey;
+  final Key? avatarKey;
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-    dimension: activityAvatarSize,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        CircleAvatar(
-          key: avatarKey,
-          radius: activityAvatarSize / 2,
-          backgroundColor: conversationHue(seed),
-          child: Text(
-            conversationInitial(label),
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+  Widget build(BuildContext context) {
+    final badgeSize = (size * 0.381).clamp(10.0, 16.0);
+    // A third of the circle (14 at the row's 42) shrinks the letter to a
+    // few pixels in pills and pickers; small circles get up to half of it.
+    final letterSize = max(size / 3, min(size / 2, 14.0));
+    final badgeIcon = isThread
+        ? LucideIcons.messagesSquare
+        : isPrivate
+        ? LucideIcons.lock
+        : null;
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            key: avatarKey,
+            width: size,
+            height: size,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: conversationHue(seed),
             ),
-          ),
-        ),
-        if (isThread)
-          Positioned(
-            right: -2,
-            bottom: -2,
-            child: Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: context.colors.surface,
-                border: Border.all(color: context.colors.outlineVariant),
-              ),
-              child: Icon(
-                LucideIcons.messagesSquare,
-                size: 10,
-                color: context.colors.onSurfaceVariant,
+            child: Text(
+              conversationInitial(label),
+              style: TextStyle(
+                fontSize: letterSize,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
             ),
           ),
-      ],
-    ),
-  );
+          if (badgeIcon != null)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                key: isPrivate && !isThread
+                    ? const ValueKey('group-avatar-lock-badge')
+                    : null,
+                width: badgeSize,
+                height: badgeSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: context.colors.surface,
+                  border: Border.all(color: context.colors.outlineVariant),
+                ),
+                child: Icon(
+                  badgeIcon,
+                  size: badgeSize * 0.625,
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Circle size in a two-circle avatar (desktop 28 of 36, scaled to 42).

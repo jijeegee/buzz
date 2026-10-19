@@ -2484,14 +2484,12 @@ Photos
           expect(find.text('kuzz'), findsOneWidget);
           expect(find.text('kuzz · cdcdcdcd'), findsNWidgets(2));
           expect(find.byIcon(LucideIcons.messageSquare), findsOneWidget);
-          expect(find.byIcon(LucideIcons.hash), findsOneWidget);
+          expect(find.byIcon(LucideIcons.users), findsOneWidget);
           expect(find.byIcon(LucideIcons.folderGit2), findsOneWidget);
           expect(find.byIcon(LucideIcons.gitPullRequest), findsOneWidget);
           expect(find.byIcon(LucideIcons.circleDot), findsOneWidget);
           expect(
-            find.bySemanticsLabel(
-              'Open message cdcdcdcd in channel engineering',
-            ),
+            find.bySemanticsLabel('Open message cdcdcdcd in group engineering'),
             findsOneWidget,
           );
           expect(
@@ -2696,7 +2694,8 @@ Photos
           ),
         );
 
-        expect(find.byIcon(LucideIcons.hash), findsOneWidget);
+        expect(find.byKey(const ValueKey('group-pill-avatar')), findsOneWidget);
+        expect(find.byIcon(LucideIcons.hash), findsNothing);
         expect(find.text('general'), findsOneWidget);
         expect(find.text('#general'), findsNothing);
       });
@@ -2766,7 +2765,7 @@ Photos
           ),
         );
 
-        expect(find.byIcon(LucideIcons.hash), findsOneWidget);
+        expect(find.byIcon(LucideIcons.users), findsOneWidget);
         expect(find.text('unknown'), findsOneWidget);
         expect(find.text('#unknown'), findsNothing);
       });

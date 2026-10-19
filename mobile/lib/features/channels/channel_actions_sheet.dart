@@ -22,6 +22,7 @@ import '../../shared/widgets/lucide_star_icon.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/widgets/sheet_divider.dart';
 import 'channel.dart';
+import 'group_avatar.dart';
 import 'add_members_sheet.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_management_provider.dart';
@@ -219,7 +220,11 @@ class ChannelActionsSheet extends HookConsumerWidget {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(isMuted ? LucideIcons.bell : LucideIcons.bellOff),
-                title: Text(isMuted ? 'Unmute channel' : 'Mute channel'),
+                title: Text(
+                  isMuted
+                      ? 'Unmute ${channel.isDm ? 'chat' : 'group'}'
+                      : 'Mute ${channel.isDm ? 'chat' : 'group'}',
+                ),
                 onTap: () {
                   close();
                   final notifier = ref.read(channelMutesProvider.notifier);
@@ -240,11 +245,11 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.settings),
-                  title: const Text('Manage channel'),
+                  title: const Text('Manage group'),
                   onTap: () async {
                     final shouldClose = await showKuzzModalBottomSheet<bool>(
                       context: context,
-                      title: 'Manage channel',
+                      title: 'Manage group',
                       isScrollControlled: true,
                       showDragHandle: true,
                       constraints: BoxConstraints(
@@ -267,26 +272,28 @@ class ChannelActionsSheet extends HookConsumerWidget {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.copy),
-                title: const Text('Copy channel name'),
+                title: Text('Copy ${channel.isDm ? 'chat' : 'group'} name'),
                 onTap: () {
                   close();
                   copyToClipboard(
                     context,
                     currentChannel.name,
-                    message: 'Channel name copied to clipboard',
+                    message:
+                        '${channel.isDm ? 'Chat' : 'Group'} name copied to clipboard',
                   );
                 },
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(LucideIcons.hash),
-                title: const Text('Copy channel ID'),
+                leading: const Icon(LucideIcons.fingerprint),
+                title: Text('Copy ${channel.isDm ? 'chat' : 'group'} ID'),
                 onTap: () {
                   close();
                   copyToClipboard(
                     context,
                     channel.id,
-                    message: 'Channel ID copied to clipboard',
+                    message:
+                        '${channel.isDm ? 'Chat' : 'Group'} ID copied to clipboard',
                   );
                 },
               ),
@@ -295,13 +302,13 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 if (channel.isMember && !channel.isArchived)
                   _ActionTile(
                     icon: LucideIcons.logOut,
-                    label: 'Leave channel',
+                    label: 'Leave group',
                     destructive: true,
                     onTap: () => _confirmAndRun(
                       context,
                       ref,
-                      title: 'Leave #${currentChannel.name}?',
-                      body: 'You’ll stop receiving messages from this channel.',
+                      title: 'Leave ${currentChannel.name}?',
+                      body: 'You’ll stop receiving messages from this group.',
                       confirmLabel: 'Leave',
                       action: () => ref
                           .read(channelActionsProvider)
@@ -313,26 +320,26 @@ class ChannelActionsSheet extends HookConsumerWidget {
                     enabled: false,
                     leading: KuzzLoadingIndicator(
                       size: 20,
-                      semanticLabel: 'Loading channel actions',
+                      semanticLabel: 'Loading group actions',
                     ),
-                    title: Text('Loading channel actions…'),
+                    title: Text('Loading group actions…'),
                   )
                 else if (lifecycleCapabilitiesUnavailable)
                   const ListTile(
                     enabled: false,
                     leading: Icon(LucideIcons.triangleAlert),
-                    title: Text('Channel actions unavailable'),
+                    title: Text('Group actions unavailable'),
                   )
                 else ...[
                   if (canArchive)
                     _ActionTile(
                       icon: LucideIcons.archive,
-                      label: 'Archive channel',
+                      label: 'Archive group',
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Archive #${currentChannel.name}?',
-                        body: 'The channel will become read-only.',
+                        title: 'Archive ${currentChannel.name}?',
+                        body: 'The group will become read-only.',
                         confirmLabel: 'Archive',
                         action: () => ref
                             .read(channelActionsProvider)
@@ -342,12 +349,12 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   if (canUnarchive)
                     _ActionTile(
                       icon: LucideIcons.archiveRestore,
-                      label: 'Unarchive channel',
+                      label: 'Unarchive group',
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Unarchive #${currentChannel.name}?',
-                        body: 'The channel will become active again.',
+                        title: 'Unarchive ${currentChannel.name}?',
+                        body: 'The group will become active again.',
                         confirmLabel: 'Unarchive',
                         action: () => ref
                             .read(channelActionsProvider)
@@ -357,14 +364,14 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   if (canDelete)
                     _ActionTile(
                       icon: LucideIcons.trash2,
-                      label: 'Delete channel',
+                      label: 'Delete group',
                       destructive: true,
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Delete #${currentChannel.name}?',
+                        title: 'Delete ${currentChannel.name}?',
                         body:
-                            'This permanently deletes the channel and cannot be undone.',
+                            'This permanently deletes the group and cannot be undone.',
                         confirmLabel: 'Delete',
                         action: () => ref
                             .read(channelActionsProvider)
@@ -529,7 +536,7 @@ Future<void> _confirmAndRun(
     ScaffoldMessenger.of(pageContext).showSnackBar(
       SnackBar(
         content: Text(
-          'Couldn’t ${confirmLabel.toLowerCase()} channel. Try again.',
+          'Couldn’t ${confirmLabel.toLowerCase()} group. Try again.',
         ),
       ),
     );

@@ -510,7 +510,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const Key('search-empty-state')),
-        matching: find.text('Search messages, channels, and people'),
+        matching: find.text('Search messages, groups, and people'),
       ),
       findsOneWidget,
     );
@@ -772,7 +772,9 @@ void main() {
       );
       expect(
         sectionLabel.data,
-        '${label[0].toUpperCase()}${label.substring(1)}',
+        label == 'channels'
+            ? 'Groups'
+            : '${label[0].toUpperCase()}${label.substring(1)}',
       );
       expect(sectionLabel.style?.fontSize, activityContextTextStyle.fontSize);
       expect(
@@ -859,7 +861,7 @@ void main() {
     );
     expect(contextLabel.style?.fontSize, activityContextTextStyle.fontSize);
     expect(contextLabel.style?.height, activityContextTextStyle.height);
-    expect(channelLabel.data, '#design');
+    expect(channelLabel.data, 'design');
     expect(channelLabel.style?.fontSize, activityContextTextStyle.fontSize);
     final channelChip = tester.widget<Container>(
       find.byWidgetPredicate(
@@ -1003,7 +1005,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Open'), findsOneWidget);
+    expect(find.text('Public'), findsOneWidget);
     expect(find.text('0 members'), findsNothing);
   });
 }

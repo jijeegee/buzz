@@ -19,6 +19,7 @@ import '../channels/channel_detail_page.dart';
 import '../channels/channel_identity_names_provider.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
+import '../channels/group_avatar.dart';
 import '../channels/small_avatar.dart';
 import '../channels/message_content.dart';
 import '../channels/date_formatters.dart';
@@ -317,7 +318,7 @@ class SearchPage extends HookConsumerWidget {
                 child: KuzzSearchField(
                   controller: textController,
                   focusNode: focusNode,
-                  hintText: 'Search messages, channels, and people',
+                  hintText: 'Search messages, groups, and people',
                   iconColor: searchPrimaryColor,
                   inputColor: searchPrimaryColor,
                   placeholderColor: searchPlaceholderColor,
@@ -460,7 +461,7 @@ class _SearchBody extends ConsumerWidget {
               ),
               const SizedBox(height: Grid.xs),
               Text(
-                'Search messages, channels, and people',
+                'Search messages, groups, and people',
                 textAlign: TextAlign.center,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
@@ -655,15 +656,15 @@ class _ChannelsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(label: 'Channels'),
+        _SectionLabel(label: 'Groups', id: 'channels'),
         for (final channel in channels)
           ListTile(
             key: ValueKey('search-channel-row-${channel.id}'),
             contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
-            leading: Icon(
-              channelIcon(channel),
+            leading: GroupAvatar(
               key: ValueKey('search-channel-leading-${channel.id}'),
-              size: 20,
+              channel: channel,
+              size: 28,
             ),
             title: Text(
               channel.name,
@@ -689,7 +690,7 @@ class _ChannelsSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(Radii.sm),
                     ),
                     child: Text(
-                      'Open',
+                      'Public',
                       style: context.textTheme.labelSmall?.copyWith(
                         color: context.colors.primary,
                         fontWeight: FontWeight.w600,
@@ -935,7 +936,7 @@ class _MessageTile extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(Radii.xs),
                     ),
                     child: Text(
-                      '#$channelName',
+                      channelName,
                       key: ValueKey('search-message-channel-${hit.eventId}'),
                       style: activityContextTextStyle.copyWith(
                         color: context.colors.onSurfaceVariant,
@@ -997,7 +998,10 @@ class _MessageTile extends ConsumerWidget {
 class _SectionLabel extends StatelessWidget {
   final String label;
 
-  const _SectionLabel({required this.label});
+  /// Key suffix; defaults to the lower-cased [label].
+  final String? id;
+
+  const _SectionLabel({required this.label, this.id});
 
   @override
   Widget build(BuildContext context) {
@@ -1010,7 +1014,7 @@ class _SectionLabel extends StatelessWidget {
       ),
       child: Text(
         label,
-        key: ValueKey('search-section-${label.toLowerCase()}'),
+        key: ValueKey('search-section-${id ?? label.toLowerCase()}'),
         style: activityContextTextStyle.copyWith(
           color: context.colors.onSurfaceVariant,
         ),
@@ -1023,7 +1027,7 @@ extension on _SearchFilter {
   String get label => switch (this) {
     _SearchFilter.all => 'All',
     _SearchFilter.messages => 'Messages',
-    _SearchFilter.channels => 'Channels',
+    _SearchFilter.channels => 'Groups',
     _SearchFilter.people => 'People',
   };
 }

@@ -262,22 +262,22 @@ class _QuickActionsMenu extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _QuickActionItem(
-            icon: LucideIcons.hash,
-            title: 'Create channel',
-            key: const Key('quick-action-create-channel-card'),
-            onTap: () => onSelected(_QuickAction.createChannel),
-          ),
-          const SizedBox(height: Grid.xxs),
-          _QuickActionItem(
             icon: LucideIcons.messagesSquare,
-            title: 'New direct message',
+            title: 'New message',
             key: const Key('quick-action-new-dm-card'),
             onTap: () => onSelected(_QuickAction.newDm),
           ),
           const SizedBox(height: Grid.xxs),
           _QuickActionItem(
-            icon: LucideIcons.compass,
-            title: 'Browse channels',
+            icon: LucideIcons.users,
+            title: 'New group',
+            key: const Key('quick-action-create-channel-card'),
+            onTap: () => onSelected(_QuickAction.createChannel),
+          ),
+          const SizedBox(height: Grid.xxs),
+          _QuickActionItem(
+            icon: LucideIcons.usersRound,
+            title: 'Find groups',
             key: const Key('quick-action-browse-channels-card'),
             onTap: () => onSelected(_QuickAction.browseChannels),
           ),

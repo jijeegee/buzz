@@ -45,7 +45,7 @@ class _CreateChannelSheet extends HookConsumerWidget {
     final errorMessage = useState<String?>(null);
     useListenable(nameController);
 
-    final kindLabel = channelType == 'forum' ? 'forum' : 'channel';
+    final kindLabel = channelType == 'forum' ? 'forum' : 'group';
     final canSubmit =
         nameController.text.trim().isNotEmpty && !isSubmitting.value;
 
@@ -156,7 +156,7 @@ class _CreateChannelSheet extends HookConsumerWidget {
               const SizedBox(height: Grid.sm),
               _CreateChannelRadioGroup<bool>(
                 enabled: !isSubmitting.value,
-                label: 'Channel type',
+                label: 'Group type',
                 onSelected: (value) => temporary.value = value,
                 options: const [
                   _CreateChannelMenuOption(
@@ -918,11 +918,11 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                       if (sharedResults.isNotEmpty ||
                           sharedPending ||
                           sharedFailed) ...[
-                        header('shared', 'In your channels'),
+                        header('shared', 'In your groups'),
                         if (sharedPending)
                           note('shared-loading', 'Searching…')
                         else if (sharedFailed)
-                          note('shared-error', 'Couldn’t search your channels')
+                          note('shared-error', 'Couldn’t search your groups')
                         else
                           for (final user in sharedResults) tileFor(user),
                       ],

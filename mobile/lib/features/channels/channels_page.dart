@@ -32,6 +32,7 @@ import '../profile/presence_cache_provider.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import 'channel.dart';
+import 'group_avatar.dart';
 import 'chats_order.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_detail_page.dart';

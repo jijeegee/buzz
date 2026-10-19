@@ -24,9 +24,9 @@ void openChannelLink({
   }
 
   if (targetChannel == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Channel could not be opened')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Group could not be opened')));
     return;
   }
 

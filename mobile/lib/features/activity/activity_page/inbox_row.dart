@@ -173,8 +173,8 @@ class _InboxRow extends HookConsumerWidget {
     final channelChipLabel = channelName == null
         ? null
         : threadRootId == null
-        ? '#$channelName'
-        : '#$channelName › ${threadName ?? 'Thread'}';
+        ? channelName
+        : '$channelName › ${threadName ?? 'Thread'}';
     final label = inboxTypeLabel(
       item,
       channelName: channelName,
@@ -361,7 +361,7 @@ class _InboxRow extends HookConsumerWidget {
                                     ],
                                   ),
                                   const SizedBox(height: Grid.quarter),
-                                  // Contextual label: "Mentioned in #channel" etc.
+                                  // Contextual label: "Mentioned in group" etc.
                                   Row(
                                     children: [
                                       Flexible(
@@ -392,7 +392,7 @@ class _InboxRow extends HookConsumerWidget {
                                             ),
                                             child: Text(
                                               channelChipLabel ??
-                                                  '#${label.channelLabel}',
+                                                  label.channelLabel!,
                                               style: activityContextTextStyle
                                                   .copyWith(color: mutedColor),
                                               overflow: TextOverflow.ellipsis,

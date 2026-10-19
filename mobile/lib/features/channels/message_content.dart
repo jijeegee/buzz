@@ -23,6 +23,7 @@ import '../../shared/deeplink/pending_deep_link_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/syntax_highlight.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
 import '../../shared/custom_emoji/custom_emoji_provider.dart';
 import '../../shared/custom_emoji/custom_emoji_render.dart';
@@ -441,12 +442,12 @@ class MessageContent extends HookConsumerWidget {
     final isCanonicalKuzzLabel = isKuzzLink && text == url;
     final kuzzPresentation = switch (kuzzLink) {
       ChannelDeepLink(:final channelId) => (
-        icon: LucideIcons.hash,
+        icon: LucideIcons.users,
         label:
             _channelNameForId(resolvedChannelNames, channelId) ??
             channelId.substring(0, math.min(8, channelId.length)),
         semanticLabel:
-            'Open channel ${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))}',
+            'Open group ${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))}',
         interactive: true,
       ),
       MessageDeepLink(:final channelId, :final messageId) => (
@@ -454,7 +455,7 @@ class MessageContent extends HookConsumerWidget {
         label:
             '${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))} · ${messageId.substring(0, math.min(8, messageId.length))}',
         semanticLabel:
-            'Open message ${messageId.substring(0, math.min(8, messageId.length))} in channel ${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))}',
+            'Open message ${messageId.substring(0, math.min(8, messageId.length))} in group ${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))}',
         interactive: true,
       ),
       EntityDeepLink(:final type, :final repository, :final eventId) => (
