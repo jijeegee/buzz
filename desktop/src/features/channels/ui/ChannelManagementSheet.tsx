@@ -2,9 +2,10 @@ import {
   Archive,
   ArchiveRestore,
   BookOpenText,
-  Target,
   DoorClosed,
   DoorOpen,
+  Fingerprint,
+  Target,
   Trash2,
   Workflow as WorkflowIcon,
 } from "lucide-react";
@@ -860,6 +861,7 @@ function ChannelManagementPanelContent({
                 value={`${memberCount} member${memberCount === 1 ? "" : "s"}`}
               />
               <CopyFieldRow
+                icon={Fingerprint}
                 label="Group ID"
                 testId="channel-management-channel-id"
                 value={resolvedChannel.id}

@@ -1,4 +1,4 @@
-import { Lock, MessagesSquare, Users } from "lucide-react";
+import { Lock, MessagesSquare } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 
@@ -55,7 +55,7 @@ export function ConversationLetterAvatar({
           className="absolute left-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-start rounded-full pl-2 text-2xs font-semibold text-white"
           style={{ backgroundColor: background }}
         >
-          {initial || <Users className="h-3 w-3" />}
+          {initial || "?"}
         </span>
         <span
           className="absolute right-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-background"
@@ -75,7 +75,7 @@ export function ConversationLetterAvatar({
       data-testid={testId}
       style={{ backgroundColor: background }}
     >
-      {initial || <Users className="h-4 w-4" />}
+      {initial || "?"}
       {isThread ? (
         <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border">
           <MessagesSquare className="h-2.5 w-2.5" />
@@ -163,7 +163,7 @@ export function GroupLetterAvatar({
       data-testid={testId}
       style={{ backgroundColor: conversationColor(channelId || label || "") }}
     >
-      {initial || <Users className={dims.icon} />}
+      {initial || "?"}
       {isPrivate ? (
         <span
           className={cn(

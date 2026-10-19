@@ -109,6 +109,8 @@ function MoveToSectionSubmenu({
  * "Copy" submenu (channel name / channel ID).
  */
 function CopyChannelSubmenu({ channel }: { channel: Channel }) {
+  const noun = channel.channelType === "dm" ? "chat" : "group";
+  const Noun = channel.channelType === "dm" ? "Chat" : "Group";
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
@@ -120,17 +122,20 @@ function CopyChannelSubmenu({ channel }: { channel: Channel }) {
       <ContextMenuSubContent>
         <ContextMenuItem
           onSelect={() =>
-            copyTextToClipboard(channel.name, "Group name copied to clipboard")
+            copyTextToClipboard(
+              channel.name,
+              `${Noun} name copied to clipboard`,
+            )
           }
         >
-          <span>Copy group name</span>
+          <span>Copy {noun} name</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() =>
-            copyTextToClipboard(channel.id, "Group ID copied to clipboard")
+            copyTextToClipboard(channel.id, `${Noun} ID copied to clipboard`)
           }
         >
-          <span>Copy group ID</span>
+          <span>Copy {noun} ID</span>
         </ContextMenuItem>
       </ContextMenuSubContent>
     </ContextMenuSub>
@@ -288,7 +293,9 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <Bell className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>Unmute group</span>
+            <span>
+              Unmute {channel.channelType === "dm" ? "chat" : "group"}
+            </span>
           </ContextMenuItem>
         ) : (
           <ContextMenuItem
@@ -297,7 +304,7 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <BellOff className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>Mute group</span>
+            <span>Mute {channel.channelType === "dm" ? "chat" : "group"}</span>
           </ContextMenuItem>
         )
       ) : null}
