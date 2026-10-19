@@ -3,8 +3,8 @@ import {
   FolderGit2,
   Folders,
   GitPullRequest,
-  Hash,
   type LucideIcon,
+  Users,
 } from "lucide-react";
 
 import type { ProjectsFilter } from "@/features/projects/lib/projectsViewHelpers";
@@ -22,7 +22,7 @@ export function projectsSectionIcon(filter: ProjectsFilter): LucideIcon {
   if (filter === "prs") return GitPullRequest;
   if (filter === "issues") return CircleDot;
   if (filter === "repositories") return FolderGit2;
-  if (filter === "channels") return Hash;
+  if (filter === "channels") return Users;
   return Folders;
 }
 

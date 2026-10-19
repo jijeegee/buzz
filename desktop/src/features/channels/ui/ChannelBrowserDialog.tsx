@@ -439,7 +439,7 @@ export function ChannelBrowserDialog({
   const needsLongerQuery =
     !isForumMode && activeTab === "joined" && !canSeePublicGroups;
   const emptyTitle =
-    deferredQuery.length > 0 && !needsLongerQuery
+    deferredQuery.length > 0
       ? `No ${entityLabel}s match your search`
       : activeTab === "archived"
         ? `No archived ${entityLabel}s`

@@ -37,7 +37,7 @@ test("send-to-channel rejects specialized message kinds", () => {
   assert.equal(canSendMessageToChannel(diffMessage, CURRENT, profiles), false);
   assert.throws(
     () => assertCanSendMessageToChannel(diffMessage, CURRENT, profiles),
-    /Only ordinary channel messages/,
+    /Only ordinary messages can be sent to the group/,
   );
 });
 
