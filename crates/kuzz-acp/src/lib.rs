@@ -3258,8 +3258,15 @@ async fn run_harness(
 
     let runtime_start_nonce = std::env::var("KUZZ_MANAGED_AGENT_START_NONCE").unwrap_or_default();
     let dedup_mode = config.dedup_mode;
-    let mut queue =
-        EventQueue::new(dedup_mode).with_in_flight_deadline(config.max_turn_duration_secs);
+    // A turn still working at the cap is checked in on and renewed (up to
+    // TURN_CHECKIN_LIMIT times) inside the prompt task, so the queue's
+    // backstop must outlast every renewal; a stuck agent is still bounded by
+    // its own hard timeout.
+    let mut queue = EventQueue::new(dedup_mode).with_in_flight_deadline(
+        config
+            .max_turn_duration_secs
+            .saturating_mul(u64::from(pool::TURN_CHECKIN_LIMIT) + 1),
+    );
 
     // Online means the harness can receive work, not merely that its socket is
     // connected. Publishing after channel subscriptions gives desktop callers
