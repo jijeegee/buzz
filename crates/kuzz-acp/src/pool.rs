@@ -4969,8 +4969,7 @@ pub async fn run_prompt_task(
                 "turn still working after {checkins} check-ins — pausing session {session_id}"
             );
             if let Some(batch) = batch.as_ref() {
-                let elapsed = ctx.max_turn_duration.saturating_mul(checkins + 1);
-                spawn_turn_paused_notice(&ctx.rest_client, batch, elapsed);
+                spawn_turn_paused_notice(&ctx.rest_client, batch, agent.acp.turn_elapsed());
             }
             let cancelled = agent
                 .acp
@@ -4989,6 +4988,42 @@ pub async fn run_prompt_task(
             let outcome = match cancelled {
                 Ok(stop_reason) => {
                     log_stop_reason(&source, &stop_reason);
+                    // The session keeps this request, so record it as
+                    // delivered: the requester's reply must continue it, not
+                    // re-send it as new.
+                    if let PromptSource::Channel(scope) = &source {
+                        let standing_sent = !agent.has_system_prompt_support();
+                        record_scope_delivery_success(
+                            &mut agent,
+                            scope.clone(),
+                            standing_sent,
+                            &pending_delivered_event_ids,
+                            &pending_hydrated_thread_roots,
+                        );
+                        agent
+                            .state
+                            .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
+                        agent
+                            .state
+                            .mark_live_text_seen(scope.clone(), &live_now.text);
+                        agent
+                            .state
+                            .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
+                        agent
+                            .state
+                            .mark_prompt_goals_in_messages(scope, prompt_goals_in_messages);
+                        if let Some(ledger) = &ctx.session_ledger {
+                            ledger.touch(scope, &session_id);
+                            ledger.set_standing(
+                                scope,
+                                &session_id,
+                                &crate::live_settings::StandingHashes::new(
+                                    &live_now.text,
+                                    layer0_now.as_deref(),
+                                ),
+                            );
+                        }
+                    }
                     PromptOutcome::Ok(stop_reason)
                 }
                 Err(AcpError::AgentExited) => {

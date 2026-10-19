@@ -187,6 +187,8 @@ pub struct AcpClient {
     turn_checkin_limit: u32,
     /// Check-ins sent in the current turn.
     checkins_sent: u32,
+    /// When the current `session/prompt` was sent.
+    turn_started_at: Option<tokio::time::Instant>,
     /// True only while `session/prompt` itself is being read, so a cancel
     /// drain never sends a check-in.
     checkin_armed: bool,
@@ -689,6 +691,7 @@ impl AcpClient {
             current_hard_deadline: None,
             turn_checkin_limit: 0,
             checkins_sent: 0,
+            turn_started_at: None,
             checkin_armed: false,
             checkin_activity_window: CHECKIN_ACTIVITY_WINDOW,
             observer: None,
@@ -714,6 +717,13 @@ impl AcpClient {
     /// keeps the plain hard timeout.
     pub fn set_turn_checkin_limit(&mut self, limit: u32) {
         self.turn_checkin_limit = limit;
+    }
+
+    /// How long the current (or last) `session/prompt` has been running.
+    pub fn turn_elapsed(&self) -> std::time::Duration {
+        self.turn_started_at
+            .map(|started| started.elapsed())
+            .unwrap_or_default()
     }
 
     /// Attach a local observer feed to this ACP client.
@@ -976,6 +986,7 @@ impl AcpClient {
         let hard_deadline = tokio::time::Instant::now() + max_duration;
         self.current_hard_deadline = Some(hard_deadline);
         self.checkins_sent = 0;
+        self.turn_started_at = Some(tokio::time::Instant::now());
 
         // Mark the usage tracker as in-flight for this turn BEFORE sending the
         // prompt so that any setup notifications recorded earlier are not
@@ -1304,6 +1315,10 @@ impl AcpClient {
         session_id: &str,
         hard_deadline: tokio::time::Instant,
     ) -> Result<StopReason, AcpError> {
+        // A prompt read dropped by a control signal never cleared this; a
+        // cancel drain must never steer a check-in.
+        self.checkin_armed = false;
+
         // Validate precondition before any side effects — fail fast if there's
         // no in-flight prompt (prevents writing permission responses or cancel
         // notifications to the agent when no prompt is active).
@@ -1633,6 +1648,8 @@ impl AcpClient {
         // A check-in was rejected or could not be written: the next hard
         // deadline is a plain hard timeout.
         let mut checkin_unavailable = false;
+        // Set once the cap waited for a pending user steer's ack.
+        let mut cap_deferred_for_steer = false;
 
         let now = Instant::now();
         let mut idle_deadline = now + idle_timeout;
@@ -1664,6 +1681,20 @@ impl AcpClient {
                 if !idle_fires_first && self.checkin_armed {
                     let silence = Instant::now().saturating_duration_since(last_activity_at);
                     let working = silence < self.checkin_activity_window;
+                    if working
+                        && self.turn_checkin_limit > 0
+                        && pending_steer.is_some()
+                        && !cap_deferred_for_steer
+                    {
+                        // A user steer's ack renews the cap itself; wait for
+                        // it once instead of cutting the turn.
+                        cap_deferred_for_steer = true;
+                        hard_deadline = Instant::now() + CHECKIN_ACK_GRACE;
+                        tracing::info!(
+                            "hard cap reached while a steer is pending — waiting for its ack"
+                        );
+                        continue;
+                    }
                     let can_checkin = working
                         && self.turn_checkin_limit > 0
                         && !checkin_unavailable
@@ -1680,7 +1711,10 @@ impl AcpClient {
                     }
                     if can_checkin {
                         let number = self.checkins_sent + 1;
-                        let elapsed = max_duration.saturating_mul(number);
+                        let elapsed = self
+                            .turn_started_at
+                            .map(|started| started.elapsed())
+                            .unwrap_or_else(|| max_duration.saturating_mul(number));
                         let text = turn_checkin_prompt(number, self.turn_checkin_limit, elapsed);
                         match self.steer_target(session_id, &[text.as_str()]) {
                             Some((transport, method, params)) => {
@@ -5181,6 +5215,34 @@ Start-Sleep -Seconds 1"#;
             "expected HardTimeout when unarmed, got {result:?}"
         );
         assert_eq!(client.checkins_sent, 0);
+    }
+
+    /// A prompt read dropped by a control signal leaves `checkin_armed` set;
+    /// the cancel drain must still end at its own grace, never steering a
+    /// check-in (which would wait out the 60s ack grace).
+    #[tokio::test]
+    async fn cancel_drain_never_sends_checkin() {
+        let script = format!("{CHECKIN_NOISE} sleep 10");
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+        client.last_prompt_id = Some(999);
+
+        let started = tokio::time::Instant::now();
+        let result = client
+            .cancel_with_cleanup_grace("sess-test", std::time::Duration::from_millis(500))
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::CancelDrainTimeout(_))),
+            "expected CancelDrainTimeout, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "drain must end at its grace, took {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
