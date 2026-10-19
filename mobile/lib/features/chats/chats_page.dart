@@ -29,6 +29,7 @@ import '../channels/channel_stars/channel_stars_provider.dart';
 import '../channels/channels_page.dart';
 import '../channels/channels_provider.dart';
 import '../channels/dm_channel_labels.dart';
+import '../groups/group_invitations.dart';
 import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
@@ -184,6 +185,18 @@ class ChatsPage extends HookConsumerWidget {
     final pinnedThreads = ref.watch(threadPinsProvider);
     final working = _watchWorking(ref, rows);
     final readState = ref.watch(readStateProvider);
+    // Pending group invitations: loaded with Chats, refreshed on resume.
+    ref.watch(groupInvitationsProvider);
+    ref.listen<AppLifecycleState>(appLifecycleProvider, (previous, next) {
+      if (next == AppLifecycleState.resumed &&
+          previous != AppLifecycleState.resumed) {
+        unawaited(
+          Future<void>.microtask(
+            ref.read(groupInvitationsProvider.notifier).refresh,
+          ),
+        );
+      }
+    });
     // "+ 10 more" taps per channel, for this session only.
     final expanded = useState(<String, int>{});
     final scrollController = useScrollController();
@@ -261,6 +274,7 @@ class ChatsPage extends HookConsumerWidget {
     // reloads behind it.
     Future<void> refresh() async {
       ref.read(channelsProvider.notifier).refresh().ignore();
+      ref.read(groupInvitationsProvider.notifier).refresh().ignore();
       await refreshChatList(ref);
     }
 
@@ -280,9 +294,17 @@ class ChatsPage extends HookConsumerWidget {
     } else if (rows.isEmpty) {
       body = Padding(
         padding: EdgeInsets.only(top: topSectionHeight),
-        child: _ChatsEmptyState(
-          onFindChannels: () => unawaited(showBrowseChannelsSheet(context)),
-          onMessageSomeone: () => unawaited(openNewMessage()),
+        child: Column(
+          children: [
+            const GroupInvitationsRow(),
+            Expanded(
+              child: _ChatsEmptyState(
+                onFindChannels: () =>
+                    unawaited(showBrowseChannelsSheet(context)),
+                onMessageSomeone: () => unawaited(openNewMessage()),
+              ),
+            ),
+          ],
         ),
       );
     } else {
@@ -319,6 +341,7 @@ class ChatsPage extends HookConsumerWidget {
           controller: scrollController,
           slivers: [
             SliverToBoxAdapter(child: SizedBox(height: topSectionHeight)),
+            const SliverToBoxAdapter(child: GroupInvitationsRow()),
             SliverPadding(
               padding: EdgeInsets.only(
                 top: Grid.xxs,

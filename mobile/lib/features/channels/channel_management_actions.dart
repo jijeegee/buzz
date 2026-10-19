@@ -77,7 +77,10 @@ class ChannelActions {
     return _refreshChannelsAndRead(channelId);
   }
 
-  Future<void> addMembers({
+  /// Adds [pubkeys] with kind:9000. People the relay sent an invitation to
+  /// instead (their "who can add me" setting) come back in
+  /// [AddMembersResult.invited]; refusals throw [AddMembersException].
+  Future<AddMembersResult> addMembers({
     required String channelId,
     required List<String> pubkeys,
     String role = 'member',
@@ -95,6 +98,7 @@ class ChannelActions {
     // relay rejection must not skip the remaining adds or the invalidation
     // below, which would leave the members list stale for the adds that landed.
     final failures = <String, String>{};
+    final invited = <String>[];
     for (final pubkey in normalizedPubkeys) {
       // Outside the catch: a community switch mid-loop must abort the whole
       // add, not be recorded as this pubkey's rejection.
@@ -110,15 +114,24 @@ class ChannelActions {
           ],
         );
       } catch (error) {
-        failures[pubkey] = _relayErrorMessage(error);
+        final message = _relayErrorMessage(error);
+        switch (classifyAddMemberReply(message)) {
+          case AddMemberReply.invited:
+            invited.add(pubkey);
+          case AddMemberReply.rateLimited:
+            failures[pubkey] = tooManyInvitationsMessage;
+          case AddMemberReply.other:
+            failures[pubkey] = message;
+        }
       }
     }
     _ensureCommunityValid();
     _ref.invalidate(channelMembersProvider(channelId));
     _ref.invalidate(channelBotPubkeysProvider(channelId));
     if (failures.isNotEmpty) {
-      throw AddMembersException(failures);
+      throw AddMembersException(failures, invited: invited);
     }
+    return AddMembersResult(invited: invited);
   }
 
   void _ensureCommunityValid() {

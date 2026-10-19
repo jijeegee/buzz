@@ -99,15 +99,29 @@ class AddChannelMembersSheet extends HookConsumerWidget {
       final submittedUsers = List<DirectoryUser>.of(selectedUsers.value);
       isSubmitting.value = true;
       submitError.value = null;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      void announceInvited(List<String> invited) {
+        if (invited.isEmpty) return;
+        final names = [
+          for (final user in submittedUsers)
+            if (invited.contains(user.pubkey.toLowerCase())) labelFor(user),
+        ];
+        messenger?.showSnackBar(
+          SnackBar(content: Text(invitationSentMessage(names))),
+        );
+      }
+
       try {
-        await ref
+        final result = await ref
             .read(channelActionsProvider)
             .addMembers(
               channelId: channelId,
               pubkeys: submittedUsers.map((user) => user.pubkey).toList(),
             );
+        announceInvited(result.invited);
         if (context.mounted) Navigator.of(context).pop(true);
       } on AddMembersException catch (error) {
+        announceInvited(error.invited);
         final failedPubkeys = error.failures.keys
             .map((pubkey) => pubkey.toLowerCase())
             .toSet();
