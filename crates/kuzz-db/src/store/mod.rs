@@ -102,6 +102,9 @@ mod media_access_postgres_tests;
 mod channel_history_postgres_tests;
 
 #[cfg(test)]
+mod channel_sequence_page_postgres_tests;
+
+#[cfg(test)]
 mod chat_backfill_postgres_tests;
 
 #[cfg(test)]
