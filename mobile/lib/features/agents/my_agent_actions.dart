@@ -6,6 +6,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import '../channels/channel.dart';
+import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/send_message_provider.dart';
 import 'agent_settings_page.dart';
@@ -97,6 +99,40 @@ final myAgentCommandChannelProvider = Provider<MyAgentCommandChannel>(
     return dm.id;
   },
 );
+
+/// The owner's DM with an agent, opened if there is none.
+typedef MyAgentDm = Future<Channel> Function(String agentPubkey);
+
+final myAgentDmProvider = Provider<MyAgentDm>(
+  (ref) =>
+      (agentPubkey) =>
+          ref.read(channelActionsProvider).openDm(pubkeys: [agentPubkey]),
+);
+
+/// Opens the owner's DM with an agent: what tapping the agent does.
+Future<void> openMyAgentDm(
+  BuildContext context,
+  WidgetRef ref,
+  String agentPubkey,
+  String name,
+) async {
+  final navigator = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final Channel channel;
+  try {
+    channel = await ref.read(myAgentDmProvider)(agentPubkey);
+  } catch (failure) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('Couldn’t open the DM with $name: $failure')),
+    );
+    return;
+  }
+  await navigator.push(
+    MaterialPageRoute<void>(
+      builder: (_) => ChannelDetailPage(channel: channel),
+    ),
+  );
+}
 
 /// Asks the agent to stop after confirming. Stop sends the owner's
 /// `!shutdown` in their DM with the agent, like desktop's remote stop; the

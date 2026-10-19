@@ -33,6 +33,7 @@ void main() {
     List<MyTeamPreset> teamPresets = const [],
     List<MyAgentPreset> presets = const [],
     String? currentDevice = 'phone',
+    List<String>? openedDms,
   }) async {
     final send = _RecordingSend();
     await tester.pumpWidget(
@@ -65,6 +66,11 @@ void main() {
           myAgentCommandChannelProvider.overrideWithValue(
             (pubkey) async => 'dm-$pubkey',
           ),
+          // Records the DM asked for; the DM page itself is not under test.
+          myAgentDmProvider.overrideWithValue((pubkey) async {
+            openedDms?.add(pubkey);
+            throw StateError('offline');
+          }),
           // Signed out for settings: they open read-only, with no relay.
           myPubkeyProvider.overrideWithValue(null),
         ],
@@ -136,10 +142,7 @@ void main() {
     );
     await tester.tap(find.byKey(ValueKey('my-agent-menu-$_fizz')));
     await tester.pumpAndSettle();
-    final start = tester.widget<PopupMenuItem<Object?>>(
-      find.byKey(ValueKey('my-agent-menu-start-$_fizz')),
-    );
-    expect(start.enabled, isFalse);
+    expect(find.byKey(ValueKey('my-agent-menu-start-$_fizz')), findsNothing);
     await tester.tap(find.byKey(ValueKey('my-agent-menu-stop-$_fizz')));
     await tester.pumpAndSettle();
     expect(find.text('Stop Fizz?'), findsOneWidget);
@@ -157,12 +160,11 @@ void main() {
       agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'offline'},
     );
-    await tester.tap(find.byKey(ValueKey('my-agent-menu-$_fizz')));
+    // A long press opens the same sheet as the "⋮".
+    await tester.longPress(find.text('Fizz'));
     await tester.pumpAndSettle();
-    final stop = tester.widget<PopupMenuItem<Object?>>(
-      find.byKey(ValueKey('my-agent-menu-stop-$_fizz')),
-    );
-    expect(stop.enabled, isFalse);
+    expect(find.byKey(ValueKey('my-agent-sheet-$_fizz')), findsOneWidget);
+    expect(find.byKey(ValueKey('my-agent-menu-stop-$_fizz')), findsNothing);
     await tester.tap(find.byKey(ValueKey('my-agent-menu-start-$_fizz')));
     await tester.pumpAndSettle();
     expect(send.calls, [('dm-$_fizz', '!start', _fizz)]);
@@ -182,33 +184,57 @@ void main() {
     );
     await tester.tap(find.byKey(ValueKey('my-agent-menu-$_scout')));
     await tester.pumpAndSettle();
-    PopupMenuItem<Object?> item(String key) =>
-        tester.widget(find.byKey(ValueKey('my-agent-menu-$key-$_scout')));
-    expect(item('start').enabled, isFalse);
-    expect(item('stop').enabled, isTrue);
+    expect(find.byKey(ValueKey('my-agent-menu-stop-$_scout')), findsOneWidget);
+    expect(find.byKey(ValueKey('my-agent-menu-start-$_scout')), findsNothing);
+    expect(find.text('Online · Office PC'), findsOneWidget);
+    for (final action in ['message', 'edit', 'profile']) {
+      expect(
+        find.byKey(ValueKey('my-agent-menu-$action-$_scout')),
+        findsOneWidget,
+      );
+    }
   });
 
-  testWidgets('tapping an agent or menu Edit opens its settings', (
+  testWidgets('tapping an agent opens its DM, not its settings', (
     tester,
   ) async {
+    final opened = <String>[];
+    await pump(
+      tester,
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
+      presence: {_fizz: 'online'},
+      openedDms: opened,
+    );
+    await tester.tap(find.text('Fizz'));
+    await tester.pumpAndSettle();
+    expect(opened, [_fizz]);
+    expect(find.byType(AgentSettingsPage), findsNothing);
+    expect(
+      find.textContaining('Couldn’t open the DM with Fizz'),
+      findsOneWidget,
+    );
+    // Message in the sheet opens the same DM.
+    await tester.tap(find.byKey(ValueKey('my-agent-menu-$_fizz')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('my-agent-menu-message-$_fizz')));
+    await tester.pumpAndSettle();
+    expect(opened, [_fizz, _fizz]);
+  });
+
+  testWidgets('sheet Edit opens its settings', (tester) async {
     await pump(
       tester,
       agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'online'},
     );
-    await tester.tap(find.text('Fizz'));
-    await tester.pumpAndSettle();
-    expect(find.byType(AgentSettingsPage), findsOneWidget);
-    // Settings show the agent's state and Stop.
-    expect(find.byKey(const Key('my-agent-status-card')), findsOneWidget);
-    expect(find.byKey(ValueKey('my-agent-stop-$_fizz')), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey('my-agent-menu-$_fizz')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey('my-agent-menu-edit-$_fizz')));
     await tester.pumpAndSettle();
     expect(find.byType(AgentSettingsPage), findsOneWidget);
+    // Settings show the agent's state and Stop.
+    expect(find.byKey(const Key('my-agent-status-card')), findsOneWidget);
+    expect(find.byKey(ValueKey('my-agent-stop-$_fizz')), findsOneWidget);
   });
 
   testWidgets('settings Start shows Starting… while the command is sent', (
@@ -219,7 +245,9 @@ void main() {
       agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'offline'},
     );
-    await tester.tap(find.text('Fizz'));
+    await tester.tap(find.byKey(ValueKey('my-agent-menu-$_fizz')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('my-agent-menu-edit-$_fizz')));
     await tester.pumpAndSettle();
     send.gate = Completer<void>();
     await tester.tap(find.byKey(ValueKey('my-agent-start-$_fizz')));

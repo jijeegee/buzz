@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/devices/agent_host_devices.dart';
@@ -15,8 +18,9 @@ import 'my_agents.dart';
 
 /// One of the owner's agents in Agents: avatar with a status light, the
 /// robot of the computer it runs on before its name, its status (and, with
-/// [showComputer], the computer) below, and the Start / Stop / Edit menu.
-/// Tapping it opens the agent's settings.
+/// [showComputer], the computer) below, and the "⋮" for its actions.
+/// Tapping it opens the DM with the agent; a long press or the "⋮" opens
+/// the actions sheet.
 class MyAgentTile extends ConsumerWidget {
   const MyAgentTile({
     super.key,
@@ -58,7 +62,11 @@ class MyAgentTile extends ConsumerWidget {
     );
     return InkWell(
       key: ValueKey('my-agent-${agent.pubkey}'),
-      onTap: () => openMyAgentSettings(context, agent.pubkey, name),
+      onTap: () => unawaited(openMyAgentDm(context, ref, agent.pubkey, name)),
+      onLongPress: () {
+        unawaited(HapticFeedback.mediumImpact());
+        unawaited(showMyAgentSheet(context, ref, agent: agent, name: name));
+      },
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           Grid.gutter + indent,
