@@ -83,6 +83,16 @@ fn collect_stored_events(rows: Vec<PgRow>) -> Result<Vec<StoredEvent>> {
     Ok(out)
 }
 
+/// Drop rows from before `reader` joined a `since_join` room
+/// (`channel_event_before_join`), before ORDER/LIMIT.
+fn push_history_filter(qb: &mut QueryBuilder<sqlx::Postgres>, prefix: &str, reader: &[u8]) {
+    qb.push(format!(
+        " AND NOT channel_event_before_join({prefix}community_id, {prefix}channel_id,          {prefix}channel_sequence, "
+    ));
+    qb.push_bind(reader.to_vec());
+    qb.push(")");
+}
+
 fn build_mentions_query(
     community: CommunityId,
     pubkey_bytes: &[u8],
@@ -110,6 +120,7 @@ fn build_mentions_query(
          {KIND_GIT_STATUS_MERGED}, {KIND_GIT_STATUS_CLOSED}, {KIND_GIT_STATUS_DRAFT})"
     ));
     push_visible_channel_filter(&mut qb, "e.channel_id", accessible_channel_ids);
+    push_history_filter(&mut qb, "e.", pubkey_bytes);
     if let Some(s) = since {
         qb.push(" AND m.event_created_at >= ").push_bind(s);
     }
@@ -196,6 +207,7 @@ fn build_needs_action_query(
         " AND e.kind IN ({KIND_WORKFLOW_APPROVAL_REQUESTED}, {KIND_STREAM_REMINDER})"
     ));
     push_visible_channel_filter(&mut qb, "e.channel_id", accessible_channel_ids);
+    push_history_filter(&mut qb, "e.", pubkey_bytes);
     if let Some(s) = since {
         qb.push(" AND m.event_created_at >= ").push_bind(s);
     }
