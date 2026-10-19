@@ -318,12 +318,11 @@ KuzzDeepLink? parseKuzzDeepLink(Uri uri) =>
     parseChannelDeepLink(uri) ??
     parseMessageDeepLink(uri);
 
-GroupJoinDeepLink? _parseGroupJoin(Uri uri) => switch (parseGroupJoinDeepLink(
-  uri,
-)) {
-  final target? => GroupJoinDeepLink(target),
-  null => null,
-};
+GroupJoinDeepLink? _parseGroupJoin(Uri uri) =>
+    switch (parseGroupJoinDeepLink(uri)) {
+      final target? => GroupJoinDeepLink(target),
+      null => null,
+    };
 
 /// A validated Kuzz repository, pull request, or issue permalink.
 class EntityDeepLink extends KuzzDeepLink {

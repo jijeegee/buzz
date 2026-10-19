@@ -280,7 +280,10 @@ class JoinWithLinkSheet extends HookConsumerWidget {
       looking.value = true;
       error.value = null;
       try {
-        final group = await lookupGroupLink(ref.read(groupsApiProvider), target);
+        final group = await lookupGroupLink(
+          ref.read(groupsApiProvider),
+          target,
+        );
         if (!context.mounted || serial != lookupSerial.value) return;
         found.value = (target, group);
       } catch (e) {

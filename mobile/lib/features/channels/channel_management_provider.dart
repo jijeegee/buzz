@@ -76,13 +76,12 @@ class AddMembersException implements Exception {
 
   const AddMembersException(this.failures, {this.invited = const []});
 
-  String get message => failures.values.every(
-        (reason) => reason == tooManyInvitationsMessage,
-      )
+  String get message =>
+      failures.values.every((reason) => reason == tooManyInvitationsMessage)
       ? tooManyInvitationsMessage
       : failures.entries
-      .map((entry) => '${shortPubkey(entry.key)}: ${entry.value}')
-      .join('; ');
+            .map((entry) => '${shortPubkey(entry.key)}: ${entry.value}')
+            .join('; ');
 
   @override
   String toString() => 'AddMembersException($message)';

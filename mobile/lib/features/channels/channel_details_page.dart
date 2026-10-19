@@ -439,6 +439,13 @@ class ChannelDetailsPage extends HookConsumerWidget {
               ],
             ],
           ),
+          if (!resolvedChannel.isDm &&
+              resolvedChannel.isMember &&
+              !resolvedChannel.isArchived)
+            GroupSettingsCard(
+              channel: resolvedChannel,
+              canManage: canManageLifecycle,
+            ),
           AppListCard(
             key: const ValueKey('channel-details-goals-card'),
             verticalPadding: _channelDetailsSectionPadding,

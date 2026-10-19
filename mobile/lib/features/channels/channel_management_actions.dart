@@ -175,6 +175,7 @@ class ChannelActions {
     String? name,
     String? description,
     bool? goalsEnabled,
+    String? visibility,
   }) async {
     _ensureCommunityValid();
     await _signedEventRelay.submit(
@@ -185,6 +186,7 @@ class ChannelActions {
         name: name,
         description: description,
         goalsEnabled: goalsEnabled,
+        visibility: visibility,
       ),
     );
     _ensureCommunityValid();

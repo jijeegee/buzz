@@ -266,7 +266,9 @@ class GroupsApi {
     final base = Uri.parse(_config.baseUrl).resolve(path);
     final uri = query == null ? base : base.replace(queryParameters: query);
     final url = uri.toString();
-    final bodyBytes = body == null ? const <int>[] : utf8.encode(jsonEncode(body));
+    final bodyBytes = body == null
+        ? const <int>[]
+        : utf8.encode(jsonEncode(body));
     Future<http.Response> send(String authorization) {
       final headers = {
         'Authorization': authorization,

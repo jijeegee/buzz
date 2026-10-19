@@ -97,9 +97,7 @@ class GroupInvitationsRow extends ConsumerWidget {
       child: InkWell(
         key: const ValueKey('chats-invitations-row'),
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => const GroupInvitationsPage(),
-          ),
+          MaterialPageRoute<void>(builder: (_) => const GroupInvitationsPage()),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(

@@ -287,11 +287,7 @@ class _PublicGroupTile extends HookConsumerWidget {
           key: Key('browse-channel-${group.id}'),
           contentPadding: EdgeInsets.zero,
           leading: GroupAvatar(channel: channel, size: 32),
-          title: Text(
-            group.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(group.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(memberCountLabel(group.memberCount)),
           onTap: () => Navigator.of(context).pop(channel),
           trailing: FilledButton.tonal(
