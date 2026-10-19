@@ -538,7 +538,7 @@ class MessageContent extends HookConsumerWidget {
 
         try {
           await ref.read(openDownloadedFileProvider)(
-            url,
+            auth.resolve(url),
             auth.headersFor(url),
             text,
           );

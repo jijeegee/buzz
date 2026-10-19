@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import '../channels/channel_management_provider.dart';
 import '../channels/send_message_provider.dart';
 import 'agent_settings_page.dart';
 import 'my_agents.dart';
@@ -75,37 +76,47 @@ String myAgentComputerLabel(String? deviceName, {required bool current}) {
   return name.isEmpty ? 'Another computer' : name;
 }
 
-/// Whether Stop can be sent: the agent runs and has a channel for the
-/// owner's command.
+/// Whether Stop can be sent: the agent runs.
 bool myAgentCanStop(MyAgent agent, MyAgentStatus status) =>
-    (status == MyAgentStatus.online || status == MyAgentStatus.busy) &&
-    agent.commandChannelId != null;
+    status == MyAgentStatus.online || status == MyAgentStatus.busy;
 
-/// Whether Start can be sent: the agent is known to be stopped and has a
-/// channel for the owner's command.
+/// Whether Start can be sent: the agent is known to be stopped.
 bool myAgentCanStart(MyAgent agent, MyAgentStatus status) =>
-    status == MyAgentStatus.stopped && agent.commandChannelId != null;
+    status == MyAgentStatus.stopped;
+
+/// The channel id of the owner's DM with an agent, opened if there is none.
+typedef MyAgentCommandChannel = Future<String> Function(String agentPubkey);
+
+/// Owner commands go to the DM with the agent, so no one else sees them and
+/// an agent in no channel can still be reached.
+final myAgentCommandChannelProvider = Provider<MyAgentCommandChannel>(
+  (ref) => (agentPubkey) async {
+    final dm = await ref
+        .read(channelActionsProvider)
+        .openDm(pubkeys: [agentPubkey]);
+    return dm.id;
+  },
+);
 
 /// Asks the agent to stop after confirming. Stop sends the owner's
-/// `!shutdown` in a channel the agent is in, like desktop's remote stop; the
-/// Kuzz app on the agent's computer acts on it.
+/// `!shutdown` in their DM with the agent, like desktop's remote stop; the
+/// agent's harness on its computer acts on it.
 Future<void> stopMyAgent(
   BuildContext context,
   WidgetRef ref,
   MyAgent agent,
   String name,
 ) async {
-  final channelId = agent.commandChannelId;
   final commands = ref.read(myAgentCommandsProvider.notifier);
-  if (channelId == null ||
-      ref.read(myAgentCommandsProvider).containsKey(agent.pubkey)) {
-    return;
-  }
+  if (ref.read(myAgentCommandsProvider).containsKey(agent.pubkey)) return;
   final ok = await _confirmStop(context, name);
   if (!ok || !context.mounted) return;
   commands._set(agent.pubkey, MyAgentCommand.stop);
   final messenger = ScaffoldMessenger.of(context);
   try {
+    final channelId = await ref.read(myAgentCommandChannelProvider)(
+      agent.pubkey,
+    );
     await ref
         .read(sendMessageProvider)
         .call(
@@ -129,19 +140,16 @@ Future<void> stopMyAgent(
   }
 }
 
-/// Asks the agent's computer to start it with the owner's `!start`.
+/// Asks the agent's computer to start it with the owner's `!start` in
+/// their DM with the agent.
 Future<void> startMyAgent(
   BuildContext context,
   WidgetRef ref,
   MyAgent agent,
   String name,
 ) async {
-  final channelId = agent.commandChannelId;
   final commands = ref.read(myAgentCommandsProvider.notifier);
-  if (channelId == null ||
-      ref.read(myAgentCommandsProvider).containsKey(agent.pubkey)) {
-    return;
-  }
+  if (ref.read(myAgentCommandsProvider).containsKey(agent.pubkey)) return;
   final computer = myAgentComputerName(
     ref.read(agentHostDeviceNamesProvider)[agent.deviceId],
     current: ref.read(currentAccountDeviceIdProvider) == agent.deviceId,
@@ -149,6 +157,9 @@ Future<void> startMyAgent(
   commands._set(agent.pubkey, MyAgentCommand.start);
   final messenger = ScaffoldMessenger.of(context);
   try {
+    final channelId = await ref.read(myAgentCommandChannelProvider)(
+      agent.pubkey,
+    );
     await ref
         .read(sendMessageProvider)
         .call(

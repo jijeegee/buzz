@@ -228,7 +228,7 @@ debug builds without it connect nowhere.
 
 `just mobile-dev` and `just mobile-build-android` pass `KUZZ_RELAY_URL` and the
 explicit recovery service origin `KUZZ_KEY_BACKUP_ORIGIN`, defaulting in those
-development recipes to `https://jihobuzz.duckdns.org:8443`. Override that environment variable
+development recipes to `https://jihobuzz.duckdns.org`. Override that environment variable
 for another deployment. Direct Flutter/IDE launches use
 `--dart-define-from-file=config/dev.json`, or explicitly pass
 `--dart-define=KUZZ_KEY_BACKUP_ORIGIN=https://your-service.example`.

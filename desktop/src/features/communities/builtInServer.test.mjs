@@ -159,6 +159,7 @@ test("startup selects the stored built-in community", () => {
     communities: [other, ours],
     activeId: "ours",
     created: null,
+    rehomed: false,
   });
   assert.equal(resolveStartupPin([other, ours], "ours", BUILT_IN), null);
   assert.equal(resolveStartupPin([other, ours], "other", null), null);
@@ -168,6 +169,52 @@ test("startup selects the stored built-in community", () => {
   const added = resolveStartupPin([insecure], "insecure", BUILT_IN);
   assert.ok(added?.created);
   assert.equal(added.created.relayUrl, BUILT_IN);
+});
+
+test("startup moves the community on an earlier service address to the built-in one", () => {
+  const NEW = "wss://jihobuzz.duckdns.org";
+  const isService = (url) =>
+    /^(wss|https):\/\/jihobuzz\.duckdns\.org(:8443)?\/?$/.test(url);
+  const other = community("other", "wss://old.example");
+  const ours = community("ours", BUILT_IN, { pubkey: "ab" });
+  const pin = resolveStartupPin(
+    [other, ours],
+    "ours",
+    NEW,
+    () => "new-id",
+    () => new Date(),
+    isService,
+  );
+  assert.deepEqual(pin, {
+    communities: [other, { ...ours, relayUrl: NEW }],
+    activeId: "ours",
+    created: null,
+    rehomed: true,
+  });
+  // Already on the built-in address: nothing to do.
+  assert.equal(
+    resolveStartupPin(
+      [{ ...ours, relayUrl: NEW }],
+      "ours",
+      NEW,
+      undefined,
+      undefined,
+      isService,
+    ),
+    null,
+  );
+  // Active elsewhere: the moved entry is selected, nothing is created.
+  const fromOther = resolveStartupPin(
+    [other, ours],
+    "other",
+    NEW,
+    () => "new-id",
+    () => new Date(),
+    isService,
+  );
+  assert.equal(fromOther?.activeId, "ours");
+  assert.equal(fromOther?.created, null);
+  assert.equal(fromOther?.rehomed, true);
 });
 
 test("startup adds a fresh, signed-out built-in community when only others are stored", () => {
@@ -241,6 +288,37 @@ test("loading resolves once and pins storage", async () => {
 
   setBuiltInServerForTests(undefined);
   assert.equal(await loadBuiltInServer(read, "e2e"), null);
+});
+
+test("settings are keyed by the service only for the native side's addresses", async () => {
+  const { normalizeRelayUrl } = await import(
+    "../../shared/lib/normalizeRelayUrl.ts"
+  );
+  const { resetServiceForTests } = await import(
+    "../../shared/lib/serviceAddress.ts"
+  );
+  const read = async () => BUILT_IN;
+  const service = (relayUrls) => async () => ({
+    scope: "kuzz",
+    previousRelayUrls: [],
+    relayUrls,
+  });
+  try {
+    await loadBuiltInServer(read, "production", service([BUILT_IN]));
+    assert.equal(normalizeRelayUrl(BUILT_IN), "kuzz");
+
+    // A dev build pointed at another server at run time.
+    setBuiltInServerForTests(undefined);
+    resetServiceForTests();
+    await loadBuiltInServer(
+      read,
+      "production",
+      service(["wss://elsewhere.example"]),
+    );
+    assert.equal(normalizeRelayUrl(BUILT_IN), BUILT_IN);
+  } finally {
+    resetServiceForTests();
+  }
 });
 
 test("a failed read is an error with retry, never the multi-server mode", async () => {

@@ -17,6 +17,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import { isServiceAddress } from "@/shared/lib/serviceAddress";
+
 // Matches: https://anything.com/media/{64-hex}.{ext}
 // Also matches thumbnails: /media/{64-hex}.thumb.jpg
 const RELAY_MEDIA_RE =
@@ -320,7 +322,9 @@ export function rewriteRelayUrl(url: string): string {
   // Compare canonicalized origins: hosts are case-insensitive, and the relay
   // always returns lowercased media URLs even when the saved community URL
   // was typed with uppercase (e.g. wss://PENDING-SEED.communities.buzz.xyz).
-  if (cachedRelayOrigin) {
+  // Media on an earlier address of the built-in service is the same relay's
+  // (the proxy fetches by path from the current relay).
+  if (cachedRelayOrigin && !isServiceAddress(url)) {
     const urlOrigin = canonicalOrigin(url);
     if (urlOrigin !== cachedRelayOrigin) {
       return url;

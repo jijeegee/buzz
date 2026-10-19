@@ -48,6 +48,14 @@ use crate::scope::SessionScope;
 /// the turn as "recently active" (eligible for requeue instead of dead-letter).
 const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(60);
 
+/// Check-ins a channel turn still working at the hard cap gets before it is
+/// paused and the requester asked whether to continue (with the 2-hour cap,
+/// a pause after about 8 hours).
+pub(crate) const TURN_CHECKIN_LIMIT: u32 = 3;
+
+/// How long a paused turn may take to stop before the adapter is replaced.
+const CHECKIN_PAUSE_GRACE: Duration = Duration::from_secs(60);
+
 /// Maximum canonical thread roots remembered by one live ACP session.
 ///
 /// Evicting the oldest root only causes a future prompt to include redundant
@@ -216,6 +224,15 @@ pub struct SessionState {
     /// pool uses this fence to discard that stale provider session before the
     /// worker becomes claimable again.
     scope_owner_generations: HashMap<SessionScope, u64>,
+    /// Sessions [`invalidate_all`](Self::invalidate_all) dropped because the
+    /// adapter process died or timed out. Their transcripts are intact, so
+    /// the main loop hands them to the ledger for reattach when it replaces
+    /// the worker (see [`take_held_sessions`](Self::take_held_sessions)).
+    released_sessions: Vec<(SessionScope, String)>,
+    /// The scope and provider session the current turn runs on, set once the
+    /// turn has its session. Failure paths drop the session handle before the
+    /// worker returns; this says which session the dead worker was driving.
+    pub(crate) turn_session: Option<(SessionScope, String)>,
 }
 
 impl SessionState {
@@ -332,7 +349,7 @@ impl SessionState {
 
     /// Invalidate all sessions and turn counters (e.g. after agent exit).
     pub fn invalidate_all(&mut self) {
-        self.sessions.clear();
+        self.released_sessions.extend(self.sessions.drain());
         self.turn_counts.clear();
         self.heartbeat_session = None;
         self.heartbeat_turn_count = 0;
@@ -342,6 +359,23 @@ impl SessionState {
         self.roster_sections.clear();
         self.deliveries.clear();
         self.scope_owner_generations.clear();
+    }
+
+    /// Every provider session this worker held when it went away: those
+    /// dropped by [`invalidate_all`](Self::invalidate_all) plus any still
+    /// live. Called once, as the worker is replaced.
+    /// The session the current (or last) turn ran on in `scope`.
+    pub(crate) fn turn_session(&self, scope: &SessionScope) -> Option<&str> {
+        self.turn_session
+            .as_ref()
+            .filter(|(turn_scope, _)| turn_scope == scope)
+            .map(|(_, session_id)| session_id.as_str())
+    }
+
+    pub(crate) fn take_held_sessions(&mut self) -> Vec<(SessionScope, String)> {
+        let mut held = std::mem::take(&mut self.released_sessions);
+        held.extend(self.sessions.drain());
+        held
     }
 
     /// Record the layer 0 goals a successful turn left `scope`'s session with.
@@ -576,6 +610,9 @@ pub struct AgentPool {
     /// Best-effort: stale entries (rotation, crash/respawn) self-heal on the
     /// next dispatch and are pruned on channel-wide session invalidation.
     session_owners: HashMap<SessionScope, SessionOwner>,
+    /// Scopes whose session an idle model switch dropped from its worker. The
+    /// conversation is intact, so dispatch lets the next session reattach it.
+    pending_reattach: HashSet<SessionScope>,
     /// Monotonic validity fence assigned whenever a scope is dispatched. The
     /// generation distinguishes a newly forked owner from every older copy of
     /// that scope's provider session.
@@ -648,15 +685,32 @@ fn apply_completed_before_control_signal(
     state: &mut SessionState,
     source: &PromptSource,
     control_signal: &ControlSignal,
+    session_ledger: Option<&crate::session_ledger::SessionLedger>,
 ) {
-    // Rotate and SwitchModel both invalidate so the next turn creates a fresh
-    // session. For SwitchModel the caller has already set `desired_model`, so
-    // the fresh session applies the new model on its next creation.
-    if matches!(
-        control_signal,
-        ControlSignal::Rotate | ControlSignal::SwitchModel { .. }
-    ) {
-        state.invalidate(source);
+    // Rotate and SwitchModel both invalidate so the next turn opens the
+    // session again. Rotate starts a fresh one (the main loop already removed
+    // it from the ledger). SwitchModel reattaches the same conversation and
+    // applies the `desired_model` the caller set, so changing the model within
+    // one adapter never loses the conversation.
+    match control_signal {
+        ControlSignal::Rotate => state.invalidate(source),
+        ControlSignal::SwitchModel { .. } => {
+            state.invalidate(source);
+            allow_reattach(source, session_ledger);
+        }
+        _ => {}
+    }
+}
+
+/// Let the next session opened for `source`'s scope reattach the recorded
+/// conversation. Used where a turn drops its in-memory session handle on
+/// purpose (a cancel, a model switch) while the conversation itself is fine.
+fn allow_reattach(
+    source: &PromptSource,
+    session_ledger: Option<&crate::session_ledger::SessionLedger>,
+) {
+    if let (PromptSource::Channel(scope), Some(ledger)) = (source, session_ledger) {
+        ledger.allow_handoff(scope);
     }
 }
 
@@ -1194,6 +1248,7 @@ impl AgentPool {
             join_set: JoinSet::new(),
             task_map: HashMap::new(),
             session_owners: HashMap::new(),
+            pending_reattach: HashSet::new(),
             next_scope_owner_generation: 1,
             held_since: HashMap::new(),
         }
@@ -1615,6 +1670,22 @@ impl AgentPool {
         &mut self.agents
     }
 
+    /// Whether an idle model switch left `scope` waiting to reattach its
+    /// conversation; clears the mark.
+    pub fn take_pending_reattach(&mut self, scope: &SessionScope) -> bool {
+        self.pending_reattach.remove(scope)
+    }
+
+    /// Scopes whose provider session the pool records worker `agent_index`
+    /// as owning.
+    pub fn scopes_owned_by(&self, agent_index: usize) -> Vec<SessionScope> {
+        self.session_owners
+            .iter()
+            .filter(|(_, owner)| owner.agent_index == agent_index)
+            .map(|(scope, _)| scope.clone())
+            .collect()
+    }
+
     /// Remove the session for `channel_id` from all idle agents.
     ///
     /// Called when the agent is removed from a channel — stale sessions
@@ -1749,6 +1820,9 @@ impl AgentPool {
         agent.state.invalidate_scope(&scope);
         self.session_owners.remove(&scope);
         self.held_since.remove(&scope);
+        // Same adapter, new model: the next turn reattaches the conversation
+        // and applies the model (see `take_pending_reattach`).
+        self.pending_reattach.insert(scope);
         IdleSwitchResult::Switched
     }
 }
@@ -3358,6 +3432,7 @@ pub async fn run_prompt_task(
         Some(b) => PromptSource::Channel(b.scope.clone()),
         None => PromptSource::Heartbeat,
     };
+    agent.state.turn_session = None;
     let observer_channel_id = source.channel_id();
     // Thread conversation context requires the canonical root to distinguish
     // concurrent threads in the same channel's activity.
@@ -3908,6 +3983,9 @@ pub async fn run_prompt_task(
             }
         }
     };
+    if let PromptSource::Channel(scope) = &source {
+        agent.state.turn_session = Some((scope.clone(), session_id.clone()));
+    }
     agent.acp.set_observer_context(observer::context_for_turn(
         observer_channel_id,
         Some(session_id.clone()),
@@ -4459,6 +4537,13 @@ pub async fn run_prompt_task(
         prompt_label(&source)
     );
 
+    // A channel turn still working at the hard cap is checked in on instead
+    // of cut off; heartbeats keep the plain hard timeout.
+    agent.acp.set_turn_checkin_limit(match &source {
+        PromptSource::Channel(_) => TURN_CHECKIN_LIMIT,
+        PromptSource::Heartbeat => 0,
+    });
+
     // When control_rx is Some (channel tasks), wrap the prompt in select! so
     // the main loop can cancel, interrupt, or rotate it. Heartbeats
     // (control_rx=None) take the simple await path — they are not controllable.
@@ -4513,6 +4598,13 @@ pub async fn run_prompt_task(
                             Ok(stop_reason) => {
                                 log_stop_reason(&source, &stop_reason);
                                 agent.state.invalidate(&source);
+                                // A cancelled turn leaves the conversation
+                                // intact: the requeued or next turn continues
+                                // it (and applies a switched model). Only a
+                                // rotate starts over.
+                                if !matches!(control_signal, ControlSignal::Rotate) {
+                                    allow_reattach(&source, ctx.session_ledger.as_deref());
+                                }
                                 let retry_batch =
                                     requeue_cancelled_batch(&ctx, control_signal, batch);
 
@@ -4629,6 +4721,7 @@ pub async fn run_prompt_task(
                             &mut agent.state,
                             &source,
                             &control_signal,
+                            ctx.session_ledger.as_deref(),
                         );
                         let usage = agent.acp.take_turn_usage();
                         publish_agent_turn_metric(
@@ -4700,12 +4793,11 @@ pub async fn run_prompt_task(
                 agent.state.heartbeat_standing_context_sent = true;
             }
 
-            let should_rotate = matches!(
-                stop_reason,
-                StopReason::MaxTokens | StopReason::MaxTurnRequests
-            );
-
-            let should_rotate = should_rotate || {
+            // `MaxTokens` / `MaxTurnRequests` end one response, not the
+            // session: Claude Code and Codex compact long sessions themselves,
+            // so the session continues. Only the operator's explicit turn
+            // limit rotates it.
+            let should_rotate = {
                 let limit = ctx.max_turns_per_session;
                 if limit > 0 {
                     match &source {
@@ -4727,9 +4819,15 @@ pub async fn run_prompt_task(
             if should_rotate {
                 tracing::info!(
                     target: "pool::session",
-                    "rotating session for {source:?} after {stop_reason:?}",
+                    "rotating session for {source:?} after {} turns",
+                    ctx.max_turns_per_session,
                 );
                 agent.state.invalidate(&source);
+                // A deliberate rotation: never reattach the old session.
+                if let (PromptSource::Channel(scope), Some(ledger)) = (&source, &ctx.session_ledger)
+                {
+                    ledger.remove(scope);
+                }
             }
 
             let core_stop = acp_stop_to_core(&stop_reason);
@@ -4861,6 +4959,89 @@ pub async fn run_prompt_task(
                     );
                 }
             }
+        }
+        Err(AcpError::CheckinLimit { checkins }) => {
+            // Still working after every check-in: pause the turn, keep the
+            // session, and ask the requester. Their reply continues the same
+            // conversation; the batch is not retried.
+            tracing::warn!(
+                target: "pool::prompt",
+                "turn still working after {checkins} check-ins — pausing session {session_id}"
+            );
+            if let Some(batch) = batch.as_ref() {
+                spawn_turn_paused_notice(&ctx.rest_client, batch, agent.acp.turn_elapsed());
+            }
+            let cancelled = agent
+                .acp
+                .cancel_with_cleanup_grace(&session_id, CHECKIN_PAUSE_GRACE)
+                .await;
+            let usage = agent.acp.take_turn_usage();
+            publish_agent_turn_metric(
+                &ctx,
+                usage,
+                observer_channel_id,
+                &session_id,
+                &turn_id,
+                Some(kuzz_core::agent_turn_metric::StopReason::Cancelled),
+            )
+            .await;
+            let outcome = match cancelled {
+                Ok(stop_reason) => {
+                    log_stop_reason(&source, &stop_reason);
+                    // The session keeps this request, so record it as
+                    // delivered: the requester's reply must continue it, not
+                    // re-send it as new.
+                    if let PromptSource::Channel(scope) = &source {
+                        let standing_sent = !agent.has_system_prompt_support();
+                        record_scope_delivery_success(
+                            &mut agent,
+                            scope.clone(),
+                            standing_sent,
+                            &pending_delivered_event_ids,
+                            &pending_hydrated_thread_roots,
+                        );
+                        agent
+                            .state
+                            .mark_layer0_goals_seen(scope.clone(), layer0_now.clone());
+                        agent
+                            .state
+                            .mark_live_text_seen(scope.clone(), &live_now.text);
+                        agent
+                            .state
+                            .mark_goal_context_seen(scope.clone(), goal_context_now.as_ref());
+                        agent
+                            .state
+                            .mark_prompt_goals_in_messages(scope, prompt_goals_in_messages);
+                        if let Some(ledger) = &ctx.session_ledger {
+                            ledger.touch(scope, &session_id);
+                            ledger.set_standing(
+                                scope,
+                                &session_id,
+                                &crate::live_settings::StandingHashes::new(
+                                    &live_now.text,
+                                    layer0_now.as_deref(),
+                                ),
+                            );
+                        }
+                    }
+                    PromptOutcome::Ok(stop_reason)
+                }
+                Err(AcpError::AgentExited) => {
+                    agent.state.invalidate_all();
+                    PromptOutcome::AgentExited
+                }
+                Err(e) => {
+                    // Did not stop in time: replace the adapter. The session
+                    // is reattached by the next turn.
+                    tracing::warn!(
+                        target: "pool::prompt",
+                        "paused turn did not stop ({e}) — replacing the agent process"
+                    );
+                    agent.state.invalidate_all();
+                    PromptOutcome::CancelDrainTimeout(CHECKIN_PAUSE_GRACE)
+                }
+            };
+            send_prompt_result(&result_tx, &turn_id, agent, source, outcome, None);
         }
         Err(AcpError::HardTimeout { silence }) => {
             let recently_active = silence < RECENT_ACTIVITY_WINDOW;
@@ -7042,12 +7223,76 @@ pub(crate) async fn post_failure_notice(
     }
 }
 
+/// The notice telling the requester a long turn was paused after its last
+/// check-in, and that replying continues it.
+pub(crate) fn turn_paused_notice(elapsed: Duration) -> String {
+    let hours = (elapsed.as_secs() + 1800) / 3600;
+    let elapsed = if hours >= 1 {
+        format!("about {hours} hour{}", if hours == 1 { "" } else { "s" })
+    } else {
+        let minutes = (elapsed.as_secs() + 30) / 60;
+        format!(
+            "about {minutes} minute{}",
+            if minutes == 1 { "" } else { "s" }
+        )
+    };
+    format!(
+        "⏸️ This request has been running for {elapsed}, so I paused it. \
+         Reply here if I should continue — I'll pick up where I left off."
+    )
+}
+
+/// Best-effort: post [`turn_paused_notice`] in the paused request's thread,
+/// notifying the person who sent it.
+fn spawn_turn_paused_notice(
+    rest: &crate::relay::RestClient,
+    batch: &FlushBatch,
+    elapsed: Duration,
+) {
+    let Some(last) = batch.events.last() else {
+        return;
+    };
+    let thread_tags = last.routing_thread_tags();
+    let requester = last.event.pubkey.to_hex();
+    let rest = rest.clone();
+    let channel_id = batch.channel_id;
+    let content = turn_paused_notice(elapsed);
+    tokio::spawn(async move {
+        let Some(event) = build_notice_event(
+            &rest.keys,
+            channel_id,
+            &thread_tags,
+            &content,
+            &[&requester],
+        ) else {
+            return;
+        };
+        match tokio::time::timeout(Duration::from_secs(5), rest.submit_event(&event)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(channel = %channel_id, "turn paused notice failed: {e}"),
+            Err(_) => tracing::warn!(channel = %channel_id, "turn paused notice timed out"),
+        }
+    });
+}
+
 /// Build the signed failure-notice event published by [`post_failure_notice`].
 pub(crate) fn build_failure_notice_event(
     keys: &crate::identity::AgentIdentity,
     channel_id: Uuid,
     thread_tags: &ThreadTags,
     content: &str,
+) -> Option<nostr::Event> {
+    build_notice_event(keys, channel_id, thread_tags, content, &[])
+}
+
+/// A signed kind:9 notice from the agent, threaded per `thread_tags`,
+/// notifying `mentions` (hex pubkeys).
+pub(crate) fn build_notice_event(
+    keys: &crate::identity::AgentIdentity,
+    channel_id: Uuid,
+    thread_tags: &ThreadTags,
+    content: &str,
+    mentions: &[&str],
 ) -> Option<nostr::Event> {
     let thread_ref = thread_tags.root_event_id.as_deref().and_then(|root| {
         let root_id = nostr::EventId::from_hex(root).ok()?;
@@ -7065,7 +7310,7 @@ pub(crate) fn build_failure_notice_event(
         channel_id,
         content,
         thread_ref.as_ref(),
-        &[],
+        mentions,
         false,
         &[],
         &[],
@@ -7203,6 +7448,20 @@ async fn clear_reactions(rest: crate::relay::RestClient, event_ids: Vec<String>)
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn turn_paused_notice_rounds_to_hours() {
+        let text = turn_paused_notice(Duration::from_secs(8 * 3600));
+        assert!(
+            text.starts_with("⏸️ This request has been running for about 8 hours, so I paused it."),
+            "{text}"
+        );
+        assert!(text.contains("Reply here if I should continue"), "{text}");
+        let one = turn_paused_notice(Duration::from_secs(3600));
+        assert!(one.contains("about 1 hour,"), "{one}");
+        let short = turn_paused_notice(Duration::from_secs(4 * 60));
+        assert!(short.contains("about 4 minutes,"), "{short}");
+    }
     use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
     use serde_json::json;
 
@@ -11432,6 +11691,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             &mut s,
             &PromptSource::Channel(SessionScope::Conversation { channel_id: ch_a }),
             &ControlSignal::Rotate,
+            None,
         );
 
         assert!(!s.sessions.contains_key(&conv(ch_a)));
@@ -11453,6 +11713,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             &mut s,
             &PromptSource::Channel(SessionScope::Conversation { channel_id: ch_a }),
             &ControlSignal::Cancel,
+            None,
         );
 
         assert_eq!(s.sessions.get(&conv(ch_a)).unwrap(), "sess-a");
@@ -11596,12 +11857,64 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 model_id: "gpt-5".into(),
                 request_id: None,
             },
+            None,
         );
 
         assert!(!s.has_channel_state(&ch_a));
         // ch_b untouched — the switch is channel-scoped.
         assert_eq!(s.sessions.get(&conv(ch_b)).unwrap(), "sess-b");
         assert_eq!(*s.turn_counts.get(&conv(ch_b)).unwrap(), 3);
+    }
+
+    #[test]
+    fn switch_model_reattaches_the_conversation_and_rotate_does_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ledger = crate::session_ledger::SessionLedger::open(dir.path().join("sessions.json"));
+        let (mut s, ch_a, ch_b) = make_state();
+        ledger.record(&conv(ch_a), "sess-a", "id", "/c");
+        ledger.record(&conv(ch_b), "sess-b", "id", "/c");
+
+        apply_completed_before_control_signal(
+            &mut s,
+            &PromptSource::Channel(conv(ch_a)),
+            &ControlSignal::SwitchModel {
+                model_id: "gpt-5".into(),
+                request_id: None,
+            },
+            Some(&ledger),
+        );
+        assert!(!s.has_channel_state(&ch_a));
+        assert_eq!(
+            ledger.take_resumable(&conv(ch_a), "id", "/c"),
+            Some("sess-a".into()),
+            "same adapter, new model: the next session continues the conversation"
+        );
+
+        apply_completed_before_control_signal(
+            &mut s,
+            &PromptSource::Channel(conv(ch_b)),
+            &ControlSignal::Rotate,
+            Some(&ledger),
+        );
+        assert!(!s.has_channel_state(&ch_b));
+        assert!(ledger.take_resumable(&conv(ch_b), "id", "/c").is_none());
+    }
+
+    #[test]
+    fn held_sessions_include_those_dropped_when_the_adapter_died() {
+        let (mut s, ch_a, ch_b) = make_state();
+        s.invalidate_all();
+        assert!(s.sessions.is_empty());
+        let mut held = s.take_held_sessions();
+        held.sort_by(|a, b| a.1.cmp(&b.1));
+        assert_eq!(
+            held,
+            vec![
+                (conv(ch_a), "sess-a".to_string()),
+                (conv(ch_b), "sess-b".to_string())
+            ]
+        );
+        assert!(s.take_held_sessions().is_empty(), "handed over once");
     }
 
     // ── requeue_cancelled_batch ────────────────────────────────────────────

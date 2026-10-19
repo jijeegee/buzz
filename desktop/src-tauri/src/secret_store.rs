@@ -751,6 +751,35 @@ impl SecretStore {
         }
     }
 
+    /// Move blob-held entries in a single blob write: each `from` is removed
+    /// and its value lands under `to` (when given and not already set; a set
+    /// `to` wins). Both names never coexist, so moving to shorter names frees
+    /// room instead of needing it, even on a nearly full Windows blob.
+    /// Standalone credentials are not touched; their blob markers move like
+    /// any other entry.
+    pub fn move_in_blob(&self, moves: &[(String, Option<String>)]) -> Result<(), String> {
+        #[cfg(feature = "system-keyring")]
+        {
+            self.mutate_blob(|map| {
+                for (from, to) in moves {
+                    if let Some(value) = map.remove(from) {
+                        if let Some(to) = to {
+                            map.entry(to.clone()).or_insert(value);
+                        }
+                    }
+                }
+            })
+        }
+        #[cfg(not(feature = "system-keyring"))]
+        {
+            let _ = moves;
+            Err(storage_error(
+                "unavailable",
+                "system-keyring feature disabled",
+            ))
+        }
+    }
+
     /// On first launch after upgrading from the per-key DPK format, read the
     /// old DPK entry for `key`, write it into a new blob, and delete the old
     /// item. Returns `Ok(None)` when no old entry exists.

@@ -116,7 +116,8 @@ final threadNameStorageProvider = Provider<ThreadNameStorage>((ref) {
   final config = ref.watch(relayConfigProvider);
   return ThreadNameStorage(
     ref.watch(savedPrefsProvider),
-    '${config.baseUrl}:${outgoingAuthorPubkey(config) ?? "anonymous"}',
+    '${storageScopeFor(config.baseUrl)}:'
+    '${outgoingAuthorPubkey(config) ?? "anonymous"}',
   );
 });
 
