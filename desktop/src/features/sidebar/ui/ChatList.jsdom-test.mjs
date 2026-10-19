@@ -378,7 +378,7 @@ test("By channel groups threads under their channel and expands in place", async
       ...view
         .getByTestId("chat-list")
         .querySelectorAll(
-          "[data-channel-id],[data-chat-thread-id],[data-testid^='chat-more-threads-room']",
+          "[data-channel-id],[data-chat-thread-id],[data-testid^='chat-more-threads-room'],[data-testid^='chat-more-threads-less-']",
         ),
     ].map((row) =>
       row.dataset.channelId
@@ -412,7 +412,7 @@ test("By channel groups threads under their channel and expands in place", async
       "5",
       "Show less",
     ]);
-    fireEvent.click(view.getByTestId("chat-more-threads-room-a"));
+    fireEvent.click(view.getByTestId("chat-more-threads-less-room-a"));
     assert.equal(order(view).length, 6);
     // All chats: every row by activity, no grouping.
     // room-a's main row is not on a loaded page: the local row heads the
@@ -443,6 +443,98 @@ test("By channel groups threads under their channel and expands in place", async
       "5",
       "room-a",
     ]);
+  } finally {
+    cleanup();
+    client.clear();
+  }
+});
+
+test("By channel reveals 5 more threads per click, then Show less returns to 3", async () => {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { enabled: false, retry: false, gcTime: Infinity },
+    },
+  });
+  client.setQueryData(["identity"], { pubkey: "owner" });
+  // 18 threads; only the oldest one has unread (3) and a mention.
+  const roots = Array.from({ length: 18 }, (_, index) =>
+    index.toString(16).padStart(64, "0"),
+  );
+  const rows = [
+    serverRow({ channel_id: "room-a", at: 900 }),
+    ...roots.map((root, index) =>
+      serverRow({
+        type: "thread",
+        channel_id: "room-a",
+        root_id: root,
+        thread_name: `T${index + 1}`,
+        at: 800 - index * 10,
+        unread: index === 17 ? 3 : 0,
+        unread_mentions: index === 17 ? 1 : 0,
+      }),
+    ),
+  ];
+  const tree = () =>
+    React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(
+        SidebarProvider,
+        null,
+        React.createElement(ChatList, {
+          isActiveChannel: false,
+          selectedChannelId: null,
+          items: [channel("room-a")],
+          unreadChannelIds: new Set(),
+          unreadChannelCounts: new Map(),
+          onSelectChannel: () => {},
+          serverChats: {
+            rows,
+            getReadAt: () => null,
+            onOpenThread: () => {},
+            readStateVersion: 0,
+          },
+          view: "by-channel",
+        }),
+      ),
+    );
+  const threads = (view) =>
+    view.getByTestId("chat-list").querySelectorAll("[data-chat-thread-id]")
+      .length;
+  const more = (view) => view.queryByTestId("chat-more-threads-room-a");
+  const less = (view) => view.queryByTestId("chat-more-threads-less-room-a");
+  let view;
+  try {
+    await act(async () => {
+      view = render(tree());
+    });
+    assert.equal(threads(view), 3);
+    assert.equal(
+      more(view).textContent,
+      "+ 15 more threads@ 1 unread mention3 unread messages",
+    );
+    assert.equal(less(view), null);
+    fireEvent.click(more(view));
+    assert.equal(threads(view), 8);
+    assert.equal(
+      more(view).textContent,
+      "+ 5 more · 10 left@ 1 unread mention3 unread messages",
+    );
+    assert.equal(less(view).textContent, "Show less");
+    fireEvent.click(more(view));
+    assert.equal(threads(view), 13);
+    assert.equal(
+      more(view).textContent,
+      "+ 5 more@ 1 unread mention3 unread messages",
+    );
+    fireEvent.click(more(view));
+    assert.equal(threads(view), 18);
+    assert.equal(more(view), null);
+    assert.equal(less(view).textContent, "Show less");
+    fireEvent.click(less(view));
+    assert.equal(threads(view), 3);
+    assert.equal(less(view), null);
+    assert.match(more(view).textContent, /^\+ 15 more threads/);
   } finally {
     cleanup();
     client.clear();

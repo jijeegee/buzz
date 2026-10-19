@@ -62,8 +62,9 @@ function isListedChat(channel: Channel) {
 }
 
 type ByChannel = {
-  expandedChannelIds: ReadonlySet<string>;
-  onToggleExpanded: (channelId: string) => void;
+  expandedSteps: ReadonlyMap<string, number>;
+  onShowLess: (channelId: string) => void;
+  onShowMore: (channelId: string) => void;
 };
 
 /**
@@ -159,7 +160,7 @@ function buildServerChatRows(
   };
   const grouping = byChannel
     ? groupChatRowsByChannel(listed, {
-        expandedChannelIds: byChannel.expandedChannelIds,
+        expandedSteps: byChannel.expandedSteps,
         isPinnedRoom,
         isPinnedThread,
         unreadOf,
@@ -199,7 +200,8 @@ function buildServerChatRows(
             isMuted={props.mutedChannelIds?.has(entry.channelId) ?? false}
             marked={entry.marked}
             mentions={entry.mentions}
-            onToggle={byChannel.onToggleExpanded}
+            onShowLess={byChannel.onShowLess}
+            onShowMore={byChannel.onShowMore}
             unread={entry.unread}
             unreadOverflow={entry.unreadOverflow}
           />
@@ -249,21 +251,26 @@ export function ChatList({
       sortChatList(props.items.filter(isListedChat), props.starredChannelIds),
     [props.items, props.starredChannelIds],
   );
-  // Expanded "+ N more threads" groups, for this session only.
-  const [expandedChannelIds, setExpandedChannelIds] = useState<
-    ReadonlySet<string>
-  >(() => new Set());
-  const onToggleExpanded = useCallback((channelId: string) => {
-    setExpandedChannelIds((current) => {
-      const next = new Set(current);
-      if (!next.delete(channelId)) next.add(channelId);
+  // "+ 5 more" clicks per channel, for this session only.
+  const [expandedSteps, setExpandedSteps] = useState<
+    ReadonlyMap<string, number>
+  >(() => new Map());
+  const onShowMore = useCallback((channelId: string) => {
+    setExpandedSteps((current) =>
+      new Map(current).set(channelId, (current.get(channelId) ?? 0) + 1),
+    );
+  }, []);
+  const onShowLess = useCallback((channelId: string) => {
+    setExpandedSteps((current) => {
+      const next = new Map(current);
+      next.delete(channelId);
       return next;
     });
   }, []);
   const byChannel = useMemo(
     () =>
-      view === "by-channel" ? { expandedChannelIds, onToggleExpanded } : null,
-    [expandedChannelIds, onToggleExpanded, view],
+      view === "by-channel" ? { expandedSteps, onShowLess, onShowMore } : null,
+    [expandedSteps, onShowLess, onShowMore, view],
   );
   const working = useMemo(
     () =>

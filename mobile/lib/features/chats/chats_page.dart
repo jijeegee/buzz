@@ -183,7 +183,8 @@ class ChatsPage extends HookConsumerWidget {
     final pinnedThreads = ref.watch(threadPinsProvider);
     final working = _watchWorking(ref, rows);
     final readState = ref.watch(readStateProvider);
-    final expanded = useState(<String>{});
+    // "+ 5 more" taps per channel, for this session only.
+    final expanded = useState(<String, int>{});
     final scrollController = useScrollController();
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     useEffect(() {
@@ -292,7 +293,7 @@ class ChatsPage extends HookConsumerWidget {
       final entries = mode == ChatsViewMode.byChannel
           ? groupChatRowsByChannel(
               ordered,
-              expandedChannelIds: expanded.value,
+              expandedSteps: expanded.value,
               unreadOf: unreadOf,
               pinnedThreadIds: pinnedThreads,
             )
@@ -383,13 +384,14 @@ class ChatsPage extends HookConsumerWidget {
                     ChatGroupMore() => _MoreThreadsRow(
                       key: ValueKey('chat-more-${entry.channelId}'),
                       more: entry,
-                      onTap: () {
-                        final next = {...expanded.value};
-                        if (!next.remove(entry.channelId)) {
-                          next.add(entry.channelId);
-                        }
-                        expanded.value = next;
+                      onShowMore: () => expanded.value = {
+                        ...expanded.value,
+                        entry.channelId:
+                            (expanded.value[entry.channelId] ?? 0) + 1,
                       },
+                      onShowLess: () =>
+                          expanded.value = {...expanded.value}
+                            ..remove(entry.channelId),
                     ),
                     _ => const SizedBox.shrink(),
                   };

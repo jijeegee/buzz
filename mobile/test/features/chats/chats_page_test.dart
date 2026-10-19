@@ -54,14 +54,17 @@ void main() {
     for (var i = 1; i <= 4; i++) _thread(i, unread: i == 4 ? 2 : 0),
   ];
 
-  Future<void> pumpChats(WidgetTester tester) async {
+  Future<void> pumpChats(
+    WidgetTester tester, {
+    List<ChatListRow>? chatRows,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
-          chatsRowsProvider.overrideWithValue(rows),
+          chatsRowsProvider.overrideWithValue(chatRows ?? rows),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const ChatsPage()),
       ),
@@ -112,6 +115,59 @@ void main() {
     expect(find.text('Thread 3'), findsOneWidget);
     expect(find.text('Thread 4'), findsOneWidget);
     expect(find.text('Show less'), findsOneWidget);
+    expect(find.textContaining('more'), findsNothing);
+  });
+
+  testWidgets('By channel shows 5 more threads per tap, then Show less', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    // 17 threads: 2 shown, 15 hidden; the oldest has 3 unread.
+    await pumpChats(
+      tester,
+      chatRows: [
+        for (var i = 1; i <= 17; i++) _thread(i, unread: i == 17 ? 3 : 0),
+      ],
+    );
+    await tester.tap(find.byKey(const ValueKey('chats-view-byChannel')));
+    await tester.pumpAndSettle();
+    final show = find.byKey(const ValueKey('chat-more-show-$_channel'));
+    final less = find.byKey(const ValueKey('chat-more-less-$_channel'));
+    int threads() =>
+        find.textContaining(RegExp(r'^Thread \d+$')).evaluate().length;
+
+    expect(threads(), 2);
+    expect(find.text('+ 15 more threads'), findsOneWidget);
+    expect(find.descendant(of: show, matching: find.text('3')), findsOneWidget);
+    expect(less, findsNothing);
+
+    await tester.tap(show);
+    await tester.pumpAndSettle();
+    expect(threads(), 7);
+    expect(find.text('+ 5 more · 10 left'), findsOneWidget);
+    expect(find.descendant(of: show, matching: find.text('3')), findsOneWidget);
+    expect(
+      find.descendant(of: less, matching: find.text('Show less')),
+      findsOneWidget,
+    );
+
+    await tester.tap(show);
+    await tester.pumpAndSettle();
+    expect(threads(), 12);
+    expect(find.text('+ 5 more'), findsOneWidget);
+
+    await tester.tap(show);
+    await tester.pumpAndSettle();
+    expect(threads(), 17);
+    expect(show, findsNothing);
+    expect(find.text('Show less'), findsOneWidget);
+
+    await tester.tap(less);
+    await tester.pumpAndSettle();
+    expect(threads(), 2);
+    expect(find.text('+ 15 more threads'), findsOneWidget);
   });
 
   testWidgets('a chat that is not loaded yet says so instead of opening', (

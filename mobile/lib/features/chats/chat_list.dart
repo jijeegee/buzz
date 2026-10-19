@@ -18,6 +18,9 @@ const chatUnreadCap = 99;
 /// Threads shown under their channel in By channel before "+ N more".
 const byChannelVisibleThreads = 2;
 
+/// Threads each "+ 5 more" tap reveals under a channel.
+const byChannelThreadStep = 5;
+
 /// Message kinds the relay counts (kuzz-db `MESSAGE_KINDS`).
 const _messageKinds = {9, 40002, 45001, 45003};
 
@@ -633,7 +636,7 @@ final class ChatGroupThread extends ChatGroupEntry {
   final ChatListRow row;
 }
 
-/// "+ N more threads" (or "Show less") under a channel.
+/// "+ N more threads", "+ 5 more · N left" and "Show less" under a channel.
 final class ChatGroupMore extends ChatGroupEntry {
   const ChatGroupMore({
     required this.channelId,
@@ -644,22 +647,24 @@ final class ChatGroupMore extends ChatGroupEntry {
 
   final String channelId;
 
-  /// Threads hidden while folded.
+  /// Threads still hidden; 0 once every thread shows.
   final int hidden;
 
-  /// Unread messages in the hidden threads.
+  /// Unread messages in the still hidden threads.
   final int hiddenUnread;
+
+  /// Shows threads past the first ones, so "Show less" is offered.
   final bool expanded;
 }
 
 /// Groups ordered rows by channel: each channel once, at the position of its
 /// newest row, followed by its threads newest first (pinned threads first and
-/// always shown). Only [byChannelVisibleThreads] threads show unless the
-/// channel is in [expandedChannelIds]. [unreadOf] gives a row's shown unread
-/// count.
+/// always shown). [byChannelVisibleThreads] threads show, plus
+/// [byChannelThreadStep] more per step in [expandedSteps] (channel id to
+/// "+ 5 more" taps). [unreadOf] gives a row's shown unread count.
 List<ChatGroupEntry> groupChatRowsByChannel(
   List<ChatListRow> ordered, {
-  required Set<String> expandedChannelIds,
+  required Map<String, int> expandedSteps,
   required int Function(ChatListRow row) unreadOf,
   Set<String> pinnedThreadIds = const {},
 }) {
@@ -685,17 +690,19 @@ List<ChatGroupEntry> groupChatRowsByChannel(
         pinnedThreadIds.contains(row.rootId ?? row.key);
     final list = [...all.where(pinned), ...all.where((row) => !pinned(row))];
     final limit = math.max(byChannelVisibleThreads, all.where(pinned).length);
-    final expanded = expandedChannelIds.contains(channelId);
-    final visible = expanded ? list : list.take(limit).toList();
-    entries.addAll(visible.map(ChatGroupThread.new));
+    final shown = math.min(
+      list.length,
+      limit + (expandedSteps[channelId] ?? 0) * byChannelThreadStep,
+    );
+    entries.addAll(list.take(shown).map(ChatGroupThread.new));
     if (list.length > limit) {
-      final hidden = list.skip(limit);
+      final hidden = list.skip(shown);
       entries.add(
         ChatGroupMore(
           channelId: channelId,
-          hidden: list.length - limit,
+          hidden: list.length - shown,
           hiddenUnread: hidden.fold(0, (sum, row) => sum + unreadOf(row)),
-          expanded: expanded,
+          expanded: shown > limit,
         ),
       );
     }

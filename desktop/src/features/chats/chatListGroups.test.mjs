@@ -60,7 +60,7 @@ test("a channel shows its main row and up to 3 newest threads, then a summed mor
     thread("c1", "t1", 10, 0, 2),
   ];
   const entries = groupChatRowsByChannel(rows, {
-    expandedChannelIds: new Set(),
+    expandedSteps: new Map(),
     isPinnedRoom: none,
     isPinnedThread: none,
     unreadOf,
@@ -74,25 +74,34 @@ test("a channel shows its main row and up to 3 newest threads, then a summed mor
   ]);
 });
 
-test("expanding lists every thread and ends with Show less", () => {
+test("each step shows 5 more threads; the more line sums only the still hidden", () => {
+  // 18 threads: t18 newest; t1 and t2 have unread, t1 a mention.
   const rows = [
-    room("c1", 60),
-    ...[5, 4, 3, 2].map((n) => thread("c1", `t${n}`, n * 10, 1)),
+    room("c1", 100),
+    ...Array.from({ length: 18 }, (_, i) => 18 - i).map((n) =>
+      thread("c1", `t${n}`, n, n <= 2 ? 1 : 0, n === 1 ? 1 : 0),
+    ),
   ];
-  const entries = groupChatRowsByChannel(rows, {
-    expandedChannelIds: new Set(["c1"]),
-    isPinnedRoom: none,
-    isPinnedThread: none,
-    unreadOf,
-  });
-  assert.deepEqual(shape(entries), [
-    "c1",
-    "t5",
-    "t4",
-    "t3",
-    "t2",
-    "more:c1:1:open:0:0",
-  ]);
+  const at = (steps) =>
+    groupChatRowsByChannel(rows, {
+      expandedSteps: new Map(steps === 0 ? [] : [["c1", steps]]),
+      isPinnedRoom: none,
+      isPinnedThread: none,
+      unreadOf,
+    });
+  const threads = (entries) =>
+    entries.entries.filter((e) => e.kind === "row").length - 1;
+  assert.equal(threads(at(0)), 3);
+  assert.equal(shape(at(0)).at(-1), "more:c1:15:shut:2:1");
+  assert.equal(threads(at(1)), 8);
+  assert.equal(shape(at(1)).at(-1), "more:c1:10:open:2:1");
+  assert.equal(threads(at(2)), 13);
+  assert.equal(shape(at(2)).at(-1), "more:c1:5:open:2:1");
+  // Fully shown: nothing hidden, so no unread to sum; only Show less.
+  assert.equal(threads(at(3)), 18);
+  assert.equal(shape(at(3)).at(-1), "more:c1:0:open:0:0");
+  // Steps past the end stay fully shown.
+  assert.deepEqual(shape(at(9)), shape(at(3)));
 });
 
 test("groups keep the order of their newest row; DMs are groups too", () => {
@@ -104,7 +113,7 @@ test("groups keep the order of their newest row; DMs are groups too", () => {
     thread("dm1", "d1", 50),
   ];
   const entries = groupChatRowsByChannel(rows, {
-    expandedChannelIds: new Set(),
+    expandedSteps: new Map(),
     isPinnedRoom: none,
     isPinnedThread: none,
     unreadOf,
@@ -122,7 +131,7 @@ test("a pinned thread pins its group to the top and leads inside it", () => {
     thread("c2", "pinned", 10),
   ];
   const entries = groupChatRowsByChannel(rows, {
-    expandedChannelIds: new Set(),
+    expandedSteps: new Map(),
     isPinnedRoom: none,
     isPinnedThread: (root) => root === "pinned",
     unreadOf,
@@ -142,7 +151,7 @@ test("a group whose main row is not loaded starts with the channel heading", () 
   const entries = groupChatRowsByChannel(
     [room("c1", 9), thread("c9", "t", 5)],
     {
-      expandedChannelIds: new Set(),
+      expandedSteps: new Map(),
       isPinnedRoom: (id) => id === "c9",
       isPinnedThread: none,
       unreadOf,
@@ -176,7 +185,7 @@ test("a hidden thread marked unread with no count still marks the more line", ()
     marked,
   ];
   const options = {
-    expandedChannelIds: new Set(),
+    expandedSteps: new Map(),
     isPinnedRoom: none,
     isPinnedThread: none,
     unreadOf,
