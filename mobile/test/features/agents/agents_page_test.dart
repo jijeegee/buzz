@@ -279,9 +279,7 @@ void main() {
   testWidgets('Presets lists team presets, view only', (tester) async {
     await pump(
       tester,
-      agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a'),
-      ],
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       teamPresets: [
         MyTeamPreset(
           id: 'research',
@@ -321,8 +319,8 @@ void main() {
     await pump(
       tester,
       agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
-        MyAgent(pubkey: _honey, deviceId: 'pc-b', commandChannelId: 'c1'),
+        MyAgent(pubkey: _fizz, deviceId: 'pc-a'),
+        MyAgent(pubkey: _honey, deviceId: 'pc-b'),
       ],
       presence: {_fizz: 'online', _honey: 'offline'},
       teams: [
