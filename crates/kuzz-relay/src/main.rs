@@ -1482,6 +1482,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         });
     }
 
+    // Daily cleanup of uploaded files no live message uses (KUZZ_MEDIA_GC).
+    kuzz_relay::media_gc::spawn(Arc::clone(&state));
+
     serve(
         router,
         health_router,

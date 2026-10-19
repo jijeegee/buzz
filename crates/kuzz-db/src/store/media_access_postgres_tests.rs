@@ -257,3 +257,207 @@ async fn an_agent_can_use_what_its_owner_uploaded() {
     assert!(f.readable(&agent).await, "the owner's agent can publish it");
     assert!(!f.readable(&stranger).await);
 }
+
+impl Fixture {
+    async fn in_use(&self, grace_cutoff: DateTime<Utc>) -> bool {
+        !self
+            .db
+            .media_hashes_in_use(self.scope, &[SHA.to_owned()], grace_cutoff)
+            .await
+            .expect("cleanup check")
+            .is_empty()
+    }
+
+    /// Store an event that names `SHA` in its content without linking it.
+    async fn naming_event(&self, kind: u16, keys: &Keys) -> Event {
+        let event = EventBuilder::new(
+            Kind::Custom(kind),
+            format!("https://x.test/media/{SHA}.png"),
+        )
+        .sign_with_keys(keys)
+        .expect("signature");
+        self.db
+            .insert_event(self.scope, &event, None)
+            .await
+            .expect("event write");
+        event
+    }
+
+    async fn delete_event_at(&self, event: &Event, at: DateTime<Utc>) {
+        sqlx::query("UPDATE events SET deleted_at = $3 WHERE community_id = $1 AND id = $2")
+            .bind(self.scope.as_uuid())
+            .bind(event.id.to_bytes().to_vec())
+            .bind(at)
+            .execute(&self.pool)
+            .await
+            .expect("delete event");
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn cleanup_keeps_recent_uploads_and_drops_old_unused_ones() {
+    let f = Fixture::new().await;
+    let alice = Keys::generate();
+    let now = Utc::now();
+    let cutoff = now - chrono::Duration::days(7);
+    assert!(!f.in_use(cutoff).await, "never uploaded or named");
+
+    f.db.record_media_upload(f.scope, SHA, &pk(&alice))
+        .await
+        .expect("upload");
+    assert!(f.in_use(cutoff).await, "uploaded within the grace period");
+    sqlx::query("UPDATE media_uploads SET created_at = $2 WHERE community_id = $1")
+        .bind(f.scope.as_uuid())
+        .bind(now - chrono::Duration::days(8))
+        .execute(&f.pool)
+        .await
+        .expect("age upload");
+    assert!(!f.in_use(cutoff).await, "old upload no message uses");
+
+    // Attaching the same bytes again restarts the grace period.
+    f.db.record_media_upload(f.scope, SHA, &pk(&alice))
+        .await
+        .expect("re-upload");
+    assert!(
+        f.in_use(cutoff).await,
+        "re-uploaded within the grace period"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn cleanup_keeps_attachments_of_reported_messages() {
+    let f = Fixture::new().await;
+    let alice = Keys::generate();
+    let now = Utc::now();
+    let cutoff = now - chrono::Duration::days(7);
+    let message = f.naming_event(9, &alice).await;
+    f.delete_event_at(&message, now - chrono::Duration::days(30))
+        .await;
+    assert!(!f.in_use(cutoff).await, "deleted long ago");
+
+    sqlx::query(
+        "INSERT INTO moderation_reports \
+           (community_id, report_event_id, reporter_pubkey, target_kind, target_event_id, report_type) \
+         VALUES ($1, $2, $3, 'event', $4, 'other')",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(vec![7u8; 32])
+    .bind(pk(&Keys::generate()))
+    .bind(message.id.to_bytes().to_vec())
+    .execute(&f.pool)
+    .await
+    .expect("report");
+    assert!(
+        f.in_use(cutoff).await,
+        "reported message keeps its attachment"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn cleanup_keeps_files_any_live_or_recently_deleted_event_names() {
+    let f = Fixture::new().await;
+    let alice = Keys::generate();
+    let now = Utc::now();
+    let cutoff = now - chrono::Duration::days(7);
+
+    // A private persona is never linked for readers but still uses the file.
+    let persona = f.naming_event(30175, &alice).await;
+    assert!(f.in_use(cutoff).await, "live private event");
+    f.delete_event_at(&persona, now - chrono::Duration::days(1))
+        .await;
+    assert!(f.in_use(cutoff).await, "deleted within the grace period");
+    f.delete_event_at(&persona, now - chrono::Duration::days(8))
+        .await;
+    assert!(!f.in_use(cutoff).await, "deleted long ago");
+
+    // A linked message in a room keeps it while live.
+    let room = f.room(ChannelVisibility::Private, &alice, &[]).await;
+    let message = f.reference(Some(room), &alice).await;
+    assert!(f.in_use(cutoff).await, "linked live message");
+    f.delete_event_at(&message, now - chrono::Duration::days(8))
+        .await;
+    assert!(!f.in_use(cutoff).await, "every message deleted long ago");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn cleanup_keeps_profile_pictures_icons_and_reported_files() {
+    let f = Fixture::new().await;
+    let alice = Keys::generate();
+    let cutoff = Utc::now() - chrono::Duration::days(7);
+    let url = format!("https://x.test/media/{SHA}.png");
+
+    crate::user::ensure_user(&f.pool, f.scope, &pk(&alice))
+        .await
+        .expect("user");
+    sqlx::query("UPDATE users SET avatar_url = $3 WHERE community_id = $1 AND pubkey = $2")
+        .bind(f.scope.as_uuid())
+        .bind(pk(&alice))
+        .bind(&url)
+        .execute(&f.pool)
+        .await
+        .expect("avatar");
+    assert!(f.in_use(cutoff).await, "profile picture");
+    sqlx::query("UPDATE users SET avatar_url = NULL WHERE community_id = $1")
+        .bind(f.scope.as_uuid())
+        .execute(&f.pool)
+        .await
+        .expect("clear avatar");
+    assert!(!f.in_use(cutoff).await);
+
+    sqlx::query("UPDATE communities SET icon = $2 WHERE id = $1")
+        .bind(f.scope.as_uuid())
+        .bind(&url)
+        .execute(&f.pool)
+        .await
+        .expect("icon");
+    assert!(f.in_use(cutoff).await, "community icon");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn forget_media_drops_only_stale_rows_of_that_file() {
+    let f = Fixture::new().await;
+    let alice = Keys::generate();
+    let room = f.room(ChannelVisibility::Open, &alice, &[]).await;
+    f.reference(Some(room), &alice).await;
+    f.db.record_media_upload(f.scope, SHA, &pk(&alice))
+        .await
+        .expect("upload");
+    f.db.record_media_upload(f.scope, ICON_SHA, &pk(&alice))
+        .await
+        .expect("other upload");
+    let rows = || async {
+        let mut rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT 'upload', sha256 FROM media_uploads WHERE community_id = $1 \
+             UNION ALL SELECT 'reference', sha256 FROM media_references WHERE community_id = $1",
+        )
+        .bind(f.scope.as_uuid())
+        .fetch_all(&f.pool)
+        .await
+        .expect("rows");
+        rows.sort();
+        rows
+    };
+
+    // A fresh upload stays.
+    f.db.forget_media(f.scope, SHA, Utc::now() - chrono::Duration::days(7))
+        .await
+        .expect("forget");
+    assert_eq!(rows().await.len(), 3);
+
+    // An old upload goes; the live message's reference and the other file stay.
+    f.db.forget_media(f.scope, SHA, Utc::now() + chrono::Duration::days(1))
+        .await
+        .expect("forget");
+    assert_eq!(
+        rows().await,
+        vec![
+            ("reference".to_owned(), SHA.to_owned()),
+            ("upload".to_owned(), ICON_SHA.to_owned()),
+        ]
+    );
+}
