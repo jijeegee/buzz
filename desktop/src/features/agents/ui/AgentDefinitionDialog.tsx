@@ -19,6 +19,7 @@ import { PersonaAdvancedFields } from "./PersonaAdvancedFields";
 import { KuzzAgentModelTuningFields } from "./kuzzAgentModelTuningFields";
 import { isKuzzAgentRuntime } from "./kuzzAgentConfig";
 import { PersonaModelField } from "./PersonaModelField";
+import { HarnessProviderField } from "./HarnessProviderField";
 import { runtimeAvailabilityWarning } from "./runtimeAvailabilityWarning";
 import { PersonaProviderApiKeyField } from "./PersonaProviderApiKeyField";
 import {
@@ -571,13 +572,16 @@ export function AgentDefinitionDialog({
   );
   const {
     discoveredModelOptions,
+    harnessProviderChoice,
     modelDiscoveryLoading,
     modelDiscoveryStatus,
   } = usePersonaModelDiscovery({
     envVars: envVarsForDiscovery,
     isCustomProviderEditing,
+    model,
     modelFieldVisible,
     open,
+    persistedModel: initialValues?.model ?? undefined,
     // Gate provider by runtime: runtimes that don't support LLM provider
     // selection (codex, claude) must not inherit the global provider — doing
     // so causes them to discover models from the wrong provider.
@@ -938,6 +942,23 @@ export function AgentDefinitionDialog({
                 </div>
               ) : null}
             </div>
+          ) : null}
+
+          {!llmProviderFieldVisible &&
+          aiConfigurationMode === "custom" &&
+          harnessProviderChoice ? (
+            <HarnessProviderField
+              choice={harnessProviderChoice}
+              disabled={isPending}
+              harnessLabel={selectedRuntime?.label ?? "the harness"}
+              id="persona-harness-provider"
+              note="The list comes from Hermes on this computer."
+              onModelChange={(nextModel) =>
+                handleModelDropdownChange(
+                  nextModel || AUTO_MODEL_DROPDOWN_VALUE,
+                )
+              }
+            />
           ) : null}
 
           {llmProviderFieldVisible &&

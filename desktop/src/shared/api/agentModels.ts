@@ -9,6 +9,10 @@ export type DiscoverAgentModelsInput = {
   envVars?: Record<string, string>;
   /** Definition-level env from the harness definition (custom/preset). Merged below user envVars. */
   definitionEnv?: Record<string, string>;
+  /** The saved agent being edited; a Hermes agent lists its own profile's models. */
+  agentPubkey?: string;
+  /** The model saved on the agent being edited, kept listed even if unavailable. */
+  persistedModel?: string;
 };
 
 export async function discoverAgentModels(input: DiscoverAgentModelsInput) {

@@ -110,5 +110,6 @@ pub(super) fn filter_openrouter_models(
         agent_default_model: None,
         selected_model,
         supports_switching: true,
+        harness_providers: None,
     }))
 }

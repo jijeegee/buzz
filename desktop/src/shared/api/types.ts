@@ -656,6 +656,18 @@ export type AgentModelsResponse = {
   agentDefaultModel: string | null;
   selectedModel: string | null;
   supportsSwitching: boolean;
+  /**
+   * Providers set up inside the harness itself (Hermes only), default first.
+   * When present, `models` holds only these providers' models.
+   */
+  harnessProviders?: HarnessProviderInfo[];
+};
+export type HarnessProviderInfo = {
+  /** The provider prefix of model ids (`<id>:<model>`). */
+  id: string;
+  label: string;
+  /** The provider the harness runs when no model is chosen. */
+  isDefault: boolean;
 };
 export type AgentModelInfo = {
   id: string;

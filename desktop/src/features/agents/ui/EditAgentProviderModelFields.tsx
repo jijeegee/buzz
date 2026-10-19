@@ -12,8 +12,10 @@ import {
   ModelEffortFields,
   type ModelEffortCompanion,
 } from "./ModelEffortFields";
+import { HarnessProviderField } from "./HarnessProviderField";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import { PersonaProviderApiKeyField } from "./PersonaProviderApiKeyField";
+import type { HarnessProviderChoice } from "./usePersonaModelDiscovery";
 
 /**
  * LLM provider + provider API key + model block of the Edit Agent dialog.
@@ -29,6 +31,7 @@ export function EditAgentProviderModelFields({
   disabled,
   effort,
   llmProviderFieldVisible,
+  harnessProviderChoice,
   providerRequired,
   providerDropdownOptions,
   providerSelectValue,
@@ -57,6 +60,8 @@ export function EditAgentProviderModelFields({
   /** Effort companion for the model picker; see `ModelEffortFields`. */
   effort: ModelEffortCompanion;
   llmProviderFieldVisible: boolean;
+  /** Providers set up in the harness itself (Hermes); shown read-only. */
+  harnessProviderChoice: HarnessProviderChoice | null;
   providerRequired: boolean;
   providerDropdownOptions: PersonaDropdownOption[];
   providerSelectValue: string;
@@ -130,6 +135,16 @@ export function EditAgentProviderModelFields({
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {!llmProviderFieldVisible && harnessProviderChoice ? (
+        <HarnessProviderField
+          choice={harnessProviderChoice}
+          disabled={disabled}
+          harnessLabel="Hermes"
+          id="edit-agent-harness-provider"
+          onModelChange={onModelChange}
+        />
       ) : null}
 
       {llmProviderFieldVisible && topLevelSecretEnvVar ? (
