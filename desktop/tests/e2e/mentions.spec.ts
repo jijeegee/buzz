@@ -1713,6 +1713,8 @@ test("managed relay-profile agents with member roles can be addressed explicitly
 
   await openChannelBrowser(page);
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
+  // Groups you are not in only show up through search.
+  await page.getByTestId("channel-browser-search").fill("sales");
   await page
     .getByTestId("browse-channel-sales")
     .getByRole("button", { name: "Join" })

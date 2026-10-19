@@ -1535,7 +1535,7 @@ test("create channel template selector matches the lifecycle controls", async ({
   ).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("create-channel-permissions-option-open").click();
   await expect(page.getByTestId("create-channel-template-summary")).toHaveText(
-    "Open · Canvas included · 1 agent · 1 team",
+    "Public · Canvas included · 1 agent · 1 team",
   );
 });
 
@@ -3627,7 +3627,7 @@ test("Inbox type labels keep the same height with and without a channel chip", a
   await expect(dmLabel.locator('[data-channel-link=""]')).toHaveCount(0);
   await expect(mentionLabel).toContainText("Mentioned in");
   await expect(mentionLabel.locator('[data-channel-link=""]')).toHaveText(
-    "#general",
+    "general",
   );
 
   const [dmBox, mentionBox] = await Promise.all([
@@ -5291,6 +5291,8 @@ test("bulk remove stays hidden when row-level remove is not allowed", async ({
   // The user becomes a regular member — not admin/owner.
   await openChannelBrowser(page);
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
+  // Groups you are not in only show up through search.
+  await page.getByTestId("channel-browser-search").fill("design");
   await page
     .getByTestId("browse-channel-design")
     .getByRole("button", { name: "Join" })
@@ -5320,6 +5322,8 @@ test("open channel management supports join and leave", async ({ page }) => {
   // Navigate to "design" (an unjoined channel) via the channel browser
   await openChannelBrowser(page);
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
+  // Groups you are not in only show up through search.
+  await page.getByTestId("channel-browser-search").fill("design");
   await page
     .getByTestId("browse-channel-design")
     .getByRole("button", { name: "Join" })
@@ -5347,8 +5351,9 @@ test("open channel management supports join and leave", async ({ page }) => {
   // After leaving, the app navigates away — re-open browser and find design
   await openChannelBrowser(page);
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
+  await page.getByTestId("channel-browser-search").fill("design");
 
-  // "design" should be back in the unjoined section with a Join button
+  // "design" should be back in the public results with a Join button
   await expect(
     page
       .getByTestId("browse-channel-design")
