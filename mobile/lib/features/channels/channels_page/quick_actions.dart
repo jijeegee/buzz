@@ -7,7 +7,8 @@ const _kMorphCloseCurve = Cubic(0.22, 1, 0.36, 1);
 const double _kMorphOpenBounce = 0.14;
 const double _kMorphCloseBounce = 0.06;
 const double _kMorphClosedSize = 56;
-const double _kMorphOpenHeight = 216;
+// Four 61 px cards with Grid.xxs gaps and padding.
+const double _kMorphOpenHeight = 285;
 const double _kMorphOpenRadius = 20;
 const double _kMorphSlide = 40;
 const double _kMorphScale = 0.97;
@@ -280,6 +281,13 @@ class _QuickActionsMenu extends StatelessWidget {
             title: 'Find groups',
             key: const Key('quick-action-browse-channels-card'),
             onTap: () => onSelected(_QuickAction.browseChannels),
+          ),
+          const SizedBox(height: Grid.xxs),
+          _QuickActionItem(
+            icon: LucideIcons.link,
+            title: 'Join with link',
+            key: const Key('quick-action-join-with-link-card'),
+            onTap: () => onSelected(_QuickAction.joinWithLink),
           ),
         ],
       ),

@@ -27,6 +27,8 @@ import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/widgets/skeleton.dart';
+import '../groups/group_preview.dart';
+import '../groups/groups_api.dart';
 import '../profile/profile_avatar.dart';
 import '../profile/presence_cache_provider.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
@@ -65,7 +67,7 @@ part 'channels_page/community.dart';
 part 'channels_page/quick_actions.dart';
 part 'channels_page/quick_actions_launcher.dart';
 
-enum _QuickAction { createChannel, newDm, browseChannels }
+enum _QuickAction { createChannel, newDm, browseChannels, joinWithLink }
 
 const double _kChannelSectionInset = Grid.gutter;
 const double _kChannelLeadingWidth = 22.0;

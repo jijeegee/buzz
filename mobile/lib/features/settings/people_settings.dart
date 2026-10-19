@@ -11,6 +11,7 @@ import '../../shared/kuzz_links.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
+import '../groups/group_add_policy.dart';
 import 'blocked_users_page.dart';
 import '../people/people_errors.dart';
 import 'kuzz_id_page.dart';
@@ -23,7 +24,15 @@ class PeopleSettings extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final origin = ref.watch(accountOriginProvider);
-    if (origin == null) return const SizedBox.shrink();
+    if (origin == null) {
+      // Without an account only the relay-side group setting applies.
+      return const AppListCard(
+        key: ValueKey('settings-people'),
+        label: 'Friends & privacy',
+        verticalPadding: Grid.twelve,
+        children: [GroupAddPolicyRow()],
+      );
+    }
     final profile = ref.watch(accountProfileProvider(origin));
     final loaded = profile.value;
     // The switch shows the requested value while the server saves it.
@@ -96,6 +105,7 @@ class PeopleSettings extends HookConsumerWidget {
             ),
           ),
         ),
+        const GroupAddPolicyRow(),
         AppListRow(
           key: const Key('settings-blocked-row'),
           icon: LucideIcons.ban,

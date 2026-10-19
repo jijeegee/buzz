@@ -20,6 +20,8 @@ import 'package:kuzz/features/channels/channel_sections/channel_sections_provide
 import 'package:kuzz/features/channels/channel_sections/channel_sections_storage.dart';
 import 'package:kuzz/features/channels/channels_page.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/channel_detail_page.dart';
+import 'package:kuzz/features/groups/groups_api.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/features/channels/unread_badge/observed_unread_event.dart';
 import 'package:kuzz/features/profile/profile_avatar.dart';
@@ -33,7 +35,6 @@ import 'package:kuzz/shared/community/community_icon_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:kuzz/shared/widgets/avatar_image.dart';
-import 'package:kuzz/shared/widgets/kuzz_loading_indicator.dart';
 import 'package:kuzz/shared/widgets/frosted_app_bar.dart';
 import 'package:kuzz/shared/widgets/masked_avatar_badge.dart';
 import 'package:kuzz/shared/widgets/skeleton.dart';
@@ -1482,8 +1483,8 @@ void main() {
     }
     await tester.pumpAndSettle();
 
-    expect(largestHeight, greaterThan(216));
-    expect(tester.getSize(surface).height, closeTo(216, 0.01));
+    expect(largestHeight, greaterThan(285));
+    expect(tester.getSize(surface).height, closeTo(285, 0.01));
     final screenWidth = MediaQuery.sizeOf(tester.element(surface)).width;
     final surfaceRect = tester.getRect(surface);
     expect(surfaceRect.left, closeTo(20, 0.01));
@@ -1511,6 +1512,11 @@ void main() {
     expect(menuRect.right - browseRect.right, closeTo(8, 0.01));
     expect(createRect.top - dmRect.bottom, closeTo(8, 0.01));
     expect(browseRect.top - createRect.bottom, closeTo(8, 0.01));
+    final joinLinkRect = tester.getRect(
+      find.byKey(const Key('quick-action-join-with-link-card')),
+    );
+    expect(joinLinkRect.top - browseRect.bottom, closeTo(8, 0.01));
+    expect(joinLinkRect.width, createRect.width);
     expect(dmRect.width, createRect.width);
     expect(browseRect.width, createRect.width);
     expect(dmRect.width, closeTo(menuRect.width - 16, 0.01));
@@ -1545,101 +1551,68 @@ void main() {
     expect(tester.widget<Text>(find.text('New group')).style?.fontSize, 16);
     expect(tester.widget<Text>(find.text('New message')).style?.fontSize, 16);
     expect(tester.widget<Text>(find.text('Find groups')).style?.fontSize, 16);
+    expect(
+      tester.widget<Text>(find.text('Join with link')).style?.fontSize,
+      16,
+    );
     expect(find.text('Message one or more people'), findsNothing);
   });
 
-  testWidgets('browse action lists only channels eligible to join', (
+  testWidgets('browse action searches public groups on the server', (
     tester,
   ) async {
-    final channels = [
-      ...testChannels,
-      Channel(
-        id: 'open-to-join',
-        name: 'announcements',
-        channelType: 'stream',
-        visibility: 'open',
-        description: 'Community announcements',
-        createdBy: 'abc',
-        createdAt: DateTime(2025),
-        memberCount: 8,
-      ),
-      Channel(
-        id: 'private-channel',
-        name: 'private-planning',
-        channelType: 'stream',
-        visibility: 'private',
-        description: 'Private planning',
-        createdBy: 'abc',
-        createdAt: DateTime(2025),
-        memberCount: 4,
-      ),
-      Channel(
-        id: 'archived-channel',
-        name: 'old-announcements',
-        channelType: 'stream',
-        visibility: 'open',
-        description: 'Archived announcements',
-        createdBy: 'abc',
-        createdAt: DateTime(2025),
-        memberCount: 3,
-        archivedAt: DateTime(2025, 1, 2),
-      ),
-      Channel(
-        id: 'unjoined-dm',
-        name: 'Hidden DM',
-        channelType: 'dm',
-        visibility: 'open',
-        description: 'Direct message',
-        createdBy: 'abc',
-        createdAt: DateTime(2025),
-        memberCount: 2,
-      ),
-    ];
-
+    final api = _FakeFindGroupsApi(
+      (query) async => [
+        _publicGroup('open-to-join', 'announcements', members: 8),
+        _publicGroup('1', 'general', members: 5, isMember: true),
+      ],
+    );
     await tester.pumpWidget(
       buildTestable(
         disableAnimations: true,
         overrides: [
-          channelsProvider.overrideWith(() => _FakeNotifier(channels)),
+          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          groupsApiProvider.overrideWithValue(api),
         ],
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Create or start conversation'));
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const Key('quick-action-browse-channels-card')),
-    );
-    await tester.pumpAndSettle();
+    await _openFindGroups(tester);
 
     // Your groups are listed at once; public groups wait for two letters.
     expect(find.byKey(const Key('find-groups-mine-1')), findsOneWidget);
     expect(find.byKey(const Key('find-groups-mine-2')), findsOneWidget);
     expect(find.byKey(const Key('find-groups-mine-3')), findsNothing);
     expect(find.byKey(const Key('find-groups-public-hint')), findsOneWidget);
+    await _searchFindGroups(tester, 'a');
+    expect(api.queries, isEmpty);
     expect(find.byKey(const Key('browse-channel-open-to-join')), findsNothing);
-    await tester.enterText(find.byKey(const Key('find-groups-search')), 'a');
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('browse-channel-open-to-join')), findsNothing);
-    await tester.enterText(find.byKey(const Key('find-groups-search')), 'an');
-    await tester.pumpAndSettle();
+    await _searchFindGroups(tester, 'an');
 
+    expect(api.queries, ['an']);
     expect(
       find.byKey(const Key('browse-channel-open-to-join')),
       findsOneWidget,
     );
+    expect(find.text('8 members'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('browse-channel-join-open-to-join')),
+        matching: find.text('Join'),
+      ),
+      findsOneWidget,
+    );
+    // A group I am in offers Open instead of Join.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('browse-channel-join-1')),
+        matching: find.text('Open'),
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('find-groups-mine-1')), findsNothing);
-    expect(find.byKey(const Key('browse-channel-1')), findsNothing);
-    expect(
-      find.byKey(const Key('browse-channel-private-channel')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const Key('browse-channel-archived-channel')),
-      findsNothing,
-    );
-    expect(find.byKey(const Key('browse-channel-unjoined-dm')), findsNothing);
+    expect(find.textContaining('#'), findsNothing);
   });
 
   testWidgets('Find groups opens New group from its create row', (
@@ -1676,77 +1649,57 @@ void main() {
     expect(find.byKey(const Key('create-channel-name')), findsOneWidget);
   });
 
-  testWidgets('browse action explains when no channels are discoverable', (
-    tester,
-  ) async {
+  testWidgets('browse action explains when no groups match', (tester) async {
     await tester.pumpWidget(
       buildTestable(
         disableAnimations: true,
         overrides: [
           channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
-        ],
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Create or start conversation'));
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const Key('quick-action-browse-channels-card')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('find-groups-search')), 'zz');
-    await tester.pumpAndSettle();
-
-    expect(find.text('No public groups match.'), findsOneWidget);
-  });
-
-  testWidgets('browse action retries an initial directory request problem', (
-    tester,
-  ) async {
-    final joinable = Channel(
-      id: 'retry-discovery',
-      name: 'community-help',
-      channelType: 'stream',
-      visibility: 'open',
-      description: 'Help from the community',
-      createdBy: 'abc',
-      createdAt: DateTime(2025),
-      memberCount: 0,
-    );
-    late _RetryingDirectoryNotifier notifier;
-    await tester.pumpWidget(
-      buildTestable(
-        disableAnimations: true,
-        overrides: [
-          channelsProvider.overrideWith(
-            () => notifier = _RetryingDirectoryNotifier(
-              initialChannels: testChannels,
-              retriedChannels: [...testChannels, joinable],
-            ),
+          groupsApiProvider.overrideWithValue(
+            _FakeFindGroupsApi((_) async => const []),
           ),
         ],
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Create or start conversation'));
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const Key('quick-action-browse-channels-card')),
+    await _openFindGroups(tester);
+    await _searchFindGroups(tester, 'zz');
+
+    expect(find.text('No public groups match.'), findsOneWidget);
+  });
+
+  testWidgets('browse action retries a failed search', (tester) async {
+    var fail = true;
+    final api = _FakeFindGroupsApi((query) async {
+      if (fail) throw const GroupsApiException(500, 'boom');
+      return [_publicGroup('retry-discovery', 'community-help')];
+    });
+    await tester.pumpWidget(
+      buildTestable(
+        disableAnimations: true,
+        overrides: [
+          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          groupsApiProvider.overrideWithValue(api),
+        ],
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('find-groups-search')), 'co');
-    await tester.pumpAndSettle();
+
+    await _openFindGroups(tester);
+    await _searchFindGroups(tester, 'co');
 
     expect(find.text('Couldn’t load public groups.'), findsOneWidget);
     expect(find.text('No public groups match.'), findsNothing);
     expect(find.byKey(const Key('browse-channels-retry')), findsOneWidget);
 
+    fail = false;
     await tester.tap(find.byKey(const Key('browse-channels-retry')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
-    expect(notifier.retryCount, 1);
+    expect(api.queries, ['co', 'co']);
     expect(find.text('Couldn’t load public groups.'), findsNothing);
     expect(
       find.byKey(const Key('browse-channel-retry-discovery')),
@@ -1754,28 +1707,24 @@ void main() {
     );
   });
 
-  testWidgets('browse action exposes retry when refresh supersedes loading', (
+  testWidgets('browse action joins a public group from the results', (
     tester,
   ) async {
-    final joinable = Channel(
-      id: 'superseded-directory',
-      name: 'community-help',
-      channelType: 'stream',
-      visibility: 'open',
-      description: 'Help from the community',
-      createdBy: 'abc',
-      createdAt: DateTime(2025),
-      memberCount: 0,
-    );
-    late _SupersededDirectoryNotifier notifier;
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    late _RecordingChannelActions actions;
     await tester.pumpWidget(
       buildTestable(
         disableAnimations: true,
         overrides: [
-          channelsProvider.overrideWith(
-            () => notifier = _SupersededDirectoryNotifier(
-              initialChannels: testChannels,
-              retriedChannels: [...testChannels, joinable],
+          savedPrefsProvider.overrideWithValue(prefs),
+          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          channelActionsProvider.overrideWith(
+            (ref) => actions = _RecordingChannelActions(ref),
+          ),
+          groupsApiProvider.overrideWithValue(
+            _FakeFindGroupsApi(
+              (_) async => [_publicGroup('community', 'community-help')],
             ),
           ),
         ],
@@ -1783,117 +1732,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Create or start conversation'));
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const Key('quick-action-browse-channels-card')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('find-groups-search')), 'co');
+    await _openFindGroups(tester);
+    await _searchFindGroups(tester, 'co');
+    await tester.tap(find.byKey(const Key('browse-channel-join-community')));
     await tester.pumpAndSettle();
 
-    expect(find.byType(KuzzLoadingIndicator), findsOneWidget);
-
-    notifier.supersedeLoadingDirectory();
-    await tester.pumpAndSettle();
-
-    expect(find.byType(KuzzLoadingIndicator), findsNothing);
-    expect(find.text('Couldn’t load public groups.'), findsOneWidget);
-    expect(find.byKey(const Key('browse-channels-retry')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('browse-channels-retry')));
-    await tester.pumpAndSettle();
-
-    expect(notifier.retryCount, 1);
-    expect(
-      find.byKey(const Key('browse-channel-superseded-directory')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('browse action scrolls and joins an offscreen channel', (
-    tester,
-  ) async {
-    final channels = List.generate(
-      500,
-      (index) => Channel(
-        id: 'directory-$index',
-        name: 'channel-${index.toString().padLeft(3, '0')}',
-        channelType: 'stream',
-        visibility: 'open',
-        description: '',
-        createdBy: 'abc',
-        createdAt: DateTime(2025),
-        memberCount: 0,
-      ),
-    );
-    late _RecordingChannelActions actions;
-    await tester.pumpWidget(
-      buildTestable(
-        disableAnimations: true,
-        overrides: [
-          channelsProvider.overrideWith(() => _FakeNotifier(channels)),
-          channelActionsProvider.overrideWith(
-            (ref) => actions = _RecordingChannelActions(ref),
-          ),
-        ],
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Create or start conversation'));
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const Key('quick-action-browse-channels-card')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('find-groups-search')), 'ch');
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const Key('browse-channel-directory-0')),
-      findsAtLeast(1),
-    );
-    expect(find.byKey(const Key('browse-channel-directory-499')), findsNothing);
-
-    // The group list's own scrollable, not the search field's (which
-    // scrolls sideways).
-    final sheet = find.byType(BottomSheet).last;
-    final scrollable = find
-        .descendant(
-          of: sheet,
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is Scrollable &&
-                widget.axisDirection == AxisDirection.down,
-          ),
-        )
-        .last;
-    expect(
-      tester.state<ScrollableState>(scrollable).position.maxScrollExtent,
-      greaterThan(0),
-    );
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('browse-channel-directory-499')),
-      500,
-      scrollable: scrollable,
-      maxScrolls: 100,
-    );
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const Key('browse-channel-directory-499')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('browse-channel-directory-0')), findsNothing);
-
-    await tester.tap(
-      find.byKey(const Key('browse-channel-join-directory-499')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(actions.joinedChannelIds, ['directory-499']);
+    expect(actions.joinedChannelIds, ['community']);
     expect(find.byType(BottomSheet), findsNothing);
+    // The joined group opens.
+    expect(find.byType(ChannelDetailPage), findsOneWidget);
   });
 
   testWidgets('create channel sheet lists type and visibility radio options', (
@@ -2687,80 +2534,6 @@ class _FakeNotifier extends ChannelsNotifier {
   get observedUnreadEventsByChannel => _observedEventsByChannel;
 }
 
-class _RetryingDirectoryNotifier extends ChannelsNotifier {
-  _RetryingDirectoryNotifier({
-    required this.initialChannels,
-    required this.retriedChannels,
-  });
-
-  final List<Channel> initialChannels;
-  final List<Channel> retriedChannels;
-  int retryCount = 0;
-
-  @override
-  Future<List<Channel>> build() async => initialChannels;
-
-  @override
-  Future<void> ensureDirectoryLoaded() async {
-    ref
-        .read(channelDirectoryLoadStatusProvider.notifier)
-        .markError(_activeDirectoryScope(ref));
-  }
-
-  @override
-  Future<void> retryDirectory() async {
-    retryCount++;
-    ref
-        .read(channelDirectoryLoadStatusProvider.notifier)
-        .markLoading(_activeDirectoryScope(ref));
-    await Future<void>.delayed(Duration.zero);
-    state = AsyncData(retriedChannels);
-    ref
-        .read(channelDirectoryLoadStatusProvider.notifier)
-        .markLoaded(_activeDirectoryScope(ref));
-  }
-}
-
-class _SupersededDirectoryNotifier extends ChannelsNotifier {
-  _SupersededDirectoryNotifier({
-    required this.initialChannels,
-    required this.retriedChannels,
-  });
-
-  final List<Channel> initialChannels;
-  final List<Channel> retriedChannels;
-  final _directoryCompletion = Completer<void>();
-  int retryCount = 0;
-
-  @override
-  Future<List<Channel>> build() async => initialChannels;
-
-  @override
-  Future<void> ensureDirectoryLoaded() async {
-    ref
-        .read(channelDirectoryLoadStatusProvider.notifier)
-        .markLoading(_activeDirectoryScope(ref));
-    await _directoryCompletion.future;
-  }
-
-  /// Mirrors an ordinary refresh invalidating the active directory request.
-  void supersedeLoadingDirectory() {
-    ref
-        .read(channelDirectoryLoadStatusProvider.notifier)
-        .markError(_activeDirectoryScope(ref));
-    _directoryCompletion.complete();
-  }
-
-  @override
-  Future<void> retryDirectory() async {
-    retryCount++;
-    state = AsyncData(retriedChannels);
-    ref
-        .read(channelDirectoryLoadStatusProvider.notifier)
-        .markLoaded(_activeDirectoryScope(ref));
-  }
-}
-
 String _activeDirectoryScope(Ref ref) => channelDirectoryScope(
   ref.read(relayConfigProvider).baseUrl,
   ref.read(myPubkeyProvider),
@@ -2947,4 +2720,48 @@ String _dmTileAvatarInitial(WidgetTester tester, String labelText) {
     find.descendant(of: avatar, matching: find.byType(Text)),
   );
   return initial.data!;
+}
+
+GroupSummary _publicGroup(
+  String id,
+  String name, {
+  int members = 0,
+  bool isMember = false,
+}) => GroupSummary(
+  id: id,
+  name: name,
+  description: '',
+  channelType: 'stream',
+  memberCount: members,
+  isMember: isMember,
+  visibility: 'open',
+);
+
+class _FakeFindGroupsApi extends Fake implements GroupsApi {
+  _FakeFindGroupsApi(this.onSearch);
+
+  final Future<List<GroupSummary>> Function(String query) onSearch;
+  final queries = <String>[];
+
+  @override
+  Future<List<GroupSummary>> search(String query, {int limit = 20}) {
+    queries.add(query);
+    return onSearch(query);
+  }
+}
+
+Future<void> _openFindGroups(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Create or start conversation'));
+  await tester.pump();
+  await tester.tap(find.byKey(const Key('quick-action-browse-channels-card')));
+  await tester.pumpAndSettle();
+}
+
+/// Types into Find groups and waits out the search debounce.
+Future<void> _searchFindGroups(WidgetTester tester, String query) async {
+  await tester.enterText(find.byKey(const Key('find-groups-search')), query);
+  // Build with the new text first; the debounce starts there.
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pumpAndSettle();
 }

@@ -21,6 +21,7 @@ import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/lucide_star_icon.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/widgets/sheet_divider.dart';
+import '../groups/group_settings_section.dart';
 import 'channel.dart';
 import 'group_avatar.dart';
 import 'add_members_sheet.dart';

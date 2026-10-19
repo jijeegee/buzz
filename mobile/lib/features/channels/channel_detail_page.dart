@@ -24,6 +24,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
+import '../groups/group_preview.dart' show GroupJoinBar;
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/bouncing_dots_indicator.dart';
@@ -1151,7 +1152,9 @@ class ChannelDetailPage extends HookConsumerWidget {
                           entries: typingEntries,
                         ),
                 ),
-                if (!resolvedChannel.isDm)
+                if (resolvedChannel.canJoin)
+                  GroupJoinBar(channel: resolvedChannel)
+                else if (!resolvedChannel.isDm)
                   _ReadOnlyNotice(channel: resolvedChannel),
               ],
             ],

@@ -24,6 +24,44 @@ part 'channel_management_actions.dart';
 String _relayErrorMessage(Object error) =>
     error.toString().replaceFirst('Exception: ', '');
 
+/// Shown when the relay refuses an add because of the invitation cap.
+const tooManyInvitationsMessage = 'Too many invitations. Try again later.';
+
+/// How the relay answered one kind:9000 add that was not applied.
+enum AddMemberReply {
+  /// `invite-sent:` — the person was sent an invitation instead (info).
+  invited,
+
+  /// `rate-limited:` — too many invitations.
+  rateLimited,
+
+  /// Any other refusal.
+  other,
+}
+
+/// Classifies a refused kind:9000 add by its OK reason.
+AddMemberReply classifyAddMemberReply(String reason) {
+  final text = reason.trim().replaceFirst(
+    RegExp(r'^(Exception: )?(Relay rejected event: )?'),
+    '',
+  );
+  if (text.startsWith('invite-sent:')) return AddMemberReply.invited;
+  if (text.startsWith('rate-limited:')) return AddMemberReply.rateLimited;
+  return AddMemberReply.other;
+}
+
+/// "Invitation sent to A" / "Invitation sent to A, B".
+String invitationSentMessage(Iterable<String> names) =>
+    'Invitation sent to ${names.join(', ')}';
+
+/// What a kind:9000 batch did besides adding: who was sent an invitation.
+@immutable
+class AddMembersResult {
+  final List<String> invited;
+
+  const AddMembersResult({this.invited = const []});
+}
+
 /// Raised when one or more kind:9000 adds were rejected, keyed by pubkey.
 ///
 /// Callers surface [message] to the user — a relay rejection here (e.g. a plain
@@ -33,11 +71,17 @@ String _relayErrorMessage(Object error) =>
 class AddMembersException implements Exception {
   final Map<String, String> failures;
 
-  const AddMembersException(this.failures);
+  /// People in the same batch who were sent an invitation instead.
+  final List<String> invited;
 
-  String get message => failures.entries
-      .map((entry) => '${shortPubkey(entry.key)}: ${entry.value}')
-      .join('; ');
+  const AddMembersException(this.failures, {this.invited = const []});
+
+  String get message =>
+      failures.values.every((reason) => reason == tooManyInvitationsMessage)
+      ? tooManyInvitationsMessage
+      : failures.entries
+            .map((entry) => '${shortPubkey(entry.key)}: ${entry.value}')
+            .join('; ');
 
   @override
   String toString() => 'AddMembersException($message)';

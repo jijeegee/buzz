@@ -2488,7 +2488,8 @@ void main() {
         lessThan(tester.getTopLeft(memberRow).dy),
       );
 
-      await tester.ensureVisible(seeAllRow);
+      // Centre it: the page scrolls under a frosted app bar.
+      await Scrollable.ensureVisible(tester.element(seeAllRow), alignment: 0.5);
       await tester.pumpAndSettle();
       await tester.tap(seeAllRow);
       await tester.pumpAndSettle();
@@ -2752,7 +2753,8 @@ void main() {
       );
       expect(_previewRowAvatarInitial(tester, 'self'), 'Y');
 
-      await tester.ensureVisible(seeAllRow);
+      // Centre it: the page scrolls under a frosted app bar.
+      await Scrollable.ensureVisible(tester.element(seeAllRow), alignment: 0.5);
       await tester.pumpAndSettle();
       await tester.tap(seeAllRow);
       await tester.pumpAndSettle();
@@ -3056,30 +3058,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('Join this group from Manage to participate.'),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('group-join-bar')), findsOneWidget);
       expect(find.text('Message…'), findsNothing);
 
-      await tester.tap(
-        find.byKey(const ValueKey('channel-header-settings-trigger')),
-      );
-      await tester.pumpAndSettle();
-      await tester.drag(
-        find.byKey(const ValueKey('channel-details-page-list')),
-        const Offset(0, -300),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Join group'));
+      await tester.tap(find.byKey(const ValueKey('group-join-bar-join')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Join group'), findsNothing);
-      expect(
-        find.text('Join this group from Manage to participate.'),
-        findsNothing,
-      );
-
+      expect(find.byKey(const ValueKey('group-join-bar')), findsNothing);
       expect(find.text('Message general'), findsOneWidget);
     });
 
@@ -10613,6 +10598,16 @@ void main() {
       await tester.pumpAndSettle();
 
       final goalsSwitch = find.byKey(const ValueKey('room-goals-switch'));
+      await tester.scrollUntilVisible(
+        goalsSwitch,
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('channel-details-page-list')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       // Centre it: the page scrolls under a frosted app bar.
       await Scrollable.ensureVisible(
         tester.element(goalsSwitch),
@@ -10650,6 +10645,16 @@ void main() {
       await tester.pumpAndSettle();
 
       final goalsSwitch = find.byKey(const ValueKey('room-goals-switch'));
+      await tester.scrollUntilVisible(
+        goalsSwitch,
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('channel-details-page-list')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       // Centre it: the page scrolls under a frosted app bar.
       await Scrollable.ensureVisible(
         tester.element(goalsSwitch),
@@ -15981,12 +15986,13 @@ class _FakeChannelActions extends ChannelActions {
   }
 
   @override
-  Future<void> addMembers({
+  Future<AddMembersResult> addMembers({
     required String channelId,
     required List<String> pubkeys,
     String role = 'member',
   }) async {
     await onAddMembers?.call(channelId, pubkeys);
+    return const AddMembersResult();
   }
 
   @override
@@ -16005,6 +16011,7 @@ class _FakeChannelActions extends ChannelActions {
     String? name,
     String? description,
     bool? goalsEnabled,
+    String? visibility,
   }) async {
     if (goalsEnabled != null) {
       await onUpdateGoals?.call(channelId, goalsEnabled);

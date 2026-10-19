@@ -524,7 +524,8 @@ class MessageContent extends HookConsumerWidget {
           if (deepLink case ChannelDeepLink(:final channelId)) {
             resolvedChannelTap(channelId);
           } else if (deepLink is MessageDeepLink ||
-              deepLink is InviteDeepLink) {
+              deepLink is InviteDeepLink ||
+              deepLink is GroupJoinDeepLink) {
             ref.read(pendingDeepLinkProvider.notifier).open(uri);
           }
           return;

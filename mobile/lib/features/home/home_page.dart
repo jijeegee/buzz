@@ -15,6 +15,7 @@ import '../agents/agents_page.dart';
 import '../channels/channels_page.dart';
 import '../chats/chat_state_writer.dart';
 import '../chats/chats_page.dart';
+import '../groups/group_invitations.dart';
 import '../more/more_page.dart';
 import '../people/people_page.dart';
 
@@ -223,6 +224,12 @@ class HomePage extends HookConsumerWidget {
                 unawaited(HapticFeedback.selectionClick());
                 visitedTabs.value.add(i);
                 tabIndex.value = i;
+                if (i == _chatsTab) {
+                  ref
+                      .read(groupInvitationsProvider.notifier)
+                      .refresh()
+                      .ignore();
+                }
                 if (reducedMotion) {
                   tabContentTransitionController.value = 1;
                 } else {

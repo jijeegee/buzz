@@ -582,6 +582,41 @@ class _SwitchableRelayConfigNotifier extends RelayConfigNotifier {
   RelayConfig build() => initial;
 }
 
+class _ReplyingRelaySocket extends RelaySocket {
+  final List<Map<String, dynamic>> events;
+  final (bool, String) Function(Map<String, dynamic> event) reply;
+
+  _ReplyingRelaySocket(
+    this.events,
+    this.reply,
+    void Function(List<dynamic> message) handleMessage,
+  ) : super(
+        wsUrl: 'ws://localhost',
+        nsec: null,
+        onMessage: handleMessage,
+        onConnected: () {},
+        onDisconnected: (_) {},
+      );
+
+  @override
+  SocketState get state => SocketState.connected;
+
+  @override
+  void send(List<dynamic> payload) {
+    if (payload case ['EVENT', final Map<String, dynamic> event]) {
+      events.add(event);
+      final (accepted, message) = reply(event);
+      super.debugHandleOkForTest(['OK', event['id'], accepted, message]);
+    }
+  }
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  void dispose() {}
+}
+
 class _RecordingRelaySocket extends RelaySocket {
   final List<Map<String, dynamic>> events;
   final void Function(List<dynamic> message) handleMessage;
@@ -3362,6 +3397,71 @@ void main() {
           throwsA(isA<StateError>()),
         );
         expect(publishedEvents, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'invite-sent adds are invitations and rate-limited adds fail plainly',
+      (tester) async {
+        final signer = nostr.Keys.generate();
+        final publishedEvents = <Map<String, dynamic>>[];
+        await tester.pumpWidget(
+          _buildComposeBar(
+            uploadService: _testUploadService(signer.nsec),
+            currentPubkey: signer.public,
+            onSend: (_, _, {mediaTags = const <List<String>>[]}) async {},
+          ),
+        );
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(ComposeBar)),
+        );
+        final session = container.read(relaySessionProvider.notifier);
+        final invitedKey = 'a' * 64;
+        final limitedKey = 'b' * 64;
+        final addedKey = 'c' * 64;
+        session.debugAttachSocketForTest(
+          _ReplyingRelaySocket(publishedEvents, (event) {
+            final tags = (event['tags'] as List).cast<List<dynamic>>();
+            final target = tags.firstWhere((tag) => tag[0] == 'p')[1];
+            if (target == invitedKey) {
+              return (
+                false,
+                'invite-sent: not added; they were sent an invitation to join',
+              );
+            }
+            if (target == limitedKey) {
+              return (false, 'rate-limited: too many invitations, try later');
+            }
+            return (true, '');
+          }, session.debugHandleSocketMessageForTest),
+        );
+        final actions = container.read(channelActionsProvider);
+
+        final result = await actions.addMembers(
+          channelId: 'channel-1',
+          pubkeys: [invitedKey, addedKey],
+        );
+        expect(result.invited, [invitedKey]);
+
+        await expectLater(
+          actions.addMembers(
+            channelId: 'channel-1',
+            pubkeys: [invitedKey, limitedKey],
+          ),
+          throwsA(
+            isA<AddMembersException>()
+                .having((e) => e.invited, 'invited', [invitedKey])
+                .having((e) => e.failures.keys, 'failed', [limitedKey])
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'Too many invitations. Try again later.',
+                ),
+          ),
+        );
+        // The invitation cap is not relay back-pressure.
+        expect(session.isRateLimited, isFalse);
+        expect(publishedEvents, hasLength(4));
       },
     );
 
