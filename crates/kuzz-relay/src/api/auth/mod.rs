@@ -264,7 +264,7 @@ fn client_ip(
 /// peer IP is known, otherwise one deployment-wide bucket sized for all
 /// clients together (a per-IP limit there would let one client lock out
 /// everyone).
-async fn rate_limit_client(
+pub(crate) async fn rate_limit_client(
     state: &AppState,
     extensions: &axum::http::Extensions,
     headers: &HeaderMap,

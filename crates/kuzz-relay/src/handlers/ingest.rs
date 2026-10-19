@@ -3188,7 +3188,20 @@ async fn ingest_event_inner(
     if crate::handlers::side_effects::is_admin_kind(kind_u32) {
         crate::handlers::side_effects::validate_admin_event(tenant, kind_u32, &event, state)
             .await
-            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+            .map_err(|e| {
+                if e.is::<crate::handlers::side_effects::InvitationSent>() {
+                    IngestError::Rejected(format!(
+                        "{} not added; they were sent an invitation to join",
+                        crate::handlers::side_effects::INVITE_SENT_PREFIX
+                    ))
+                } else if e.is::<crate::handlers::side_effects::InvitationRateLimited>() {
+                    IngestError::Rejected(
+                        crate::handlers::side_effects::INVITATIONS_RATE_LIMITED.to_owned(),
+                    )
+                } else {
+                    IngestError::Rejected(format!("invalid: {e}"))
+                }
+            })?;
     }
 
     // Processed here (verify consent, mutate archived_identities, emit the

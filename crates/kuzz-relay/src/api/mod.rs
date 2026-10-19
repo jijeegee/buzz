@@ -6,6 +6,7 @@ pub mod bridge;
 pub mod events;
 pub mod gifs;
 pub mod git;
+pub mod groups;
 pub mod invites;
 pub mod media;
 pub mod mesh_demo;

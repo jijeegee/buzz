@@ -722,7 +722,12 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 74);
+        assert_eq!(migrations.len(), 75);
+        assert_eq!(migrations[74].version, 75);
+        assert!(migrations[74]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE group_invitations"));
         assert_eq!(migrations[73].version, 74);
         assert!(migrations[73]
             .sql
@@ -2190,6 +2195,9 @@ mod postgres_tests {
             [
                 "artifact_heads",
                 "artifact_revisions",
+                "group_add_settings",
+                "group_invitations",
+                "group_invite_links",
                 "thread_follows",
                 "media_references",
                 "media_uploads",
