@@ -278,7 +278,7 @@ void main() {
     await pump(
       tester,
       agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
+        MyAgent(pubkey: _fizz, deviceId: 'pc-a'),
       ],
       presence: {_fizz: 'online'},
       teams: [
