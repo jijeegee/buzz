@@ -128,4 +128,65 @@ test.describe("Agents page tabs", () => {
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/04-team-preset-set-up.png` });
   });
+
+  test("05-sidebar-row: a click opens the DM, the menu holds the rest", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await installMockBridge(page, MOCK);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("open-agents-view").click();
+    const list = page.getByTestId("agents-list");
+    const running = list.getByTestId(
+      `agents-row-agent:${TEST_IDENTITIES.alice.pubkey}`,
+    );
+    await expect(running).toBeVisible({ timeout: 10_000 });
+
+    // Picking the agent opens the DM with it; the list stays.
+    await running.click();
+    await expect(page).toHaveURL(/\/channels\//, { timeout: 10_000 });
+    await expect(list).toBeVisible();
+    await expect(running).toHaveAttribute("aria-current", "true");
+
+    // The "⋯" shows on hover in place of the status.
+    await running.hover();
+    const menuButton = list.getByTestId(
+      `agents-row-menu-agent:${TEST_IDENTITIES.alice.pubkey}`,
+    );
+    await menuButton.click();
+    const key = `agent:${TEST_IDENTITIES.alice.pubkey}`;
+    await expect(page.getByTestId(`agents-row-menu-stop-${key}`)).toBeVisible();
+    await expect(page.getByTestId(`agents-row-menu-start-${key}`)).toHaveCount(
+      0,
+    );
+    for (const action of ["message", "edit", "profile"]) {
+      await expect(
+        page.getByTestId(`agents-row-menu-${action}-${key}`),
+      ).toBeVisible();
+    }
+    await expect(
+      page.getByTestId(`agents-row-menu-add-to-channel-${key}`),
+    ).toHaveCount(0);
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/05-sidebar-row-menu.png` });
+    await page.keyboard.press("Escape");
+
+    // A stopped agent offers Start; a right click opens the same menu.
+    const stoppedKey = `agent:${TEST_IDENTITIES.bob.pubkey}`;
+    await list
+      .getByTestId(`agents-row-${stoppedKey}`)
+      .click({ button: "right" });
+    await expect(
+      page.getByTestId(`agents-row-menu-start-${stoppedKey}`),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId(`agents-row-menu-stop-${stoppedKey}`),
+    ).toHaveCount(0);
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/06-sidebar-row-context-menu.png` });
+
+    // Edit goes to the agent's settings.
+    await page.getByTestId(`agents-row-menu-edit-${stoppedKey}`).click();
+    await expect(page).toHaveURL(/\/agents\?.*profileTab=runtime/);
+  });
 });
