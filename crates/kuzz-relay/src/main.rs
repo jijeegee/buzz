@@ -13,7 +13,7 @@ use kuzz_audit::AuditService;
 use kuzz_auth::AuthService;
 use kuzz_core::CommunityId;
 use kuzz_db::{Db, DbConfig};
-use kuzz_pubsub::PubSubManager;
+use kuzz_pubsub::{PubSubConfig, PubSubManager};
 use kuzz_search::SearchService;
 
 use kuzz_relay::config::{Config, MAX_DRAIN_JITTER_MS};
@@ -530,9 +530,12 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     kuzz_relay::state::verify_redis_command_path(&redis_health_pool).await?;
     info!("Redis command path connected");
     let pubsub = Arc::new(
-        PubSubManager::new(&config.redis_url, redis_pool)
-            .await
-            .map_err(|e| anyhow::anyhow!("PubSub init failed: {e}"))?,
+        PubSubManager::with_config(
+            PubSubConfig::new(&config.redis_url).with_seq_envelope(config.pubsub_seq_envelope),
+            redis_pool,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("PubSub init failed: {e}"))?,
     );
     info!("Redis pub/sub connected");
 

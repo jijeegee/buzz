@@ -433,7 +433,8 @@ pub async fn fan_out_pubsub_event(state: &Arc<AppState>, channel_event: kuzz_pub
         kuzz_pubsub::EventTopic::Global => None,
     };
     let community_id = channel_event.community_id;
-    let stored = StoredEvent::new(channel_event.event, channel_id);
+    let mut stored = StoredEvent::new(channel_event.event, channel_id);
+    stored.channel_sequence = channel_event.channel_sequence;
 
     // Skip events that were already fanned out in-process (local echo). The
     // dedup key is `(community_id, event_id)` — a same-id event arriving for a
@@ -575,7 +576,12 @@ async fn dispatch_persistent_event_inner(
     crate::nip_fi_test_hooks::before_event_publish(tenant.community());
     if let Err(e) = state
         .pubsub
-        .publish_event(tenant, topic, &stored_event.event)
+        .publish_event_with_sequence(
+            tenant,
+            topic,
+            &stored_event.event,
+            stored_event.channel_sequence,
+        )
         .await
     {
         state
@@ -2352,6 +2358,7 @@ mod tests {
                             community_id: kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
                             topic: EventTopic::Global,
                             event,
+                            channel_sequence: None,
                         },
                     )
                     .await;
@@ -2496,6 +2503,7 @@ mod tests {
                     community_id: kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
                     topic: EventTopic::Global,
                     event,
+                    channel_sequence: None,
                 },
             )
             .await;
@@ -2519,6 +2527,7 @@ mod tests {
                     community_id: community,
                     topic: EventTopic::Global,
                     event,
+                    channel_sequence: None,
                 },
             )
             .await;
@@ -2561,6 +2570,7 @@ mod tests {
                     community_id: community_b,
                     topic: EventTopic::Global,
                     event,
+                    channel_sequence: None,
                 },
             )
             .await;
@@ -2590,6 +2600,7 @@ mod tests {
                     community_id: kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
                     topic: EventTopic::Global,
                     event,
+                    channel_sequence: None,
                 },
             )
             .await;
