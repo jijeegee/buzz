@@ -129,6 +129,10 @@ pub struct EventQuery {
     /// (`user_block_periods`), before ORDER/LIMIT so history pages and counts
     /// never include them.
     pub blocked_dm_reader: Option<Vec<u8>>,
+    /// Reader whose `since_join` history cut applies (`channel_event_before_join`):
+    /// rows from before their current join in members-only `since_join` rooms
+    /// are removed before ORDER/LIMIT, so pages and counts never include them.
+    pub history_reader: Option<Vec<u8>>,
     /// Keep only rows whose `channel_sequence` is strictly greater than this
     /// order number. Requires [`EventQuery::channel_id`]: the number only
     /// orders events within one channel.
@@ -169,6 +173,7 @@ impl EventQuery {
             max_limit: None,
             shared_gated_reader: None,
             blocked_dm_reader: None,
+            history_reader: None,
             after_sequence: None,
             order_by_sequence: false,
         }
@@ -666,6 +671,17 @@ async fn query_events_on_inner(
 ///
 /// The author set and the reader's 1:1 DMs are hashed once per query; only
 /// rows passing both probe the period index.
+fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
+    let Some(ref reader) = q.history_reader else {
+        return;
+    };
+    qb.push(format!(
+        " AND NOT channel_event_before_join({col_prefix}community_id, {col_prefix}channel_id,          {col_prefix}channel_sequence, "
+    ));
+    qb.push_bind(reader.clone());
+    qb.push(")");
+}
+
 fn push_blocked_dm_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
     let Some(ref reader) = q.blocked_dm_reader else {
         return;
@@ -800,6 +816,7 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
     }
 
     push_blocked_dm_clause(&mut qb, q, col_prefix);
+    push_history_clause(&mut qb, q, col_prefix);
 
     if let Some(ref pk) = q.pubkey {
         qb.push(format!(" AND {col_prefix}pubkey = "))
@@ -1160,6 +1177,7 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
     }
 
     push_blocked_dm_clause(&mut qb, q, col_prefix);
+    push_history_clause(&mut qb, q, col_prefix);
 
     if let Some(ref pk) = q.pubkey {
         qb.push(format!(" AND {col_prefix}pubkey = "))
