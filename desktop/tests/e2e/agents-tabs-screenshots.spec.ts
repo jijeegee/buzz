@@ -159,11 +159,14 @@ test.describe("Agents page tabs", () => {
     await expect(page.getByTestId(`agents-row-menu-start-${key}`)).toHaveCount(
       0,
     );
-    for (const action of ["message", "add-to-channel", "edit", "profile"]) {
+    for (const action of ["message", "edit", "profile"]) {
       await expect(
         page.getByTestId(`agents-row-menu-${action}-${key}`),
       ).toBeVisible();
     }
+    await expect(
+      page.getByTestId(`agents-row-menu-add-to-channel-${key}`),
+    ).toHaveCount(0);
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/05-sidebar-row-menu.png` });
     await page.keyboard.press("Escape");

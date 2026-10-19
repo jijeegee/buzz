@@ -1,7 +1,6 @@
 import * as React from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  Hash,
   LayoutGrid,
   MessageSquare,
   MoreHorizontal,
@@ -65,9 +64,7 @@ import {
 import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { deferMenuAction } from "@/features/sidebar/ui/sidebarMenuHelpers";
-import { AddAgentToChannelDialog } from "./AddAgentToChannelDialog";
 import { DeviceRobot } from "./MyAgentsSection";
-import { AddMyTeamToChannelDialog } from "./MyTeamDialogs";
 import { useManagedAgentActions } from "./useManagedAgentActions";
 
 /** One row: one real agent, here or on another computer. */
@@ -94,7 +91,6 @@ type AgentRowAction =
   | "start"
   | "stop"
   | "restart"
-  | "addToChannel"
   | "edit"
   | "profile";
 
@@ -232,9 +228,6 @@ export function AgentsSidebarList({
     setActionNoticeMessage(null);
   }, [actions.actionNoticeMessage, setActionNoticeMessage]);
   const [remotePending, setRemotePending] = React.useState<string | null>(null);
-  const [remoteToAdd, setRemoteToAdd] = React.useState<AgentListItem | null>(
-    null,
-  );
   const openDmMutation = useOpenDmMutation();
   const { goChannel } = useAppNavigation();
   const channelsQuery = useChannelsQuery();
@@ -303,10 +296,6 @@ export function AgentsSidebarList({
         return;
       case "restart":
         if (managed) void actions.handleRestart(managed.pubkey);
-        return;
-      case "addToChannel":
-        if (managed) actions.setAgentToAddToChannel(managed);
-        else setRemoteToAdd(item);
         return;
       case "edit":
         // Like the page card's Edit: this agent's own settings.
@@ -406,50 +395,6 @@ export function AgentsSidebarList({
           })
         )}
       </div>
-      {actions.agentToAddToChannel ? (
-        <AddAgentToChannelDialog
-          agent={actions.agentToAddToChannel}
-          onAdded={actions.handleAddedToChannel}
-          onOpenChange={(open) => {
-            if (!open) actions.setAgentToAddToChannel(null);
-          }}
-          open
-        />
-      ) : null}
-      <AddMyTeamToChannelDialog
-        agentsByPubkey={
-          new Map(
-            remoteToAdd
-              ? [
-                  [
-                    remoteToAdd.pubkey,
-                    {
-                      computer: remoteToAdd.hostName ?? "Another device",
-                      name: remoteToAdd.name || "Agent",
-                      pubkey: remoteToAdd.pubkey,
-                      running: remoteToAdd.running,
-                    },
-                  ],
-                ]
-              : [],
-          )
-        }
-        onAdded={(message) => toast.success(message)}
-        onOpenChange={(open) => {
-          if (!open) setRemoteToAdd(null);
-        }}
-        team={
-          remoteToAdd
-            ? {
-                agentPubkeys: [remoteToAdd.pubkey],
-                createdAt: 0,
-                description: null,
-                id: `agent:${remoteToAdd.pubkey}`,
-                name: remoteToAdd.name || "Agent",
-              }
-            : null
-        }
-      />
     </div>
   );
 }
@@ -508,13 +453,6 @@ function AgentRowMenuItems({
         </Item>
       ) : null}
       <Separator />
-      <Item
-        data-testid={testId("add-to-channel")}
-        onSelect={run("addToChannel")}
-      >
-        <Hash className={iconClass} />
-        Add to channel
-      </Item>
       <Item data-testid={testId("edit")} onSelect={run("edit")}>
         <Pencil className={iconClass} />
         Edit
