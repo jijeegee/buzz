@@ -8194,6 +8194,7 @@ mod postgres_tests {
                 cancel: cancel.clone(),
                 backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
                 grace_limit: 3,
+                kuzz_seq: false,
                 nip_fi_assertion: None,
                 session_deadline: None,
                 nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),

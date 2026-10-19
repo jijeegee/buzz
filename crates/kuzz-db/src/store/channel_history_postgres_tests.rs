@@ -345,3 +345,76 @@ async fn insert_returns_sequence_and_duplicates_do_not_burn_numbers() {
         .expect("global insert");
     assert_eq!(stored.channel_sequence, None);
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn query_events_reads_sequence_and_limit_zero_returns_nothing() {
+    let f = Fixture::new().await;
+    let first = f.send("first", 1_700_000_000).await;
+    let second = f.send("second", 1_700_000_001).await;
+    let global = EventBuilder::new(Kind::TextNote, "global")
+        .sign_with_keys(&f.owner)
+        .expect("fixture signature");
+    event::insert_event(&f.pool, f.scope, &global, None)
+        .await
+        .expect("global insert");
+
+    let mut q = event::EventQuery::for_community(f.scope);
+    q.channel_id = Some(f.channel);
+    let rows = event::query_events(&f.pool, &q)
+        .await
+        .expect("channel query");
+    let sequences: Vec<_> = rows.iter().map(|row| row.channel_sequence).collect();
+    assert_eq!(sequences, vec![Some(second), Some(first)]);
+
+    // The #p join path selects the column too.
+    let mentioned = Keys::generate();
+    let mention = EventBuilder::new(Kind::Custom(9), "hi")
+        .tags([
+            Tag::parse(["h", &f.channel.to_string()]).expect("h tag"),
+            Tag::parse(["p", &mentioned.public_key().to_hex()]).expect("p tag"),
+        ])
+        .custom_created_at(Timestamp::from(1_700_000_002))
+        .sign_with_keys(&f.owner)
+        .expect("fixture signature");
+    let (stored, _) = event::insert_event(&f.pool, f.scope, &mention, Some(f.channel))
+        .await
+        .expect("mention insert");
+    sqlx::query(
+        "INSERT INTO event_mentions \
+         (community_id, pubkey_hex, event_id, event_created_at, channel_id, event_kind) \
+         VALUES ($1, $2, $3, to_timestamp(1700000002), $4, 9)",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(mentioned.public_key().to_hex())
+    .bind(mention.id.as_bytes().as_slice())
+    .bind(f.channel)
+    .execute(&f.pool)
+    .await
+    .expect("mention row");
+    let mut q = event::EventQuery::for_community(f.scope);
+    q.p_tag_hex = Some(mentioned.public_key().to_hex());
+    let rows = event::query_events(&f.pool, &q).await.expect("#p query");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].channel_sequence, stored.channel_sequence);
+    assert!(rows[0].channel_sequence.is_some());
+
+    let mut q = event::EventQuery::for_community(f.scope);
+    q.global_only = true;
+    let rows = event::query_events(&f.pool, &q)
+        .await
+        .expect("global query");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].channel_sequence, None,
+        "no channel, no order number"
+    );
+
+    // NIP-01 `limit: 0`: no stored rows, so a REQ can be live-only.
+    let mut q = event::EventQuery::for_community(f.scope);
+    q.limit = Some(0);
+    assert!(event::query_events(&f.pool, &q)
+        .await
+        .expect("limit 0 query")
+        .is_empty());
+}

@@ -295,6 +295,8 @@ struct ConnEntry {
     /// Set once AUTH succeeds. The pubkey is bound earlier so revocation can
     /// find a socket mid-admission; online counts and presence read this.
     admitted: AtomicBool,
+    /// Opted in with `?kuzz_seq=1`: fan-out sends the sequence-bearing frame.
+    kuzz_seq: AtomicBool,
     grace_limit: u8,
     /// Lifecycle control used by `disconnect_nip_fi` for the denial transition.
     community_control: CommunityConnectionControl,
@@ -681,6 +683,7 @@ impl ConnectionManager {
                 nip_fi_issuer: std::sync::RwLock::new(None),
                 admitted_owner: std::sync::OnceLock::new(),
                 admitted: AtomicBool::new(false),
+                kuzz_seq: AtomicBool::new(false),
                 grace_limit,
                 community_control,
             },
@@ -696,6 +699,13 @@ impl ConnectionManager {
         if self.draining.load(Ordering::SeqCst) {
             let _ = drain_ctrl_tx.try_send(Self::restart_close_frame());
             drain_cancel.cancel();
+        }
+    }
+
+    /// Mark a connection as opted in to channel order numbers (`?kuzz_seq=1`).
+    pub(crate) fn set_kuzz_seq(&self, conn_id: Uuid) {
+        if let Some(entry) = self.connections.get(&conn_id) {
+            entry.kuzz_seq.store(true, Ordering::Relaxed);
         }
     }
 
@@ -1096,32 +1106,57 @@ impl ConnectionManager {
         self.try_send_ws_message(conn_id, WsMessage::Text(text))
     }
 
+    /// Fan-out send of an already-serialized frame. Connections that opted in
+    /// with `?kuzz_seq=1` get the frame `seq_frame` builds (the caller caches
+    /// it); every other connection, or a `None` builder, gets `plain`.
+    pub(crate) fn send_fanout_text_bytes(
+        &self,
+        conn_id: Uuid,
+        plain: &Arc<Bytes>,
+        seq_frame: Option<&dyn Fn() -> Arc<Bytes>>,
+    ) -> bool {
+        let Some(entry) = self.connections.get(&conn_id) else {
+            return false;
+        };
+        let conn = entry.value();
+        let frame = match seq_frame {
+            Some(build) if conn.kuzz_seq.load(Ordering::Relaxed) => build(),
+            _ => Arc::clone(plain),
+        };
+        let text = WsUtf8Bytes::try_from(Bytes::clone(frame.as_ref()))
+            .expect("relay fan-out frames are serialized UTF-8 JSON");
+        Self::try_send_entry(conn_id, conn, WsMessage::Text(text))
+    }
+
     fn try_send_ws_message(&self, conn_id: Uuid, msg: WsMessage) -> bool {
         if let Some(entry) = self.connections.get(&conn_id) {
-            let conn = entry.value();
-            match conn.tx.try_send(msg) {
-                Ok(_) => {
-                    conn.backpressure_count.store(0, Ordering::Relaxed);
-                    true
-                }
-                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                    let count = conn.backpressure_count.fetch_add(1, Ordering::Relaxed) + 1;
-                    if count >= conn.grace_limit {
-                        tracing::warn!(conn_id = %conn_id, count, "fan-out: sustained backpressure — cancelling slow client");
-                        metrics::counter!("kuzz_ws_backpressure_disconnects_total").increment(1);
-                        conn.cancel.cancel();
-                    } else {
-                        tracing::warn!(conn_id = %conn_id, count, grace = conn.grace_limit, "fan-out: send buffer full — grace {count}/{}", conn.grace_limit);
-                    }
-                    false
-                }
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                    tracing::debug!(conn_id = %conn_id, "fan-out: send channel closed");
-                    false
-                }
-            }
+            Self::try_send_entry(conn_id, entry.value(), msg)
         } else {
             false
+        }
+    }
+
+    fn try_send_entry(conn_id: Uuid, conn: &ConnEntry, msg: WsMessage) -> bool {
+        match conn.tx.try_send(msg) {
+            Ok(_) => {
+                conn.backpressure_count.store(0, Ordering::Relaxed);
+                true
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                let count = conn.backpressure_count.fetch_add(1, Ordering::Relaxed) + 1;
+                if count >= conn.grace_limit {
+                    tracing::warn!(conn_id = %conn_id, count, "fan-out: sustained backpressure — cancelling slow client");
+                    metrics::counter!("kuzz_ws_backpressure_disconnects_total").increment(1);
+                    conn.cancel.cancel();
+                } else {
+                    tracing::warn!(conn_id = %conn_id, count, grace = conn.grace_limit, "fan-out: send buffer full — grace {count}/{}", conn.grace_limit);
+                }
+                false
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                tracing::debug!(conn_id = %conn_id, "fan-out: send channel closed");
+                false
+            }
         }
     }
 }
@@ -2886,6 +2921,7 @@ pub(crate) mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::clone(&bp),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: None,
             nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),

@@ -736,6 +736,7 @@ async fn nip11_or_ws_handler(
     };
 
     let max_frame_bytes = state.config.max_frame_bytes;
+    let kuzz_seq = crate::connection::kuzz_seq_requested(req.uri().query());
 
     match WebSocketUpgrade::from_request(req, &state).await {
         Ok(ws) => {
@@ -790,6 +791,7 @@ async fn nip11_or_ws_handler(
                         tenant,
                         nip_fi_assertion,
                         connection_time,
+                        kuzz_seq,
                     )
                     .await
                 })

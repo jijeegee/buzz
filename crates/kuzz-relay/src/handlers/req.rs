@@ -563,7 +563,7 @@ pub async fn handle_req(
                     continue;
                 }
 
-                let msg = RelayMessage::event(&sub_id, &stored.event);
+                let msg = RelayMessage::stored_event(&sub_id, stored, conn.kuzz_seq);
                 if !conn.send(msg) {
                     return false;
                 }
@@ -962,7 +962,7 @@ async fn handle_search_req(
                     if !seen_ids.insert(stored.event.id) {
                         continue;
                     }
-                    if !conn.send(RelayMessage::event(sub_id, &stored.event)) {
+                    if !conn.send(RelayMessage::stored_event(sub_id, stored, conn.kuzz_seq)) {
                         return;
                     }
                     emitted += 1;
@@ -1872,6 +1872,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: None,
             nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),
@@ -2247,6 +2248,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: None,
             nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),
@@ -2307,6 +2309,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: None,
             nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),
@@ -3437,6 +3440,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: Some(deadline),
             nip_fi_gate: gate,
@@ -3567,6 +3571,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: Some(deadline),
             nip_fi_gate: gate,
@@ -3705,6 +3710,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: Some(deadline),
             nip_fi_gate: Arc::clone(&gate),
@@ -3849,6 +3855,7 @@ mod tests {
             cancel: cancel.clone(),
             backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             grace_limit: 3,
+            kuzz_seq: false,
             nip_fi_assertion: None,
             session_deadline: Some(deadline),
             nip_fi_gate: Arc::clone(&gate),
@@ -3918,7 +3925,143 @@ mod tests {
         }
     }
 
+    /// REQ history frames carry the channel order number only on `?kuzz_seq=1`
+    /// connections; `limit: 0` sends no history but still subscribes live.
+    async fn history_frames_carry_sequence_for_opted_in_connections_body() {
+        use nostr::{EventBuilder, Filter, Keys, Kind, Tag};
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::mpsc;
+        use tokio_util::sync::CancellationToken;
+        use uuid::Uuid;
+
+        let state =
+            crate::state::tests::test_state_with_database_url(&crate::test_support::database_url())
+                .await;
+        let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+            .await
+            .expect("Postgres");
+        let host = format!("req-seq-{}.local", Uuid::new_v4());
+        state.db.ensure_configured_community(&host).await.unwrap();
+        state.db.ensure_future_partitions(1, true).await.unwrap();
+        let tenant = crate::tenant::bind_community(&state.db, &host)
+            .await
+            .unwrap();
+        let community = tenant.community();
+        let reader = Keys::generate();
+        let channel = Uuid::new_v4();
+        sqlx::query("INSERT INTO channels(community_id,id,name,visibility,channel_type,created_by) VALUES($1,$2,$2::text,'open'::channel_visibility,'stream',$3)")
+            .bind(community.as_uuid()).bind(channel).bind(reader.public_key().as_bytes().as_slice()).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO channel_members(community_id,channel_id,pubkey,role) VALUES($1,$2,$3,'owner')")
+            .bind(community.as_uuid()).bind(channel).bind(reader.public_key().as_bytes().as_slice()).execute(&pool).await.unwrap();
+        let mut sequences = HashMap::new();
+        for content in ["one", "two"] {
+            let event = EventBuilder::new(Kind::Custom(9), content)
+                .tags([Tag::parse(["h", &channel.to_string()]).unwrap()])
+                .sign_with_keys(&reader)
+                .unwrap();
+            let (stored, _) = state
+                .db
+                .insert_event(community, &event, Some(channel))
+                .await
+                .unwrap();
+            sequences.insert(event.id, stored.channel_sequence.expect("channel sequence"));
+        }
+
+        let connect = |kuzz_seq: bool| {
+            let (send_tx, send_rx) = mpsc::channel::<axum::extract::ws::Message>(16);
+            let cancel = CancellationToken::new();
+            let conn = Arc::new(crate::connection::ConnectionState {
+                conn_id: Uuid::new_v4(),
+                tenant: tenant.clone(),
+                remote_addr: "127.0.0.1:1234".parse().unwrap(),
+                auth_state: std::sync::Mutex::new(crate::connection::AuthState::Authenticated(
+                    kuzz_auth::AuthContext {
+                        pubkey: reader.public_key(),
+                        scopes: vec![],
+                        channel_ids: None,
+                        auth_method: kuzz_auth::AuthMethod::Nip42,
+                        agent_owner_pubkey: None,
+                        token: None,
+                    },
+                )),
+                subscriptions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+                send_tx,
+                ctrl_tx: mpsc::channel(8).0,
+                terminal_ctrl_tx: mpsc::channel(1).0,
+                cancel: cancel.clone(),
+                backpressure_count: Arc::new(std::sync::atomic::AtomicU8::new(0)),
+                grace_limit: 3,
+                kuzz_seq,
+                nip_fi_assertion: None,
+                session_deadline: None,
+                nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(cancel.clone()),
+                community_control: crate::state::CommunityConnectionControl::new(cancel),
+            });
+            (conn, send_rx)
+        };
+        let drain = |rx: &mut mpsc::Receiver<axum::extract::ws::Message>| {
+            let mut out = Vec::new();
+            while let Ok(axum::extract::ws::Message::Text(text)) = rx.try_recv() {
+                out.push(serde_json::from_str::<serde_json::Value>(&text).unwrap());
+            }
+            out
+        };
+        let filter = || {
+            Filter::new().kind(Kind::Custom(9)).custom_tag(
+                nostr::SingleLetterTag::lowercase(nostr::Alphabet::H),
+                channel.to_string(),
+            )
+        };
+
+        for kuzz_seq in [false, true] {
+            let (conn, mut rx) = connect(kuzz_seq);
+            handle_req(
+                "h".into(),
+                vec![filter()],
+                vec![],
+                Arc::clone(&conn),
+                Arc::clone(&state),
+            )
+            .await;
+            let frames = drain(&mut rx);
+            assert_eq!(frames.len(), 3, "two events and EOSE: {frames:?}");
+            assert_eq!(frames[2], serde_json::json!(["EOSE", "h"]));
+            for frame in &frames[..2] {
+                let event: nostr::Event = serde_json::from_value(frame[2].clone()).unwrap();
+                if kuzz_seq {
+                    assert_eq!(frame.as_array().unwrap().len(), 4);
+                    assert_eq!(
+                        frame[3],
+                        serde_json::json!({"channel_sequence": sequences[&event.id]})
+                    );
+                } else {
+                    assert_eq!(frame.as_array().unwrap().len(), 3, "legacy frame");
+                }
+            }
+
+            // NIP-01 `limit: 0`: no history, just EOSE, and the live
+            // subscription stays registered.
+            handle_req(
+                "live".into(),
+                vec![filter().limit(0)],
+                vec![],
+                Arc::clone(&conn),
+                Arc::clone(&state),
+            )
+            .await;
+            assert_eq!(drain(&mut rx), vec![serde_json::json!(["EOSE", "live"])]);
+            assert!(conn.subscriptions.lock().await.contains_key("live"));
+        }
+    }
+
     mod postgres_tests {
+        #[tokio::test]
+        #[ignore = "requires Postgres"]
+        async fn history_frames_carry_sequence_for_opted_in_connections() {
+            super::history_frames_carry_sequence_for_opted_in_connections_body().await;
+        }
+
         #[tokio::test]
         #[ignore = "requires Postgres"]
         async fn w3_b2_req_barrier_expiry_mid_flight_blocks_subscription_registration() {
