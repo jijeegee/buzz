@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 use kuzz_core::event::StoredEvent;
 use kuzz_core::kind::{
     event_kind_u32, is_ephemeral, is_unshared_gated_event, AUTHOR_ONLY_KINDS,
-    KIND_AGENT_OBSERVER_FRAME, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE,
+    KIND_AGENT_OBSERVER_FRAME, KIND_GIFT_WRAP, KIND_PRESENCE_UPDATE, KIND_THREAD_SUMMARY,
 };
 use kuzz_core::observer::{
     content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -117,6 +117,11 @@ async fn drop_dm_blockers(
             return None;
         }
     }
+    if event_kind_u32(&stored_event.event) == KIND_THREAD_SUMMARY
+        && stored_event.event.pubkey == state.relay_keypair.public_key()
+    {
+        return Some(drop_summary_blockers(state, community_id, stored_event, matches).await);
+    }
     let author = stored_event.event.pubkey.to_bytes();
     let blockers = match state.blockers_of_cached(community_id, &author).await {
         Ok(blockers) => blockers,
@@ -140,6 +145,66 @@ async fn drop_dm_blockers(
             })
             .collect(),
     )
+}
+
+/// Silent block for a live DM thread summary: it counts everyone's replies,
+/// so it skips whoever blocked one of its participants (their next window
+/// fetch carries counts without the blocked replies). A failed lookup skips
+/// that recipient.
+async fn drop_summary_blockers(
+    state: &AppState,
+    community_id: CommunityId,
+    stored_event: &StoredEvent,
+    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
+) -> Vec<(crate::subscription::ConnId, crate::subscription::SubId)> {
+    let participants: Vec<[u8; 32]> =
+        serde_json::from_str::<serde_json::Value>(&stored_event.event.content)
+            .ok()
+            .and_then(|content| {
+                Some(
+                    content
+                        .get("participants")?
+                        .as_array()?
+                        .iter()
+                        .filter_map(|p| hex::decode(p.as_str()?).ok()?.try_into().ok())
+                        .collect(),
+                )
+            })
+            .unwrap_or_default();
+    if participants.is_empty() {
+        return matches;
+    }
+    let mut allowed: HashMap<[u8; 32], bool> = HashMap::new();
+    let mut kept = Vec::with_capacity(matches.len());
+    for (conn_id, sub_id) in matches {
+        let Some(pk) = state
+            .conn_manager
+            .pubkey_for_conn(conn_id)
+            .and_then(|pk| <[u8; 32]>::try_from(pk.as_slice()).ok())
+        else {
+            // Left for the membership check below, which drops it.
+            kept.push((conn_id, sub_id));
+            continue;
+        };
+        let ok = match allowed.get(&pk) {
+            Some(ok) => *ok,
+            None => {
+                let ok = match state.blocked_by_cached(community_id, &pk).await {
+                    Ok(blocked) => !participants.iter().any(|p| blocked.contains(p)),
+                    Err(e) => {
+                        warn!("fan-out summary block filter: block list lookup failed: {e}");
+                        false
+                    }
+                };
+                allowed.insert(pk, ok);
+                ok
+            }
+        };
+        if ok {
+            kept.push((conn_id, sub_id));
+        }
+    }
+    kept
 }
 
 /// Drop recipients without access before fan-out on a private channel.
@@ -3132,6 +3197,70 @@ mod tests {
             )
             .await;
             assert_eq!(out, vec![(blocker, "s".to_string())]);
+        }
+
+        #[tokio::test]
+        async fn dm_thread_summary_skips_members_who_blocked_a_participant() {
+            let state = test_state().await;
+            let channel_id = Uuid::new_v4();
+            let community_id = kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil());
+            state
+                .channel_visibility_cache
+                .insert((community_id, channel_id), "private".to_string());
+            state.blocks.seed_dm(community_id, channel_id, true);
+
+            let (blocker_pk, other_pk, replier_pk) = ([3u8; 32], [4u8; 32], [5u8; 32]);
+            state
+                .blocks
+                .seed_blocked(community_id, blocker_pk, [replier_pk]);
+            state.blocks.seed_blocked(community_id, other_pk, []);
+            for pk in [blocker_pk, other_pk] {
+                state
+                    .membership_cache
+                    .insert((community_id, channel_id, pk.to_vec()), true);
+            }
+            let blocker = register_conn(&state, Some(blocker_pk.to_vec()));
+            let other = register_conn(&state, Some(other_pk.to_vec()));
+            let matches = vec![(blocker, "s".to_string()), (other, "s".to_string())];
+
+            let summary = |signer: &Keys| {
+                let content = serde_json::json!({
+                    "reply_count": 1,
+                    "participants": [hex::encode(replier_pk)],
+                });
+                let event = EventBuilder::new(
+                    Kind::Custom(kuzz_core::kind::KIND_THREAD_SUMMARY as u16),
+                    content.to_string(),
+                )
+                .tags([nostr::Tag::parse(["h", &channel_id.to_string()]).expect("h")])
+                .sign_with_keys(signer)
+                .expect("sign");
+                StoredEvent::new(event, Some(channel_id))
+            };
+            let out = filter_fanout_by_access(
+                &state,
+                community_id,
+                &summary(&state.relay_keypair),
+                matches.clone(),
+                None,
+            )
+            .await;
+            assert_eq!(out, vec![(other, "s".to_string())]);
+
+            // Only relay-signed summaries are filtered this way.
+            let stranger = Keys::generate();
+            state
+                .blocks
+                .seed_blockers(community_id, stranger.public_key().to_bytes(), []);
+            let out = filter_fanout_by_access(
+                &state,
+                community_id,
+                &summary(&stranger),
+                matches.clone(),
+                None,
+            )
+            .await;
+            assert_eq!(out, matches);
         }
 
         #[tokio::test]

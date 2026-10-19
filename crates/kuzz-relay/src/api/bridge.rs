@@ -735,6 +735,7 @@ async fn handle_channel_window_filter(
     raw: &Value,
     filter: &nostr::Filter,
     accessible_channels: &[uuid::Uuid],
+    reader: &[u8],
     events: &mut Vec<Value>,
 ) -> Result<(), (StatusCode, Json<Value>)> {
     use kuzz_core::kind::{KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS};
@@ -853,7 +854,7 @@ async fn handle_channel_window_filter(
                 .await
         }
     };
-    let (window, mut session) =
+    let (mut window, mut session) =
         window.map_err(|e| internal_error(&format!("channel window error: {e}")))?;
 
     // 1. Rows, in keyset order.
@@ -920,8 +921,21 @@ async fn handle_channel_window_filter(
 
     // 3. Thread-summary overlays: one relay-signed 39005 per row with replies.
     if extension_flag(raw, "include_summaries") {
+        let summaries = window
+            .rows
+            .iter_mut()
+            .filter_map(|row| {
+                let id = row.stored_event.event.id.as_bytes().to_vec();
+                row.thread_summary.as_mut().map(|summary| (id, summary))
+            })
+            .collect();
+        state
+            .hide_blocked_in_thread_summaries(tenant.community(), reader, ch_id, summaries)
+            .await
+            .map_err(|e| db_read_error("block list lookup error", &e))?;
         for row in &window.rows {
-            let Some(summary) = &row.thread_summary else {
+            // A summary left without replies is not sent.
+            let Some(summary) = row.thread_summary.as_ref().filter(|s| s.reply_count > 0) else {
                 continue;
             };
             let root_hex = row.stored_event.event.id.to_hex();
@@ -1646,7 +1660,10 @@ async fn query_events_authed(
     // Resolve reply owners from retained thread metadata, including tombstones.
     for (idx, (raw, filter)) in raw_filters.iter().zip(filters.iter()).enumerate() {
         if extension_flag(raw, "resolve_thread_roots") {
-            events.extend(thread_roots::query(state, tenant, filter, &accessible_channels).await?);
+            events.extend(
+                thread_roots::query(state, tenant, filter, &accessible_channels, &pubkey_bytes)
+                    .await?,
+            );
             handled.insert(idx);
         }
     }
@@ -1663,6 +1680,7 @@ async fn query_events_authed(
             raw,
             filter,
             &accessible_channels,
+            &pubkey_bytes,
             &mut events,
         )
         .await?;

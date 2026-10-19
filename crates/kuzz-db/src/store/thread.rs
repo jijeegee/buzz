@@ -78,6 +78,38 @@ pub struct ThreadSummary {
     pub participants: Vec<Vec<u8>>,
 }
 
+/// Replies from blocked authors inside one event's stored thread counters
+/// ([`Db::blocked_thread_replies`]).
+#[derive(Debug, Clone)]
+pub struct BlockedThreadReplies {
+    /// The event whose summary the counters belong to.
+    pub target: Vec<u8>,
+    /// Counted direct replies (part of `reply_count`) from blocked authors.
+    pub direct: i32,
+    /// Counted replies at any depth (part of `descendant_count`) from
+    /// blocked authors.
+    pub descendants: i32,
+    /// Latest reply from anyone else, `None` when there is none.
+    pub last_other_reply_at: Option<DateTime<Utc>>,
+}
+
+impl ThreadSummary {
+    /// This summary without the replies in `hidden` and without `blocked`
+    /// participants.
+    pub fn without_blocked(
+        &mut self,
+        hidden: Option<&BlockedThreadReplies>,
+        is_blocked: impl Fn(&[u8]) -> bool,
+    ) {
+        if let Some(hidden) = hidden {
+            self.reply_count = (self.reply_count - hidden.direct).max(0);
+            self.descendant_count = (self.descendant_count - hidden.descendants).max(0);
+            self.last_reply_at = hidden.last_other_reply_at;
+        }
+        self.participants.retain(|p| !is_blocked(p));
+    }
+}
+
 /// One row of a channel window: the reconstructed signed event plus its
 /// thread summary (populated when the row has thread activity).
 #[derive(Debug, Clone)]
@@ -1051,6 +1083,72 @@ impl Db {
                         participants: row.try_get("participants")?,
                     },
                 ))
+            })
+            .collect()
+    }
+
+    /// What the stored thread counters of `targets` hold from `blocked`
+    /// authors, so a reader who blocked them sees counts for replies they can
+    /// open. Only targets with at least one live counted reply from `blocked`
+    /// are returned.
+    #[datastore_span(name = "blocked_thread_replies", system = "postgresql")]
+    pub async fn blocked_thread_replies(
+        &self,
+        community_id: CommunityId,
+        targets: &[Vec<u8>],
+        blocked: &[Vec<u8>],
+    ) -> Result<Vec<BlockedThreadReplies>> {
+        if targets.is_empty() || blocked.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut connection = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::SubscriptionHistory,
+        )
+        .await?;
+        // Counted replies are live non-markers (as the counters keep them);
+        // the last reply time, like last_reply_at, counts every reply.
+        let rows = sqlx::query(
+            r#"
+            SELECT t.target,
+                count(*) FILTER (WHERE x.counted AND x.blocked
+                                 AND x.parent_event_id = t.target)::int AS direct,
+                count(*) FILTER (WHERE x.counted AND x.blocked
+                                 AND x.root_event_id = t.target)::int AS descendants,
+                max(x.received_at) FILTER (WHERE NOT x.blocked) AS last_other_reply_at
+            FROM unnest($2::bytea[]) AS t(target)
+            CROSS JOIN LATERAL (
+                SELECT tm.parent_event_id, tm.root_event_id, e.received_at,
+                    e.pubkey = ANY($3) AS blocked,
+                    e.deleted_at IS NULL AND NOT EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(e.tags) mt
+                        WHERE mt->>0 IN ($4, $5) AND COALESCE(mt->>1, '') <> ''
+                    ) AS counted
+                FROM thread_metadata tm
+                JOIN events e ON e.community_id = tm.community_id
+                    AND e.created_at = tm.event_created_at AND e.id = tm.event_id
+                WHERE tm.community_id = $1 AND tm.depth > 0
+                  AND (tm.parent_event_id = t.target OR tm.root_event_id = t.target)
+            ) x
+            GROUP BY t.target
+            HAVING count(*) FILTER (WHERE x.counted AND x.blocked) > 0
+            "#,
+        )
+        .bind(community_id.as_uuid())
+        .bind(targets)
+        .bind(blocked)
+        .bind(crate::chat_state::THREAD_CLOSED_TAG)
+        .bind(crate::chat_state::THREAD_REOPENED_TAG)
+        .fetch_all(&mut *connection)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(BlockedThreadReplies {
+                    target: row.try_get("target")?,
+                    direct: row.try_get("direct")?,
+                    descendants: row.try_get("descendants")?,
+                    last_other_reply_at: row.try_get("last_other_reply_at")?,
+                })
             })
             .collect()
     }
