@@ -58,6 +58,7 @@ import { SidebarUpdateCard } from "@/features/settings/SidebarUpdateCard";
 import { useUpdaterContext } from "@/features/settings/hooks/UpdaterProvider";
 import { shouldShowSidebarUpdateCard } from "@/features/settings/sidebarUpdateCardVisibility";
 import type { ChannelVisibility } from "@/shared/api/types";
+import { Button } from "@/shared/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -419,6 +420,7 @@ export function AppSidebar({
               />
             }
             onBrowseChannels={onBrowseChannels}
+            onNewGroup={handleOpenCreateChannel}
             onNewMessage={onNewMessage}
           />
           <AppSidebarPinnedHeader
@@ -500,7 +502,36 @@ export function AppSidebar({
                       onUnstarChannel={onUnstarChannel}
                       onDeleteChannel={requestDeleteChannel}
                       onLeaveChannel={requestLeaveChannel}
-                      emptyState="No chats yet. Start a message or browse channels."
+                      emptyState={
+                        <div
+                          className="flex flex-col items-start gap-2"
+                          data-testid="chats-empty-state"
+                        >
+                          <span>No chats yet</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {onBrowseChannels ? (
+                              <Button
+                                className="h-7 px-2 text-xs"
+                                data-testid="chats-empty-find-groups"
+                                onClick={() => onBrowseChannels()}
+                                size="sm"
+                                variant="outline"
+                              >
+                                Find groups
+                              </Button>
+                            ) : null}
+                            <Button
+                              className="h-7 px-2 text-xs"
+                              data-testid="chats-empty-new-message"
+                              onClick={() => onNewMessage()}
+                              size="sm"
+                              variant="outline"
+                            >
+                              Message someone
+                            </Button>
+                          </div>
+                        </div>
+                      }
                     />
                     <FeatureGate feature="forum">
                       <ChannelGroupSection

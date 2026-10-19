@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  UsersRound,
 } from "lucide-react";
 
 import { useRef, useState } from "react";
@@ -60,7 +61,6 @@ import type { ChannelSection } from "@/features/sidebar/lib/useChannelSections";
 import type { Channel } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { getPlatformKeysById } from "@/shared/lib/keyboard-shortcuts";
-import { HashSearch } from "@/shared/ui/icons";
 import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 
 const SECTION_LABEL_BUTTON_CLASS =
@@ -204,19 +204,19 @@ export function SectionActionsMenu({
             <span>{newMessageLabel ?? "New message"}</span>
           </DropdownMenuItem>
         ) : null}
-        {onBrowse ? (
-          <DropdownMenuItem onSelect={() => deferMenuAction(onBrowse)}>
-            <HashSearch className="h-4 w-4" />
-            <span>{browseLabel ?? "Browse channels"}</span>
-            <DropdownMenuShortcut>
-              {getPlatformKeysById("browse-channels")}
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
-        ) : null}
         {onCreate ? (
           <DropdownMenuItem onSelect={() => deferMenuAction(onCreate)}>
             <Plus className="h-4 w-4" />
-            <span>{createLabel ?? "Create channel"}</span>
+            <span>{createLabel ?? "New group"}</span>
+          </DropdownMenuItem>
+        ) : null}
+        {onBrowse ? (
+          <DropdownMenuItem onSelect={() => deferMenuAction(onBrowse)}>
+            <UsersRound className="h-4 w-4" />
+            <span>{browseLabel ?? "Find groups"}</span>
+            <DropdownMenuShortcut>
+              {getPlatformKeysById("browse-channels")}
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
         ) : null}
         {showSectionManagement ? (
@@ -265,7 +265,7 @@ export function SectionActionsMenu({
                 data-testid="chats-view-by-channel"
                 value="by-channel"
               >
-                By channel
+                By group
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </>
