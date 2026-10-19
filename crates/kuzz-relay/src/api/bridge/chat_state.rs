@@ -803,6 +803,33 @@ mod postgres_tests {
 
     #[tokio::test]
     #[ignore = "requires Postgres"]
+    async fn events_response_carries_the_channel_sequence_and_retry_keeps_it() {
+        for chat_state in [false, true] {
+            let f = Fixture::new(chat_state).await;
+            let author = Keys::generate();
+            let room = f.room(&author, &[]).await;
+            let first = f.sign(room, &author, 100, vec![]);
+            let body = serde_json::to_value(&first).expect("event");
+            let (status, created) = f.send("/events", &author, &body).await;
+            assert_eq!(status, StatusCode::OK, "{created}");
+            let sequence = created["channel_sequence"].as_i64().expect("{created}");
+            let (_, retried) = f.send("/events", &author, &body).await;
+            assert_eq!(retried["message"], "duplicate:", "{retried}");
+            assert_eq!(retried["channel_sequence"], sequence, "{retried}");
+            let second = f.sign(room, &author, 101, vec![]);
+            let (_, next) = f
+                .send(
+                    "/events",
+                    &author,
+                    &serde_json::to_value(&second).expect("event"),
+                )
+                .await;
+            assert_eq!(next["channel_sequence"], sequence + 1, "{next}");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
     async fn switch_off_refuses_every_envelope() {
         let f = Fixture::new(false).await;
         let reader = Keys::generate();

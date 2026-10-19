@@ -2321,7 +2321,7 @@ SELECT attach_community_write_fence('artifact_revisions');
 -- retirement must skip payloads referenced by `artifact_heads.event_id`
 -- (NIP-AR: expiring earlier revisions MUST NOT remove the current revision).
 
--- Channel history acceptance ordering (migration 0060).
+-- Channel history acceptance ordering (migration 0060, body from 0075).
 CREATE FUNCTION stamp_channel_event_sequence() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -2331,6 +2331,15 @@ BEGIN
     END IF;
     PERFORM pg_advisory_xact_lock(hashtextextended(
         'kuzz_channel_membership:' || NEW.community_id::text || ':' || NEW.channel_id::text, 0));
+    -- A retried event: the insert will hit ON CONFLICT DO NOTHING.
+    IF EXISTS (
+        SELECT 1 FROM events
+        WHERE community_id = NEW.community_id
+          AND created_at = NEW.created_at
+          AND id = NEW.id
+    ) THEN
+        RETURN NEW;
+    END IF;
     UPDATE channels SET accepted_sequence = accepted_sequence + 1
     WHERE community_id = NEW.community_id AND id = NEW.channel_id
     RETURNING accepted_sequence INTO NEW.channel_sequence;

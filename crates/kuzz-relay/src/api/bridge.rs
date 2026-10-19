@@ -1344,11 +1344,16 @@ async fn submit_event_authed(
             if result.accepted && server_stamped {
                 crate::handlers::event::note_token_write(state, tenant, pubkey);
             }
-            let response = Json(serde_json::json!({
+            let mut body = serde_json::json!({
                 "event_id": result.event_id,
                 "accepted": result.accepted,
                 "message": result.message,
-            }));
+            });
+            // Only channel events carry an order number.
+            if let Some(sequence) = result.channel_sequence {
+                body["channel_sequence"] = sequence.into();
+            }
+            let response = Json(body);
             SubmitOutcome::Ok {
                 accepted: result.accepted,
                 kind: kind_u32,

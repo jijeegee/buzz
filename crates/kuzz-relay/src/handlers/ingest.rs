@@ -500,6 +500,9 @@ pub struct IngestResult {
     pub accepted: bool,
     /// Optional message (e.g. "duplicate:" for dedup).
     pub message: String,
+    /// The channel's order number for the stored event (the original row's on
+    /// a duplicate); `None` when the event has no channel order.
+    pub channel_sequence: Option<i64>,
 }
 
 /// Ingestion error — the caller maps this to their transport's error format.
@@ -2766,6 +2769,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: String::new(),
+            channel_sequence: None,
         });
     }
 
@@ -2867,6 +2871,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: String::new(),
+            channel_sequence: None,
         });
     }
 
@@ -2884,6 +2889,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: String::new(),
+            channel_sequence: None,
         });
     }
 
@@ -2902,6 +2908,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: String::new(),
+            channel_sequence: None,
         });
     }
 
@@ -3080,6 +3087,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: String::new(),
+            channel_sequence: None,
         });
     }
 
@@ -3180,6 +3188,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: "info: you have left this relay".into(),
+            channel_sequence: None,
         });
     }
 
@@ -3476,6 +3485,7 @@ async fn ingest_event_inner(
                     event_id: event_id_hex,
                     accepted: false,
                     message: "duplicate: channel already exists".into(),
+                    channel_sequence: None,
                 });
             }
             pre_created_channel = Some(client_uuid);
@@ -3555,6 +3565,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: String::new(),
+            channel_sequence: None,
         });
     }
 
@@ -3674,6 +3685,7 @@ async fn ingest_event_inner(
                     event_id: event_id_hex,
                     accepted: false,
                     message: "duplicate: reaction already exists".into(),
+                    channel_sequence: None,
                 });
             }
             kuzz_db::ReactionEventInsertOutcome::Inserted {
@@ -3732,6 +3744,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: String::new(),
+            channel_sequence: stored_event.channel_sequence,
         });
     }
 
@@ -3879,6 +3892,7 @@ async fn ingest_event_inner(
             event_id: event_id_hex,
             accepted: true,
             message: "duplicate:".into(),
+            channel_sequence: stored_event.channel_sequence,
         });
     }
 
@@ -3987,6 +4001,7 @@ async fn ingest_event_inner(
         event_id: event_id_hex,
         accepted: true,
         message: String::new(),
+        channel_sequence: stored_event.channel_sequence,
     })
 }
 
