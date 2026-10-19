@@ -754,6 +754,62 @@ async fn agent_adds_owner_and_invitation_spam_limits() {
     assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
     assert!(!is_member(&pool, scope, bot_room, &erin.principal).await);
 
+    // As a plain member of someone else's group the agent cannot pull its
+    // owner in: a stranger could otherwise add the agent and have it add V.
+    let mallory = new_user(&inst).await;
+    let trap = group(&pool, scope, &mallory, "Trap", ChannelVisibility::Open).await;
+    kuzz_db::channel_members::add_member(
+        &pool,
+        scope,
+        trap,
+        &key(&bot),
+        kuzz_db::channel::MemberRole::Member,
+        Some(&key(&mallory.principal)),
+    )
+    .await
+    .unwrap();
+    let ok = put_user(&mut bot_ws, trap, &alice.principal).await;
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+    assert!(!is_member(&pool, scope, trap, &alice.principal).await);
+
+    // A block wins over `everyone`: not added, silent invite-sent, no row.
+    let mut mallory_ws = authed_ws(&inst, &mallory).await;
+    assert_eq!(
+        put(
+            &inst,
+            &zed,
+            "/api/me/group-add-policy",
+            json!({"policy": "everyone"})
+        )
+        .await
+        .0,
+        200
+    );
+    let blocked = inst
+        .http
+        .put(inst.url(&format!("/auth/blocks/{}", mallory.principal)))
+        .header("host", &inst.host)
+        .bearer_auth(&zed.access)
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16();
+    assert_eq!(blocked, 204);
+    let ok = put_user(&mut mallory_ws, trap, &zed.principal).await;
+    assert_eq!(ok[2], false, "{ok}");
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+    assert!(!is_member(&pool, scope, trap, &zed.principal).await);
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM group_invitations WHERE community_id = $1 AND invitee = $2",
+    )
+    .bind(scope.as_uuid())
+    .bind(key(&zed.principal))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, 0);
+
     // Decline cooldown.
     let room = group(&pool, scope, &alice, "Runners", ChannelVisibility::Open).await;
     let mut alice_ws = authed_ws(&inst, &alice).await;
@@ -826,6 +882,7 @@ async fn agent_adds_owner_and_invitation_spam_limits() {
     );
 
     // Daily cap: fill alice's 24h budget to exactly 50.
+    let yan = new_user(&inst).await;
     let sent: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM group_invitations WHERE community_id = $1 AND inviter = $2 \
          AND created_at > now() - interval '24 hours'",
@@ -848,13 +905,13 @@ async fn agent_adds_owner_and_invitation_spam_limits() {
         .await
         .unwrap();
     }
-    let ok = put_user(&mut alice_ws, room, &zed.principal).await;
+    let ok = put_user(&mut alice_ws, room, &yan.principal).await;
     assert_eq!(ok[2], false, "{ok}");
     assert_eq!(
         ok_message(&ok),
         "rate-limited: too many invitations, try later"
     );
-    assert!(pending(&zed).await.as_array().unwrap().is_empty());
+    assert!(pending(&yan).await.as_array().unwrap().is_empty());
     // Refreshing an existing pending invitation is not a new one.
     let ok = put_user(&mut alice_ws, room, &erin.principal).await;
     assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");

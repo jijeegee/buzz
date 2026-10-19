@@ -234,13 +234,19 @@ pub fn decide_person_add(
 
 /// Whether "who can add me" treats `actor` as the target's friend: the target
 /// lists the actor in their kind:3 contact list, or the actor is an agent the
-/// target owns (agents routinely add their owner to rooms they create).
+/// target owns AND the agent runs this group (created it, or is an
+/// owner/admin) — agents routinely add their owner to rooms they create.
+///
+/// The `actor_runs_group` condition matters: anyone can add V's agent to
+/// their own group (agents keep their own add policy), so "V's agent adds V"
+/// alone would let a stranger pull V in through the agent.
 pub fn admits_as_friend(
     in_target_contacts: bool,
     actor_agent_owner: Option<&[u8]>,
     target: &[u8],
+    actor_runs_group: bool,
 ) -> bool {
-    in_target_contacts || actor_agent_owner == Some(target)
+    in_target_contacts || (actor_runs_group && actor_agent_owner == Some(target))
 }
 
 /// What a refused add writes. See [`decide_invitation_write`].
@@ -794,10 +800,12 @@ mod tests {
     fn own_agent_counts_as_friend() {
         let owner = [1u8; 32];
         let other = [2u8; 32];
-        assert!(admits_as_friend(true, None, &owner));
-        assert!(admits_as_friend(false, Some(&owner), &owner));
-        assert!(!admits_as_friend(false, Some(&other), &owner));
-        assert!(!admits_as_friend(false, None, &owner));
+        assert!(admits_as_friend(true, None, &owner, false));
+        assert!(admits_as_friend(false, Some(&owner), &owner, true));
+        // A plain member agent (someone else's group) cannot pull its owner in.
+        assert!(!admits_as_friend(false, Some(&owner), &owner, false));
+        assert!(!admits_as_friend(false, Some(&other), &owner, true));
+        assert!(!admits_as_friend(false, None, &owner, true));
     }
 
     #[test]

@@ -502,6 +502,7 @@ async fn check_person_add(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     channel_id: Uuid,
+    channel_created_by: &[u8],
     actor_role: Option<MemberRole>,
     actor: &[u8],
     target: &[u8],
@@ -521,13 +522,24 @@ async fn check_person_add(
             .get_agent_channel_policy(community, actor)
             .await?
             .and_then(|(_, owner)| owner);
-        channel_authz::admits_as_friend(false, actor_agent_owner.as_deref(), target)
-            || is_friend_of(tenant, state, target, actor).await?
+        let actor_runs_group =
+            channel_created_by == actor || actor_role.is_some_and(|r| r.is_elevated());
+        channel_authz::admits_as_friend(
+            false,
+            actor_agent_owner.as_deref(),
+            target,
+            actor_runs_group,
+        ) || is_friend_of(tenant, state, target, actor).await?
     };
-    match channel_authz::decide_person_add(&invite_policy, actor_role, &add_policy, friend)? {
+    let decision =
+        channel_authz::decide_person_add(&invite_policy, actor_role, &add_policy, friend)?;
+    // A target who blocks the actor is never added by them, whatever their
+    // setting: silently answer "invitation sent" and store nothing.
+    let blocked = state.db.is_blocked_by(community, target, actor).await?;
+    match decision {
+        channel_authz::PersonAddDecision::Allow if blocked => Err(InvitationSent.into()),
         channel_authz::PersonAddDecision::Allow => Ok(()),
         channel_authz::PersonAddDecision::SendInvitation => {
-            let blocked = state.db.is_blocked_by(community, target, actor).await?;
             let write_state = state
                 .db
                 .group_invitation_write_state(community, channel_id, actor, target)
@@ -658,6 +670,7 @@ pub async fn validate_admin_event(
                                 tenant,
                                 state,
                                 channel_id,
+                                &channel.created_by,
                                 actor_role,
                                 &actor_bytes,
                                 &target_pubkey,
