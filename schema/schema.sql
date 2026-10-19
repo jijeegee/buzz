@@ -625,6 +625,22 @@ CREATE TABLE user_blocks (
 );
 CREATE INDEX idx_user_blocks_blocked ON user_blocks (community_id, blocked);
 
+-- Block periods (migration 0073): one row per block's time span, open while
+-- the block is on. Stored 1:1 DM messages received during a period are hidden
+-- from the blocker, also after unblocking.
+CREATE TABLE user_block_periods (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    blocker      BYTEA NOT NULL CHECK (length(blocker) = 32),
+    blocked      BYTEA NOT NULL CHECK (length(blocked) = 32),
+    started_at   TIMESTAMPTZ NOT NULL,
+    ended_at     TIMESTAMPTZ,
+    PRIMARY KEY (community_id, blocker, blocked, started_at),
+    CONSTRAINT user_block_periods_not_self CHECK (blocker <> blocked),
+    CONSTRAINT user_block_periods_ordered CHECK (ended_at IS NULL OR ended_at >= started_at)
+);
+CREATE UNIQUE INDEX user_block_periods_open
+    ON user_block_periods (community_id, blocker, blocked) WHERE ended_at IS NULL;
+
 -- ── Media access ──────────────────────────────────────────────────────────────
 -- Attachment permissions (migration 0074): a blob is readable by its uploaders
 -- and by whoever can currently read an event that references it. NULL
@@ -1910,6 +1926,7 @@ SELECT attach_community_write_fence('subscriptions');
 SELECT attach_community_write_fence('thread_follows');
 SELECT attach_community_write_fence('thread_metadata');
 SELECT attach_community_write_fence('thread_state');
+SELECT attach_community_write_fence('user_block_periods');
 SELECT attach_community_write_fence('user_blocks');
 SELECT attach_community_write_fence('users');
 SELECT attach_community_write_fence('workflow_approvals');
@@ -2375,7 +2392,20 @@ LANGUAGE sql IMMUTABLE AS $$
           AND lower(mt->>1) = encode(p_root, 'hex'))
 $$;
 
+-- A DM between exactly two people (migration 0073). DM participant sets never
+-- change, so the member row count is the participant count.
+CREATE FUNCTION dm_is_one_to_one(p_cid UUID, p_chid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (SELECT 1 FROM channels c
+                    WHERE c.community_id = p_cid AND c.id = p_chid AND c.channel_type = 'dm')
+       AND (SELECT count(*) FROM channel_members m
+             WHERE m.community_id = p_cid AND m.channel_id = p_chid) = 2
+$$;
+
 -- Unread and unread-mention counts of a room's main timeline for one reader.
+-- In a 1:1 DM, messages received during one of the reader's block periods of
+-- their author do not count (migration 0073).
 CREATE FUNCTION chat_room_unread(
     p_cid UUID, p_chid UUID, p_reader BYTEA, p_after BIGINT,
     OUT unread INTEGER, OUT mentions INTEGER)
@@ -2384,9 +2414,7 @@ DECLARE
     v_dm BOOLEAN;
     v_reader_hex TEXT := encode(p_reader, 'hex');
 BEGIN
-    SELECT c.channel_type = 'dm' INTO v_dm
-      FROM channels c WHERE c.community_id = p_cid AND c.id = p_chid;
-    v_dm := COALESCE(v_dm, FALSE);
+    v_dm := dm_is_one_to_one(p_cid, p_chid);
     SELECT count(*) INTO unread FROM (
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
@@ -2398,9 +2426,10 @@ BEGIN
                 WHERE r.community_id = p_cid AND r.event_id = e.id AND r.depth > 0
                   AND (NOT r.broadcast OR chat_is_thread_marker(e.tags, r.root_event_id)))
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
          LIMIT 100) n;
     SELECT count(*) INTO mentions FROM (
         SELECT 1 FROM events e
@@ -2413,9 +2442,10 @@ BEGIN
                 WHERE r.community_id = p_cid AND r.event_id = e.id AND r.depth > 0
                   AND (NOT r.broadcast OR chat_is_thread_marker(e.tags, r.root_event_id)))
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
            AND EXISTS (
                SELECT 1 FROM event_mentions em
                 WHERE em.community_id = p_cid AND em.pubkey_hex = v_reader_hex
@@ -2425,7 +2455,7 @@ END
 $$;
 
 -- Unread and unread-mention counts of a thread for one reader. `p_chid` is
--- the thread's room (it decides whether the DM block rule applies).
+-- the thread's room (it decides whether the 1:1 DM block rule applies).
 CREATE FUNCTION chat_thread_unread(
     p_cid UUID, p_chid UUID, p_root BYTEA, p_reader BYTEA, p_after BIGINT,
     OUT unread INTEGER, OUT mentions INTEGER)
@@ -2434,9 +2464,7 @@ DECLARE
     v_dm BOOLEAN;
     v_reader_hex TEXT := encode(p_reader, 'hex');
 BEGIN
-    SELECT c.channel_type = 'dm' INTO v_dm
-      FROM channels c WHERE c.community_id = p_cid AND c.id = p_chid;
-    v_dm := COALESCE(v_dm, FALSE);
+    v_dm := dm_is_one_to_one(p_cid, p_chid);
     SELECT count(*) INTO unread FROM (
         SELECT 1 FROM thread_metadata r
           JOIN events e ON e.community_id = r.community_id
@@ -2447,9 +2475,10 @@ BEGIN
            AND e.pubkey <> p_reader
            AND NOT chat_is_thread_marker(e.tags, p_root)
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
          LIMIT 100) n;
     SELECT count(*) INTO mentions FROM (
         SELECT 1 FROM thread_metadata r
@@ -2461,9 +2490,10 @@ BEGIN
            AND e.pubkey <> p_reader
            AND NOT chat_is_thread_marker(e.tags, p_root)
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
            AND EXISTS (
                SELECT 1 FROM event_mentions em
                 WHERE em.community_id = p_cid AND em.pubkey_hex = v_reader_hex

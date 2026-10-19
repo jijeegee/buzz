@@ -392,7 +392,7 @@ async fn handle_dm_open(
             warn!(channel = %channel.id, "DM open: discovery emission failed: {e}");
         }
 
-        let silent = opener_blockers(tenant, state, &self_bytes).await;
+        let silent = opener_blockers(tenant, state, &self_bytes, all_bytes.len()).await;
         for participant in &all_bytes {
             if silent.skips(participant) {
                 // Their membership starts hidden. Refresh their hidden-DM
@@ -438,14 +438,16 @@ async fn handle_dm_open(
     })
 }
 
-/// Participants who blocked a DM's opener: their membership starts hidden
-/// (see `kuzz_db::dm::create_dm`), they get no "added" notification and their
-/// hidden-DM snapshot is republished, so the opener cannot tell. A failed
-/// lookup treats every other participant this way (fail closed); anyone not
-/// actually hidden still sees the DM via the chats list.
+/// Participants of a new 1:1 DM who block its opener: their membership
+/// starts hidden (see `kuzz_db::dm::create_dm`), they get no "added"
+/// notification and their hidden-DM snapshot is republished, so the opener
+/// cannot tell. A failed lookup treats the other participant this way (fail
+/// closed); anyone not actually hidden still sees the DM via the chats list.
+/// Group DMs open normally for everyone.
 enum OpenerBlockers {
     Known(crate::blocks::PubkeySet, Vec<u8>),
     Unknown(Vec<u8>),
+    GroupDm,
 }
 
 impl OpenerBlockers {
@@ -456,6 +458,7 @@ impl OpenerBlockers {
                     && <[u8; 32]>::try_from(participant).is_ok_and(|pk| blockers.contains(&pk))
             }
             Self::Unknown(opener) => participant != opener.as_slice(),
+            Self::GroupDm => false,
         }
     }
 }
@@ -464,7 +467,11 @@ async fn opener_blockers(
     tenant: &TenantContext,
     state: &AppState,
     opener: &[u8],
+    participant_count: usize,
 ) -> OpenerBlockers {
+    if participant_count != 2 {
+        return OpenerBlockers::GroupDm;
+    }
     match state.blockers_of_cached(tenant.community(), opener).await {
         Ok(blockers) => OpenerBlockers::Known(blockers, opener.to_vec()),
         Err(e) => {
@@ -582,7 +589,7 @@ async fn handle_dm_add_member(
             warn!(channel = %new_channel.id, "DM add_member: discovery emission failed: {e}");
         }
 
-        let silent = opener_blockers(tenant, state, &self_bytes).await;
+        let silent = opener_blockers(tenant, state, &self_bytes, all_bytes.len()).await;
         for participant_bytes in &all_bytes {
             if silent.skips(participant_bytes) {
                 // Their membership starts hidden. Refresh their hidden-DM

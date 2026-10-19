@@ -180,16 +180,23 @@ pub async fn create_dm(
     .execute(&mut *tx)
     .await?;
 
-    // Add all participants as members with role='member'. A participant who
-    // blocked the creator starts hidden (silent block): the DM opens normally
-    // for the creator but never appears in the blocker's list.
+    // Add all participants as members with role='member'. In a 1:1 DM, a
+    // participant who blocks the creator starts hidden (silent block): the DM
+    // opens normally for the creator but never appears in the blocker's list.
+    // Group DMs open normally for everyone (clients fold blocked people's
+    // messages there).
+    let one_to_one = participants
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        == 2;
     for pk in participants {
         sqlx::query(
             r#"
             INSERT INTO channel_members
                 (community_id, channel_id, pubkey, role, invited_by, hidden_at)
             VALUES ($1, $2, $3, 'member', $4,
-                    CASE WHEN EXISTS (
+                    CASE WHEN $5 AND EXISTS (
                         SELECT 1 FROM user_blocks ub
                         WHERE ub.community_id = $1 AND ub.blocker = $3 AND ub.blocked = $4
                     ) THEN NOW() END)
@@ -203,6 +210,7 @@ pub async fn create_dm(
         .bind(id)
         .bind(*pk)
         .bind(created_by)
+        .bind(one_to_one)
         .execute(&mut *tx)
         .await?;
     }

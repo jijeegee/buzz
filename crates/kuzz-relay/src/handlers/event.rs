@@ -95,10 +95,11 @@ where
     drop_count
 }
 
-/// Silent block (live delivery): in a DM, drop the connections of everyone
-/// who blocked the event's author. The author is never told. Only called for
-/// private channels. `None` means a lookup failed and the event must not be
-/// delivered (fail closed, like the membership check).
+/// Silent block (live delivery): in a 1:1 DM, drop the connections of
+/// whoever blocks the event's author now (the message is received inside
+/// their block period, so stored reads hide it too). The author is never
+/// told. Only called for private channels. `None` means a lookup failed and
+/// the event must not be delivered (fail closed, like the membership check).
 async fn drop_dm_blockers(
     state: &AppState,
     community_id: CommunityId,
@@ -109,7 +110,10 @@ async fn drop_dm_blockers(
     if matches.is_empty() {
         return Some(matches);
     }
-    match state.dm_channels_cached(community_id, [channel_id]).await {
+    match state
+        .one_to_one_dms_cached(community_id, [channel_id])
+        .await
+    {
         Ok(dms) if dms.contains(&channel_id) => {}
         Ok(_) => return Some(matches),
         Err(e) => {
@@ -147,10 +151,10 @@ async fn drop_dm_blockers(
     )
 }
 
-/// Silent block for a live DM thread summary: it counts everyone's replies,
-/// so it skips whoever blocked one of its participants (their next window
-/// fetch carries counts without the blocked replies). A failed lookup skips
-/// that recipient.
+/// Silent block for a live 1:1 DM thread summary: it counts everyone's
+/// replies, so it skips whoever blocks one of its participants now (their
+/// next window fetch carries counts without the hidden replies). A failed
+/// lookup skips that recipient.
 async fn drop_summary_blockers(
     state: &AppState,
     community_id: CommunityId,
