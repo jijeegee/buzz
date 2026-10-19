@@ -270,6 +270,24 @@ pub(crate) trait Secrets {
     /// Every key held in the shared blob (standalone credentials included as
     /// their markers).
     fn blob_keys(&self) -> Result<Vec<String>, String>;
+    /// Move blob-held entries in one write: each `from` is removed and its
+    /// value lands under `to` (when given and not already set). The blob never
+    /// holds both names at once, so a move to a shorter name never grows it.
+    /// The default (test doubles) removes before it inserts.
+    fn move_in_blob(&self, moves: &[(String, Option<String>)]) -> Result<(), String> {
+        for (from, to) in moves {
+            let Some(value) = self.load(from)?.map(Zeroizing::new) else {
+                continue;
+            };
+            self.delete(from)?;
+            if let Some(to) = to {
+                if self.load(to)?.is_none() {
+                    self.store(to, &value)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Secrets for crate::secret_store::SecretStore {
@@ -290,6 +308,9 @@ impl Secrets for crate::secret_store::SecretStore {
             .load_all_readonly()?
             .map(|map| map.into_keys().collect())
             .unwrap_or_default())
+    }
+    fn move_in_blob(&self, moves: &[(String, Option<String>)]) -> Result<(), String> {
+        crate::secret_store::SecretStore::move_in_blob(self, moves)
     }
 }
 
