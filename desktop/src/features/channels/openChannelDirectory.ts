@@ -216,7 +216,11 @@ function uniqueChannelIds(
 export function useChannelReferences(
   channelIds: readonly (string | null | undefined)[],
   options?: { enabled?: boolean },
-): { channelsById: ReadonlyMap<string, Channel>; isReady: boolean } {
+): {
+  channelsById: ReadonlyMap<string, Channel>;
+  isReady: boolean;
+  isResolving: boolean;
+} {
   const ids = useStableArrayShallow(
     React.useMemo(() => uniqueChannelIds(channelIds), [channelIds]),
   );
@@ -260,7 +264,8 @@ export function useChannelReferences(
     return resolved;
   }, [fetchQueries, ids, knownById]);
 
-  return { channelsById: useStableMap(channelsById), isReady };
+  const isResolving = fetchQueries.some((query) => query.fetchStatus !== "idle");
+  return { channelsById: useStableMap(channelsById), isReady, isResolving };
 }
 
 /**
@@ -279,4 +284,17 @@ export function useChannelReference(
   const ids = React.useMemo(() => (channelId ? [channelId] : []), [channelId]);
   const { channelsById } = useChannelReferences(ids);
   return channelId ? channelsById.get(channelId) : undefined;
+}
+
+/** {@link useChannelReference} plus whether its bounded fetch is in flight. */
+export function useChannelReferenceStatus(channelId: string | null): {
+  channel: Channel | undefined;
+  isResolving: boolean;
+} {
+  const ids = React.useMemo(() => (channelId ? [channelId] : []), [channelId]);
+  const { channelsById, isResolving } = useChannelReferences(ids);
+  return {
+    channel: channelId ? channelsById.get(channelId) : undefined,
+    isResolving,
+  };
 }

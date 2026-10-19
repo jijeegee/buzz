@@ -1,7 +1,7 @@
 use url::Url;
 
 use super::{
-    canonical_entity_deep_link, parse_add_community_deep_link, parse_channel_deep_link,
+    canonical_entity_deep_link, canonical_group_join_deep_link, parse_add_community_deep_link, parse_channel_deep_link,
     parse_entity_deep_link, parse_join_deep_link, parse_message_deep_link,
     parse_nostr_bind_deep_link, PendingCommunityDeepLink, PendingCommunityDeepLinks,
     PendingEntityDeepLinks, PendingNavigationDeepLink, PendingNavigationDeepLinks,
@@ -603,4 +603,35 @@ fn parse_nostr_bind_deep_link_accepts_expired_link_for_user_facing_error() {
     let url = Url::parse("kuzz://nostr-bind?challenge_id=550e8400-e29b-41d4-a716-446655440000&nonce=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi01234567&verification_code=123456&audience=kuzz%3Anostr-identity&action=bind_nostr_identity&protocol=kuzz-nostr-identity&version=1&origin=https%3A%2F%2Fexample.com&expires_at=2000-01-01T00%3A00%3A00Z&return=clipboard").unwrap();
     let payload = parse_nostr_bind_deep_link(&url).unwrap();
     assert_eq!(payload.expires_at, "2000-01-01T00:00:00Z");
+}
+
+#[test]
+fn group_join_links_canonicalize_codes_and_handles() {
+    let code = "AbCdEfGhIjKlMnOpQrStUv_-";
+    for scheme in ["kuzz", "kuzz-demo-preview-11ea9e5994418051"] {
+        let url = Url::parse(&format!("{scheme}://join/{code}")).unwrap();
+        assert_eq!(
+            canonical_group_join_deep_link(&url).as_deref(),
+            Some(format!("kuzz://join/{code}").as_str())
+        );
+        let url = Url::parse(&format!("{scheme}://join/@Team_One")).unwrap();
+        assert_eq!(
+            canonical_group_join_deep_link(&url).as_deref(),
+            Some("kuzz://join/@team_one")
+        );
+    }
+    for bad in [
+        "kuzz://join/short",
+        "kuzz://join/@ab",
+        "kuzz://join/@bad-handle",
+        "kuzz://join/AbCdEfGhIjKlMnOpQrStUv_-/extra",
+        "kuzz://join/AbCdEfGhIjKlMnOpQrStUv_-?x=1",
+        "kuzz://join/AbCdEfGhIjKlMnOpQrStUv_-#f",
+        "kuzz://other/AbCdEfGhIjKlMnOpQrStUv_-",
+    ] {
+        assert!(
+            canonical_group_join_deep_link(&Url::parse(bad).unwrap()).is_none(),
+            "{bad}"
+        );
+    }
 }

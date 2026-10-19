@@ -1,6 +1,7 @@
 import * as React from "react";
 import { claimDraftSend } from "@/features/messages/lib/useDrafts";
 import { toast } from "sonner";
+import { invitationSentText } from "@/shared/api/groupAddOutcome";
 import {
   type CreateChannelManagedAgentInput,
   useAttachManagedAgentToChannelMutation,
@@ -983,6 +984,17 @@ export function useMentionSendFlow({
     addMembers: addMembersMutation.mutateAsync,
     completeSend,
     setError: setNonMemberPromptError,
+    onInvited: (pubkeys) =>
+      toast(
+        invitationSentText(
+          pubkeys
+            .map(
+              (pubkey) =>
+                mentions.getMentionDisplayName(pubkey) ?? UNKNOWN_USER_LABEL,
+            )
+            .join(", "),
+        ),
+      ),
   });
   const handleSendWithoutInviting = React.useCallback(() => {
     if (!pendingNonMemberSend) return;

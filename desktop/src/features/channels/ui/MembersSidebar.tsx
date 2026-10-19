@@ -1,6 +1,8 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserRoundPlus, X } from "lucide-react";
+import { toast } from "sonner";
+import { invitationSentText } from "@/shared/api/groupAddOutcome";
 import {
   invalidateChannelState,
   useAddChannelMembersMutation,
@@ -603,6 +605,9 @@ export function MembersSidebar({
           label: formatAddCandidateName(user),
         })),
       ]);
+      if (result.invited.length > 0) {
+        toast(invitationSentText(formatAddCandidateName(user)));
+      }
     } finally {
       setAddingMemberPubkeys((prev) => {
         const next = new Set(prev);

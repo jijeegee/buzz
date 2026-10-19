@@ -1,7 +1,8 @@
 import type * as React from "react";
-import { MessageSquarePlus, Plus, UsersRound } from "lucide-react";
+import { Link2, MessageSquarePlus, Plus, UsersRound } from "lucide-react";
 
 import type { ChatsViewMode } from "@/features/chats/chatListGroups";
+import { openJoinWithLink } from "@/features/groups/joinWithLinkStore";
 import { deferMenuAction } from "@/features/sidebar/ui/sidebarMenuHelpers";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
@@ -13,7 +14,8 @@ import {
 } from "@/shared/ui/dropdown-menu";
 
 /**
- * "Chats" with Find groups, + New (New message / New group / Find groups)
+ * "Chats" with Find groups, + New (New message / New group / Find groups /
+ * Join with link)
  * and the list menu, atop the list column.
  */
 export function ChatsColumnTitle({
@@ -86,6 +88,15 @@ export function ChatsColumnTitle({
               >
                 <UsersRound className="h-4 w-4" />
                 <span>Find groups</span>
+              </DropdownMenuItem>
+            ) : null}
+            {onBrowseChannels ? (
+              <DropdownMenuItem
+                data-testid="chats-new-menu-join-with-link"
+                onSelect={() => deferMenuAction(() => openJoinWithLink())}
+              >
+                <Link2 className="h-4 w-4" />
+                <span>Join with link</span>
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
