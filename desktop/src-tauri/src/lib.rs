@@ -65,12 +65,11 @@ pub use commands::print_agent_access_owner_only_probe_if_requested;
 use commands::*;
 use deep_link::{
     acknowledge_pending_community_deep_link, acknowledge_pending_entity_deep_link,
-    acknowledge_pending_navigation_deep_link, clear_pending_navigation_deep_links,
-    acknowledge_pending_group_join_deep_link, handle_deep_link_url,
-    take_pending_community_deep_link, take_pending_entity_deep_link,
-    take_pending_group_join_deep_link, take_pending_navigation_deep_link,
-    PendingCommunityDeepLinks, PendingEntityDeepLinks, PendingGroupJoinDeepLinks,
-    PendingNavigationDeepLinks,
+    acknowledge_pending_group_join_deep_link, acknowledge_pending_navigation_deep_link,
+    clear_pending_navigation_deep_links, handle_deep_link_url, take_pending_community_deep_link,
+    take_pending_entity_deep_link, take_pending_group_join_deep_link,
+    take_pending_navigation_deep_link, PendingCommunityDeepLinks, PendingEntityDeepLinks,
+    PendingGroupJoinDeepLinks, PendingNavigationDeepLinks,
 };
 use huddle::{
     add_agent_to_huddle,

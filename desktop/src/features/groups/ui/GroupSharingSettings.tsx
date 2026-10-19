@@ -117,7 +117,11 @@ function PublicAddressRow({
   channelId: string;
   handle: string | null;
 }) {
-  const prefix = publicAddressPrefix(useRelayOrigin());
+  // The server's invite link carries its public web host (where /g/ pages
+  // live); fall back to the community origin until it loads.
+  const linkUrl = useGroupInviteLinkQuery(channelId, true).data?.url;
+  const relayOrigin = useRelayOrigin();
+  const prefix = publicAddressPrefix(linkUrl ?? relayOrigin);
   const invalidate = useGroupsInvalidate(channelId);
   const [draft, setDraft] = React.useState(handle ?? "");
   const [error, setError] = React.useState<string | null>(null);

@@ -1,7 +1,8 @@
 /**
  * In-memory stand-in for the relay groups routes (`groups_request`) used by
  * the Playwright mock bridge. Seeds come from `mock.groups` in the E2E config;
- * without seeds search finds nothing and there are no invitations.
+ * without `groups` seeds the groups are the bridge's own mock channels, and
+ * without `invitations` there are none.
  */
 
 export type MockGroupSeed = {
@@ -53,32 +54,49 @@ function httpError(status: number, message: string): Error {
   return new Error(`HTTP ${status}: ${message}`);
 }
 
-function getState(config: MockGroupsConfig | undefined): MockGroupsState {
-  if (state && stateSource === config) return state;
-  stateSource = config;
-  state = {
-    groups: new Map(
-      (config?.groups ?? []).map((seed) => [
-        seed.id,
-        {
-          id: seed.id,
-          name: seed.name,
-          description: seed.description ?? null,
-          handle: seed.handle ?? null,
-          channelType: seed.channelType ?? "stream",
-          memberCount: seed.memberCount ?? 1,
-          isMember: seed.isMember ?? false,
-          visibility: seed.visibility ?? "open",
-          invitePolicy: seed.invitePolicy ?? "members",
-        },
-      ]),
-    ),
-    inviteCodes: new Map(Object.entries(config?.inviteCodes ?? {})),
-    invitations: [...(config?.invitations ?? [])],
-    addPolicy: config?.addPolicy ?? "friends",
-    reserved: new Set(config?.reservedHandles ?? []),
-    host: config?.host ?? "kuzz.example",
+function fromSeed(seed: MockGroupSeed): Required<MockGroupSeed> {
+  return {
+    id: seed.id,
+    name: seed.name,
+    description: seed.description ?? null,
+    handle: seed.handle ?? null,
+    channelType: seed.channelType ?? "stream",
+    memberCount: seed.memberCount ?? 1,
+    isMember: seed.isMember ?? false,
+    visibility: seed.visibility ?? "open",
+    invitePolicy: seed.invitePolicy ?? "members",
   };
+}
+
+function getState(
+  config: MockGroupsConfig | undefined,
+  fallbackGroups: () => MockGroupSeed[],
+): MockGroupsState {
+  if (!state || stateSource !== config) {
+    stateSource = config;
+    state = {
+      groups: new Map(
+        (config?.groups ?? []).map((seed) => [seed.id, fromSeed(seed)]),
+      ),
+      inviteCodes: new Map(Object.entries(config?.inviteCodes ?? {})),
+      invitations: [...(config?.invitations ?? [])],
+      addPolicy: config?.addPolicy ?? "friends",
+      reserved: new Set(config?.reservedHandles ?? []),
+      host: config?.host ?? "kuzz.example",
+    };
+  }
+  if (!config?.groups) {
+    // Track the bridge's live channels (joins, renames), keeping any address
+    // or invite policy set through these routes.
+    for (const seed of fallbackGroups()) {
+      const current = state.groups.get(seed.id);
+      state.groups.set(seed.id, {
+        ...fromSeed(seed),
+        handle: current?.handle ?? null,
+        invitePolicy: current?.invitePolicy ?? "members",
+      });
+    }
+  }
   return state;
 }
 
@@ -113,11 +131,35 @@ function joinResult(group: Required<MockGroupSeed>) {
   return { channelId: group.id, joined };
 }
 
+/** A bridge mock channel as a groups seed. */
+export function mockGroupSeedFromChannel(channel: {
+  id: string;
+  name: string;
+  description: string;
+  channel_type: string;
+  visibility: "open" | "private";
+  member_count: number;
+  is_member: boolean;
+  archived_at: string | null;
+}): MockGroupSeed | null {
+  if (channel.channel_type === "dm" || channel.archived_at) return null;
+  return {
+    id: channel.id,
+    name: channel.name,
+    description: channel.description || null,
+    channelType: channel.channel_type === "forum" ? "forum" : "stream",
+    memberCount: channel.member_count,
+    isMember: channel.is_member,
+    visibility: channel.visibility,
+  };
+}
+
 export function handleMockGroupsRequest(
   config: MockGroupsConfig | undefined,
   payload: { method: string; path: string; body: unknown },
+  fallbackGroups: () => MockGroupSeed[] = () => [],
 ): unknown {
-  const s = getState(config);
+  const s = getState(config, fallbackGroups);
   const [pathname, search = ""] = payload.path.split("?");
   const parts = pathname.split("/").filter(Boolean); // ["api", ...]
   const method = payload.method.toUpperCase();

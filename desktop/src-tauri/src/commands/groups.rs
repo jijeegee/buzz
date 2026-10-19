@@ -40,7 +40,9 @@ fn checked_method(method: &str) -> Result<Method, String> {
 /// no traversal, no scheme/host smuggling).
 fn checked_path(path: &str) -> Result<&str, String> {
     let (route, _query) = path.split_once('?').unwrap_or((path, ""));
-    let allowed = ALLOWED_PREFIXES.iter().any(|prefix| route.starts_with(prefix));
+    let allowed = ALLOWED_PREFIXES
+        .iter()
+        .any(|prefix| route.starts_with(prefix));
     if !allowed
         || route.contains("..")
         || route.contains("//")

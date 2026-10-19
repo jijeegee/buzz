@@ -24,6 +24,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import {
   handleMockGroupsRequest,
   type MockGroupsConfig,
+  mockGroupSeedFromChannel,
 } from "@/testing/e2eGroupsMock";
 import { activateRateLimit } from "@/shared/api/relayRateLimitGate";
 import { resolveAgentParallelism } from "@/features/agents/lib/agentParallelism";
@@ -13271,11 +13272,23 @@ export function maybeInstallE2eTauriMocks() {
         return;
       case "fetch_join_policy":
         return activeConfig?.mock?.joinPolicy ?? null;
-      case "groups_request":
+      case "groups_request": {
+        const groupsConfig = activeConfig?.mock?.groups;
+        const directory = groupsConfig?.groups
+          ? []
+          : ((
+              await handleGetChannels(undefined, activeConfig, "open-directory")
+            ).channels ?? []);
         return handleMockGroupsRequest(
-          activeConfig?.mock?.groups,
+          groupsConfig,
           payload as { method: string; path: string; body: unknown },
+          () =>
+            directory.flatMap((channel) => {
+              const seed = mockGroupSeedFromChannel(channel);
+              return seed ? [seed] : [];
+            }),
         );
+      }
       case "take_pending_group_join_deep_link":
         return null;
       case "acknowledge_pending_group_join_deep_link":
