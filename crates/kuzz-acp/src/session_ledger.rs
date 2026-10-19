@@ -5,7 +5,9 @@
 //! scope → session map lives only in worker memory. This ledger persists that
 //! map so the first turn after a restart can reattach to the same provider
 //! session with ACP `session/resume` (or `session/load`) instead of starting
-//! over from relay context.
+//! over from relay context. The same holds inside one harness process
+//! whenever the adapter process goes away while its sessions are intact: the
+//! idle pool sleep, an adapter exit, a timeout respawn, or a worker panic.
 //!
 //! The ledger is best-effort: relay history stays the source of truth. Any
 //! mismatch or failure (different adapter, different cwd, unsupported resume,
@@ -16,7 +18,7 @@
 //! one relay, so each file has a single writer and needs no cross-process lock.
 //! Writes replace the whole file atomically (temp file + rename).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -30,13 +32,16 @@ use crate::scope::SessionScope;
 /// On-disk schema version. A file with any other version is set aside, not
 /// interpreted.
 const LEDGER_VERSION: u32 = 1;
-/// Entries unused for this long are dropped: their transcripts are likely
-/// gone and their relay context is better rebuilt fresh.
-const ENTRY_TTL: Duration = Duration::from_secs(14 * 24 * 60 * 60);
-/// Hard cap on entries; the least recently used are dropped first.
+/// Hard cap on entries; the least recently used are dropped first. There is
+/// no age limit: adapters own transcript retention (Claude Code deletes old
+/// transcripts itself, Codex keeps them), and a reattach to a deleted
+/// transcript already falls back to a fresh session.
 const MAX_ENTRIES: usize = 256;
 /// Minimum spacing between persisted `last_used_at` refreshes for one entry.
 const TOUCH_INTERVAL: Duration = Duration::from_secs(60 * 60);
+/// Failed turns in a row (adapter exit, timeout, panic) after which a
+/// session is treated as broken and forgotten instead of reattached again.
+const MAX_FAILURES_IN_A_ROW: u32 = 2;
 
 /// One persisted scope → provider-session mapping.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,11 +84,15 @@ pub struct SessionLedger {
 struct LedgerState {
     file: LedgerFile,
     /// Keys whose recorded session the next new session for that scope may
-    /// reattach: every key loaded from disk at startup, plus a key re-armed by
-    /// [`SessionLedger::allow_handoff`] when a busy owner's scope moves to
-    /// another worker. Otherwise in-process rotation must create new sessions,
-    /// never resume one that was deliberately rotated away.
+    /// reattach: every key loaded from disk at startup, plus keys re-armed
+    /// when no worker holds the session any more ([`SessionLedger::rearm_all`],
+    /// [`SessionLedger::release`]) or when a busy owner's scope moves to
+    /// another worker ([`SessionLedger::allow_handoff`]). Otherwise in-process
+    /// rotation must create new sessions, never resume one that was
+    /// deliberately rotated away.
     resumable: HashSet<String>,
+    /// Failed turns in a row per key since its session last completed a turn.
+    failures: HashMap<String, u32>,
 }
 
 impl std::fmt::Debug for SessionLedger {
@@ -166,11 +175,15 @@ impl SessionLedger {
             version: LEDGER_VERSION,
             entries,
         };
-        let pruned = prune(&mut file, now_unix());
+        let pruned = prune(&mut file);
         let resumable = file.entries.keys().cloned().collect();
         let ledger = Self {
             path,
-            state: Mutex::new(LedgerState { file, resumable }),
+            state: Mutex::new(LedgerState {
+                file,
+                resumable,
+                failures: HashMap::new(),
+            }),
         };
         if pruned {
             if let Ok(state) = ledger.state.lock() {
@@ -181,9 +194,8 @@ impl SessionLedger {
     }
 
     /// Claim the recorded provider session for `scope` for reattach. Returns it
-    /// only when it was loaded from disk at startup or re-armed by
-    /// [`allow_handoff`](Self::allow_handoff), has not been claimed since, and
-    /// was created by an adapter with
+    /// only when it was loaded from disk at startup or re-armed since, has not
+    /// been claimed since, and was created by an adapter with
     /// `agent_identity` running in `cwd`. Claiming consumes the chance even on
     /// a mismatch, so later sessions for the scope are always new ones.
     pub fn take_resumable(
@@ -221,6 +233,56 @@ impl SessionLedger {
         }
     }
 
+    /// Let every recorded session be reattached. Called when the whole pool is
+    /// torn down (idle pool sleep): no worker holds any session afterwards,
+    /// and the transcripts are intact.
+    pub fn rearm_all(&self) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let keys: Vec<String> = state.file.entries.keys().cloned().collect();
+        state.resumable.extend(keys);
+    }
+
+    /// A worker that held `scope`'s session is gone (adapter exit, timeout
+    /// respawn, panic), so the next new session for `scope` may reattach it.
+    /// `session_id` guards against re-arming a session that a different worker
+    /// replaced in the meantime; `None` (a panicked worker's sessions are
+    /// unknown) skips that check. `failed` marks the scope whose turn was
+    /// running: [`MAX_FAILURES_IN_A_ROW`] such failures without a completed
+    /// turn in between forget the session, so a broken transcript cannot keep
+    /// killing the worker.
+    pub fn release(&self, scope: &SessionScope, session_id: Option<&str>, failed: bool) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let key = scope_key(scope);
+        let Some(entry) = state.file.entries.get(&key) else {
+            return;
+        };
+        if session_id.is_some_and(|sid| sid != entry.session_id) {
+            return;
+        }
+        if failed {
+            let count = state.failures.entry(key.clone()).or_insert(0);
+            *count += 1;
+            if *count >= MAX_FAILURES_IN_A_ROW {
+                tracing::warn!(
+                    target: "acp::ledger",
+                    scope = %key,
+                    failures = *count,
+                    "session failed repeatedly — forgetting it, the next turn starts fresh"
+                );
+                state.failures.remove(&key);
+                state.resumable.remove(&key);
+                state.file.entries.remove(&key);
+                self.persist_locked(&state.file);
+                return;
+            }
+        }
+        state.resumable.insert(key);
+    }
+
     /// Record that `scope` is served by provider session `session_id`, replacing
     /// any previous mapping, and persist.
     pub fn record(&self, scope: &SessionScope, session_id: &str, agent_identity: &str, cwd: &str) {
@@ -230,6 +292,14 @@ impl SessionLedger {
             return;
         };
         state.resumable.remove(&key);
+        let replaced = state
+            .file
+            .entries
+            .get(&key)
+            .is_none_or(|entry| entry.session_id != session_id);
+        if replaced {
+            state.failures.remove(&key);
+        }
         let same_session = state
             .file
             .entries
@@ -249,24 +319,29 @@ impl SessionLedger {
                 standing,
             },
         );
-        prune(&mut state.file, now);
+        prune(&mut state.file);
         self.persist_locked(&state.file);
     }
 
-    /// Note a successful turn on `session_id` so a session in steady use is
-    /// not pruned as stale. Persists at most once per [`TOUCH_INTERVAL`] per
-    /// entry to keep per-turn cost negligible.
+    /// Note a successful turn on `session_id`: it clears the session's
+    /// failure count and keeps a session in steady use from being the least
+    /// recently used. Persists at most once per [`TOUCH_INTERVAL`] per entry
+    /// to keep per-turn cost negligible.
     pub fn touch(&self, scope: &SessionScope, session_id: &str) {
         let now = now_unix();
         let Ok(mut state) = self.state.lock() else {
             return;
         };
-        let Some(entry) = state.file.entries.get_mut(&scope_key(scope)) else {
+        let key = scope_key(scope);
+        let state = &mut *state;
+        let Some(entry) = state.file.entries.get_mut(&key) else {
             return;
         };
-        if entry.session_id != session_id
-            || now.saturating_sub(entry.last_used_at) < TOUCH_INTERVAL.as_secs()
-        {
+        if entry.session_id != session_id {
+            return;
+        }
+        state.failures.remove(&key);
+        if now.saturating_sub(entry.last_used_at) < TOUCH_INTERVAL.as_secs() {
             return;
         }
         entry.last_used_at = now;
@@ -317,6 +392,7 @@ impl SessionLedger {
             return;
         };
         state.resumable.remove(&key);
+        state.failures.remove(&key);
         if state.file.entries.remove(&key).is_some() {
             self.persist_locked(&state.file);
         }
@@ -330,6 +406,7 @@ impl SessionLedger {
             return;
         };
         state.resumable.retain(|key| !in_channel(key));
+        state.failures.retain(|key, _| !in_channel(key));
         let before = state.file.entries.len();
         state.file.entries.retain(|key, _| !in_channel(key));
         if before != state.file.entries.len() {
@@ -360,13 +437,10 @@ impl SessionLedger {
     }
 }
 
-/// Drop entries past [`ENTRY_TTL`], then the least recently used beyond
-/// [`MAX_ENTRIES`]. Returns whether anything was removed.
-fn prune(file: &mut LedgerFile, now: u64) -> bool {
+/// Drop the least recently used entries beyond [`MAX_ENTRIES`]. Returns
+/// whether anything was removed.
+fn prune(file: &mut LedgerFile) -> bool {
     let before = file.entries.len();
-    let ttl = ENTRY_TTL.as_secs();
-    file.entries
-        .retain(|_, entry| now.saturating_sub(entry.last_used_at) <= ttl);
     if file.entries.len() > MAX_ENTRIES {
         let mut by_age: Vec<(u64, String)> = file
             .entries
@@ -570,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_and_excess_entries_are_pruned_on_open() {
+    fn old_entries_are_kept_and_excess_entries_are_pruned_on_open() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("sessions.json");
         let now = now_unix();
@@ -583,10 +657,26 @@ mod tests {
             standing: None,
         };
         let mut entries = BTreeMap::new();
-        entries.insert(
-            "main:stale".to_string(),
-            entry(now - ENTRY_TTL.as_secs() - 60),
-        );
+        // Thirty days unused: kept while within the cap, since the adapter
+        // decides whether the transcript still exists.
+        entries.insert("main:old".to_string(), entry(now - 30 * 24 * 60 * 60));
+        let ledger = {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("sessions.json");
+            let file = LedgerFile {
+                version: LEDGER_VERSION,
+                entries: entries.clone(),
+            };
+            std::fs::write(&path, serde_json::to_vec(&file).expect("encode")).expect("write");
+            SessionLedger::open(path)
+        };
+        assert!(ledger
+            .state
+            .lock()
+            .expect("lock")
+            .file
+            .entries
+            .contains_key("main:old"));
         for i in 0..(MAX_ENTRIES + 5) {
             entries.insert(format!("main:{i:04}"), entry(now - 1000 + i as u64));
         }
@@ -601,7 +691,7 @@ mod tests {
             let state = ledger.state.lock().expect("lock");
             let kept = &state.file.entries;
             assert_eq!(kept.len(), MAX_ENTRIES);
-            assert!(!kept.contains_key("main:stale"));
+            assert!(!kept.contains_key("main:old"));
             // The least recently used fall off first.
             assert!(!kept.contains_key("main:0000"));
             assert!(kept.contains_key(&format!("main:{:04}", MAX_ENTRIES + 4)));
@@ -610,6 +700,91 @@ mod tests {
         let on_disk: LedgerFile =
             serde_json::from_slice(&std::fs::read(&path).expect("read")).expect("decode");
         assert_eq!(on_disk.entries.len(), MAX_ENTRIES);
+    }
+
+    #[test]
+    fn rearm_all_lets_every_recorded_session_reattach_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ch = Uuid::new_v4();
+        let (main, t) = (main_scope(ch), thread(ch, 'a'));
+        let ledger = SessionLedger::open(dir.path().join("sessions.json"));
+        ledger.record(&main, "sess-main", "id", "/c");
+        ledger.record(&t, "sess-thread", "id", "/c");
+        assert!(ledger.take_resumable(&t, "id", "/c").is_none());
+
+        // The idle pool sleep tore every worker down.
+        ledger.rearm_all();
+        assert_eq!(
+            ledger.take_resumable(&t, "id", "/c"),
+            Some("sess-thread".into())
+        );
+        assert_eq!(
+            ledger.take_resumable(&main, "id", "/c"),
+            Some("sess-main".into())
+        );
+        assert!(ledger.take_resumable(&t, "id", "/c").is_none());
+        // A different adapter still never reattaches.
+        ledger.rearm_all();
+        assert!(ledger.take_resumable(&t, "other", "/c").is_none());
+    }
+
+    #[test]
+    fn release_rearms_only_the_session_the_gone_worker_held() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let t = thread(Uuid::new_v4(), 'a');
+        let ledger = SessionLedger::open(dir.path().join("sessions.json"));
+        ledger.record(&t, "sess-new", "id", "/c");
+
+        // The dead worker held an older session another worker replaced.
+        ledger.release(&t, Some("sess-old"), false);
+        assert!(ledger.take_resumable(&t, "id", "/c").is_none());
+
+        ledger.release(&t, Some("sess-new"), false);
+        assert_eq!(
+            ledger.take_resumable(&t, "id", "/c"),
+            Some("sess-new".into())
+        );
+        // A panicked worker's session id is unknown.
+        ledger.release(&t, None, false);
+        assert_eq!(
+            ledger.take_resumable(&t, "id", "/c"),
+            Some("sess-new".into())
+        );
+    }
+
+    #[test]
+    fn a_session_failing_twice_in_a_row_is_forgotten() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.json");
+        let t = thread(Uuid::new_v4(), 'a');
+        let ledger = SessionLedger::open(path.clone());
+        ledger.record(&t, "s", "id", "/c");
+
+        ledger.release(&t, Some("s"), true);
+        assert_eq!(ledger.take_resumable(&t, "id", "/c"), Some("s".into()));
+        // A completed turn in between resets the count.
+        ledger.touch(&t, "s");
+        ledger.release(&t, Some("s"), true);
+        assert_eq!(ledger.take_resumable(&t, "id", "/c"), Some("s".into()));
+
+        // Second failure in a row: broken, start fresh — also after a restart.
+        ledger.release(&t, Some("s"), true);
+        assert!(ledger.take_resumable(&t, "id", "/c").is_none());
+        drop(ledger);
+        let reopened = SessionLedger::open(path);
+        assert!(reopened.take_resumable(&t, "id", "/c").is_none());
+    }
+
+    #[test]
+    fn a_new_session_starts_with_no_failures() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let t = thread(Uuid::new_v4(), 'a');
+        let ledger = SessionLedger::open(dir.path().join("sessions.json"));
+        ledger.record(&t, "s1", "id", "/c");
+        ledger.release(&t, Some("s1"), true);
+        ledger.record(&t, "s2", "id", "/c");
+        ledger.release(&t, Some("s2"), true);
+        assert_eq!(ledger.take_resumable(&t, "id", "/c"), Some("s2".into()));
     }
 
     #[test]
