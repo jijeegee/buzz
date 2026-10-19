@@ -116,6 +116,42 @@ pub fn ledger_path(state_dir: &Path, agent_pubkey_hex: &str, relay_url: &str) ->
         .join(format!("sessions-{relay_tag}.json"))
 }
 
+/// Ledger file path for one agent on one service. With `scope` (Desktop sets
+/// `KUZZ_SESSION_SCOPE` for its built-in service) the ledger is keyed by the
+/// service instead of the relay address, so an address change keeps every
+/// resumable session; a ledger an older build kept under one of
+/// `addresses` (the service's current and earlier relay URLs) is copied to
+/// it once. Without `scope` this is [`ledger_path`] for `relay_url`.
+pub fn service_ledger_path(
+    state_dir: &Path,
+    agent_pubkey_hex: &str,
+    relay_url: &str,
+    scope: Option<&str>,
+    addresses: &[String],
+) -> PathBuf {
+    let Some(scope) = scope.map(str::trim).filter(|scope| !scope.is_empty()) else {
+        return ledger_path(state_dir, agent_pubkey_hex, relay_url);
+    };
+    let path = ledger_path(state_dir, agent_pubkey_hex, scope);
+    if !path.exists() {
+        let candidates = std::iter::once(relay_url).chain(addresses.iter().map(String::as_str));
+        for address in candidates {
+            let old = ledger_path(state_dir, agent_pubkey_hex, address.trim());
+            if old.exists() {
+                if let Err(error) = std::fs::copy(&old, &path) {
+                    tracing::warn!(
+                        target: "acp::ledger",
+                        from = %old.display(),
+                        "could not adopt the session ledger: {error}"
+                    );
+                }
+                break;
+            }
+        }
+    }
+    path
+}
+
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -410,6 +446,34 @@ fn set_aside(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn service_ledger_adopts_the_ledger_of_an_earlier_address_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let agent = "ab".repeat(32);
+        let old_url = "wss://jihobuzz.duckdns.org:8443";
+        let new_url = "wss://jihobuzz.duckdns.org";
+        let old = ledger_path(dir.path(), &agent, old_url);
+        std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+        std::fs::write(&old, b"old ledger").unwrap();
+
+        let addresses = vec![new_url.to_owned(), old_url.to_owned()];
+        let path = service_ledger_path(dir.path(), &agent, new_url, Some("kuzz"), &addresses);
+        assert_eq!(path, ledger_path(dir.path(), &agent, "kuzz"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"old ledger");
+        assert!(old.exists(), "the old ledger is kept");
+
+        // The service ledger wins from then on.
+        std::fs::write(&path, b"current").unwrap();
+        let again = service_ledger_path(dir.path(), &agent, new_url, Some("kuzz"), &addresses);
+        assert_eq!(std::fs::read(again).unwrap(), b"current");
+
+        // Without a scope the address keys the ledger, as before.
+        assert_eq!(
+            service_ledger_path(dir.path(), &agent, new_url, None, &addresses),
+            ledger_path(dir.path(), &agent, new_url)
+        );
+    }
 
     fn thread(channel_id: Uuid, root: char) -> SessionScope {
         SessionScope::Thread {

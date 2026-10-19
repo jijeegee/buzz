@@ -39,7 +39,7 @@ Set<String> parseThreadPins(Object? json) {
 }
 
 String _cacheKey(String origin, String pubkey) =>
-    'kuzz.threadPins.v1:$origin:${pubkey.toLowerCase()}';
+    'kuzz.threadPins.v1:${storageScopeFor(origin)}:${pubkey.toLowerCase()}';
 
 /// Threads the user pinned (on desktop), so the Chats list asks the relay to
 /// keep them listed while quiet or closed, as desktop does. Saved on this

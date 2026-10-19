@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../relay/service_address.dart';
 import 'accent_colors.dart';
 import 'theme_catalog.dart';
 import 'theme_pairs.dart';
@@ -106,10 +107,16 @@ class CommunityThemeStorage {
   const CommunityThemeStorage(this.prefs);
 
   String key(String pubkey, String relayUrl) =>
-      '$_prefix:$pubkey:${Uri.encodeComponent(normalizeCommunityRelayUrl(relayUrl))}';
+      '$_prefix:$pubkey:${_scope(relayUrl)}';
 
   String outboxKey(String pubkey, String relayUrl) =>
-      '$_outboxPrefix:$pubkey:${Uri.encodeComponent(normalizeCommunityRelayUrl(relayUrl))}';
+      '$_outboxPrefix:$pubkey:${_scope(relayUrl)}';
+
+  /// The service scope for this build's service, otherwise the encoded
+  /// normalized relay URL (see [storageScopeFor]).
+  static String _scope(String relayUrl) => Uri.encodeComponent(
+    storageScopeFor(normalizeCommunityRelayUrl(relayUrl)),
+  );
 
   CommunityThemePreference? _readKey(String storageKey) {
     try {

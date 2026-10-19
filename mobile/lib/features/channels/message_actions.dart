@@ -397,11 +397,12 @@ class _DownloadedImage {
 }
 
 Future<_DownloadedImage> _downloadImage(WidgetRef ref, String imageUrl) async {
+  final auth = ref.read(mediaGetAuthServiceProvider);
   final response = await ref
       .read(mediaHttpClientProvider)
       .get(
-        Uri.parse(imageUrl),
-        headers: ref.read(mediaGetAuthServiceProvider).headersFor(imageUrl),
+        Uri.parse(auth.resolve(imageUrl)),
+        headers: auth.headersFor(imageUrl),
       );
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw HttpException(
