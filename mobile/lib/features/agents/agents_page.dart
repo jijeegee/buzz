@@ -16,6 +16,7 @@ import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_view_switch.dart';
 import '../profile/presence_cache_provider.dart';
 import 'agent_row.dart';
 import 'agent_team_page.dart';
@@ -234,27 +235,26 @@ class AgentsPage extends HookConsumerWidget {
                 Grid.gutter,
                 0,
               ),
+              // The same switch as Chats' "All chats | By channel".
               child: SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<_AgentsTab>(
+                height: 36,
+                child: KuzzViewSwitch<_AgentsTab>(
                   key: const Key('agents-tabs'),
-                  segments: const [
-                    ButtonSegment(
+                  semanticsLabel: 'Agents view',
+                  options: const [
+                    KuzzViewOption(
                       value: _AgentsTab.myAgents,
-                      label: Text('My agents', key: Key('agents-tab-agents')),
+                      label: 'My agents',
+                      key: Key('agents-tab-agents'),
                     ),
-                    ButtonSegment(
+                    KuzzViewOption(
                       value: _AgentsTab.presets,
-                      label: Text('Presets', key: Key('agents-tab-presets')),
+                      label: 'Presets',
+                      key: Key('agents-tab-presets'),
                     ),
                   ],
-                  selected: {tab.value},
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  onSelectionChanged: (selected) => tab.value = selected.single,
+                  selected: tab.value,
+                  onChanged: (next) => tab.value = next,
                 ),
               ),
             ),
