@@ -1,7 +1,7 @@
 import * as React from "react";
-import { CopyPlus, EllipsisVertical, Pencil, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 
+import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
 import {
   type ManagedAgentActionResult,
   startRemoteOwnedAgent,
@@ -10,20 +10,10 @@ import {
 import type { AgentAvailabilityReader } from "@/features/agents/lib/useAgentAvailability";
 import type { RemoteOwnedAgentHere } from "@/features/agents/useRemoteOwnedAgents";
 import { useUserProfileQuery } from "@/features/profile/hooks";
-import { agentHostDeviceLabel } from "@/features/profile/ui/AgentBadgeIcon";
 import type { AgentPersona } from "@/shared/api/types";
-import { useAuthDeviceLabels } from "@/shared/api/useAuthDeviceNames";
-import { deviceRobotTag } from "@/shared/lib/deviceRobot";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/shared/ui/dropdown-menu";
+import { Button } from "@/shared/ui/button";
 import { AgentCardRobot } from "./AgentCardRobot";
-import { AgentIdentityCard } from "./AgentIdentityCard";
-import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
+import { AgentTile } from "./AgentTile";
 
 /**
  * One of the owner's agents that runs on another of their computers. It is
@@ -35,145 +25,93 @@ import { AgentRuntimeAvatarControl } from "./AgentRuntimeAvatarControl";
 export function RemoteAgentCard({
   agent,
   getAvailability,
+  hostName,
   isPending,
   persona,
-  onDuplicatePersona,
   onEditPersona,
   onOpenAgentProfile,
 }: {
   agent: RemoteOwnedAgentHere;
   getAvailability: AgentAvailabilityReader;
+  /** The computer it runs on, as its device heading names it. */
+  hostName: string;
   isPending: boolean;
   /** This computer's persona the agent was made from, if any. */
   persona: AgentPersona | null;
-  onDuplicatePersona: (persona: AgentPersona) => void;
   onEditPersona: (persona: AgentPersona) => void;
   onOpenAgentProfile: (pubkey: string) => void;
 }) {
   const profile = useUserProfileQuery(agent.pubkey).data;
-  const deviceLabels = useAuthDeviceLabels();
-  const hostDevice = deviceLabels.get(deviceRobotTag(agent.deviceId) ?? "");
-  const hostLabel = agentHostDeviceLabel(hostDevice);
   const title =
-    persona?.displayName.trim() ||
     agent.name?.trim() ||
     profile?.displayName?.trim() ||
+    persona?.displayName.trim() ||
     "Agent";
   const avatarUrl =
     profile?.avatarUrl?.trim() || persona?.avatarUrl?.trim() || null;
   const availability = getAvailability(agent.pubkey);
+  const working = useAgentWorking(agent.pubkey).working;
   const stop = useRemoteAgentCommand(stopRemoteOwnedAgent, "stop");
   const start = useRemoteAgentCommand(startRemoteOwnedAgent, "start");
+  const isOnline = availability === "online" || availability === "away";
+  const busy = isPending || stop.isPending || start.isPending;
+  const canEdit = persona !== null && !persona.sourceTeam;
 
   return (
-    <AgentIdentityCard
-      actions={
-        <RemoteAgentActionsMenu
-          canStart={availability === "offline"}
-          canStop={availability !== "offline"}
-          isPending={isPending || stop.isPending || start.isPending}
-          label={title}
-          persona={persona}
-          onDuplicatePersona={onDuplicatePersona}
-          onEditPersona={onEditPersona}
-          onStart={() =>
-            start.run({ pubkey: agent.pubkey, hostName: hostDevice?.name })
-          }
-          onStop={() => stop.run({ pubkey: agent.pubkey })}
-        />
-      }
-      ariaLabel={`${title} agent profile`}
-      avatar={
-        <AgentRuntimeAvatarControl
-          activeTestId={`remote-agent-status-${agent.pubkey}`}
-          availability={availability}
-          avatarUrl={avatarUrl}
-          hostedElsewhereLabel={hostLabel}
-          isActive={availability === "online" || availability === "away"}
-          isStarting={false}
-          label={title}
-          startTestId={`remote-agent-start-${agent.pubkey}`}
-          onStart={() => {}}
-        />
-      }
+    <AgentTile
       avatarUrl={avatarUrl}
+      buttons={
+        <>
+          {isOnline ? (
+            <Button
+              data-testid={`remote-agent-stop-${agent.pubkey}`}
+              disabled={busy}
+              onClick={() => stop.run({ pubkey: agent.pubkey })}
+              size="xs"
+              variant="outline"
+            >
+              Stop
+            </Button>
+          ) : (
+            <Button
+              data-testid={`remote-agent-start-${agent.pubkey}`}
+              disabled={busy || availability === undefined}
+              onClick={() => start.run({ pubkey: agent.pubkey, hostName })}
+              size="xs"
+            >
+              Start
+            </Button>
+          )}
+          <Button
+            onClick={() =>
+              canEdit
+                ? onEditPersona(persona)
+                : onOpenAgentProfile(agent.pubkey)
+            }
+            size="xs"
+            variant="outline"
+          >
+            Edit
+          </Button>
+        </>
+      }
       dataTestId={`remote-agent-row-${agent.pubkey}`}
+      description={persona ? `from preset ${persona.displayName}` : null}
       label={title}
       labelBadge={<AgentCardRobot pubkey={agent.pubkey} />}
-      subtitle={hostLabel}
-      onClick={() => onOpenAgentProfile(agent.pubkey)}
+      openLabel={`${title} agent profile`}
+      status={
+        availability === undefined
+          ? undefined
+          : isOnline
+            ? working
+              ? "working"
+              : "running"
+            : "stopped"
+      }
+      subtitle={hostName}
+      onOpen={() => onOpenAgentProfile(agent.pubkey)}
     />
-  );
-}
-
-function RemoteAgentActionsMenu({
-  canStart,
-  canStop,
-  isPending,
-  label,
-  persona,
-  onDuplicatePersona,
-  onEditPersona,
-  onStart,
-  onStop,
-}: {
-  canStart: boolean;
-  canStop: boolean;
-  isPending: boolean;
-  label: string;
-  persona: AgentPersona | null;
-  onDuplicatePersona: (persona: AgentPersona) => void;
-  onEditPersona: (persona: AgentPersona) => void;
-  onStart: () => void;
-  onStop: () => void;
-}) {
-  const canEdit = persona !== null && !persona.sourceTeam;
-  return (
-    <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
-        <button
-          aria-label={`Open actions for ${label}`}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          type="button"
-        >
-          <EllipsisVertical className="h-4 w-4" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        onCloseAutoFocus={(event) => event.preventDefault()}
-      >
-        <DropdownMenuItem disabled={isPending || !canStart} onClick={onStart}>
-          <Play className="h-4 w-4" />
-          Start
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={isPending || !canStop} onClick={onStop}>
-          <Square className="h-4 w-4" />
-          Stop
-        </DropdownMenuItem>
-        {persona ? (
-          <>
-            <DropdownMenuSeparator />
-            {canEdit ? (
-              <DropdownMenuItem
-                disabled={isPending}
-                onClick={() => onEditPersona(persona)}
-              >
-                <Pencil className="h-4 w-4" />
-                Edit
-              </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem
-              disabled={isPending}
-              onClick={() => onDuplicatePersona(persona)}
-            >
-              <CopyPlus className="h-4 w-4" />
-              Duplicate
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

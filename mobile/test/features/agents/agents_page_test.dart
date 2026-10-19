@@ -30,6 +30,7 @@ void main() {
     required List<MyAgent> agents,
     Map<String, String> presence = const {},
     List<MyTeam> teams = const [],
+    List<MyAgentPreset> presets = const [],
     String? currentDevice = 'phone',
   }) async {
     final send = _RecordingSend();
@@ -41,6 +42,7 @@ void main() {
             (ref) async => const <AgentDirectoryEntry>[],
           ),
           myTeamsProvider.overrideWith((ref) async => teams),
+          myAgentPresetsProvider.overrideWith((ref) async => presets),
           presenceCacheProvider.overrideWith(() => _FakePresence(presence)),
           userCacheProvider.overrideWith(
             () => _FakeUsers({
@@ -226,12 +228,58 @@ void main() {
     expect(find.text('Start'), findsOneWidget);
   });
 
-  testWidgets('lists teams with their members and opens a team', (
+  testWidgets('Presets lists agent presets with their use, no status', (
     tester,
   ) async {
     await pump(
       tester,
       agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
+      presence: {_fizz: 'online'},
+      presets: const [
+        MyAgentPreset(
+          id: 'coder',
+          name: 'Coder',
+          description: 'Works in a repo',
+          agentCount: 0,
+        ),
+        MyAgentPreset(
+          id: 'fizz',
+          name: 'Fizz',
+          description: null,
+          agentCount: 2,
+        ),
+      ],
+    );
+    // My agents first: real agents, no presets.
+    expect(find.text('Online'), findsOneWidget);
+    expect(find.text('Coder'), findsNothing);
+    expect(find.byKey(const Key('agents-presets-note')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('agents-tab-presets')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('agents-presets-note')), findsOneWidget);
+    expect(find.text('AGENT PRESETS'), findsOneWidget);
+    expect(find.text('Works in a repo · not used yet'), findsOneWidget);
+    expect(find.text('used by 2 agents'), findsOneWidget);
+    expect(find.text('Online'), findsNothing);
+    expect(find.text('Stopped'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'cod');
+    await tester.pump();
+    expect(find.text('Coder'), findsOneWidget);
+    expect(find.text('used by 2 agents'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('agents-tab-agents')));
+    await tester.pumpAndSettle();
+    expect(find.text('AGENT PRESETS'), findsNothing);
+  });
+
+  testWidgets('Presets lists team presets and opens one', (tester) async {
+    await pump(
+      tester,
+      agents: [
+        MyAgent(pubkey: _fizz, deviceId: 'pc-a'),
+      ],
       presence: {_fizz: 'online'},
       teams: [
         MyTeam(
@@ -249,9 +297,13 @@ void main() {
         ),
       ],
     );
-    expect(find.text('AGENT TEAMS'), findsOneWidget);
+    // Teams are not on My agents.
+    expect(find.text('Research'), findsNothing);
+    await tester.tap(find.byKey(const Key('agents-tab-presets')));
+    await tester.pumpAndSettle();
+    expect(find.text('TEAM PRESETS'), findsOneWidget);
     expect(find.text('Research'), findsOneWidget);
-    expect(find.text('Fizz, Writer'), findsOneWidget);
+    expect(find.text('Fizz · Writer'), findsOneWidget);
     await tester.tap(find.text('Research'));
     await tester.pumpAndSettle();
     expect(find.byType(AgentTeamPage), findsOneWidget);

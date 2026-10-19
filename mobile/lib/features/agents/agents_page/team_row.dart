@@ -10,7 +10,9 @@ class _TeamRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = memberNames.isEmpty ? 'No agents' : memberNames.join(', ');
+    final subtitle = memberNames.isEmpty
+        ? 'No presets'
+        : memberNames.join(' · ');
     return InkWell(
       onTap: () => unawaited(
         Navigator.of(context).push(

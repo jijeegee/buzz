@@ -958,6 +958,7 @@ type RawRelayAgent = {
 
 type RawManagedAgent = {
   pubkey: string;
+  owner_pubkey?: string | null;
   name: string;
   persona_id: string | null;
   /** Record-level harness/runtime pin (`null` when inheriting from the persona). */
@@ -1975,6 +1976,7 @@ function cloneRelayAgent(agent: RawRelayAgent): RawRelayAgent {
 function cloneManagedAgent(agent: MockManagedAgent): RawManagedAgent {
   return {
     pubkey: agent.pubkey,
+    owner_pubkey: agent.owner_pubkey ?? null,
     name: agent.name,
     persona_id: agent.persona_id,
     runtime: agent.runtime ?? null,
@@ -2537,6 +2539,8 @@ function buildSeededManagedAgent(seed: MockManagedAgentSeed): MockManagedAgent {
     pubkey: seed.pubkey,
     name: seed.name,
     persona_id: seed.personaId ?? null,
+    // The signed-in account made it; each account sees only its own agents.
+    owner_pubkey: MOCK_IDENTITY_PUBKEY,
     // Native serde always emits this key (`null` when unpinned) — the bridge
     // must mirror the wire shape, not omit the key.
     runtime: seed.runtime ?? null,

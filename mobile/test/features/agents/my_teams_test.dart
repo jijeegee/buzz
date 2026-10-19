@@ -89,4 +89,32 @@ void main() {
     );
     expect([for (final t in teams) t.name], ['New']);
   });
+
+  test('reads agent presets with how many agents use each', () {
+    final presets = myAgentPresetsFrom(
+      owner: _owner,
+      personaEvents: [
+        _event(EventKind.persona, 'scribe', {
+          'display_name': 'Scribe',
+          'description': ' Writes docs ',
+        }),
+        _event(EventKind.persona, 'fizz', {'display_name': 'Fizz'}),
+        // No name: skipped. Another owner's: not ours.
+        _event(EventKind.persona, 'blank', {'display_name': ' '}),
+        _event(EventKind.persona, 'x', {'display_name': 'X'}, author: _other),
+      ],
+      agentEvents: [
+        _event(EventKind.managedAgent, _fizz, {'persona_id': 'fizz'}),
+        _event(EventKind.managedAgent, _honey, {'persona_id': 'fizz'}),
+      ],
+    );
+    expect([for (final p in presets) p.name], ['Fizz', 'Scribe']);
+    expect(presets.first.agentCount, 2);
+    expect(presets.first.description, isNull);
+    expect(presets.last.agentCount, 0);
+    expect(presets.last.description, 'Writes docs');
+    expect(presetUsageLabel(0), 'not used yet');
+    expect(presetUsageLabel(1), 'used by 1 agent');
+    expect(presetUsageLabel(2), 'used by 2 agents');
+  });
 }
