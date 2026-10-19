@@ -1,5 +1,14 @@
 part of '../channels_page.dart';
 
+/// Letters typed before public groups you're not in are listed.
+const _kFindGroupsMinQueryLength = 2;
+
+/// What Find groups closed with, besides a group to open.
+enum _FindGroupsAction { newGroup }
+
+/// Find groups: your groups always, public groups you're not in only once
+/// the search has [_kFindGroupsMinQueryLength] or more letters. Pops with the
+/// [Channel] to open or [_FindGroupsAction.newGroup].
 class _BrowseChannelsSheet extends HookConsumerWidget {
   const _BrowseChannelsSheet();
 
@@ -14,13 +23,33 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
     final directoryStatus = directoryState.scope == activeDirectoryScope
         ? directoryState.status
         : ChannelDirectoryLoadStatus.idle;
-    final channels = channelsAsync.asData?.value
-        .where((channel) => channel.canJoin)
-        .toList();
-    channels?.sort(
-      (left, right) =>
-          left.name.toLowerCase().compareTo(right.name.toLowerCase()),
-    );
+    final queryController = useTextEditingController();
+    useListenable(queryController);
+    final query = queryController.text.trim().toLowerCase();
+    final searchesPublic = query.length >= _kFindGroupsMinQueryLength;
+
+    bool matches(Channel channel) =>
+        query.isEmpty ||
+        channel.name.toLowerCase().contains(query) ||
+        channel.description.toLowerCase().contains(query);
+    int byName(Channel left, Channel right) =>
+        left.name.toLowerCase().compareTo(right.name.toLowerCase());
+
+    final all = channelsAsync.asData?.value;
+    final myGroups = [
+      for (final channel in all ?? const <Channel>[])
+        if (channel.isMember &&
+            !channel.isDm &&
+            !channel.isArchived &&
+            matches(channel))
+          channel,
+    ]..sort(byName);
+    final publicGroups = all == null || !searchesPublic
+        ? null
+        : ([
+            for (final channel in all)
+              if (channel.canJoin && matches(channel)) channel,
+          ]..sort(byName));
 
     useEffect(() {
       unawaited(
@@ -37,34 +66,128 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
     final directoryHasError =
         directoryStatus == ChannelDirectoryLoadStatus.error ||
         channelsAsync.hasError;
+    final mutedStyle = context.textTheme.bodyMedium?.copyWith(
+      color: context.colors.onSurfaceVariant,
+    );
+
+    Widget sectionHeader(String key, String title) => Padding(
+      key: Key('find-groups-section-$key'),
+      padding: const EdgeInsets.only(top: Grid.xs, bottom: Grid.half),
+      child: Text(
+        title,
+        style: context.textTheme.labelLarge?.copyWith(
+          color: context.colors.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+
+    Widget note(String key, String text) => Padding(
+      key: Key(key),
+      padding: const EdgeInsets.symmetric(vertical: Grid.xxs),
+      child: Text(text, style: mutedStyle),
+    );
 
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
+        padding: EdgeInsets.fromLTRB(
           Grid.gutter,
           0,
           Grid.gutter,
-          Grid.xs,
+          MediaQuery.viewInsetsOf(context).bottom + Grid.xs,
         ),
         child: CustomScrollView(
           shrinkWrap: true,
           slivers: [
             SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Join an open channel to add it to your conversations.',
-                    style: context.textTheme.bodyMedium?.copyWith(
+              child: _CreateChannelFieldShell(
+                child: TextField(
+                  key: const Key('find-groups-search'),
+                  controller: queryController,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: 'Search groups',
+                    prefixIcon: Icon(
+                      LucideIcons.search,
+                      size: 18,
                       color: context.colors.onSurfaceVariant,
                     ),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: Grid.twelve,
+                      vertical: Grid.xs,
+                    ),
                   ),
-                  const SizedBox(height: Grid.xs),
-                ],
+                ),
               ),
             ),
-            if (directoryIsLoading && (channels == null || channels.isEmpty))
+            SliverToBoxAdapter(
+              child: ListTile(
+                key: const Key('find-groups-new-group'),
+                contentPadding: EdgeInsets.zero,
+                leading: SizedBox.square(
+                  dimension: 32,
+                  child: Icon(
+                    LucideIcons.plus,
+                    size: 20,
+                    color: context.colors.primary,
+                  ),
+                ),
+                title: const Text('New group'),
+                onTap: () =>
+                    Navigator.of(context).pop(_FindGroupsAction.newGroup),
+              ),
+            ),
+            SliverToBoxAdapter(child: sectionHeader('mine', 'My groups')),
+            if (all == null && channelsAsync.isLoading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(Grid.sm),
+                  child: Center(child: KuzzLoadingIndicator()),
+                ),
+              )
+            else if (myGroups.isEmpty)
+              SliverToBoxAdapter(
+                child: note(
+                  'find-groups-mine-empty',
+                  query.isEmpty
+                      ? 'You’re not in any groups yet.'
+                      : 'None of your groups match.',
+                ),
+              )
+            else
+              SliverList.builder(
+                itemCount: myGroups.length,
+                itemBuilder: (context, index) {
+                  final channel = myGroups[index];
+                  return ListTile(
+                    key: Key('find-groups-mine-${channel.id}'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: GroupAvatar(channel: channel, size: 32),
+                    title: Text(
+                      channel.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => Navigator.of(context).pop(channel),
+                  );
+                },
+              ),
+            SliverToBoxAdapter(child: sectionHeader('public', 'Public groups')),
+            if (!searchesPublic)
+              SliverToBoxAdapter(
+                child: note(
+                  'find-groups-public-hint',
+                  'Type 2 or more letters to find public groups.',
+                ),
+              )
+            else if (directoryIsLoading &&
+                (publicGroups == null || publicGroups.isEmpty))
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.all(Grid.sm),
@@ -72,18 +195,16 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                 ),
               )
             else if (directoryHasError &&
-                (channels == null || channels.isEmpty))
+                (publicGroups == null || publicGroups.isEmpty))
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: Grid.sm),
                   child: Column(
                     children: [
                       Text(
-                        'Couldn’t load open channels.',
+                        'Couldn’t load public groups.',
                         textAlign: TextAlign.center,
-                        style: context.textTheme.bodyMedium?.copyWith(
-                          color: context.colors.onSurfaceVariant,
-                        ),
+                        style: mutedStyle,
                       ),
                       const SizedBox(height: Grid.xxs),
                       TextButton(
@@ -97,24 +218,18 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                   ),
                 ),
               )
-            else if (channels == null || channels.isEmpty)
+            else if (publicGroups == null || publicGroups.isEmpty)
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Grid.sm),
-                  child: Text(
-                    'No open channels available to join.',
-                    textAlign: TextAlign.center,
-                    style: context.textTheme.bodyMedium?.copyWith(
-                      color: context.colors.onSurfaceVariant,
-                    ),
-                  ),
+                child: note(
+                  'find-groups-public-empty',
+                  'No public groups match.',
                 ),
               )
             else
               SliverList.builder(
-                itemCount: channels.length,
+                itemCount: publicGroups.length,
                 itemBuilder: (context, index) => _JoinableChannelTile(
-                  channel: channels[index],
+                  channel: publicGroups[index],
                   closeAfterJoin: true,
                 ),
               ),
@@ -159,7 +274,7 @@ class _JoinableChannelTile extends HookConsumerWidget {
         ListTile(
           key: Key('browse-channel-${channel.id}'),
           contentPadding: EdgeInsets.zero,
-          leading: Icon(channelIcon(channel)),
+          leading: GroupAvatar(channel: channel, size: 32),
           title: Text(channel.name),
           subtitle: channel.description.trim().isEmpty
               ? null

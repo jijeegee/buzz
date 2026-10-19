@@ -303,15 +303,15 @@ void main() {
           ).colorScheme.onSurface.withValues(alpha: 0.8),
         );
       }
-      final channelIcon = tester.widget<Icon>(
-        find.byKey(const ValueKey('channel-icon-1')),
-      );
+      // A group leads with its letter avatar, not a hash.
       expect(
-        channelIcon.color,
-        Theme.of(
-          tester.element(find.byKey(const ValueKey('channel-icon-1'))),
-        ).colorScheme.onSurface.withValues(alpha: 0.8),
+        find.descendant(
+          of: find.byKey(const ValueKey('channel-icon-1')),
+          matching: find.text('G'),
+        ),
+        findsOneWidget,
       );
+      expect(find.byIcon(LucideIcons.hash), findsNothing);
       final sectionTitle = tester.widget<Text>(find.text('Chats'));
       expect(sectionTitle.style?.fontSize, contentListTitleTextStyle.fontSize);
       expect(sectionTitle.style?.fontWeight, FontWeight.w600);
@@ -1509,8 +1509,8 @@ void main() {
     expect(menuRect.right - dmRect.right, closeTo(8, 0.01));
     expect(browseRect.left - menuRect.left, closeTo(8, 0.01));
     expect(menuRect.right - browseRect.right, closeTo(8, 0.01));
-    expect(dmRect.top - createRect.bottom, closeTo(8, 0.01));
-    expect(browseRect.top - dmRect.bottom, closeTo(8, 0.01));
+    expect(createRect.top - dmRect.bottom, closeTo(8, 0.01));
+    expect(browseRect.top - createRect.bottom, closeTo(8, 0.01));
     expect(dmRect.width, createRect.width);
     expect(browseRect.width, createRect.width);
     expect(dmRect.width, closeTo(menuRect.width - 16, 0.01));
@@ -1542,18 +1542,9 @@ void main() {
     );
 
     expect(find.text('Start a new stream channel'), findsNothing);
-    expect(
-      tester.widget<Text>(find.text('Create channel')).style?.fontSize,
-      16,
-    );
-    expect(
-      tester.widget<Text>(find.text('New direct message')).style?.fontSize,
-      16,
-    );
-    expect(
-      tester.widget<Text>(find.text('Browse channels')).style?.fontSize,
-      16,
-    );
+    expect(tester.widget<Text>(find.text('New group')).style?.fontSize, 16);
+    expect(tester.widget<Text>(find.text('New message')).style?.fontSize, 16);
+    expect(tester.widget<Text>(find.text('Find groups')).style?.fontSize, 16);
     expect(find.text('Message one or more people'), findsNothing);
   });
 
@@ -1622,10 +1613,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // Your groups are listed at once; public groups wait for two letters.
+    expect(find.byKey(const Key('find-groups-mine-1')), findsOneWidget);
+    expect(find.byKey(const Key('find-groups-mine-2')), findsOneWidget);
+    expect(find.byKey(const Key('find-groups-mine-3')), findsNothing);
+    expect(find.byKey(const Key('find-groups-public-hint')), findsOneWidget);
+    expect(find.byKey(const Key('browse-channel-open-to-join')), findsNothing);
+    await tester.enterText(find.byKey(const Key('find-groups-search')), 'a');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('browse-channel-open-to-join')), findsNothing);
+    await tester.enterText(find.byKey(const Key('find-groups-search')), 'an');
+    await tester.pumpAndSettle();
+
     expect(
       find.byKey(const Key('browse-channel-open-to-join')),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('find-groups-mine-1')), findsNothing);
     expect(find.byKey(const Key('browse-channel-1')), findsNothing);
     expect(
       find.byKey(const Key('browse-channel-private-channel')),
@@ -1636,6 +1640,40 @@ void main() {
       findsNothing,
     );
     expect(find.byKey(const Key('browse-channel-unjoined-dm')), findsNothing);
+  });
+
+  testWidgets('Find groups opens New group from its create row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      buildTestable(
+        disableAnimations: true,
+        overrides: [
+          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Create or start conversation'));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const Key('quick-action-browse-channels-card')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet).last,
+        matching: find.text('Find groups'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('find-groups-new-group')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('find-groups-search')), findsNothing);
+    expect(find.byKey(const Key('create-channel-name')), findsOneWidget);
   });
 
   testWidgets('browse action explains when no channels are discoverable', (
@@ -1657,8 +1695,10 @@ void main() {
       find.byKey(const Key('quick-action-browse-channels-card')),
     );
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('find-groups-search')), 'zz');
+    await tester.pumpAndSettle();
 
-    expect(find.text('No open channels available to join.'), findsOneWidget);
+    expect(find.text('No public groups match.'), findsOneWidget);
   });
 
   testWidgets('browse action retries an initial directory request problem', (
@@ -1696,16 +1736,18 @@ void main() {
       find.byKey(const Key('quick-action-browse-channels-card')),
     );
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('find-groups-search')), 'co');
+    await tester.pumpAndSettle();
 
-    expect(find.text('Couldn’t load open channels.'), findsOneWidget);
-    expect(find.text('No open channels available to join.'), findsNothing);
+    expect(find.text('Couldn’t load public groups.'), findsOneWidget);
+    expect(find.text('No public groups match.'), findsNothing);
     expect(find.byKey(const Key('browse-channels-retry')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('browse-channels-retry')));
     await tester.pumpAndSettle();
 
     expect(notifier.retryCount, 1);
-    expect(find.text('Couldn’t load open channels.'), findsNothing);
+    expect(find.text('Couldn’t load public groups.'), findsNothing);
     expect(
       find.byKey(const Key('browse-channel-retry-discovery')),
       findsOneWidget,
@@ -1747,6 +1789,8 @@ void main() {
       find.byKey(const Key('quick-action-browse-channels-card')),
     );
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('find-groups-search')), 'co');
+    await tester.pumpAndSettle();
 
     expect(find.byType(KuzzLoadingIndicator), findsOneWidget);
 
@@ -1754,7 +1798,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(KuzzLoadingIndicator), findsNothing);
-    expect(find.text('Couldn’t load open channels.'), findsOneWidget);
+    expect(find.text('Couldn’t load public groups.'), findsOneWidget);
     expect(find.byKey(const Key('browse-channels-retry')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('browse-channels-retry')));
@@ -1803,6 +1847,8 @@ void main() {
       find.byKey(const Key('quick-action-browse-channels-card')),
     );
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('find-groups-search')), 'ch');
+    await tester.pumpAndSettle();
 
     expect(
       find.byKey(const Key('browse-channel-directory-0')),
@@ -1810,9 +1856,18 @@ void main() {
     );
     expect(find.byKey(const Key('browse-channel-directory-499')), findsNothing);
 
+    // The group list's own scrollable, not the search field's (which
+    // scrolls sideways).
     final sheet = find.byType(BottomSheet).last;
     final scrollable = find
-        .descendant(of: sheet, matching: find.byType(Scrollable))
+        .descendant(
+          of: sheet,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Scrollable &&
+                widget.axisDirection == AxisDirection.down,
+          ),
+        )
         .last;
     expect(
       tester.state<ScrollableState>(scrollable).position.maxScrollExtent,
@@ -1855,17 +1910,24 @@ void main() {
 
     await tester.tap(find.byTooltip('Create or start conversation'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Create channel'));
+    await tester.tap(find.text('New group'));
     await tester.pumpAndSettle();
     final createSheetRect = tester.getRect(find.byType(BottomSheet).last);
     expect(createSheetRect.top, greaterThanOrEqualTo(24));
     tester.testTextInput.hide();
     await tester.pumpAndSettle();
 
-    expect(find.text('Create a new channel'), findsOneWidget);
+    // The sheet title reads like the menu item that opened it.
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet).last,
+        matching: find.text('New group'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Name'), findsOneWidget);
     expect(find.text('Description  Optional'), findsOneWidget);
-    expect(find.text('Channel type'), findsOneWidget);
+    expect(find.text('Group type'), findsOneWidget);
     expect(find.text('Ongoing'), findsOneWidget);
     expect(find.text('Temporary'), findsOneWidget);
     expect(find.text('Visibility'), findsOneWidget);
@@ -1961,12 +2023,18 @@ void main() {
 
     await tester.tap(find.byTooltip('Create or start conversation'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('New direct message'));
+    await tester.tap(find.text('New message'));
     await tester.pumpAndSettle();
 
     final dmSheetRect = tester.getRect(find.byType(BottomSheet).last);
     expect(dmSheetRect.top, greaterThanOrEqualTo(24));
-    expect(find.text('New message'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet).last,
+        matching: find.text('New message'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('To:'), findsOneWidget);
     expect(find.text('Search for a person'), findsOneWidget);
     final recipientField = find.byKey(const Key('new-dm-recipient-field'));
@@ -2133,7 +2201,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Create or start conversation'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('New direct message'));
+      await tester.tap(find.text('New message'));
       await tester.pumpAndSettle();
 
       // No query: friends and agents; never the whole directory.
@@ -2192,7 +2260,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Create or start conversation'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('New direct message'));
+    await tester.tap(find.text('New message'));
     await tester.pumpAndSettle();
 
     for (final user in directoryUsers) {
@@ -2235,7 +2303,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Create or start conversation'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('New direct message'));
+    await tester.tap(find.text('New message'));
     await tester.pumpAndSettle();
 
     expect(find.text('Couldn’t load people. Try again.'), findsNothing);
@@ -2354,7 +2422,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pump();
 
-    expect(find.text('Could not load channels'), findsOneWidget);
+    expect(find.text('Could not load groups'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
 
