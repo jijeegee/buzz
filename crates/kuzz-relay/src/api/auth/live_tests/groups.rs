@@ -859,3 +859,139 @@ async fn agent_adds_owner_and_invitation_spam_limits() {
     let ok = put_user(&mut alice_ws, room, &erin.principal).await;
     assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
 }
+
+/// The public `/g/<code>` and `/g/@<handle>` landing page: no auth, HTML,
+/// escaped user text, private groups without description, 404 page for
+/// unknown and reset codes.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn landing_page_for_codes_and_handles() {
+    use kuzz_db::channel::ChannelVisibility;
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let scope = community_id(&inst).await;
+    let alice = new_user(&inst).await;
+    let open = group(
+        &pool,
+        scope,
+        &alice,
+        "<b>Bold</b> & \"Co\"",
+        ChannelVisibility::Open,
+    )
+    .await;
+    sqlx::query("UPDATE channels SET description = $3 WHERE community_id = $1 AND id = $2")
+        .bind(scope.as_uuid())
+        .bind(open)
+        .bind("<img src=x onerror=alert(1)> hikes")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (code, _) = put(
+        &inst,
+        &alice,
+        &format!("/api/groups/{open}/handle"),
+        json!({"handle": "landing_crew"}),
+    )
+    .await;
+    assert_eq!(code, 200);
+    let open_code = get(&inst, &alice, &format!("/api/groups/{open}/invite-link"))
+        .await
+        .1["code"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let secret = group(
+        &pool,
+        scope,
+        &alice,
+        "Secret Room",
+        ChannelVisibility::Private,
+    )
+    .await;
+    sqlx::query(
+        "UPDATE channels SET description = 'hidden plans' WHERE community_id = $1 AND id = $2",
+    )
+    .bind(scope.as_uuid())
+    .bind(secret)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let secret_code = get(&inst, &alice, &format!("/api/groups/{secret}/invite-link"))
+        .await
+        .1["code"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let page = |path: String| {
+        let inst = &inst;
+        async move {
+            let response = inst.get(&path).send().await.unwrap();
+            let status = response.status().as_u16();
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .map(|v| v.to_str().unwrap().to_owned())
+                .unwrap_or_default();
+            let robots = response
+                .headers()
+                .get("x-robots-tag")
+                .map(|v| v.to_str().unwrap().to_owned())
+                .unwrap_or_default();
+            (status, content_type, robots, response.text().await.unwrap())
+        }
+    };
+
+    let (status, content_type, robots, body) = page(format!("/g/{open_code}")).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(content_type, "text/html; charset=utf-8");
+    assert!(robots.contains("noindex"));
+    assert!(
+        body.contains("&lt;b&gt;Bold&lt;/b&gt; &amp; &quot;Co&quot;"),
+        "{body}"
+    );
+    assert!(!body.contains("<b>Bold"), "{body}");
+    assert!(!body.contains("<img"), "{body}");
+    assert!(body.contains("&lt;img src=x onerror=alert(1)&gt; hikes"));
+    assert!(body.contains("1 member<"));
+    assert!(body.contains(&format!("href=\"kuzz://join/{open_code}\"")));
+    assert!(body.contains("Don&#39;t have Kuzz yet? Ask the person who shared this link."));
+
+    let (status, _, _, body) = page("/g/@Landing_Crew".to_owned()).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body.contains("href=\"kuzz://join/@landing_crew\""),
+        "{body}"
+    );
+    assert!(body.contains("hikes"));
+
+    let (status, _, _, body) = page(format!("/g/{secret_code}")).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(body.contains("Secret Room"));
+    assert!(!body.contains("hidden plans"), "private: name + count only");
+    // Private groups have no public address page.
+    assert_eq!(page("/g/@secret_room".to_owned()).await.0, 404);
+
+    let (status, content_type, _, body) = page("/g/not-a-real-code-at-all-xx".to_owned()).await;
+    assert_eq!(status, 404);
+    assert_eq!(content_type, "text/html; charset=utf-8");
+    assert!(body.contains("This link doesn&#39;t work"));
+    assert_eq!(page("/g/@nobody_here".to_owned()).await.0, 404);
+    assert_eq!(
+        post(
+            &inst,
+            &alice,
+            &format!("/api/groups/{open}/invite-link/reset")
+        )
+        .await
+        .0,
+        200
+    );
+    assert_eq!(
+        page(format!("/g/{open_code}")).await.0,
+        404,
+        "reset kills it"
+    );
+}

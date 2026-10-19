@@ -1015,9 +1015,248 @@ pub async fn decline_invitation(
     Ok(Json(json!({ "status": "declined" })).into_response())
 }
 
+// ── Public landing page: /g/<code> and /g/@<handle> ─────────────────────────
+
+/// Deep-link scheme the desktop (tauri deep-link) and mobile (Android intent
+/// filter, iOS URL type) apps register.
+const APP_SCHEME: &str = "kuzz";
+/// Landing pages one client IP may open per minute (as the preview API).
+const LANDING_PER_IP_PER_MIN: u64 = LINK_PREVIEW_PER_MIN;
+/// Landing pages per minute for all clients together when the IP is unknown.
+const LANDING_GLOBAL_PER_MIN: u64 = 600;
+/// Longest description shown on the page, in characters.
+const LANDING_DESCRIPTION_CHARS: usize = 280;
+
+/// Escape text for HTML element content and double-quoted attributes.
+fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// What a landing page shows.
+struct Landing<'a> {
+    name: &'a str,
+    member_count: i64,
+    /// `None` for private groups (name and member count only).
+    description: Option<&'a str>,
+    /// `kuzz://join/<code>` or `kuzz://join/@<handle>`.
+    deep_link: String,
+}
+
+const LANDING_STYLE: &str =
+    "body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;\
+background:#f6f6f4;color:#1d1d1b;display:flex;min-height:100vh;align-items:center;\
+justify-content:center}main{background:#fff;border-radius:16px;padding:32px;max-width:420px;\
+width:calc(100% - 48px);box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center}\
+h1{font-size:22px;margin:0 0 8px;overflow-wrap:anywhere}.count{color:#6b6b66;margin:0 0 16px}\
+.desc{margin:0 0 24px;overflow-wrap:anywhere;white-space:pre-line}\
+.open{display:inline-block;background:#0047a0;color:#fff;text-decoration:none;\
+padding:12px 28px;border-radius:999px;font-weight:600}.hint{color:#6b6b66;font-size:14px;\
+margin:20px 0 0}";
+
+fn landing_document(title: &str, main: &str) -> String {
+    format!(
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <meta name=\"robots\" content=\"noindex,nofollow\">\
+         <title>{title}</title><style>{LANDING_STYLE}</style></head>\
+         <body><main>{main}</main></body></html>",
+        title = escape_html(title),
+    )
+}
+
+fn render_landing(landing: &Landing<'_>) -> String {
+    let members = if landing.member_count == 1 {
+        "1 member".to_owned()
+    } else {
+        format!("{} members", landing.member_count)
+    };
+    let description = landing
+        .description
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .map(|d| {
+            let short: String = d.chars().take(LANDING_DESCRIPTION_CHARS).collect();
+            let ellipsis = if d.chars().count() > LANDING_DESCRIPTION_CHARS {
+                "\u{2026}"
+            } else {
+                ""
+            };
+            format!("<p class=\"desc\">{}{ellipsis}</p>", escape_html(&short))
+        })
+        .unwrap_or_default();
+    let main = format!(
+        "<h1>{name}</h1><p class=\"count\">{members}</p>{description}\
+         <a class=\"open\" href=\"{link}\">Open in Kuzz</a>\
+         <p class=\"hint\">Don&#39;t have Kuzz yet? Ask the person who shared this link.</p>",
+        name = escape_html(landing.name),
+        link = escape_html(&landing.deep_link),
+    );
+    landing_document(&format!("{} on Kuzz", landing.name), &main)
+}
+
+fn render_landing_not_found() -> String {
+    landing_document(
+        "Link not found",
+        "<h1>This link doesn&#39;t work</h1>\
+         <p class=\"hint\">It may have been reset or the group may no longer exist. \
+         Ask the person who shared it for a new link.</p>",
+    )
+}
+
+fn html_response(status: StatusCode, body: String) -> Response {
+    (
+        status,
+        [
+            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (
+                axum::http::header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; \
+                 form-action 'none'; frame-ancestors 'none'",
+            ),
+            (
+                axum::http::header::HeaderName::from_static("x-robots-tag"),
+                "noindex, nofollow",
+            ),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+            (axum::http::header::REFERRER_POLICY, "no-referrer"),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+/// `GET /g/{code}` and `GET /g/@{handle}` (no auth): a small self-contained
+/// HTML page for a shared group link with an "Open in Kuzz" button
+/// (`kuzz://join/<code>` / `kuzz://join/@<handle>`). Open groups show name,
+/// member count and a short description; private groups (code only) show
+/// name and member count. Unknown, revoked, deleted or archived → 404 page.
+pub async fn landing(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    extensions: axum::http::Extensions,
+    Path(target): Path<String>,
+) -> Response {
+    let not_found = || html_response(StatusCode::NOT_FOUND, render_landing_not_found());
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await else {
+        return not_found();
+    };
+    if super::auth::rate_limit_client(
+        &state,
+        &extensions,
+        &headers,
+        &format!("groups:landing:{}", tenant.community()),
+        LANDING_PER_IP_PER_MIN,
+        LANDING_GLOBAL_PER_MIN,
+    )
+    .await
+    .is_err()
+    {
+        return html_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            landing_document(
+                "Try again soon",
+                "<h1>Too many requests</h1><p class=\"hint\">Try again in a minute.</p>",
+            ),
+        );
+    }
+    // An anonymous viewer: the all-zero key is never a member.
+    let viewer = Caller {
+        tenant,
+        pubkey: vec![0u8; 32],
+    };
+    let page = if let Some(raw) = target.strip_prefix('@') {
+        let Ok(handle) = normalize_handle(raw) else {
+            return not_found();
+        };
+        match state
+            .db
+            .open_group_by_handle(viewer.tenant.community(), &viewer.pubkey, &handle)
+            .await
+        {
+            Ok(Some(group)) => render_landing(&Landing {
+                name: &group.name,
+                member_count: group.member_count,
+                description: group.description.as_deref(),
+                deep_link: format!("{APP_SCHEME}://join/@{handle}"),
+            }),
+            Ok(None) => return not_found(),
+            Err(e) => {
+                tracing::warn!(error = %e, "group landing by handle failed");
+                return internal("group landing", &e);
+            }
+        }
+    } else {
+        match group_for_code(&state, &viewer, &target).await {
+            Ok((group, link)) => render_landing(&Landing {
+                name: &group.name,
+                member_count: group.member_count,
+                description: if group.visibility == "open" {
+                    group.description.as_deref()
+                } else {
+                    None
+                },
+                deep_link: format!("{APP_SCHEME}://join/{}", link.code),
+            }),
+            Err(response) if response.status() == StatusCode::NOT_FOUND => return not_found(),
+            Err(response) => return response,
+        }
+    };
+    html_response(StatusCode::OK, page)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{new_invite_code, normalize_handle, plausible_code};
+    use super::{
+        escape_html, new_invite_code, normalize_handle, plausible_code, render_landing, Landing,
+    };
+
+    #[test]
+    fn landing_escapes_user_text_and_hides_private_descriptions() {
+        assert_eq!(
+            escape_html("<b>&\"x'</b>"),
+            "&lt;b&gt;&amp;&quot;x&#39;&lt;/b&gt;"
+        );
+        let page = render_landing(&Landing {
+            name: "<script>alert(1)</script>",
+            member_count: 1,
+            description: Some("a \"quoted\" <img src=x> & more"),
+            deep_link: "kuzz://join/abc\"onclick=\"x".to_owned(),
+        });
+        assert!(!page.contains("<script>alert"), "{page}");
+        assert!(!page.contains("<img"), "{page}");
+        assert!(page.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(page.contains("1 member<"));
+        assert!(page.contains("href=\"kuzz://join/abc&quot;onclick=&quot;x\""));
+        assert!(page.contains("noindex"));
+        assert!(page.contains("Don&#39;t have Kuzz yet? Ask the person who shared this link."));
+        assert!(
+            !page.contains("http://") && !page.contains("https://"),
+            "no external assets"
+        );
+        let private = render_landing(&Landing {
+            name: "Secret",
+            member_count: 3,
+            description: None,
+            deep_link: "kuzz://join/code".to_owned(),
+        });
+        assert!(private.contains("3 members"));
+        assert!(!private.contains("class=\"desc\""));
+    }
 
     #[test]
     fn handles_are_normalized_and_validated() {

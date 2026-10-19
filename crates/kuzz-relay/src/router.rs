@@ -144,6 +144,8 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/favicon.svg",
     // Invite landing page (SPA) — subtree
     "/invite/",
+    // Group invite / public address landing page (no auth) — subtree
+    "/g/",
     // Git web GUI (SPA) — exact + subtree
     "/repos",
     // Internal HMAC/localhost control-plane endpoint for the pre-receive hook.
@@ -374,6 +376,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/invites/claim", post(api::invites::claim_invite))
         // Groups: search + public addresses, invite links, "who can add me"
         // and invitations (Bearer / NIP-98 + relay membership, like /query).
+        // Public landing page for shared group links: /g/<code>, /g/@<handle>.
+        .route("/g/{code}", get(api::groups::landing))
         .route("/api/groups/search", get(api::groups::search))
         .route(
             "/api/groups/by-handle/{handle}",
