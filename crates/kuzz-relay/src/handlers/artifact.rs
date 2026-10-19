@@ -61,6 +61,7 @@ pub(crate) async fn accept(
         event_id: event.id.to_hex(),
         accepted: true,
         message: String::new(),
+        channel_sequence: None,
     })
 }
 

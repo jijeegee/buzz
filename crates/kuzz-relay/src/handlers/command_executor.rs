@@ -339,6 +339,7 @@ async fn handle_dm_open(
                 event_id: event.id.to_hex(),
                 accepted: true,
                 message: "duplicate: already processed".into(),
+                channel_sequence: None,
             });
         }
         PersistResult::Inserted(tx) => tx,
@@ -435,6 +436,7 @@ async fn handle_dm_open(
                 "created": was_created,
             })
         ),
+        channel_sequence: None,
     })
 }
 
@@ -554,6 +556,7 @@ async fn handle_dm_add_member(
                 event_id: event.id.to_hex(),
                 accepted: true,
                 message: "duplicate: already processed".into(),
+                channel_sequence: None,
             });
         }
         PersistResult::Inserted(tx) => tx,
@@ -627,6 +630,7 @@ async fn handle_dm_add_member(
                 "channel_id": new_channel.id.to_string(),
             })
         ),
+        channel_sequence: None,
     })
 }
 
@@ -672,6 +676,7 @@ async fn handle_dm_hide(
                 event_id: event.id.to_hex(),
                 accepted: true,
                 message: "duplicate: already processed".into(),
+                channel_sequence: None,
             });
         }
         PersistResult::Inserted(tx) => tx,
@@ -700,6 +705,7 @@ async fn handle_dm_hide(
         event_id: event.id.to_hex(),
         accepted: true,
         message: "{}".into(),
+        channel_sequence: None,
     })
 }
 
@@ -809,6 +815,7 @@ async fn handle_workflow_def(
                 event_id: event.id.to_hex(),
                 accepted: true,
                 message: "duplicate: already processed".into(),
+                channel_sequence: None,
             });
         }
         PersistResult::Inserted(tx) => tx,
@@ -874,6 +881,7 @@ async fn handle_workflow_def(
         event_id: event.id.to_hex(),
         accepted: true,
         message: format!("response:{}", resp),
+        channel_sequence: None,
     })
 }
 
@@ -948,6 +956,7 @@ async fn handle_workflow_trigger(
                 event_id: event.id.to_hex(),
                 accepted: true,
                 message: "duplicate: already processed".into(),
+                channel_sequence: None,
             });
         }
         PersistResult::Inserted(tx) => tx,
@@ -1047,6 +1056,7 @@ async fn handle_workflow_trigger(
                 "run_id": run_id.to_string(),
             })
         ),
+        channel_sequence: None,
     })
 }
 
@@ -1132,6 +1142,7 @@ async fn handle_approval_grant(
                 event_id: event.id.to_hex(),
                 accepted: true,
                 message: "duplicate: already processed".into(),
+                channel_sequence: None,
             });
         }
         PersistResult::Inserted(tx) => tx,
@@ -1191,6 +1202,7 @@ async fn handle_approval_grant(
                 "run_id": run_id.to_string(),
             })
         ),
+        channel_sequence: None,
     })
 }
 
@@ -1243,6 +1255,7 @@ async fn handle_approval_deny(
                 event_id: event.id.to_hex(),
                 accepted: true,
                 message: "duplicate: already processed".into(),
+                channel_sequence: None,
             });
         }
         PersistResult::Inserted(tx) => tx,
@@ -1331,6 +1344,7 @@ async fn handle_approval_deny(
                 "run_id": run_id.to_string(),
             })
         ),
+        channel_sequence: None,
     })
 }
 

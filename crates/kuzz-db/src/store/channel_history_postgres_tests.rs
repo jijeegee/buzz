@@ -285,3 +285,63 @@ async fn migration_schema_history_backfill_preserves_old_rooms() {
             .expect("new policy");
     assert_eq!(new_policy, "since_join");
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn insert_returns_sequence_and_duplicates_do_not_burn_numbers() {
+    let f = Fixture::new().await;
+    let accepted = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT accepted_sequence FROM channels WHERE community_id=$1 AND id=$2",
+        )
+        .bind(f.scope.as_uuid())
+        .bind(f.channel)
+        .fetch_one(&f.pool)
+        .await
+        .expect("accepted sequence")
+    };
+
+    let first = f.message("first", 1_700_000_000);
+    let (stored, inserted) = event::insert_event(&f.pool, f.scope, &first, Some(f.channel))
+        .await
+        .expect("insert");
+    assert!(inserted);
+    let first_sequence = stored
+        .channel_sequence
+        .expect("new row returns its sequence");
+    assert_eq!(accepted().await, first_sequence);
+
+    // Retry through both writers: same number back, counter unchanged.
+    let (retry, inserted) = event::insert_event(&f.pool, f.scope, &first, Some(f.channel))
+        .await
+        .expect("retry");
+    assert!(!inserted);
+    assert_eq!(retry.channel_sequence, Some(first_sequence));
+    let (retry, inserted) =
+        event::insert_event_with_chat_state(&f.pool, f.scope, &first, Some(f.channel), None)
+            .await
+            .map(|(stored, inserted, _)| (stored, inserted))
+            .expect("retry with chat state");
+    assert!(!inserted);
+    assert_eq!(retry.channel_sequence, Some(first_sequence));
+    assert_eq!(accepted().await, first_sequence, "duplicates leave no hole");
+
+    let second = f.message("second", 1_700_000_001);
+    let (stored, inserted) =
+        event::insert_event_with_chat_state(&f.pool, f.scope, &second, Some(f.channel), None)
+            .await
+            .map(|(stored, inserted, _)| (stored, inserted))
+            .expect("second insert");
+    assert!(inserted);
+    assert_eq!(stored.channel_sequence, Some(first_sequence + 1));
+    assert_eq!(accepted().await, first_sequence + 1);
+
+    // Events without a channel carry no order number.
+    let global = EventBuilder::new(Kind::TextNote, "global")
+        .sign_with_keys(&f.owner)
+        .expect("fixture signature");
+    let (stored, _) = event::insert_event(&f.pool, f.scope, &global, None)
+        .await
+        .expect("global insert");
+    assert_eq!(stored.channel_sequence, None);
+}

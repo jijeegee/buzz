@@ -15,6 +15,10 @@ pub struct StoredEvent {
     pub received_at: DateTime<Utc>,
     /// Channel scope; `None` for global/DM events.
     pub channel_id: Option<Uuid>,
+    /// The channel's order number for this event, set by the store when it
+    /// writes or finds the row; `None` when unknown or the event has no channel
+    /// order.
+    pub channel_sequence: Option<i64>,
     verified: bool,
 }
 
@@ -25,6 +29,7 @@ impl StoredEvent {
             event,
             received_at: Utc::now(),
             channel_id,
+            channel_sequence: None,
             verified: false,
         }
     }
@@ -45,6 +50,7 @@ impl StoredEvent {
             event,
             received_at,
             channel_id,
+            channel_sequence: None,
             verified,
         }
     }

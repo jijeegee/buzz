@@ -487,11 +487,12 @@ async fn insert_event_on(
     let received_at = Utc::now();
     let d_tag = extract_d_tag(event);
     let not_before = extract_not_before(event);
-    let result = sqlx::query(
+    let inserted_sequence: Option<i64> = sqlx::query_scalar(
         r#"
         INSERT INTO events (community_id, id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id, d_tag, not_before)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT DO NOTHING
+        RETURNING channel_sequence
         "#,
     )
     .bind(community_id.as_uuid())
@@ -506,15 +507,44 @@ async fn insert_event_on(
     .bind(channel_id)
     .bind(d_tag.as_deref())
     .bind(not_before)
-    .execute(connection)
+    .fetch_optional(&mut *connection)
     .await?;
 
-    let was_inserted = result.rows_affected() > 0;
+    let was_inserted = inserted_sequence.is_some();
+    let channel_sequence = match inserted_sequence {
+        Some(sequence) => known_channel_sequence(sequence),
+        None => {
+            stored_channel_sequence(connection, community_id, created_at, id_bytes.as_slice())
+                .await?
+        }
+    };
 
-    Ok((
-        StoredEvent::with_received_at(event.clone(), received_at, channel_id, true),
-        was_inserted,
-    ))
+    let mut stored = StoredEvent::with_received_at(event.clone(), received_at, channel_id, true);
+    stored.channel_sequence = channel_sequence;
+    Ok((stored, was_inserted))
+}
+
+/// `0` marks an event with no channel order (no channel, or an absent one).
+fn known_channel_sequence(sequence: i64) -> Option<i64> {
+    (sequence > 0).then_some(sequence)
+}
+
+/// The order number the original row got, for a duplicate insert.
+async fn stored_channel_sequence(
+    connection: &mut PgConnection,
+    community_id: CommunityId,
+    created_at: DateTime<Utc>,
+    id_bytes: &[u8],
+) -> Result<Option<i64>> {
+    let sequence: Option<i64> = sqlx::query_scalar(
+        "SELECT channel_sequence FROM events WHERE community_id = $1 AND created_at = $2 AND id = $3",
+    )
+    .bind(community_id.as_uuid())
+    .bind(created_at)
+    .bind(id_bytes)
+    .fetch_optional(connection)
+    .await?;
+    Ok(sequence.and_then(known_channel_sequence))
 }
 
 /// Query events with optional filters. Results ordered by `created_at DESC`.
@@ -1669,11 +1699,12 @@ pub(crate) async fn insert_event_with_thread_metadata_tx(
     let d_tag = extract_d_tag(event);
     let not_before = extract_not_before(event);
 
-    let result = sqlx::query(
+    let inserted_sequence: Option<i64> = sqlx::query_scalar(
         r#"
         INSERT INTO events (community_id, id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id, d_tag, not_before)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT DO NOTHING
+        RETURNING channel_sequence
         "#,
     )
     .bind(community_id.as_uuid())
@@ -1688,10 +1719,17 @@ pub(crate) async fn insert_event_with_thread_metadata_tx(
     .bind(channel_id)
     .bind(d_tag.as_deref())
     .bind(not_before)
-    .execute(&mut **tx)
+    .fetch_optional(&mut **tx)
     .await?;
 
-    let was_inserted = result.rows_affected() > 0;
+    let was_inserted = inserted_sequence.is_some();
+    let channel_sequence = match inserted_sequence {
+        Some(sequence) => known_channel_sequence(sequence),
+        None => {
+            stored_channel_sequence(&mut **tx, community_id, created_at, id_bytes.as_slice())
+                .await?
+        }
+    };
 
     if was_inserted {
         if let Some(ref meta) = thread_meta {
@@ -1811,10 +1849,9 @@ pub(crate) async fn insert_event_with_thread_metadata_tx(
         crate::operator_listener::enqueue_mentions_in_transaction(tx, community_id, event).await?;
     }
 
-    Ok((
-        StoredEvent::with_received_at(event.clone(), received_at, channel_id, true),
-        was_inserted,
-    ))
+    let mut stored = StoredEvent::with_received_at(event.clone(), received_at, channel_id, true);
+    stored.channel_sequence = channel_sequence;
+    Ok((stored, was_inserted))
 }
 
 /// Atomically insert an event and its optional thread metadata.
