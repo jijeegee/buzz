@@ -1537,6 +1537,8 @@ async fn query_events_authed(
         .map(|v| serde_json::from_value(v.clone()))
         .collect::<Result<_, _>>()
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
+    crate::protocol::check_filter_list_limits(&filters)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
     crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
         .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?;
 
@@ -2232,6 +2234,8 @@ async fn count_events_authed(
     }
     let filters: Vec<nostr::Filter> = serde_json::from_slice(body)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
+    crate::protocol::check_filter_list_limits(&filters)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
     crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
         .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?;
 

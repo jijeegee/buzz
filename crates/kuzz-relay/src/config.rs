@@ -398,6 +398,36 @@ pub struct Config {
     pub auth_token: crate::identity::AuthTokenConfig,
 }
 
+/// Returns whether `relay_url` points at this machine (`localhost`,
+/// `*.localhost`, `127.0.0.0/8`, or `::1`).
+fn relay_url_is_loopback(relay_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(relay_url) else {
+        return false;
+    };
+    match url.host() {
+        Some(url::Host::Domain(host)) => host == "localhost" || host.ends_with(".localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
+}
+
+/// The `X-Pubkey` header bypass (`require_auth_token = false`) trusts any
+/// caller-supplied pubkey, so it is only honoured when the relay is served
+/// from a loopback `RELAY_URL`. Any other deployment requires real REST auth
+/// regardless of `KUZZ_REQUIRE_AUTH_TOKEN`.
+fn enforce_auth_token_off_loopback(require_auth_token: bool, relay_url: &str) -> bool {
+    if require_auth_token || relay_url_is_loopback(relay_url) {
+        return require_auth_token;
+    }
+    warn!(
+        relay_url,
+        "KUZZ_REQUIRE_AUTH_TOKEN=false ignored: the X-Pubkey dev bypass is only \
+         allowed on a loopback RELAY_URL"
+    );
+    true
+}
+
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
     raw.parse::<SocketAddr>()
         .map_err(|e| ConfigError::InvalidBindAddr(e.to_string()))
@@ -742,6 +772,7 @@ impl Config {
         let require_auth_token = std::env::var("KUZZ_REQUIRE_AUTH_TOKEN")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+        let require_auth_token = enforce_auth_token_off_loopback(require_auth_token, &relay_url);
 
         let pubkey_allowlist_enabled = std::env::var("KUZZ_PUBKEY_ALLOWLIST")
             .map(|v| v == "true" || v == "1")
@@ -891,8 +922,8 @@ impl Config {
 
         if !require_auth_token {
             warn!(
-                "KUZZ_REQUIRE_AUTH_TOKEN is false — REST API requests bypass token auth. \
-                 WebSocket protocol auth is unaffected. Set to true for production."
+                "KUZZ_REQUIRE_AUTH_TOKEN is false on a loopback RELAY_URL — REST API \
+                 requests accept the X-Pubkey dev header. WebSocket protocol auth is unaffected."
             );
         }
 
@@ -2866,5 +2897,28 @@ mod tests {
             matches!(result, Err(ConfigError::InvalidValue(ref msg)) if msg.contains("KUZZ_GIT_REPO_PATH")),
             "expected InvalidValue mentioning KUZZ_GIT_REPO_PATH, got {result:?}"
         );
+    }
+
+    #[test]
+    fn x_pubkey_bypass_only_survives_on_loopback_relay_url() {
+        for url in [
+            "ws://localhost:3000",
+            "ws://admin.localhost:3000",
+            "ws://127.0.0.1:3000",
+            "ws://[::1]:3000",
+        ] {
+            assert!(relay_url_is_loopback(url), "{url} should be loopback");
+            assert!(!enforce_auth_token_off_loopback(false, url), "{url}");
+        }
+        for url in [
+            "wss://jihobuzz.duckdns.org:8443",
+            "ws://10.0.0.5:3000",
+            "ws://localhost.example.com",
+            "not a url",
+        ] {
+            assert!(!relay_url_is_loopback(url), "{url} should not be loopback");
+            assert!(enforce_auth_token_off_loopback(false, url), "{url}");
+        }
+        assert!(enforce_auth_token_off_loopback(true, "ws://localhost:3000"));
     }
 }
