@@ -580,12 +580,20 @@ class _ChannelHeaderRow extends StatelessWidget {
   }
 }
 
-/// "+ N more threads" / "Show less" under a channel in By channel.
+/// "+ N more threads" under a channel in By channel. Each tap shows 10 more:
+/// "+ 10 more · N left" (or "+ N more" for the last ones) beside "Show less";
+/// with every thread shown, only "Show less".
 class _MoreThreadsRow extends StatelessWidget {
-  const _MoreThreadsRow({super.key, required this.more, required this.onTap});
+  const _MoreThreadsRow({
+    super.key,
+    required this.more,
+    required this.onShowMore,
+    required this.onShowLess,
+  });
 
   final ChatGroupMore more;
-  final VoidCallback onTap;
+  final VoidCallback onShowMore;
+  final VoidCallback onShowLess;
 
   @override
   Widget build(BuildContext context) {
@@ -593,34 +601,67 @@ class _MoreThreadsRow extends StatelessWidget {
       color: context.colors.primary,
       fontWeight: FontWeight.w600,
     );
-    final label = more.expanded
-        ? 'Show less'
-        : '+ ${more.hidden} more ${more.hidden == 1 ? 'thread' : 'threads'}';
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Grid.gutter +
-              _threadIndent +
-              activityAvatarSize +
-              messageAvatarContentGap,
-          0,
-          Grid.gutter,
-          Grid.twelve,
+    final hidden = more.hidden;
+    final label = !more.expanded
+        ? '+ $hidden more ${hidden == 1 ? 'thread' : 'threads'}'
+        : hidden > byChannelThreadStep
+        ? '+ $byChannelThreadStep more · $hidden left'
+        : '+ $hidden more';
+    final showMore = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: style),
+        if (more.hiddenUnread > 0) ...[
+          const SizedBox(width: Grid.xxs),
+          _Pill(
+            label: formatChatCount(more.hiddenUnread, false),
+            color: context.colors.primary,
+            foreground: context.colors.onPrimary,
+          ),
+        ],
+      ],
+    );
+    const padding = EdgeInsets.fromLTRB(
+      Grid.gutter +
+          _threadIndent +
+          activityAvatarSize +
+          messageAvatarContentGap,
+      0,
+      Grid.gutter,
+      Grid.twelve,
+    );
+    final showLess = Text('Show less', style: style);
+    // One control: the whole line taps, as before.
+    if (hidden == 0 || !more.expanded) {
+      return InkWell(
+        key: ValueKey(
+          hidden == 0
+              ? 'chat-more-less-${more.channelId}'
+              : 'chat-more-show-${more.channelId}',
         ),
-        child: Row(
-          children: [
-            Text(label, style: style),
-            if (!more.expanded && more.hiddenUnread > 0) ...[
-              const SizedBox(width: Grid.xxs),
-              _Pill(
-                label: formatChatCount(more.hiddenUnread, false),
-                color: context.colors.primary,
-                foreground: context.colors.onPrimary,
-              ),
-            ],
-          ],
+        onTap: hidden == 0 ? onShowLess : onShowMore,
+        child: Padding(
+          padding: padding,
+          child: hidden == 0 ? Row(children: [showLess]) : showMore,
         ),
+      );
+    }
+    return Padding(
+      padding: padding,
+      child: Row(
+        children: [
+          InkWell(
+            key: ValueKey('chat-more-show-${more.channelId}'),
+            onTap: onShowMore,
+            child: showMore,
+          ),
+          const Spacer(),
+          InkWell(
+            key: ValueKey('chat-more-less-${more.channelId}'),
+            onTap: onShowLess,
+            child: showLess,
+          ),
+        ],
       ),
     );
   }
