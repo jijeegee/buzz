@@ -221,6 +221,10 @@ pub struct SessionState {
     /// the main loop hands them to the ledger for reattach when it replaces
     /// the worker (see [`take_held_sessions`](Self::take_held_sessions)).
     released_sessions: Vec<(SessionScope, String)>,
+    /// The scope and provider session the current turn runs on, set once the
+    /// turn has its session. Failure paths drop the session handle before the
+    /// worker returns; this says which session the dead worker was driving.
+    pub(crate) turn_session: Option<(SessionScope, String)>,
 }
 
 impl SessionState {
@@ -352,6 +356,14 @@ impl SessionState {
     /// Every provider session this worker held when it went away: those
     /// dropped by [`invalidate_all`](Self::invalidate_all) plus any still
     /// live. Called once, as the worker is replaced.
+    /// The session the current (or last) turn ran on in `scope`.
+    pub(crate) fn turn_session(&self, scope: &SessionScope) -> Option<&str> {
+        self.turn_session
+            .as_ref()
+            .filter(|(turn_scope, _)| turn_scope == scope)
+            .map(|(_, session_id)| session_id.as_str())
+    }
+
     pub(crate) fn take_held_sessions(&mut self) -> Vec<(SessionScope, String)> {
         let mut held = std::mem::take(&mut self.released_sessions);
         held.extend(self.sessions.drain());
@@ -3412,6 +3424,7 @@ pub async fn run_prompt_task(
         Some(b) => PromptSource::Channel(b.scope.clone()),
         None => PromptSource::Heartbeat,
     };
+    agent.state.turn_session = None;
     let observer_channel_id = source.channel_id();
     // Thread conversation context requires the canonical root to distinguish
     // concurrent threads in the same channel's activity.
@@ -3962,6 +3975,9 @@ pub async fn run_prompt_task(
             }
         }
     };
+    if let PromptSource::Channel(scope) = &source {
+        agent.state.turn_session = Some((scope.clone(), session_id.clone()));
+    }
     agent.acp.set_observer_context(observer::context_for_turn(
         observer_channel_id,
         Some(session_id.clone()),

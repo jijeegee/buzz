@@ -457,12 +457,13 @@ impl AcpClient {
         // Kill the entire process group when possible. The child was spawned
         // with process_group(0), so its PID == its PGID. Killing the group
         // ensures subprocesses (MCP servers, tool processes) are cleaned up
-        // rather than orphaned to init.
+        // rather than orphaned to init. Windows kills the process tree.
         //
-        // Falls back to start_kill() (direct child only) on non-Unix or if
+        // Falls back to start_kill() (direct child only) if neither works or
         // the child has been polled to completion (id() returns None).
         match self.child.id() {
             Some(pid) if kill_process_group(pid) => {}
+            Some(pid) if kill_process_tree(pid).await => {}
             _ => {
                 let _ = self.child.start_kill();
             }
@@ -2678,6 +2679,28 @@ fn kill_process_group(pid: u32) -> bool {
 /// Returns `false` so the caller falls back to `child.start_kill()`.
 #[cfg(not(unix))]
 fn kill_process_group(_pid: u32) -> bool {
+    false
+}
+
+/// Windows has no process groups: killing the direct child (often a `.cmd`
+/// shim) leaves the adapter and its CLI running, possibly still writing the
+/// session the next worker reattaches. `taskkill /T` ends the whole tree.
+#[cfg(windows)]
+async fn kill_process_tree(pid: u32) -> bool {
+    let mut cmd = tokio::process::Command::new("taskkill");
+    cmd.args(["/T", "/F", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    configure_no_window(&mut cmd);
+    matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), cmd.status()).await,
+        Ok(Ok(status)) if status.success()
+    )
+}
+
+#[cfg(not(windows))]
+async fn kill_process_tree(_pid: u32) -> bool {
     false
 }
 

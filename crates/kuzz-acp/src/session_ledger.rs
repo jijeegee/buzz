@@ -93,6 +93,14 @@ struct LedgerState {
     resumable: HashSet<String>,
     /// Failed turns in a row per key since its session last completed a turn.
     failures: HashMap<String, u32>,
+    /// Sessions handed out by [`SessionLedger::take_resumable`] whose reattach
+    /// has not been recorded yet: a worker that dies while reattaching never
+    /// held the session, so this is how its failure is pinned on the session.
+    claimed: HashMap<String, String>,
+    /// Sessions deliberately dropped ([`SessionLedger::remove`],
+    /// [`SessionLedger::remove_channel`]). A turn still opening one of them
+    /// when it was dropped must not record it back.
+    retired: HashMap<String, String>,
 }
 
 impl std::fmt::Debug for SessionLedger {
@@ -183,6 +191,8 @@ impl SessionLedger {
                 file,
                 resumable,
                 failures: HashMap::new(),
+                claimed: HashMap::new(),
+                retired: HashMap::new(),
             }),
         };
         if pruned {
@@ -209,11 +219,30 @@ impl SessionLedger {
         if !state.resumable.remove(&key) {
             return None;
         }
-        state
+        let session_id = state
             .file
             .entries
             .get(&key)
             .filter(|entry| entry.agent_identity == agent_identity && entry.cwd == cwd)
+            .map(|entry| entry.session_id.clone())?;
+        state.claimed.insert(key, session_id.clone());
+        Some(session_id)
+    }
+
+    /// The session a turn in `scope` claimed for reattach and has not recorded
+    /// yet: the one a worker dying mid-reattach was opening.
+    pub fn claimed(&self, scope: &SessionScope) -> Option<String> {
+        let state = self.state.lock().ok()?;
+        state.claimed.get(&scope_key(scope)).cloned()
+    }
+
+    /// The provider session recorded for `scope`, if any.
+    pub fn session_id(&self, scope: &SessionScope) -> Option<String> {
+        let state = self.state.lock().ok()?;
+        state
+            .file
+            .entries
+            .get(&scope_key(scope))
             .map(|entry| entry.session_id.clone())
     }
 
@@ -263,6 +292,7 @@ impl SessionLedger {
         if session_id.is_some_and(|sid| sid != entry.session_id) {
             return;
         }
+        state.claimed.remove(&key);
         if failed {
             let count = state.failures.entry(key.clone()).or_insert(0);
             *count += 1;
@@ -292,6 +322,17 @@ impl SessionLedger {
             return;
         };
         state.resumable.remove(&key);
+        state.claimed.remove(&key);
+        if state.retired.get(&key).is_some_and(|sid| sid == session_id) {
+            // Rotated away or left while this turn was still opening it.
+            tracing::info!(
+                target: "acp::ledger",
+                scope = %key,
+                "not recording a session that was dropped while it was opening"
+            );
+            return;
+        }
+        state.retired.remove(&key);
         let replaced = state
             .file
             .entries
@@ -393,7 +434,9 @@ impl SessionLedger {
         };
         state.resumable.remove(&key);
         state.failures.remove(&key);
-        if state.file.entries.remove(&key).is_some() {
+        state.claimed.remove(&key);
+        if let Some(entry) = state.file.entries.remove(&key) {
+            state.retired.insert(key, entry.session_id);
             self.persist_locked(&state.file);
         }
     }
@@ -407,9 +450,19 @@ impl SessionLedger {
         };
         state.resumable.retain(|key| !in_channel(key));
         state.failures.retain(|key, _| !in_channel(key));
-        let before = state.file.entries.len();
-        state.file.entries.retain(|key, _| !in_channel(key));
-        if before != state.file.entries.len() {
+        state.claimed.retain(|key, _| !in_channel(key));
+        let dropped: Vec<(String, String)> = state
+            .file
+            .entries
+            .iter()
+            .filter(|(key, _)| in_channel(key))
+            .map(|(key, entry)| (key.clone(), entry.session_id.clone()))
+            .collect();
+        if !dropped.is_empty() {
+            for (key, _) in &dropped {
+                state.file.entries.remove(key);
+            }
+            state.retired.extend(dropped);
             self.persist_locked(&state.file);
         }
     }
@@ -773,6 +826,57 @@ mod tests {
         drop(ledger);
         let reopened = SessionLedger::open(path);
         assert!(reopened.take_resumable(&t, "id", "/c").is_none());
+    }
+
+    #[test]
+    fn a_reattach_claim_lasts_until_the_session_is_recorded() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let t = thread(Uuid::new_v4(), 'a');
+        let ledger = SessionLedger::open(dir.path().join("sessions.json"));
+        ledger.record(&t, "s", "id", "/c");
+        assert!(ledger.claimed(&t).is_none());
+
+        ledger.release(&t, Some("s"), false);
+        // A mismatched adapter claims nothing.
+        assert!(ledger.take_resumable(&t, "other", "/c").is_none());
+        assert!(ledger.claimed(&t).is_none());
+
+        ledger.release(&t, Some("s"), false);
+        assert_eq!(ledger.take_resumable(&t, "id", "/c"), Some("s".into()));
+        assert_eq!(ledger.claimed(&t), Some("s".into()));
+        ledger.record(&t, "s", "id", "/c");
+        assert!(ledger.claimed(&t).is_none());
+    }
+
+    #[test]
+    fn a_removed_session_is_not_recorded_back_by_a_turn_still_opening_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let t = thread(Uuid::new_v4(), 'a');
+        let ledger = SessionLedger::open(dir.path().join("sessions.json"));
+        ledger.record(&t, "s", "id", "/c");
+
+        // `!rotate` lands while a turn is reattaching `s`.
+        ledger.remove(&t);
+        ledger.record(&t, "s", "id", "/c");
+        assert!(ledger.session_id(&t).is_none());
+        ledger.rearm_all();
+        assert!(ledger.take_resumable(&t, "id", "/c").is_none());
+
+        // The next fresh session is recorded as usual.
+        ledger.record(&t, "fresh", "id", "/c");
+        assert_eq!(ledger.session_id(&t), Some("fresh".into()));
+    }
+
+    #[test]
+    fn a_session_of_a_left_channel_is_not_recorded_back() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let channel = Uuid::new_v4();
+        let t = thread(channel, 'a');
+        let ledger = SessionLedger::open(dir.path().join("sessions.json"));
+        ledger.record(&t, "s", "id", "/c");
+        ledger.remove_channel(channel);
+        ledger.record(&t, "s", "id", "/c");
+        assert!(ledger.session_id(&t).is_none());
     }
 
     #[test]
