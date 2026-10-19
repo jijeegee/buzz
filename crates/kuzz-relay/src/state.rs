@@ -1252,6 +1252,13 @@ pub struct AppState {
     pub gif_http_client: reqwest::Client,
     /// Shared Redis-backed admission limits for ordinary HTTP and WebSocket work.
     pub admission_rate_limiter: Arc<RedisRateLimiter>,
+    /// Open WebSocket connections per client IP on this process.
+    pub ws_open_by_ip: crate::ip_connection_limit::OpenConnectionsByIp,
+    /// Recent media read grants (see [`crate::media_access`]). Positive
+    /// answers only, so a new member or a fresh message is never refused from
+    /// a stale entry; a removed member keeps a grant for at most the TTL.
+    #[allow(clippy::type_complexity)]
+    pub media_read_grants: Arc<moka::sync::Cache<(CommunityId, Vec<u8>, String), ()>>,
 
     /// Per-agent sliding-window rate limiter for observer frames (kind 24200).
     /// Key: (community_id, agent pubkey bytes). Value: (count, window_start).
@@ -1503,6 +1510,13 @@ impl AppState {
             nip98_replay,
             gif_http_client,
             admission_rate_limiter,
+            ws_open_by_ip: Arc::new(DashMap::new()),
+            media_read_grants: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(100_000)
+                    .time_to_live(crate::media_access::READ_GRANT_TTL)
+                    .build(),
+            ),
             observer_rate_limiter: Arc::new(DashMap::new()),
             media_upload_rate_limiter: Arc::new(DashMap::new()),
             invite_claim_rate_limiter: Arc::new(

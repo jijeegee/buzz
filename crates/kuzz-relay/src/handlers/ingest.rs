@@ -1297,12 +1297,30 @@ fn count_e_tags(event: &Event) -> usize {
         .count()
 }
 
+/// Kinds whose relay-signed copies name their real author in the first `p`
+/// tag: workflow and legacy REST messages, edits, forum posts and reactions.
+///
+/// Every other relay-signed event (member rosters, membership notices, huddle
+/// events) uses `p` for the people it is *about*. Reading those as authors
+/// would let the first listed person edit or delete the relay's own record.
+fn relay_signed_kind_attributes_p(kind: u32) -> bool {
+    matches!(
+        kind,
+        KIND_STREAM_MESSAGE
+            | KIND_STREAM_MESSAGE_V2
+            | KIND_STREAM_MESSAGE_EDIT
+            | KIND_FORUM_POST
+            | KIND_FORUM_COMMENT
+            | KIND_REACTION
+    )
+}
+
 /// Extract the effective author of a stored event (handles workflow-generated and
 /// legacy relay-signed attributed events).
 pub(crate) fn effective_message_author(event: &Event, relay_pubkey: &nostr::PublicKey) -> Vec<u8> {
     if event.pubkey == *relay_pubkey {
         // Workflow-generated or legacy relay-signed attributed event — real author
-        // in "actor" or "p" tag.
+        // in "actor" or, for message kinds only, "p" tag.
         if let Some(hex) = event.tags.iter().find_map(|t| {
             if t.kind().to_string() == "actor" {
                 t.content().map(|s| s.to_string())
@@ -1315,6 +1333,9 @@ pub(crate) fn effective_message_author(event: &Event, relay_pubkey: &nostr::Publ
                     return bytes;
                 }
             }
+        }
+        if !relay_signed_kind_attributes_p(event_kind_u32(event)) {
+            return event.pubkey.to_bytes().to_vec();
         }
         for tag in event.tags.iter() {
             if tag.kind().to_string() == "p" {
@@ -3551,6 +3572,15 @@ async fn ingest_event_inner(
             },
         };
         emit(tracer, action, state_for_request(tenant, auth.pubkey()));
+        if was_inserted {
+            crate::media_access::record_event_media(
+                state,
+                tenant.community(),
+                &event,
+                stored_event.channel_id,
+            )
+            .await;
+        }
         dispatch_persistent_event(
             tenant,
             state,
@@ -3700,6 +3730,15 @@ async fn ingest_event_inner(
     };
 
     if !was_inserted {
+        // A retry of a stored event re-links its media in case the first
+        // attempt's linking failed after the insert.
+        crate::media_access::record_event_media(
+            state,
+            tenant.community(),
+            &event,
+            stored_event.channel_id,
+        )
+        .await;
         return Ok(IngestResult {
             event_id: event_id_hex,
             accepted: true,
@@ -3787,6 +3826,15 @@ async fn ingest_event_inner(
         };
         emit(tracer, action, state_for_request(tenant, auth.pubkey()));
     }
+    // Link the blobs this event names before it fans out, so its readers can
+    // open them as soon as it arrives.
+    crate::media_access::record_event_media(
+        state,
+        tenant.community(),
+        &event,
+        stored_event.channel_id,
+    )
+    .await;
     dispatch_persistent_event(
         tenant,
         state,
@@ -3818,6 +3866,31 @@ mod postgres_tests {
         KIND_STREAM_MESSAGE_DIFF, KIND_TEAM, KIND_USER_STATUS,
     };
     use nostr::{EventBuilder, Kind};
+
+    #[test]
+    fn relay_signed_roster_is_not_authored_by_its_first_member() {
+        let relay = nostr::Keys::generate();
+        let member = nostr::Keys::generate();
+        let p = nostr::Tag::parse(["p", &member.public_key().to_hex()]).unwrap();
+        let roster = EventBuilder::new(Kind::Custom(39002), "")
+            .tags([p.clone()])
+            .sign_with_keys(&relay)
+            .unwrap();
+        assert_eq!(
+            effective_message_author(&roster, &relay.public_key()),
+            relay.public_key().to_bytes().to_vec(),
+            "a roster names members; it is the relay's own record"
+        );
+        let message = EventBuilder::new(Kind::Custom(KIND_STREAM_MESSAGE as u16), "hi")
+            .tags([p])
+            .sign_with_keys(&relay)
+            .unwrap();
+        assert_eq!(
+            effective_message_author(&message, &relay.public_key()),
+            member.public_key().to_bytes().to_vec(),
+            "a relay-signed message still credits its p-tagged sender"
+        );
+    }
 
     /// A channel lookup failure must deny the write. Before, the error became
     /// "no row", which skipped the archive check while a cached membership

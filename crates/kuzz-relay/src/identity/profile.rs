@@ -196,6 +196,8 @@ pub(crate) async fn publish_profile_in_community(
         // under the lock so a later publisher sees the projection too.
         crate::handlers::side_effects::handle_side_effects(tenant, kind, &stored.event, state)
             .await?;
+        crate::media_access::record_event_media(state, tenant.community(), &stored.event, None)
+            .await;
         crate::handlers::event::dispatch_persistent_event(
             tenant,
             state,

@@ -4,6 +4,8 @@
 
 mod admission;
 mod build_info;
+pub mod ip_connection_limit;
+pub mod media_access;
 mod rejection;
 
 /// Shared NIP-FI assertion evaluation, denial rendering, and key pairing.

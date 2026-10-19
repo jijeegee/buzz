@@ -575,11 +575,11 @@ async fn nip11_or_ws_handler(
     headers: HeaderMap,
     req: axum::extract::Request,
 ) -> impl IntoResponse {
-    let addr = req
+    let peer = req
         .extensions()
         .get::<ConnectInfo<std::net::SocketAddr>>()
-        .map(|ci| ci.0)
-        .unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 0)));
+        .map(|ci| ci.0);
+    let addr = peer.unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 0)));
 
     let accept = headers
         .get("accept")
@@ -699,6 +699,18 @@ async fn nip11_or_ws_handler(
         }
     }
 
+    // Per-client-IP admission, before the community lookup so a connection
+    // flood costs neither a socket nor a DB query. Non-upgrade requests (NIP-11,
+    // SPA) are not counted.
+    let ip_slot = if is_websocket_upgrade_request(&req, &headers) {
+        match admit_websocket_client_ip(&state, peer.map(|addr| addr.ip()), &headers).await {
+            Ok(slot) => slot,
+            Err(response) => return response,
+        }
+    } else {
+        None
+    };
+
     // Row zero: bind the connection to its community from the request host
     // BEFORE the WebSocket upgrade, so no frame is ever read on an unbound
     // connection. The host is the authoritative selector; an unmapped host or a
@@ -767,7 +779,10 @@ async fn nip11_or_ws_handler(
             // [FI-TRACE-LEASE-BOUND]
             let connection_time = chrono::Utc::now();
             limit_relay_websocket(ws, max_frame_bytes)
-                .on_upgrade(move |socket| {
+                .on_upgrade(move |socket| async move {
+                    // Held for the connection's lifetime; dropping it frees
+                    // this IP's open-connection slot.
+                    let _ip_slot = ip_slot;
                     handle_connection(
                         socket,
                         state,
@@ -776,6 +791,7 @@ async fn nip11_or_ws_handler(
                         nip_fi_assertion,
                         connection_time,
                     )
+                    .await
                 })
                 .into_response()
         }
@@ -795,6 +811,85 @@ async fn nip11_or_ws_handler(
             Json(nip11_document(&state, raw_host).await).into_response()
         }
     }
+}
+
+/// Whether `req` asks to become a WebSocket: an HTTP/1.1 `Upgrade: websocket`
+/// with a `Connection: upgrade` token, or an HTTP/2 extended CONNECT.
+fn is_websocket_upgrade_request(req: &axum::extract::Request, headers: &HeaderMap) -> bool {
+    let h1 = headers
+        .get(axum::http::header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+        && headers
+            .get(axum::http::header::CONNECTION)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| {
+                v.split(',')
+                    .any(|t| t.trim().eq_ignore_ascii_case("upgrade"))
+            });
+    let h2 =
+        req.version() == axum::http::Version::HTTP_2 && req.method() == axum::http::Method::CONNECT;
+    h1 || h2
+}
+
+/// Per-client-IP WebSocket admission (see [`crate::ip_connection_limit`]):
+/// the new-connections-per-minute window, then an open-connection slot.
+///
+/// An unresolvable client IP is admitted. A Redis outage admits too and logs:
+/// the open-connection cap still applies, and refusing every connection while
+/// the shared counter is down would turn a cache outage into a full outage.
+#[allow(clippy::result_large_err)]
+async fn admit_websocket_client_ip(
+    state: &AppState,
+    peer: Option<std::net::IpAddr>,
+    headers: &HeaderMap,
+) -> Result<Option<crate::ip_connection_limit::IpConnectionSlot>, axum::response::Response> {
+    use kuzz_auth::RateLimiter;
+
+    let Some(ip) = state
+        .identity
+        .config()
+        .trusted_proxies
+        .client_ip(peer, headers)
+    else {
+        return Ok(None);
+    };
+    let too_many = |reason: &'static str, retry_after: u64| {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(axum::http::header::RETRY_AFTER, retry_after.to_string())],
+            reason,
+        )
+            .into_response()
+    };
+
+    let per_min = state.config.ws_new_per_ip_per_min;
+    if per_min != 0 {
+        match state
+            .admission_rate_limiter
+            .check_ip_connection(&ip, 60, per_min)
+            .await
+        {
+            Ok(result) if !result.allowed => {
+                return Err(too_many(
+                    "relay: too many new connections from this address",
+                    result.reset_in_secs.max(1),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(error = %error, "per-IP connection rate unavailable; admitting");
+            }
+        }
+    }
+
+    crate::ip_connection_limit::try_acquire_slot(
+        &state.ws_open_by_ip,
+        ip,
+        state.config.ws_max_open_per_ip,
+    )
+    .map(Some)
+    .ok_or_else(|| too_many("relay: too many open connections from this address", 30))
 }
 
 fn limit_relay_websocket<F>(

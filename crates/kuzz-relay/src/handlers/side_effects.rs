@@ -2585,33 +2585,8 @@ fn extract_p_tag(event: &Event) -> Option<Vec<u8>> {
     None
 }
 
-/// Extract the effective message author from a stored event.
-///
-/// REST-created messages are signed by the relay keypair and attribute the real
-/// sender via a `p` tag. For user-signed events (WebSocket), `event.pubkey` is
-/// the author. Returns the correct author bytes in both cases.
 fn effective_message_author(event: &Event, relay_pubkey: &nostr::PublicKey) -> Vec<u8> {
-    if event.pubkey == *relay_pubkey {
-        if let Some(actor_hex) = extract_tag_value(event, "actor") {
-            if let Ok(bytes) = hex::decode(actor_hex) {
-                if bytes.len() == 32 {
-                    return bytes;
-                }
-            }
-        }
-        for tag in event.tags.iter() {
-            if tag.kind().to_string() == "p" {
-                if let Some(hex) = tag.content() {
-                    if let Ok(bytes) = hex::decode(hex) {
-                        if bytes.len() == 32 {
-                            return bytes;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    event.pubkey.to_bytes().to_vec()
+    super::ingest::effective_message_author(event, relay_pubkey)
 }
 
 /// True if the event carries any `e` tag at all, regardless of whether its
