@@ -110,9 +110,9 @@ export function ProfilePopover({
         <PopoverTrigger asChild>{children}</PopoverTrigger>
 
         <PopoverContent
-          side="top"
-          align="start"
-          sideOffset={-32}
+          side="right"
+          align="end"
+          sideOffset={8}
           className="w-[280px] p-1"
           data-testid="profile-popover"
           onInteractOutside={(event) => {

@@ -81,6 +81,7 @@ import { useReminderNotifications } from "@/features/reminders/useReminderNotifi
 import { AppSidebar } from "@/features/sidebar/ui/AppSidebar";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
 import { AppNavRail } from "@/features/sidebar/ui/AppNavRail";
+import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
 import { CommunityRail } from "@/features/sidebar/ui/CommunityRail";
 import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
@@ -897,6 +898,43 @@ export function AppShell() {
                 onSelectProjects={() => setSidebarListTab("projects")}
                 onSelectPulse={() => setSidebarListTab("pulse")}
                 onSelectWorkflows={() => void goWorkflows()}
+                profileSlot={
+                  <SidebarProfileCard
+                    activeCommunity={communitiesHook.activeCommunity}
+                    communities={communitiesHook.communities}
+                    isPresencePending={presenceSession.isPending}
+                    onClearUserStatus={() =>
+                      setUserStatusMutation.mutate({ text: "", emoji: "" })
+                    }
+                    onLeaveCommunity={handleLeaveCommunity}
+                    onOpenAddCommunity={addCommunityDialog.openDialog}
+                    onOpenSettings={handleOpenSettings}
+                    onRemoveCommunityFromDevice={removeFromDevice}
+                    onSendFeedback={() => setIsSendFeedbackOpen(true)}
+                    onSetPresenceStatus={(status) =>
+                      presenceSession.setStatus(status)
+                    }
+                    onSetUserStatus={setUserStatusMutation.mutate}
+                    onSwitchCommunity={handleSwitchCommunity}
+                    onUpdateCommunity={communitiesHook.updateCommunity}
+                    profile={profileQuery.data}
+                    resolvedDisplayName={
+                      profileQuery.data?.displayName?.trim() ||
+                      identityQuery.data?.displayName?.trim() ||
+                      "Current identity"
+                    }
+                    selfPresenceStatus={presenceSession.currentStatus}
+                    selfUserStatus={
+                      deferredPubkey
+                        ? (visibleUserStatus(
+                            selfStatusQuery.data?.[
+                              deferredPubkey.toLowerCase()
+                            ],
+                          ) ?? undefined)
+                        : undefined
+                    }
+                  />
+                }
                 selectedView={selectedView}
               />
             ) : null}
@@ -972,7 +1010,6 @@ export function AppShell() {
                           isLoading={channelsQuery.isLoading}
                           isCreateChannelOpen={isCreateChannelOpen}
                           isHuddleCompanionOpen={isHuddleCompanionOpen}
-                          isPresencePending={presenceSession.isPending}
                           onAddCommunity={(community) => {
                             const id = communitiesHook.addCommunity({
                               ...community,
@@ -987,14 +1024,7 @@ export function AppShell() {
                           onNewMessage={goNewMessage}
                           onBackgroundClick={requestFocusedThreadClose}
                           onCreateChannelOpenChange={setIsCreateChannelOpen}
-                          onOpenAddCommunity={addCommunityDialog.openDialog}
-                          onSendFeedback={() => setIsSendFeedbackOpen(true)}
-                          onUpdateCommunity={communitiesHook.updateCommunity}
-                          onLeaveCommunity={handleLeaveCommunity}
-                          onRemoveCommunityFromDevice={removeFromDevice}
-                          onSwitchCommunity={handleSwitchCommunity}
                           onCreateAgent={() => requestOpenCreateAgent()}
-                          selfPresenceStatus={presenceSession.currentStatus}
                           communities={communitiesHook.communities}
                           onCreateChannel={handleCreateChannel}
                           onCreateForum={handleCreateForum}
@@ -1019,27 +1049,7 @@ export function AppShell() {
                             scopeSearchFocusRequest,
                           ]}
                           onSelectHome={() => void goHome()}
-                          onSelectSettings={handleOpenSettings}
-                          onSetPresenceStatus={(status) =>
-                            presenceSession.setStatus(status)
-                          }
-                          onSetUserStatus={setUserStatusMutation.mutate}
-                          onClearUserStatus={() =>
-                            setUserStatusMutation.mutate({
-                              text: "",
-                              emoji: "",
-                            })
-                          }
                           profile={profileQuery.data}
-                          selfUserStatus={
-                            deferredPubkey
-                              ? (visibleUserStatus(
-                                  selfStatusQuery.data?.[
-                                    deferredPubkey.toLowerCase()
-                                  ],
-                                ) ?? undefined)
-                              : undefined
-                          }
                           selectedChannelId={selectedChannelId}
                           selectedView={selectedView}
                           unreadChannelIds={unreadChannelIds}
