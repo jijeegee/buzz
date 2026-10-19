@@ -296,6 +296,9 @@ pub fn run() {
             // Accounts on this computer: rebuild or migrate the list and refill
             // the active-account copy before the identity is read from it.
             if let Ok(data_dir) = app_handle.path().app_data_dir() {
+                // Sign-ins stored under an earlier server address, once.
+                let secrets = crate::auth::accounts::shared_secrets();
+                crate::auth::service::migrate_on_launch(secrets, &data_dir);
                 crate::auth::accounts::reconcile_on_launch(&data_dir);
             }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
@@ -635,6 +638,7 @@ pub fn run() {
             get_os_idle_seconds,
             get_default_relay_url,
             get_built_in_relay_url,
+            get_service_info,
             auto_connect_default_relay_enabled,
             get_legacy_workspace_storage,
             is_shared_identity,

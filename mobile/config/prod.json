@@ -1,5 +1,6 @@
 {
   "KUZZ_ENV": "prod",
-  "KUZZ_RELAY_URL": "wss://jihobuzz.duckdns.org:8443",
-  "KUZZ_KEY_BACKUP_ORIGIN": "https://jihobuzz.duckdns.org:8443"
+  "KUZZ_RELAY_URL": "wss://jihobuzz.duckdns.org",
+  "KUZZ_KEY_BACKUP_ORIGIN": "https://jihobuzz.duckdns.org",
+  "KUZZ_PREVIOUS_RELAY_URLS": "wss://jihobuzz.duckdns.org:8443"
 }

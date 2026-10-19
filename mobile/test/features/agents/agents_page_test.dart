@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/agents/agent_settings_page.dart';
+import 'package:kuzz/features/agents/my_agent_actions.dart';
 import 'package:kuzz/features/agents/agent_team_page.dart';
 import 'package:kuzz/features/agents/agents_page.dart';
 import 'package:kuzz/features/agents/my_agents.dart';
@@ -61,6 +62,9 @@ void main() {
             const <String, DeviceRobotVariant>{},
           ),
           sendMessageProvider.overrideWithValue(send),
+          myAgentCommandChannelProvider.overrideWithValue(
+            (pubkey) async => 'dm-$pubkey',
+          ),
           // Signed out for settings: they open read-only, with no relay.
           myPubkeyProvider.overrideWithValue(null),
         ],
@@ -78,9 +82,9 @@ void main() {
     await pump(
       tester,
       agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
-        MyAgent(pubkey: _honey, deviceId: 'pc-b', commandChannelId: 'c1'),
-        MyAgent(pubkey: _scout, deviceId: 'pc-a', commandChannelId: 'c1'),
+        MyAgent(pubkey: _fizz, deviceId: 'pc-a'),
+        MyAgent(pubkey: _honey, deviceId: 'pc-b'),
+        MyAgent(pubkey: _scout, deviceId: 'pc-a'),
       ],
       presence: {_fizz: 'online', _honey: 'away', _scout: 'offline'},
     );
@@ -127,9 +131,7 @@ void main() {
   ) async {
     final send = await pump(
       tester,
-      agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
-      ],
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'online'},
     );
     await tester.tap(find.byKey(ValueKey('my-agent-menu-$_fizz')));
@@ -143,7 +145,7 @@ void main() {
     expect(find.text('Stop Fizz?'), findsOneWidget);
     await tester.tap(find.byKey(const Key('my-agents-confirm-stop')));
     await tester.pumpAndSettle();
-    expect(send.calls, [('c1', '!shutdown', _fizz)]);
+    expect(send.calls, [('dm-$_fizz', '!shutdown', _fizz)]);
     expect(find.textContaining('Stop requested'), findsOneWidget);
   });
 
@@ -152,9 +154,7 @@ void main() {
   ) async {
     final send = await pump(
       tester,
-      agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
-      ],
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'offline'},
     );
     await tester.tap(find.byKey(ValueKey('my-agent-menu-$_fizz')));
@@ -165,7 +165,7 @@ void main() {
     expect(stop.enabled, isFalse);
     await tester.tap(find.byKey(ValueKey('my-agent-menu-start-$_fizz')));
     await tester.pumpAndSettle();
-    expect(send.calls, [('c1', '!start', _fizz)]);
+    expect(send.calls, [('dm-$_fizz', '!start', _fizz)]);
     expect(
       find.text(
         'Start requested. Fizz starts only if Kuzz is open on Office PC now.',
@@ -174,9 +174,7 @@ void main() {
     );
   });
 
-  testWidgets('an agent in no channel can be neither started nor stopped', (
-    tester,
-  ) async {
+  testWidgets('a running agent offers Stop, not Start', (tester) async {
     await pump(
       tester,
       agents: [MyAgent(pubkey: _scout, deviceId: 'pc-a')],
@@ -184,12 +182,10 @@ void main() {
     );
     await tester.tap(find.byKey(ValueKey('my-agent-menu-$_scout')));
     await tester.pumpAndSettle();
-    for (final key in ['start', 'stop']) {
-      final item = tester.widget<PopupMenuItem<Object?>>(
-        find.byKey(ValueKey('my-agent-menu-$key-$_scout')),
-      );
-      expect(item.enabled, isFalse);
-    }
+    PopupMenuItem<Object?> item(String key) =>
+        tester.widget(find.byKey(ValueKey('my-agent-menu-$key-$_scout')));
+    expect(item('start').enabled, isFalse);
+    expect(item('stop').enabled, isTrue);
   });
 
   testWidgets('tapping an agent or menu Edit opens its settings', (
@@ -197,9 +193,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
-      ],
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'online'},
     );
     await tester.tap(find.text('Fizz'));
@@ -222,9 +216,7 @@ void main() {
   ) async {
     final send = await pump(
       tester,
-      agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
-      ],
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'offline'},
     );
     await tester.tap(find.text('Fizz'));
@@ -243,9 +235,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      agents: [
-        MyAgent(pubkey: _fizz, deviceId: 'pc-a', commandChannelId: 'c1'),
-      ],
+      agents: [MyAgent(pubkey: _fizz, deviceId: 'pc-a')],
       presence: {_fizz: 'online'},
       presets: const [
         MyAgentPreset(

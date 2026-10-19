@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../channel.dart';
+import '../../../shared/relay/service_address.dart';
 
 String normalizeChannelSortRelayUrl(String relayUrl) =>
     relayUrl.trim().replaceFirst(RegExp(r'/+$'), '').toLowerCase();
 
 String channelSortKey(String pubkey, String relayUrl) =>
-    'kuzz.channel-sort.v1:$pubkey:${Uri.encodeComponent(normalizeChannelSortRelayUrl(relayUrl))}';
+    'kuzz.channel-sort.v1:$pubkey:'
+    '${Uri.encodeComponent(storageScopeFor(normalizeChannelSortRelayUrl(relayUrl)))}';
 
 String legacyChannelSortKey(String pubkey) => 'kuzz.channel-sort.v1:$pubkey';
 

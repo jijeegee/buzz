@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 const CONVERSATION_STORAGE_PREFIX = "kuzz.projects.agentConversation";
 
 /** Builds the identity boundary for Projects conversation pointers and drafts. */
@@ -8,7 +9,7 @@ export function projectsConversationScope(
   resource: string,
 ): string | null {
   if (!relayUrl || !signerPubkey || !resource) return null;
-  return `${surface}:${relayUrl}:${signerPubkey.toLowerCase()}:${resource}`;
+  return `${surface}:${relayStorageScope(relayUrl, relayUrl)}:${signerPubkey.toLowerCase()}:${resource}`;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 import { markReadItemForContext } from "@/features/chats/chatStateWrites";
 import {
   isChatStateAccountChanged,
@@ -15,7 +16,7 @@ const EVENT_ID_RE = /^[0-9a-f]{64}$/i;
 
 /** localStorage key set once every chunk of the upload was accepted. */
 export function chatImportFlagKey(pubkey: string, relayUrl: string): string {
-  return `${FLAG_PREFIX}:${pubkey.toLowerCase()}:${relayUrl}`;
+  return `${FLAG_PREFIX}:${pubkey.toLowerCase()}:${relayStorageScope(relayUrl, relayUrl)}`;
 }
 
 export type ChatImportChunk = {

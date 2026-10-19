@@ -167,7 +167,8 @@ class PeopleFavoritesManager {
     @visibleForTesting Duration debounce = const Duration(seconds: 2),
     @visibleForTesting int Function()? nowMs,
   }) : _prefs = prefs,
-       _storageKey = 'kuzz-people-favorites.v1:$pubkey:$origin',
+       _storageKey =
+           'kuzz-people-favorites.v1:$pubkey:${storageScopeFor(origin)}',
        _crypto = crypto,
        _relaySession = relaySession,
        _signedEventRelay = signedEventRelay,
