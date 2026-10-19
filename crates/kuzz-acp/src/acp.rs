@@ -101,6 +101,12 @@ pub enum AcpError {
     #[error("Hard turn timeout exceeded (silence {silence:?})")]
     HardTimeout { silence: std::time::Duration },
 
+    /// The turn reached the hard cap again after its last allowed check-in
+    /// while still working. The adapter is healthy; the caller pauses the
+    /// turn (cancel, keep the session) and asks the requester.
+    #[error("Turn still running after {checkins} check-ins")]
+    CheckinLimit { checkins: u32 },
+
     #[error("Agent did not stop within {0:?} after cancellation")]
     CancelDrainTimeout(std::time::Duration),
 
@@ -175,6 +181,18 @@ pub struct AcpClient {
     /// Inherited by `cancel_with_cleanup` so the drain loop shares the same budget
     /// rather than starting a fresh timer (prevents double-jeopardy).
     current_hard_deadline: Option<tokio::time::Instant>,
+    /// How many check-ins a turn that is still working gets at the hard cap
+    /// before it is paused ([`AcpError::CheckinLimit`]); 0 keeps the plain
+    /// hard timeout. Set per turn by the pool.
+    turn_checkin_limit: u32,
+    /// Check-ins sent in the current turn.
+    checkins_sent: u32,
+    /// True only while `session/prompt` itself is being read, so a cancel
+    /// drain never sends a check-in.
+    checkin_armed: bool,
+    /// Output within this window at the hard cap means "still working"
+    /// ([`CHECKIN_ACTIVITY_WINDOW`]; shorter in tests).
+    checkin_activity_window: std::time::Duration,
     /// Optional local observer feed used by the desktop app.
     observer: Option<ObserverHandle>,
     /// Pool slot index for this agent process.
@@ -669,6 +687,10 @@ impl AcpClient {
             permission_responded: false,
             last_prompt_id: None,
             current_hard_deadline: None,
+            turn_checkin_limit: 0,
+            checkins_sent: 0,
+            checkin_armed: false,
+            checkin_activity_window: CHECKIN_ACTIVITY_WINDOW,
             observer: None,
             observer_agent_index: None,
             observer_context: ObserverContext::default(),
@@ -686,6 +708,12 @@ impl AcpClient {
             standard_adapter,
             broker_lease,
         })
+    }
+
+    /// Check-ins the next turns get at the hard cap while still working; 0
+    /// keeps the plain hard timeout.
+    pub fn set_turn_checkin_limit(&mut self, limit: u32) {
+        self.turn_checkin_limit = limit;
     }
 
     /// Attach a local observer feed to this ACP client.
@@ -947,6 +975,7 @@ impl AcpClient {
         let params = build_prompt_params(session_id, prompt_blocks);
         let hard_deadline = tokio::time::Instant::now() + max_duration;
         self.current_hard_deadline = Some(hard_deadline);
+        self.checkins_sent = 0;
 
         // Mark the usage tracker as in-flight for this turn BEFORE sending the
         // prompt so that any setup notifications recorded earlier are not
@@ -972,6 +1001,7 @@ impl AcpClient {
             return Err(e);
         }
 
+        self.checkin_armed = true;
         let result = self
             .read_until_response_with_idle_timeout(
                 session_id,
@@ -981,6 +1011,7 @@ impl AcpClient {
                 max_duration,
             )
             .await;
+        self.checkin_armed = false;
 
         // On timeout errors, leave current_hard_deadline set so cancel_with_cleanup
         // can inherit the remaining budget. Clear it on all other outcomes.
@@ -989,7 +1020,11 @@ impl AcpClient {
                 self.last_prompt_id = None;
                 self.current_hard_deadline = None;
             }
-            Err(AcpError::IdleTimeout(_) | AcpError::HardTimeout { .. }) => {
+            Err(
+                AcpError::IdleTimeout(_)
+                | AcpError::HardTimeout { .. }
+                | AcpError::CheckinLimit { .. },
+            ) => {
                 // Leave last_prompt_id and current_hard_deadline set —
                 // caller will invoke cancel_with_cleanup.
             }
@@ -1040,6 +1075,34 @@ impl AcpClient {
     ///
     /// The read loop's steer arm reads the field directly; this accessor exists
     /// for the supervisor's post-initialize log line.
+    /// The steer transport and request for injecting `prompt_blocks` into the
+    /// running turn, or `None` when the agent cannot be steered.
+    ///
+    /// Precedence: a goose run id wins (`expectedRunId` names the exact run);
+    /// otherwise the cross-adapter [`ACP_STEER_METHOD`], only when advertised.
+    /// Probing an unknown method is unsafe: codex-acp answers unrecognized
+    /// extension methods with `{}` — a JSON-RPC success — which would read as
+    /// a delivered steer.
+    fn steer_target(
+        &self,
+        session_id: &str,
+        prompt_blocks: &[&str],
+    ) -> Option<(SteerTransport, &'static str, serde_json::Value)> {
+        match (&self.active_run_id, self.steering_supported) {
+            (Some(run_id), _) => Some((
+                SteerTransport::Goose,
+                GOOSE_STEER_METHOD,
+                build_goose_steer_params(session_id, run_id, prompt_blocks),
+            )),
+            (None, true) => Some((
+                SteerTransport::AcpExtension,
+                ACP_STEER_METHOD,
+                build_acp_steer_params(session_id, prompt_blocks),
+            )),
+            (None, false) => None,
+        }
+    }
+
     pub fn steering_supported(&self) -> bool {
         self.steering_supported
     }
@@ -1564,6 +1627,13 @@ impl AcpClient {
             tokio::sync::oneshot::Sender<crate::pool::SteerAck>,
         )> = None;
 
+        // The check-in steer written at the hard cap, awaiting its response.
+        // Gates the steer arm like `pending_steer`.
+        let mut pending_checkin: Option<(u64, SteerTransport)> = None;
+        // A check-in was rejected or could not be written: the next hard
+        // deadline is a plain hard timeout.
+        let mut checkin_unavailable = false;
+
         let now = Instant::now();
         let mut idle_deadline = now + idle_timeout;
         let mut hard_deadline = hard_deadline;
@@ -1587,6 +1657,68 @@ impl AcpClient {
             // exists). Check the classified deadline here so a steady-
             // stream agent is still bounded.
             if Instant::now() >= next_deadline {
+                // Hard cap while the agent is still working: instead of
+                // ending the turn, steer a check-in into it and give it
+                // another `max_duration`. The session and work stay as they
+                // are; only a silent (stuck) agent times out.
+                if !idle_fires_first && self.checkin_armed {
+                    let silence = Instant::now().saturating_duration_since(last_activity_at);
+                    let working = silence < self.checkin_activity_window;
+                    let can_checkin = working
+                        && self.turn_checkin_limit > 0
+                        && !checkin_unavailable
+                        && pending_steer.is_none()
+                        && pending_checkin.is_none();
+                    if can_checkin && self.checkins_sent >= self.turn_checkin_limit {
+                        tracing::warn!(
+                            "turn still working after {} check-ins — pausing it",
+                            self.checkins_sent
+                        );
+                        return Err(AcpError::CheckinLimit {
+                            checkins: self.checkins_sent,
+                        });
+                    }
+                    if can_checkin {
+                        let number = self.checkins_sent + 1;
+                        let elapsed = max_duration.saturating_mul(number);
+                        let text = turn_checkin_prompt(number, self.turn_checkin_limit, elapsed);
+                        match self.steer_target(session_id, &[text.as_str()]) {
+                            Some((transport, method, params)) => {
+                                let id = self.next_id;
+                                self.next_id += 1;
+                                let msg = serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "method": method,
+                                    "params": params,
+                                });
+                                match self.write_ndjson(&msg).await {
+                                    Ok(()) => {
+                                        self.checkins_sent = number;
+                                        pending_checkin = Some((id, transport));
+                                        // Wait briefly for the adapter to
+                                        // accept it; acceptance renews the
+                                        // deadline by `max_duration`.
+                                        hard_deadline = Instant::now() + CHECKIN_ACK_GRACE;
+                                        tracing::info!(
+                                            "hard cap reached while working — sent turn check-in {number}/{}",
+                                            self.turn_checkin_limit
+                                        );
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("turn check-in write failed: {e}");
+                                    }
+                                }
+                            }
+                            None => {
+                                tracing::warn!(
+                                    "hard cap reached while working, but the agent cannot be steered — no check-in"
+                                );
+                            }
+                        }
+                    }
+                }
                 if let Some((_, _, ack_tx)) = pending_steer.take() {
                     // Prompt is timing out — release the withheld event via
                     // PromptCompletedNeutral (no fallback signal: there is
@@ -1621,7 +1753,7 @@ impl AcpClient {
                         Some(rx) => rx.recv().await,
                         None => None,
                     }
-                }, if pending_steer.is_none() => {
+                }, if pending_steer.is_none() && pending_checkin.is_none() => {
                     // Selected: choose the steer transport and build its
                     // params at write time using the lexical `session_id`
                     // and the freshest `active_run_id`.
@@ -1650,20 +1782,7 @@ impl AcpClient {
                     // delivered steer and silently drop the user's message.
                     let prompt_block_refs: Vec<&str> =
                         req.prompt_blocks.iter().map(String::as_str).collect();
-                    let selected = match (&self.active_run_id, self.steering_supported) {
-                        (Some(run_id), _) => Some((
-                            SteerTransport::Goose,
-                            GOOSE_STEER_METHOD,
-                            build_goose_steer_params(session_id, run_id, &prompt_block_refs),
-                        )),
-                        (None, true) => Some((
-                            SteerTransport::AcpExtension,
-                            ACP_STEER_METHOD,
-                            build_acp_steer_params(session_id, &prompt_block_refs),
-                        )),
-                        (None, false) => None,
-                    };
-                    match selected {
+                    match self.steer_target(session_id, &prompt_block_refs) {
                         None => {
                             tracing::warn!(
                                 "steer: no active_run_id and agent did not advertise \
@@ -1708,21 +1827,9 @@ impl AcpClient {
                     None
                 }
                 _ = tokio::time::sleep_until(next_deadline) => {
-                    // The pre-select check at the top of the next iteration
-                    // would catch this anyway, but firing the deadline arm
-                    // here makes the wakeup immediate (no extra reader poll
-                    // round-trip when stdout is idle).
-                    if let Some((_, _, ack_tx)) = pending_steer.take() {
-                        let _ = ack_tx.send(crate::pool::SteerAck::PromptCompletedNeutral);
-                    }
-                    if idle_fires_first {
-                        tracing::warn!("idle timeout ({idle_timeout:?}) — no agent activity");
-                        return Err(AcpError::IdleTimeout(idle_timeout));
-                    } else {
-                        let silence = Instant::now().saturating_duration_since(last_activity_at);
-                        tracing::warn!("hard turn timeout exceeded (silence {silence:?})");
-                        return Err(AcpError::HardTimeout { silence });
-                    }
+                    // Woken by the deadline: the pre-select check at the top
+                    // of the loop handles it (timeout or turn check-in).
+                    None
                 }
             };
 
@@ -1793,6 +1900,41 @@ impl AcpClient {
                     // share the `no method` guard.
                     if let Some(id) = msg.get("id") {
                         if msg.get("method").is_none() {
+                            if let Some((checkin_id, transport)) = pending_checkin {
+                                if *id == serde_json::json!(checkin_id) {
+                                    pending_checkin = None;
+                                    let delivered = msg.get("error").is_none()
+                                        && match transport {
+                                            SteerTransport::Goose => true,
+                                            SteerTransport::AcpExtension => {
+                                                msg.pointer("/result/outcome")
+                                                    .and_then(|v| v.as_str())
+                                                    == Some(STEER_OUTCOME_INJECTED)
+                                            }
+                                        };
+                                    if delivered {
+                                        hard_deadline = Instant::now() + max_duration;
+                                        self.current_hard_deadline = Some(hard_deadline);
+                                        tracing::info!(
+                                            "turn check-in {} delivered: renewed hard deadline ({max_duration:?} from now)",
+                                            self.checkins_sent
+                                        );
+                                    } else {
+                                        // Not delivered into this turn: time
+                                        // it out as before.
+                                        tracing::warn!(
+                                            "turn check-in not delivered ({}) — hard timeout",
+                                            msg.get("error")
+                                                .or_else(|| msg.pointer("/result/outcome"))
+                                                .map(|v| v.to_string())
+                                                .unwrap_or_else(|| "<absent>".into())
+                                        );
+                                        checkin_unavailable = true;
+                                        hard_deadline = Instant::now();
+                                    }
+                                    continue;
+                                }
+                            }
                             if let Some((steer_id, _, _)) = pending_steer.as_ref() {
                                 if *id == serde_json::json!(*steer_id) {
                                     // Take the ack_tx out and route the
@@ -2386,6 +2528,38 @@ fn build_goose_steer_params(
         "expectedRunId": expected_run_id,
         "prompt": steer_prompt_blocks(prompt_blocks),
     })
+}
+
+/// A hard cap counts as "still working" when the agent produced output within
+/// this window (same window the pool uses for `recently_active`).
+const CHECKIN_ACTIVITY_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long a check-in may take to be accepted before the turn times out.
+const CHECKIN_ACK_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The check-in steered into a turn still working at the hard cap: the agent
+/// checks its work against what the requester needs, reports briefly, and
+/// continues or wraps up.
+pub(crate) fn turn_checkin_prompt(number: u32, limit: u32, elapsed: std::time::Duration) -> String {
+    let secs = elapsed.as_secs();
+    let elapsed = if secs >= 3600 {
+        let hours = (secs + 1800) / 3600;
+        format!("{hours} hour{}", if hours == 1 { "" } else { "s" })
+    } else {
+        let minutes = (secs + 30) / 60;
+        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
+    };
+    format!(
+        "[System: turn check-in {number} of {limit}]\n\
+         This request has been running for {elapsed}. Before you continue, check:\n\
+         1. Are you doing what the requester asked for?\n\
+         2. Is the depth what they need?\n\
+         3. Are you spending time on details that don't matter to them?\n\
+         Post one or two lines in the conversation on what is done and what remains \
+         (no @mention). Then continue if you are on track; otherwise narrow the scope or \
+         wrap up. After check-in {limit} the turn is paused and the requester is asked \
+         whether to continue."
+    )
 }
 
 /// Build the params for an [`ACP_STEER_METHOD`] request.
@@ -4774,6 +4948,258 @@ Start-Sleep -Seconds 1"#;
             matches!(ack, crate::pool::SteerAck::Success { .. }),
             "injected must ack Success, got {ack:?}"
         );
+    }
+
+    /// Arm turn check-ins the way `session_prompt_blocks_with_idle_timeout`
+    /// does, so `read_until_response_with_idle_timeout` can be driven directly.
+    fn arm_checkins(client: &mut AcpClient, limit: u32) {
+        client.set_turn_checkin_limit(limit);
+        client.checkins_sent = 0;
+        client.checkin_armed = true;
+    }
+
+    /// Fake agent output that keeps the turn "working": a session/update
+    /// notification every 50ms in the background.
+    const CHECKIN_NOISE: &str = "(while true; do \
+        echo '{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-test\",\"update\":{}}}'; \
+        sleep 0.05; done) & ";
+
+    /// Hard cap while the agent is working: a check-in is steered (not a
+    /// timeout), and `injected` renews the deadline by `max_duration` so the
+    /// prompt response after the original cap still lands.
+    ///
+    /// The fake agent answers whatever line it reads: on Windows the bash
+    /// fixture cannot see stdin content (see the baseline failures of the
+    /// wire-shape steer tests), so the check-in text is covered by
+    /// `turn_checkin_prompt_states_number_limit_and_elapsed` and the
+    /// transport by `steer_target`'s shared use with user steers.
+    ///
+    /// Timeline: cap at t≈1s → check-in; renewed to t≈2s; response t≈1.6s.
+    #[tokio::test]
+    async fn hard_cap_while_working_sends_checkin_and_renews() {
+        let script = format!(
+            "{CHECKIN_NOISE} read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+             sleep 0.6; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{{\"done\":true}}}}'; \
+             kill $! 2>/dev/null; sleep 5"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_secs(1);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "a delivered check-in must renew the cap, got {result:?}"
+        );
+        assert_eq!(result.unwrap()["done"], serde_json::json!(true));
+        assert_eq!(client.checkins_sent, 1);
+        // Renewed by `max_duration` (≈1s), not left at the 60s ack grace.
+        let renewed = client
+            .current_hard_deadline
+            .expect("delivered check-in records the renewed deadline");
+        assert!(
+            renewed.saturating_duration_since(tokio::time::Instant::now())
+                < std::time::Duration::from_secs(5),
+            "deadline must be renewed by max_duration"
+        );
+    }
+
+    /// Still working after the last check-in: `CheckinLimit`, not
+    /// `HardTimeout`, so the pool pauses the turn and keeps the session.
+    ///
+    /// Timeline (cap 0.5s): check-in 1 at t≈0.5s, check-in 2 at t≈1s,
+    /// limit at t≈1.5s.
+    #[tokio::test]
+    async fn checkin_limit_reached_returns_checkin_limit() {
+        let script = format!(
+            "{CHECKIN_NOISE} read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+             read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+             sleep 10"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 2);
+
+        let max_dur = std::time::Duration::from_millis(500);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let started = tokio::time::Instant::now();
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::CheckinLimit { checkins: 2 })),
+            "expected CheckinLimit after 2 check-ins, got {result:?}"
+        );
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(1400),
+            "both check-ins must renew before the limit, ended at {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// A silent (stuck) agent at the cap keeps the plain hard timeout: no
+    /// check-in is sent.
+    #[tokio::test]
+    async fn hard_cap_while_silent_times_out_without_checkin() {
+        // Any line on stdin (a check-in) would be answered `injected`; a
+        // HardTimeout therefore proves none was sent.
+        let script = "read line; \
+                      echo '{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"outcome\":\"injected\"}}'; \
+                      sleep 10";
+        let mut client = spawn_script(script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+        client.checkin_activity_window = std::time::Duration::from_millis(100);
+
+        let max_dur = std::time::Duration::from_millis(500);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::HardTimeout { .. })),
+            "expected HardTimeout for a silent agent, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+    }
+
+    /// Working, but the agent cannot be steered: plain hard timeout.
+    #[tokio::test]
+    async fn hard_cap_while_working_without_steering_times_out() {
+        let script = format!("{CHECKIN_NOISE} sleep 10");
+        let mut client = spawn_script(&script).await;
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::HardTimeout { .. })),
+            "expected HardTimeout without steering, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+    }
+
+    /// A check-in the adapter does not inject (e.g. `startedNewTurn`) ends
+    /// the turn with the hard timeout instead of renewing it.
+    #[tokio::test]
+    async fn checkin_not_injected_times_out() {
+        let script = format!(
+            "{CHECKIN_NOISE} read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"startedNewTurn\"}}}}'; \
+             sleep 10"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let started = tokio::time::Instant::now();
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::HardTimeout { .. })),
+            "expected HardTimeout after an undelivered check-in, got {result:?}"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "must not wait out the ack grace, took {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// Without `checkin_armed` (cancel drains, other reads) the cap stays a
+    /// plain hard timeout even with a limit set.
+    #[tokio::test]
+    async fn unarmed_read_never_sends_checkin() {
+        let script = format!("{CHECKIN_NOISE} sleep 10");
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        client.set_turn_checkin_limit(3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::HardTimeout { .. })),
+            "expected HardTimeout when unarmed, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+    }
+
+    #[test]
+    fn turn_checkin_prompt_states_number_limit_and_elapsed() {
+        let text = turn_checkin_prompt(2, 3, std::time::Duration::from_secs(4 * 3600));
+        assert!(
+            text.starts_with("[System: turn check-in 2 of 3]\n"),
+            "{text}"
+        );
+        assert!(text.contains("running for 4 hours"), "{text}");
+        assert!(text.contains("no @mention"), "{text}");
+        assert!(
+            text.contains("After check-in 3 the turn is paused"),
+            "{text}"
+        );
+        let short = turn_checkin_prompt(1, 3, std::time::Duration::from_secs(60));
+        assert!(short.contains("running for 1 minute."), "{short}");
+        let hour = turn_checkin_prompt(1, 3, std::time::Duration::from_secs(3600));
+        assert!(hour.contains("running for 1 hour."), "{hour}");
     }
 
     /// Test 6: **red/green for the no-renewal rule.** `startedNewTurn` means
