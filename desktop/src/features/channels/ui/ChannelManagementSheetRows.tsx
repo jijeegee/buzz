@@ -11,6 +11,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
+import { useIsProjectHomeChannel } from "@/features/projects/lib/projectHomeChannel";
 import type { Channel } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
@@ -24,6 +25,11 @@ export function ChannelHero({
   channel: Channel;
   onEdit?: () => void;
 }) {
+  const projectHome = useIsProjectHomeChannel(channel.id);
+  const usesLetterAvatar =
+    !projectHome &&
+    channel.channelType !== "dm" &&
+    channel.channelType !== "forum";
   const channelDescription = channel.description.trim();
   const description =
     channelDescription || (onEdit ? "Add a description" : null);
@@ -33,13 +39,17 @@ export function ChannelHero({
       className="flex flex-col items-center gap-3 py-3 text-center"
       data-testid="channel-management-hero"
     >
-      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground">
-        {channel.channelType === "dm" ? (
-          <MessageSquare className="h-8 w-8" />
-        ) : (
-          <ChannelGlyph channel={channel} className="h-8 w-8" />
-        )}
-      </div>
+      {usesLetterAvatar ? (
+        <ChannelGlyph avatarSize="xl" channel={channel} />
+      ) : (
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          {channel.channelType === "dm" ? (
+            <MessageSquare className="h-8 w-8" />
+          ) : (
+            <ChannelGlyph channel={channel} className="h-8 w-8" />
+          )}
+        </div>
+      )}
       {channel.channelType !== "dm" && onEdit ? (
         <button
           aria-label="Edit channel"

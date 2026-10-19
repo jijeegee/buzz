@@ -1,4 +1,4 @@
-import { FolderKanban, Hash, LockKeyhole } from "lucide-react";
+import { FolderKanban, LockKeyhole, Users } from "lucide-react";
 import * as React from "react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -211,7 +211,7 @@ export function ProjectsChannelsList({
                     }
                     icon={
                       channel ? (
-                        <Hash className="h-3.5 w-3.5 text-muted-foreground/70" />
+                        <Users className="h-3.5 w-3.5 text-muted-foreground/70" />
                       ) : (
                         <LockKeyhole className="h-3.5 w-3.5 text-muted-foreground/55" />
                       )

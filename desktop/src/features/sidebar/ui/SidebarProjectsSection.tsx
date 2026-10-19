@@ -6,16 +6,15 @@ import {
   EllipsisVertical,
   Folder,
   Folders,
-  Hash,
   Link2,
   ListMinus,
-  Lock,
   Plus,
   Trash2,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
+import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import {
@@ -334,8 +333,6 @@ function SidebarProjectsSectionContent() {
                     />
                     {isExpanded
                       ? childChannels.map(({ binding, channel }) => {
-                          const ChannelIcon =
-                            channel.visibility === "private" ? Lock : Hash;
                           return (
                             <SidebarMenuItem
                               key={`${project.id}:${binding.role}:${channel.id}`}
@@ -350,7 +347,11 @@ function SidebarProjectsSectionContent() {
                                 tooltip={`#${channel.name}`}
                                 type="button"
                               >
-                                <ChannelIcon className="h-3.5 w-3.5" />
+                                <GroupLetterAvatar
+                                  channelId={channel.id}
+                                  isPrivate={channel.visibility === "private"}
+                                  label={channel.name}
+                                />
                                 <SidebarMenuLabel>
                                   {`#${channel.name}`}
                                 </SidebarMenuLabel>

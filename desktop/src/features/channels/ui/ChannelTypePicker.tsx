@@ -1,4 +1,4 @@
-import { ChevronDown, ClockFading, Hash } from "lucide-react";
+import { ChevronDown, ClockFading, Users } from "lucide-react";
 import * as React from "react";
 
 import type { ChannelLifecycle } from "@/features/channels/lib/channelLifecycle";
@@ -20,7 +20,7 @@ const LIFECYCLE_LABEL: Record<ChannelLifecycle, string> = {
 };
 
 const LIFECYCLE_ICON = {
-  ongoing: Hash,
+  ongoing: Users,
   temporary: ClockFading,
 } as const;
 

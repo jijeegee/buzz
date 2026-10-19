@@ -1,8 +1,8 @@
-import { Folders, Hash } from "lucide-react";
+import { Folders, Users } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 
-/** Projects glyph with a small channel hash nested in the lower right. */
+/** Projects glyph with a small group mark nested in the lower right. */
 export function ProjectChannelIcon({ className }: { className?: string }) {
   return (
     <span
@@ -11,7 +11,7 @@ export function ProjectChannelIcon({ className }: { className?: string }) {
       data-testid="project-channel-icon"
     >
       <Folders className="!size-full" />
-      <Hash
+      <Users
         className="pointer-events-none absolute -bottom-px -right-px !size-[62.5%]"
         strokeWidth={2.5}
       />

@@ -755,7 +755,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                     <span className="truncate">
                       Viewing{" "}
                       <span className="font-medium text-foreground">
-                        #{activeChannel?.name}
+                        {activeChannel?.name}
                       </span>
                     </span>
                   </div>

@@ -3,14 +3,14 @@ import {
   ArrowRight,
   Bot,
   FileText,
-  Hash,
+  type LucideIcon,
   MessageCircle,
   Plus,
   User,
-  type LucideIcon,
+  Users,
+  UsersRound,
 } from "lucide-react";
 
-import { HashSearch } from "@/shared/ui/icons";
 import {
   resolveUserLabel,
   resolveUserSecondaryLabel,
@@ -71,7 +71,7 @@ export function resultIcon(
 ) {
   if (result.kind === "action") {
     if (result.action.id === "browse-channels") {
-      return HashSearch;
+      return UsersRound;
     }
     return result.action.id === "create-agent" ? Bot : Plus;
   }
@@ -95,7 +95,7 @@ export function resultIcon(
     return MessageCircle;
   }
 
-  return Hash;
+  return Users;
 }
 
 export function SearchResultShell({

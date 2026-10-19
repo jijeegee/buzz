@@ -1,4 +1,4 @@
-import { ChevronDown, Hash, MessageSquare, Search } from "lucide-react";
+import { ChevronDown, MessageSquare, Search, Users } from "lucide-react";
 import * as React from "react";
 
 import { useChannelsQuery } from "@/features/channels/hooks";
@@ -67,7 +67,7 @@ export function ProjectSelectionDiscussAction({
                 type="button"
                 variant="ghost"
               >
-                <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate">#{name}</span>
                 {count > 1 ? (
                   <span className="shrink-0 tabular-nums text-muted-foreground">

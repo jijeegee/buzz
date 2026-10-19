@@ -5,7 +5,6 @@ import {
   FolderGit2,
   GitCommitHorizontal,
   GitPullRequest,
-  Hash,
   Users,
 } from "lucide-react";
 import * as React from "react";
@@ -160,7 +159,7 @@ function ChannelContextRow({
   projectHome?: boolean;
   testId: string;
 }) {
-  const Icon = projectHome ? ProjectChannelIcon : Hash;
+  const Icon = projectHome ? ProjectChannelIcon : Users;
   if (onClick) {
     return (
       <ContextNavButton icon={<Icon />} onClick={onClick} testId={testId}>
@@ -357,7 +356,7 @@ export function ProjectHomeContextPanel({
           <p
             className={`${PROJECT_HOME_SIDEBAR_ROW_CLASS} pointer-events-none flex items-center`}
           >
-            <ContextRowContent icon={<Hash />}>Unavailable</ContextRowContent>
+            <ContextRowContent icon={<Users />}>Unavailable</ContextRowContent>
           </p>
         )}
       </ContextSection>

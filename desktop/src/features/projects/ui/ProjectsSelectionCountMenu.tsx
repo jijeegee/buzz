@@ -5,9 +5,9 @@ import {
   Folders,
   GitCommitHorizontal,
   GitPullRequest,
-  Hash,
   Link2,
   ListChecks,
+  Users,
   X,
 } from "lucide-react";
 import * as React from "react";
@@ -31,7 +31,7 @@ function selectionActionIcon(id: ProjectSelectionAction["id"]) {
 }
 
 function selectionKindIcon(kind: ProjectSelectionItem["kind"] | undefined) {
-  if (kind === "channel") return Hash;
+  if (kind === "channel") return Users;
   if (kind === "commit") return GitCommitHorizontal;
   if (kind === "project") return Folders;
   if (kind === "repository") return FolderGit2;

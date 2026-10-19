@@ -1,4 +1,4 @@
-import { Hash } from "lucide-react";
+import { Users } from "lucide-react";
 import * as React from "react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -437,7 +437,9 @@ export function DiscussionChannelsPanel({
                 }`}
                 dateSeconds={channel.lastActivityAt}
                 dateTestId="project-channel-row-date"
-                icon={<Hash className="h-3.5 w-3.5 text-muted-foreground/70" />}
+                icon={
+                  <Users className="h-3.5 w-3.5 text-muted-foreground/70" />
+                }
                 onClick={() =>
                   openDiscussionHit({
                     channelId: channel.id,

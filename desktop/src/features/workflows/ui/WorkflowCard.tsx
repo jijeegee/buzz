@@ -3,11 +3,11 @@ import {
   CalendarClock,
   CircleCheckBig,
   GitPullRequest,
-  Hash,
   MessageCircle,
   MessageSquare,
   SmilePlus,
   Timer,
+  Users,
   Webhook,
   Zap,
 } from "lucide-react";
@@ -61,7 +61,7 @@ const ACTION_ICONS: Record<string, LucideIcon> = {
   request_approval: CircleCheckBig,
   send_dm: MessageCircle,
   send_message: MessageSquare,
-  set_channel_topic: Hash,
+  set_channel_topic: Users,
 };
 
 const TRIGGER_ACCENTS: Record<string, string> = {

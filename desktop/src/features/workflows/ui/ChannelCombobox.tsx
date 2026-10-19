@@ -2,13 +2,12 @@ import {
   Asterisk,
   Check,
   ChevronDown,
-  Hash,
-  Lock,
   MessageSquareMore,
   Search,
 } from "lucide-react";
 import * as React from "react";
 
+import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -19,15 +18,22 @@ import { PortalledScrollArea } from "@/shared/ui/PortalledScrollArea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 function ChannelPrivacyIcon({ channel }: { channel: Channel }) {
-  const Icon =
-    channel.channelType === "dm"
-      ? MessageSquareMore
-      : channel.visibility === "private"
-        ? Lock
-        : Hash;
+  if (channel.channelType !== "dm") {
+    return (
+      <GroupLetterAvatar
+        channelId={channel.id}
+        isPrivate={channel.visibility === "private"}
+        label={channel.name}
+        size="sm"
+      />
+    );
+  }
 
   return (
-    <Icon aria-hidden className="h-5 w-5 shrink-0 text-muted-foreground/60" />
+    <MessageSquareMore
+      aria-hidden
+      className="h-5 w-5 shrink-0 text-muted-foreground/60"
+    />
   );
 }
 

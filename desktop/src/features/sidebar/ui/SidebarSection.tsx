@@ -274,12 +274,19 @@ function SidebarChannelIcon({
       <ConversationLetterAvatar
         channelId={channel.id}
         channelLabel={channel.name}
+        isPrivate={channel.visibility === "private"}
         isThread={false}
         testId={`chat-row-avatar-${channel.id}`}
       />
     );
   }
-  return <ChannelGlyph channel={channel} className={className} />;
+  return (
+    <ChannelGlyph
+      avatarClassName={className}
+      channel={channel}
+      className={className}
+    />
+  );
 }
 
 export function ChannelMenuButton({

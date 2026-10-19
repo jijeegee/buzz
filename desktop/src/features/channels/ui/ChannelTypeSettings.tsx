@@ -1,4 +1,4 @@
-import { ChevronDown, ClockFading, Hash } from "lucide-react";
+import { ChevronDown, ClockFading, Users } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import {
@@ -26,7 +26,7 @@ import { ChannelTypePicker } from "./ChannelTypePicker";
 
 const CHANNEL_TYPE_OPTIONS = [
   { value: "temporary", label: "Temporary", Icon: ClockFading },
-  { value: "ongoing", label: "Ongoing", Icon: Hash },
+  { value: "ongoing", label: "Ongoing", Icon: Users },
 ] as const;
 
 const EPHEMERAL_TIMEOUT_OPTIONS = [

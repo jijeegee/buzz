@@ -5,9 +5,9 @@ import {
   Copy,
   FileText,
   FolderGit2,
-  Hash,
   House,
   Lock,
+  Users,
   Zap,
 } from "lucide-react";
 import type * as React from "react";
@@ -40,7 +40,7 @@ type ChatHeaderProps = {
 };
 
 const HEADER_ICON_CLASS = "h-4 w-4 text-muted-foreground";
-const CHANNEL_HASH_ICON_CLASS = "h-4 w-4 translate-y-px";
+const GROUP_ICON_CLASS = "h-4 w-4 translate-y-px text-muted-foreground";
 
 function ChannelIcon({
   channelType,
@@ -83,7 +83,7 @@ function ChannelIcon({
     return <FileText className={HEADER_ICON_CLASS} />;
   }
 
-  return <Hash className={CHANNEL_HASH_ICON_CLASS} color="gray" />;
+  return <Users className={GROUP_ICON_CLASS} />;
 }
 
 export function ChatHeader({
@@ -102,6 +102,8 @@ export function ChatHeader({
   transparentChrome = false,
 }: ChatHeaderProps) {
   const trimmedDescription = description?.trim() ?? "";
+  const nameNoun = channelType === "dm" ? "name" : "group name";
+  const NameNoun = channelType === "dm" ? "Name" : "Group name";
 
   async function handleCopyTitle() {
     const value = title.trim();
@@ -109,9 +111,9 @@ export function ChatHeader({
 
     try {
       await writeTextToClipboard(value);
-      toast.success("Channel name copied");
+      toast.success(`${NameNoun} copied`);
     } catch {
-      toast.error("Failed to copy channel name");
+      toast.error(`Failed to copy ${nameNoun}`);
     }
   }
 
@@ -148,11 +150,11 @@ export function ChatHeader({
             </h1>
             {titleAdornment}
             <Button
-              aria-label={`Copy channel name: ${title}`}
+              aria-label={`Copy ${nameNoun}: ${title}`}
               className="h-6 w-6 shrink-0 opacity-0 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/title:opacity-100"
               onClick={() => void handleCopyTitle()}
               size="icon-xs"
-              title="Copy channel name"
+              title={`Copy ${nameNoun}`}
               type="button"
               variant="ghost"
             >

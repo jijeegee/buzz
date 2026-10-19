@@ -9,6 +9,7 @@ import {
   Link2,
   MailCheck,
   MailOpen,
+  MessageSquareShare,
   Pencil,
   Quote,
   SmilePlus,
@@ -47,7 +48,6 @@ import { emojiDisplayName } from "@/shared/lib/emojiName";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { KIND_HUDDLE_STARTED } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
-import { HashArrowIn } from "@/shared/ui/icons";
 import { DeleteMessageConfirmDialog } from "./DeleteMessageConfirmDialog";
 import {
   DropdownMenu,
@@ -279,7 +279,7 @@ function MoreActionsMenu({
                   });
               }}
             >
-              <HashArrowIn
+              <MessageSquareShare
                 aria-hidden="true"
                 className="h-4 w-4"
                 data-testid="send-to-channel-icon"
