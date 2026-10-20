@@ -220,6 +220,72 @@ void main() {
     expect(details.ttlDeadline!.isUtc, isTrue);
   });
 
+  group('group photo', () {
+    NostrEvent pictureMeta(List<List<String>> extra) => NostrEvent(
+      id: 'meta-picture',
+      pubkey: 'creator',
+      createdAt: 1700000000,
+      kind: 39000,
+      tags: [
+        ['d', 'c8c629ae-d35c-44fa-bc39-f6c1816756cc'],
+        ['name', 'photos'],
+        ['t', 'stream'],
+        ['public'],
+        ...extra,
+      ],
+      content: '',
+      sig: 'sig',
+    );
+
+    const url =
+        'https://relay.example/media/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg';
+
+    test('kind 39000 picture tag reaches ChannelData and details', () {
+      final event = pictureMeta(const [
+        ['picture', url],
+      ]);
+      expect(ChannelData.fromEvent(event).picture, url);
+      expect(channelDetailsFromEvent(event).picture, url);
+    });
+
+    test('absent or empty picture means no photo', () {
+      expect(ChannelData.fromEvent(pictureMeta(const [])).picture, isNull);
+      expect(channelDetailsFromEvent(pictureMeta(const [])).picture, isNull);
+      expect(
+        ChannelData.fromEvent(
+          pictureMeta(const [
+            ['picture', '  '],
+          ]),
+        ).picture,
+        isNull,
+      );
+    });
+
+    test('mergeDetails and copyWith carry the photo', () {
+      final base = Channel(
+        id: 'c8c629ae-d35c-44fa-bc39-f6c1816756cc',
+        name: 'photos',
+        channelType: 'stream',
+        visibility: 'open',
+        description: '',
+        createdBy: 'creator',
+        createdAt: DateTime(2025),
+        memberCount: 2,
+      );
+      final merged = base.mergeDetails(
+        channelDetailsFromEvent(
+          pictureMeta(const [
+            ['picture', url],
+          ]),
+        ),
+      );
+      expect(merged.picture, url);
+      expect(merged.copyWith(name: 'renamed').picture, url);
+      expect(merged.copyWith(picture: null).picture, isNull);
+      expect(ChannelDetails.fromChannel(merged).picture, url);
+    });
+  });
+
   group('per-room goals flag', () {
     NostrEvent goalsMeta(List<List<String>> extra) => NostrEvent(
       id: 'meta-goals',
@@ -363,6 +429,22 @@ void main() {
           ['goals', 'on'],
         ],
       );
+    });
+
+    test('group photo is sent alone as a kind 9002 picture tag', () {
+      const url =
+          'https://relay.example/media/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg';
+      expect(buildUpdateChannelTags(channelId: 'channel-id', picture: url), [
+        ['h', 'channel-id'],
+        ['picture', url],
+      ]);
+    });
+
+    test('an empty picture tag removes the group photo', () {
+      expect(buildUpdateChannelTags(channelId: 'channel-id', picture: ''), [
+        ['h', 'channel-id'],
+        ['picture', ''],
+      ]);
     });
 
     test('channel edits require at least one field', () {
