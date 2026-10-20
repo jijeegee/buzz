@@ -84,6 +84,7 @@ class _ChatRow extends HookConsumerWidget {
             threadSeed: row.rootId ?? row.key,
             threadLabel: threadTitle!,
             ringColor: background,
+            channelPicture: channel?.picture,
           )
         : row.isDm
         ? _DmAvatar(

@@ -636,7 +636,10 @@ class _ChannelDetailsHero extends StatelessWidget {
                     size: 32,
                     iconColor: context.colors.onPrimaryContainer,
                   )
-                : GroupAvatar(channel: channel, size: 80),
+                : GroupPhotoViewerTap(
+                    picture: channel.picture,
+                    child: GroupAvatar(channel: channel, size: 80),
+                  ),
           ),
           const SizedBox(height: Grid.xxs),
           KeyedSubtree(

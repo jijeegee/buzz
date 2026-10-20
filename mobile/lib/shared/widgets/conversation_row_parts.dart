@@ -283,7 +283,9 @@ class ConversationAvatarPair extends StatelessWidget {
 
 /// A thread's picture (desktop's A design): the channel's circle behind with
 /// its letter kept to the left so the front circle never covers it, and the
-/// thread's own circle and letter in front.
+/// thread's own circle and letter in front. The group photo
+/// ([channelPicture]), when set, covers the channel's circle; its letter
+/// shows while the photo loads or when it fails.
 class ConversationThreadAvatar extends StatelessWidget {
   const ConversationThreadAvatar({
     super.key,
@@ -292,6 +294,7 @@ class ConversationThreadAvatar extends StatelessWidget {
     required this.threadSeed,
     required this.threadLabel,
     required this.ringColor,
+    this.channelPicture,
   });
 
   final String channelSeed;
@@ -300,15 +303,13 @@ class ConversationThreadAvatar extends StatelessWidget {
   final String threadLabel;
   final Color ringColor;
 
+  /// Group photo URL; null or blank shows the channel's letter.
+  final String? channelPicture;
+
   @override
-  Widget build(BuildContext context) => ConversationAvatarPair(
-    ringColor: ringColor,
-    back: Container(
-      key: const ValueKey('conversation-thread-avatar-channel'),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: conversationHue(channelSeed),
-      ),
+  Widget build(BuildContext context) {
+    final picture = channelPicture?.trim();
+    final letter = Container(
       alignment: Alignment.centerLeft,
       // Clear of the front circle's ring (which starts at 16).
       padding: const EdgeInsets.only(left: 6),
@@ -321,25 +322,50 @@ class ConversationThreadAvatar extends StatelessWidget {
           height: 1,
         ),
       ),
-    ),
-    front: Container(
-      key: const ValueKey('conversation-thread-avatar-thread'),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: conversationHue(threadSeed),
+    );
+    return ConversationAvatarPair(
+      ringColor: ringColor,
+      back: Container(
+        key: const ValueKey('conversation-thread-avatar-channel'),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: conversationHue(channelSeed),
+        ),
+        child: picture == null || picture.isEmpty
+            ? letter
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  letter,
+                  ClipOval(
+                    key: const ValueKey('conversation-thread-avatar-photo'),
+                    child: AvatarImageContent(
+                      imageUrl: picture,
+                      fallback: const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ),
       ),
-      alignment: Alignment.center,
-      child: Text(
-        conversationInitial(threadLabel),
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
-          height: 1,
+      front: Container(
+        key: const ValueKey('conversation-thread-avatar-thread'),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: conversationHue(threadSeed),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          conversationInitial(threadLabel),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+            height: 1,
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 final _qualifiedMention = RegExp(

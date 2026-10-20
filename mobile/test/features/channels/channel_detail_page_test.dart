@@ -9605,6 +9605,36 @@ void main() {
       );
     });
 
+    testWidgets('renders picture_changed system events', (tester) async {
+      final messages = [
+        _systemMsg(
+          id: 'sys1',
+          payload: {
+            'type': 'picture_changed',
+            'actor': 'alice',
+            'picture': 'https://relay.example/media/photo.jpg',
+          },
+        ),
+        _systemMsg(
+          id: 'sys2',
+          payload: {'type': 'picture_changed', 'actor': 'alice', 'picture': ''},
+        ),
+      ];
+
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: messages,
+          users: {
+            'alice': const UserProfile(pubkey: 'alice', displayName: 'Alice'),
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Alice changed the group photo'), findsOneWidget);
+      expect(find.text('Alice removed the group photo'), findsOneWidget);
+    });
+
     testWidgets('system message breaks author grouping', (tester) async {
       final messages = [
         _textMsg(
