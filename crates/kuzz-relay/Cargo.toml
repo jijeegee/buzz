@@ -104,4 +104,6 @@ reqwest = { workspace = true }
 tokio-tungstenite = { workspace = true }
 futures = "0.3"
 flate2 = "1.1.9"
+# Already in the tree via kuzz-media; fixtures for the `.small.jpg` live test.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
