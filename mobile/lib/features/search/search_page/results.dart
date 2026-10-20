@@ -138,9 +138,9 @@ class _ChannelResultTile extends StatelessWidget {
   }
 }
 
-/// The Chats thread picture at [size]: the group's circle behind, the
-/// thread's in front.
-class _ThreadAvatar extends StatelessWidget {
+/// The Chats thread picture at [size]: the group's circle (or photo) behind,
+/// the thread's in front.
+class _ThreadAvatar extends ConsumerWidget {
   final String channelId;
   final String channelName;
   final String threadSeed;
@@ -157,18 +157,29 @@ class _ThreadAvatar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-    dimension: size,
-    child: FittedBox(
-      child: ConversationThreadAvatar(
-        channelSeed: channelId,
-        channelLabel: channelName,
-        threadSeed: threadSeed,
-        threadLabel: threadTitle,
-        ringColor: context.colors.surface,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final picture = ref.watch(
+      channelsProvider.select((channels) {
+        for (final channel in channels.value ?? const <Channel>[]) {
+          if (channel.id == channelId) return channel.picture;
+        }
+        return null;
+      }),
+    );
+    return SizedBox.square(
+      dimension: size,
+      child: FittedBox(
+        child: ConversationThreadAvatar(
+          channelSeed: channelId,
+          channelLabel: channelName,
+          threadSeed: threadSeed,
+          threadLabel: threadTitle,
+          ringColor: context.colors.surface,
+          channelPicture: picture,
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// A thread found by its title: the Chats thread avatar, the title, and the

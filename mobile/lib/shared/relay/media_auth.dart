@@ -43,6 +43,11 @@ class MediaGetAuthService {
   /// call (never cached here, so a rotation applies to the next request).
   final RelayAccessTokens? _accessTokens;
 
+  /// Relay and signed-in identity this service fetches as, or null when
+  /// signed out. Media fetched with this service is stored on disk under
+  /// this scope only, so one account never reads another's cached media.
+  final String? cacheScope;
+
   Map<String, String>? _cachedHeaders;
   DateTime? _refreshAt;
 
@@ -51,6 +56,7 @@ class MediaGetAuthService {
     required String? nsec,
     DateTime Function()? now,
     RelayAccessTokens? accessTokens,
+    this.cacheScope,
   }) : _baseUrl = baseUrl,
        _nsec = nsec,
        _accessTokens = accessTokens,
@@ -170,14 +176,23 @@ class MediaGetAuthService {
 
 final mediaGetAuthServiceProvider = Provider<MediaGetAuthService>((ref) {
   final config = ref.watch(relayConfigProvider);
+  final pubkey = ref.watch(myPubkeyProvider);
+  final cacheScope = pubkey == null || pubkey.isEmpty
+      ? null
+      : '${config.baseUrl}\n$pubkey';
   if (config.tokenAuth) {
     return MediaGetAuthService(
       baseUrl: config.baseUrl,
       nsec: null,
       accessTokens: ref.watch(relayAccessTokensProvider),
+      cacheScope: cacheScope,
     );
   }
-  return MediaGetAuthService(baseUrl: config.baseUrl, nsec: config.nsec);
+  return MediaGetAuthService(
+    baseUrl: config.baseUrl,
+    nsec: config.nsec,
+    cacheScope: cacheScope,
+  );
 });
 
 Map<String, String> mediaGetHeadersFor(WidgetRef ref, String url) {
