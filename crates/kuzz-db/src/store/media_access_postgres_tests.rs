@@ -461,3 +461,71 @@ async fn forget_media_drops_only_stale_rows_of_that_file() {
         ]
     );
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn group_photo_is_readable_by_anyone_and_kept_while_set() {
+    let f = Fixture::new().await;
+    let (owner, outsider) = (Keys::generate(), Keys::generate());
+    let room = f.room(ChannelVisibility::Private, &owner, &[]).await;
+    let cutoff = Utc::now() - chrono::Duration::days(7);
+    assert!(!f.readable(&outsider).await);
+    assert!(!f.in_use(cutoff).await);
+
+    let updated =
+        f.db.update_channel(
+            f.scope,
+            room,
+            channel::ChannelUpdate {
+                picture: Some(Some(format!("https://relay.example/media/{SHA}.jpg"))),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("set photo");
+    assert_eq!(
+        updated.picture.as_deref(),
+        Some(format!("https://relay.example/media/{SHA}.jpg").as_str())
+    );
+    assert!(
+        f.readable(&outsider).await,
+        "a private group's photo shows on invitations to non-members"
+    );
+    assert!(f.in_use(cutoff).await, "the cleanup keeps a group photo");
+
+    let cleared =
+        f.db.update_channel(
+            f.scope,
+            room,
+            channel::ChannelUpdate {
+                picture: Some(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("remove photo");
+    assert_eq!(cleared.picture, None);
+    assert!(!f.readable(&outsider).await);
+    assert!(!f.in_use(cutoff).await);
+
+    f.db.update_channel(
+        f.scope,
+        room,
+        channel::ChannelUpdate {
+            picture: Some(Some(format!("https://relay.example/media/{SHA}.jpg"))),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("set photo again");
+    sqlx::query("UPDATE channels SET deleted_at = now() WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(room)
+        .execute(&f.pool)
+        .await
+        .expect("delete channel");
+    assert!(
+        !f.readable(&outsider).await,
+        "a deleted group's photo is closed"
+    );
+}

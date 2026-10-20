@@ -902,6 +902,25 @@ pub fn build_update_channel(
     Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
 }
 
+/// Build a NIP-29 edit-metadata event that sets or removes the group photo
+/// (kind 9002). `Some(url)` sets it (a `/media/<sha256>[.ext]` URL on the
+/// relay, which the relay validates); `None` removes it (`["picture", ""]`).
+pub fn build_set_channel_picture(
+    channel_id: Uuid,
+    picture: Option<&str>,
+) -> Result<EventBuilder, SdkError> {
+    if picture.is_some_and(str::is_empty) {
+        return Err(SdkError::InvalidTag(
+            "picture URL must not be empty (use None to remove)".into(),
+        ));
+    }
+    let tags = vec![
+        tag(&["h", &channel_id.to_string()])?,
+        tag(&["picture", picture.unwrap_or("")])?,
+    ];
+    Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
+}
+
 /// Build a NIP-29 edit-metadata event for topic (kind 9002).
 pub fn build_set_topic(channel_id: Uuid, topic: &str) -> Result<EventBuilder, SdkError> {
     let tags = vec![
@@ -3604,6 +3623,21 @@ mod tests {
         let ev = sign(build_set_topic(cid, "Rust async patterns").unwrap());
         assert_eq!(ev.kind.as_u16(), 9002);
         assert!(has_tag(&ev, "topic", "Rust async patterns"));
+    }
+
+    #[test]
+    fn set_channel_picture_sets_and_removes() {
+        let cid = uuid();
+        let url = format!("https://relay.example/media/{}.jpg", "a".repeat(64));
+        let ev = sign(build_set_channel_picture(cid, Some(&url)).unwrap());
+        assert_eq!(ev.kind.as_u16(), 9002);
+        assert!(has_tag(&ev, "picture", &url));
+        let ev = sign(build_set_channel_picture(cid, None).unwrap());
+        assert!(has_tag(&ev, "picture", ""));
+        assert!(matches!(
+            build_set_channel_picture(cid, Some("")),
+            Err(SdkError::InvalidTag(_))
+        ));
     }
 
     #[test]

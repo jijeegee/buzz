@@ -1052,3 +1052,185 @@ async fn landing_page_for_codes_and_handles() {
         "reset kills it"
     );
 }
+
+/// Poll `sql` (bound to the community and `arg`) until it returns true.
+async fn eventually(pool: &sqlx::PgPool, scope: kuzz_core::CommunityId, sql: &str, arg: &str) {
+    for _ in 0..50 {
+        let ok: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_owned()))
+            .bind(scope.as_uuid())
+            .bind(arg)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        if ok {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("never true: {sql} ({arg})");
+}
+
+/// S4: group photo via kind:9002 `picture` — owner/admin only, URL rules,
+/// stored and shown in kind:39000, the groups API, invitations and the
+/// landing page; removal clears it everywhere.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn group_photo_set_shown_and_removed() {
+    use kuzz_db::channel::{ChannelVisibility, MemberRole};
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let scope = community_id(&inst).await;
+    let alice = new_user(&inst).await;
+    let bob = new_user(&inst).await;
+    let carol = new_user(&inst).await;
+    let room = group(
+        &pool,
+        scope,
+        &alice,
+        "Photo Club",
+        ChannelVisibility::Private,
+    )
+    .await;
+    add(&pool, scope, room, &bob, MemberRole::Member).await;
+    let hash = "ab".repeat(32);
+    let url = format!("http://{}/media/{hash}.jpg", inst.host);
+    let h = room.to_string();
+
+    // A plain member may not change it.
+    let mut bob_ws = authed_ws(&inst, &bob).await;
+    let ok = publish(&mut bob_ws, 9002, json!([["h", h], ["picture", url]])).await;
+    assert_eq!(ok[2], false, "{ok}");
+    assert!(ok_message(&ok).contains("not authorized"), "{ok}");
+
+    // Only blob URLs on this relay.
+    let mut alice_ws = authed_ws(&inst, &alice).await;
+    for bad in [
+        format!("https://evil.example/media/{hash}.jpg"),
+        format!("http://{}/media/{hash}.jpg?x=1", inst.host),
+        format!("http://{}/media/not-a-hash.jpg", inst.host),
+        format!("http://{}/media/{hash}.{}", inst.host, "a".repeat(600)),
+    ] {
+        let ok = publish(&mut alice_ws, 9002, json!([["h", h], ["picture", bad]])).await;
+        assert_eq!(ok[2], false, "{bad}: {ok}");
+        assert!(ok_message(&ok).contains("invalid picture"), "{ok}");
+    }
+
+    // The owner sets it.
+    let ok = publish(&mut alice_ws, 9002, json!([["h", h], ["picture", url]])).await;
+    assert_eq!(ok[2], true, "{ok}");
+    eventually(
+        &pool,
+        scope,
+        "SELECT EXISTS (SELECT 1 FROM channels WHERE community_id = $1 \
+         AND id::text = $2 AND picture IS NOT NULL)",
+        &h,
+    )
+    .await;
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT picture FROM channels WHERE community_id = $1 AND id = $2")
+            .bind(scope.as_uuid())
+            .bind(room)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.as_deref(), Some(url.as_str()));
+    let picture_tag = json!([["picture", url]]).to_string();
+    eventually(
+        &pool,
+        scope,
+        &format!(
+            "SELECT EXISTS (SELECT 1 FROM events WHERE community_id = $1 AND kind = 39000 \
+             AND deleted_at IS NULL AND tags @> jsonb_build_array(jsonb_build_array('d', $2::text)) \
+             AND tags @> '{}'::jsonb)",
+            picture_tag.replace('\'', "''")
+        ),
+        &h,
+    )
+    .await;
+    eventually(
+        &pool,
+        scope,
+        "SELECT EXISTS (SELECT 1 FROM events WHERE community_id = $1 AND deleted_at IS NULL \
+         AND content LIKE '%\"picture_changed\"%' AND content LIKE '%' || $2 || '%')",
+        &url,
+    )
+    .await;
+
+    // Shown to a non-member: invite preview and the invitation list.
+    let code = get(&inst, &alice, &format!("/api/groups/{room}/invite-link"))
+        .await
+        .1["code"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, preview) = get(&inst, &carol, &format!("/api/groups/invite/{code}")).await;
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["picture"], url.as_str());
+    // A stranger gets an invitation instead of being added.
+    let ok = put_user(&mut alice_ws, room, &carol.principal).await;
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+    let (status, invitations) = get(&inst, &carol, "/api/group-invitations").await;
+    assert_eq!(status, 200, "{invitations}");
+    assert_eq!(
+        invitations[0]["channel"]["picture"],
+        url.as_str(),
+        "{invitations}"
+    );
+
+    // Landing page shows it from the same origin; the photo route answers
+    // without sign-in (404 here: the test relay stores no blob bytes).
+    let response = inst.get(&format!("/g/{code}")).send().await.unwrap();
+    let csp = response
+        .headers()
+        .get("content-security-policy")
+        .map(|v| v.to_str().unwrap().to_owned())
+        .unwrap_or_default();
+    let body = response.text().await.unwrap();
+    assert!(
+        body.contains(&format!("<img class=\"photo\" src=\"/g/{code}/picture\"")),
+        "{body}"
+    );
+    assert!(csp.contains("img-src 'self'"), "{csp}");
+    let status = inst
+        .get(&format!("/g/{code}/picture"))
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16();
+    assert_eq!(status, 404);
+
+    // Removing clears it everywhere.
+    let ok = publish(&mut alice_ws, 9002, json!([["h", h], ["picture", ""]])).await;
+    assert_eq!(ok[2], true, "{ok}");
+    eventually(
+        &pool,
+        scope,
+        "SELECT EXISTS (SELECT 1 FROM channels WHERE community_id = $1 \
+         AND id::text = $2 AND picture IS NULL)",
+        &h,
+    )
+    .await;
+    eventually(
+        &pool,
+        scope,
+        "SELECT EXISTS (SELECT 1 FROM events WHERE community_id = $1 AND kind = 39000 \
+         AND deleted_at IS NULL AND tags @> jsonb_build_array(jsonb_build_array('d', $2::text)) \
+         AND NOT tags::text LIKE '%\"picture\"%')",
+        &h,
+    )
+    .await;
+    let (_, preview) = get(&inst, &carol, &format!("/api/groups/invite/{code}")).await;
+    assert_eq!(preview["picture"], Value::Null);
+    let body = inst
+        .get(&format!("/g/{code}"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(!body.contains("<img"), "{body}");
+}

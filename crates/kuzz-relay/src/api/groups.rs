@@ -188,13 +188,15 @@ fn json_body(body: &[u8]) -> Result<serde_json::Map<String, Value>, Response> {
     }
 }
 
-/// `{ id, name, description, handle, channelType, memberCount, isMember }`.
+/// `{ id, name, description, handle, picture, channelType, memberCount,
+/// isMember }`. `picture` is the group photo URL or null.
 fn group_json(group: &GroupSummary) -> Value {
     json!({
         "id": group.id.to_string(),
         "name": group.name,
         "description": group.description,
         "handle": group.handle,
+        "picture": group.picture,
         "channelType": group.channel_type,
         "memberCount": group.member_count,
         "isMember": group.is_member,
@@ -652,8 +654,8 @@ pub async fn reset_invite_link(
     Ok(Json(invite_link_json(&state, &caller.tenant, &link)).into_response())
 }
 
-/// `GET /api/groups/invite/{code}` → `{ id, name, description, channelType,
-/// memberCount, visibility, isMember }` (open and private groups).
+/// `GET /api/groups/invite/{code}` → `{ id, name, description, picture,
+/// channelType, memberCount, visibility, isMember }` (open and private groups).
 pub async fn preview_invite(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -890,6 +892,7 @@ pub async fn list_invitations(
                     "id": channel.id.to_string(),
                     "name": channel.name,
                     "description": channel.description,
+                    "picture": channel.picture,
                     "channelType": channel.channel_type,
                     "memberCount": channel.member_count,
                     "visibility": channel.visibility,
@@ -1051,6 +1054,8 @@ struct Landing<'a> {
     description: Option<&'a str>,
     /// `kuzz://join/<code>` or `kuzz://join/@<handle>`.
     deep_link: String,
+    /// Same-origin path of the group photo (`/g/<target>/picture`), if set.
+    picture_src: Option<String>,
 }
 
 const LANDING_STYLE: &str =
@@ -1062,7 +1067,8 @@ h1{font-size:22px;margin:0 0 8px;overflow-wrap:anywhere}.count{color:#6b6b66;mar
 .desc{margin:0 0 24px;overflow-wrap:anywhere;white-space:pre-line}\
 .open{display:inline-block;background:#0047a0;color:#fff;text-decoration:none;\
 padding:12px 28px;border-radius:999px;font-weight:600}.hint{color:#6b6b66;font-size:14px;\
-margin:20px 0 0}";
+margin:20px 0 0}.photo{width:96px;height:96px;border-radius:50%;object-fit:cover;\
+margin:0 0 16px}";
 
 fn landing_document(title: &str, main: &str) -> String {
     format!(
@@ -1095,8 +1101,18 @@ fn render_landing(landing: &Landing<'_>) -> String {
             format!("<p class=\"desc\">{}{ellipsis}</p>", escape_html(&short))
         })
         .unwrap_or_default();
+    let photo = landing
+        .picture_src
+        .as_deref()
+        .map(|src| {
+            format!(
+                "<img class=\"photo\" src=\"{}\" alt=\"\">",
+                escape_html(src)
+            )
+        })
+        .unwrap_or_default();
     let main = format!(
-        "<h1>{name}</h1><p class=\"count\">{members}</p>{description}\
+        "{photo}<h1>{name}</h1><p class=\"count\">{members}</p>{description}\
          <a class=\"open\" href=\"{link}\">Open in Kuzz</a>\
          <p class=\"hint\">Don&#39;t have Kuzz yet? Ask the person who shared this link.</p>",
         name = escape_html(landing.name),
@@ -1121,7 +1137,7 @@ fn html_response(status: StatusCode, body: String) -> Response {
             (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
             (
                 axum::http::header::CONTENT_SECURITY_POLICY,
-                "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; \
+                "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; \
                  form-action 'none'; frame-ancestors 'none'",
             ),
             (
@@ -1193,6 +1209,10 @@ pub async fn landing(
                 member_count: group.member_count,
                 description: group.description.as_deref(),
                 deep_link: format!("{APP_SCHEME}://join/@{handle}"),
+                picture_src: group
+                    .picture
+                    .as_ref()
+                    .map(|_| format!("/g/@{handle}/picture")),
             }),
             Ok(None) => return not_found(),
             Err(e) => {
@@ -1211,6 +1231,10 @@ pub async fn landing(
                     None
                 },
                 deep_link: format!("{APP_SCHEME}://join/{}", link.code),
+                picture_src: group
+                    .picture
+                    .as_ref()
+                    .map(|_| format!("/g/{}/picture", link.code)),
             }),
             Err(response) if response.status() == StatusCode::NOT_FOUND => return not_found(),
             Err(response) => return response,
@@ -1219,10 +1243,86 @@ pub async fn landing(
     html_response(StatusCode::OK, page)
 }
 
+/// The `<sha256>[.ext]` file name of a group photo URL on this relay's /media.
+fn picture_media_name(picture: &str) -> Option<&str> {
+    let (_, name) = picture.rsplit_once("/media/")?;
+    let (hash, ext) = match name.split_once('.') {
+        Some((hash, ext)) => (hash, Some(ext)),
+        None => (name, None),
+    };
+    let hash_ok = hash.len() == 64 && hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'));
+    let ext_ok = ext.is_none_or(crate::api::media::is_safe_ext);
+    (hash_ok && ext_ok).then_some(name)
+}
+
+/// `GET /g/{code}/picture` and `GET /g/@{handle}/picture` (no auth): the photo
+/// of the group the landing page shows, so the page can display it without a
+/// signed-in media read. Same lookup and rate limit as [`landing`]; 404 when
+/// the group is not shown there or has no photo.
+pub async fn landing_picture(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    extensions: axum::http::Extensions,
+    Path(target): Path<String>,
+) -> Response {
+    let not_found = || StatusCode::NOT_FOUND.into_response();
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await else {
+        return not_found();
+    };
+    if super::auth::rate_limit_client(
+        &state,
+        &extensions,
+        &headers,
+        &format!("groups:landing:{}", tenant.community()),
+        LANDING_PER_IP_PER_MIN,
+        LANDING_GLOBAL_PER_MIN,
+    )
+    .await
+    .is_err()
+    {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+    let viewer = Caller {
+        tenant,
+        pubkey: vec![0u8; 32],
+    };
+    let group = if let Some(raw) = target.strip_prefix('@') {
+        let Ok(handle) = normalize_handle(raw) else {
+            return not_found();
+        };
+        match state
+            .db
+            .open_group_by_handle(viewer.tenant.community(), &viewer.pubkey, &handle)
+            .await
+        {
+            Ok(Some(group)) => group,
+            Ok(None) => return not_found(),
+            Err(e) => return internal("group landing picture", &e),
+        }
+    } else {
+        match group_for_code(&state, &viewer, &target).await {
+            Ok((group, _)) => group,
+            Err(response) => return response,
+        }
+    };
+    let Some(name) = group.picture.as_deref().and_then(picture_media_name) else {
+        return not_found();
+    };
+    match crate::api::media::serve_blob_for_tenant(&state, &viewer.tenant, name, &headers).await {
+        Ok(response) => response,
+        Err(_) => not_found(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        escape_html, new_invite_code, normalize_handle, plausible_code, render_landing, Landing,
+        escape_html, new_invite_code, normalize_handle, picture_media_name, plausible_code,
+        render_landing, Landing,
     };
 
     #[test]
@@ -1236,6 +1336,7 @@ mod tests {
             member_count: 1,
             description: Some("a \"quoted\" <img src=x> & more"),
             deep_link: "kuzz://join/abc\"onclick=\"x".to_owned(),
+            picture_src: None,
         });
         assert!(!page.contains("<script>alert"), "{page}");
         assert!(!page.contains("<img"), "{page}");
@@ -1253,9 +1354,49 @@ mod tests {
             member_count: 3,
             description: None,
             deep_link: "kuzz://join/code".to_owned(),
+            picture_src: None,
         });
         assert!(private.contains("3 members"));
         assert!(!private.contains("class=\"desc\""));
+        assert!(!private.contains("<img"));
+    }
+
+    #[test]
+    fn landing_shows_group_photo_from_same_origin() {
+        let page = render_landing(&Landing {
+            name: "Crew",
+            member_count: 2,
+            description: None,
+            deep_link: "kuzz://join/code".to_owned(),
+            picture_src: Some("/g/code\"x/picture".to_owned()),
+        });
+        assert!(
+            page.contains("<img class=\"photo\" src=\"/g/code&quot;x/picture\" alt=\"\">"),
+            "{page}"
+        );
+        assert!(!page.contains("http://") && !page.contains("https://"));
+    }
+
+    #[test]
+    fn picture_media_name_takes_the_blob_file_name() {
+        let hash = "ab".repeat(32);
+        assert_eq!(
+            picture_media_name(&format!("https://relay.example/media/{hash}.jpg")),
+            Some(format!("{hash}.jpg").as_str())
+        );
+        assert_eq!(
+            picture_media_name(&format!("https://relay.example/media/{hash}")),
+            Some(hash.as_str())
+        );
+        assert_eq!(
+            picture_media_name("https://relay.example/media/../etc"),
+            None
+        );
+        assert_eq!(
+            picture_media_name(&format!("https://relay.example/media/{hash}.JPG")),
+            None
+        );
+        assert_eq!(picture_media_name("https://relay.example/x.jpg"), None);
     }
 
     #[test]
