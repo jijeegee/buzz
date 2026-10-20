@@ -20,6 +20,7 @@ import {
   getAgentTranscript,
   subscribeAgentObserverStore,
   subscribeAgentManagementRequests,
+  subscribeAgentControlRequests,
   resetAgentObserverStore,
   _testProcessLiveObserverEvents,
 } from "./observerRelayStore.ts";
@@ -1877,6 +1878,42 @@ describe("observer → active-turns bridge sync", () => {
       "management callback must observe its triggering frame and prior envelope frames",
     );
     assert.equal(observerNotifications, 1);
+  });
+
+  it("hands agent control requests to listeners once, with the send time", () => {
+    const controlFrame = makeEvent({
+      seq: 2,
+      kind: "agent_control_request",
+      timestamp: "2024-01-01T00:00:02Z",
+      channelId: null,
+      payload: {
+        type: "agent_control_request",
+        action: "restart",
+        requestId: "control-1",
+        request: { agent: "Scout" },
+      },
+    });
+    const received = [];
+    const unsubscribe = subscribeAgentControlRequests((...args) => {
+      received.push(args);
+    });
+    _testProcessLiveObserverEvents(AGENT, [controlFrame]);
+    // A reconnect replay of the same frame must not re-run the request.
+    _testProcessLiveObserverEvents(AGENT, [controlFrame]);
+    unsubscribe();
+
+    assert.deepEqual(received, [
+      [
+        AGENT,
+        {
+          type: "agent_control_request",
+          action: "restart",
+          requestId: "control-1",
+          agent: "Scout",
+        },
+        "2024-01-01T00:00:02Z",
+      ],
+    ]);
   });
 
   it("does not publish when a replay batch is entirely duplicate", () => {

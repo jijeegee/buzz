@@ -1419,6 +1419,117 @@ impl KuzzClient {
         .to_string())
     }
 
+    /// Publish an agent→owner observer request and read the owner's
+    /// owner→agent control replies on the same connection.
+    ///
+    /// The reply subscription opens (and reaches EOSE) before the request is
+    /// sent, so a fast reply cannot be missed. Every decrypted reply signed by
+    /// `owner` is passed to `on_reply`, which may shorten the remaining wait
+    /// (`Some(Duration::ZERO)` stops at once); collection ends when the wait
+    /// elapses. Key mode only: replies are NIP-44 encrypted
+    /// to this agent's key.
+    pub async fn publish_observer_request(
+        &self,
+        event: nostr::Event,
+        owner: &nostr::PublicKey,
+        wait: std::time::Duration,
+        mut on_reply: impl FnMut(serde_json::Value) -> Option<std::time::Duration>,
+    ) -> Result<(), CliError> {
+        use kuzz_ws_client::{NostrWsConnection, RelayMessage, WsClientError};
+
+        let keys = self.keys("agent control requests (NIP-44 encrypted to the owner)")?;
+        let ws_error = |e: WsClientError| match e {
+            WsClientError::AuthFailed(message) => {
+                CliError::Auth(format!("relay rejected WebSocket auth: {message}"))
+            }
+            other => CliError::Other(other.to_string()),
+        };
+        let mut conn = NostrWsConnection::connect_authenticated(
+            &to_ws_url(&self.relay_url),
+            keys,
+            self.auth_tag.as_ref(),
+        )
+        .await
+        .map_err(ws_error)?;
+
+        let sub_id = format!("ctl-{}", uuid::Uuid::new_v4().simple());
+        let since = chrono::Utc::now().timestamp() - 5;
+        conn.send_raw(&serde_json::json!([
+            "REQ",
+            sub_id,
+            {
+                "kinds": [kuzz_core::kind::KIND_AGENT_OBSERVER_FRAME],
+                "#p": [keys.public_key().to_hex()],
+                "since": since,
+            }
+        ]))
+        .await
+        .map_err(ws_error)?;
+        let subscribed_by = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            let remaining = subscribed_by.saturating_duration_since(tokio::time::Instant::now());
+            match conn.next_event(remaining).await.map_err(ws_error)? {
+                RelayMessage::Eose { subscription_id } if subscription_id == sub_id => break,
+                RelayMessage::Closed {
+                    subscription_id,
+                    message,
+                } if subscription_id == sub_id => {
+                    return Err(CliError::Other(format!(
+                        "relay refused the reply subscription: {message}"
+                    )));
+                }
+                _ => {}
+            }
+        }
+
+        let ok = conn.send_event(event).await.map_err(ws_error)?;
+        if !ok.accepted {
+            return Err(CliError::Relay {
+                status: 400,
+                body: ok.message,
+            });
+        }
+
+        let mut deadline = tokio::time::Instant::now() + wait;
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let message = match conn.next_event(remaining).await {
+                Ok(message) => message,
+                Err(WsClientError::Timeout) => break,
+                Err(e) => return Err(ws_error(e)),
+            };
+            let RelayMessage::Event {
+                subscription_id,
+                event,
+            } = message
+            else {
+                continue;
+            };
+            let is_owner_control = event.pubkey == *owner
+                && event.tags.iter().any(|tag| {
+                    matches!(tag.as_slice(), [name, value]
+                        if name == kuzz_core::observer::OBSERVER_FRAME_TAG
+                            && value == kuzz_core::observer::OBSERVER_FRAME_CONTROL)
+                });
+            if subscription_id != sub_id || !is_owner_control {
+                continue;
+            }
+            let Ok(payload) =
+                kuzz_core::observer::decrypt_observer_payload::<serde_json::Value>(keys, &event)
+            else {
+                continue;
+            };
+            if let Some(rest) = on_reply(payload) {
+                deadline = deadline.min(tokio::time::Instant::now() + rest);
+            }
+        }
+        let _ = conn.disconnect().await;
+        Ok(())
+    }
+
     /// Upload a file to the relay's Blossom endpoint.
     /// Returns a BlobDescriptor on success.
     pub async fn upload_file(&self, file_path: &str) -> Result<BlobDescriptor, CliError> {

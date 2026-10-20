@@ -351,6 +351,16 @@ impl RespondToArg {
     }
 }
 
+const AGENT_CONTROL_HELP: &str = "For agents running in Kuzz (KUZZ_PRIVATE_KEY + KUZZ_AUTH_TAG). \
+The request goes to the owner's Kuzz app; the computer that runs the named agent \
+acts and answers. Works only while the owner's app is open with the owner's \
+account as the open account.\n\n\
+Examples:\n  \
+kuzz agents list\n  \
+kuzz agents start Scout\n  \
+kuzz agents restart Scout\n  \
+kuzz agents stop <AGENT_PUBKEY>";
+
 #[derive(Subcommand)]
 pub enum AgentsCmd {
     /// Open a prefilled create-agent form in the owner's Kuzz Desktop
@@ -386,6 +396,40 @@ pub enum AgentsCmd {
         model: Option<String>,
         #[arg(long, value_enum)]
         respond_to: Option<RespondToArg>,
+    },
+    /// List the owner's agents on every computer where the owner's Kuzz app is open
+    #[command(after_help = AGENT_CONTROL_HELP)]
+    List {
+        /// Seconds to collect answers from the owner's computers
+        #[arg(long, default_value_t = 5)]
+        timeout: u64,
+    },
+    /// Start one of the owner's agents through the owner's Kuzz app
+    #[command(after_help = AGENT_CONTROL_HELP)]
+    Start {
+        /// Agent name or hex pubkey
+        agent: String,
+        /// Seconds to wait for the owner's app to answer
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Stop one of the owner's agents through the owner's Kuzz app
+    #[command(after_help = AGENT_CONTROL_HELP)]
+    Stop {
+        /// Agent name or hex pubkey
+        agent: String,
+        /// Seconds to wait for the owner's app to answer
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+    },
+    /// Restart one of the owner's agents through the owner's Kuzz app
+    #[command(after_help = AGENT_CONTROL_HELP)]
+    Restart {
+        /// Agent name or hex pubkey
+        agent: String,
+        /// Seconds to wait for the owner's app to answer
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
     },
     /// Submit a NIP-IA archive request for an identity (kind 9035)
     #[command(
@@ -2887,6 +2931,10 @@ mod tests {
                 "archived",
                 "draft-create",
                 "draft-update",
+                "list",
+                "restart",
+                "start",
+                "stop",
                 "unarchive"
             ]
         );
@@ -3035,7 +3083,7 @@ mod tests {
     #[test]
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
-            ("agents", 5),
+            ("agents", 9),
             ("auth", 7),
             ("canvas", 4),
             ("channels", 16),

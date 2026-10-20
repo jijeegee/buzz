@@ -12,6 +12,10 @@ import {
   type AgentManagementRequest,
 } from "./agentManagement";
 import {
+  parseAgentControlRequest,
+  type AgentControlRequest,
+} from "./agentControl";
+import {
   parseProjectChannelRequest,
   type ProjectChannelRequest,
 } from "@/features/projects/projectChannelRequest";
@@ -140,6 +144,9 @@ const agentManagementListeners = new Set<
 >();
 const projectChannelRequestListeners = new Set<
   (agentPubkey: string, request: ProjectChannelRequest) => void
+>();
+const agentControlListeners = new Set<
+  (agentPubkey: string, request: AgentControlRequest, sentAt: string) => void
 >();
 
 // Normalized pubkeys of agents we are actively managing. Only events whose
@@ -519,6 +526,12 @@ function processLiveObserverEvents(
         listener(agentPubkey, projectChannelRequest);
       }
     }
+    const agentControlRequest = parseAgentControlRequest(parsed.payload);
+    if (agentControlRequest) {
+      for (const listener of agentControlListeners) {
+        listener(agentPubkey, agentControlRequest, parsed.timestamp);
+      }
+    }
     if (parsed.kind === "session_config_captured") {
       void putAgentSessionConfig(agentPubkey, parsed.payload);
       onSessionConfigCaptured?.(agentPubkey);
@@ -706,6 +719,20 @@ export function subscribeProjectChannelRequests(
   projectChannelRequestListeners.add(listener);
   return () => {
     projectChannelRequestListeners.delete(listener);
+  };
+}
+
+/** Agent requests to list, start, stop or restart the owner's agents. */
+export function subscribeAgentControlRequests(
+  listener: (
+    agentPubkey: string,
+    request: AgentControlRequest,
+    sentAt: string,
+  ) => void,
+) {
+  agentControlListeners.add(listener);
+  return () => {
+    agentControlListeners.delete(listener);
   };
 }
 
@@ -942,6 +969,7 @@ export function resetAgentObserverStore() {
   latestLiveSessionByAgentChannel.clear();
   agentManagementListeners.clear();
   projectChannelRequestListeners.clear();
+  agentControlListeners.clear();
   onSessionConfigCaptured = null;
   connectionState = "idle";
   errorMessage = null;

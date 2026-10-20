@@ -3,7 +3,10 @@ use kuzz_sdk::builders::{build_archive_identity_request, build_unarchive_identit
 use nostr::PublicKey;
 use serde_json::json;
 
-use crate::agent_management::{build_create, build_update, CreateAgentDraft, UpdateAgentDraft};
+use crate::agent_management::{
+    build_control, build_create, build_update, parse_control_result, AgentControlAction,
+    CreateAgentDraft, UpdateAgentDraft,
+};
 use crate::client::KuzzClient;
 use crate::error::CliError;
 use crate::validate::{read_or_stdin, validate_hex64};
@@ -83,6 +86,19 @@ pub async fn dispatch(command: AgentsCmd, client: &KuzzClient) -> Result<(), Cli
             }
             println!("{output}");
             Ok(())
+        }
+
+        AgentsCmd::List { timeout } => {
+            control(client, AgentControlAction::List, None, timeout).await
+        }
+        AgentsCmd::Start { agent, timeout } => {
+            control(client, AgentControlAction::Start, Some(agent), timeout).await
+        }
+        AgentsCmd::Stop { agent, timeout } => {
+            control(client, AgentControlAction::Stop, Some(agent), timeout).await
+        }
+        AgentsCmd::Restart { agent, timeout } => {
+            control(client, AgentControlAction::Restart, Some(agent), timeout).await
         }
 
         AgentsCmd::Archive {
@@ -167,8 +183,107 @@ pub async fn dispatch(command: AgentsCmd, client: &KuzzClient) -> Result<(), Cli
     }
 }
 
-/// Require `KUZZ_AUTH_TAG` and parse the owner pubkey from it. Used only by
-/// the `draft-create` and `draft-update` paths.
+/// Ask the owner's Kuzz app to list, start, stop or restart an agent and
+/// print its answer. `list` gathers every answering computer for the whole
+/// wait. The others need one answer (only the host computer answers) but
+/// listen a little longer, so a second computer that also has the agent is
+/// reported instead of hidden.
+const SECOND_HOST_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
+async fn control(
+    client: &KuzzClient,
+    action: AgentControlAction,
+    agent: Option<String>,
+    timeout_secs: u64,
+) -> Result<(), CliError> {
+    let owner = require_owner(client)?;
+    let built = build_control(
+        client.keys("agent control requests (NIP-44 encrypted to the owner)")?,
+        &owner,
+        action,
+        agent,
+    )?;
+    let request_id = built.request_id.clone();
+    let mut replies = Vec::new();
+    client
+        .publish_observer_request(
+            built.event,
+            &owner,
+            std::time::Duration::from_secs(timeout_secs.clamp(1, 300)),
+            |payload| {
+                let reply = parse_control_result(&payload, &request_id)?;
+                replies.push(reply);
+                (action != AgentControlAction::List).then_some(SECOND_HOST_GRACE)
+            },
+        )
+        .await?;
+    let output = control_output(action, &request_id, replies)?;
+    println!("{output}");
+    Ok(())
+}
+
+fn control_output(
+    action: AgentControlAction,
+    request_id: &str,
+    replies: Vec<serde_json::Value>,
+) -> Result<serde_json::Value, CliError> {
+    if replies.is_empty() {
+        return Err(CliError::Other(match action {
+            AgentControlAction::List => "No Kuzz app answered. The owner's app may be closed, or signed in with another account open."
+                .into(),
+            _ => "No Kuzz app answered. The agent may not exist, or its computer is off, or the owner's app there is closed or has another account open. Run `kuzz agents list` to check."
+                .into(),
+        }));
+    }
+    if action == AgentControlAction::List {
+        let computers: Vec<serde_json::Value> = replies
+            .into_iter()
+            .map(|reply| {
+                json!({
+                    "computer": reply.get("computer").cloned().unwrap_or_default(),
+                    "ok": reply.get("ok").cloned().unwrap_or(false.into()),
+                    "error": reply.get("error").cloned(),
+                    "agents": reply.get("agents").cloned().unwrap_or(json!([])),
+                })
+            })
+            .collect();
+        return Ok(json!({
+            "ok": true,
+            "action": action.as_wire(),
+            "request_id": request_id,
+            "computers": computers,
+            "note": "Only computers with the owner's Kuzz app open answer.",
+        }));
+    }
+    let reply = &replies[0];
+    if replies.len() > 1 {
+        let computers: Vec<serde_json::Value> = replies
+            .iter()
+            .map(|reply| reply.get("computer").cloned().unwrap_or_default())
+            .collect();
+        return Err(CliError::Other(format!(
+            "More than one computer has this agent and each acted on it: {}. Check `kuzz agents list` and ask the owner which copy to keep.",
+            serde_json::Value::from(computers)
+        )));
+    }
+    if reply.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        let error = reply
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("the owner's Kuzz app could not do this");
+        return Err(CliError::Other(error.to_owned()));
+    }
+    Ok(json!({
+        "ok": true,
+        "action": action.as_wire(),
+        "request_id": request_id,
+        "computer": reply.get("computer").cloned().unwrap_or_default(),
+        "agent": reply.get("agent").cloned().unwrap_or_default(),
+    }))
+}
+
+/// Require `KUZZ_AUTH_TAG` and parse the owner pubkey from it. Used by the
+/// draft and agent control requests.
 fn require_owner(client: &KuzzClient) -> Result<PublicKey, CliError> {
     let hex = client
         .auth_tag_owner_hex()
@@ -531,6 +646,26 @@ fn verify_archived_event<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::control_output;
+    use crate::agent_management::AgentControlAction;
+
+    #[test]
+    fn control_output_flags_a_second_computer_that_also_acted() {
+        let reply = |computer: &str| serde_json::json!({"type": "agent_control_result", "requestId": "r", "ok": true, "computer": computer});
+        let error = control_output(
+            AgentControlAction::Start,
+            "r",
+            vec![reply("PC-A"), reply("PC-B")],
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("PC-A"));
+        assert!(error.to_string().contains("PC-B"));
+
+        let ok = control_output(AgentControlAction::Start, "r", vec![reply("PC-A")]).unwrap();
+        assert_eq!(ok["computer"], "PC-A");
+        assert!(control_output(AgentControlAction::Stop, "r", vec![]).is_err());
+    }
+
     use super::*;
     use kuzz_core::kind::KIND_IA_ARCHIVED_LIST;
     use nostr::{EventBuilder, Keys, Kind, Tag};
