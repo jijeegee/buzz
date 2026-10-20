@@ -178,6 +178,7 @@ export function AddAgentDialog({
                     type="button"
                   >
                     <ProfileAvatar
+                      mediaVariant="small"
                       avatarUrl={agent.avatar_url}
                       className="h-9 w-9 shrink-0 text-xs"
                       label={agent.name}

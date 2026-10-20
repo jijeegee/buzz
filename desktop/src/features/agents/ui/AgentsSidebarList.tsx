@@ -503,6 +503,7 @@ function AgentRow({
             type="button"
           >
             <ProfileAvatar
+              mediaVariant="small"
               avatarUrl={avatarUrl}
               className="h-8 w-8 shrink-0 text-xs shadow-none"
               iconClassName="h-4 w-4"

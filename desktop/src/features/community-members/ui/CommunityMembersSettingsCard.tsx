@@ -130,6 +130,7 @@ function RelayMemberRow({
         triggerElement="span"
       >
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={profile?.avatarUrl ?? null}
           className="h-9 w-9 text-xs shadow-none"
           label={displayName}

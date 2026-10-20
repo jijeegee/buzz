@@ -50,6 +50,7 @@ function OwnerMark({
       title={`Agent owned by ${name}`}
     >
       <ProfileAvatar
+        mediaVariant="small"
         avatarUrl={avatarUrl}
         className="h-full w-full text-3xs shadow-none ring-1 ring-border"
         iconClassName="h-[70%] w-[70%]"

@@ -410,6 +410,7 @@ export function CommunityCatalogDialog({
                             type="button"
                           >
                             <ProfileAvatar
+                              mediaVariant="small"
                               avatarUrl={persona.avatarUrl}
                               className="h-6 w-6 text-3xs"
                               label={persona.displayName}
@@ -762,6 +763,7 @@ function PersonaCatalogDetail({ persona }: { persona: AgentPersona }) {
     <div className="w-full min-w-0 max-w-full space-y-6 overflow-x-hidden">
       <div className="flex items-center gap-3">
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={persona.avatarUrl}
           className="h-12 w-12 text-sm"
           label={persona.displayName}
@@ -882,6 +884,7 @@ function TeamCatalogMemberRow({ member }: TeamCatalogMemberRowProps) {
         type="button"
       >
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={member.avatarUrl}
           className="h-8 w-8 shrink-0 text-3xs"
           label={member.displayName}

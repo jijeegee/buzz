@@ -70,6 +70,7 @@ export function AccountSwitcherSection({
             type="button"
           >
             <ProfileAvatar
+              mediaVariant="small"
               avatarUrl={account.avatarUrl}
               className="h-6 w-6 shrink-0 text-2xs"
               iconClassName="h-3 w-3"

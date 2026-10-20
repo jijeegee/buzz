@@ -189,6 +189,7 @@ export function SidebarProfileCard({
               size={32}
             >
               <ProfileAvatar
+                mediaVariant="small"
                 avatarDataUrl={selfProfileCache?.avatarDataUrl ?? null}
                 avatarUrl={profile?.avatarUrl ?? null}
                 className="h-full w-full text-xs"

@@ -294,6 +294,7 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
             >
               <div className="flex min-w-0 items-center gap-3">
                 <ProfileAvatar
+                  mediaVariant="small"
                   avatarUrl={profile?.avatarUrl ?? null}
                   className="h-8 w-8 text-xs shadow-none"
                   iconClassName="h-4 w-4"

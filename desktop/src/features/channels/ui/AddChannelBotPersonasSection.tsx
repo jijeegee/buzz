@@ -34,6 +34,7 @@ function AgentRow({
       type="button"
     >
       <ProfileAvatar
+        mediaVariant="small"
         avatarUrl={persona.avatarUrl}
         className="h-9 w-9 shrink-0 text-xs"
         iconClassName="h-5 w-5"

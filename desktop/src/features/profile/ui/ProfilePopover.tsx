@@ -146,6 +146,7 @@ export function ProfilePopover({
                 size={32}
               >
                 <ProfileAvatar
+                  mediaVariant="small"
                   avatarDataUrl={avatarDataUrl}
                   avatarUrl={avatarUrl}
                   className="h-full w-full text-xs"

@@ -292,6 +292,7 @@ export function TeamDialog({
                             tabIndex={-1}
                           />
                           <ProfileAvatar
+                            mediaVariant="small"
                             avatarUrl={persona.avatarUrl}
                             className="h-6 w-6 text-2xs"
                             label={persona.displayName}

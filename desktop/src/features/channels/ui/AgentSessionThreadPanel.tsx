@@ -460,6 +460,7 @@ export function AgentSessionThreadPanel({
         onBack={onBack}
       >
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={agentProfile?.avatarUrl ?? null}
           className="size-9"
           label={agentLabel}
