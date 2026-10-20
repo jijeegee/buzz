@@ -330,7 +330,8 @@ fn normalize_server_host(value: &str) -> String {
         Some((_scheme, rest)) => rest.split('/').next().unwrap_or(rest),
         None => value.split('/').next().unwrap_or(value),
     };
-    kuzz_core::tenant::normalize_host(authority)
+    // A value signed for an alias of this service counts as the service.
+    kuzz_core::tenant::canonical_service_url(&kuzz_core::tenant::normalize_host(authority))
 }
 
 /// Verify a kind:24242 Blossom upload auth event, including the x tag hash check.

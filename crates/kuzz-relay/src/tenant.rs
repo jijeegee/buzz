@@ -14,73 +14,8 @@
 //! (`Db::resolve_host`); the relay depends on the trait, not the query, so the
 //! binding is testable without a database.
 
-use std::collections::BTreeSet;
-use std::sync::OnceLock;
-
+pub use kuzz_core::tenant::{install_service_aliases, service_aliases, ServiceAliases};
 use kuzz_core::tenant::{normalize_host, CommunityId, TenantContext};
-
-/// Other addresses of this deployment's service: region hosts (`kr.`, `jp.`)
-/// or a previous domain (`KUZZ_SERVICE_ALIASES`).
-///
-/// A request that arrives on an alias binds to the service's community, and
-/// its [`TenantContext::host`] is the *service* host. Every signature check
-/// (NIP-42 `relay`, NIP-98 `u`, Blossom `server`, push `origin`) and every
-/// absolute URL (media, invites, NIP-05) reads the tenant host, so clients
-/// sign with the service name and stored URLs stay the same whichever address
-/// they connected to. An alias is never accepted as a signature value itself.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ServiceAliases {
-    service_host: String,
-    aliases: BTreeSet<String>,
-}
-
-impl ServiceAliases {
-    /// `service_host` and every alias must already be normalized
-    /// ([`normalize_host`]); an alias equal to the service host is ignored.
-    pub fn new(service_host: String, aliases: impl IntoIterator<Item = String>) -> Self {
-        let aliases = aliases
-            .into_iter()
-            .filter(|alias| *alias != service_host)
-            .collect();
-        Self {
-            service_host,
-            aliases,
-        }
-    }
-
-    /// The host a normalized request host binds as: the service host for an
-    /// alias, the host itself otherwise.
-    pub fn canonical<'a>(&'a self, normalized_host: &'a str) -> &'a str {
-        if self.aliases.contains(normalized_host) {
-            &self.service_host
-        } else {
-            normalized_host
-        }
-    }
-
-    /// Whether `normalized_host` is an alias (not the service host).
-    pub fn is_alias(&self, normalized_host: &str) -> bool {
-        self.aliases.contains(normalized_host)
-    }
-
-    /// Whether no aliases are configured.
-    pub fn is_empty(&self) -> bool {
-        self.aliases.is_empty()
-    }
-}
-
-static SERVICE_ALIASES: OnceLock<ServiceAliases> = OnceLock::new();
-
-/// Install the deployment's service aliases. Startup calls this once, before
-/// serving; later calls are ignored (the first value wins).
-pub fn install_service_aliases(aliases: ServiceAliases) -> bool {
-    SERVICE_ALIASES.set(aliases).is_ok()
-}
-
-/// The installed service aliases, if any.
-pub fn service_aliases() -> Option<&'static ServiceAliases> {
-    SERVICE_ALIASES.get()
-}
 
 /// Resolves a normalized connection host to its community, or `None` when the
 /// host maps to no community on this deployment.

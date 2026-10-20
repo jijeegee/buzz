@@ -71,7 +71,9 @@ pub fn verify_nip42_event(
         .and_then(|t| t.content())
         .ok_or(AuthError::RelayUrlMismatch)?;
 
-    if normalize_relay_url(relay) != normalize_relay_url(relay_url) {
+    // A value signed for an alias of this service counts as the service.
+    let relay = kuzz_core::tenant::canonical_service_url(relay);
+    if normalize_relay_url(&relay) != normalize_relay_url(relay_url) {
         return Err(AuthError::RelayUrlMismatch);
     }
 
