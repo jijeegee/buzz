@@ -207,9 +207,130 @@ pub fn relay_url_authority(relay_url: &str) -> String {
     normalize_host(&authority)
 }
 
+/// Other addresses of this deployment's service: region hosts (`kr.`, `jp.`)
+/// or a previous domain (`KUZZ_SERVICE_ALIASES`).
+///
+/// A request that arrives on an alias binds to the service's community, and
+/// its [`TenantContext::host`] is the *service* host. Every signature check
+/// (NIP-42 `relay`, NIP-98 `u`, Blossom `server`, push `origin`) and every
+/// absolute URL (media, invites, NIP-05) reads the tenant host, so clients
+/// sign with the service name and stored URLs stay the same whichever address
+/// they connected to. A value signed for an alias is accepted too
+/// ([`canonical_service_url`]): apps from before a domain change keep signing
+/// the old domain.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ServiceAliases {
+    service_host: String,
+    aliases: std::collections::BTreeSet<String>,
+}
+
+impl ServiceAliases {
+    /// `service_host` and every alias must already be normalized
+    /// ([`normalize_host`]); an alias equal to the service host is ignored.
+    pub fn new(service_host: String, aliases: impl IntoIterator<Item = String>) -> Self {
+        let aliases = aliases
+            .into_iter()
+            .filter(|alias| *alias != service_host)
+            .collect();
+        Self {
+            service_host,
+            aliases,
+        }
+    }
+
+    /// The host a normalized request host binds as: the service host for an
+    /// alias, the host itself otherwise.
+    pub fn canonical<'a>(&'a self, normalized_host: &'a str) -> &'a str {
+        if self.aliases.contains(normalized_host) {
+            &self.service_host
+        } else {
+            normalized_host
+        }
+    }
+
+    /// Whether `normalized_host` is an alias (not the service host).
+    pub fn is_alias(&self, normalized_host: &str) -> bool {
+        self.aliases.contains(normalized_host)
+    }
+
+    /// Whether no aliases are configured.
+    pub fn is_empty(&self) -> bool {
+        self.aliases.is_empty()
+    }
+}
+
+static SERVICE_ALIASES: std::sync::OnceLock<ServiceAliases> = std::sync::OnceLock::new();
+
+/// Install the deployment's service aliases. Startup calls this once, before
+/// serving; later calls are ignored (the first value wins).
+pub fn install_service_aliases(aliases: ServiceAliases) -> bool {
+    SERVICE_ALIASES.set(aliases).is_ok()
+}
+
+/// The installed service aliases, if any.
+pub fn service_aliases() -> Option<&'static ServiceAliases> {
+    SERVICE_ALIASES.get()
+}
+
+/// A signed URL or host (NIP-42 `relay`, NIP-98 `u`, Blossom `server`, push
+/// `origin`) with an alias authority replaced by the service host, so it
+/// compares equal to the value built from the tenant host. Anything else is
+/// returned unchanged.
+#[must_use]
+pub fn canonical_service_url(signed: &str) -> String {
+    canonical_service_url_with(service_aliases(), signed)
+}
+
+fn canonical_service_url_with(aliases: Option<&ServiceAliases>, signed: &str) -> String {
+    let Some(aliases) = aliases.filter(|a| !a.is_empty()) else {
+        return signed.to_string();
+    };
+    let start = signed.find("://").map_or(0, |i| i + 3);
+    let end = signed[start..]
+        .find(['/', '?', '#'])
+        .map_or(signed.len(), |i| start + i);
+    let host = normalize_host(&signed[start..end]);
+    if !aliases.is_alias(&host) {
+        return signed.to_string();
+    }
+    format!(
+        "{}{}{}",
+        &signed[..start],
+        aliases.canonical(&host),
+        &signed[end..]
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alias_signed_values_map_to_the_service_host() {
+        let aliases = ServiceAliases::new(
+            "chat.example".to_string(),
+            ["kr.chat.example".to_string(), "old.example".to_string()],
+        );
+        let a = Some(&aliases);
+        assert_eq!(
+            canonical_service_url_with(a, "wss://KR.chat.example:443"),
+            "wss://chat.example"
+        );
+        assert_eq!(
+            canonical_service_url_with(a, "https://old.example/query?x=1"),
+            "https://chat.example/query?x=1"
+        );
+        assert_eq!(canonical_service_url_with(a, "old.example"), "chat.example");
+        // Not an alias, or no aliases: unchanged.
+        assert_eq!(
+            canonical_service_url_with(a, "wss://jp.chat.example"),
+            "wss://jp.chat.example"
+        );
+        assert_eq!(
+            canonical_service_url_with(None, "wss://kr.chat.example"),
+            "wss://kr.chat.example"
+        );
+    }
 
     #[test]
     fn validate_community_host_accepts_only_bare_host_and_port() {

@@ -106,7 +106,10 @@ pub fn verify_nip98_event(
         .and_then(|t| t.content())
         .ok_or_else(|| AuthError::Nip98Invalid("missing `u` tag".to_string()))?;
 
-    if normalize_url(u_tag) != normalize_url(expected_url) {
+    // A value signed for an alias of this service counts as the service.
+    if normalize_url(&kuzz_core::tenant::canonical_service_url(u_tag))
+        != normalize_url(expected_url)
+    {
         return Err(AuthError::Nip98Invalid(format!(
             "URL mismatch: event has `{u_tag}`, expected `{expected_url}`"
         )));
