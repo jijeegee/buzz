@@ -251,7 +251,7 @@ async fn channel_windows_hide_rows_from_before_the_join() {
 
 impl Fixture {
     /// A kind:9 reply to `root` (or a kind:7 reaction on it) through the real
-    /// event writer, plus the thread index row the relay ingest would write.
+    /// event and thread index writers.
     async fn reply(&self, root: &str, kind: u16, content: &str) -> String {
         let root_id = nostr::EventId::from_hex(root).expect("root id");
         let event = EventBuilder::new(Kind::Custom(kind), content)
@@ -265,18 +265,29 @@ impl Fixture {
             .await
             .expect("real event writer");
         if kind == 9 {
-            sqlx::query(
-                "INSERT INTO thread_metadata (community_id, event_created_at, event_id, channel_id, \
-                 parent_event_id, parent_event_created_at, root_event_id, root_event_created_at, depth, broadcast) \
-                 SELECT $1, e.created_at, e.id, $2, r.id, r.created_at, r.id, r.created_at, 1, false \
-                 FROM events e, events r WHERE e.community_id = $1 AND e.id = $3 \
-                 AND r.community_id = $1 AND r.id = $4",
+            let at = |ts: nostr::Timestamp| {
+                chrono::DateTime::from_timestamp(ts.as_secs() as i64, 0).expect("timestamp")
+            };
+            let root_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+                "SELECT created_at FROM events WHERE community_id = $1 AND id = $2",
             )
             .bind(self.scope.as_uuid())
-            .bind(self.channel)
-            .bind(event.id.to_bytes().to_vec())
             .bind(root_id.to_bytes().to_vec())
-            .execute(&self.pool)
+            .fetch_one(&self.pool)
+            .await
+            .expect("root row");
+            // Root row first (exists after the first reply), then the reply.
+            crate::thread::insert_thread_metadata(
+                &self.pool, self.scope, root_id.as_bytes(), root_at, self.channel,
+                None, None, None, None, 0, false,
+            )
+            .await
+            .ok();
+            crate::thread::insert_thread_metadata(
+                &self.pool, self.scope, event.id.as_bytes(), at(event.created_at), self.channel,
+                Some(root_id.as_bytes()), Some(root_at), Some(root_id.as_bytes()), Some(root_at),
+                1, false,
+            )
             .await
             .expect("thread index");
         }
@@ -405,4 +416,49 @@ async fn summaries_and_id_lookups_treat_pre_join_events_as_absent() {
         .await
         .unwrap()
         .is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn inbox_skips_rooms_and_threads_from_before_the_join() {
+    use crate::inbox_summary::{InboxReadMarkers, InboxRowKind};
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let old_root = f.send("old root").await;
+    f.reply(&old_root, 9, "old reply").await;
+    f.join().await;
+    let member = f.member.public_key();
+    let markers = InboxReadMarkers {
+        channels: vec![],
+        threads: vec![],
+    };
+
+    // Joined, nothing new yet: the room shows with no preview, no thread row.
+    let page = db.inbox_summary(f.scope, &member, 30, None, &markers).await.unwrap();
+    let shape: Vec<_> = page.rows.iter().map(|r| (r.kind, r.latest.is_some())).collect();
+    assert_eq!(shape, [(InboxRowKind::Room, false)]);
+
+    // A late reply to the old root still does not surface the old thread.
+    f.reply(&old_root, 9, "late reply to old root").await;
+    let new_root = f.send("new root").await;
+    f.reply(&new_root, 9, "new reply").await;
+    let page = db.inbox_summary(f.scope, &member, 30, None, &markers).await.unwrap();
+    let threads: Vec<_> = page
+        .rows
+        .iter()
+        .filter(|r| r.kind == InboxRowKind::Thread)
+        .map(|r| r.root.as_ref().unwrap()["content"].clone())
+        .collect();
+    assert_eq!(threads, ["new root"]);
+    let room = page.rows.iter().find(|r| r.kind == InboxRowKind::Room).unwrap();
+    assert_eq!(room.latest.as_ref().unwrap()["content"], "new root");
+
+    // The owner (no cut) still sees the old thread.
+    let page = db
+        .inbox_summary(f.scope, &f.owner.public_key(), 30, None, &markers)
+        .await
+        .unwrap();
+    assert_eq!(page.rows.iter().filter(|r| r.kind == InboxRowKind::Thread).count(), 2);
 }
