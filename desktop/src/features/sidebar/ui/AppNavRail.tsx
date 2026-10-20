@@ -1,10 +1,8 @@
 import * as React from "react";
 import {
-  Activity,
   Bot,
   Ellipsis,
   Folders,
-  Inbox,
   MessagesSquare,
   Users,
   Zap,
@@ -31,15 +29,12 @@ export type NavRailView =
   | "people";
 
 type AppNavRailProps = {
-  homeBadgeCount: number;
   /** The list shown in the left column; its tab is the highlighted one. */
   listTab: SidebarListTab;
   onSelectAgents: () => void;
   onSelectChats: () => void;
-  onSelectHome: () => void;
   onSelectPeople: () => void;
   onSelectProjects: () => void;
-  onSelectPulse: () => void;
   onSelectWorkflows: () => void;
   /** The signed-in profile button, pinned to the bottom of the rail. */
   profileSlot?: React.ReactNode;
@@ -48,19 +43,16 @@ type AppNavRailProps = {
 
 /**
  * The app's main tabs as a narrow column of icons with labels, left of the
- * list: Chats · People · Activity · Agents · More (Pulse, Projects,
- * Workflows). The list beside it follows the selected tab. The profile
+ * list: Chats · People · Agents · More (Projects, Workflows). Activity and
+ * Pulse are hidden for now. The list beside it follows the selected tab. The profile
  * button sits at the bottom, apart from the list.
  */
 export function AppNavRail({
-  homeBadgeCount,
   listTab,
   onSelectAgents,
   onSelectChats,
-  onSelectHome,
   onSelectPeople,
   onSelectProjects,
-  onSelectPulse,
   onSelectWorkflows,
   profileSlot,
   selectedView,
@@ -88,23 +80,6 @@ export function AppNavRail({
         testId="open-people-view"
       />
       <RailButton
-        active={!onWorkflows && listTab === "activity"}
-        badge={
-          homeBadgeCount > 0 ? (
-            <span
-              className="absolute right-1.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground tabular-nums"
-              data-testid="sidebar-home-count"
-            >
-              {Math.min(homeBadgeCount, 99)}
-            </span>
-          ) : null
-        }
-        icon={<Inbox className="h-5 w-5" />}
-        label="Activity"
-        onClick={onSelectHome}
-        testId="open-activity-view"
-      />
-      <RailButton
         active={!onWorkflows && listTab === "agents"}
         icon={<Bot className="h-5 w-5" />}
         label="Agents"
@@ -113,9 +88,8 @@ export function AppNavRail({
       />
       <RailMoreMenu
         onSelectProjects={onSelectProjects}
-        onSelectPulse={onSelectPulse}
         onSelectWorkflows={onSelectWorkflows}
-        active={onWorkflows || listTab === "projects" || listTab === "pulse"}
+        active={onWorkflows || listTab === "projects"}
       />
       {profileSlot ? (
         <div className="mt-auto w-full pt-2">{profileSlot}</div>
@@ -165,20 +139,17 @@ const RailButton = React.forwardRef<HTMLButtonElement, RailButtonProps>(
   },
 );
 
-/** Pulse, Projects and Workflows live behind one "More" rail item. */
+/** Projects and Workflows live behind one "More" rail item. */
 function RailMoreMenu({
   active,
   onSelectProjects,
-  onSelectPulse,
   onSelectWorkflows,
-}: Pick<
-  AppNavRailProps,
-  "onSelectProjects" | "onSelectPulse" | "onSelectWorkflows"
-> & { active: boolean }) {
-  const pulseEnabled = useFeatureEnabled("pulse");
+}: Pick<AppNavRailProps, "onSelectProjects" | "onSelectWorkflows"> & {
+  active: boolean;
+}) {
   const projectsEnabled = useFeatureEnabled("projects");
   const workflowsEnabled = useFeatureEnabled("workflows");
-  if (!pulseEnabled && !projectsEnabled && !workflowsEnabled) {
+  if (!projectsEnabled && !workflowsEnabled) {
     return null;
   }
   return (
@@ -192,15 +163,6 @@ function RailMoreMenu({
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="right">
-        {pulseEnabled ? (
-          <DropdownMenuItem
-            data-testid="open-pulse-view"
-            onSelect={onSelectPulse}
-          >
-            <Activity className="h-4 w-4" />
-            <span>Pulse</span>
-          </DropdownMenuItem>
-        ) : null}
         {projectsEnabled ? (
           <DropdownMenuItem
             data-testid="open-projects-view"

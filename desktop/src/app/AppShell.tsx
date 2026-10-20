@@ -76,7 +76,6 @@ import {
   type SettingsSection,
   isSettingsSection,
 } from "@/features/settings/ui/SettingsPanels";
-import { useDueReminderBadgeCount } from "@/features/reminders/hooks";
 import { useReminderNotifications } from "@/features/reminders/useReminderNotifications";
 import { AppSidebar } from "@/features/sidebar/ui/AppSidebar";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
@@ -512,29 +511,24 @@ export function AppShell() {
     unreadThreadFeedItems,
   ]);
 
-  const { homeBadgeCount, homeBadgeCountExcludingHighPriority } =
-    useHomeFeedNotificationState(
-      homeFeedQuery.data,
-      identityQuery.data?.pubkey,
-      notificationSettings.settings,
-      notificationSettings.setDesktopEnabled,
-      !isHuddleRoom,
-      selectedView === "home" && !settingsOpen,
-      getChannelReadAt,
-      readStateVersion,
-      highPriorityUnreadChannelIds,
-      feedProfilesQuery.data?.profiles,
-      mutedChannelIds,
-      feedItemState.unreadSet,
-      threadActivityFeedItems,
-      getThreadReadAt,
-      getMessageReadAt,
-      channels,
-      huddleBackingChannelIds,
-    );
-  const dueReminderBadge = useDueReminderBadgeCount(
+  const { homeBadgeCountExcludingHighPriority } = useHomeFeedNotificationState(
+    homeFeedQuery.data,
     identityQuery.data?.pubkey,
-    notificationSettings.settings.homeBadgeEnabled,
+    notificationSettings.settings,
+    notificationSettings.setDesktopEnabled,
+    !isHuddleRoom,
+    selectedView === "home" && !settingsOpen,
+    getChannelReadAt,
+    readStateVersion,
+    highPriorityUnreadChannelIds,
+    feedProfilesQuery.data?.profiles,
+    mutedChannelIds,
+    feedItemState.unreadSet,
+    threadActivityFeedItems,
+    getThreadReadAt,
+    getMessageReadAt,
+    channels,
+    huddleBackingChannelIds,
   );
   const isNotifiedForThread = React.useCallback(
     (rootId: string) =>
@@ -893,16 +887,13 @@ export function AppShell() {
             ) : null}
             {!isHuddleRoom ? (
               <AppNavRail
-                homeBadgeCount={homeBadgeCount + dueReminderBadge}
                 listTab={sidebarListTab}
                 // Rail tabs switch only the left list; the main pane keeps
                 // what it shows until an item in that list is opened.
                 onSelectAgents={() => setSidebarListTab("agents")}
                 onSelectChats={handleSelectChats}
-                onSelectHome={() => setSidebarListTab("activity")}
                 onSelectPeople={() => setSidebarListTab("people")}
                 onSelectProjects={() => setSidebarListTab("projects")}
-                onSelectPulse={() => setSidebarListTab("pulse")}
                 onSelectWorkflows={() => void goWorkflows()}
                 profileSlot={
                   <SidebarProfileCard

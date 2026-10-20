@@ -47,7 +47,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    for (final label in ['People', 'Activity', 'Agents', 'More']) {
+    for (final label in ['People', 'Agents', 'More']) {
       expect(find.text(label), findsNothing);
       expect(find.bySemanticsLabel(label), findsOneWidget);
     }
@@ -226,12 +226,12 @@ void main() {
     await tester.pump();
     expect(hapticCalls, isEmpty);
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
     expect(hapticCalls, hasLength(1));
     expect(hapticCalls.single.arguments, 'HapticFeedbackType.selectionClick');
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
     expect(hapticCalls, hasLength(1));
 
@@ -266,41 +266,32 @@ void main() {
     expect(hapticCalls.single.arguments, 'HapticFeedbackType.lightImpact');
   });
 
-  testWidgets('badges the Activity tab when it has unread rows', (tester) async {
+  testWidgets('hides the Activity tab even with unread rows', (tester) async {
     await tester.pumpWidget(await buildHome(unreadInboxCount: 1));
     await tester.pump();
 
-    expect(
-      find.byKey(const ValueKey('activity-tab-unread-dot')),
-      findsOneWidget,
-    );
-    final badge = tester.widget<Container>(
-      find.byKey(const ValueKey('activity-tab-unread-dot')),
-    );
-    expect(badge.constraints?.maxWidth, 12);
-    expect(badge.constraints?.maxHeight, 12);
-    expect(find.bySemanticsLabel('Activity, unread'), findsOneWidget);
-    AnimatedScale unreadDotScale() => tester.widget<AnimatedScale>(
-      find.byKey(const ValueKey('activity-tab-unread-dot-scale')),
-    );
-    expect(unreadDotScale().scale, 1);
-    expect(unreadDotScale().alignment, const Alignment(-0.5, 0.5));
-    expect(unreadDotScale().duration, const Duration(milliseconds: 220));
+    expect(find.byTooltip('Activity'), findsNothing);
+    expect(find.byKey(const ValueKey('activity-tab-unread-dot')), findsNothing);
+  });
 
-    await tester.tap(find.byTooltip('Activity'));
+  testWidgets('opens More as a small menu with profile and Settings only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    expect(
-      find.byKey(const ValueKey('activity-tab-unread-dot')),
-      findsOneWidget,
-    );
-    expect(unreadDotScale().scale, 0);
-    expect(find.bySemanticsLabel('Activity, unread'), findsNothing);
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Chats'));
-    await tester.pump();
+    expect(find.byKey(const ValueKey('more-menu')), findsOneWidget);
+    expect(find.byKey(const ValueKey('more-settings')), findsOneWidget);
+    for (final hidden in ['Groups', 'Search', 'Pulse']) {
+      expect(find.text(hidden), findsNothing);
+    }
 
-    expect(unreadDotScale().scale, 1);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('more-menu')), findsNothing);
   });
 
   testWidgets('fades and slides tab content in the selected direction', (
@@ -331,7 +322,7 @@ void main() {
     expect(bodyOpacity().opacity, closeTo(1, 0.001));
     expect(appBarOpacity().opacity, closeTo(1, 0.001));
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
 
     expect(bodyOffset(), closeTo(24, 0.001));
@@ -377,7 +368,7 @@ void main() {
     await tester.pumpWidget(await buildHome(disableAnimations: true));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
 
     final bodyTransform = tester.widget<Transform>(
@@ -418,7 +409,7 @@ void main() {
     expect(scale(), closeTo(1, 0.001));
     expect(opacity(), closeTo(1, 0.001));
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 110));
 
