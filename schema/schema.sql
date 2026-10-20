@@ -2375,6 +2375,19 @@ CREATE TABLE event_side_effects (
 CREATE INDEX event_side_effects_due ON event_side_effects (lease_until);
 SELECT attach_community_write_fence('event_side_effects');
 
+-- Per-field order of channel metadata edits (0083).
+CREATE TABLE channel_metadata_order (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    channel_id UUID NOT NULL,
+    field TEXT NOT NULL,
+    seq BIGINT NOT NULL,
+    event_id BYTEA,
+    PRIMARY KEY (community_id, channel_id, field),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE
+);
+SELECT attach_community_write_fence('channel_metadata_order');
+
 CREATE FUNCTION enqueue_event_side_effect() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN

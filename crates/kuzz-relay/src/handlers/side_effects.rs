@@ -14,6 +14,7 @@ use kuzz_core::kind::{
     KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION, KIND_THREAD_SUMMARY,
 };
 use kuzz_core::StoredEvent;
+use kuzz_db::channel::ChannelField;
 use kuzz_db::channel::{MemberRecord, MemberRole};
 use kuzz_db::channel_members::MemberWrite;
 
@@ -41,9 +42,9 @@ pub fn is_side_effect_kind(kind: u32) -> bool {
 /// Kinds whose side effects may run again after a failed or interrupted run.
 ///
 /// The others are not safe to replay yet (audit 2026-10-20, see
-/// PLANS/GLOBAL_REGIONS_S0_ORDER_GAP_PLAN_20261019.md): metadata edits (9002)
-/// and profiles (0, 10100) can apply a stale change after newer ones. Their
-/// outbox rows stay as a record of the failure.
+/// PLANS/GLOBAL_REGIONS_S0_ORDER_GAP_PLAN_20261019.md): profiles (0, 10100)
+/// can apply a stale change after newer ones. Their outbox rows stay as a
+/// record of the failure.
 pub fn side_effect_retry_safe(kind: u32) -> bool {
     SIDE_EFFECT_RETRY_KINDS.contains(&(kind as i32))
 }
@@ -51,12 +52,14 @@ pub fn side_effect_retry_safe(kind: u32) -> bool {
 /// [`side_effect_retry_safe`] kinds, for the outbox retry query. 9007 and
 /// 9009 are idempotent (a known channel id, system messages and notifications
 /// with the trigger's time); membership changes (9000, 9001, 9021, 9022) skip
-/// a re-run or an event older than the last change (migration 0082);
+/// a re-run or an event older than the last change (migration 0082), and
+/// metadata edits (9002) do the same per field (migration 0083);
 /// 41001..=41003 have no side effect.
-pub const SIDE_EFFECT_RETRY_KINDS: [i32; 13] = [
+pub const SIDE_EFFECT_RETRY_KINDS: [i32; 14] = [
     5,
     9000,
     9001,
+    9002,
     9005,
     9007,
     9008,
@@ -1749,6 +1752,29 @@ async fn handle_remove_user(
     Ok(())
 }
 
+/// Set one kind:9002 field unless a later change of it was applied already
+/// (migration 0083). `false` means skip this tag's messages; a re-run of the
+/// same event goes on, its messages are deduplicated.
+async fn apply_metadata_field(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+    channel_id: Uuid,
+    field: ChannelField<'_>,
+) -> anyhow::Result<bool> {
+    let key = field.key();
+    let write = state
+        .db
+        .apply_channel_field_for_event(tenant.community(), channel_id, field, event.id.as_bytes())
+        .await?;
+    if write != MemberWrite::Superseded {
+        return Ok(true);
+    }
+    metrics::counter!("kuzz_metadata_edits_superseded_total", "field" => key).increment(1);
+    info!(channel = %channel_id, event_id = %event.id, field = key, "metadata edit superseded by a later change; skipped");
+    Ok(false)
+}
+
 async fn handle_edit_metadata(
     tenant: &TenantContext,
     event: &Event,
@@ -1758,42 +1784,22 @@ async fn handle_edit_metadata(
         extract_h_tag_channel(event).ok_or_else(|| anyhow::anyhow!("missing h tag"))?;
     let actor_bytes = event.pubkey.to_bytes().to_vec();
     let actor_hex = hex::encode(&actor_bytes);
+    let apply = |field| apply_metadata_field(tenant, state, event, channel_id, field);
 
     for tag in event.tags.iter() {
         let key = tag.kind().to_string();
         if let Some(val) = tag.content() {
             match key.as_str() {
                 "name" => {
-                    state
-                        .db
-                        .update_channel(
-                            tenant.community(),
-                            channel_id,
-                            kuzz_db::channel::ChannelUpdate {
-                                name: Some(val.to_string()),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
+                    apply(ChannelField::Name(val)).await?;
                 }
                 "about" => {
-                    state
-                        .db
-                        .update_channel(
-                            tenant.community(),
-                            channel_id,
-                            kuzz_db::channel::ChannelUpdate {
-                                description: Some(val.to_string()),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
+                    apply(ChannelField::About(val)).await?;
                 }
                 "topic" => {
-                    state
-                        .db
-                        .set_topic(tenant.community(), channel_id, val, &actor_bytes)
-                        .await?;
+                    if !apply(ChannelField::Topic(val, &actor_bytes)).await? {
+                        continue;
+                    }
                     emit_side_effect_message(
                         tenant,
                         state,
@@ -1806,10 +1812,9 @@ async fn handle_edit_metadata(
                     .await?;
                 }
                 "purpose" => {
-                    state
-                        .db
-                        .set_purpose(tenant.community(), channel_id, val, &actor_bytes)
-                        .await?;
+                    if !apply(ChannelField::Purpose(val, &actor_bytes)).await? {
+                        continue;
+                    }
                     emit_side_effect_message(
                         tenant,
                         state,
@@ -1828,17 +1833,9 @@ async fn handle_edit_metadata(
                         .await
                         .map(|c| c.visibility == "open")
                         .unwrap_or(false);
-                    state
-                        .db
-                        .update_channel(
-                            tenant.community(),
-                            channel_id,
-                            kuzz_db::channel::ChannelUpdate {
-                                visibility: Some(val.to_string()),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
+                    if !apply(ChannelField::Visibility(val)).await? {
+                        continue;
+                    }
                     // A visibility flip changes who can see the channel, so the
                     // accessible-channels and visibility caches must be cleared
                     // before any later event for this channel fans out.
@@ -1873,17 +1870,9 @@ async fn handle_edit_metadata(
                             anyhow::anyhow!("invalid ttl value: {val} (must be a positive integer)")
                         })?)
                     };
-                    state
-                        .db
-                        .update_channel(
-                            tenant.community(),
-                            channel_id,
-                            kuzz_db::channel::ChannelUpdate {
-                                ttl_seconds: Some(ttl_change),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
+                    if !apply(ChannelField::Ttl(ttl_change)).await? {
+                        continue;
+                    }
                     emit_side_effect_message(
                         tenant,
                         state,
@@ -1897,17 +1886,9 @@ async fn handle_edit_metadata(
                 }
                 "goals" => {
                     // "on"/"off", validated during authorization.
-                    state
-                        .db
-                        .update_channel(
-                            tenant.community(),
-                            channel_id,
-                            kuzz_db::channel::ChannelUpdate {
-                                goals_enabled: Some(val == "on"),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
+                    if !apply(ChannelField::Goals(val == "on")).await? {
+                        continue;
+                    }
                     emit_side_effect_message(
                         tenant,
                         state,
@@ -1922,10 +1903,9 @@ async fn handle_edit_metadata(
                 "archived" => {
                     match val {
                         "true" => {
-                            state
-                                .db
-                                .archive_channel(tenant.community(), channel_id)
-                                .await?;
+                            if !apply(ChannelField::Archived(true)).await? {
+                                continue;
+                            }
                             emit_side_effect_message(
                                 tenant,
                                 state,
@@ -1938,10 +1918,9 @@ async fn handle_edit_metadata(
                             .await?;
                         }
                         "false" => {
-                            state
-                                .db
-                                .unarchive_channel(tenant.community(), channel_id)
-                                .await?;
+                            if !apply(ChannelField::Archived(false)).await? {
+                                continue;
+                            }
                             emit_side_effect_message(
                                 tenant,
                                 state,
@@ -4037,8 +4016,11 @@ mod tests {
             .sign_with_keys(&keys)
             .unwrap();
         assert_ne!(derived_channel_id(&event), derived_channel_id(&other));
-        for kind in [9002, 0, KIND_AGENT_PROFILE] {
-            assert!(!side_effect_retry_safe(kind), "{kind} still unsafe to replay");
+        for kind in [0, KIND_AGENT_PROFILE] {
+            assert!(
+                !side_effect_retry_safe(kind),
+                "{kind} still unsafe to replay"
+            );
         }
         assert!(!is_side_effect_kind(40099));
     }
@@ -4092,8 +4074,12 @@ mod tests {
                 .await
                 .expect("store admin event");
         }
-        handle_side_effects(&tenant, 9000, &add, &state).await.expect("add");
-        handle_side_effects(&tenant, 9001, &remove, &state).await.expect("remove");
+        handle_side_effects(&tenant, 9000, &add, &state)
+            .await
+            .expect("add");
+        handle_side_effects(&tenant, 9001, &remove, &state)
+            .await
+            .expect("remove");
         let target_bytes = hex::decode(&target).unwrap();
         let is_member = || async {
             state
@@ -4119,13 +4105,114 @@ mod tests {
         handle_side_effects(&tenant, 9000, &add, &state)
             .await
             .expect("stale add is not an error");
-        assert!(!is_member().await, "an old add must not undo the later remove");
+        assert!(
+            !is_member().await,
+            "an old add must not undo the later remove"
+        );
         // The remove replayed: a no-op, not MemberNotFound.
         handle_side_effects(&tenant, 9001, &remove, &state)
             .await
             .expect("re-run remove is not an error");
         assert!(!is_member().await);
-        assert_eq!(messages().await, before, "replays post no new system messages");
+        assert_eq!(
+            messages().await,
+            before,
+            "replays post no new system messages"
+        );
+    }
+
+    /// Metadata edits (9002) replayed out of order: per field, an older edit
+    /// does not undo a newer one, and a re-run posts nothing new.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn metadata_replays_keep_the_latest_change() {
+        let state =
+            crate::state::tests::test_state_with_database_url(&crate::test_support::database_url())
+                .await;
+        let pool = state.db.pool();
+        let community = kuzz_core::tenant::CommunityId::from_uuid(Uuid::new_v4());
+        let host = format!("replay-{}.test", community.as_uuid());
+        sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
+            .bind(community.as_uuid())
+            .bind(&host)
+            .execute(pool)
+            .await
+            .expect("community");
+        let tenant = TenantContext::resolved(community, host);
+        let owner = nostr::Keys::generate();
+        let create = EventBuilder::new(Kind::Custom(9007), "")
+            .tags([
+                Tag::parse(["name", "replay-meta"]).unwrap(),
+                Tag::parse(["visibility", "private"]).unwrap(),
+            ])
+            .sign_with_keys(&owner)
+            .unwrap();
+        handle_side_effects(&tenant, 9007, &create, &state)
+            .await
+            .expect("create group");
+        let channel = derived_channel_id(&create);
+        let edit = |tags: &[[&str; 2]]| {
+            let mut all = vec![Tag::parse(["h", &channel.to_string()]).unwrap()];
+            all.extend(tags.iter().map(|t| Tag::parse(*t).unwrap()));
+            EventBuilder::new(Kind::Custom(9002), "")
+                .tags(all)
+                .sign_with_keys(&owner)
+                .unwrap()
+        };
+        let first = edit(&[["name", "first"], ["topic", "old topic"]]);
+        let second = edit(&[["name", "second"]]);
+        let archive = edit(&[["archived", "true"]]);
+        for event in [&first, &second, &archive] {
+            state
+                .db
+                .insert_event(community, event, Some(channel))
+                .await
+                .expect("store edit");
+            handle_side_effects(&tenant, 9002, event, &state)
+                .await
+                .expect("edit");
+        }
+        let channel_row = || async {
+            state
+                .db
+                .get_channel(community, channel)
+                .await
+                .expect("channel")
+        };
+        let messages = || async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM events WHERE community_id = $1 AND channel_id = $2 \
+                 AND kind = 40099",
+            )
+            .bind(community.as_uuid())
+            .bind(channel)
+            .fetch_one(pool)
+            .await
+            .expect("count")
+        };
+        let before = messages().await;
+
+        // The first edit replayed: its name is older than the second's, its
+        // topic is its own re-run.
+        handle_side_effects(&tenant, 9002, &first, &state)
+            .await
+            .expect("stale edit is not an error");
+        let row = channel_row().await;
+        assert_eq!(
+            row.name, "second",
+            "an old rename must not undo the later one"
+        );
+        assert_eq!(row.topic.as_deref(), Some("old topic"));
+        // The archive replayed: a no-op, not "already archived".
+        handle_side_effects(&tenant, 9002, &archive, &state)
+            .await
+            .expect("re-run archive is not an error");
+        assert!(channel_row().await.archived_at.is_some());
+        assert_eq!(
+            messages().await,
+            before,
+            "replays post no new system messages"
+        );
     }
 
     /// A 9007 without `h` run twice (crash before the outbox row settled)

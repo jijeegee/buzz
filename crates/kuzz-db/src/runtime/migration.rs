@@ -725,7 +725,14 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 81);
+        assert_eq!(migrations.len(), 82);
+        assert_eq!(migrations[81].version, 83);
+        assert!(migrations[81]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE channel_metadata_order"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TABLE channel_metadata_order"));
         assert_eq!(migrations[80].version, 82);
         assert!(migrations[80]
             .sql
@@ -2237,6 +2244,7 @@ mod postgres_tests {
             [
                 "artifact_heads",
                 "artifact_revisions",
+                "channel_metadata_order",
                 "event_side_effects",
                 "room_directory",
                 "thread_follows",

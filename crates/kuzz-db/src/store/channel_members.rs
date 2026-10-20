@@ -454,7 +454,8 @@ pub async fn lock_member_snapshot(
     })
 }
 
-/// Outcome of a membership write made for an event (see migration 0082).
+/// Outcome of a membership or metadata write made for an event (see
+/// migrations 0082 and 0083).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemberWrite {
     /// The change was applied.
@@ -466,17 +467,15 @@ pub enum MemberWrite {
     Superseded,
 }
 
-/// Where `cause` sits in the channel's order relative to the last recorded
-/// change of this membership. `None` when the event has no channel sequence
-/// (it is then applied without ordering).
-async fn member_write_order(
+/// The channel sequence the server gave stored event `cause` in
+/// `channel_id`, if any.
+pub(crate) async fn event_channel_sequence(
     tx: &mut Transaction<'_, Postgres>,
     community_id: CommunityId,
     channel_id: Uuid,
-    pubkey: &[u8],
     cause: &[u8],
-) -> Result<(Option<i64>, MemberWrite)> {
-    let seq: Option<i64> = sqlx::query_scalar(
+) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar(
         "SELECT channel_sequence FROM events \
          WHERE community_id = $1 AND id = $2 AND channel_id = $3 AND channel_sequence > 0",
     )
@@ -484,8 +483,34 @@ async fn member_write_order(
     .bind(cause)
     .bind(channel_id)
     .fetch_optional(&mut **tx)
-    .await?;
-    let Some(seq) = seq else {
+    .await?)
+}
+
+/// Decide a write from the last recorded change `(seq, event id)` of the
+/// same thing and the incoming event's `seq`.
+pub(crate) fn order_decision(
+    last: Option<(Option<i64>, Option<Vec<u8>>)>,
+    seq: i64,
+    cause: &[u8],
+) -> MemberWrite {
+    match last {
+        Some((_, Some(event_id))) if event_id == cause => MemberWrite::AlreadyApplied,
+        Some((Some(last_seq), _)) if last_seq >= seq => MemberWrite::Superseded,
+        _ => MemberWrite::Applied,
+    }
+}
+
+/// Where `cause` sits in the channel's order relative to the last recorded
+/// change of this membership. `None` when the event has no channel sequence
+/// (it is then applied without ordering).
+pub(crate) async fn member_write_order(
+    tx: &mut Transaction<'_, Postgres>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    cause: &[u8],
+) -> Result<(Option<i64>, MemberWrite)> {
+    let Some(seq) = event_channel_sequence(tx, community_id, channel_id, cause).await? else {
         return Ok((None, MemberWrite::Applied));
     };
     let last: Option<(Option<i64>, Option<Vec<u8>>)> = sqlx::query_as(
@@ -497,12 +522,7 @@ async fn member_write_order(
     .bind(pubkey)
     .fetch_optional(&mut **tx)
     .await?;
-    let write = match last {
-        Some((_, Some(event_id))) if event_id == cause => MemberWrite::AlreadyApplied,
-        Some((Some(last_seq), _)) if last_seq >= seq => MemberWrite::Superseded,
-        _ => MemberWrite::Applied,
-    };
-    Ok((Some(seq), write))
+    Ok((Some(seq), order_decision(last, seq, cause)))
 }
 
 /// Add a member to a channel.
