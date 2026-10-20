@@ -26,6 +26,13 @@
 //! at least 1) and `KUZZ_MEDIA_GC_INTERVAL_SECS` (default one day) tune it.
 //! The bucket must not be shared with another deployment: blob bytes carry no
 //! deployment prefix, so another deployment's sidecars are invisible here.
+//!
+//! Regions share one bucket, but each region's database only knows the
+//! messages of the rooms it serves. So the cleanup pauses (removes and
+//! restores nothing) unless this database is the only registered region, or
+//! no region is registered yet: with a second region it would remove files
+//! that region's rooms still use. Cleanup across regions needs every region's
+//! references (global regions S4).
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -145,11 +152,51 @@ pub fn spawn(state: std::sync::Arc<AppState>) {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
+            match region_pause(&state.db).await {
+                Ok(None) => {}
+                Ok(Some(reason)) => {
+                    warn!(reason, "media cleanup paused");
+                    metrics::counter!("kuzz_media_gc_paused_total").increment(1);
+                    continue;
+                }
+                Err(e) => {
+                    error!(error = %e, "media cleanup paused: regions unreadable");
+                    metrics::counter!("kuzz_media_gc_paused_total").increment(1);
+                    continue;
+                }
+            }
             if let Err(e) = run_once(&state.db, &state.media_storage, settings).await {
                 error!(error = %e, "media cleanup run failed");
             }
         }
     });
+}
+
+/// Why the cleanup must not run now, read fresh each run (see the module
+/// docs), or `None` when it may.
+async fn region_pause(db: &Db) -> anyhow::Result<Option<String>> {
+    let local = db.local_region().await?;
+    let regions = db.list_regions().await?;
+    Ok(region_pause_reason(local.as_deref(), &regions))
+}
+
+fn region_pause_reason(
+    local: Option<&str>,
+    regions: &[kuzz_db::region::RegionRecord],
+) -> Option<String> {
+    match regions {
+        [] => None,
+        [only] if local.is_none_or(|local| local == only.id) => None,
+        [only] => Some(format!(
+            "this database belongs to region {}, but only region {} is registered",
+            local.unwrap_or_default(),
+            only.id
+        )),
+        _ => Some(format!(
+            "{} regions are registered; cleanup across regions is not built yet",
+            regions.len()
+        )),
+    }
 }
 
 /// One cleanup pass, if this relay wins the lock: the trash first, then every
@@ -462,6 +509,22 @@ mod tests {
         assert_eq!(GcMode::parse(Some("dry-run")), GcMode::DryRun);
         assert_eq!(GcMode::parse(Some(" DRY_RUN ")), GcMode::DryRun);
         assert_eq!(GcMode::parse(Some("on")), GcMode::On);
+    }
+
+    #[test]
+    fn cleanup_runs_only_with_a_single_region() {
+        let region = |id: &str, is_primary: bool| kuzz_db::region::RegionRecord {
+            id: id.to_owned(),
+            connect_url: format!("wss://{id}.test"),
+            is_primary,
+        };
+        assert_eq!(region_pause_reason(None, &[]), None);
+        assert_eq!(region_pause_reason(Some("kr"), &[region("kr", true)]), None);
+        assert_eq!(region_pause_reason(None, &[region("kr", true)]), None);
+        assert!(region_pause_reason(Some("jp"), &[region("kr", true)]).is_some());
+        let two = [region("kr", true), region("jp", false)];
+        assert!(region_pause_reason(Some("kr"), &two).is_some());
+        assert!(region_pause_reason(Some("jp"), &two).is_some());
     }
 
     #[test]
