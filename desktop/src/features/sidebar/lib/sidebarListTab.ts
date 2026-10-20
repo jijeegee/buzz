@@ -25,8 +25,19 @@ const TABS: readonly SidebarListTab[] = [
   "pulse",
 ];
 
+/**
+ * The app was started without a route (no hash), as on a fresh launch. A
+ * reload keeps its hash, so it returns to the screen it was on.
+ */
+export const STARTED_WITHOUT_ROUTE =
+  typeof window === "undefined" ||
+  window.location.hash === "" ||
+  window.location.hash === "#";
+
 const listeners = new Set<() => void>();
-let current = readStored();
+// A fresh launch always opens on Chats; a reload keeps the list it was on.
+let current: SidebarListTab = STARTED_WITHOUT_ROUTE ? "chats" : readStored();
+if (STARTED_WITHOUT_ROUTE) setInboxPanelOpen(false);
 
 function readStored(): SidebarListTab {
   try {
