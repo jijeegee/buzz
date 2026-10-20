@@ -191,6 +191,32 @@ impl Db {
         .transpose()
     }
 
+    /// Of `channels`, the rooms the directory homes outside `local_region`,
+    /// with their home region. Rooms without a directory row are not listed.
+    #[datastore_span(name = "rooms_homed_elsewhere", system = "postgresql")]
+    pub async fn rooms_homed_elsewhere(
+        &self,
+        community_id: CommunityId,
+        channels: &[Uuid],
+        local_region: &str,
+    ) -> Result<Vec<(Uuid, String)>> {
+        if channels.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            "SELECT channel_id, home_region FROM room_directory \
+              WHERE community_id = $1 AND channel_id = ANY($2) AND home_region <> $3",
+        )
+        .bind(community_id.as_uuid())
+        .bind(channels)
+        .bind(local_region)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| Ok((row.try_get("channel_id")?, row.try_get("home_region")?)))
+            .collect()
+    }
+
     /// Every region, primary first, then by id.
     #[datastore_span(name = "list_regions", system = "postgresql")]
     pub async fn list_regions(&self) -> Result<Vec<RegionRecord>> {

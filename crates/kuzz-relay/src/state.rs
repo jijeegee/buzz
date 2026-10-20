@@ -2122,11 +2122,34 @@ impl AppState {
         }
         metrics::counter!("kuzz_accessible_channels_cache_misses_total").increment(1);
         let result = self
-            .db
-            .get_accessible_channel_ids(community_id, pubkey)
+            .get_accessible_channel_ids_uncached(community_id, pubkey)
             .await?;
         self.accessible_channels_cache.insert(key, result.clone());
         Ok(result)
+    }
+
+    /// Channels the pubkey can access that this region serves. Rooms another
+    /// region serves are left out of every multi-room read (Chats, Inbox,
+    /// feeds, REQ without `#h`, COUNT, search) until regions are linked (S4).
+    pub async fn get_accessible_channel_ids_uncached(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+    ) -> Result<Vec<Uuid>, kuzz_db::DbError> {
+        let accessible = self
+            .db
+            .get_accessible_channel_ids(community_id, pubkey)
+            .await?;
+        let split = self
+            .room_router
+            .split(&self.db, community_id, accessible)
+            .await?;
+        let elsewhere: usize = split.elsewhere.values().map(Vec::len).sum();
+        if elsewhere > 0 {
+            metrics::counter!("kuzz_rooms_served_elsewhere_skipped_total")
+                .increment(elsewhere as u64);
+        }
+        Ok(split.here)
     }
 
     /// Channel visibility string. Caches only `private` (10s); never caches a
