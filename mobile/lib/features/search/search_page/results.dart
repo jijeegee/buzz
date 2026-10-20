@@ -495,6 +495,9 @@ class _MessageTile extends ConsumerWidget {
             key: ValueKey('search-message-context-${hit.eventId}'),
             children: [
               Flexible(
+                // "group › thread" takes the room; the short label keeps
+                // its width.
+                flex: threadTitle == null ? 1 : 0,
                 child: Text(
                   isDm
                       ? 'Direct message'
