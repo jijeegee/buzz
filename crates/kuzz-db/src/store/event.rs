@@ -677,29 +677,46 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
     };
     // since_join: rows from before the reader's join, and reactions/edits/
     // deletions about such rows, are hidden. One channel: compare against its
-    // floor once (index-friendly); otherwise per row.
+    // floor once (index-friendly; floor 0 hides nothing, not even sequence
+    // 0); otherwise per row. Room state kinds are never cut.
+    let state_exempt = q
+        .kinds
+        .as_ref()
+        .is_none_or(|kinds| kinds.iter().copied().any(is_room_state_kind));
+    qb.push(" AND (");
     if let Some(channel) = q.channel_id {
-        qb.push(format!(" AND {col_prefix}channel_sequence > channel_history_floor("));
+        qb.push(format!(
+            "{col_prefix}channel_sequence > COALESCE(NULLIF(channel_history_floor("
+        ));
         qb.push_bind(q.community_id.as_uuid());
         qb.push(", ");
         qb.push_bind(channel);
         qb.push(", ");
         qb.push_bind(reader.clone());
-        qb.push(")");
+        qb.push("), 0), -1)");
     } else {
         qb.push(format!(
-            " AND NOT channel_event_before_join({col_prefix}community_id, {col_prefix}channel_id, \
+            "NOT channel_event_before_join({col_prefix}community_id, {col_prefix}channel_id, \
              {col_prefix}channel_sequence, "
         ));
         qb.push_bind(reader.clone());
         qb.push(")");
     }
+    if state_exempt {
+        qb.push(format!(" OR channel_kind_is_room_state({col_prefix}kind)"));
+    }
+    qb.push(")");
     qb.push(format!(
         " AND NOT channel_event_targets_before_join({col_prefix}community_id, \
          {col_prefix}channel_id, {col_prefix}kind, {col_prefix}tags, "
     ));
     qb.push_bind(reader.clone());
     qb.push(")");
+}
+
+/// Mirrors SQL `channel_kind_is_room_state` (migration 0076).
+fn is_room_state_kind(kind: i32) -> bool {
+    matches!(kind, 9007 | 40100 | 40110 | 10_000..=19_999 | 30_000..=39_999)
 }
 
 fn push_blocked_dm_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {

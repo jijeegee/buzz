@@ -755,3 +755,122 @@ async fn chat_list_counts_and_latest_ignore_pre_join_messages() {
     let rows = db.chat_list(f.scope, &f.member.public_key(), &query).await.unwrap().rows;
     assert!(rows[0].latest.is_none(), "{:?}", rows[0].latest);
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn feed_mentions_and_activity_skip_messages_from_before_the_join() {
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let member_hex = f.member.public_key().to_hex();
+    let mention = |content: &'static str| {
+        let f = &f;
+        let member_hex = member_hex.clone();
+        async move {
+            let event = EventBuilder::new(Kind::Custom(9), content)
+                .tags([
+                    Tag::parse(["h", &f.channel.to_string()]).expect("h tag"),
+                    Tag::parse(["p", &member_hex]).expect("p tag"),
+                ])
+                .sign_with_keys(&f.owner)
+                .expect("fixture signature");
+            event::insert_event(&f.pool, f.scope, &event, Some(f.channel))
+                .await
+                .expect("real event writer");
+            sqlx::query(
+                "INSERT INTO event_mentions \
+                 (community_id, pubkey_hex, event_id, event_created_at, channel_id, event_kind) \
+                 SELECT community_id, $2, id, created_at, channel_id, kind FROM events \
+                  WHERE community_id = $1 AND id = $3",
+            )
+            .bind(f.scope.as_uuid())
+            .bind(&member_hex)
+            .bind(event.id.as_bytes().as_slice())
+            .execute(&f.pool)
+            .await
+            .expect("mention row");
+            event.id.to_hex()
+        }
+    };
+    let old = mention("old mention").await;
+    f.join().await;
+    let new = mention("new mention").await;
+    let member = f.member.public_key().to_bytes();
+    let ids = |rows: Vec<kuzz_core::StoredEvent>| -> Vec<String> {
+        rows.into_iter().map(|r| r.event.id.to_hex()).collect()
+    };
+
+    let mentions = crate::feed::query_mentions(&f.pool, f.scope, &member, &[f.channel], None, 50)
+        .await
+        .expect("mentions");
+    assert_eq!(ids(mentions), [new.clone()]);
+    let activity =
+        crate::feed::query_activity(&f.pool, f.scope, &[f.channel], None, 50, Some(&member))
+            .await
+            .expect("activity");
+    assert_eq!(ids(activity), [new.clone()]);
+    let owner = f.owner.public_key().to_bytes();
+    let activity =
+        crate::feed::query_activity(&f.pool, f.scope, &[f.channel], None, 50, Some(&owner))
+            .await
+            .expect("owner activity");
+    assert_eq!(ids(activity).len(), 2, "owner keeps {old}");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn room_state_from_before_the_join_stays_visible() {
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let state = EventBuilder::new(Kind::Custom(30078), "room settings")
+        .tags([
+            Tag::parse(["h", &f.channel.to_string()]).expect("h tag"),
+            Tag::parse(["d", "settings"]).expect("d tag"),
+        ])
+        .sign_with_keys(&f.owner)
+        .expect("fixture signature");
+    event::insert_event(&f.pool, f.scope, &state, Some(f.channel))
+        .await
+        .expect("real event writer");
+    let old = f.send("old message").await;
+    f.join().await;
+    let new = f.send("new message").await;
+
+    for one_channel in [true, false] {
+        let mut q = EventQuery::for_community(f.scope);
+        q.channel_id = one_channel.then_some(f.channel);
+        q.order_by_sequence = one_channel;
+        q.history_reader = Some(f.member.public_key().to_bytes().to_vec());
+        let mut ids: Vec<String> = event::query_events(&f.pool, &q)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.event.id.to_hex())
+            .collect();
+        ids.sort();
+        let mut expected = vec![state.id.to_hex(), new.clone()];
+        expected.sort();
+        // The room's own creation/system rows may also be state; the old
+        // message never is.
+        assert!(!ids.contains(&old), "one_channel={one_channel}");
+        assert!(expected.iter().all(|id| ids.contains(id)), "one_channel={one_channel}");
+        // A kinds filter of messages only skips the state exemption.
+        q.kinds = Some(vec![9]);
+        assert_eq!(event::count_events(&f.pool, &q).await.unwrap(), 1);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_reader_without_current_membership_sees_nothing() {
+    // A replica that has not seen the join yet, or a stale removed row.
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    f.send("before").await;
+    assert_eq!(f.read(Some(&f.member)).await, (vec![], 0));
+    f.join().await;
+    let after = f.send("after").await;
+    assert_eq!(f.read(Some(&f.member)).await, (vec![after], 1));
+    f.leave().await;
+    assert_eq!(f.read(Some(&f.member)).await, (vec![], 0));
+    // Policy 'all': no cut at all.
+    f.set("UPDATE channels SET history_policy='all' WHERE community_id=$1 AND id=$2")
+        .await;
+    assert_eq!(f.read(Some(&f.member)).await.1, 2);
+}
