@@ -97,6 +97,7 @@ class _ChatRow extends HookConsumerWidget {
             label: _bareRoomName(row, channel),
             isPrivate: channel?.isPrivate ?? false,
             avatarKey: const ValueKey('chat-channel-avatar'),
+            imageUrl: channel?.picture,
           );
 
     final titleStyle = activityUsernameTextStyle.copyWith(

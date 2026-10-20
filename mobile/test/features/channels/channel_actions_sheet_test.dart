@@ -664,7 +664,9 @@ class _FakeChannelActions extends ChannelActions {
     String? description,
     bool? goalsEnabled,
     String? visibility,
+    String? picture,
   }) async {
+    if (picture != null) pictureUpdates.add(picture);
     if (goalsEnabled != null) {
       goalsUpdates.add(goalsEnabled);
       final failure = goalsUpdateError;
@@ -674,6 +676,7 @@ class _FakeChannelActions extends ChannelActions {
   }
 
   final List<bool> goalsUpdates = [];
+  final List<String> pictureUpdates = [];
   Object? goalsUpdateError;
 
   String? unarchivedChannelId;

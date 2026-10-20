@@ -4,8 +4,9 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/widgets/conversation_row_parts.dart';
 import 'channel.dart';
 
-/// A group's picture at any size: its first letter on the colour fixed by
-/// its id (the Chats row avatar), with a lock badge when private. Forums keep
+/// A group's picture at any size: its photo when set, else its first letter
+/// on the colour fixed by its id (the Chats row avatar), with a lock badge
+/// when private. Forums keep
 /// their forum icon and DMs their conversation icon.
 class GroupAvatar extends StatelessWidget {
   const GroupAvatar({
@@ -40,6 +41,7 @@ class GroupAvatar extends StatelessWidget {
       isPrivate: channel.isPrivate,
       size: size,
       avatarKey: null,
+      imageUrl: channel.picture,
     );
   }
 }

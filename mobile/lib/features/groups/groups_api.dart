@@ -20,6 +20,7 @@ class GroupSummary {
     this.handle,
     this.visibility,
     this.invitePolicy,
+    this.picture,
   });
 
   final String id;
@@ -38,6 +39,9 @@ class GroupSummary {
   /// `members` or `admins`, only from `GET /api/groups/{id}`.
   final String? invitePolicy;
 
+  /// Group photo URL, or null when the group has none.
+  final String? picture;
+
   bool get isPrivate => visibility == 'private';
 
   factory GroupSummary.fromJson(
@@ -45,6 +49,7 @@ class GroupSummary {
     String? defaultVisibility,
   }) {
     final handle = json['handle'];
+    final picture = json['picture'];
     return GroupSummary(
       id: json['id'] as String,
       name: (json['name'] as String?) ?? '',
@@ -55,6 +60,9 @@ class GroupSummary {
       handle: handle is String && handle.isNotEmpty ? handle : null,
       visibility: (json['visibility'] as String?) ?? defaultVisibility,
       invitePolicy: json['invitePolicy'] as String?,
+      picture: picture is String && picture.trim().isNotEmpty
+          ? picture.trim()
+          : null,
     );
   }
 
@@ -70,6 +78,7 @@ class GroupSummary {
     createdAt: DateTime.fromMillisecondsSinceEpoch(0),
     memberCount: memberCount,
     isMember: isMember,
+    picture: picture,
   );
 }
 

@@ -170,12 +170,14 @@ class ChannelActions {
 
   /// Updates the user-editable channel metadata and refreshes cached details.
   /// [goalsEnabled] toggles the per-room goals switch and may be sent alone.
+  /// [picture] sets the group photo URL; an empty string removes it.
   Future<void> updateChannel({
     required String channelId,
     String? name,
     String? description,
     bool? goalsEnabled,
     String? visibility,
+    String? picture,
   }) async {
     _ensureCommunityValid();
     await _signedEventRelay.submit(
@@ -187,6 +189,7 @@ class ChannelActions {
         description: description,
         goalsEnabled: goalsEnabled,
         visibility: visibility,
+        picture: picture,
       ),
     );
     _ensureCommunityValid();

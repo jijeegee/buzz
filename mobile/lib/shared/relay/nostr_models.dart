@@ -340,6 +340,9 @@ class ChannelData {
   /// Per-room goals switch; only `["goals","off"]` disables it.
   final bool goalsEnabled;
 
+  /// Group photo URL from `["picture", url]`; null when unset or empty.
+  final String? picture;
+
   const ChannelData({
     required this.id,
     required this.name,
@@ -352,6 +355,7 @@ class ChannelData {
     this.ttlDeadline,
     this.isArchived = false,
     this.goalsEnabled = true,
+    this.picture,
   });
 
   factory ChannelData.fromEvent(NostrEvent event) {
@@ -392,6 +396,10 @@ class ChannelData {
     // Goals default on: the relay emits `["goals", "off"]` only when a room
     // has opted out, so a missing tag (or any other value) means enabled.
     final goalsEnabled = event.getTagValue('goals') != 'off';
+    final pictureRaw = event.getTagValue('picture')?.trim();
+    final picture = pictureRaw == null || pictureRaw.isEmpty
+        ? null
+        : pictureRaw;
     return ChannelData(
       id: id,
       name: name,
@@ -404,6 +412,7 @@ class ChannelData {
       ttlDeadline: ttlDeadline,
       isArchived: isArchived,
       goalsEnabled: goalsEnabled,
+      picture: picture,
     );
   }
 }
