@@ -919,7 +919,9 @@ mod tests {
     fn channel_builders_reject_hash_only_names() {
         let channel_id = Uuid::new_v4();
         assert!(build_create_channel(channel_id, "###", "open", "stream", None, None).is_err());
-        assert!(build_update_channel(channel_id, Some("###"), None, None, None, None, None).is_err());
+        assert!(
+            build_update_channel(channel_id, Some("###"), None, None, None, None, None).is_err()
+        );
     }
 
     fn update_channel_tags(goals_enabled: Option<bool>) -> Result<Vec<Vec<String>>, String> {
