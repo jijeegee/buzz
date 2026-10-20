@@ -118,7 +118,10 @@ import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { ChatStateSync } from "@/app/ChatStateSync";
 import { useChatStateWiring } from "@/app/useChatStateWiring";
 import { useChatThreadRowActions } from "@/app/useChatThreadRowActions";
-import { useChatsRailNavigation } from "@/app/useChatsRailNavigation";
+import {
+  isFreshStartLandingPending,
+  useChatsRailNavigation,
+} from "@/app/useChatsRailNavigation";
 import {
   listTabForView,
   setSidebarListTab,
@@ -376,9 +379,12 @@ export function AppShell() {
   });
   const sidebarListTab = useSidebarListTab();
   // A screen opened by route (a link, search, back) shows its own list.
+  // A fresh launch starts on the Activity route but shows Chats.
   React.useEffect(() => {
     const tab = listTabForView(selectedView);
-    if (tab) setSidebarListTab(tab);
+    if (!tab) return;
+    if (tab === "activity" && isFreshStartLandingPending()) return;
+    setSidebarListTab(tab);
   }, [selectedView]);
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
