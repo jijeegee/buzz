@@ -8,6 +8,7 @@
 //! With one registered region every room is local and nothing is looked up,
 //! so a single-region deployment behaves exactly as before.
 
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -91,6 +92,40 @@ pub fn route_for(local: &str, regions: &[RegionRecord], home: Option<&RoomHome>)
     }
 }
 
+/// Rooms split by the region that serves them.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RoomSplit {
+    /// Rooms served here, in the order given.
+    pub here: Vec<Uuid>,
+    /// Rooms other regions serve, by region. Multi-room reads query these
+    /// in their home regions once regions are linked (S4); until then they
+    /// are left out.
+    pub elsewhere: BTreeMap<String, Vec<Uuid>>,
+}
+
+/// Split `channels` using the directory rows of the rooms homed elsewhere.
+pub fn split_rooms(channels: Vec<Uuid>, homed_elsewhere: Vec<(Uuid, String)>) -> RoomSplit {
+    if homed_elsewhere.is_empty() {
+        return RoomSplit {
+            here: channels,
+            elsewhere: BTreeMap::new(),
+        };
+    }
+    let homes: HashMap<Uuid, String> = homed_elsewhere.into_iter().collect();
+    let mut split = RoomSplit::default();
+    for channel in channels {
+        match homes.get(&channel) {
+            Some(region) => split
+                .elsewhere
+                .entry(region.clone())
+                .or_default()
+                .push(channel),
+            None => split.here.push(channel),
+        }
+    }
+    split
+}
+
 /// Cached room-home lookups for one relay.
 pub struct RoomRouter {
     local: String,
@@ -126,14 +161,7 @@ impl RoomRouter {
         community_id: CommunityId,
         channel_id: Uuid,
     ) -> Result<RoomRoute, kuzz_db::DbError> {
-        let regions = match self.regions.get(&()) {
-            Some(regions) => regions,
-            None => {
-                let regions = Arc::new(db.list_regions().await?);
-                self.regions.insert((), Arc::clone(&regions));
-                regions
-            }
-        };
+        let regions = self.region_list(db).await?;
         if regions.len() <= 1 {
             return Ok(RoomRoute::Here);
         }
@@ -147,6 +175,32 @@ impl RoomRouter {
             }
         };
         Ok(route_for(&self.local, &regions, home.as_ref()))
+    }
+
+    /// Split a multi-room read by the region that serves each room. With one
+    /// registered region every room is here and nothing is looked up.
+    pub async fn split(
+        &self,
+        db: &Db,
+        community_id: CommunityId,
+        channels: Vec<Uuid>,
+    ) -> Result<RoomSplit, kuzz_db::DbError> {
+        if self.region_list(db).await?.len() <= 1 {
+            return Ok(split_rooms(channels, Vec::new()));
+        }
+        let homed_elsewhere = db
+            .rooms_homed_elsewhere(community_id, &channels, &self.local)
+            .await?;
+        Ok(split_rooms(channels, homed_elsewhere))
+    }
+
+    async fn region_list(&self, db: &Db) -> Result<Arc<Vec<RegionRecord>>, kuzz_db::DbError> {
+        if let Some(regions) = self.regions.get(&()) {
+            return Ok(regions);
+        }
+        let regions = Arc::new(db.list_regions().await?);
+        self.regions.insert((), Arc::clone(&regions));
+        Ok(regions)
     }
 
     /// Drop a cached home (the room moved or was deleted).
@@ -215,6 +269,26 @@ mod tests {
             panic!("sg room is not served by kr");
         };
         assert_eq!(unknown.ws_message(), "wrong-region: room lives in sg");
+    }
+
+    #[test]
+    fn multi_room_reads_keep_only_rooms_served_here() {
+        let (a, b, c, d) = (
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+        let split = split_rooms(
+            vec![a, b, c, d],
+            vec![(b, "jp".to_string()), (d, "jp".to_string())],
+        );
+        assert_eq!(split.here, vec![a, c]);
+        assert_eq!(
+            split.elsewhere,
+            BTreeMap::from([("jp".to_string(), vec![b, d])])
+        );
+        assert_eq!(split_rooms(vec![a, b], Vec::new()).here, vec![a, b]);
     }
 
     #[test]
@@ -291,5 +365,13 @@ mod tests {
             .await
             .expect("route");
         assert_eq!(first.map(|home| home.region), Some("jp".to_string()));
+
+        let split = state
+            .room_router
+            .split(&state.db, community, vec![kr_room, jp_room, unknown])
+            .await
+            .expect("split");
+        assert_eq!(split.here, vec![kr_room, unknown]);
+        assert_eq!(split.elsewhere["jp"], vec![jp_room]);
     }
 }

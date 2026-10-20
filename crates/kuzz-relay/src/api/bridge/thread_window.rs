@@ -94,8 +94,7 @@ pub(super) async fn query_batch<'a>(
     requests: impl IntoIterator<Item = &'a Request>,
 ) -> Result<Vec<Value>, Error> {
     let accessible = state
-        .db
-        .get_accessible_channel_ids(tenant.community(), &reader.to_bytes())
+        .get_accessible_channel_ids_uncached(tenant.community(), &reader.to_bytes())
         .await
         .map_err(|e| database_error("access", e))?;
     let mut budget = Budget::default();
@@ -106,8 +105,7 @@ pub(super) async fn query_batch<'a>(
         }
     }
     let current = state
-        .db
-        .get_accessible_channel_ids(tenant.community(), &reader.to_bytes())
+        .get_accessible_channel_ids_uncached(tenant.community(), &reader.to_bytes())
         .await
         .map_err(|e| database_error("final access", e))?;
     // Grants can expose auxiliary events omitted from the original closure;
