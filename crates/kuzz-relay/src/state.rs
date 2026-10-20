@@ -1257,6 +1257,8 @@ pub struct AppState {
     pub workflow_engine: Arc<WorkflowEngine>,
     /// Relay signing keypair — used to sign system messages (kind 40099).
     pub relay_keypair: nostr::Keys,
+    /// Which region serves each room (global regions S3).
+    pub room_router: Arc<crate::routing::RoomRouter>,
     /// Process-local generation advertised for non-mesh huddle liveness.
     ///
     /// A fresh value on every relay start lets desktop clients retire persisted
@@ -1526,6 +1528,7 @@ impl AppState {
         let audit_enabled = audit_arc.is_some();
         // Build NIP-FI components before moving config into the state Arc.
         let (nip_fi_verifier, nip_fi_jwks_source) = build_nip_fi_components(&config);
+        let room_router = Arc::new(crate::routing::RoomRouter::new(config.region_id.clone()));
         let state = Self {
             config: Arc::new(config),
             db,
@@ -1545,6 +1548,7 @@ impl AppState {
             media_upload_semaphore: Arc::new(Semaphore::new(media_max_concurrent_uploads)),
             workflow_engine,
             relay_keypair,
+            room_router,
             huddle_liveness_generation: Uuid::new_v4(),
 
             local_event_ids: Arc::new(
@@ -1699,6 +1703,17 @@ impl AppState {
     pub fn mark_local_event(&self, community: CommunityId, event_id: &nostr::EventId) {
         self.local_event_ids
             .insert((community, event_id.to_bytes()), ());
+    }
+
+    /// Which region serves operations on this room (see [`crate::routing`]).
+    pub async fn route_room(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+    ) -> Result<crate::routing::RoomRoute, kuzz_db::DbError> {
+        self.room_router
+            .route(&self.db, community_id, channel_id)
+            .await
     }
 
     /// Check channel membership with a 10-second cache. Falls back to DB on miss.

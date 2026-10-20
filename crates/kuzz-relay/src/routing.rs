@@ -1,0 +1,235 @@
+//! Room routing (global regions, stage S3).
+//!
+//! Every room lives in one home region (`room_directory`, migration 0079).
+//! A room operation that reaches another region is not served from that
+//! region's database: until regions forward to each other (S4), the client
+//! is told where the room lives instead.
+//!
+//! With one registered region every room is local and nothing is looked up,
+//! so a single-region deployment behaves exactly as before.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::http::StatusCode;
+use axum::response::Json;
+use kuzz_core::CommunityId;
+use kuzz_db::region::{RegionRecord, RoomHome};
+use kuzz_db::Db;
+use uuid::Uuid;
+
+/// How long a room's home and the region list are cached. Homes change only
+/// when a room moves (S6), which will drop the cached entry explicitly.
+const CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// Prefix of WS `OK`/`CLOSED` messages for a room that lives elsewhere.
+pub const WRONG_REGION_PREFIX: &str = "wrong-region:";
+
+/// Where a room operation must be served.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoomRoute {
+    /// The room lives here, or this region does not know it (the ordinary
+    /// "not found" path applies).
+    Here,
+    /// The room lives in another region.
+    Elsewhere(RemoteHome),
+}
+
+/// The home of a room that lives in another region.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteHome {
+    pub region: String,
+    /// Address clients in that region connect to; empty when the region is
+    /// not registered here yet.
+    pub connect_url: String,
+    pub epoch: i32,
+}
+
+impl RemoteHome {
+    /// The WS refusal: `wrong-region: room lives in <region> <connect_url>`.
+    pub fn ws_message(&self) -> String {
+        format!(
+            "{WRONG_REGION_PREFIX} room lives in {} {}",
+            self.region, self.connect_url
+        )
+        .trim_end()
+        .to_string()
+    }
+
+    /// The HTTP refusal: 421 Misdirected Request with the home region.
+    pub fn http_error(&self) -> (StatusCode, Json<serde_json::Value>) {
+        (
+            StatusCode::MISDIRECTED_REQUEST,
+            Json(serde_json::json!({
+                "error": "wrong_region",
+                "region": self.region,
+                "connect_url": self.connect_url,
+            })),
+        )
+    }
+}
+
+/// Decide where a room is served from the region list and the room's
+/// directory row.
+pub fn route_for(local: &str, regions: &[RegionRecord], home: Option<&RoomHome>) -> RoomRoute {
+    match home {
+        Some(home) if regions.len() > 1 && home.region != local => {
+            let connect_url = regions
+                .iter()
+                .find(|region| region.id == home.region)
+                .map(|region| region.connect_url.clone())
+                .unwrap_or_default();
+            RoomRoute::Elsewhere(RemoteHome {
+                region: home.region.clone(),
+                connect_url,
+                epoch: home.epoch,
+            })
+        }
+        _ => RoomRoute::Here,
+    }
+}
+
+/// Cached room-home lookups for one relay.
+pub struct RoomRouter {
+    local: String,
+    regions: moka::sync::Cache<(), Arc<Vec<RegionRecord>>>,
+    homes: moka::sync::Cache<(CommunityId, Uuid), Option<RoomHome>>,
+}
+
+impl RoomRouter {
+    pub fn new(local_region: impl Into<String>) -> Self {
+        Self {
+            local: local_region.into(),
+            regions: moka::sync::Cache::builder()
+                .max_capacity(1)
+                .time_to_live(CACHE_TTL)
+                .build(),
+            homes: moka::sync::Cache::builder()
+                .max_capacity(100_000)
+                .time_to_live(CACHE_TTL)
+                .build(),
+        }
+    }
+
+    /// This relay's region.
+    pub fn local_region(&self) -> &str {
+        &self.local
+    }
+
+    /// Where an operation on `channel_id` must be served.
+    pub async fn route(
+        &self,
+        db: &Db,
+        community_id: CommunityId,
+        channel_id: Uuid,
+    ) -> Result<RoomRoute, kuzz_db::DbError> {
+        let regions = match self.regions.get(&()) {
+            Some(regions) => regions,
+            None => {
+                let regions = Arc::new(db.list_regions().await?);
+                self.regions.insert((), Arc::clone(&regions));
+                regions
+            }
+        };
+        if regions.len() <= 1 {
+            return Ok(RoomRoute::Here);
+        }
+        let key = (community_id, channel_id);
+        let home = match self.homes.get(&key) {
+            Some(home) => home,
+            None => {
+                let home = db.room_home(community_id, channel_id).await?;
+                self.homes.insert(key, home.clone());
+                home
+            }
+        };
+        Ok(route_for(&self.local, &regions, home.as_ref()))
+    }
+
+    /// Drop a cached home (the room moved or was deleted).
+    pub fn forget(&self, community_id: CommunityId, channel_id: Uuid) {
+        self.homes.invalidate(&(community_id, channel_id));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn region(id: &str, url: &str, is_primary: bool) -> RegionRecord {
+        RegionRecord {
+            id: id.to_string(),
+            connect_url: url.to_string(),
+            is_primary,
+        }
+    }
+
+    fn home(region: &str) -> RoomHome {
+        RoomHome {
+            region: region.to_string(),
+            epoch: 2,
+        }
+    }
+
+    #[test]
+    fn one_region_serves_every_room() {
+        let regions = [region("kr", "wss://kr.example", true)];
+        assert_eq!(
+            route_for("kr", &regions, Some(&home("jp"))),
+            RoomRoute::Here
+        );
+        assert_eq!(route_for("kr", &regions, None), RoomRoute::Here);
+    }
+
+    #[test]
+    fn rooms_of_another_region_are_sent_there() {
+        let regions = [
+            region("kr", "wss://kr.example", true),
+            region("jp", "wss://jp.example", false),
+        ];
+        assert_eq!(
+            route_for("kr", &regions, Some(&home("kr"))),
+            RoomRoute::Here
+        );
+        assert_eq!(route_for("kr", &regions, None), RoomRoute::Here);
+        let RoomRoute::Elsewhere(remote) = route_for("kr", &regions, Some(&home("jp"))) else {
+            panic!("jp room is not served by kr");
+        };
+        assert_eq!(
+            remote,
+            RemoteHome {
+                region: "jp".to_string(),
+                connect_url: "wss://jp.example".to_string(),
+                epoch: 2,
+            }
+        );
+        assert_eq!(
+            remote.ws_message(),
+            "wrong-region: room lives in jp wss://jp.example"
+        );
+        // A home region that is not registered here yet still refuses.
+        let RoomRoute::Elsewhere(unknown) = route_for("kr", &regions, Some(&home("sg"))) else {
+            panic!("sg room is not served by kr");
+        };
+        assert_eq!(unknown.ws_message(), "wrong-region: room lives in sg");
+    }
+
+    #[test]
+    fn wrong_region_is_http_421_with_the_home() {
+        let remote = RemoteHome {
+            region: "jp".to_string(),
+            connect_url: "wss://jp.example".to_string(),
+            epoch: 0,
+        };
+        let (status, Json(body)) = remote.http_error();
+        assert_eq!(status, StatusCode::MISDIRECTED_REQUEST);
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "error": "wrong_region",
+                "region": "jp",
+                "connect_url": "wss://jp.example",
+            })
+        );
+    }
+}
