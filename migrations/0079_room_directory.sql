@@ -15,6 +15,11 @@
 -- the relay at startup. `home_region` names a `regions` row; there is no
 -- foreign key because tenant keys must lead with community_id and the
 -- directory is later copied to regions in any order.
+--
+-- Creating the triggers locks `channels`; give up instead of queueing every
+-- channel write behind a long transaction.
+SET LOCAL lock_timeout = '5s';
+
 CREATE TABLE local_region (
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
     region_id TEXT NOT NULL REFERENCES regions(id),

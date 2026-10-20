@@ -98,8 +98,9 @@ impl Db {
 
     /// Give every room without a directory row the local region as its home.
     /// Covers rooms created before migration 0079 and while no region was
-    /// claimed. Communities being deleted are skipped (their writes are
-    /// fenced). Returns the number of rows added.
+    /// claimed. Communities being deleted are skipped through the write-fence
+    /// predicate, so one community entering deletion mid-run does not abort
+    /// the rest. Returns the number of rows added.
     #[datastore_span(name = "backfill_room_directory", system = "postgresql")]
     pub async fn backfill_room_directory(&self) -> Result<u64> {
         let added = sqlx::query(
@@ -107,11 +108,11 @@ impl Db {
             INSERT INTO room_directory (community_id, channel_id, home_region, participant_hash)
             SELECT c.community_id, c.id, l.region_id, c.participant_hash
               FROM channels c
-              JOIN communities co ON co.id = c.community_id AND co.deletion_state = 'active'
              CROSS JOIN local_region l
              WHERE NOT EXISTS (
                    SELECT 1 FROM room_directory d
                     WHERE d.community_id = c.community_id AND d.channel_id = c.id)
+               AND community_write_allowed(c.community_id)
             ON CONFLICT (community_id, channel_id) DO NOTHING
             "#,
         )
