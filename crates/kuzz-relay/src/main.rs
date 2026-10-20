@@ -490,6 +490,23 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // startup. An empty authority (unparseable `relay_url`)
     // is a misconfiguration — fail fast when membership is enforced rather than
     // seeding an empty-host community that no request can ever resolve to.
+    // Region hosts / an old domain that serve this same service. An alias that
+    // is also its own community row would be shadowed: refuse to start.
+    for alias in &config.service_aliases {
+        if db.lookup_community_by_host(alias).await?.is_some() {
+            return Err(anyhow::anyhow!(
+                "KUZZ_SERVICE_ALIASES entry {alias:?} is already a separate community host"
+            ));
+        }
+    }
+    if !config.service_aliases.is_empty() {
+        info!(aliases = ?config.service_aliases, "service aliases bind to the RELAY_URL community");
+    }
+    kuzz_relay::tenant::install_service_aliases(kuzz_relay::tenant::ServiceAliases::new(
+        kuzz_relay::tenant::relay_url_authority(&config.relay_url),
+        config.service_aliases.iter().cloned(),
+    ));
+
     let deployment_community = {
         let host = kuzz_relay::tenant::relay_url_authority(&config.relay_url);
         if host.is_empty() {

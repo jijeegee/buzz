@@ -198,6 +198,11 @@ pub(crate) fn normalize_candidate_host(host: &str) -> Result<String, String> {
 
     let normalized = normalize_host(host);
     validate_host(&normalized)?;
+    // An alias already serves the deployment community; a separate community
+    // on it would never be reachable.
+    if crate::tenant::service_aliases().is_some_and(|a| a.is_alias(&normalized)) {
+        return Err("host is a service alias of this deployment".to_string());
+    }
     Ok(normalized)
 }
 

@@ -86,6 +86,12 @@ pub struct RelayInfo {
     /// This never advertises token messaging or replaces the signing identity.
     #[serde(rename = "kuzz_key_backup", skip_serializing_if = "Option::is_none")]
     pub key_backup: Option<serde_json::Value>,
+    /// The service URL clients sign NIP-42 AUTH with (`wss://<service>`),
+    /// which may differ from the address they connected to (a region host or
+    /// an old domain listed in `KUZZ_SERVICE_ALIASES`). Present when the
+    /// request host binds to a community.
+    #[serde(rename = "kuzz_service_url", skip_serializing_if = "Option::is_none")]
+    pub service_url: Option<String>,
 }
 
 /// Public capability descriptor for relay-proxied GIF search.
@@ -296,6 +302,7 @@ impl RelayInfo {
             federated_identity,
             token_auth: None,
             key_backup: None,
+            service_url: None,
         }
     }
 }
@@ -381,6 +388,10 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
     info.token_auth = token_auth_descriptor(&state.identity);
     info.key_backup = key_backup_descriptor(&state.identity);
     if let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await {
+        info.service_url = Some(crate::api::bridge::nip42_expected_relay_url(
+            &state.config.relay_url,
+            &tenant,
+        ));
         info.read_state_snapshot = Some(serde_json::json!({
             "version": 1,
             "community_id": tenant.community().as_uuid(),

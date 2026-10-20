@@ -14,7 +14,73 @@
 //! (`Db::resolve_host`); the relay depends on the trait, not the query, so the
 //! binding is testable without a database.
 
+use std::collections::BTreeSet;
+use std::sync::OnceLock;
+
 use kuzz_core::tenant::{normalize_host, CommunityId, TenantContext};
+
+/// Other addresses of this deployment's service: region hosts (`kr.`, `jp.`)
+/// or a previous domain (`KUZZ_SERVICE_ALIASES`).
+///
+/// A request that arrives on an alias binds to the service's community, and
+/// its [`TenantContext::host`] is the *service* host. Every signature check
+/// (NIP-42 `relay`, NIP-98 `u`, Blossom `server`, push `origin`) and every
+/// absolute URL (media, invites, NIP-05) reads the tenant host, so clients
+/// sign with the service name and stored URLs stay the same whichever address
+/// they connected to. An alias is never accepted as a signature value itself.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ServiceAliases {
+    service_host: String,
+    aliases: BTreeSet<String>,
+}
+
+impl ServiceAliases {
+    /// `service_host` and every alias must already be normalized
+    /// ([`normalize_host`]); an alias equal to the service host is ignored.
+    pub fn new(service_host: String, aliases: impl IntoIterator<Item = String>) -> Self {
+        let aliases = aliases
+            .into_iter()
+            .filter(|alias| *alias != service_host)
+            .collect();
+        Self {
+            service_host,
+            aliases,
+        }
+    }
+
+    /// The host a normalized request host binds as: the service host for an
+    /// alias, the host itself otherwise.
+    pub fn canonical<'a>(&'a self, normalized_host: &'a str) -> &'a str {
+        if self.aliases.contains(normalized_host) {
+            &self.service_host
+        } else {
+            normalized_host
+        }
+    }
+
+    /// Whether `normalized_host` is an alias (not the service host).
+    pub fn is_alias(&self, normalized_host: &str) -> bool {
+        self.aliases.contains(normalized_host)
+    }
+
+    /// Whether no aliases are configured.
+    pub fn is_empty(&self) -> bool {
+        self.aliases.is_empty()
+    }
+}
+
+static SERVICE_ALIASES: OnceLock<ServiceAliases> = OnceLock::new();
+
+/// Install the deployment's service aliases. Startup calls this once, before
+/// serving; later calls are ignored (the first value wins).
+pub fn install_service_aliases(aliases: ServiceAliases) -> bool {
+    SERVICE_ALIASES.set(aliases).is_ok()
+}
+
+/// The installed service aliases, if any.
+pub fn service_aliases() -> Option<&'static ServiceAliases> {
+    SERVICE_ALIASES.get()
+}
 
 /// Resolves a normalized connection host to its community, or `None` when the
 /// host maps to no community on this deployment.
@@ -67,12 +133,22 @@ pub enum BindError<E> {
 ///
 /// The returned [`TenantContext`] carries the *normalized* host, so downstream
 /// NIP-05 / audit labelling and the NIP-98 `u`-host check all see the same
-/// canonical form the community was resolved from.
+/// canonical form the community was resolved from. A host listed in
+/// [`ServiceAliases`] resolves as the service host.
 pub async fn bind_community<R: HostResolver>(
     resolver: &R,
     raw_host: &str,
 ) -> Result<TenantContext, BindError<R::Error>> {
-    let host = normalize_host(raw_host);
+    bind_community_via(resolver, service_aliases(), raw_host).await
+}
+
+async fn bind_community_via<R: HostResolver>(
+    resolver: &R,
+    aliases: Option<&ServiceAliases>,
+    raw_host: &str,
+) -> Result<TenantContext, BindError<R::Error>> {
+    let normalized = normalize_host(raw_host);
+    let host = aliases.map_or(normalized.as_str(), |a| a.canonical(&normalized));
     // Inv_RowZero (host-binding seam): an empty raw_host carries no community
     // evidence — there is no `connection.host` to resolve, so no community can
     // be derived from it. Fail closed BEFORE the resolver lookup. The schema
@@ -84,7 +160,7 @@ pub async fn bind_community<R: HostResolver>(
     if host.is_empty() {
         return Err(BindError::UnmappedHost);
     }
-    match resolver.resolve_host(&host).await {
+    match resolver.resolve_host(host).await {
         Ok(Some(community)) => Ok(TenantContext::resolved(community, host)),
         Ok(None) => Err(BindError::UnmappedHost),
         Err(e) => Err(BindError::Lookup(e)),
@@ -178,6 +254,72 @@ mod tests {
             CommunityId::from_uuid(Uuid::from_u128(id)),
         );
         MapResolver { map, fail: false }
+    }
+
+    fn aliases() -> ServiceAliases {
+        ServiceAliases::new(
+            "relay.example".to_string(),
+            ["kr.relay.example".to_string(), "old.example".to_string()],
+        )
+    }
+
+    #[tokio::test]
+    async fn alias_binds_as_the_service_host() {
+        let r = resolver_with("relay.example", 3);
+        let a = aliases();
+        for raw in ["kr.relay.example", "KR.relay.example:443", "old.example."] {
+            let ctx = bind_community_via(&r, Some(&a), raw)
+                .await
+                .unwrap_or_else(|_| panic!("alias {raw:?} should bind"));
+            assert_eq!(ctx.community().as_uuid(), &Uuid::from_u128(3));
+            // Signature checks and URLs use the service name.
+            assert_eq!(ctx.host(), "relay.example");
+        }
+        let ctx = bind_community_via(&r, Some(&a), "relay.example")
+            .await
+            .expect("service host binds");
+        assert_eq!(ctx.host(), "relay.example");
+    }
+
+    #[tokio::test]
+    async fn signatures_on_an_alias_are_checked_against_the_service_name() {
+        let r = resolver_with("relay.example", 3);
+        let ctx = bind_community_via(&r, Some(&aliases()), "kr.relay.example")
+            .await
+            .expect("alias binds");
+        assert_eq!(
+            crate::api::bridge::nip42_expected_relay_url("wss://relay.example", &ctx),
+            "wss://relay.example"
+        );
+        assert_eq!(
+            crate::api::bridge::nip98_expected_url("wss://relay.example", &ctx, "/query"),
+            "https://relay.example/query"
+        );
+    }
+
+    #[tokio::test]
+    async fn unlisted_hosts_still_fail_closed_with_aliases() {
+        let r = resolver_with("relay.example", 3);
+        let a = aliases();
+        assert!(matches!(
+            bind_community_via(&r, Some(&a), "jp.relay.example").await,
+            Err(BindError::UnmappedHost)
+        ));
+        assert!(matches!(
+            bind_community_via(&r, Some(&a), "").await,
+            Err(BindError::UnmappedHost)
+        ));
+    }
+
+    #[test]
+    fn service_host_is_never_its_own_alias() {
+        let a = ServiceAliases::new(
+            "relay.example".to_string(),
+            ["relay.example".to_string(), "kr.relay.example".to_string()],
+        );
+        assert!(!a.is_alias("relay.example"));
+        assert!(a.is_alias("kr.relay.example"));
+        assert!(ServiceAliases::default().is_empty());
     }
 
     #[tokio::test]
