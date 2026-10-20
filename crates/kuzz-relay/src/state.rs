@@ -1020,6 +1020,53 @@ impl ConnectionManager {
         count
     }
 
+    /// Tells every live connection that this relay may have missed events.
+    ///
+    /// Sockets opted in with `?kuzz_seq=1` get `["KUZZ_RESYNC",{"reason":..}]`
+    /// on the control channel and stay open; they fetch what they missed by
+    /// order number. Every other socket cannot be told, so it is closed with
+    /// `1012` after an independent delay in `[1, legacy_jitter_ms]` (no
+    /// reconnect herd); its client repairs on reconnect. The returned future
+    /// owns the delayed closes.
+    ///
+    /// Returns `(signalled, closed)`.
+    pub async fn resync_all(&self, reason: &str, legacy_jitter_ms: u64) -> (usize, usize) {
+        let frame = WsMessage::Text(
+            serde_json::json!(["KUZZ_RESYNC", { "reason": reason }])
+                .to_string()
+                .into(),
+        );
+        let legacy_jitter_ms = legacy_jitter_ms.max(1);
+        let mut signalled = 0usize;
+        let mut closes = Vec::new();
+        for entry in self.connections.iter() {
+            if entry.kuzz_seq.load(Ordering::Relaxed) {
+                let _ = entry.ctrl_tx.try_send(frame.clone());
+                signalled += 1;
+                continue;
+            }
+            let ctrl_tx = entry.ctrl_tx.clone();
+            let cancel = entry.cancel.clone();
+            let delay_ms = 1 + rand::random::<u64>() % legacy_jitter_ms;
+            closes.push(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                let _ = ctrl_tx.try_send(Self::resync_close_frame());
+                cancel.cancel();
+            });
+        }
+        let closed = closes.len();
+        join_all(closes).await;
+        (signalled, closed)
+    }
+
+    /// The WS close frame for a socket that cannot be told to resync: 1012.
+    fn resync_close_frame() -> WsMessage {
+        WsMessage::Close(Some(axum::extract::ws::CloseFrame {
+            code: axum::extract::ws::close_code::RESTART,
+            reason: axum::extract::ws::Utf8Bytes::from_static("relay resync"),
+        }))
+    }
+
     /// The WS close frame announcing a graceful restart: 1012 Service Restart.
     fn restart_close_frame() -> WsMessage {
         WsMessage::Close(Some(axum::extract::ws::CloseFrame {
@@ -3871,6 +3918,58 @@ pub(crate) mod tests {
             "an un-acknowledged flush falls back to cancellation"
         );
         drop(restart);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn resync_all_tells_seq_sockets_and_closes_the_rest_later() {
+        let mgr = ConnectionManager::new();
+        let register = |kuzz_seq: bool| {
+            let conn_id = Uuid::new_v4();
+            let (tx, _rx) = mpsc::channel(8);
+            let (ctrl_tx, ctrl_rx) = mpsc::channel(8);
+            let cancel = CancellationToken::new();
+            mgr.register(
+                conn_id,
+                tx,
+                ctrl_tx,
+                tokio::sync::mpsc::channel(1).0,
+                None,
+                cancel.clone(),
+                kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
+                Arc::new(AtomicU8::new(0)),
+                Arc::new(Mutex::new(HashMap::new())),
+                3,
+                crate::state::CommunityConnectionControl::new(cancel.clone()),
+            );
+            if kuzz_seq {
+                mgr.set_kuzz_seq(conn_id);
+            }
+            (ctrl_rx, cancel)
+        };
+        let (mut seq_ctrl, seq_cancel) = register(true);
+        let (mut legacy_ctrl, legacy_cancel) = register(false);
+
+        let started = tokio::time::Instant::now();
+        let (signalled, closed) = mgr.resync_all("redis_reconnect", 30_000).await;
+        assert_eq!((signalled, closed), (1, 1));
+        assert!(started.elapsed() <= std::time::Duration::from_millis(30_000));
+
+        match seq_ctrl.try_recv().expect("resync frame") {
+            WsMessage::Text(text) => assert_eq!(
+                text.as_str(),
+                r#"["KUZZ_RESYNC",{"reason":"redis_reconnect"}]"#
+            ),
+            other => panic!("expected text frame, got {other:?}"),
+        }
+        assert!(!seq_cancel.is_cancelled(), "opted-in socket stays open");
+
+        match legacy_ctrl.try_recv().expect("close frame") {
+            WsMessage::Close(Some(frame)) => {
+                assert_eq!(frame.code, axum::extract::ws::close_code::RESTART);
+            }
+            other => panic!("expected 1012 close, got {other:?}"),
+        }
+        assert!(legacy_cancel.is_cancelled(), "legacy socket is closed");
     }
 
     #[tokio::test]
