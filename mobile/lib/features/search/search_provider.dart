@@ -54,7 +54,6 @@ class SearchState {
   final String query;
   final List<SearchHit> messageResults;
   final List<DirectoryUser> userResults;
-  final List<Channel> channelResults;
   final bool isLoading;
   final String? error;
 
@@ -62,7 +61,6 @@ class SearchState {
     this.query = '',
     this.messageResults = const [],
     this.userResults = const [],
-    this.channelResults = const [],
     this.isLoading = false,
     this.error,
   });
@@ -71,7 +69,6 @@ class SearchState {
     : query = '',
       messageResults = const [],
       userResults = const [],
-      channelResults = const [],
       isLoading = false,
       error = null;
 
@@ -79,14 +76,12 @@ class SearchState {
     String? query,
     List<SearchHit>? messageResults,
     List<DirectoryUser>? userResults,
-    List<Channel>? channelResults,
     bool? isLoading,
     String? error,
   }) => SearchState(
     query: query ?? this.query,
     messageResults: messageResults ?? this.messageResults,
     userResults: userResults ?? this.userResults,
-    channelResults: channelResults ?? this.channelResults,
     isLoading: isLoading ?? this.isLoading,
     error: error ?? this.error,
   );
@@ -125,22 +120,19 @@ class SearchNotifier extends Notifier<SearchState> {
     // If the query changed while debouncing, bail out.
     if (state.query != query) return;
 
-    // Fire all three lookups in parallel.
+    // Chats by name come from searchChatResultsProvider, on this device.
     _searchMessages(query);
     _searchUsers(query);
-    _searchChannels(query);
   }
 
   Future<void> _searchMessages(String query) async {
     try {
       final session = ref.read(relaySessionProvider.notifier);
-      final events = await session.fetchHistory(
-        NostrFilter(
-          kinds: const [9, 40002, 45001, 45003],
-          search: query,
-          limit: 20,
-        ),
-      );
+      // The HTTP bridge, not a REQ: only it honours prefix matching, which
+      // lets "검색" find "검색창을".
+      final events = await session.queryRelay([
+        NostrFilters.searchMessages(query),
+      ]);
 
       // Channel-name lookup from the cached channels list — not all hits
       // will have a known channel (e.g. ones we're not a member of).
@@ -149,23 +141,26 @@ class SearchNotifier extends Notifier<SearchState> {
           c.id: c.name,
       };
 
-      final hits = events
-          .map(
-            (e) => SearchHit(
-              eventId: e.id,
-              content: e.content,
-              kind: e.kind,
-              pubkey: e.pubkey,
-              channelId: e.channelId,
-              channelName: e.channelId != null
-                  ? channelsById[e.channelId!]
-                  : null,
-              createdAt: e.createdAt,
-              score: 0.0,
-              tags: e.tags,
-            ),
-          )
-          .toList();
+      final hits =
+          events
+              .map(
+                (e) => SearchHit(
+                  eventId: e.id,
+                  content: e.content,
+                  kind: e.kind,
+                  pubkey: e.pubkey,
+                  channelId: e.channelId,
+                  channelName: e.channelId != null
+                      ? channelsById[e.channelId!]
+                      : null,
+                  createdAt: e.createdAt,
+                  score: 0.0,
+                  tags: e.tags,
+                ),
+              )
+              .toList()
+            // Newest first.
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       if (state.query != query) return;
       state = state.copyWith(messageResults: hits, isLoading: false);
@@ -182,29 +177,10 @@ class SearchNotifier extends Notifier<SearchState> {
           .searchUsers(query, limit: 8);
 
       if (state.query != query) return;
-      state = state.copyWith(
-        userResults: users,
-        isLoading: state.messageResults.isEmpty && state.channelResults.isEmpty,
-      );
+      state = state.copyWith(userResults: users);
     } catch (_) {
       // User search failure is non-critical — keep existing results.
     }
-  }
-
-  void _searchChannels(String query) {
-    final channels = ref.read(channelsProvider).value ?? [];
-    final lowerQuery = query.toLowerCase();
-    final matches = channels.where((c) {
-      if (c.isDm) return false;
-      return c.name.toLowerCase().contains(lowerQuery) ||
-          c.description.toLowerCase().contains(lowerQuery);
-    }).toList();
-
-    if (state.query != query) return;
-    state = state.copyWith(
-      channelResults: matches,
-      isLoading: state.messageResults.isEmpty && state.userResults.isEmpty,
-    );
   }
 
   void clear() {
