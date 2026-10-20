@@ -233,6 +233,8 @@ pub struct SessionState {
     /// turn has its session. Failure paths drop the session handle before the
     /// worker returns; this says which session the dead worker was driving.
     pub(crate) turn_session: Option<(SessionScope, String)>,
+    /// The answer of the idle check this worker just ran, for the main loop.
+    pub idle_check_answer: Option<IdleCheckAnswer>,
 }
 
 impl SessionState {
@@ -3270,6 +3272,168 @@ pub async fn run_compact_task(
         );
     }
     send_prompt_result(&result_tx, &turn_id, agent, source, outcome, None);
+}
+
+/// Turn ids of idle checks start with this, so the main loop can tell an
+/// idle check's result from a channel turn's.
+pub(crate) const IDLE_CHECK_TURN_PREFIX: &str = "idle-check-";
+
+/// An idle check with no output for this long counts as unanswered: the agent
+/// is stuck and the pool may sleep.
+pub(crate) const IDLE_CHECK_ANSWER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+/// Asked in a scope's live session before the idle pool sleep stops the
+/// worker: only the agent knows whether background work it started (a
+/// background agent or shell command) is still running, and the runner does
+/// not read the agent's output between turns.
+pub(crate) const IDLE_CHECK_PROMPT: &str = "[System: idle check]\n\
+Your last request in this conversation ended a while ago and nothing has come in since. \
+Kuzz will now stop this agent's process to save memory. The conversation is kept and \
+continues with the next message, but background work you started (background agents or \
+subagents, background shell commands) would be stopped.\n\
+Do not post in the conversation and do not start anything new for this check. If background \
+work you were waiting on has already finished and its follow-up is not done, finish that \
+follow-up first. Then reply with one line only:\n\
+- `BUSY: <what is still running>` if background work you started is still running\n\
+- `IDLE` otherwise";
+
+/// What an idle check found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdleCheckAnswer {
+    /// Nothing is running in the background; the worker may stop.
+    Idle,
+    /// Background work is still running; keep the worker.
+    Busy,
+    /// No answer (stuck, failed or cancelled); the worker may stop.
+    NoAnswer,
+}
+
+/// Read an idle check reply. The answer is the last `BUSY` or `IDLE`
+/// (uppercase, as the prompt asks), so narrative before it does not count;
+/// an `IDLE` on the same line after `BUSY` is part of the BUSY description.
+/// A reply with neither keeps the worker, since stopping it could lose work
+/// and the next check asks again.
+pub(crate) fn parse_idle_check_answer(reply: &str) -> IdleCheckAnswer {
+    match (reply.rfind("BUSY"), reply.rfind("IDLE")) {
+        (None, None) => IdleCheckAnswer::Busy,
+        (Some(_), None) => IdleCheckAnswer::Busy,
+        (None, Some(_)) => IdleCheckAnswer::Idle,
+        (Some(busy), Some(idle)) if busy > idle => IdleCheckAnswer::Busy,
+        (Some(busy), Some(idle)) if !reply[busy..idle].contains('\n') => IdleCheckAnswer::Busy,
+        (Some(_), Some(_)) => IdleCheckAnswer::Idle,
+    }
+}
+
+/// Ask `scope`'s live session whether background work is still running (see
+/// [`IDLE_CHECK_PROMPT`]) and return the worker with the answer in
+/// [`SessionState::idle_check_answer`].
+pub async fn run_idle_check_task(
+    mut agent: OwnedAgent,
+    scope: SessionScope,
+    ctx: Arc<PromptContext>,
+    result_tx: mpsc::UnboundedSender<PromptResult>,
+    turn_id: String,
+) {
+    let channel_id = scope.channel_id();
+    let session_id = agent.state.sessions.get(&scope).cloned();
+    agent.acp.set_observer_context(observer::context_for_turn(
+        Some(channel_id),
+        session_id.clone(),
+        turn_id.clone(),
+        chrono::Utc::now().to_rfc3339(),
+    ));
+    agent
+        .acp
+        .set_observer_thread_root(scope.root_event_id().map(str::to_owned));
+    let source = PromptSource::Channel(scope.clone());
+
+    let (answer, outcome) = match session_id.as_deref() {
+        // Invalidated between the claim and now: nothing is left to ask.
+        None => (
+            IdleCheckAnswer::Idle,
+            PromptOutcome::Ok(StopReason::EndTurn),
+        ),
+        Some(session_id) => {
+            agent.acp.set_capture_reply(true);
+            let result = agent
+                .acp
+                .session_prompt_with_idle_timeout(
+                    session_id,
+                    IDLE_CHECK_PROMPT,
+                    IDLE_CHECK_ANSWER_TIMEOUT,
+                    ctx.max_turn_duration,
+                )
+                .await;
+            let reply = agent.acp.take_reply_text();
+            agent.acp.set_capture_reply(false);
+            let (status, outcome, stop) =
+                compact_outcome(&mut agent, session_id, &ctx, result).await;
+            let usage = agent.acp.take_turn_usage();
+            publish_agent_turn_metric(
+                &ctx,
+                usage,
+                Some(channel_id),
+                session_id,
+                &turn_id,
+                Some(stop),
+            )
+            .await;
+            let answer = if status == "completed" {
+                parse_idle_check_answer(&reply)
+            } else {
+                IdleCheckAnswer::NoAnswer
+            };
+            tracing::info!(
+                target: "pool::session",
+                agent = agent.index,
+                ?answer,
+                reply = %reply.trim(),
+                "idle check finished for {source:?}"
+            );
+            (answer, outcome)
+        }
+    };
+    agent.state.idle_check_answer = Some(answer);
+    send_prompt_result(&result_tx, &turn_id, agent, source, outcome, None);
+}
+
+#[cfg(test)]
+mod idle_check_answer_tests {
+    use super::{parse_idle_check_answer, IdleCheckAnswer, IDLE_CHECK_PROMPT};
+
+    #[test]
+    fn last_answer_counts_and_unclear_replies_keep_the_worker() {
+        assert_eq!(parse_idle_check_answer("IDLE"), IdleCheckAnswer::Idle);
+        assert_eq!(parse_idle_check_answer("`IDLE`\n"), IdleCheckAnswer::Idle);
+        // Narrative before the answer does not count (seen live: no newline).
+        assert_eq!(
+            parse_idle_check_answer("The test run that kept me busy finished. I posted it.IDLE"),
+            IdleCheckAnswer::Idle
+        );
+        assert_eq!(
+            parse_idle_check_answer("Earlier I said BUSY.\nIt finished now.\nIDLE"),
+            IdleCheckAnswer::Idle
+        );
+        assert_eq!(
+            parse_idle_check_answer("BUSY: background agent auditing side effects"),
+            IdleCheckAnswer::Busy
+        );
+        assert_eq!(
+            parse_idle_check_answer("BUSY: tests (not IDLE)"),
+            IdleCheckAnswer::Busy
+        );
+        assert_eq!(parse_idle_check_answer(""), IdleCheckAnswer::Busy);
+        assert_eq!(parse_idle_check_answer("all good"), IdleCheckAnswer::Busy);
+        assert_eq!(parse_idle_check_answer("idle"), IdleCheckAnswer::Busy);
+    }
+
+    #[test]
+    fn prompt_asks_for_one_line_without_posting() {
+        assert!(IDLE_CHECK_PROMPT.starts_with("[System: idle check]\n"));
+        assert!(IDLE_CHECK_PROMPT.contains("Do not post in the conversation"));
+        assert!(IDLE_CHECK_PROMPT.contains("`BUSY: <what is still running>`"));
+        assert!(IDLE_CHECK_PROMPT.contains("`IDLE` otherwise"));
+    }
 }
 
 /// Map a `/compact` prompt result to its reported status, the pool outcome
