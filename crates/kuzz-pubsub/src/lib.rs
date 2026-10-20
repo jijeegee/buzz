@@ -125,6 +125,10 @@ pub enum ResyncReason {
     RedisReconnect,
     /// The local fan-out consumer fell behind and skipped events.
     FanoutLagged,
+    /// The Redis pub/sub connection dropped. Events from other relays stop
+    /// arriving until [`Self::RedisReconnect`]; clients should remember
+    /// where they were now, but fetching before the reconnect gains nothing.
+    RedisDown,
 }
 
 impl ResyncReason {
@@ -133,7 +137,14 @@ impl ResyncReason {
         match self {
             Self::RedisReconnect => "redis_reconnect",
             Self::FanoutLagged => "fanout_lagged",
+            Self::RedisDown => "redis_down",
         }
+    }
+
+    /// Whether missed events cannot be fetched yet (the frame carries
+    /// `"pending":true`, and sockets that cannot be told stay open).
+    pub fn is_pending(self) -> bool {
+        matches!(self, Self::RedisDown)
     }
 }
 
@@ -595,9 +606,16 @@ mod tests {
 
         let reason = tokio::time::timeout(tokio::time::Duration::from_secs(5), resync.recv())
             .await
+            .expect("signal when the connection drops")
+            .expect("resync channel open");
+        assert_eq!(reason, ResyncReason::RedisDown);
+        assert!(reason.is_pending());
+        let reason = tokio::time::timeout(tokio::time::Duration::from_secs(5), resync.recv())
+            .await
             .expect("resync after reconnect")
             .expect("resync channel open");
         assert_eq!(reason, ResyncReason::RedisReconnect);
+        assert!(!reason.is_pending());
         assert_eq!(reason.as_str(), "redis_reconnect");
     }
 

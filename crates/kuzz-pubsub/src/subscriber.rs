@@ -33,7 +33,8 @@ pub(crate) enum SubscriptionCommand {
 ///
 /// The desired refcount map is the source of truth. On every reconnect, this
 /// task snapshots topics with count > 0 and subscribes to those exact Redis
-/// channels before processing messages. Every connection after the first
+/// channels before processing messages. When an established connection ends
+/// it sends [`ResyncReason::RedisDown`], and every connection after the first
 /// sends [`ResyncReason::RedisReconnect`]: events published while the
 /// connection was down never arrive.
 pub(crate) async fn run_subscriber(
@@ -47,16 +48,21 @@ pub(crate) async fn run_subscriber(
     let mut connected_once = false;
 
     loop {
-        match connect_and_subscribe(
+        let mut established = false;
+        let result = connect_and_subscribe(
             &redis_url,
             &broadcast_tx,
             desired_topics.clone(),
             &mut subscription_rx,
             &resync_tx,
             &mut connected_once,
+            &mut established,
         )
-        .await
-        {
+        .await;
+        if established {
+            let _ = resync_tx.send(ResyncReason::RedisDown);
+        }
+        match result {
             Ok(()) => {
                 // Stream ended cleanly (Redis returned None). The connection was
                 // established and ran successfully, so reset backoff to the initial
@@ -85,6 +91,7 @@ async fn connect_and_subscribe(
     subscription_rx: &mut mpsc::Receiver<SubscriptionCommand>,
     resync_tx: &broadcast::Sender<ResyncReason>,
     connected_once: &mut bool,
+    established: &mut bool,
 ) -> Result<(), redis::RedisError> {
     let client = redis::Client::open(redis_url)?;
     let conn = client.get_async_pubsub().await?;
@@ -109,6 +116,7 @@ async fn connect_and_subscribe(
         topic_count = active_topics.len(),
         "Redis pub/sub subscriber connected with dynamic scoped subscriptions"
     );
+    *established = true;
     if std::mem::replace(connected_once, true) {
         let _ = resync_tx.send(ResyncReason::RedisReconnect);
     }
