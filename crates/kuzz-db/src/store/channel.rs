@@ -629,6 +629,279 @@ pub async fn update_channel(
     .await
 }
 
+/// One metadata field set by a kind:9002 edit.
+#[derive(Debug, Clone, Copy)]
+pub enum ChannelField<'a> {
+    /// Channel name.
+    Name(&'a str),
+    /// Channel description (`about`).
+    About(&'a str),
+    /// Topic, with who set it.
+    Topic(&'a str, &'a [u8]),
+    /// Purpose, with who set it.
+    Purpose(&'a str, &'a [u8]),
+    /// `open` or `private`.
+    Visibility(&'a str),
+    /// TTL in seconds; `None` makes the channel permanent.
+    Ttl(Option<i32>),
+    /// Goals on or off.
+    Goals(bool),
+    /// Archived or not.
+    Archived(bool),
+}
+
+impl ChannelField<'_> {
+    /// Key in `channel_metadata_order`.
+    pub fn key(&self) -> &'static str {
+        match self {
+            Self::Name(_) => "name",
+            Self::About(_) => "about",
+            Self::Topic(..) => "topic",
+            Self::Purpose(..) => "purpose",
+            Self::Visibility(_) => "visibility",
+            Self::Ttl(_) => "ttl",
+            Self::Goals(_) => "goals",
+            Self::Archived(_) => "archived",
+        }
+    }
+}
+
+/// Set one metadata field for the side effect of stored event `cause` (a
+/// kind:9002), unless this event or a later change of the same field was
+/// applied already (migration 0083). The order check and the write share
+/// one transaction under a per-channel lock, so concurrent edits on other
+/// relay instances cannot interleave between them.
+///
+/// Like [`archive_channel`] and [`unarchive_channel`], archiving an archived
+/// channel or unarchiving an open one returns `AccessDenied`; a re-run of
+/// the same event returns `AlreadyApplied` before that check.
+pub async fn apply_channel_field_for_event(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    field: ChannelField<'_>,
+    cause: &[u8],
+) -> Result<crate::channel_members::MemberWrite> {
+    use crate::channel_members::{event_channel_sequence, order_decision, MemberWrite};
+
+    let name;
+    let field = match field {
+        ChannelField::Name(raw) => {
+            name = kuzz_core::channel::canonical_channel_name(raw).to_owned();
+            if name.is_empty() {
+                return Err(DbError::InvalidData("channel name is required".into()));
+            }
+            ChannelField::Name(&name)
+        }
+        other => other,
+    };
+
+    let mut tx = begin_event_write_transaction(pool).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!(
+            "kuzz_channel_metadata:{}:{}",
+            community_id.as_uuid(),
+            channel_id
+        ))
+        .execute(&mut *tx)
+        .await?;
+    if matches!(field, ChannelField::Ttl(_)) {
+        // Same key as `update_channel`'s TTL path (event-trigger fast path).
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(format!(
+                "kuzz_channel_ttl:{}:{}",
+                community_id.as_uuid(),
+                channel_id
+            ))
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    let seq = event_channel_sequence(&mut tx, community_id, channel_id, cause).await?;
+    if let Some(seq) = seq {
+        let last: Option<(Option<i64>, Option<Vec<u8>>)> = sqlx::query_as(
+            "SELECT seq, event_id FROM channel_metadata_order \
+             WHERE community_id = $1 AND channel_id = $2 AND field = $3",
+        )
+        .bind(community_id.as_uuid())
+        .bind(channel_id)
+        .bind(field.key())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let write = order_decision(last, seq, cause);
+        if write != MemberWrite::Applied {
+            return Ok(write);
+        }
+    }
+
+    let community = community_id.as_uuid();
+    let live = "community_id = $1 AND id = $2 AND deleted_at IS NULL";
+    let result = match field {
+        ChannelField::Name(v) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET name = $3, updated_at = NOW() WHERE {live}"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .bind(v)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::About(v) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET description = $3, updated_at = NOW() WHERE {live}"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .bind(v)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::Topic(v, by) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET topic = $3, topic_set_by = $4, topic_set_at = NOW() \
+                 WHERE {live}"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .bind(v)
+            .bind(by)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::Purpose(v, by) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET purpose = $3, purpose_set_by = $4, purpose_set_at = NOW() \
+                 WHERE {live}"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .bind(v)
+            .bind(by)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::Visibility(v) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET visibility = $3::channel_visibility, updated_at = NOW() \
+                 WHERE {live}"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .bind(v)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::Ttl(v) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET ttl_seconds = $3, \
+                     ttl_deadline = CASE WHEN $3::int IS NULL THEN NULL \
+                         ELSE NOW() + ($3::int || ' seconds')::interval END, \
+                     updated_at = NOW() \
+                 WHERE {live}"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .bind(v)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::Goals(v) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET goals_enabled = $3, updated_at = NOW() WHERE {live}"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .bind(v)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::Archived(true) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET archived_at = NOW() WHERE {live} AND archived_at IS NULL"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .execute(&mut *tx)
+            .await?
+        }
+        ChannelField::Archived(false) => {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE channels SET \
+                     ttl_deadline = CASE \
+                         WHEN ttl_seconds IS NOT NULL \
+                             THEN NOW() + (ttl_seconds || ' seconds')::interval \
+                         ELSE ttl_deadline \
+                     END, \
+                     archived_at = NULL \
+                 WHERE {live} AND archived_at IS NOT NULL"
+            )))
+            .bind(community)
+            .bind(channel_id)
+            .execute(&mut *tx)
+            .await?
+        }
+    };
+    if result.rows_affected() == 0 {
+        let exists: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT EXISTS (SELECT 1 FROM channels WHERE {live})"
+        )))
+        .bind(community)
+        .bind(channel_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        return Err(match field {
+            ChannelField::Archived(true) if exists => {
+                DbError::AccessDenied("channel is already archived".to_string())
+            }
+            ChannelField::Archived(false) if exists => {
+                DbError::AccessDenied("channel is not archived".to_string())
+            }
+            _ => DbError::ChannelNotFound(channel_id),
+        });
+    }
+    if let Some(seq) = seq {
+        record_metadata_order(
+            &mut tx,
+            community_id,
+            channel_id,
+            field.key(),
+            Some(seq),
+            Some(cause),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(MemberWrite::Applied)
+}
+
+/// Record the last change of a metadata field: `seq` and `cause` for an
+/// event, or the channel's current sequence and no event otherwise.
+async fn record_metadata_order(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    field: &str,
+    seq: Option<i64>,
+    cause: Option<&[u8]>,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO channel_metadata_order (community_id, channel_id, field, seq, event_id) \
+         SELECT $1, $2, $3, COALESCE($4, accepted_sequence), $5 FROM channels \
+          WHERE community_id = $1 AND id = $2 \
+         ON CONFLICT (community_id, channel_id, field) DO UPDATE \
+            SET seq = EXCLUDED.seq, event_id = EXCLUDED.event_id",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .bind(field)
+    .bind(seq)
+    .bind(cause)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 /// Sets the topic for a channel, recording who set it and when.
 pub async fn set_topic(
     pool: &PgPool,
@@ -710,14 +983,18 @@ pub async fn archive_channel(
         }
     }
 
+    let mut tx = sqlx::Transaction::begin(connection, None).await?;
     sqlx::query(
         "UPDATE channels SET archived_at = NOW() \
          WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL AND archived_at IS NULL",
     )
     .bind(community_id.as_uuid())
     .bind(channel_id)
-    .execute(&mut *connection)
+    .execute(&mut *tx)
     .await?;
+    // An older kind:9002 replayed later must not unarchive (migration 0083).
+    record_metadata_order(&mut tx, community_id, channel_id, "archived", None, None).await?;
+    tx.commit().await?;
 
     Ok(())
 }
@@ -751,6 +1028,7 @@ pub async fn unarchive_channel(
         }
     }
 
+    let mut tx = sqlx::Transaction::begin(connection, None).await?;
     sqlx::query(
         "UPDATE channels SET archived_at = NULL, \
              ttl_deadline = CASE \
@@ -761,8 +1039,10 @@ pub async fn unarchive_channel(
     )
     .bind(community_id.as_uuid())
     .bind(channel_id)
-    .execute(&mut *connection)
+    .execute(&mut *tx)
     .await?;
+    record_metadata_order(&mut tx, community_id, channel_id, "archived", None, None).await?;
+    tx.commit().await?;
 
     Ok(())
 }
@@ -992,6 +1272,19 @@ impl Db {
         set_by: &[u8],
     ) -> Result<()> {
         set_purpose(&self.pool, community_id, channel_id, purpose, set_by).await
+    }
+
+    /// Sets one metadata field for a kind:9002 side effect (see
+    /// [`apply_channel_field_for_event`]).
+    #[datastore_span(name = "apply_channel_field_for_event", system = "postgresql")]
+    pub async fn apply_channel_field_for_event(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        field: ChannelField<'_>,
+        cause: &[u8],
+    ) -> Result<crate::channel_members::MemberWrite> {
+        apply_channel_field_for_event(&self.pool, community_id, channel_id, field, cause).await
     }
 
     /// Archives a channel.
