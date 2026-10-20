@@ -4765,6 +4765,7 @@ dependencies = [
  "hmac 0.13.0",
  "http-body",
  "http-body-util",
+ "image",
  "infer",
  "jsonwebtoken",
  "kuzz-audit",

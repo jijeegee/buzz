@@ -10,7 +10,7 @@
 //! checked again right before it is removed, and once more after its sidecar
 //! is gone: a file uploaded or sent meanwhile gets its sidecar and bytes back.
 //!
-//! Blob bytes (`{sha}.{ext}`, `{sha}.thumb.jpg`) are shared by every
+//! Blob bytes (`{sha}.{ext}`, `{sha}.thumb.jpg`, `{sha}.small.jpg`) are shared by every
 //! community. An unused community file loses its sidecar and its uploader and
 //! reference rows. When no community has a sidecar left, the bytes move to
 //! `_trash/{unix seconds}/{key}` instead of being deleted. Each run first
@@ -122,7 +122,7 @@ pub struct GcReport {
     pub bytes: u64,
     /// Community sidecars removed.
     pub sidecars_removed: u64,
-    /// Shared blob objects (original and thumbnail) moved to the trash.
+    /// Shared blob objects (original and derived variants) moved to the trash.
     pub trashed: u64,
     /// Trashed objects put back because a community uses them again.
     pub restored: u64,
@@ -369,7 +369,8 @@ async fn exists(storage: &MediaStorage, key: &str) -> anyhow::Result<bool> {
     Ok(page.objects.iter().any(|(found, _)| found == key))
 }
 
-/// The shared objects for `sha`: the original (`{sha}.{ext}`) and thumbnail.
+/// The shared objects for `sha`: the original (`{sha}.{ext}`) and its derived
+/// variants (`{sha}.thumb.jpg`, `{sha}.small.jpg`).
 async fn blob_object_keys(storage: &MediaStorage, sha: &str) -> anyhow::Result<Vec<String>> {
     Ok(list_keys(storage, sha)
         .await?
@@ -495,6 +496,14 @@ mod tests {
                 sha: SHA.to_owned(),
             })
         );
+        assert_eq!(
+            parse_trash_key(&format!("_trash/1760000000/{SHA}.small.jpg")),
+            Some(TrashEntry {
+                trashed_at: 1_760_000_000,
+                original: format!("{SHA}.small.jpg"),
+                sha: SHA.to_owned(),
+            })
+        );
         assert_eq!(parse_trash_key(&format!("_trash/x/{SHA}.png")), None);
         assert_eq!(parse_trash_key(&format!("_trash/1/{SHA}")), None);
         assert_eq!(parse_trash_key("_trash/1/abc.png"), None);
@@ -502,9 +511,10 @@ mod tests {
     }
 
     #[test]
-    fn blob_object_keys_are_original_and_thumbnail_only() {
+    fn blob_object_keys_are_original_and_derived_variants_only() {
         assert!(is_blob_object_key(&format!("{SHA}.png"), SHA));
         assert!(is_blob_object_key(&format!("{SHA}.thumb.jpg"), SHA));
+        assert!(is_blob_object_key(&format!("{SHA}.small.jpg"), SHA));
         assert!(!is_blob_object_key(SHA, SHA));
         assert!(!is_blob_object_key(&format!("{SHA}0.png"), SHA));
         assert!(!is_blob_object_key(&format!("{SHA}./x"), SHA));
@@ -568,6 +578,10 @@ mod tests {
                     .put(&format!("{sha}.thumb.jpg"), b"jpg", "image/jpeg")
                     .await
                     .expect("thumb");
+                storage
+                    .put(&format!("{sha}.small.jpg"), b"jpg", "image/jpeg")
+                    .await
+                    .expect("small");
                 let tenant = TenantContext::resolved(community, String::new());
                 storage
                     .put_sidecar(&tenant, &sha, &meta(uploaded_at))
@@ -622,10 +636,11 @@ mod tests {
             .expect("run")
             .expect("leader");
 
-        // Unused everywhere: sidecar, original and thumbnail are gone.
+        // Unused everywhere: sidecar, original and both variants are gone.
         assert!(!exists(sidecar(community_a, &unused)).await);
         assert!(!exists(format!("{unused}.png")).await);
         assert!(!exists(format!("{unused}.thumb.jpg")).await);
+        assert!(!exists(format!("{unused}.small.jpg")).await);
         // Unused in A but used in B: A's sidecar goes, the bytes stay.
         assert!(!exists(sidecar(community_a, &shared)).await);
         assert!(exists(sidecar(community_b, &shared)).await);
@@ -643,7 +658,7 @@ mod tests {
             .into_iter()
             .filter(|key| key.contains(&unused))
             .collect();
-        assert_eq!(trashed.len(), 2, "original and thumbnail: {trashed:?}");
+        assert_eq!(trashed.len(), 3, "original, thumb and small: {trashed:?}");
 
         // A community uploads the file again before the trash is emptied:
         // the next run restores the bytes and keeps them.
@@ -658,9 +673,10 @@ mod tests {
             .await
             .expect("run")
             .expect("leader");
-        assert_eq!(report.restored, 2, "{report:?}");
+        assert_eq!(report.restored, 3, "{report:?}");
         assert!(exists(format!("{unused}.png")).await);
         assert!(exists(format!("{unused}.thumb.jpg")).await);
+        assert!(exists(format!("{unused}.small.jpg")).await);
         assert!(list_keys(&storage, TRASH_PREFIX)
             .await
             .expect("trash")
