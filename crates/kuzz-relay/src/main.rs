@@ -1216,6 +1216,15 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         });
     }
 
+    // Side-effect retry worker (outbox, migration 0077). Leases keep pods
+    // from running one row twice.
+    if state.config.side_effect_retry {
+        let state_for_retry = Arc::clone(&state);
+        tokio::spawn(kuzz_relay::side_effect_retry::run_side_effect_retry_loop(
+            state_for_retry,
+        ));
+    }
+
     // Resync consumer: this relay may have missed events from other relays.
     // Signals arriving within a second are handled once.
     if state.config.resync_signal {

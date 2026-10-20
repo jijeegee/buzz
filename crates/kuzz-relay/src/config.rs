@@ -344,6 +344,14 @@ pub struct Config {
     /// clients repair on reconnect. Off: only the lag metric and log, as before.
     pub resync_signal: bool,
 
+    /// Side-effect retry (`KUZZ_SIDE_EFFECT_RETRY`, default off).
+    ///
+    /// On: side effects that failed or were cut off (outbox rows, migration
+    /// 0077) run again from a background worker and on a duplicate re-send,
+    /// for kinds safe to replay (`side_effect_retry_safe`). Off: rows are still
+    /// written and settled, but nothing is retried, as before.
+    pub side_effect_retry: bool,
+
     /// Optional override for ephemeral channel TTL (in seconds).
     /// When set, any channel created with a TTL tag will use this value instead
     /// of the client-provided one. Useful for testing ephemeral expiry quickly.
@@ -1226,6 +1234,7 @@ impl Config {
         let chat_state_writes = parse_bool("KUZZ_CHAT_STATE_WRITES", false)?;
         let pubsub_seq_envelope = parse_bool("KUZZ_PUBSUB_SEQ_ENVELOPE", false)?;
         let resync_signal = parse_bool("KUZZ_RESYNC_SIGNAL", false)?;
+        let side_effect_retry = parse_bool("KUZZ_SIDE_EFFECT_RETRY", false)?;
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1459,6 +1468,7 @@ impl Config {
             chat_state_writes,
             pubsub_seq_envelope,
             resync_signal,
+            side_effect_retry,
             ephemeral_ttl_override,
             git_repo_path,
             git_pack_cache_path,
@@ -1708,6 +1718,10 @@ mod tests {
             "Redis sequence envelope must default to off"
         );
         assert!(!config.resync_signal, "resync signal must default to off");
+        assert!(
+            !config.side_effect_retry,
+            "side-effect retry must default to off"
+        );
         assert!(config.slow_client_grace_limit > 0);
         assert!(
             !config.pubkey_allowlist_enabled,

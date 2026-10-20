@@ -72,6 +72,8 @@ pub mod reminder;
 /// Replaceable-event persistence and coordinate locking.
 pub mod replaceable;
 /// Durable completed snapshots from the isolated media-storage worker.
+pub mod side_effect_outbox;
+
 pub mod storage_accounting;
 /// Thread metadata persistence.
 pub mod thread;
@@ -121,3 +123,6 @@ mod chat_stored_state_postgres_tests;
 
 #[cfg(test)]
 mod inbox_summary_postgres_tests;
+
+#[cfg(test)]
+mod side_effect_outbox_postgres_tests;

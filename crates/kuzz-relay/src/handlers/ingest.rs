@@ -3888,6 +3888,29 @@ async fn ingest_event_inner(
             stored_event.channel_id,
         )
         .await;
+        // A re-send of an event whose side effects failed or were cut off
+        // runs them again (outbox, migration 0077), for kinds safe to replay.
+        if state.config.side_effect_retry
+            && crate::handlers::side_effects::side_effect_retry_safe(kind_u32)
+        {
+            match state
+                .db
+                .claim_side_effect(tenant.community(), &event.id.to_bytes())
+                .await
+            {
+                Ok(true) => {
+                    if let Err(e) = crate::handlers::side_effects::run_outboxed_side_effects(
+                        tenant, kind_u32, &event, state,
+                    )
+                    .await
+                    {
+                        error!(event_id = %event_id_hex, kind = kind_u32, "Side effect retry failed: {e}");
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => warn!(event_id = %event_id_hex, "side-effect outbox claim failed: {e}"),
+            }
+        }
         return Ok(IngestResult {
             event_id: event_id_hex,
             accepted: true,
@@ -3896,10 +3919,11 @@ async fn ingest_event_inner(
         });
     }
 
-    if !workflow_deletion && crate::handlers::side_effects::is_side_effect_kind(kind_u32) {
-        if let Err(e) =
-            crate::handlers::side_effects::handle_side_effects(tenant, kind_u32, &event, state)
-                .await
+    if crate::handlers::side_effects::is_side_effect_kind(kind_u32) {
+        if let Err(e) = crate::handlers::side_effects::run_outboxed_side_effects(
+            tenant, kind_u32, &event, state,
+        )
+        .await
         {
             // error!, not warn!: the event was accepted but its side effects
             // (channel creation, git repo seeding, …) did not run — the relay

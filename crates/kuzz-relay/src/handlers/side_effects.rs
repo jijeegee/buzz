@@ -37,6 +37,59 @@ pub fn is_side_effect_kind(kind: u32) -> bool {
     matches!(kind, 0 | 5 | 9000..=9022 | KIND_GIT_REPO_ANNOUNCEMENT | KIND_AGENT_PROFILE | 41001..=41003 | 40099)
 }
 
+/// Kinds whose side effects may run again after a failed or interrupted run.
+///
+/// The others are not safe to replay (audit 2026-10-20, see
+/// PLANS/GLOBAL_REGIONS_S0_ORDER_GAP_PLAN_20261019.md): their system messages
+/// get a new id per run, member add/remove and metadata edits can apply a
+/// stale change after newer ones, and 9007 without `h` mints a new channel.
+/// Their outbox rows stay as a record of the failure.
+pub fn side_effect_retry_safe(kind: u32) -> bool {
+    matches!(kind, 5 | 9005 | 9008 | KIND_GIT_REPO_ANNOUNCEMENT)
+}
+
+/// [`side_effect_retry_safe`] kinds, for the outbox retry query.
+pub const SIDE_EFFECT_RETRY_KINDS: [i32; 4] = [5, 9005, 9008, KIND_GIT_REPO_ANNOUNCEMENT as i32];
+
+/// Run a stored event's side effects and settle its outbox row (migration
+/// 0077): deleted on success, kept with the error on failure.
+///
+/// Workflow deletions (kind 5 aimed at a workflow) have no side effects; their
+/// row is settled as done.
+pub async fn run_outboxed_side_effects(
+    tenant: &TenantContext,
+    kind: u32,
+    event: &Event,
+    state: &Arc<AppState>,
+) -> anyhow::Result<()> {
+    let result = if kind == 5 && is_workflow_deletion(event) {
+        Ok(())
+    } else {
+        handle_side_effects(tenant, kind, event, state).await
+    };
+    let event_id = event.id.to_bytes();
+    let settled = match &result {
+        Ok(()) => {
+            state
+                .db
+                .complete_side_effect(tenant.community(), &event_id)
+                .await
+        }
+        Err(e) => {
+            metrics::counter!("kuzz_side_effect_failures_total", "kind" => kind.to_string())
+                .increment(1);
+            state
+                .db
+                .record_side_effect_failure(tenant.community(), &event_id, &format!("{e:#}"))
+                .await
+        }
+    };
+    if let Err(e) = settled {
+        warn!(event_id = %event.id, kind, "side-effect outbox update failed: {e}");
+    }
+    result
+}
+
 /// Apply the three live side effects that must follow a successful admin kick:
 ///
 /// 1. `invalidate_membership` — drops the 10 s membership-cache entry on this pod
