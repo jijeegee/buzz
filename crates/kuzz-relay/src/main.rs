@@ -1226,13 +1226,14 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     }
 
     // Resync consumer: this relay may have missed events from other relays.
-    // Signals arriving within a second are handled once.
+    // Signals arriving within a second are handled once; a fetchable reason
+    // wins over a pending one (Redis dropped and came back in that second).
     if state.config.resync_signal {
         let state_for_resync = Arc::clone(&state);
         let mut resync_rx = resync_rx;
         tokio::spawn(async move {
             loop {
-                let reason = match resync_rx.recv().await {
+                let mut reason = match resync_rx.recv().await {
                     Ok(reason) => reason,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         kuzz_pubsub::ResyncReason::FanoutLagged
@@ -1240,12 +1241,27 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 };
                 tokio::time::sleep(RESYNC_COALESCE).await;
-                while resync_rx.try_recv().is_ok() {}
+                loop {
+                    let next = match resync_rx.try_recv() {
+                        Ok(next) => next,
+                        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                            kuzz_pubsub::ResyncReason::FanoutLagged
+                        }
+                        Err(_) => break,
+                    };
+                    if reason.is_pending() {
+                        reason = next;
+                    }
+                }
                 metrics::counter!("kuzz_resync_signal_total", "reason" => reason.as_str())
                     .increment(1);
                 let (signalled, closed) = state_for_resync
                     .conn_manager
-                    .resync_all(reason.as_str(), RESYNC_LEGACY_CLOSE_JITTER_MS)
+                    .resync_all(
+                        reason.as_str(),
+                        reason.is_pending(),
+                        RESYNC_LEGACY_CLOSE_JITTER_MS,
+                    )
                     .await;
                 tracing::warn!(
                     reason = reason.as_str(),

@@ -102,7 +102,18 @@ fn event_frame_carries_its_order_number_and_legacy_frames_have_none() {
         other => panic!("expected EVENT, got {other:?}"),
     }
     match parse_relay_message(r#"["KUZZ_RESYNC",{"reason":"redis_reconnect"}]"#).unwrap() {
-        RelayMessage::Resync { reason } => assert_eq!(reason, "redis_reconnect"),
+        RelayMessage::Resync { reason, pending } => {
+            assert_eq!(reason, "redis_reconnect");
+            assert!(!pending);
+        }
+        other => panic!("expected KUZZ_RESYNC, got {other:?}"),
+    }
+    match parse_relay_message(r#"["KUZZ_RESYNC",{"reason":"redis_down","pending":true}]"#).unwrap()
+    {
+        RelayMessage::Resync { reason, pending } => {
+            assert_eq!(reason, "redis_down");
+            assert!(pending);
+        }
         other => panic!("expected KUZZ_RESYNC, got {other:?}"),
     }
 }
@@ -292,6 +303,47 @@ async fn resync_queues_every_channel_and_membership_replay() {
         !state.seq.contains_key(&channels[1]),
         "no numbers: since path"
     );
+}
+
+#[tokio::test]
+async fn pending_resync_pins_now_and_replays_on_the_next_signal() {
+    let (mut client, _server) = test_ws_pair().await;
+    let (tx, _rx) = mpsc::channel(8);
+    let mut state = BgState::new();
+    let channel = Uuid::new_v4();
+    seed_test_subscription(&mut state, channel);
+    state
+        .active_subscriptions
+        .insert(channel, channel_sub_id(channel));
+    state.membership_sub_active = true;
+    state.seq.insert(channel, aged_cursor(40, 50));
+
+    dispatch(
+        &mut client,
+        &mut state,
+        &tx,
+        json!(["KUZZ_RESYNC", {"reason": "redis_down", "pending": true}]),
+    )
+    .await;
+    assert_eq!(state.seq[&channel].pinned(), Some(40));
+    assert!(state.resubscribe_retry.is_empty(), "nothing to fetch yet");
+    assert!(!state.membership_resub_needed);
+
+    // Redis stayed down longer than the stable window while this relay's own
+    // events kept arriving, so the resync after recovery would pin 50, past
+    // the gap, on its own. The earlier pin wins.
+    let during = tokio::time::Instant::now() - Duration::from_secs(60);
+    state.seq.get_mut(&channel).unwrap().observe(90, during);
+    dispatch(
+        &mut client,
+        &mut state,
+        &tx,
+        json!(["KUZZ_RESYNC", {"reason": "redis_reconnect"}]),
+    )
+    .await;
+    assert!(state.resubscribe_retry.contains(&channel));
+    assert!(state.membership_resub_needed);
+    assert_eq!(state.seq[&channel].pinned(), Some(40));
 }
 
 #[tokio::test]

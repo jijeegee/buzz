@@ -788,9 +788,12 @@ enum RelayMessage {
         challenge: String,
     },
     /// `["KUZZ_RESYNC",{"reason":..}]`: the relay may have missed events for
-    /// this connection; replay every channel.
+    /// this connection; replay every channel. With `"pending":true` the
+    /// missed events cannot be fetched yet (Redis is down): remember the
+    /// replay point now, and replay on the signal that follows.
     Resync {
         reason: String,
+        pending: bool,
     },
 }
 
@@ -2629,13 +2632,15 @@ async fn handle_ws_message(
                 RelayMessage::Eose { subscription_id } => {
                     debug!("EOSE for subscription {subscription_id}");
                 }
-                RelayMessage::Resync { reason } => {
+                RelayMessage::Resync { reason, pending } => {
                     // Replay every channel and membership notifications through
                     // the paced main-loop drains. The replay point is pinned
                     // now: the REQ may go out much later, after live numbers
-                    // have moved past the gap.
+                    // have moved past the gap. A pending signal only pins; the
+                    // pin keeps the lowest point until the replay.
                     info!(
                         reason,
+                        pending,
                         channels = state.active_subscriptions.len(),
                         "relay asked for resync — replaying subscriptions"
                     );
@@ -2645,6 +2650,9 @@ async fn handle_ws_message(
                         if let Some(cursor) = state.seq.get_mut(channel_id) {
                             cursor.resync(now);
                         }
+                    }
+                    if pending {
+                        return true;
                     }
                     state.resubscribe_retry.extend(channels);
                     if state.membership_sub_active {
@@ -2931,9 +2939,11 @@ async fn process_handshake_buffer(
             } => serde_json::to_string(&json!(["OK", event_id, accepted, message])).ok(),
             // AUTH in the buffer is stale — skip it.
             RelayMessage::Auth { .. } => None,
-            RelayMessage::Resync { reason } => {
-                serde_json::to_string(&json!(["KUZZ_RESYNC", {"reason": reason}])).ok()
-            }
+            RelayMessage::Resync { reason, pending } => serde_json::to_string(&json!([
+                "KUZZ_RESYNC",
+                {"reason": reason, "pending": pending}
+            ]))
+            .ok(),
         };
         if let Some(text) = text {
             let should_continue = handle_ws_message(
@@ -4196,13 +4206,17 @@ pub(crate) fn parse_relay_message(text: &str) -> Result<RelayMessage, RelayError
             Ok(RelayMessage::Auth { challenge })
         }
         "KUZZ_RESYNC" => {
-            let reason = arr
-                .get(1)
+            let body = arr.get(1);
+            let reason = body
                 .and_then(|v| v.get("reason"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            Ok(RelayMessage::Resync { reason })
+            let pending = body
+                .and_then(|v| v.get("pending"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            Ok(RelayMessage::Resync { reason, pending })
         }
         other => Err(RelayError::UnexpectedMessage(format!(
             "unknown message type: {other}"

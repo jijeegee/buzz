@@ -1024,25 +1024,45 @@ impl ConnectionManager {
     ///
     /// Sockets opted in with `?kuzz_seq=1` get `["KUZZ_RESYNC",{"reason":..}]`
     /// on the control channel and stay open; they fetch what they missed by
-    /// order number. Every other socket cannot be told, so it is closed with
-    /// `1012` after an independent delay in `[1, legacy_jitter_ms]` (no
-    /// reconnect herd); its client repairs on reconnect. The returned future
-    /// owns the delayed closes.
+    /// order number. A socket whose control channel is full cannot be told,
+    /// so it is closed at once and repairs on reconnect. Every other socket
+    /// cannot be told either, so it is closed with `1012` after an independent
+    /// delay in `[1, legacy_jitter_ms]` (no reconnect herd). The returned
+    /// future owns the delayed closes.
+    ///
+    /// A `pending` signal (missed events cannot be fetched yet) adds
+    /// `"pending":true` and leaves the other sockets open: closing them now
+    /// would reconnect into the same gap, and the resync that follows the
+    /// recovery closes them.
     ///
     /// Returns `(signalled, closed)`.
-    pub async fn resync_all(&self, reason: &str, legacy_jitter_ms: u64) -> (usize, usize) {
-        let frame = WsMessage::Text(
+    pub async fn resync_all(
+        &self,
+        reason: &str,
+        pending: bool,
+        legacy_jitter_ms: u64,
+    ) -> (usize, usize) {
+        let body = if pending {
+            serde_json::json!(["KUZZ_RESYNC", { "reason": reason, "pending": true }])
+        } else {
             serde_json::json!(["KUZZ_RESYNC", { "reason": reason }])
-                .to_string()
-                .into(),
-        );
+        };
+        let frame = WsMessage::Text(body.to_string().into());
         let legacy_jitter_ms = legacy_jitter_ms.max(1);
         let mut signalled = 0usize;
+        let mut dropped = 0usize;
         let mut closes = Vec::new();
         for entry in self.connections.iter() {
             if entry.kuzz_seq.load(Ordering::Relaxed) {
-                let _ = entry.ctrl_tx.try_send(frame.clone());
-                signalled += 1;
+                if entry.ctrl_tx.try_send(frame.clone()).is_ok() {
+                    signalled += 1;
+                } else {
+                    entry.cancel.cancel();
+                    dropped += 1;
+                }
+                continue;
+            }
+            if pending {
                 continue;
             }
             let ctrl_tx = entry.ctrl_tx.clone();
@@ -1054,7 +1074,7 @@ impl ConnectionManager {
                 cancel.cancel();
             });
         }
-        let closed = closes.len();
+        let closed = closes.len() + dropped;
         join_all(closes).await;
         (signalled, closed)
     }
@@ -3950,7 +3970,7 @@ pub(crate) mod tests {
         let (mut legacy_ctrl, legacy_cancel) = register(false);
 
         let started = tokio::time::Instant::now();
-        let (signalled, closed) = mgr.resync_all("redis_reconnect", 30_000).await;
+        let (signalled, closed) = mgr.resync_all("redis_reconnect", false, 30_000).await;
         assert_eq!((signalled, closed), (1, 1));
         assert!(started.elapsed() <= std::time::Duration::from_millis(30_000));
 
@@ -3970,6 +3990,54 @@ pub(crate) mod tests {
             other => panic!("expected 1012 close, got {other:?}"),
         }
         assert!(legacy_cancel.is_cancelled(), "legacy socket is closed");
+    }
+
+    #[tokio::test]
+    async fn resync_pending_tells_only_seq_sockets_and_full_ones_are_closed() {
+        let mgr = ConnectionManager::new();
+        let register = |kuzz_seq: bool, capacity: usize| {
+            let conn_id = Uuid::new_v4();
+            let (tx, _rx) = mpsc::channel(8);
+            let (ctrl_tx, ctrl_rx) = mpsc::channel(capacity);
+            let cancel = CancellationToken::new();
+            mgr.register(
+                conn_id,
+                tx,
+                ctrl_tx.clone(),
+                tokio::sync::mpsc::channel(1).0,
+                None,
+                cancel.clone(),
+                kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
+                Arc::new(AtomicU8::new(0)),
+                Arc::new(Mutex::new(HashMap::new())),
+                3,
+                crate::state::CommunityConnectionControl::new(cancel.clone()),
+            );
+            if kuzz_seq {
+                mgr.set_kuzz_seq(conn_id);
+            }
+            (ctrl_tx, ctrl_rx, cancel)
+        };
+        let (_seq_tx, mut seq_ctrl, seq_cancel) = register(true, 8);
+        let (full_tx, _full_ctrl, full_cancel) = register(true, 1);
+        full_tx
+            .try_send(WsMessage::Text("busy".into()))
+            .expect("fill control channel");
+        let (_legacy_tx, mut legacy_ctrl, legacy_cancel) = register(false, 8);
+
+        let (signalled, closed) = mgr.resync_all("redis_down", true, 1).await;
+        assert_eq!((signalled, closed), (1, 1));
+        match seq_ctrl.try_recv().expect("pending frame") {
+            WsMessage::Text(text) => assert_eq!(
+                text.as_str(),
+                r#"["KUZZ_RESYNC",{"pending":true,"reason":"redis_down"}]"#
+            ),
+            other => panic!("expected text frame, got {other:?}"),
+        }
+        assert!(!seq_cancel.is_cancelled());
+        assert!(full_cancel.is_cancelled(), "a socket that missed the signal is closed");
+        assert!(legacy_ctrl.try_recv().is_err(), "legacy socket is left alone");
+        assert!(!legacy_cancel.is_cancelled());
     }
 
     #[tokio::test]
