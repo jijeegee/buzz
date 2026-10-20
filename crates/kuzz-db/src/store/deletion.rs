@@ -102,6 +102,7 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
     "reactions",
     "relay_invites",
     "relay_members",
+    "room_directory",
     "scheduled_workflow_fires",
     "subscriptions",
     "thread_follows",
@@ -153,6 +154,7 @@ pub const PURGE_SCOPED_TABLES: &[&str] = &[
     "user_block_periods",
     "user_blocks",
     "users",
+    "room_directory",
     "channels",
 ];
 

@@ -279,15 +279,15 @@ BEGIN
 END $$;
 
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
-    ('regions', 'deployment regions; a region serves every community')
+    ('regions', 'deployment regions; a region serves every community'),
+    ('local_region', 'the region this database belongs to; never tenant data')
 ON CONFLICT (table_name) DO NOTHING;
 
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM _operator_global_tables WHERE table_name = 'regions'
-    ) THEN
-        RAISE EXCEPTION 'regions must be registered as deployment-global';
+    IF (SELECT count(*) FROM _operator_global_tables
+         WHERE table_name IN ('regions', 'local_region')) <> 2 THEN
+        RAISE EXCEPTION 'regions and local_region must be registered as deployment-global';
     END IF;
 END $$;
 
