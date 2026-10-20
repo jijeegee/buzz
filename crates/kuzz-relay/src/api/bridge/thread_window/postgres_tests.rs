@@ -528,7 +528,7 @@ async fn thread_window_router_aux_row_cap_and_corrupt_page() {
     f.copy_aux(&aux, 8200, "fixture").await;
     let (status, body) = f.post(&f.keys, "/query", json!([f.filter()])).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
-    assert!(body["error"].as_str().unwrap().contains("raw row budget"));
+    assert!(body["error"].as_str().unwrap().contains("raw row budget"), "{body}");
     // Keep 1,001 rows and corrupt one guaranteed to lie on the first raw page.
     sqlx::query("DELETE FROM events WHERE community_id=$1 AND kind=40003 AND id NOT IN \
         (SELECT id FROM events WHERE community_id=$1 AND kind=40003 ORDER BY created_at DESC,id ASC LIMIT 1001)")

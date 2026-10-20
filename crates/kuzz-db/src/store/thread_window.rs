@@ -405,10 +405,31 @@ async fn select_aux(
         return Err(invalid("invalid thread auxiliary target batch"));
     }
     budget.query()?;
-    let mut q = QueryBuilder::new(
+    let mut q = QueryBuilder::new("");
+    // since_join: each accessible channel's floor is computed once, not per
+    // row (a hot thread can carry thousands of aux rows).
+    if let Some(reader) = query.history_reader {
+        let target_ids: Vec<Vec<u8>> =
+            query.targets.iter().filter_map(|t| hex::decode(t).ok()).collect();
+        q.push("WITH floors AS MATERIALIZED (SELECT ch, channel_history_floor(")
+            .push_bind(query.community.as_uuid())
+            .push(", ch, ")
+            .push_bind(reader.to_vec())
+            .push(") AS floor FROM unnest(")
+            .push_bind(query.accessible)
+            .push("::uuid[]) AS ch), hidden AS MATERIALIZED (SELECT encode(e.id, 'hex') AS h FROM events e WHERE e.community_id = ")
+            .push_bind(query.community.as_uuid())
+            .push(" AND e.id = ANY(")
+            .push_bind(target_ids)
+            .push(") AND channel_event_before_join(e.community_id, e.channel_id, e.channel_sequence, ")
+            .push_bind(reader.to_vec())
+            .push(")) ");
+    }
+    q.push(
         "SELECT id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id, deleted_at, \
          octet_length(content) + octet_length(tags::text) AS payload_bytes \
-         FROM events WHERE community_id = ");
+         FROM events WHERE community_id = ",
+    );
     q.push_bind(query.community.as_uuid())
         .push(" AND ((channel_id IS NULL AND kind IN (5, 9005)) OR channel_id = ANY(")
         .push_bind(query.accessible)
@@ -416,12 +437,13 @@ async fn select_aux(
         .push(" AND kind = ANY(")
         .push_bind(query.kinds.iter().map(|k| *k as i32).collect::<Vec<_>>())
         .push(")");
-    if let Some(reader) = query.history_reader {
-        q.push(" AND NOT channel_event_before_join(community_id, channel_id, channel_sequence, ")
-            .push_bind(reader.to_vec())
-            .push(") AND NOT channel_event_targets_before_join(community_id, channel_id, kind, tags, ")
-            .push_bind(reader.to_vec())
-            .push(")");
+    // Rows from before the join, and rows about a target from before it (the
+    // thread root is only an anchor), stay hidden.
+    if query.history_reader.is_some() {
+        q.push(
+            " AND (channel_id IS NULL OR channel_sequence > COALESCE(NULLIF(\
+             (SELECT floor FROM floors WHERE ch = channel_id), 0), -1)) AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(tags) ht JOIN hidden ON ht->>1 = hidden.h WHERE ht->>0 = 'e')",
+        );
     }
     q.push(" AND (");
     for (index, target) in query.targets.iter().enumerate() {
