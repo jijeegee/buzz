@@ -38,10 +38,12 @@ pub enum RoomRoute {
 /// The home of a room that lives in another region.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteHome {
+    /// The home region's id.
     pub region: String,
     /// Address clients in that region connect to; empty when the region is
     /// not registered here yet.
     pub connect_url: String,
+    /// The room's epoch (bumped when it moves, S6).
     pub epoch: i32,
 }
 
@@ -97,6 +99,7 @@ pub struct RoomRouter {
 }
 
 impl RoomRouter {
+    /// A router for a relay in `local_region`.
     pub fn new(local_region: impl Into<String>) -> Self {
         Self {
             local: local_region.into(),
