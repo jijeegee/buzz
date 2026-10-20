@@ -529,6 +529,7 @@ fn row_to_channel_record(row: sqlx::postgres::PgRow) -> Result<ChannelRecord> {
         ttl_seconds: row.try_get("ttl_seconds").unwrap_or(None),
         ttl_deadline: row.try_get("ttl_deadline").unwrap_or(None),
         goals_enabled: row.try_get("goals_enabled").unwrap_or(true),
+        picture: None,
     })
 }
 

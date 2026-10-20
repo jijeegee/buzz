@@ -724,6 +724,7 @@ pub async fn validate_admin_event(
                 "visibility",
                 "ttl",
                 "goals",
+                "picture",
             ];
             let has_recognized = event
                 .tags
@@ -731,7 +732,7 @@ pub async fn validate_admin_event(
                 .any(|t| RECOGNIZED_TAGS.contains(&t.kind().to_string().as_str()));
             if !has_recognized {
                 return Err(anyhow::anyhow!(
-                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals)"
+                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals, picture)"
                 ));
             }
 
@@ -827,7 +828,29 @@ pub async fn validate_admin_event(
                 }
             }
 
-            // name/about/archived/visibility/ttl require owner/admin;
+            // Validate picture values before storage: empty removes the photo,
+            // otherwise it must be a blob URL on this relay's /media.
+            if event.tags.iter().any(|t| t.kind().to_string() == "picture") {
+                let media_base = crate::api::media::media_base_url_for_tenant(
+                    &state.config.relay_url,
+                    tenant.host(),
+                );
+                for t in event.tags.iter() {
+                    if t.kind().to_string() == "picture" {
+                        match t.content() {
+                            Some(v) => validate_group_picture(v, &media_base)
+                                .map_err(|e| anyhow::anyhow!(e))?,
+                            None => {
+                                return Err(anyhow::anyhow!(
+                                    "picture tag must have a value (media URL, or empty string to remove)"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // name/about/archived/visibility/ttl/picture require owner/admin;
             // topic/purpose allow any member. goals is owner/admin in a
             // channel, but a DM has no owner, so any participant may switch it.
             let is_dm = channel.channel_type == "dm";
@@ -838,6 +861,7 @@ pub async fn validate_admin_event(
                     || k == "archived"
                     || k == "visibility"
                     || k == "ttl"
+                    || k == "picture"
                     || (k == "goals" && !is_dm)
             });
             if has_privileged_tag {
@@ -860,7 +884,7 @@ pub async fn validate_admin_event(
                             return Ok(());
                         }
                         Err(anyhow::anyhow!(
-                            "actor not authorized for name/about/archived/visibility/ttl/goals changes"
+                            "actor not authorized for name/about/archived/visibility/ttl/goals/picture changes"
                         ))
                     }
                 }
@@ -1437,6 +1461,12 @@ pub async fn emit_group_discovery_events(
         if !channel.goals_enabled {
             tags.push(Tag::parse(["goals", "off"])?);
         }
+        // Group photo (a /media blob on this relay); absent means letter avatar.
+        if let Some(ref picture) = channel.picture {
+            if !picture.is_empty() {
+                tags.push(Tag::parse(["picture", picture])?);
+            }
+        }
         emit_addressable_discovery_event(
             tenant,
             state,
@@ -1785,6 +1815,43 @@ async fn handle_remove_user(
     Ok(())
 }
 
+/// Longest accepted group photo URL.
+const MAX_GROUP_PICTURE_LEN: usize = 512;
+
+/// Validates a kind:9002 `picture` value. Empty removes the photo; anything
+/// else must be `<media_base>/<64 lowercase hex>[.ext]` on this relay (no
+/// query, fragment, or extra path), at most [`MAX_GROUP_PICTURE_LEN`] chars.
+pub(crate) fn validate_group_picture(value: &str, media_base: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Ok(());
+    }
+    if value.len() > MAX_GROUP_PICTURE_LEN {
+        return Err(format!(
+            "invalid picture value: longer than {MAX_GROUP_PICTURE_LEN} characters"
+        ));
+    }
+    let invalid = || {
+        format!(
+            "invalid picture value: {value} (must be a {media_base}/<sha256>[.ext] URL from this relay, or empty to remove)"
+        )
+    };
+    let name = value
+        .strip_prefix(media_base)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .ok_or_else(invalid)?;
+    let (hash, ext) = match name.split_once('.') {
+        Some((hash, ext)) => (hash, Some(ext)),
+        None => (name, None),
+    };
+    let hash_ok = hash.len() == 64 && hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'));
+    let ext_ok = ext.is_none_or(crate::api::media::is_safe_ext);
+    if hash_ok && ext_ok {
+        Ok(())
+    } else {
+        Err(invalid())
+    }
+}
+
 async fn handle_edit_metadata(
     tenant: &TenantContext,
     event: &Event,
@@ -1950,6 +2017,32 @@ async fn handle_edit_metadata(
                         channel_id,
                         serde_json::json!({
                             "type": "goals_changed", "actor": actor_hex, "goals": val
+                        }),
+                        chrono::Utc::now(),
+                    )
+                    .await?;
+                }
+                "picture" => {
+                    // Empty removes the photo; otherwise a /media URL on this
+                    // relay, validated during authorization.
+                    let picture = (!val.is_empty()).then(|| val.to_string());
+                    state
+                        .db
+                        .update_channel(
+                            tenant.community(),
+                            channel_id,
+                            kuzz_db::channel::ChannelUpdate {
+                                picture: Some(picture),
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                    emit_system_message(
+                        tenant,
+                        state,
+                        channel_id,
+                        serde_json::json!({
+                            "type": "picture_changed", "actor": actor_hex, "picture": val
                         }),
                         chrono::Utc::now(),
                     )
@@ -4018,6 +4111,42 @@ pub async fn publish_nipia_unarchived(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_picture_accepts_only_media_urls_on_this_relay() {
+        let base = "https://relay.example/media";
+        let hash = "0123456789abcdef".repeat(4);
+        for ok in [
+            String::new(),
+            format!("{base}/{hash}"),
+            format!("{base}/{hash}.jpg"),
+            format!("{base}/{hash}.webp"),
+        ] {
+            assert_eq!(validate_group_picture(&ok, base), Ok(()), "{ok}");
+        }
+        for bad in [
+            format!("https://evil.example/media/{hash}.jpg"),
+            format!("http://relay.example/media/{hash}.jpg"),
+            format!("https://relay.example.evil/media/{hash}.jpg"),
+            format!("https://relay.example/media/{}.jpg", &hash[..63]),
+            format!("https://relay.example/media/{}.jpg", hash.to_uppercase()),
+            format!("{base}/{hash}.jpg?x=1"),
+            format!("{base}/{hash}.jpg#x"),
+            format!("{base}/{hash}.thumb.jpg"),
+            format!("{base}/{hash}.JPG"),
+            format!("{base}/{hash}/x.jpg"),
+            format!("{base}/../{hash}.jpg"),
+            format!("{base}{hash}.jpg"),
+            format!("{base}/"),
+            "not a url".to_owned(),
+            "javascript:alert(1)".to_owned(),
+        ] {
+            assert!(validate_group_picture(&bad, base).is_err(), "{bad}");
+        }
+        let long = format!("{base}/{hash}.{}", "a".repeat(600));
+        let err = validate_group_picture(&long, base).unwrap_err();
+        assert!(err.contains("512"), "{err}");
+    }
 
     #[test]
     fn workflow_deletion_retry_matches_authorized_dispatch() {

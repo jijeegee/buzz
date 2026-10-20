@@ -38,6 +38,8 @@ pub struct GroupSummary {
     pub description: Option<String>,
     /// Public address (open groups only).
     pub handle: Option<String>,
+    /// Group photo URL (a `/media` blob on this relay), if set.
+    pub picture: Option<String>,
     /// `stream` or `forum` (or `dm`/`workflow` for direct lookups).
     pub channel_type: String,
     /// `open` or `private`.
@@ -133,7 +135,7 @@ fn check_key(name: &str, key: &[u8]) -> Result<()> {
 /// Columns of [`GroupSummary`] for channel alias `c`; `$2` is the viewer.
 macro_rules! summary_columns {
     () => {
-        "c.id, c.name, c.description, c.handle, c.channel_type::text AS channel_type, \
+        "c.id, c.name, c.description, c.handle, c.picture, c.channel_type::text AS channel_type, \
          c.visibility::text AS visibility, c.invite_policy, c.archived_at, c.created_at, \
          (SELECT count(*) FROM channel_members m \
            WHERE m.community_id = c.community_id AND m.channel_id = c.id \
@@ -200,6 +202,7 @@ fn summary_from_row(row: &sqlx::postgres::PgRow) -> Result<GroupSummary> {
         name: row.try_get("name")?,
         description: row.try_get("description")?,
         handle: row.try_get("handle")?,
+        picture: row.try_get("picture")?,
         channel_type: row.try_get("channel_type")?,
         visibility: row.try_get("visibility")?,
         invite_policy: row.try_get("invite_policy")?,

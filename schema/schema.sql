@@ -112,6 +112,8 @@ CREATE TABLE channels (
     handle          TEXT CONSTRAINT chk_channels_handle CHECK (handle ~ '^[a-z0-9_]{3,32}$'),
     invite_policy   TEXT NOT NULL DEFAULT 'members'
         CONSTRAINT chk_channels_invite_policy CHECK (invite_policy IN ('members', 'admins')),
+    -- Group photo URL on this relay's /media, or NULL (migration 0076).
+    picture         TEXT,
     PRIMARY KEY (community_id, id),
     CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
 );

@@ -148,6 +148,13 @@ impl Db {
                OR EXISTS (
                     SELECT 1 FROM communities co
                     WHERE co.id = $1 AND co.icon LIKE '%/media/' || h.sha || '%')
+               OR EXISTS (
+                    -- A group photo is shown to people who are not members yet
+                    -- (invitations, invite links), so any signed-in reader may
+                    -- open it; the hash is unguessable.
+                    SELECT 1 FROM channels gc
+                    WHERE gc.community_id = $1 AND gc.deleted_at IS NULL
+                      AND gc.picture LIKE '%/media/' || h.sha || '%')
             "#,
         )
         .bind(community.as_uuid())
@@ -178,7 +185,7 @@ impl Db {
     /// uploaded after `grace_cutoff`, or any event that is live or was deleted
     /// after `grace_cutoff` names it anywhere in its content or tags (every
     /// kind, including private ones the read links skip), or a reported event,
-    /// a profile picture, the community icon, a blob report, a feedback
+    /// a profile picture, the community icon, a group photo, a blob report, a feedback
     /// attachment or a workflow definition names it.
     ///
     /// The indexed checks run first; only the hashes they leave are matched
@@ -236,6 +243,10 @@ impl Db {
                    OR EXISTS (
                         SELECT 1 FROM communities co
                         WHERE co.id = $1 AND strpos(COALESCE(co.icon, ''), h.sha) > 0)
+                   OR EXISTS (
+                        SELECT 1 FROM channels gc
+                        WHERE gc.community_id = $1
+                          AND strpos(COALESCE(gc.picture, ''), h.sha) > 0)
                    OR EXISTS (
                         SELECT 1 FROM users us
                         WHERE us.community_id = $1

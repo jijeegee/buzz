@@ -378,6 +378,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // and invitations (Bearer / NIP-98 + relay membership, like /query).
         // Public landing page for shared group links: /g/<code>, /g/@<handle>.
         .route("/g/{code}", get(api::groups::landing))
+        .route("/g/{code}/picture", get(api::groups::landing_picture))
         .route("/api/groups/search", get(api::groups::search))
         .route(
             "/api/groups/by-handle/{handle}",
