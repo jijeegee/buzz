@@ -1,3 +1,4 @@
+import type { ChatListRow } from "@/features/chats/chatListState";
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import type { Channel, SearchHit } from "@/shared/api/types";
 
@@ -10,11 +11,13 @@ type AppSidebarPinnedHeaderProps = {
   onCreateChannel: () => void;
   onOpenDm: (input: { pubkeys: string[] }) => Promise<void>;
   onOpenSearchResult: (hit: SearchHit, query: string) => void;
+  onOpenThread?: (channelId: string, rootId: string) => void;
   onSelectChannel: (channelId: string) => void;
   searchChannels: Channel[];
   searchFocusRequest: number;
   scopeSearchFocusRequest: number;
   suggestionChannels: Channel[];
+  threadRows?: readonly ChatListRow[];
 };
 
 export function AppSidebarPinnedHeader({
@@ -26,11 +29,13 @@ export function AppSidebarPinnedHeader({
   onCreateChannel,
   onOpenDm,
   onOpenSearchResult,
+  onOpenThread,
   onSelectChannel,
   searchChannels,
   searchFocusRequest,
   scopeSearchFocusRequest,
   suggestionChannels,
+  threadRows,
 }: AppSidebarPinnedHeaderProps) {
   return (
     <div
@@ -45,12 +50,14 @@ export function AppSidebarPinnedHeader({
         focusRequest={searchFocusRequest}
         onOpenChannel={onSelectChannel}
         onOpenResult={onOpenSearchResult}
+        onOpenThread={onOpenThread}
         onOpenUser={(user) => onOpenDm({ pubkeys: [user.pubkey] })}
         onBrowseChannels={onBrowseChannels}
         onCreateAgent={onCreateAgent}
         onCreateChannel={onCreateChannel}
         scopeFocusRequest={scopeSearchFocusRequest}
         suggestionChannels={suggestionChannels}
+        threadRows={threadRows}
       />
     </div>
   );

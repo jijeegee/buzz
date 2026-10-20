@@ -623,7 +623,7 @@ test("global search offers an optional current-channel scope", async ({
   await expect(scopeChip).toHaveText(/#general/);
   await expect(input).toBeFocused();
   await input.fill("w");
-  const relevantHeader = page.getByText("Most relevant", { exact: true });
+  const relevantHeader = page.getByText("Messages", { exact: true });
   const firstScopedResult = page
     .locator('[data-search-section="messages"] .search-result-row')
     .first();

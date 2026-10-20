@@ -5,12 +5,15 @@ import {
   FileText,
   type LucideIcon,
   MessageCircle,
+  MessagesSquare,
   Plus,
   User,
   Users,
   UsersRound,
 } from "lucide-react";
 
+import type { SearchThread } from "@/features/search/lib/searchRanking";
+import type { SearchHitThread } from "@/features/search/useSearchHitThreads";
 import {
   resolveUserLabel,
   resolveUserSecondaryLabel,
@@ -30,8 +33,9 @@ export type SearchResult =
       };
     }
   | { kind: "channel"; channel: Channel }
+  | { kind: "thread"; isDm: boolean; thread: SearchThread }
   | { kind: "user"; user: UserSearchResult }
-  | { kind: "message"; hit: SearchHit };
+  | { kind: "message"; hit: SearchHit; thread?: SearchHitThread | null };
 
 export function resultKey(result: SearchResult) {
   if (result.kind === "action") {
@@ -40,6 +44,10 @@ export function resultKey(result: SearchResult) {
 
   if (result.kind === "channel") {
     return `channel-${result.channel.id}`;
+  }
+
+  if (result.kind === "thread") {
+    return `thread-${result.thread.rootId}`;
   }
 
   if (result.kind === "user") {
@@ -56,6 +64,10 @@ export function resultTestId(result: SearchResult) {
 
   if (result.kind === "channel") {
     return `search-result-channel-${result.channel.id}`;
+  }
+
+  if (result.kind === "thread") {
+    return `search-result-thread-${result.thread.rootId}`;
   }
 
   if (result.kind === "user") {
@@ -78,6 +90,10 @@ export function resultIcon(
 
   if (result.kind === "user") {
     return result.user.isAgent ? Bot : User;
+  }
+
+  if (result.kind === "thread") {
+    return MessagesSquare;
   }
 
   const channelType =
