@@ -434,6 +434,8 @@ pub fn sanitized_reason_for(err: &crate::handlers::ingest::IngestError) -> Sanit
     match err {
         E::Rejected(_) => SanitizedReason::Invalid,
         E::CanvasConflict(_) => SanitizedReason::Invalid,
+        // Not a refusal of the event itself: the room is served elsewhere.
+        E::WrongRegion(_) => SanitizedReason::Invalid,
         E::AuthFailed(_) => SanitizedReason::Restricted,
         E::Internal(_) => SanitizedReason::ServerError,
     }

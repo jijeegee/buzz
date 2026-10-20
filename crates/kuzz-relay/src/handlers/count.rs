@@ -79,6 +79,26 @@ pub async fn handle_count(
             }
         };
 
+    // Global regions (S3): rooms of another region are counted there.
+    match state
+        .first_room_elsewhere(
+            conn.tenant.community(),
+            requested_channel_sets.iter().flatten().flatten().copied(),
+        )
+        .await
+    {
+        Ok(None) => {}
+        Ok(Some(home)) => {
+            conn.send(RelayMessage::closed(&sub_id, &home.ws_message()));
+            return;
+        }
+        Err(e) => {
+            warn!(sub_id = %sub_id, "Room region lookup failed: {e}");
+            conn.send(RelayMessage::closed(&sub_id, "error: database error"));
+            return;
+        }
+    }
+
     // Get channels this user can access — same enforcement as WS REQ handler.
     let mut accessible_channels = match state
         .get_accessible_channel_ids_cached(conn.tenant.community(), &pubkey_bytes)

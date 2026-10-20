@@ -2881,6 +2881,17 @@ async fn check_membership_for_admission(
     #[cfg(test)]
     crate::nip_fi_test_hooks::before_membership_check(tenant.community()).await;
 
+    // Global regions (S3): a huddle of another region's room is joined there.
+    match state.route_room(tenant.community(), channel_id).await {
+        Ok(crate::routing::RoomRoute::Here) => {}
+        Ok(crate::routing::RoomRoute::Elsewhere(_)) => {
+            return Err(AdmissionRefusal::Denied(
+                "wrong-region: room lives in another region",
+            ));
+        }
+        Err(e) => return Err(AdmissionRefusal::Dependency(e)),
+    }
+
     // Load channel first — reject archived channels before any membership check.
     let channel = state
         .db

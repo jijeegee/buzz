@@ -1716,6 +1716,22 @@ impl AppState {
             .await
     }
 
+    /// The home of the first of `channels` that another region serves.
+    pub async fn first_room_elsewhere(
+        &self,
+        community_id: CommunityId,
+        channels: impl IntoIterator<Item = Uuid>,
+    ) -> Result<Option<crate::routing::RemoteHome>, kuzz_db::DbError> {
+        for channel_id in channels {
+            if let crate::routing::RoomRoute::Elsewhere(home) =
+                self.route_room(community_id, channel_id).await?
+            {
+                return Ok(Some(home));
+            }
+        }
+        Ok(None)
+    }
+
     /// Check channel membership with a 10-second cache. Falls back to DB on miss.
     pub async fn is_member_cached(
         &self,

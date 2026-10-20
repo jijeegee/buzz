@@ -232,4 +232,61 @@ mod tests {
             })
         );
     }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn writes_and_reads_of_another_regions_room_are_refused() {
+        let state =
+            crate::state::tests::test_state_with_database_url(&crate::test_support::database_url())
+                .await;
+        assert_eq!(state.room_router.local_region(), "kr");
+        let pool = state.db.pool();
+        sqlx::query(
+            "INSERT INTO regions (id, connect_url, is_primary) VALUES              ('kr', 'wss://kr.test', NOT EXISTS (SELECT 1 FROM regions WHERE is_primary)),              ('jp', 'wss://jp.test', false) ON CONFLICT (id) DO NOTHING",
+        )
+        .execute(pool)
+        .await
+        .expect("regions");
+        let community = CommunityId::from_uuid(Uuid::new_v4());
+        sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
+            .bind(community.as_uuid())
+            .bind(format!("routing-{}.test", community.as_uuid()))
+            .execute(pool)
+            .await
+            .expect("community");
+        let (kr_room, jp_room, unknown) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        for (room, home) in [(kr_room, "kr"), (jp_room, "jp")] {
+            sqlx::query(
+                "INSERT INTO room_directory (community_id, channel_id, home_region)                  VALUES ($1, $2, $3)",
+            )
+            .bind(community.as_uuid())
+            .bind(room)
+            .bind(home)
+            .execute(pool)
+            .await
+            .expect("directory row");
+        }
+
+        assert_eq!(
+            state.route_room(community, kr_room).await.expect("route"),
+            RoomRoute::Here
+        );
+        assert_eq!(
+            state.route_room(community, unknown).await.expect("route"),
+            RoomRoute::Here
+        );
+        let tenant = kuzz_core::tenant::TenantContext::resolved(community, "routing.test");
+        match crate::handlers::ingest::ensure_room_here(&state, &tenant, jp_room).await {
+            Err(crate::handlers::ingest::IngestError::WrongRegion(home)) => {
+                assert_eq!(home.region, "jp");
+                assert!(home.ws_message().starts_with(WRONG_REGION_PREFIX));
+            }
+            other => panic!("expected wrong region, got {other:?}"),
+        }
+        let first = state
+            .first_room_elsewhere(community, [kr_room, unknown, jp_room])
+            .await
+            .expect("route");
+        assert_eq!(first.map(|home| home.region), Some("jp".to_string()));
+    }
 }

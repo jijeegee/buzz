@@ -522,6 +522,24 @@ pub enum IngestError {
     AuthFailed(String),
     /// Server error — WS: OK false, HTTP: 500.
     Internal(String),
+    /// The room lives in another region — WS: OK false `wrong-region:`,
+    /// HTTP: 421 (see [`crate::routing`]).
+    WrongRegion(crate::routing::RemoteHome),
+}
+
+/// Refuse a write to a room that another region serves.
+pub(crate) async fn ensure_room_here(
+    state: &AppState,
+    tenant: &TenantContext,
+    channel_id: Uuid,
+) -> Result<(), IngestError> {
+    match state.route_room(tenant.community(), channel_id).await {
+        Ok(crate::routing::RoomRoute::Here) => Ok(()),
+        Ok(crate::routing::RoomRoute::Elsewhere(home)) => Err(IngestError::WrongRegion(home)),
+        Err(error) => Err(IngestError::Internal(format!(
+            "error: looking up the room's region: {error}"
+        ))),
+    }
 }
 
 /// Map the durable community write-fence lookup onto the ingest error taxonomy.
@@ -2912,6 +2930,14 @@ async fn ingest_event_inner(
         });
     }
 
+    // Global regions (S3): a reaction or deletion naming its room is sent to
+    // that room's region before its target is looked up here.
+    if kind_u32 == KIND_REACTION || kind_u32 == KIND_DELETION {
+        if let Some(ch_id) = extract_channel_id(&event) {
+            ensure_room_here(state, tenant, ch_id).await?;
+        }
+    }
+
     let mut channel_id = if kind_u32 == KIND_REACTION {
         match derive_reaction_channel(tenant.community(), &state.db, &event).await {
             ReactionChannelResult::Channel(ch_id) => Some(ch_id),
@@ -2985,6 +3011,12 @@ async fn ingest_event_inner(
         return Err(IngestError::Rejected(
             "invalid: channel-scoped events must include an h tag".into(),
         ));
+    }
+
+    // Global regions (S3): a room that lives in another region is not
+    // written here.
+    if let Some(ch_id) = channel_id {
+        ensure_room_here(state, tenant, ch_id).await?;
     }
 
     if let Some(ch_id) = channel_id {

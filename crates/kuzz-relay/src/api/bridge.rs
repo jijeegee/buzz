@@ -1740,6 +1740,14 @@ async fn submit_event_authed(
                 response: e,
             }
         }
+        Err(IngestError::WrongRegion(home)) => {
+            crate::handlers::ingest::reject_with_transport("http", "invalid");
+            let e = home.http_error();
+            SubmitOutcome::Err {
+                status: e.0,
+                response: e,
+            }
+        }
     }
 }
 
@@ -1926,8 +1934,16 @@ async fn query_events_authed(
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
     crate::protocol::check_filter_list_limits(&filters)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
-    crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
+    let explicit_channels = crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
         .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?;
+    // Global regions (S3): rooms of another region are read there.
+    if let Some(home) = state
+        .first_room_elsewhere(tenant.community(), explicit_channels.into_iter().flatten())
+        .await
+        .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
+    {
+        return Err(home.http_error());
+    }
 
     // P-gated kinds (gift wraps, member notifications, observer frames) require
     // the caller's own pubkey in the #p tag — same enforcement as WS REQ handler.
@@ -2650,8 +2666,16 @@ async fn count_events_authed(
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
     crate::protocol::check_filter_list_limits(&filters)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
-    crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
+    let explicit_channels = crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
         .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?;
+    // Global regions (S3): rooms of another region are read there.
+    if let Some(home) = state
+        .first_room_elsewhere(tenant.community(), explicit_channels.into_iter().flatten())
+        .await
+        .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
+    {
+        return Err(home.http_error());
+    }
 
     // P-gated kinds enforcement — same as WS REQ and /query.
     let authed_pubkey_hex = pubkey.to_hex();
