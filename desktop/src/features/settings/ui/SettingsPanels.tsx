@@ -19,6 +19,8 @@ import {
   Smile,
   Sun,
   SunMoon,
+  KeyRound,
+  ShieldCheck,
   Ticket,
   UserRound,
   Volume2,
@@ -89,6 +91,8 @@ import { Layer0GoalCard } from "@/features/goals/ui/Layer0GoalCard";
 
 export type SettingsSection =
   | "profile"
+  | "account"
+  | "privacy"
   | "notifications"
   | "voice"
   | "experimental"
@@ -106,10 +110,12 @@ export type SettingsSection =
   | "mobile"
   | "updates";
 
-export const DEFAULT_SETTINGS_SECTION: SettingsSection = "profile";
+export const DEFAULT_SETTINGS_SECTION: SettingsSection = "account";
 
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "profile",
+  "account",
+  "privacy",
   "notifications",
   "voice",
   "experimental",
@@ -168,6 +174,16 @@ export const settingsSections: SettingsSectionDescriptor[] = [
     value: "profile",
     label: "Profile",
     icon: UserRound,
+  },
+  {
+    value: "account",
+    label: "Account",
+    icon: KeyRound,
+  },
+  {
+    value: "privacy",
+    label: "Friends & privacy",
+    icon: ShieldCheck,
   },
   {
     value: "notifications",
@@ -828,13 +844,23 @@ export function renderSettingsSection(
           <ProfileSettingsCard
             currentPubkey={props.currentPubkey}
             fallbackDisplayName={props.fallbackDisplayName}
+            part="profile"
           />
-          <PeoplePrivacySettingsCard />
           <div className="mt-6">
             <Layer0GoalCard agentPubkey={null} />
           </div>
         </>
       );
+    case "account":
+      return (
+        <ProfileSettingsCard
+          currentPubkey={props.currentPubkey}
+          fallbackDisplayName={props.fallbackDisplayName}
+          part="account"
+        />
+      );
+    case "privacy":
+      return <PeoplePrivacySettingsCard />;
     case "notifications":
       return (
         <NotificationSettingsCard

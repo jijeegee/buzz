@@ -12,13 +12,11 @@ import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
-import '../../shared/clipboard_utils.dart';
 import '../../shared/community/community_membership_provider.dart';
 import '../../shared/community/community_removal.dart';
 import '../../shared/push/push_bridge.dart';
 import '../../shared/push/push_relay_capability_provider.dart';
 import '../../shared/relay/relay.dart';
-import '../../shared/utils/string_utils.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -32,6 +30,7 @@ import 'account_page.dart';
 import 'agents_settings.dart';
 import 'devices_page.dart';
 import 'experiments_settings.dart';
+import 'messages_settings.dart';
 import 'people_settings.dart';
 import 'theme_picker_page.dart';
 import '../sign_in/token_sign_in_page.dart';
@@ -45,10 +44,19 @@ Widget _emptyProfileEditPage(BuildContext context) => const SizedBox.shrink();
 
 enum _ProfileEditAction { displayName, description, photo }
 
+/// Which of the two current-user screens [SettingsPage] shows.
+///
+/// - [profile]: me as others see me — photo, name, about, status, Kuzz ID —
+///   with the Edit action.
+/// - [settings]: how my app works — account, notifications, appearance,
+///   friends & privacy, agents, help, sign out.
+enum SettingsPageMode { profile, settings }
+
 class SettingsPage extends HookConsumerWidget {
   /// Creates the settings page.
   const SettingsPage({
     super.key,
+    this.mode = SettingsPageMode.settings,
     required this.profileHeader,
     required this.invitePageBuilder,
     this.profileEditPageBuilder = _emptyProfileEditPage,
@@ -56,7 +64,10 @@ class SettingsPage extends HookConsumerWidget {
     this.onEditProfileDescription,
   });
 
-  /// Header widget displayed at the top of settings.
+  /// Profile or settings.
+  final SettingsPageMode mode;
+
+  /// Header widget displayed at the top of the profile screen.
   final Widget profileHeader;
 
   /// Builds the community-invite page pushed from the invite settings row.
@@ -83,6 +94,8 @@ class SettingsPage extends HookConsumerWidget {
 
     final tokenOrigin = ref.watch(activeTokenOriginProvider);
     final googleKeyOrigin = ref.watch(activeGoogleKeyOriginProvider);
+    final isProfile = mode == SettingsPageMode.profile;
+    final title = isProfile ? 'Profile' : 'Settings';
 
     Future<void> showEditProfileSheet() async {
       // A token account has one global profile; the relay rejects client
@@ -165,11 +178,12 @@ class SettingsPage extends HookConsumerWidget {
         automaticallyImplyLeading: false,
         horizontalInset: Grid.gutter,
         showBottomDivider: false,
+        title: Text(title),
         leading: Theme.of(context).platform == TargetPlatform.iOS
             ? IosGlassNavigationButton(
                 key: const ValueKey('settings-ios-glass-close'),
                 icon: IosGlassNavigationIcon.close,
-                semanticLabel: 'Close settings',
+                semanticLabel: 'Close ${title.toLowerCase()}',
                 onPressed: () {
                   unawaited(HapticFeedback.lightImpact());
                   Navigator.of(context).pop();
@@ -180,7 +194,7 @@ class SettingsPage extends HookConsumerWidget {
                 width: Grid.xl,
                 height: Grid.xl,
                 child: IconButton(
-                  tooltip: 'Close settings',
+                  tooltip: 'Close ${title.toLowerCase()}',
                   onPressed: () {
                     unawaited(HapticFeedback.lightImpact());
                     Navigator.of(context).pop();
@@ -190,7 +204,9 @@ class SettingsPage extends HookConsumerWidget {
                 ),
               ),
         actions: [
-          if (Theme.of(context).platform == TargetPlatform.iOS)
+          if (!isProfile)
+            const SizedBox.shrink()
+          else if (Theme.of(context).platform == TargetPlatform.iOS)
             IosGlassNavigationAction(
               key: const ValueKey('settings-edit-profile'),
               label: 'Edit',
@@ -229,27 +245,33 @@ class SettingsPage extends HookConsumerWidget {
           Expanded(
             child: ListView(
               padding: EdgeInsets.only(top: topSectionHeight, bottom: Grid.xs),
-              children: [
-                profileHeader,
-                _CommunitySection(invitePageBuilder: invitePageBuilder),
-                const _NotificationsSection(),
-                const AgentsSettings(),
-                const ExperimentsSettings(),
-                if (tokenOrigin != null)
-                  _AccountSection(origin: tokenOrigin)
-                else if (googleKeyOrigin != null)
-                  _AccountSection(origin: googleKeyOrigin, googleKey: true)
-                else
-                  const _ProtectAccountSection(),
-                const PeopleSettings(),
-                const SupportSettings(),
-                const _SignOutSection(),
-                // The built-in server cannot be removed from the device.
-                if (!hasBuiltInServer) const _RemoveCommunitySection(),
-              ],
+              children: isProfile
+                  ? [profileHeader, const KuzzIdSettings()]
+                  : [
+                      if (tokenOrigin != null)
+                        _AccountSection(origin: tokenOrigin)
+                      else if (googleKeyOrigin != null)
+                        _AccountSection(
+                          origin: googleKeyOrigin,
+                          googleKey: true,
+                        )
+                      else
+                        const _ProtectAccountSection(),
+                      const _NotificationsSection(),
+                      _CommunitySection(invitePageBuilder: invitePageBuilder),
+                      const MessagesSettings(),
+                      const AgentsSettings(),
+                      const PeopleSettings(),
+                      const SupportSettings(),
+                      const ExperimentsSettings(),
+                      const _SignOutSection(),
+                      // The built-in server cannot be removed from the
+                      // device.
+                      if (!hasBuiltInServer) const _RemoveCommunitySection(),
+                    ],
             ),
           ),
-          if (packageInfo.hasData)
+          if (!isProfile && packageInfo.hasData)
             _VersionFooter(
               version: packageInfo.data!.version,
               buildNumber: packageInfo.data!.buildNumber,

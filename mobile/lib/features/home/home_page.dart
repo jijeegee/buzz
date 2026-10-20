@@ -22,10 +22,15 @@ class HomePage extends HookConsumerWidget {
   const HomePage({
     required this.settingsPageBuilder,
     required this.hasUnreadInbox,
+    this.profilePageBuilder,
     super.key,
   });
 
   final WidgetBuilder settingsPageBuilder;
+
+  /// My profile, opened from the More menu's top row. Falls back to
+  /// Settings when absent.
+  final WidgetBuilder? profilePageBuilder;
   final bool hasUnreadInbox;
 
   static const double _tabBarHeight = mobileTabBarHeight;
@@ -112,11 +117,11 @@ class HomePage extends HookConsumerWidget {
       const SizedBox.shrink(),
     ];
 
-    void openSettings() {
+    void openSettingsRoute(WidgetBuilder builder) {
       HapticFeedback.lightImpact();
       Navigator.of(context).push(
         SettingsPageRoute(
-          builder: settingsPageBuilder,
+          builder: builder,
           onTransitionProgress: (progress) {
             if (settingsTransitionProgress.value != progress) {
               settingsTransitionProgress.value = progress;
@@ -212,7 +217,11 @@ class HomePage extends HookConsumerWidget {
                   unawaited(
                     showMoreMenu(
                       context,
-                      onOpenSettings: openSettings,
+                      onOpenProfile: () => openSettingsRoute(
+                        profilePageBuilder ?? settingsPageBuilder,
+                      ),
+                      onOpenSettings: () =>
+                          openSettingsRoute(settingsPageBuilder),
                       bottomClearance: HomePage._fabClearance,
                     ),
                   );
