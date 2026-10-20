@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 
 use crate::publisher::decode_event_payload;
 use crate::topic::EventTopicKey;
-use crate::ChannelEvent;
+use crate::{ChannelEvent, ResyncReason};
 
 /// Initial reconnect backoff (1 second).
 const BACKOFF_INITIAL_SECS: u64 = 1;
@@ -33,14 +33,18 @@ pub(crate) enum SubscriptionCommand {
 ///
 /// The desired refcount map is the source of truth. On every reconnect, this
 /// task snapshots topics with count > 0 and subscribes to those exact Redis
-/// channels before processing messages.
+/// channels before processing messages. Every connection after the first
+/// sends [`ResyncReason::RedisReconnect`]: events published while the
+/// connection was down never arrive.
 pub(crate) async fn run_subscriber(
     redis_url: String,
     broadcast_tx: broadcast::Sender<ChannelEvent>,
     desired_topics: DesiredTopics,
     mut subscription_rx: mpsc::Receiver<SubscriptionCommand>,
+    resync_tx: broadcast::Sender<ResyncReason>,
 ) {
     let mut backoff_secs = BACKOFF_INITIAL_SECS;
+    let mut connected_once = false;
 
     loop {
         match connect_and_subscribe(
@@ -48,6 +52,8 @@ pub(crate) async fn run_subscriber(
             &broadcast_tx,
             desired_topics.clone(),
             &mut subscription_rx,
+            &resync_tx,
+            &mut connected_once,
         )
         .await
         {
@@ -77,6 +83,8 @@ async fn connect_and_subscribe(
     broadcast_tx: &broadcast::Sender<ChannelEvent>,
     desired_topics: DesiredTopics,
     subscription_rx: &mut mpsc::Receiver<SubscriptionCommand>,
+    resync_tx: &broadcast::Sender<ResyncReason>,
+    connected_once: &mut bool,
 ) -> Result<(), redis::RedisError> {
     let client = redis::Client::open(redis_url)?;
     let conn = client.get_async_pubsub().await?;
@@ -101,6 +109,9 @@ async fn connect_and_subscribe(
         topic_count = active_topics.len(),
         "Redis pub/sub subscriber connected with dynamic scoped subscriptions"
     );
+    if std::mem::replace(connected_once, true) {
+        let _ = resync_tx.send(ResyncReason::RedisReconnect);
+    }
 
     loop {
         tokio::select! {

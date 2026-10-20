@@ -116,6 +116,27 @@ impl PubSubConfig {
     }
 }
 
+/// Why this relay may have missed events from other relays, so connected
+/// clients should fetch what they missed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResyncReason {
+    /// The Redis pub/sub connection dropped and came back; events published
+    /// while it was down never arrived.
+    RedisReconnect,
+    /// The local fan-out consumer fell behind and skipped events.
+    FanoutLagged,
+}
+
+impl ResyncReason {
+    /// Wire name used in the `KUZZ_RESYNC` frame.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RedisReconnect => "redis_reconnect",
+            Self::FanoutLagged => "fanout_lagged",
+        }
+    }
+}
+
 /// Central pub/sub manager for a Kuzz relay instance.
 pub struct PubSubManager {
     pool: deadpool_redis::Pool,
@@ -134,6 +155,7 @@ pub struct PubSubManager {
     conn_control_tx: broadcast::Sender<ScopedConnControl>,
     nip_fi_disconnect_tx: broadcast::Sender<NipFiDisconnect>,
     auth_revocation_tx: broadcast::Sender<AuthRevocation>,
+    resync_tx: broadcast::Sender<ResyncReason>,
 }
 
 impl PubSubManager {
@@ -152,6 +174,7 @@ impl PubSubManager {
         let (conn_control_tx, _) = broadcast::channel(4096);
         let (nip_fi_disconnect_tx, _) = broadcast::channel(4096);
         let (auth_revocation_tx, _) = broadcast::channel(4096);
+        let (resync_tx, _) = broadcast::channel(16);
         let (subscription_tx, subscription_rx) = mpsc::channel(4096);
 
         Ok(Self {
@@ -167,6 +190,7 @@ impl PubSubManager {
             conn_control_tx,
             nip_fi_disconnect_tx,
             auth_revocation_tx,
+            resync_tx,
         })
     }
 
@@ -185,8 +209,19 @@ impl PubSubManager {
             self.broadcast_tx.clone(),
             self.desired_topics.clone(),
             subscription_rx,
+            self.resync_tx.clone(),
         )
         .await;
+    }
+
+    /// Returns a new receiver for "this relay may have missed events" signals.
+    pub fn subscribe_resync(&self) -> broadcast::Receiver<ResyncReason> {
+        self.resync_tx.subscribe()
+    }
+
+    /// Signal that this relay may have missed events (no-op without receivers).
+    pub fn signal_resync(&self, reason: ResyncReason) {
+        let _ = self.resync_tx.send(reason);
     }
 
     /// Starts the cache-invalidation subscriber loop with automatic
@@ -514,6 +549,56 @@ mod tests {
 
     fn ctx(id: u128, host: &str) -> TenantContext {
         TenantContext::resolved(CommunityId::from_uuid(Uuid::from_u128(id)), host)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Redis"]
+    async fn redis_reconnect_signals_resync_but_first_connect_does_not() {
+        // Kills every pub/sub client on the target Redis, so it never runs
+        // against the default URL: point KUZZ_TEST_REDIS_URL at a test Redis.
+        let Ok(url) = std::env::var("KUZZ_TEST_REDIS_URL") else {
+            eprintln!("skipped: KUZZ_TEST_REDIS_URL unset");
+            return;
+        };
+        let pool = deadpool_redis::Config::from_url(&url)
+            .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+            .expect("redis pool");
+        let manager = Arc::new(
+            PubSubManager::new(&url, pool.clone())
+                .await
+                .expect("Failed to create PubSubManager"),
+        );
+        let mut resync = manager.subscribe_resync();
+        let manager_clone = manager.clone();
+        tokio::spawn(async move { manager_clone.run_subscriber().await });
+        // A connection only counts as pub/sub once it holds a subscription.
+        manager
+            .retain_topic(
+                &ctx(0xbbbb, "b.example"),
+                EventTopic::Channel(Uuid::new_v4()),
+            )
+            .await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        assert!(resync.try_recv().is_err(), "first connect is not a resync");
+
+        // Drop every pub/sub connection on this Redis; the subscriber
+        // reconnects after its 1 s backoff.
+        let mut conn = pool.get().await.expect("redis conn");
+        let killed: i64 = redis::cmd("CLIENT")
+            .arg("KILL")
+            .arg("TYPE")
+            .arg("pubsub")
+            .query_async(&mut conn)
+            .await
+            .expect("client kill");
+        assert!(killed >= 1, "the subscriber connection was killed");
+
+        let reason = tokio::time::timeout(tokio::time::Duration::from_secs(5), resync.recv())
+            .await
+            .expect("resync after reconnect")
+            .expect("resync channel open");
+        assert_eq!(reason, ResyncReason::RedisReconnect);
+        assert_eq!(reason.as_str(), "redis_reconnect");
     }
 
     #[tokio::test]

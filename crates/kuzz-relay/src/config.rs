@@ -335,6 +335,15 @@ pub struct Config {
     /// run a build that reads the envelope.
     pub pubsub_seq_envelope: bool,
 
+    /// Resync signal (`KUZZ_RESYNC_SIGNAL`, default off).
+    ///
+    /// On: when this relay may have missed events from other relays (Redis
+    /// pub/sub reconnected, or local fan-out lagged), `?kuzz_seq=1` sockets get
+    /// `["KUZZ_RESYNC",{"reason":...}]` and fetch what they missed by order
+    /// number; other sockets are closed with 1012 spread over 30 s, and their
+    /// clients repair on reconnect. Off: only the lag metric and log, as before.
+    pub resync_signal: bool,
+
     /// Optional override for ephemeral channel TTL (in seconds).
     /// When set, any channel created with a TTL tag will use this value instead
     /// of the client-provided one. Useful for testing ephemeral expiry quickly.
@@ -1216,6 +1225,7 @@ impl Config {
         let audit_enabled = parse_bool("KUZZ_AUDIT_ENABLED", true)?;
         let chat_state_writes = parse_bool("KUZZ_CHAT_STATE_WRITES", false)?;
         let pubsub_seq_envelope = parse_bool("KUZZ_PUBSUB_SEQ_ENVELOPE", false)?;
+        let resync_signal = parse_bool("KUZZ_RESYNC_SIGNAL", false)?;
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1448,6 +1458,7 @@ impl Config {
             audit_enabled,
             chat_state_writes,
             pubsub_seq_envelope,
+            resync_signal,
             ephemeral_ttl_override,
             git_repo_path,
             git_pack_cache_path,
@@ -1696,6 +1707,7 @@ mod tests {
             !config.pubsub_seq_envelope,
             "Redis sequence envelope must default to off"
         );
+        assert!(!config.resync_signal, "resync signal must default to off");
         assert!(config.slow_client_grace_limit > 0);
         assert!(
             !config.pubkey_allowlist_enabled,

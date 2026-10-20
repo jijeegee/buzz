@@ -104,6 +104,10 @@ impl EmissionScope {
 }
 
 const USAGE_METRICS_LOCK_KEY: i64 = 0x4255_5A5A_4D45_5452;
+/// Resync signals arriving within this window are handled once.
+const RESYNC_COALESCE: std::time::Duration = std::time::Duration::from_secs(1);
+/// Sockets that cannot be told to resync are closed over this window (ms).
+const RESYNC_LEGACY_CLOSE_JITTER_MS: u64 = 30_000;
 
 /// Retry missing diagnostics promptly, without tying audit recovery to readiness.
 /// Delays start after each attempt finishes, so slow audits cannot cause bursts.
@@ -542,6 +546,8 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // Spawn Redis pub/sub subscriber for multi-node fan-out.
     // Events published by other relay instances are received here and
     // fanned out to local WebSocket subscribers.
+    // Subscribe before the subscriber starts so no resync signal is dropped.
+    let resync_rx = pubsub.subscribe_resync();
     let pubsub_for_sub = Arc::clone(&pubsub);
     tokio::spawn(async move { pubsub_for_sub.run_subscriber().await });
 
@@ -1197,6 +1203,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         metrics::counter!("kuzz_multinode_fanout_lag_total").increment(n);
                         tracing::warn!("Multi-node fan-out lagged by {n} messages");
+                        state_for_sub
+                            .pubsub
+                            .signal_resync(kuzz_pubsub::ResyncReason::FanoutLagged);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::error!("Multi-node fan-out broadcast channel closed");
@@ -1205,6 +1214,40 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                 }
             }
         });
+    }
+
+    // Resync consumer: this relay may have missed events from other relays.
+    // Signals arriving within a second are handled once.
+    if state.config.resync_signal {
+        let state_for_resync = Arc::clone(&state);
+        let mut resync_rx = resync_rx;
+        tokio::spawn(async move {
+            loop {
+                let reason = match resync_rx.recv().await {
+                    Ok(reason) => reason,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        kuzz_pubsub::ResyncReason::FanoutLagged
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                };
+                tokio::time::sleep(RESYNC_COALESCE).await;
+                while resync_rx.try_recv().is_ok() {}
+                metrics::counter!("kuzz_resync_signal_total", "reason" => reason.as_str())
+                    .increment(1);
+                let (signalled, closed) = state_for_resync
+                    .conn_manager
+                    .resync_all(reason.as_str(), RESYNC_LEGACY_CLOSE_JITTER_MS)
+                    .await;
+                tracing::warn!(
+                    reason = reason.as_str(),
+                    signalled,
+                    closed,
+                    "Relay may have missed events; clients told to resync"
+                );
+            }
+        });
+    } else {
+        drop(resync_rx);
     }
 
     // Cross-pod cache-invalidation consumer: receive cache-key drops from Redis
