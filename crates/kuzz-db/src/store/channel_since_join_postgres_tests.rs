@@ -462,3 +462,68 @@ async fn inbox_skips_rooms_and_threads_from_before_the_join() {
         .unwrap();
     assert_eq!(page.rows.iter().filter(|r| r.kind == InboxRowKind::Thread).count(), 2);
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn chat_list_previews_only_messages_after_the_join() {
+    use crate::chat_list::{ChatListQuery, ChatRowKind};
+    use crate::event::ThreadMetadataParams;
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone()).with_chat_state_writes(true);
+    let post = |content: &'static str, root: Option<nostr::Event>| {
+        let db = db.clone();
+        let (scope, channel, owner) = (f.scope, f.channel, f.owner.clone());
+        async move {
+            let mut tags = vec![Tag::parse(["h", &channel.to_string()]).unwrap()];
+            if let Some(root) = &root {
+                tags.push(Tag::parse(["e", &root.id.to_hex(), "", "root"]).unwrap());
+            }
+            let event = EventBuilder::new(Kind::Custom(9), content)
+                .tags(tags)
+                .sign_with_keys(&owner)
+                .unwrap();
+            let at = |e: &nostr::Event| {
+                chrono::DateTime::from_timestamp(e.created_at.as_secs() as i64, 0).unwrap()
+            };
+            let meta = root.as_ref().map(|root| ThreadMetadataParams {
+                event_id: event.id.as_bytes(),
+                event_created_at: at(&event),
+                channel_id: channel,
+                parent_event_id: Some(root.id.as_bytes()),
+                parent_event_created_at: Some(at(root)),
+                root_event_id: Some(root.id.as_bytes()),
+                root_event_created_at: Some(at(root)),
+                depth: 1,
+                broadcast: false,
+            });
+            db.insert_event_with_thread_metadata_and_chat_state(scope, &event, Some(channel), meta)
+                .await
+                .unwrap();
+            event
+        }
+    };
+    let old_root = post("old root", None).await;
+    post("old reply", Some(old_root.clone())).await;
+    f.join().await;
+    let query = ChatListQuery {
+        limit: 30,
+        before: None,
+        pinned_threads: vec![old_root.id.as_bytes().to_vec()],
+        quiet_before: chrono::Utc::now() - chrono::Duration::days(7),
+    };
+    let rows = db.chat_list(f.scope, &f.member.public_key(), &query).await.unwrap().rows;
+    let shape: Vec<_> = rows.iter().map(|r| (r.kind, r.latest.is_some())).collect();
+    assert_eq!(shape, [(ChatRowKind::Room, false)], "no old preview, no old thread");
+
+    post("late reply to old root", Some(old_root.clone())).await;
+    post("new message", None).await;
+    let rows = db.chat_list(f.scope, &f.member.public_key(), &query).await.unwrap().rows;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].latest.as_ref().unwrap()["content"], "new message");
+
+    // The owner (no cut) still gets the pinned old thread.
+    let rows = db.chat_list(f.scope, &f.owner.public_key(), &query).await.unwrap().rows;
+    assert!(rows.iter().any(|r| r.kind == ChatRowKind::Thread));
+}

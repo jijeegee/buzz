@@ -219,7 +219,9 @@ my AS MATERIALIZED (
            (c.channel_type = 'dm' AND EXISTS (
                SELECT 1 FROM blk JOIN channel_members bm ON bm.community_id = $1
                    AND bm.channel_id = cm.channel_id AND bm.pubkey = blk.blocked
-           ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked
+           ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked,
+           -- since_join rooms: nothing at or below this sequence is shown.
+           channel_history_floor($1, cm.channel_id, $2) AS history_floor
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
     WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
@@ -239,7 +241,7 @@ rooms AS (
     LEFT JOIN LATERAL (
         SELECT e.channel_sequence, e.received_at, e.id FROM events e
         WHERE m.dm_blocked AND e.community_id = $1 AND e.channel_id = m.channel_id
-          AND e.kind = ANY($3) AND "#,
+          AND e.kind = ANY($3) AND e.channel_sequence > m.history_floor AND "#,
     main_timeline!(),
     r#"
           AND NOT "#,
@@ -247,10 +249,16 @@ rooms AS (
     r#"
         ORDER BY e.channel_sequence DESC LIMIT 1
     ) l ON TRUE
+    -- The stored latest is the newest main message: at or below the history
+    -- floor, the reader has no main message yet.
     CROSS JOIN LATERAL (
-        SELECT CASE WHEN m.dm_blocked THEN l.channel_sequence ELSE m.main_last_seq END AS last_seq,
-               CASE WHEN m.dm_blocked THEN l.received_at ELSE m.main_last_at END AS last_at,
-               CASE WHEN m.dm_blocked THEN l.id ELSE m.main_last_event_id END AS last_event_id
+        SELECT CASE WHEN m.dm_blocked THEN l.channel_sequence
+                    WHEN m.main_last_seq > m.history_floor THEN m.main_last_seq END AS last_seq,
+               CASE WHEN m.dm_blocked THEN l.received_at
+                    WHEN m.main_last_seq > m.history_floor THEN m.main_last_at END AS last_at,
+               CASE WHEN m.dm_blocked THEN l.id
+                    WHEN m.main_last_seq > m.history_floor THEN m.main_last_event_id END
+                   AS last_event_id
     ) v
     WHERE m.hidden_at IS NULL
       AND (m.archived_at IS NULL OR m.unread_mark
@@ -309,11 +317,15 @@ threads AS (
                CASE WHEN m.dm_blocked THEN l.received_at ELSE ts.last_at END AS last_at,
                CASE WHEN m.dm_blocked THEN l.id ELSE ts.last_event_id END AS last_event_id
     ) v
-    WHERE t.root_id = ANY($7)
+    WHERE (m.history_floor = 0 OR EXISTS (
+        -- A root from before the join is not shown (its replies follow it).
+        SELECT 1 FROM events re WHERE re.community_id = $1 AND re.id = t.root_id
+          AND re.channel_sequence > m.history_floor))
+      AND (t.root_id = ANY($7)
        OR (ts.closed_at IS NULL
            AND (t.unread_mark
                 OR COALESCE(v.last_seq, 0) > COALESCE(t.read_seq, 0)
-                OR (m.archived_at IS NULL AND v.last_at >= $8)))
+                OR (m.archived_at IS NULL AND v.last_at >= $8))))
 ),
 page AS (
     SELECT * FROM (SELECT * FROM rooms UNION ALL SELECT * FROM threads) x
@@ -346,7 +358,8 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
     event_json!(),
     r#" FROM events e
         WHERE e.community_id = $1 AND e.channel_id = p.channel_id
-          AND e.kind = ANY($3) AND e.deleted_at IS NULL AND "#,
+          AND e.kind = ANY($3) AND e.deleted_at IS NULL
+          AND e.channel_sequence > m.history_floor AND "#,
     main_timeline!(),
     " AND ",
     not_blocked_dm!(),
