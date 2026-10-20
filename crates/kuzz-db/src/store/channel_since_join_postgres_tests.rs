@@ -582,3 +582,89 @@ async fn mark_read_and_follow_treat_pre_join_ids_as_unknown() {
         .unwrap()
         .is_ok());
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn files_from_before_the_join_are_not_readable() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let (scope, channel) = (f.scope, f.channel);
+    let attach = |hex_id: String, sha: String| {
+        let db = db.clone();
+        let pool = f.pool.clone();
+        async move {
+            let id = nostr::EventId::from_hex(&hex_id).unwrap().to_bytes().to_vec();
+            let at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+                "SELECT created_at FROM events WHERE community_id = $1 AND id = $2",
+            )
+            .bind(scope.as_uuid())
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            db.record_media_references(scope, &id, at, Some(channel), &[sha])
+                .await
+                .unwrap();
+        }
+    };
+    let old_sha = "a".repeat(64);
+    let new_sha = "b".repeat(64);
+    attach(f.send("old file").await, old_sha.clone()).await;
+    f.join().await;
+    attach(f.send("new file").await, new_sha.clone()).await;
+    let both = [old_sha.clone(), new_sha.clone()];
+    let member = f.member.public_key().to_bytes();
+    let owner = f.owner.public_key().to_bytes();
+    assert_eq!(
+        db.media_hashes_readable_by(f.scope, &member, &both).await.unwrap(),
+        [new_sha.clone()]
+    );
+    let mut all = db.media_hashes_readable_by(f.scope, &owner, &both).await.unwrap();
+    all.sort();
+    assert_eq!(all, both);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn artifact_revisions_from_before_the_join_are_hidden() {
+    use crate::Db;
+    use kuzz_core::artifact::{ArtifactQuery, ArtifactView};
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let revision = |content: &'static str| {
+        let event = EventBuilder::new(Kind::Custom(45010), content)
+            .tags([
+                Tag::parse(["h", &f.channel.to_string()]).unwrap(),
+                Tag::parse(["d", "doc"]).unwrap(),
+            ])
+            .sign_with_keys(&f.owner)
+            .unwrap();
+        let (pool, scope, channel) = (f.pool.clone(), f.scope, f.channel);
+        async move {
+            event::insert_event(&pool, scope, &event, Some(channel)).await.unwrap();
+            event.id.to_hex()
+        }
+    };
+    revision("v1").await;
+    f.join().await;
+    let v2 = revision("v2").await;
+    let query = ArtifactQuery {
+        view: ArtifactView::History,
+        tags: vec![("d".into(), vec!["doc".into()])],
+        limit: 10,
+        offset: 0,
+    };
+    let read = |reader: Vec<u8>, count: bool| {
+        let db = db.clone();
+        let query = &query;
+        async move { db.query_artifacts(f.scope, &reader, query, count).await.unwrap() }
+    };
+    let member = f.member.public_key().to_bytes().to_vec();
+    let (rows, _) = read(member.clone(), false).await;
+    assert_eq!(rows.iter().map(|r| r.event.id.to_hex()).collect::<Vec<_>>(), [v2]);
+    assert_eq!(read(member, true).await.1, 1);
+    assert_eq!(read(f.owner.public_key().to_bytes().to_vec(), true).await.1, 2);
+}
