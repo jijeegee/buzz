@@ -15,6 +15,7 @@ use kuzz_core::kind::{
 };
 use kuzz_core::StoredEvent;
 use kuzz_db::channel::{MemberRecord, MemberRole};
+use kuzz_db::channel_members::MemberWrite;
 
 use super::channel_authz::{self, ChannelAuthzError, PutUserDecision, RemoveOtherDecision};
 use super::event::dispatch_persistent_event;
@@ -39,24 +40,29 @@ pub fn is_side_effect_kind(kind: u32) -> bool {
 
 /// Kinds whose side effects may run again after a failed or interrupted run.
 ///
-/// The others are not safe to replay (audit 2026-10-20, see
-/// PLANS/GLOBAL_REGIONS_S0_ORDER_GAP_PLAN_20261019.md): their system messages
-/// get a new id per run, member add/remove and metadata edits can apply a
-/// stale change after newer ones, and 9007 without `h` mints a new channel.
-/// Their outbox rows stay as a record of the failure.
+/// The others are not safe to replay yet (audit 2026-10-20, see
+/// PLANS/GLOBAL_REGIONS_S0_ORDER_GAP_PLAN_20261019.md): metadata edits (9002)
+/// and profiles (0, 10100) can apply a stale change after newer ones. Their
+/// outbox rows stay as a record of the failure.
 pub fn side_effect_retry_safe(kind: u32) -> bool {
     SIDE_EFFECT_RETRY_KINDS.contains(&(kind as i32))
 }
 
 /// [`side_effect_retry_safe`] kinds, for the outbox retry query. 9007 and
 /// 9009 are idempotent (a known channel id, system messages and notifications
-/// with the trigger's time); 41001..=41003 have no side effect.
-pub const SIDE_EFFECT_RETRY_KINDS: [i32; 9] = [
+/// with the trigger's time); membership changes (9000, 9001, 9021, 9022) skip
+/// a re-run or an event older than the last change (migration 0082);
+/// 41001..=41003 have no side effect.
+pub const SIDE_EFFECT_RETRY_KINDS: [i32; 13] = [
     5,
+    9000,
+    9001,
     9005,
     9007,
     9008,
     9009,
+    9021,
+    9022,
     KIND_GIT_REPO_ANNOUNCEMENT as i32,
     41001,
     41002,
@@ -916,6 +922,17 @@ pub async fn validate_admin_event(
     }
 }
 
+/// A later membership change was applied before this event's: leave it.
+fn superseded(event: &Event, channel_id: Uuid, write: MemberWrite) -> bool {
+    if write != MemberWrite::Superseded {
+        return false;
+    }
+    metrics::counter!("kuzz_membership_events_superseded_total", "kind" => event.kind.as_u16().to_string())
+        .increment(1);
+    info!(channel = %channel_id, event_id = %event.id, "membership event superseded by a later change; skipped");
+    true
+}
+
 /// The time a side effect's own events carry: the triggering event's
 /// `created_at`.
 fn trigger_time(event: &Event) -> chrono::DateTime<chrono::Utc> {
@@ -1598,16 +1615,22 @@ async fn handle_put_user(
 
     let actor_bytes = event.pubkey.to_bytes().to_vec();
 
-    state
+    // A re-run of this event re-emits (deduplicated); an older event than the
+    // last change of this membership is skipped.
+    let (_, write) = state
         .db
-        .add_member(
+        .add_member_for_event(
             tenant.community(),
             channel_id,
             &target_pubkey,
             role,
             Some(&actor_bytes),
+            &event.id.to_bytes(),
         )
         .await?;
+    if superseded(event, channel_id, write) {
+        return Ok(());
+    }
     state.invalidate_membership(tenant, channel_id, &target_pubkey);
 
     let actor_hex = hex::encode(&actor_bytes);
@@ -1668,10 +1691,19 @@ async fn handle_remove_user(
         }
     }
 
-    state
+    let write = state
         .db
-        .remove_member(tenant.community(), channel_id, &target_pubkey, &actor_bytes)
+        .remove_member_for_event(
+            tenant.community(),
+            channel_id,
+            &target_pubkey,
+            &actor_bytes,
+            &event.id.to_bytes(),
+        )
         .await?;
+    if superseded(event, channel_id, write) {
+        return Ok(());
+    }
     state.invalidate_membership(tenant, channel_id, &target_pubkey);
     evict_live_channel_subscriptions(tenant, state, channel_id, &target_pubkey).await;
     disable_departed_member_workflows(tenant, state, channel_id, &target_pubkey).await;
@@ -2278,17 +2310,21 @@ async fn handle_join_request(
         return Ok(());
     }
 
-    // Add as member (idempotent — add_member handles duplicates).
-    state
+    // Add as member; a join older than a later leave is skipped.
+    let (_, write) = state
         .db
-        .add_member(
+        .add_member_for_event(
             tenant.community(),
             channel_id,
             &actor_bytes,
             kuzz_db::channel::MemberRole::Member,
             None,
+            &event.id.to_bytes(),
         )
         .await?;
+    if superseded(event, channel_id, write) {
+        return Ok(());
+    }
     state.invalidate_membership(tenant, channel_id, &actor_bytes);
 
     let actor_hex = hex::encode(&actor_bytes);
@@ -2346,10 +2382,19 @@ async fn handle_leave_request(
         return Err(ChannelAuthzError::LastOwnerRemovalTransferFirst.into());
     }
 
-    state
+    let write = state
         .db
-        .remove_member(tenant.community(), channel_id, &actor_bytes, &actor_bytes)
+        .remove_member_for_event(
+            tenant.community(),
+            channel_id,
+            &actor_bytes,
+            &actor_bytes,
+            &event.id.to_bytes(),
+        )
         .await?;
+    if superseded(event, channel_id, write) {
+        return Ok(());
+    }
     state.invalidate_membership(tenant, channel_id, &actor_bytes);
     evict_live_channel_subscriptions(tenant, state, channel_id, &actor_bytes).await;
     disable_departed_member_workflows(tenant, state, channel_id, &actor_bytes).await;
@@ -3992,10 +4037,95 @@ mod tests {
             .sign_with_keys(&keys)
             .unwrap();
         assert_ne!(derived_channel_id(&event), derived_channel_id(&other));
-        for kind in [9000, 9001, 9002, 9021, 9022, 0, KIND_AGENT_PROFILE] {
+        for kind in [9002, 0, KIND_AGENT_PROFILE] {
             assert!(!side_effect_retry_safe(kind), "{kind} still unsafe to replay");
         }
         assert!(!is_side_effect_kind(40099));
+    }
+
+    /// Membership events re-run (outbox retry) or arriving late: the same
+    /// event is a no-op, an older one does not undo a later change.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn membership_replays_keep_the_latest_change() {
+        let state =
+            crate::state::tests::test_state_with_database_url(&crate::test_support::database_url())
+                .await;
+        let pool = state.db.pool();
+        let community = kuzz_core::tenant::CommunityId::from_uuid(Uuid::new_v4());
+        let host = format!("replay-{}.test", community.as_uuid());
+        sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
+            .bind(community.as_uuid())
+            .bind(&host)
+            .execute(pool)
+            .await
+            .expect("community");
+        let tenant = TenantContext::resolved(community, host);
+        let owner = nostr::Keys::generate();
+        let create = EventBuilder::new(Kind::Custom(9007), "")
+            .tags([
+                Tag::parse(["name", "replay-members"]).unwrap(),
+                Tag::parse(["visibility", "private"]).unwrap(),
+            ])
+            .sign_with_keys(&owner)
+            .unwrap();
+        handle_side_effects(&tenant, 9007, &create, &state)
+            .await
+            .expect("create group");
+        let channel = derived_channel_id(&create);
+        let target = nostr::Keys::generate().public_key().to_hex();
+        let admin = |kind: u16| {
+            EventBuilder::new(Kind::Custom(kind), "")
+                .tags([
+                    Tag::parse(["h", &channel.to_string()]).unwrap(),
+                    Tag::parse(["p", &target]).unwrap(),
+                ])
+                .sign_with_keys(&owner)
+                .unwrap()
+        };
+        // Stored first (as ingest does), then their side effects run.
+        let (add, remove) = (admin(9000), admin(9001));
+        for event in [&add, &remove] {
+            state
+                .db
+                .insert_event(community, event, Some(channel))
+                .await
+                .expect("store admin event");
+        }
+        handle_side_effects(&tenant, 9000, &add, &state).await.expect("add");
+        handle_side_effects(&tenant, 9001, &remove, &state).await.expect("remove");
+        let target_bytes = hex::decode(&target).unwrap();
+        let is_member = || async {
+            state
+                .db
+                .is_member(community, channel, &target_bytes)
+                .await
+                .expect("is_member")
+        };
+        assert!(!is_member().await);
+        let messages = || async {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM events WHERE community_id = $1 AND channel_id = $2                  AND kind = 40099",
+            )
+            .bind(community.as_uuid())
+            .bind(channel)
+            .fetch_one(pool)
+            .await
+            .expect("count")
+        };
+        let before = messages().await;
+
+        // The add replayed after the remove: skipped, the target stays out.
+        handle_side_effects(&tenant, 9000, &add, &state)
+            .await
+            .expect("stale add is not an error");
+        assert!(!is_member().await, "an old add must not undo the later remove");
+        // The remove replayed: a no-op, not MemberNotFound.
+        handle_side_effects(&tenant, 9001, &remove, &state)
+            .await
+            .expect("re-run remove is not an error");
+        assert!(!is_member().await);
+        assert_eq!(messages().await, before, "replays post no new system messages");
     }
 
     /// A 9007 without `h` run twice (crash before the outbox row settled)

@@ -168,6 +168,9 @@ CREATE TABLE channel_members (
     -- Stored unread counts, capped at 100 (migration 0072).
     unread_count    INTEGER NOT NULL DEFAULT 0,
     unread_mentions INTEGER NOT NULL DEFAULT 0,
+    -- Last membership change, in channel_sequence order (migration 0082).
+    membership_seq      BIGINT,
+    membership_event_id BYTEA,
     PRIMARY KEY (community_id, channel_id, pubkey),
     FOREIGN KEY (community_id, channel_id)
         REFERENCES channels (community_id, id) ON DELETE CASCADE
