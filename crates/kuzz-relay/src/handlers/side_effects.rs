@@ -34,7 +34,7 @@ pub fn is_admin_kind(kind: u32) -> bool {
 /// handled in `ingest_event()` before storage so we can short-circuit on
 /// duplicates without storing the event at all.
 pub fn is_side_effect_kind(kind: u32) -> bool {
-    matches!(kind, 0 | 5 | 9000..=9022 | KIND_GIT_REPO_ANNOUNCEMENT | KIND_AGENT_PROFILE | 41001..=41003 | 40099)
+    matches!(kind, 0 | 5 | 9000..=9022 | KIND_GIT_REPO_ANNOUNCEMENT | KIND_AGENT_PROFILE | 41001..=41003)
 }
 
 /// Kinds whose side effects may run again after a failed or interrupted run.
@@ -45,11 +45,23 @@ pub fn is_side_effect_kind(kind: u32) -> bool {
 /// stale change after newer ones, and 9007 without `h` mints a new channel.
 /// Their outbox rows stay as a record of the failure.
 pub fn side_effect_retry_safe(kind: u32) -> bool {
-    matches!(kind, 5 | 9005 | 9008 | KIND_GIT_REPO_ANNOUNCEMENT)
+    SIDE_EFFECT_RETRY_KINDS.contains(&(kind as i32))
 }
 
-/// [`side_effect_retry_safe`] kinds, for the outbox retry query.
-pub const SIDE_EFFECT_RETRY_KINDS: [i32; 4] = [5, 9005, 9008, KIND_GIT_REPO_ANNOUNCEMENT as i32];
+/// [`side_effect_retry_safe`] kinds, for the outbox retry query. 9007 and
+/// 9009 are idempotent (a known channel id, system messages and notifications
+/// with the trigger's time); 41001..=41003 have no side effect.
+pub const SIDE_EFFECT_RETRY_KINDS: [i32; 9] = [
+    5,
+    9005,
+    9007,
+    9008,
+    9009,
+    KIND_GIT_REPO_ANNOUNCEMENT as i32,
+    41001,
+    41002,
+    41003,
+];
 
 /// Run a stored event's side effects and settle its outbox row (migration
 /// 0077): deleted on success, kept with the error on failure.
@@ -904,6 +916,37 @@ pub async fn validate_admin_event(
     }
 }
 
+/// The time a side effect's own events carry: the triggering event's
+/// `created_at`.
+fn trigger_time(event: &Event) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::from_timestamp(event.created_at.as_secs() as i64, 0)
+        .unwrap_or_else(chrono::Utc::now)
+}
+
+/// Channel id for a 9007 without an `h` tag, derived from the event id so a
+/// re-run finds the channel it created instead of minting another.
+fn derived_channel_id(event: &Event) -> Uuid {
+    let id = event.id.to_bytes();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&id[..16]);
+    uuid::Builder::from_random_bytes(bytes).into_uuid()
+}
+
+/// [`emit_system_message`] for a side effect of `trigger`: the message
+/// carries the trigger's time and id, so a replay of the side effect signs
+/// the same event (dropped as a duplicate) while two different triggers in
+/// the same second stay two messages.
+async fn emit_side_effect_message(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    mut content: serde_json::Value,
+    trigger: &Event,
+) -> anyhow::Result<()> {
+    content["trigger"] = trigger.id.to_hex().into();
+    emit_system_message(tenant, state, channel_id, content, trigger_time(trigger)).await
+}
+
 /// Emit a system message (kind 40099) signed by the relay keypair.
 ///
 /// `idempotency_ts` is used as the event's `created_at`. Passing a stable
@@ -930,11 +973,15 @@ pub async fn emit_system_message(
         .map_err(|e| anyhow::anyhow!("failed to sign system message: {e}"))?;
 
     // Durable insert is the completion boundary — propagate failure.
-    state
+    let (_, was_inserted) = state
         .db
         .insert_event(tenant.community(), &event, Some(channel_id))
         .await
         .map_err(|e| anyhow::anyhow!("system message insert failed: {e}"))?;
+    // Already stored by an earlier run of the same side effect.
+    if !was_inserted {
+        return Ok(());
+    }
 
     // Fan out to subscribers: best-effort, clients can retrieve the persisted event.
     if let Err(e) = state
@@ -1062,6 +1109,7 @@ pub async fn emit_membership_notification(
     target_pubkey: &[u8],
     actor_pubkey: &[u8],
     notification_kind: u32,
+    trigger: Option<&Event>,
 ) -> anyhow::Result<()> {
     let target_hex = hex::encode(target_pubkey);
     let actor_hex = hex::encode(actor_pubkey);
@@ -1082,15 +1130,23 @@ pub async fn emit_membership_notification(
         }
     };
 
-    let content = serde_json::json!({
+    let mut content = serde_json::json!({
         "type": event_type,
         "channel_id": channel_id_str,
         "actor": actor_hex,
-    })
-    .to_string();
+    });
+    let created_at = match trigger {
+        Some(trigger) => {
+            content["trigger"] = trigger.id.to_hex().into();
+            trigger.created_at
+        }
+        None => nostr::Timestamp::now(),
+    };
+    let content = content.to_string();
 
     let event = EventBuilder::new(Kind::Custom(notification_kind as u16), content)
         .tags([p_tag, h_tag])
+        .custom_created_at(created_at)
         .sign_with_keys(&state.relay_keypair)
         .map_err(|e| anyhow::anyhow!("failed to sign membership notification: {e}"))?;
 
@@ -1556,7 +1612,7 @@ async fn handle_put_user(
 
     let actor_hex = hex::encode(&actor_bytes);
     let target_hex = hex::encode(&target_pubkey);
-    emit_system_message(
+    emit_side_effect_message(
         tenant,
         state,
         channel_id,
@@ -1565,7 +1621,7 @@ async fn handle_put_user(
             "actor": actor_hex,
             "target": target_hex,
         }),
-        chrono::Utc::now(),
+        event,
     )
     .await?;
 
@@ -1580,6 +1636,7 @@ async fn handle_put_user(
         &target_pubkey,
         &actor_bytes,
         KIND_MEMBER_ADDED_NOTIFICATION,
+        Some(event),
     )
     .await
     {
@@ -1626,7 +1683,7 @@ async fn handle_remove_user(
     } else {
         "member_removed"
     };
-    emit_system_message(
+    emit_side_effect_message(
         tenant,
         state,
         channel_id,
@@ -1635,7 +1692,7 @@ async fn handle_remove_user(
             "actor": actor_hex,
             "target": target_hex,
         }),
-        chrono::Utc::now(),
+        event,
     )
     .await?;
 
@@ -1650,6 +1707,7 @@ async fn handle_remove_user(
         &target_pubkey,
         &actor_bytes,
         KIND_MEMBER_REMOVED_NOTIFICATION,
+        Some(event),
     )
     .await
     {
@@ -1704,14 +1762,14 @@ async fn handle_edit_metadata(
                         .db
                         .set_topic(tenant.community(), channel_id, val, &actor_bytes)
                         .await?;
-                    emit_system_message(
+                    emit_side_effect_message(
                         tenant,
                         state,
                         channel_id,
                         serde_json::json!({
                             "type": "topic_changed", "actor": actor_hex, "topic": val
                         }),
-                        chrono::Utc::now(),
+                        event,
                     )
                     .await?;
                 }
@@ -1720,14 +1778,14 @@ async fn handle_edit_metadata(
                         .db
                         .set_purpose(tenant.community(), channel_id, val, &actor_bytes)
                         .await?;
-                    emit_system_message(
+                    emit_side_effect_message(
                         tenant,
                         state,
                         channel_id,
                         serde_json::json!({
                             "type": "purpose_changed", "actor": actor_hex, "purpose": val
                         }),
-                        chrono::Utc::now(),
+                        event,
                     )
                     .await?;
                 }
@@ -1760,14 +1818,14 @@ async fn handle_edit_metadata(
                     if was_open && val == "private" {
                         evict_non_member_channel_subscriptions(tenant, state, channel_id).await?;
                     }
-                    emit_system_message(
+                    emit_side_effect_message(
                         tenant,
                         state,
                         channel_id,
                         serde_json::json!({
                             "type": "visibility_changed", "actor": actor_hex, "visibility": val
                         }),
-                        chrono::Utc::now(),
+                        event,
                     )
                     .await?;
                 }
@@ -1794,14 +1852,14 @@ async fn handle_edit_metadata(
                             },
                         )
                         .await?;
-                    emit_system_message(
+                    emit_side_effect_message(
                         tenant,
                         state,
                         channel_id,
                         serde_json::json!({
                             "type": "ttl_changed", "actor": actor_hex, "ttl_seconds": ttl_change
                         }),
-                        chrono::Utc::now(),
+                        event,
                     )
                     .await?;
                 }
@@ -1818,14 +1876,14 @@ async fn handle_edit_metadata(
                             },
                         )
                         .await?;
-                    emit_system_message(
+                    emit_side_effect_message(
                         tenant,
                         state,
                         channel_id,
                         serde_json::json!({
                             "type": "goals_changed", "actor": actor_hex, "goals": val
                         }),
-                        chrono::Utc::now(),
+                        event,
                     )
                     .await?;
                 }
@@ -1836,14 +1894,14 @@ async fn handle_edit_metadata(
                                 .db
                                 .archive_channel(tenant.community(), channel_id)
                                 .await?;
-                            emit_system_message(
+                            emit_side_effect_message(
                                 tenant,
                                 state,
                                 channel_id,
                                 serde_json::json!({
                                     "type": "channel_archived", "actor": actor_hex
                                 }),
-                                chrono::Utc::now(),
+                                event,
                             )
                             .await?;
                         }
@@ -1852,14 +1910,14 @@ async fn handle_edit_metadata(
                                 .db
                                 .unarchive_channel(tenant.community(), channel_id)
                                 .await?;
-                            emit_system_message(
+                            emit_side_effect_message(
                                 tenant,
                                 state,
                                 channel_id,
                                 serde_json::json!({
                                     "type": "channel_unarchived", "actor": actor_hex
                                 }),
-                                chrono::Utc::now(),
+                                event,
                             )
                             .await?;
 
@@ -1890,6 +1948,7 @@ async fn handle_edit_metadata(
                                     &member.pubkey,
                                     &actor_bytes,
                                     KIND_MEMBER_ADDED_NOTIFICATION,
+                                    Some(event),
                                 )
                                 .await
                                 {
@@ -2010,7 +2069,7 @@ async fn handle_delete_event_side_effect(
     copy_optional_string_field(event, &mut tombstone, "reason_code");
     copy_optional_string_field(event, &mut tombstone, "public_reason");
 
-    emit_system_message(tenant, state, channel_id, tombstone, chrono::Utc::now()).await?;
+    emit_side_effect_message(tenant, state, channel_id, tombstone, event).await?;
 
     info!(target_event = %hex::encode(&target_id), "NIP-29 DELETE_EVENT processed");
     Ok(())
@@ -2050,6 +2109,33 @@ async fn handle_create_group(
     // inaccessible, so the counter correctly records a new creation. For the
     // no-h-tag path, ingest never creates the channel, so this is the sole
     // increment.
+    let create = |channel_id: Uuid| {
+        let (name, description, actor_bytes) = (&name, &description, &actor_bytes);
+        async move {
+            let (ch, created) = state
+                .db
+                .create_channel_with_id(
+                    tenant.community(),
+                    channel_id,
+                    name,
+                    channel_type,
+                    visibility,
+                    description.as_deref(),
+                    actor_bytes,
+                    ttl_seconds,
+                )
+                .await?;
+            if created {
+                metrics::counter!(
+                    "kuzz_channels_created_total",
+                    "community" => tenant.host().to_owned(),
+                    "type" => channel_type.to_string()
+                )
+                .increment(1);
+            }
+            anyhow::Ok(ch)
+        }
+    };
     let channel = if let Some(client_uuid) = extract_h_tag_channel(event) {
         match state
             .db
@@ -2057,50 +2143,13 @@ async fn handle_create_group(
             .await
         {
             Ok(ch) => ch,
-            Err(_) => {
-                // Channel not found — shouldn't happen (ingest_event pre-created it),
-                // but fall back to creation to stay resilient.
-                let ch = state
-                    .db
-                    .create_channel(
-                        tenant.community(),
-                        &name,
-                        channel_type,
-                        visibility,
-                        description.as_deref(),
-                        &actor_bytes,
-                        ttl_seconds,
-                    )
-                    .await?;
-                metrics::counter!(
-                    "kuzz_channels_created_total",
-                    "community" => tenant.host().to_owned(),
-                    "type" => channel_type.to_string()
-                )
-                .increment(1);
-                ch
-            }
+            // Channel not found — shouldn't happen (ingest_event pre-created it),
+            // but fall back to creation to stay resilient.
+            Err(_) => create(client_uuid).await?,
         }
     } else {
-        let ch = state
-            .db
-            .create_channel(
-                tenant.community(),
-                &name,
-                channel_type,
-                visibility,
-                description.as_deref(),
-                &actor_bytes,
-                ttl_seconds,
-            )
-            .await?;
-        metrics::counter!(
-            "kuzz_channels_created_total",
-            "community" => tenant.host().to_owned(),
-            "type" => channel_type.to_string()
-        )
-        .increment(1);
-        ch
+        // No `h`: the id comes from the event, so a re-run reuses the channel.
+        create(derived_channel_id(event)).await?
     };
 
     // Creator becomes owner — evict any stale negative membership lookup.
@@ -2112,14 +2161,14 @@ async fn handle_create_group(
     }
 
     let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
+    emit_side_effect_message(
         tenant,
         state,
         channel.id,
         serde_json::json!({
             "type": "channel_created", "actor": actor_hex
         }),
-        chrono::Utc::now(),
+        event,
     )
     .await?;
 
@@ -2134,6 +2183,7 @@ async fn handle_create_group(
         &actor_bytes,
         &actor_bytes, // creator is both actor and target
         KIND_MEMBER_ADDED_NOTIFICATION,
+        Some(event),
     )
     .await
     {
@@ -2182,14 +2232,14 @@ async fn handle_delete_group(
     state.invalidate_channel_deleted(tenant);
 
     let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
+    emit_side_effect_message(
         tenant,
         state,
         channel_id,
         serde_json::json!({
             "type": "channel_deleted", "actor": actor_hex
         }),
-        chrono::Utc::now(),
+        event,
     )
     .await?;
 
@@ -2242,7 +2292,7 @@ async fn handle_join_request(
     state.invalidate_membership(tenant, channel_id, &actor_bytes);
 
     let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
+    emit_side_effect_message(
         tenant,
         state,
         channel_id,
@@ -2251,7 +2301,7 @@ async fn handle_join_request(
             "actor": actor_hex,
             "target": actor_hex,
         }),
-        chrono::Utc::now(),
+        event,
     )
     .await?;
 
@@ -2266,6 +2316,7 @@ async fn handle_join_request(
         &actor_bytes,
         &actor_bytes,
         kuzz_core::kind::KIND_MEMBER_ADDED_NOTIFICATION,
+        Some(event),
     )
     .await
     {
@@ -2304,7 +2355,7 @@ async fn handle_leave_request(
     disable_departed_member_workflows(tenant, state, channel_id, &actor_bytes).await;
 
     let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
+    emit_side_effect_message(
         tenant,
         state,
         channel_id,
@@ -2312,7 +2363,7 @@ async fn handle_leave_request(
             "type": "member_left",
             "actor": actor_hex,
         }),
-        chrono::Utc::now(),
+        event,
     )
     .await?;
 
@@ -2327,6 +2378,7 @@ async fn handle_leave_request(
         &actor_bytes,
         &actor_bytes, // self-leave: actor == target
         KIND_MEMBER_REMOVED_NOTIFICATION,
+        Some(event),
     )
     .await
     {
@@ -3924,6 +3976,102 @@ pub async fn publish_nipia_unarchived(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replayed_side_effects_reuse_their_ids() {
+        let keys = nostr::Keys::generate();
+        let event = EventBuilder::new(Kind::Custom(9007), "")
+            .tags([Tag::parse(["name", "replay"]).unwrap()])
+            .custom_created_at(nostr::Timestamp::from(1_700_000_000))
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(derived_channel_id(&event), derived_channel_id(&event));
+        assert_eq!(trigger_time(&event).timestamp(), 1_700_000_000);
+        let other = EventBuilder::new(Kind::Custom(9007), "")
+            .tags([Tag::parse(["name", "other"]).unwrap()])
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_ne!(derived_channel_id(&event), derived_channel_id(&other));
+        for kind in [9000, 9001, 9002, 9021, 9022, 0, KIND_AGENT_PROFILE] {
+            assert!(!side_effect_retry_safe(kind), "{kind} still unsafe to replay");
+        }
+        assert!(!is_side_effect_kind(40099));
+    }
+
+    /// A 9007 without `h` run twice (crash before the outbox row settled)
+    /// creates one channel, one system message and one notification.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn create_group_runs_twice_without_duplicates() {
+        let state =
+            crate::state::tests::test_state_with_database_url(&crate::test_support::database_url())
+                .await;
+        let pool = state.db.pool();
+        let community = kuzz_core::tenant::CommunityId::from_uuid(Uuid::new_v4());
+        let host = format!("replay-{}.test", community.as_uuid());
+        sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
+            .bind(community.as_uuid())
+            .bind(&host)
+            .execute(pool)
+            .await
+            .expect("community");
+        let tenant = TenantContext::resolved(community, host);
+        let keys = nostr::Keys::generate();
+        let event = EventBuilder::new(Kind::Custom(9007), "")
+            .tags([
+                Tag::parse(["name", "replay"]).unwrap(),
+                Tag::parse(["visibility", "private"]).unwrap(),
+            ])
+            .sign_with_keys(&keys)
+            .unwrap();
+        for _ in 0..2 {
+            handle_side_effects(&tenant, 9007, &event, &state)
+                .await
+                .expect("create group");
+        }
+        let channel = derived_channel_id(&event);
+        let count = |sql: &'static str| async move {
+            sqlx::query_scalar::<_, i64>(sql)
+                .bind(community.as_uuid())
+                .bind(channel)
+                .fetch_one(pool)
+                .await
+                .expect(sql)
+        };
+        assert_eq!(
+            count("SELECT count(*) FROM channels WHERE community_id = $1 AND id = $2").await,
+            1
+        );
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM channels WHERE community_id = $1 AND id <> $2                  AND name = 'replay'"
+            )
+            .await,
+            0
+        );
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM events WHERE community_id = $1 AND channel_id = $2                  AND kind = 40099"
+            )
+            .await,
+            1
+        );
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM events WHERE community_id = $1 AND kind = 44100                  AND content LIKE '%' || $2::text || '%'"
+            )
+            .await,
+            1
+        );
+        // System messages leave no outbox rows (migration 0081).
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM event_side_effects WHERE community_id = $1                  AND kind = 40099 AND $2::uuid IS NOT NULL"
+            )
+            .await,
+            0
+        );
+    }
 
     #[test]
     fn workflow_deletion_retry_matches_authorized_dispatch() {

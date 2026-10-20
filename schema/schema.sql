@@ -2375,7 +2375,7 @@ SELECT attach_community_write_fence('event_side_effects');
 CREATE FUNCTION enqueue_event_side_effect() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
-    IF NEW.kind IN (0, 5, 10100, 30617, 40099)
+    IF NEW.kind IN (0, 5, 10100, 30617)
        OR NEW.kind BETWEEN 9000 AND 9022
        OR NEW.kind BETWEEN 41001 AND 41003 THEN
         INSERT INTO event_side_effects (community_id, event_id, kind)
