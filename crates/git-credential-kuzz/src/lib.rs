@@ -17,7 +17,8 @@
 //! file named by `git config kuzz.tokenfile`.
 //!
 //! The token is only ever released to the Kuzz relay host: the request's
-//! `host` must equal the host of `KUZZ_RELAY_URL` (or `git config kuzz.host`).
+//! `host` must equal the host of `KUZZ_SERVICE_URL`, else `KUZZ_RELAY_URL` (or
+//! `git config kuzz.host`).
 //! Any other host gets no answer, so git falls through to its next helper.
 //! The request's `protocol` must also be `https`; plain `http` is accepted
 //! only when `KUZZ_RELAY_URL` itself is a plain `ws://`/`http://` URL (a
@@ -196,9 +197,15 @@ pub fn run() -> i32 {
     if req.host.is_none() {
         return 0;
     }
-    let relay = std::env::var("KUZZ_RELAY_URL")
-        .ok()
-        .and_then(|url| RelayTarget::from_url(&url))
+    // Git talks to the service name (clone URLs use it); KUZZ_SERVICE_URL is
+    // set when the relay is reached through another address.
+    let relay = ["KUZZ_SERVICE_URL", "KUZZ_RELAY_URL"]
+        .into_iter()
+        .find_map(|var| {
+            std::env::var(var)
+                .ok()
+                .and_then(|url| RelayTarget::from_url(&url))
+        })
         .or_else(|| git_config("kuzz.host").and_then(|host| RelayTarget::from_host(&host)));
     let Some(relay) = relay else {
         // Not configured for a Kuzz relay: let git try the next helper.

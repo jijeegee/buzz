@@ -7103,6 +7103,14 @@ fn build_mcp_servers(config: &Config) -> Vec<McpServer> {
                 name: "KUZZ_RELAY_URL".into(),
                 value: config.relay_url.clone(),
             }];
+            // The MCP child starts from a cleared env: keep signing the
+            // service name when connected through another address.
+            if let Some(service_url) = kuzz_core::tenant::service_url_from_env() {
+                env.push(EnvVar {
+                    name: kuzz_core::tenant::SERVICE_URL_ENV.into(),
+                    value: service_url.into(),
+                });
+            }
             // Token mode adds no credential here: `AcpClient::session_new_full`
             // gives each MCP server the broker secret of the agent process
             // that spawns it, so the secret dies with that process.
