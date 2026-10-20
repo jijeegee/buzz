@@ -310,16 +310,20 @@ class UserProfileSheet extends HookConsumerWidget {
                           ),
                           const SizedBox(width: Grid.twelve),
                         ],
-                        Expanded(
-                          child: KuzzActionTile(
-                            icon: copied.value
-                                ? LucideIcons.check
-                                : LucideIcons.key,
-                            label: copied.value ? 'Copied' : 'Copy public key',
-                            isEnabled: npub != null,
-                            onTap: copyPublicKey,
+                        // Keys are not part of my own profile.
+                        if (pk != currentPubkey)
+                          Expanded(
+                            child: KuzzActionTile(
+                              icon: copied.value
+                                  ? LucideIcons.check
+                                  : LucideIcons.key,
+                              label: copied.value
+                                  ? 'Copied'
+                                  : 'Copy public key',
+                              isEnabled: npub != null,
+                              onTap: copyPublicKey,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                     if (pk != currentPubkey) ...[

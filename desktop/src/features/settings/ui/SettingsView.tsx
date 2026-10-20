@@ -53,21 +53,37 @@ type SettingsViewProps = SettingsPanelProps & {
 
 /**
  * Sections Kuzz does not offer: hosted communities are Block's Builderlab
- * service, and updates have no Kuzz release feed yet.
+ * service, updates have no Kuzz release feed yet, and compute, group
+ * templates, custom emoji, local archive and mobile pairing are upstream
+ * tools Kuzz users don't need.
  */
 export const FORK_HIDDEN_SETTINGS_SECTIONS: ReadonlySet<SettingsSection> =
-  new Set<SettingsSection>(["hosted-communities", "updates"]);
+  new Set<SettingsSection>([
+    "hosted-communities",
+    "updates",
+    "compute",
+    "channel-templates",
+    "custom-emoji",
+    "local-archive",
+    "mobile",
+  ]);
 
 export const settingsNavGroups: Array<{
   label: string;
   sections: SettingsSection[];
 }> = [
+  // Profile is how others see me; everything below is how my app works.
   {
-    label: "Personal",
+    label: "Me",
+    sections: ["profile"],
+  },
+  {
+    label: "Settings",
     sections: [
-      "profile",
-      "appearance",
+      "account",
       "notifications",
+      "appearance",
+      "privacy",
       "voice",
       "shortcuts",
       "custom-emoji",
@@ -85,9 +101,10 @@ export const settingsNavGroups: Array<{
       "models",
       "agents",
       "compute",
-      "experimental",
       "mobile",
       "updates",
+      // Last: switches for features still being refined.
+      "experimental",
     ],
   },
 ];

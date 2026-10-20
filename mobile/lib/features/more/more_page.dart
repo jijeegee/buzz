@@ -8,9 +8,10 @@ import '../profile/profile_avatar.dart';
 import '../profile/profile_provider.dart';
 
 /// The More tab's menu: a small popup above the tab bar, not a page of its
-/// own. It holds my profile and Settings; both open Settings.
+/// own: my profile on top, then Settings.
 Future<void> showMoreMenu(
   BuildContext context, {
+  required VoidCallback onOpenProfile,
   required VoidCallback onOpenSettings,
   required double bottomClearance,
 }) {
@@ -30,6 +31,10 @@ Future<void> showMoreMenu(
             bottom: bottomClearance + Grid.xs,
           ),
           child: _MoreMenu(
+            onOpenProfile: () {
+              Navigator.of(dialogContext).pop();
+              onOpenProfile();
+            },
             onOpenSettings: () {
               Navigator.of(dialogContext).pop();
               onOpenSettings();
@@ -50,8 +55,9 @@ Future<void> showMoreMenu(
 }
 
 class _MoreMenu extends ConsumerWidget {
-  const _MoreMenu({required this.onOpenSettings});
+  const _MoreMenu({required this.onOpenProfile, required this.onOpenSettings});
 
+  final VoidCallback onOpenProfile;
   final VoidCallback onOpenSettings;
 
   @override
@@ -72,7 +78,7 @@ class _MoreMenu extends ConsumerWidget {
           children: [
             InkWell(
               key: const ValueKey('more-profile'),
-              onTap: onOpenSettings,
+              onTap: onOpenProfile,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: Grid.sm,

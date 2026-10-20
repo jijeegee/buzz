@@ -14,7 +14,7 @@ class _CommunitySection extends ConsumerWidget {
     final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
 
     return AppListCard(
-      label: hasBuiltInServer ? null : 'Community',
+      label: hasBuiltInServer ? 'Appearance' : 'Community',
       verticalPadding: Grid.twelve,
       children: [
         if (canInvite)

@@ -1,36 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../shared/theme/grid.dart';
+import '../../shared/theme/theme.dart';
+import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
-import 'read_aloud_settings.dart';
+import '../../shared/widgets/frosted_app_bar.dart';
+import '../../shared/widgets/frosted_scaffold.dart';
 
 /// Builds the rows contributed by one experiment.
 typedef ExperimentRowsBuilder =
     List<Widget> Function(BuildContext context, WidgetRef ref);
 
 /// Mobile experiments, in display order. Add a builder here to surface a new
-/// experiment in Settings → Experiments.
-const List<ExperimentRowsBuilder> mobileExperiments = [readAloudExperimentRows];
+/// experiment under Settings → Experiments.
+const List<ExperimentRowsBuilder> mobileExperiments = [];
 
-/// Settings card for device-local experimental features.
+/// The Experiments row in Settings. Experiments are switched on their own
+/// screen, not on the Settings page; the row hides when there are none.
 class ExperimentsSettings extends ConsumerWidget {
   const ExperimentsSettings({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (mobileExperiments.isEmpty) return const SizedBox.shrink();
+    return AppListCard(
+      key: const ValueKey('settings-experiments'),
+      verticalPadding: Grid.twelve,
+      children: [
+        AppListRow(
+          key: const ValueKey('settings-experiments-row'),
+          icon: LucideIcons.flaskConical,
+          title: 'Experiments',
+          trailing: Icon(
+            LucideIcons.chevronRight,
+            size: 18,
+            color: context.colors.onSurfaceVariant,
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const ExperimentsPage()),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Settings → Experiments: features that are still being refined.
+class ExperimentsPage extends ConsumerWidget {
+  const ExperimentsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rows = [
       for (final experiment in mobileExperiments) ...experiment(context, ref),
     ];
-    if (rows.isEmpty) return const SizedBox.shrink();
-    return AppListCard(
-      key: const ValueKey('settings-experiments'),
-      label: 'Experiments',
-      description:
-          'Features that are still being refined. They may change or be '
-          'removed.',
-      verticalPadding: Grid.twelve,
-      children: rows,
+    return FrostedScaffold(
+      useUtilitySurfaceTheme: true,
+      appBar: const FrostedAppBar(title: Text('Experiments')),
+      body: ListView(
+        padding: EdgeInsets.only(
+          top: frostedAppBarHeight(context),
+          bottom: Grid.xs,
+        ),
+        children: [
+          AppListCard(
+            key: const ValueKey('experiments-list'),
+            description:
+                'Features that are still being refined. They may change or be '
+                'removed.',
+            verticalPadding: Grid.twelve,
+            children: rows,
+          ),
+        ],
+      ),
     );
   }
 }

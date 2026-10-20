@@ -37,7 +37,7 @@ interface ProfilePopoverProps {
   onSetStatus: (status: PresenceStatus) => void;
   onSetUserStatus: (status: UserStatusInput) => void;
   onClearUserStatus: () => void;
-  onOpenSettings: (section?: "profile" | "appearance") => void;
+  onOpenSettings: (section?: "profile" | "account" | "appearance") => void;
   onSendFeedback?: () => void;
   children: React.ReactNode;
   // Optional outer container whose clicks should NOT close the popover.
@@ -313,14 +313,30 @@ export function ProfilePopover({
               </button>
             ) : null}
 
-            {/* ── Settings ───────────────────────────────────────── */}
+            {/* ── Profile: how others see me ─────────────────────── */}
+            <button
+              className={MENU_ITEM_CLASS}
+              data-testid="profile-popover-profile"
+              onClick={() => {
+                closePopover();
+                window.requestAnimationFrame(() => {
+                  onOpenSettings("profile");
+                });
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <span className="flex-1">Profile</span>
+            </button>
+
+            {/* ── Settings: how my app works ─────────────────────── */}
             <button
               className={MENU_ITEM_CLASS}
               data-testid="profile-popover-settings"
               onClick={() => {
                 closePopover();
                 window.requestAnimationFrame(() => {
-                  onOpenSettings();
+                  onOpenSettings("account");
                 });
               }}
               role="menuitem"

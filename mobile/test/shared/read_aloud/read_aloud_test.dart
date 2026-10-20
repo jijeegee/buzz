@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:kuzz/features/channels/chat_bubble_row.dart';
-import 'package:kuzz/features/settings/experiments_settings.dart';
+import 'package:kuzz/features/settings/messages_settings.dart';
 import 'package:kuzz/shared/community/community_provider.dart';
 import 'package:kuzz/shared/read_aloud/speech_audio_gate.dart';
 import 'package:kuzz/shared/read_aloud/read_aloud_controller.dart';
@@ -261,7 +261,7 @@ void main() {
             home: Scaffold(
               body: Column(
                 children: [
-                  const ExperimentsSettings(),
+                  const MessagesSettings(),
                   ReadAloudMessage(
                     messageId: 'one',
                     content: '하나 둘',
@@ -365,7 +365,9 @@ void main() {
     },
   );
 
-  testWidgets('read-aloud body keeps a short own bubble narrow', (tester) async {
+  testWidgets('read-aloud body keeps a short own bubble narrow', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
