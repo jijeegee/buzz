@@ -1,5 +1,15 @@
 //! Which server the backend talks to: the build-time server address and the
 //! rule that refuses every other relay.
+//!
+//! The server may give an account another address of itself to connect to
+//! (`connect_url` from `/auth/me`: the account's home region). Only an
+//! address the built-in server gave is accepted besides its own, and the
+//! service address stays what everything is signed with and keyed by.
+
+use std::collections::HashMap;
+use std::sync::{PoisonError, RwLock};
+
+use nostr::PublicKey;
 
 use super::{configured_env_var, relay_http_base_url};
 
@@ -165,6 +175,80 @@ pub fn ensure_relay_allowed(context: &str, relay_url: &str) -> Result<(), String
     })
 }
 
+/// Pure check of a `connect_url` the built-in server gave: a WebSocket URL
+/// over the same kind of scheme as the chosen server (so prod only takes
+/// `wss`). `None` when it is unusable or just the chosen server again.
+pub fn accept_connect_url(
+    env: KuzzEnv,
+    built_in: &RelayEndpoints,
+    overrides: &RelayOverrides,
+    connect_url: &str,
+) -> Option<String> {
+    let connect_url = connect_url.trim();
+    let scheme = connect_url.split_once("://")?.0.to_ascii_lowercase();
+    if scheme != "wss" && scheme != "ws" {
+        return None;
+    }
+    let (chosen, _) = choose_relay_urls(env, built_in, overrides);
+    let (given, chosen) = (relay_endpoint(connect_url)?, relay_endpoint(&chosen)?);
+    (given.secure == chosen.secure && given != chosen).then(|| connect_url.to_string())
+}
+
+/// Addresses the built-in server gave each account (keyed by principal),
+/// learned from `/auth/me` in this run.
+static SERVER_GIVEN: RwLock<Option<HashMap<PublicKey, String>>> = RwLock::new(None);
+
+/// Record the `connect_url` `/auth/me` returned for `account`. A missing or
+/// unusable one (or the built-in server again) forgets the account's.
+pub fn learn_connect_url(account: PublicKey, connect_url: Option<&str>) {
+    let accepted = connect_url.and_then(|url| {
+        accept_connect_url(kuzz_env(), &relay_endpoints(), &relay_overrides(), url)
+    });
+    let mut given = SERVER_GIVEN.write().unwrap_or_else(PoisonError::into_inner);
+    let given = given.get_or_insert_with(HashMap::new);
+    match accepted {
+        Some(url) => {
+            given.insert(account, url);
+        }
+        None => {
+            given.remove(&account);
+        }
+    }
+}
+
+/// Where `account` connects its relay WebSocket: the address the server gave
+/// it, else the built-in server.
+pub fn connect_ws_url(account: Option<&PublicKey>) -> Option<String> {
+    let given = SERVER_GIVEN.read().unwrap_or_else(PoisonError::into_inner);
+    account.and_then(|account| given.as_ref()?.get(account).cloned())
+}
+
+fn server_gave(relay_url: &str) -> bool {
+    let Some(wanted) = relay_endpoint(relay_url) else {
+        return false;
+    };
+    let given = SERVER_GIVEN.read().unwrap_or_else(PoisonError::into_inner);
+    given
+        .iter()
+        .flat_map(|given| given.values())
+        .any(|url| relay_endpoint(url).as_ref() == Some(&wanted))
+}
+
+/// [`ensure_relay_allowed`] for a relay WebSocket connect, which may also
+/// reach an address the built-in server gave an account. Everything else
+/// (signing, sessions, workspaces, agents) stays on the built-in server.
+pub fn ensure_connect_allowed(context: &str, relay_url: &str) -> Result<(), String> {
+    if server_gave(relay_url) {
+        return Ok(());
+    }
+    ensure_relay_allowed(context, relay_url)
+}
+
+/// Whether two relay URLs name the same endpoint (scheme kind, host, port).
+pub fn same_endpoint(a: &str, b: &str) -> bool {
+    matches!((relay_endpoint(a), relay_endpoint(b)), (Some(a), Some(b)) if a == b)
+}
+
 /// The built-in server's WebSocket URL for this build.
 pub fn relay_ws_url() -> String {
     choose_relay_urls(kuzz_env(), &relay_endpoints(), &relay_overrides()).0
@@ -194,8 +278,8 @@ pub(crate) fn refusal_test_app() -> tauri::App<tauri::test::MockRuntime> {
 #[cfg(test)]
 mod tests {
     use super::{
-        built_in_endpoints, check_relay_allowed, choose_relay_urls, parse_kuzz_env,
-        relay_endpoints, KuzzEnv, RelayEndpoints, RelayOverrides, UNSET_RELAY_WS,
+        accept_connect_url, built_in_endpoints, check_relay_allowed, choose_relay_urls,
+        parse_kuzz_env, relay_endpoints, KuzzEnv, RelayEndpoints, RelayOverrides, UNSET_RELAY_WS,
     };
 
     fn overrides(ws: Option<&str>, http: Option<&str>) -> RelayOverrides {
@@ -288,6 +372,55 @@ mod tests {
             .1,
             "https://api.dev.example"
         );
+    }
+
+    #[test]
+    fn a_server_given_address_must_be_another_websocket_of_the_same_kind() {
+        let none = overrides(None, None);
+        let accept =
+            |env, overrides: &RelayOverrides, url| accept_connect_url(env, &ours(), overrides, url);
+        assert_eq!(
+            accept(KuzzEnv::Prod, &none, " wss://jp.kuzz.example "),
+            Some("wss://jp.kuzz.example".to_string())
+        );
+        // The built-in server again is nothing to follow.
+        assert_eq!(
+            accept(KuzzEnv::Prod, &none, "wss://kuzz.example:8443/"),
+            None
+        );
+        assert_eq!(accept(KuzzEnv::Prod, &none, "ws://jp.kuzz.example"), None);
+        assert_eq!(
+            accept(KuzzEnv::Prod, &none, "https://jp.kuzz.example"),
+            None
+        );
+        assert_eq!(accept(KuzzEnv::Prod, &none, "jp.kuzz.example"), None);
+        assert_eq!(accept(KuzzEnv::Prod, &none, ""), None);
+        // A dev build pointed at a local relay follows that relay's
+        // unencrypted addresses only.
+        let local = overrides(Some("ws://localhost:3000"), None);
+        assert_eq!(
+            accept(KuzzEnv::Dev, &local, "ws://localhost:3001"),
+            Some("ws://localhost:3001".to_string())
+        );
+        assert_eq!(accept(KuzzEnv::Dev, &local, "wss://jp.kuzz.example"), None);
+    }
+
+    #[test]
+    fn only_the_websocket_connect_follows_a_learned_address() {
+        let account = nostr::Keys::generate().public_key();
+        let region = "wss://jp.learned-region.example";
+        super::learn_connect_url(account, Some(region));
+        assert_eq!(
+            super::connect_ws_url(Some(&account)),
+            Some(region.to_string())
+        );
+        assert!(super::ensure_connect_allowed("test", region).is_ok());
+        assert!(super::ensure_connect_allowed("test", "ws://jp.learned-region.example").is_err());
+        assert!(super::ensure_relay_allowed("test", region).is_err());
+        // An answer without one forgets it.
+        super::learn_connect_url(account, None);
+        assert_eq!(super::connect_ws_url(Some(&account)), None);
+        assert!(super::ensure_connect_allowed("test", region).is_err());
     }
 
     #[test]

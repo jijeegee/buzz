@@ -147,6 +147,20 @@ pub(crate) struct MeInfo {
     /// without the setting omit it; their accounts are findable.
     #[serde(default)]
     pub discoverable: Option<bool>,
+    /// Where this account connects: its home region's address. Relays
+    /// before regions omit it.
+    #[serde(default)]
+    pub connect_url: Option<String>,
+}
+
+impl MeInfo {
+    /// Remember where the server says this account connects (see
+    /// [`crate::relay::server::learn_connect_url`]).
+    pub(crate) fn learn_connect_url(&self) {
+        if let Ok(principal) = nostr::PublicKey::from_hex(&self.principal_id) {
+            crate::relay::server::learn_connect_url(principal, self.connect_url.as_deref());
+        }
+    }
 }
 
 /// One person from `GET /auth/people/lookup` or `/auth/people/shared`.

@@ -355,6 +355,15 @@ export function getRelayWsUrl(): Promise<string> {
   return invokeTauri<string>("get_relay_ws_url");
 }
 
+/**
+ * Where the active account's relay WebSocket connects: the address the
+ * server gave it (its home region), else {@link getRelayWsUrl}. AUTH is still
+ * signed for {@link getRelayWsUrl}.
+ */
+export function getRelayConnectUrl(): Promise<string> {
+  return invokeTauri<string>("get_relay_connect_url");
+}
+
 export function getRelayHttpUrl(): Promise<string> {
   return invokeTauri<string>("get_relay_http_url");
 }

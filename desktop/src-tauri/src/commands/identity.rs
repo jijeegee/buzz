@@ -153,6 +153,20 @@ pub fn get_relay_ws_url(state: State<'_, AppState>) -> String {
     relay_ws_url_with_override(&state)
 }
 
+/// Where the active account's relay WebSocket connects: the address the
+/// server gave it (its home region), else [`get_relay_ws_url`]. AUTH is still
+/// signed for [`get_relay_ws_url`].
+#[tauri::command]
+pub fn get_relay_connect_url(state: State<'_, AppState>) -> String {
+    let service = relay_ws_url_with_override(&state);
+    // A workspace pointed at another relay (dev) keeps that relay.
+    if !crate::relay::server::same_endpoint(&service, &crate::relay::relay_ws_url()) {
+        return service;
+    }
+    let account = state.current_identity_pubkey().ok();
+    crate::relay::server::connect_ws_url(account.as_ref()).unwrap_or(service)
+}
+
 #[tauri::command]
 pub fn get_relay_http_url(state: State<'_, AppState>) -> String {
     relay_api_base_url_with_override(&state)

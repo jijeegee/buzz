@@ -186,6 +186,7 @@ pub(crate) async fn refresh_once(
             }
             let principal = PublicKey::from_hex(&me.principal_id)
                 .map_err(|_| RefreshFailure::Terminal("invalid_principal".into()))?;
+            me.learn_connect_url();
             (principal, me.device_id)
         }
     };

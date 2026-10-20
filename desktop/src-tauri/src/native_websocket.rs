@@ -186,8 +186,9 @@ async fn connect(
     _config: Option<serde_json::Value>,
 ) -> Result<Id, String> {
     // Every webview socket (the main relay session and read-only account
-    // watchers) opens here: only the built-in server may be reached.
-    crate::relay::ensure_relay_allowed("websocket connect", &url)?;
+    // watchers) opens here: only the built-in server, or an address of it
+    // that it gave an account, may be reached.
+    crate::relay::server::ensure_connect_allowed("websocket connect", &url)?;
     open_connection(manager.inner(), &url, on_message).await
 }
 
