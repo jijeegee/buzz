@@ -765,6 +765,7 @@ function RuntimeRow({
           <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : (
           <ProfileAvatar
+            mediaVariant="small"
             avatarUrl={avatarUrl ?? null}
             className="h-5 w-5 shrink-0 text-3xs bg-muted text-muted-foreground ring-1 ring-border/50"
             label={label}

@@ -2,6 +2,10 @@ import * as React from "react";
 import { Lock, MessagesSquare, Users } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
+import {
+  type RelayMediaVariant,
+  useRelayMediaFallback,
+} from "@/shared/lib/relayMediaVariants";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 
 export function conversationHue(channelId: string) {
@@ -22,18 +26,21 @@ function conversationColor(key: string) {
 
 /**
  * The group photo drawn over the letter circle. Relay media goes through the
- * same authenticated proxy as profile avatars. When the image fails to load
- * it removes itself, so the letter underneath shows again.
+ * same authenticated proxy as profile avatars, starting from the relay's
+ * downsized variant for `variant` and falling back to the original. When
+ * nothing loads it removes itself, so the letter underneath shows again.
  */
 function GroupPictureImage({
   picture,
   testId,
+  variant,
 }: {
   picture?: string | null;
   testId?: string;
+  variant: RelayMediaVariant;
 }) {
-  const trimmed = picture?.trim() ?? "";
-  const src = trimmed ? rewriteRelayUrl(trimmed) : null;
+  const media = useRelayMediaFallback(picture, variant);
+  const src = media.src ? rewriteRelayUrl(media.src) : null;
   const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
   if (!src || failedSrc === src) return null;
   return (
@@ -42,7 +49,9 @@ function GroupPictureImage({
       className="absolute inset-0 size-full rounded-full object-cover"
       data-testid={testId}
       draggable={false}
-      onError={() => setFailedSrc(src)}
+      onError={() => {
+        if (!media.onError()) setFailedSrc(src);
+      }}
       referrerPolicy="no-referrer"
       src={src}
     />
@@ -90,7 +99,7 @@ export function ConversationLetterAvatar({
           style={{ backgroundColor: background }}
         >
           {initial || "?"}
-          <GroupPictureImage picture={picture} />
+          <GroupPictureImage picture={picture} variant="small" />
         </span>
         <span
           className="absolute right-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-background"
@@ -111,7 +120,11 @@ export function ConversationLetterAvatar({
       style={{ backgroundColor: background }}
     >
       {initial || "?"}
-      <GroupPictureImage picture={picture} testId={`${testId}-image`} />
+      <GroupPictureImage
+        picture={picture}
+        testId={`${testId}-image`}
+        variant="small"
+      />
       {isThread ? (
         <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border">
           <MessagesSquare className="h-2.5 w-2.5" />
@@ -206,6 +219,8 @@ export function GroupLetterAvatar({
       <GroupPictureImage
         picture={picture}
         testId={testId ? `${testId}-image` : undefined}
+        // Only the 80px size is drawn above 56 CSS px.
+        variant={size === "xl" ? "thumb" : "small"}
       />
       {isPrivate ? (
         <span

@@ -6,6 +6,10 @@ import { avatarSourceUrlForShape } from "@/features/profile/ui/ProfileAvatarEdit
 import { parseAnimatedAvatarUrl } from "@/shared/lib/animatedAvatar";
 import { cn } from "@/shared/lib/cn";
 import { getInitials } from "@/shared/lib/initials";
+import {
+  type RelayMediaVariant,
+  useRelayMediaFallback,
+} from "@/shared/lib/relayMediaVariants";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 import { Spinner } from "@/shared/ui/spinner";
@@ -52,6 +56,12 @@ type ProfileAvatarProps = {
    * blocked.
    */
   untrusted?: boolean;
+  /**
+   * Relay image variant to load first: `small` (160px) for avatars drawn at
+   * 56 CSS px or less, `thumb` (320px) for larger ones. Either falls back to
+   * the original when the variant is missing.
+   */
+  mediaVariant?: RelayMediaVariant;
 };
 
 export function ProfileAvatar({
@@ -66,6 +76,7 @@ export function ProfileAvatar({
   shape = "circle",
   testId,
   untrusted = false,
+  mediaVariant = "thumb",
 }: ProfileAvatarProps) {
   const initials = getInitials(initialsLabel ?? label);
   const presentation = useAvatarPresentation(avatarUrl);
@@ -81,6 +92,13 @@ export function ProfileAvatar({
       ? animated.animationUrl
       : animated.posterUrl
     : shapedAvatarUrl;
+  // Still relay images load a downsized relay variant first and fall back to
+  // the original if it is missing. Animated avatars keep their PNG frames
+  // (the variants are opaque JPEGs), and untrusted URLs never load at all.
+  const still = useRelayMediaFallback(
+    animated || untrusted ? null : shapedAvatarUrl,
+    mediaVariant,
+  );
 
   // Compute the live (proxied) source. Failures are tracked per resolved URL so
   // the poster and hover animation can recover independently. Under `untrusted`
@@ -95,7 +113,7 @@ export function ProfileAvatar({
       ? isInlineDataUrl(baseUrl)
         ? baseUrl
         : null
-      : rewriteRelayUrl(baseUrl);
+      : rewriteRelayUrl(animated ? baseUrl : (still.src ?? baseUrl));
   const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
   const liveFailed = liveSrc !== null && failedSrc === liveSrc;
 
@@ -130,7 +148,9 @@ export function ProfileAvatar({
           )}
           data-testid={testId ? `${testId}-image` : undefined}
           onLoadingStatusChange={(status) => {
-            if (status === "error") setFailedSrc(liveSrc);
+            if (status === "error" && !(src === liveSrc && still.onError())) {
+              setFailedSrc(liveSrc);
+            }
             if (status === "loaded" && src === liveSrc) {
               setFailedSrc(null);
             }

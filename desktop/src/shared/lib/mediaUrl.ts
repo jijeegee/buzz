@@ -20,9 +20,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { isServiceAddress } from "@/shared/lib/serviceAddress";
 
 // Matches: https://anything.com/media/{64-hex}.{ext}
-// Also matches thumbnails: /media/{64-hex}.thumb.jpg
+// Also matches downsized variants: /media/{64-hex}.thumb.jpg, .small.jpg
 const RELAY_MEDIA_RE =
-  /^(?:https?:\/\/[^/]+)\/media\/([\da-f]{64}(?:\.thumb)?\.(?:jpg|png|gif|webp|mp4|webm|mov)(?:\?.*)?)$/;
+  /^(?:https?:\/\/[^/]+)\/media\/([\da-f]{64}(?:\.(?:thumb|small))?\.(?:jpg|png|gif|webp|mp4|webm|mov)(?:\?.*)?)$/;
 
 /** Cached proxy port — fetched once from the Tauri backend. */
 let cachedPort: number | null = null;

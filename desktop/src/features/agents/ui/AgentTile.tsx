@@ -71,6 +71,7 @@ export function AgentTile({
       />
       <div className="pointer-events-none relative flex min-w-0 items-start gap-2.5">
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={avatarUrl?.trim() || null}
           className="h-9 w-9 shrink-0 text-xs shadow-none"
           iconClassName="h-4 w-4"
