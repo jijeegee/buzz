@@ -1,6 +1,5 @@
 import 'package:kuzz/features/home/home_page.dart';
 import 'package:kuzz/features/channels/channels_page.dart';
-import 'package:kuzz/features/profile/profile_avatar.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,11 +33,8 @@ void main() {
     );
   }
 
-  Future<void> openSettingsFromMore(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('More'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ProfileAvatar), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('more-profile')));
+  Future<void> openProfileFromTab(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Profile'));
   }
 
   testWidgets('shows icon-only navigation and an aligned quick action', (
@@ -47,7 +43,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    for (final label in ['People', 'Agents', 'More']) {
+    for (final label in ['People', 'Agents', 'Profile', 'Settings']) {
       expect(find.text(label), findsNothing);
       expect(find.bySemanticsLabel(label), findsOneWidget);
     }
@@ -125,7 +121,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pumpAndSettle();
 
-    await openSettingsFromMore(tester);
+    await openProfileFromTab(tester);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 95));
 
@@ -165,7 +161,7 @@ void main() {
         .transform
         .storage[0];
 
-    await openSettingsFromMore(tester);
+    await openProfileFromTab(tester);
     await tester.pump();
 
     final settingsTransition = find.byKey(
@@ -274,24 +270,26 @@ void main() {
     expect(find.byKey(const ValueKey('activity-tab-unread-dot')), findsNothing);
   });
 
-  testWidgets('opens More as a small menu with profile and Settings only', (
+  testWidgets('puts Profile and Settings on the tab bar, without More', (
     tester,
   ) async {
     await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    await tester.tap(find.byTooltip('More'));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey('more-menu')), findsOneWidget);
-    expect(find.byKey(const ValueKey('more-settings')), findsOneWidget);
+    expect(find.byTooltip('More'), findsNothing);
     for (final hidden in ['Groups', 'Search', 'Pulse']) {
-      expect(find.text(hidden), findsNothing);
+      expect(find.bySemanticsLabel(hidden), findsNothing);
     }
 
-    await tester.tapAt(const Offset(10, 10));
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('more-menu')), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey('settings-transition-opacity'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('fades and slides tab content in the selected direction', (

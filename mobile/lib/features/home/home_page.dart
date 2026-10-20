@@ -15,7 +15,6 @@ import '../channels/channels_page.dart';
 import '../chats/chat_state_writer.dart';
 import '../chats/chats_page.dart';
 import '../groups/group_invitations.dart';
-import '../more/more_page.dart';
 import '../people/people_page.dart';
 
 class HomePage extends HookConsumerWidget {
@@ -53,8 +52,9 @@ class HomePage extends HookConsumerWidget {
   static const double _tabContentTransitionDistance = 24;
 
   static const _chatsTab = 0;
-  // More opens a small menu instead of a page of its own.
-  static const _moreTab = 3;
+  // Profile and Settings open their own screens instead of a tab page.
+  static const _profileTab = 3;
+  static const _settingsTab = 4;
 
   static const _destinations = [
     _HomeDestination(
@@ -73,9 +73,14 @@ class HomePage extends HookConsumerWidget {
       label: 'Agents',
     ),
     _HomeDestination(
-      icon: LucideIcons.ellipsis300,
-      selectedIcon: LucideIcons.ellipsis500,
-      label: 'More',
+      icon: LucideIcons.circleUserRound300,
+      selectedIcon: LucideIcons.circleUserRound500,
+      label: 'Profile',
+    ),
+    _HomeDestination(
+      icon: LucideIcons.settings300,
+      selectedIcon: LucideIcons.settings500,
+      label: 'Settings',
     ),
   ];
 
@@ -114,6 +119,7 @@ class HomePage extends HookConsumerWidget {
       ChatsPage(tabReselection: reselections[0]),
       lazy(1, () => const PeoplePage()),
       lazy(2, () => AgentsPage(tabReselection: reselections[2])),
+      const SizedBox.shrink(),
       const SizedBox.shrink(),
     ];
 
@@ -213,18 +219,14 @@ class HomePage extends HookConsumerWidget {
               selectedIndex: tabIndex.value,
               unreadTabs: {if (hasUnreadChats) _chatsTab},
               onDestinationSelected: (i) {
-                if (i == _moreTab) {
-                  unawaited(
-                    showMoreMenu(
-                      context,
-                      onOpenProfile: () => openSettingsRoute(
-                        profilePageBuilder ?? settingsPageBuilder,
-                      ),
-                      onOpenSettings: () =>
-                          openSettingsRoute(settingsPageBuilder),
-                      bottomClearance: HomePage._fabClearance,
-                    ),
-                  );
+                if (i == _profileTab) {
+                  unawaited(HapticFeedback.selectionClick());
+                  openSettingsRoute(profilePageBuilder ?? settingsPageBuilder);
+                  return;
+                }
+                if (i == _settingsTab) {
+                  unawaited(HapticFeedback.selectionClick());
+                  openSettingsRoute(settingsPageBuilder);
                   return;
                 }
                 if (i == tabIndex.value) {
