@@ -37,6 +37,8 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Room history cut (`since_join`) lookups.
+pub mod history;
 /// Centralized identity: principals, devices, sessions, bots, access tokens.
 pub mod identity;
 /// One-statement inbox summary of member rooms and active threads.

@@ -295,10 +295,10 @@ async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
     let db = Db::from_pool(f.pool.clone());
     let root = f.send("root").await;
     let early = f.reply(&root, 9, "early reply").await;
-    let early_reaction = f.reply(&root, 7, "+").await;
+    let early_reaction = f.reply(&root, 7, "early +").await;
     f.join().await;
     let late = f.reply(&root, 9, "late reply").await;
-    let late_reaction = f.reply(&root, 7, "+").await;
+    let late_reaction = f.reply(&root, 7, "late +").await;
     let member = f.member.public_key().to_bytes();
     let reader = Some(member.as_slice());
     let root_bytes = nostr::EventId::from_hex(&root).unwrap().to_bytes();
@@ -362,4 +362,47 @@ async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
         .unwrap();
     assert_eq!(page.events.len(), 2);
     let _ = early_reaction;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn summaries_and_id_lookups_treat_pre_join_events_as_absent() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let root = f.send("root").await;
+    let early = f.reply(&root, 9, "early reply").await;
+    f.join().await;
+    let late = f.reply(&root, 9, "late reply").await;
+    let member = f.member.public_key().to_bytes();
+    let owner = f.owner.public_key().to_bytes();
+    let bytes = |hex_id: &str| nostr::EventId::from_hex(hex_id).unwrap().to_bytes().to_vec();
+
+    assert!(db.channel_history_floor(f.scope, f.channel, &member).await.unwrap() > 0);
+    assert_eq!(db.channel_history_floor(f.scope, f.channel, &owner).await.unwrap(), 0);
+
+    let ids = [bytes(&root), bytes(&early), bytes(&late)];
+    let mut hidden = db.history_hidden_event_ids(f.scope, &member, &ids).await.unwrap();
+    hidden.sort();
+    let mut expected = vec![bytes(&root), bytes(&early)];
+    expected.sort();
+    assert_eq!(hidden, expected);
+    assert!(db.history_hidden_event_ids(f.scope, &owner, &ids).await.unwrap().is_empty());
+
+    // Stored counters (2 replies) minus the pre-join one; the author still
+    // has a visible reply, so stays a participant.
+    let cut = db
+        .blocked_thread_replies(f.scope, &member, &[bytes(&root)], false)
+        .await
+        .unwrap();
+    assert_eq!(cut.len(), 1);
+    assert_eq!((cut[0].direct, cut[0].descendants), (1, 1));
+    assert!(cut[0].hidden_authors.is_empty());
+    assert!(cut[0].last_other_reply_at.is_some());
+    assert!(db
+        .blocked_thread_replies(f.scope, &owner, &[bytes(&root)], false)
+        .await
+        .unwrap()
+        .is_empty());
 }

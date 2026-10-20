@@ -316,11 +316,12 @@ impl AppState {
         Ok(())
     }
 
-    /// Thread summaries of one channel as `reader` sees them: in a 1:1 DM,
-    /// replies hidden from `reader` by block periods (and authors left with
-    /// only such replies) are taken out, so a summary never promises replies
-    /// the thread view hides. `summaries` pairs each summarized event id with
-    /// its summary.
+    /// Thread summaries of one channel as `reader` sees them: replies from
+    /// before `reader` joined a `since_join` room and, in a 1:1 DM, replies
+    /// hidden from `reader` by block periods (and authors left with only such
+    /// replies) are taken out, so a summary never promises replies the thread
+    /// view hides. `summaries` pairs each summarized event id with its
+    /// summary.
     pub async fn hide_blocked_in_thread_summaries(
         &self,
         community: CommunityId,
@@ -332,18 +333,23 @@ impl AppState {
             return Ok(());
         }
         let ever = self.ever_blocked_by_cached(community, reader).await?;
-        if ever.is_empty()
-            || !self
+        let apply_blocks = !ever.is_empty()
+            && self
                 .one_to_one_dms_cached(community, [channel])
                 .await?
-                .contains(&channel)
-        {
+                .contains(&channel);
+        let history_cut = self
+            .db
+            .channel_history_floor(community, channel, reader)
+            .await?
+            > 0;
+        if !apply_blocks && !history_cut {
             return Ok(());
         }
         let targets: Vec<Vec<u8>> = summaries.iter().map(|(id, _)| id.clone()).collect();
         let hidden = self
             .db
-            .blocked_thread_replies(community, reader, &targets)
+            .blocked_thread_replies(community, reader, &targets, apply_blocks)
             .await?;
         for (id, summary) in summaries {
             if let Some(hidden_here) = hidden.iter().find(|h| h.target == id) {

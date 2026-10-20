@@ -1367,15 +1367,17 @@ impl Db {
     }
 
     /// What the stored thread counters of `targets` hold that `reader` may not
-    /// see: replies the server received from someone while `reader` blocked
-    /// them (block periods). Callers ask only for 1:1 DM threads. Only targets
-    /// with at least one such reply are returned.
+    /// see: replies written before `reader` joined a `since_join` room and,
+    /// with `apply_blocks`, replies the server received from someone while
+    /// `reader` blocked them (block periods; callers set it only for 1:1 DM
+    /// threads). Only targets with at least one such reply are returned.
     #[datastore_span(name = "blocked_thread_replies", system = "postgresql")]
     pub async fn blocked_thread_replies(
         &self,
         community_id: CommunityId,
         reader: &[u8],
         targets: &[Vec<u8>],
+        apply_blocks: bool,
     ) -> Result<Vec<BlockedThreadReplies>> {
         if targets.is_empty() {
             return Ok(Vec::new());
@@ -1391,9 +1393,10 @@ impl Db {
             r#"
             WITH x AS (
                 SELECT t.target, tm.parent_event_id, tm.root_event_id, e.received_at,
-                    e.pubkey, e.deleted_at IS NULL AS live, "#,
+                    e.pubkey, e.deleted_at IS NULL AS live, (($6 AND "#,
             crate::blocks::hidden_by_block_period!("$1", "$3", "e"),
-            r#" AS hidden,
+            r#") OR channel_event_before_join(e.community_id, e.channel_id,
+                        e.channel_sequence, $3)) AS hidden,
                     e.deleted_at IS NULL AND NOT EXISTS (
                         SELECT 1 FROM jsonb_array_elements(e.tags) mt
                         WHERE mt->>0 IN ($4, $5) AND COALESCE(mt->>1, '') <> ''
@@ -1425,6 +1428,7 @@ impl Db {
         .bind(reader)
         .bind(crate::chat_state::THREAD_CLOSED_TAG)
         .bind(crate::chat_state::THREAD_REOPENED_TAG)
+        .bind(apply_blocks)
         .fetch_all(&mut *connection)
         .await?;
         rows.into_iter()
