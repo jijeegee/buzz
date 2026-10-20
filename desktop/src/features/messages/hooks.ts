@@ -392,6 +392,12 @@ export function useChannelSubscription(channel: Channel | null) {
             queryKey: ["channels"],
             exact: true,
           });
+        } else if (payload.type === "picture_changed") {
+          // Group photo changed: refresh the list so every avatar updates.
+          void queryClient.invalidateQueries({
+            queryKey: ["channels"],
+            exact: true,
+          });
         }
       } catch {
         // Non-JSON system message — ignore.

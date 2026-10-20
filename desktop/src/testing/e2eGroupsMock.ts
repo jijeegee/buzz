@@ -15,6 +15,8 @@ export type MockGroupSeed = {
   isMember?: boolean;
   visibility?: "open" | "private";
   invitePolicy?: "members" | "admins";
+  /** Group photo URL; null = none. */
+  picture?: string | null;
 };
 
 export type MockGroupInvitationSeed = {
@@ -65,6 +67,7 @@ function fromSeed(seed: MockGroupSeed): Required<MockGroupSeed> {
     isMember: seed.isMember ?? false,
     visibility: seed.visibility ?? "open",
     invitePolicy: seed.invitePolicy ?? "members",
+    picture: seed.picture ?? null,
   };
 }
 
@@ -141,6 +144,7 @@ export function mockGroupSeedFromChannel(channel: {
   member_count: number;
   is_member: boolean;
   archived_at: string | null;
+  picture?: string | null;
 }): MockGroupSeed | null {
   if (channel.channel_type === "dm" || channel.archived_at) return null;
   return {
@@ -151,6 +155,7 @@ export function mockGroupSeedFromChannel(channel: {
     memberCount: channel.member_count,
     isMember: channel.is_member,
     visibility: channel.visibility,
+    picture: channel.picture ?? null,
   };
 }
 
@@ -186,6 +191,7 @@ export function handleMockGroupsRequest(
               channelType: group.channelType,
               memberCount: group.memberCount,
               visibility: group.visibility,
+              picture: group.picture,
             },
             inviter: invitation.inviter,
             createdAt: invitation.createdAt ?? new Date().toISOString(),

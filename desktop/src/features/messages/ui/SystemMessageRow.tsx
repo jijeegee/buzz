@@ -609,6 +609,13 @@ function describeSystemEvent(
       if (!action) return null;
       return { title: actorName, action };
     }
+    case "picture_changed":
+      return {
+        title: actorName,
+        action: payload.picture?.trim()
+          ? "changed the group photo"
+          : "removed the group photo",
+      };
     case "channel_created":
       return {
         title: actorName,

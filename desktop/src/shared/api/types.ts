@@ -23,6 +23,8 @@ export type Channel = {
    * when disabled, so an absent tag (and old relays) means enabled.
    */
   goalsEnabled: boolean;
+  /** Group photo URL from kind:39000 `["picture", url]`; null/absent = none. */
+  picture?: string | null;
 };
 export type ChannelDetail = Channel & {
   createdBy: string;
@@ -61,6 +63,8 @@ export type UpdateChannelInput = {
   ttlSeconds?: number | null;
   /** Omit to leave unchanged; emits `["goals", "on" | "off"]` when set. */
   goalsEnabled?: boolean;
+  /** Group photo URL; absent = unchanged, "" = remove. */
+  picture?: string;
 };
 
 export type SetChannelTopicInput = {

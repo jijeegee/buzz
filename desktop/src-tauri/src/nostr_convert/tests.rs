@@ -139,6 +139,42 @@ fn channel_info_merges_summary() {
 }
 
 #[test]
+fn channel_picture_parsed_from_picture_tag() {
+    let url = "https://relay.example/media/abc.png";
+    let e = ev(
+        39000,
+        "",
+        vec![vec!["d", "u"], vec!["name", "n"], vec!["picture", url]],
+    );
+    assert_eq!(
+        channel_info_from_event(&e, None, None)
+            .unwrap()
+            .picture
+            .as_deref(),
+        Some(url)
+    );
+    assert_eq!(
+        channel_detail_from_event(&e).unwrap().picture.as_deref(),
+        Some(url)
+    );
+}
+
+#[test]
+fn channel_picture_none_when_absent_or_empty() {
+    let absent = ev(39000, "", vec![vec!["d", "u"], vec!["name", "n"]]);
+    assert!(channel_info_from_event(&absent, None, None)
+        .unwrap()
+        .picture
+        .is_none());
+    let empty = ev(
+        39000,
+        "",
+        vec![vec!["d", "u"], vec!["name", "n"], vec!["picture", ""]],
+    );
+    assert!(channel_detail_from_event(&empty).unwrap().picture.is_none());
+}
+
+#[test]
 fn channel_goals_enabled_by_default_when_tag_absent() {
     let e = ev(39000, "", vec![vec!["d", "u"], vec!["name", "n"]]);
     assert!(

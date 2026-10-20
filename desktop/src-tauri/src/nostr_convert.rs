@@ -193,6 +193,7 @@ pub fn channel_info_from_event(
         ttl_seconds,
         ttl_deadline,
         goals_enabled: goals_enabled_from_event(event),
+        picture: picture_from_event(event),
     })
 }
 
@@ -256,7 +257,16 @@ pub fn channel_detail_from_event(event: &Event) -> Result<ChannelDetailInfo, Str
         ttl_seconds: first_tag_value(event, "ttl").and_then(|v| v.parse::<i32>().ok()),
         ttl_deadline: first_tag_value(event, "ttl_deadline").map(str::to_string),
         goals_enabled: goals_enabled_from_event(event),
+        picture: picture_from_event(event),
     })
+}
+
+/// Group photo URL from kind:39000 `["picture", url]`. Empty means unset.
+fn picture_from_event(event: &Event) -> Option<String> {
+    first_tag_value(event, "picture")
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
 }
 
 /// Per-room goals switch from kind:39000. The relay only emits

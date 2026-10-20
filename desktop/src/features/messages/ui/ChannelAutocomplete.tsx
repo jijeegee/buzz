@@ -82,6 +82,7 @@ export const ChannelAutocomplete = React.memo(function ChannelAutocomplete({
             <GroupLetterAvatar
               channelId={suggestion.id}
               label={suggestion.name}
+              picture={suggestion.picture}
               size="sm"
             />
             <span className="truncate font-medium">{suggestion.name}</span>

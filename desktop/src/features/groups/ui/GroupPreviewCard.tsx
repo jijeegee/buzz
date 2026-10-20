@@ -21,6 +21,7 @@ export function GroupPreviewCard({
     memberCount: number;
     isMember: boolean;
     isPrivate: boolean;
+    picture?: string | null;
   };
   isJoining: boolean;
   onJoin: () => void;
@@ -36,6 +37,7 @@ export function GroupPreviewCard({
         channelId={group.id}
         isPrivate={group.isPrivate}
         label={group.name}
+        picture={group.picture}
         size="xl"
       />
       <p

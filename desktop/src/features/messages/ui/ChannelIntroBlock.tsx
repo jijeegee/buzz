@@ -21,6 +21,8 @@ export type ChannelIntro = {
   hideBeginning?: boolean;
   icon?: React.ReactNode;
   isPrivate?: boolean;
+  /** Group photo; the letter avatar shows when absent or it fails. */
+  picture?: string | null;
 };
 
 /**
@@ -62,6 +64,7 @@ export function ChannelIntroBlock({
             className="h-[60px] w-[60px] text-2xl"
             isPrivate={intro.isPrivate}
             label={intro.channelName}
+            picture={intro.picture}
             size="xl"
           />
         </div>

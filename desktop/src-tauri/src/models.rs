@@ -135,6 +135,9 @@ pub struct ChannelInfo {
     /// only when disabled; an absent tag (including old relays) means on.
     #[serde(default = "default_true")]
     pub goals_enabled: bool,
+    /// Group photo URL from kind:39000 `["picture", url]`; `None` when unset.
+    #[serde(default)]
+    pub picture: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -164,6 +167,9 @@ pub struct ChannelDetailInfo {
     /// See [`ChannelInfo::goals_enabled`].
     #[serde(default = "default_true")]
     pub goals_enabled: bool,
+    /// Group photo URL from kind:39000 `["picture", url]`; `None` when unset.
+    #[serde(default)]
+    pub picture: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

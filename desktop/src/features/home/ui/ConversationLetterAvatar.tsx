@@ -1,6 +1,8 @@
+import * as React from "react";
 import { Lock, MessagesSquare, Users } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
+import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 
 export function conversationHue(channelId: string) {
   let hash = 0;
@@ -19,6 +21,35 @@ function conversationColor(key: string) {
 }
 
 /**
+ * The group photo drawn over the letter circle. Relay media goes through the
+ * same authenticated proxy as profile avatars. When the image fails to load
+ * it removes itself, so the letter underneath shows again.
+ */
+function GroupPictureImage({
+  picture,
+  testId,
+}: {
+  picture?: string | null;
+  testId?: string;
+}) {
+  const trimmed = picture?.trim() ?? "";
+  const src = trimmed ? rewriteRelayUrl(trimmed) : null;
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  if (!src || failedSrc === src) return null;
+  return (
+    <img
+      alt=""
+      className="absolute inset-0 size-full rounded-full object-cover"
+      data-testid={testId}
+      draggable={false}
+      onError={() => setFailedSrc(src)}
+      referrerPolicy="no-referrer"
+      src={src}
+    />
+  );
+}
+
+/**
  * A channel's picture: its first letter on a color picked from its id. A
  * thread adds a small speech-bubble badge, or, given `thread`, a second
  * circle with the thread's own letter in front of a smaller channel circle,
@@ -30,6 +61,7 @@ export function ConversationLetterAvatar({
   channelLabel,
   isPrivate = false,
   isThread,
+  picture,
   testId = "home-inbox-conversation-avatar",
   thread,
 }: {
@@ -37,6 +69,8 @@ export function ConversationLetterAvatar({
   channelLabel: string;
   isPrivate?: boolean;
   isThread: boolean;
+  /** Group photo URL; the letter shows when absent or the image fails. */
+  picture?: string | null;
   testId?: string;
   thread?: { id: string; label: string };
 }) {
@@ -56,6 +90,7 @@ export function ConversationLetterAvatar({
           style={{ backgroundColor: background }}
         >
           {initial || "?"}
+          <GroupPictureImage picture={picture} />
         </span>
         <span
           className="absolute right-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-background"
@@ -76,6 +111,7 @@ export function ConversationLetterAvatar({
       style={{ backgroundColor: background }}
     >
       {initial || "?"}
+      <GroupPictureImage picture={picture} testId={`${testId}-image`} />
       {isThread ? (
         <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border">
           <MessagesSquare className="h-2.5 w-2.5" />
@@ -138,6 +174,7 @@ export function GroupLetterAvatar({
   className,
   isPrivate = false,
   label,
+  picture,
   size = "xs",
   testId,
 }: {
@@ -145,6 +182,8 @@ export function GroupLetterAvatar({
   className?: string;
   isPrivate?: boolean;
   label?: string | null;
+  /** Group photo URL; the letter shows when absent or the image fails. */
+  picture?: string | null;
   size?: GroupAvatarSize;
   testId?: string;
 }) {
@@ -164,6 +203,10 @@ export function GroupLetterAvatar({
       style={{ backgroundColor: conversationColor(channelId || label || "") }}
     >
       {initial || <Users className={dims.icon} />}
+      <GroupPictureImage
+        picture={picture}
+        testId={testId ? `${testId}-image` : undefined}
+      />
       {isPrivate ? (
         <span
           className={cn(

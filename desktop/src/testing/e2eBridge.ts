@@ -784,6 +784,8 @@ type RawChannel = {
   ttl_deadline: string | null;
   /** Per-room goals switch; absent means on (mirrors kind:39000 parsing). */
   goals_enabled?: boolean;
+  /** Group photo URL; absent/null = none. */
+  picture?: string | null;
 };
 
 type RawChannelWithMembership = RawChannel & {
@@ -1836,6 +1838,7 @@ function toRawChannel(
     ttl_seconds: channel.ttl_seconds ?? null,
     ttl_deadline: channel.ttl_deadline ?? null,
     goals_enabled: channel.goals_enabled ?? true,
+    picture: channel.picture ?? null,
     is_member: channel.members.some(
       (member) => member.pubkey.toLowerCase() === currentPubkey,
     ),
@@ -6978,6 +6981,7 @@ async function handleGetChannels(
         ttl_seconds: getTag("ttl") ? Number(getTag("ttl")) : null,
         ttl_deadline: getTag("ttl_deadline") ?? null,
         goals_enabled: getTag("goals") !== "off",
+        picture: getTag("picture") || null,
         is_member: memberSet.has(channelId),
       };
     })
@@ -7685,6 +7689,7 @@ async function handleGetChannelDetails(
     ttl_seconds: getTag("ttl") ? Number(getTag("ttl")) : null,
     ttl_deadline: getTag("ttl_deadline") ?? null,
     goals_enabled: getTag("goals") !== "off",
+    picture: getTag("picture") || null,
     created_at: ev?.created_at
       ? new Date(ev.created_at * 1000).toISOString()
       : new Date().toISOString(),
@@ -7744,6 +7749,7 @@ async function handleUpdateChannel(
     visibility?: "open" | "private";
     ttlSeconds?: number | null;
     goalsEnabled?: boolean;
+    picture?: string;
   },
   config: E2eConfig | undefined,
 ) {
@@ -7774,6 +7780,9 @@ async function handleUpdateChannel(
     if (args.goalsEnabled !== undefined) {
       channel.goals_enabled = args.goalsEnabled;
     }
+    if (args.picture !== undefined) {
+      channel.picture = args.picture || null;
+    }
     touchMockChannel(channel);
     return toRawChannelDetail(channel, config);
   }
@@ -7793,6 +7802,9 @@ async function handleUpdateChannel(
   }
   if (args.goalsEnabled !== undefined) {
     tags.push(["goals", args.goalsEnabled ? "on" : "off"]);
+  }
+  if (args.picture !== undefined) {
+    tags.push(["picture", args.picture]);
   }
   await submitSignedEvent(config, { kind: 9002, content: "", tags });
 
@@ -7823,6 +7835,7 @@ async function handleUpdateChannel(
         ? null
         : new Date(Date.now() + ttlSeconds * 1000).toISOString(),
     goals_enabled: getTag("goals") !== "off",
+    picture: getTag("picture") || null,
     created_at: ev?.created_at
       ? new Date(ev.created_at * 1000).toISOString()
       : new Date().toISOString(),

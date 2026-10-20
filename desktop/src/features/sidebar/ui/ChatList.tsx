@@ -140,6 +140,9 @@ function buildServerChatRows(
         <ChatThreadRow
           actions={server.threadActions}
           channelLabel={props.channelLabels?.[channel.id] ?? channel.name}
+          channelPicture={
+            channel.channelType === "dm" ? null : (channel.picture ?? null)
+          }
           indent={byChannel !== null}
           isActive={
             props.isActiveChannel === true &&

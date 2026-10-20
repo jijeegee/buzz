@@ -351,6 +351,7 @@ function SidebarProjectsSectionContent() {
                                   channelId={channel.id}
                                   isPrivate={channel.visibility === "private"}
                                   label={channel.name}
+                                  picture={channel.picture}
                                 />
                                 <SidebarMenuLabel>
                                   {`${channel.name}`}

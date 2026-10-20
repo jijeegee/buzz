@@ -140,6 +140,8 @@ pub fn build_leave(channel_id: Uuid) -> Result<EventBuilder, String> {
 /// ephemeral timeout; `Some(None)` clears it (emits `["ttl", ""]`).
 /// `goals_enabled`: `None` leaves the per-room goals switch unchanged;
 /// `Some(on)` emits `["goals", "on" | "off"]`.
+/// `picture`: `None` leaves the group photo unchanged; `Some(url)` sets it;
+/// `Some("")` removes it (emits `["picture", ""]`).
 pub fn build_update_channel(
     channel_id: Uuid,
     name: Option<&str>,
@@ -147,16 +149,26 @@ pub fn build_update_channel(
     visibility: Option<&str>,
     ttl: Option<Option<i32>>,
     goals_enabled: Option<bool>,
+    picture: Option<&str>,
 ) -> Result<EventBuilder, String> {
     if name.is_none()
         && about.is_none()
         && visibility.is_none()
         && ttl.is_none()
         && goals_enabled.is_none()
+        && picture.is_none()
     {
         return Err(
-            "at least one of name, about, visibility, ttl, or goals must be provided".into(),
+            "at least one of name, about, visibility, ttl, goals, or picture must be provided"
+                .into(),
         );
+    }
+    let picture = picture.map(str::trim);
+    if picture.is_some_and(|p| !p.is_empty() && !p.starts_with("https://")) {
+        return Err("group photo must be an https URL".into());
+    }
+    if picture.is_some_and(|p| p.len() > 512) {
+        return Err("group photo URL is too long".into());
     }
     if let Some(v) = visibility {
         if v != "open" && v != "private" {
@@ -185,6 +197,9 @@ pub fn build_update_channel(
     }
     if let Some(on) = goals_enabled {
         tags.push(tag(vec!["goals", if on { "on" } else { "off" }])?);
+    }
+    if let Some(p) = picture {
+        tags.push(tag(vec!["picture", p])?);
     }
     Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
 }
@@ -904,13 +919,50 @@ mod tests {
     fn channel_builders_reject_hash_only_names() {
         let channel_id = Uuid::new_v4();
         assert!(build_create_channel(channel_id, "###", "open", "stream", None, None).is_err());
-        assert!(build_update_channel(channel_id, Some("###"), None, None, None, None).is_err());
+        assert!(
+            build_update_channel(channel_id, Some("###"), None, None, None, None, None).is_err()
+        );
     }
 
     fn update_channel_tags(goals_enabled: Option<bool>) -> Result<Vec<Vec<String>>, String> {
-        let builder = build_update_channel(Uuid::nil(), None, None, None, None, goals_enabled)?;
+        let builder =
+            build_update_channel(Uuid::nil(), None, None, None, None, goals_enabled, None)?;
         let event = builder.sign_with_keys(&Keys::generate()).unwrap();
         Ok(event.tags.iter().map(|t| t.as_slice().to_vec()).collect())
+    }
+
+    fn update_channel_picture_tags(picture: &str) -> Result<Vec<Vec<String>>, String> {
+        let builder =
+            build_update_channel(Uuid::nil(), None, None, None, None, None, Some(picture))?;
+        let event = builder.sign_with_keys(&Keys::generate()).unwrap();
+        Ok(event.tags.iter().map(|t| t.as_slice().to_vec()).collect())
+    }
+
+    #[test]
+    fn update_channel_sets_picture_tag() {
+        let url = "https://relay.example/media/abc.jpg";
+        let tags = update_channel_picture_tags(url).expect("picture-only edit is valid");
+        assert!(tags.contains(&vec!["picture".to_string(), url.to_string()]));
+        assert!(!tags.iter().any(|t| t[0] == "name" || t[0] == "about"));
+    }
+
+    #[test]
+    fn update_channel_removes_picture_with_empty_tag() {
+        let tags = update_channel_picture_tags("").expect("picture removal is valid");
+        assert!(tags.contains(&vec!["picture".to_string(), String::new()]));
+    }
+
+    #[test]
+    fn update_channel_rejects_non_https_picture() {
+        assert!(update_channel_picture_tags("http://relay.example/media/a.jpg").is_err());
+        let long = format!("https://relay.example/{}", "a".repeat(600));
+        assert!(update_channel_picture_tags(&long).is_err());
+    }
+
+    #[test]
+    fn update_channel_omits_picture_tag_when_unchanged() {
+        let tags = update_channel_tags(Some(true)).unwrap();
+        assert!(!tags.iter().any(|t| t[0] == "picture"));
     }
 
     #[test]

@@ -22,6 +22,8 @@ export type GroupSummary = {
   isMember: boolean;
   visibility?: GroupVisibility;
   invitePolicy?: GroupInvitePolicy;
+  /** Group photo URL; null/absent = none (older servers omit it). */
+  picture?: string | null;
 };
 
 /** `GET /api/groups/invite/{code}`: no handle; private groups included. */
@@ -33,6 +35,7 @@ export type GroupInvitePreview = {
   memberCount: number;
   visibility: GroupVisibility;
   isMember: boolean;
+  picture?: string | null;
 };
 
 export type GroupInviteLink = { code: string; url: string };
@@ -47,6 +50,7 @@ export type GroupInvitation = {
     channelType: GroupChannelType;
     memberCount: number;
     visibility: GroupVisibility;
+    picture?: string | null;
   };
   /** Inviter pubkey (hex). */
   inviter: string;
