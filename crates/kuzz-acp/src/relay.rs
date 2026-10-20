@@ -449,6 +449,9 @@ impl RestClient {
         use base64::Engine;
         use sha2::{Digest, Sha256};
 
+        // Sign the service name even when the request goes to another address.
+        let url =
+            &kuzz_core::tenant::service_signed_url(url, kuzz_core::tenant::service_url_from_env());
         let u_tag = Tag::parse(["u", url])
             .map_err(|e| RelayError::Http(format!("NIP-98 tag error: {e}")))?;
         let method_tag = Tag::parse(["method", method])
@@ -3890,6 +3893,11 @@ async fn send_auth_response(
     keys: &AgentIdentity,
     auth_tag: Option<&nostr::Tag>,
 ) -> Result<(), RelayError> {
+    // Sign the service name even when connected through another address.
+    let relay_url = &kuzz_core::tenant::service_signed_url(
+        relay_url,
+        kuzz_core::tenant::service_url_from_env(),
+    );
     let relay_nostr_url = RelayUrl::parse(relay_url)
         .map_err(|e| RelayError::Http(format!("invalid relay URL: {e}")))?;
     let keys = keys

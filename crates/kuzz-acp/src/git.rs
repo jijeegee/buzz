@@ -128,6 +128,12 @@ impl GitEnvironment {
             env.push(("KUZZ_PRIVATE_KEY".into(), keys.secret_key().to_secret_hex()));
         }
         env.push(("KUZZ_RELAY_URL".into(), relay_url.to_owned()));
+        if let Some(service_url) = kuzz_core::tenant::service_url_from_env() {
+            env.push((
+                kuzz_core::tenant::SERVICE_URL_ENV.into(),
+                service_url.to_owned(),
+            ));
+        }
         // MCP children start from a cleared env; forward the resolved mode so a
         // nested harness keeps it instead of defaulting to `agent`.
         env.push((
@@ -423,6 +429,7 @@ pub(crate) fn is_managed_env(name: &str) -> bool {
                 | "GIT_TERMINAL_PROMPT"
                 | "KUZZ_PRIVATE_KEY"
                 | "KUZZ_RELAY_URL"
+                | kuzz_core::tenant::SERVICE_URL_ENV
                 | GIT_IDENTITY_ENV
         )
 }
