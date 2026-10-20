@@ -565,3 +565,47 @@ test("removing a reaction from a duplicate self-join lifecycle group targets eve
     ["c", "👍"],
   ]);
 });
+
+function pictureChangedMessage({ actor, picture }) {
+  return {
+    author: "System",
+    body: JSON.stringify({ type: "picture_changed", actor, picture }),
+    createdAt: 1,
+    depth: 0,
+    id: `picture-${picture}`,
+    kind: 40099,
+    reactions: [],
+    time: "12:00 PM",
+  };
+}
+
+test("a group photo change renders 'changed the group photo'", async () => {
+  const { screen } = await import("@testing-library/react");
+  const elrond = "11".repeat(32);
+  const message = pictureChangedMessage({
+    actor: elrond,
+    picture: "https://relay.example/media/a.png",
+  });
+  await renderSystemMessageRow({
+    groupedMessages: [message],
+    profiles: profileFor(elrond, "Elrond"),
+  });
+  const text = normalizeText(
+    screen.getByTestId("system-message-row").textContent ?? "",
+  );
+  assert.match(text, /^Elrond ?changed the group photo/);
+});
+
+test("a removed group photo renders 'removed the group photo'", async () => {
+  const { screen } = await import("@testing-library/react");
+  const elrond = "11".repeat(32);
+  const message = pictureChangedMessage({ actor: elrond, picture: "" });
+  await renderSystemMessageRow({
+    groupedMessages: [message],
+    profiles: profileFor(elrond, "Elrond"),
+  });
+  const text = normalizeText(
+    screen.getByTestId("system-message-row").textContent ?? "",
+  );
+  assert.match(text, /^Elrond ?removed the group photo/);
+});
