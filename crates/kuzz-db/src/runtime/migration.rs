@@ -725,7 +725,12 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 79);
+        assert_eq!(migrations.len(), 80);
+        assert_eq!(migrations[79].version, 81);
+        assert!(migrations[79]
+            .sql
+            .as_str()
+            .contains("DELETE FROM event_side_effects WHERE kind = 40099"));
         assert_eq!(migrations[78].version, 80);
         assert!(migrations[78]
             .sql

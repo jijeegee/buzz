@@ -417,6 +417,7 @@ async fn handle_dm_open(
                 participant,
                 &self_bytes,
                 KIND_MEMBER_ADDED_NOTIFICATION,
+                None,
             )
             .await
             {
@@ -618,6 +619,7 @@ async fn handle_dm_add_member(
                 participant_bytes,
                 &self_bytes,
                 KIND_MEMBER_ADDED_NOTIFICATION,
+                None,
             )
             .await
             {
