@@ -7,7 +7,7 @@ import {
 } from "@/features/chats/chatListState";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { threadNameQueryOptions } from "@/features/messages/lib/useThreadName";
-import { relayClient } from "@/shared/api/relayClient";
+import { getEventsByIds } from "@/shared/api/tauri";
 import type { Channel, SearchHit } from "@/shared/api/types";
 import { CHANNEL_TIMELINE_CONTENT_KINDS } from "@/shared/constants/kinds";
 
@@ -20,7 +20,7 @@ type HitRoot = { rootId: string; rootContent: string | undefined };
 
 /**
  * Search hits carry no thread tags, so look up which hits are thread replies
- * (one relay fetch for all hits, plus one for their roots) and each thread's
+ * (one batch fetch for all hits, plus one for their roots) and each thread's
  * name: the Chats list name when loaded, else the thread name event, else the
  * root's first line, as the Chats thread row shows it. `isLoading` stays true
  * until every name is known, so rows draw once with their final label.
@@ -56,27 +56,18 @@ export function useSearchHitThreads({
   const rootsQuery = useQuery({
     enabled: enabled && candidateIds.length > 0,
     queryKey: ["search-hit-threads", candidateIds],
+    // A failed lookup shows plain message rows rather than holding them.
+    retry: false,
     staleTime: 5 * 60_000,
     queryFn: async (): Promise<Record<string, HitRoot>> => {
-      const events = await relayClient.fetchEvents({
-        ids: candidateIds,
-        kinds: [...TIMELINE_KINDS],
-        limit: candidateIds.length,
-      });
+      const events = await getEventsByIds(candidateIds);
       const rootByEventId = new Map<string, string>();
       for (const event of events) {
         const { rootId } = getThreadReference(event.tags);
         if (rootId && rootId !== event.id) rootByEventId.set(event.id, rootId);
       }
       const rootIds = [...new Set(rootByEventId.values())];
-      const roots =
-        rootIds.length > 0
-          ? await relayClient.fetchEvents({
-              ids: rootIds,
-              kinds: [...TIMELINE_KINDS],
-              limit: rootIds.length,
-            })
-          : [];
+      const roots = await getEventsByIds(rootIds);
       const rootContent = new Map(roots.map((root) => [root.id, root.content]));
       return Object.fromEntries(
         [...rootByEventId].map(([eventId, rootId]) => [
@@ -113,6 +104,7 @@ export function useSearchHitThreads({
     queries: unnamedThreads.map(({ channelId, rootId }) => ({
       ...threadNameQueryOptions(channelId, rootId),
       enabled,
+      retry: false,
     })),
   });
 
