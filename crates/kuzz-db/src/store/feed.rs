@@ -87,7 +87,13 @@ fn collect_stored_events(rows: Vec<PgRow>) -> Result<Vec<StoredEvent>> {
 /// (`channel_event_before_join`), before ORDER/LIMIT.
 fn push_history_filter(qb: &mut QueryBuilder<sqlx::Postgres>, prefix: &str, reader: &[u8]) {
     qb.push(format!(
-        " AND NOT channel_event_before_join({prefix}community_id, {prefix}channel_id,          {prefix}channel_sequence, "
+        " AND NOT channel_event_before_join({prefix}community_id, {prefix}channel_id, \
+         {prefix}channel_sequence, "
+    ));
+    qb.push_bind(reader.to_vec());
+    qb.push(format!(
+        ") AND NOT channel_event_targets_before_join({prefix}community_id, {prefix}channel_id, \
+         {prefix}kind, {prefix}tags, "
     ));
     qb.push_bind(reader.to_vec());
     qb.push(")");

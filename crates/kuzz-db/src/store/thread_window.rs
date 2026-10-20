@@ -419,6 +419,8 @@ async fn select_aux(
     if let Some(reader) = query.history_reader {
         q.push(" AND NOT channel_event_before_join(community_id, channel_id, channel_sequence, ")
             .push_bind(reader.to_vec())
+            .push(") AND NOT channel_event_targets_before_join(community_id, channel_id, kind, tags, ")
+            .push_bind(reader.to_vec())
             .push(")");
     }
     q.push(" AND (");

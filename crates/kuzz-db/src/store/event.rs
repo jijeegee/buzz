@@ -675,8 +675,28 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
     let Some(ref reader) = q.history_reader else {
         return;
     };
+    // since_join: rows from before the reader's join, and reactions/edits/
+    // deletions about such rows, are hidden. One channel: compare against its
+    // floor once (index-friendly); otherwise per row.
+    if let Some(channel) = q.channel_id {
+        qb.push(format!(" AND {col_prefix}channel_sequence > channel_history_floor("));
+        qb.push_bind(q.community_id.as_uuid());
+        qb.push(", ");
+        qb.push_bind(channel);
+        qb.push(", ");
+        qb.push_bind(reader.clone());
+        qb.push(")");
+    } else {
+        qb.push(format!(
+            " AND NOT channel_event_before_join({col_prefix}community_id, {col_prefix}channel_id, \
+             {col_prefix}channel_sequence, "
+        ));
+        qb.push_bind(reader.clone());
+        qb.push(")");
+    }
     qb.push(format!(
-        " AND NOT channel_event_before_join({col_prefix}community_id, {col_prefix}channel_id,          {col_prefix}channel_sequence, "
+        " AND NOT channel_event_targets_before_join({col_prefix}community_id, \
+         {col_prefix}channel_id, {col_prefix}kind, {col_prefix}tags, "
     ));
     qb.push_bind(reader.clone());
     qb.push(")");

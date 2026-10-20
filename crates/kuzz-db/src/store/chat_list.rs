@@ -349,7 +349,7 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
     event_json!(),
     r#" FROM events e
         WHERE e.community_id = $1 AND e.id = p.last_event_id AND e.deleted_at IS NULL
-          AND "#,
+          AND e.channel_sequence > m.history_floor AND "#,
     not_blocked_dm!(),
     r#"
         ORDER BY e.created_at DESC LIMIT 1

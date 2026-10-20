@@ -350,7 +350,8 @@ async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
         .unwrap();
     assert_eq!(replies.len(), 2);
 
-    // Aux closure: reactions written before the join stay hidden.
+    // Aux closure: reactions on the pre-join root stay hidden, whenever they
+    // were written.
     let targets = [root.clone()];
     let accessible = [f.channel];
     let aux = |history_reader| AuxQuery {
@@ -366,13 +367,13 @@ async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
         .await
         .unwrap();
     let ids: Vec<String> = page.events.iter().map(|e| e.event.id.to_hex()).collect();
-    assert_eq!(ids, [late_reaction.clone()]);
+    assert!(ids.is_empty(), "{ids:?}");
     let page = session
         .thread_window_aux(&aux(None), &mut ScanBudget::default())
         .await
         .unwrap();
     assert_eq!(page.events.len(), 2);
-    let _ = early_reaction;
+    let _ = (early_reaction, late_reaction);
 }
 
 #[tokio::test]
@@ -667,4 +668,90 @@ async fn artifact_revisions_from_before_the_join_are_hidden() {
     assert_eq!(rows.iter().map(|r| r.event.id.to_hex()).collect::<Vec<_>>(), [v2]);
     assert_eq!(read(member, true).await.1, 1);
     assert_eq!(read(f.owner.public_key().to_bytes().to_vec(), true).await.1, 2);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn later_reactions_and_edits_on_pre_join_messages_stay_hidden() {
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let old = f.send("old message").await;
+    f.join().await;
+    let new = f.send("new message").await;
+    let reaction_on_old = f.reply(&old, 7, "on old").await;
+    let edit_on_old = f.reply(&old, 40003, "edited old").await;
+    let reaction_on_new = f.reply(&new, 7, "on new").await;
+
+    for one_channel in [true, false] {
+        let mut q = EventQuery::for_community(f.scope);
+        q.channel_id = one_channel.then_some(f.channel);
+        q.kinds = Some(vec![7, 40003]);
+        q.history_reader = Some(f.member.public_key().to_bytes().to_vec());
+        let rows = event::query_events(&f.pool, &q).await.unwrap();
+        let ids: Vec<String> = rows.iter().map(|r| r.event.id.to_hex()).collect();
+        assert_eq!(ids, [reaction_on_new.clone()], "one_channel={one_channel}");
+        assert_eq!(event::count_events(&f.pool, &q).await.unwrap(), 1);
+        q.history_reader = Some(f.owner.public_key().to_bytes().to_vec());
+        assert_eq!(event::count_events(&f.pool, &q).await.unwrap(), 3);
+    }
+    let _ = (reaction_on_old, edit_on_old);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn chat_list_counts_and_latest_ignore_pre_join_messages() {
+    use crate::chat_list::{ChatListQuery, ChatRowKind};
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone()).with_chat_state_writes(true);
+    let post = |content: &'static str| {
+        let event = EventBuilder::new(Kind::Custom(9), content)
+            .tags([Tag::parse(["h", &f.channel.to_string()]).unwrap()])
+            .sign_with_keys(&f.owner)
+            .unwrap();
+        let (db, scope, channel) = (db.clone(), f.scope, f.channel);
+        async move {
+            db.insert_event_with_thread_metadata_and_chat_state(scope, &event, Some(channel), None)
+                .await
+                .unwrap();
+            event
+        }
+    };
+    post("old one").await;
+    post("old two").await;
+    f.join().await;
+    let query = ChatListQuery {
+        limit: 30,
+        before: None,
+        pinned_threads: vec![],
+        quiet_before: chrono::Utc::now() - chrono::Duration::days(7),
+    };
+    let rows = db.chat_list(f.scope, &f.member.public_key(), &query).await.unwrap().rows;
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].kind, rows[0].unread), (ChatRowKind::Room, 0));
+
+    let new = post("new one").await;
+    let rows = db.chat_list(f.scope, &f.member.public_key(), &query).await.unwrap().rows;
+    assert_eq!(rows[0].unread, 1);
+    assert_eq!(rows[0].latest.as_ref().unwrap()["content"], "new one");
+
+    // Deleting the only post-join message must not bring back an old preview.
+    sqlx::query("UPDATE events SET deleted_at = now() WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(new.id.as_bytes().as_slice())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE channels SET main_last_event_id = (SELECT id FROM events WHERE community_id = $1 \
+         AND channel_id = $2 AND deleted_at IS NULL ORDER BY channel_sequence DESC LIMIT 1) \
+         WHERE community_id = $1 AND id = $2",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(f.channel)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let rows = db.chat_list(f.scope, &f.member.public_key(), &query).await.unwrap().rows;
+    assert!(rows[0].latest.is_none(), "{:?}", rows[0].latest);
 }

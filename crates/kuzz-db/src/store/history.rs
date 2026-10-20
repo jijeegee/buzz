@@ -69,8 +69,8 @@ impl Db {
             .collect()
     }
 
-    /// Of `readers`, those for whom every one of `targets` that lives in
-    /// `channel` was written before their join. Live delivery of a reaction,
+    /// Of `readers`, those for whom any of `targets` that lives in `channel`
+    /// was written before their join. Live delivery of a reaction,
     /// edit, deletion or summary uses it to skip readers who cannot see what
     /// it is about. Targets outside `channel` are ignored; none in it hides
     /// nothing.
@@ -91,7 +91,7 @@ impl Db {
             )));
         }
         let rows = sqlx::query(
-            "WITH t AS (SELECT max(e.channel_sequence) AS seq FROM events e \
+            "WITH t AS (SELECT min(e.channel_sequence) AS seq FROM events e \
                          WHERE e.community_id = $1 AND e.channel_id = $2 AND e.id = ANY($3)) \
              SELECT r.pk FROM unnest($4::bytea[]) AS r(pk), t \
               WHERE t.seq IS NOT NULL AND t.seq <= channel_history_floor($1, $2, r.pk)",

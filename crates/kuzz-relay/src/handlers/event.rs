@@ -409,8 +409,8 @@ const TARGETING_KINDS: [u32; 5] = [
     KIND_THREAD_SUMMARY,
 ];
 
-/// since_join rooms: a reaction, edit, deletion or summary whose targets were
-/// all written before a recipient joined does not reach that recipient (the
+/// since_join rooms: a reaction, edit, deletion or summary naming a target
+/// written before a recipient joined does not reach that recipient (the
 /// stored reads hide the same events). Fails closed.
 async fn drop_readers_blind_to_targets(
     state: &AppState,
