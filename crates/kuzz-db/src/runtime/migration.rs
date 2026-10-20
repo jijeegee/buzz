@@ -510,6 +510,7 @@ mod postgres_tests {
             "bots",
             "access_tokens",
             "regions",
+            "local_region",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -724,7 +725,14 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 77);
+        assert_eq!(migrations.len(), 78);
+        assert_eq!(migrations[77].version, 79);
+        assert!(migrations[77]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE room_directory"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TRIGGER record_room_home"));
         assert_eq!(migrations[76].version, 78);
         assert!(migrations[76].sql.as_str().contains("CREATE TABLE regions"));
         assert!(include_str!("../../../../schema/schema.sql").contains("CREATE TABLE regions"));
@@ -2212,6 +2220,7 @@ mod postgres_tests {
                 "artifact_heads",
                 "artifact_revisions",
                 "event_side_effects",
+                "room_directory",
                 "thread_follows",
                 "media_references",
                 "media_uploads",

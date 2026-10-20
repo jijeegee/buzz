@@ -412,6 +412,16 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // must not start. Without auto-migrate the table may not exist yet, so
     // only warn.
     {
+        // Check the claim first, so a relay started with the wrong region
+        // leaves no row behind.
+        if let Ok(Some(claimed)) = db.local_region().await {
+            if claimed != config.region_id {
+                return Err(anyhow::anyhow!(
+                    "This database belongs to region {claimed}, but KUZZ_REGION_ID is {}",
+                    config.region_id
+                ));
+            }
+        }
         let is_primary = config.region_id == config.primary_region;
         match db
             .register_region(&config.region_id, &config.region_connect_url, is_primary)
@@ -419,6 +429,19 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         {
             Ok(region) => {
                 info!(region = %region.id, primary = region.is_primary, "Region recorded");
+                // One database serves one region: refuse to start on a
+                // database another region claimed.
+                db.claim_local_region(&region.id).await.map_err(|e| {
+                    error!(region = %region.id, "Failed to claim this database for the region: {e}");
+                    anyhow::anyhow!("Failed to claim database for region {}: {e}", region.id)
+                })?;
+                match db.backfill_room_directory().await {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        info!(region = %region.id, "Room directory: {n} rooms given this region as home")
+                    }
+                    Err(e) => warn!("Room directory backfill failed (retried next start): {e}"),
+                }
             }
             Err(e) if auto_migrate => {
                 error!(region = %config.region_id, "Failed to record this relay's region: {e}");
