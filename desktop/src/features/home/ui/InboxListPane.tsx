@@ -40,6 +40,7 @@ import {
 } from "@/features/reminders/ui/RemindersPanel";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
 import { cn } from "@/shared/lib/cn";
+import { useChannelNavigation } from "@/shared/context/ChannelNavigationContext";
 import type { SidebarDmParticipant } from "@/features/sidebar/ui/SidebarSection";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
@@ -145,6 +146,12 @@ function ConversationRoomAvatar({
   room: InboxConversationRoom;
   testId: string;
 }) {
+  const { channels } = useChannelNavigation();
+  const channelPicture =
+    room.kind === "dm"
+      ? null
+      : (channels.find((channel) => channel.id === room.channelId)?.picture ??
+        null);
   if (room.kind === "dm") {
     // A DM room's picture is the other participant's profile.
     const { person } = room;
@@ -182,6 +189,7 @@ function ConversationRoomAvatar({
       channelId={room.channelId}
       channelLabel={room.channelLabel}
       isThread={room.kind === "thread"}
+      picture={channelPicture}
     />
   );
 }

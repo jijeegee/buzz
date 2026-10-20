@@ -74,6 +74,7 @@ import {
 import { ChannelPermissionsSettings } from "./ChannelPermissionsSettings";
 import { GroupSharingSettings } from "@/features/groups/ui/GroupSharingSettings";
 import { GroupVisibilityConfirmDialog } from "@/features/groups/ui/GroupVisibilityConfirmDialog";
+import { GroupPhotoField } from "./GroupPhotoField";
 import {
   ActionFieldRow,
   ChannelHero,
@@ -186,6 +187,8 @@ export function ChannelManagementSheet({
 
   const [nameDraft, setNameDraft] = React.useState("");
   const [descriptionDraft, setDescriptionDraft] = React.useState("");
+  const [pictureDraft, setPictureDraft] = React.useState("");
+  const [isPhotoUploading, setIsPhotoUploading] = React.useState(false);
   const [isPrivateDraft, setIsPrivateDraft] = React.useState(false);
   const [isEphemeralDraft, setIsEphemeralDraft] = React.useState(false);
   const [ttlSecondsDraft, setTtlSecondsDraft] = React.useState(
@@ -247,6 +250,7 @@ export function ChannelManagementSheet({
 
     setNameDraft(detail.name);
     setDescriptionDraft(detail.description);
+    setPictureDraft(detail.picture ?? "");
     setIsPrivateDraft(detail.visibility === "private");
     setIsEphemeralDraft(detail.ttlSeconds !== null);
     setTtlSecondsDraft(detail.ttlSeconds ?? DEFAULT_EPHEMERAL_TTL_SECONDS);
@@ -325,12 +329,15 @@ export function ChannelManagementSheet({
   const nameDirty = nameDraft.trim() !== resolvedChannel.name.trim();
   const descriptionDirty =
     descriptionDraft.trim() !== resolvedChannel.description.trim();
+  const pictureDirty = pictureDraft !== (resolvedChannel.picture ?? "");
   const isSavingChannelEdits = updateChannelDetailsMutation.isPending;
-  const hasChannelEditChanges = nameDirty || descriptionDirty || lifecycleDirty;
+  const hasChannelEditChanges =
+    nameDirty || descriptionDirty || lifecycleDirty || pictureDirty;
   const canSaveChannelEdits =
     nameDraft.trim().length > 0 &&
     hasUserEditedChannelDraft &&
     hasChannelEditChanges &&
+    !isPhotoUploading &&
     !isSavingChannelEdits;
   const canvasContent = canvasQuery.data?.content?.trim() ?? "";
   const hasCanvas = canvasContent.length > 0;
@@ -351,6 +358,7 @@ export function ChannelManagementSheet({
     cancelDeferredModalOpen();
     setNameDraft(resolvedChannel.name);
     setDescriptionDraft(resolvedChannel.description);
+    setPictureDraft(resolvedChannel.picture ?? "");
     setIsPrivateDraft(currentVisibility === "private");
     setIsEphemeralDraft(currentTtlSeconds !== null);
     setTtlSecondsDraft(currentTtlSeconds ?? DEFAULT_EPHEMERAL_TTL_SECONDS);
@@ -366,10 +374,11 @@ export function ChannelManagementSheet({
       return;
     }
     try {
-      if (nameDirty || descriptionDirty || lifecycleDirty) {
+      if (hasChannelEditChanges) {
         await updateChannelDetailsMutation.mutateAsync({
           description: descriptionDirty ? descriptionDraft.trim() : undefined,
           name: nameDirty ? nameDraft.trim() : undefined,
+          picture: pictureDirty ? pictureDraft : undefined,
           ttlSeconds:
             nextTtlSeconds !== currentTtlSeconds ? nextTtlSeconds : undefined,
           visibility:
@@ -541,6 +550,18 @@ export function ChannelManagementSheet({
 
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
                 <div className="space-y-5">
+                  <GroupPhotoField
+                    channelId={resolvedChannel.id}
+                    disabled={isSavingChannelEdits}
+                    isPrivate={isPrivateDraft}
+                    label={nameDraft || resolvedChannel.name}
+                    onPictureChange={(picture) => {
+                      setPictureDraft(picture);
+                      setHasUserEditedChannelDraft(true);
+                    }}
+                    onUploadingChange={setIsPhotoUploading}
+                    picture={pictureDraft}
+                  />
                   <div className="space-y-1.5">
                     <label
                       className="text-sm font-medium text-foreground"

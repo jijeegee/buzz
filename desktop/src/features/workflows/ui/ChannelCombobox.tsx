@@ -24,6 +24,7 @@ function ChannelPrivacyIcon({ channel }: { channel: Channel }) {
         channelId={channel.id}
         isPrivate={channel.visibility === "private"}
         label={channel.name}
+        picture={channel.picture}
         size="sm"
       />
     );

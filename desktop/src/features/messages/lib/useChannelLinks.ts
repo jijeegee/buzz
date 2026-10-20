@@ -9,6 +9,7 @@ export type ChannelSuggestion = {
   id: string;
   name: string;
   channelType: "stream" | "forum";
+  picture?: string | null;
 };
 
 const CHANNEL_QUERY_DEBOUNCE_MS = 120;
@@ -41,6 +42,7 @@ export function selectChannelSuggestions(
       id: ch.id,
       name: ch.name,
       channelType: ch.channelType as "stream" | "forum",
+      ...(ch.picture ? { picture: ch.picture } : {}),
     }));
 }
 

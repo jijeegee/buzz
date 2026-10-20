@@ -297,6 +297,7 @@ fn make_channel(id: &str, name: &str, last_message_at: Option<String>) -> Channe
         ttl_seconds: None,
         ttl_deadline: None,
         goals_enabled: true,
+        picture: None,
     }
 }
 
@@ -335,6 +336,19 @@ fn hash_changes_on_metadata_change() {
         compute_channels_hash(&[c1]),
         compute_channels_hash(&[c2]),
         "hash must change when channel name changes",
+    );
+}
+
+#[test]
+fn hash_changes_on_picture_change() {
+    let c1 = make_channel("chan-1", "Alpha", None);
+    let mut c2 = make_channel("chan-1", "Alpha", None);
+    c2.picture = Some("https://relay.example/media/a.png".to_string());
+
+    assert_ne!(
+        compute_channels_hash(&[c1]),
+        compute_channels_hash(&[c2]),
+        "hash must change when the group photo changes",
     );
 }
 

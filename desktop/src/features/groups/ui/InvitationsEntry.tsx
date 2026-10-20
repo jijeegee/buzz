@@ -188,6 +188,7 @@ function InvitationsDialog({
                     channelId={invitation.channel.id}
                     isPrivate={invitation.channel.visibility === "private"}
                     label={invitation.channel.name}
+                    picture={invitation.channel.picture}
                     size="md"
                   />
                   <div className="min-w-0 flex-1">

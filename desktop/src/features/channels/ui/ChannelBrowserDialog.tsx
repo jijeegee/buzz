@@ -61,7 +61,7 @@ type BrowserTab = "all" | "joined" | "archived";
 type BrowseRow = Pick<
   Channel,
   "id" | "name" | "description" | "memberCount" | "isMember" | "visibility"
-> & { archivedAt: string | null };
+> & { archivedAt: string | null; picture?: string | null };
 
 function searchResultRow(group: GroupSummary): BrowseRow {
   return {
@@ -72,6 +72,7 @@ function searchResultRow(group: GroupSummary): BrowseRow {
     isMember: group.isMember,
     visibility: "open",
     archivedAt: null,
+    picture: group.picture ?? null,
   };
 }
 
@@ -930,6 +931,7 @@ function ChannelCard({
               channelId={channel.id}
               isPrivate={channel.visibility === "private"}
               label={channel.name}
+              picture={channel.picture}
               size="sm"
             />
             <p className="min-w-0 truncate text-base font-medium tracking-tight">

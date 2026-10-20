@@ -276,6 +276,7 @@ function SidebarChannelIcon({
         channelLabel={channel.name}
         isPrivate={channel.visibility === "private"}
         isThread={false}
+        picture={channel.picture}
         testId={`chat-row-avatar-${channel.id}`}
       />
     );

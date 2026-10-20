@@ -140,6 +140,7 @@ export function useChannelIntro({
       description: getChannelIntroDescription(activeChannel),
       hideBeginning: projectHome,
       isPrivate: activeChannel.visibility === "private",
+      picture: activeChannel.picture ?? null,
       icon: projectHome ? (
         <ProjectChannelIcon className="h-7 w-7" />
       ) : undefined,

@@ -35,6 +35,8 @@ export type RawChannel = {
   ttl_deadline: string | null;
   /** Absent from older backends; treated as enabled. */
   goals_enabled?: boolean;
+  /** Absent from older backends; null = no group photo. */
+  picture?: string | null;
 };
 
 /**
@@ -98,6 +100,7 @@ export function fromRawChannel(channel: RawChannel): Channel {
     ttlSeconds: channel.ttl_seconds,
     ttlDeadline: channel.ttl_deadline,
     goalsEnabled: channel.goals_enabled ?? true,
+    picture: channel.picture ?? null,
   };
 }
 

@@ -21,6 +21,7 @@ export function ChannelGlyph({
   avatarSize?: "xs" | "sm" | "md" | "xl";
   channel: Pick<Channel, "channelType" | "id" | "visibility"> & {
     name?: string;
+    picture?: string | null;
   };
   className?: string;
 }) {
@@ -39,6 +40,7 @@ export function ChannelGlyph({
       className={avatarClassName}
       isPrivate={channel.visibility === "private"}
       label={channel.name}
+      picture={channel.picture}
       size={avatarSize}
     />
   );
