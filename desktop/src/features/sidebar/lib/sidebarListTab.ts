@@ -16,13 +16,13 @@ export type SidebarListTab =
   | "pulse";
 
 const STORAGE_KEY = "kuzz.desktop.sidebar-list-tab";
+// Tabs a reload may return to. Activity and Pulse have no rail item for
+// now, so a stored one falls back to Chats.
 const TABS: readonly SidebarListTab[] = [
   "chats",
   "people",
-  "activity",
   "agents",
   "projects",
-  "pulse",
 ];
 
 /**

@@ -10,7 +10,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/directional_transition_scope.dart';
 import '../../shared/widgets/mobile_tab_footer_backdrop.dart';
-import '../activity/activity_page.dart';
 import '../agents/agents_page.dart';
 import '../channels/channels_page.dart';
 import '../chats/chat_state_writer.dart';
@@ -49,7 +48,8 @@ class HomePage extends HookConsumerWidget {
   static const double _tabContentTransitionDistance = 24;
 
   static const _chatsTab = 0;
-  static const _activityTab = 2;
+  // More opens a small menu instead of a page of its own.
+  static const _moreTab = 3;
 
   static const _destinations = [
     _HomeDestination(
@@ -61,11 +61,6 @@ class HomePage extends HookConsumerWidget {
       icon: LucideIcons.users300,
       selectedIcon: LucideIcons.users500,
       label: 'People',
-    ),
-    _HomeDestination(
-      icon: LucideIcons.inbox300,
-      selectedIcon: LucideIcons.inbox500,
-      label: 'Activity',
     ),
     _HomeDestination(
       icon: LucideIcons.bot300,
@@ -113,21 +108,23 @@ class HomePage extends HookConsumerWidget {
     final pages = [
       ChatsPage(tabReselection: reselections[0]),
       lazy(1, () => const PeoplePage()),
-      lazy(2, () => ActivityPage(tabReselection: reselections[2])),
-      lazy(3, () => AgentsPage(tabReselection: reselections[3])),
-      lazy(
-        4,
-        () => MorePage(
-          settingsPageBuilder: settingsPageBuilder,
-          onSettingsTransitionProgress: (progress) {
+      lazy(2, () => AgentsPage(tabReselection: reselections[2])),
+      const SizedBox.shrink(),
+    ];
+
+    void openSettings() {
+      HapticFeedback.lightImpact();
+      Navigator.of(context).push(
+        SettingsPageRoute(
+          builder: settingsPageBuilder,
+          onTransitionProgress: (progress) {
             if (settingsTransitionProgress.value != progress) {
               settingsTransitionProgress.value = progress;
             }
           },
-          tabReselection: reselections[4],
         ),
-      ),
-    ];
+      );
+    }
 
     const Gradient? settingsTransitionGradient = null;
 
@@ -209,11 +206,18 @@ class HomePage extends HookConsumerWidget {
             ),
             bottomNavigationBar: _FloatingTabBar(
               selectedIndex: tabIndex.value,
-              unreadTabs: {
-                if (hasUnreadChats) _chatsTab,
-                if (hasUnreadInbox) _activityTab,
-              },
+              unreadTabs: {if (hasUnreadChats) _chatsTab},
               onDestinationSelected: (i) {
+                if (i == _moreTab) {
+                  unawaited(
+                    showMoreMenu(
+                      context,
+                      onOpenSettings: openSettings,
+                      bottomClearance: HomePage._fabClearance,
+                    ),
+                  );
+                  return;
+                }
                 if (i == tabIndex.value) {
                   reselections[i].value++;
                   return;
