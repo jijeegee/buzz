@@ -133,6 +133,12 @@ abstract final class NostrFilters {
       );
 
   /// NIP-50 message search, optionally scoped to a channel.
+  ///
+  /// `search_mode: "prefix"` lets the last word match as a prefix, so a
+  /// partly typed word or a Korean stem ("검색" → "검색창을") finds the
+  /// message. Mirrors desktop's message search
+  /// (desktop/src-tauri/src/commands/messages.rs). Bridge-only: send through
+  /// `queryRelay`, not a WebSocket REQ.
   static NostrFilter searchMessages(
     String query, {
     String? channelId,
@@ -146,6 +152,7 @@ abstract final class NostrFilters {
         : const {},
     search: query,
     limit: limit,
+    extensions: const {'search_mode': 'prefix'},
   );
 
   /// Global user search over kind:0 profiles (NIP-50 via the HTTP bridge).

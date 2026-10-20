@@ -564,22 +564,7 @@ void main() {
   ) async {
     const keyboardInset = 300.0;
     const footerClearance = 102.0;
-    final state = SearchState(
-      query: 'general',
-      channelResults: [
-        Channel(
-          id: 'general',
-          name: 'general',
-          channelType: 'stream',
-          visibility: 'open',
-          description: 'General discussion',
-          createdBy: 'test',
-          createdAt: DateTime(2025),
-          memberCount: 1,
-          isMember: true,
-        ),
-      ],
-    );
+    final state = SearchState(query: 'general');
 
     await tester.pumpWidget(
       WidgetHelpers.testable(
@@ -589,6 +574,21 @@ void main() {
             () => _FakeRecentSearchesNotifier(const []),
           ),
           profileProvider.overrideWith(() => _FakeProfileNotifier()),
+          channelsProvider.overrideWith(
+            () => _FakeChannelsNotifier([
+              Channel(
+                id: 'general',
+                name: 'general',
+                channelType: 'stream',
+                visibility: 'open',
+                description: 'General discussion',
+                createdBy: 'test',
+                createdAt: DateTime(2025),
+                memberCount: 1,
+                isMember: true,
+              ),
+            ]),
+          ),
         ],
         child: Builder(
           builder: (context) => MediaQuery(
@@ -657,7 +657,6 @@ void main() {
     final first = 'a' * 64, second = 'b' * 64;
     final state = SearchState(
       query: 'scout',
-      channelResults: const [],
       userResults: [
         DirectoryUser(pubkey: first, displayName: 'Scout'),
         DirectoryUser(pubkey: second, displayName: 'Scout'),
@@ -698,19 +697,6 @@ void main() {
     final createdAt = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 120;
     final state = SearchState(
       query: 'design',
-      channelResults: [
-        Channel(
-          id: 'design',
-          name: 'design',
-          channelType: 'stream',
-          visibility: 'open',
-          description: 'Design discussion',
-          createdBy: 'test',
-          createdAt: DateTime(2025),
-          memberCount: 4,
-          isMember: true,
-        ),
-      ],
       userResults: const [
         DirectoryUser(
           pubkey: 'maya',
@@ -739,7 +725,21 @@ void main() {
             () => recentSearches = _FakeRecentSearchesNotifier(const []),
           ),
           profileProvider.overrideWith(() => _FakeProfileNotifier()),
-          channelsProvider.overrideWith(() => _FakeChannelsNotifier()),
+          channelsProvider.overrideWith(
+            () => _FakeChannelsNotifier([
+              Channel(
+                id: 'design',
+                name: 'design',
+                channelType: 'stream',
+                visibility: 'open',
+                description: 'Design discussion',
+                createdBy: 'test',
+                createdAt: DateTime(2025),
+                memberCount: 4,
+                isMember: true,
+              ),
+            ]),
+          ),
           userCacheProvider.overrideWith(
             () => _FakeUserCacheNotifier(
               const UserProfile(
@@ -975,21 +975,7 @@ void main() {
   testWidgets('does not label an unjoined channel as having zero members', (
     tester,
   ) async {
-    final state = SearchState(
-      query: 'community',
-      channelResults: [
-        Channel(
-          id: 'community-help',
-          name: 'community-help',
-          channelType: 'stream',
-          visibility: 'open',
-          description: 'Help from the community',
-          createdBy: 'test',
-          createdAt: DateTime(2025),
-          memberCount: 0,
-        ),
-      ],
-    );
+    final state = SearchState(query: 'community');
 
     await tester.pumpWidget(
       WidgetHelpers.testable(
@@ -999,6 +985,20 @@ void main() {
             () => _FakeRecentSearchesNotifier(const []),
           ),
           profileProvider.overrideWith(() => _FakeProfileNotifier()),
+          channelsProvider.overrideWith(
+            () => _FakeChannelsNotifier([
+              Channel(
+                id: 'community-help',
+                name: 'community-help',
+                channelType: 'stream',
+                visibility: 'open',
+                description: 'Help from the community',
+                createdBy: 'test',
+                createdAt: DateTime(2025),
+                memberCount: 0,
+              ),
+            ]),
+          ),
         ],
         child: const SearchPage(),
       ),
