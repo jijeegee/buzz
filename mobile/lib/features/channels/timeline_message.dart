@@ -16,6 +16,7 @@ enum SystemEventType {
   channelArchived,
   channelUnarchived,
   goalsChanged,
+  pictureChanged,
   huddleStarted,
   huddleEnded,
 }
@@ -28,6 +29,9 @@ class SystemEvent {
   final String? topic;
   final String? purpose;
 
+  /// `picture_changed`: the new group photo URL; blank when it was removed.
+  final String? picture;
+
   /// `goals_changed`: the room's goals switch, `on` or `off`.
   final String? goals;
   final String? ephemeralChannelId;
@@ -38,6 +42,7 @@ class SystemEvent {
     this.targetPubkey,
     this.topic,
     this.purpose,
+    this.picture,
     this.goals,
     this.ephemeralChannelId,
   });
@@ -66,6 +71,7 @@ class SystemEvent {
       'channel_archived' => SystemEventType.channelArchived,
       'channel_unarchived' => SystemEventType.channelUnarchived,
       'goals_changed' => SystemEventType.goalsChanged,
+      'picture_changed' => SystemEventType.pictureChanged,
       _ => null,
     };
 
@@ -85,6 +91,7 @@ class SystemEvent {
       targetPubkey: _readString(json, 'target'),
       topic: _readString(json, 'topic'),
       purpose: _readString(json, 'purpose'),
+      picture: _readString(json, 'picture'),
       goals: goals,
     );
   }
@@ -140,6 +147,11 @@ class SystemEvent {
       SystemEventType.channelArchived => '$actor archived this group',
       SystemEventType.channelUnarchived => '$actor unarchived this group',
       SystemEventType.goalsChanged => '$actor turned goals $goals',
+      // Mirrors desktop's SystemMessageRow `picture_changed` copy.
+      SystemEventType.pictureChanged =>
+        picture?.trim().isNotEmpty ?? false
+            ? '$actor changed the group photo'
+            : '$actor removed the group photo',
       SystemEventType.huddleStarted => '$actor started a huddle',
       SystemEventType.huddleEnded => '$actor ended the huddle',
     };

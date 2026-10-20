@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../shared/animated_avatar.dart';
 import '../../shared/relay/relay.dart';
+import 'avatar_upload_image.dart';
 
 /// A prepared profile-avatar change that is uploaded only when the user saves.
 sealed class ProfileAvatarDraft {
@@ -29,12 +30,12 @@ final class ProfileUrlAvatarDraft extends ProfileAvatarDraft {
   Future<String> upload(MediaUploadService service) async => url;
 }
 
-/// A locally prepared still image awaiting upload on Save.
+/// A locally prepared photo awaiting upload on Save.
 final class ProfileImageAvatarDraft extends ProfileAvatarDraft {
-  /// Creates a still-image draft from JPEG [bytes].
+  /// Creates a photo draft from JPEG, PNG or GIF [bytes].
   ProfileImageAvatarDraft(this.bytes);
 
-  /// The prepared JPEG payload.
+  /// The prepared JPEG, PNG or GIF payload.
   final Uint8List bytes;
   MediaUploadService? _uploadService;
   Future<String>? _uploadedUrl;
@@ -48,7 +49,7 @@ final class ProfileImageAvatarDraft extends ProfileAvatarDraft {
     final existing = _uploadedUrl;
     if (existing != null) return existing;
     final upload = service
-        .uploadBytes(bytes, mimeType: 'image/jpeg')
+        .uploadBytes(bytes, mimeType: avatarUploadMimeType(bytes))
         .then((descriptor) => descriptor.url);
     _uploadedUrl = upload;
     try {

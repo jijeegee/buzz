@@ -173,6 +173,7 @@ void main() {
         'channel_created': SystemEventType.channelCreated,
         'channel_archived': SystemEventType.channelArchived,
         'channel_unarchived': SystemEventType.channelUnarchived,
+        'picture_changed': SystemEventType.pictureChanged,
       };
 
       for (final entry in types.entries) {
@@ -386,6 +387,18 @@ void main() {
         );
         expect(event.describe(resolve), 'Alice turned goals $goals');
       }
+    });
+
+    test('picture_changed', () {
+      SystemEvent picture(String? url) => SystemEvent.fromContent(
+        jsonEncode({'type': 'picture_changed', 'actor': 'pk1', 'picture': url}),
+      )!;
+      expect(
+        picture('https://relay.example/media/a.jpg').describe(resolve),
+        'Alice changed the group photo',
+      );
+      expect(picture('').describe(resolve), 'Alice removed the group photo');
+      expect(picture(null).describe(resolve), 'Alice removed the group photo');
     });
 
     test('huddle_started', () {

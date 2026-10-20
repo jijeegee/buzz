@@ -4,6 +4,7 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'channel.dart';
+import 'group_photo_viewer.dart';
 
 /// Diameter of the group photo at the top of the Manage group sheet.
 const groupPhotoFieldSize = 88.0;
@@ -40,13 +41,16 @@ class GroupPhotoField extends StatelessWidget {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              ConversationLetterAvatar(
-                seed: channel.id,
-                label: channel.name,
-                isPrivate: channel.isPrivate,
-                size: groupPhotoFieldSize,
-                avatarKey: const ValueKey('manage-channel-photo'),
-                imageUrl: picture,
+              GroupPhotoViewerTap(
+                picture: picture,
+                child: ConversationLetterAvatar(
+                  seed: channel.id,
+                  label: channel.name,
+                  isPrivate: channel.isPrivate,
+                  size: groupPhotoFieldSize,
+                  avatarKey: const ValueKey('manage-channel-photo'),
+                  imageUrl: picture,
+                ),
               ),
               if (isSaving)
                 Container(

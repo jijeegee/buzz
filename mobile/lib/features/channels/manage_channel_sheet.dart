@@ -7,6 +7,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'channel.dart';
+import '../profile/avatar_upload_image.dart';
 import '../profile/profile_avatar_crop_page.dart';
 import 'channel_management_provider.dart';
 import 'group_photo_field.dart';
@@ -125,6 +126,15 @@ class ManageChannelSheet extends HookConsumerWidget {
       if (picked == null || !context.mounted) return;
       final prepared = await service.prepareImageBytes(picked);
       if (!context.mounted) return;
+      // A GIF is uploaded as it is: cropping would drop its animation.
+      if (isGifImage(prepared)) {
+        final uploaded = await service.uploadBytes(
+          prepared,
+          mimeType: 'image/gif',
+        );
+        await savePicture(uploaded.url);
+        return;
+      }
       final cropped = await Navigator.of(context).push<Uint8List>(
         MaterialPageRoute(
           builder: (_) => ProfileAvatarCropPage(
@@ -135,7 +145,7 @@ class ManageChannelSheet extends HookConsumerWidget {
       if (cropped == null || !context.mounted) return;
       final uploaded = await service.uploadBytes(
         cropped,
-        mimeType: 'image/jpeg',
+        mimeType: avatarUploadMimeType(cropped),
       );
       await savePicture(uploaded.url);
     });

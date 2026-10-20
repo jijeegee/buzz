@@ -25,6 +25,7 @@ import 'animated_avatar_capture.dart';
 import 'camera_disposal_barrier.dart';
 import 'avatar_background_grid.dart';
 import 'avatar_editor_option_button.dart';
+import 'avatar_upload_image.dart';
 import 'emoji_avatar_tile.dart';
 import 'image_avatar_capture.dart';
 import 'profile_avatar_crop_page.dart';
@@ -211,6 +212,11 @@ class ProfileAvatarEditor extends HookConsumerWidget {
         if (picked == null || !isCurrentOperation()) return;
         final preparedPhoto = await service.prepareImageBytes(picked);
         if (!context.mounted || !isCurrentOperation()) return;
+        // A GIF is kept as it is: cropping would drop its animation.
+        if (isGifImage(preparedPhoto)) {
+          onDraftChanged(ProfileImageAvatarDraft(preparedPhoto));
+          return;
+        }
         final cropped = await Navigator.of(context).push<Uint8List>(
           MaterialPageRoute(
             builder: (_) => ProfileAvatarCropPage(

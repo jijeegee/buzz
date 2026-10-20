@@ -24,6 +24,7 @@ import '../../shared/widgets/sheet_divider.dart';
 import '../groups/group_settings_section.dart';
 import 'channel.dart';
 import 'group_avatar.dart';
+import 'group_photo_viewer.dart';
 import 'add_members_sheet.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_management_provider.dart';

@@ -1,6 +1,7 @@
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
@@ -2515,6 +2516,7 @@ NostrEvent _meta({
   int? ttlSeconds,
   bool archived = false,
   String? goals,
+  String? picture,
 }) => NostrEvent(
   id: 'meta-$id',
   pubkey: 'creator',
@@ -2528,6 +2530,7 @@ NostrEvent _meta({
     if (ttlSeconds != null) ['ttl', '$ttlSeconds'],
     if (archived) ['archived', 'true'],
     if (goals != null) ['goals', goals],
+    if (picture != null) ['picture', picture],
   ],
   content: '',
   sig: 'sig',
