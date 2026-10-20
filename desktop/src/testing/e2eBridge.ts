@@ -13979,6 +13979,7 @@ export function maybeInstallE2eTauriMocks() {
           cloned: false,
         };
       case "get_relay_ws_url":
+      case "get_relay_connect_url":
         return getRelayWsUrl(activeConfig);
       case "get_default_relay_url":
         return getRelayWsUrl(activeConfig);
