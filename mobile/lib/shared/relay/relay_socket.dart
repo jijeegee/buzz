@@ -72,6 +72,11 @@ class RelaySocket {
   /// Set before [connect].
   RelayAccessTokens? accessTokens;
 
+  /// The address NIP-42 AUTH is signed for, when the socket connects to
+  /// another address of the same service (the account's home region);
+  /// `null` signs for the address it connects to. Set before [connect].
+  String? authRelayUrl;
+
   /// Whether a refreshable first-AUTH rejection refreshes the token (and
   /// fails with [RelayTokenRefreshedException]) or is terminal. The session
   /// clears it on the reconnect a refresh triggered, bounding the cycle to
@@ -103,9 +108,9 @@ class RelaySocket {
   /// Connect to the relay and complete NIP-42 authentication.
   Future<void> connect() async {
     if (_state != SocketState.disconnected) return;
-    // Every relay socket opens here: only the built-in server may be
-    // reached, whatever address the caller was given.
-    if (!allowConnection('relay connection', _wsUrl)) {
+    // Every relay socket opens here: only the built-in server, or an
+    // address of it that it gave an account, may be reached.
+    if (!allowRelayConnection('relay connection', _wsUrl)) {
       _onDisconnected(StateError(differentServerMessage));
       return;
     }
@@ -397,7 +402,7 @@ class RelaySocket {
 
       // Build the auth tags.
       final tags = <List<String>>[
-        ['relay', _wsUrl],
+        ['relay', authRelayUrl ?? _wsUrl],
         ['challenge', challenge],
       ];
 

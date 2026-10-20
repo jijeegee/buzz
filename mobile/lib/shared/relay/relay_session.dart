@@ -14,6 +14,7 @@ import '../../features/age_gate/age_signal_provider.dart';
 import '../auth/auth.dart';
 import '../auth/token/token_session.dart';
 import 'nostr_models.dart';
+import 'connect_url_provider.dart';
 import 'relay_access_tokens.dart';
 import 'relay_client.dart';
 import 'relay_closed_policy.dart';
@@ -160,6 +161,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     final tokens = config.tokenAuth
         ? ref.watch(relayAccessTokensProvider)
         : null;
+    // Learns where this account connects; the next connect attempt uses it.
+    if (config.tokenAuth) ref.listen(serverGivenConnectUrlProvider, (_, _) {});
     _accessTokens = tokens;
     if (tokens != null) {
       _tokenListenerRemovers
@@ -573,8 +576,14 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     );
 
     _socket?.dispose();
+    // Read per attempt: the server may give this account another address of
+    // itself (its home region) once it has signed in. AUTH stays signed for
+    // the service address.
+    final connectUrl =
+        serverGivenConnectUrl(config.tokenAuth ? config.principalId : null) ??
+        config.wsUrl;
     final socket = _socketFactory(
-      wsUrl: config.wsUrl,
+      wsUrl: connectUrl,
       nsec: config.nsec,
       onMessage: (message) {
         if (generation == _connectionGeneration) _handleMessage(message);
@@ -583,6 +592,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       onDisconnected: (error) => _handleDisconnected(generation, error),
     );
     socket.accessTokens = config.tokenAuth ? _accessTokens : null;
+    if (connectUrl != config.wsUrl) socket.authRelayUrl = config.wsUrl;
     socket.refreshRejectedToken = !_retryingRefreshedToken;
     _retryingRefreshedToken = false;
     _socket = socket;
