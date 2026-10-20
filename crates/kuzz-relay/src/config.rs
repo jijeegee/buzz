@@ -335,6 +335,19 @@ pub struct Config {
     /// run a build that reads the envelope.
     pub pubsub_seq_envelope: bool,
 
+    /// This relay's region (`KUZZ_REGION_ID`, default `kr`, the first
+    /// region). Short id: a lowercase letter, then up to 15 lowercase
+    /// letters, digits or `-`. Recorded in the `regions` table at startup.
+    pub region_id: String,
+
+    /// The primary region (`KUZZ_PRIMARY_REGION`, default this relay's
+    /// region). Only the primary region runs deployment-wide jobs.
+    pub primary_region: String,
+
+    /// Address clients in this region connect to (`KUZZ_REGION_CONNECT_URL`,
+    /// default `RELAY_URL`).
+    pub region_connect_url: String,
+
     /// Resync signal (`KUZZ_RESYNC_SIGNAL`, default off).
     ///
     /// On: when this relay may have missed events from other relays (Redis
@@ -610,6 +623,30 @@ fn parse_operator_listener_delivery_urls(
         }
     }
     Ok(endpoints)
+}
+
+/// A region id: a lowercase letter, then up to 15 lowercase letters, digits
+/// or `-` (the `regions.id` CHECK).
+pub fn is_valid_region_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && id.len() <= 16
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn parse_region_id(name: &str, default: &str) -> Result<String, ConfigError> {
+    let value = std::env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| default.to_string());
+    if is_valid_region_id(&value) {
+        Ok(value)
+    } else {
+        Err(ConfigError::InvalidValue(format!(
+            "{name} must be a lowercase letter followed by up to 15 lowercase letters, digits or '-' (got {value:?})"
+        )))
+    }
 }
 
 fn parse_bool(name: &str, default: bool) -> Result<bool, ConfigError> {
@@ -1235,6 +1272,13 @@ impl Config {
         let pubsub_seq_envelope = parse_bool("KUZZ_PUBSUB_SEQ_ENVELOPE", false)?;
         let resync_signal = parse_bool("KUZZ_RESYNC_SIGNAL", false)?;
         let side_effect_retry = parse_bool("KUZZ_SIDE_EFFECT_RETRY", false)?;
+        let region_id = parse_region_id("KUZZ_REGION_ID", "kr")?;
+        let primary_region = parse_region_id("KUZZ_PRIMARY_REGION", &region_id)?;
+        let region_connect_url = std::env::var("KUZZ_REGION_CONNECT_URL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| relay_url.clone());
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1467,6 +1511,9 @@ impl Config {
             audit_enabled,
             chat_state_writes,
             pubsub_seq_envelope,
+            region_id,
+            primary_region,
+            region_connect_url,
             resync_signal,
             side_effect_retry,
             ephemeral_ttl_override,
@@ -1552,6 +1599,29 @@ impl Config {
             .push(std::thread::current().id());
         let _fi_guard = crate::nip_fi_config::NIP_FI_ENV_LOCK.lock().unwrap();
         Self::from_env().expect("default config must load for test fixture")
+    }
+}
+
+#[cfg(test)]
+mod region_id_tests {
+    use super::is_valid_region_id;
+
+    #[test]
+    fn region_ids_are_short_lowercase_names() {
+        for ok in ["kr", "jp", "us-east", "sg2", "a"] {
+            assert!(is_valid_region_id(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "KR",
+            "2kr",
+            "-kr",
+            "kr_1",
+            "kr.example",
+            "abcdefghijklmnopq",
+        ] {
+            assert!(!is_valid_region_id(bad), "{bad}");
+        }
     }
 }
 
@@ -1718,6 +1788,9 @@ mod tests {
             "Redis sequence envelope must default to off"
         );
         assert!(!config.resync_signal, "resync signal must default to off");
+        assert_eq!(config.region_id, "kr");
+        assert_eq!(config.primary_region, "kr");
+        assert_eq!(config.region_connect_url, config.relay_url);
         assert!(
             !config.side_effect_retry,
             "side-effect retry must default to off"

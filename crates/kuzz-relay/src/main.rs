@@ -407,6 +407,32 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         ));
     }
 
+    // Record this relay's region (global regions S2). Fatal on failure when
+    // this relay migrates: a second primary, or a region the table refuses,
+    // must not start. Without auto-migrate the table may not exist yet, so
+    // only warn.
+    {
+        let is_primary = config.region_id == config.primary_region;
+        match db
+            .register_region(&config.region_id, &config.region_connect_url, is_primary)
+            .await
+        {
+            Ok(region) => {
+                info!(region = %region.id, primary = region.is_primary, "Region recorded");
+            }
+            Err(e) if auto_migrate => {
+                error!(region = %config.region_id, "Failed to record this relay's region: {e}");
+                return Err(anyhow::anyhow!(
+                    "Failed to record region {}: {e}",
+                    config.region_id
+                ));
+            }
+            Err(e) => {
+                warn!(region = %config.region_id, "Could not record this relay's region (migrations not applied by this relay?): {e}");
+            }
+        }
+    }
+
     // NIP-43 / multi-tenant: seed the deployment's *own* community before any
     // membership backfill or owner bootstrap, so those writes are scoped to a
     // real `(community_id, pubkey)` and not a global pubkey. The host is derived

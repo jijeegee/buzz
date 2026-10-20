@@ -278,6 +278,19 @@ BEGIN
     END IF;
 END $$;
 
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('regions', 'deployment regions; a region serves every community')
+ON CONFLICT (table_name) DO NOTHING;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM _operator_global_tables WHERE table_name = 'regions'
+    ) THEN
+        RAISE EXCEPTION 'regions must be registered as deployment-global';
+    END IF;
+END $$;
+
 ALTER TABLE replica_heartbeat SET (vacuum_truncate = false);
 
 INSERT INTO replica_heartbeat (id) VALUES (1)

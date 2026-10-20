@@ -509,6 +509,7 @@ mod postgres_tests {
             "refresh_tokens",
             "bots",
             "access_tokens",
+            "regions",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -723,7 +724,10 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 76);
+        assert_eq!(migrations.len(), 77);
+        assert_eq!(migrations[76].version, 78);
+        assert!(migrations[76].sql.as_str().contains("CREATE TABLE regions"));
+        assert!(include_str!("../../../../schema/schema.sql").contains("CREATE TABLE regions"));
         assert_eq!(migrations[75].version, 77);
         assert!(migrations[75]
             .sql
