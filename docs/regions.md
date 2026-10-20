@@ -61,7 +61,7 @@ Before a second region is turned on, every job started from
 | push matcher | home | matching needs the stored event |
 | NIP-ER reminder scheduler | home | reminders belong to a room |
 | workflow cron | home | workflows belong to a room |
-| audit writer | home | one audit chain per region (planned) |
+| audit writer | every | each region's database holds its own per-community chains |
 | push delivery worker | primary | push registrations are global |
 | operator-listener reaper and delivery | primary | operator state is global |
 | admin outbox worker, admin action recovery | primary | admin actions are global |
@@ -70,3 +70,11 @@ Before a second region is turned on, every job started from
 
 Jobs that already coordinate through database leases, advisory locks or a
 leader keep doing so within their scope.
+
+## Audit chains
+
+`audit_log` lives in each region's own database, so every region keeps its
+own chain per community and two regions never append to the same chain. The
+region id is not part of the hash. Add it (a new `hash_version`) before audit
+rows from several regions are ever combined in one place, so an entry cannot
+be moved from one region's chain to another's unnoticed.
