@@ -417,6 +417,10 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         "device_id": binding.device_id,
         "bot": bot,
         "operator": binding.is_operator,
+        // Where this account's apps and agents connect. One address for now;
+        // with regions it becomes the account's home region. Signatures keep
+        // the service URL from NIP-11 `kuzz_service_url`.
+        "connect_url": state.config.relay_url,
     }))
     .into_response()
 }

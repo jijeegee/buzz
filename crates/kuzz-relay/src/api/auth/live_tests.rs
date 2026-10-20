@@ -658,9 +658,11 @@ async fn refresh_rotation_replay_and_reuse_detection() {
         retry["refresh"], r2["refresh"],
         "replay cache returns the same rotation"
     );
+    let (status, me) = me_status(&inst, r2["access"].as_str().unwrap()).await;
+    assert_eq!(status, 200);
     assert_eq!(
-        me_status(&inst, r2["access"].as_str().unwrap()).await.0,
-        200
+        me["connect_url"], inst.state.config.relay_url,
+        "one region: apps connect to the service URL"
     );
 
     // Past the replay window: R1 again is theft.
