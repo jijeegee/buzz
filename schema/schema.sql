@@ -1964,7 +1964,10 @@ CREATE TABLE principals (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     disabled_at   TIMESTAMPTZ,
     purge_after   TIMESTAMPTZ,
-    discoverable  BOOLEAN NOT NULL DEFAULT true
+    discoverable  BOOLEAN NOT NULL DEFAULT true,
+    home_region   TEXT CONSTRAINT principals_home_region
+        CHECK (home_region ~ '^[a-z][a-z0-9-]{0,15}$'),
+    country       TEXT CONSTRAINT principals_country CHECK (country ~ '^[A-Z]{2}$')
 );
 CREATE UNIQUE INDEX principals_username_lower
     ON principals (lower(username)) WHERE username IS NOT NULL;
@@ -3017,3 +3020,19 @@ $$;
 CREATE TRIGGER forget_room_home
 AFTER DELETE ON channels
 FOR EACH ROW EXECUTE FUNCTION forget_room_home();
+
+-- ── Account home region (migration 0080) ─────────────────────────────────
+-- Fills principals.home_region from local_region on insert.
+CREATE FUNCTION set_principal_home() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.home_region IS NULL THEN
+        SELECT region_id INTO NEW.home_region FROM local_region;
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER set_principal_home
+BEFORE INSERT ON principals
+FOR EACH ROW EXECUTE FUNCTION set_principal_home();

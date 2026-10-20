@@ -3,6 +3,7 @@
 //! Each relay records its own region at startup and claims this database for
 //! it. Room and user home markers refer to these ids.
 
+use kuzz_core::principal::PrincipalId;
 use kuzz_core::CommunityId;
 use kuzz_datastore_tracing::datastore_span;
 use sqlx::Row;
@@ -122,6 +123,51 @@ impl Db {
         Ok(added)
     }
 
+    /// Give every account without a home region the local region (accounts
+    /// from before migration 0080, or created while no region was claimed).
+    /// Returns the number of accounts updated.
+    #[datastore_span(name = "backfill_principal_homes", system = "postgresql")]
+    pub async fn backfill_principal_homes(&self) -> Result<u64> {
+        let updated = sqlx::query(
+            "UPDATE principals p SET home_region = l.region_id \
+               FROM local_region l WHERE p.home_region IS NULL",
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        Ok(updated)
+    }
+
+    /// Record the country an account signed up from, unless one is recorded.
+    /// `country` must be two uppercase letters.
+    #[datastore_span(name = "record_signup_country", system = "postgresql")]
+    pub async fn record_signup_country(
+        &self,
+        principal: &PrincipalId,
+        country: &str,
+    ) -> Result<()> {
+        sqlx::query("UPDATE principals SET country = $2 WHERE id = $1 AND country IS NULL")
+            .bind(principal.as_bytes().as_slice())
+            .bind(country)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// The account's home region and sign-up country.
+    #[datastore_span(name = "principal_home", system = "postgresql")]
+    pub async fn principal_home(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<Option<(Option<String>, Option<String>)>> {
+        let row = sqlx::query("SELECT home_region, country FROM principals WHERE id = $1")
+            .bind(principal.as_bytes().as_slice())
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(|row| Ok((row.try_get("home_region")?, row.try_get("country")?)))
+            .transpose()
+    }
+
     /// The room's home, or `None` when the directory has no row for it.
     #[datastore_span(name = "room_home", system = "postgresql")]
     pub async fn room_home(
@@ -173,6 +219,7 @@ mod postgres_tests {
 
     use super::RoomHome;
     use crate::Db;
+    use kuzz_core::principal::PrincipalId;
 
     async fn community(db: &Db) -> CommunityId {
         let id = CommunityId::from_uuid(Uuid::new_v4());
@@ -337,5 +384,51 @@ mod postgres_tests {
             .await
             .expect("delete room");
         assert_eq!(db.room_home(scope, dm).await.expect("home"), None);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn accounts_record_their_home_region_and_signup_country() {
+        let db = db().await;
+        let insert = |id: PrincipalId| {
+            let pool = db.pool.clone();
+            async move {
+                sqlx::query("INSERT INTO principals (id, kind) VALUES ($1, 'user')")
+                    .bind(id.as_bytes().as_slice())
+                    .execute(&pool)
+                    .await
+                    .expect("principal");
+            }
+        };
+        let early = PrincipalId::generate();
+        insert(early).await;
+        assert_eq!(
+            db.principal_home(&early).await.expect("home"),
+            Some((None, None))
+        );
+
+        db.register_region("kr", "wss://kr.example", true)
+            .await
+            .expect("region");
+        db.claim_local_region("kr").await.expect("claim");
+        assert!(db.backfill_principal_homes().await.expect("backfill") >= 1);
+        assert_eq!(
+            db.principal_home(&early).await.expect("home"),
+            Some((Some("kr".to_string()), None))
+        );
+
+        // New accounts get the local region from the trigger.
+        let later = PrincipalId::generate();
+        insert(later).await;
+        db.record_signup_country(&later, "JP")
+            .await
+            .expect("country");
+        // The first recorded country stays.
+        db.record_signup_country(&later, "US").await.expect("again");
+        assert_eq!(
+            db.principal_home(&later).await.expect("home"),
+            Some((Some("kr".to_string()), Some("JP".to_string())))
+        );
+        assert!(db.record_signup_country(&early, "jp").await.is_err());
     }
 }
