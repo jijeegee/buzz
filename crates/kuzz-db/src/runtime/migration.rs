@@ -722,7 +722,12 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 75);
+        assert_eq!(migrations.len(), 76);
+        assert_eq!(migrations[75].version, 76);
+        assert!(migrations[75]
+            .sql
+            .as_str()
+            .contains("FUNCTION channel_history_floor"));
         assert_eq!(migrations[74].version, 75);
         // Fresh desired-state bootstraps must stamp the same body as 0075.
         let skip_duplicates = migrations[74].sql.as_str();
