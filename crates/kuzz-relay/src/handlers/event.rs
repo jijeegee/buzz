@@ -869,6 +869,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 IngestError::AuthFailed(m)
                 | IngestError::Rejected(m)
                 | IngestError::CanvasConflict(m) => (m, "auth"),
+                IngestError::WrongRegion(home) => (home.ws_message(), "invalid"),
             };
             reject(reason);
             conn.send(RelayMessage::ok(&event_id_hex, false, &message));
@@ -1002,6 +1003,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                     IngestError::CanvasConflict(message) => (message, "invalid"),
                     IngestError::AuthFailed(message) => (message, "auth"),
                     IngestError::Internal(message) => (message, "error"),
+                    IngestError::WrongRegion(home) => (home.ws_message(), "invalid"),
                 };
                 reject(reason);
                 conn.send(RelayMessage::ok(&event_id_hex, false, &message));
@@ -1074,6 +1076,7 @@ pub async fn handle_event(event: Event, conn: Arc<ConnectionState>, state: Arc<A
                 IngestError::CanvasConflict(m) => (m.clone(), "invalid"),
                 IngestError::AuthFailed(m) => (m.clone(), "auth"),
                 IngestError::Internal(_) => ("error: internal server error".to_string(), "error"),
+                IngestError::WrongRegion(home) => (home.ws_message(), "invalid"),
             };
             reject(reason);
             conn.send(RelayMessage::ok(&event_id_hex, false, &msg));
@@ -1199,6 +1202,7 @@ async fn handle_ephemeral_event(
 
     // Check channel membership before publishing other ephemeral events.
     if let Some(ch_id) = super::ingest::extract_channel_id(&event) {
+        super::ingest::ensure_room_here(&state, &conn.tenant, ch_id).await?;
         // Membership refusals are client-input rejections, and the shared
         // gate's message text is surfaced verbatim exactly as before this
         // typed classification; no behavior change on this path.

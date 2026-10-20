@@ -119,6 +119,25 @@ pub async fn handle_req_paged(
         }
     };
 
+    // Global regions (S3): rooms of another region are read there.
+    if let Some(requested) = requested_channel_ids.as_ref() {
+        match state
+            .first_room_elsewhere(conn.tenant.community(), requested.iter().copied())
+            .await
+        {
+            Ok(None) => {}
+            Ok(Some(home)) => {
+                conn.send(RelayMessage::closed(&sub_id, &home.ws_message()));
+                return;
+            }
+            Err(e) => {
+                warn!(conn_id = %conn_id, "Room region lookup failed: {e}");
+                conn.send(RelayMessage::closed(&sub_id, "error: database error"));
+                return;
+            }
+        }
+    }
+
     let mut accessible_channels = if filters_are_nip43_membership_only(&filters) {
         metrics::counter!("kuzz_req_global_access_resolution_skips_total", "kind" => "13534")
             .increment(1);

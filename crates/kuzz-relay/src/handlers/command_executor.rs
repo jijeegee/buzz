@@ -62,6 +62,12 @@ pub async fn handle_command(
     }
 
     let kind = event.kind.as_u16() as u32;
+    // Global regions (S3): a command on a room of another region runs there.
+    if kind != KIND_DM_OPEN {
+        if let Some(channel_id) = super::ingest::extract_channel_id(&event) {
+            super::ingest::ensure_room_here(state, tenant, channel_id).await?;
+        }
+    }
     match kind {
         KIND_DM_OPEN => handle_dm_open(tenant, state, &event, &auth).await,
         KIND_DM_ADD_MEMBER => handle_dm_add_member(tenant, state, &event, &auth).await,
@@ -1506,6 +1512,7 @@ mod postgres_tests {
             }
             Err(IngestError::AuthFailed(message)) => panic!("unexpected auth failure: {message}"),
             Err(IngestError::Internal(message)) => panic!("unexpected internal failure: {message}"),
+            Err(IngestError::WrongRegion(home)) => panic!("unexpected region refusal: {home:?}"),
             Ok(_) => panic!("expected revision parsing to fail"),
         }
     }
