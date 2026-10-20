@@ -454,6 +454,57 @@ pub async fn lock_member_snapshot(
     })
 }
 
+/// Outcome of a membership write made for an event (see migration 0082).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemberWrite {
+    /// The change was applied.
+    Applied,
+    /// This event's change was applied before (a re-run).
+    AlreadyApplied,
+    /// A later change to this membership was applied first; this one is
+    /// skipped so it does not undo it.
+    Superseded,
+}
+
+/// Where `cause` sits in the channel's order relative to the last recorded
+/// change of this membership. `None` when the event has no channel sequence
+/// (it is then applied without ordering).
+async fn member_write_order(
+    tx: &mut Transaction<'_, Postgres>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    cause: &[u8],
+) -> Result<(Option<i64>, MemberWrite)> {
+    let seq: Option<i64> = sqlx::query_scalar(
+        "SELECT channel_sequence FROM events \
+         WHERE community_id = $1 AND id = $2 AND channel_id = $3 AND channel_sequence > 0",
+    )
+    .bind(community_id.as_uuid())
+    .bind(cause)
+    .bind(channel_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(seq) = seq else {
+        return Ok((None, MemberWrite::Applied));
+    };
+    let last: Option<(Option<i64>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT membership_seq, membership_event_id FROM channel_members \
+         WHERE community_id = $1 AND channel_id = $2 AND pubkey = $3",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .bind(pubkey)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let write = match last {
+        Some((_, Some(event_id))) if event_id == cause => MemberWrite::AlreadyApplied,
+        Some((Some(last_seq), _)) if last_seq >= seq => MemberWrite::Superseded,
+        _ => MemberWrite::Applied,
+    };
+    Ok((Some(seq), write))
+}
+
 /// Add a member to a channel.
 ///
 /// Role enforcement:
@@ -475,6 +526,52 @@ pub async fn add_member(
     role: MemberRole,
     invited_by: Option<&[u8]>,
 ) -> Result<MemberRecord> {
+    let (record, _) = add_member_ordered(
+        pool,
+        community_id,
+        channel_id,
+        pubkey,
+        role,
+        invited_by,
+        None,
+    )
+    .await?;
+    record.ok_or_else(|| DbError::InvalidData("unordered member add skipped".into()))
+}
+
+/// [`add_member`] for the side effect of event `cause` (a 9000 or 9021):
+/// skipped when this event or a later change was already applied. The record
+/// is `None` when skipped.
+pub async fn add_member_for_event(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    role: MemberRole,
+    invited_by: Option<&[u8]>,
+    cause: &[u8],
+) -> Result<(Option<MemberRecord>, MemberWrite)> {
+    add_member_ordered(
+        pool,
+        community_id,
+        channel_id,
+        pubkey,
+        role,
+        invited_by,
+        Some(cause),
+    )
+    .await
+}
+
+async fn add_member_ordered(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    role: MemberRole,
+    invited_by: Option<&[u8]>,
+    cause: Option<&[u8]>,
+) -> Result<(Option<MemberRecord>, MemberWrite)> {
     if pubkey.len() != 32 {
         return Err(DbError::InvalidData(format!(
             "pubkey must be 32 bytes, got {}",
@@ -492,6 +589,20 @@ pub async fn add_member(
     // First statement: serialize the whole role-check / owner-count / upsert
     // sequence against concurrent membership writes on this channel.
     acquire_channel_membership_lock(&mut tx, community_id, channel_id).await?;
+
+    // Ordering first: a re-run or stale event must not fail on authorization
+    // that later changes took away.
+    let order_seq = match cause {
+        Some(cause) => {
+            let (seq, write) =
+                member_write_order(&mut tx, community_id, channel_id, pubkey, cause).await?;
+            if write != MemberWrite::Applied {
+                return Ok((None, write));
+            }
+            seq
+        }
+        None => None,
+    };
 
     let channel = get_channel_tx(&mut tx, community_id, channel_id).await?;
 
@@ -598,12 +709,17 @@ pub async fn add_member(
 
     sqlx::query(
         r#"
-        INSERT INTO channel_members (community_id, channel_id, pubkey, role, invited_by)
-        VALUES ($1, $2, $3, $4::member_role, $5)
+        INSERT INTO channel_members
+            (community_id, channel_id, pubkey, role, invited_by, membership_seq, membership_event_id)
+        VALUES ($1, $2, $3, $4::member_role, $5,
+            COALESCE($6, (SELECT accepted_sequence FROM channels WHERE community_id = $1 AND id = $2)),
+            $7)
         ON CONFLICT (community_id, channel_id, pubkey) DO UPDATE SET
             removed_at = NULL,
             removed_by = NULL,
-            role = EXCLUDED.role
+            role = EXCLUDED.role,
+            membership_seq = EXCLUDED.membership_seq,
+            membership_event_id = EXCLUDED.membership_event_id
         "#,
     )
     .bind(community_id.as_uuid())
@@ -611,6 +727,8 @@ pub async fn add_member(
     .bind(pubkey)
     .bind(effective_role.as_str())
     .bind(invited_by)
+    .bind(order_seq)
+    .bind(cause.filter(|_| order_seq.is_some()))
     .execute(&mut *tx)
     .await?;
 
@@ -628,7 +746,7 @@ pub async fn add_member(
 
     let record = row_to_member_record(row)?;
     tx.commit().await?;
-    Ok(record)
+    Ok((Some(record), MemberWrite::Applied))
 }
 
 /// Remove a member from a channel (soft delete).
@@ -657,6 +775,40 @@ pub async fn remove_member(
     pubkey: &[u8],
     actor_pubkey: &[u8],
 ) -> Result<()> {
+    remove_member_ordered(pool, community_id, channel_id, pubkey, actor_pubkey, None)
+        .await
+        .map(|_| ())
+}
+
+/// [`remove_member`] for the side effect of event `cause` (a 9001 or 9022):
+/// skipped when this event or a later change was already applied.
+pub async fn remove_member_for_event(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    actor_pubkey: &[u8],
+    cause: &[u8],
+) -> Result<MemberWrite> {
+    remove_member_ordered(
+        pool,
+        community_id,
+        channel_id,
+        pubkey,
+        actor_pubkey,
+        Some(cause),
+    )
+    .await
+}
+
+async fn remove_member_ordered(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    actor_pubkey: &[u8],
+    cause: Option<&[u8]>,
+) -> Result<MemberWrite> {
     let is_self_remove = pubkey == actor_pubkey;
 
     // Immutable, and must not be queried while holding the lock (second pool
@@ -679,6 +831,19 @@ pub async fn remove_member(
     // the UPDATE against concurrent membership writes on this channel (same key
     // as `add_member`).
     acquire_channel_membership_lock(&mut tx, community_id, channel_id).await?;
+
+    // Ordering first (see `add_member_ordered`).
+    let order_seq = match cause {
+        Some(cause) => {
+            let (seq, write) =
+                member_write_order(&mut tx, community_id, channel_id, pubkey, cause).await?;
+            if write != MemberWrite::Applied {
+                return Ok(write);
+            }
+            seq
+        }
+        None => None,
+    };
 
     if !is_self_remove {
         let actor_role_str = get_active_role_tx(&mut tx, community_id, channel_id, actor_pubkey)
@@ -718,7 +883,10 @@ pub async fn remove_member(
     let result = sqlx::query(
         r#"
         UPDATE channel_members
-        SET removed_at = NOW(), removed_by = $1
+        SET removed_at = NOW(), removed_by = $1,
+            membership_seq = COALESCE($5,
+                (SELECT accepted_sequence FROM channels WHERE community_id = $2 AND id = $3)),
+            membership_event_id = $6
         WHERE community_id = $2 AND channel_id = $3 AND pubkey = $4 AND removed_at IS NULL
         "#,
     )
@@ -726,6 +894,8 @@ pub async fn remove_member(
     .bind(community_id.as_uuid())
     .bind(channel_id)
     .bind(pubkey)
+    .bind(order_seq)
+    .bind(cause.filter(|_| order_seq.is_some()))
     .execute(&mut *tx)
     .await?;
 
@@ -734,7 +904,7 @@ pub async fn remove_member(
     }
 
     tx.commit().await?;
-    Ok(())
+    Ok(MemberWrite::Applied)
 }
 
 /// Returns `true` if the given pubkey is an active member of the channel.
@@ -1580,6 +1750,53 @@ impl Db {
             pubkey,
             role,
             invited_by,
+        )
+        .await
+    }
+
+    /// Adds a member for the side effect of event `cause` (see
+    /// [`add_member_for_event`]).
+    #[allow(clippy::too_many_arguments)]
+    #[datastore_span(name = "add_member_for_event", system = "postgresql")]
+    pub async fn add_member_for_event(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        pubkey: &[u8],
+        role: MemberRole,
+        invited_by: Option<&[u8]>,
+        cause: &[u8],
+    ) -> Result<(Option<MemberRecord>, MemberWrite)> {
+        add_member_for_event(
+            &self.pool,
+            community_id,
+            channel_id,
+            pubkey,
+            role,
+            invited_by,
+            cause,
+        )
+        .await
+    }
+
+    /// Removes a member for the side effect of event `cause` (see
+    /// [`remove_member_for_event`]).
+    #[datastore_span(name = "remove_member_for_event", system = "postgresql")]
+    pub async fn remove_member_for_event(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        pubkey: &[u8],
+        actor_pubkey: &[u8],
+        cause: &[u8],
+    ) -> Result<MemberWrite> {
+        remove_member_for_event(
+            &self.pool,
+            community_id,
+            channel_id,
+            pubkey,
+            actor_pubkey,
+            cause,
         )
         .await
     }

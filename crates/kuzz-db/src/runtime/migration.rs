@@ -725,7 +725,13 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 80);
+        assert_eq!(migrations.len(), 81);
+        assert_eq!(migrations[80].version, 82);
+        assert!(migrations[80]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN membership_seq BIGINT"));
+        assert!(include_str!("../../../../schema/schema.sql").contains("membership_event_id BYTEA"));
         assert_eq!(migrations[79].version, 81);
         assert!(migrations[79]
             .sql
