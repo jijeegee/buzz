@@ -34,6 +34,7 @@ class AccountProfile {
     this.username,
     this.email,
     this.discoverable = true,
+    this.connectUrl,
   });
 
   factory AccountProfile.fromJson(Map<String, Object?> json) {
@@ -48,6 +49,7 @@ class AccountProfile {
     final username = json['username'];
     final email = json['email'];
     final discoverable = json['discoverable'];
+    final connectUrl = json['connect_url'];
     return AccountProfile(
       principalId: principal,
       displayName: name is String ? name : '',
@@ -56,6 +58,9 @@ class AccountProfile {
       email: email is String && email.isNotEmpty ? email : null,
       // Relays before people lookup send none; the account default is on.
       discoverable: discoverable is bool ? discoverable : true,
+      connectUrl: connectUrl is String && connectUrl.isNotEmpty
+          ? connectUrl
+          : null,
     );
   }
 
@@ -71,6 +76,10 @@ class AccountProfile {
   /// Whether other people can find this account by its exact Kuzz ID or
   /// email (`GET /auth/people/lookup`).
   final bool discoverable;
+
+  /// Where this account connects: its home region's address. Relays before
+  /// regions send none.
+  final String? connectUrl;
 }
 
 /// Another person as the people endpoints return them

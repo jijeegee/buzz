@@ -162,6 +162,55 @@ bool allowConnection(String context, String url) {
   return false;
 }
 
+/// A `connect_url` the built-in server [builtInOrigin] gave an account (its
+/// home region, another address of the same service), or `null` when it is
+/// unusable or just the built-in server again: a WebSocket URL with the same
+/// security as the built-in server, so prod only takes `wss`.
+String? acceptConnectUrl(String? url, String? builtInOrigin) {
+  final trimmed = url?.trim() ?? '';
+  final scheme = trimmed.split('://').first.toLowerCase();
+  if (builtInOrigin == null || (scheme != 'wss' && scheme != 'ws')) {
+    return null;
+  }
+  final given = _relayOrigin(trimmed);
+  final builtIn = _relayOrigin(builtInOrigin);
+  if (given == null || builtIn == null || given == builtIn) return null;
+  final secure = given.startsWith('https://');
+  return secure == builtIn.startsWith('https://') ? trimmed : null;
+}
+
+/// Addresses the built-in server gave each account (keyed by principal),
+/// learned from `/auth/me` in this run.
+final Map<String, String> _serverGivenConnectUrls = {};
+
+/// Record what [acceptConnectUrl] made of the `connect_url` `/auth/me`
+/// returned for [principal]; `null` forgets the account's address.
+void rememberConnectUrl(String principal, String? acceptedUrl) {
+  if (acceptedUrl == null) {
+    _serverGivenConnectUrls.remove(principal);
+  } else {
+    _serverGivenConnectUrls[principal] = acceptedUrl;
+  }
+}
+
+/// The address the built-in server gave [principal], if any.
+String? serverGivenConnectUrl(String? principal) =>
+    principal == null ? null : _serverGivenConnectUrls[principal];
+
+/// [allowConnection] for the relay WebSocket, which may also reach an address
+/// the built-in server gave an account. Everything else (signing, sessions,
+/// push, one-shot sockets) stays on the built-in server.
+bool allowRelayConnection(String context, String url) {
+  final origin = _relayOrigin(url);
+  if (origin != null &&
+      _serverGivenConnectUrls.values.any((given) {
+        return _relayOrigin(given) == origin;
+      })) {
+    return true;
+  }
+  return allowConnection(context, url);
+}
+
 /// The built-in server origin (see [builtInServerOrigin]). Tests override it
 /// to switch the fixed-server rule on with a fake origin.
 final defaultCommunityOriginProvider = Provider<String?>(
