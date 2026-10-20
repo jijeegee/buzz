@@ -67,6 +67,8 @@ pub mod push_runtime;
 pub mod readiness;
 /// Axum router construction.
 pub mod router;
+/// Background retry of side effects left in the outbox.
+pub mod side_effect_retry;
 /// Shared application state.
 pub mod state;
 pub mod storage_sweep;
