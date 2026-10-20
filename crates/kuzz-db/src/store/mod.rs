@@ -69,6 +69,8 @@ pub mod relay_members;
 pub mod relay_operators;
 /// Event-reminder delivery query, claim, and release persistence.
 pub mod reminder;
+/// Deployment regions (migration 0078).
+pub mod region;
 /// Replaceable-event persistence and coordinate locking.
 pub mod replaceable;
 /// Durable completed snapshots from the isolated media-storage worker.
