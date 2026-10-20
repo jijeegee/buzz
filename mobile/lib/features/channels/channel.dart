@@ -2,6 +2,12 @@ import 'package:flutter/foundation.dart';
 
 const Object _sentinel = Object();
 
+String? _nonEmpty(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
 /// Shown when a private-channel add is refused, so a missing Invite action
 /// reads as a rule rather than a bug.
 const privateChannelAddDeniedMessage =
@@ -31,6 +37,9 @@ class Channel {
   /// only when disabled, so absent means on.
   final bool goalsEnabled;
 
+  /// Group photo URL (kind 39000 `["picture", url]`); null shows the letter.
+  final String? picture;
+
   const Channel({
     required this.id,
     required this.name,
@@ -50,6 +59,7 @@ class Channel {
     this.ttlSeconds,
     this.ttlDeadline,
     this.goalsEnabled = true,
+    this.picture,
   });
 
   factory Channel.fromJson(Map<String, dynamic> json) => Channel(
@@ -79,6 +89,7 @@ class Channel {
     ttlDeadline: json['ttl_deadline'] != null
         ? DateTime.parse(json['ttl_deadline'] as String)
         : null,
+    picture: _nonEmpty(json['picture']),
   );
 
   bool get isEphemeral => ttlSeconds != null || ttlDeadline != null;
@@ -145,6 +156,7 @@ class Channel {
     ttlSeconds: details.ttlSeconds,
     ttlDeadline: details.ttlDeadline,
     goalsEnabled: details.goalsEnabled,
+    picture: details.picture,
   );
 
   Channel copyWith({
@@ -155,6 +167,7 @@ class Channel {
     int? memberCount,
     bool? isMember,
     bool? goalsEnabled,
+    Object? picture = _sentinel,
   }) => Channel(
     id: id,
     name: name ?? this.name,
@@ -178,6 +191,7 @@ class Channel {
     ttlSeconds: ttlSeconds,
     ttlDeadline: ttlDeadline,
     goalsEnabled: goalsEnabled ?? this.goalsEnabled,
+    picture: identical(picture, _sentinel) ? this.picture : picture as String?,
   );
 }
 
@@ -201,6 +215,9 @@ class ChannelDetails {
   /// only when disabled, so absent means on.
   final bool goalsEnabled;
 
+  /// Group photo URL (kind 39000 `["picture", url]`); null when unset.
+  final String? picture;
+
   const ChannelDetails({
     required this.id,
     required this.name,
@@ -216,6 +233,7 @@ class ChannelDetails {
     this.ttlSeconds,
     this.ttlDeadline,
     this.goalsEnabled = true,
+    this.picture,
   });
 
   factory ChannelDetails.fromJson(Map<String, dynamic> json) => ChannelDetails(
@@ -236,6 +254,7 @@ class ChannelDetails {
     ttlDeadline: json['ttl_deadline'] != null
         ? DateTime.parse(json['ttl_deadline'] as String)
         : null,
+    picture: _nonEmpty(json['picture']),
   );
 
   factory ChannelDetails.fromChannel(Channel channel) => ChannelDetails(
@@ -253,5 +272,6 @@ class ChannelDetails {
     ttlSeconds: channel.ttlSeconds,
     ttlDeadline: channel.ttlDeadline,
     goalsEnabled: channel.goalsEnabled,
+    picture: channel.picture,
   );
 }

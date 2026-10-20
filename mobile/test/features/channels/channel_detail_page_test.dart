@@ -16012,6 +16012,7 @@ class _FakeChannelActions extends ChannelActions {
     String? description,
     bool? goalsEnabled,
     String? visibility,
+    String? picture,
   }) async {
     if (goalsEnabled != null) {
       await onUpdateGoals?.call(channelId, goalsEnabled);

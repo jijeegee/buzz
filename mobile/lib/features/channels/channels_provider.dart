@@ -566,6 +566,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       ttlSeconds: data.ttlSeconds,
       ttlDeadline: data.ttlDeadline,
       goalsEnabled: data.goalsEnabled,
+      picture: data.picture,
     );
   }
 

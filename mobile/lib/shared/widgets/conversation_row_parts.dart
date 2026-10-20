@@ -109,9 +109,10 @@ class ConversationPersonAvatar extends StatelessWidget {
   }
 }
 
-/// A group's picture: its first letter on its colour. [isThread] adds a
-/// small speech-bubble badge (the Activity thread rows); [isPrivate] a small
-/// lock badge on the corner.
+/// A group's picture: its photo ([imageUrl]) when it has one, else its first
+/// letter on its colour (also shown while the photo loads or when it fails).
+/// [isThread] adds a small speech-bubble badge (the Activity thread rows);
+/// [isPrivate] a small lock badge on the corner.
 class ConversationLetterAvatar extends StatelessWidget {
   const ConversationLetterAvatar({
     super.key,
@@ -121,6 +122,7 @@ class ConversationLetterAvatar extends StatelessWidget {
     this.isPrivate = false,
     this.size = activityAvatarSize,
     this.avatarKey = const ValueKey('activity-conversation-avatar'),
+    this.imageUrl,
   });
 
   final String seed;
@@ -133,6 +135,9 @@ class ConversationLetterAvatar extends StatelessWidget {
 
   /// Key of the circle itself.
   final Key? avatarKey;
+
+  /// Group photo URL; null or blank shows the letter.
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -159,14 +164,7 @@ class ConversationLetterAvatar extends StatelessWidget {
               shape: BoxShape.circle,
               color: conversationHue(seed),
             ),
-            child: Text(
-              conversationInitial(label),
-              style: TextStyle(
-                fontSize: letterSize,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
+            child: _photoOrLetter(letterSize),
           ),
           if (badgeIcon != null)
             Positioned(
@@ -191,6 +189,26 @@ class ConversationLetterAvatar extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _photoOrLetter(double letterSize) {
+    final letter = Text(
+      conversationInitial(label),
+      style: TextStyle(
+        fontSize: letterSize,
+        fontWeight: FontWeight.w600,
+        color: Colors.white,
+      ),
+    );
+    final url = imageUrl?.trim();
+    if (url == null || url.isEmpty) return letter;
+    return ClipOval(
+      child: SizedBox.square(
+        key: const ValueKey('group-avatar-photo'),
+        dimension: size,
+        child: AvatarImageContent(imageUrl: url, fallback: letter),
       ),
     );
   }

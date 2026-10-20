@@ -590,6 +590,20 @@ class _ConversationRoomAvatar extends HookConsumerWidget {
         (cache) => personPubkey == null ? null : cache[personPubkey],
       ),
     );
+    final roomChannelId = switch (room) {
+      ChannelConversationRoom(:final channelId) => channelId,
+      ThreadConversationRoom(:final channelId) => channelId,
+      _ => null,
+    };
+    final groupPicture = ref.watch(
+      channelsProvider.select((channels) {
+        if (roomChannelId == null || roomChannelId.isEmpty) return null;
+        for (final channel in channels.value ?? const <Channel>[]) {
+          if (channel.id == roomChannelId) return channel.picture;
+        }
+        return null;
+      }),
+    );
     useEffect(() {
       if (personPubkey != null && personProfile == null) {
         Future.microtask(
@@ -614,12 +628,14 @@ class _ConversationRoomAvatar extends HookConsumerWidget {
           seed: channelId.isEmpty ? channelName : channelId,
           label: channelName,
           isThread: false,
+          imageUrl: groupPicture,
         );
       case ThreadConversationRoom(:final channelId, :final channelName):
         return ConversationLetterAvatar(
           seed: channelId.isEmpty ? channelName : channelId,
           label: channelName,
           isThread: true,
+          imageUrl: groupPicture,
         );
     }
   }

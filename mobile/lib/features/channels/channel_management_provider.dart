@@ -529,6 +529,7 @@ ChannelDetails channelDetailsFromEvent(NostrEvent event) {
     ttlSeconds: data.ttlSeconds,
     ttlDeadline: data.ttlDeadline,
     goalsEnabled: data.goalsEnabled,
+    picture: data.picture,
   );
 }
 
