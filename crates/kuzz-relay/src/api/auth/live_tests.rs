@@ -915,7 +915,11 @@ async fn every_revocation_path_revokes_its_tokens() {
     let first = bot_token(&inst, &owner, &bot).await;
     let second = bot_token(&inst, &owner, &bot).await;
     assert_eq!(me_status(&inst, &first).await.1["code"], "token_revoked");
-    assert_eq!(me_status(&inst, &second).await.0, 200);
+    let (status, me) = me_status(&inst, &second).await;
+    assert_eq!(status, 200);
+    // One region: apps connect to this relay's own address.
+    assert!(me["home_region"].is_string(), "{me}");
+    assert!(me["connect_url"].is_string(), "{me}");
 
     // Revoke-all covers hosted and headless tokens; bots survive.
     let headless = create_bot(&inst, &owner, "headless").await;

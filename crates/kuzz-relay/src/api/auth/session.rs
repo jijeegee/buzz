@@ -404,6 +404,19 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         },
         None => None,
     };
+    // Global regions (S3): apps connect to the account's home region.
+    let home = match state.db.principal_home(&binding.principal).await {
+        Ok(home) => home.and_then(|(home, _)| home),
+        Err(_) => return unavailable(),
+    };
+    let (home_region, connect_url) = match state
+        .room_router
+        .account_address(&state.db, home.as_deref(), &state.config.region_connect_url)
+        .await
+    {
+        Ok(address) => address,
+        Err(_) => return unavailable(),
+    };
     axum::Json(json!({
         "principal_id": principal.id.to_hex(),
         "identity_mode": if key_mode { "key_backup" } else { "token" },
@@ -417,6 +430,8 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         "device_id": binding.device_id,
         "bot": bot,
         "operator": binding.is_operator,
+        "home_region": home_region,
+        "connect_url": connect_url,
     }))
     .into_response()
 }
