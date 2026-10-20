@@ -527,3 +527,58 @@ async fn chat_list_previews_only_messages_after_the_join() {
     let rows = db.chat_list(f.scope, &f.owner.public_key(), &query).await.unwrap().rows;
     assert!(rows.iter().any(|r| r.kind == ChatRowKind::Thread));
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn mark_read_and_follow_treat_pre_join_ids_as_unknown() {
+    use crate::chat_user_state::{
+        ChatStateDenied, FollowState, MarkReadItem, MarkReadTarget, ReadPosition,
+    };
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone()).with_chat_state_writes(true);
+    let old = f.send("old root").await;
+    f.join().await;
+    let new = f.send("new root").await;
+    let member = f.member.public_key();
+    let id = |hex_id: &str| nostr::EventId::from_hex(hex_id).unwrap().to_bytes().to_vec();
+
+    let follow = |root: Vec<u8>| {
+        let db = db.clone();
+        async move {
+            db.chat_thread_follow(f.scope, &member, &root, FollowState::Followed)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(follow(id(&old)).await, Err(ChatStateDenied::NotMember { index: 0 }));
+    assert_eq!(follow(id(&new)).await, Ok(f.channel));
+
+    let read = |target: MarkReadTarget, event: Vec<u8>| {
+        let db = db.clone();
+        async move {
+            let item = MarkReadItem {
+                target,
+                position: Some(ReadPosition::Event(event)),
+            };
+            db.chat_mark_read(f.scope, &member, &[item], false)
+                .await
+                .unwrap()
+                .map(|_| ())
+        }
+    };
+    let room = MarkReadTarget::Channel(f.channel);
+    assert_eq!(read(room.clone(), id(&old)).await, Err(ChatStateDenied::UnknownEvent { index: 0 }));
+    assert_eq!(read(room, id(&new)).await, Ok(()));
+    assert_eq!(
+        read(MarkReadTarget::Thread(id(&old)), id(&old)).await,
+        Err(ChatStateDenied::NotMember { index: 0 })
+    );
+    // The owner (no cut) may still follow the old root.
+    assert!(db
+        .chat_thread_follow(f.scope, &f.owner.public_key(), &id(&old), FollowState::Followed)
+        .await
+        .unwrap()
+        .is_ok());
+}
