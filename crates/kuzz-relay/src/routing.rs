@@ -92,6 +92,21 @@ pub fn route_for(local: &str, regions: &[RegionRecord], home: Option<&RoomHome>)
     }
 }
 
+/// The region and address an account's apps connect to: its home region's
+/// `connect_url`, or this relay's own when the home is unset or not
+/// registered here.
+pub fn home_address(
+    home: Option<&str>,
+    regions: &[RegionRecord],
+    local: &str,
+    local_url: &str,
+) -> (String, String) {
+    home.and_then(|home| regions.iter().find(|region| region.id == home))
+        .filter(|region| !region.connect_url.is_empty())
+        .map(|region| (region.id.clone(), region.connect_url.clone()))
+        .unwrap_or_else(|| (local.to_string(), local_url.to_string()))
+}
+
 /// Rooms split by the region that serves them.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RoomSplit {
@@ -203,6 +218,18 @@ impl RoomRouter {
         Ok(regions)
     }
 
+    /// Where an account whose home region is `home` connects (see
+    /// [`home_address`]); `local_url` is this relay's own address.
+    pub async fn account_address(
+        &self,
+        db: &Db,
+        home: Option<&str>,
+        local_url: &str,
+    ) -> Result<(String, String), kuzz_db::DbError> {
+        let regions = self.region_list(db).await?;
+        Ok(home_address(home, &regions, &self.local, local_url))
+    }
+
     /// Drop a cached home (the room moved or was deleted).
     pub fn forget(&self, community_id: CommunityId, channel_id: Uuid) {
         self.homes.invalidate(&(community_id, channel_id));
@@ -289,6 +316,22 @@ mod tests {
             BTreeMap::from([("jp".to_string(), vec![b, d])])
         );
         assert_eq!(split_rooms(vec![a, b], Vec::new()).here, vec![a, b]);
+    }
+
+    #[test]
+    fn accounts_connect_to_their_home_region() {
+        let regions = [
+            region("kr", "wss://kr.example", true),
+            region("jp", "wss://jp.example", false),
+            region("sg", "", false),
+        ];
+        let here = |home| home_address(home, &regions, "kr", "wss://local.example");
+        assert_eq!(here(Some("jp")), ("jp".into(), "wss://jp.example".into()));
+        assert_eq!(here(Some("kr")), ("kr".into(), "wss://kr.example".into()));
+        // Unset, unregistered or address-less homes use this relay.
+        for home in [None, Some("us"), Some("sg")] {
+            assert_eq!(here(home), ("kr".into(), "wss://local.example".into()));
+        }
     }
 
     #[test]
