@@ -766,6 +766,8 @@ enum RelayMessage {
     Event {
         subscription_id: String,
         event: Box<Event>,
+        /// Channel order number from a `kuzz-seq` relay (4th frame element).
+        channel_sequence: Option<i64>,
     },
     Ok {
         event_id: String,
@@ -784,6 +786,11 @@ enum RelayMessage {
     },
     Auth {
         challenge: String,
+    },
+    /// `["KUZZ_RESYNC",{"reason":..}]`: the relay may have missed events for
+    /// this connection; replay every channel.
+    Resync {
+        reason: String,
     },
 }
 
@@ -1352,6 +1359,9 @@ struct BgState {
     /// On reconnect resubscribe, `since` = min(last_seen, channel_dropped_since).
     /// Cleared per-channel after a successful resubscribe.
     channel_dropped_since: HashMap<Uuid, u64>,
+    /// Channel order numbers from a `kuzz-seq` relay; replay asks for events
+    /// after a number instead of after a time when one is known.
+    seq: seq_cursor::SeqCursors,
     /// Rate/fairness bookkeeping only; replay cursors retain baseline semantics.
     recovery: recovery::RecoverySchedule,
     /// Unix timestamp captured just before the relay connection was established.
@@ -1429,6 +1439,7 @@ impl BgState {
             membership_sub_active: false,
             observer_control_sub_active: false,
             channel_dropped_since: HashMap::new(),
+            seq: HashMap::new(),
             recovery: recovery::RecoverySchedule::default(),
             startup_watermark: None,
             subscribe_since: HashMap::new(),
@@ -1507,6 +1518,7 @@ impl BgState {
         self.last_seen.remove(channel_id);
         self.subscribe_since.remove(channel_id);
         self.channel_dropped_since.remove(channel_id);
+        self.seq.remove(channel_id);
         self.active_filters.remove(channel_id);
         self.rate_limited_pending.remove(channel_id);
         self.resubscribe_retry.remove(channel_id);
@@ -2432,6 +2444,7 @@ async fn handle_ws_message(
                 RelayMessage::Event {
                     subscription_id,
                     event,
+                    channel_sequence,
                 } => {
                     // Relay and storage responses are untrusted. Verify before
                     // any event field can affect routing, replay state, or the
@@ -2533,6 +2546,22 @@ async fn handle_ws_message(
                             Err(mpsc::error::TrySendError::Closed(_)) => return false,
                         }
                     } else if let Some(channel_id) = channel_id_from_sub_id(&subscription_id) {
+                        // The relay-signed page end of an `after_seq` replay:
+                        // the next page goes through the paced, rate-gated
+                        // retry drain.
+                        if let Some(bounds) = seq_cursor::after_seq_bounds(&event) {
+                            if bounds.has_more
+                                && state.active_subscriptions.contains_key(&channel_id)
+                            {
+                                state
+                                    .seq
+                                    .entry(channel_id)
+                                    .or_default()
+                                    .page_continues(bounds.last_seq, tokio::time::Instant::now());
+                                state.resubscribe_retry.insert(channel_id);
+                            }
+                            return true;
+                        }
                         let ts = event.created_at.as_secs();
                         let event_id_hex = event.id.to_hex();
                         if state.record_event(channel_id, &event) {
@@ -2552,11 +2581,26 @@ async fn handle_ws_message(
                                 );
                             }
                             match event_tx.try_send(Some(kuzz_event)) {
-                                Ok(()) => {}
+                                Ok(()) => {
+                                    if let Some(seq) = channel_sequence.filter(|_| {
+                                        state.active_subscriptions.contains_key(&channel_id)
+                                    }) {
+                                        state
+                                            .seq
+                                            .entry(channel_id)
+                                            .or_default()
+                                            .observe(seq, tokio::time::Instant::now());
+                                    }
+                                }
                                 Err(mpsc::error::TrySendError::Full(_)) => {
                                     // Remove from dedup set so the replayed event
                                     // won't be rejected as a duplicate after reconnect.
                                     state.seen_ids.remove(&event_id_hex);
+                                    if let Some(seq) = channel_sequence.filter(|_| {
+                                        state.active_subscriptions.contains_key(&channel_id)
+                                    }) {
+                                        state.seq.entry(channel_id).or_default().dropped(seq);
+                                    }
                                     // Track the oldest dropped timestamp so reconnect
                                     // replay starts early enough to re-deliver it.
                                     state
@@ -2584,6 +2628,28 @@ async fn handle_ws_message(
                 }
                 RelayMessage::Eose { subscription_id } => {
                     debug!("EOSE for subscription {subscription_id}");
+                }
+                RelayMessage::Resync { reason } => {
+                    // Replay every channel and membership notifications through
+                    // the paced main-loop drains. The replay point is pinned
+                    // now: the REQ may go out much later, after live numbers
+                    // have moved past the gap.
+                    info!(
+                        reason,
+                        channels = state.active_subscriptions.len(),
+                        "relay asked for resync — replaying subscriptions"
+                    );
+                    let now = tokio::time::Instant::now();
+                    let channels: Vec<Uuid> = state.active_subscriptions.keys().copied().collect();
+                    for channel_id in &channels {
+                        if let Some(cursor) = state.seq.get_mut(channel_id) {
+                            cursor.resync(now);
+                        }
+                    }
+                    state.resubscribe_retry.extend(channels);
+                    if state.membership_sub_active {
+                        state.membership_resub_needed = true;
+                    }
                 }
                 RelayMessage::Notice { message } => {
                     // Fix 4: NOTICE at warn level.
@@ -2837,7 +2903,17 @@ async fn process_handshake_buffer(
             RelayMessage::Event {
                 subscription_id,
                 event,
-            } => serde_json::to_string(&json!(["EVENT", subscription_id, event])).ok(),
+                channel_sequence,
+            } => match channel_sequence {
+                Some(seq) => serde_json::to_string(&json!([
+                    "EVENT",
+                    subscription_id,
+                    event,
+                    {"channel_sequence": seq}
+                ]))
+                .ok(),
+                None => serde_json::to_string(&json!(["EVENT", subscription_id, event])).ok(),
+            },
             RelayMessage::Eose { subscription_id } => {
                 serde_json::to_string(&json!(["EOSE", subscription_id])).ok()
             }
@@ -2855,6 +2931,9 @@ async fn process_handshake_buffer(
             } => serde_json::to_string(&json!(["OK", event_id, accepted, message])).ok(),
             // AUTH in the buffer is stale — skip it.
             RelayMessage::Auth { .. } => None,
+            RelayMessage::Resync { reason } => {
+                serde_json::to_string(&json!(["KUZZ_RESYNC", {"reason": reason}])).ok()
+            }
         };
         if let Some(text) = text {
             let should_continue = handle_ws_message(
@@ -2923,6 +3002,9 @@ async fn resubscribe_after_reconnect(
         // shared admission counter survives socket replacement.
         state.rate_limited_pending.clear();
         state.resubscribe_retry.clear();
+        // Order numbers belong to the old socket; the new relay may not speak
+        // `kuzz-seq`. Reconnect replay uses `since`.
+        state.seq.clear();
     }
 
     let mut deferred_commands = VecDeque::new();
@@ -3583,13 +3665,58 @@ async fn wait_for_reconnect(
 ///   history. On reconnect (`since` is `Some`) subtracts [`SINCE_SKEW_SECS`].
 ///
 /// Returns `true` if the REQ was successfully written to the WebSocket.
+/// How a channel REQ picks up history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReplayCursor {
+    /// `since` (unix seconds).
+    Since(u64),
+    /// `after_seq`: events after this channel order number.
+    AfterSeq(i64),
+}
+
 async fn send_subscribe(
     ws: &mut WsStream,
-    _state: &BgState,
+    state: &mut BgState,
     channel_id: Uuid,
     agent_pubkey_hex: &str,
     since: Option<u64>,
     filter: &ChannelFilter,
+) -> bool {
+    // A replay point pinned by a `kuzz-seq` signal (resync, page, drop) asks
+    // for events after that order number. A first subscribe starts now.
+    let after_seq = state
+        .seq
+        .get(&channel_id)
+        .and_then(seq_cursor::SeqCursor::pinned);
+    let cursor = match (after_seq, since) {
+        (Some(after), _) => ReplayCursor::AfterSeq(after),
+        // On reconnect subtract the skew buffer to catch events missed during
+        // the disconnect window.
+        (None, Some(ts)) => ReplayCursor::Since(ts.saturating_sub(SINCE_SKEW_SECS)),
+        // First subscribe: current time skips history.
+        (None, None) => ReplayCursor::Since(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        ),
+    };
+    let sent = send_channel_req(ws, channel_id, agent_pubkey_hex, filter, cursor).await;
+    if sent && after_seq.is_some() {
+        if let Some(cursor) = state.seq.get_mut(&channel_id) {
+            cursor.clear_pin();
+        }
+    }
+    sent
+}
+
+/// Send one channel REQ (`#h`, optional kinds and `#p`) with the given cursor.
+async fn send_channel_req(
+    ws: &mut WsStream,
+    channel_id: Uuid,
+    agent_pubkey_hex: &str,
+    filter: &ChannelFilter,
+    cursor: ReplayCursor,
 ) -> bool {
     let sub_id = channel_sub_id(channel_id);
 
@@ -3608,16 +3735,15 @@ async fn send_subscribe(
         req_filter.insert("#p".into(), json!([agent_pubkey_hex]));
     }
 
-    // since — on first subscribe use current time to skip history; on reconnect
-    // subtract skew buffer to catch events missed during the disconnect window.
-    let since_ts = match since {
-        Some(ts) => ts.saturating_sub(SINCE_SKEW_SECS),
-        None => std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
-    };
-    req_filter.insert("since".into(), json!(since_ts));
+    match cursor {
+        ReplayCursor::Since(ts) => {
+            req_filter.insert("since".into(), json!(ts));
+        }
+        ReplayCursor::AfterSeq(after) => {
+            req_filter.insert("after_seq".into(), json!(after));
+            req_filter.insert("limit".into(), json!(seq_cursor::AFTER_SEQ_PAGE_LIMIT));
+        }
+    }
 
     let req = json!(["REQ", sub_id, Value::Object(req_filter)]);
 
@@ -3625,14 +3751,7 @@ async fn send_subscribe(
         Ok(text) => {
             match ws_send_timeout(ws, Message::Text(text.into()), WS_SEND_TIMEOUT_SECS).await {
                 Ok(()) => {
-                    debug!(
-                        "subscribed to channel {channel_id}{}",
-                        if since.is_some() {
-                            " (with since filter)"
-                        } else {
-                            " (since=now)"
-                        }
-                    );
+                    debug!("subscribed to channel {channel_id} ({cursor:?})");
                     true
                 }
                 Err(e) => {
@@ -4006,9 +4125,14 @@ pub(crate) fn parse_relay_message(text: &str) -> Result<RelayMessage, RelayError
                     .cloned()
                     .ok_or_else(|| RelayError::UnexpectedMessage(text.to_string()))?,
             )?;
+            let channel_sequence = arr
+                .get(3)
+                .and_then(|extra| extra.get("channel_sequence"))
+                .and_then(Value::as_i64);
             Ok(RelayMessage::Event {
                 subscription_id: sub_id,
                 event: Box::new(event),
+                channel_sequence,
             })
         }
         "OK" => {
@@ -4070,6 +4194,15 @@ pub(crate) fn parse_relay_message(text: &str) -> Result<RelayMessage, RelayError
                 .ok_or_else(|| RelayError::UnexpectedMessage(text.to_string()))?
                 .to_string();
             Ok(RelayMessage::Auth { challenge })
+        }
+        "KUZZ_RESYNC" => {
+            let reason = arr
+                .get(1)
+                .and_then(|v| v.get("reason"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Ok(RelayMessage::Resync { reason })
         }
         other => Err(RelayError::UnexpectedMessage(format!(
             "unknown message type: {other}"
@@ -4287,10 +4420,15 @@ async fn do_connect(
         .parse::<url::Url>()
         .map_err(|e| RelayError::Http(format!("invalid relay URL: {e}")))?;
 
-    let (ws, _response) = tokio::time::timeout(CONNECT_TIMEOUT, connect_async(parsed.as_str()))
-        .await
-        .map_err(|_| RelayError::ConnectionClosed)? // timeout → treat as connection failure
-        .map_err(|e| RelayError::WebSocket(Box::new(e)))?;
+    // Ask for channel order numbers. Relays without `kuzz-seq` ignore the
+    // query; the NIP-42 `relay` tag keeps the bare URL.
+    let mut connect_url = parsed.clone();
+    connect_url.query_pairs_mut().append_pair("kuzz_seq", "1");
+    let (ws, _response) =
+        tokio::time::timeout(CONNECT_TIMEOUT, connect_async(connect_url.as_str()))
+            .await
+            .map_err(|_| RelayError::ConnectionClosed)? // timeout → treat as connection failure
+            .map_err(|e| RelayError::WebSocket(Box::new(e)))?;
     debug!("connected to relay at {relay_url}");
 
     let mut ws = ws;
@@ -4473,6 +4611,11 @@ async fn wait_for_any_ok(
 }
 
 mod recovery;
+
+mod seq_cursor;
+
+#[cfg(test)]
+mod seq_tests;
 
 #[cfg(test)]
 mod recovery_tests;
