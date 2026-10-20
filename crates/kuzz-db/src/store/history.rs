@@ -68,4 +68,42 @@ impl Db {
             .map(|row| row.try_get::<Vec<u8>, _>("id").map_err(Into::into))
             .collect()
     }
+
+    /// Of `readers`, those for whom every one of `targets` that lives in
+    /// `channel` was written before their join. Live delivery of a reaction,
+    /// edit, deletion or summary uses it to skip readers who cannot see what
+    /// it is about. Targets outside `channel` are ignored; none in it hides
+    /// nothing.
+    #[datastore_span(name = "readers_blind_to_targets", system = "postgresql")]
+    pub async fn readers_blind_to_targets(
+        &self,
+        community: CommunityId,
+        channel: Uuid,
+        targets: &[Vec<u8>],
+        readers: &[Vec<u8>],
+    ) -> Result<Vec<Vec<u8>>> {
+        if targets.is_empty() || readers.is_empty() {
+            return Ok(Vec::new());
+        }
+        if targets.len() > MAX_HISTORY_EVENT_LOOKUP || readers.len() > MAX_HISTORY_EVENT_LOOKUP {
+            return Err(DbError::InvalidData(format!(
+                "at most {MAX_HISTORY_EVENT_LOOKUP} targets and readers per history lookup"
+            )));
+        }
+        let rows = sqlx::query(
+            "WITH t AS (SELECT max(e.channel_sequence) AS seq FROM events e \
+                         WHERE e.community_id = $1 AND e.channel_id = $2 AND e.id = ANY($3)) \
+             SELECT r.pk FROM unnest($4::bytea[]) AS r(pk), t \
+              WHERE t.seq IS NOT NULL AND t.seq <= channel_history_floor($1, $2, r.pk)",
+        )
+        .bind(community.as_uuid())
+        .bind(channel)
+        .bind(targets)
+        .bind(readers)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| row.try_get::<Vec<u8>, _>("pk").map_err(Into::into))
+            .collect()
+    }
 }

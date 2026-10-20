@@ -888,6 +888,7 @@ async fn handle_search_req(
                 page,
                 per_page: SEARCH_PAGE_SIZE,
                 mode: kuzz_search::SearchMode::FullText,
+                history_reader: Some(reader_pubkey_bytes.to_vec()),
             };
 
             let search_result = match state.search.search(&search_query).await {
