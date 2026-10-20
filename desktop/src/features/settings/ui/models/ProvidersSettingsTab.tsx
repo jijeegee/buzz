@@ -19,16 +19,12 @@ import {
   SettingsOptionGroupList,
   SettingsOptionRow,
 } from "../SettingsOptionGroup";
-import { DefaultForNewAgentsGroup } from "./DefaultForNewAgentsGroup";
 import { ProviderApiKeyRow } from "./ProviderApiKeyRow";
 import {
   buildProviderRows,
-  defaultOptions,
   groupProviderRows,
   nextGlobalConfigForApiKey,
-  nextGlobalConfigForDefault,
   saveNoticeText,
-  type DefaultOption,
   type ProviderGroup,
 } from "./providersSettingsModel";
 import type { SaveNotice } from "./SaveNoticeLine";
@@ -75,7 +71,6 @@ export function ProvidersSettingsTab() {
     [catalog, globalConfig, hiddenProviderIds],
   );
   const groups = React.useMemo(() => groupProviderRows(rows), [rows]);
-  const options = React.useMemo(() => defaultOptions(rows), [rows]);
 
   const isRefreshing = runtimesQuery.isFetching;
   // Every write spreads `globalConfig` back into `set_global_agent_config`,
@@ -106,16 +101,6 @@ export function ProvidersSettingsTab() {
 
   const noticeFor = (scope: string) =>
     notice && notice.scope === scope ? notice : null;
-
-  function handleChooseDefault(option: DefaultOption) {
-    const row = rows.find(
-      (candidate) => candidate.providerId === option.providerId,
-    );
-    if (!row) return;
-    const next = nextGlobalConfigForDefault(globalConfig, row, option.path);
-    if (!next) return;
-    void persist("default", next);
-  }
 
   function handleCheckAgain() {
     setResetEpoch((epoch) => epoch + 1);
@@ -209,7 +194,7 @@ export function ProvidersSettingsTab() {
                 data-settings-subcopy
               >
                 {primary.label} uses a workspace host and OAuth sign-in,
-                configured under Agent defaults in Settings › Agents.
+                configured under Default for new agents.
               </p>
             </div>
           </SettingsOptionRow>
@@ -227,18 +212,12 @@ export function ProvidersSettingsTab() {
           role="alert"
         >
           <AlertCircle aria-hidden="true" className="size-3.5 shrink-0" />
-          Couldn't load Agent defaults, so keys and the default can't be changed
-          here right now. Reopen Settings to try again.
+          Couldn't load your AI settings, so keys can't be changed here right
+          now. Reopen Settings to try again.
         </p>
       ) : null}
       <SettingsOptionGroupList>
         {groups.map(renderGroup)}
-        <DefaultForNewAgentsGroup
-          disabled={busy || catalog === undefined}
-          notice={noticeFor("default")}
-          onChoose={handleChooseDefault}
-          options={options}
-        />
       </SettingsOptionGroupList>
     </div>
   );
