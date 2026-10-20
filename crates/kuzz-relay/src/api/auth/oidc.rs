@@ -326,6 +326,8 @@ pub(super) async fn start(
 pub(super) async fn callback(
     State(state): State<Arc<AppState>>,
     Path(provider_name): Path<String>,
+    extensions: Extensions,
+    headers: HeaderMap,
     RawQuery(raw): RawQuery,
 ) -> Response {
     let raw = raw.unwrap_or_default();
@@ -451,6 +453,24 @@ pub(super) async fn callback(
         }
         if login.created {
             tracing::info!(principal = %login.principal, "auth.account_created");
+            // Best effort: the country only seeds defaults later.
+            let peer = extensions
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|info| info.0.ip());
+            if let Some(country) = state
+                .identity
+                .config()
+                .trusted_proxies
+                .country(peer, &headers)
+            {
+                if let Err(error) = state
+                    .db
+                    .record_signup_country(&login.principal, &country)
+                    .await
+                {
+                    tracing::warn!(%error, "could not record sign-up country");
+                }
+            }
         }
         if pending.identity_mode == "token" {
             bootstrap_operator(&state, &login.principal, &identity).await;

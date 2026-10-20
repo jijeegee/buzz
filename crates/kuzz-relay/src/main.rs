@@ -442,6 +442,13 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     }
                     Err(e) => warn!("Room directory backfill failed (retried next start): {e}"),
                 }
+                match db.backfill_principal_homes().await {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        info!(region = %region.id, "{n} accounts given this region as home")
+                    }
+                    Err(e) => warn!("Account home backfill failed (retried next start): {e}"),
+                }
             }
             Err(e) if auto_migrate => {
                 error!(region = %config.region_id, "Failed to record this relay's region: {e}");

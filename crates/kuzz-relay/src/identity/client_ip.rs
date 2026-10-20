@@ -107,6 +107,24 @@ impl TrustedProxies {
         self.nets.iter().any(|net| net.contains(ip))
     }
 
+    /// The two-letter country a trusted proxy (Cloudflare) names in
+    /// `CF-IPCountry` for a request from `peer`. `None` when the peer is not
+    /// a trusted proxy (anyone could send the header), or for Cloudflare's
+    /// unknown (`XX`) and Tor (`T1`) values.
+    pub fn country(&self, peer: Option<IpAddr>, headers: &HeaderMap) -> Option<String> {
+        let peer_trusted = match peer {
+            Some(ip) => self.trusts(ip),
+            None => self.trust_unix,
+        };
+        if !peer_trusted {
+            return None;
+        }
+        let value = headers.get("cf-ipcountry")?.to_str().ok()?.trim();
+        let valid = value.len() == 2 && value.bytes().all(|b| b.is_ascii_alphabetic());
+        let country = value.to_ascii_uppercase();
+        (valid && country != "XX" && country != "T1").then_some(country)
+    }
+
     /// The client address for a request from `peer` (`None` = Unix socket).
     pub fn client_ip(&self, peer: Option<IpAddr>, headers: &HeaderMap) -> Option<IpAddr> {
         let peer_trusted = match peer {
@@ -217,6 +235,20 @@ mod tests {
     fn untrusted_peer_headers_are_ignored() {
         let proxies = TrustedProxies::parse("10.0.0.0/8").unwrap();
         let h = headers(&[("x-forwarded-for", "1.1.1.1")]);
+        let proxies = TrustedProxies::parse("10.0.0.0/8, unix").unwrap();
+        let kr = headers(&[("cf-ipcountry", "kr")]);
+        assert_eq!(
+            proxies.country(Some(ip("10.0.0.9")), &kr).as_deref(),
+            Some("KR")
+        );
+        assert_eq!(proxies.country(None, &kr).as_deref(), Some("KR"));
+        // Untrusted peer, unknown, Tor or malformed values: no country.
+        assert_eq!(proxies.country(Some(ip("203.0.113.7")), &kr), None);
+        for bad in ["XX", "T1", "KOR", "", "1A"] {
+            let h = headers(&[("cf-ipcountry", bad)]);
+            assert_eq!(proxies.country(Some(ip("10.0.0.9")), &h), None, "{bad}");
+        }
+        assert_eq!(TrustedProxies::default().country(None, &kr), None);
         assert_eq!(
             proxies.client_ip(Some(ip("8.8.8.8")), &h),
             Some(ip("8.8.8.8"))

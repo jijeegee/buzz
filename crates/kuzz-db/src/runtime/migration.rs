@@ -725,7 +725,14 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 78);
+        assert_eq!(migrations.len(), 79);
+        assert_eq!(migrations[78].version, 80);
+        assert!(migrations[78]
+            .sql
+            .as_str()
+            .contains("CREATE TRIGGER set_principal_home"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TRIGGER set_principal_home"));
         assert_eq!(migrations[77].version, 79);
         assert!(migrations[77]
             .sql
