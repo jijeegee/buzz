@@ -2,6 +2,7 @@ import * as React from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { accountLabel } from "@/features/accounts/lib/accountLabels";
+import { handleRemoteCommand } from "@/features/agents/lib/remoteStartHandler";
 import { defaultReadThreadRelationships } from "@/features/communities/communityUnreadObserver";
 import {
   isAllowedServer,
@@ -82,6 +83,13 @@ function watcherDeps(target: WatchTarget): WatcherDeps {
     },
     store: watchedUnreadStore,
     log: (message, error) => console.debug(message, error),
+    // This account's `!start` from another device, for its agents here.
+    onMessage: (event) =>
+      handleRemoteCommand(event, {
+        ownerPubkey: pubkey,
+        relayUrl: target.relayUrl,
+        openAccount: false,
+      }),
   };
 }
 
