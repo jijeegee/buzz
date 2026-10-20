@@ -248,3 +248,118 @@ async fn channel_windows_hide_rows_from_before_the_join() {
     .unwrap();
     assert_eq!(ids(all), [before, after]);
 }
+
+impl Fixture {
+    /// A kind:9 reply to `root` (or a kind:7 reaction on it) through the real
+    /// event writer, plus the thread index row the relay ingest would write.
+    async fn reply(&self, root: &str, kind: u16, content: &str) -> String {
+        let root_id = nostr::EventId::from_hex(root).expect("root id");
+        let event = EventBuilder::new(Kind::Custom(kind), content)
+            .tags([
+                Tag::parse(["h", &self.channel.to_string()]).expect("h tag"),
+                Tag::parse(["e", root, "", "reply"]).expect("e tag"),
+            ])
+            .sign_with_keys(&self.owner)
+            .expect("fixture signature");
+        event::insert_event(&self.pool, self.scope, &event, Some(self.channel))
+            .await
+            .expect("real event writer");
+        if kind == 9 {
+            sqlx::query(
+                "INSERT INTO thread_metadata (community_id, event_created_at, event_id, channel_id, \
+                 parent_event_id, parent_event_created_at, root_event_id, root_event_created_at, depth, broadcast) \
+                 SELECT $1, e.created_at, e.id, $2, r.id, r.created_at, r.id, r.created_at, 1, false \
+                 FROM events e, events r WHERE e.community_id = $1 AND e.id = $3 \
+                 AND r.community_id = $1 AND r.id = $4",
+            )
+            .bind(self.scope.as_uuid())
+            .bind(self.channel)
+            .bind(event.id.to_bytes().to_vec())
+            .bind(root_id.to_bytes().to_vec())
+            .execute(&self.pool)
+            .await
+            .expect("thread index");
+        }
+        event.id.to_hex()
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
+    use crate::thread_window::{AuxQuery, ScanBudget};
+    use crate::Db;
+    use kuzz_core::thread_window::Request;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let root = f.send("root").await;
+    let early = f.reply(&root, 9, "early reply").await;
+    let early_reaction = f.reply(&root, 7, "+").await;
+    f.join().await;
+    let late = f.reply(&root, 9, "late reply").await;
+    let late_reaction = f.reply(&root, 7, "+").await;
+    let member = f.member.public_key().to_bytes();
+    let reader = Some(member.as_slice());
+    let root_bytes = nostr::EventId::from_hex(&root).unwrap().to_bytes();
+
+    // Thread window rows.
+    let req = Request::parse(&serde_json::json!({"thread_window": true,
+        "#h": [f.channel], "#e": [root], "kinds": [9], "limit": 10}))
+    .unwrap();
+    let rows = |w: crate::thread_window::ThreadWindow| -> Vec<String> {
+        w.rows.into_iter().map(|r| r.event.id.to_hex()).collect()
+    };
+    let (window, mut session) = db
+        .get_thread_window_for_reader_with_session(f.scope, &req, reader, &mut ScanBudget::default())
+        .await
+        .unwrap();
+    assert!(window.root_in_channel);
+    assert_eq!(rows(window), [late.clone()]);
+    let (window, _) = db
+        .get_thread_window_with_session(f.scope, &req, &mut ScanBudget::default())
+        .await
+        .unwrap();
+    let mut all = rows(window);
+    all.sort();
+    let mut expected = vec![early.clone(), late.clone()];
+    expected.sort();
+    assert_eq!(all, expected);
+
+    // Thread replies (bridge depth path).
+    let replies = db
+        .get_thread_replies_for_reader(f.scope, &root_bytes, Some(1), 10, None, reader)
+        .await
+        .unwrap();
+    let ids: Vec<String> = replies.iter().map(|r| hex::encode(&r.event_id)).collect();
+    assert_eq!(ids, [late.clone()]);
+    let replies = db
+        .get_thread_replies(f.scope, &root_bytes, Some(1), 10, None)
+        .await
+        .unwrap();
+    assert_eq!(replies.len(), 2);
+
+    // Aux closure: reactions written before the join stay hidden.
+    let targets = [root.clone()];
+    let accessible = [f.channel];
+    let aux = |history_reader| AuxQuery {
+        community: f.scope,
+        targets: &targets,
+        kinds: &[7],
+        accessible: &accessible,
+        cursor: None,
+        history_reader,
+    };
+    let page = session
+        .thread_window_aux(&aux(reader), &mut ScanBudget::default())
+        .await
+        .unwrap();
+    let ids: Vec<String> = page.events.iter().map(|e| e.event.id.to_hex()).collect();
+    assert_eq!(ids, [late_reaction.clone()]);
+    let page = session
+        .thread_window_aux(&aux(None), &mut ScanBudget::default())
+        .await
+        .unwrap();
+    assert_eq!(page.events.len(), 2);
+    let _ = early_reaction;
+}
