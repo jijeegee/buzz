@@ -1,5 +1,7 @@
 import { Search } from "lucide-react";
 import * as React from "react";
+import type { ChatListRow } from "@/features/chats/chatListState";
+import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { getMinimumSearchQueryLength } from "@/features/search/hooks";
 import { parseSearchOperators } from "@/features/search/lib/parseSearchOperators";
@@ -38,12 +40,16 @@ type TopbarSearchProps = {
   focusRequest?: number;
   onOpenChannel: (channelId: string) => void;
   onOpenResult: (hit: SearchHit, query: string) => void;
+  /** Opens a thread result, as the Chats thread row does. */
+  onOpenThread?: (channelId: string, rootId: string) => void;
   onOpenUser?: (user: UserSearchResult) => void | Promise<void>;
   onBrowseChannels?: () => void | Promise<void>;
   onCreateAgent?: () => void | Promise<void>;
   onCreateChannel?: () => void | Promise<void>;
   suggestionChannels?: Channel[];
   scopeFocusRequest?: number;
+  /** The relay's Chats list rows; their thread names are searched. */
+  threadRows?: readonly ChatListRow[];
   variant?: "bar" | "icon";
 };
 const MAX_SEARCH_SUGGESTIONS = 4;
@@ -67,6 +73,8 @@ type SearchResultSection = {
 type SearchHitContextLabel = {
   channelLabel: string | null;
   text: string;
+  /** Set when the message is in a thread: `group › thread`. */
+  threadName?: string;
 };
 function formatRelativeTime(unixSeconds: number) {
   const diff = Math.floor(Date.now() / 1_000) - unixSeconds;
@@ -170,6 +178,7 @@ function getSearchHitContextLabel(
   hit: SearchHit,
   channelLookup: ReadonlyMap<string, Channel>,
   channelLabels?: Record<string, string>,
+  threadName?: string,
 ): SearchHitContextLabel {
   const channel = hit.channelId ? channelLookup.get(hit.channelId) : null;
   const channelName = getSearchHitChannelName(
@@ -177,6 +186,14 @@ function getSearchHitContextLabel(
     channelLookup,
     channelLabels,
   );
+
+  if (threadName) {
+    return {
+      channelLabel: channelName,
+      text: "",
+      threadName,
+    };
+  }
 
   if (channel?.channelType === "dm") {
     return {
@@ -202,6 +219,10 @@ function getResultSectionKey(result: SearchResult): SearchResultSectionKey {
     return result.channel.channelType === "dm" ? "direct-messages" : "channels";
   }
 
+  if (result.kind === "thread") {
+    return result.isDm ? "direct-messages" : "channels";
+  }
+
   if (result.kind === "user") {
     return result.user.isAgent ? "agents" : "people";
   }
@@ -224,7 +245,7 @@ function getSectionTitle(sectionKey: SearchResultSectionKey) {
     case "agents":
       return "Agents";
     case "messages":
-      return "Most relevant";
+      return "Messages";
     case "actions":
       return "Actions";
   }
@@ -238,17 +259,30 @@ function SearchHitContextLine({ label }: { label: SearchHitContextLabel }) {
         "mt-0 flex min-w-0 items-center gap-1.5 text-2xs font-medium leading-3 text-muted-foreground/80",
       )}
     >
-      <span className="shrink-0">{label.text}</span>
+      {label.text ? <span className="shrink-0">{label.text}</span> : null}
       {label.channelLabel ? (
         <span
           className={cn(
             MENTION_CHIP_BASE_CLASSES,
             "search-channel-chip min-w-0 max-w-full overflow-hidden",
+            label.threadName && "max-w-[45%] shrink-0",
           )}
           data-channel-link=""
         >
           <span className="truncate">{label.channelLabel}</span>
         </span>
+      ) : null}
+      {label.threadName ? (
+        <>
+          <span
+            aria-hidden="true"
+            className="shrink-0 text-muted-foreground/60"
+          >
+            ›
+          </span>
+          <span className="sr-only">thread</span>
+          <span className="min-w-0 truncate">{label.threadName}</span>
+        </>
       ) : null}
     </span>
   );
@@ -380,12 +414,14 @@ export function TopbarSearch({
   focusRequest = 0,
   onOpenChannel,
   onOpenResult,
+  onOpenThread,
   onOpenUser,
   onBrowseChannels,
   onCreateAgent,
   onCreateChannel,
   scopeFocusRequest = 0,
   suggestionChannels,
+  threadRows,
   variant = "bar",
 }: TopbarSearchProps) {
   const [isOpen, setIsOpen] = React.useState(false);
@@ -401,6 +437,7 @@ export function TopbarSearch({
     channelLookup,
     debouncedQuery,
     fuzzyUserCandidatesQuery,
+    isThreadContextLoading,
     isWaitingOnFromResolution,
     query,
     resultProfiles,
@@ -414,6 +451,7 @@ export function TopbarSearch({
     enabled: isOpen,
     limit: SEARCH_RESULT_LIMIT,
     scopeChannelId,
+    threadRows,
   });
   const trimmedQuery = query.trim();
   // Bind highlights to the debounced result source so stale results can never
@@ -507,6 +545,7 @@ export function TopbarSearch({
   const isSearchLoading =
     (!isShowingSuggestions && !resultsAreCurrent) ||
     isWaitingOnFromResolution ||
+    isThreadContextLoading ||
     searchQuery.isLoading ||
     fuzzyUserCandidatesQuery.isLoading ||
     userSearchQuery.isLoading;
@@ -546,6 +585,11 @@ export function TopbarSearch({
         return;
       }
 
+      if (result.kind === "thread") {
+        onOpenThread?.(result.thread.channelId, result.thread.rootId);
+        return;
+      }
+
       if (result.kind === "user") {
         void onOpenUser?.(result.user);
         return;
@@ -577,6 +621,7 @@ export function TopbarSearch({
       onCreateChannel,
       onOpenChannel,
       onOpenResult,
+      onOpenThread,
       onOpenUser,
       openAfterExit,
       setQuery,
@@ -656,6 +701,32 @@ export function TopbarSearch({
       result.kind === "channel"
         ? getChannelDisplayName(result.channel, channelLabels)
         : null;
+    // Threads look as they do in Chats: the thread avatar and `group › thread`.
+    const threadPlace =
+      result.kind === "thread"
+        ? {
+            channelId: result.thread.channelId,
+            label:
+              (channelLookup.get(result.thread.channelId)
+                ? getChannelDisplayName(
+                    channelLookup.get(result.thread.channelId) as Channel,
+                    channelLabels,
+                  )
+                : result.thread.channelName) || "Group",
+            thread: { id: result.thread.rootId, label: result.thread.name },
+          }
+        : result.kind === "message" && result.thread && result.hit.channelId
+          ? {
+              channelId: result.hit.channelId,
+              label:
+                getSearchHitChannelName(
+                  result.hit,
+                  channelLookup,
+                  channelLabels,
+                ) || "Group",
+              thread: { id: result.thread.rootId, label: result.thread.name },
+            }
+          : null;
     const userDisplayName =
       result.kind === "user" ? getUserDisplayName(result.user) : null;
     const messageAuthorLabel =
@@ -669,30 +740,43 @@ export function TopbarSearch({
         : null;
     const messageContextLabel =
       result.kind === "message"
-        ? getSearchHitContextLabel(result.hit, channelLookup, channelLabels)
+        ? getSearchHitContextLabel(
+            result.hit,
+            channelLookup,
+            channelLabels,
+            result.thread?.name,
+          )
         : null;
     const title =
       result.kind === "channel"
         ? channelDisplayName
-        : result.kind === "action"
-          ? result.action.title
-          : result.kind === "user"
-            ? userDisplayName
-            : messageAuthorLabel;
+        : result.kind === "thread"
+          ? result.thread.name
+          : result.kind === "action"
+            ? result.action.title
+            : result.kind === "user"
+              ? userDisplayName
+              : messageAuthorLabel;
     const preview =
       result.kind === "channel"
         ? getChannelPreview(result.channel)
-        : result.kind === "action"
-          ? result.action.description
-          : result.kind === "user"
-            ? getUserSecondaryLabel(result.user)
-            : buildSearchResultPreview(result.hit.content, resultQuery);
+        : result.kind === "thread"
+          ? null
+          : result.kind === "action"
+            ? result.action.description
+            : result.kind === "user"
+              ? getUserSecondaryLabel(result.user)
+              : buildSearchResultPreview(result.hit.content, resultQuery);
     const trailingLabel =
       result.kind === "channel"
         ? getChannelSuggestionMeta(result.channel)
-        : result.kind === "message"
-          ? formatRelativeTime(result.hit.createdAt)
-          : null;
+        : result.kind === "thread"
+          ? result.thread.at > 0
+            ? formatRelativeTime(result.thread.at)
+            : null
+          : result.kind === "message"
+            ? formatRelativeTime(result.hit.createdAt)
+            : null;
 
     return (
       <button
@@ -713,7 +797,15 @@ export function TopbarSearch({
         data-testid={resultTestId(result)}
         data-search-result-index={menuIndex}
       >
-        {result.kind === "message" ? (
+        {threadPlace ? (
+          <ConversationLetterAvatar
+            channelId={threadPlace.channelId}
+            channelLabel={threadPlace.label}
+            isThread
+            testId={`search-result-thread-avatar-${threadPlace.thread.id}`}
+            thread={threadPlace.thread}
+          />
+        ) : result.kind === "message" ? (
           <UserAvatar
             avatarUrl={
               resultProfiles?.[result.hit.pubkey.toLowerCase()]?.avatarUrl ??
@@ -770,6 +862,20 @@ export function TopbarSearch({
                   <HighlightedSearchText query={resultQuery} text={preview} />
                 </span>
               ) : null}
+            </span>
+          ) : result.kind === "thread" && threadPlace ? (
+            <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+              <span className="max-w-[45%] shrink-0 truncate font-normal text-muted-foreground">
+                {threadPlace.label}
+              </span>
+              <span
+                aria-hidden="true"
+                className="shrink-0 font-normal text-muted-foreground/60"
+              >
+                ›
+              </span>
+              <span className="sr-only">thread</span>
+              <span className="min-w-0 truncate">{title}</span>
             </span>
           ) : (
             <span className="block space-y-0.5">

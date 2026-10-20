@@ -482,8 +482,13 @@ export function orderChatRows(
 export function chatThreadTitle(row: ChatListRow): string {
   const name = row.thread_name?.trim();
   if (name) return name;
-  const firstLine = row.root?.content
-    .split("\n")
+  return threadRootTitle(row.root?.content);
+}
+
+/** An unnamed thread's title: its root's first line, trimmed. */
+export function threadRootTitle(content: string | undefined): string {
+  const firstLine = content
+    ?.split("\n")
     .map((line) => line.trim())
     .find((line) => line.length > 0);
   if (!firstLine) return "Thread";

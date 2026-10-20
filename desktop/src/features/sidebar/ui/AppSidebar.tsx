@@ -435,11 +435,13 @@ export function AppSidebar({
             onCreateChannel={handleOpenCreateChannel}
             onOpenDm={onOpenDm}
             onOpenSearchResult={onOpenSearchResult}
+            onOpenThread={serverChats?.onOpenThread}
             onSelectChannel={onSelectChannel}
             searchChannels={searchChannels}
             searchFocusRequest={searchFocusRequests[0]}
             scopeSearchFocusRequest={searchFocusRequests[1]}
             suggestionChannels={channels}
+            threadRows={serverChats?.rows}
           />
           {serverChats ? (
             <ChatsViewToggle onChange={setChatsView} value={chatsView} />
