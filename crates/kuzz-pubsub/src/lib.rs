@@ -352,6 +352,22 @@ impl PubSubManager {
         }
     }
 
+    /// Wait until every topic retained before this call is subscribed on
+    /// Redis. `false` when the subscriber is not running; while Redis is
+    /// down it waits for the reconnect, so callers bound it with a timeout.
+    pub async fn flush_subscriptions(&self) -> bool {
+        let (done, flushed) = tokio::sync::oneshot::channel();
+        if self
+            .subscription_tx
+            .send(subscriber::SubscriptionCommand::Flush(done))
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        flushed.await.is_ok()
+    }
+
     /// Current local desired refcount for tests and metrics.
     pub async fn topic_refcount(&self, ctx: &TenantContext, topic: EventTopic) -> usize {
         let topic_key = EventTopicKey::from_context(ctx, topic);

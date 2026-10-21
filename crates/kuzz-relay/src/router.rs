@@ -158,6 +158,7 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/internal/region/ping",
     "/internal/region/events",
     "/internal/region/query",
+    "/internal/region/stream",
 ];
 
 /// Middleware: full offline assertion guard for NIP-FI protected paths.
@@ -420,6 +421,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                 .route(
                     crate::region_read::QUERY_PATH,
                     post(crate::region_read::query),
+                )
+                .route(
+                    crate::region_stream::STREAM_PATH,
+                    get(crate::region_stream::stream),
                 )
                 .layer(RequestBodyLimitLayer::new(1024 * 1024))
                 .with_state(state.clone()),
