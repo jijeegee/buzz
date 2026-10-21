@@ -649,6 +649,7 @@ pub fn run() {
             get_relay_ws_url,
             get_relay_connect_url,
             get_relay_http_url,
+            get_relay_request_url,
             get_media_proxy_port,
             fetch_link_preview_metadata,
             cancel_link_preview_metadata,

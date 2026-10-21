@@ -698,6 +698,9 @@ pub(crate) fn spawn_transcription_task(
         return;
     };
     let relay_base_url = crate::relay::relay_api_base_url_with_override(state);
+    // Posts are signed for the service address and sent to the account's
+    // region.
+    let account = state.current_identity_pubkey().ok();
 
     tauri::async_runtime::spawn(async move {
         // recv().await yields (not blocks) until text arrives or sender is dropped.
@@ -770,8 +773,12 @@ pub(crate) fn spawn_transcription_task(
             };
 
             let response = {
+                let target = match &account {
+                    Some(account) => crate::relay::server::region_request_url(account, &url),
+                    None => url.clone(),
+                };
                 http_client
-                    .post(&url)
+                    .post(&target)
                     .header("Authorization", auth_header)
                     .header("Content-Type", "application/json")
                     .body(body_bytes)

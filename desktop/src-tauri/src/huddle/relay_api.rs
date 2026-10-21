@@ -148,9 +148,11 @@ async fn connect_authenticated_audio_socket(
     channel_id: &str,
     parent_channel_id: Option<&str>,
     relay_url: &str,
+    connect_url: &str,
     auth: AudioAuth<'_>,
 ) -> Result<(WsSink, WsReceiver, u8, Vec<(u8, String, u8)>), String> {
-    let ws_url = format!("{relay_url}/huddle/{channel_id}/audio");
+    // AUTH is signed for `relay_url`; the socket goes to `connect_url`.
+    let ws_url = format!("{connect_url}/huddle/{channel_id}/audio");
     let (ws_stream, _) = connect_async(&ws_url)
         .await
         .map_err(|e| format!("audio WS connect failed: {e}"))?;
@@ -251,6 +253,9 @@ pub(crate) async fn connect_audio_relay(
     state: &AppState,
 ) -> Result<(CancellationToken, tokio::sync::mpsc::Sender<Vec<u8>>), String> {
     let relay_url = crate::relay::relay_ws_url_with_override(state);
+    // Same address as the account's relay socket, so the huddle room is on
+    // the same server. Agent voices follow this PC's account too.
+    let connect_url = crate::relay::relay_connect_ws_url(state);
     let user_auth = user_audio_auth(state)?;
     // Token mode: hand the socket each refreshed access token so the relay
     // keeps the huddle bound past the token's 1 h lifetime.
@@ -289,6 +294,7 @@ pub(crate) async fn connect_audio_relay(
         channel_id,
         parent_channel_id,
         &relay_url,
+        &connect_url,
         user_auth.as_audio_auth(),
     )
     .await?;
@@ -404,10 +410,14 @@ pub(crate) async fn connect_tts_audio_publisher(
     local_tts_publishers: super::tts::LocalTtsPublishers,
 ) -> Result<super::tts::TtsAudioPublisher, String> {
     let relay_url = crate::relay::relay_ws_url_with_override(state);
+    // Same address as the account's relay socket, so the huddle room is on
+    // the same server. Agent voices follow this PC's account too.
+    let connect_url = crate::relay::relay_connect_ws_url(state);
     let (ws_tx, ws_rx, peer_index, _) = connect_authenticated_audio_socket(
         channel_id,
         parent_channel_id,
         &relay_url,
+        &connect_url,
         AudioAuth::Keys {
             keys,
             auth_tag_json,

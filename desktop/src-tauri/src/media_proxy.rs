@@ -48,7 +48,9 @@ async fn proxy_handler(AxumState(state): AxumState<ProxyState>, req: Request) ->
     // Resolve relay URL dynamically so workspace switches take effect immediately.
     let app_state = state.app_handle.state::<AppState>();
     let base_url = relay::relay_api_base_url_with_override(&app_state);
-    let upstream_url = format!("{base_url}{path_and_query}");
+    // Auth is minted for the service address; the bytes come from the
+    // account's region.
+    let upstream_url = app_state.region_request_url(&format!("{base_url}{path_and_query}"));
 
     let has_range = req.headers().contains_key("range");
 
@@ -57,8 +59,9 @@ async fn proxy_handler(AxumState(state): AxumState<ProxyState>, req: Request) ->
         .get(&upstream_url)
         .timeout(std::time::Duration::from_secs(120));
 
-    // `upstream_url` is always `{relay base}{path}`, so the token can't reach
-    // a third-party origin (mint_media_get_auth safety contract).
+    // `upstream_url` is always `{relay base}{path}` (or the region the relay
+    // gave this account), so the token can't reach a third-party origin
+    // (mint_media_get_auth safety contract).
     if let Some(auth) = mint_media_get_auth(&app_state, &base_url) {
         upstream = upstream.header("authorization", auth);
     }
@@ -209,7 +212,7 @@ pub async fn handle_kuzz_media(
     }
 
     let has_range = request.headers().contains_key("range");
-    let upstream_url = format!("{base}{path_and_query}");
+    let upstream_url = state.region_request_url(&format!("{base}{path_and_query}"));
 
     // Forward Range header if present — enables video seeking through the proxy.
     let mut upstream = state
@@ -217,8 +220,9 @@ pub async fn handle_kuzz_media(
         .get(&upstream_url)
         .timeout(std::time::Duration::from_secs(60));
 
-    // `upstream_url` is always `{relay base}{path}`, so the token can't reach
-    // a third-party origin (mint_media_get_auth safety contract).
+    // `upstream_url` is always `{relay base}{path}` (or the region the relay
+    // gave this account), so the token can't reach a third-party origin
+    // (mint_media_get_auth safety contract).
     if let Some(auth) = mint_media_get_auth(&state, &base) {
         upstream = upstream.header("authorization", auth);
     }

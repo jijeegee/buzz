@@ -114,12 +114,18 @@ function setupTauriStubs(
     invoke: async (command, args) => {
       calls.invokeArgs.push({ command, args });
       if (command === "get_relay_http_url") return httpBase;
+      if (command === "get_relay_request_url") {
+        return regionBase ? args.url.replace(httpBase, regionBase) : args.url;
+      }
       if (command === "sign_event") return JSON.stringify(authEvent);
       throw new Error(`Unexpected Tauri command: ${command}`);
     },
   };
   return calls;
 }
+
+// The account's home region, as `get_relay_request_url` reports it.
+let regionBase;
 
 function teardownTauriStubs() {
   delete globalThis.window.__TAURI_INTERNALS__;
@@ -256,6 +262,39 @@ test("invite requests to another server are refused before any fetch or signing"
       "no NIP-98 event signed for a refused server",
     );
   } finally {
+    globalThis.fetch = originalFetch;
+    teardownTauriStubs();
+  }
+});
+
+test("mintInvite signs for the service but sends to the account's region", async () => {
+  const calls = setupTauriStubs("https://relay.example");
+  regionBase = "https://kr.relay.example";
+  const originalFetch = globalThis.fetch;
+  const fetched = [];
+  globalThis.fetch = async (url) => {
+    fetched.push(url);
+    return new Response(
+      JSON.stringify({
+        code: "c",
+        expires_at: 1,
+        url: "https://relay.example/invite/c",
+        max_uses: null,
+      }),
+      { status: 200 },
+    );
+  };
+  try {
+    const minted = await mintInvite();
+    assert.deepEqual(fetched, ["https://kr.relay.example/api/invites"]);
+    const signed = JSON.stringify(
+      calls.invokeArgs.find((call) => call.command === "sign_event").args,
+    );
+    assert.ok(signed.includes("https://relay.example/api/invites"), signed);
+    assert.equal(signed.includes("kr.relay.example"), false, signed);
+    assert.equal(minted.url, "https://relay.example/invite/c");
+  } finally {
+    regionBase = undefined;
     globalThis.fetch = originalFetch;
     teardownTauriStubs();
   }

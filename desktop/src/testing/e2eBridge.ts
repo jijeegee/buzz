@@ -13978,6 +13978,8 @@ export function maybeInstallE2eTauriMocks() {
           path: "/tmp/kuzz/REPOS/kuzz",
           cloned: false,
         };
+      case "get_relay_request_url":
+        return (payload as { url: string }).url;
       case "get_relay_ws_url":
       case "get_relay_connect_url":
         return getRelayWsUrl(activeConfig);

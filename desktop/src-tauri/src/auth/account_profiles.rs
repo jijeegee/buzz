@@ -135,6 +135,13 @@ pub(crate) fn learn_kuzz_name(data_dir: &Path, account: &PublicKey, name: &str) 
     }
 }
 
+/// [`learn`] from a fresh `/auth/me`, and remember where the server says the
+/// account connects.
+pub(crate) fn learn_me(data_dir: &Path, account: &PublicKey, me: super::api::MeInfo) {
+    me.learn_connect_url();
+    learn(data_dir, account, me.display_name, me.avatar_url, me.email);
+}
+
 /// Record that `account` was just signed into or switched to.
 pub(crate) fn touch(data_dir: &Path, account: &PublicKey) {
     let now = chrono::Utc::now().timestamp();

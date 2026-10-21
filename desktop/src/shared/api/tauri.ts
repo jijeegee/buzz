@@ -368,6 +368,14 @@ export function getRelayHttpUrl(): Promise<string> {
   return invokeTauri<string>("get_relay_http_url");
 }
 
+/**
+ * Where a request to `url` is sent: the active account's home region for the
+ * built-in server, `url` itself otherwise. Sign auth for `url`, not this.
+ */
+export function getRelayRequestUrl(url: string): Promise<string> {
+  return invokeTauri<string>("get_relay_request_url", { url });
+}
+
 export async function addChannelMembers(
   input: AddChannelMembersInput,
 ): Promise<AddChannelMembersResult> {
