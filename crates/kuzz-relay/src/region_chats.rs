@@ -54,7 +54,7 @@ pub(crate) async fn other_regions(state: &AppState) -> Vec<String> {
 }
 
 /// How long a list or lookup waits for one region before leaving it out.
-const FAN_OUT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+pub(crate) const FAN_OUT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Ask each of `regions` to answer `filters` for `pubkey` (an HTTP `/query`
 /// reader), all at once, waiting at most [`FAN_OUT_TIMEOUT`] for each.

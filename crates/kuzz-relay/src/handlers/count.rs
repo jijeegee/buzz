@@ -158,6 +158,61 @@ pub async fn handle_count(
             return;
         }
     }
+    // Global regions (S4-3c): rooms of several regions are counted at each
+    // and added up.
+    if token_channel_ids.is_none() {
+        let raw: Vec<serde_json::Value> = filters
+            .iter()
+            .map(|filter| crate::region_read::raw_filter(filter, None, None))
+            .collect();
+        match crate::region_merge::plan(&state, conn.tenant.community(), &filters, &raw).await {
+            Ok(Some(plan)) => {
+                let (pubkey, scopes) = match conn.auth_state_snapshot() {
+                    AuthState::Authenticated(ctx) => (ctx.pubkey, ctx.scopes.clone()),
+                    _ => return,
+                };
+                let reader = crate::region_read::reader(
+                    &pubkey,
+                    crate::region_link::EntryAuth::Nip42,
+                    &scopes,
+                    None,
+                );
+                // Same NIP-FI seam as a local COUNT.
+                let _merged_permit = match conn.nip_fi_gate.acquire_effect().await {
+                    Ok(permit) => permit,
+                    Err(crate::nip_fi_gate::SessionExpired) => {
+                        conn.send(RelayMessage::closed(
+                            &sub_id,
+                            "restricted: authorization denied",
+                        ));
+                        return;
+                    }
+                };
+                if let Some(count) =
+                    crate::region_merge::count(&state, &conn.tenant, &pubkey, &plan, &reader).await
+                {
+                    match count {
+                        Ok(count) => {
+                            conn.send(RelayMessage::count(&sub_id, count));
+                        }
+                        Err(error) => {
+                            conn.send(RelayMessage::closed(
+                                &sub_id,
+                                &crate::region_read::closed_message(&error),
+                            ));
+                        }
+                    }
+                    return;
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                warn!(sub_id = %sub_id, "Room region lookup failed: {e}");
+                conn.send(RelayMessage::closed(&sub_id, "error: database error"));
+                return;
+            }
+        }
+    }
     // Global regions (S3): otherwise rooms of another region are counted there.
     match state
         .first_room_elsewhere(

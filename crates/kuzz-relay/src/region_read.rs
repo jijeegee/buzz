@@ -10,8 +10,8 @@
 //! relay's own.
 //!
 //! A WS `REQ` gets the stored events and `EOSE`; live events of a remote room
-//! follow with the region stream (S4-4). Reads that mix regions are still
-//! refused with "wrong region" until they are merged.
+//! follow with the region stream (S4-4). Reads that span regions are merged
+//! from each region's part ([`crate::region_merge`], S4-3c).
 //!
 //! Only runs with the link on (`KUZZ_REGION_LINK`).
 

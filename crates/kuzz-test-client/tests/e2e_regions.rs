@@ -312,32 +312,84 @@ async fn rooms_are_served_only_by_their_home_region() {
         "{refused}"
     );
 
-    // A read spanning both regions is not merged yet: CLOSED naming kr.
+    // A read spanning both regions is merged from each home (S4-3c): REQ,
+    // COUNT, HTTP /query and /count, and a read naming no room.
     let both = Filter::new()
+        .kind(Kind::Custom(9))
         .custom_tag(SingleLetterTag::lowercase(nostr::Alphabet::H), room.clone())
         .custom_tag(
             SingleLetterTag::lowercase(nostr::Alphabet::H),
             jp_room.clone(),
         );
-    jp.subscribe("mixed", vec![both]).await.expect("req");
+    jp.subscribe("mixed", vec![both.clone()])
+        .await
+        .expect("req");
+    let read = jp
+        .collect_until_eose("mixed", Duration::from_secs(10))
+        .await
+        .expect("jp read of both regions");
+    let mut texts: Vec<_> = read.iter().map(|event| event.content.as_str()).collect();
+    texts.sort_unstable();
+    assert_eq!(texts, ["hi jp", "hi jp ws", "hi kr", "jp's own room"]);
+    jp.send_raw(&serde_json::json!(["COUNT", "mixed-count", both]))
+        .await
+        .expect("count");
     loop {
-        match jp.recv_event(Duration::from_secs(5)).await.expect("reply") {
-            RelayMessage::Closed {
+        match jp
+            .recv_event(Duration::from_secs(10))
+            .await
+            .expect("count reply")
+        {
+            RelayMessage::Count {
                 subscription_id,
-                message,
-            } if subscription_id == "mixed" => {
-                assert!(
-                    message.starts_with("wrong-region: room lives in kr"),
-                    "{message}"
-                );
+                count,
+            } if subscription_id == "mixed-count" => {
+                assert_eq!(count, 4);
                 break;
             }
-            RelayMessage::Event { .. } | RelayMessage::Eose { .. } => {
-                panic!("jp served a mixed read")
-            }
+            RelayMessage::Closed { message, .. } => panic!("mixed count refused: {message}"),
             _ => {}
         }
     }
+    let both_rooms = serde_json::json!([room, jp_room]);
+    let (status, events) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"kinds": [9], "#h": both_rooms}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{events}");
+    assert_eq!(events.as_array().map(Vec::len), Some(4), "{events}");
+    let (status, page) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"kinds": [9], "#h": both_rooms, "limit": 2}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{page}");
+    assert_eq!(page.as_array().map(Vec::len), Some(2), "{page}");
+    let (status, mine) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"kinds": [9], "authors": [keys.public_key().to_hex()]}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{mine}");
+    assert_eq!(
+        mine.as_array().map(Vec::len),
+        Some(4),
+        "a read naming no room: {mine}"
+    );
+    let response = reqwest::Client::new()
+        .post(format!("{}/count", http(&jp_url())))
+        .header("X-Pubkey", keys.public_key().to_hex())
+        .json(&serde_json::json!([{"kinds": [9], "#h": both_rooms}]))
+        .send()
+        .await
+        .expect("count");
+    assert_eq!(response.status().as_u16(), 200);
+    let counted: Value = response.json().await.expect("count body");
+    assert_eq!(counted["count"], 4, "{counted}");
 }
 
 /// A region link call from jp to kr: signed with jp's link key, for kr's
