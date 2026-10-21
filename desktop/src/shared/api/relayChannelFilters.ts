@@ -8,6 +8,8 @@ import {
   KIND_STREAM_MESSAGE,
   KIND_STREAM_MESSAGE_V2,
   KIND_STREAM_MESSAGE_EDIT,
+  KIND_CHANNEL_THREAD_SUMMARY,
+  KIND_TYPING_INDICATOR,
 } from "@/shared/constants/kinds";
 import type { RelaySubscriptionFilter } from "@/shared/api/relayClientShared";
 
@@ -39,6 +41,41 @@ export function buildChannelFilter(
   }
 
   return filter;
+}
+
+/**
+ * Window-store live filter for an open channel, starting now. 39005 rides
+ * only this subscription: CHANNEL_EVENT_KINDS' other consumers (unread
+ * tracking, cache merges) must never see summary overlays.
+ */
+export function buildChannelWindowLiveFilter(
+  channelId: string,
+): RelaySubscriptionFilter {
+  return {
+    kinds: [...CHANNEL_EVENT_KINDS, KIND_CHANNEL_THREAD_SUMMARY],
+    "#h": [channelId],
+    limit: 1000,
+    since: Math.floor(Date.now() / 1_000),
+  };
+}
+
+/** Huddle lifecycle events (48100-48103) for a channel, last 100 included. */
+export function buildHuddleLifecycleFilter(
+  channelId: string,
+): RelaySubscriptionFilter {
+  return { kinds: [48100, 48101, 48102, 48103], "#h": [channelId], limit: 100 };
+}
+
+/** Typing indicators for a channel from the last 10 seconds on. */
+export function buildTypingIndicatorFilter(
+  channelId: string,
+): RelaySubscriptionFilter {
+  return {
+    kinds: [KIND_TYPING_INDICATOR],
+    "#h": [channelId],
+    limit: 10,
+    since: Math.floor(Date.now() / 1_000) - 10,
+  };
 }
 
 /**

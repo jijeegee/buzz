@@ -6,8 +6,6 @@ import {
   KIND_STREAM_MESSAGE,
   KIND_TYPING_INDICATOR,
   KIND_USER_STATUS,
-  CHANNEL_EVENT_KINDS,
-  KIND_CHANNEL_THREAD_SUMMARY,
 } from "@/shared/constants/kinds";
 import {
   getTextPayload,
@@ -23,7 +21,10 @@ import {
   buildChannelAuxDeletionFilter,
   buildChannelFilter,
   buildChannelHistoryFilter,
+  buildChannelWindowLiveFilter,
   buildGlobalStreamFilter,
+  buildHuddleLifecycleFilter,
+  buildTypingIndicatorFilter,
 } from "@/shared/api/relayChannelFilters";
 import {
   clearClosedRetry,
@@ -34,6 +35,7 @@ import {
 } from "@/shared/api/relayClosedRecovery";
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
 import { replayLiveSubscriptions } from "@/shared/api/relayReconnectReplay";
+import { RelaySeqSync } from "@/shared/api/relaySeqSync";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
 import { publishSessionEvent } from "@/shared/api/relayEventPublisher";
@@ -99,6 +101,12 @@ export class RelayClient {
   private visibleChannelId: string | null = null;
   private authOkTracker = new AuthOkTracker();
   private terminal = false;
+  readonly seq = new RelaySeqSync(() => ({
+    generation: this.connectionGeneration,
+    subscriptions: this.subscriptions,
+    sendRaw: (payload) => this.sendRaw(payload),
+    visibleChannelId: this.visibleChannelId,
+  }));
 
   private connectionStateEmitter = new RelayConnectionStateEmitter("idle");
   private stallWatchdog = new RelayStallWatchdog({
@@ -136,6 +144,7 @@ export class RelayClient {
     this.terminal = false;
     this.visibleChannelId = null;
     this.authOkTracker.reset();
+    this.seq.clear();
     this.connectionStateEmitter.set("idle");
 
     if (this.wsId !== null) {
@@ -335,18 +344,7 @@ export class RelayClient {
     channelId: string,
     onEvent: (event: RelayEvent) => void,
   ) {
-    // 39005 rides only this window-store subscription — CHANNEL_EVENT_KINDS'
-    // other consumers (unread tracking, cache merges) must never see
-    // summary overlays.
-    return this.subscribe(
-      {
-        kinds: [...CHANNEL_EVENT_KINDS, KIND_CHANNEL_THREAD_SUMMARY],
-        "#h": [channelId],
-        limit: 1000,
-        since: Math.floor(Date.now() / 1_000),
-      },
-      onEvent,
-    );
+    return this.subscribe(buildChannelWindowLiveFilter(channelId), onEvent);
   }
 
   /**
@@ -358,29 +356,14 @@ export class RelayClient {
     channelId: string,
     onEvent: (event: RelayEvent) => void,
   ) {
-    return this.subscribe(
-      {
-        kinds: [48100, 48101, 48102, 48103],
-        "#h": [channelId],
-        limit: 100,
-      },
-      onEvent,
-    );
+    return this.subscribe(buildHuddleLifecycleFilter(channelId), onEvent);
   }
 
   async subscribeToTypingIndicators(
     channelId: string,
     onEvent: (event: RelayEvent) => void,
   ) {
-    return this.subscribe(
-      {
-        kinds: [KIND_TYPING_INDICATOR],
-        "#h": [channelId],
-        limit: 10,
-        since: Math.floor(Date.now() / 1_000) - 10,
-      },
-      onEvent,
-    );
+    return this.subscribe(buildTypingIndicatorFilter(channelId), onEvent);
   }
   async publishUserStatus(status: UserStatusInput): Promise<RelayEvent> {
     await this.ensureConnected();
@@ -564,8 +547,10 @@ export class RelayClient {
       if (!this.relayUrl) {
         this.relayUrl = await getRelayWsUrl();
       }
+      // ?kuzz_seq=1 only when NIP-11 advertises it; AUTH signs the bare URL.
+      const url = await this.seq.socketUrl(this.relayUrl);
       const wsId = await invoke<number>("plugin:websocket|connect", {
-        url: this.relayUrl,
+        url,
         onMessage: this.onMessageChannel,
         config: {},
       });
@@ -574,6 +559,7 @@ export class RelayClient {
         throw new Error("Relay connection attempt was superseded.");
       }
       this.wsId = wsId;
+      this.seq.connected(generation, url, this.relayUrl);
 
       const authentication = armRelayAuthentication(
         AUTH_TIMEOUT_MS,
@@ -676,6 +662,7 @@ export class RelayClient {
         onReady?.(readiness);
         settleReady();
       };
+      const first = this.seq.isFirstForKnownChannel(this.subscriptions, filter);
       this.subscriptions.set(subId, subscription);
       await Promise.race([
         this.sendRawWithReconnectRetry(
@@ -693,6 +680,8 @@ export class RelayClient {
         cancelled,
       ]);
       await Promise.race([ready, cancelled]);
+      // Fetch, by order number, what arrived while no sub was open on it.
+      if (first) void this.seq.repair(new Set([subId]));
       return dispose;
     } catch (error) {
       await dispose().catch(() => {});
@@ -898,15 +887,19 @@ export class RelayClient {
       return;
     }
     if (type === "EVENT" && typeof rest[0] === "string" && rest[1]) {
-      this.handleEvent(rest[0], rest[1] as RelayEvent, generation);
+      this.handleEvent(rest[0], rest[1] as RelayEvent, generation, rest[2]);
       return;
     }
+    // The relay may have lost events for this socket: repair by order number.
+    if (type === "KUZZ_RESYNC") return void this.seq.repair();
 
     if (
       type === "OK" &&
       typeof rest[0] === "string" &&
       typeof rest[1] === "boolean"
     ) {
+      if (rest[1])
+        this.seq.onOk(this.pendingEvents.get(rest[0]), generation, rest[3]);
       this.handleOk(
         rest[0],
         rest[1],
@@ -962,11 +955,15 @@ export class RelayClient {
     await this.sendRaw(["AUTH", frame.payload]);
   }
 
-  private handleEvent(subId: string, event: RelayEvent, generation: number) {
+  private handleEvent(
+    subId: string,
+    event: RelayEvent,
+    generation: number,
+    meta?: unknown,
+  ) {
     const subscription = this.subscriptions.get(subId);
-    if (!subscription) {
-      return;
-    }
+    if (!subscription) return;
+    if (!this.seq.onEvent(subscription, event, generation, meta)) return;
 
     if (subscription.mode === "first") {
       subscription.onEvent(event);
@@ -1053,6 +1050,7 @@ export class RelayClient {
         generation,
         visibleChannelId: this.visibleChannelId,
         isActive: () => this.connectionGeneration === generation,
+        seq: this.seq.replay(generation),
       });
     } catch (error) {
       const reconnectError =
@@ -1126,6 +1124,7 @@ export class RelayClient {
     },
   ) {
     this.onMessageChannel = null;
+    this.seq.reset();
     this.stallWatchdog.stop();
     this.connectionGeneration++;
     this.liveReqDrain.reset();
