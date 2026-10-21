@@ -23,10 +23,14 @@ pub async fn get_relay_json<T: DeserializeOwned>(
         path_with_query
     );
     let auth = build_nip98_auth_header(&Method::GET, &url, &[], state)?;
+    let target = match state.current_identity_pubkey() {
+        Ok(account) => super::server::region_request_url(&account, &url),
+        Err(_) => url.clone(),
+    };
     let response = build_authenticated_relay_request(
         &state.http_client,
         Method::GET,
-        &url,
+        &target,
         &auth,
         None,
         None,

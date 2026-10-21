@@ -234,6 +234,25 @@ fn server_gave(relay_url: &str) -> bool {
         .any(|url| relay_endpoint(url).as_ref() == Some(&wanted))
 }
 
+/// Where an HTTP request for `account` to `url` is sent: a request to the
+/// built-in server goes to the address it gave the account (its home
+/// region). The request's auth stays signed for `url`, the service address,
+/// and anything else (a dev workspace relay, other hosts) is sent as is.
+pub fn region_request_url(account: &PublicKey, url: &str) -> String {
+    let Some(given) = connect_ws_url(Some(account)) else {
+        return url.to_string();
+    };
+    let service = relay_api_base_url();
+    let service = service.trim_end_matches('/');
+    match url.strip_prefix(service) {
+        Some(rest) if rest.is_empty() || rest.starts_with(['/', '?']) => {
+            let region = crate::relay::relay_http_base_url(&given);
+            format!("{}{rest}", region.trim_end_matches('/'))
+        }
+        _ => url.to_string(),
+    }
+}
+
 /// [`ensure_relay_allowed`] for a relay WebSocket connect, which may also
 /// reach an address the built-in server gave an account. Everything else
 /// (signing, sessions, workspaces, agents) stays on the built-in server.
@@ -421,6 +440,36 @@ mod tests {
         super::learn_connect_url(account, None);
         assert_eq!(super::connect_ws_url(Some(&account)), None);
         assert!(super::ensure_connect_allowed("test", region).is_err());
+    }
+
+    #[test]
+    fn requests_to_the_service_go_to_the_learned_region() {
+        let account = nostr::Keys::generate().public_key();
+        let other = nostr::Keys::generate().public_key();
+        let service = super::relay_api_base_url();
+        let service = service.trim_end_matches('/');
+        let query = format!("{service}/query");
+        // Nothing learned: sent as is.
+        assert_eq!(super::region_request_url(&account, &query), query);
+
+        super::learn_connect_url(account, Some("wss://jp.request-region.example"));
+        assert_eq!(
+            super::region_request_url(&account, &query),
+            "https://jp.request-region.example/query"
+        );
+        assert_eq!(
+            super::region_request_url(&account, &format!("{service}/api/x?a=1")),
+            "https://jp.request-region.example/api/x?a=1"
+        );
+        // Another account, another host, or a longer host name: as is.
+        assert_eq!(super::region_request_url(&other, &query), query);
+        let elsewhere = "https://elsewhere.example/query";
+        assert_eq!(super::region_request_url(&account, elsewhere), elsewhere);
+        let longer = format!("{service}x/query");
+        assert_eq!(super::region_request_url(&account, &longer), longer);
+
+        super::learn_connect_url(account, None);
+        assert_eq!(super::region_request_url(&account, &query), query);
     }
 
     #[test]
