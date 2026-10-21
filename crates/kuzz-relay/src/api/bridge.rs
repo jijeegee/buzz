@@ -1829,6 +1829,7 @@ pub async fn query_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        true,
     )
     .await;
     match &result {
@@ -1856,9 +1857,40 @@ pub async fn query_events(
     Ok(result.into_response())
 }
 
+/// A read another region proxied here for `pubkey` (global regions S4-3):
+/// the ordinary `/query` or `/count` path, never forwarded again. The
+/// calling region already checked the reader's credential.
+pub(crate) async fn read_for_region(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    body: &[u8],
+    pubkey: nostr::PublicKey,
+    mode: crate::region_read::ReadMode,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let headers = HeaderMap::new();
+    match mode {
+        crate::region_read::ReadMode::Query => {
+            query_events_authed(
+                state, tenant, &headers, body, pubkey, [0u8; 32], None, false,
+            )
+            .await
+        }
+        crate::region_read::ReadMode::Count => {
+            count_events_authed(
+                state, tenant, &headers, body, pubkey, [0u8; 32], None, false,
+            )
+            .await
+        }
+    }
+}
+
 /// Filter execution for [`query_events`], run once NIP-98 auth succeeds.
 /// Handles admission, replay, membership, and all filter paths so the thin
 /// wrapper above can emit exactly one terminal attribution line from the Result.
+///
+/// `may_forward`: a read naming only rooms of one other region is answered
+/// there (S4-3); off for reads another region proxied here.
+#[allow(clippy::too_many_arguments)]
 async fn query_events_authed(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -1867,20 +1899,25 @@ async fn query_events_authed(
     pubkey: nostr::PublicKey,
     event_id_bytes: [u8; 32],
     signed_auth_created_at: Option<u64>,
+    may_forward: bool,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     enforce_http_admission(state, tenant, &pubkey).await?;
     check_nip98_replay(state, tenant, event_id_bytes).await?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
-    let auth_tag = super::relay_members::extract_auth_tag_header(headers);
-    super::relay_members::enforce_relay_membership(
-        state,
-        tenant.community(),
-        &pubkey_bytes,
-        auth_tag,
-        signed_auth_created_at,
-    )
-    .await?;
+    // A read another region proxied here was admitted there with the
+    // reader's own membership proof (auth tag), which does not travel.
+    if may_forward {
+        let auth_tag = super::relay_members::extract_auth_tag_header(headers);
+        super::relay_members::enforce_relay_membership(
+            state,
+            tenant.community(),
+            &pubkey_bytes,
+            auth_tag,
+            signed_auth_created_at,
+        )
+        .await?;
+    }
 
     // Two-pass parse: preserve raw JSON for custom extension fields (before_id,
     // depth_limit, feed_types) that nostr::Filter silently drops.
@@ -1934,11 +1971,38 @@ async fn query_events_authed(
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
     crate::protocol::check_filter_list_limits(&filters)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
-    let explicit_channels = crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
-        .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?;
-    // Global regions (S3): rooms of another region are read there.
+    let explicit_channels: Vec<uuid::Uuid> =
+        crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
+            .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?
+            .unwrap_or_default();
+    // Global regions: rooms of one other region are read there (S4-3);
+    // otherwise a room of another region is refused (S3).
+    if may_forward {
+        if let Some(region) =
+            crate::region_read::single_remote_home(state, tenant.community(), &explicit_channels)
+                .await
+                .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
+        {
+            let reader = crate::region_read::reader(
+                &pubkey,
+                crate::region_link::EntryAuth::Nip98,
+                &kuzz_auth::Scope::all_known(),
+                None,
+            );
+            return crate::region_read::read_at_home(
+                state,
+                tenant,
+                &region,
+                crate::region_read::ReadMode::Query,
+                raw_filters,
+                reader,
+            )
+            .await
+            .map(Json);
+        }
+    }
     if let Some(home) = state
-        .first_room_elsewhere(tenant.community(), explicit_channels.into_iter().flatten())
+        .first_room_elsewhere(tenant.community(), explicit_channels)
         .await
         .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
     {
@@ -2606,6 +2670,7 @@ pub async fn count_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        true,
     )
     .await;
     match &result {
@@ -2634,6 +2699,7 @@ pub async fn count_events(
 /// Filter execution for [`count_events`], run once NIP-98 auth succeeds.
 /// Handles admission, replay, membership, and count execution so the thin
 /// wrapper above can emit exactly one terminal attribution line from the Result.
+#[allow(clippy::too_many_arguments)]
 async fn count_events_authed(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -2642,20 +2708,25 @@ async fn count_events_authed(
     pubkey: nostr::PublicKey,
     event_id_bytes: [u8; 32],
     signed_auth_created_at: Option<u64>,
+    may_forward: bool,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     enforce_http_admission(state, tenant, &pubkey).await?;
     check_nip98_replay(state, tenant, event_id_bytes).await?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
-    let auth_tag = super::relay_members::extract_auth_tag_header(headers);
-    super::relay_members::enforce_relay_membership(
-        state,
-        tenant.community(),
-        &pubkey_bytes,
-        auth_tag,
-        signed_auth_created_at,
-    )
-    .await?;
+    // A read another region proxied here was admitted there with the
+    // reader's own membership proof (auth tag), which does not travel.
+    if may_forward {
+        let auth_tag = super::relay_members::extract_auth_tag_header(headers);
+        super::relay_members::enforce_relay_membership(
+            state,
+            tenant.community(),
+            &pubkey_bytes,
+            auth_tag,
+            signed_auth_created_at,
+        )
+        .await?;
+    }
 
     let raw: Vec<Value> = serde_json::from_slice(body)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
@@ -2666,11 +2737,38 @@ async fn count_events_authed(
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &format!("invalid filters: {e}")))?;
     crate::protocol::check_filter_list_limits(&filters)
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
-    let explicit_channels = crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
-        .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?;
-    // Global regions (S3): rooms of another region are read there.
+    let explicit_channels: Vec<uuid::Uuid> =
+        crate::handlers::req::extract_channel_ids_from_filters_limited(&filters)
+            .map_err(|()| api_error(StatusCode::BAD_REQUEST, "too many explicit channels"))?
+            .unwrap_or_default();
+    // Global regions: rooms of one other region are counted there (S4-3);
+    // otherwise a room of another region is refused (S3).
+    if may_forward {
+        if let Some(region) =
+            crate::region_read::single_remote_home(state, tenant.community(), &explicit_channels)
+                .await
+                .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
+        {
+            let reader = crate::region_read::reader(
+                &pubkey,
+                crate::region_link::EntryAuth::Nip98,
+                &kuzz_auth::Scope::all_known(),
+                None,
+            );
+            return crate::region_read::read_at_home(
+                state,
+                tenant,
+                &region,
+                crate::region_read::ReadMode::Count,
+                raw,
+                reader,
+            )
+            .await
+            .map(Json);
+        }
+    }
     if let Some(home) = state
-        .first_room_elsewhere(tenant.community(), explicit_channels.into_iter().flatten())
+        .first_room_elsewhere(tenant.community(), explicit_channels)
         .await
         .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
     {

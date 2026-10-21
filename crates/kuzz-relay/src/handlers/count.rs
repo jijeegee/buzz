@@ -79,7 +79,86 @@ pub async fn handle_count(
             }
         };
 
-    // Global regions (S3): rooms of another region are counted there.
+    // Global regions (S4-3): rooms of one other region are counted there.
+    // Only when every filter names its rooms: a filter without `#h` counts
+    // every room the reader can open, here too.
+    let requested =
+        crate::region_read::rooms_of_every_filter(&requested_channel_sets).unwrap_or_default();
+    match crate::region_read::single_remote_home(&state, conn.tenant.community(), &requested).await
+    {
+        Ok(Some(region)) => {
+            let (pubkey, scopes) = match conn.auth_state_snapshot() {
+                AuthState::Authenticated(ctx) => (ctx.pubkey, ctx.scopes.clone()),
+                _ => return,
+            };
+            if let Some(allowed) = token_channel_ids.as_deref() {
+                if requested.iter().any(|channel| !allowed.contains(channel)) {
+                    conn.send(RelayMessage::closed(
+                        &sub_id,
+                        "restricted: channel not allowed for this token",
+                    ));
+                    return;
+                }
+            }
+            let raw = filters
+                .iter()
+                .map(|filter| crate::region_read::raw_filter(filter, None, None))
+                .collect();
+            let reader = crate::region_read::reader(
+                &pubkey,
+                crate::region_link::EntryAuth::Nip42,
+                &scopes,
+                token_channel_ids.clone(),
+            );
+            // Same NIP-FI seam as a local COUNT.
+            let _remote_permit = match conn.nip_fi_gate.acquire_effect().await {
+                Ok(permit) => permit,
+                Err(crate::nip_fi_gate::SessionExpired) => {
+                    conn.send(RelayMessage::closed(
+                        &sub_id,
+                        "restricted: authorization denied",
+                    ));
+                    return;
+                }
+            };
+            match crate::region_read::read_at_home(
+                &state,
+                &conn.tenant,
+                &region,
+                crate::region_read::ReadMode::Count,
+                raw,
+                reader,
+            )
+            .await
+            {
+                Ok(answer) => match answer.get("count").and_then(serde_json::Value::as_u64) {
+                    Some(count) => {
+                        conn.send(RelayMessage::count(&sub_id, count));
+                    }
+                    None => {
+                        conn.send(RelayMessage::closed(
+                            &sub_id,
+                            crate::region_read::UNREACHABLE,
+                        ));
+                    }
+                },
+                Err(error) => {
+                    conn.send(RelayMessage::closed(
+                        &sub_id,
+                        &crate::region_read::closed_message(&error),
+                    ));
+                }
+            }
+            return;
+        }
+        Ok(None) => {}
+        Err(e) => {
+            warn!(sub_id = %sub_id, "Room region lookup failed: {e}");
+            conn.send(RelayMessage::closed(&sub_id, "error: database error"));
+            return;
+        }
+    }
+    // Global regions (S3): otherwise rooms of another region are counted there.
     match state
         .first_room_elsewhere(
             conn.tenant.community(),
