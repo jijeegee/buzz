@@ -27,6 +27,16 @@
 //! merged: search (S4-3d), order-number pages, thread windows and the other
 //! `/query` modes keep their single-region answers.
 //!
+//! Search (S4-3d) is merged by relevance: for page `p` of `n` hits each
+//! part returns its best `p * n` hits with their scores (`ts_rank_cd`, the
+//! same scale in every region), and the entry sorts them by score, then
+//! `created_at` newest first, then `id`, the search query's own order, and
+//! answers hits `(p - 1) * n` to `p * n`. A part also returns the hits it
+//! hides from the reader, as score, time and id without the event, so the
+//! entry pages over the same list a single region would. Parts return at
+//! most [`SEARCH_DEPTH`] hits, and a page reaching past that depth is empty.
+//! Profile search (kind 0, global-only) stays local until S5.
+//!
 //! Only runs with the link on (`KUZZ_REGION_LINK`); with it off, or with one
 //! region, [`plan`] returns `None` and nothing changes.
 
@@ -59,6 +69,23 @@ const PLAIN_KEYS: &[&str] = &[
     "before_id",
 ];
 
+/// Search keys a merged search understands, besides [`PLAIN_KEYS`].
+const SEARCH_KEYS: &[&str] = &[
+    "search",
+    "search_mode",
+    "searchMode",
+    "page",
+    "search_page",
+    "searchPage",
+];
+
+/// Filter key asking a region for its search hits with their scores. Only
+/// honoured for a part of a merged search, never from a reader.
+pub(crate) const SEARCH_RANKS_KEY: &str = "region_search_ranks";
+
+/// The most hits one part of a merged search returns (the search page cap).
+pub(crate) const SEARCH_DEPTH: usize = 500;
+
 /// One region's share of one filter. `region` is `None` for this region.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Part {
@@ -77,6 +104,8 @@ pub(crate) struct Plan {
     pub limits: Vec<usize>,
     /// Whether every filter names its rooms (a `COUNT` can be summed).
     pub every_filter_named: bool,
+    /// For a search, each filter's 1-based page.
+    pub search_pages: Option<Vec<usize>>,
 }
 
 /// How `raw` filters (`filters` as `/query` JSON) are split across regions,
@@ -88,7 +117,11 @@ pub(crate) async fn plan(
     filters: &[nostr::Filter],
     raw: &[Value],
 ) -> Result<Option<Plan>, kuzz_db::DbError> {
-    if !state.config.region_link || filters.len() != raw.len() || !raw.iter().all(is_plain) {
+    let search = !filters.is_empty() && filters.iter().all(|filter| filter.search.is_some());
+    if !state.config.region_link
+        || filters.len() != raw.len()
+        || !raw.iter().all(|raw| is_plain(raw, search))
+    {
         return Ok(None);
     }
     let others = state.room_router.other_regions(&state.db).await?;
@@ -133,20 +166,71 @@ pub(crate) async fn plan(
     if parts.iter().all(|part| part.region.is_none()) {
         return Ok(None);
     }
+    if search {
+        let limits: Vec<usize> = filters.iter().map(search_limit).collect();
+        let pages: Vec<usize> = raw.iter().map(search_page).collect();
+        for part in &mut parts {
+            let depth = pages[part.filter]
+                .saturating_mul(limits[part.filter])
+                .min(SEARCH_DEPTH);
+            part.raw = search_part(&part.raw, depth);
+        }
+        return Ok(Some(Plan {
+            parts,
+            limits,
+            every_filter_named,
+            search_pages: Some(pages),
+        }));
+    }
     let limits = filters.iter().map(event_limit).collect();
     Ok(Some(Plan {
         parts,
         limits,
         every_filter_named,
+        search_pages: None,
     }))
 }
 
-/// Whether `raw` uses only keys a merged read understands.
-fn is_plain(raw: &Value) -> bool {
+/// A search filter's page size, as the HTTP search applies it.
+fn search_limit(filter: &nostr::Filter) -> usize {
+    filter.limit.unwrap_or(100).min(SEARCH_DEPTH)
+}
+
+/// A search filter's 1-based page.
+fn search_page(raw: &Value) -> usize {
+    ["page", "search_page", "searchPage"]
+        .iter()
+        .find_map(|key| raw.get(key).and_then(Value::as_u64))
+        .and_then(|page| usize::try_from(page).ok())
+        .filter(|&page| page > 0)
+        .map_or(1, |page| page.min(SEARCH_PAGE_MAX))
+}
+
+/// The search query's own page cap.
+const SEARCH_PAGE_MAX: usize = 1000;
+
+/// A part of a merged search: its best `depth` hits, with scores.
+fn search_part(raw: &Value, depth: usize) -> Value {
+    let mut raw = raw.clone();
+    if let Some(object) = raw.as_object_mut() {
+        object.remove("search_page");
+        object.remove("searchPage");
+        object.insert("page".into(), json!(1));
+        object.insert("limit".into(), json!(depth));
+        object.insert(SEARCH_RANKS_KEY.into(), json!(true));
+    }
+    raw
+}
+
+/// Whether `raw` uses only keys a merged read (or, with `search`, a merged
+/// search) understands.
+fn is_plain(raw: &Value, search: bool) -> bool {
     raw.as_object().is_some_and(|object| {
-        object
-            .keys()
-            .all(|key| key.starts_with('#') || PLAIN_KEYS.contains(&key.as_str()))
+        object.keys().all(|key| {
+            key.starts_with('#')
+                || PLAIN_KEYS.contains(&key.as_str())
+                || (search && SEARCH_KEYS.contains(&key.as_str()))
+        })
     })
 }
 
@@ -227,6 +311,9 @@ pub(crate) async fn query(
     plan: &Plan,
     reader: &EntryPrincipal,
 ) -> Result<Vec<Value>, QueryError> {
+    if let Some(pages) = &plan.search_pages {
+        return search(state, tenant, pubkey, plan, pages, reader).await;
+    }
     let calls = by_region(plan)
         .into_iter()
         .map(|(region, parts)| async move {
@@ -257,7 +344,7 @@ pub(crate) async fn count(
     plan: &Plan,
     reader: &EntryPrincipal,
 ) -> Option<Result<u64, QueryError>> {
-    if !plan.every_filter_named {
+    if !plan.every_filter_named || plan.search_pages.is_some() {
         return None;
     }
     // One call per region: its rooms' filters are counted together, as a
@@ -285,6 +372,113 @@ pub(crate) async fn count(
         });
     let counts = futures_util::future::join_all(calls).await;
     Some(counts.into_iter().sum())
+}
+
+/// Run a merged search: one call per part (a region's search hits cannot be
+/// split back by filter), then merge by score.
+async fn search(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    pubkey: &nostr::PublicKey,
+    plan: &Plan,
+    pages: &[usize],
+    reader: &EntryPrincipal,
+) -> Result<Vec<Value>, QueryError> {
+    let calls = plan.parts.iter().map(|part| async move {
+        let filters = vec![part.raw.clone()];
+        let answer = read_in(
+            state,
+            tenant,
+            pubkey,
+            part.region.as_deref(),
+            ReadMode::Query,
+            filters,
+            reader,
+        )
+        .await
+        .and_then(|answer| match answer.get("search_hits") {
+            Some(Value::Array(hits)) => Ok(Value::Array(hits.clone())),
+            _ => {
+                tracing::warn!(target_region = ?part.region, "Malformed merged-search answer");
+                Err(unreachable_error())
+            }
+        });
+        PartAnswer {
+            filter: part.filter,
+            region: part.region.clone(),
+            named: part.named,
+            answer,
+        }
+    });
+    let answers = futures_util::future::join_all(calls).await;
+    merge_search(&plan.limits, pages, answers)
+}
+
+/// Merge search parts (each answer an array of `{"rank", "created_at",
+/// "id", "event"}`, `event` absent for a hit hidden from the reader): per
+/// filter the hits sorted by score, then the filter's page of them without
+/// the hidden ones, then the filters in order with each event once. A page
+/// reaching past [`SEARCH_DEPTH`] is empty. Failures as in [`merge_events`].
+pub(crate) fn merge_search(
+    limits: &[usize],
+    pages: &[usize],
+    answers: Vec<PartAnswer>,
+) -> Result<Vec<Value>, QueryError> {
+    let mut per_filter: Vec<Vec<Value>> = vec![Vec::new(); limits.len()];
+    let mut answered = false;
+    let mut refusal = None;
+    for part in answers {
+        match part.answer {
+            Ok(Value::Array(hits)) if part.filter < per_filter.len() => {
+                answered = true;
+                per_filter[part.filter].extend(hits);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                let failed = error.0.is_server_error() || error.0 == StatusCode::TOO_MANY_REQUESTS;
+                tracing::warn!(target_region = ?part.region, status = %error.0, "Region part of a merged search failed");
+                metrics::counter!(
+                    "kuzz_region_merged_read_parts_failed_total",
+                    "named" => if part.named { "true" } else { "false" }
+                )
+                .increment(1);
+                if failed && part.named {
+                    return Err(error);
+                }
+                if !failed && refusal.is_none() {
+                    refusal = Some(error);
+                }
+            }
+        }
+    }
+    if !answered {
+        return Err(refusal.unwrap_or_else(unreachable_error));
+    }
+    let mut seen = HashSet::new();
+    let mut merged = Vec::new();
+    for ((mut hits, &limit), &page) in per_filter.into_iter().zip(limits).zip(pages) {
+        if page.saturating_mul(limit) > SEARCH_DEPTH {
+            continue;
+        }
+        hits.sort_by(|left, right| {
+            let rank = |hit: &Value| hit.get("rank").and_then(Value::as_f64).unwrap_or(0.0);
+            rank(right)
+                .total_cmp(&rank(left))
+                .then_with(|| event_order(left, right))
+        });
+        hits.dedup_by(|left, right| left.get("id") == right.get("id"));
+        let start = (page - 1).saturating_mul(limit);
+        for hit in hits.into_iter().skip(start).take(limit) {
+            let Some(event) = hit.get("event").cloned() else {
+                continue;
+            };
+            let id = event.get("id").and_then(Value::as_str).map(str::to_string);
+            if id.is_none_or(|id| seen.insert(id)) {
+                merged.push(event);
+            }
+        }
+    }
+    Ok(merged)
 }
 
 fn unreachable_error() -> QueryError {
@@ -597,12 +791,68 @@ mod tests {
     #[test]
     fn only_plain_filters_merge() {
         assert!(is_plain(
-            &json!({"kinds": [9], "#h": ["x"], "until": 5, "before_id": "ab"})
+            &json!({"kinds": [9], "#h": ["x"], "until": 5, "before_id": "ab"}),
+            false
         ));
-        assert!(!is_plain(&json!({"kinds": [9], "search": "hi"})));
-        assert!(!is_plain(&json!({"#h": ["x"], "top_level": true})));
-        assert!(!is_plain(&json!({"#h": ["x"], "after_seq": 3})));
-        assert!(!is_plain(&json!([])));
+        assert!(!is_plain(&json!({"kinds": [9], "search": "hi"}), false));
+        assert!(is_plain(
+            &json!({"kinds": [9], "search": "hi", "page": 2}),
+            true
+        ));
+        assert!(!is_plain(&json!({"search": "hi", "top_level": true}), true));
+        assert!(!is_plain(&json!({"#h": ["x"], "top_level": true}), false));
+        assert!(!is_plain(&json!({"#h": ["x"], "after_seq": 3}), false));
+        assert!(!is_plain(&json!([]), false));
+    }
+
+    #[test]
+    fn search_parts_ask_for_every_page_up_to_this_one() {
+        let raw = json!({"search": "hi", "searchPage": 3, "limit": 20});
+        assert_eq!(search_page(&raw), 3);
+        let part = search_part(&raw, 60);
+        assert_eq!(part["page"], 1);
+        assert_eq!(part["limit"], 60);
+        assert_eq!(part[SEARCH_RANKS_KEY], true);
+        assert!(part.get("searchPage").is_none());
+        assert_eq!(search_limit(&nostr::Filter::new().search("hi")), 100);
+    }
+
+    #[test]
+    fn search_merges_by_score_then_pages() {
+        let hit = |at: u64, id: &str, rank: f64| {
+            let mut hit = event(at, id);
+            hit["rank"] = json!(rank);
+            hit["event"] = event(at, id);
+            hit
+        };
+        let here = json!([hit(10, "a", 0.9), hit(30, "c", 0.5)]);
+        let jp = json!([hit(20, "b", 0.7), hit(40, "d", 0.5), hit(1, "e", 0.1)]);
+        let answers = || {
+            vec![
+                answer(0, None, true, Ok(here.clone())),
+                answer(0, Some("jp"), true, Ok(jp.clone())),
+            ]
+        };
+        let first = merge_search(&[2], &[1], answers()).unwrap();
+        assert_eq!(ids(&first), ["a", "b"]);
+        // Equal scores: newer first.
+        let second = merge_search(&[2], &[2], answers()).unwrap();
+        assert_eq!(ids(&second), ["d", "c"]);
+        let third = merge_search(&[2], &[3], answers()).unwrap();
+        assert_eq!(ids(&third), ["e"]);
+        // A hidden hit keeps its place: page 2 is the same as one region's.
+        let mut hidden = hit(50, "f", 0.95);
+        hidden.as_object_mut().unwrap().remove("event");
+        let with_hidden = vec![
+            answer(0, None, true, Ok(json!([hidden, hit(10, "a", 0.9)]))),
+            answer(0, Some("jp"), true, Ok(jp.clone())),
+        ];
+        assert_eq!(ids(&merge_search(&[2], &[1], with_hidden).unwrap()), ["a"]);
+        // Past the depth every part can return, a page is empty.
+        assert!(merge_search(&[400], &[2], answers()).unwrap().is_empty());
+        let down = answer(0, Some("sg"), true, Err(unreachable_error()));
+        let error = merge_search(&[2], &[1], vec![down]).unwrap_err();
+        assert_eq!(error.0, StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[test]
