@@ -375,7 +375,7 @@ pub async fn query_relay_value(
     let auth = credential.relay_http_auth(&Method::POST, &url, &body_bytes)?;
     send_query_request_as(
         &state.http_client,
-        &url,
+        &server::region_request_url(&credential.public_key(), &url),
         &auth,
         None,
         body_bytes,
@@ -400,7 +400,7 @@ pub(crate) async fn query_relay_value_as(
     let auth = credential.relay_http_auth(&Method::POST, &url, &body_bytes)?;
     send_query_request_as(
         &state.http_client,
-        &url,
+        &server::region_request_url(&credential.public_key(), &url),
         &auth,
         None,
         body_bytes,
@@ -438,7 +438,7 @@ pub async fn query_relay_at_with_keys(
     let auth = keys.relay_http_auth(&Method::POST, &url, &body_bytes)?;
     send_query_request(
         &state.http_client,
-        &url,
+        &server::region_request_url(&keys.signer_pubkey(), &url),
         &auth,
         auth_tag,
         body_bytes,
@@ -783,7 +783,7 @@ pub async fn submit_signed_event_with_keys(
 
     let mut request = state
         .http_client
-        .post(&url)
+        .post(server::region_request_url(&keys.signer_pubkey(), &url))
         .header("Authorization", auth_header)
         .header("Content-Type", "application/json");
     if let Some(tag) = auth_tag {

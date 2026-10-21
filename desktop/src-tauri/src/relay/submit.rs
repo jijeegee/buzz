@@ -32,7 +32,7 @@ pub async fn submit_signed_event_at_with_keys(
     let response = build_authenticated_relay_request(
         &state.http_client,
         Method::POST,
-        &url,
+        &super::server::region_request_url(&keys.signer_pubkey(), &url),
         &auth_header,
         Some(body_bytes),
         None,
