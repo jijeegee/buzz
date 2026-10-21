@@ -8,12 +8,12 @@ use std::collections::BTreeMap;
 
 use base64::Engine as _;
 
-/// Seconds a woken lazy harness stays warm before it releases its worker
-/// subprocesses back to the empty-slot state (via `KUZZ_ACP_IDLE_POOL_SLEEP`).
-/// The next accepted event re-wakes it through the same lazy path. Matches the
-/// harness's own 15-minute per-turn idle window so a warm pool survives a
-/// normal back-and-forth but a truly quiet harness stops paying for workers.
-const IDLE_POOL_SLEEP_SECS: &str = "900";
+/// Seconds a woken lazy harness stays quiet after its last turn ends before it
+/// releases its worker subprocesses back to the empty-slot state (via
+/// `KUZZ_ACP_IDLE_POOL_SLEEP`). The next accepted event re-wakes it through the
+/// same lazy path. 30 minutes keeps a warm pool through a normal back-and-forth
+/// while a truly quiet harness stops paying for workers.
+const IDLE_POOL_SLEEP_SECS: &str = "1800";
 
 /// Value for `KUZZ_ACP_IDLE_POOL_SLEEP`. Idle re-sleep is only meaningful for
 /// lazy harnesses (the harness ignores it otherwise); gate to `lazy` here so

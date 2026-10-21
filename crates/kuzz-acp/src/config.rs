@@ -618,8 +618,9 @@ pub struct CliArgs {
     pub lazy_pool: bool,
 
     /// Tear the woken pool back down to the lazy empty-slot state after this
-    /// many seconds with no dispatched turn in flight and an empty queue,
-    /// releasing worker subprocesses until the next accepted event re-wakes.
+    /// many seconds since the last channel dispatch or completion, with no turn
+    /// in flight and an empty queue, releasing worker subprocesses until the
+    /// next accepted event re-wakes. Heartbeat completion does not renew it.
     /// Requires `--lazy-pool`; ignored otherwise. 0 disables idle re-sleep.
     #[arg(long, env = "KUZZ_ACP_IDLE_POOL_SLEEP", default_value_t = 0)]
     pub idle_pool_sleep: u64,
