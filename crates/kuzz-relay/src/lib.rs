@@ -65,12 +65,14 @@ pub mod protocol;
 pub mod push_runtime;
 /// Readiness-probe telemetry and the per-pod dependency sampler behind `/_status`.
 pub mod readiness;
+/// Writes forwarded to a room's home region.
+pub mod region_forward;
+/// Calls between relays of different regions (entry attestations).
+pub mod region_link;
 /// Axum router construction.
 pub mod router;
 /// Room routing between regions: which region serves a room.
 pub mod routing;
-/// Calls between relays of different regions (entry attestations).
-pub mod region_link;
 /// Background retry of side effects left in the outbox.
 pub mod side_effect_retry;
 /// Shared application state.

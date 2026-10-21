@@ -22,6 +22,8 @@ JP_URL=ws://localhost:3042
 # Throwaway region link keys (S4): one per region.
 KR_LINK_KEY="$(openssl rand -hex 32)"
 JP_LINK_KEY="$(openssl rand -hex 32)"
+# One community, the same id in both regions.
+COMMUNITY_ID="$(openssl rand -hex 16 | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')"
 PIDS=()
 
 log() { printf '[regions] %s\n' "$*"; }
@@ -61,6 +63,7 @@ start_relay() {
     KUZZ_PRIMARY_REGION=kr \
     KUZZ_REGION_LINK=on \
     KUZZ_REGION_KEY="${link_key}" \
+    KUZZ_COMMUNITY_ID="${COMMUNITY_ID}" \
     KUZZ_S3_ENDPOINT=http://127.0.0.1:9491 \
     KUZZ_S3_ACCESS_KEY=kuzz_dev \
     KUZZ_S3_SECRET_KEY=kuzz_dev_secret \

@@ -378,6 +378,13 @@ pub struct Config {
     /// it by its public half in `regions.link_pubkey`.
     pub region_key: Option<RegionKey>,
 
+    /// The deployment community's id (`KUZZ_COMMUNITY_ID`, optional). Every
+    /// region of one service bootstraps its community with this same id, so
+    /// region link calls, the room directory and DM reservations name one
+    /// community everywhere. Unset: the database picks a random id, as
+    /// before (one region only).
+    pub community_id: Option<uuid::Uuid>,
+
     /// Optional override for ephemeral channel TTL (in seconds).
     /// When set, any channel created with a TTL tag will use this value instead
     /// of the client-provided one. Useful for testing ephemeral expiry quickly.
@@ -1317,6 +1324,27 @@ impl Config {
                 "KUZZ_REGION_LINK=on needs KUZZ_REGION_KEY set to a valid secret key".into(),
             ));
         }
+        let community_id = match std::env::var("KUZZ_COMMUNITY_ID")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+        {
+            Some(raw) => Some(
+                uuid::Uuid::parse_str(&raw)
+                    .ok()
+                    .filter(|id| !id.is_nil())
+                    .ok_or_else(|| {
+                        ConfigError::InvalidValue("KUZZ_COMMUNITY_ID must be a non-nil UUID".into())
+                    })?,
+            ),
+            None => None,
+        };
+        if region_link && community_id.is_none() {
+            return Err(ConfigError::InvalidValue(
+                "KUZZ_REGION_LINK=on needs KUZZ_COMMUNITY_ID: every region must name the same community"
+                    .into(),
+            ));
+        }
         let region_id = parse_region_id("KUZZ_REGION_ID", "kr")?;
         let primary_region = parse_region_id("KUZZ_PRIMARY_REGION", &region_id)?;
         let region_connect_url = std::env::var("KUZZ_REGION_CONNECT_URL")
@@ -1563,6 +1591,7 @@ impl Config {
             side_effect_retry,
             region_link,
             region_key,
+            community_id,
             ephemeral_ttl_override,
             git_repo_path,
             git_pack_cache_path,

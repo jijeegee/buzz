@@ -1,5 +1,7 @@
 //! Two-region routing (global regions S3): a room is served only by its home
 //! region; the other region answers "wrong region" with the home's address.
+//! With the region link (S4), the other region forwards a logged-in user's
+//! write to the home instead.
 //!
 //! Needs two relays with separate databases, started by
 //! `scripts/regions-two-region-test.sh`, which also runs this file:
@@ -79,6 +81,18 @@ async fn tell_jp_room_lives_in_kr(room: &str) {
     .expect("directory row");
 }
 
+/// How many rows jp's database has for `room`.
+async fn jp_room_rows(room: &str) -> i64 {
+    let url = std::env::var("REGION_JP_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz".into());
+    let pool = sqlx::PgPool::connect(&url).await.expect("jp database");
+    sqlx::query_scalar("SELECT count(*) FROM channels WHERE id = $1::uuid")
+        .bind(room)
+        .fetch_one(&pool)
+        .await
+        .expect("channel rows")
+}
+
 #[tokio::test]
 #[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
 async fn rooms_are_served_only_by_their_home_region() {
@@ -101,28 +115,45 @@ async fn rooms_are_served_only_by_their_home_region() {
 
     tell_jp_room_lives_in_kr(&room).await;
 
-    // jp neither writes the room nor creates a second copy of it.
-    for event in [message(&keys, &room, "hi jp"), create_room(&keys, &room)] {
-        let (status, body) = post(&jp_url(), &keys, &event).await;
-        assert_eq!(status, 421, "{body}");
-        assert_eq!(body["error"], "wrong_region");
-        assert_eq!(body["region"], "kr");
-        assert_eq!(body["connect_url"], kr_url());
-    }
+    // jp forwards writes for the room to kr (S4-2) and never keeps its own
+    // copy of the room: the answer is kr's, with kr's order number.
+    let (status, body) = post(&jp_url(), &keys, &message(&keys, &room, "hi jp")).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    assert!(body["channel_sequence"].as_i64().is_some(), "{body}");
+    let (status, body) = post(&jp_url(), &keys, &create_room(&keys, &room)).await;
+    assert!(status < 500, "{status} {body}");
+    assert_eq!(jp_room_rows(&room).await, 0, "jp made a copy of a kr room");
 
-    // Over WS: writes get OK false, reads get CLOSED, both naming kr.
+    // Over WS (NIP-42) jp forwards the write to kr (S4-2): accepted once,
+    // stored in kr, and a resend is kr's duplicate answer.
     let mut jp = KuzzTestClient::connect(&jp_url(), &keys)
         .await
         .expect("jp connect");
-    let ok = jp
-        .send_event(message(&keys, &room, "hi jp ws"))
+    let forwarded = message(&keys, &room, "hi jp ws");
+    let ok = jp.send_event(forwarded.clone()).await.expect("ok");
+    assert!(ok.accepted, "{}", ok.message);
+    let ok = jp.send_event(forwarded.clone()).await.expect("ok");
+    assert!(ok.accepted, "{}", ok.message);
+    assert!(ok.message.starts_with("duplicate:"), "{}", ok.message);
+    let mut kr = KuzzTestClient::connect(&kr_url(), &keys)
         .await
-        .expect("ok");
-    assert!(!ok.accepted);
-    assert_eq!(
-        ok.message,
-        format!("wrong-region: room lives in kr {}", kr_url())
-    );
+        .expect("kr connect");
+    let in_room = Filter::new()
+        .id(forwarded.id)
+        .custom_tag(SingleLetterTag::lowercase(nostr::Alphabet::H), room.clone());
+    kr.subscribe("kr-room", vec![in_room]).await.expect("req");
+    let stored = kr
+        .collect_until_eose("kr-room", Duration::from_secs(5))
+        .await
+        .expect("kr read");
+    assert_eq!(stored.len(), 1, "the forwarded write is stored in kr");
+    assert_eq!(stored[0].content, "hi jp ws");
+
+    // Reads are not forwarded yet (S4-3): CLOSED naming kr.
     let filter =
         Filter::new().custom_tag(SingleLetterTag::lowercase(nostr::Alphabet::H), room.clone());
     jp.subscribe("regions", vec![filter]).await.expect("req");

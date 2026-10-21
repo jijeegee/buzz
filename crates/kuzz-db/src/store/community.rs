@@ -373,11 +373,16 @@ impl Db {
         self.ensure_configured_community_with_operation(
             normalized_host,
             crate::observability::WriterOperation::Authorization,
+            None,
         )
         .await
     }
 
     /// Ensure the deployment-configured community during process bootstrap.
+    ///
+    /// `id` (`KUZZ_COMMUNITY_ID`) is the id every region of the service uses
+    /// for it. A new community is created with it; an existing one with
+    /// another id is an error, never silently kept.
     #[datastore_span(
         name = "ensure_configured_community_for_bootstrap",
         system = "postgresql"
@@ -385,24 +390,35 @@ impl Db {
     pub async fn ensure_configured_community_for_bootstrap(
         &self,
         normalized_host: &str,
+        id: Option<uuid::Uuid>,
     ) -> Result<EnsuredCommunityRecord> {
-        self.ensure_configured_community_with_operation(
-            normalized_host,
-            crate::observability::WriterOperation::Bootstrap,
-        )
-        .await
+        let record = self
+            .ensure_configured_community_with_operation(
+                normalized_host,
+                crate::observability::WriterOperation::Bootstrap,
+                id,
+            )
+            .await?;
+        match id {
+            Some(id) if *record.id.as_uuid() != id => Err(DbError::InvalidData(format!(
+                "community {normalized_host:?} has id {}, not the configured {id}",
+                record.id
+            ))),
+            _ => Ok(record),
+        }
     }
 
     async fn ensure_configured_community_with_operation(
         &self,
         normalized_host: &str,
         operation: crate::observability::WriterOperation,
+        id: Option<uuid::Uuid>,
     ) -> Result<EnsuredCommunityRecord> {
         let mut connection = crate::observability::acquire_writer(&self.pool, operation).await?;
         let row = sqlx::query(
             r#"
-            INSERT INTO communities (host)
-            VALUES ($1)
+            INSERT INTO communities (id, host)
+            VALUES (COALESCE($2, gen_random_uuid()), $1)
             ON CONFLICT (lower(host)) DO UPDATE SET host = communities.host
             WHERE communities.deletion_state = 'active'
               AND communities.deleted_at IS NULL
@@ -410,6 +426,7 @@ impl Db {
             "#,
         )
         .bind(normalized_host)
+        .bind(id)
         .fetch_optional(&mut *connection)
         .await?
         .ok_or_else(|| {
@@ -1083,6 +1100,36 @@ mod postgres_tests {
         assert!(!second.created, "second ensure should report existed");
         assert_eq!(second.id, first.id);
         assert_eq!(second.host, host);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn bootstrap_uses_the_configured_community_id() {
+        let db = setup_db().await;
+        let host = format!("ensure-community-{}.example", Uuid::new_v4().simple());
+        let id = Uuid::new_v4();
+        let first = db
+            .ensure_configured_community_for_bootstrap(&host, Some(id))
+            .await
+            .expect("created with the id");
+        assert!(first.created);
+        assert_eq!(*first.id.as_uuid(), id);
+        let again = db
+            .ensure_configured_community_for_bootstrap(&host, Some(id))
+            .await
+            .expect("same id again");
+        assert!(!again.created);
+        // A community that already has another id is not silently kept.
+        assert!(db
+            .ensure_configured_community_for_bootstrap(&host, Some(Uuid::new_v4()))
+            .await
+            .is_err());
+        // Unset keeps the existing row, as before.
+        let unset = db
+            .ensure_configured_community_for_bootstrap(&host, None)
+            .await
+            .expect("unset");
+        assert_eq!(*unset.id.as_uuid(), id);
     }
 
     #[tokio::test]
