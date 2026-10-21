@@ -20,6 +20,7 @@ import {
   Sun,
   SunMoon,
   KeyRound,
+  MonitorSmartphone,
   ShieldCheck,
   Ticket,
   UserRound,
@@ -84,6 +85,7 @@ import {
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { PeoplePrivacySettingsCard } from "./PeoplePrivacySettingsCard";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
+import { DevicesSettingsCard } from "./AccountSettingsCard";
 import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { VoiceSettingsCard } from "./VoiceSettingsCard";
@@ -92,6 +94,7 @@ import { Layer0GoalCard } from "@/features/goals/ui/Layer0GoalCard";
 export type SettingsSection =
   | "profile"
   | "account"
+  | "devices"
   | "privacy"
   | "notifications"
   | "voice"
@@ -115,6 +118,7 @@ export const DEFAULT_SETTINGS_SECTION: SettingsSection = "account";
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "profile",
   "account",
+  "devices",
   "privacy",
   "notifications",
   "voice",
@@ -179,6 +183,11 @@ export const settingsSections: SettingsSectionDescriptor[] = [
     value: "account",
     label: "Account",
     icon: KeyRound,
+  },
+  {
+    value: "devices",
+    label: "Devices",
+    icon: MonitorSmartphone,
   },
   {
     value: "privacy",
@@ -859,6 +868,8 @@ export function renderSettingsSection(
           part="account"
         />
       );
+    case "devices":
+      return <DevicesSettingsCard />;
     case "privacy":
       return <PeoplePrivacySettingsCard />;
     case "notifications":
