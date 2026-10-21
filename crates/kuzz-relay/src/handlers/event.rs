@@ -132,13 +132,13 @@ where
 /// their block period, so stored reads hide it too). The author is never
 /// told. Only called for private channels. `None` means a lookup failed and
 /// the event must not be delivered (fail closed, like the membership check).
-async fn drop_dm_blockers(
+async fn drop_dm_blockers<T>(
     state: &AppState,
     community_id: CommunityId,
     stored_event: &StoredEvent,
     channel_id: uuid::Uuid,
-    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
-) -> Option<Vec<(crate::subscription::ConnId, crate::subscription::SubId)>> {
+    matches: Vec<Recipient<T>>,
+) -> Option<Vec<Recipient<T>>> {
     if matches.is_empty() {
         return Some(matches);
     }
@@ -172,11 +172,10 @@ async fn drop_dm_blockers(
     Some(
         matches
             .into_iter()
-            .filter(|(conn_id, _)| {
-                state
-                    .conn_manager
-                    .pubkey_for_conn(*conn_id)
-                    .and_then(|pk| <[u8; 32]>::try_from(pk.as_slice()).ok())
+            .filter(|(_, pubkey)| {
+                pubkey
+                    .as_deref()
+                    .and_then(|pk| <[u8; 32]>::try_from(pk).ok())
                     .is_none_or(|pk| !blockers.contains(&pk))
             })
             .collect(),
@@ -187,12 +186,12 @@ async fn drop_dm_blockers(
 /// replies, so it skips whoever blocks one of its participants now (their
 /// next window fetch carries counts without the hidden replies). A failed
 /// lookup skips that recipient.
-async fn drop_summary_blockers(
+async fn drop_summary_blockers<T>(
     state: &AppState,
     community_id: CommunityId,
     stored_event: &StoredEvent,
-    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
-) -> Vec<(crate::subscription::ConnId, crate::subscription::SubId)> {
+    matches: Vec<Recipient<T>>,
+) -> Vec<Recipient<T>> {
     let participants: Vec<[u8; 32]> =
         serde_json::from_str::<serde_json::Value>(&stored_event.event.content)
             .ok()
@@ -212,14 +211,13 @@ async fn drop_summary_blockers(
     }
     let mut allowed: HashMap<[u8; 32], bool> = HashMap::new();
     let mut kept = Vec::with_capacity(matches.len());
-    for (conn_id, sub_id) in matches {
-        let Some(pk) = state
-            .conn_manager
-            .pubkey_for_conn(conn_id)
-            .and_then(|pk| <[u8; 32]>::try_from(pk.as_slice()).ok())
+    for (item, pubkey) in matches {
+        let Some(pk) = pubkey
+            .as_deref()
+            .and_then(|pk| <[u8; 32]>::try_from(pk).ok())
         else {
             // Left for the membership check below, which drops it.
-            kept.push((conn_id, sub_id));
+            kept.push((item, pubkey));
             continue;
         };
         let ok = match allowed.get(&pk) {
@@ -237,7 +235,7 @@ async fn drop_summary_blockers(
             }
         };
         if ok {
-            kept.push((conn_id, sub_id));
+            kept.push((item, pubkey));
         }
     }
     kept
@@ -276,7 +274,31 @@ pub async fn filter_fanout_by_access(
             state.conn_manager.community_for_conn(*conn_id) == Some(community_id)
         })
         .collect();
+    let recipients = matches
+        .into_iter()
+        .map(|matched| {
+            let pubkey = state.conn_manager.pubkey_for_conn(matched.0);
+            (matched, pubkey)
+        })
+        .collect();
+    filter_recipients_by_access(state, community_id, stored_event, recipients, threaded).await
+}
 
+/// One fan-out recipient: what to deliver to, and the pubkey it is
+/// authenticated as (`None` when unauthenticated).
+pub(crate) type Recipient<T> = (T, Option<Vec<u8>>);
+
+/// The access gate of [`filter_fanout_by_access`] on recipients named by
+/// pubkey. Local fan-out runs it on connections; a home region runs it on the
+/// readers another region watches a room for (global regions S4-4), so both
+/// deliver under one rule set.
+pub(crate) async fn filter_recipients_by_access<T>(
+    state: &AppState,
+    community_id: CommunityId,
+    stored_event: &StoredEvent,
+    matches: Vec<Recipient<T>>,
+    threaded: Option<&crate::state::ThreadedChannelVisibility>,
+) -> Vec<T> {
     // Author-only kinds (NIP-ER reminders) may only ever be delivered to the
     // event's own author. This gate lives here — the chokepoint shared by the
     // ingest fan-out path and the Redis cross-node `subscribe_local` path, the
@@ -287,12 +309,7 @@ pub async fn filter_fanout_by_access(
         let author = stored_event.event.pubkey.to_bytes();
         matches
             .into_iter()
-            .filter(|(conn_id, _)| {
-                state
-                    .conn_manager
-                    .pubkey_for_conn(*conn_id)
-                    .is_some_and(|pk| pk == author)
-            })
+            .filter(|(_, pubkey)| pubkey.as_ref().is_some_and(|pk| *pk == author))
             .collect()
     } else {
         matches
@@ -305,16 +322,16 @@ pub async fn filter_fanout_by_access(
         let author = stored_event.event.pubkey.to_bytes();
         matches
             .into_iter()
-            .filter(|(conn_id, _)| {
-                let Some(pk) = state.conn_manager.pubkey_for_conn(*conn_id) else {
+            .filter(|(_, pubkey)| {
+                let Some(pk) = pubkey else {
                     return false;
                 };
                 // Author always receives their own events.
-                if pk == author {
+                if *pk == author {
                     return true;
                 }
                 // Foreign connection: allowed only if the event is shared.
-                !is_unshared_gated_event(&stored_event.event, &pk)
+                !is_unshared_gated_event(&stored_event.event, pk)
             })
             .collect()
     } else {
@@ -330,16 +347,13 @@ pub async fn filter_fanout_by_access(
     let matches = if kuzz_core::filter::is_owner_only_kind(kind) {
         matches
             .into_iter()
-            .filter(|(conn_id, _)| {
-                state
-                    .conn_manager
-                    .pubkey_for_conn(*conn_id)
-                    .is_some_and(|pk| {
-                        kuzz_core::filter::reader_authorized_for_event(
-                            &stored_event.event,
-                            &hex::encode(pk),
-                        )
-                    })
+            .filter(|(_, pubkey)| {
+                pubkey.as_ref().is_some_and(|pk| {
+                    kuzz_core::filter::reader_authorized_for_event(
+                        &stored_event.event,
+                        &hex::encode(pk),
+                    )
+                })
             })
             .collect()
     } else {
@@ -347,7 +361,7 @@ pub async fn filter_fanout_by_access(
     };
 
     let Some(channel_id) = stored_event.channel_id else {
-        return matches;
+        return matches.into_iter().map(|(item, _)| item).collect();
     };
     // Fence 3 (§4.8 phase-2): the threaded value is used only when it was
     // resolved under exactly this (community_id, channel_id); anything else
@@ -364,7 +378,7 @@ pub async fn filter_fanout_by_access(
         }
     };
     match visibility {
-        Ok(v) if v != "private" => return matches,
+        Ok(v) if v != "private" => return matches.into_iter().map(|(item, _)| item).collect(),
         Ok(_) => {}
         Err(e) => {
             // Fail closed: if we cannot determine visibility, do not leak a
@@ -381,15 +395,15 @@ pub async fn filter_fanout_by_access(
         };
 
     let mut allowed = Vec::with_capacity(matches.len());
-    for (conn_id, sub_id) in matches {
-        let Some(pubkey) = state.conn_manager.pubkey_for_conn(conn_id) else {
+    for (item, pubkey) in matches {
+        let Some(pubkey) = pubkey else {
             continue;
         };
         match state
             .is_member_cached(community_id, channel_id, &pubkey)
             .await
         {
-            Ok(true) => allowed.push((conn_id, sub_id)),
+            Ok(true) => allowed.push(item),
             Ok(false) => {}
             Err(e) => {
                 warn!(%channel_id, "fan-out access filter: membership lookup failed: {e}");

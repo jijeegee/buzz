@@ -21,12 +21,14 @@ pub(crate) type DesiredTopics = Arc<Mutex<HashMap<EventTopicKey, usize>>>;
 
 /// Commands sent from relay subscription registration/removal to the Redis
 /// pub/sub task.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) enum SubscriptionCommand {
     /// Ensure the topic is subscribed on the current Redis pub/sub connection.
     Subscribe(EventTopicKey),
     /// Unsubscribe only if the desired refcount is still zero when processed.
     UnsubscribeIfIdle(EventTopicKey),
+    /// Answer once every command sent before it has been applied.
+    Flush(tokio::sync::oneshot::Sender<()>),
 }
 
 /// Runs a dynamically scoped subscriber and forwards events to broadcast.
@@ -130,6 +132,9 @@ async fn connect_and_subscribe(
                                 sink.unsubscribe(&channel).await?;
                             }
                         }
+                    }
+                    SubscriptionCommand::Flush(done) => {
+                        let _ = done.send(());
                     }
                 }
             }

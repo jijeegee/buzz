@@ -426,12 +426,21 @@ async fn rooms_are_served_only_by_their_home_region() {
 /// community, this exact path and body. Built here independently of the
 /// relay's own signer, so the wire format is pinned.
 fn jp_attestation(keys: &Keys, community: &str, path: &str, body: &[u8], target: &str) -> String {
-    jp_attestation_at(keys, community, path, body, target, nostr::Timestamp::now())
+    jp_attestation_at(
+        keys,
+        community,
+        "POST",
+        path,
+        body,
+        target,
+        nostr::Timestamp::now(),
+    )
 }
 
 fn jp_attestation_at(
     keys: &Keys,
     community: &str,
+    method: &str,
     path: &str,
     body: &[u8],
     target: &str,
@@ -444,7 +453,7 @@ fn jp_attestation_at(
         "entry_region": "jp",
         "target_region": target,
         "community_id": community,
-        "method": "POST",
+        "method": method,
         "path": path,
         "body_sha256": hex::encode(sha2::Sha256::digest(body)),
         "channel_id": null,
@@ -519,8 +528,165 @@ async fn region_link_accepts_only_a_fresh_call_signed_by_a_known_region() {
     assert_eq!(ping_kr(&other_community, body).await.0, 401);
     // Signed a minute ago: expired.
     let old = nostr::Timestamp::from(nostr::Timestamp::now().as_secs() - 60);
-    let expired = jp_attestation_at(&jp_key, &community, path, body, "kr", old);
+    let expired = jp_attestation_at(&jp_key, &community, "POST", path, body, "kr", old);
     assert_eq!(ping_kr(&expired, body).await.0, 401);
     // No attestation at all.
     assert_eq!(ping_kr("Bearer nothing", body).await.0, 401);
+}
+
+/// The next text frame of a region stream, as JSON, skipping pings.
+async fn next_stream_frame<S>(stream: &mut S) -> Option<Value>
+where
+    S: futures_util::Stream<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + Unpin,
+{
+    use futures_util::StreamExt as _;
+    loop {
+        let message = tokio::time::timeout(Duration::from_secs(5), stream.next())
+            .await
+            .ok()??
+            .ok()?;
+        if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+            return serde_json::from_str(text.as_str()).ok();
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn home_streams_a_watched_room_to_its_allowed_readers() {
+    use futures_util::{SinkExt as _, StreamExt as _};
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+
+    let jp_key = Keys::parse(&std::env::var("REGION_JP_LINK_KEY").expect("REGION_JP_LINK_KEY"))
+        .expect("jp link key");
+    let community = kr_community().await;
+    let path = "/internal/region/stream";
+
+    // A private kr room with one member; a stranger is watched for too.
+    let member = Keys::generate();
+    let stranger = Keys::generate();
+    let room = uuid::Uuid::new_v4().to_string();
+    let private_room = EventBuilder::new(Kind::Custom(9007), "")
+        .tags([
+            Tag::parse(["h", &room]).unwrap(),
+            Tag::parse(["name", &format!("regions-{room}")]).unwrap(),
+            Tag::parse(["channel_type", "stream"]).unwrap(),
+            Tag::parse(["visibility", "private"]).unwrap(),
+        ])
+        .sign_with_keys(&member)
+        .unwrap();
+    let (status, body) = post(&kr_url(), &member, &private_room).await;
+    assert_eq!(status, 200, "{body}");
+
+    // Without a valid attestation the upgrade is refused.
+    let mut request = format!("{}{path}", kr_url()).into_client_request().unwrap();
+    request
+        .headers_mut()
+        .insert("Authorization", "KuzzRegion e30=".parse().unwrap());
+    assert!(tokio_tungstenite::connect_async(request).await.is_err());
+
+    let auth = jp_attestation_at(
+        &jp_key,
+        &community,
+        "GET",
+        path,
+        b"",
+        "kr",
+        nostr::Timestamp::now(),
+    );
+    let mut request = format!("{}{path}", kr_url()).into_client_request().unwrap();
+    request
+        .headers_mut()
+        .insert("Authorization", auth.parse().unwrap());
+    let (socket, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("stream upgrade");
+    let (mut sink, mut stream) = socket.split();
+    let watch = serde_json::json!({
+        "op": "watch",
+        "room": room,
+        "readers": [member.public_key().to_hex(), stranger.public_key().to_hex()],
+    });
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        watch.to_string().into(),
+    ))
+    .await
+    .expect("watch");
+    // kr answers once the watch is live; no sleep needed.
+    let frame = next_stream_frame(&mut stream).await.expect("watching");
+    assert_eq!(frame["op"], "watching", "{frame}");
+
+    let sent = message(&member, &room, "live from kr");
+    let (status, body) = post(&kr_url(), &member, &sent).await;
+    assert_eq!(status, 200, "{body}");
+    let seq = body["channel_sequence"].as_i64();
+
+    let frame = next_stream_frame(&mut stream).await.expect("event frame");
+    assert_eq!(frame["op"], "event", "{frame}");
+    assert_eq!(frame["room"], room.as_str());
+    assert_eq!(frame["event"]["id"], sent.id.to_hex());
+    // Only the member may see a private room's message.
+    assert_eq!(
+        frame["to"],
+        serde_json::json!([member.public_key().to_hex()])
+    );
+    assert!(seq.is_some(), "{body}");
+    assert_eq!(frame["seq"].as_i64(), seq, "{frame}");
+
+    // Watched only for the stranger, the room's messages are not streamed.
+    let only_stranger = serde_json::json!({
+        "op": "watch",
+        "room": room,
+        "readers": [stranger.public_key().to_hex()],
+    });
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        only_stranger.to_string().into(),
+    ))
+    .await
+    .expect("rewatch");
+    let frame = next_stream_frame(&mut stream).await.expect("watching");
+    assert_eq!(frame["op"], "watching", "{frame}");
+    let (status, _) = post(&kr_url(), &member, &message(&member, &room, "private")).await;
+    assert_eq!(status, 200);
+
+    // After unwatching, nothing more arrives for the room.
+    let unwatch = serde_json::json!({"op": "unwatch", "room": room});
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        unwatch.to_string().into(),
+    ))
+    .await
+    .expect("unwatch");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let (status, _) = post(&kr_url(), &member, &message(&member, &room, "after")).await;
+    assert_eq!(status, 200);
+    assert!(next_stream_frame(&mut stream).await.is_none());
+
+    // A malformed reader is refused, per room.
+    let bad = serde_json::json!({"op": "watch", "room": room, "readers": ["nope"]});
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        bad.to_string().into(),
+    ))
+    .await
+    .expect("bad watch");
+    let frame = next_stream_frame(&mut stream).await.expect("refusal");
+    assert_eq!(frame["op"], "refused", "{frame}");
+    // So is a room kr does not have.
+    let unknown = serde_json::json!({
+        "op": "watch",
+        "room": uuid::Uuid::new_v4(),
+        "readers": [member.public_key().to_hex()],
+    });
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        unknown.to_string().into(),
+    ))
+    .await
+    .expect("unknown watch");
+    let frame = next_stream_frame(&mut stream).await.expect("refusal");
+    assert_eq!(frame["op"], "refused", "{frame}");
+    assert_eq!(frame["reason"], "invalid: unknown room");
 }

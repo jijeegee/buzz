@@ -71,6 +71,7 @@ pub mod region_chats;
 pub mod region_forward;
 /// Reads that span regions, merged (S4-3c).
 pub mod region_merge;
+pub mod region_stream;
 /// Calls between relays of different regions (entry attestations).
 pub mod region_link;
 /// Reads of rooms another region serves.

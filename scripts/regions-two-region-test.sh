@@ -72,6 +72,7 @@ start_relay() {
     KUZZ_RELAY_PRIVATE_KEY="${RELAY_KEY}" \
     KUZZ_REQUIRE_AUTH_TOKEN=false \
     KUZZ_CHAT_STATE_WRITES=on \
+    KUZZ_PUBSUB_SEQ_ENVELOPE=true \
     "${BIN}" >"${LOG_DIR}/relay-${region}.log" 2>&1 &
   PIDS+=($!)
 }
