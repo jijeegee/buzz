@@ -2664,6 +2664,137 @@ fn idle_pool_sleep_due(
         && inactivity_expired(last_activity, now, bound, turn_in_flight)
 }
 
+/// Idle checks of one round before the pool sleeps. `busy` is set when any
+/// answered that background work is still running; `asked` holds the scopes
+/// already asked, since one worker answers for its scopes one at a time.
+#[derive(Debug, Default)]
+struct IdleCheckRound {
+    busy: bool,
+    asked: HashSet<scope::SessionScope>,
+}
+
+/// What the idle pool sleep does once its bound is reached.
+#[derive(Debug, PartialEq, Eq)]
+enum IdleCheckStep {
+    /// Idle checks were sent; decide when they return.
+    Asking,
+    /// The round found background work; wait another full interval.
+    Busy,
+    /// Every scope was asked and nothing is running: tear the pool down.
+    Sleep,
+}
+
+/// Decide the idle pool sleep. Called only when the sleep is due, which
+/// implies no task is in flight, so the checks sent so far have returned.
+/// `start` sends checks to the scopes not yet asked in this round and returns
+/// them; the round ends when one answered `BUSY` or none is left to ask.
+fn idle_check_step(
+    round: &mut Option<IdleCheckRound>,
+    start: impl FnOnce(&HashSet<scope::SessionScope>) -> Vec<scope::SessionScope>,
+) -> IdleCheckStep {
+    let mut current = round.take().unwrap_or_default();
+    if current.busy {
+        return IdleCheckStep::Busy;
+    }
+    let sent = start(&current.asked);
+    if sent.is_empty() {
+        return IdleCheckStep::Sleep;
+    }
+    current.asked.extend(sent);
+    *round = Some(current);
+    IdleCheckStep::Asking
+}
+
+/// Book a returned turn for the idle pool sleep. An idle check's answer goes
+/// to the round; `IDLE` or no answer drops its scope from the next check. A
+/// channel turn restarts the idle interval at its completion (upstream
+/// block/buzz #8149: a turn longer than the interval otherwise lets the pool
+/// sleep the moment it ends), marks its scope for the next check, and voids a
+/// round it overlapped. Heartbeats change nothing.
+fn record_idle_activity(
+    result: &mut PromptResult,
+    idle_check_scopes: &mut HashSet<scope::SessionScope>,
+    idle_check_round: &mut Option<IdleCheckRound>,
+    last_activity: &mut tokio::time::Instant,
+) {
+    let PromptSource::Channel(scope) = &result.source else {
+        return;
+    };
+    if result.turn_id.starts_with(pool::IDLE_CHECK_TURN_PREFIX) {
+        let answer = result
+            .agent
+            .state
+            .idle_check_answer
+            .take()
+            .unwrap_or(pool::IdleCheckAnswer::NoAnswer);
+        if answer == pool::IdleCheckAnswer::Busy {
+            if let Some(round) = idle_check_round.as_mut() {
+                round.busy = true;
+            }
+        } else {
+            idle_check_scopes.remove(scope);
+        }
+        return;
+    }
+    *last_activity = tokio::time::Instant::now();
+    idle_check_scopes.insert(scope.clone());
+    *idle_check_round = None;
+}
+
+/// Send an idle check to the live session of each scope in `scopes` not in
+/// `asked` and return the scopes it went to. A scope whose session is gone is
+/// dropped; one whose worker is already asking another scope waits for the
+/// next step.
+fn start_idle_checks(
+    pool: &mut AgentPool,
+    queue: &mut EventQueue,
+    ctx: &Arc<PromptContext>,
+    scopes: &mut HashSet<scope::SessionScope>,
+    asked: &HashSet<scope::SessionScope>,
+) -> Vec<scope::SessionScope> {
+    let mut started = Vec::new();
+    let candidates: Vec<_> = scopes.difference(asked).cloned().collect();
+    for scope in candidates {
+        if session_scope_busy(pool, queue, &scope) {
+            continue;
+        }
+        let Some(agent) = pool.try_claim_scope_owner(&scope) else {
+            scopes.remove(&scope);
+            continue;
+        };
+        queue.mark_scope_in_flight(scope.clone());
+        let agent_index = agent.index;
+        let turn_id = format!("{}{}", pool::IDLE_CHECK_TURN_PREFIX, Uuid::new_v4());
+        let task_turn_id = turn_id.clone();
+        let task_scope = scope.clone();
+        let result_tx = pool.result_tx();
+        let ctx = Arc::clone(ctx);
+        let abort_handle = pool.join_set.spawn(async move {
+            pool::run_idle_check_task(agent, task_scope, ctx, result_tx, task_turn_id).await;
+        });
+        pool.task_map_mut().insert(
+            abort_handle.id(),
+            pool::TaskMeta {
+                agent_index,
+                channel_id: Some(scope.channel_id()),
+                scope: Some(scope.clone()),
+                turn_id,
+                recoverable_batch: None,
+                control_tx: None,
+                steer_tx: None,
+                successful_steer_deliveries: HashSet::new(),
+            },
+        );
+        tracing::info!(
+            agent = agent_index,
+            scope = %scope.telemetry_label(),
+            "idle check sent"
+        );
+        started.push(scope);
+    }
+    started
+}
+
 #[cfg(test)]
 mod inactivity_tests {
     use super::*;
@@ -2708,46 +2839,9 @@ mod inactivity_tests {
     }
 }
 
-/// Whether a completed turn restarts the idle pool sleep interval. A channel
-/// turn longer than the interval otherwise lets the pool sleep the moment it
-/// ends, killing background work the agent just started (upstream block/buzz
-/// #8149). Heartbeats do not keep the pool awake.
-fn completion_renews_idle_interval(source: &PromptSource) -> bool {
-    matches!(source, PromptSource::Channel(_))
-}
-
 #[cfg(test)]
 mod idle_pool_sleep_tests {
     use super::*;
-
-    /// A channel turn longer than the bound gets a full bound after it
-    /// completes; a heartbeat completion does not renew it.
-    #[tokio::test(start_paused = true)]
-    async fn completed_channel_turn_gets_a_full_idle_interval() {
-        let bound = Duration::from_secs(60);
-        let dispatched = tokio::time::Instant::now();
-        tokio::time::advance(bound * 2).await;
-        let completed_at = tokio::time::Instant::now();
-        let due = |last: tokio::time::Instant, now: tokio::time::Instant| {
-            idle_pool_sleep_due(true, last, now, bound, false, false, false, false)
-        };
-        assert!(due(dispatched, completed_at), "precondition");
-
-        let heartbeat = PromptSource::Heartbeat;
-        assert!(!completion_renews_idle_interval(&heartbeat));
-
-        let channel = PromptSource::Channel(scope::SessionScope::Conversation {
-            channel_id: Uuid::new_v4(),
-        });
-        assert!(completion_renews_idle_interval(&channel));
-        let last_activity = completed_at;
-        assert!(!due(last_activity, completed_at));
-        assert!(!due(
-            last_activity,
-            completed_at + bound - Duration::from_millis(1)
-        ));
-        assert!(due(last_activity, completed_at + bound));
-    }
 
     // The all-clear baseline: pool ready, bound elapsed, nothing busy or
     // queued. Every negative case below flips exactly one gate off this.
@@ -3475,6 +3569,10 @@ async fn run_harness(
     } else {
         Duration::ZERO
     };
+    // Before the pool sleeps, every scope that ran a channel turn since its
+    // last idle check is asked whether background work is still running.
+    let mut idle_check_scopes: HashSet<scope::SessionScope> = HashSet::new();
+    let mut idle_check_round: Option<IdleCheckRound> = None;
     let mut idle_pool_sleep_reaper = if idle_pool_sleep_bound.is_zero() {
         None
     } else {
@@ -4262,7 +4360,7 @@ async fn run_harness(
                     // keeps `work_queued` true for a retry-throttled batch too,
                     // so a failed turn awaiting backoff is never stranded — the
                     // next iteration dispatches or re-wakes it.
-                    if idle_pool_sleep_due(
+                    let sleep_due = idle_pool_sleep_due(
                         pool_ready,
                         last_activity,
                         tokio::time::Instant::now(),
@@ -4272,11 +4370,35 @@ async fn run_harness(
                         queue.has_undispatched_work(),
                         !wake_tasks.is_empty()
                             || any_respawn_in_flight(&crash_history),
-                    ) {
+                    );
+                    // Ask before sleeping: only the agent knows whether
+                    // background work it started is still running.
+                    let sleep_now = sleep_due
+                        && match idle_check_step(&mut idle_check_round, |asked| {
+                            start_idle_checks(
+                                &mut pool,
+                                &mut queue,
+                                &ctx,
+                                &mut idle_check_scopes,
+                                asked,
+                            )
+                        }) {
+                            IdleCheckStep::Asking => false,
+                            IdleCheckStep::Busy => {
+                                tracing::info!(
+                                    "idle check: background work still running — pool stays awake"
+                                );
+                                last_activity = tokio::time::Instant::now();
+                                false
+                            }
+                            IdleCheckStep::Sleep => true,
+                        };
+                    if sleep_now {
                         tracing::info!(
                             idle_pool_sleep_seconds = config.idle_pool_sleep_secs,
                             "idle pool sleep bound reached — tearing pool back to lazy state"
                         );
+                        idle_check_scopes.clear();
                         shutdown_agent_pool(&mut pool).await;
                         // No worker holds a session any more and every
                         // transcript is intact: the next turn in each scope
@@ -4421,16 +4543,19 @@ async fn run_harness(
                     typing_channels.insert(scope, thread_tags);
                 }
             }
-            Some(PoolEvent::Result(result)) => {
+            Some(PoolEvent::Result(mut result)) => {
                 // Stop the typing indicator for the completed turn's exact scope,
                 // not the whole channel — a sibling thread still running in the
                 // same channel must keep its indicator.
                 if let Some(scope) = result.source.scope() {
                     typing_channels.remove(scope);
                 }
-                if completion_renews_idle_interval(&result.source) {
-                    last_activity = tokio::time::Instant::now();
-                }
+                record_idle_activity(
+                    &mut result,
+                    &mut idle_check_scopes,
+                    &mut idle_check_round,
+                    &mut last_activity,
+                );
                 if handle_prompt_result(
                     &mut pool,
                     &mut queue,
@@ -11969,6 +12094,209 @@ mod error_outcome_emission_tests {
     ) {
         let generation = pool.record_scope_owner(scope.clone(), agent.index);
         agent.state.set_scope_owner_generation(scope, generation);
+    }
+
+    async fn idle_test_result(source: PromptSource, turn_id: &str) -> PromptResult {
+        PromptResult {
+            agent: dummy_agent(0).await,
+            source,
+            turn_id: turn_id.into(),
+            outcome: PromptOutcome::Ok(crate::acp::StopReason::EndTurn),
+            batch: None,
+        }
+    }
+
+    fn idle_sleep_due(last_activity: tokio::time::Instant, now: tokio::time::Instant) -> bool {
+        idle_pool_sleep_due(
+            true,
+            last_activity,
+            now,
+            Duration::from_secs(30),
+            false,
+            false,
+            false,
+            false,
+        )
+    }
+
+    /// A channel turn longer than the idle interval gets a full interval
+    /// after it completes (upstream block/buzz #8149), is marked for the next
+    /// idle check, and voids a round it overlapped.
+    #[tokio::test(start_paused = true)]
+    async fn completed_channel_turn_gets_a_full_idle_interval() {
+        let scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let bound = Duration::from_secs(30);
+        let mut last_activity = tokio::time::Instant::now();
+        tokio::time::advance(bound * 2).await;
+        let completed_at = tokio::time::Instant::now();
+        assert!(idle_sleep_due(last_activity, completed_at), "precondition");
+
+        let mut scopes = HashSet::new();
+        let mut round = Some(IdleCheckRound {
+            busy: true,
+            ..Default::default()
+        });
+        let mut result = idle_test_result(PromptSource::Channel(scope.clone()), "turn").await;
+        record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+
+        assert_eq!(last_activity, completed_at);
+        assert!(scopes.contains(&scope));
+        assert!(round.is_none());
+        assert!(!idle_sleep_due(last_activity, completed_at));
+        assert!(!idle_sleep_due(
+            last_activity,
+            completed_at + bound - Duration::from_millis(1)
+        ));
+        assert!(idle_sleep_due(last_activity, completed_at + bound));
+    }
+
+    /// Heartbeats neither renew the interval nor need an idle check.
+    #[tokio::test(start_paused = true)]
+    async fn completed_heartbeat_does_not_extend_the_idle_interval() {
+        let mut last_activity = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        let before = last_activity;
+        let mut scopes = HashSet::new();
+        let mut round = None;
+        let mut result = idle_test_result(PromptSource::Heartbeat, "hb").await;
+        record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+        assert_eq!(last_activity, before);
+        assert!(scopes.is_empty());
+        assert!(idle_sleep_due(last_activity, tokio::time::Instant::now()));
+    }
+
+    /// An idle check's answer goes to the round and never renews the
+    /// interval: `BUSY` keeps the scope for the next check, `IDLE` and no
+    /// answer drop it.
+    #[tokio::test(start_paused = true)]
+    async fn idle_check_answers_update_the_round_not_the_interval() {
+        let busy_scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let idle_scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let stuck_scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut last_activity = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        let before = last_activity;
+        let mut scopes: HashSet<_> = [busy_scope.clone(), idle_scope.clone(), stuck_scope.clone()]
+            .into_iter()
+            .collect();
+        let mut round = Some(IdleCheckRound::default());
+        let check_id = format!("{}x", pool::IDLE_CHECK_TURN_PREFIX);
+
+        for (scope, answer) in [
+            (&idle_scope, Some(pool::IdleCheckAnswer::Idle)),
+            (&stuck_scope, None),
+        ] {
+            let mut result =
+                idle_test_result(PromptSource::Channel(scope.clone()), &check_id).await;
+            result.agent.state.idle_check_answer = answer;
+            record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+        }
+        assert!(!round.as_ref().unwrap().busy);
+        assert_eq!(scopes, [busy_scope.clone()].into_iter().collect());
+
+        let mut result =
+            idle_test_result(PromptSource::Channel(busy_scope.clone()), &check_id).await;
+        result.agent.state.idle_check_answer = Some(pool::IdleCheckAnswer::Busy);
+        record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+        assert!(round.as_ref().unwrap().busy);
+        assert!(scopes.contains(&busy_scope));
+        assert_eq!(last_activity, before, "an idle check is not activity");
+    }
+
+    /// Idle checks go only to a scope's owning worker; a scope whose session
+    /// is gone is dropped from the set.
+    #[tokio::test]
+    async fn idle_checks_go_to_live_scope_owners_only() {
+        let owned = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let gone = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut agent = dummy_agent(0).await;
+        let mut pool = AgentPool::from_slots(vec![None]);
+        bind_agent_scope_owner(&mut pool, &mut agent, owned.clone());
+        agent
+            .state
+            .sessions
+            .insert(owned.clone(), "sess-owned".into());
+        pool.return_agent(agent);
+        let mut queue = EventQueue::new(config::DedupMode::Queue);
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
+        let mut scopes: HashSet<_> = [owned.clone(), gone.clone()].into_iter().collect();
+
+        let none = HashSet::new();
+        assert_eq!(
+            start_idle_checks(&mut pool, &mut queue, &ctx, &mut scopes, &none),
+            vec![owned.clone()]
+        );
+        assert_eq!(scopes, [owned.clone()].into_iter().collect());
+        assert!(queue.is_scope_in_flight(&owned));
+        let meta = pool.task_map().values().next().expect("idle check task");
+        assert_eq!(meta.scope.as_ref(), Some(&owned));
+        assert!(meta.turn_id.starts_with(pool::IDLE_CHECK_TURN_PREFIX));
+        // While it runs the scope is busy: a second round sends nothing.
+        assert!(start_idle_checks(&mut pool, &mut queue, &ctx, &mut scopes, &none).is_empty());
+        pool.join_set.abort_all();
+    }
+
+    /// One worker answers for its scopes one at a time, so a round keeps
+    /// asking until every scope was asked; `BUSY` ends it without asking more.
+    #[test]
+    fn idle_check_step_asks_every_scope_before_sleeping() {
+        let a = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let b = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut round = None;
+        assert_eq!(
+            idle_check_step(&mut round, |_| Vec::new()),
+            IdleCheckStep::Sleep
+        );
+        assert!(round.is_none());
+
+        assert_eq!(
+            idle_check_step(&mut round, |asked| {
+                assert!(asked.is_empty());
+                vec![a.clone()]
+            }),
+            IdleCheckStep::Asking
+        );
+        assert_eq!(
+            idle_check_step(&mut round, |asked| {
+                assert_eq!(asked, &[a.clone()].into_iter().collect());
+                vec![b.clone()]
+            }),
+            IdleCheckStep::Asking
+        );
+        assert_eq!(
+            idle_check_step(&mut round, |asked| {
+                assert_eq!(asked.len(), 2);
+                Vec::new()
+            }),
+            IdleCheckStep::Sleep
+        );
+        assert!(round.is_none());
+
+        let mut round = Some(IdleCheckRound {
+            busy: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            idle_check_step(&mut round, |_| panic!("a busy round must not ask")),
+            IdleCheckStep::Busy
+        );
+        assert!(round.is_none());
     }
 
     #[tokio::test]

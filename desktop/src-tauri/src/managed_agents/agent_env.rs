@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use base64::Engine as _;
 
 /// Seconds a woken lazy harness stays quiet after its last turn ends before it
-/// releases its worker subprocesses back to the empty-slot state (via
+/// asks each conversation whether background work is still running and, if
+/// none is, releases its worker subprocesses back to the empty-slot state (via
 /// `KUZZ_ACP_IDLE_POOL_SLEEP`). The next accepted event re-wakes it through the
 /// same lazy path. 30 minutes keeps a warm pool through a normal back-and-forth
 /// while a truly quiet harness stops paying for workers.

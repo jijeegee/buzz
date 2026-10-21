@@ -196,6 +196,9 @@ pub struct AcpClient {
     /// A check-in waits for them: steering into a running command makes
     /// Claude Code move it to the background and end the turn.
     open_tool_calls: std::collections::HashSet<String>,
+    /// The agent's reply text of the current turn, collected only while
+    /// [`set_capture_reply`](Self::set_capture_reply) is on (idle checks).
+    reply_text: Option<String>,
     /// Optional local observer feed used by the desktop app.
     observer: Option<ObserverHandle>,
     /// Pool slot index for this agent process.
@@ -695,6 +698,7 @@ impl AcpClient {
             turn_started_at: None,
             checkin_armed: false,
             open_tool_calls: std::collections::HashSet::new(),
+            reply_text: None,
             observer: None,
             observer_agent_index: None,
             observer_context: ObserverContext::default(),
@@ -718,6 +722,21 @@ impl AcpClient {
     /// keeps the plain hard timeout.
     pub fn set_turn_checkin_limit(&mut self, limit: u32) {
         self.turn_checkin_limit = limit;
+    }
+
+    /// Collect the agent's reply text of the next turns (`true`) or stop
+    /// collecting and drop it (`false`).
+    pub fn set_capture_reply(&mut self, on: bool) {
+        self.reply_text = on.then(String::new);
+    }
+
+    /// The reply text collected since the last turn started; empty when not
+    /// collecting.
+    pub fn take_reply_text(&mut self) -> String {
+        self.reply_text
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// How long the current (or last) `session/prompt` has been running.
@@ -988,6 +1007,9 @@ impl AcpClient {
         self.current_hard_deadline = Some(hard_deadline);
         self.checkins_sent = 0;
         self.open_tool_calls.clear();
+        if let Some(text) = self.reply_text.as_mut() {
+            text.clear();
+        }
         self.turn_started_at = Some(tokio::time::Instant::now());
 
         // Mark the usage tracker as in-flight for this turn BEFORE sending the
@@ -2188,6 +2210,11 @@ impl AcpClient {
             "agent_message_chunk" => {
                 if let Some(text) = update["content"]["text"].as_str() {
                     tracing::info!(target: "acp::stream", "{text}");
+                    if let Some(reply) = self.reply_text.as_mut() {
+                        if reply.len() < MAX_CAPTURED_REPLY {
+                            reply.push_str(text);
+                        }
+                    }
                 }
                 false
             }
@@ -2611,6 +2638,10 @@ fn build_goose_steer_params(
 
 /// How long a check-in may take to be accepted before the turn times out.
 const CHECKIN_ACK_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Reply text collected for an idle check beyond this is dropped; the answer
+/// is one line.
+const MAX_CAPTURED_REPLY: usize = 16 * 1024;
 
 /// How often a check-in waiting for running tool calls re-checks them.
 const CHECKIN_TOOL_POLL: std::time::Duration = std::time::Duration::from_secs(1);
@@ -5140,6 +5171,41 @@ Start-Sleep -Seconds 1"#;
             "both check-ins must renew before the limit, ended at {:?}",
             started.elapsed()
         );
+    }
+
+    /// Reply text is collected only while capture is on (idle checks).
+    #[tokio::test]
+    async fn reply_text_is_captured_only_when_enabled() {
+        let script = "for i in 1 2; do \
+                      echo '{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-test\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"BUSY: \"}}}}'; \
+                      echo '{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-test\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"build\"}}}}'; \
+                      echo '{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{\"stopReason\":\"end_turn\"}}'; \
+                      done; sleep 5";
+        let mut client = spawn_script(script).await;
+        let max_dur = std::time::Duration::from_secs(5);
+        for capture in [false, true] {
+            client.set_capture_reply(capture);
+            client
+                .read_until_response_with_idle_timeout(
+                    "sess-test",
+                    999,
+                    std::time::Duration::from_secs(5),
+                    tokio::time::Instant::now() + max_dur,
+                    max_dur,
+                )
+                .await
+                .expect("turn");
+            if !capture {
+                assert_eq!(
+                    client.take_reply_text(),
+                    "",
+                    "not collected without capture"
+                );
+            }
+        }
+        assert_eq!(client.take_reply_text(), "BUSY: build");
+        client.set_capture_reply(false);
+        assert_eq!(client.take_reply_text(), "");
     }
 
     /// An agent quiet at the cap but within `idle_timeout` (waiting on a long
