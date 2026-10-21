@@ -365,6 +365,19 @@ pub struct Config {
     /// written and settled, but nothing is retried, as before.
     pub side_effect_retry: bool,
 
+    /// Region link (`KUZZ_REGION_LINK`, default off).
+    ///
+    /// On: this relay calls and answers other regions' relays over
+    /// `/internal/region/*`, every call carrying an entry attestation signed
+    /// with [`Config::region_key`]. Off: no link route is mounted and nothing
+    /// calls another region, as before.
+    pub region_link: bool,
+
+    /// This region's link key (`KUZZ_REGION_KEY`, hex or nsec), required when
+    /// [`Config::region_link`] is on. One key per region: other regions know
+    /// it by its public half in `regions.link_pubkey`.
+    pub region_key: Option<RegionKey>,
+
     /// Optional override for ephemeral channel TTL (in seconds).
     /// When set, any channel created with a TTL tag will use this value instead
     /// of the client-provided one. Useful for testing ephemeral expiry quickly.
@@ -623,6 +636,23 @@ fn parse_operator_listener_delivery_urls(
         }
     }
     Ok(endpoints)
+}
+
+/// A region link secret key. `Debug` never prints it.
+#[derive(Clone)]
+pub struct RegionKey(String);
+
+impl RegionKey {
+    /// The key as configured (hex or nsec).
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for RegionKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RegionKey(<redacted>)")
+    }
 }
 
 /// A region id: a lowercase letter, then up to 15 lowercase letters, digits
@@ -1272,6 +1302,21 @@ impl Config {
         let pubsub_seq_envelope = parse_bool("KUZZ_PUBSUB_SEQ_ENVELOPE", false)?;
         let resync_signal = parse_bool("KUZZ_RESYNC_SIGNAL", false)?;
         let side_effect_retry = parse_bool("KUZZ_SIDE_EFFECT_RETRY", false)?;
+        let region_link = parse_bool("KUZZ_REGION_LINK", false)?;
+        let region_key = std::env::var("KUZZ_REGION_KEY")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .map(RegionKey);
+        if region_link
+            && region_key
+                .as_ref()
+                .is_none_or(|key| nostr::Keys::parse(key.expose()).is_err())
+        {
+            return Err(ConfigError::InvalidValue(
+                "KUZZ_REGION_LINK=on needs KUZZ_REGION_KEY set to a valid secret key".into(),
+            ));
+        }
         let region_id = parse_region_id("KUZZ_REGION_ID", "kr")?;
         let primary_region = parse_region_id("KUZZ_PRIMARY_REGION", &region_id)?;
         let region_connect_url = std::env::var("KUZZ_REGION_CONNECT_URL")
@@ -1516,6 +1561,8 @@ impl Config {
             region_connect_url,
             resync_signal,
             side_effect_retry,
+            region_link,
+            region_key,
             ephemeral_ttl_override,
             git_repo_path,
             git_pack_cache_path,

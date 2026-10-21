@@ -19,6 +19,9 @@ TARGET="${CARGO_TARGET_DIR:-${ROOT}/target}"
 LOG_DIR="${LOG_DIR:-${TARGET}/regions-test}"
 KR_URL=ws://localhost:3041
 JP_URL=ws://localhost:3042
+# Throwaway region link keys (S4): one per region.
+KR_LINK_KEY="$(openssl rand -hex 32)"
+JP_LINK_KEY="$(openssl rand -hex 32)"
 PIDS=()
 
 log() { printf '[regions] %s\n' "$*"; }
@@ -44,9 +47,9 @@ BIN="${TARGET}/debug/kuzz-relay"
 [[ -x "${BIN}" || -x "${BIN}.exe" ]] || { log "no relay binary at ${BIN}"; exit 1; }
 mkdir -p "${LOG_DIR}"
 
-# start_relay <region> <port> <postgres port> <redis port> <health port> <metrics port>
+# start_relay <region> <port> <postgres port> <redis port> <health port> <metrics port> <link key>
 start_relay() {
-  local region=$1 port=$2 pg=$3 redis=$4 health=$5 metrics=$6
+  local region=$1 port=$2 pg=$3 redis=$4 health=$5 metrics=$6 link_key=$7
   env DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:${pg}/kuzz" \
     REDIS_URL="redis://127.0.0.1:${redis}" \
     RELAY_URL="ws://localhost:${port}" \
@@ -56,6 +59,8 @@ start_relay() {
     KUZZ_AUTO_MIGRATE=true \
     KUZZ_REGION_ID="${region}" \
     KUZZ_PRIMARY_REGION=kr \
+    KUZZ_REGION_LINK=on \
+    KUZZ_REGION_KEY="${link_key}" \
     KUZZ_S3_ENDPOINT=http://127.0.0.1:9491 \
     KUZZ_S3_ACCESS_KEY=kuzz_dev \
     KUZZ_S3_SECRET_KEY=kuzz_dev_secret \
@@ -66,8 +71,8 @@ start_relay() {
   PIDS+=($!)
 }
 
-start_relay kr 3041 5491 6491 3051 3061
-start_relay jp 3042 5492 6492 3052 3062
+start_relay kr 3041 5491 6491 3051 3061 "${KR_LINK_KEY}"
+start_relay jp 3042 5492 6492 3052 3062 "${JP_LINK_KEY}"
 
 for url in http://localhost:3041/ http://localhost:3042/; do
   for _ in $(seq 1 120); do
@@ -88,8 +93,23 @@ for service in postgres-kr postgres-jp; do
      ON CONFLICT (id) DO NOTHING"
 done
 
+# Each relay recorded its own link key; give each database the other's.
+link_pubkey() {
+  "${COMPOSE[@]}" exec -T "postgres-$1" psql -qtA -U kuzz -d kuzz -c \
+    "SELECT link_pubkey FROM regions WHERE id = '$1'"
+}
+KR_LINK_PUBKEY="$(link_pubkey kr | tr -d '[:space:]')"
+JP_LINK_PUBKEY="$(link_pubkey jp | tr -d '[:space:]')"
+[[ -n "${KR_LINK_PUBKEY}" && -n "${JP_LINK_PUBKEY}" ]] || { log "relays did not record link keys"; exit 1; }
+"${COMPOSE[@]}" exec -T postgres-kr psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
+  "UPDATE regions SET link_pubkey = '${JP_LINK_PUBKEY}' WHERE id = 'jp'"
+"${COMPOSE[@]}" exec -T postgres-jp psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
+  "UPDATE regions SET link_pubkey = '${KR_LINK_PUBKEY}' WHERE id = 'kr'"
+
 log "running e2e_regions"
 REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
   REGION_JP_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz" \
+  REGION_KR_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz" \
+  REGION_JP_LINK_KEY="${JP_LINK_KEY}" \
   cargo test -p kuzz-test-client --test e2e_regions -- --ignored --test-threads=1
 log "passed"

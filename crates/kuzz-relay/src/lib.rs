@@ -69,6 +69,8 @@ pub mod readiness;
 pub mod router;
 /// Room routing between regions: which region serves a room.
 pub mod routing;
+/// Calls between relays of different regions (entry attestations).
+pub mod region_link;
 /// Background retry of side effects left in the outbox.
 pub mod side_effect_retry;
 /// Shared application state.
