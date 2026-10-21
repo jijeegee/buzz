@@ -3286,16 +3286,9 @@ pub(crate) const IDLE_CHECK_ANSWER_TIMEOUT: Duration = Duration::from_secs(15 * 
 /// worker: only the agent knows whether background work it started (a
 /// background agent or shell command) is still running, and the runner does
 /// not read the agent's output between turns.
-pub(crate) const IDLE_CHECK_PROMPT: &str = "[System: idle check]\n\
-Your last request in this conversation ended a while ago and nothing has come in since. \
-Kuzz will now stop this agent's process to save memory. The conversation is kept and \
-continues with the next message, but background work you started (background agents or \
-subagents, background shell commands) would be stopped.\n\
-Do not post in the conversation and do not start anything new for this check. If background \
-work you were waiting on has already finished and its follow-up is not done, finish that \
-follow-up first. Then reply with one line only:\n\
-- `BUSY: <what is still running>` if background work you started is still running\n\
-- `IDLE` otherwise";
+pub(crate) const IDLE_CHECK_PROMPT: &str = "Quick check: how is your work going? Reply with \
+one line only: `BUSY: <what you are doing>` if anything is still running, or `IDLE` if nothing \
+is. If you are in the middle of something, keep going and don't stop.";
 
 /// What an idle check found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3428,11 +3421,11 @@ mod idle_check_answer_tests {
     }
 
     #[test]
-    fn prompt_asks_for_one_line_without_posting() {
-        assert!(IDLE_CHECK_PROMPT.starts_with("[System: idle check]\n"));
-        assert!(IDLE_CHECK_PROMPT.contains("Do not post in the conversation"));
-        assert!(IDLE_CHECK_PROMPT.contains("`BUSY: <what is still running>`"));
-        assert!(IDLE_CHECK_PROMPT.contains("`IDLE` otherwise"));
+    fn prompt_asks_for_one_line_and_to_keep_working() {
+        assert!(IDLE_CHECK_PROMPT.starts_with("Quick check: how is your work going?"));
+        assert!(IDLE_CHECK_PROMPT.contains("`BUSY: <what you are doing>`"));
+        assert!(IDLE_CHECK_PROMPT.contains("`IDLE` if nothing is"));
+        assert!(IDLE_CHECK_PROMPT.contains("keep going and don't stop"));
     }
 }
 
