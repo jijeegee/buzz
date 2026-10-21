@@ -1829,7 +1829,7 @@ pub async fn query_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
-        true,
+        ReadOrigin::Entry,
     )
     .await;
     match &result {
@@ -1867,29 +1867,66 @@ pub(crate) async fn read_for_region(
     pubkey: nostr::PublicKey,
     mode: crate::region_read::ReadMode,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    read_without_auth(state, tenant, body, pubkey, mode, ReadOrigin::Region).await
+}
+
+/// This region's part of a read that spans regions (S4-3c), for `pubkey`
+/// as the entry already admitted them: the ordinary `/query` or `/count`
+/// path, without a second admission charge and never forwarded.
+pub(crate) async fn read_part_here(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    body: &[u8],
+    pubkey: nostr::PublicKey,
+    mode: crate::region_read::ReadMode,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    read_without_auth(state, tenant, body, pubkey, mode, ReadOrigin::Part).await
+}
+
+async fn read_without_auth(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    body: &[u8],
+    pubkey: nostr::PublicKey,
+    mode: crate::region_read::ReadMode,
+    origin: ReadOrigin,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let headers = HeaderMap::new();
     match mode {
         crate::region_read::ReadMode::Query => {
             query_events_authed(
-                state, tenant, &headers, body, pubkey, [0u8; 32], None, false,
+                state, tenant, &headers, body, pubkey, [0u8; 32], None, origin,
             )
             .await
         }
         crate::region_read::ReadMode::Count => {
             count_events_authed(
-                state, tenant, &headers, body, pubkey, [0u8; 32], None, false,
+                state, tenant, &headers, body, pubkey, [0u8; 32], None, origin,
             )
             .await
         }
     }
 }
 
+/// Who runs a `/query` or `/count` (global regions S4-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadOrigin {
+    /// The reader, over HTTP: reads of other regions' rooms go there.
+    Entry,
+    /// Another region, for its reader: answered here, never forwarded.
+    Region,
+    /// This region's part of a read the entry here merges: already
+    /// admitted, never forwarded.
+    Part,
+}
+
 /// Filter execution for [`query_events`], run once NIP-98 auth succeeds.
 /// Handles admission, replay, membership, and all filter paths so the thin
 /// wrapper above can emit exactly one terminal attribution line from the Result.
 ///
-/// `may_forward`: a read naming only rooms of one other region is answered
-/// there (S4-3); off for reads another region proxied here.
+/// From the reader (`origin` is [`ReadOrigin::Entry`]), a read naming only
+/// rooms of one other region is answered there (S4-3), and a read spanning
+/// regions is merged from each region's part (S4-3c).
 #[allow(clippy::too_many_arguments)]
 async fn query_events_authed(
     state: &Arc<AppState>,
@@ -1899,9 +1936,12 @@ async fn query_events_authed(
     pubkey: nostr::PublicKey,
     event_id_bytes: [u8; 32],
     signed_auth_created_at: Option<u64>,
-    may_forward: bool,
+    origin: ReadOrigin,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    enforce_http_admission(state, tenant, &pubkey).await?;
+    let may_forward = origin == ReadOrigin::Entry;
+    if origin != ReadOrigin::Part {
+        enforce_http_admission(state, tenant, &pubkey).await?;
+    }
     check_nip98_replay(state, tenant, event_id_bytes).await?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
@@ -2002,12 +2042,23 @@ async fn query_events_authed(
             .map(Json);
         }
     }
-    if let Some(home) = state
-        .first_room_elsewhere(tenant.community(), explicit_channels)
-        .await
-        .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
-    {
-        return Err(home.http_error());
+    // A read spanning regions is merged from each region's part (S4-3c),
+    // after the filter checks below.
+    let merged = if may_forward {
+        crate::region_merge::plan(state, tenant.community(), &filters, &raw_filters)
+            .await
+            .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
+    } else {
+        None
+    };
+    if merged.is_none() {
+        if let Some(home) = state
+            .first_room_elsewhere(tenant.community(), explicit_channels)
+            .await
+            .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
+        {
+            return Err(home.http_error());
+        }
     }
 
     // P-gated kinds (gift wraps, member notifications, observer frames) require
@@ -2030,6 +2081,17 @@ async fn query_events_authed(
             StatusCode::FORBIDDEN,
             "restricted: author-only kinds require authors=[self]",
         ));
+    }
+    if let Some(plan) = merged {
+        let reader = crate::region_read::reader(
+            &pubkey,
+            crate::region_link::EntryAuth::Nip98,
+            &kuzz_auth::Scope::all_known(),
+            None,
+        );
+        return crate::region_merge::query(state, tenant, &pubkey, &plan, &reader)
+            .await
+            .map(|events| Json(Value::Array(events)));
     }
 
     if thread_windows.iter().any(Option::is_some) {
@@ -2671,7 +2733,7 @@ pub async fn count_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
-        true,
+        ReadOrigin::Entry,
     )
     .await;
     match &result {
@@ -2709,9 +2771,12 @@ async fn count_events_authed(
     pubkey: nostr::PublicKey,
     event_id_bytes: [u8; 32],
     signed_auth_created_at: Option<u64>,
-    may_forward: bool,
+    origin: ReadOrigin,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    enforce_http_admission(state, tenant, &pubkey).await?;
+    let may_forward = origin == ReadOrigin::Entry;
+    if origin != ReadOrigin::Part {
+        enforce_http_admission(state, tenant, &pubkey).await?;
+    }
     check_nip98_replay(state, tenant, event_id_bytes).await?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
@@ -2766,6 +2831,23 @@ async fn count_events_authed(
             )
             .await
             .map(Json);
+        }
+        // Rooms of several regions are counted at each and added up (S4-3c).
+        if let Some(plan) = crate::region_merge::plan(state, tenant.community(), &filters, &raw)
+            .await
+            .map_err(|e| internal_error(&format!("room region lookup: {e}")))?
+        {
+            let reader = crate::region_read::reader(
+                &pubkey,
+                crate::region_link::EntryAuth::Nip98,
+                &kuzz_auth::Scope::all_known(),
+                None,
+            );
+            if let Some(count) =
+                crate::region_merge::count(state, tenant, &pubkey, &plan, &reader).await
+            {
+                return count.map(|count| Json(serde_json::json!({ "count": count })));
+            }
         }
     }
     if let Some(home) = state

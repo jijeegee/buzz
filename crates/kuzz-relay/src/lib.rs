@@ -69,6 +69,8 @@ pub mod readiness;
 pub mod region_chats;
 /// Writes forwarded to a room's home region.
 pub mod region_forward;
+/// Reads that span regions, merged (S4-3c).
+pub mod region_merge;
 /// Calls between relays of different regions (entry attestations).
 pub mod region_link;
 /// Reads of rooms another region serves.

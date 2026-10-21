@@ -177,6 +177,61 @@ async fn read_remote_rooms(
     true
 }
 
+/// How a REQ spanning regions is split (S4-3c), with the reader as the
+/// homes see them, or `None` when the REQ stays here. Channel-limited
+/// credentials, order-number pages, search and huddle liveness are not
+/// merged.
+#[allow(clippy::type_complexity)]
+async fn merged_read_plan(
+    filters: &[Filter],
+    before_ids: &[Option<Vec<u8>>],
+    after_seqs: &[Option<i64>],
+    token_channel_ids: Option<&[uuid::Uuid]>,
+    conn: &ConnectionState,
+    state: &AppState,
+) -> Result<
+    Option<(
+        crate::region_merge::Plan,
+        crate::region_link::EntryPrincipal,
+        nostr::PublicKey,
+    )>,
+    kuzz_db::DbError,
+> {
+    if token_channel_ids.is_some()
+        || after_seqs.iter().any(Option::is_some)
+        || filters.iter().any(|filter| filter.search.is_some())
+        || filters_are_huddle_liveness_only(filters)
+    {
+        return Ok(None);
+    }
+    let AuthState::Authenticated(ctx) = conn.auth_state_snapshot() else {
+        return Ok(None);
+    };
+    let raw: Vec<serde_json::Value> = filters
+        .iter()
+        .enumerate()
+        .map(|(idx, filter)| {
+            crate::region_read::raw_filter(
+                filter,
+                before_ids.get(idx).and_then(|id| id.as_deref()),
+                None,
+            )
+        })
+        .collect();
+    let Some(plan) =
+        crate::region_merge::plan(state, conn.tenant.community(), filters, &raw).await?
+    else {
+        return Ok(None);
+    };
+    let reader = crate::region_read::reader(
+        &ctx.pubkey,
+        crate::region_link::EntryAuth::Nip42,
+        &ctx.scopes,
+        None,
+    );
+    Ok(Some((plan, reader, ctx.pubkey)))
+}
+
 /// [`handle_req`] with per-filter `after_seq` order-number cursors: such a
 /// filter's history is that channel's events after the number, in acceptance
 /// order, closed by a relay-signed `kind:39006` bounds event before EOSE.
@@ -255,8 +310,27 @@ pub async fn handle_req_paged(
             return;
         }
     }
+    // Global regions (S4-3c): a read spanning regions is merged from each
+    // region's part.
+    let merged = match merged_read_plan(
+        &filters,
+        &before_ids,
+        &after_seqs,
+        token_channel_ids.as_deref(),
+        &conn,
+        &state,
+    )
+    .await
+    {
+        Ok(merged) => merged,
+        Err(e) => {
+            warn!(conn_id = %conn_id, "Room region lookup failed: {e}");
+            conn.send(RelayMessage::closed(&sub_id, "error: database error"));
+            return;
+        }
+    };
     // Global regions (S3): otherwise rooms of another region are read there.
-    if let Some(requested) = requested_channel_ids.as_ref() {
+    if let Some(requested) = requested_channel_ids.as_ref().filter(|_| merged.is_none()) {
         match state
             .first_room_elsewhere(conn.tenant.community(), requested.iter().copied())
             .await
@@ -366,9 +440,11 @@ pub async fn handle_req_paged(
     // inaccessible branches. If no valid requested channel survives, retain the
     // established single-channel contract: reject instead of registering a
     // subscription that can never produce an event or a terminal notice.
-    if authorized_requested_channels
-        .as_ref()
-        .is_some_and(|authorized| authorized.is_empty())
+    // A merged read may name only rooms of other regions; their homes judge.
+    if merged.is_none()
+        && authorized_requested_channels
+            .as_ref()
+            .is_some_and(|authorized| authorized.is_empty())
     {
         conn.send(RelayMessage::closed(
             &sub_id,
@@ -557,9 +633,36 @@ pub async fn handle_req_paged(
     // releases the permit without sending another EVENT or EOSE. It returns
     // whether a statement timeout ended it: retirement then runs after the
     // race, because a dropped retirement would leak its unreleased topics.
+    let mut merged_refusal: Option<String> = None;
     let history = async {
         #[cfg(test)]
         crate::nip_fi_test_hooks::before_req_history(conn.tenant.community()).await;
+
+        // Global regions (S4-3c): the stored events of every region's part,
+        // merged. Live events of other regions' rooms follow with S4-4.
+        if let Some((plan, reader, pubkey)) = merged.as_ref() {
+            match crate::region_merge::query(&state, &conn.tenant, pubkey, plan, reader).await {
+                Ok(events) => {
+                    for value in events {
+                        match serde_json::from_value::<nostr::Event>(value) {
+                            Ok(event) => {
+                                if !conn.send(RelayMessage::event(&sub_id, &event)) {
+                                    return false;
+                                }
+                            }
+                            Err(e) => {
+                                warn!(conn_id = %conn_id, "Skipped a malformed merged event: {e}");
+                            }
+                        }
+                    }
+                    conn.send(RelayMessage::eose(&sub_id));
+                }
+                Err(error) => {
+                    merged_refusal = Some(crate::region_read::closed_message(&error));
+                }
+            }
+            return false;
+        }
 
         // NIP-01 OR semantics: execute one DB query per filter and deduplicate results
         // by event ID. Collapsing all filters into a single query would merge their
@@ -813,7 +916,11 @@ pub async fn handle_req_paged(
     let outcome = unless_cancelled(&conn, history).await;
     drop(_req_permit);
     match outcome {
-        Some(false) => {}
+        Some(false) => {
+            if let Some(reason) = merged_refusal {
+                super::close::close_if_owner(&sub_id, owner, Some(&reason), &conn, &state).await;
+            }
+        }
         Some(true) => close_timed_out_subscription(&sub_id, owner, &conn, &state).await,
         None => {
             super::close::close_if_owner(&sub_id, owner, None, &conn, &state).await;
