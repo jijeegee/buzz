@@ -9,12 +9,12 @@
 //! never stored.
 
 use axum::{http::StatusCode, Json};
+use chrono::{DateTime, Utc};
 use kuzz_core::TenantContext;
 use kuzz_db::inbox_summary::{
     InboxCursor, InboxReadMarkers, InboxRowKind, InboxSummaryRow, INBOX_UNREAD_CAP,
     MAX_INBOX_SUMMARY_LIMIT,
 };
-use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -146,14 +146,17 @@ fn row_json(row: InboxSummaryRow, reader: &[u8]) -> Value {
     })
 }
 
-/// Serve one inbox page for the authenticated reader.
+/// Serve one inbox page for the authenticated reader. With `fan_out`, the
+/// rooms other regions serve are merged in (S4-3b).
 pub(super) async fn query(
     state: &AppState,
     tenant: &TenantContext,
     reader: &nostr::PublicKey,
     filters: &[Value],
+    fan_out: bool,
 ) -> Result<Json<Value>, QueryError> {
     let request = parse(filters)?;
+    let limit = request.limit as usize;
     let reader_bytes = reader.to_bytes();
     let accessible = state
         .get_accessible_channel_ids_cached(tenant.community(), &reader_bytes)
@@ -182,11 +185,26 @@ pub(super) async fn query(
         .filter(|row| accessible.contains(&row.channel_id))
         .map(|row| row_json(row, &reader_bytes))
         .collect();
-    Ok(Json(json!({
+    let local = json!({
         "inbox_summary": 1,
         "rows": rows,
         "next": next,
-    })))
+    });
+    let others = if fan_out {
+        crate::region_chats::other_regions(state).await
+    } else {
+        Vec::new()
+    };
+    if others.is_empty() {
+        return Ok(Json(local));
+    }
+    let answers = crate::region_chats::ask_regions(state, tenant, reader, &others, filters).await;
+    Ok(Json(crate::region_chats::merge_pages(
+        "inbox_summary",
+        local,
+        answers,
+        limit,
+    )))
 }
 
 #[cfg(test)]

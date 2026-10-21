@@ -81,6 +81,27 @@ async fn tell_jp_room_lives_in_kr(room: &str) {
     .expect("directory row");
 }
 
+/// POST `/query` filters over HTTP (dev-mode `X-Pubkey`).
+async fn query(url: &str, keys: &Keys, filters: Value) -> (u16, Value) {
+    let response = reqwest::Client::new()
+        .post(format!("{}/query", http(url)))
+        .header("X-Pubkey", keys.public_key().to_hex())
+        .json(&filters)
+        .send()
+        .await
+        .expect("query request");
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+/// The `chat_list` row of `room` in `page`.
+fn room_row<'a>(page: &'a Value, room: &str) -> Option<&'a Value> {
+    page["rows"]
+        .as_array()?
+        .iter()
+        .find(|row| row["type"] == "room" && row["channel_id"] == room)
+}
+
 /// How many rows jp's database has for `room`.
 async fn jp_room_rows(room: &str) -> i64 {
     let url = std::env::var("REGION_JP_DATABASE_URL")
@@ -213,6 +234,83 @@ async fn rooms_are_served_only_by_their_home_region() {
         .await
         .expect("ok");
     assert!(ok.accepted, "{}", ok.message);
+
+    // Chats through jp list the rooms of both regions (S4-3b), merged
+    // newest first, with a cursor apps send back unchanged.
+    let (status, chats) = query(&jp_url(), &keys, serde_json::json!([{"chat_list": 1}])).await;
+    assert_eq!(status, 200, "{chats}");
+    let kr_row = room_row(&chats, &room).unwrap_or_else(|| panic!("kr room missing: {chats}"));
+    assert!(
+        room_row(&chats, &jp_room).is_some(),
+        "jp room missing: {chats}"
+    );
+    assert!(chats.get("unavailable_regions").is_none(), "{chats}");
+    let last_seq = kr_row["last_seq"].as_i64().expect("last_seq");
+    let (status, page) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"chat_list": 1, "limit": 1}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{page}");
+    assert_eq!(page["rows"].as_array().map(Vec::len), Some(1), "{page}");
+    let (status, rest) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"chat_list": 1, "limit": 1, "before": page["next"]}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{rest}");
+    assert_ne!(rest["rows"][0]["key"], page["rows"][0]["key"], "{rest}");
+    let (status, inbox) = query(&jp_url(), &keys, serde_json::json!([{"inbox_summary": 1}])).await;
+    assert_eq!(status, 200, "{inbox}");
+    assert!(
+        inbox["rows"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row["channel_id"] == room)),
+        "kr room missing from the inbox: {inbox}"
+    );
+
+    // A read position set through jp is kept by the room's home, kr.
+    let (status, marked) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"mark_read": 1, "items": [
+            {"channel": jp_room},
+            {"channel": room, "seq": last_seq}
+        ]}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{marked}");
+    assert_eq!(marked["items"][1]["channel_id"], room, "{marked}");
+    assert_eq!(marked["items"][1]["read_seq"], last_seq, "{marked}");
+    assert_eq!(marked["items"][0]["channel_id"], jp_room, "{marked}");
+    let (_, kr_chats) = query(&kr_url(), &keys, serde_json::json!([{"chat_list": 1}])).await;
+    let kr_row = room_row(&kr_chats, &room).unwrap_or_else(|| panic!("{kr_chats}"));
+    assert_eq!(kr_row["read_seq"], last_seq, "{kr_chats}");
+    // kr merges in jp's rooms the same way.
+    assert!(
+        room_row(&kr_chats, &jp_room).is_some(),
+        "kr did not list the jp room: {kr_chats}"
+    );
+    // A refused item is named by its place in the whole request.
+    let stranger = uuid::Uuid::new_v4().to_string();
+    tell_jp_room_lives_in_kr(&stranger).await;
+    let (status, refused) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"mark_read": 1, "items": [
+            {"channel": jp_room}, {"channel": room}, {"channel": stranger}
+        ]}]),
+    )
+    .await;
+    assert_eq!(status, 403, "{refused}");
+    assert!(
+        refused["error"]
+            .as_str()
+            .is_some_and(|error| error.starts_with("mark_read item 2:")),
+        "{refused}"
+    );
 
     // A read spanning both regions is not merged yet: CLOSED naming kr.
     let both = Filter::new()

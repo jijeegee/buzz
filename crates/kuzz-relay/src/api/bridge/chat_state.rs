@@ -14,7 +14,9 @@
 //!   of the newest `event` the reader has seen, or `at`, whole Unix seconds
 //!   the reader has read up to (matched against message `created_at`, the
 //!   signer's time; at most 300 s ahead). Without a position only the unread mark
-//!   changes. All items apply or none do.
+//!   changes. All items apply or none do, within one region: with the
+//!   region link on, the items of rooms other regions serve are applied at
+//!   their home (S4-3b), each region's items together.
 //! - `{"thread_follow": 1, "root": "<root-hex>", "state": "followed" |
 //!   "unfollowed"}` → `{"thread_follow": 1, "root": .., "channel_id": ..,
 //!   "state": ..}`.
@@ -363,21 +365,31 @@ async fn ping(state: &Arc<AppState>, tenant: &TenantContext, reader: &nostr::Pub
     }
 }
 
-/// Serve one chat-state envelope for the authenticated reader.
+/// Serve one chat-state envelope for the authenticated reader. With
+/// `fan_out`, rooms other regions serve are listed and changed at their
+/// home (S4-3b).
 pub(super) async fn query(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     reader: &nostr::PublicKey,
     filters: &[Value],
     envelope: Envelope,
+    fan_out: bool,
 ) -> Result<Json<Value>, QueryError> {
     if !state.db.chat_state_writes() {
         return Err(api_error(StatusCode::NOT_FOUND, DISABLED));
     }
     match envelope {
-        Envelope::ChatList => chat_list(state, tenant, reader, filters).await,
+        Envelope::ChatList => chat_list(state, tenant, reader, filters, fan_out).await,
         Envelope::MarkRead => {
             let (items, unread_mark) = parse_mark_read(filters)?;
+            if fan_out {
+                if let Some(answer) =
+                    mark_read_at_homes(state, tenant, reader, filters, &items, unread_mark).await?
+                {
+                    return Ok(answer);
+                }
+            }
             let results = state
                 .db
                 .chat_mark_read(tenant.community(), reader, &items, unread_mark)
@@ -394,6 +406,23 @@ pub(super) async fn query(
         }
         Envelope::ThreadFollow => {
             let (root, follow) = parse_thread_follow(filters)?;
+            if fan_out {
+                let target = [crate::region_chats::Target::Thread(&root)];
+                let home = crate::region_chats::homes_of(state, tenant, reader, &target).await?;
+                if let Some(region) = home.into_iter().next().flatten() {
+                    let answer = crate::region_read::read_at_home(
+                        state,
+                        tenant,
+                        &region,
+                        crate::region_read::ReadMode::Query,
+                        filters.to_vec(),
+                        home_reader(reader),
+                    )
+                    .await?;
+                    ping(state, tenant, reader).await;
+                    return Ok(Json(answer));
+                }
+            }
             let channel_id = state
                 .db
                 .chat_thread_follow(tenant.community(), reader, &root, follow)
@@ -418,9 +447,172 @@ pub(super) async fn query(
             if outcome.any_applied() {
                 ping(state, tenant, reader).await;
             }
-            Ok(Json(import::response(&request, &outcome)))
+            let local = import::response(&request, &outcome);
+            let others = if fan_out {
+                crate::region_chats::other_regions(state).await
+            } else {
+                Vec::new()
+            };
+            if others.is_empty() {
+                return Ok(Json(local));
+            }
+            let answers =
+                crate::region_chats::ask_regions(state, tenant, reader, &others, filters).await;
+            let merged = crate::region_chats::merge_import(local, answers);
+            if !outcome.any_applied() && import_applied_anywhere(&merged) {
+                ping(state, tenant, reader).await;
+            }
+            Ok(Json(merged))
         }
     }
+}
+
+/// The reader as this region admitted them, for a call to a room's home.
+fn home_reader(reader: &nostr::PublicKey) -> crate::region_link::EntryPrincipal {
+    crate::region_read::reader(
+        reader,
+        crate::region_link::EntryAuth::Nip98,
+        &kuzz_auth::Scope::all_known(),
+        None,
+    )
+}
+
+/// True when any imported item was applied (here or at a room's home).
+fn import_applied_anywhere(answer: &Value) -> bool {
+    ["reads", "follows"].iter().any(|list| {
+        answer
+            .get(list)
+            .and_then(Value::as_array)
+            .is_some_and(|items| items.iter().any(|item| item["applied"] == json!(true)))
+    })
+}
+
+/// `mark_read` when some items' rooms live in other regions: each region's
+/// items are applied at that home, atomically per region, and the results
+/// come back in request order. `None` when every item is served here.
+///
+/// A refusal names the item's index in the whole request. Groups applied
+/// before it stay applied; read positions only move forward, so the app's
+/// retry without the refused item stores nothing twice.
+async fn mark_read_at_homes(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    reader: &nostr::PublicKey,
+    filters: &[Value],
+    items: &[MarkReadItem],
+    unread_mark: bool,
+) -> Result<Option<Json<Value>>, QueryError> {
+    use crate::region_chats::{homes_of, Target};
+
+    let targets: Vec<Target<'_>> = items
+        .iter()
+        .map(|item| match &item.target {
+            MarkReadTarget::Channel(channel) => Target::Room(*channel),
+            MarkReadTarget::Thread(root) => Target::Thread(root),
+        })
+        .collect();
+    let homes = homes_of(state, tenant, reader, &targets).await?;
+    if homes.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+    let raw_items = filters
+        .first()
+        .and_then(|filter| filter.get("items"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| bad("mark_read items must be an array"))?;
+    // This region's items first (`None` sorts first), then each home's.
+    let mut groups: std::collections::BTreeMap<Option<String>, Vec<usize>> = Default::default();
+    for (index, home) in homes.into_iter().enumerate() {
+        groups.entry(home).or_default().push(index);
+    }
+    let mut slots = vec![Value::Null; items.len()];
+    let mut stored = false;
+    for (home, group) in groups {
+        let part = MarkReadPart {
+            items,
+            raw_items,
+            group: &group,
+            unread_mark,
+        };
+        let results = match mark_read_part(state, tenant, reader, home.as_deref(), part).await {
+            Ok(results) => results,
+            Err(error) => {
+                // Parts applied before the refusal stay; devices still refetch.
+                if stored {
+                    ping(state, tenant, reader).await;
+                }
+                return Err(error);
+            }
+        };
+        for (&index, result) in group.iter().zip(results) {
+            stored |= result["stored"] == json!(true);
+            slots[index] = result;
+        }
+    }
+    if stored {
+        ping(state, tenant, reader).await;
+    }
+    Ok(Some(Json(json!({ "mark_read": 1, "items": slots }))))
+}
+
+/// One region's share of a `mark_read` request.
+struct MarkReadPart<'a> {
+    items: &'a [MarkReadItem],
+    raw_items: &'a [Value],
+    group: &'a [usize],
+    unread_mark: bool,
+}
+
+/// Apply one region's items: here (`home` is `None`) or at that home. The
+/// results are in `group` order; a refusal names the item's request index.
+async fn mark_read_part(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    reader: &nostr::PublicKey,
+    home: Option<&str>,
+    part: MarkReadPart<'_>,
+) -> Result<Vec<Value>, QueryError> {
+    use crate::region_chats::renumber_refusal;
+
+    let Some(region) = home else {
+        let subset: Vec<MarkReadItem> = part.group.iter().map(|&i| part.items[i].clone()).collect();
+        return Ok(state
+            .db
+            .chat_mark_read(tenant.community(), reader, &subset, part.unread_mark)
+            .await
+            .map_err(|e| internal_error(&format!("mark_read: {e}")))?
+            .map_err(|denial| renumber_refusal(denied(Envelope::MarkRead, denial), part.group))?
+            .into_iter()
+            .map(mark_result_json)
+            .collect());
+    };
+    let request = json!({
+        "mark_read": 1,
+        "items": part.group.iter().map(|&i| part.raw_items[i].clone()).collect::<Vec<_>>(),
+        "unread_mark": part.unread_mark,
+    });
+    let answer = crate::region_read::read_at_home(
+        state,
+        tenant,
+        region,
+        crate::region_read::ReadMode::Query,
+        vec![request],
+        home_reader(reader),
+    )
+    .await
+    .map_err(|error| renumber_refusal(error, part.group))?;
+    answer
+        .get("items")
+        .and_then(Value::as_array)
+        .filter(|results| results.len() == part.group.len())
+        .cloned()
+        .ok_or_else(|| {
+            tracing::warn!(target_region = %region, "Malformed mark_read answer");
+            api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                crate::region_read::UNREACHABLE,
+            )
+        })
 }
 
 async fn chat_list(
@@ -428,8 +620,10 @@ async fn chat_list(
     tenant: &TenantContext,
     reader: &nostr::PublicKey,
     filters: &[Value],
+    fan_out: bool,
 ) -> Result<Json<Value>, QueryError> {
     let query = parse_chat_list(filters, Utc::now())?;
+    let limit = query.limit as usize;
     let reader_bytes = reader.to_bytes();
     let accessible = state
         .get_accessible_channel_ids_cached(tenant.community(), &reader_bytes)
@@ -452,11 +646,26 @@ async fn chat_list(
         .filter(|row| accessible.contains(&row.channel_id))
         .map(|row| row_json(row, &reader_bytes))
         .collect();
-    Ok(Json(json!({
+    let local = json!({
         "chat_list": 1,
         "rows": rows,
         "next": next,
-    })))
+    });
+    let others = if fan_out {
+        crate::region_chats::other_regions(state).await
+    } else {
+        Vec::new()
+    };
+    if others.is_empty() {
+        return Ok(Json(local));
+    }
+    let answers = crate::region_chats::ask_regions(state, tenant, reader, &others, filters).await;
+    Ok(Json(crate::region_chats::merge_pages(
+        "chat_list",
+        local,
+        answers,
+        limit,
+    )))
 }
 
 #[cfg(test)]

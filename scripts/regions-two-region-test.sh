@@ -71,6 +71,7 @@ start_relay() {
     KUZZ_S3_BUCKET=kuzz-media \
     KUZZ_RELAY_PRIVATE_KEY="${RELAY_KEY}" \
     KUZZ_REQUIRE_AUTH_TOKEN=false \
+    KUZZ_CHAT_STATE_WRITES=on \
     "${BIN}" >"${LOG_DIR}/relay-${region}.log" 2>&1 &
   PIDS+=($!)
 }

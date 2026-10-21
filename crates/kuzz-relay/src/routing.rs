@@ -219,6 +219,17 @@ impl RoomRouter {
         Ok(split_rooms(channels, homed_elsewhere))
     }
 
+    /// Every registered region but this one.
+    pub async fn other_regions(&self, db: &Db) -> Result<Vec<String>, kuzz_db::DbError> {
+        Ok(self
+            .region_list(db)
+            .await?
+            .iter()
+            .filter(|region| region.id != self.local)
+            .map(|region| region.id.clone())
+            .collect())
+    }
+
     async fn region_list(&self, db: &Db) -> Result<Arc<Vec<RegionRecord>>, kuzz_db::DbError> {
         if let Some(regions) = self.regions.get(&()) {
             return Ok(regions);
