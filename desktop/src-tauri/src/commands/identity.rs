@@ -139,7 +139,8 @@ mod auto_connect_default_relay_tests {
 
 #[tauri::command]
 pub fn is_shared_identity() -> bool {
-    std::env::var("KUZZ_SHARE_IDENTITY")
+    crate::app_state::env_identity_allowed(crate::relay::server::kuzz_env())
+        && std::env::var("KUZZ_SHARE_IDENTITY")
         .map(|v| v == "1")
         .unwrap_or(false)
         && std::env::var("KUZZ_PRIVATE_KEY")
