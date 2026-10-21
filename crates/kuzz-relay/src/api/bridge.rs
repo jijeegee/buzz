@@ -1977,6 +1977,17 @@ async fn query_events_authed(
         })
         .collect::<Result<_, _>>()
         .map_err(|e| api_error(StatusCode::BAD_REQUEST, &e))?;
+    // Search scores travel only between regions (S4-3d).
+    if origin == ReadOrigin::Entry
+        && raw_filters
+            .iter()
+            .any(|raw| raw.get(crate::region_merge::SEARCH_RANKS_KEY).is_some())
+    {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid filters: unknown key region_search_ranks",
+        ));
+    }
     // A sibling filter may also switch the whole request into another mode.
     if after_seqs.iter().any(Option::is_some)
         && (inbox_summary::requested(&raw_filters)
@@ -2140,6 +2151,11 @@ async fn query_events_authed(
                 "mixed search and non-search filters not supported",
             ));
         }
+        // Scores travel only to the entry of a merged search (S4-3d).
+        let with_ranks = origin != ReadOrigin::Entry
+            && raw_filters.iter().all(|raw| {
+                raw.get(crate::region_merge::SEARCH_RANKS_KEY) == Some(&Value::Bool(true))
+            });
         return handle_bridge_search(
             state,
             &raw_filters,
@@ -2148,6 +2164,7 @@ async fn query_events_authed(
             tenant,
             &authed_pubkey_hex,
             &pubkey_bytes,
+            with_ranks,
         )
         .await;
     }
@@ -3113,6 +3130,10 @@ fn search_hit_accepted(
 
 /// Handle search filters by routing to Postgres FTS, then fetching full events
 /// from DB. Supports a bridge-only `page` extension over the FTS result set.
+///
+/// `with_ranks`: answer `{"search_hits": [{"event", "rank"}]}` for the entry
+/// of a merged search (S4-3d) instead of the event array.
+#[allow(clippy::too_many_arguments)]
 async fn handle_bridge_search(
     state: &AppState,
     raw_filters: &[Value],
@@ -3121,6 +3142,7 @@ async fn handle_bridge_search(
     tenant: &kuzz_core::tenant::TenantContext,
     reader_pubkey_hex: &str,
     pubkey_bytes: &[u8],
+    with_ranks: bool,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     // Bridge always includes global (channel-less) events — same as WS with
     // full scopes. `None` means no accessible channels and no global access →
@@ -3130,11 +3152,15 @@ async fn handle_bridge_search(
         true, // include_global
     ) {
         Some(scope) => scope,
+        None if with_ranks => return Ok(Json(serde_json::json!({ "search_hits": [] }))),
         None => return Ok(Json(Value::Array(Vec::new()))),
     };
 
     let mut events: Vec<Value> = Vec::new();
     let mut seen_ids: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+    // Every hit in score order, kept or hidden: the entry of a merged search
+    // pages over the same list a single region would.
+    let mut ranked: Vec<(String, f32, i64)> = Vec::new();
 
     for (raw, filter) in raw_filters.iter().zip(filters) {
         let search_mode = extract_search_mode(raw);
@@ -3205,6 +3231,14 @@ async fn handle_bridge_search(
 
         // Fetch full events from DB by ID. Hit ids are already raw 32-byte
         // arrays from the FTS layer — no hex decode.
+        if with_ranks {
+            ranked.extend(
+                search_result
+                    .hits
+                    .iter()
+                    .map(|hit| (hex::encode(hit.event_id), hit.rank, hit.created_at)),
+            );
+        }
         let hit_ids: Vec<[u8; 32]> = search_result.hits.into_iter().map(|h| h.event_id).collect();
 
         if hit_ids.is_empty() {
@@ -3254,6 +3288,24 @@ async fn handle_bridge_search(
 
     hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut events).await?;
     hide_blocked_dm_authors(state, tenant, pubkey_bytes, &mut events).await?;
+    if with_ranks {
+        let mut kept: std::collections::HashMap<String, Value> = events
+            .into_iter()
+            .filter_map(|event| Some((event.get("id")?.as_str()?.to_string(), event)))
+            .collect();
+        let hits: Vec<Value> = ranked
+            .into_iter()
+            .map(|(id, rank, created_at)| {
+                let mut hit =
+                    serde_json::json!({ "id": id, "rank": rank, "created_at": created_at });
+                if let Some(event) = kept.remove(&id) {
+                    hit["event"] = event;
+                }
+                hit
+            })
+            .collect();
+        return Ok(Json(serde_json::json!({ "search_hits": hits })));
+    }
     Ok(Json(Value::Array(events)))
 }
 

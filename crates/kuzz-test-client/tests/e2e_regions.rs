@@ -390,6 +390,36 @@ async fn rooms_are_served_only_by_their_home_region() {
     assert_eq!(response.status().as_u16(), 200);
     let counted: Value = response.json().await.expect("count body");
     assert_eq!(counted["count"], 4, "{counted}");
+
+    // Search spanning both regions is merged by score (S4-3d).
+    let (status, found) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"kinds": [9], "#h": both_rooms, "search": "hi"}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{found}");
+    assert_eq!(found.as_array().map(Vec::len), Some(3), "{found}");
+    let (status, page) = query(
+        &jp_url(),
+        &keys,
+        serde_json::json!([{"kinds": [9], "search": "hi", "limit": 2, "page": 2}]),
+    )
+    .await;
+    assert_eq!(status, 200, "{page}");
+    assert_eq!(
+        page.as_array().map(Vec::len),
+        Some(1),
+        "page 2 of a room-less search: {page}"
+    );
+    let searched = Filter::new().kind(Kind::Custom(9)).search("room");
+    jp.subscribe("search", vec![searched]).await.expect("req");
+    let hits = jp
+        .collect_until_eose("search", Duration::from_secs(10))
+        .await
+        .expect("jp search");
+    let texts: Vec<_> = hits.iter().map(|event| event.content.as_str()).collect();
+    assert_eq!(texts, ["jp's own room"]);
 }
 
 /// A region link call from jp to kr: signed with jp's link key, for kr's

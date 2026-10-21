@@ -179,8 +179,8 @@ async fn read_remote_rooms(
 
 /// How a REQ spanning regions is split (S4-3c), with the reader as the
 /// homes see them, or `None` when the REQ stays here. Channel-limited
-/// credentials, order-number pages, search and huddle liveness are not
-/// merged.
+/// credentials, order-number pages and huddle liveness are not merged;
+/// search is merged by score (S4-3d).
 #[allow(clippy::type_complexity)]
 async fn merged_read_plan(
     filters: &[Filter],
@@ -199,7 +199,6 @@ async fn merged_read_plan(
 > {
     if token_channel_ids.is_some()
         || after_seqs.iter().any(Option::is_some)
-        || filters.iter().any(|filter| filter.search.is_some())
         || filters_are_huddle_liveness_only(filters)
     {
         return Ok(None);
@@ -568,6 +567,34 @@ pub async fn handle_req_paged(
         let Some(owner) = claim_search_subscription(&sub_id, &conn, &state).await else {
             return;
         };
+        // Global regions (S4-3d): a search spanning regions, merged by score.
+        if let Some((plan, reader, pubkey)) = merged.as_ref() {
+            let search = crate::region_merge::query(&state, &conn.tenant, pubkey, plan, reader);
+            let reason = match unless_cancelled(&conn, search).await {
+                Some(Ok(events)) => {
+                    let subs = conn.subscriptions.lock().await;
+                    if subs.get(&sub_id) == Some(&owner) {
+                        for value in events {
+                            match serde_json::from_value::<nostr::Event>(value) {
+                                Ok(event) => {
+                                    conn.send(RelayMessage::event(&sub_id, &event));
+                                }
+                                Err(e) => {
+                                    warn!(conn_id = %conn_id, "Skipped a malformed search hit: {e}");
+                                }
+                            }
+                        }
+                        conn.send(RelayMessage::eose(&sub_id));
+                    }
+                    None
+                }
+                Some(Err(error)) => Some(crate::region_read::closed_message(&error)),
+                None => None,
+            };
+            drop(_search_permit);
+            super::close::close_if_owner(&sub_id, owner, reason.as_deref(), &conn, &state).await;
+            return;
+        }
         let search = async {
             #[cfg(test)]
             crate::nip_fi_test_hooks::before_search_query(conn.tenant.community()).await;
