@@ -29,6 +29,24 @@ void main() {
       );
     });
 
+    test('order-number page bounds are not the window bounds', () {
+      final page = parseChannelWindowResponse(
+        [
+          _row('a'),
+          _bounds(
+            id: 'page',
+            dTag: '${_channelId.toLowerCase()}:after_seq:4',
+            content: {'order': 'seq', 'last_seq': 5, 'has_more': true},
+          ),
+          _bounds(),
+        ],
+        _channelId,
+        null,
+      );
+      expect(page.rows.map((row) => row.event.id), ['a']);
+      expect(page.hasMore, isFalse);
+    });
+
     test('rejects hasMore and nextCursor disagreement', () {
       expect(
         () => parseChannelWindowResponse(

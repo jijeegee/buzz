@@ -78,6 +78,11 @@ class RelaySocket {
   /// one refresh. Set before [connect].
   bool refreshRejectedToken = true;
 
+  /// Ask a `kuzz-seq` relay for channel order numbers on this socket. Only
+  /// the connect URL carries `?kuzz_seq=1`; AUTH stays signed for the bare
+  /// relay URL, which is what the relay compares. Set before [connect].
+  bool sequenceFrames = false;
+
   /// Bumped on every connection reset; fences awaited token reads.
   int _epoch = 0;
   bool _tokenAuthStarted = false;
@@ -113,7 +118,7 @@ class RelaySocket {
 
     try {
       _channel = IOWebSocketChannel.connect(
-        Uri.parse(_wsUrl),
+        connectUri(_wsUrl, sequenceFrames: sequenceFrames),
         pingInterval: debugPingInterval,
       );
       await _channel!.ready;
@@ -171,6 +176,17 @@ class RelaySocket {
       await disconnect();
       _onDisconnected(e);
     }
+  }
+
+  /// The address a socket for [wsUrl] opens: with `kuzz_seq=1` added to the
+  /// query when [sequenceFrames] is set.
+  @visibleForTesting
+  static Uri connectUri(String wsUrl, {required bool sequenceFrames}) {
+    final uri = Uri.parse(wsUrl);
+    if (!sequenceFrames) return uri;
+    return uri.replace(
+      queryParameters: {...uri.queryParameters, 'kuzz_seq': '1'},
+    );
   }
 
   /// Present a rotated token on the live connection (same-principal re-AUTH

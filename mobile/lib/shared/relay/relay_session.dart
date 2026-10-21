@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:flutter/foundation.dart';
@@ -13,11 +14,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../features/age_gate/age_signal_provider.dart';
 import '../auth/auth.dart';
 import '../auth/token/token_session.dart';
+import 'channel_sequence.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
 import 'relay_client.dart';
 import 'relay_closed_policy.dart';
 import 'relay_http_query_client.dart';
+import 'relay_info_provider.dart';
 import 'relay_provider.dart';
 import 'relay_rate_limit_gate.dart';
 import 'relay_session_types.dart';
@@ -63,8 +66,13 @@ class _ClosedRetry {
 class _PendingEvent {
   final Completer<NostrEvent> completer;
   final Timer timeout;
+  final String? channelId;
 
-  _PendingEvent({required this.completer, required this.timeout});
+  _PendingEvent({
+    required this.completer,
+    required this.timeout,
+    this.channelId,
+  });
 }
 
 class _BufferedEvent {
@@ -83,6 +91,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     RelayRateLimitGate? rateLimitGate,
     RelayTimerFactory retryTimerFactory = Timer.new,
     Future<void> Function(Duration) replayDelay = Future.delayed,
+    bool probeSequenceSupport = false,
   }) : _httpQueryClient = RelayHttpQueryClient(
          client: httpClient,
          clientFactory: httpClientFactory,
@@ -91,7 +100,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
        _now = now ?? DateTime.now,
        _rateLimitGate = rateLimitGate ?? RelayRateLimitGate(),
        _retryTimerFactory = retryTimerFactory,
-       _replayDelay = replayDelay;
+       _replayDelay = replayDelay,
+       _probeSequenceSupport = probeSequenceSupport;
 
   final RelayHttpQueryClient _httpQueryClient;
   final RelaySocketFactory _socketFactory;
@@ -99,6 +109,14 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   final RelayRateLimitGate _rateLimitGate;
   final RelayTimerFactory _retryTimerFactory;
   final Future<void> Function(Duration) _replayDelay;
+
+  /// Opt in to channel order numbers when the relay's NIP-11 lists
+  /// `kuzz-seq`. The app's provider sets it; tests that build a session
+  /// directly keep today's behaviour.
+  final bool _probeSequenceSupport;
+
+  static const _sequenceSupportPrefPrefix = 'relay_kuzz_seq:';
+  static const _maxRepairChannels = 20;
 
   static const _baseReconnectDelayMs = 1000;
   static const _maxReconnectDelayMs = 30000;
@@ -145,6 +163,20 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// session already refreshed; it must not refresh again (one per cycle).
   bool _retryingRefreshedToken = false;
 
+  /// What this run's NIP-11 read said about `kuzz-seq`, per relay.
+  final Map<String, bool> _sequenceSupport = {};
+  bool _sequenceProbeStarted = false;
+
+  /// The connection generation whose socket carries order numbers; repair
+  /// only ever asks `after_seq` on such a socket.
+  int? _sequencedGeneration;
+
+  /// Order numbers seen live per channel. They outlive a socket so a
+  /// reconnect can fill what the gap missed.
+  final Map<String, ChannelSeqCursor> _seqCursors = {};
+  bool _repairing = false;
+  bool _repairAgain = false;
+
   @override
   SessionState build() {
     final config = ref.watch(relayConfigProvider);
@@ -154,6 +186,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     // Reset disposed flag — build() may re-run on the same Notifier instance
     // after a provider dependency changes (e.g. auth completing).
     _disposed = false;
+    _sequenceProbeStarted = false;
 
     ref.onDispose(_dispose);
 
@@ -422,6 +455,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _pendingEvents[event.id] = _PendingEvent(
       completer: completer,
       timeout: timer,
+      channelId: event.channelId,
     );
 
     _socket?.send(['EVENT', event.toJson()]);
@@ -448,6 +482,19 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   @visibleForTesting
   void debugDispose() => _dispose();
+
+  /// Mark the current connection as one that carries order numbers.
+  @visibleForTesting
+  void debugEnableSequenceForTest() =>
+      _sequencedGeneration = _connectionGeneration;
+
+  @visibleForTesting
+  Future<bool> debugRelaySpeaksSequence(String baseUrl) =>
+      _relaySpeaksSequence(baseUrl);
+
+  @visibleForTesting
+  int? debugSequenceRepairPoint(String channelId) =>
+      _seqCursors[channelId]?.repairPoint(_now());
 
   @visibleForTesting
   void debugSupersedeConnection() => _connectionGeneration++;
@@ -572,6 +619,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       reconnectAttempt: state.reconnectAttempt,
     );
 
+    final sequenced =
+        _probeSequenceSupport && await _relaySpeaksSequence(config.baseUrl);
+    if (!_isActiveConnection(generation) || _ageRestricted) return;
+    _sequencedGeneration = sequenced ? generation : null;
+
     _socket?.dispose();
     final socket = _socketFactory(
       wsUrl: config.wsUrl,
@@ -584,6 +636,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     );
     socket.accessTokens = config.tokenAuth ? _accessTokens : null;
     socket.refreshRejectedToken = !_retryingRefreshedToken;
+    socket.sequenceFrames = sequenced;
     _retryingRefreshedToken = false;
     _socket = socket;
 
@@ -597,6 +650,170 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _reconnectDelayMs = _baseReconnectDelayMs;
     state = const SessionState(status: SessionStatus.connected);
     await _replayLiveSubscriptions(generation);
+    await _repairSequencedChannels(generation);
+  }
+
+  /// Whether to connect to [baseUrl] with order numbers, without waiting on
+  /// the network: this run's NIP-11 answer, else the last one stored. The
+  /// first connect of a run starts a NIP-11 read in the background; its
+  /// answer applies from the next connect.
+  Future<bool> _relaySpeaksSequence(String baseUrl) async {
+    final known = _sequenceSupport[baseUrl];
+    if (known != null) return known;
+    final prefs = await SharedPreferences.getInstance();
+    if (!_sequenceProbeStarted) {
+      _sequenceProbeStarted = true;
+      unawaited(_readSequenceSupport(baseUrl, prefs));
+    }
+    return prefs.getBool('$_sequenceSupportPrefPrefix$baseUrl') ?? false;
+  }
+
+  Future<void> _readSequenceSupport(
+    String baseUrl,
+    SharedPreferences prefs,
+  ) async {
+    final RelayInfo info;
+    try {
+      info = await ref.read(relayInfoFetcherProvider)(baseUrl);
+    } catch (error) {
+      // Keep the stored answer; the next session build reads again.
+      debugPrint('[RelaySession] NIP-11 read for $baseUrl failed: $error');
+      return;
+    }
+    final supported = info.supports(kuzzSeqExtension);
+    _sequenceSupport[baseUrl] = supported;
+    await prefs.setBool('$_sequenceSupportPrefPrefix$baseUrl', supported);
+  }
+
+  bool get _sequenceActive =>
+      _sequencedGeneration != null &&
+      _sequencedGeneration == _connectionGeneration;
+
+  void _observeSequence(String? channelId, int sequence) {
+    if (channelId == null) return;
+    final now = _now();
+    final cursor = _seqCursors[channelId];
+    if (cursor == null) {
+      _seqCursors[channelId] = ChannelSeqCursor(sequence, now);
+    } else {
+      cursor.observe(sequence, now);
+    }
+  }
+
+  /// Fill watched channels from their order numbers after a reconnect or
+  /// `KUZZ_RESYNC`: the visible channel first, then the most recently active,
+  /// at most [_maxRepairChannels] per run, one paced request at a time.
+  /// Events go to the live subscriptions whose filters match them; ones
+  /// already delivered are dropped by the per-subscription dedup. A signal
+  /// that lands during a run starts one more run after it.
+  Future<void> _repairSequencedChannels(int generation) async {
+    if (_sequencedGeneration != generation || _seqCursors.isEmpty) return;
+    if (_repairing) {
+      _repairAgain = true;
+      return;
+    }
+    _repairing = true;
+    try {
+      do {
+        _repairAgain = false;
+        await _repairSequencedChannelsOnce(generation);
+      } while (_repairAgain && _isActiveConnection(generation));
+    } finally {
+      _repairing = false;
+      _repairAgain = false;
+    }
+  }
+
+  Future<void> _repairSequencedChannelsOnce(int generation) async {
+    final visibleChannelId = _visibleChannelsByOwner.isEmpty
+        ? null
+        : _visibleChannelsByOwner.values.last;
+    final channelIds = _seqCursors.keys.toList()
+      ..sort((left, right) {
+        if ((left == visibleChannelId) != (right == visibleChannelId)) {
+          return left == visibleChannelId ? -1 : 1;
+        }
+        return _seqCursors[right]!.lastObservedAt.compareTo(
+          _seqCursors[left]!.lastObservedAt,
+        );
+      });
+    var repaired = 0;
+    for (final channelId in channelIds) {
+      if (repaired >= _maxRepairChannels) return;
+      if (!_isActiveConnection(generation)) return;
+      final kinds = afterSeqKinds(_liveKindsForChannel(channelId));
+      if (kinds.isEmpty) {
+        // No live subscription watches this channel any more.
+        _seqCursors.remove(channelId);
+        continue;
+      }
+      if (repaired > 0) await _replayDelay(_replayInterBatchDelay);
+      if (!_isActiveConnection(generation)) return;
+      repaired++;
+      try {
+        await _repairChannel(channelId, kinds, generation);
+      } catch (error) {
+        debugPrint('[RelaySession] order-number repair of $channelId: $error');
+      }
+    }
+  }
+
+  Future<void> _repairChannel(
+    String channelId,
+    List<int> kinds,
+    int generation,
+  ) async {
+    var after = _seqCursors[channelId]?.repairPoint(_now());
+    for (var page = 0; after != null && page < afterSeqMaxPages; page++) {
+      final events = await fetchHistory(
+        NostrFilter(
+          kinds: kinds,
+          tags: {
+            '#h': [channelId],
+          },
+          limit: afterSeqPageLimit,
+          extensions: {'after_seq': after},
+        ),
+      );
+      if (!_isActiveConnection(generation)) return;
+      AfterSeqBounds? bounds;
+      final rows = <NostrEvent>[];
+      for (final event in events) {
+        final pageBounds = parseAfterSeqBounds(event);
+        if (pageBounds != null) {
+          bounds = pageBounds;
+        } else {
+          rows.add(event);
+        }
+      }
+      // A page without its bounds is not an order-number page.
+      if (bounds == null) return;
+      for (final row in rows) {
+        final sequence = bounds.sequences[row.id] ?? row.channelSequence;
+        _bufferForLiveSubscriptions(
+          sequence == null ? row : row.withChannelSequence(sequence),
+        );
+      }
+      _flushBufferedEventsNow();
+      if (bounds.lastSeq > after) _observeSequence(channelId, bounds.lastSeq);
+      if (!bounds.hasMore || bounds.lastSeq <= after) return;
+      after = bounds.lastSeq;
+    }
+  }
+
+  /// Kinds the live subscriptions covering [channelId] ask for.
+  Set<int> _liveKindsForChannel(String channelId) => {
+    for (final subscription in _liveSubscriptions.values)
+      if (subscription.filter.tags['#h']?.contains(channelId) ?? false)
+        ...subscription.filter.kinds,
+  };
+
+  void _bufferForLiveSubscriptions(NostrEvent event) {
+    for (final entry in _liveSubscriptions.entries) {
+      if (liveFilterMatches(entry.value.filter, event)) {
+        _eventBuffer.add(_BufferedEvent(entry.key, event));
+      }
+    }
   }
 
   void _handleDisconnected(int generation, Object? error) {
@@ -744,6 +961,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
         _handleClosed(data);
       case 'OK':
         _handleOk(data);
+      case 'KUZZ_RESYNC':
+        // The relay may have lost events for this socket.
+        if (_sequenceActive) {
+          unawaited(_repairSequencedChannels(_connectionGeneration));
+        }
     }
   }
 
@@ -751,7 +973,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     if (data.length < 3) return;
     final subId = data[1] as String;
     final eventJson = data[2] as Map<String, dynamic>;
-    final event = NostrEvent.fromJson(eventJson);
+    var event = NostrEvent.fromJson(eventJson);
+    final sequence = _sequenceActive ? frameChannelSequence(data, 3) : null;
+    if (sequence != null) event = event.withChannelSequence(sequence);
 
     // History subscriptions accumulate immediately.
     final historySub = _historySubscriptions[subId];
@@ -765,6 +989,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     final liveSub = _liveSubscriptions[subId];
     if (liveSub != null) {
       _resetClosedRetry(liveSub);
+      // Page bounds share kind 39006 with window bounds; never a live row.
+      if (isAfterSeqBounds(event)) return;
+      if (sequence != null) _observeSequence(event.channelId, sequence);
       // Track last seen timestamp for reconnect replay.
       if (liveSub.lastSeenCreatedAt == null ||
           event.createdAt > liveSub.lastSeenCreatedAt!) {
@@ -929,6 +1156,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     pending.timeout.cancel();
 
     if (accepted) {
+      final sequence = _sequenceActive ? frameChannelSequence(data, 4) : null;
+      if (sequence != null) _observeSequence(pending.channelId, sequence);
       // We don't have the full event here; create a minimal placeholder.
       // Command kinds (e.g. 41010, 30620, 46020) return "response:{...}" in
       // the OK message — preserve it in `content` so callers can parse it.
@@ -1093,6 +1322,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _cancelAllClosedRetries();
     _rateLimitGate.reset();
     _visibleChannelsByOwner.clear();
+    _seqCursors.clear();
+    _sequencedGeneration = null;
     _socketConnected = false;
     _cancelAllHistory(null);
     _rejectAllPending(null);
@@ -1111,5 +1342,5 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
 final relaySessionProvider =
     NotifierProvider<RelaySessionNotifier, SessionState>(
-      RelaySessionNotifier.new,
+      () => RelaySessionNotifier(probeSequenceSupport: true),
     );

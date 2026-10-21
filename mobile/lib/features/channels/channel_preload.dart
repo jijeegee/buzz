@@ -73,6 +73,8 @@ Map<String, List<NostrEvent>> splitChannelWindows(
   final windows = <String, List<NostrEvent>>{};
   var segment = <NostrEvent>[];
   for (final event in events) {
+    // An order-number page's bounds share the kind but close no window.
+    if (isAfterSeqBounds(event)) continue;
     segment.add(event);
     if (event.kind != EventKind.channelWindowBounds) continue;
     final channelId = wanted[event.getTagValue('h')?.toLowerCase()];

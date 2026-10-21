@@ -122,6 +122,27 @@ void main() {
       ]);
     });
 
+    test('order-number page bounds close no room window', () {
+      final pageBounds = _event(
+        'a-page',
+        EventKind.channelWindowBounds,
+        tags: [
+          ['d', 'a:after_seq:4'],
+          ['h', 'a'],
+        ],
+        content: jsonEncode({'order': 'seq', 'last_seq': 5}),
+      );
+      final windows = splitChannelWindows(
+        [pageBounds, ..._roomWindow('a')],
+        ['a'],
+      );
+      expect(windows['a']!.map((event) => event.id), [
+        'a-message',
+        'a-reaction',
+        'a-bounds',
+      ]);
+    });
+
     test('each thread window ends at its bounds overlay', () {
       const wanted = ThreadRepliesArgs(channelId: 'a', rootId: 'r1');
       final windows = splitThreadWindows(

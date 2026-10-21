@@ -150,7 +150,7 @@ List<NostrEvent> _sorted(Iterable<NostrEvent> events) {
   for (final event in events) {
     byId[event.id] = event;
   }
-  return byId.values.toList()..sort(compareThreadRepliesChronologically);
+  return sortThreadReplies(byId.values.toList());
 }
 
 ({bool hasOlder, ThreadWindowCursor? olderCursor}) _olderState(

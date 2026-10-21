@@ -260,9 +260,9 @@ extension _ThreadSummaryState on ChannelMessagesNotifier {
   void _queueOverflowSummary(String root, {bool countPending = false}) {
     if (!_hasVisibleThreadRows(root)) return;
     final ids = cachedThreadReplyIds(root)..removeAll(_localReplyRoots.keys);
-    final events =
-        _cachedThreadEvents.where((event) => ids.contains(event.id)).toList()
-          ..sort(compareThreadRepliesChronologically);
+    final events = sortThreadReplies(
+      _cachedThreadEvents.where((event) => ids.contains(event.id)).toList(),
+    );
     final previous = _baseThreadSummaries[root];
     final count = (previous?.descendantCount ?? 0) > ids.length
         ? previous!.descendantCount
