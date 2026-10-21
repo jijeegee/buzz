@@ -62,6 +62,7 @@ redis = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 sqlx = { workspace = true }
 reqwest = { workspace = true }
+tokio-tungstenite = { workspace = true }
 base64 = "0.22"
 kuzz-sdk = { workspace = true }
 kuzz-workflow = { workspace = true, features = ["reqwest"] }
