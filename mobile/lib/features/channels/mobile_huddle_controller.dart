@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/community/community_provider.dart';
 import '../../shared/huddle/huddle.dart';
+import '../../shared/relay/connect_url_provider.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_management_provider.dart';
 
@@ -497,6 +498,7 @@ final class MobileHuddleController extends Notifier<bool> {
       }
       return HuddleConnectionParameters(
         relayWebSocketUrl: config.wsUrl,
+        audioRelayUrl: regionSocketUrlFor(config, config.wsUrl),
         accessTokens: tokens,
         parentChannelId: parentChannelId,
         ephemeralChannelId: ephemeralChannelId,

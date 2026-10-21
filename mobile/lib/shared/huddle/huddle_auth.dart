@@ -10,6 +10,10 @@ import 'huddle_wire.dart';
 final class HuddleConnectionParameters {
   final String relayWebSocketUrl;
 
+  /// Where the audio socket connects (the account's home region); defaults
+  /// to [relayWebSocketUrl], which AUTH keeps signing for.
+  final String audioRelayUrl;
+
   /// Signing key for the legacy NIP-42 envelope; `null` on a token community.
   final String? nsec;
 
@@ -26,7 +30,8 @@ final class HuddleConnectionParameters {
     this.accessTokens,
     required this.parentChannelId,
     required this.ephemeralChannelId,
-  }) {
+    String? audioRelayUrl,
+  }) : audioRelayUrl = audioRelayUrl ?? relayWebSocketUrl {
     final relayUri = Uri.tryParse(relayWebSocketUrl);
     if (relayUri == null ||
         !relayUri.hasAuthority ||
@@ -55,10 +60,10 @@ final class HuddleConnectionParameters {
     }
   }
 
-  /// The endpoint is derived from the relay origin, but NIP-42's `relay` tag
-  /// must remain [relayWebSocketUrl], not this Huddle-specific URL.
+  /// The endpoint is derived from [audioRelayUrl]'s origin, but NIP-42's
+  /// `relay` tag must remain [relayWebSocketUrl], not this Huddle-specific URL.
   Uri get audioWebSocketUri {
-    final base = Uri.parse(relayWebSocketUrl);
+    final base = Uri.parse(audioRelayUrl);
     return base.replace(
       path: '/huddle/${Uri.encodeComponent(ephemeralChannelId)}/audio',
       query: null,

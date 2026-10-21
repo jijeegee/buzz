@@ -308,8 +308,9 @@ final class HuddleTransport implements HuddleTransportClient {
       ),
     );
 
-    // Only the built-in server's Huddle relay may be reached.
-    if (!allowConnection(
+    // Only the built-in server's Huddle relay, or the address it gave this
+    // account (its home region), may be reached.
+    if (!allowRelayConnection(
       'huddle connection',
       parameters.audioWebSocketUri.toString(),
     )) {

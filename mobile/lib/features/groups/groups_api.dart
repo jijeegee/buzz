@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/relay/connect_url_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../channels/channel.dart';
 
@@ -273,8 +274,10 @@ class GroupsApi {
     Map<String, Object?>? body,
   }) async {
     final base = Uri.parse(_config.baseUrl).resolve(path);
-    final uri = query == null ? base : base.replace(queryParameters: query);
-    final url = uri.toString();
+    final url = (query == null ? base : base.replace(queryParameters: query))
+        .toString();
+    // Sent to the account's home region; auth is signed for [url].
+    final uri = Uri.parse(regionUrlFor(_config, url));
     final bodyBytes = body == null
         ? const <int>[]
         : utf8.encode(jsonEncode(body));

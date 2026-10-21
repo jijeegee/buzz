@@ -214,6 +214,15 @@ String regionRequestUrl(String? principal, String url, String serviceBase) {
       .toString();
 }
 
+/// [regionRequestUrl] for a WebSocket [url]: the same path on the account's
+/// home region, keeping the socket scheme (`wss`, or `ws` on a dev relay).
+String regionSocketUrl(String? principal, String url, String serviceBase) {
+  final routed = regionRequestUrl(principal, url, serviceBase);
+  if (routed == url) return url;
+  final uri = Uri.parse(routed);
+  return uri.replace(scheme: uri.scheme == 'http' ? 'ws' : 'wss').toString();
+}
+
 /// [allowConnection] for the relay WebSocket, which may also reach an address
 /// the built-in server gave an account. Everything else (signing, sessions,
 /// push, one-shot sockets) stays on the built-in server.
