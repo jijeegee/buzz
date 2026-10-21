@@ -1,10 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { buildRelayAuthFrame } from "@/shared/api/relayAuthFrame";
-import {
-  getRelayConnectUrl,
-  getRelayWsUrl,
-  signRelayEvent,
-} from "@/shared/api/tauri";
+import { getRelayConnectUrl, getRelayWsUrl } from "@/shared/api/tauri";
+import { signRelayEvent } from "@/shared/api/tauri";
 import type { PresenceStatus, RelayEvent } from "@/shared/api/types";
 import {
   KIND_STREAM_MESSAGE,
@@ -568,12 +565,9 @@ export class RelayClient {
       if (!this.relayUrl) {
         this.relayUrl = await getRelayWsUrl();
       }
-      // Read per attempt: the server may give this account another address
-      // of itself (its home region) once it has signed in. AUTH stays signed
-      // for `relayUrl`, the service address.
-      const connectUrl = await getRelayConnectUrl();
       const wsId = await invoke<number>("plugin:websocket|connect", {
-        url: connectUrl,
+        // Per attempt: the account's home region. AUTH still signs `relayUrl`.
+        url: await getRelayConnectUrl(),
         onMessage: this.onMessageChannel,
         config: {},
       });

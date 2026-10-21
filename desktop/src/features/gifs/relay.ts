@@ -8,7 +8,7 @@ import {
   type RelayGifSearchInfo,
 } from "@/features/gifs/api";
 import { relayHttpFromWs } from "@/shared/api/inviteHelpers";
-import { signRelayEvent } from "@/shared/api/tauri";
+import { getRelayRequestUrl, signRelayEvent } from "@/shared/api/tauri";
 
 const KLIPY_CUSTOMER_ID_STORAGE_KEY_PREFIX = "kuzz:klipy-customer-id:v1:";
 const NIP98_KIND = 27235;
@@ -72,7 +72,7 @@ async function relayPost<T>(
 ): Promise<T> {
   const url = `${relayHttpFromWs(relayUrl).replace(/\/+$/, "")}${path}`;
   const body = JSON.stringify(payload);
-  const response = await fetch(url, {
+  const response = await fetch(await getRelayRequestUrl(url), {
     body,
     headers: {
       Authorization: await nip98PostHeader(url, body),

@@ -55,6 +55,19 @@ pub fn relay_ws_url_with_override(state: &AppState) -> String {
     workspace_relay_override(state).unwrap_or_else(relay_ws_url)
 }
 
+/// Where the active account's relay WebSockets connect: the address the
+/// server gave it (its home region), else [`relay_ws_url_with_override`].
+/// AUTH is still signed for [`relay_ws_url_with_override`].
+pub fn relay_connect_ws_url(state: &AppState) -> String {
+    let service = relay_ws_url_with_override(state);
+    // A workspace pointed at another relay (dev) keeps that relay.
+    if !server::same_endpoint(&service, &relay_ws_url()) {
+        return service;
+    }
+    let account = state.current_identity_pubkey().ok();
+    server::connect_ws_url(account.as_ref()).unwrap_or(service)
+}
+
 /// Returns the relay HTTP API base URL, checking the workspace override first.
 /// Precedence: workspace override > env vars > build-time vars > default.
 pub fn relay_api_base_url_with_override(state: &AppState) -> String {

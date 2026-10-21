@@ -536,16 +536,7 @@ fn remember_signed_in_profile(
     let access = Zeroizing::new(tokens.access.0.to_string());
     tauri::async_runtime::spawn(async move {
         match api::me(&client, &origin, &access).await {
-            Ok(me) => {
-                me.learn_connect_url();
-                super::account_profiles::learn(
-                    &data_dir,
-                    &account,
-                    me.display_name,
-                    me.avatar_url,
-                    me.email,
-                )
-            }
+            Ok(me) => super::account_profiles::learn_me(&data_dir, &account, me),
             Err(error) => eprintln!("kuzz-desktop: accounts: profile not fetched: {error}"),
         }
     });

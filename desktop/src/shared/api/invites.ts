@@ -2,6 +2,7 @@ import { ensureAllowedServer } from "@/features/communities/builtInServer";
 import { relayHttpFromWs } from "@/shared/api/inviteHelpers";
 import {
   getRelayHttpUrl,
+  getRelayRequestUrl,
   invokeTauri,
   signRelayEvent,
 } from "@/shared/api/tauri";
@@ -88,7 +89,7 @@ async function invitePost<T>(
   ensureAllowedServer(httpBase);
   const url = `${httpBase.replace(/\/+$/, "")}${path}`;
   const authorization = await nip98PostHeader(url, body);
-  const response = await fetch(url, {
+  const response = await fetch(await getRelayRequestUrl(url), {
     method: "POST",
     headers: {
       Authorization: authorization,

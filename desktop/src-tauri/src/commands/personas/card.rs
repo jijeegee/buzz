@@ -678,7 +678,7 @@ pub async fn mint_agent_card(
             let auth = is_same_origin(url, &relay_base)
                 .then(|| crate::commands::media::mint_media_get_auth(&state, &relay_base))
                 .flatten();
-            fetch_avatar(url, auth.as_deref()).await?
+            fetch_avatar(&state.region_request_url(url), auth.as_deref()).await?
         }
         _ => {
             return Err(

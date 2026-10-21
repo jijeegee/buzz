@@ -177,6 +177,15 @@ impl AppState {
         }
     }
 
+    /// Where a request to `url` for the current account is sent: its home
+    /// region for the built-in server, `url` itself otherwise.
+    pub(crate) fn region_request_url(&self, url: &str) -> String {
+        match self.current_identity_pubkey() {
+            Ok(account) => crate::relay::server::region_request_url(&account, url),
+            Err(_) => url.to_string(),
+        }
+    }
+
     /// `Some(reason)` when local-key signing must be refused for the current
     /// community because it is in (or entering) token mode.
     pub(crate) fn key_signing_blocked(&self) -> Option<String> {

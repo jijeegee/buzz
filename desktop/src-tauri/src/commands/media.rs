@@ -463,8 +463,10 @@ async fn do_upload(
     // The server-side window is also 60s in Strict mode, matching this value.
     let expiry_secs = 60u64;
     let base_url = relay_api_base_url_with_override(state);
-    let auth_header =
-        media_upload_auth_header(&state.user_credential()?, &sha256, expiry_secs, &base_url)?;
+    let credential = state.user_credential()?;
+    let auth_header = media_upload_auth_header(&credential, &sha256, expiry_secs, &base_url)?;
+    // Signed for the service address; sent to the account's region.
+    let send_base = crate::relay::server::region_request_url(&credential.public_key(), &base_url);
     let body = bytes::Bytes::from(body);
     if let Some((app, progress_id)) = progress.as_ref() {
         emit_media_upload_phase(app, Some(progress_id.as_str()), "uploading");
@@ -472,7 +474,7 @@ async fn do_upload(
     let mut resp = send_upload_attempt(
         state,
         UploadAttempt {
-            url: format!("{base_url}/upload"),
+            url: format!("{send_base}/upload"),
             auth_header: &auth_header,
             mime,
             sha256: &sha256,
@@ -486,7 +488,7 @@ async fn do_upload(
         resp = send_upload_attempt(
             state,
             UploadAttempt {
-                url: format!("{base_url}/media/upload"),
+                url: format!("{send_base}/media/upload"),
                 auth_header: &auth_header,
                 mime,
                 sha256: &sha256,

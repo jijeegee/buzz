@@ -102,7 +102,7 @@ pub async fn groups_request(
     let auth = build_nip98_auth_header(&method, &url, &body_bytes, &state)?;
     let mut request = state
         .http_client
-        .request(method, &url)
+        .request(method, state.region_request_url(&url))
         .header("Authorization", auth)
         .timeout(GROUPS_REQUEST_TIMEOUT);
     if body.is_some() {
