@@ -255,11 +255,16 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     final generation = _contextGeneration;
     final config = ref.read(relayConfigProvider);
     final url = Uri.parse(config.baseUrl).resolve('/query').toString();
+    // Sent to the account's home region when the server gave one; auth is
+    // signed for the service address [url].
+    final target = config.tokenAuth
+        ? regionRequestUrl(config.principalId, url, config.baseUrl)
+        : url;
     final bodyBytes = utf8.encode(jsonEncode(filters));
     // Reuse the session transport on success. A timeout rotates immediately
     // for new queries, then closes the retired client after its peers finish.
     Future<http.Response> post(String authorization) => _httpQueryClient.post(
-      Uri.parse(url),
+      Uri.parse(target),
       headers: {
         'Authorization': authorization,
         'Content-Type': 'application/json',

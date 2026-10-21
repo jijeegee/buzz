@@ -54,6 +54,28 @@ void main() {
     expect(allowRelayConnection('test', region), isFalse);
   });
 
+  test('requests to the service go to the remembered region', () {
+    const principal = 'cc';
+    const service = 'https://kuzz.example';
+    addTearDown(() => rememberConnectUrl(principal, null));
+    const query = '$service/query';
+    expect(regionRequestUrl(principal, query, service), query);
+
+    rememberConnectUrl(principal, 'wss://jp.kuzz.example');
+    expect(
+      regionRequestUrl(principal, query, service),
+      'https://jp.kuzz.example/query',
+    );
+    expect(
+      regionRequestUrl(principal, '$service/api/x?a=1', service),
+      'https://jp.kuzz.example/api/x?a=1',
+    );
+    expect(regionRequestUrl('dd', query, service), query);
+    expect(regionRequestUrl(null, query, service), query);
+    const elsewhere = 'https://elsewhere.example/query';
+    expect(regionRequestUrl(principal, elsewhere, service), elsewhere);
+  });
+
   test('/auth/me connect_url is read when sent', () {
     final profile = AccountProfile.fromJson({
       'principal_id': 'aa',
