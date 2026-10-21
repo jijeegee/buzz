@@ -305,22 +305,45 @@ pub enum IngestAuth {
         /// WebSocket connection id; `None` for an HTTP `Bearer` request.
         conn_id: Option<Uuid>,
     },
+    /// A write another region admitted and forwarded to this room's home
+    /// (global regions S4). The calling region's signed attestation names
+    /// the principal and how they logged in; see [`crate::region_forward`].
+    Forwarded {
+        /// The principal the entry region admitted.
+        pubkey: nostr::PublicKey,
+        /// Scopes their credential carries.
+        scopes: Vec<Scope>,
+        /// Channels their credential is limited to.
+        channel_ids: Option<Vec<Uuid>>,
+        /// The region that admitted them.
+        entry_region: String,
+        /// How they logged in there.
+        entry_auth: crate::region_link::EntryAuth,
+    },
 }
 
 impl IngestAuth {
     /// The authenticated public key.
     pub fn pubkey(&self) -> &nostr::PublicKey {
         match self {
-            Self::Nip42 { pubkey, .. } | Self::Http { pubkey, .. } | Self::Token { pubkey, .. } => {
-                pubkey
-            }
+            Self::Nip42 { pubkey, .. }
+            | Self::Http { pubkey, .. }
+            | Self::Token { pubkey, .. }
+            | Self::Forwarded { pubkey, .. } => pubkey,
         }
     }
 
     /// Whether the event was stamped by the server rather than signed by the
     /// client (token auth): verification checks the id, not the signature.
     pub fn is_server_stamped(&self) -> bool {
-        matches!(self, Self::Token { .. })
+        matches!(
+            self,
+            Self::Token { .. }
+                | Self::Forwarded {
+                    entry_auth: crate::region_link::EntryAuth::Token,
+                    ..
+                }
+        )
     }
 
     /// Pubkey used for principal-scoped accounting and policy lookups.
@@ -331,9 +354,10 @@ impl IngestAuth {
     /// Permission scopes for this auth context.
     pub fn scopes(&self) -> &[Scope] {
         match self {
-            Self::Nip42 { scopes, .. } | Self::Http { scopes, .. } | Self::Token { scopes, .. } => {
-                scopes
-            }
+            Self::Nip42 { scopes, .. }
+            | Self::Http { scopes, .. }
+            | Self::Token { scopes, .. }
+            | Self::Forwarded { scopes, .. } => scopes,
         }
     }
 
@@ -342,7 +366,7 @@ impl IngestAuth {
         match self {
             Self::Nip42 { conn_id, .. } => Some(*conn_id),
             Self::Token { conn_id, .. } => *conn_id,
-            Self::Http { .. } => None,
+            Self::Http { .. } | Self::Forwarded { .. } => None,
         }
     }
 
@@ -354,14 +378,26 @@ impl IngestAuth {
             Self::Nip42 {
                 channel_ids: Some(ids),
                 ..
+            }
+            | Self::Forwarded {
+                channel_ids: Some(ids),
+                ..
             } => Some(ids),
             _ => None,
         }
     }
 
     /// Whether this auth context is an HTTP request (not WebSocket).
+    /// A forwarded write counts as HTTP unless it came from a WebSocket
+    /// NIP-42 login; the WS-only kinds carry no room and are never forwarded.
     pub fn is_http(&self) -> bool {
-        matches!(self, Self::Http { .. } | Self::Token { conn_id: None, .. })
+        match self {
+            Self::Http { .. } | Self::Token { conn_id: None, .. } => true,
+            Self::Forwarded { entry_auth, .. } => {
+                *entry_auth != crate::region_link::EntryAuth::Nip42
+            }
+            Self::Nip42 { .. } | Self::Token { .. } => false,
+        }
     }
 }
 
@@ -2595,7 +2631,35 @@ pub(crate) async fn enforce_write_restriction(
 /// `return Err(...)` from having to emit explicitly. See
 /// `crates/kuzz-relay/src/conformance/mod.rs` and
 /// `docs/spec/MultiTenantRelay.tla`.
+///
+/// With the region link on (global regions S4), a write for a room another
+/// region serves is forwarded there ([`crate::region_forward`]) and its answer
+/// returned, instead of the S3 "wrong region" refusal.
 pub async fn ingest_event(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: Event,
+    auth: IngestAuth,
+) -> Result<IngestResult, IngestError> {
+    // The event is consumed by ingest; keep a copy to forward. Only when the
+    // link is on, i.e. in a multi-region deployment.
+    let forwardable = (state.config.region_link && !matches!(auth, IngestAuth::Forwarded { .. }))
+        .then(|| (event.clone(), auth.clone()));
+    match ingest_event_here(state, tenant, event, auth).await {
+        Err(IngestError::WrongRegion(home)) => match forwardable {
+            Some((event, auth)) => {
+                crate::region_forward::forward_write(state, tenant, &event, &auth, home).await
+            }
+            None => Err(IngestError::WrongRegion(home)),
+        },
+        result => result,
+    }
+}
+
+/// Ingest an event into this region's database only: a room another region
+/// serves is refused with [`IngestError::WrongRegion`]. Forwarded writes are
+/// ingested here, so they are never forwarded again.
+pub async fn ingest_event_here(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: Event,

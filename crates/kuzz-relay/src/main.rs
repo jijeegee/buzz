@@ -505,10 +505,20 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
             );
             None
         } else {
-            match db.ensure_configured_community_for_bootstrap(&host).await {
+            match db
+                .ensure_configured_community_for_bootstrap(&host, config.community_id)
+                .await
+            {
                 Ok(record) => {
                     info!(host = %record.host, community = %record.id, "Deployment community ensured");
                     Some(record.id)
+                }
+                Err(e) if config.community_id.is_some() => {
+                    // Serving under another id would split the community
+                    // between regions.
+                    return Err(anyhow::anyhow!(
+                        "Failed to ensure the deployment community with KUZZ_COMMUNITY_ID: {e}"
+                    ));
                 }
                 Err(e) => {
                     if config.require_relay_membership {

@@ -156,6 +156,7 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     // not a NIP-FI assertion; the routes exist only when the link is on.
     // Listed by exact path: each new link route is added here on purpose.
     "/internal/region/ping",
+    "/internal/region/events",
 ];
 
 /// Middleware: full offline assertion guard for NIP-FI protected paths.
@@ -411,6 +412,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         merged = merged.merge(
             Router::new()
                 .route("/internal/region/ping", post(crate::region_link::ping))
+                .route(
+                    crate::region_forward::EVENTS_PATH,
+                    post(crate::region_forward::events),
+                )
                 .layer(RequestBodyLimitLayer::new(1024 * 1024))
                 .with_state(state.clone()),
         );

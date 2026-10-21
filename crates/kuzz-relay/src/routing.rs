@@ -46,6 +46,9 @@ pub struct RemoteHome {
     pub connect_url: String,
     /// The room's epoch (bumped when it moves, S6).
     pub epoch: i32,
+    /// The room being routed, when the lookup was for one room. A forwarded
+    /// write names it with the epoch it trusted (S4).
+    pub room: Option<Uuid>,
 }
 
 impl RemoteHome {
@@ -86,6 +89,7 @@ pub fn route_for(local: &str, regions: &[RegionRecord], home: Option<&RoomHome>)
                 region: home.region.clone(),
                 connect_url,
                 epoch: home.epoch,
+                room: None,
             })
         }
         _ => RoomRoute::Here,
@@ -189,7 +193,13 @@ impl RoomRouter {
                 home
             }
         };
-        Ok(route_for(&self.local, &regions, home.as_ref()))
+        Ok(match route_for(&self.local, &regions, home.as_ref()) {
+            RoomRoute::Elsewhere(remote) => RoomRoute::Elsewhere(RemoteHome {
+                room: Some(channel_id),
+                ..remote
+            }),
+            RoomRoute::Here => RoomRoute::Here,
+        })
     }
 
     /// Split a multi-room read by the region that serves each room. With one
@@ -285,6 +295,7 @@ mod tests {
                 region: "jp".to_string(),
                 connect_url: "wss://jp.example".to_string(),
                 epoch: 2,
+                room: None,
             }
         );
         assert_eq!(
@@ -340,6 +351,7 @@ mod tests {
             region: "jp".to_string(),
             connect_url: "wss://jp.example".to_string(),
             epoch: 0,
+            room: None,
         };
         let (status, Json(body)) = remote.http_error();
         assert_eq!(status, StatusCode::MISDIRECTED_REQUEST);
@@ -399,6 +411,7 @@ mod tests {
         match crate::handlers::ingest::ensure_room_here(&state, &tenant, jp_room).await {
             Err(crate::handlers::ingest::IngestError::WrongRegion(home)) => {
                 assert_eq!(home.region, "jp");
+                assert_eq!(home.room, Some(jp_room));
                 assert!(home.ws_message().starts_with(WRONG_REGION_PREFIX));
             }
             other => panic!("expected wrong region, got {other:?}"),
