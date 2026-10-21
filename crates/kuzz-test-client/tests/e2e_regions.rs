@@ -153,28 +153,52 @@ async fn rooms_are_served_only_by_their_home_region() {
     assert_eq!(stored.len(), 1, "the forwarded write is stored in kr");
     assert_eq!(stored[0].content, "hi jp ws");
 
-    // Reads are not forwarded yet (S4-3): CLOSED naming kr.
-    let filter =
-        Filter::new().custom_tag(SingleLetterTag::lowercase(nostr::Alphabet::H), room.clone());
-    jp.subscribe("regions", vec![filter]).await.expect("req");
+    // Reads of the kr room through jp are answered by kr (S4-3): REQ,
+    // COUNT, and HTTP /query all see the messages written in both regions.
+    let h = SingleLetterTag::lowercase(nostr::Alphabet::H);
+    let in_kr_room = Filter::new()
+        .kind(Kind::Custom(9))
+        .custom_tag(h, room.clone());
+    jp.subscribe("regions", vec![in_kr_room.clone()])
+        .await
+        .expect("req");
+    let read = jp
+        .collect_until_eose("regions", Duration::from_secs(10))
+        .await
+        .expect("jp read of a kr room");
+    let mut texts: Vec<_> = read.iter().map(|event| event.content.as_str()).collect();
+    texts.sort_unstable();
+    assert_eq!(texts, ["hi jp", "hi jp ws", "hi kr"]);
+    jp.send_raw(&serde_json::json!(["COUNT", "regions-count", in_kr_room]))
+        .await
+        .expect("count");
     loop {
-        match jp.recv_event(Duration::from_secs(5)).await.expect("reply") {
-            RelayMessage::Closed {
+        match jp
+            .recv_event(Duration::from_secs(10))
+            .await
+            .expect("count reply")
+        {
+            RelayMessage::Count {
                 subscription_id,
-                message,
-            } if subscription_id == "regions" => {
-                assert!(
-                    message.starts_with("wrong-region: room lives in kr"),
-                    "{message}"
-                );
+                count,
+            } if subscription_id == "regions-count" => {
+                assert_eq!(count, 3);
                 break;
             }
-            RelayMessage::Event { .. } | RelayMessage::Eose { .. } => {
-                panic!("jp served a kr room")
-            }
+            RelayMessage::Closed { message, .. } => panic!("count refused: {message}"),
             _ => {}
         }
     }
+    let response = reqwest::Client::new()
+        .post(format!("{}/query", http(&jp_url())))
+        .header("X-Pubkey", keys.public_key().to_hex())
+        .json(&serde_json::json!([{"kinds": [9], "#h": [room]}]))
+        .send()
+        .await
+        .expect("query");
+    assert_eq!(response.status().as_u16(), 200);
+    let events: Value = response.json().await.expect("query body");
+    assert_eq!(events.as_array().map(Vec::len), Some(3), "{events}");
 
     // A room created in jp is jp's own.
     let jp_room = uuid::Uuid::new_v4().to_string();
@@ -189,6 +213,33 @@ async fn rooms_are_served_only_by_their_home_region() {
         .await
         .expect("ok");
     assert!(ok.accepted, "{}", ok.message);
+
+    // A read spanning both regions is not merged yet: CLOSED naming kr.
+    let both = Filter::new()
+        .custom_tag(SingleLetterTag::lowercase(nostr::Alphabet::H), room.clone())
+        .custom_tag(
+            SingleLetterTag::lowercase(nostr::Alphabet::H),
+            jp_room.clone(),
+        );
+    jp.subscribe("mixed", vec![both]).await.expect("req");
+    loop {
+        match jp.recv_event(Duration::from_secs(5)).await.expect("reply") {
+            RelayMessage::Closed {
+                subscription_id,
+                message,
+            } if subscription_id == "mixed" => {
+                assert!(
+                    message.starts_with("wrong-region: room lives in kr"),
+                    "{message}"
+                );
+                break;
+            }
+            RelayMessage::Event { .. } | RelayMessage::Eose { .. } => {
+                panic!("jp served a mixed read")
+            }
+            _ => {}
+        }
+    }
 }
 
 /// A region link call from jp to kr: signed with jp's link key, for kr's

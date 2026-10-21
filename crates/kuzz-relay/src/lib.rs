@@ -69,6 +69,8 @@ pub mod readiness;
 pub mod region_forward;
 /// Calls between relays of different regions (entry attestations).
 pub mod region_link;
+/// Reads of rooms another region serves.
+pub mod region_read;
 /// Axum router construction.
 pub mod router;
 /// Room routing between regions: which region serves a room.

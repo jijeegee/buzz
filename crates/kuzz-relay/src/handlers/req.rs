@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use tracing::{debug, warn};
 
+use hex;
 use kuzz_core::filter::filters_match;
 use kuzz_core::kind::{
     is_unshared_gated_event, AUTHOR_ONLY_KINDS, KIND_AGENT_ENGRAM, KIND_HUDDLE_LIVENESS,
@@ -13,7 +14,6 @@ use kuzz_core::kind::{
 use kuzz_core::tenant::TenantContext;
 use kuzz_db::EventQuery;
 use kuzz_pubsub::EventTopic;
-use hex;
 use nostr::Filter;
 
 use kuzz_auth::Scope;
@@ -56,6 +56,125 @@ pub async fn handle_req(
     state: Arc<AppState>,
 ) {
     handle_req_paged(sub_id, filters, before_ids, Vec::new(), conn, state).await;
+}
+
+/// Answer a REQ that names only rooms of one other region from that region
+/// (stored events, then `EOSE`; live events follow with S4-4). Returns
+/// whether the REQ was answered.
+#[allow(clippy::too_many_arguments)]
+async fn read_remote_rooms(
+    sub_id: &str,
+    filters: &[Filter],
+    before_ids: &[Option<Vec<u8>>],
+    after_seqs: &[Option<i64>],
+    requested: &[uuid::Uuid],
+    token_channel_ids: Option<&[uuid::Uuid]>,
+    conn: &ConnectionState,
+    state: &AppState,
+) -> bool {
+    let region =
+        match crate::region_read::single_remote_home(state, conn.tenant.community(), requested)
+            .await
+        {
+            Ok(Some(region)) => region,
+            Ok(None) => return false,
+            Err(e) => {
+                warn!(conn_id = %conn.conn_id, "Room region lookup failed: {e}");
+                conn.send(RelayMessage::closed(sub_id, "error: database error"));
+                return true;
+            }
+        };
+    let (pubkey, scopes) = match conn.auth_state_snapshot() {
+        AuthState::Authenticated(ctx) => (ctx.pubkey, ctx.scopes.clone()),
+        _ => return false,
+    };
+    if let Some(allowed) = token_channel_ids {
+        if requested.iter().any(|channel| !allowed.contains(channel)) {
+            conn.send(RelayMessage::closed(
+                sub_id,
+                "restricted: channel not allowed for this token",
+            ));
+            return true;
+        }
+    }
+    let raw = filters
+        .iter()
+        .enumerate()
+        .map(|(idx, filter)| {
+            crate::region_read::raw_filter(
+                filter,
+                before_ids.get(idx).and_then(|id| id.as_deref()),
+                after_seqs.get(idx).copied().flatten(),
+            )
+        })
+        .collect();
+    let reader = crate::region_read::reader(
+        &pubkey,
+        crate::region_link::EntryAuth::Nip42,
+        &scopes,
+        token_channel_ids.map(<[uuid::Uuid]>::to_vec),
+    );
+    // Same NIP-FI seam as a local REQ: held through delivery and EOSE.
+    let _remote_permit = match conn.nip_fi_gate.acquire_effect().await {
+        Ok(permit) => permit,
+        Err(crate::nip_fi_gate::SessionExpired) => {
+            conn.send(RelayMessage::closed(
+                sub_id,
+                "restricted: authorization denied",
+            ));
+            return true;
+        }
+    };
+    // Claim the id like any REQ: an older subscription with it is replaced,
+    // and a CLOSE or newer REQ during the call supersedes this one.
+    let Some(owner) = claim_search_subscription(sub_id, conn, state).await else {
+        return true;
+    };
+    let answer = crate::region_read::read_at_home(
+        state,
+        &conn.tenant,
+        &region,
+        crate::region_read::ReadMode::Query,
+        raw,
+        reader,
+    )
+    .await;
+    let events = match answer {
+        Ok(serde_json::Value::Array(events)) => events,
+        Ok(_) => {
+            super::close::close_if_owner(
+                sub_id,
+                owner,
+                Some(crate::region_read::UNREACHABLE),
+                conn,
+                state,
+            )
+            .await;
+            return true;
+        }
+        Err(error) => {
+            let reason = crate::region_read::closed_message(&error);
+            super::close::close_if_owner(sub_id, owner, Some(&reason), conn, state).await;
+            return true;
+        }
+    };
+    // Delivered under the lifecycle lock, only while this REQ still owns the
+    // id. The claim stays: live events of the room join it with S4-4.
+    let subs = conn.subscriptions.lock().await;
+    if subs.get(sub_id) != Some(&owner) {
+        return true;
+    }
+    for value in events {
+        match serde_json::from_value::<nostr::Event>(value) {
+            Ok(event) => {
+                conn.send(RelayMessage::event(sub_id, &event));
+            }
+            Err(e) => warn!(conn_id = %conn.conn_id, "Skipped a malformed remote event: {e}"),
+        }
+    }
+    conn.send(RelayMessage::eose(sub_id));
+    drop(subs);
+    true
 }
 
 /// [`handle_req`] with per-filter `after_seq` order-number cursors: such a
@@ -119,7 +238,24 @@ pub async fn handle_req_paged(
         }
     };
 
-    // Global regions (S3): rooms of another region are read there.
+    // Global regions (S4-3): rooms of one other region are read there.
+    if let Some(requested) = requested_channel_ids.as_ref() {
+        if read_remote_rooms(
+            &sub_id,
+            &filters,
+            &before_ids,
+            &after_seqs,
+            requested,
+            token_channel_ids.as_deref(),
+            &conn,
+            &state,
+        )
+        .await
+        {
+            return;
+        }
+    }
+    // Global regions (S3): otherwise rooms of another region are read there.
     if let Some(requested) = requested_channel_ids.as_ref() {
         match state
             .first_room_elsewhere(conn.tenant.community(), requested.iter().copied())
