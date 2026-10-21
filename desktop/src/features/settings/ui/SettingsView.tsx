@@ -81,6 +81,7 @@ export const settingsNavGroups: Array<{
     label: "Settings",
     sections: [
       "account",
+      "devices",
       "notifications",
       "appearance",
       "privacy",

@@ -19,8 +19,19 @@ import '../../shared/widgets/modal_presentation.dart';
 /// Signed-in devices and account security for a token relay: remote
 /// sign-out, sign out everywhere else, bot token revocation and account
 /// deletion.
+/// Which half of the page to show: the signed-in devices (Settings ›
+/// Devices) or the account's own actions (Settings › Account › Security).
+enum DevicesPagePart { devices, account }
+
 class DevicesPage extends HookConsumerWidget {
-  const DevicesPage({super.key, required this.origin, this.botTokens = true});
+  const DevicesPage({
+    super.key,
+    required this.origin,
+    this.botTokens = true,
+    this.part = DevicesPagePart.devices,
+  });
+
+  final DevicesPagePart part;
 
   /// Canonical origin of the token relay.
   final String origin;
@@ -176,8 +187,9 @@ class DevicesPage extends HookConsumerWidget {
     }
 
     final list = devices.value;
+    final showDevices = part == DevicesPagePart.devices;
     return Scaffold(
-      appBar: AppBar(title: const Text('Devices & security')),
+      appBar: AppBar(title: Text(showDevices ? 'Devices' : 'Security')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: Grid.xs),
@@ -230,76 +242,81 @@ class DevicesPage extends HookConsumerWidget {
                   ),
                 ),
               ),
-            if (list != null)
-              AppListCard(
-                label: 'Signed-in devices',
-                children: [
-                  for (final device in list)
-                    _DeviceRow(
-                      device: device,
-                      onRename: busy.value
-                          ? null
-                          : () => unawaited(renameDevice(device)),
-                      onChooseRobot: busy.value
-                          ? null
-                          : () => unawaited(chooseRobot(device)),
-                      onSignOut: busy.value || device.current
-                          ? null
-                          : () => unawaited(signOutDevice(device)),
-                    ),
-                ],
-              )
-            else if (devices.hasError)
-              Padding(
-                padding: const EdgeInsets.all(Grid.sm),
-                child: Column(
+            if (showDevices) ...[
+              if (list != null)
+                AppListCard(
+                  label: 'Signed-in devices',
                   children: [
-                    Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        'Couldn’t load devices: ${devices.error}',
-                        textAlign: TextAlign.center,
+                    for (final device in list)
+                      _DeviceRow(
+                        device: device,
+                        onRename: busy.value
+                            ? null
+                            : () => unawaited(renameDevice(device)),
+                        onChooseRobot: busy.value
+                            ? null
+                            : () => unawaited(chooseRobot(device)),
+                        onSignOut: busy.value || device.current
+                            ? null
+                            : () => unawaited(signOutDevice(device)),
                       ),
-                    ),
-                    const SizedBox(height: Grid.xs),
-                    FilledButton(
-                      key: const Key('devices-load-retry'),
-                      onPressed: () =>
-                          ref.invalidate(accountDevicesProvider(origin)),
-                      child: const Text('Try again'),
-                    ),
                   ],
-                ),
-              )
-            else
-              const Padding(
-                padding: EdgeInsets.all(Grid.sm),
-                child: Center(
-                  child: KuzzLoadingIndicator(
-                    size: 32,
-                    semanticLabel: 'Loading devices',
+                )
+              else if (devices.hasError)
+                Padding(
+                  padding: const EdgeInsets.all(Grid.sm),
+                  child: Column(
+                    children: [
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          'Couldn’t load devices: ${devices.error}',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: Grid.xs),
+                      FilledButton(
+                        key: const Key('devices-load-retry'),
+                        onPressed: () =>
+                            ref.invalidate(accountDevicesProvider(origin)),
+                        child: const Text('Try again'),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.all(Grid.sm),
+                  child: Center(
+                    child: KuzzLoadingIndicator(
+                      size: 32,
+                      semanticLabel: 'Loading devices',
+                    ),
                   ),
                 ),
+              AppListCard(
+                children: [
+                  AppListRow(
+                    key: const Key('devices-sign-out-others'),
+                    icon: LucideIcons.monitorSmartphone,
+                    title: 'Sign out all other devices',
+                    onTap: busy.value ? null : () => unawaited(signOutOthers()),
+                  ),
+                ],
               ),
-            AppListCard(
-              label: 'Security',
-              children: [
-                AppListRow(
-                  key: const Key('devices-sign-out-others'),
-                  icon: LucideIcons.monitorSmartphone,
-                  title: 'Sign out all other devices',
-                  onTap: busy.value ? null : () => unawaited(signOutOthers()),
-                ),
-                if (botTokens)
+            ],
+            if (!showDevices && botTokens)
+              AppListCard(
+                children: [
                   AppListRow(
                     key: const Key('devices-revoke-bots'),
                     icon: LucideIcons.bot,
                     title: 'Revoke all bot tokens',
                     onTap: busy.value ? null : () => unawaited(revokeBots()),
                   ),
-              ],
-            ),
-            if (!accountDeleted.value)
+                ],
+              ),
+            if (!showDevices && !accountDeleted.value)
               AppListCard(
                 children: [
                   ExpansionTile(
