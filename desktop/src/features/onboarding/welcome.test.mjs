@@ -152,6 +152,32 @@ test("ensureWelcomeChannel clears ttl on an existing ephemeral Welcome channel",
   ]);
 });
 
+test("ensureWelcomeChannel keeps member lists when updating Welcome metadata", async () => {
+  const existingChannel = makeChannel({
+    description: "A private channel for getting oriented in this community.",
+    id: "existing-welcome",
+    participants: ["Me"],
+    participantPubkeys: ["current-user"],
+  });
+
+  const result = await ensureWelcomeChannel({
+    getChannels: async () => [existingChannel],
+    // Channel detail from the relay carries no member or participant lists.
+    updateChannel: async (input) => ({
+      ...makeChannel({ id: input.channelId, description: input.description }),
+      memberPubkeys: [],
+      participants: undefined,
+      participantPubkeys: undefined,
+    }),
+    createChannel: async () => makeChannel({ id: "created-welcome" }),
+  });
+
+  assert.equal(result.description, WELCOME_CHANNEL_DESCRIPTION);
+  assert.deepEqual(result.memberPubkeys, ["current-user"]);
+  assert.deepEqual(result.participants, ["Me"]);
+  assert.deepEqual(result.participantPubkeys, ["current-user"]);
+});
+
 test("ensureWelcomeChannel reuses an existing private solo-member Welcome channel", async () => {
   const existingChannel = makeChannel({ id: "existing-welcome" });
   let createCalls = 0;
