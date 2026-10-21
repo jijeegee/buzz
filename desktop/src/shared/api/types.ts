@@ -199,6 +199,8 @@ export type RelayEvent = {
   content: string;
   sig: string;
   pending?: boolean;
+  /** Local-only: the channel order number a `kuzz-seq` relay gave this event. */
+  seq?: number;
 };
 
 export type SendChannelMessageResult = {

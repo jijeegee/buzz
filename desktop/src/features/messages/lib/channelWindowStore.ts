@@ -1,3 +1,4 @@
+import { orderBySeqWithinTime } from "@/shared/api/relaySeqCursor";
 import type { RelayEvent } from "@/shared/api/types";
 
 export type ChannelWindowCursor = { createdAt: number; eventId: string };
@@ -271,8 +272,10 @@ export function flattenChannelWindowEvents(store: ChannelWindowStore) {
   }
   for (const event of store.liveOverlay) byId.set(event.id, event);
   for (const event of store.liveAux) byId.set(event.id, event);
-  return [...byId.values()].sort((left, right) =>
-    compareRelayOrder(right, left),
+  // Order numbers from a kuzz-seq relay win over sender clocks among the
+  // events that carry them.
+  return orderBySeqWithinTime(
+    [...byId.values()].sort((left, right) => compareRelayOrder(right, left)),
   );
 }
 

@@ -8,7 +8,16 @@ import {
   markReconnectRepairDone,
   shouldDispatchSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
-import type { ChannelReconnectRepairRequest } from "@/shared/api/channelReconnectRepair";
+import type {
+  ChannelReconnectRepairRequest,
+  ChannelSeqRepairRequest,
+} from "@/shared/api/channelReconnectRepair";
+import {
+  AFTER_SEQ_MAX_PAGES,
+  AFTER_SEQ_PAGE_LIMIT,
+  afterSeqBounds,
+  type SeqCursors,
+} from "@/shared/api/relaySeqCursor";
 import {
   isRateLimited,
   waitForRateLimit,
@@ -101,13 +110,97 @@ export function buildReconnectReplayFilter(
   return replayFilter;
 }
 
-export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
+function isChannelEventFilter(filter: RelaySubscriptionFilter) {
   return (
-    filter.limit > 0 &&
     Array.isArray(filter["#h"]) &&
     filter["#h"].length === 1 &&
     CHANNEL_EVENT_KINDS.every((kind) => filter.kinds.includes(kind))
   );
+}
+
+export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
+  return filter.limit > 0 && isChannelEventFilter(filter);
+}
+
+/** The live REQ of an `after_seq`-repaired channel: no time bound, no history. */
+export function buildLiveOnlyFilter(
+  filter: RelaySubscriptionFilter,
+): RelaySubscriptionFilter {
+  const { since: _since, ...rest } = filter;
+  return { ...rest, limit: 0 };
+}
+
+/** Order-number repair for a connection to a `kuzz-seq` relay. */
+export type SeqReplay = {
+  cursors: SeqCursors;
+  requestSeqRepair: (request: ChannelSeqRepairRequest) => Promise<RelayEvent[]>;
+  now?: () => number;
+};
+
+/**
+ * Page one channel's events after `afterSeq` and hand each to every live
+ * subscription given. Returns `false` when the pass aborted because the
+ * connection went stale. Stops after {@link AFTER_SEQ_MAX_PAGES} pages with a
+ * pin, so the next repair starts no later than where this one stopped.
+ */
+export async function replaySeqHistoryPages({
+  subscriptions,
+  channelId,
+  afterSeq,
+  cursors,
+  isActive,
+  requestSeqRepair,
+  now = Date.now,
+}: {
+  subscriptions: () => Extract<RelaySubscription, { mode: "live" }>[];
+  channelId: string;
+  afterSeq: number;
+  cursors: SeqCursors;
+  isActive: () => boolean;
+  requestSeqRepair: SeqReplay["requestSeqRepair"];
+  now?: () => number;
+}): Promise<boolean> {
+  let after = afterSeq;
+  for (let page = 0; page < AFTER_SEQ_MAX_PAGES; page++) {
+    if (!isActive()) return false;
+    const events = await requestSeqRepair({
+      channelId,
+      afterSeq: after,
+      limit: AFTER_SEQ_PAGE_LIMIT,
+    });
+    if (!isActive()) return false;
+
+    const boundsEvent = events.find(
+      (event) => afterSeqBounds(event) !== undefined,
+    );
+    const bounds = boundsEvent ? afterSeqBounds(boundsEvent) : undefined;
+    if (!bounds) throw new Error("after_seq page has no bounds event");
+    const targets = subscriptions();
+    for (const event of events) {
+      if (event === boundsEvent) continue;
+      const seq = bounds.sequences.get(event.id);
+      if (seq !== undefined) {
+        event.seq = seq;
+        cursors.observe(channelId, seq, now());
+      }
+      for (const subscription of targets) {
+        if (shouldDispatchSubscriptionEvent(subscription, event)) {
+          subscription.onEvent(event);
+        }
+      }
+    }
+    cursors.observe(channelId, bounds.lastSeq, now());
+    if (!bounds.hasMore) {
+      cursors.get(channelId)?.clearPin();
+      return true;
+    }
+    if (bounds.lastSeq <= after) {
+      throw new Error("after_seq repair cursor did not advance");
+    }
+    after = bounds.lastSeq;
+    cursors.get(channelId)?.movePin(after);
+  }
+  return true;
 }
 
 /**
@@ -190,6 +283,9 @@ export async function replayLiveSubscriptions({
   setTimeoutFn = (fn: () => void, ms: number) =>
     window.setTimeout(fn, ms) as unknown as number,
   isActive = () => true,
+  seq,
+  resendLive = true,
+  onlySubIds,
 }: {
   subscriptions: Map<string, RelaySubscription>;
   sendRaw: (payload: unknown[]) => Promise<void>;
@@ -212,6 +308,15 @@ export async function replayLiveSubscriptions({
    * must not double-send REQs on the live socket.
    */
   isActive?: () => boolean;
+  /** Present when this connection is opted in to `kuzz-seq`. */
+  seq?: SeqReplay;
+  /**
+   * False for a repair on a socket whose live REQs are still open (a
+   * `KUZZ_RESYNC` signal or a channel's first subscription): no REQ is sent.
+   */
+  resendLive?: boolean;
+  /** Limit the pass to these subscriptions. */
+  onlySubIds?: Set<string>;
 }) {
   // If the relay has signalled back-pressure, wait for the gate to clear
   // before blasting a full set of REQs that would immediately be rate-limited.
@@ -221,18 +326,28 @@ export async function replayLiveSubscriptions({
   // gate — abort silently to avoid double-sending every REQ on the live socket.
   if (!isActive()) return;
 
+  const seqNow = seq?.now ?? Date.now;
   const replayRequests = Array.from(subscriptions.entries())
     .filter(
       (
         entry,
       ): entry is [string, Extract<RelaySubscription, { mode: "live" }>] =>
-        entry[1].mode === "live",
+        entry[1].mode === "live" &&
+        (onlySubIds === undefined || onlySubIds.has(entry[0])),
     )
     .map(([subId, subscription]) => {
       const channelId = subscription.filter["#h"]?.[0];
       const shouldPageReplay =
         channelId !== undefined &&
         shouldPageReconnectReplay(subscription.filter);
+      // A kuzz-seq relay repairs by order number from a point this session
+      // already saw for the channel; without one the time path below runs.
+      const afterSeq =
+        seq !== undefined &&
+        channelId !== undefined &&
+        isChannelEventFilter(subscription.filter)
+          ? seq.cursors.replayPoint(channelId, seqNow())
+          : undefined;
       const cursorSince =
         subscription.lastSeenCreatedAt === undefined
           ? undefined
@@ -258,15 +373,26 @@ export async function replayLiveSubscriptions({
         replayFloor === undefined
           ? undefined
           : Math.max(replayFloor, subscription.filter.since ?? 0);
-      const willRepair = shouldPageReplay && replaySince !== undefined;
-      if (willRepair) {
+      const willSeqRepair = afterSeq !== undefined;
+      const willRepair =
+        !willSeqRepair &&
+        shouldPageReplay &&
+        replaySince !== undefined &&
+        // A repair on open REQs is order-number only; the time path pages
+        // what the restored REQ cannot replay.
+        resendLive;
+      if (willSeqRepair || willRepair) {
         // Install before the restored live REQ: a live frame may beat page one.
-        subscription.reconnectReplay = {
-          generation,
-          seenEventIds: new Set(),
-          liveEose: false,
-          repairDone: false,
-        };
+        // Without a new REQ no EOSE comes, so the live half is already done.
+        subscription.reconnectReplay =
+          !resendLive && subscription.reconnectReplay?.generation === generation
+            ? subscription.reconnectReplay
+            : {
+                generation,
+                seenEventIds: new Set(),
+                liveEose: !resendLive,
+                repairDone: false,
+              };
       }
 
       return {
@@ -274,6 +400,7 @@ export async function replayLiveSubscriptions({
         subscription,
         channelId,
         replaySince,
+        afterSeq,
         shouldPageReplay: willRepair,
       };
     });
@@ -295,7 +422,11 @@ export async function replayLiveSubscriptions({
 
   // Send live REQs in capped batches with inter-batch delays to avoid
   // triggering per-pubkey admission control on degraded/recovering connections.
-  for (let i = 0; i < replayRequests.length; i += replayBatchSize) {
+  for (
+    let i = 0;
+    resendLive && i < replayRequests.length;
+    i += replayBatchSize
+  ) {
     // Re-check the gate before every batch: a previous batch may have triggered
     // admission control and armed the gate mid-replay. Wait for it to clear,
     // then verify the connection is still current — a newer connection may have
@@ -305,7 +436,13 @@ export async function replayLiveSubscriptions({
     const batch = replayRequests.slice(i, i + replayBatchSize);
     await Promise.all(
       batch.map(
-        async ({ subId, subscription, replaySince, shouldPageReplay }) => {
+        async ({
+          subId,
+          subscription,
+          replaySince,
+          afterSeq,
+          shouldPageReplay,
+        }) => {
           // The subscription map may change while replay is paused behind the
           // gate or an inter-batch delay. Never resurrect a disposed entry (or
           // overwrite its replacement) with a REQ from this stale snapshot.
@@ -313,9 +450,11 @@ export async function replayLiveSubscriptions({
           await sendRaw([
             "REQ",
             subId,
-            shouldPageReplay
-              ? subscription.filter
-              : buildReconnectReplayFilter(subscription.filter, replaySince),
+            afterSeq !== undefined
+              ? buildLiveOnlyFilter(subscription.filter)
+              : shouldPageReplay
+                ? subscription.filter
+                : buildReconnectReplayFilter(subscription.filter, replaySince),
           ]);
           // Disposal can race the asynchronous websocket invoke after the
           // identity check. If this exact entry was deleted while REQ was in
@@ -404,6 +543,105 @@ export async function replayLiveSubscriptions({
           // and re-check that this replay's connection is still current.
           if (isRateLimited()) await waitForRateLimit();
           if (subscriptions.get(subId) !== subscription || !isActive()) return;
+        }
+      }
+    },
+  );
+
+  if (seq) {
+    await replaySeqChannels({
+      requests: replayRequests,
+      subscriptions,
+      seq,
+      now: seqNow,
+      generation,
+      pageReplayConcurrency,
+      isActive,
+    });
+  }
+}
+
+/** One order-number pass per channel feeds every live subscription on it. */
+async function replaySeqChannels({
+  requests,
+  subscriptions,
+  seq,
+  now,
+  generation,
+  pageReplayConcurrency,
+  isActive,
+}: {
+  requests: {
+    subId: string;
+    subscription: Extract<RelaySubscription, { mode: "live" }>;
+    channelId: string | undefined;
+    afterSeq: number | undefined;
+  }[];
+  subscriptions: Map<string, RelaySubscription>;
+  seq: SeqReplay;
+  now: () => number;
+  generation: number;
+  pageReplayConcurrency: number;
+  isActive: () => boolean;
+}) {
+  type Entry = (typeof requests)[number];
+  const byChannel = new Map<string, { afterSeq: number; entries: Entry[] }>();
+  for (const request of requests) {
+    if (request.afterSeq === undefined || request.channelId === undefined)
+      continue;
+    const group = byChannel.get(request.channelId);
+    if (group) {
+      group.afterSeq = Math.min(group.afterSeq, request.afterSeq);
+      group.entries.push(request);
+    } else {
+      byChannel.set(request.channelId, {
+        afterSeq: request.afterSeq,
+        entries: [request],
+      });
+    }
+  }
+  await runWithConcurrency(
+    [...byChannel.entries()],
+    pageReplayConcurrency,
+    async ([channelId, { afterSeq, entries }]) => {
+      const current = () =>
+        entries
+          .filter(
+            ({ subId, subscription }) =>
+              subscriptions.get(subId) === subscription,
+          )
+          .map(({ subscription }) => subscription);
+      const markDone = () => {
+        for (const { subscription } of entries)
+          markReconnectRepairDone(subscription, generation);
+      };
+      // Pin the start: live numbers keep arriving during a failed pass and
+      // must not move the next replay point past the unresolved window.
+      seq.cursors.get(channelId)?.pinAt(afterSeq);
+      for (let attempt = 1; attempt <= PAGE_REPLAY_MAX_ATTEMPTS; attempt++) {
+        try {
+          const completed = await replaySeqHistoryPages({
+            subscriptions: current,
+            channelId,
+            afterSeq: seq.cursors.replayPoint(channelId, now()) ?? afterSeq,
+            cursors: seq.cursors,
+            isActive: () => isActive() && current().length > 0,
+            requestSeqRepair: seq.requestSeqRepair,
+            now,
+          });
+          if (completed) markDone();
+          return;
+        } catch (error) {
+          console.warn(
+            `[reconnect replay] order-number repair attempt ${attempt}/${PAGE_REPLAY_MAX_ATTEMPTS} failed for ${channelId}:`,
+            error,
+          );
+          if (attempt === PAGE_REPLAY_MAX_ATTEMPTS) {
+            markDone();
+            return;
+          }
+          if (isRateLimited()) await waitForRateLimit();
+          if (current().length === 0 || !isActive()) return;
         }
       }
     },
