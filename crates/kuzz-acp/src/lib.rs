@@ -2708,9 +2708,46 @@ mod inactivity_tests {
     }
 }
 
+/// Whether a completed turn restarts the idle pool sleep interval. A channel
+/// turn longer than the interval otherwise lets the pool sleep the moment it
+/// ends, killing background work the agent just started (upstream block/buzz
+/// #8149). Heartbeats do not keep the pool awake.
+fn completion_renews_idle_interval(source: &PromptSource) -> bool {
+    matches!(source, PromptSource::Channel(_))
+}
+
 #[cfg(test)]
 mod idle_pool_sleep_tests {
     use super::*;
+
+    /// A channel turn longer than the bound gets a full bound after it
+    /// completes; a heartbeat completion does not renew it.
+    #[tokio::test(start_paused = true)]
+    async fn completed_channel_turn_gets_a_full_idle_interval() {
+        let bound = Duration::from_secs(60);
+        let dispatched = tokio::time::Instant::now();
+        tokio::time::advance(bound * 2).await;
+        let completed_at = tokio::time::Instant::now();
+        let due = |last: tokio::time::Instant, now: tokio::time::Instant| {
+            idle_pool_sleep_due(true, last, now, bound, false, false, false, false)
+        };
+        assert!(due(dispatched, completed_at), "precondition");
+
+        let heartbeat = PromptSource::Heartbeat;
+        assert!(!completion_renews_idle_interval(&heartbeat));
+
+        let channel = PromptSource::Channel(scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        });
+        assert!(completion_renews_idle_interval(&channel));
+        let last_activity = completed_at;
+        assert!(!due(last_activity, completed_at));
+        assert!(!due(
+            last_activity,
+            completed_at + bound - Duration::from_millis(1)
+        ));
+        assert!(due(last_activity, completed_at + bound));
+    }
 
     // The all-clear baseline: pool ready, bound elapsed, nothing busy or
     // queued. Every negative case below flips exactly one gate off this.
@@ -4390,6 +4427,9 @@ async fn run_harness(
                 // same channel must keep its indicator.
                 if let Some(scope) = result.source.scope() {
                     typing_channels.remove(scope);
+                }
+                if completion_renews_idle_interval(&result.source) {
+                    last_activity = tokio::time::Instant::now();
                 }
                 if handle_prompt_result(
                     &mut pool,
