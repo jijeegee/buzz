@@ -482,6 +482,9 @@ fn preserve_outgoing(
     outgoing: &Keys,
 ) -> Result<(), String> {
     let pubkey = outgoing.public_key();
+    if !registry.contains_pubkey(&pubkey) && is_placeholder(secrets, &pubkey)? {
+        return Ok(());
+    }
     ensure_owners_recorded(data_dir, registry, &pubkey);
     let marker = secrets.load("identity.bootstrap")?;
     if is_unused_bootstrap_key(
@@ -489,8 +492,7 @@ fn preserve_outgoing(
         &pubkey,
         registry.accounts.len(),
         local_agent_count(data_dir),
-    ) || (!registry.contains_pubkey(&pubkey) && is_placeholder(secrets, &pubkey)?)
-    {
+    ) {
         return Ok(());
     }
     if !registry.contains_pubkey(&pubkey) {
@@ -864,7 +866,10 @@ pub(crate) fn mark_signed_out(
 ) -> Result<(), String> {
     let _lock = registry_lock();
     let mut registry = load_registry(data_dir)?.unwrap_or_default();
-    if registry.get(origin, pubkey).is_none() && !registry.contains_pubkey(pubkey) {
+    // Only an account listed on `origin` is signed out of it: a key-only
+    // account must never turn into a server account here, or the sign-out
+    // would remove its only key (`forget_signed_out_key`).
+    if registry.get(origin, pubkey).is_none() {
         return Ok(());
     }
     registry.upsert(origin, pubkey, AccountState::SignedOut);
@@ -1827,6 +1832,11 @@ pub async fn switch_account(
         save_registry(secrets, &data_dir, &registry)?;
         write_active_copy(secrets, &keys, None)?;
         *state.keys.lock().map_err(|_| "identity storage is busy")? = keys;
+        // With the key, so the pairing check never sees the new key against
+        // the old binding (the hand-over below settles every origin).
+        if registry.get(&origin, &target).is_some() {
+            state.token_auth.set_key_backup(&origin, target);
+        }
         outgoing.public_key()
     };
     // This origin's lock is still held: no session here can rotate until it

@@ -421,6 +421,9 @@ pub(crate) async fn complete<R: tauri::Runtime>(
         )?;
         let pubkey = keys.public_key();
         *state.keys.lock().map_err(|_| "identity storage is busy")? = keys;
+        // With the key, so the pairing check never sees the new key against
+        // the old binding.
+        state.token_auth.set_key_backup(origin, pubkey);
         Ok(pubkey)
     })();
     let pubkey = match committed {

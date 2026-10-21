@@ -404,6 +404,10 @@ fn keys_without_a_server_backup_or_still_signed_in_are_kept() {
     mem.put("identity", &nsec(&key_only));
     mem.put("identity.bootstrap", "");
     assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Migrated);
+    // A sign-out on a server it was never listed on leaves it key-only.
+    mark_signed_out(&mem, dir.path(), ORIGIN, &key_only.public_key()).unwrap();
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert!(registry.get(ORIGIN, &key_only.public_key()).is_none());
     assert!(
         forget_signed_out_key(&mem, dir.path(), &key_only.public_key())
             .unwrap()

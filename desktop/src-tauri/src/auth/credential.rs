@@ -142,13 +142,24 @@ impl AppState {
     /// key. Whatever put another key here (an agent's environment, a key
     /// written by another process, a leftover file, an import) can never sign
     /// as the person. No binding = not a login account here: unaffected.
-    /// The stored binding is loaded into memory first thing at launch
-    /// (`refresh::restore_session`).
     pub(crate) fn held_key_unpaired(&self, origin: &str) -> bool {
-        let Some(bound) = self.token_auth.signing_pubkey(origin) else {
+        let Some(bound) = self.paired_pubkey(origin) else {
             return false;
         };
         held_key_differs(&self.keys, &bound)
+    }
+
+    /// The key paired with the login account of `origin`, if any. The stored
+    /// binding counts before the first restore of a launch puts it in memory
+    /// (as in `device_signed_out`).
+    pub(crate) fn paired_pubkey(&self, origin: &str) -> Option<PublicKey> {
+        self.token_auth.signing_pubkey(origin).or_else(|| {
+            use super::RefreshStore;
+            super::KeyringRefreshStore
+                .signing_pubkey(origin)
+                .ok()
+                .flatten()
+        })
     }
 
     /// The token-auth mode of the current workspace relay.

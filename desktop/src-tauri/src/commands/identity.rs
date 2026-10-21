@@ -141,8 +141,8 @@ mod auto_connect_default_relay_tests {
 pub fn is_shared_identity() -> bool {
     crate::app_state::env_identity_allowed(crate::relay::server::kuzz_env())
         && std::env::var("KUZZ_SHARE_IDENTITY")
-        .map(|v| v == "1")
-        .unwrap_or(false)
+            .map(|v| v == "1")
+            .unwrap_or(false)
         && std::env::var("KUZZ_PRIVATE_KEY")
             .ok()
             .and_then(|k| Keys::parse(k.trim()).ok())
@@ -448,6 +448,16 @@ pub async fn import_identity(
         // this import.
         let state = app_handle.state::<AppState>();
         let _mutation_guard = state.identity_mutation.lock().map_err(|e| e.to_string())?;
+        // A login account's key is the one its server paired; another key
+        // imported here could never sign as it and would be replaced at the
+        // next launch.
+        let origin = state.current_auth_origin();
+        if state
+            .paired_pubkey(&origin)
+            .is_some_and(|paired| paired != keys.public_key())
+        {
+            return Err("Sign out before importing a different key.".into());
+        }
 
         let data_dir = app_handle
             .path()
