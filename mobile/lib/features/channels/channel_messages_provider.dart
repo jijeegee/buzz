@@ -311,8 +311,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         NostrFilters.messages(channelId),
       );
       _relayHistoryArrived = true;
-      history.sort(compareChannelTimelineEventsChronologically);
-      return history;
+      return sortChannelTimeline(history);
     }
   }
 
@@ -571,8 +570,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   }
 
   List<NostrEvent> _boundedReplies(Iterable<NostrEvent> events) {
-    final sorted = events.toList()
-      ..sort((a, b) => compareThreadRepliesChronologically(b, a));
+    final sorted = sortThreadReplies(events.toList(), newestFirst: true);
     final counts = <String?, int>{};
     final seen = <String>{};
     final retained = <NostrEvent>[];
@@ -822,10 +820,12 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         .toList();
     _lastKnownMessages = remaining;
     state = AsyncData(remaining);
-    final aggregate = {
-      ...{for (final event in replies) event.id: event},
-      ...{for (final event in later) event.id: event},
-    }.values.toList()..sort(compareThreadRepliesChronologically);
+    final aggregate = sortThreadReplies(
+      {
+        ...{for (final event in replies) event.id: event},
+        ...{for (final event in later) event.id: event},
+      }.values.toList(),
+    );
     _queryThreadSummaries.remove(rootId);
     _queryThreadSummaries[rootId] = ChannelWindowThreadSummary(
       replyCount: aggregate
@@ -974,8 +974,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   ) {
     if (current.any((e) => e.id == incoming.id)) return current;
     final updated = [...current, incoming];
-    updated.sort(compareChannelTimelineEventsChronologically);
-    return updated;
+    return sortChannelTimeline(updated);
   }
 
   bool _isCurrentInit(int initVersion) => initVersion == _initVersion;
@@ -1089,10 +1088,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
   List<NostrEvent> _withDeepLinkEvents(List<NostrEvent> events) {
     final ids = events.map((event) => event.id).toSet();
-    return [
+    return sortChannelTimeline([
       ...events,
       ..._deepLinkEvents.values.where((event) => ids.add(event.id)),
-    ]..sort(compareChannelTimelineEventsChronologically);
+    ]);
   }
 
   Future<bool> fetchOlder() async {
@@ -1144,7 +1143,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     }
     state = state.whenData((events) {
       final merged = [...deduped, ...events];
-      merged.sort(compareChannelTimelineEventsChronologically);
+      sortChannelTimeline(merged);
       _lastKnownMessages = merged;
       return merged;
     });

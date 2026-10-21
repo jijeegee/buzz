@@ -617,5 +617,5 @@ List<NostrEvent> _mergeReplies(
   for (final event in [...first, ...second]) {
     byId[event.id] = event;
   }
-  return byId.values.toList()..sort(compareThreadRepliesChronologically);
+  return sortThreadReplies(byId.values.toList());
 }

@@ -212,8 +212,13 @@ ChannelWindowPage parseChannelWindowResponse(
     );
   }
 
+  // An order-number page's bounds share the kind; they close no window.
   final boundsEvents = events
-      .where((event) => event.kind == EventKind.channelWindowBounds)
+      .where(
+        (event) =>
+            event.kind == EventKind.channelWindowBounds &&
+            !isAfterSeqBounds(event),
+      )
       .toList();
   if (boundsEvents.length != 1) {
     throw Exception(
@@ -644,8 +649,7 @@ List<NostrEvent> flattenChannelWindowEvents(ChannelWindowStore store) {
   for (final event in store.liveAux) {
     byId[event.id] = event;
   }
-  return byId.values.toList()
-    ..sort(compareChannelTimelineEventsChronologically);
+  return sortChannelTimeline(byId.values.toList());
 }
 
 bool channelWindowHasMore(ChannelWindowStore store) =>

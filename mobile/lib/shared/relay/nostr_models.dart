@@ -137,6 +137,11 @@ class NostrEvent {
   /// relay, not a signature, vouches for `pubkey` there.
   final String? sig;
 
+  /// The relay's order number for this event in its channel
+  /// (`channel_sequence`), when a `kuzz-seq` relay sent one. Not part of the
+  /// signed event, so [toJson] leaves it out.
+  final int? channelSequence;
+
   const NostrEvent({
     required this.id,
     required this.pubkey,
@@ -145,7 +150,20 @@ class NostrEvent {
     required this.tags,
     required this.content,
     this.sig,
+    this.channelSequence,
   });
+
+  /// This event carrying the relay's order number [sequence].
+  NostrEvent withChannelSequence(int sequence) => NostrEvent(
+    id: id,
+    pubkey: pubkey,
+    createdAt: createdAt,
+    kind: kind,
+    tags: tags,
+    content: content,
+    sig: sig,
+    channelSequence: sequence,
+  );
 
   factory NostrEvent.fromJson(Map<String, dynamic> json) {
     return NostrEvent(
