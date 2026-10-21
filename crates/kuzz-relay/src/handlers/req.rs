@@ -59,8 +59,9 @@ pub async fn handle_req(
 }
 
 /// Answer a REQ that names only rooms of one other region from that region
-/// (stored events, then `EOSE`; live events follow with S4-4). Returns
-/// whether the REQ was answered.
+/// (stored events, then `EOSE`). A REQ that stays open is registered for the
+/// rooms and watched at their home first, so live events follow its history
+/// (S4-4b). Returns whether the REQ was answered.
 #[allow(clippy::too_many_arguments)]
 async fn read_remote_rooms(
     sub_id: &str,
@@ -70,7 +71,7 @@ async fn read_remote_rooms(
     requested: &[uuid::Uuid],
     token_channel_ids: Option<&[uuid::Uuid]>,
     conn: &ConnectionState,
-    state: &AppState,
+    state: &Arc<AppState>,
 ) -> bool {
     let region =
         match crate::region_read::single_remote_home(state, conn.tenant.community(), requested)
@@ -126,10 +127,30 @@ async fn read_remote_rooms(
         }
     };
     // Claim the id like any REQ: an older subscription with it is replaced,
-    // and a CLOSE or newer REQ during the call supersedes this one.
-    let Some(owner) = claim_search_subscription(sub_id, conn, state).await else {
+    // and a CLOSE or newer REQ during the call supersedes this one. A search
+    // or a huddle liveness read is one-shot, as here.
+    let live = !filters.iter().any(|filter| filter.search.is_some())
+        && !filters_are_huddle_liveness_only(filters);
+    let owner = if live {
+        claim_live_subscription(sub_id, filters, Some(requested), conn, state).await
+    } else {
+        claim_search_subscription(sub_id, conn, state).await
+    };
+    let Some(owner) = owner else {
         return true;
     };
+    if live {
+        state
+            .region_live
+            .ensure(
+                state,
+                &conn.tenant,
+                &region,
+                requested.to_vec(),
+                pubkey.to_bytes().to_vec(),
+            )
+            .await;
+    }
     let answer = crate::region_read::read_at_home(
         state,
         &conn.tenant,
@@ -159,7 +180,7 @@ async fn read_remote_rooms(
         }
     };
     // Delivered under the lifecycle lock, only while this REQ still owns the
-    // id. The claim stays: live events of the room join it with S4-4.
+    // id. The claim stays: live events of the rooms follow.
     let subs = conn.subscriptions.lock().await;
     if subs.get(sub_id) != Some(&owner) {
         return true;
@@ -641,17 +662,40 @@ pub async fn handle_req_paged(
         }
     };
 
-    let Some(owner) = claim_live_subscription(
-        &sub_id,
-        &filters,
-        authorized_requested_channels.as_deref(),
-        &conn,
-        &state,
-    )
-    .await
+    // Global regions (S4-4b): a merged read also registers the rooms it
+    // names in other regions; their homes judge who sees their events.
+    let remote_rooms = merged
+        .as_ref()
+        .map(|(plan, _, _)| crate::region_merge::remote_rooms(plan))
+        .unwrap_or_default();
+    let live_channels = authorized_requested_channels.as_ref().map(|authorized| {
+        let mut channels = authorized.clone();
+        for room in remote_rooms.iter().flat_map(|(_, rooms)| rooms) {
+            if !channels.contains(room) {
+                channels.push(*room);
+            }
+        }
+        channels
+    });
+    let Some(owner) =
+        claim_live_subscription(&sub_id, &filters, live_channels.as_deref(), &conn, &state).await
     else {
         return;
     };
+    if live_channels.is_some() {
+        futures_util::future::join_all(remote_rooms.into_iter().map(|(region, rooms)| {
+            let state = &state;
+            let tenant = &conn.tenant;
+            let reader = pubkey_bytes.clone();
+            async move {
+                state
+                    .region_live
+                    .ensure(state, tenant, &region, rooms, reader)
+                    .await;
+            }
+        }))
+        .await;
+    }
 
     debug!(conn_id = %conn_id, sub_id = %sub_id, "Subscription registered");
 
@@ -666,7 +710,7 @@ pub async fn handle_req_paged(
         crate::nip_fi_test_hooks::before_req_history(conn.tenant.community()).await;
 
         // Global regions (S4-3c): the stored events of every region's part,
-        // merged. Live events of other regions' rooms follow with S4-4.
+        // merged. Live events of other regions' named rooms follow (S4-4b).
         if let Some((plan, reader, pubkey)) = merged.as_ref() {
             match crate::region_merge::query(&state, &conn.tenant, pubkey, plan, reader).await {
                 Ok(events) => {

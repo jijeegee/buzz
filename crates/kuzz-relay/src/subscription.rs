@@ -367,6 +367,36 @@ impl SubscriptionRegistry {
         conns.into_iter().collect()
     }
 
+    /// [`Self::channel_subscriber_conns_scoped`] for many rooms in one pass
+    /// over the index. Rooms without subscribers are absent.
+    pub fn channel_subscriber_conns_many(
+        &self,
+        community_id: CommunityId,
+        channel_ids: &HashSet<Uuid>,
+    ) -> std::collections::HashMap<Uuid, HashSet<ConnId>> {
+        let mut conns: std::collections::HashMap<Uuid, HashSet<ConnId>> =
+            std::collections::HashMap::new();
+        for entry in self.channel_kind_index.iter() {
+            let (community, key) = entry.key();
+            if *community == community_id && channel_ids.contains(&key.channel_id) {
+                conns
+                    .entry(key.channel_id)
+                    .or_default()
+                    .extend(entry.value().iter().map(|(conn_id, _)| *conn_id));
+            }
+        }
+        for &channel_id in channel_ids {
+            if let Some(entry) = self.channel_wildcard_index.get(&(community_id, channel_id)) {
+                conns
+                    .entry(channel_id)
+                    .or_default()
+                    .extend(entry.value().iter().map(|(conn_id, _)| *conn_id));
+            }
+        }
+        conns.retain(|_, set| !set.is_empty());
+        conns
+    }
+
     /// Test-only convenience wrapper preserving the original single-tenant test API.
     #[cfg(test)]
     pub fn channel_subscriber_conns(&self, channel_id: Uuid) -> Vec<ConnId> {
@@ -749,8 +779,8 @@ fn test_community() -> CommunityId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kuzz_core::StoredEvent;
     use chrono::Utc;
+    use kuzz_core::StoredEvent;
     use nostr::{EventBuilder, Keys, Kind, Tag};
     use std::sync::Arc;
     use std::time::{Duration, Instant};

@@ -532,6 +532,39 @@ pub async fn fan_out_pubsub_event(state: &Arc<AppState>, channel_event: kuzz_pub
     }
 }
 
+/// Send `stored` to `matches`, already checked for access, with its order
+/// number. Used for events of rooms that live in another region (S4-4b),
+/// whose home checked access. Returns how many connections were dropped.
+pub(crate) fn send_to_matches(
+    state: &AppState,
+    matches: &[(crate::subscription::ConnId, crate::subscription::SubId)],
+    stored: &StoredEvent,
+) -> u32 {
+    if matches.is_empty() {
+        return 0;
+    }
+    let event_json = match serde_json::to_string(&stored.event) {
+        Ok(json) => json,
+        Err(e) => {
+            tracing::error!("Failed to serialize a region event: {e}");
+            return 0;
+        }
+    };
+    let frames = fanout_frame_cache(
+        matches.iter().map(|(_, sub_id)| sub_id.as_str()),
+        &event_json,
+    );
+    send_fanout_frames(
+        state,
+        matches
+            .iter()
+            .map(|(conn_id, sub_id)| (*conn_id, sub_id.as_str())),
+        &frames,
+        &event_json,
+        stored.channel_sequence,
+    )
+}
+
 /// A server-stamped (token) write was accepted in `tenant`: let the kind:0
 /// reconciler publish the principal's profile there (once per process window).
 pub(crate) fn note_token_write(

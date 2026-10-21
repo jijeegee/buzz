@@ -108,6 +108,34 @@ pub(crate) struct Plan {
     pub search_pages: Option<Vec<usize>>,
 }
 
+/// The rooms a plan names in other regions, by region.
+pub(crate) fn remote_rooms(plan: &Plan) -> Vec<(String, Vec<Uuid>)> {
+    let mut by_region: Vec<(String, Vec<Uuid>)> = Vec::new();
+    for part in plan.parts.iter().filter(|part| part.named) {
+        let Some(region) = part.region.as_ref() else {
+            continue;
+        };
+        let rooms = part.raw["#h"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|room| room.as_str()?.parse::<Uuid>().ok());
+        let index = match by_region.iter().position(|(name, _)| name == region) {
+            Some(index) => index,
+            None => {
+                by_region.push((region.clone(), Vec::new()));
+                by_region.len() - 1
+            }
+        };
+        for room in rooms {
+            if !by_region[index].1.contains(&room) {
+                by_region[index].1.push(room);
+            }
+        }
+    }
+    by_region
+}
+
 /// How `raw` filters (`filters` as `/query` JSON) are split across regions,
 /// or `None` when the read stays here: the link is off, there is one region,
 /// a filter is not plain, or no part goes to another region.

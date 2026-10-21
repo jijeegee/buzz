@@ -1031,6 +1031,18 @@ impl ConnectionManager {
     ///
     /// Returns `(signalled, closed)`.
     pub async fn resync_all(&self, reason: &str, legacy_jitter_ms: u64) -> (usize, usize) {
+        let conns: Vec<Uuid> = self.connections.iter().map(|entry| *entry.key()).collect();
+        self.resync_conns(&conns, reason, legacy_jitter_ms).await
+    }
+
+    /// [`Self::resync_all`] for some connections only: those that may have
+    /// missed events of one source (a region link, S4-4).
+    pub async fn resync_conns(
+        &self,
+        conns: &[Uuid],
+        reason: &str,
+        legacy_jitter_ms: u64,
+    ) -> (usize, usize) {
         let frame = WsMessage::Text(
             serde_json::json!(["KUZZ_RESYNC", { "reason": reason }])
                 .to_string()
@@ -1039,7 +1051,10 @@ impl ConnectionManager {
         let legacy_jitter_ms = legacy_jitter_ms.max(1);
         let mut signalled = 0usize;
         let mut closes = Vec::new();
-        for entry in self.connections.iter() {
+        for conn_id in conns {
+            let Some(entry) = self.connections.get(conn_id) else {
+                continue;
+            };
             if entry.kuzz_seq.load(Ordering::Relaxed) {
                 let _ = entry.ctrl_tx.try_send(frame.clone());
                 signalled += 1;
@@ -1259,6 +1274,8 @@ pub struct AppState {
     pub relay_keypair: nostr::Keys,
     /// Which region serves each room (global regions S3).
     pub room_router: Arc<crate::routing::RoomRouter>,
+    /// Live rooms of other regions (S4-4b): one stream per home region.
+    pub region_live: Arc<crate::region_live::RegionLive>,
     /// Process-local generation advertised for non-mesh huddle liveness.
     ///
     /// A fresh value on every relay start lets desktop clients retire persisted
@@ -1549,6 +1566,7 @@ impl AppState {
             workflow_engine,
             relay_keypair,
             room_router,
+            region_live: Arc::new(crate::region_live::RegionLive::default()),
             huddle_liveness_generation: Uuid::new_v4(),
 
             local_event_ids: Arc::new(

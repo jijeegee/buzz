@@ -81,6 +81,27 @@ async fn tell_jp_room_lives_in_kr(room: &str) {
     .expect("directory row");
 }
 
+/// The next live event of `sub_id`, skipping other messages.
+async fn live_event(client: &mut KuzzTestClient, sub_id: &str) -> Event {
+    loop {
+        match client
+            .recv_event(Duration::from_secs(10))
+            .await
+            .expect("live event")
+        {
+            RelayMessage::Event {
+                subscription_id,
+                event,
+            } if subscription_id == sub_id => return *event,
+            RelayMessage::Closed {
+                subscription_id,
+                message,
+            } if subscription_id == sub_id => panic!("{sub_id} closed: {message}"),
+            _ => {}
+        }
+    }
+}
+
 /// POST `/query` filters over HTTP (dev-mode `X-Pubkey`).
 async fn query(url: &str, keys: &Keys, filters: Value) -> (u16, Value) {
     let response = reqwest::Client::new()
@@ -190,6 +211,16 @@ async fn rooms_are_served_only_by_their_home_region() {
     let mut texts: Vec<_> = read.iter().map(|event| event.content.as_str()).collect();
     texts.sort_unstable();
     assert_eq!(texts, ["hi jp", "hi jp ws", "hi kr"]);
+    // The REQ stays open: a message written in kr arrives live through jp,
+    // with kr's order number (S4-4b).
+    let live = message(&keys, &room, "live in kr");
+    let (status, body) = post(&kr_url(), &keys, &live).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        live_event(&mut jp, "regions").await.id,
+        live.id,
+        "live event through jp"
+    );
     jp.send_raw(&serde_json::json!(["COUNT", "regions-count", in_kr_room]))
         .await
         .expect("count");
@@ -203,7 +234,7 @@ async fn rooms_are_served_only_by_their_home_region() {
                 subscription_id,
                 count,
             } if subscription_id == "regions-count" => {
-                assert_eq!(count, 3);
+                assert_eq!(count, 4);
                 break;
             }
             RelayMessage::Closed { message, .. } => panic!("count refused: {message}"),
@@ -219,7 +250,7 @@ async fn rooms_are_served_only_by_their_home_region() {
         .expect("query");
     assert_eq!(response.status().as_u16(), 200);
     let events: Value = response.json().await.expect("query body");
-    assert_eq!(events.as_array().map(Vec::len), Some(3), "{events}");
+    assert_eq!(events.as_array().map(Vec::len), Some(4), "{events}");
 
     // A room created in jp is jp's own.
     let jp_room = uuid::Uuid::new_v4().to_string();
@@ -330,7 +361,15 @@ async fn rooms_are_served_only_by_their_home_region() {
         .expect("jp read of both regions");
     let mut texts: Vec<_> = read.iter().map(|event| event.content.as_str()).collect();
     texts.sort_unstable();
-    assert_eq!(texts, ["hi jp", "hi jp ws", "hi kr", "jp's own room"]);
+    assert_eq!(
+        texts,
+        ["hi jp", "hi jp ws", "hi kr", "jp's own room", "live in kr"]
+    );
+    // Live events of the kr room reach the merged REQ too (S4-4b).
+    let live = message(&keys, &room, "live again");
+    let (status, body) = post(&kr_url(), &keys, &live).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(live_event(&mut jp, "mixed").await.id, live.id);
     jp.send_raw(&serde_json::json!(["COUNT", "mixed-count", both]))
         .await
         .expect("count");
@@ -344,7 +383,7 @@ async fn rooms_are_served_only_by_their_home_region() {
                 subscription_id,
                 count,
             } if subscription_id == "mixed-count" => {
-                assert_eq!(count, 4);
+                assert_eq!(count, 6);
                 break;
             }
             RelayMessage::Closed { message, .. } => panic!("mixed count refused: {message}"),
@@ -359,7 +398,7 @@ async fn rooms_are_served_only_by_their_home_region() {
     )
     .await;
     assert_eq!(status, 200, "{events}");
-    assert_eq!(events.as_array().map(Vec::len), Some(4), "{events}");
+    assert_eq!(events.as_array().map(Vec::len), Some(6), "{events}");
     let (status, page) = query(
         &jp_url(),
         &keys,
@@ -377,7 +416,7 @@ async fn rooms_are_served_only_by_their_home_region() {
     assert_eq!(status, 200, "{mine}");
     assert_eq!(
         mine.as_array().map(Vec::len),
-        Some(4),
+        Some(6),
         "a read naming no room: {mine}"
     );
     let response = reqwest::Client::new()
@@ -389,7 +428,7 @@ async fn rooms_are_served_only_by_their_home_region() {
         .expect("count");
     assert_eq!(response.status().as_u16(), 200);
     let counted: Value = response.json().await.expect("count body");
-    assert_eq!(counted["count"], 4, "{counted}");
+    assert_eq!(counted["count"], 6, "{counted}");
 
     // Search spanning both regions is merged by score (S4-3d).
     let (status, found) = query(
