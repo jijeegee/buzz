@@ -171,7 +171,15 @@ async function ensureCurrentWelcomeChannelMetadata(
     return channel;
   }
 
-  return client.updateChannel(input);
+  // The update returns channel detail, which carries no member or participant
+  // lists; keep the listed channel's and take only the fields just changed.
+  const updated = await client.updateChannel(input);
+  return {
+    ...channel,
+    description: updated.description,
+    ttlSeconds: updated.ttlSeconds,
+    ttlDeadline: updated.ttlDeadline,
+  };
 }
 
 export async function ensureWelcomeChannel(

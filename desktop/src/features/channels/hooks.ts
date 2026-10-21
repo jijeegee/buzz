@@ -678,7 +678,17 @@ export function useUpdateChannelMutation(channelId: string | null) {
       queryClient.setQueryData<Channel[]>(channelsQueryKey, (current = []) =>
         sortChannels(
           current.map((channel) =>
-            channel.id === updatedChannel.id ? updatedChannel : channel,
+            channel.id === updatedChannel.id
+              ? {
+                  ...updatedChannel,
+                  // Channel detail carries no member or participant lists.
+                  memberPubkeys: channel.memberPubkeys,
+                  participants: channel.participants,
+                  participantPubkeys: channel.participantPubkeys,
+                  lastMessageAt: channel.lastMessageAt,
+                  isMember: channel.isMember,
+                }
+              : channel,
           ),
         ),
       );
