@@ -159,3 +159,106 @@ async fn rooms_are_served_only_by_their_home_region() {
         .expect("ok");
     assert!(ok.accepted, "{}", ok.message);
 }
+
+/// A region link call from jp to kr: signed with jp's link key, for kr's
+/// community, this exact path and body. Built here independently of the
+/// relay's own signer, so the wire format is pinned.
+fn jp_attestation(keys: &Keys, community: &str, path: &str, body: &[u8], target: &str) -> String {
+    jp_attestation_at(keys, community, path, body, target, nostr::Timestamp::now())
+}
+
+fn jp_attestation_at(
+    keys: &Keys,
+    community: &str,
+    path: &str,
+    body: &[u8],
+    target: &str,
+    now: nostr::Timestamp,
+) -> String {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let claims = serde_json::json!({
+        "v": 1,
+        "entry_region": "jp",
+        "target_region": target,
+        "community_id": community,
+        "method": "POST",
+        "path": path,
+        "body_sha256": hex::encode(sha2::Sha256::digest(body)),
+        "channel_id": null,
+        "epoch": null,
+        "principal": null,
+        "nonce": uuid::Uuid::new_v4().simple().to_string(),
+    });
+    let event = EventBuilder::new(Kind::Custom(27250), claims.to_string())
+        .tags([Tag::expiration(nostr::Timestamp::from(now.as_secs() + 30))])
+        .custom_created_at(now)
+        .sign_with_keys(keys)
+        .unwrap();
+    format!(
+        "KuzzRegion {}",
+        base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&event).unwrap())
+    )
+}
+
+async fn kr_community() -> String {
+    let url = std::env::var("REGION_KR_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz".into());
+    let pool = sqlx::PgPool::connect(&url).await.expect("kr database");
+    let id: uuid::Uuid =
+        sqlx::query_scalar("SELECT id FROM communities WHERE host = 'localhost:3041'")
+            .fetch_one(&pool)
+            .await
+            .expect("kr community");
+    id.to_string()
+}
+
+async fn ping_kr(auth: &str, body: &'static [u8]) -> (u16, Value) {
+    let response = reqwest::Client::new()
+        .post(format!("{}/internal/region/ping", http(&kr_url())))
+        .header("Authorization", auth)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("ping request");
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn region_link_accepts_only_a_fresh_call_signed_by_a_known_region() {
+    let jp_key = Keys::parse(&std::env::var("REGION_JP_LINK_KEY").expect("REGION_JP_LINK_KEY"))
+        .expect("jp link key");
+    let community = kr_community().await;
+    let path = "/internal/region/ping";
+    let body: &'static [u8] = b"{}";
+
+    let auth = jp_attestation(&jp_key, &community, path, body, "kr");
+    let (status, answer) = ping_kr(&auth, body).await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(answer["region"], "kr");
+    assert_eq!(answer["from"], "jp");
+
+    // The same attestation again is a replay.
+    assert_eq!(ping_kr(&auth, body).await.0, 401);
+    // Another key claiming to be jp.
+    let forged = jp_attestation(&Keys::generate(), &community, path, body, "kr");
+    assert_eq!(ping_kr(&forged, body).await.0, 401);
+    // Signed for another body, or for another region.
+    let other_body = jp_attestation(&jp_key, &community, path, b"{\"x\":1}", "kr");
+    assert_eq!(ping_kr(&other_body, body).await.0, 401);
+    let other_target = jp_attestation(&jp_key, &community, path, body, "us");
+    assert_eq!(ping_kr(&other_target, body).await.0, 401);
+    // A community kr does not serve.
+    let elsewhere = uuid::Uuid::new_v4().to_string();
+    let other_community = jp_attestation(&jp_key, &elsewhere, path, body, "kr");
+    assert_eq!(ping_kr(&other_community, body).await.0, 401);
+    // Signed a minute ago: expired.
+    let old = nostr::Timestamp::from(nostr::Timestamp::now().as_secs() - 60);
+    let expired = jp_attestation_at(&jp_key, &community, path, body, "kr", old);
+    assert_eq!(ping_kr(&expired, body).await.0, 401);
+    // No attestation at all.
+    assert_eq!(ping_kr("Bearer nothing", body).await.0, 401);
+}

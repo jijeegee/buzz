@@ -151,6 +151,11 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     // payload; does not carry a NIP-FI assertion.  Listed by exact path —
     // sub-paths (if any) are equally harmless since no routes exist there.
     "/internal/git/policy",
+    // Region link calls between relays (KUZZ_REGION_LINK). Authenticated by
+    // the calling region's signed entry attestation (`region_link::admit`),
+    // not a NIP-FI assertion; the routes exist only when the link is on.
+    // Listed by exact path: each new link route is added here on purpose.
+    "/internal/region/ping",
 ];
 
 /// Middleware: full offline assertion guard for NIP-FI protected paths.
@@ -402,6 +407,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(media_router)
         .merge(git_router)
         .merge(git_policy_router);
+    if state.config.region_link {
+        merged = merged.merge(
+            Router::new()
+                .route("/internal/region/ping", post(crate::region_link::ping))
+                .layer(RequestBodyLimitLayer::new(1024 * 1024))
+                .with_state(state.clone()),
+        );
+    }
     if let Some(admin_router) = admin_router {
         merged = merged.merge(admin_router);
     }

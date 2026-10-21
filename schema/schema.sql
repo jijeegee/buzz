@@ -2956,7 +2956,8 @@ CREATE TABLE regions (
     connect_url TEXT NOT NULL,
     is_primary BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    link_pubkey TEXT CHECK (link_pubkey ~ '^[0-9a-f]{64}$')
 );
 
 CREATE UNIQUE INDEX regions_one_primary ON regions (is_primary) WHERE is_primary;

@@ -217,6 +217,32 @@ impl Db {
             .collect()
     }
 
+    /// Record this region's link key (x-only public key, lowercase hex).
+    #[datastore_span(name = "set_region_link_key", system = "postgresql")]
+    pub async fn set_region_link_key(&self, id: &str, link_pubkey: &str) -> Result<()> {
+        let done = sqlx::query("UPDATE regions SET link_pubkey = $2 WHERE id = $1")
+            .bind(id)
+            .bind(link_pubkey)
+            .execute(&self.pool)
+            .await?;
+        if done.rows_affected() == 0 {
+            return Err(DbError::NotFound(format!("region {id}")));
+        }
+        Ok(())
+    }
+
+    /// A region's address and link key, or `None` when the region is not
+    /// registered here. The key is `None` when the region has no link.
+    #[datastore_span(name = "region_link", system = "postgresql")]
+    pub async fn region_link(&self, id: &str) -> Result<Option<(String, Option<String>)>> {
+        let row = sqlx::query("SELECT connect_url, link_pubkey FROM regions WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(|row| Ok((row.try_get("connect_url")?, row.try_get("link_pubkey")?)))
+            .transpose()
+    }
+
     /// Every region, primary first, then by id.
     #[datastore_span(name = "list_regions", system = "postgresql")]
     pub async fn list_regions(&self) -> Result<Vec<RegionRecord>> {
@@ -302,6 +328,36 @@ mod postgres_tests {
                 .expect("clear region tables");
         }
         Db::from_pool(pool)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn region_link_keys_are_recorded_per_region() {
+        let db = db().await;
+        db.register_region("kr", "wss://kr.example", true)
+            .await
+            .expect("region");
+        assert_eq!(
+            db.region_link("kr").await.expect("read"),
+            Some(("wss://kr.example".to_string(), None))
+        );
+        let key = "ab".repeat(32);
+        db.set_region_link_key("kr", &key).await.expect("set key");
+        // A restart refreshes the address and keeps the key.
+        db.register_region("kr", "wss://kr2.example", true)
+            .await
+            .expect("re-register");
+        assert_eq!(
+            db.region_link("kr").await.expect("read"),
+            Some(("wss://kr2.example".to_string(), Some(key)))
+        );
+        assert_eq!(db.region_link("jp").await.expect("read"), None);
+        assert!(db
+            .set_region_link_key("jp", &"cd".repeat(32))
+            .await
+            .is_err());
+        // Only a lowercase 64-hex key fits the column.
+        assert!(db.set_region_link_key("kr", "not-a-key").await.is_err());
     }
 
     #[tokio::test]

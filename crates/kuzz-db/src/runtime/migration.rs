@@ -725,7 +725,13 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 82);
+        assert_eq!(migrations.len(), 83);
+        assert_eq!(migrations[82].version, 84);
+        assert!(migrations[82]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN link_pubkey"));
+        assert!(include_str!("../../../../schema/schema.sql").contains("link_pubkey TEXT CHECK"));
         assert_eq!(migrations[81].version, 83);
         assert!(migrations[81]
             .sql

@@ -442,6 +442,19 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     }
                     Err(e) => warn!("Room directory backfill failed (retried next start): {e}"),
                 }
+                if let Some(key) = config
+                    .region_key
+                    .as_ref()
+                    .filter(|_| config.region_link)
+                    .and_then(|key| nostr::Keys::parse(key.expose()).ok())
+                {
+                    let pubkey = key.public_key().to_hex();
+                    db.set_region_link_key(&region.id, &pubkey).await.map_err(|e| {
+                        error!(region = %region.id, "Failed to record the region link key: {e}");
+                        anyhow::anyhow!("Failed to record region link key: {e}")
+                    })?;
+                    info!(region = %region.id, link_pubkey = %pubkey, "Region link on");
+                }
                 match db.backfill_principal_homes().await {
                     Ok(0) => {}
                     Ok(n) => {
@@ -459,6 +472,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
             }
             Err(e) => {
                 warn!(region = %config.region_id, "Could not record this relay's region (migrations not applied by this relay?): {e}");
+                if config.region_link {
+                    warn!(region = %config.region_id, "Region link is on but its key was not recorded; other regions cannot verify this one until it is");
+                }
             }
         }
     }
