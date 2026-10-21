@@ -65,6 +65,8 @@ pub mod protocol;
 pub mod push_runtime;
 /// Readiness-probe telemetry and the per-pod dependency sampler behind `/_status`.
 pub mod readiness;
+/// Chats and Inbox across regions (S4-3b).
+pub mod region_chats;
 /// Writes forwarded to a room's home region.
 pub mod region_forward;
 /// Calls between relays of different regions (entry attestations).

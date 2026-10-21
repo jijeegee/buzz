@@ -1958,10 +1958,11 @@ async fn query_events_authed(
         return result;
     }
     if inbox_summary::requested(&raw_filters) {
-        return inbox_summary::query(state, tenant, &pubkey, &raw_filters).await;
+        return inbox_summary::query(state, tenant, &pubkey, &raw_filters, may_forward).await;
     }
     if let Some(envelope) = chat_state::requested(&raw_filters) {
-        return chat_state::query(state, tenant, &pubkey, &raw_filters, envelope).await;
+        return chat_state::query(state, tenant, &pubkey, &raw_filters, envelope, may_forward)
+            .await;
     }
     let thread_windows = thread_window::parse(&raw_filters)?;
     let filters: Vec<nostr::Filter> = raw_filters
