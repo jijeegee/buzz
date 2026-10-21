@@ -3,7 +3,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../auth/account/account_api.dart';
 import '../auth/default_community.dart';
 
-export '../auth/default_community.dart' show serverGivenConnectUrl;
+export '../auth/default_community.dart'
+    show regionRequestUrl, serverGivenConnectUrl;
 
 /// Where the active account's relay WebSocket connects: the `connect_url`
 /// `/auth/me` returns (its home region) when [acceptConnectUrl] takes it,

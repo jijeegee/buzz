@@ -197,6 +197,23 @@ void rememberConnectUrl(String principal, String? acceptedUrl) {
 String? serverGivenConnectUrl(String? principal) =>
     principal == null ? null : _serverGivenConnectUrls[principal];
 
+/// Where an HTTP request for [principal] to [url] is sent: a request to the
+/// service [serviceBase] goes to the address the server gave the account (its
+/// home region), same path and query. Anything else, or an account with no
+/// address, is sent as is. Auth stays signed for [url].
+String regionRequestUrl(String? principal, String url, String serviceBase) {
+  final given = serverGivenConnectUrl(principal);
+  final region = given == null ? null : _relayOrigin(given);
+  final origin = _relayOrigin(url);
+  if (region == null || origin == null || origin != _relayOrigin(serviceBase)) {
+    return url;
+  }
+  final target = Uri.parse(region);
+  return Uri.parse(url)
+      .replace(scheme: target.scheme, host: target.host, port: target.port)
+      .toString();
+}
+
 /// [allowConnection] for the relay WebSocket, which may also reach an address
 /// the built-in server gave an account. Everything else (signing, sessions,
 /// push, one-shot sockets) stays on the built-in server.
