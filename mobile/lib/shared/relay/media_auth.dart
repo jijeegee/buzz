@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:nostr/nostr.dart' as nostr;
 
+import 'connect_url_provider.dart';
 import 'relay_access_tokens.dart';
 import 'relay_provider.dart';
 import 'service_address.dart';
@@ -39,6 +40,10 @@ class MediaGetAuthService {
   final String? _nsec;
   final DateTime Function() _now;
 
+  /// Where a relay media URL on the service is fetched from (the account's
+  /// home region). Auth is still made for the service URL.
+  final String Function(String url) _route;
+
   /// Token-auth communities: the session's access tokens, read on every
   /// call (never cached here, so a rotation applies to the next request).
   final RelayAccessTokens? _accessTokens;
@@ -56,19 +61,27 @@ class MediaGetAuthService {
     required String? nsec,
     DateTime Function()? now,
     RelayAccessTokens? accessTokens,
+    String Function(String url)? route,
     this.cacheScope,
   }) : _baseUrl = baseUrl,
        _nsec = nsec,
        _accessTokens = accessTokens,
+       _route = route ?? _sameUrl,
        _now = now ?? DateTime.now;
+
+  static String _sameUrl(String url) => url;
 
   /// The address to fetch [url] from: media on any address of this build's
   /// service (e.g. a URL stored in an event before a server move) is loaded
-  /// from the service's current address; every other URL is unchanged.
-  String resolve(String url) => currentServiceUrl(url);
+  /// from the service's current address, routed to the account's home
+  /// region; every other URL is unchanged. [headersFor] takes either form.
+  String resolve(String url) {
+    final current = currentServiceUrl(url);
+    return isRelayMediaUrl(url) ? _route(current) : current;
+  }
 
   bool isRelayMediaUrl(String url) {
-    final uri = Uri.tryParse(resolve(url));
+    final uri = Uri.tryParse(currentServiceUrl(url));
     final relayUri = Uri.tryParse(_baseUrl);
     if (uri == null || relayUri == null) return false;
     return _isRelayMediaUrl(uri, relayUri);
@@ -121,11 +134,10 @@ class MediaGetAuthService {
   /// sends none inside the expiry margin) and a 401 `token_expired` rotates
   /// once and retries once; every other URL is fetched exactly as before.
   Future<http.Response> get(http.Client client, String url) {
-    final target = resolve(url);
-    final uri = Uri.parse(target);
+    final uri = Uri.parse(resolve(url));
     final tokens = _accessTokens;
-    if (tokens == null || !isRelayMediaUrl(target)) {
-      return client.get(uri, headers: headersFor(target));
+    if (tokens == null || !isRelayMediaUrl(url)) {
+      return client.get(uri, headers: headersFor(url));
     }
     return sendWithBearer(
       tokens,
@@ -143,7 +155,12 @@ class MediaGetAuthService {
     final mediaAuthority = extractServerAuthority(base);
     final relayAuthority = extractServerAuthority(_baseUrl);
     if (mediaAuthority == null || relayAuthority == null) return false;
-    if (mediaAuthority.toLowerCase() != relayAuthority.toLowerCase()) {
+    // The service address, or the account's home region it routes to (a
+    // native view may hand back a URL [resolve] already routed).
+    final regionAuthority = extractServerAuthority(_route(_baseUrl));
+    final authority = mediaAuthority.toLowerCase();
+    if (authority != relayAuthority.toLowerCase() &&
+        authority != regionAuthority?.toLowerCase()) {
       return false;
     }
     return uri.path.startsWith('/media/');
@@ -185,6 +202,7 @@ final mediaGetAuthServiceProvider = Provider<MediaGetAuthService>((ref) {
       baseUrl: config.baseUrl,
       nsec: null,
       accessTokens: ref.watch(relayAccessTokensProvider),
+      route: (url) => regionUrlFor(config, url),
       cacheScope: cacheScope,
     );
   }

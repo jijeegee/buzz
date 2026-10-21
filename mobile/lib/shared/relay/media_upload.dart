@@ -13,6 +13,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
 
 import 'animated_image_sanitizer.dart';
+import 'connect_url_provider.dart';
 import 'media_auth.dart';
 import 'mp4_fast_start.dart';
 import 'relay_access_tokens.dart';
@@ -256,6 +257,12 @@ class MediaUploadService {
   /// Bearer source on a token-auth community; `null` keeps kind 24242.
   final RelayAccessTokens? _accessTokens;
 
+  /// Where an upload to the service is sent (the account's home region). The
+  /// Blossom `server` tag stays the service authority.
+  final String Function(String url) _route;
+
+  static String _sameUrl(String url) => url;
+
   MediaUploadService({
     required String baseUrl,
     required String? nsec,
@@ -273,8 +280,10 @@ class MediaUploadService {
     DateTime Function()? now,
     http.Client? httpClient,
     RelayAccessTokens? accessTokens,
+    String Function(String url)? route,
   }) : _baseUrl = baseUrl,
        _accessTokens = accessTokens,
+       _route = route ?? _sameUrl,
        _nsec = nsec,
        _pickGalleryImage = pickGalleryImage,
        _pickCameraImage = pickCameraImage,
@@ -666,7 +675,7 @@ class MediaUploadService {
     _throwIfCancelled(cancellationToken);
     final request = http.AbortableStreamedRequest(
       'PUT',
-      Uri.parse(_baseUrl).resolve(path),
+      Uri.parse(_route(Uri.parse(_baseUrl).resolve(path).toString())),
       abortTrigger: cancellationToken?.whenCancelled,
     );
     request.contentLength = bytes.length;

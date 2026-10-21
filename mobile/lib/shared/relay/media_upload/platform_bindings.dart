@@ -20,6 +20,7 @@ final mediaUploadServiceProvider = Provider<MediaUploadService>((ref) {
     accessTokens: config.tokenAuth
         ? ref.watch(relayAccessTokensProvider)
         : null,
+    route: (url) => regionUrlFor(config, url),
     pickGalleryImage: () => picker.pickImage(
       source: ImageSource.gallery,
       requestFullMetadata: false,
