@@ -57,9 +57,11 @@ class FlutterWebAuth2Launcher implements WebAuthLauncher {
       final result = await FlutterWebAuth2.authenticate(
         url: url.toString(),
         callbackUrlScheme: callbackUrlScheme,
-        // Do not share the browser's Google cookies with other apps' logins
-        // and do not leave this login behind in the shared jar.
-        options: const FlutterWebAuth2Options(preferEphemeral: true),
+        // Share the system browser's Google sign-in, so an account already
+        // signed in on the phone is one tap. The relay asks Google to show
+        // the account chooser (`prompt=select_account`), so adding a second
+        // account still picks it explicitly.
+        options: const FlutterWebAuth2Options(preferEphemeral: false),
       );
       if (defaultTargetPlatform == TargetPlatform.android) {
         try {
