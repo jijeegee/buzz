@@ -1,5 +1,6 @@
 import { BY_CHANNEL_THREAD_STEP } from "@/features/chats/chatListGroups";
 import { formatChatCount } from "@/features/chats/chatListState";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { SidebarMenuButton, SidebarMenuItem } from "@/shared/ui/sidebar";
 
@@ -36,6 +37,7 @@ export function ChatMoreThreadsRow({
   unread: number;
   unreadOverflow: boolean;
 }) {
+  const t = useT();
   const showLess = expanded ? (
     <SidebarMenuButton
       className={cn(
@@ -54,7 +56,7 @@ export function ChatMoreThreadsRow({
           count > 0 ? "" : "min-w-0 flex-1 pl-6",
         )}
       >
-        Show less
+        {t("sidebar.moreThreads.showLess")}
       </span>
     </SidebarMenuButton>
   ) : null;
@@ -64,10 +66,13 @@ export function ChatMoreThreadsRow({
     );
   }
   const label = !expanded
-    ? `+ ${count} more thread${count === 1 ? "" : "s"}`
+    ? t("sidebar.moreThreads.moreThreads", { count })
     : count > BY_CHANNEL_THREAD_STEP
-      ? `+ ${BY_CHANNEL_THREAD_STEP} more · ${count} left`
-      : `+ ${count} more`;
+      ? t("sidebar.moreThreads.nextStep", {
+          step: BY_CHANNEL_THREAD_STEP,
+          count,
+        })
+      : t("sidebar.moreThreads.lastStep", { count });
   return (
     <SidebarMenuItem
       className={cn("group/menu-item", expanded && "flex items-center gap-1")}
@@ -93,7 +98,7 @@ export function ChatMoreThreadsRow({
             @
             <span className="sr-only">
               {" "}
-              {mentions} unread mention{mentions === 1 ? "" : "s"}
+              {t("sidebar.moreThreads.mentionsSr", { count: mentions })}
             </span>
           </span>
         ) : null}
@@ -111,7 +116,7 @@ export function ChatMoreThreadsRow({
             {formatChatCount(unread, unreadOverflow)}
             <span className="sr-only">
               {" "}
-              unread message{unread === 1 ? "" : "s"}
+              {t("sidebar.moreThreads.unreadSr", { count: unread })}
             </span>
           </span>
         ) : marked && mentions === 0 ? (
@@ -119,7 +124,7 @@ export function ChatMoreThreadsRow({
             className="ml-auto h-2 w-2 shrink-0 rounded-full bg-primary"
             data-testid={`chat-more-threads-unread-dot-${channelId}`}
           >
-            <span className="sr-only">unread</span>
+            <span className="sr-only">{t("sidebar.unreadSr")}</span>
           </span>
         ) : null}
       </SidebarMenuButton>

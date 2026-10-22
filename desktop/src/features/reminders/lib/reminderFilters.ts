@@ -1,4 +1,5 @@
 import type { Reminder } from "@/features/reminders/lib/reminderTypes";
+import { type MessageKey, t } from "@/shared/i18n";
 
 const nowSeconds = () => Math.floor(Date.now() / 1_000);
 
@@ -44,9 +45,16 @@ export function dueSince(
 }
 
 export type ReminderGroup = {
+  /** Message key of the group heading; components translate it with `useT()`. */
+  labelKey: MessageKey;
+  /** The heading in the current language when grouped. */
   label: string;
   reminders: Reminder[];
 };
+
+function group(labelKey: MessageKey, reminders: Reminder[]): ReminderGroup {
+  return { labelKey, label: t(labelKey), reminders };
+}
 
 /**
  * Bucket pending reminders into Overdue/Today/Upcoming, and — when
@@ -86,10 +94,11 @@ export function groupReminders(
   done.sort((a, b) => b.createdAt - a.createdAt);
 
   const groups: ReminderGroup[] = [];
-  if (overdue.length > 0) groups.push({ label: "Overdue", reminders: overdue });
-  if (today.length > 0) groups.push({ label: "Today", reminders: today });
+  if (overdue.length > 0)
+    groups.push(group("reminders.group.overdue", overdue));
+  if (today.length > 0) groups.push(group("time.today", today));
   if (upcoming.length > 0)
-    groups.push({ label: "Upcoming", reminders: upcoming });
-  if (done.length > 0) groups.push({ label: "Completed", reminders: done });
+    groups.push(group("reminders.group.upcoming", upcoming));
+  if (done.length > 0) groups.push(group("reminders.group.completed", done));
   return groups;
 }

@@ -13,6 +13,7 @@ import { openProjectMergeRecoveryTerminal } from "@/shared/api/projectGit";
 import { useElementWidth } from "@/shared/hooks/use-mobile";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
@@ -32,6 +33,7 @@ export function ProjectInboxDetailPane({
   profiles,
   workItem,
 }: ProjectInboxDetailPaneProps) {
+  const t = useT();
   const { activeCommunity } = useCommunities();
   const [detailContentRef, detailContentWidth] =
     useElementWidth<HTMLDivElement>();
@@ -45,13 +47,16 @@ export function ProjectInboxDetailPane({
     profiles?.[normalizePubkey(authorPubkey)]?.avatarUrl ?? null;
   const authorIsAgent =
     profiles?.[normalizePubkey(authorPubkey)]?.isAgent === true;
-  const inboxTitle = `${authorLabel} sent you ${
-    workItem.type === "pull-request" ? "a review" : "a task"
-  }`;
+  const inboxTitle =
+    workItem.type === "pull-request"
+      ? t("home.project.sentReview", { name: authorLabel })
+      : t("home.project.sentTask", { name: authorLabel });
   // The action deep-links to this specific work item in the project view,
   // so the label names the entity, not the project.
   const openLabel =
-    workItem.type === "pull-request" ? "Open review" : "Open task";
+    workItem.type === "pull-request"
+      ? t("home.project.openReview")
+      : t("home.project.openTask");
   const handleOpenMergeRecoveryTerminal = React.useCallback(
     async (input: {
       expectedCommit: string;
@@ -60,11 +65,11 @@ export function ProjectInboxDetailPane({
       targetBranch: string;
     }) => {
       if (workItem.type !== "pull-request") {
-        throw new Error("Merge recovery is only available for reviews.");
+        throw new Error(t("home.project.mergeRecoveryReviewsOnly"));
       }
       const targetCloneUrl = workItem.repository.cloneUrls[0];
       if (!targetCloneUrl) {
-        throw new Error("This repository has no clone URL.");
+        throw new Error(t("home.project.noCloneUrl"));
       }
       return openProjectMergeRecoveryTerminal({
         ...input,
@@ -73,7 +78,7 @@ export function ProjectInboxDetailPane({
         targetCloneUrl,
       });
     },
-    [activeCommunity?.reposDir, workItem],
+    [activeCommunity?.reposDir, t, workItem],
   );
 
   return (
@@ -87,7 +92,7 @@ export function ProjectInboxDetailPane({
             <div className="flex min-w-0 items-center gap-1">
               {isSinglePanelView && onBack ? (
                 <Button
-                  aria-label="Back to Inbox"
+                  aria-label={t("home.project.backToInbox")}
                   onClick={onBack}
                   size="icon"
                   type="button"

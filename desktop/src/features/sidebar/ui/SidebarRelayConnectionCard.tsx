@@ -4,6 +4,7 @@ import {
   SidebarCompactActionCard,
   type SidebarActionCardSurface,
 } from "@/shared/ui/sidebar-action-card";
+import { useT } from "@/shared/i18n";
 import { Spinner } from "@/shared/ui/spinner";
 
 type SidebarRelayConnectionCardProps = {
@@ -60,16 +61,21 @@ export function SidebarRelayConnectionCompactCard({
   surface,
   testId = "sidebar-relay-unreachable-compact",
 }: SidebarRelayConnectionCardProps) {
+  const t = useT();
   const reconnectTitle = isWaitingOnReconnectHook
-    ? "Waiting to reconnect"
-    : "Connecting";
+    ? t("sidebar.connection.waitingTitle")
+    : t("sidebar.connection.connecting");
   const reconnectDescription = isWaitingOnReconnectHook
-    ? "Complete any prompts opened by the reconnect helper to continue."
-    : "Reconnecting";
+    ? t("sidebar.connection.waitingDescription")
+    : t("sidebar.connection.reconnecting");
 
   return (
     <SidebarCompactActionCard
-      actionAriaLabel={isConnected ? "Connected" : "Reconnect"}
+      actionAriaLabel={
+        isConnected
+          ? t("sidebar.connection.connected")
+          : t("sidebar.connection.reconnect")
+      }
       actionDisabled={isActionDisabled || isReconnectPending || isConnected}
       actionTestId={actionTestId}
       description={
@@ -77,10 +83,10 @@ export function SidebarRelayConnectionCompactCard({
           ? undefined
           : isReconnectPending
             ? reconnectDescription
-            : "Click to connect"
+            : t("sidebar.connection.clickToConnect")
       }
       dismissClassName={dismissClassName}
-      dismissLabel="Dismiss"
+      dismissLabel={t("sidebar.connection.dismiss")}
       iconKey={
         isConnected ? "connected" : isReconnectPending ? "pending" : "idle"
       }
@@ -101,10 +107,10 @@ export function SidebarRelayConnectionCompactCard({
       testId={testId}
       title={
         isConnected
-          ? "Connected"
+          ? t("sidebar.connection.connected")
           : isReconnectPending
             ? reconnectTitle
-            : "Couldn't connect"
+            : t("sidebar.connection.failed")
       }
       tone={isConnected ? "success" : "neutral"}
     />

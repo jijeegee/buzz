@@ -1,6 +1,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
+import { type MessageKey, t } from "@/shared/i18n";
 import { normalizeRelayUrl } from "@/shared/lib/normalizeRelayUrl";
 import { useLaneSync, type Lane } from "./sidebarLaneReconciler";
 import { isReg, own, setRegs, type Reg, type Tree } from "./sidebarLwwMap";
@@ -16,8 +17,8 @@ export const MAX_ID_SET_TOMBSTONES = 50;
 
 export type IdSetLane = Lane & {
   maxEntries: number;
-  /** Shown when adding past `maxEntries`. */
-  limitMessage: string;
+  /** Language-file key of the toast shown when adding past `maxEntries`. */
+  limitMessageKey: MessageKey;
 };
 
 /**
@@ -27,17 +28,17 @@ export type IdSetLane = Lane & {
  */
 export function createIdSetLane({
   dTag,
-  limitMessage,
+  limitMessageKey,
   maxEntries,
   storagePrefix,
 }: {
   dTag: string;
-  limitMessage: string;
+  limitMessageKey: MessageKey;
   maxEntries: number;
   storagePrefix: string;
 }): IdSetLane {
   return {
-    limitMessage,
+    limitMessageKey,
     maxEntries,
     dTag,
     storageKey: (pubkey, relayUrl) =>
@@ -108,7 +109,7 @@ export function useSyncedIdSet(
   const add = React.useCallback(
     (id: string) => {
       if (!ids.has(id) && ids.size >= lane.maxEntries) {
-        toast.error(lane.limitMessage);
+        toast.error(t(lane.limitMessageKey));
         return false;
       }
       edit((prev) => setIdInTree(prev, id, true));
@@ -126,7 +127,7 @@ export function useSyncedIdSet(
 /** People starred on the People screen or a profile. */
 export const PEOPLE_FAVORITES_LANE = createIdSetLane({
   dTag: "people-favorites",
-  limitMessage: "You can favorite up to 200 people.",
+  limitMessageKey: "sidebar.limits.favoritePeople",
   maxEntries: 200,
   storagePrefix: "kuzz-people-favorites.v1",
 });
@@ -134,7 +135,7 @@ export const PEOPLE_FAVORITES_LANE = createIdSetLane({
 /** Threads pinned from a Chats row; the relay lists up to 200 pinned threads. */
 export const THREAD_PINS_LANE = createIdSetLane({
   dTag: "thread-pins",
-  limitMessage: "You can pin up to 200 threads.",
+  limitMessageKey: "sidebar.limits.pinThreads",
   maxEntries: 200,
   storagePrefix: "kuzz-thread-pins.v1",
 });

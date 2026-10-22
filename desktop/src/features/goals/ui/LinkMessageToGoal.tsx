@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import type { TimelineMessage } from "@/features/messages/types";
 import { useChannelReference } from "@/features/channels/openChannelDirectory";
+import { t as translate, useT } from "@/shared/i18n";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +28,7 @@ export function LinkToGoalMenuItem({
   message: TimelineMessage;
   onSelect: () => void;
 }) {
+  const t = useT();
   const channel = useChannelReference(channelId);
   if (channel?.goalsEnabled !== true) return null;
   return (
@@ -35,7 +37,7 @@ export function LinkToGoalMenuItem({
       onClick={onSelect}
     >
       <Target className="h-4 w-4" />
-      Link to goal
+      {t("goals.linkMessage.menuItem")}
     </DropdownMenuItem>
   );
 }
@@ -54,6 +56,7 @@ export function LinkMessageToGoalDialog({
   message: TimelineMessage;
   onClose: () => void;
 }) {
+  const t = useT();
   const tree = useGoalTreeQuery(channelId).data?.tree;
   const applyGoalOp = useApplyGoalOpMutation(channelId).mutateAsync;
   // The picker closes before the edit lands, so failures surface as toasts.
@@ -61,7 +64,9 @@ export function LinkMessageToGoalDialog({
     (op) =>
       applyGoalOp(op).catch((error: unknown) => {
         toast.error(
-          error instanceof Error ? error.message : "Couldn't link to the goal",
+          error instanceof Error
+            ? error.message
+            : translate("goals.linkMessage.failed"),
         );
         throw error;
       }),
@@ -73,7 +78,7 @@ export function LinkMessageToGoalDialog({
     <Dialog onOpenChange={(open) => !open && onClose()} open>
       <DialogContent aria-describedby={undefined} className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Link to goal</DialogTitle>
+          <DialogTitle>{t("goals.linkMessage.title")}</DialogTitle>
         </DialogHeader>
         {!tree ? null : goalRoot(tree) ? (
           <div className="max-h-96 overflow-y-auto">
@@ -89,7 +94,7 @@ export function LinkMessageToGoalDialog({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            This conversation has no goals yet.
+            {t("goals.linkMessage.noGoals")}
           </p>
         )}
       </DialogContent>

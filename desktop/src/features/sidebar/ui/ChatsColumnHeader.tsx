@@ -4,6 +4,7 @@ import { Link2, MessageSquarePlus, Plus, UsersRound } from "lucide-react";
 import type { ChatsViewMode } from "@/features/chats/chatListGroups";
 import { openJoinWithLink } from "@/features/groups/joinWithLinkStore";
 import { deferMenuAction } from "@/features/sidebar/ui/sidebarMenuHelpers";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import {
@@ -29,6 +30,7 @@ export function ChatsColumnTitle({
   onNewGroup?: () => void;
   onNewMessage: () => void;
 }) {
+  const t = useT();
   const hasNewMenu = Boolean(onNewGroup || onBrowseChannels);
   const newButton = (
     <Button
@@ -38,7 +40,7 @@ export function ChatsColumnTitle({
       size="sm"
     >
       <Plus className="h-3.5 w-3.5" />
-      New
+      {t("sidebar.chatsHeader.new")}
     </Button>
   );
   return (
@@ -47,7 +49,7 @@ export function ChatsColumnTitle({
       data-testid="chats-column-title"
     >
       <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-sidebar-foreground">
-        Chats
+        {t("nav.chats")}
       </h2>
       {onBrowseChannels ? (
         <Button
@@ -58,7 +60,7 @@ export function ChatsColumnTitle({
           variant="outline"
         >
           <UsersRound className="h-3.5 w-3.5" />
-          Find groups
+          {t("sidebar.findGroups")}
         </Button>
       ) : null}
       {hasNewMenu ? (
@@ -70,7 +72,7 @@ export function ChatsColumnTitle({
               onSelect={() => deferMenuAction(onNewMessage)}
             >
               <MessageSquarePlus className="h-4 w-4" />
-              <span>New message</span>
+              <span>{t("sidebar.newMessage")}</span>
             </DropdownMenuItem>
             {onNewGroup ? (
               <DropdownMenuItem
@@ -78,7 +80,7 @@ export function ChatsColumnTitle({
                 onSelect={() => deferMenuAction(onNewGroup)}
               >
                 <Plus className="h-4 w-4" />
-                <span>New group</span>
+                <span>{t("sidebar.newGroup")}</span>
               </DropdownMenuItem>
             ) : null}
             {onBrowseChannels ? (
@@ -87,7 +89,7 @@ export function ChatsColumnTitle({
                 onSelect={() => deferMenuAction(onBrowseChannels)}
               >
                 <UsersRound className="h-4 w-4" />
-                <span>Find groups</span>
+                <span>{t("sidebar.findGroups")}</span>
               </DropdownMenuItem>
             ) : null}
             {onBrowseChannels ? (
@@ -96,7 +98,7 @@ export function ChatsColumnTitle({
                 onSelect={() => deferMenuAction(() => openJoinWithLink())}
               >
                 <Link2 className="h-4 w-4" />
-                <span>Join with link</span>
+                <span>{t("sidebar.chatsHeader.joinWithLink")}</span>
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
@@ -109,10 +111,10 @@ export function ChatsColumnTitle({
   );
 }
 
-const VIEWS: { label: string; testId: string; value: ChatsViewMode }[] = [
-  { label: "All chats", testId: "chats-toggle-all", value: "all" },
+const VIEWS: { label: MessageKey; testId: string; value: ChatsViewMode }[] = [
+  { label: "sidebar.chatsView.all", testId: "chats-toggle-all", value: "all" },
   {
-    label: "By group",
+    label: "sidebar.chatsView.byGroup",
     testId: "chats-toggle-by-channel",
     value: "by-channel",
   },
@@ -126,9 +128,10 @@ export function ChatsViewToggle({
   onChange: (value: ChatsViewMode) => void;
   value: ChatsViewMode;
 }) {
+  const t = useT();
   return (
     <div
-      aria-label="Chats view"
+      aria-label={t("sidebar.chatsView.label")}
       className="mx-3 mb-1 flex rounded-lg bg-sidebar-accent p-0.5"
       role="tablist"
     >
@@ -146,7 +149,7 @@ export function ChatsViewToggle({
           role="tab"
           type="button"
         >
-          {view.label}
+          {t(view.label)}
         </button>
       ))}
     </div>
