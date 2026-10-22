@@ -1,7 +1,9 @@
 import { MessageCircle } from "lucide-react";
+import { useT } from "@/shared/i18n";
 
 /** Orientation content shown at the top of the companion huddle transcript. */
 export function HuddleTranscriptIntro() {
+  const t = useT();
   return (
     <div
       className="mx-1 flex items-start gap-2.5 rounded-2xl border border-border/60 bg-muted/30 px-2 py-2.5 text-left"
@@ -11,10 +13,11 @@ export function HuddleTranscriptIntro() {
         <MessageCircle aria-hidden className="h-4 w-4" />
       </span>
       <div className="min-w-0">
-        <p className="text-base font-semibold text-foreground">Huddle chat</p>
+        <p className="text-base font-semibold text-foreground">
+          {t("huddle.transcriptIntro.title")}
+        </p>
         <p className="mt-0.5 max-w-xl text-sm leading-5 text-muted-foreground">
-          Chat with huddle participants and agents. The transcript appears here
-          too.
+          {t("huddle.transcriptIntro.body")}
         </p>
       </div>
     </div>

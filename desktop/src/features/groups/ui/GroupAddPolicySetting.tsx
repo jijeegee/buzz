@@ -6,6 +6,7 @@ import {
   SettingsOptionRow,
 } from "@/features/settings/ui/SettingsOptionGroup";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { useT } from "@/shared/i18n";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import {
   type GroupAddPolicy,
@@ -14,16 +15,16 @@ import {
 } from "../groupsApi";
 import { groupAddPolicyQueryKey, useGroupAddPolicyQuery } from "../hooks";
 
-const OPTIONS = [
-  { value: "friends", label: "Friends" },
-  { value: "everyone", label: "Everyone" },
-] as const;
-
 /**
  * Settings › Privacy: who can add me to groups. With Friends (the default),
  * anyone else sends an invitation instead.
  */
 export function GroupAddPolicySetting() {
+  const t = useT();
+  const options = [
+    { value: "friends", label: t("groups.addPolicy.friends") },
+    { value: "everyone", label: t("groups.addPolicy.everyone") },
+  ] as const;
   const queryClient = useQueryClient();
   const account = useIdentityQuery().data?.pubkey?.toLowerCase() ?? "";
   const queryKey = groupAddPolicyQueryKey(account);
@@ -37,22 +38,25 @@ export function GroupAddPolicySetting() {
     },
     onError: (error, _next, context) => {
       queryClient.setQueryData(queryKey, context?.previous);
-      toast.error(groupsErrorText(error) || "Couldn't change this setting");
+      toast.error(groupsErrorText(error) || t("groups.addPolicy.saveFailed"));
     },
   });
 
   return (
-    <SettingsOptionGroup data-testid="settings-group-add-policy" title="Groups">
+    <SettingsOptionGroup
+      data-testid="settings-group-add-policy"
+      title={t("groups.addPolicy.sectionTitle")}
+    >
       <SettingsOptionRow>
-        <p className="text-sm font-medium">Who can add me to groups</p>
+        <p className="text-sm font-medium">{t("groups.addPolicy.label")}</p>
         <SegmentedControl
           disabled={!policyQuery.isSuccess || save.isPending}
-          legend="Who can add me to groups"
+          legend={t("groups.addPolicy.label")}
           onValueChange={(next) => {
             if (next !== policyQuery.data) save.mutate(next);
           }}
           optionTestIdPrefix="settings-group-add-policy"
-          options={OPTIONS}
+          options={options}
           size="compact"
           testId="settings-group-add-policy-control"
           value={policyQuery.data ?? "friends"}
@@ -61,7 +65,7 @@ export function GroupAddPolicySetting() {
       {policyQuery.isError ? (
         <SettingsOptionRow>
           <p className="text-sm text-muted-foreground">
-            Couldn't load this setting.
+            {t("groups.addPolicy.loadFailed")}
           </p>
         </SettingsOptionRow>
       ) : null}

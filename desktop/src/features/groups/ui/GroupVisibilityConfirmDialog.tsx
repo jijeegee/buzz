@@ -1,9 +1,5 @@
 import { SettingsConfirmDialog } from "@/features/settings/ui/SettingsConfirmDialog";
-
-export const MAKE_PUBLIC_BODY =
-  "Anyone on Kuzz will be able to find this group and read its past messages.";
-export const MAKE_PRIVATE_BODY =
-  "The public address will be removed and the group will disappear from search. Members stay.";
+import { useT } from "@/shared/i18n";
 
 /** Confirm before a group switches between public and private. */
 export function GroupVisibilityConfirmDialog({
@@ -17,16 +13,29 @@ export function GroupVisibilityConfirmDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const t = useT();
   const toPublic = nextVisibility === "open";
   return (
     <SettingsConfirmDialog
-      confirmLabel={toPublic ? "Make public" : "Make private"}
-      description={toPublic ? MAKE_PUBLIC_BODY : MAKE_PRIVATE_BODY}
+      confirmLabel={
+        toPublic
+          ? t("groups.visibilityConfirm.makePublic")
+          : t("groups.visibilityConfirm.makePrivate")
+      }
+      description={
+        toPublic
+          ? t("groups.visibilityConfirm.publicBody")
+          : t("groups.visibilityConfirm.privateBody")
+      }
       onConfirm={onConfirm}
       onOpenChange={onOpenChange}
       open={open}
       testId="group-visibility-confirm"
-      title={toPublic ? "Make this group public?" : "Make this group private?"}
+      title={
+        toPublic
+          ? t("groups.visibilityConfirm.publicTitle")
+          : t("groups.visibilityConfirm.privateTitle")
+      }
     />
   );
 }

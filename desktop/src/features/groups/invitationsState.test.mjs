@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  INVITATION_NO_LONGER_VALID_TEXT,
+  invitationNoLongerValidText,
   invitationsRowLabel,
   invitationsViewState,
   invitedYouText,
@@ -60,7 +60,7 @@ test("row texts", () => {
   assert.equal(memberCountLabel(5), "5 members");
   assert.equal(invitedYouText("Alice"), "Alice invited you");
   assert.equal(
-    INVITATION_NO_LONGER_VALID_TEXT,
+    invitationNoLongerValidText(),
     "This invitation is no longer valid.",
   );
 });

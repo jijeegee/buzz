@@ -158,5 +158,733 @@
   "common.you": "You",
   "@common.you": {
     "description": "Refers to the current user, e.g. in a member list or as a message author. Short."
+  },
+  "channelTemplates.apply.agentsFailed": "{count, plural, one {# agent from the template could not be created} other {# agents from the template could not be created}}",
+  "@channelTemplates.apply.agentsFailed": {
+    "description": "Warning toast after creating a group from a template when some of the template's agents could not be created."
+  },
+  "forum.noGroupSelected": "No group selected.",
+  "@forum.noGroupSelected": {
+    "description": "Error shown when posting or deleting in a forum while no forum is open."
+  },
+  "forum.time.minutesAgo": "{minutes}m ago",
+  "@forum.time.minutesAgo": {
+    "description": "Forum post card, how long ago the last reply was, after the word 'last'; abbreviated minutes. Short."
+  },
+  "forum.time.hoursAgo": "{hours}h ago",
+  "@forum.time.hoursAgo": {
+    "description": "Forum post card, how long ago the last reply was, after the word 'last'; abbreviated hours. Short."
+  },
+  "forum.time.daysAgo": "{days}d ago",
+  "@forum.time.daysAgo": {
+    "description": "Forum post card, how long ago the last reply was, after the word 'last'; abbreviated days. Short."
+  },
+  "forum.delete.postAction": "Delete post",
+  "@forum.delete.postAction": {
+    "description": "Forum post menu item and confirm button that deletes a post. Short."
+  },
+  "forum.delete.replyAction": "Delete reply",
+  "@forum.delete.replyAction": {
+    "description": "Forum reply menu item and confirm button that deletes a reply. Short."
+  },
+  "forum.delete.postTitle": "Delete post?",
+  "@forum.delete.postTitle": {
+    "description": "Title of the dialog confirming deletion of a forum post."
+  },
+  "forum.delete.replyTitle": "Delete reply?",
+  "@forum.delete.replyTitle": {
+    "description": "Title of the dialog confirming deletion of a forum reply."
+  },
+  "forum.delete.postBody": "This will permanently delete this post and cannot be undone.",
+  "@forum.delete.postBody": {
+    "description": "Body of the dialog confirming deletion of a forum post."
+  },
+  "forum.delete.replyBody": "This will permanently delete this reply and cannot be undone.",
+  "@forum.delete.replyBody": {
+    "description": "Body of the dialog confirming deletion of a forum reply."
+  },
+  "forum.composer.comment": "Comment",
+  "@forum.composer.comment": {
+    "description": "Forum reply composer, send button and its menu option that posts a comment. Short."
+  },
+  "forum.composer.sending": "Sending",
+  "@forum.composer.sending": {
+    "description": "Screen-reader label of the forum composer send button while sending. Short."
+  },
+  "forum.composer.send": "Send message",
+  "@forum.composer.send": {
+    "description": "Screen-reader label of the forum composer send button. Short."
+  },
+  "forum.composer.uploadFailed": "Upload failed: {message}",
+  "@forum.composer.uploadFailed": {
+    "description": "Error above the forum composer when an attachment upload fails; {message} is the error detail."
+  },
+  "forum.composer.dismiss": "Dismiss",
+  "@forum.composer.dismiss": {
+    "description": "Button that hides the upload error above the forum composer. Short."
+  },
+  "forum.postCard.replyCount": "{count, plural, one {# reply} other {# replies}}",
+  "@forum.postCard.replyCount": {
+    "description": "Forum post card footer, number of replies. Short."
+  },
+  "forum.postCard.lastReply": "last {time}",
+  "@forum.postCard.lastReply": {
+    "description": "Forum post card footer, when the last reply was; {time} is like '5m ago' or 'just now'. Lowercase. Short."
+  },
+  "forum.thread.backToPosts": "Back to posts",
+  "@forum.thread.backToPosts": {
+    "description": "Button at the top of a forum post's thread that returns to the post list. Short."
+  },
+  "forum.thread.replyCount": "{count, plural, one {# reply} other {# replies}}",
+  "@forum.thread.replyCount": {
+    "description": "Forum thread, header above the replies list. Short."
+  },
+  "forum.thread.noReplies": "No replies yet. Be the first to respond.",
+  "@forum.thread.noReplies": {
+    "description": "Forum thread, empty state when a post has no replies."
+  },
+  "forum.thread.replyPlaceholder": "Reply to this post...",
+  "@forum.thread.replyPlaceholder": {
+    "description": "Placeholder of the reply composer in a forum thread."
+  },
+  "forum.view.postPlaceholder": "Write your post...",
+  "@forum.view.postPlaceholder": {
+    "description": "Placeholder of the new post composer at the top of a forum."
+  },
+  "forum.view.archived": "This forum is archived.",
+  "@forum.view.archived": {
+    "description": "Forum, shown in place of the new post button when the forum is archived."
+  },
+  "forum.view.joinToPost": "Join this forum to create posts.",
+  "@forum.view.joinToPost": {
+    "description": "Forum, shown in place of the new post button when you are not a member."
+  },
+  "forum.view.startPost": "Start a new post...",
+  "@forum.view.startPost": {
+    "description": "Forum, button at the top that opens the new post composer."
+  },
+  "forum.view.emptyTitle": "No posts yet",
+  "@forum.view.emptyTitle": {
+    "description": "Forum, empty state title when there are no posts."
+  },
+  "forum.view.emptyBody": "Start a discussion by creating the first post.",
+  "@forum.view.emptyBody": {
+    "description": "Forum, empty state text under the title."
+  },
+  "forum.mentions.inviteFailed": "Could not invite members.",
+  "@forum.mentions.inviteFailed": {
+    "description": "Forum composer, error when adding mentioned people to the forum fails."
+  },
+  "groups.genericError": "Something went wrong. Try again.",
+  "@groups.genericError": {
+    "description": "Error toast or message when joining a group or answering an invitation fails for an unknown reason."
+  },
+  "groups.publicAddress.taken": "This address is taken.",
+  "@groups.publicAddress.taken": {
+    "description": "Group settings, Sharing, error under the public address field when another group uses it."
+  },
+  "groups.publicAddress.invalid": "Use 3-32 characters: a-z, 0-9 and _.",
+  "@groups.publicAddress.invalid": {
+    "description": "Group settings, Sharing, error under the public address field when it has invalid characters or length."
+  },
+  "groups.publicAddress.reserved": "This address is reserved.",
+  "@groups.publicAddress.reserved": {
+    "description": "Group settings, Sharing, error under the public address field when the address is reserved."
+  },
+  "groups.invitations.rowLabel": "Invitations · {count}",
+  "@groups.invitations.rowLabel": {
+    "description": "Chats list row that opens pending group invitations; {count} is how many. Short."
+  },
+  "groups.invitations.memberCount": "{count, plural, one {# member} other {# members}}",
+  "@groups.invitations.memberCount": {
+    "description": "Group invitation row or group preview card, number of members. Short."
+  },
+  "groups.invitations.invitedYou": "{name} invited you",
+  "@groups.invitations.invitedYou": {
+    "description": "Group invitation row, who sent the invitation. Short."
+  },
+  "groups.invitations.rowSubtitle": "{name} invited you · {members}",
+  "@groups.invitations.rowSubtitle": {
+    "description": "Invitations dialog, small text under a group name; {members} is like '5 members' or '5 people'. Short."
+  },
+  "groups.invitations.noLongerValid": "This invitation is no longer valid.",
+  "@groups.invitations.noLongerValid": {
+    "description": "Toast when you answer a group invitation that was withdrawn or expired."
+  },
+  "groups.invitations.title": "Invitations",
+  "@groups.invitations.title": {
+    "description": "Title of the dialog listing pending group invitations. Short."
+  },
+  "groups.invitations.loading": "Loading...",
+  "@groups.invitations.loading": {
+    "description": "Invitations dialog, shown while invitations load. Short."
+  },
+  "groups.invitations.loadFailed": "Couldn't load invitations.",
+  "@groups.invitations.loadFailed": {
+    "description": "Invitations dialog, error when the list fails to load."
+  },
+  "groups.invitations.tryAgain": "Try again",
+  "@groups.invitations.tryAgain": {
+    "description": "Invitations dialog, button that reloads the list after an error. Short."
+  },
+  "groups.invitations.empty": "No invitations",
+  "@groups.invitations.empty": {
+    "description": "Invitations dialog, empty state. Short."
+  },
+  "groups.invitations.decline": "Decline",
+  "@groups.invitations.decline": {
+    "description": "Invitations dialog, button that declines an invitation. Short."
+  },
+  "groups.invitations.join": "Join",
+  "@groups.invitations.join": {
+    "description": "Invitations dialog, button that accepts an invitation and joins the group. Short."
+  },
+  "groups.invitations.joining": "Joining...",
+  "@groups.invitations.joining": {
+    "description": "Invitations dialog, join button while joining. Short."
+  },
+  "groups.addPolicy.sectionTitle": "Groups",
+  "@groups.addPolicy.sectionTitle": {
+    "description": "Settings, Privacy, section title for group settings. Short."
+  },
+  "groups.addPolicy.label": "Who can add me to groups",
+  "@groups.addPolicy.label": {
+    "description": "Settings, Privacy, label of the choice of who may add you to groups directly."
+  },
+  "groups.addPolicy.friends": "Friends",
+  "@groups.addPolicy.friends": {
+    "description": "Settings, Privacy, option: only friends can add you to groups. Short."
+  },
+  "groups.addPolicy.everyone": "Everyone",
+  "@groups.addPolicy.everyone": {
+    "description": "Settings, Privacy, option: anyone can add you to groups. Short."
+  },
+  "groups.addPolicy.saveFailed": "Couldn't change this setting",
+  "@groups.addPolicy.saveFailed": {
+    "description": "Error toast when saving who can add you to groups fails."
+  },
+  "groups.addPolicy.loadFailed": "Couldn't load this setting.",
+  "@groups.addPolicy.loadFailed": {
+    "description": "Settings, Privacy, error when who can add you to groups fails to load."
+  },
+  "groups.preview.open": "Open",
+  "@groups.preview.open": {
+    "description": "Group preview card (join with link), button that opens a group you are already in. Short."
+  },
+  "groups.preview.join": "Join group",
+  "@groups.preview.join": {
+    "description": "Group preview card (join with link), button that joins the group. Short."
+  },
+  "groups.preview.joining": "Joining...",
+  "@groups.preview.joining": {
+    "description": "Group preview card, join button while joining. Short."
+  },
+  "groups.sharing.title": "Sharing",
+  "@groups.sharing.title": {
+    "description": "Group settings, section title for public address and invite link. Short."
+  },
+  "groups.sharing.publicAddress": "Public address",
+  "@groups.sharing.publicAddress": {
+    "description": "Group settings, Sharing, label of the public address field. Short."
+  },
+  "groups.sharing.addressSaved": "Public address saved",
+  "@groups.sharing.addressSaved": {
+    "description": "Toast after saving a group's public address."
+  },
+  "groups.sharing.addressRemoved": "Public address removed",
+  "@groups.sharing.addressRemoved": {
+    "description": "Toast after clearing a group's public address."
+  },
+  "groups.sharing.addressSaveFailed": "Couldn't save the address.",
+  "@groups.sharing.addressSaveFailed": {
+    "description": "Group settings, Sharing, error when saving the public address fails."
+  },
+  "groups.sharing.saving": "Saving...",
+  "@groups.sharing.saving": {
+    "description": "Group settings, Sharing, save button while saving. Short."
+  },
+  "groups.sharing.inviteLink": "Invite link",
+  "@groups.sharing.inviteLink": {
+    "description": "Group settings, Sharing, label above the group's invite link. Short."
+  },
+  "groups.sharing.loading": "Loading...",
+  "@groups.sharing.loading": {
+    "description": "Group settings, Sharing, shown while the invite link loads. Short."
+  },
+  "groups.sharing.linkLoadFailed": "Couldn't load the link.",
+  "@groups.sharing.linkLoadFailed": {
+    "description": "Group settings, Sharing, error when the invite link fails to load."
+  },
+  "groups.sharing.copyLink": "Copy link",
+  "@groups.sharing.copyLink": {
+    "description": "Group settings, Sharing, button that copies the invite link. Short."
+  },
+  "groups.sharing.linkCopied": "Link copied",
+  "@groups.sharing.linkCopied": {
+    "description": "Toast after copying a group invite link. Short."
+  },
+  "groups.sharing.resetLink": "Reset link",
+  "@groups.sharing.resetLink": {
+    "description": "Group settings, Sharing, button and confirm button that replaces the invite link with a new one. Short."
+  },
+  "groups.sharing.resetTitle": "Reset link?",
+  "@groups.sharing.resetTitle": {
+    "description": "Title of the dialog confirming an invite link reset."
+  },
+  "groups.sharing.resetBody": "The old link will stop working.",
+  "@groups.sharing.resetBody": {
+    "description": "Body of the dialog confirming an invite link reset."
+  },
+  "groups.sharing.resetFailed": "Couldn't reset the link.",
+  "@groups.sharing.resetFailed": {
+    "description": "Error toast when resetting a group invite link fails."
+  },
+  "groups.sharing.whoCanInvite": "Who can invite",
+  "@groups.sharing.whoCanInvite": {
+    "description": "Group settings, Sharing, label of the choice of who may invite people. Short."
+  },
+  "groups.sharing.allMembers": "All members",
+  "@groups.sharing.allMembers": {
+    "description": "Group settings, Sharing, option: all members can invite. Short."
+  },
+  "groups.sharing.adminsOnly": "Admins only",
+  "@groups.sharing.adminsOnly": {
+    "description": "Group settings, Sharing, option: only admins can invite. Short."
+  },
+  "groups.sharing.policySaveFailed": "Couldn't change this setting.",
+  "@groups.sharing.policySaveFailed": {
+    "description": "Error toast when saving who can invite to a group fails."
+  },
+  "groups.visibilityConfirm.publicTitle": "Make this group public?",
+  "@groups.visibilityConfirm.publicTitle": {
+    "description": "Title of the dialog confirming a switch of a group to public."
+  },
+  "groups.visibilityConfirm.privateTitle": "Make this group private?",
+  "@groups.visibilityConfirm.privateTitle": {
+    "description": "Title of the dialog confirming a switch of a group to private."
+  },
+  "groups.visibilityConfirm.publicBody": "Anyone on Kuzz will be able to find this group and read its past messages.",
+  "@groups.visibilityConfirm.publicBody": {
+    "description": "Body of the dialog confirming a switch of a group to public."
+  },
+  "groups.visibilityConfirm.privateBody": "The public address will be removed and the group will disappear from search. Members stay.",
+  "@groups.visibilityConfirm.privateBody": {
+    "description": "Body of the dialog confirming a switch of a group to private."
+  },
+  "groups.visibilityConfirm.makePublic": "Make public",
+  "@groups.visibilityConfirm.makePublic": {
+    "description": "Confirm button in the dialog switching a group to public. Short."
+  },
+  "groups.visibilityConfirm.makePrivate": "Make private",
+  "@groups.visibilityConfirm.makePrivate": {
+    "description": "Confirm button in the dialog switching a group to private. Short."
+  },
+  "groups.joinWithLink.title": "Join with link",
+  "@groups.joinWithLink.title": {
+    "description": "Title of the dialog for joining a group from an invite link or @address. Short."
+  },
+  "groups.joinWithLink.placeholder": "Paste an invite link or @address",
+  "@groups.joinWithLink.placeholder": {
+    "description": "Placeholder of the link field in the Join with link dialog."
+  },
+  "groups.joinWithLink.looking": "Looking...",
+  "@groups.joinWithLink.looking": {
+    "description": "Join with link dialog, Continue button while looking up the group. Short."
+  },
+  "groups.joinWithLink.invalid": "This doesn't look like a group link.",
+  "@groups.joinWithLink.invalid": {
+    "description": "Join with link dialog, error when the pasted text is not a group link."
+  },
+  "groups.joinWithLink.notFound": "No group found for this link.",
+  "@groups.joinWithLink.notFound": {
+    "description": "Join with link dialog, error when no group matches the link."
+  },
+  "groups.joinWithLink.forbidden": "You can't join this group.",
+  "@groups.joinWithLink.forbidden": {
+    "description": "Join with link dialog, error when joining is not allowed."
+  },
+  "huddle.leave": "Leave",
+  "@huddle.leave": {
+    "description": "Huddle bar and sidebar huddle card, button that leaves the huddle. Short."
+  },
+  "huddle.leaveLabel": "Leave huddle",
+  "@huddle.leaveLabel": {
+    "description": "Screen-reader label of the Leave button in a huddle. Short."
+  },
+  "huddle.openWindow": "Open huddle window",
+  "@huddle.openWindow": {
+    "description": "Tooltip or screen-reader label of the button that opens the huddle in its own window. Short."
+  },
+  "huddle.starting": "Starting huddle",
+  "@huddle.starting": {
+    "description": "Screen-reader text while a huddle is being started. Short."
+  },
+  "huddle.removeAgentNamed": "Remove {name} from huddle",
+  "@huddle.removeAgentNamed": {
+    "description": "Screen-reader label of the button that removes an agent from the huddle; {name} is the agent's name."
+  },
+  "huddle.removeAgentConfirm": "Remove this agent from the huddle?",
+  "@huddle.removeAgentConfirm": {
+    "description": "Confirmation prompt before removing an agent from a huddle."
+  },
+  "huddle.addAgent.title": "Add agents",
+  "@huddle.addAgent.title": {
+    "description": "Title of the dialog for adding agents to a huddle. Short."
+  },
+  "huddle.addAgent.subtitle": "Choose an agent to join this huddle.",
+  "@huddle.addAgent.subtitle": {
+    "description": "Subtitle of the Add agents dialog in a huddle."
+  },
+  "huddle.addAgent.loading": "Loading agents…",
+  "@huddle.addAgent.loading": {
+    "description": "Add agents dialog in a huddle, shown while the list loads. Short."
+  },
+  "huddle.addAgent.allAdded": "All available agents are already in this huddle.",
+  "@huddle.addAgent.allAdded": {
+    "description": "Add agents dialog in a huddle, empty state when every agent has joined."
+  },
+  "huddle.addAgent.adding": "Adding {name}",
+  "@huddle.addAgent.adding": {
+    "description": "Screen-reader label of the spinner next to an agent being added to a huddle."
+  },
+  "huddle.addAgent.loadFailed": "Could not load agents.",
+  "@huddle.addAgent.loadFailed": {
+    "description": "Add agents dialog in a huddle, error when the agent list fails to load."
+  },
+  "huddle.addAgent.startFailed": "Added to huddle, but could not start agent: {message}",
+  "@huddle.addAgent.startFailed": {
+    "description": "Add agents dialog in a huddle, warning; {message} is the error detail."
+  },
+  "huddle.addAgent.parentFailed": "Added to huddle, but parent group failed: {message}",
+  "@huddle.addAgent.parentFailed": {
+    "description": "Add agents dialog in a huddle, warning when the agent could not be added to the group the huddle belongs to; {message} is the error detail."
+  },
+  "huddle.addAgent.addFailed": "Failed to add agent: {message}",
+  "@huddle.addAgent.addFailed": {
+    "description": "Huddle, error when adding an agent fails; {message} is the error detail."
+  },
+  "huddle.agentVoice.settingsFor": "Voice settings for {name}",
+  "@huddle.agentVoice.settingsFor": {
+    "description": "Screen-reader label of the button that opens an agent's voice settings in a huddle."
+  },
+  "huddle.agentVoice.tts": "Agent text-to-speech",
+  "@huddle.agentVoice.tts": {
+    "description": "Agent voice settings in a huddle, label of the switch that turns the agent's speech on or off."
+  },
+  "huddle.agentVoice.voice": "Agent voice",
+  "@huddle.agentVoice.voice": {
+    "description": "Agent voice settings in a huddle, label next to the voice picker. Short."
+  },
+  "huddle.agentVoice.choose": "Choose agent voice",
+  "@huddle.agentVoice.choose": {
+    "description": "Screen-reader label of the agent voice picker in a huddle. Short."
+  },
+  "huddle.agentVoice.unavailable": "Unavailable",
+  "@huddle.agentVoice.unavailable": {
+    "description": "Agent voice picker in a huddle, shown when no voice is available. Short."
+  },
+  "huddle.agentVoice.remove": "Remove from huddle",
+  "@huddle.agentVoice.remove": {
+    "description": "Agent voice settings in a huddle, button that removes the agent. Short."
+  },
+  "huddle.agentVoice.updateFailed": "Agent voice could not be updated.",
+  "@huddle.agentVoice.updateFailed": {
+    "description": "Agent voice settings in a huddle, error when saving fails."
+  },
+  "huddle.attachment.title": "Huddle",
+  "@huddle.attachment.title": {
+    "description": "Huddle card in a chat, title before the status (Huddle · In progress). Short."
+  },
+  "huddle.attachment.inProgress": "In progress",
+  "@huddle.attachment.inProgress": {
+    "description": "Huddle card in a chat, status after the title. Short."
+  },
+  "huddle.attachment.ended": "Ended",
+  "@huddle.attachment.ended": {
+    "description": "Huddle card in a chat, status after the title. Short."
+  },
+  "huddle.attachment.participants": "{count, plural, one {# participant} other {# participants}}",
+  "@huddle.attachment.participants": {
+    "description": "Huddle card in a chat or huddle participant list, number of participants. Short."
+  },
+  "huddle.attachment.unavailable": "Huddle unavailable",
+  "@huddle.attachment.unavailable": {
+    "description": "Huddle card in a chat, title when the card is broken. Short."
+  },
+  "huddle.attachment.missingDetails": "This huddle card is missing session details.",
+  "@huddle.attachment.missingDetails": {
+    "description": "Huddle card in a chat, text when the card is broken."
+  },
+  "huddle.attachment.join": "Join",
+  "@huddle.attachment.join": {
+    "description": "Huddle card in a chat, button that joins the huddle. Short."
+  },
+  "huddle.attachment.joining": "Joining",
+  "@huddle.attachment.joining": {
+    "description": "Huddle card in a chat, join button while joining. Short."
+  },
+  "huddle.attachment.view": "View",
+  "@huddle.attachment.view": {
+    "description": "Huddle card in a chat, button that shows the huddle. Short."
+  },
+  "huddle.attachment.viewLabel": "View huddle",
+  "@huddle.attachment.viewLabel": {
+    "description": "Screen-reader label of the View button on a huddle card. Short."
+  },
+  "huddle.bar.someone": "Someone",
+  "@huddle.bar.someone": {
+    "description": "Name shown for the sender of a huddle emoji reaction when their name is unknown. Short."
+  },
+  "huddle.bar.reactionFailed": "Reaction failed",
+  "@huddle.bar.reactionFailed": {
+    "description": "Huddle bar, error when sending an emoji reaction fails. Short."
+  },
+  "huddle.bar.transcriptFailed": "Transcript failed: {message}",
+  "@huddle.bar.transcriptFailed": {
+    "description": "Huddle bar, error when turning the transcript on or off fails; {message} is the error detail."
+  },
+  "huddle.bar.dismissError": "Dismiss error",
+  "@huddle.bar.dismissError": {
+    "description": "Screen-reader label of the button that hides a huddle error. Short."
+  },
+  "huddle.bar.voiceModels": "Voice models: STT {stt}, TTS {tts}",
+  "@huddle.bar.voiceModels": {
+    "description": "Huddle bar, download progress of the speech-to-text (STT) and text-to-speech (TTS) models; {stt} and {tts} are status words from the app."
+  },
+  "huddle.bar.sttModel": "STT model: {status}",
+  "@huddle.bar.sttModel": {
+    "description": "Huddle bar, download progress of the speech-to-text model; {status} is a status word from the app."
+  },
+  "huddle.bar.ttsModel": "TTS model: {status}",
+  "@huddle.bar.ttsModel": {
+    "description": "Huddle bar, download progress of the text-to-speech model; {status} is a status word from the app."
+  },
+  "huddle.bar.reactions": "Emoji reactions",
+  "@huddle.bar.reactions": {
+    "description": "Huddle bar, tooltip and screen-reader label of the emoji reactions button. Short."
+  },
+  "huddle.bar.startTranscript": "Start transcript",
+  "@huddle.bar.startTranscript": {
+    "description": "Huddle bar, tooltip and screen-reader label of the transcript button. Short."
+  },
+  "huddle.bar.stopTranscript": "Stop transcript",
+  "@huddle.bar.stopTranscript": {
+    "description": "Huddle bar, tooltip and screen-reader label of the transcript button while on. Short."
+  },
+  "huddle.bar.addAgent": "Add agent",
+  "@huddle.bar.addAgent": {
+    "description": "Huddle bar, tooltip of the button that adds an agent. Short."
+  },
+  "huddle.bar.addAgentLabel": "Add agent to huddle",
+  "@huddle.bar.addAgentLabel": {
+    "description": "Screen-reader label of the huddle bar button that adds an agent. Short."
+  },
+  "huddle.bar.openWindowLabel": "Open huddle in a new window",
+  "@huddle.bar.openWindowLabel": {
+    "description": "Screen-reader label of the huddle bar button that opens the huddle window. Short."
+  },
+  "huddle.bar.returnToDrawer": "Return huddle to drawer",
+  "@huddle.bar.returnToDrawer": {
+    "description": "Huddle window, tooltip and screen-reader label of the button that moves the huddle back into the main window. Short."
+  },
+  "huddle.bar.srStatus": "In huddle, {mic, select, yes {microphone connected} other {no microphone}}, voice input: {ptt, select, yes {push to talk, press Ctrl+Space to transmit} other {voice activity detection}}",
+  "@huddle.bar.srStatus": {
+    "description": "Screen-reader announcement of the huddle state. Keep 'Ctrl+Space' as is."
+  },
+  "huddle.bar.srSttModel": ", STT model {status}",
+  "@huddle.bar.srSttModel": {
+    "description": "Screen-reader announcement appended to the huddle state, starting with a comma; speech-to-text model download status from the app."
+  },
+  "huddle.bar.srTtsModel": ", TTS model {status}",
+  "@huddle.bar.srTtsModel": {
+    "description": "Screen-reader announcement appended to the huddle state, starting with a comma; text-to-speech model download status from the app."
+  },
+  "huddle.indicator.start": "Start huddle",
+  "@huddle.indicator.start": {
+    "description": "Group header, button or menu item that starts a voice huddle. Short."
+  },
+  "huddle.indicator.tooltip": "Huddle",
+  "@huddle.indicator.tooltip": {
+    "description": "Group header, tooltip of the start huddle button. Short."
+  },
+  "huddle.indicator.join": "Join huddle",
+  "@huddle.indicator.join": {
+    "description": "Group header menu item that joins the active huddle. Short."
+  },
+  "huddle.indicator.joinActive": "Join active huddle ({count, plural, one {# participant} other {# participants}})",
+  "@huddle.indicator.joinActive": {
+    "description": "Screen-reader label of the group header button that joins the active huddle."
+  },
+  "huddle.indicator.active": "Huddle active — {count, plural, one {# participant} other {# participants}}",
+  "@huddle.indicator.active": {
+    "description": "Tooltip of the group header button when a huddle is running."
+  },
+  "huddle.error.audioUnavailable": "Huddle audio isn’t available on this server. Ask an administrator to turn it on.",
+  "@huddle.error.audioUnavailable": {
+    "description": "Error when starting or joining a huddle on a server without huddle audio."
+  },
+  "huddle.error.joinFailed": "Couldn’t join the huddle.",
+  "@huddle.error.joinFailed": {
+    "description": "Error toast when joining a huddle fails."
+  },
+  "huddle.error.startFailed": "Couldn’t start the huddle.",
+  "@huddle.error.startFailed": {
+    "description": "Error when starting a huddle fails."
+  },
+  "huddle.profile.inHuddle": "In a huddle",
+  "@huddle.profile.inHuddle": {
+    "description": "Sidebar card while you are in a huddle, title. Short."
+  },
+  "huddle.profile.fallbackName": "Huddle",
+  "@huddle.profile.fallbackName": {
+    "description": "Sidebar card while you are in a huddle, shown when the group name is unknown. Short."
+  },
+  "huddle.transcriptIntro.title": "Huddle chat",
+  "@huddle.transcriptIntro.title": {
+    "description": "Huddle window, title at the top of the chat. Short."
+  },
+  "huddle.transcriptIntro.body": "Chat with huddle participants and agents. The transcript appears here too.",
+  "@huddle.transcriptIntro.body": {
+    "description": "Huddle window, text at the top of the chat."
+  },
+  "huddle.mic.unavailable": "Microphone unavailable",
+  "@huddle.mic.unavailable": {
+    "description": "Huddle microphone button label, or title in audio settings, when no microphone works. Short."
+  },
+  "huddle.mic.unavailableTooltip": "Microphone unavailable. Check app permissions or input device.",
+  "@huddle.mic.unavailableTooltip": {
+    "description": "Huddle microphone button tooltip when no microphone works."
+  },
+  "huddle.mic.unavailableBody": "Check app microphone permission or select another input device.",
+  "@huddle.mic.unavailableBody": {
+    "description": "Huddle audio settings, advice under Microphone unavailable."
+  },
+  "huddle.mic.mute": "Mute microphone",
+  "@huddle.mic.mute": {
+    "description": "Huddle microphone button, tooltip and screen-reader label. Short."
+  },
+  "huddle.mic.unmute": "Unmute microphone",
+  "@huddle.mic.unmute": {
+    "description": "Huddle microphone button while muted, tooltip and screen-reader label. Short."
+  },
+  "huddle.mic.pttHint": "Click to unmute or hold",
+  "@huddle.mic.pttHint": {
+    "description": "Huddle microphone tooltip in push-to-talk mode, followed by the key shortcut (Ctrl+Space)."
+  },
+  "huddle.mic.audioSettings": "Audio settings",
+  "@huddle.mic.audioSettings": {
+    "description": "Screen-reader label of the huddle button that opens microphone settings. Short."
+  },
+  "huddle.mic.inputMode": "Input Mode",
+  "@huddle.mic.inputMode": {
+    "description": "Huddle audio settings, heading above the push-to-talk option. Title case. Short."
+  },
+  "huddle.mic.ptt": "Push to Talk",
+  "@huddle.mic.ptt": {
+    "description": "Huddle audio settings, option: microphone only sends while a key is held. Title case. Short."
+  },
+  "huddle.mic.pttOn": "Turn on Push to Talk",
+  "@huddle.mic.pttOn": {
+    "description": "Screen-reader label of the Push to Talk option. Short."
+  },
+  "huddle.mic.pttOff": "Turn off Push to Talk",
+  "@huddle.mic.pttOff": {
+    "description": "Screen-reader label of the Push to Talk option while on. Short."
+  },
+  "huddle.mic.pttEnabled": "Push to Talk is enabled.",
+  "@huddle.mic.pttEnabled": {
+    "description": "Screen-reader announcement after turning on Push to Talk."
+  },
+  "huddle.mic.continuous": "Microphone is continuous.",
+  "@huddle.mic.continuous": {
+    "description": "Screen-reader announcement after turning off Push to Talk."
+  },
+  "huddle.mic.microphone": "Microphone",
+  "@huddle.mic.microphone": {
+    "description": "Huddle audio settings, heading of the microphone list. Short."
+  },
+  "huddle.mic.deviceFallback": "Mic {id}",
+  "@huddle.mic.deviceFallback": {
+    "description": "Huddle audio settings, name of a microphone without a name; {id} is part of its device ID. Short."
+  },
+  "huddle.mic.inputVolume": "Input Volume",
+  "@huddle.mic.inputVolume": {
+    "description": "Huddle audio settings, label of the microphone volume slider. Title case. Short."
+  },
+  "huddle.mic.openSettings": "Open Settings",
+  "@huddle.mic.openSettings": {
+    "description": "Huddle audio settings, button that opens the system microphone privacy settings (macOS). Short."
+  },
+  "huddle.headphones.label": "Headphones recommended",
+  "@huddle.headphones.label": {
+    "description": "Screen-reader label of the tip suggesting headphones in a huddle. Short."
+  },
+  "huddle.headphones.title": "Headphones help prevent echo",
+  "@huddle.headphones.title": {
+    "description": "Huddle tip suggesting headphones, title."
+  },
+  "huddle.headphones.body": "If people are nearby, speakers can feed back into your mic. Headphones keep huddles clearer.",
+  "@huddle.headphones.body": {
+    "description": "Huddle tip suggesting headphones, text."
+  },
+  "huddle.headphones.gotIt": "Got it",
+  "@huddle.headphones.gotIt": {
+    "description": "Huddle tip suggesting headphones, button that closes it. Short."
+  },
+  "huddle.speaker.muteAgents": "Mute agent speech",
+  "@huddle.speaker.muteAgents": {
+    "description": "Screen-reader label of the huddle speaker button. Short."
+  },
+  "huddle.speaker.unmuteAgents": "Unmute agent speech",
+  "@huddle.speaker.unmuteAgents": {
+    "description": "Screen-reader label of the huddle speaker button while agent speech is muted. Short."
+  },
+  "huddle.speaker.settings": "Speaker settings",
+  "@huddle.speaker.settings": {
+    "description": "Screen-reader label of the huddle button that opens speaker settings. Short."
+  },
+  "huddle.speaker.label": "Speaker",
+  "@huddle.speaker.label": {
+    "description": "Huddle speaker settings, heading of the speaker list. Short."
+  },
+  "huddle.devices.systemDefault": "System default",
+  "@huddle.devices.systemDefault": {
+    "description": "Huddle audio settings, device list option that uses the system's device. Short."
+  },
+  "huddle.devices.changeHint": "Change takes effect on next huddle",
+  "@huddle.devices.changeHint": {
+    "description": "Huddle audio settings, note under the device list."
+  },
+  "huddle.participants.title": "Participants",
+  "@huddle.participants.title": {
+    "description": "Huddle participant list, title. Short."
+  },
+  "huddle.participants.openProfile": "Open profile for {name}",
+  "@huddle.participants.openProfile": {
+    "description": "Screen-reader label of a participant's avatar in the huddle participant list."
+  },
+  "huddle.participants.speaking": "Speaking",
+  "@huddle.participants.speaking": {
+    "description": "Huddle participant list, status under a name. Short."
+  },
+  "huddle.participants.agent": "Agent",
+  "@huddle.participants.agent": {
+    "description": "Huddle participant list, status under an AI agent's name, or its name when unknown. Short."
+  },
+  "huddle.participants.inHuddle": "In huddle",
+  "@huddle.participants.inHuddle": {
+    "description": "Huddle participant list, status under a person's name. Short."
+  },
+  "huddle.participants.stop": "Stop",
+  "@huddle.participants.stop": {
+    "description": "Huddle participant tile, button that stops an agent speaking. Short."
+  },
+  "huddle.participants.stopSpeaking": "Stop {name} speaking",
+  "@huddle.participants.stopSpeaking": {
+    "description": "Screen-reader label of the Stop button on an agent's huddle tile."
+  },
+  "huddle.participants.showAll": "Show all huddle participants ({count})",
+  "@huddle.participants.showAll": {
+    "description": "Screen-reader label of the +N button that shows every huddle participant."
   }
 }
