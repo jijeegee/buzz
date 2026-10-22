@@ -178,6 +178,14 @@ async fn assert_aux_access_change(grant: bool) {
     f.aux(7, &reply, Some(f.channel)).await;
     let aux_channel = Uuid::new_v4();
     private_channel(&f.state.db, f.community, aux_channel, &f.keys).await;
+    // Access changes here are removal/re-add; under since_join a re-add would
+    // also hide the earlier edit (covered by the since_join tests).
+    sqlx::query("UPDATE channels SET history_policy='all' WHERE community_id=$1 AND id=$2")
+        .bind(f.community.as_uuid())
+        .bind(aux_channel)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     let edit = f.aux(40003, &reply, Some(aux_channel)).await;
     set_access(&f, aux_channel, !grant).await;
     let contains_edit = |body: &Value| {

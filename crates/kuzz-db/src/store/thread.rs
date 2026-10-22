@@ -4,9 +4,9 @@
 //! nested threads. The `thread_metadata` table is populated when events are
 //! ingested and updated as replies arrive or are deleted.
 
+use chrono::{DateTime, Utc};
 use kuzz_core::thread_window::Direction;
 use kuzz_core::StoredEvent;
-use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -314,6 +314,29 @@ pub async fn get_thread_replies(
     limit: u32,
     cursor: Option<&[u8]>,
 ) -> Result<Vec<ThreadReply>> {
+    get_thread_replies_for_reader(
+        pool,
+        community_id,
+        root_event_id,
+        depth_limit,
+        limit,
+        cursor,
+        None,
+    )
+    .await
+}
+
+/// [`get_thread_replies`] without replies from before `history_reader`
+/// joined a `since_join` room (`channel_event_before_join`).
+pub(crate) async fn get_thread_replies_for_reader(
+    pool: &PgPool,
+    community_id: CommunityId,
+    root_event_id: &[u8],
+    depth_limit: Option<u32>,
+    limit: u32,
+    cursor: Option<&[u8]>,
+    history_reader: Option<&[u8]>,
+) -> Result<Vec<ThreadReply>> {
     let mut conn = crate::observability::acquire_writer(
         pool,
         crate::observability::WriterOperation::SubscriptionHistory,
@@ -326,6 +349,7 @@ pub async fn get_thread_replies(
         depth_limit,
         limit,
         cursor,
+        history_reader,
     )
     .await
 }
@@ -341,6 +365,7 @@ pub(crate) async fn get_thread_replies_on(
     depth_limit: Option<u32>,
     limit: u32,
     cursor: Option<&[u8]>,
+    history_reader: Option<&[u8]>,
 ) -> Result<Vec<ThreadReply>> {
     // Decode cursor bytes -> keyset (timestamp, optional event_id) for the
     // WHERE condition. Layout: 8-byte BE i64 seconds, then the raw event_id.
@@ -424,6 +449,14 @@ pub(crate) async fn get_thread_replies_on(
             None => {}
         }
 
+        if history_reader.is_some() {
+            sql.push_str(&format!(
+                " AND NOT channel_event_before_join(e.community_id, e.channel_id, \
+                 e.channel_sequence, ${param_idx})"
+            ));
+            param_idx += 1;
+        }
+
         sql.push_str(&format!(
             " ORDER BY tm.event_created_at ASC, tm.event_id ASC LIMIT ${param_idx}"
         ));
@@ -443,6 +476,9 @@ pub(crate) async fn get_thread_replies_on(
                 q = q.bind(*ts);
             }
             None => {}
+        }
+        if let Some(reader) = history_reader {
+            q = q.bind(reader.to_vec());
         }
         q = q.bind(remaining as i32);
 
@@ -593,6 +629,33 @@ pub async fn get_channel_window(
     kind_filter: Option<&[u32]>,
     direction: Direction,
 ) -> Result<ChannelWindow> {
+    get_channel_window_for_reader(
+        pool,
+        community_id,
+        channel_id,
+        limit,
+        cursor,
+        kind_filter,
+        direction,
+        None,
+    )
+    .await
+}
+
+/// [`get_channel_window`] with the `since_join` history cut of `history_reader`
+/// (`channel_history_floor`): rows from before that reader's current join are
+/// excluded before the `limit + 1` probe.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn get_channel_window_for_reader(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    limit: u32,
+    cursor: Option<(DateTime<Utc>, Vec<u8>)>,
+    kind_filter: Option<&[u32]>,
+    direction: Direction,
+    history_reader: Option<&[u8]>,
+) -> Result<ChannelWindow> {
     let mut conn = crate::observability::acquire_writer(
         pool,
         crate::observability::WriterOperation::SubscriptionHistory,
@@ -606,6 +669,7 @@ pub async fn get_channel_window(
         cursor,
         kind_filter,
         direction,
+        history_reader,
     )
     .await
 }
@@ -615,6 +679,7 @@ pub async fn get_channel_window(
 /// whose heartbeat observation proved coverage (the proof is
 /// connection-local; a different pooled session may sit at a different
 /// replay position).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn get_channel_window_on(
     conn: &mut sqlx::PgConnection,
     community_id: CommunityId,
@@ -623,6 +688,7 @@ pub(crate) async fn get_channel_window_on(
     cursor: Option<(DateTime<Utc>, Vec<u8>)>,
     kind_filter: Option<&[u32]>,
     direction: Direction,
+    history_reader: Option<&[u8]>,
 ) -> Result<ChannelWindow> {
     let newer = direction == Direction::Newer;
     if newer && cursor.is_none() {
@@ -692,6 +758,13 @@ pub(crate) async fn get_channel_window_on(
         }
     }
 
+    if history_reader.is_some() {
+        sql.push_str(&format!(
+            " AND e.channel_sequence > channel_history_floor($1, $2, ${param_idx})"
+        ));
+        param_idx += 1;
+    }
+
     let order = if newer {
         "e.created_at ASC, e.id DESC"
     } else {
@@ -704,6 +777,9 @@ pub(crate) async fn get_channel_window_on(
         .bind(channel_id);
     if let Some((ts, id)) = &cursor {
         q = q.bind(*ts).bind(id.clone());
+    }
+    if let Some(reader) = history_reader {
+        q = q.bind(reader.to_vec());
     }
     // The +1 probe row is the server-internal has_more evidence.
     q = q.bind(limit as i64 + 1);
@@ -948,6 +1024,28 @@ impl Db {
         limit: u32,
         cursor: Option<&[u8]>,
     ) -> Result<Vec<crate::thread::ThreadReply>> {
+        self.get_thread_replies_for_reader(
+            community_id,
+            root_event_id,
+            depth_limit,
+            limit,
+            cursor,
+            None,
+        )
+        .await
+    }
+
+    /// [`Db::get_thread_replies`] without replies from before
+    /// `history_reader` joined a `since_join` room.
+    pub async fn get_thread_replies_for_reader(
+        &self,
+        community_id: CommunityId,
+        root_event_id: &[u8],
+        depth_limit: Option<u32>,
+        limit: u32,
+        cursor: Option<&[u8]>,
+        history_reader: Option<&[u8]>,
+    ) -> Result<Vec<crate::thread::ThreadReply>> {
         let (path, predicate): (&'static str, RoutePredicate) = match cursor {
             Some(_) => (
                 "thread_cursor",
@@ -972,6 +1070,7 @@ impl Db {
                 depth_limit,
                 limit,
                 cursor,
+                history_reader,
             )
             .await
             {
@@ -1007,13 +1106,14 @@ impl Db {
                 }
             }
         }
-        crate::thread::get_thread_replies(
+        crate::thread::get_thread_replies_for_reader(
             &self.pool,
             community_id,
             root_event_id,
             depth_limit,
             limit,
             cursor,
+            history_reader,
         )
         .await
     }
@@ -1085,15 +1185,17 @@ impl Db {
     }
 
     /// What the stored thread counters of `targets` hold that `reader` may not
-    /// see: replies the server received from someone while `reader` blocked
-    /// them (block periods). Callers ask only for 1:1 DM threads. Only targets
-    /// with at least one such reply are returned.
+    /// see: replies written before `reader` joined a `since_join` room and,
+    /// with `apply_blocks`, replies the server received from someone while
+    /// `reader` blocked them (block periods; callers set it only for 1:1 DM
+    /// threads). Only targets with at least one such reply are returned.
     #[datastore_span(name = "blocked_thread_replies", system = "postgresql")]
     pub async fn blocked_thread_replies(
         &self,
         community_id: CommunityId,
         reader: &[u8],
         targets: &[Vec<u8>],
+        apply_blocks: bool,
     ) -> Result<Vec<BlockedThreadReplies>> {
         if targets.is_empty() {
             return Ok(Vec::new());
@@ -1109,9 +1211,10 @@ impl Db {
             r#"
             WITH x AS (
                 SELECT t.target, tm.parent_event_id, tm.root_event_id, e.received_at,
-                    e.pubkey, e.deleted_at IS NULL AS live, "#,
+                    e.pubkey, e.deleted_at IS NULL AS live, (($6 AND "#,
             crate::blocks::hidden_by_block_period!("$1", "$3", "e"),
-            r#" AS hidden,
+            r#") OR channel_event_before_join(e.community_id, e.channel_id,
+                        e.channel_sequence, $3)) AS hidden,
                     e.deleted_at IS NULL AND NOT EXISTS (
                         SELECT 1 FROM jsonb_array_elements(e.tags) mt
                         WHERE mt->>0 IN ($4, $5) AND COALESCE(mt->>1, '') <> ''
@@ -1143,6 +1246,7 @@ impl Db {
         .bind(reader)
         .bind(crate::chat_state::THREAD_CLOSED_TAG)
         .bind(crate::chat_state::THREAD_REOPENED_TAG)
+        .bind(apply_blocks)
         .fetch_all(&mut *connection)
         .await?;
         rows.into_iter()
@@ -1170,9 +1274,16 @@ impl Db {
         cursor: Option<(DateTime<Utc>, Vec<u8>)>,
         kind_filter: Option<&[u32]>,
     ) -> Result<crate::thread::ChannelWindow> {
-        self.get_channel_window_with_session(community_id, channel_id, limit, cursor, kind_filter)
-            .await
-            .map(|(window, _session)| window)
+        self.get_channel_window_with_session(
+            community_id,
+            channel_id,
+            limit,
+            cursor,
+            kind_filter,
+            None,
+        )
+        .await
+        .map(|(window, _session)| window)
     }
 
     /// [`Db::get_channel_window`], additionally returning the session that
@@ -1209,6 +1320,7 @@ impl Db {
         limit: u32,
         cursor: Option<(DateTime<Utc>, Vec<u8>)>,
         kind_filter: Option<&[u32]>,
+        history_reader: Option<&[u8]>,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
         self.channel_window_routed(
             community_id,
@@ -1217,6 +1329,7 @@ impl Db {
             cursor,
             kind_filter,
             Direction::Older,
+            history_reader,
         )
         .await
     }
@@ -1232,6 +1345,7 @@ impl Db {
         limit: u32,
         cursor: (DateTime<Utc>, Vec<u8>),
         kind_filter: Option<&[u32]>,
+        history_reader: Option<&[u8]>,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
         self.channel_window_routed(
             community_id,
@@ -1240,6 +1354,7 @@ impl Db {
             Some(cursor),
             kind_filter,
             Direction::Newer,
+            history_reader,
         )
         .await
     }
@@ -1252,6 +1367,7 @@ impl Db {
         cursor: Option<(DateTime<Utc>, Vec<u8>)>,
         kind_filter: Option<&[u32]>,
         direction: Direction,
+        history_reader: Option<&[u8]>,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
         let newer = direction == Direction::Newer;
         let path: &'static str = match (newer, cursor.is_some()) {
@@ -1281,6 +1397,7 @@ impl Db {
                     cursor.clone(),
                     kind_filter,
                     direction,
+                    history_reader,
                 )
                 .await
                 {
@@ -1314,7 +1431,7 @@ impl Db {
             }
             RouteDecision::Writer => {}
         }
-        let window = crate::thread::get_channel_window(
+        let window = crate::thread::get_channel_window_for_reader(
             &self.pool,
             community_id,
             channel_id,
@@ -1322,6 +1439,7 @@ impl Db {
             cursor,
             kind_filter,
             direction,
+            history_reader,
         )
         .await?;
         Ok((

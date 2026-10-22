@@ -724,7 +724,14 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 80);
+        assert_eq!(migrations.len(), 81);
+        assert_eq!(migrations[80].version, 81);
+        assert!(migrations[80]
+            .sql
+            .as_str()
+            .contains("FUNCTION channel_history_floor"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("FUNCTION channel_history_floor"));
         assert_eq!(migrations[79].version, 80);
         let agent_keys = migrations[79].sql.as_str();
         assert!(agent_keys.contains("CREATE TABLE agent_key_backups"));

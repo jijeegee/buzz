@@ -364,7 +364,84 @@ pub async fn filter_fanout_by_access(
             }
         }
     }
-    allowed
+    drop_readers_blind_to_targets(state, community_id, stored_event, channel_id, allowed).await
+}
+
+/// Kinds that are about other events (named in `e` tags) rather than new
+/// messages: reactions, edits, deletions and relay thread summaries.
+const TARGETING_KINDS: [u32; 5] = [
+    kuzz_core::kind::KIND_DELETION,
+    kuzz_core::kind::KIND_REACTION,
+    kuzz_core::kind::KIND_NIP29_DELETE_EVENT,
+    kuzz_core::kind::KIND_STREAM_MESSAGE_EDIT,
+    KIND_THREAD_SUMMARY,
+];
+
+/// since_join rooms: a reaction, edit, deletion or summary naming a target
+/// written before a recipient joined does not reach that recipient (the
+/// stored reads hide the same events). Fails closed.
+async fn drop_readers_blind_to_targets(
+    state: &AppState,
+    community_id: CommunityId,
+    stored_event: &StoredEvent,
+    channel_id: uuid::Uuid,
+    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
+) -> Vec<(crate::subscription::ConnId, crate::subscription::SubId)> {
+    if matches.is_empty() || !TARGETING_KINDS.contains(&event_kind_u32(&stored_event.event)) {
+        return matches;
+    }
+    let mut targets: Vec<Vec<u8>> = stored_event
+        .event
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let tag = tag.as_slice();
+            (tag.first().map(String::as_str) == Some("e"))
+                .then(|| tag.get(1).and_then(|id| hex::decode(id).ok()))
+                .flatten()
+                .filter(|id| id.len() == 32)
+        })
+        .collect();
+    targets.sort_unstable();
+    targets.dedup();
+    if targets.is_empty() {
+        return matches;
+    }
+    let mut readers: Vec<Vec<u8>> = matches
+        .iter()
+        .filter_map(|(conn_id, _)| state.conn_manager.pubkey_for_conn(*conn_id))
+        .map(|pk| pk.to_vec())
+        .collect();
+    readers.sort_unstable();
+    readers.dedup();
+    let limit = kuzz_db::history::MAX_HISTORY_EVENT_LOOKUP;
+    if targets.len() > limit || readers.len() > limit {
+        warn!(%channel_id, "fan-out history filter: too many targets or readers");
+        return Vec::new();
+    }
+    let blind = match state
+        .db
+        .readers_blind_to_targets(community_id, channel_id, &targets, &readers)
+        .await
+    {
+        Ok(blind) => blind,
+        Err(e) => {
+            warn!(%channel_id, "fan-out history filter: lookup failed: {e}");
+            return Vec::new();
+        }
+    };
+    if blind.is_empty() {
+        return matches;
+    }
+    matches
+        .into_iter()
+        .filter(|(conn_id, _)| {
+            state
+                .conn_manager
+                .pubkey_for_conn(*conn_id)
+                .is_some_and(|pk| !blind.iter().any(|b| b.as_slice() == pk.as_slice()))
+        })
+        .collect()
 }
 
 /// Deliver one event to this relay's local subscribers through the access gate.

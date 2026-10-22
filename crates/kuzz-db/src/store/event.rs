@@ -129,6 +129,10 @@ pub struct EventQuery {
     /// (`user_block_periods`), before ORDER/LIMIT so history pages and counts
     /// never include them.
     pub blocked_dm_reader: Option<Vec<u8>>,
+    /// Reader whose `since_join` history cut applies (`channel_event_before_join`):
+    /// rows from before their current join in members-only `since_join` rooms
+    /// are removed before ORDER/LIMIT, so pages and counts never include them.
+    pub history_reader: Option<Vec<u8>>,
 }
 
 impl EventQuery {
@@ -162,6 +166,7 @@ impl EventQuery {
             max_limit: None,
             shared_gated_reader: None,
             blocked_dm_reader: None,
+            history_reader: None,
         }
     }
 }
@@ -620,6 +625,54 @@ async fn query_events_on_inner(
 ///
 /// The author set and the reader's 1:1 DMs are hashed once per query; only
 /// rows passing both probe the period index.
+fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
+    let Some(ref reader) = q.history_reader else {
+        return;
+    };
+    // since_join: rows from before the reader's join, and reactions/edits/
+    // deletions about such rows, are hidden. One channel: compare against its
+    // floor once (index-friendly; floor 0 hides nothing, not even sequence
+    // 0); otherwise per row. Room state kinds are never cut.
+    let state_exempt = q
+        .kinds
+        .as_ref()
+        .is_none_or(|kinds| kinds.iter().copied().any(is_room_state_kind));
+    qb.push(" AND (");
+    if let Some(channel) = q.channel_id {
+        qb.push(format!(
+            "{col_prefix}channel_sequence > COALESCE(NULLIF(channel_history_floor("
+        ));
+        qb.push_bind(q.community_id.as_uuid());
+        qb.push(", ");
+        qb.push_bind(channel);
+        qb.push(", ");
+        qb.push_bind(reader.clone());
+        qb.push("), 0), -1)");
+    } else {
+        qb.push(format!(
+            "NOT channel_event_before_join({col_prefix}community_id, {col_prefix}channel_id, \
+             {col_prefix}channel_sequence, "
+        ));
+        qb.push_bind(reader.clone());
+        qb.push(")");
+    }
+    if state_exempt {
+        qb.push(format!(" OR channel_kind_is_room_state({col_prefix}kind)"));
+    }
+    qb.push(")");
+    qb.push(format!(
+        " AND NOT channel_event_targets_before_join({col_prefix}community_id, \
+         {col_prefix}channel_id, {col_prefix}kind, {col_prefix}tags, "
+    ));
+    qb.push_bind(reader.clone());
+    qb.push(")");
+}
+
+/// Mirrors SQL `channel_kind_is_room_state` (migration 0081).
+fn is_room_state_kind(kind: i32) -> bool {
+    matches!(kind, 9007 | 40100 | 40110 | 10_000..=19_999 | 30_000..=39_999)
+}
+
 fn push_blocked_dm_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
     let Some(ref reader) = q.blocked_dm_reader else {
         return;
@@ -754,6 +807,7 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
     }
 
     push_blocked_dm_clause(&mut qb, q, col_prefix);
+    push_history_clause(&mut qb, q, col_prefix);
 
     if let Some(ref pk) = q.pubkey {
         qb.push(format!(" AND {col_prefix}pubkey = "))
@@ -1097,6 +1151,7 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
     }
 
     push_blocked_dm_clause(&mut qb, q, col_prefix);
+    push_history_clause(&mut qb, q, col_prefix);
 
     if let Some(ref pk) = q.pubkey {
         qb.push(format!(" AND {col_prefix}pubkey = "))

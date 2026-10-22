@@ -2498,6 +2498,65 @@ LANGUAGE sql IMMUTABLE AS $$
           AND lower(mt->>1) = encode(p_root, 'hex'))
 $$;
 
+-- since_join history floor: the reader's current join_sequence in a
+-- members-only (not `open`) room whose policy is `since_join`, else 0. Rows
+-- with channel_sequence <= floor are hidden from that reader. Legacy-stamped
+-- memberships keep all history. Channel access itself is checked elsewhere.
+-- Room state kinds (channel_kind_is_room_state) are never cut.
+CREATE OR REPLACE FUNCTION channel_history_floor(p_cid UUID, p_chid UUID, p_reader BYTEA)
+RETURNS BIGINT
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    -- No current membership in such a room (a replica that has not seen the
+    -- join yet): fail closed with the largest sequence, hiding everything.
+    SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM channels hc
+             WHERE hc.community_id = p_cid AND hc.id = p_chid
+               AND hc.history_policy = 'since_join' AND hc.visibility <> 'open') THEN 0
+        ELSE COALESCE((
+            SELECT CASE WHEN hm.join_cutoff_is_legacy THEN 0 ELSE hm.join_sequence END
+              FROM channel_members hm
+             WHERE hm.community_id = p_cid AND hm.channel_id = p_chid
+               AND hm.pubkey = p_reader AND hm.removed_at IS NULL),
+            9223372036854775807)
+    END
+$$;
+
+-- True when `reader` must not see the channel event with order number `seq`.
+CREATE OR REPLACE FUNCTION channel_event_before_join(p_cid UUID, p_chid UUID, p_seq BIGINT, p_reader BYTEA)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT p_chid IS NOT NULL
+       AND p_seq <= COALESCE(NULLIF(channel_history_floor(p_cid, p_chid, p_reader), 0), -1)
+$$;
+
+-- Current room state (replaceable/addressable kinds, room creation, canvas,
+-- goal tree) stays visible to a new member: only the history is cut.
+CREATE OR REPLACE FUNCTION channel_kind_is_room_state(p_kind INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT p_kind IN (9007, 40100, 40110)
+        OR p_kind BETWEEN 10000 AND 19999 OR p_kind BETWEEN 30000 AND 39999
+$$;
+
+-- True when the reaction, edit, deletion or thread summary (kind) with `tags`
+-- names an event (`e` tag) that `reader` must not see. Other kinds: false.
+CREATE OR REPLACE FUNCTION channel_event_targets_before_join(
+    p_cid UUID, p_chid UUID, p_kind INTEGER, p_tags JSONB, p_reader BYTEA)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT CASE
+        WHEN p_kind <> ALL (ARRAY[5, 7, 9005, 40003, 39005]) THEN false
+        WHEN p_chid IS NOT NULL AND channel_history_floor(p_cid, p_chid, p_reader) = 0 THEN false
+        ELSE EXISTS (
+            SELECT 1 FROM jsonb_array_elements(p_tags) t
+            JOIN events te ON te.community_id = p_cid
+             AND te.id = CASE WHEN t->>1 ~ '^[0-9a-fA-F]{64}$' THEN decode(t->>1, 'hex') END
+            WHERE t->>0 = 'e'
+              AND channel_event_before_join(te.community_id, te.channel_id, te.channel_sequence,
+                                            p_reader))
+    END
+$$;
+
 -- A DM between exactly two people (migration 0073). DM participant sets never
 -- change, so the member row count is the participant count.
 CREATE FUNCTION dm_is_one_to_one(p_cid UUID, p_chid UUID)
@@ -2519,12 +2578,18 @@ LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_dm BOOLEAN;
     v_reader_hex TEXT := encode(p_reader, 'hex');
+    v_after BIGINT;
 BEGIN
     v_dm := dm_is_one_to_one(p_cid, p_chid);
+    -- since_join rooms: messages from before the reader's join never count.
+    -- (The fail-closed floor of a missing membership is ignored: the tally
+    -- trigger counts a row before it is in the table and passes its own cut.)
+    v_after := GREATEST(COALESCE(p_after, 0),
+                        NULLIF(channel_history_floor(p_cid, p_chid, p_reader), 9223372036854775807));
     SELECT count(*) INTO unread FROM (
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
-           AND e.channel_sequence > COALESCE(p_after, 0)
+           AND e.channel_sequence > v_after
            AND e.kind IN (9, 40002, 45001, 45003) AND e.deleted_at IS NULL
            AND e.pubkey <> p_reader
            AND NOT EXISTS (
@@ -2540,7 +2605,7 @@ BEGIN
     SELECT count(*) INTO mentions FROM (
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
-           AND e.channel_sequence > COALESCE(p_after, 0)
+           AND e.channel_sequence > v_after
            AND e.kind IN (9, 40002, 45001, 45003) AND e.deleted_at IS NULL
            AND e.pubkey <> p_reader
            AND NOT EXISTS (
@@ -2710,6 +2775,8 @@ $$;
 -- message committed before the join.
 CREATE FUNCTION tally_channel_member_unread() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_after BIGINT := NEW.read_seq;
 BEGIN
     IF NEW.removed_at IS NOT NULL THEN
         RETURN NEW;
@@ -2722,8 +2789,16 @@ BEGIN
         NEW.unread_count := 0;
         NEW.unread_mentions := 0;
     ELSE
+        -- since_join rooms: count only after this (re)join. The table row is
+        -- not this membership yet, so channel_history_floor cannot see it.
+        IF NOT NEW.join_cutoff_is_legacy AND EXISTS (
+            SELECT 1 FROM channels c
+             WHERE c.community_id = NEW.community_id AND c.id = NEW.channel_id
+               AND c.history_policy = 'since_join' AND c.visibility <> 'open') THEN
+            v_after := GREATEST(COALESCE(v_after, 0), NEW.join_sequence);
+        END IF;
         SELECT u.unread, u.mentions INTO NEW.unread_count, NEW.unread_mentions
-          FROM chat_room_unread(NEW.community_id, NEW.channel_id, NEW.pubkey, NEW.read_seq) u;
+          FROM chat_room_unread(NEW.community_id, NEW.channel_id, NEW.pubkey, v_after) u;
     END IF;
     IF TG_OP = 'UPDATE' AND OLD.removed_at IS NOT NULL THEN
         PERFORM chat_recount_thread_follows(

@@ -215,6 +215,26 @@ pub(crate) async fn lock_membership(
     .is_some())
 }
 
+/// Whether `event` was written before `reader` joined its `since_join` room;
+/// such an id is unknown to `reader`.
+async fn before_join(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    event: &[u8],
+    reader: &[u8],
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM events e \
+         WHERE e.community_id = $1 AND e.id = $2 \
+           AND channel_event_before_join(e.community_id, e.channel_id, e.channel_sequence, $3))",
+    )
+    .bind(community)
+    .bind(event)
+    .bind(reader)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
 /// Channel sequence of `event` when it is in `channel_id` (and, for a thread,
 /// is the root or one of its replies).
 async fn event_seq(
@@ -367,13 +387,23 @@ impl Db {
             if !lock_membership(&mut tx, community_uuid, channel_id, reader).await? {
                 return Ok(Err(ChatStateDenied::NotMember { index }));
             }
+            // A thread from before the join is unknown, like a missing root.
+            if let Some(root) = root {
+                if before_join(&mut tx, community_uuid, root, reader).await? {
+                    return Ok(Err(ChatStateDenied::NotMember { index }));
+                }
+            }
             let seq = match &item.position {
                 None => None,
                 Some(ReadPosition::Seq(seq)) => Some(*seq),
                 Some(ReadPosition::Event(event)) => {
                     match event_seq(&mut tx, community_uuid, channel_id, event, root).await? {
-                        Some(seq) => Some(seq),
-                        None => return Ok(Err(ChatStateDenied::UnknownEvent { index })),
+                        Some(seq)
+                            if !before_join(&mut tx, community_uuid, event, reader).await? =>
+                        {
+                            Some(seq)
+                        }
+                        _ => return Ok(Err(ChatStateDenied::UnknownEvent { index })),
                     }
                 }
                 Some(ReadPosition::At(at)) => {
@@ -471,7 +501,10 @@ impl Db {
             return Ok(Err(ChatStateDenied::NotMember { index: 0 }));
         };
         lock_channel(&mut tx, community_uuid, channel_id).await?;
-        if !lock_membership(&mut tx, community_uuid, channel_id, reader).await? {
+        if !lock_membership(&mut tx, community_uuid, channel_id, reader).await?
+            || before_join(&mut tx, community_uuid, root, reader).await?
+        {
+            // A root from before the join is unknown, like a missing one.
             return Ok(Err(ChatStateDenied::NotMember { index: 0 }));
         }
         if matches!(found, ThreadRoot::Reply(_)) {
