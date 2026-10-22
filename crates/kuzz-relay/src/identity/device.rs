@@ -45,22 +45,54 @@ const MODES_KEY: &str = "kuzz:device_admission";
 /// How often [`spawn_mode_poller`] re-reads [`MODES_KEY`].
 const MODES_POLL: Duration = Duration::from_secs(10);
 
-/// Where a device check runs. Each surface is switched on separately.
+/// Where a device check runs. Each surface is switched on separately, so
+/// enforcement can roll out one entrance at a time (plan S14): `auth` first,
+/// then `ws`, `http`, `git`, `media`, `audio` and `admin`, and `token` last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Surface {
     /// Login, refresh and every other `/auth/*` call.
     Auth,
     /// NIP-42 AUTH on the WebSocket (key admission).
     Ws,
+    /// NIP-98 HTTP: the bridge (`/events`, `/query`, `/count`, moderation
+    /// reads), gifs, groups, workflows, invites and git settings.
+    Http,
+    /// NIP-98 git smart HTTP (clone, fetch, push).
+    Git,
+    /// Blossom kind-24242 media upload and read.
+    Media,
+    /// NIP-42 AUTH on the huddle audio socket.
+    Audio,
+    /// The admin API and the deployment operator API (NIP-98).
+    Admin,
+    /// Access tokens on message paths (token WS and audio AUTH, `Bearer` on
+    /// the bridge, media and invites, git tokens, bot token issuance). Not a
+    /// device check: `log` reports each use, `enforce` closes the path.
+    Token,
 }
 
 impl Surface {
-    const ALL: [Self; 2] = [Self::Auth, Self::Ws];
+    const ALL: [Self; 8] = [
+        Self::Auth,
+        Self::Ws,
+        Self::Http,
+        Self::Git,
+        Self::Media,
+        Self::Audio,
+        Self::Admin,
+        Self::Token,
+    ];
 
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Auth => "auth",
             Self::Ws => "ws",
+            Self::Http => "http",
+            Self::Git => "git",
+            Self::Media => "media",
+            Self::Audio => "audio",
+            Self::Admin => "admin",
+            Self::Token => "token",
         }
     }
 }
@@ -131,7 +163,7 @@ impl DeviceRuntime {
         true
     }
 
-    fn set_overrides(&self, overrides: HashMap<Surface, DeviceAdmissionMode>) {
+    pub(crate) fn set_overrides(&self, overrides: HashMap<Surface, DeviceAdmissionMode>) {
         let mut current = self
             .overrides
             .write()
@@ -478,6 +510,33 @@ pub(crate) async fn check_refresh_proof(
         .map_err(crate::api::auth::rejection_response)
 }
 
+/// A message-path use of an access token (device-bound keys plan §3). Tokens
+/// carry no device signature, so device-bound messaging closes them: `log`
+/// reports the use (reason `token_path`), `enforce` refuses it with
+/// [`TokenRejection::MessagePathClosed`]. Account calls (`/auth/*`) stay open.
+pub(crate) fn close_token_path(
+    state: &AppState,
+    binding: &TokenBinding,
+) -> Result<(), TokenRejection> {
+    let mode = mode(state, Surface::Token);
+    if mode == DeviceAdmissionMode::Off {
+        return Ok(());
+    }
+    let enforced = mode == DeviceAdmissionMode::Enforce;
+    report(
+        state,
+        Surface::Token,
+        &binding.principal.to_hex(),
+        "token_path",
+        enforced,
+    );
+    if enforced {
+        Err(TokenRejection::MessagePathClosed)
+    } else {
+        Ok(())
+    }
+}
+
 /// The device key a login `start` binds (`device_pubkey` query value),
 /// normalized to compressed hex. `Ok(None)`: none, or the auth surface is off.
 #[allow(clippy::result_large_err)] // Response is the natural error type for axum handlers
@@ -590,6 +649,7 @@ mod tests {
             ("auth".to_owned(), "Enforce".to_owned()),
             ("ws".to_owned(), "log".to_owned()),
             ("git".to_owned(), "enforce".to_owned()),
+            ("push".to_owned(), "enforce".to_owned()),
         ]
         .into();
         assert_eq!(
@@ -597,11 +657,63 @@ mod tests {
             [
                 (Surface::Auth, DeviceAdmissionMode::Enforce),
                 (Surface::Ws, DeviceAdmissionMode::Log),
+                (Surface::Git, DeviceAdmissionMode::Enforce),
             ]
             .into()
         );
         let bad: HashMap<String, String> = [("auth".to_owned(), "on".to_owned())].into();
         assert!(parse_overrides(&bad).is_empty());
+        // Every surface has its own override name.
+        let names: std::collections::HashSet<_> =
+            Surface::ALL.into_iter().map(Surface::as_str).collect();
+        assert_eq!(names.len(), Surface::ALL.len());
+    }
+
+    /// A token on a message path: `off` does nothing, `log` admits and
+    /// reports, `enforce` closes it with `token_message_path_closed`.
+    #[tokio::test(flavor = "current_thread")]
+    async fn the_token_path_closes_only_under_enforce() {
+        let binding = TokenBinding {
+            principal: kuzz_core::principal::PrincipalId::from_slice(
+                &nostr::Keys::generate().public_key().to_bytes(),
+            )
+            .expect("principal"),
+            kind: AccessTokenKind::User,
+            token_hash: [0u8; 32],
+            expires_at: None,
+            device_id: None,
+            session_id: None,
+            bot_id: None,
+            bot_owner: None,
+            is_operator: false,
+            device_pubkey: None,
+        };
+        for (mode, closed, reports) in [
+            (DeviceAdmissionMode::Off, false, 0),
+            (DeviceAdmissionMode::Log, false, 1),
+            (DeviceAdmissionMode::Enforce, true, 1),
+        ] {
+            let recorder = metrics_util::debugging::DebuggingRecorder::new();
+            let snapshotter = recorder.snapshotter();
+            let _guard = metrics::set_default_local_recorder(&recorder);
+            let state = crate::state::tests::test_state_with_config(
+                "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
+                |config| config.auth_token.device_admission = mode,
+            )
+            .await;
+            let outcome = close_token_path(&state, &binding);
+            assert_eq!(outcome.is_err(), closed, "{mode:?}");
+            if let Err(rejection) = outcome {
+                assert_eq!(rejection.code(), "token_message_path_closed");
+            }
+            let counted = snapshotter
+                .snapshot()
+                .into_vec()
+                .into_iter()
+                .filter(|(key, ..)| key.key().name() == "kuzz_device_proof_refusals_total")
+                .count();
+            assert_eq!(counted, reports, "{mode:?}");
+        }
     }
 
     #[test]

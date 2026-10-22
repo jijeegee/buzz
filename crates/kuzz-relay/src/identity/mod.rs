@@ -6,13 +6,16 @@
 //! authorize token messaging, token profiles, bots or account deletion.
 //!
 //! - [`verify_access_token`] is the single token → principal seam (WS AUTH and
-//!   HTTP `Bearer`).
+//!   HTTP `Bearer`); message paths use [`verify_message_token`], which the
+//!   device admission `token` surface can close.
 //! - [`ws`] binds a connection to one token hash, swaps it on same-principal
 //!   re-AUTH, and enforces the bound token's deadline.
 //! - [`publish_revocations`] closes bound connections on this instance and
 //!   fans the revoked hashes out over Redis after the revoking commit.
 
 pub(crate) mod admission;
+#[cfg(test)]
+mod admission_routes;
 pub mod client_ip;
 pub mod config;
 pub mod device;
@@ -50,6 +53,9 @@ pub enum TokenRejection {
     /// The device proof's time is outside the window: the client should
     /// correct its clock from `x-kuzz-server-time` and retry (enforced).
     DeviceProofStale,
+    /// A token on a message path while token messaging is closed
+    /// (device-bound keys, surface `token` enforced).
+    MessagePathClosed,
     /// The token store could not be read; fail closed.
     Unavailable,
 }
@@ -64,6 +70,7 @@ impl TokenRejection {
             Self::PrincipalDisabled => "principal_disabled",
             Self::DeviceProofRequired => "device_proof_required",
             Self::DeviceProofStale => "device_proof_stale",
+            Self::MessagePathClosed => "token_message_path_closed",
             Self::Unavailable => "unavailable",
         }
     }
@@ -211,6 +218,18 @@ pub(crate) async fn verify_access_token(
     {
         return Err(TokenRejection::InvalidToken);
     }
+    Ok(binding)
+}
+
+/// [`verify_access_token`] for a message path (WS and audio AUTH, `Bearer`
+/// on the bridge, media and invites, git tokens): also closed by the device
+/// admission `token` surface ([`device::close_token_path`]).
+pub(crate) async fn verify_message_token(
+    state: &AppState,
+    token: &TokenSecret,
+) -> Result<TokenBinding, TokenRejection> {
+    let binding = verify_access_token(state, token).await?;
+    device::close_token_path(state, &binding)?;
     Ok(binding)
 }
 

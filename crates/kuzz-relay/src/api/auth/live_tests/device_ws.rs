@@ -6,7 +6,7 @@ use super::*;
 use crate::identity::admission::test_support::{auth_event, device};
 use crate::identity::config::DeviceAdmissionMode;
 
-async fn device_instance(mode: DeviceAdmissionMode) -> Instance {
+pub(super) async fn device_instance(mode: DeviceAdmissionMode) -> Instance {
     let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
         .await
         .expect("pg");
@@ -17,7 +17,7 @@ async fn device_instance(mode: DeviceAdmissionMode) -> Instance {
 }
 
 /// A key-backup account whose own key is `person`.
-async fn seed_account(inst: &Instance, person: &nostr::Keys) -> Vec<u8> {
+pub(super) async fn seed_account(inst: &Instance, person: &nostr::Keys) -> Vec<u8> {
     let principal = nostr::Keys::generate().public_key().to_bytes().to_vec();
     let pool = inst.state.db.pool();
     sqlx::query(
@@ -44,7 +44,7 @@ async fn seed_account(inst: &Instance, person: &nostr::Keys) -> Vec<u8> {
 
 /// A device row of `principal` holding `device_key`, signed in (a live
 /// session with an unused refresh token) when `signed_in`.
-async fn seed_device(
+pub(super) async fn seed_device(
     inst: &Instance,
     principal: &[u8],
     device_key: &kuzz_auth::device_proof::DevicePubkey,
@@ -81,7 +81,7 @@ async fn seed_device(
 }
 
 /// Register `key` as an agent or external key of `principal` on `host`.
-async fn seed_registry(
+pub(super) async fn seed_registry(
     inst: &Instance,
     key: &nostr::Keys,
     principal: &[u8],
@@ -102,7 +102,7 @@ async fn seed_registry(
 }
 
 /// Sign out every session of `device` (logout revokes the session).
-async fn sign_out(inst: &Instance, device: uuid::Uuid) {
+pub(super) async fn sign_out(inst: &Instance, device: uuid::Uuid) {
     sqlx::query(
         "UPDATE sessions SET revoked_at = now(), revoked_reason = 'logout' WHERE device_id = $1",
     )
@@ -116,7 +116,7 @@ async fn sign_out(inst: &Instance, device: uuid::Uuid) {
 /// fresh socket; returns the OK frame's (accepted, reason). A refusal closes
 /// the socket right after its OK, and on Windows the close can reset the
 /// connection before the client reads the frame; the answer is
-/// deterministic (only admissions are cached), so such a try is repeated.
+/// deterministic (and cached), so such a try is repeated.
 async fn key_auth(
     inst: &Instance,
     keys: &nostr::Keys,

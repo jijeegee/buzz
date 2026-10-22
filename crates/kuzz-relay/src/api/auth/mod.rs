@@ -164,10 +164,16 @@ pub(crate) fn internal(context: &str, error: &dyn std::fmt::Display) -> Response
     )
 }
 
-/// 401 for a rejected token (503 when the store is unavailable).
+/// 401 for a rejected token (503 when the store is unavailable, 403 for a
+/// closed token message path).
 pub(crate) fn rejection_response(rejection: TokenRejection) -> Response {
     match rejection {
         TokenRejection::Unavailable => unavailable(),
+        TokenRejection::MessagePathClosed => auth_error(
+            StatusCode::FORBIDDEN,
+            TokenRejection::MessagePathClosed.code(),
+            "token messaging is closed; sign in with your key on this device",
+        ),
         other => auth_error(
             StatusCode::UNAUTHORIZED,
             other.code(),

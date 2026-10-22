@@ -324,6 +324,8 @@ fn row_json(row: ChatListRow, reader: &[u8]) -> Value {
         "channel_type": row.channel_type,
         "channel_name": row.channel_name,
         "archived": row.archived,
+        "group_chat": row.group_chat,
+        "member_count": row.member_count,
         "dm_members": row.dm_members.iter().map(hex::encode).collect::<Vec<_>>(),
         "root_id": row.root_id.map(hex::encode),
         "thread_name": row.thread_name,

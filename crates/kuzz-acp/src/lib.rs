@@ -595,15 +595,35 @@ mod inbound_author_gate {
                     self.refreshed_generation = Some(kuzz_event.connection_generation);
                 }
             }
-            let channel_type = channel_info
+            let metadata = channel_info
                 .resolve_channel_metadata(kuzz_event.channel_id)
-                .await
-                .map(|info| info.channel_type);
+                .await;
+            let group_chat = metadata.as_ref().is_some_and(|info| info.group_chat);
+            let channel_type = metadata.map(|info| info.channel_type);
+            // Group chats: the agent hears a message only when @mentioned,
+            // owner included, in every routing mode (`all`, `config` rules
+            // such as Lead's owner listener, dispatcher). The subscription
+            // already requires the mention; drop anything that slipped past
+            // it (fail closed).
+            if group_chat && !crate::event_mentions_agent(&kuzz_event.event, &self.agent_pubkey_hex)
+            {
+                return InboundAuthorGateDecision {
+                    effective_author: effective_prompt_author(
+                        &kuzz_event.event,
+                        self.relay_self.as_deref(),
+                        &self.agent_pubkey_hex,
+                    ),
+                    allowed: false,
+                    is_dm: false,
+                };
+            }
             if let (Some(dispatcher), Some(channel_type)) =
                 (self.dispatcher.as_ref(), channel_type.as_deref())
             {
-                if channel_type == "dm" {
-                    // DMs stay on the ordinary author policy below.
+                if channel_type == "dm" || group_chat {
+                    // DMs and (mentioned) group chat messages stay on the
+                    // ordinary author policy below; group chats never get
+                    // dispatcher routing.
                 } else {
                     let effective_author = effective_prompt_author(
                         &kuzz_event.event,
@@ -2664,6 +2684,23 @@ fn idle_pool_sleep_due(
         && inactivity_expired(last_activity, now, bound, turn_in_flight)
 }
 
+/// How often the main loop handles output idle workers wrote between turns.
+const AGENT_OUTPUT_DRAIN_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Handle the output idle workers wrote since their last turn (see
+/// [`AcpClient::drain_between_turns`]). A worker working on its own counts
+/// as activity, so the pool does not sleep under it. A failure is kept for
+/// the worker's next turn, which recovers through the turn error path.
+async fn drain_idle_agent_output(pool: &mut AgentPool, last_activity: &mut tokio::time::Instant) {
+    let mut working = false;
+    for agent in pool.agents_mut().iter_mut().flatten() {
+        working |= agent.acp.drain_between_turns().await;
+    }
+    if working {
+        *last_activity = tokio::time::Instant::now();
+    }
+}
+
 /// Idle checks of one round before the pool sleeps. `busy` is set when any
 /// answered that background work is still running; `asked` holds the scopes
 /// already asked, since one worker answers for its scopes one at a time.
@@ -3569,6 +3606,10 @@ async fn run_harness(
     } else {
         Duration::ZERO
     };
+    // Workers keep writing after a turn ends (work they continue on their
+    // own); their output is handled on this tick.
+    let mut agent_output_drain = tokio::time::interval(AGENT_OUTPUT_DRAIN_INTERVAL);
+    agent_output_drain.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Before the pool sleeps, every scope that ran a channel turn since its
     // last idle check is asked whether background work is still running.
     let mut idle_check_scopes: HashSet<scope::SessionScope> = HashSet::new();
@@ -4344,6 +4385,14 @@ async fn run_harness(
                         );
                         let _ = shutdown_tx.send(());
                     }
+                    None
+                }
+                _ = agent_output_drain.tick() => {
+                    let _ = result_rx; // end split borrow before touching pool
+                    // An agent working on its own keeps the pool awake like
+                    // a turn: the sleep and exit bounds count from its last
+                    // output.
+                    drain_idle_agent_output(&mut pool, &mut last_activity).await;
                     None
                 }
                 _ = async {
@@ -8873,6 +8922,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: channel_type.into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9189,6 +9239,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9298,6 +9349,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9363,6 +9415,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9423,6 +9476,7 @@ mod author_gate_tests {
                         name: "workflow".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 )]),
                 rest_client.clone(),
@@ -9500,6 +9554,7 @@ mod author_gate_tests {
                     name: "test".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9899,6 +9954,7 @@ mod author_gate_tests {
                     name: "dm".into(),
                     channel_type: "dm".into(),
                     description: None,
+                    group_chat: false,
                 },
             ),
             (
@@ -9907,6 +9963,7 @@ mod author_gate_tests {
                     name: "stream".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             ),
         ]);
@@ -9924,6 +9981,7 @@ mod author_gate_tests {
                 name: "unknown".into(),
                 channel_type: "unknown".into(),
                 description: None,
+                group_chat: false,
             },
         )]);
         assert!(
@@ -11492,35 +11550,30 @@ mod build_mcp_servers_tests {
     }
 }
 
-/// Resolve a dynamically joined channel's subscription. Dispatcher mode needs
-/// the channel type so DMs keep the mention filter; unresolved metadata fails
-/// closed to the ordinary filter (see `config::resolve_dynamic_channel_filter_for_type`).
+/// Resolve a dynamically joined channel's subscription. Every mode needs the
+/// group chat marker (group chats are mention-only); dispatcher mode also
+/// needs the channel type so DMs keep the mention filter. Unresolved metadata
+/// fails closed to a mention filter in every mode (see
+/// `config::resolve_dynamic_channel_filter_for_type`).
 async fn resolve_dynamic_listener_filter(
     config: &Config,
     channel_id: Uuid,
     rules: &[SubscriptionRule],
     channel_info: &pool::ChannelInfoResolver,
 ) -> Option<config::ChannelFilter> {
-    let channel_type = if config.dispatcher {
-        let channel_type = channel_info
-            .resolve_channel_metadata(channel_id)
-            .await
-            .map(|info| info.channel_type);
-        if channel_type.is_none() {
-            tracing::warn!(
-                channel_id = %channel_id,
-                "dispatcher: channel type unresolved on join — keeping the mention filter; \
-                 unmentioned requests in this channel will not be routed until restart"
-            );
-        }
-        channel_type
-    } else {
-        None
-    };
+    let metadata = channel_info.resolve_channel_metadata(channel_id).await;
+    if metadata.is_none() {
+        tracing::warn!(
+            channel_id = %channel_id,
+            "channel metadata unresolved on join — keeping the mention filter (it may be a \
+             group chat); unmentioned messages in this channel are not heard until restart"
+        );
+    }
     config::resolve_dynamic_channel_filter_for_type(
         config,
         channel_id,
-        channel_type.as_deref(),
+        metadata.as_ref().map(|info| info.channel_type.as_str()),
+        metadata.as_ref().is_some_and(|info| info.group_chat),
         rules,
     )
 }
@@ -11720,6 +11773,7 @@ mod dispatcher_admission_tests {
                         name: "general".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 ),
                 (
@@ -11728,6 +11782,7 @@ mod dispatcher_admission_tests {
                         name: "dm".into(),
                         channel_type: "dm".into(),
                         description: None,
+                        group_chat: false,
                     },
                 ),
             ]),
@@ -11878,6 +11933,176 @@ mod dispatcher_admission_tests {
             "control: the ordinary gate admits a sibling on an unresolved channel"
         );
         unresolved_server.abort();
+    }
+
+    /// Group chats never take the dispatcher policy: a mentioned message from
+    /// the agent's owner is admitted under the ordinary author policy (the
+    /// dispatcher policy would drop it, as group chats have no owner/admin
+    /// and the owner is not a configured human), and an unmentioned message
+    /// is dropped even from the owner.
+    #[tokio::test]
+    async fn dispatcher_gate_skips_group_chats_and_requires_a_mention() {
+        let relay_hex = Keys::generate().public_key().to_hex();
+        let agent = Keys::generate().public_key().to_hex();
+        let owner = Keys::generate();
+        let (rest_client, server) =
+            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+        let chat_id = Uuid::new_v4();
+        let dispatcher = std::sync::Arc::new(dispatcher::DispatcherGate::new(
+            DispatcherConfig::from_channels(HashMap::from([(
+                chat_id,
+                DispatcherChannelPolicy {
+                    humans: HashSet::new(),
+                    ais: HashSet::new(),
+                },
+            )])),
+            None,
+        ));
+        let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test")
+            .await
+            .with_dispatcher(Some(dispatcher));
+        let channel_info = pool::ChannelInfoResolver::new(
+            HashMap::from([(
+                chat_id,
+                relay::ChannelInfo {
+                    name: "unknown".into(),
+                    channel_type: "private".into(),
+                    description: None,
+                    group_chat: true,
+                },
+            )]),
+            rest_client.clone(),
+        );
+        let owner_cache = OwnerCache::new(Some(owner.public_key().to_hex()));
+
+        let mentioned = gate
+            .evaluate_listener_event(
+                &relay::KuzzEvent {
+                    connection_generation: 0,
+                    channel_id: chat_id,
+                    event: stream_message(&owner, &[agent.as_str()]),
+                },
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            mentioned.allowed && !mentioned.is_dm,
+            "the owner's @mention in a group chat takes the ordinary policy"
+        );
+
+        let unmentioned = gate
+            .evaluate_listener_event(
+                &relay::KuzzEvent {
+                    connection_generation: 0,
+                    channel_id: chat_id,
+                    event: stream_message(&owner, &[]),
+                },
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            !unmentioned.allowed,
+            "a group chat message without an @mention never reaches the agent"
+        );
+        server.abort();
+    }
+
+    /// Without a dispatcher (Lead routing = `config` mode with the desktop's
+    /// rules, or `--subscribe all`), the listener gate still drops a group
+    /// chat message that does not @mention the agent, even from its owner,
+    /// although the Lead `lead-listen` rule would match it. The same message
+    /// in an ordinary channel keeps reaching the agent.
+    #[tokio::test]
+    async fn gate_drops_unmentioned_group_chat_messages_without_a_dispatcher() {
+        let relay_hex = Keys::generate().public_key().to_hex();
+        let agent = Keys::generate().public_key().to_hex();
+        // The owner the Lead fixture's `lead-listen` rule names (secret key 1).
+        let owner = Keys::parse("0000000000000000000000000000000000000000000000000000000000000001")
+            .expect("owner key");
+        let lead_rules = config::load_rules(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/lead_rules.toml"),
+        )
+        .expect("lead rules load");
+        let (rest_client, server) =
+            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+        let chat_id = Uuid::new_v4();
+        let stream_id = Uuid::new_v4();
+        let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test").await;
+        let channel_info = pool::ChannelInfoResolver::new(
+            HashMap::from([
+                (
+                    chat_id,
+                    relay::ChannelInfo {
+                        name: "unknown".into(),
+                        channel_type: "private".into(),
+                        description: None,
+                        group_chat: true,
+                    },
+                ),
+                (
+                    stream_id,
+                    relay::ChannelInfo {
+                        name: "general".into(),
+                        channel_type: "stream".into(),
+                        description: None,
+                        group_chat: false,
+                    },
+                ),
+            ]),
+            rest_client.clone(),
+        );
+        let owner_cache = OwnerCache::new(Some(owner.public_key().to_hex()));
+        let unmentioned = stream_message(&owner, &[]);
+        let mentioned = stream_message(&owner, &[agent.as_str()]);
+        assert_eq!(
+            filter::match_event(&unmentioned, chat_id, &lead_rules, &agent)
+                .await
+                .map(|m| m.prompt_tag)
+                .as_deref(),
+            Some("lead-listen"),
+            "the Lead rules alone would admit the owner's unmentioned message"
+        );
+
+        for respond_to in [RespondTo::OwnerOnly, RespondTo::Anyone] {
+            let mut decide = async |channel_id: Uuid, event: &nostr::Event| {
+                gate.evaluate_listener_event(
+                    &relay::KuzzEvent {
+                        connection_generation: 0,
+                        channel_id,
+                        event: event.clone(),
+                    },
+                    &respond_to,
+                    &HashSet::new(),
+                    &owner_cache,
+                    &channel_info,
+                    &rest_client,
+                )
+                .await
+                .allowed
+            };
+            assert!(
+                !decide(chat_id, &unmentioned).await,
+                "{respond_to}: an unmentioned owner message in a group chat is dropped"
+            );
+            assert!(
+                decide(chat_id, &mentioned).await,
+                "{respond_to}: the owner's @mention in a group chat is admitted"
+            );
+            assert!(
+                decide(stream_id, &unmentioned).await,
+                "{respond_to}: an ordinary channel still hears the owner unmentioned"
+            );
+        }
+        server.abort();
     }
 }
 
@@ -12048,6 +12273,53 @@ mod error_outcome_emission_tests {
             // non-systemPrompt path, the simplest valid value.
             protocol_version: 1,
         }
+    }
+
+    /// An idle worker writing on its own between turns counts as working;
+    /// bookkeeping output does not.
+    #[tokio::test]
+    async fn idle_worker_output_between_turns_is_handled_and_counts_as_work() {
+        const CHUNK: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"still going"}}}}"#;
+        const USAGE: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"usage_update","used":1,"size":2}}}"#;
+        async fn pool_writing(line: &str) -> AgentPool {
+            let mut agent = dummy_agent(0).await;
+            agent.acp = AcpClient::spawn(
+                "bash",
+                &["-c".into(), format!("echo '{line}'; sleep 30")],
+                &[],
+                false,
+            )
+            .await
+            .expect("spawn writer");
+            AgentPool::from_slots(vec![Some(agent), None])
+        }
+        /// Whether one drain moved the last activity forward.
+        async fn counts_as_work(pool: &mut AgentPool) -> bool {
+            let stale = tokio::time::Instant::now() - Duration::from_secs(60);
+            let mut last_activity = stale;
+            drain_idle_agent_output(pool, &mut last_activity).await;
+            last_activity != stale
+        }
+        async fn drained(pool: &mut AgentPool) -> bool {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            loop {
+                if counts_as_work(pool).await {
+                    return true;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return false;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+
+        let mut pool = pool_writing(CHUNK).await;
+        assert!(drained(&mut pool).await, "a reply chunk is work");
+        assert!(!counts_as_work(&mut pool).await, "handled once");
+
+        let mut pool = pool_writing(USAGE).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(!counts_as_work(&mut pool).await, "usage is not work");
     }
 
     #[tokio::test]
