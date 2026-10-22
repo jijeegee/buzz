@@ -299,6 +299,7 @@ fn make_channel(id: &str, name: &str, last_message_at: Option<String>) -> Channe
         goals_enabled: true,
         picture: None,
         group_chat: false,
+        history: None,
     }
 }
 

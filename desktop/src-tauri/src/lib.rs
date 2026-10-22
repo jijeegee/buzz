@@ -773,6 +773,7 @@ pub fn run() {
             remove_reaction,
             get_event,
             get_events,
+            get_quote_preview,
             show_native_notification,
             #[cfg(target_os = "macos")]
             macos_notifications::take_pending_activations,

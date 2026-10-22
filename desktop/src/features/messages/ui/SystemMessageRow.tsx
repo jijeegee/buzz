@@ -36,6 +36,7 @@ import {
   addedByActionPrefix,
   describeChannelTextFieldChange,
   describeGoalsChange,
+  describeHistoryChange,
   toInlineName,
 } from "../lib/systemEventCopy";
 import { MessageAgentOwner } from "./MessageAgentOwner";
@@ -604,6 +605,11 @@ function describeSystemEvent(
       };
     case "goals_changed": {
       const action = describeGoalsChange(payload.goals);
+      if (!action) return null;
+      return { title: actorName, action };
+    }
+    case "history_changed": {
+      const action = describeHistoryChange(payload.history);
       if (!action) return null;
       return { title: actorName, action };
     }

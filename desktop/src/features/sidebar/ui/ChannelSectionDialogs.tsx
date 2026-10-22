@@ -33,6 +33,7 @@ import {
   useLeaveChannelMutation,
 } from "@/features/channels/hooks";
 import { ChannelDeleteConfirmationDialog } from "@/features/channels/ui/ChannelManagementModerationActions";
+import { useOwnAgentsToRemoveOnLeave } from "@/features/channels/ui/useOwnAgentsToRemoveOnLeave";
 
 export type SectionDialogValue = {
   name: string;
@@ -291,7 +292,12 @@ export type LeaveChannelAlertDialogProps = {
   isConversation?: boolean;
   /** An ownerless chat: leaving removes only you; someone can add you back. */
   isChat?: boolean;
-  onConfirm: () => void;
+  /**
+   * My agents in the room. When non-zero the dialog offers "Leave and remove
+   * my agents (N)" (`onConfirm(true)`) next to "Leave only" (`onConfirm(false)`).
+   */
+  ownAgentCount?: number;
+  onConfirm: (removeOwnAgents: boolean) => void;
 };
 
 export function LeaveChannelAlertDialog({
@@ -300,6 +306,7 @@ export function LeaveChannelAlertDialog({
   channelName,
   isConversation = false,
   isChat = false,
+  ownAgentCount = 0,
   onConfirm,
 }: LeaveChannelAlertDialogProps) {
   const t = useT();
@@ -326,12 +333,32 @@ export function LeaveChannelAlertDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            onClick={onConfirm}
-          >
-            {t("sidebar.leaveDialog.confirm")}
-          </AlertDialogAction>
+          {ownAgentCount > 0 ? (
+            <>
+              <AlertDialogAction
+                data-testid="leave-channel-only"
+                onClick={() => onConfirm(false)}
+              >
+                {t("sidebar.leaveDialog.leaveOnly")}
+              </AlertDialogAction>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="leave-channel-remove-agents"
+                onClick={() => onConfirm(true)}
+              >
+                {t("sidebar.leaveDialog.leaveWithAgents", {
+                  count: ownAgentCount,
+                })}
+              </AlertDialogAction>
+            </>
+          ) : (
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => onConfirm(false)}
+            >
+              {t("sidebar.leaveDialog.confirm")}
+            </AlertDialogAction>
+          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -345,6 +372,10 @@ export function LeaveChannelAlertDialog({
 export function useLeaveChannelDialog() {
   const [target, setTarget] = React.useState<Channel | null>(null);
   const leaveChannel = useLeaveChannelMutation(target?.id ?? null);
+  const ownAgents = useOwnAgentsToRemoveOnLeave(
+    target?.id ?? null,
+    target !== null,
+  );
 
   const dialog = (
     <LeaveChannelAlertDialog
@@ -355,12 +386,15 @@ export function useLeaveChannelDialog() {
       channelName={target?.name ?? ""}
       isChat={isGroupChat(target)}
       isConversation={target?.channelType === "dm"}
-      onConfirm={() => {
+      onConfirm={(removeOwnAgents) => {
         if (target) {
-          leaveChannel.mutate();
+          leaveChannel.mutate({
+            removeAgentPubkeys: removeOwnAgents ? ownAgents : [],
+          });
         }
         setTarget(null);
       }}
+      ownAgentCount={target?.channelType === "dm" ? 0 : ownAgents.length}
     />
   );
 

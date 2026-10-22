@@ -30,7 +30,13 @@ export type Channel = {
    * stream with no owner; the UI calls it a "Chat" alongside 1:1 DMs.
    */
   groupChat?: boolean;
+  /**
+   * Whether new members see messages sent before they joined, from kind:39000
+   * `["history", "all" | "since_join"]`. Absent for DMs and group chats.
+   */
+  history?: ChannelHistory | null;
 };
+export type ChannelHistory = "all" | "since_join";
 export type ChannelDetail = Channel & {
   createdBy: string;
   createdAt: string;
@@ -70,6 +76,8 @@ export type UpdateChannelInput = {
   goalsEnabled?: boolean;
   /** Group photo URL; absent = unchanged, "" = remove. */
   picture?: string;
+  /** Omit to leave unchanged; emits `["history", value]` when set. */
+  history?: ChannelHistory;
 };
 
 export type SetChannelTopicInput = {

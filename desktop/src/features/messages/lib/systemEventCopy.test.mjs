@@ -5,6 +5,7 @@ import {
   addedByActionPrefix,
   describeChannelTextFieldChange,
   describeGoalsChange,
+  describeHistoryChange,
   toInlineName,
 } from "./systemEventCopy.ts";
 
@@ -121,4 +122,20 @@ test("the goals switch names the new state", () => {
 test("an unknown goals value has no caption", () => {
   assert.equal(describeGoalsChange("maybe"), null);
   assert.equal(describeGoalsChange(undefined), null);
+});
+
+test("the history setting names who can see earlier messages", () => {
+  assert.equal(
+    describeHistoryChange("all"),
+    "let new members see earlier messages",
+  );
+  assert.equal(
+    describeHistoryChange("since_join"),
+    "hid earlier messages from new members",
+  );
+});
+
+test("an unknown history value has no caption", () => {
+  assert.equal(describeHistoryChange("some"), null);
+  assert.equal(describeHistoryChange(undefined), null);
 });

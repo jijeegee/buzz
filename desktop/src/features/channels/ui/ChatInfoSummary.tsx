@@ -25,8 +25,6 @@ import { Input } from "@/shared/ui/input";
 import { PanelSectionGroup } from "@/shared/ui/PanelSectionGroup";
 import { Switch } from "@/shared/ui/switch";
 
-import { LeaveChannelAlertDialog } from "@/features/sidebar/ui/ChannelSectionDialogs";
-
 import { useChatPrefs } from "../ChatPrefsContext";
 import {
   normalizePrivateChatName,
@@ -36,6 +34,7 @@ import { peopleCountLabel } from "../lib/groupChat";
 import { useChatTitle } from "../useChatTitle";
 import { ChannelChatAvatar } from "./ChannelChatAvatar";
 import { ChannelGoalsSwitchRow } from "./ChannelGoalsSwitchRow";
+import { LeaveChannelConfirmDialog } from "./LeaveChannelConfirmDialog";
 import {
   ActionFieldRow,
   FieldGroup,
@@ -120,7 +119,8 @@ export function ChatInfoSummary({
   memberCount: number;
   members: ChannelMember[];
   membersError: unknown;
-  onLeave: () => void;
+  /** Leaves the chat, first removing `removeAgentPubkeys` (my agents). */
+  onLeave: (removeAgentPubkeys: readonly string[]) => void;
   /** Opens the people dialog (search everyone, add people). */
   onOpenPeople?: () => void;
 }) {
@@ -258,13 +258,11 @@ export function ChatInfoSummary({
           />
         </FieldGroup>
       ) : null}
-      <LeaveChannelAlertDialog
+      <LeaveChannelConfirmDialog
+        channelId={channel.id}
         channelName={title}
         isChat
-        onConfirm={() => {
-          setIsLeaveConfirmOpen(false);
-          onLeave();
-        }}
+        onLeave={onLeave}
         onOpenChange={setIsLeaveConfirmOpen}
         open={isLeaveConfirmOpen}
       />
