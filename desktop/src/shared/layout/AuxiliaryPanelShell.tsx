@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import { useIsAuxiliaryPanelOverlay } from "@/shared/hooks/use-mobile";
@@ -62,7 +63,7 @@ export function AuxiliaryPanel({
   onClose,
   onResetWidth,
   onResizeStart,
-  resizeHandleAriaLabel = "Resize panel",
+  resizeHandleAriaLabel,
   resizeHandleTestId,
   siblings,
   splitPaneClamp = true,
@@ -70,6 +71,7 @@ export function AuxiliaryPanel({
   transparentChrome = false,
   widthPx,
 }: AuxiliaryPanelProps) {
+  const t = useT();
   const isOverlay = useIsAuxiliaryPanelOverlay();
   const isFloatingOverlay = isOverlay && !isSinglePanelView;
   const isSplitLayout = layout === "split";
@@ -112,15 +114,15 @@ export function AuxiliaryPanel({
     !isSinglePanelView &&
     onResizeStart != null ? (
       <button
-        aria-label={resizeHandleAriaLabel}
+        aria-label={resizeHandleAriaLabel ?? t("ui.auxiliaryPanel.resize")}
         className="peer/auxiliary-panel-resize group/auxiliary-panel-resize absolute inset-y-0 left-0 z-40 w-3 -translate-x-1/2 cursor-col-resize"
         data-testid={resizeHandleTestId}
         onDoubleClick={canResetWidth ? onResetWidth : undefined}
         onPointerDown={onResizeStart}
         title={
           canResetWidth
-            ? "Drag to resize. Double-click to reset width."
-            : "Drag to resize."
+            ? t("ui.auxiliaryPanel.resizeTooltipWithReset")
+            : t("ui.auxiliaryPanel.resizeTooltip")
         }
         type="button"
       >

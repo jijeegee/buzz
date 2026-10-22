@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { buildObserverControlEvent } from "@/shared/api/tauriObserver";
 import type { RelayEvent } from "@/shared/api/types";
 import { KIND_AGENT_OBSERVER_FRAME } from "@/shared/constants/kinds";
@@ -41,7 +42,7 @@ export async function sendAgentObserverControl(
   const event = await buildObserverControlEvent({ agentPubkey, payload });
   await relayClient.publishEvent(
     event,
-    "Timed out while sending the agent control command.",
-    "Failed to send the agent control command.",
+    t("ui.agentControl.sendTimedOut"),
+    t("ui.agentControl.sendFailed"),
   );
 }

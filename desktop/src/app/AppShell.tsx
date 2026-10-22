@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { ProtectedGlobalOverlay } from "@protected-feature-components";
 import { useQueryClient } from "@tanstack/react-query";
@@ -130,6 +131,7 @@ import {
 } from "@/features/sidebar/lib/sidebarListTab";
 const EMPTY_CHANNELS: Channel[] = [];
 export function AppShell() {
+  const t = useT();
   useWebviewZoomShortcuts();
   useTauriWindowDrag();
   useWebviewScrollBoundaryLock();
@@ -929,7 +931,7 @@ export function AppShell() {
                     resolvedDisplayName={
                       profileQuery.data?.displayName?.trim() ||
                       identityQuery.data?.displayName?.trim() ||
-                      "Current identity"
+                      t("app.shell.currentIdentityFallback")
                     }
                     selfPresenceStatus={presenceSession.currentStatus}
                     selfUserStatus={

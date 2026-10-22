@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { useSyncExternalStore, useCallback, useEffect } from "react";
 import { getFeature } from "./manifest";
 import { resolveEnabled } from "./resolveEnabled";
@@ -151,7 +152,7 @@ export function usePreviewFeatureWarning(featureId: string): void {
     void import("sonner").then(({ toast }) => {
       if (cancelled) return;
       toast.warning(
-        `${feature.name} is a preview feature. Enable it in Settings → Experiments to surface it in your sidebar.`,
+        t("ui.previewFeature.disabledWarning", { name: feature.name }),
       );
     });
     return () => {

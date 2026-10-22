@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 /**
  * Kuzz users sign in with Google and never manage keys or pick a relay, so a
  * raw backend error such as `relay unreachable: request timed out` means
@@ -11,6 +12,7 @@
  * reach the user unchanged. Anything not recognised is returned as-is.
  */
 
+// English reference texts (tests compare against them); shown text comes from t().
 export const CONNECTIVITY_ERROR_MESSAGE =
   "Couldn't connect. Check your internet connection and try again.";
 export const RATE_LIMITED_ERROR_MESSAGE =
@@ -38,24 +40,24 @@ const RELAY_REJECTED = /^relay rejected (?:event|engram):/;
 export function toUserFacingErrorDetail(detail: string): string {
   const trimmed = detail.trim();
   if (RELAY_UNREACHABLE.test(trimmed)) {
-    return CONNECTIVITY_ERROR_MESSAGE;
+    return t("ui.backendError.connectivity");
   }
   if (RELAY_RATE_LIMITED.test(trimmed)) {
-    return RATE_LIMITED_ERROR_MESSAGE;
+    return t("ui.backendError.rateLimited");
   }
   // The server's own reason can itself name protocol internals (keys,
   // event kinds), so it is not carried over.
   if (RELAY_RETURNED.test(trimmed) || RELAY_REJECTED.test(trimmed)) {
-    return SERVER_REJECTED_ERROR_MESSAGE;
+    return t("ui.backendError.serverRejected");
   }
   return detail;
 }
 
-const BACKEND_ERROR_SHAPES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/(^|: )relay unreachable:/, CONNECTIVITY_ERROR_MESSAGE],
-  [/(^|: )relay rate-limited:/, RATE_LIMITED_ERROR_MESSAGE],
-  [/(^|: )relay returned \d{3}\b/, SERVER_REJECTED_ERROR_MESSAGE],
-  [/(^|: )relay rejected (?:event|engram):/, SERVER_REJECTED_ERROR_MESSAGE],
+const BACKEND_ERROR_SHAPES: ReadonlyArray<readonly [RegExp, MessageKey]> = [
+  [/(^|: )relay unreachable:/, "ui.backendError.connectivity"],
+  [/(^|: )relay rate-limited:/, "ui.backendError.rateLimited"],
+  [/(^|: )relay returned \d{3}\b/, "ui.backendError.serverRejected"],
+  [/(^|: )relay rejected (?:event|engram):/, "ui.backendError.serverRejected"],
 ];
 
 /**
@@ -66,7 +68,7 @@ const BACKEND_ERROR_SHAPES: ReadonlyArray<readonly [RegExp, string]> = [
  */
 export function mapBackendErrorInText(text: string): string {
   let cut = -1;
-  let replacement = "";
+  let replacement: MessageKey | null = null;
   for (const [shape, message] of BACKEND_ERROR_SHAPES) {
     const match = shape.exec(text);
     if (!match) continue;
@@ -76,5 +78,7 @@ export function mapBackendErrorInText(text: string): string {
       replacement = message;
     }
   }
-  return cut === -1 ? text : text.slice(0, cut) + replacement;
+  return cut === -1 || replacement === null
+    ? text
+    : text.slice(0, cut) + t(replacement);
 }

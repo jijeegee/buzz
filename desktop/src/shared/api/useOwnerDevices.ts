@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import {
   type QueryClient,
@@ -185,8 +186,8 @@ const defaultPublishDeps: PublishDeviceRobotDeps = {
   publish: (event) =>
     relayClient.publishEvent(
       event,
-      "Timed out saving the device robot.",
-      "Could not save the device robot.",
+      t("ui.deviceRobot.saveTimedOut"),
+      t("ui.deviceRobot.saveFailed"),
     ),
   now: () => Date.now(),
 };

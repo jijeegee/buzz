@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -48,11 +49,10 @@ import {
 import type { Channel, RelayEvent } from "@/shared/api/types";
 
 const UNAVAILABLE_TEXT = {
-  signed_out:
-    "That account is signed out on this computer. Sign in to it from the profile menu.",
-  no_community: "That account's community is no longer on this computer.",
-  failed: "Could not switch to that account.",
-} as const;
+  signed_out: "app.notifications.accountSignedOut",
+  no_community: "app.notifications.accountCommunityGone",
+  failed: "app.notifications.accountSwitchFailed",
+} as const satisfies Record<string, MessageKey>;
 
 export function useAppShellDesktopNotifications({
   channels,
@@ -116,7 +116,7 @@ export function useAppShellDesktopNotifications({
             privateName: getChatPrivateName(channel.id),
             nameOf: resolveSenderName,
           })
-        : channel.name?.trim() || "Direct message";
+        : channel.name?.trim() || t("app.notifications.directMessageFallback");
       const { title, body } = formatMessageNotification({
         source: isGroupChat(channel) ? "chat" : "dm",
         senderName: resolveSenderName(event.pubkey),
@@ -209,7 +209,7 @@ export function useAppShellDesktopNotifications({
       try {
         const incomplete = await switchAccount(target);
         action.reload(
-          "Switching accounts…",
+          t("app.notifications.switchingAccounts"),
           incomplete ? SWITCH_INCOMPLETE_NOTICE : null,
         );
       } catch (error) {
@@ -230,7 +230,7 @@ export function useAppShellDesktopNotifications({
       ),
     unavailable: (reason) => {
       void revealDesktopAppWindow().catch(() => undefined);
-      toast.error(UNAVAILABLE_TEXT[reason]);
+      toast.error(t(UNAVAILABLE_TEXT[reason]));
     },
     allowsServer: (origin) => isAllowedServer(origin, builtInServer),
     focusApp: () => {
