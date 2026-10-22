@@ -144,7 +144,7 @@ export function AgentSnapshotImportDialog({
  * They always render inside the dialog, which re-renders on language change.
  */
 const translate = ((key: MessageKey, values?: MessageValues) =>
-  getIntl().formatMessage({ id: key }, values)) as Translate;
+  getIntl().formatMessage({ id: key }, values)) as unknown as Translate;
 
 export function PreviewBody({
   preview,
