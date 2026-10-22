@@ -124,7 +124,10 @@ test("reopening keeps older loaded replies that connect to the new page", () => 
     cachedState,
     page(13, 62, true),
   );
-  assert.deepEqual(ids(events), Array.from({ length: 62 }, (_, i) => i + 1));
+  assert.deepEqual(
+    ids(events),
+    Array.from({ length: 62 }, (_, i) => i + 1),
+  );
   assert.deepEqual(state, {
     hasOlder: false,
     olderCursor: null,
@@ -139,7 +142,10 @@ test("a page that cannot reach the cached replies restarts from the page", () =>
     { hasOlder: false, olderCursor: null, newestCovered: cursor(10) },
     page(51, 100, true),
   );
-  assert.deepEqual(ids(events), Array.from({ length: 50 }, (_, i) => i + 51));
+  assert.deepEqual(
+    ids(events),
+    Array.from({ length: 50 }, (_, i) => i + 51),
+  );
   assert.equal(state.hasOlder, true);
 });
 
@@ -152,7 +158,10 @@ test("a live reply inside the new page does not hide replies missed in a gap", (
     { hasOlder: false, olderCursor: null, newestCovered: cursor(50) },
     page(62, 111, true),
   );
-  assert.deepEqual(ids(events), Array.from({ length: 50 }, (_, i) => i + 62));
+  assert.deepEqual(
+    ids(events),
+    Array.from({ length: 50 }, (_, i) => i + 62),
+  );
   assert.deepEqual(state.olderCursor, cursor(62));
 });
 
@@ -231,7 +240,10 @@ test("a link whose reply is never reached leaves the paging state untouched", as
     mustInclude: "9".repeat(64),
   });
   assert.equal(events.length, 100);
-  assert.equal(client.getQueryData(threadWindowStateKey(ROOM, ROOT)), undefined);
+  assert.equal(
+    client.getQueryData(threadWindowStateKey(ROOM, ROOT)),
+    undefined,
+  );
 });
 
 test("an older page is dropped when a newest-page restart moved the cursor", async () => {
@@ -263,9 +275,10 @@ test("an older page is dropped when a newest-page restart moved the cursor", asy
   });
   release();
   await older;
-  assert.deepEqual(ids(client.getQueryData(threadRepliesKey(ROOM, ROOT))), [
-    200,
-  ]);
+  assert.deepEqual(
+    ids(client.getQueryData(threadRepliesKey(ROOM, ROOT))),
+    [200],
+  );
   assert.deepEqual(client.getQueryData(stateKey).olderCursor, cursor(200));
 });
 

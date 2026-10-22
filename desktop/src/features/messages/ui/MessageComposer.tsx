@@ -92,6 +92,7 @@ function MessageComposerImpl({
   onPrepareSendChannel,
   onPreparingMentionSendChange,
   onSend,
+  onPreviewSend,
   placeholder,
   profiles,
   recentMentionPubkeys,
@@ -234,6 +235,7 @@ function MessageComposerImpl({
   const isSubmitLockedRef = React.useRef(false);
   const [isSubmitLocked, setIsSubmitLocked] = React.useState(false);
   const onSendRef = React.useRef(onSend);
+  const onPreviewSendRef = React.useRef(onPreviewSend);
   const onEditSaveRef = React.useRef(onEditSave);
   const onEditLastOwnMessageRef = React.useRef(onEditLastOwnMessage);
   const editTargetRef = React.useRef(editTarget);
@@ -246,6 +248,7 @@ function MessageComposerImpl({
   isSendingRef.current = isSending;
   isUploadingRef.current = media.isUploading;
   onSendRef.current = onSend;
+  onPreviewSendRef.current = onPreviewSend;
   onEditSaveRef.current = onEditSave;
   onEditLastOwnMessageRef.current = onEditLastOwnMessage;
   editTargetRef.current = editTarget;
@@ -383,6 +386,7 @@ function MessageComposerImpl({
       addressedMentionRestore.onAddressedAgentsSendSucceeded,
     onPrepareSendChannel,
     onSendRef,
+    onPreviewSendRef,
     richText,
     setContent: setComposerContent,
     setIsEmojiPickerOpen,

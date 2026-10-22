@@ -20,6 +20,8 @@ export async function sendChannelMessage(
   quoteTag?: string[],
   /** Thread Close/Reopen toggle marker on a reply in the thread. */
   threadMarker?: "closed" | "reopened",
+  /** Second the sender pressed send; honoured only if within two minutes. */
+  createdAt?: number,
 ): Promise<SendChannelMessageResult> {
   const response = await invokeTauri<RawSendChannelMessageResult>(
     "send_channel_message",
@@ -44,6 +46,7 @@ export async function sendChannelMessage(
       // switch cannot re-sign the captured tenant's content as the new one.
       expectedSignerPubkey: expectedSignerPubkey ?? null,
       threadMarker: threadMarker ?? null,
+      createdAt: createdAt ?? null,
     },
   );
   return {

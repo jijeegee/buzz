@@ -24,7 +24,12 @@ import {
 import {
   buildOutgoingMessage,
   type ImetaMedia,
+  mergeOutgoingTags,
 } from "@/features/messages/lib/imetaMediaMarkdown";
+import {
+  hasFailedSend,
+  replaceFailedSendRetry,
+} from "@/features/messages/lib/failedSends";
 import { useActivePreparedLinkPreviews } from "./useActivePreparedLinkPreviews";
 import { useDetachedAgentStart } from "./useDetachedAgentStart";
 import { useEnsureAgentMentionsReady } from "./useEnsureAgentMentionsReady";
@@ -37,7 +42,6 @@ import {
   enqueueAgentWake,
   formatMessageSendError,
   getErrorMessage,
-  mentionRevalidationOptions,
   withoutInvitingRecipients,
   mergeMentionRecipients,
   splitSoftAgentMentions,
@@ -75,6 +79,7 @@ export function useMentionSendFlow({
   onAddressedAgentsSendFailed,
   onAddressedAgentsSendSucceeded,
   onSendRef,
+  onPreviewSendRef,
   richText,
   setContent,
   setIsEmojiPickerOpen,
@@ -373,6 +378,10 @@ export function useMentionSendFlow({
       let optimisticComposerContent = "";
       let clearedRevision = -1;
       const restoreComposerAfterFailure = () => {
+        // The failed row keeps the message with Retry / Delete; restoring the
+        // draft too would offer it twice.
+        if (previewHandedOff && preview && hasFailedSend(preview.localKey))
+          return;
         if (!composerCleared) return;
         composerCleared = false;
         // An authored edit (even edit -> clear) ends optimistic recovery's
@@ -426,6 +435,33 @@ export function useMentionSendFlow({
         composerCleared = true;
         clearedRevision = getComposerRevision();
       }
+      // Draw the own message now, before preparation and the relay, unless the
+      // send can still stop to ask (a 1:1 mention may need a new chat) or must
+      // upload first. Abandoned sends discard it in `finally`; a handed-off
+      // send keeps it, marked failed, when the relay does not accept it.
+      const preview =
+        draft.queuedAttachments.length === 0 &&
+        !(onPrepareSendChannel && mentionPubkeys.length > 0)
+          ? (() => {
+              const { content, mediaTags } = buildOutgoingMessage(
+                draft.trimmed,
+                draft.savedImeta,
+                draft.savedSpoileredAttachmentUrls,
+              );
+              return (
+                onPreviewSendRef?.current?.({
+                  channelId: draft.capturedChannelId,
+                  content,
+                  mentionPubkeys: uniqueNormalizedPubkeys(mentionPubkeys),
+                  mediaTags:
+                    mergeOutgoingTags(mediaTags, outgoingTags ?? []) ?? [],
+                  parentEventId:
+                    draft.capturedThreadContext?.parentEventId ?? null,
+                }) ?? null
+              );
+            })()
+          : null;
+      let previewHandedOff = false;
       // Recover on invalidation, not when an arbitrary external await settles.
       // In particular a later visit to A must load recovery before it can edit
       // or clear A again. The async continuation only observes cancellation.
@@ -441,15 +477,10 @@ export function useMentionSendFlow({
       });
       let uploadStarted = false;
       try {
-        const admittedMentionPubkeys = uniqueNormalizedPubkeys(
-          await mentions.revalidateMentionPubkeys(
-            mentionPubkeys,
-            draft.capturedChannelId,
-            mentionRevalidationOptions(draft, "prepare"),
-          ),
-        );
-        if (isSendCancelled()) return restoreComposerAfterFailure();
-        if (!isMountedRef.current) return persistPreflightDraft();
+        // Mentions were bound to exact identities when picked; the relay and
+        // the agent's runner decide what a mention may do. Sending does not
+        // wait on a second client-side check.
+        const admittedMentionPubkeys = uniqueNormalizedPubkeys(mentionPubkeys);
         const admittedMentionPubkeySet = new Set(admittedMentionPubkeys);
         const readyAgentPubkeys = new Set(
           uniqueNormalizedPubkeys(draft.readyAgentPubkeys ?? []).filter(
@@ -501,42 +532,14 @@ export function useMentionSendFlow({
             return;
           }
         }
-        const agentReadiness = await ensureManagedAgentMentionsReady(
-          managedMentionPubkeys.filter(
-            (pubkey) => !readyAgentPubkeys.has(normalizePubkey(pubkey)),
-          ),
-          sendChannelId ?? "",
-          onPrepareSendChannel ? preparedAgentPubkeys : [],
-          [...managedAgentsByPubkey.values()],
-          isSendCancelled,
+        // Sending neither starts a stopped agent nor adds one to the group: a
+        // mentioned agent that is running and a member answers, others don't.
+        // Only wakes queued by persona creation on this draft remain; they
+        // flush after the relay accepts the publish, so an aborted send drops
+        // them.
+        const agentsToWake = dedupeQueuedAgentWakes(
+          draft.queuedAgentWakes ?? [],
         );
-        // Every wake this send queued: persona creates carried on the draft
-        // (enqueued before the non-member prompt could defer us here), then
-        // the readiness pass's. Flushed only after the relay accepts the
-        // publish — every abort path between here and there just drops them,
-        // so no wake (or "your message was sent" failure toast) can exist for
-        // a message that never landed. First entry wins the dedupe because it
-        // carries the earliest replay floor, and the floor is a lower bound.
-        const agentsToWake = dedupeQueuedAgentWakes([
-          ...(draft.queuedAgentWakes ?? []),
-          ...agentReadiness.agentsToWake,
-        ]);
-        if (isSendCancelled()) return restoreComposerAfterFailure();
-        if (!isMountedRef.current) {
-          persistPreflightDraft();
-          return;
-        }
-        if (agentReadiness.errors.length > 0) {
-          const message =
-            agentReadiness.errors.length === 1
-              ? `Could not prepare agent mention: ${agentReadiness.errors[0]}`
-              : `Could not prepare agent mentions: ${agentReadiness.errors.join(
-                  "; ",
-                )}`;
-          setNonMemberPromptError(message);
-          toast.error(message);
-          return restoreComposerAfterFailure();
-        }
         if (preparedAgentPubkeys.length > 0 && sendChannelId) {
           try {
             await syncAgentsToActiveHuddle(sendChannelId, preparedAgentPubkeys);
@@ -576,22 +579,7 @@ export function useMentionSendFlow({
           );
           if (!finalOutgoingTags || signal?.aborted || isSendCancelled())
             return restoreComposerAfterFailure();
-          // The pass immediately before signing/publish is always fresh:
-          // mention authorization is re-validated here unconditionally,
-          // whatever did or did not separate it from the admission pass
-          // above (#5681).
-          const revalidatedMentionPubkeys =
-            await mentions.revalidateMentionPubkeys(
-              mentionPubkeys,
-              sendChannelId,
-              mentionRevalidationOptions(
-                draft,
-                "publish",
-                preparedAgentPubkeys,
-              ),
-            );
-          if (signal?.aborted || isSendCancelled())
-            return restoreComposerAfterFailure();
+          const revalidatedMentionPubkeys = admittedMentionPubkeys;
           const { delivered: deliveredMentionPubkeys, soft: softPubkeys } =
             draft.softAgentMentions
               ? splitSoftAgentMentions(
@@ -610,24 +598,48 @@ export function useMentionSendFlow({
             ),
             ...buildSoftMentionTags(softPubkeys),
           ];
-          const published = await send(
-            finalContent,
-            deliveredMentionPubkeys,
-            finalTagsWithAgentAddress,
-            sendChannelId,
-            draft.capturedThreadContext,
-            draft.preparedLinkPreviews != null,
-          );
-          // The relay accepted the publish: flush the queued wakes now,
-          // before the post-send cancellation check — a cancellation racing
-          // a successful publish must not drop the wake for a message that
-          // did land. Fire-and-forget: the send awaits nothing here, and
-          // each wake carries its enqueue-time replay floor so the spawned
-          // harness replays back past this message however late the flush.
-          for (const wake of agentsToWake) {
-            startAgentDetached(wake.agent, wake.replayFloorUnix);
-          }
-          if (published) draft.onPublished?.(published);
+          // A preview drawn for another group (a 1:1 can move the send to a
+          // new chat) is not reused.
+          const previewKey =
+            preview && sendChannelId === draft.capturedChannelId
+              ? preview.localKey
+              : undefined;
+          previewHandedOff = previewKey !== undefined;
+          const publish = async (): Promise<unknown> => {
+            try {
+              const published = await send(
+                finalContent,
+                deliveredMentionPubkeys,
+                finalTagsWithAgentAddress,
+                sendChannelId,
+                draft.capturedThreadContext,
+                draft.preparedLinkPreviews != null,
+                previewKey,
+              );
+              // The relay accepted the publish: flush the queued wakes now,
+              // before the post-send cancellation check — a cancellation
+              // racing a successful publish must not drop the wake for a
+              // message that did land. Fire-and-forget: the send awaits
+              // nothing here, and each wake carries its enqueue-time replay
+              // floor so the spawned harness replays back past this message
+              // however late the flush.
+              for (const wake of agentsToWake) {
+                startAgentDetached(wake.agent, wake.replayFloorUnix);
+              }
+              if (published) draft.onPublished?.(published);
+              return published;
+            } catch (error) {
+              // The failed row's Retry publishes again with the same
+              // after-publish steps (wakes, routing) as this send.
+              if (previewKey) {
+                replaceFailedSendRetry(previewKey, () => {
+                  publish().catch(() => {});
+                });
+              }
+              throw error;
+            }
+          };
+          await publish();
           if (signal?.aborted || isSendCancelled()) return;
           const sentMentionPubkeys = new Set(
             deliveredMentionPubkeys.map(normalizePubkey),
@@ -722,6 +734,7 @@ export function useMentionSendFlow({
           getErrorMessage(error, "Could not send message. Please retry."),
         );
       } finally {
+        if (preview && !previewHandedOff) preview.discard();
         if (draft.preparedLinkPreviews) {
           activePreparedLinkPreviews.delete(draft.preparedLinkPreviews);
         }
@@ -741,14 +754,13 @@ export function useMentionSendFlow({
       runComposerUpdate,
       contentRef,
       drafts,
-      ensureManagedAgentMentionsReady,
       getManagedAgentsByPubkey,
       mentions.isAgentPubkey,
-      mentions.revalidateMentionPubkeys,
       onAddressedAgentsComposerCleared,
       onAddressedAgentsSendFailed,
       onAddressedAgentsSendSucceeded,
       onPrepareSendChannel,
+      onPreviewSendRef,
       onSendRef,
       richText.setContent,
       setContent,

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ArrowDown, LocateFixed } from "lucide-react";
 import { ThreadNameEditor } from "./ThreadNameEditor";
+import type { SendPreview } from "@/features/messages/hooks";
 
 import { HuddleTranscriptIntro } from "@/features/huddle/components/HuddleTranscriptIntro";
 import {
@@ -112,7 +113,9 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
       threadHeadId: string | null;
     } | null,
     forceRest?: boolean,
+    optimisticLocalKey?: string,
   ) => Promise<RelayEvent | undefined>;
+  onPreviewSend?: SendPreview;
   onSendToChannel?: (
     message: TimelineMessage,
     threadRoot: TimelineMessage,
@@ -216,6 +219,7 @@ export function MessageThreadPanel({
   onScrollTargetSettled,
   onSelectReplyTarget,
   onSend,
+  onPreviewSend,
   onSendToChannel,
   onToggleReaction,
   onUnfollowThread,
@@ -1019,6 +1023,7 @@ export function MessageThreadPanel({
               onEditLastOwnMessage={onEditLastOwnMessage}
               onEditSave={onEditSave}
               onSend={onSend}
+              onPreviewSend={onPreviewSend}
               placeholder={
                 isHuddleTranscript
                   ? "Message the huddle"

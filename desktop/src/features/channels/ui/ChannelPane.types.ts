@@ -1,4 +1,5 @@
 import type * as React from "react";
+import type { SendPreview } from "@/features/messages/hooks";
 import type { ReadingPosition } from "@/features/channels/readingPositionStore";
 import type { BotActivityAgent } from "@/features/channels/ui/BotActivityBar";
 import type { ChannelAgentSessionAgent } from "@/features/channels/ui/useChannelAgentSessions";
@@ -144,7 +145,10 @@ export type ChannelPaneProps = {
       threadHeadId: string | null;
     } | null,
     forceRest?: boolean,
+    optimisticLocalKey?: string,
   ) => Promise<RelayEvent | undefined>;
+  /** Draws an own message before it is sent (see `useSendPreview`). */
+  onPreviewSend?: SendPreview;
   onSendToChannel: (
     message: TimelineMessage,
     threadRoot: TimelineMessage,
@@ -166,6 +170,8 @@ export type ChannelPaneProps = {
       parentEventId: string | null;
       threadHeadId: string | null;
     } | null,
+    forceRest?: boolean,
+    optimisticLocalKey?: string,
   ) => Promise<RelayEvent | undefined>;
   onTargetReached?: (messageId: string) => void;
   onToggleReaction?: (

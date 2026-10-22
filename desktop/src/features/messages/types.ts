@@ -44,6 +44,8 @@ export type TimelineMessage = {
   depth: number;
   accent?: boolean;
   pending?: boolean;
+  /** Own send the relay did not accept (still `pending`). */
+  failed?: boolean;
   edited?: boolean;
   highlighted?: boolean;
   kind?: number;
