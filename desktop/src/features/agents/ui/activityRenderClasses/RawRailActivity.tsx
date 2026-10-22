@@ -9,8 +9,10 @@ import { ToolActivity } from "./ToolActivity";
 import { formatTranscriptTimestampTitle } from "../agentSessionUtils";
 import { PromptSectionList } from "../PromptSectionAccordion";
 import type { ActivityRenderClassItemProps } from "./types";
+import { useT } from "@/shared/i18n";
 
 export function RawRailActivity(props: ActivityRenderClassItemProps) {
+  const t = useT();
   if (props.item.type === "tool") {
     return <ToolActivity {...props} />;
   }
@@ -19,7 +21,9 @@ export function RawRailActivity(props: ActivityRenderClassItemProps) {
   }
 
   const sectionCount = props.item.sections.length;
-  const sectionSuffix = `${sectionCount} section${sectionCount === 1 ? "" : "s"}`;
+  const sectionSuffix = t("agents.transcript.sectionCount", {
+    count: sectionCount,
+  });
   const isRawPayload = props.item.acpSource === "raw_json_rpc";
 
   return (
@@ -44,7 +48,7 @@ export function RawRailActivity(props: ActivityRenderClassItemProps) {
                 <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-transform group-open/section:rotate-180 group-open/section:text-foreground" />
               </summary>
               <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap wrap-break-word rounded-md bg-muted/50 px-3 py-2 font-mono text-xs leading-5 text-muted-foreground">
-                {section.body.trim() || "No metadata."}
+                {section.body.trim() || t("agents.transcript.noMetadata")}
               </pre>
             </details>
           ))

@@ -8,6 +8,7 @@ import {
   PERSONA_FIELD_CONTROL_CLASS,
   PERSONA_FIELD_SHELL_CLASS,
 } from "./agentConfigOptions";
+import { useT } from "@/shared/i18n";
 
 type PersonaModelComboboxProps = {
   disabled?: boolean;
@@ -26,6 +27,7 @@ export function PersonaModelCombobox({
   placeholder,
   value,
 }: PersonaModelComboboxProps) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [highlightedIndex, setHighlightedIndex] = React.useState(0);
@@ -156,14 +158,14 @@ export function PersonaModelCombobox({
           <div className="group/search flex cursor-text items-center gap-2 border-b border-border/50 px-3 py-2">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55 transition-colors duration-150 ease-out group-focus-within/search:text-foreground" />
             <input
-              aria-label="Search models"
+              aria-label={t("agents.persona.searchModels")}
               autoCapitalize="none"
               autoComplete="off"
               autoCorrect="off"
               className="block min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-5 text-muted-foreground/55 shadow-none outline-none placeholder:text-muted-foreground/55 focus:text-foreground focus:placeholder:text-muted-foreground"
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Search models…"
+              placeholder={t("agents.model.searchPlaceholder")}
               // Popover supports onOpenAutoFocus; we preventDefault above so
               // Radix doesn't move focus to the first focusable. But we still
               // want the input focused immediately, so use the callback ref.
@@ -212,7 +214,7 @@ export function PersonaModelCombobox({
               ))
             ) : (
               <p className="px-3 py-6 text-center text-sm text-muted-foreground/55">
-                No models match
+                {t("agents.persona.noModelsMatch")}
               </p>
             )}
           </div>

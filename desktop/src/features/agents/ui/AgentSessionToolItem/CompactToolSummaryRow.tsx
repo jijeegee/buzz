@@ -14,6 +14,7 @@ import {
   splitActivityRowLabel,
   type ActivityRowLabelParts,
 } from "../activityRenderClasses/ActivityRow";
+import { useT } from "@/shared/i18n";
 
 export function compactSummaryTone() {
   return "text-muted-foreground/60 transition-colors group-hover/row:text-foreground group-open:text-foreground";
@@ -143,6 +144,7 @@ function CompactFileEditSummaryView({
 }: {
   summary: CompactFileEditSummary;
 }) {
+  const t = useT();
   return (
     <ActivityRowLabel
       className="max-w-72"
@@ -153,7 +155,7 @@ function CompactFileEditSummaryView({
         deletions: summary.deletions,
       }}
       title={summary.path}
-      verb="Edited"
+      verb={t("agents.toolActivity.verbEdited")}
     />
   );
 }

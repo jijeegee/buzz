@@ -6,6 +6,7 @@ import { FileEditDiffBlock, hasFileEditLineDiff } from "../FileEditDiffView";
 import { formatCodeValue } from "../agentSessionUtils";
 import { ShellCommandBlock } from "./ShellCommandBlock";
 import { ViewImageToolPreview } from "./ViewImageToolPreview";
+import { useT } from "@/shared/i18n";
 
 export function ToolDetailBlocks({
   args,
@@ -30,6 +31,7 @@ export function ToolDetailBlocks({
   result: string;
   shellCommand: string | null;
 }) {
+  const t = useT();
   const showFileEditDiff =
     fileEditDiff && hasFileEditLineDiff(fileEditDiff) && !isError;
   const showFileReadContent = fileReadContent != null && !isError;
@@ -54,7 +56,7 @@ export function ToolDetailBlocks({
         <ShellCommandBlock command={shellCommand} result={result} />
       ) : showParameters ? (
         <ToolCodeBlock
-          label="Parameters"
+          label={t("agents.toolDetails.parameters")}
           tone="muted"
           value={JSON.stringify(args, null, 2)}
         />
@@ -71,7 +73,11 @@ export function ToolDetailBlocks({
           />
         ) : (
           <ToolCodeBlock
-            label={isError ? "Error" : "Result"}
+            label={
+              isError
+                ? t("agents.toolDetails.error")
+                : t("agents.toolDetails.result")
+            }
             tone={isError ? "error" : "muted"}
             value={result}
           />
@@ -79,7 +85,7 @@ export function ToolDetailBlocks({
       ) : null}
       {!showShellCommand && !showParameters && !hasResult ? (
         <p className="text-sm text-muted-foreground/80">
-          Waiting for tool details.
+          {t("agents.toolDetails.waiting")}
         </p>
       ) : null}
     </div>

@@ -22,6 +22,7 @@ import {
   ContextGaugeButton,
   ContextGaugeDial,
 } from "./AgentContextGauge";
+import { useT } from "@/shared/i18n";
 
 /** Thread sessions shown before the rest collapse behind "Show more". */
 export const VISIBLE_THREAD_SESSIONS = 10;
@@ -50,6 +51,7 @@ function snippetFromContent(content: string): string | null {
  * a short event id. Never fetches.
  */
 function useThreadLabel(channelId: string, rootEventId: string): string {
+  const t = useT();
   const queryClient = useQueryClient();
   const cached = queryClient.getQueryData<unknown>(
     channelMessagesKey(channelId),
@@ -61,7 +63,9 @@ function useThreadLabel(channelId: string, rootEventId: string): string {
     root && typeof root.content === "string"
       ? snippetFromContent(root.content)
       : null;
-  return snippet ?? `Thread ${rootEventId.slice(0, 8)}`;
+  return (
+    snippet ?? t("agents.sessions.thread", { id: rootEventId.slice(0, 8) })
+  );
 }
 
 function ThreadSessionRow({
@@ -73,6 +77,7 @@ function ThreadSessionRow({
   now: number;
   reading: AgentContextUsage;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const threadRoot = reading.threadRootEventId ?? "";
   const label = useThreadLabel(reading.channelId, threadRoot);
@@ -92,13 +97,13 @@ function ThreadSessionRow({
         </p>
       </div>
       <Button
-        aria-label={`Compact session: ${label}`}
+        aria-label={t("agents.sessions.compactLabel", { label })}
         onClick={() => setOpen(true)}
         size="sm"
         type="button"
         variant="outline"
       >
-        Compact
+        {t("agents.sessions.compact")}
       </Button>
       {open ? (
         <CompactSessionDialog
@@ -119,6 +124,7 @@ function ThreadSessionList({
   agentName: string;
   threads: readonly AgentContextUsage[];
 }) {
+  const t = useT();
   const [showAll, setShowAll] = React.useState(false);
   const now = useNow(60_000);
   const visible = showAll ? threads : threads.slice(0, VISIBLE_THREAD_SESSIONS);
@@ -143,7 +149,7 @@ function ThreadSessionList({
             type="button"
             variant="ghost"
           >
-            Show {hiddenCount} more
+            {t("agents.sessions.showMore", { count: hiddenCount })}
           </Button>
         </div>
       ) : null}
@@ -166,6 +172,7 @@ export function AgentChannelSessionsRow({
   group?: ChannelSessionGroup;
   onOpenChannel: (channelId: string) => void;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = React.useState(false);
   const threadCount = group.threads.length;
   const hasSessions = group.conversation !== null || threadCount > 0;
@@ -179,7 +186,7 @@ export function AgentChannelSessionsRow({
         )}
       >
         <button
-          aria-label={`Open ${channel.name}`}
+          aria-label={t("agents.sessions.openGroup", { name: channel.name })}
           className="group flex min-w-0 flex-1 items-center gap-3 self-stretch px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
           data-testid={`user-profile-channel-link-${channel.name}`}
           onClick={() => onOpenChannel(channel.id)}
@@ -215,7 +222,7 @@ export function AgentChannelSessionsRow({
             ) : (
               <ChevronRight aria-hidden="true" className="h-4 w-4" />
             )}
-            {threadCount === 1 ? "1 thread" : `${threadCount} threads`}
+            {t("agents.sessions.threadCount", { count: threadCount })}
           </Button>
         ) : null}
       </div>

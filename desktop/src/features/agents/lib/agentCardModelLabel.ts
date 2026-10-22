@@ -3,6 +3,7 @@ import {
   resolveModelLabel,
 } from "./formatAgentModelLabel";
 import type { ManagedAgent } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /**
  * Model label for the Agents-page card, shared by the definition-grouped
@@ -49,6 +50,8 @@ export function formatDefaultModelLabel(
 ) {
   const model = defaultModel.trim();
   return model
-    ? `Default model (${resolveModelLabel(model, undefined, provider)})`
-    : "Default model";
+    ? t("agents.modelLabel.defaultWithName", {
+        model: resolveModelLabel(model, undefined, provider),
+      })
+    : t("agents.modelLabel.default");
 }

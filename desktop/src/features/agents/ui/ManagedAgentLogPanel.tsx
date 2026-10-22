@@ -5,6 +5,7 @@ import { cn } from "@/shared/lib/cn";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { CopyButton } from "./CopyButton";
 import { describeLogFile } from "./agentUi";
+import { useT } from "@/shared/i18n";
 
 export function ManagedAgentLogPanel({
   chrome = "framed",
@@ -21,6 +22,7 @@ export function ManagedAgentLogPanel({
   selectedAgent: ManagedAgent | null;
   variant?: "inline" | "section";
 }) {
+  const t = useT();
   const isInline = variant === "inline";
   const isBare = chrome === "bare";
   const logFileLabel = selectedAgent
@@ -44,10 +46,10 @@ export function ManagedAgentLogPanel({
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 className="text-sm font-semibold tracking-tight">
-              Harness Log
+              {t("agents.log.title")}
             </h3>
             <p className="text-sm text-muted-foreground">
-              Select a local agent to inspect recent output.
+              {t("agents.log.selectAgent")}
             </p>
           </div>
         </div>
@@ -61,10 +63,10 @@ export function ManagedAgentLogPanel({
           )}
         >
           <p className="text-sm font-semibold tracking-tight">
-            No local agent selected
+            {t("agents.log.noAgentTitle")}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Pick a managed agent to view the latest ACP log output.
+            {t("agents.log.noAgentDescription")}
           </p>
         </div>
       ) : isLoading ? (
@@ -132,7 +134,7 @@ export function ManagedAgentLogPanel({
             )}
             data-testid="managed-agent-log-content"
           >
-            {logContent?.trim() ? logContent : "No log output yet."}
+            {logContent?.trim() ? logContent : t("agents.log.empty")}
           </pre>
         </div>
       )}
@@ -156,13 +158,14 @@ function HarnessLogHeader({
   logFileLabel: string;
   selectedAgent: ManagedAgent;
 }) {
+  const t = useT();
   const fileTitle = `${selectedAgent.name} · ${logFileLabel}`;
 
   return (
     <div className="flex min-h-12 items-center justify-between gap-3 border-b border-white/10 px-3 py-2">
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="min-w-0 truncate text-2xs font-semibold uppercase tracking-wide text-zinc-300">
-          Harness Log
+          {t("agents.log.title")}
         </span>
         <span
           className="min-w-0 truncate font-mono text-2xs text-zinc-500"
@@ -173,7 +176,7 @@ function HarnessLogHeader({
       </div>
       <CopyButton
         className="h-6 rounded-md bg-black/40 px-2 text-zinc-300 hover:bg-black/70 hover:text-white"
-        label="Copy log"
+        label={t("agents.log.copy")}
         size="xs"
         value={logContent}
         variant="ghost"

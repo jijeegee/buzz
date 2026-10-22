@@ -14,6 +14,7 @@ import type { AgentPersona } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 import { AgentCardRobot } from "./AgentCardRobot";
 import { AgentTile } from "./AgentTile";
+import { useT } from "@/shared/i18n";
 
 /**
  * One of the owner's agents that runs on another of their computers. It is
@@ -41,12 +42,13 @@ export function RemoteAgentCard({
   onEditPersona: (persona: AgentPersona) => void;
   onOpenAgentProfile: (pubkey: string) => void;
 }) {
+  const t = useT();
   const profile = useUserProfileQuery(agent.pubkey).data;
   const title =
     agent.name?.trim() ||
     profile?.displayName?.trim() ||
     persona?.displayName.trim() ||
-    "Agent";
+    t("agents.remote.fallbackName");
   const avatarUrl =
     profile?.avatarUrl?.trim() || persona?.avatarUrl?.trim() || null;
   const availability = getAvailability(agent.pubkey);
@@ -70,7 +72,7 @@ export function RemoteAgentCard({
               size="xs"
               variant="outline"
             >
-              Stop
+              {t("agents.list.stop")}
             </Button>
           ) : (
             <Button
@@ -79,7 +81,7 @@ export function RemoteAgentCard({
               onClick={() => start.run({ pubkey: agent.pubkey, hostName })}
               size="xs"
             >
-              Start
+              {t("agents.runtimeBadge.start")}
             </Button>
           )}
           <Button
@@ -91,15 +93,19 @@ export function RemoteAgentCard({
             size="xs"
             variant="outline"
           >
-            Edit
+            {t("common.edit")}
           </Button>
         </>
       }
       dataTestId={`remote-agent-row-${agent.pubkey}`}
-      description={persona ? `from preset ${persona.displayName}` : null}
+      description={
+        persona
+          ? t("agents.myAgents.fromPreset", { name: persona.displayName })
+          : null
+      }
       label={title}
       labelBadge={<AgentCardRobot pubkey={agent.pubkey} />}
-      openLabel={`${title} agent profile`}
+      openLabel={t("agents.myAgents.openProfile", { name: title })}
       status={
         availability === undefined
           ? undefined
@@ -123,6 +129,7 @@ function useRemoteAgentCommand(
   ) => Promise<ManagedAgentActionResult>,
   verb: "start" | "stop",
 ) {
+  const t = useT();
   const [isPending, setIsPending] = React.useState(false);
   const run = React.useCallback(
     async (input: RemoteAgentCommandInput) => {
@@ -134,13 +141,13 @@ function useRemoteAgentCommand(
         toast.error(
           error instanceof Error
             ? error.message
-            : `Could not ${verb} the agent.`,
+            : t("agents.remote.commandFailed", { verb }),
         );
       } finally {
         setIsPending(false);
       }
     },
-    [command, verb],
+    [command, verb, t],
   );
   return { isPending, run };
 }

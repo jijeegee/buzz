@@ -31,6 +31,7 @@ import {
 import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
 import type { TeamAgent } from "./MyTeamsSection";
+import { useT } from "@/shared/i18n";
 
 export type MyTeamDraft = {
   name: string;
@@ -59,6 +60,7 @@ export function MyTeamDialog({
   onOpenChange: (open: boolean) => void;
   onSave: (draft: MyTeamDraft) => Promise<void>;
 }) {
+  const t = useT();
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [selected, setSelected] = React.useState<string[]>([]);
@@ -98,11 +100,11 @@ export function MyTeamDialog({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) {
-      setError("Give the team a name.");
+      setError(t("agents.myTeams.giveName"));
       return;
     }
     if (selected.length > MY_TEAM_MAX_AGENTS) {
-      setError(`A team can have up to ${MY_TEAM_MAX_AGENTS} agents.`);
+      setError(t("agents.myTeams.tooManyAgents", { max: MY_TEAM_MAX_AGENTS }));
       return;
     }
     try {
@@ -112,7 +114,7 @@ export function MyTeamDialog({
       setError(
         saveError instanceof Error
           ? toUserFacingErrorDetail(saveError.message)
-          : "Could not save the team.",
+          : t("agents.myTeams.saveFailed"),
       );
     }
   }
@@ -126,16 +128,19 @@ export function MyTeamDialog({
           onSubmit={(event) => void submit(event)}
         >
           <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
-            <DialogTitle>{team ? "Edit team" : "New team"}</DialogTitle>
+            <DialogTitle>
+              {team
+                ? t("agents.myTeams.editTitle")
+                : t("agents.myTeams.newTitle")}
+            </DialogTitle>
             <DialogDescription>
-              A team is a group of your agents, on any of your computers. Adding
-              it to a group adds these agents.
+              {t("agents.myTeams.dialogDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
             <div className="space-y-1.5">
               <label className="text-sm font-medium" htmlFor="my-team-name">
-                Name
+                {t("agents.myTeams.name")}
               </label>
               <Input
                 autoFocus
@@ -151,7 +156,7 @@ export function MyTeamDialog({
                 className="text-sm font-medium"
                 htmlFor="my-team-description"
               >
-                Description
+                {t("agents.identity.description")}
               </label>
               <Textarea
                 id="my-team-description"
@@ -162,10 +167,12 @@ export function MyTeamDialog({
               />
             </div>
             <fieldset className="space-y-3">
-              <legend className="text-sm font-medium">Agents</legend>
+              <legend className="text-sm font-medium">
+                {t("agents.list.title")}
+              </legend>
               {agents.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  You have no agents yet.
+                  {t("agents.myTeams.noAgentsYet")}
                 </p>
               ) : null}
               {groups.map(([computer, list]) => (
@@ -198,9 +205,7 @@ export function MyTeamDialog({
               ))}
               {removed.length > 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  {removed.length === 1
-                    ? "1 agent in this team was not found on your computers (removed, or its computer has not checked in); saving keeps it."
-                    : `${removed.length} agents in this team were not found on your computers (removed, or their computer has not checked in); saving keeps them.`}
+                  {t("agents.myTeams.removedAgents", { count: removed.length })}
                 </p>
               ) : null}
             </fieldset>
@@ -217,7 +222,7 @@ export function MyTeamDialog({
               type="button"
               variant="outline"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               data-testid="my-team-save"
@@ -225,7 +230,11 @@ export function MyTeamDialog({
               size="sm"
               type="submit"
             >
-              {isSaving ? "Saving…" : team ? "Save" : "Create team"}
+              {isSaving
+                ? t("agents.myTeams.saving")
+                : team
+                  ? t("common.save")
+                  : t("agents.myTeams.createTeam")}
             </Button>
           </div>
         </form>
@@ -250,6 +259,7 @@ export function AddMyTeamToChannelDialog({
   onAdded: (message: string) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useT();
   const open = team !== null;
   const channelsQuery = useChannelsQuery();
   const mutation = useAddAgentsToChannelMutation();
@@ -293,7 +303,9 @@ export function AddMyTeamToChannelDialog({
         const added = result.added.map(nameOf);
         throw new Error(
           [
-            ...(added.length > 0 ? [`Added: ${added.join(", ")}.`] : []),
+            ...(added.length > 0
+              ? [t("agents.myTeams.addedList", { names: added.join(", ") })]
+              : []),
             ...result.failures.map(
               (failure) => `${nameOf(failure.pubkey)}: ${failure.error}`,
             ),
@@ -303,8 +315,15 @@ export function AddMyTeamToChannelDialog({
       const added = result.added.length;
       onAdded(
         added === 0
-          ? `${team.name} is already in ${channel.name}.`
-          : `Added ${added === 1 ? "1 agent" : `${added} agents`} of ${team.name} to ${channel.name}.`,
+          ? t("agents.myTeams.alreadyInGroup", {
+              team: team.name,
+              group: channel.name,
+            })
+          : t("agents.myTeams.addedToGroup", {
+              count: added,
+              team: team.name,
+              group: channel.name,
+            }),
       );
       onOpenChange(false);
     } catch {
@@ -325,23 +344,25 @@ export function AddMyTeamToChannelDialog({
       >
         <div className="flex max-h-[85vh] flex-col">
           <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
-            <DialogTitle>Add {team?.name ?? "team"} to a group</DialogTitle>
+            <DialogTitle>
+              {team
+                ? t("agents.myTeams.addTitle", { team: team.name })
+                : t("agents.myTeams.addTitleUnnamed")}
+            </DialogTitle>
             <DialogDescription>
-              Adds these agents to the group. No new agents are made.
+              {t("agents.myTeams.addDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
             <p className="text-sm">
-              {members.map(nameOf).join(", ") || "This team has no agents."}
+              {members.map(nameOf).join(", ") || t("agents.myTeams.teamEmpty")}
             </p>
             {notFound > 0 ? (
               <p
                 className="text-xs text-muted-foreground"
                 data-testid="add-my-team-not-found"
               >
-                {notFound === 1
-                  ? "1 agent is not added: it was not found on your computers."
-                  : `${notFound} agents are not added: they were not found on your computers.`}
+                {t("agents.myTeams.notFound", { count: notFound })}
               </p>
             ) : null}
             <div className="space-y-1.5">
@@ -349,7 +370,7 @@ export function AddMyTeamToChannelDialog({
                 className="text-sm font-medium"
                 htmlFor="my-team-channel-id"
               >
-                Group
+                {t("agents.addToGroup.group")}
               </label>
               <select
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs"
@@ -359,7 +380,7 @@ export function AddMyTeamToChannelDialog({
                 value={channelId}
               >
                 {channels.length === 0 ? (
-                  <option value="">No groups available</option>
+                  <option value="">{t("agents.addToGroup.noGroups")}</option>
                 ) : null}
                 {channels.map((other) => (
                   <option key={other.id} value={other.id}>
@@ -370,7 +391,7 @@ export function AddMyTeamToChannelDialog({
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium" htmlFor="my-team-role">
-                Role
+                {t("agents.addToGroup.role")}
               </label>
               <select
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs"
@@ -381,10 +402,16 @@ export function AddMyTeamToChannelDialog({
                 }
                 value={role}
               >
-                <option value="bot">bot</option>
-                <option value="member">member</option>
-                <option value="guest">guest</option>
-                <option value="admin">admin</option>
+                <option value="bot">{t("agents.addToGroup.roleBot")}</option>
+                <option value="member">
+                  {t("agents.addToGroup.roleMember")}
+                </option>
+                <option value="guest">
+                  {t("agents.addToGroup.roleGuest")}
+                </option>
+                <option value="admin">
+                  {t("agents.addToGroup.roleAdmin")}
+                </option>
               </select>
             </div>
             {failure ? (
@@ -400,7 +427,7 @@ export function AddMyTeamToChannelDialog({
               type="button"
               variant="outline"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               data-testid="add-my-team-to-channel-submit"
@@ -409,7 +436,9 @@ export function AddMyTeamToChannelDialog({
               size="sm"
               type="button"
             >
-              {mutation.isPending ? "Adding…" : "Add to group"}
+              {mutation.isPending
+                ? t("agents.catalog.adding")
+                : t("agents.addToGroup.add")}
             </Button>
           </div>
         </div>
@@ -428,21 +457,22 @@ export function MyTeamDeleteDialog({
   onConfirm: (team: MyTeam) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useT();
   return (
     <AlertDialog onOpenChange={onOpenChange} open={team !== null}>
       <AlertDialogContent data-testid="my-team-delete-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete team?</AlertDialogTitle>
+          <AlertDialogTitle>{t("agents.myTeams.deleteTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
             {team
-              ? `Delete "${team.name}". Its agents keep running and stay in their groups.`
-              : "Delete this team."}
+              ? t("agents.myTeams.deleteDescription", { name: team.name })
+              : t("agents.myTeams.deleteDescriptionUnnamed")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -454,7 +484,7 @@ export function MyTeamDeleteDialog({
               type="button"
               variant="destructive"
             >
-              Delete
+              {t("common.delete")}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>

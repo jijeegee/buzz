@@ -6,6 +6,7 @@ import {
   pickPreferredManagedAgent,
   resolveReusableAgentAccessPolicy,
 } from "@/features/agents/agentReuse";
+import { t } from "@/shared/i18n";
 export { findReusableAgent } from "@/features/agents/agentReuse";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { resolveManagedAgentAvatarUrl } from "@/features/agents/ui/managedAgentAvatar";
@@ -350,7 +351,7 @@ export async function provisionChannelManagedAgent(
   const trimmedName = input.name.trim();
 
   if (trimmedName.length === 0) {
-    throw new Error("Agent name is required.");
+    throw new Error(t("agents.addAgent.nameRequired"));
   }
 
   // Smart reuse: if a managed agent with the same personaId already exists
@@ -550,7 +551,8 @@ export async function createChannelManagedAgents(
         kind: input.personaId ? "persona" : "generic",
         name: input.name.trim() || "agent",
         personaId: input.personaId ?? null,
-        error: error instanceof Error ? error.message : "Failed to add agent.",
+        error:
+          error instanceof Error ? error.message : t("agents.addAgent.failed"),
       });
     }
   }
@@ -680,7 +682,8 @@ export async function addAgentsToChannel(
     } catch (error) {
       result.failures.push({
         pubkey,
-        error: error instanceof Error ? error.message : "Failed to add agent.",
+        error:
+          error instanceof Error ? error.message : t("agents.addAgent.failed"),
       });
     }
   }

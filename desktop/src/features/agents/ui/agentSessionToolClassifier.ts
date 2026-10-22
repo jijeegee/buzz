@@ -15,6 +15,7 @@ import {
   getToolString,
   getToolStringList,
 } from "./agentSessionUtils";
+import { type MessageKey, t } from "@/shared/i18n";
 
 type ToolItem = Extract<TranscriptItem, { type: "tool" }>;
 
@@ -83,22 +84,22 @@ const KUZZ_CLI_READ_VERBS = new Set([
   "notes",
 ]);
 
-const TOOL_CLASS_LABELS: Record<AgentActivityRenderClass, string> = {
-  message: "Message",
-  "relay-op": "Kuzz relay op",
-  "file-edit": "File edit",
-  "file-read": "File read",
-  "skill-read": "Skill read",
-  image: "Image",
-  shell: "Shell command",
-  status: "Status",
-  thought: "Thought",
-  plan: "Plan",
-  permission: "Permission",
-  error: "Error",
-  generic: "Tool",
-  "raw-rail": "Raw event",
-  suppressed: "Suppressed",
+const TOOL_CLASS_LABELS: Record<AgentActivityRenderClass, MessageKey> = {
+  message: "agents.toolClass.message",
+  "relay-op": "agents.toolClass.relayOp",
+  "file-edit": "agents.toolClass.fileEdit",
+  "file-read": "agents.toolClass.fileRead",
+  "skill-read": "agents.toolClass.skillRead",
+  image: "agents.toolClass.image",
+  shell: "agents.toolClass.shell",
+  status: "agents.toolClass.status",
+  thought: "agents.toolClass.thought",
+  plan: "agents.toolClass.plan",
+  permission: "agents.toolClass.permission",
+  error: "agents.toolClass.error",
+  generic: "agents.toolClass.generic",
+  "raw-rail": "agents.toolClass.rawRail",
+  suppressed: "agents.toolClass.suppressed",
 };
 
 const providers: ToolClassifierProvider[] = [
@@ -119,7 +120,7 @@ export function classifyTool(
             renderClass: "error",
             label: descriptor.label.endsWith("failed")
               ? descriptor.label
-              : `${descriptor.label} failed`,
+              : t("agents.toolActivity.failed", { label: descriptor.label }),
           }
         : descriptor;
     }
@@ -140,7 +141,7 @@ export function classifyToolItem(item: ToolItem): AgentActivityDescriptor {
 }
 
 export function renderClassLabel(renderClass: AgentActivityRenderClass) {
-  return TOOL_CLASS_LABELS[renderClass];
+  return t(TOOL_CLASS_LABELS[renderClass]);
 }
 
 function classifyLoadSkillTool(
@@ -152,14 +153,16 @@ function classifyLoadSkillTool(
   if (!isLoadSkill) return null;
 
   const skillRef = getToolString(input.args, ["name"]);
-  const object = skillRef ?? "skill";
+  const object = skillRef ?? t("agents.toolActivity.objectSkill");
   const isSupportingFile = skillRef?.includes("/") ?? false;
 
   return {
     renderClass: "skill-read",
-    label: isSupportingFile ? "Read skill file" : "Read skill",
+    label: isSupportingFile
+      ? t("agents.toolActivity.readSkillFile")
+      : t("agents.toolActivity.readSkill"),
     preview: skillRef,
-    action: { verb: "Read", object },
+    action: { verb: t("agents.toolActivity.verbRead"), object },
     source: "harness",
     groupKey: isSupportingFile ? "skill:load-file" : "skill:load",
   };
@@ -179,9 +182,12 @@ function classifyDeveloperHarnessTool(
     }
     return {
       renderClass: "shell",
-      label: "Ran command",
+      label: t("agents.toolActivity.ranCommand"),
       preview: command,
-      action: { verb: "Ran", object: command ?? "command" },
+      action: {
+        verb: t("agents.toolActivity.verbRan"),
+        object: command ?? t("agents.toolActivity.objectCommand"),
+      },
       source: "harness",
       groupKey: "shell:command",
     };
@@ -191,9 +197,12 @@ function classifyDeveloperHarnessTool(
     const path = getToolString(input.args, ["path"]);
     return {
       renderClass: "file-read",
-      label: "Read file",
+      label: t("agents.toolActivity.readFile"),
       preview: path,
-      action: { verb: "Read", object: path ?? "file" },
+      action: {
+        verb: t("agents.toolActivity.verbRead"),
+        object: path ?? t("agents.toolActivity.objectFile"),
+      },
       source: "harness",
       groupKey: "read_file",
     };
@@ -203,11 +212,13 @@ function classifyDeveloperHarnessTool(
     const source = getToolString(input.args, ["source"]);
     return {
       renderClass: "image",
-      label: "Viewed image",
+      label: t("agents.toolActivity.viewedImage"),
       preview: source ? basenameOrUrl(source) : null,
       action: {
-        verb: "Viewed",
-        object: source ? basenameOrUrl(source) : "image",
+        verb: t("agents.toolActivity.verbViewed"),
+        object: source
+          ? basenameOrUrl(source)
+          : t("agents.toolActivity.objectImage"),
       },
       source: "harness",
       groupKey: "view_image",
@@ -218,9 +229,12 @@ function classifyDeveloperHarnessTool(
     const path = getToolString(input.args, ["path"]);
     return {
       renderClass: "file-edit",
-      label: "Edited file",
+      label: t("agents.toolActivity.editedFile"),
       preview: path,
-      action: { verb: "Edited", object: path ?? "file" },
+      action: {
+        verb: t("agents.toolActivity.verbEdited"),
+        object: path ?? t("agents.toolActivity.objectFile"),
+      },
       source: "harness",
       groupKey: "file-edit:str_replace",
     };
@@ -230,9 +244,9 @@ function classifyDeveloperHarnessTool(
     const preview = getTodoPreview(input.args);
     return {
       renderClass: "plan",
-      label: "Updated todos",
+      label: t("agents.toolActivity.updatedTodos"),
       preview,
-      action: { verb: "Updated", object: preview },
+      action: { verb: t("agents.toolActivity.verbUpdated"), object: preview },
       source: "harness",
       groupKey: "plan:todo",
     };
@@ -241,9 +255,12 @@ function classifyDeveloperHarnessTool(
   if (kind === "stop_hook") {
     return {
       renderClass: "suppressed",
-      label: "Checked todos",
+      label: t("agents.toolActivity.checkedTodos"),
       preview: null,
-      action: { verb: "Checked", object: "todos" },
+      action: {
+        verb: t("agents.toolActivity.verbChecked"),
+        object: t("agents.toolActivity.objectTodos"),
+      },
       source: "harness",
       groupKey: "suppressed:stop-hook",
     };
@@ -252,9 +269,12 @@ function classifyDeveloperHarnessTool(
   if (kind === "post_compact_hook") {
     return {
       renderClass: "status",
-      label: "Context compacted",
+      label: t("agents.toolActivity.contextCompacted"),
       preview: null,
-      action: { verb: "Compacted", object: "context" },
+      action: {
+        verb: t("agents.toolActivity.verbCompacted"),
+        object: t("agents.toolActivity.objectContext"),
+      },
       source: "harness",
       groupKey: "status:post-compact",
     };
@@ -263,9 +283,12 @@ function classifyDeveloperHarnessTool(
   const preview = genericPreview(input);
   return {
     renderClass: "generic",
-    label: "Ran tool",
+    label: t("agents.toolActivity.ranTool"),
     preview,
-    action: { verb: "Ran", object: preview ?? "tool" },
+    action: {
+      verb: t("agents.toolActivity.verbRan"),
+      object: preview ?? t("agents.toolActivity.objectTool"),
+    },
     source: "harness",
     groupKey: "generic:dev-mcp",
   };
@@ -304,9 +327,12 @@ function genericDescriptor(
   const preview = genericPreview(input);
   return {
     renderClass: "generic",
-    label: "Ran tool",
+    label: t("agents.toolActivity.ranTool"),
     preview,
-    action: { verb: "Ran", object: preview ?? "tool" },
+    action: {
+      verb: t("agents.toolActivity.verbRan"),
+      object: preview ?? t("agents.toolActivity.objectTool"),
+    },
     source: "fallback",
     groupKey: `generic:${normalizeToolNameText(input.toolName || input.title)}`,
   };
@@ -382,7 +408,8 @@ export function parseKuzzCliCommand(
 }
 
 function titleForKuzzCli(group: string, verb: string) {
-  if (group === "messages" && verb === "send") return "Send Message";
+  if (group === "messages" && verb === "send")
+    return t("agents.toolActivity.sendMessage");
   return [group, verb]
     .map((part) =>
       part
@@ -415,23 +442,25 @@ function kuzzOperationVerbToken(operation: string) {
 }
 
 function kuzzOperationVerb(verb: string, tone: AgentActivityTone) {
-  if (verb === "add") return "Added";
-  if (verb === "archive") return "Archived";
-  if (verb === "create") return "Created";
-  if (verb === "delete") return "Deleted";
-  if (verb === "get" || verb === "list" || verb === "members") return "Read";
-  if (verb === "remove") return "Removed";
-  if (verb === "runs") return "Read";
-  if (verb === "search") return "Searched";
-  if (verb === "send") return "Sent";
-  if (verb === "thread") return "Read";
-  if (verb === "unarchive") return "Unarchived";
-  if (tone === "read") return "Read";
-  return "Updated";
+  if (verb === "add") return t("agents.toolActivity.verbAdded");
+  if (verb === "archive") return t("agents.toolActivity.verbArchived");
+  if (verb === "create") return t("agents.toolActivity.verbCreated");
+  if (verb === "delete") return t("agents.toolActivity.verbDeleted");
+  if (verb === "get" || verb === "list" || verb === "members")
+    return t("agents.toolActivity.verbRead");
+  if (verb === "remove") return t("agents.toolActivity.verbRemoved");
+  if (verb === "runs") return t("agents.toolActivity.verbRead");
+  if (verb === "search") return t("agents.toolActivity.verbSearched");
+  if (verb === "send") return t("agents.toolActivity.verbSent");
+  if (verb === "thread") return t("agents.toolActivity.verbRead");
+  if (verb === "unarchive") return t("agents.toolActivity.verbUnarchived");
+  if (tone === "read") return t("agents.toolActivity.verbRead");
+  return t("agents.toolActivity.verbUpdated");
 }
 
 function kuzzOperationObject(operation: string) {
-  if (isKuzzMessageSend(operation)) return "message";
+  if (isKuzzMessageSend(operation))
+    return t("agents.toolActivity.objectMessage");
   if (operation.includes(".")) {
     const [group] = operation.split(".");
     return group ? group.replace(/[-_]+/g, " ") : "Kuzz";
@@ -592,7 +621,8 @@ function extractKuzzToolPreview(args: Record<string, unknown>): string | null {
   if (workflowId) return workflowId;
   const pubkeys = getToolStringList(args, ["pubkeys", "pubkey"]);
   if (pubkeys.length === 1) return pubkeys[0];
-  if (pubkeys.length > 1) return `${pubkeys.length} users`;
+  if (pubkeys.length > 1)
+    return t("agents.toolActivity.objectUsers", { count: pubkeys.length });
   return getToolString(args, ["event_id", "eventId", "name"]);
 }
 
@@ -628,8 +658,8 @@ function basenameOrUrl(source: string): string {
 
 function getTodoPreview(args: Record<string, unknown>): string | null {
   const todos = args.todos;
-  if (!Array.isArray(todos)) return "todo list";
-  if (todos.length === 0) return "empty list";
+  if (!Array.isArray(todos)) return t("agents.toolActivity.objectTodoList");
+  if (todos.length === 0) return t("agents.toolActivity.objectEmptyList");
   const first = todos[0];
   const firstText =
     first && typeof first === "object"
@@ -637,5 +667,5 @@ function getTodoPreview(args: Record<string, unknown>): string | null {
       : null;
   if (firstText)
     return todos.length > 1 ? `${firstText} (+${todos.length - 1})` : firstText;
-  return `${todos.length} item${todos.length === 1 ? "" : "s"}`;
+  return t("agents.toolActivity.objectItems", { count: todos.length });
 }

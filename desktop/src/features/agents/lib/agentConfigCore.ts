@@ -3,6 +3,7 @@ import type {
   GlobalAgentConfig,
 } from "@/shared/api/types";
 import { KUZZ_AGENT_THINKING_EFFORT } from "../ui/kuzzAgentConfig";
+import { t } from "@/shared/i18n";
 
 /**
  * Lifecycle status of the ACP runtime catalog query on a per-agent surface.
@@ -361,6 +362,6 @@ export function numericTuningPlaceholder(
   inheritedValue: string | null | undefined,
 ): string {
   return inheritedValue
-    ? `Inherit (${inheritedValue})`
-    : "Inherit (agent default)";
+    ? t("agents.tuning.inheritValue", { value: inheritedValue })
+    : t("agents.tuning.inheritDefault");
 }

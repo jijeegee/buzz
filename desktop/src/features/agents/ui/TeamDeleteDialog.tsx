@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 type TeamDeleteDialogProps = {
   open: boolean;
@@ -24,21 +25,22 @@ export function TeamDeleteDialog({
   onConfirm,
   onOpenChange,
 }: TeamDeleteDialogProps) {
+  const t = useT();
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete team?</AlertDialogTitle>
+          <AlertDialogTitle>{t("agents.myTeams.deleteTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
             {team
-              ? `Delete "${team.name}". Already-deployed agents are not affected, but this team template will no longer be available.`
-              : "Delete this team."}
+              ? t("agents.teamDelete.description", { name: team.name })
+              : t("agents.myTeams.deleteDescriptionUnnamed")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -51,7 +53,7 @@ export function TeamDeleteDialog({
               type="button"
               variant="destructive"
             >
-              Delete
+              {t("common.delete")}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>

@@ -2,9 +2,11 @@ import { useAgentManagement } from "@/features/agents/useAgentManagement";
 import { ProjectChannelRequestDialog } from "@/features/projects/ui/ProjectChannelRequestDialog";
 import { AgentCardDialogs } from "./AgentCardViewerDialog";
 import { AgentDialog } from "./AgentDialog";
+import { useT } from "@/shared/i18n";
 
 /** Global review surfaces opened by owned agents through the Kuzz harness. */
 export function AgentManagementDialogs() {
+  const t = useT();
   const management = useAgentManagement();
 
   return (
@@ -42,8 +44,8 @@ export function AgentManagementDialogs() {
           open
           runtimes={management.runtimes}
           runtimeCatalogStatus={management.runtimeCatalogStatus}
-          submitLabel="Save changes"
-          title="Edit agent"
+          submitLabel={t("agents.dialog.saveChanges")}
+          title={t("agents.dialog.editTitle")}
         />
       ) : null}
       <ProjectChannelRequestDialog />

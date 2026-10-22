@@ -8,9 +8,7 @@ import type { Channel } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { getAgentWorkingState } from "./agentWorkingSignal";
 import { useRelayAgentsQuery } from "./hooks";
-
-const INACCESSIBLE_ACTIVITY_MESSAGE =
-  "This agent is active in a group you haven't joined, so its activity can't be opened from here.";
+import { t } from "@/shared/i18n";
 
 /**
  * Can the viewer actually open this channel? Joined channels always;
@@ -167,7 +165,7 @@ export function useOpenAgentActivity() {
       if (options?.channelId) {
         if (!onOpenAgentSession) {
           if (!findOpenableChannel(options.channelId)) {
-            toast.warning(INACCESSIBLE_ACTIVITY_MESSAGE);
+            toast.warning(t("agents.activity.inaccessible"));
             return false;
           }
           void goChannel(options.channelId, {
@@ -195,7 +193,7 @@ export function useOpenAgentActivity() {
       // Say so plainly rather than failing silently — without leaking which
       // room, or navigating into it.
       if (getAgentWorkingState(pubkey).channels.length > 0) {
-        toast.warning(INACCESSIBLE_ACTIVITY_MESSAGE);
+        toast.warning(t("agents.activity.inaccessible"));
       }
       return false;
     },

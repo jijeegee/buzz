@@ -1,5 +1,6 @@
 import type { AcpCommandCandidate } from "@/shared/api/acpCommands";
 import type { PersonaDropdownOption } from "./agentConfigOptions";
+import { t } from "@/shared/i18n";
 
 export const DEFAULT_ACP_COMMAND_VALUE = "kuzz-acp";
 
@@ -11,7 +12,7 @@ export function acpCommandPickerState(
   selectValue: string;
 } {
   const options: PersonaDropdownOption[] = [
-    { label: "Kuzz ACP (default)", value: DEFAULT_ACP_COMMAND_VALUE },
+    { label: t("agents.acpCommand.default"), value: DEFAULT_ACP_COMMAND_VALUE },
     ...candidates.map((candidate) => ({
       label: candidate.command,
       value: candidate.command,
@@ -20,7 +21,7 @@ export function acpCommandPickerState(
   if (command && !options.some((option) => option.value === command)) {
     options.push({
       disabled: true,
-      label: `${command} (unavailable)`,
+      label: t("agents.acpCommand.unavailable", { command }),
       value: command,
     });
   }

@@ -20,6 +20,7 @@ import {
   buildImageContent,
   type ImageToolContent,
 } from "./agentSessionImageContent";
+import { t } from "@/shared/i18n";
 
 export type CompactToolKind =
   | "message"
@@ -102,12 +103,14 @@ function labelForStatus(
 ) {
   const label = descriptor.label;
   if (descriptor.groupKey === "file-edit:str_replace") {
-    if (failed) return "Edit failed";
-    if (running) return "Editing file";
-    return "Edited file";
+    if (failed) return t("agents.toolActivity.editFailed");
+    if (running) return t("agents.toolActivity.editingFile");
+    return t("agents.toolActivity.editedFile");
   }
   if (failed) {
-    return label.endsWith("failed") ? label : `${label} failed`;
+    return label.endsWith("failed")
+      ? label
+      : t("agents.toolActivity.failed", { label });
   }
   if (running) return label;
   if (status === "completed") return label;

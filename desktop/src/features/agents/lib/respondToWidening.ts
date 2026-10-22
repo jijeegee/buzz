@@ -1,4 +1,5 @@
 import type { RespondToMode } from "@/shared/api/types";
+import { type MessageKey, t } from "@/shared/i18n";
 
 /**
  * Who may command an agent. `respondTo` null/undefined means "unset", which
@@ -15,10 +16,10 @@ const ACCESS_RANK: Record<RespondToMode, number> = {
   anyone: 2,
 };
 
-const ACCESS_LABEL: Record<RespondToMode, string> = {
-  "owner-only": "Only me",
-  allowlist: "Selected people",
-  anyone: "Anyone",
+const ACCESS_LABEL: Record<RespondToMode, MessageKey> = {
+  "owner-only": "agents.respondTo.mode.ownerOnly",
+  allowlist: "agents.respondTo.mode.allowlist",
+  anyone: "agents.respondTo.mode.anyone",
 };
 
 function modeOf(access: RespondToAccess | null): RespondToMode {
@@ -61,9 +62,13 @@ export function respondToWideningWarning(
   if (!isRespondToWidening(prev, next)) return null;
   const prevMode = modeOf(prev);
   const nextMode = modeOf(next);
-  const change =
-    prevMode === nextMode
-      ? `${ACCESS_LABEL[nextMode]} (new people added)`
-      : `${ACCESS_LABEL[prevMode]} → ${ACCESS_LABEL[nextMode]}`;
-  return `This draft lets more people command this agent: ${change}. Review before saving.`;
+  if (prevMode === nextMode) {
+    return t("agents.respondTo.wideningAdded", {
+      mode: t(ACCESS_LABEL[nextMode]),
+    });
+  }
+  return t("agents.respondTo.wideningChanged", {
+    from: t(ACCESS_LABEL[prevMode]),
+    to: t(ACCESS_LABEL[nextMode]),
+  });
 }

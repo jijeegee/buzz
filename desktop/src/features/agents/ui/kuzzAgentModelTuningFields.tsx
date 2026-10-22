@@ -20,6 +20,7 @@ import {
   KUZZ_AGENT_THINKING_EFFORT_VALUES,
   getProviderEffortConfig,
 } from "./kuzzAgentConfig";
+import { type MessageKey, useT } from "@/shared/i18n";
 
 /**
  * Capitalize the first character of an effort value for human display.
@@ -110,11 +111,12 @@ export function EffortSelectField({
   /** Render the polished app dropdown instead of the native select. */
   useCustomSelect?: boolean;
 }) {
+  const t = useT();
   const inheritLabel = inheritedEffort
-    ? `Inherit (${inheritedEffort})`
+    ? t("agents.tuning.inheritValue", { value: inheritedEffort })
     : effortDefault === null
-      ? "Inherit (default)"
-      : (inheritFallbackLabel ?? "Inherit");
+      ? t("agents.tuning.inheritPlainDefault")
+      : (inheritFallbackLabel ?? t("agents.tuning.inherit"));
   // Build the option set as the union of the runtime's valid values and the
   // kuzz-agent master list. This ensures runtime-native values like Goose's
   // "off" appear as options even though they are not in the kuzz-agent list.
@@ -226,20 +228,18 @@ export function useEffortAutoClear({
 
 export type { NumericDescriptor };
 
-const NUMERIC_KIND_LABELS: Record<NumericDescriptor["kind"], string> = {
-  maxOutputTokens: "Max output tokens",
-  contextLimit: "Context limit",
-  maxRounds: "Max rounds",
+const NUMERIC_KIND_LABELS: Record<NumericDescriptor["kind"], MessageKey> = {
+  maxOutputTokens: "agents.tuning.maxOutputTokens",
+  contextLimit: "agents.tuning.contextLimit",
+  maxRounds: "agents.tuning.maxRounds",
 };
 
-const NUMERIC_KIND_DESCRIPTIONS: Record<NumericDescriptor["kind"], string> = {
-  maxOutputTokens:
-    "Maximum tokens the LLM may generate per response. Leave blank to inherit.",
-  contextLimit:
-    "Maximum context window tokens tracked before a handoff. Leave blank to inherit.",
-  maxRounds:
-    "Maximum LLM + tool-call rounds per turn. 0 = unlimited. Leave blank to inherit.",
-};
+const NUMERIC_KIND_DESCRIPTIONS: Record<NumericDescriptor["kind"], MessageKey> =
+  {
+    maxOutputTokens: "agents.tuning.maxOutputTokensHelp",
+    contextLimit: "agents.tuning.contextLimitHelp",
+    maxRounds: "agents.tuning.maxRoundsHelp",
+  };
 
 const NUMERIC_KIND_TEST_IDS: Record<NumericDescriptor["kind"], string> = {
   maxOutputTokens: "numeric-max-output-tokens-input",
@@ -282,13 +282,14 @@ export function NumericTuningFields({
   inheritedEnvVars: EnvVarsValue;
   onEnvVarChange: (key: string, value: string) => void;
 }) {
+  const t = useT();
   if (descriptors.length === 0) return null;
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {descriptors.map((d) => {
         const key = d.currentPersistence.key;
-        const label = NUMERIC_KIND_LABELS[d.kind];
-        const description = NUMERIC_KIND_DESCRIPTIONS[d.kind];
+        const label = t(NUMERIC_KIND_LABELS[d.kind]);
+        const description = t(NUMERIC_KIND_DESCRIPTIONS[d.kind]);
         const testId = NUMERIC_KIND_TEST_IDS[d.kind];
         const inheritedVal = inheritedEnvVars[key];
         return (
@@ -344,6 +345,7 @@ export function KuzzAgentModelTuningFields({
   /** Active LLM provider id (optional) — used for effort filtering + default labels. */
   provider?: string;
 }) {
+  const t = useT();
   const effortConfig = getProviderEffortConfig(
     provider ?? "",
     model,
@@ -380,8 +382,8 @@ export function KuzzAgentModelTuningFields({
             effortValid={effortValid}
             htmlFor="ba-thinking-effort"
             inheritedEffort={inheritedEnvVars[KUZZ_AGENT_THINKING_EFFORT]}
-            inheritFallbackLabel="Inherit (agent default)"
-            label="Thinking / Effort"
+            inheritFallbackLabel={t("agents.tuning.inheritDefault")}
+            label={t("agents.tuning.effort")}
             onChange={(value) =>
               onEnvVarChange(KUZZ_AGENT_THINKING_EFFORT, value)
             }
@@ -391,8 +393,7 @@ export function KuzzAgentModelTuningFields({
             className="text-xs text-muted-foreground"
             id="help-ba-thinking-effort"
           >
-            Controls how much reasoning effort the LLM applies per turn. Leave
-            blank to inherit from the global or persona default.
+            {t("agents.tuning.effortHelp")}
           </p>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import type { TranscriptItem } from "./agentSessionTypes";
 import { buildCompactToolSummary } from "./agentSessionToolSummary";
+import { t } from "@/shared/i18n";
 
 /**
  * Whether a polished activity row should render the opt-in timestamp footer.
@@ -26,6 +27,13 @@ const LIFECYCLE_NOISE = new Set([
   "wire parse error",
 ]);
 
+// Same rows by source, so the check holds when titles are translated.
+const LIFECYCLE_NOISE_SOURCES = new Set([
+  "turn_started",
+  "session_resolved",
+  "acp_parse_error",
+]);
+
 /** Human-readable headline for a single transcript item. */
 export function getActivityHeadline(item: TranscriptItem): string | null {
   if (item.type === "tool") {
@@ -44,13 +52,15 @@ export function getActivityHeadline(item: TranscriptItem): string | null {
             : firstLine;
         }
       }
-      return "Responding";
+      return t("agents.activityHeadline.responding");
     }
-    return item.title || "User prompt";
+    return item.title || t("agents.activityHeadline.userPrompt");
   }
 
   if (item.type === "thought") {
-    return item.title === "Plan" ? "Planning" : item.title;
+    return item.title === t("agents.transcript.plan")
+      ? t("agents.activityHeadline.planning")
+      : item.title;
   }
 
   if (item.type === "metadata") {
@@ -63,7 +73,10 @@ export function getActivityHeadline(item: TranscriptItem): string | null {
 function isLifecycleNoise(
   item: Extract<TranscriptItem, { type: "lifecycle" }>,
 ) {
-  return LIFECYCLE_NOISE.has(item.title.toLowerCase());
+  return (
+    LIFECYCLE_NOISE.has(item.title.toLowerCase()) ||
+    (item.acpSource != null && LIFECYCLE_NOISE_SOURCES.has(item.acpSource))
+  );
 }
 
 /** Whether an item should contribute to the headline scan (noise gate). */

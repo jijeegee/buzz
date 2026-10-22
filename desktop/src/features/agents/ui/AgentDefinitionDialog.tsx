@@ -103,6 +103,7 @@ import {
   runtimeDropdownAction,
   usePendingHarnessSelection,
 } from "./addCustomHarness";
+import { useT } from "@/shared/i18n";
 type AgentDefinitionDialogProps = {
   open: boolean;
   embedded?: boolean;
@@ -154,6 +155,7 @@ export function AgentDefinitionDialog({
   createSubmitBlocked = false,
   draftReview,
 }: AgentDefinitionDialogProps) {
+  const t = useT();
   const runtimesLoading = runtimeCatalogStatus === "loading";
   const acpCommandsQuery = useAcpCommandsQuery({ enabled: open });
   const [displayName, setDisplayName] = React.useState("");
@@ -653,7 +655,7 @@ export function AgentDefinitionDialog({
   runtimeDropdownOptions.push(ADD_CUSTOM_HARNESS_OPTION);
   const runtimeSummaryLabel = selectedRuntime
     ? formatRuntimeOptionLabel(selectedRuntime)
-    : runtime.trim() || "Not configured";
+    : runtime.trim() || t("agents.aiDefaults.notConfigured");
   const providerDropdownOptions: PersonaDropdownOption[] = [
     ...providerOptions
       .filter((option) => option.id.trim().length > 0)
@@ -661,7 +663,10 @@ export function AgentDefinitionDialog({
         label: option.label,
         value: option.id,
       })),
-    { label: "Custom provider...", value: CUSTOM_PROVIDER_DROPDOWN_VALUE },
+    {
+      label: t("agents.provider.customOption"),
+      value: CUSTOM_PROVIDER_DROPDOWN_VALUE,
+    },
   ];
   // Discovered (ACP) catalogs carry no blank entry, so an optional-model
   // harness gets an explicit "Default model" row to pick — and to return to
@@ -688,10 +693,10 @@ export function AgentDefinitionDialog({
       )
       .map((option) =>
         isRelayMesh && option.value === AUTO_MODEL_DROPDOWN_VALUE
-          ? { ...option, label: "Automatic" }
+          ? { ...option, label: t("agents.model.automatic") }
           : option,
       );
-  const previewLabel = displayName.trim() || "Agent name";
+  const previewLabel = displayName.trim() || t("agents.identity.name");
   const previewAvatarUrl = avatarUrl.trim() || null;
   const runtimeWarningText = selectedRuntime
     ? runtimeAvailabilityWarning(selectedRuntime)
@@ -864,7 +869,7 @@ export function AgentDefinitionDialog({
             className="text-sm font-medium text-foreground"
             htmlFor="persona-system-prompt"
           >
-            Agent instructions
+            {t("agents.dialog.instructions")}
           </label>
           <div className={PERSONA_FIELD_SHELL_CLASS}>
             <Textarea
@@ -875,7 +880,7 @@ export function AgentDefinitionDialog({
               disabled={isPending}
               id="persona-system-prompt"
               onChange={(event) => setSystemPrompt(event.target.value)}
-              placeholder="Describe what this agent should do."
+              placeholder={t("agents.dialog.instructionsPlaceholder")}
               value={systemPrompt}
             />
           </div>
@@ -921,9 +926,11 @@ export function AgentDefinitionDialog({
                 htmlFor="persona-llm-provider"
                 isRequired={providerIsRequired}
               >
-                LLM provider
+                {t("agents.provider.label")}
                 {!providerIsRequired ? (
-                  <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+                  <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+                    {t("agents.dialog.optional")}
+                  </span>
                 ) : null}
               </RequiredFieldLabel>
               <PersonaDropdownField
@@ -931,7 +938,7 @@ export function AgentDefinitionDialog({
                 id="persona-llm-provider"
                 onValueChange={handleProviderDropdownChange}
                 options={providerDropdownOptions}
-                placeholder="Choose a provider"
+                placeholder={t("agents.harnessProvider.choose")}
                 value={providerSelectValue}
               />
               {showCustomProviderInput ? (
@@ -942,7 +949,7 @@ export function AgentDefinitionDialog({
                   )}
                 >
                   <Input
-                    aria-label="Custom provider ID"
+                    aria-label={t("agents.provider.customId")}
                     autoCorrect="off"
                     className={cn(
                       "h-8 px-0 py-0 leading-6",
@@ -951,7 +958,7 @@ export function AgentDefinitionDialog({
                     disabled={isPending}
                     id="persona-custom-provider"
                     onChange={(event) => setProvider(event.target.value)}
-                    placeholder="Custom provider ID"
+                    placeholder={t("agents.provider.customId")}
                     value={provider}
                   />
                 </div>
@@ -965,9 +972,11 @@ export function AgentDefinitionDialog({
             <HarnessProviderField
               choice={harnessProviderChoice}
               disabled={isPending}
-              harnessLabel={selectedRuntime?.label ?? "the harness"}
+              harnessLabel={
+                selectedRuntime?.label ?? t("agents.harness.theHarness")
+              }
               id="persona-harness-provider"
-              note="The list comes from Hermes on this computer."
+              note={t("agents.dialog.hermesListNote")}
               onModelChange={(nextModel) =>
                 handleModelDropdownChange(
                   nextModel || AUTO_MODEL_DROPDOWN_VALUE,
@@ -985,7 +994,10 @@ export function AgentDefinitionDialog({
               isInherited={apiKeyIsInherited}
               inheritedLabel={apiKeyInheritedLabel}
               isRequired={apiKeyIsRequired}
-              label={getProviderApiKeyLabel(effectiveProvider) ?? "API key"}
+              label={
+                getProviderApiKeyLabel(effectiveProvider) ??
+                t("agents.dialog.apiKey")
+              }
               onValueChange={(next) => {
                 setEnvVars((prev) => ({
                   ...prev,
@@ -1097,7 +1109,7 @@ export function AgentDefinitionDialog({
             onClick={() => setShowAdvancedFields((current) => !current)}
             type="button"
           >
-            <span>Advanced</span>
+            <span>{t("agents.advanced.toggle")}</span>
             {(isCreateMode && createSubmitBlocked) ||
             localModeGate.missingEnvKeys.some((key) =>
               advancedRequiredEnvKeys.includes(key),
@@ -1107,7 +1119,7 @@ export function AgentDefinitionDialog({
                 className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive"
                 data-testid="persona-advanced-required-badge"
               >
-                Required
+                {t("agents.advanced.required")}
               </span>
             ) : null}
             <ChevronDown

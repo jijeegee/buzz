@@ -25,6 +25,7 @@ import {
   disambiguateModelLabels,
   resolveModelLabel,
 } from "@/features/agents/lib/formatAgentModelLabel";
+import { t } from "@/shared/i18n";
 
 export const MODEL_DISCOVERY_LOADING_VALUE = "__model_discovery_loading__";
 
@@ -75,10 +76,16 @@ export function getDiscoveredPersonaModelOptions(
             id: "",
             label:
               provider === "relay-mesh"
-                ? "Default (auto)"
+                ? t("agents.editProvider.defaultAuto")
                 : agentDefaultModel
-                  ? `Default model (${resolveModelLabel(agentDefaultModel, null, provider)})`
-                  : "Default model",
+                  ? t("agents.modelLabel.defaultWithName", {
+                      model: resolveModelLabel(
+                        agentDefaultModel,
+                        null,
+                        provider,
+                      ),
+                    })
+                  : t("agents.modelLabel.default"),
           },
         ];
 
@@ -93,9 +100,13 @@ export function getDiscoveredPersonaModelOptions(
         id: model.id,
         label:
           model.description === HARNESS_UNAVAILABLE_MODEL_DESCRIPTION
-            ? `${resolveModelLabel(model.id, model.name, provider)} (not available in Hermes)`
+            ? t("agents.modelPicker.notAvailableInHermes", {
+                model: resolveModelLabel(model.id, model.name, provider),
+              })
             : model.description === HARNESS_NOT_SET_UP_MODEL_DESCRIPTION
-              ? `${resolveModelLabel(model.id, model.name, provider)} (not set up in Hermes)`
+              ? t("agents.modelPicker.notSetUpInHermes", {
+                  model: resolveModelLabel(model.id, model.name, provider),
+                })
               : resolveModelLabel(model.id, model.name, provider),
         ...(model.supportedEfforts?.length
           ? { supportedEfforts: model.supportedEfforts }
@@ -120,9 +131,11 @@ export function synthesizeEmptyDiscoveryStatus(
   if (getDiscoveredPersonaModelOptions(response, provider) !== null) {
     return null;
   }
-  const agentLabel = response.agentName.trim() || "This agent";
+  const agentLabel = response.agentName.trim();
   return {
-    message: `${agentLabel} reported no models. Check that the CLI is installed and signed in, then reopen this screen.`,
+    message: agentLabel
+      ? t("agents.modelPicker.noModels", { name: agentLabel })
+      : t("agents.modelPicker.noModelsUnnamed"),
     tone: "warning",
   };
 }

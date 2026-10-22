@@ -15,6 +15,13 @@ import {
 import { Separator } from "@/shared/ui/separator";
 
 import { AgentDefinitionMetadata } from "./AgentDefinitionMetadata";
+import {
+  getIntl,
+  type MessageKey,
+  type MessageValues,
+  type Translate,
+  useT,
+} from "@/shared/i18n";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -46,6 +53,7 @@ export function AgentSnapshotImportDialog({
   onConfirm,
   onOpenChange,
 }: AgentSnapshotImportDialogProps) {
+  const t = useT();
   const phase: ImportPhase =
     result !== null ? "result" : isConfirming ? "confirming" : "preview";
 
@@ -68,7 +76,9 @@ export function AgentSnapshotImportDialog({
         <DialogHeader className="space-y-0">
           <div className="flex items-center justify-between gap-4">
             <DialogTitle>
-              {phase === "result" ? "Agent imported" : "Import agent snapshot"}
+              {phase === "result"
+                ? t("agents.import.doneTitle")
+                : t("agents.import.title")}
             </DialogTitle>
             <div className="flex items-center gap-2">
               {phase === "preview" ? (
@@ -82,7 +92,7 @@ export function AgentSnapshotImportDialog({
                     variant="default"
                   >
                     <Upload className="h-4 w-4" />
-                    Import
+                    {t("agents.import.import")}
                   </Button>
                   <DialogClose asChild>
                     <Button
@@ -91,14 +101,14 @@ export function AgentSnapshotImportDialog({
                       type="button"
                       variant="ghost"
                     >
-                      Cancel
+                      {t("common.cancel")}
                     </Button>
                   </DialogClose>
                 </>
               ) : (
                 <DialogClose asChild>
                   <Button size="sm" type="button" variant="ghost">
-                    Close
+                    {t("common.close")}
                   </Button>
                 </DialogClose>
               )}
@@ -116,7 +126,7 @@ export function AgentSnapshotImportDialog({
           />
         ) : phase === "confirming" ? (
           <div className="py-4 text-center text-sm text-muted-foreground">
-            Creating agent…
+            {t("agents.import.creating")}
           </div>
         ) : result !== null ? (
           <ResultBody result={result} confirmError={confirmError} />
@@ -128,6 +138,14 @@ export function AgentSnapshotImportDialog({
 
 // ── Preview body ──────────────────────────────────────────────────────────────
 
+/**
+ * PreviewBody and ResultBody are also called as plain functions (outside a
+ * React render), so they translate through the app-wide intl, not `useT()`.
+ * They always render inside the dialog, which re-renders on language change.
+ */
+const translate = ((key: MessageKey, values?: MessageValues) =>
+  getIntl().formatMessage({ id: key }, values)) as unknown as Translate;
+
 export function PreviewBody({
   preview,
   hasMemory,
@@ -137,6 +155,7 @@ export function PreviewBody({
   hasMemory: boolean;
   memoryLevelLabel: string;
 }) {
+  const t = translate;
   return (
     <div className="space-y-4 py-1">
       {/* Agent identity */}
@@ -153,9 +172,9 @@ export function PreviewBody({
         >
           <Lock className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            This card is <strong>locked</strong> — its agent is encrypted to the
-            original owner and agent keys. Your keys unlocked it; the full
-            decrypted payload is shown below.
+            {t("agents.import.lockedNotice", {
+              b: (chunks) => <strong>{chunks}</strong>,
+            })}
           </p>
         </div>
       ) : null}
@@ -172,23 +191,23 @@ export function PreviewBody({
         data-testid="agent-snapshot-import-behavior"
       >
         <div>
-          <p className="text-sm font-medium">Agent instructions</p>
+          <p className="text-sm font-medium">
+            {t("agents.dialog.instructions")}
+          </p>
           <p className="text-xs text-muted-foreground">
-            Review the instructions this agent will follow after import.
+            {t("agents.import.reviewInstructions")}
           </p>
         </div>
         <pre
           className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-3 text-xs"
           data-testid="agent-snapshot-import-system-prompt"
         >
-          {preview.systemPrompt || "No system prompt included."}
+          {preview.systemPrompt || t("agents.import.noSystemPrompt")}
         </pre>
       </section>
 
       <p className="text-sm text-muted-foreground">
-        A new agent will be created with a fresh keypair. The imported agent is
-        independent of the source — identity never travels. It starts as
-        owner-only.
+        {t("agents.import.freshIdentity")}
       </p>
 
       {/* Memory section */}
@@ -199,18 +218,16 @@ export function PreviewBody({
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            This snapshot includes{" "}
-            <strong>
-              {preview.memoryEntryCount} {memoryLevelLabel} memory entr
-              {preview.memoryEntryCount === 1 ? "y" : "ies"}
-            </strong>
-            . Memory is stored as plaintext in the file and will be restored
-            under the new agent's identity.
+            {t("agents.import.memoryWarning", {
+              count: preview.memoryEntryCount,
+              level: memoryLevelLabel,
+              b: (chunks) => <strong>{chunks}</strong>,
+            })}
           </p>
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          No memory included — config only.
+          {t("agents.import.noMemory")}
         </p>
       )}
 
@@ -219,11 +236,10 @@ export function PreviewBody({
         data-testid="agent-snapshot-import-manifest"
       >
         <summary className="cursor-pointer text-sm font-medium">
-          Full embedded manifest
+          {t("agents.import.manifest")}
         </summary>
         <p className="mt-2 text-xs text-muted-foreground">
-          This is the complete portable payload decoded from the file. Secrets,
-          credentials, and source identity are not part of the snapshot format.
+          {t("agents.import.manifestHelp")}
         </p>
         <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-3 text-xs">
           {preview.manifestJson}
@@ -242,14 +258,17 @@ export function ResultBody({
   result: AgentSnapshotImportResult;
   confirmError: string | null;
 }) {
+  const t = translate;
   const hasPartialMemory =
     result.memoryTotal > 0 && result.memoryWritten < result.memoryTotal;
 
   return (
     <div className="space-y-3 py-1">
       <p className="text-sm">
-        <span className="font-medium">{result.displayName}</span> was created
-        successfully.
+        {t("agents.import.created", {
+          name: result.displayName,
+          b: (chunks) => <span className="font-medium">{chunks}</span>,
+        })}
       </p>
 
       {result.memoryTotal > 0 ? (
@@ -261,10 +280,10 @@ export function ResultBody({
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="flex flex-col gap-1">
               <p>
-                Memory partially restored: {result.memoryWritten} of{" "}
-                {result.memoryTotal} entr
-                {result.memoryTotal === 1 ? "y" : "ies"} written. The agent
-                exists but some memory entries failed to publish.
+                {t("agents.import.memoryPartial", {
+                  written: result.memoryWritten,
+                  total: result.memoryTotal,
+                })}
               </p>
               {result.memoryErrors.length > 0 ? (
                 <ul
@@ -285,15 +304,14 @@ export function ResultBody({
             className="text-xs text-muted-foreground"
             data-testid="agent-snapshot-import-memory-success"
           >
-            {result.memoryTotal} memory entr
-            {result.memoryTotal === 1 ? "y" : "ies"} restored.
+            {t("agents.import.memoryRestored", { count: result.memoryTotal })}
           </p>
         )
       ) : null}
 
       {result.profileSyncError ? (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          Profile sync: {result.profileSyncError}
+          {t("agents.import.profileSync", { error: result.profileSyncError })}
         </p>
       ) : null}
 

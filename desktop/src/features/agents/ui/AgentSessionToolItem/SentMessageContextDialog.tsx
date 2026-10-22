@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog";
 import { formatCodeValue } from "../agentSessionUtils";
+import { t, useT } from "@/shared/i18n";
 
 export function SentMessageContextDialog({
   args,
@@ -36,6 +37,7 @@ export function SentMessageContextDialog({
   preview: string | null;
   result: string;
 }) {
+  const t = useT();
   const sections = buildSentMessageContextSections({
     args,
     description,
@@ -51,7 +53,7 @@ export function SentMessageContextDialog({
       <DialogContent className="max-w-xl overflow-hidden p-0">
         <div className="flex max-h-[85vh] flex-col">
           <DialogHeader className="px-6 pb-3 pt-5 pr-14">
-            <DialogTitle>Sent message context</DialogTitle>
+            <DialogTitle>{t("agents.sentContext.title")}</DialogTitle>
             <DialogDescription className="flex items-center gap-1.5">
               <CheckCheck className="h-3.5 w-3.5 shrink-0" />
               <span>{label}</span>
@@ -91,27 +93,29 @@ function buildSentMessageContextSections({
 }): SentMessageContextSection[] {
   const sections: SentMessageContextSection[] = [];
   if (preview) {
-    sections.push({ title: "Message", body: preview });
+    sections.push({ title: t("agents.sentContext.message"), body: preview });
   }
   if (description) {
-    sections.push({ title: "Tool", body: description });
+    sections.push({ title: t("agents.sentContext.tool"), body: description });
   }
   if (hasArgs) {
     sections.push({
-      title: "Parameters",
+      title: t("agents.toolDetails.parameters"),
       body: JSON.stringify(args, null, 2),
     });
   }
   if (hasResult) {
     sections.push({
-      title: isError ? "Error" : "Result",
+      title: isError
+        ? t("agents.toolDetails.error")
+        : t("agents.toolDetails.result"),
       body: formatCodeValue(result),
     });
   }
   if (sections.length === 0) {
     sections.push({
-      title: "Status",
-      body: "Waiting for tool details.",
+      title: t("agents.sentContext.status"),
+      body: t("agents.toolDetails.waiting"),
     });
   }
   return sections;
@@ -139,6 +143,7 @@ function SentMessageContextSectionAccordion({
 }: {
   section: SentMessageContextSection;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const body = section.body.trim();
 
@@ -169,7 +174,9 @@ function SentMessageContextSectionAccordion({
               {body.length > 0 ? (
                 body
               ) : (
-                <span className="italic text-foreground/50">No metadata.</span>
+                <span className="italic text-foreground/50">
+                  {t("agents.transcript.noMetadata")}
+                </span>
               )}
             </div>
           </div>

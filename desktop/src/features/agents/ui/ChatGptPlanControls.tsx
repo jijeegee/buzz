@@ -19,12 +19,14 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog";
 import { Spinner } from "@/shared/ui/spinner";
+import { useT, t } from "@/shared/i18n";
 
 function errorText(error: unknown): string {
-  return typeof error === "string" ? error : "Couldn't sign in with ChatGPT.";
+  return typeof error === "string" ? error : t("agents.chatgpt.signInFailed");
 }
 
 export function ManageUsageLink({ className }: { className?: string }) {
+  const t = useT();
   return (
     <button
       className={cn(
@@ -34,7 +36,7 @@ export function ManageUsageLink({ className }: { className?: string }) {
       onClick={() => void openUrl(CHATGPT_MANAGE_USAGE_URL)}
       type="button"
     >
-      Manage usage
+      {t("agents.chatgpt.manageUsage")}
       <ExternalLink aria-hidden="true" className="h-3 w-3" />
     </button>
   );
@@ -49,6 +51,7 @@ export function ContinueWithChatGptButton({
 }: {
   className?: string;
 }) {
+  const t = useT();
   const signIn = useChatGptPlanSignIn();
   const [showNotice, setShowNotice] = React.useState(false);
 
@@ -74,10 +77,10 @@ export function ContinueWithChatGptButton({
         {signIn.isPending ? (
           <>
             <Spinner aria-hidden className="h-3.5 w-3.5 border-2" />
-            Finish in your browser…
+            {t("agents.chatgpt.finishInBrowser")}
           </>
         ) : (
-          "Continue with ChatGPT"
+          t("agents.chatgpt.continue")
         )}
       </Button>
       {signIn.isError ? (
@@ -91,15 +94,14 @@ export function ContinueWithChatGptButton({
           data-testid="chatgpt-plan-first-notice"
         >
           <DialogHeader className="items-center text-center">
-            <DialogTitle>You're using your ChatGPT plan</DialogTitle>
+            <DialogTitle>{t("agents.chatgpt.noticeTitle")}</DialogTitle>
             <DialogDescription className="text-center">
-              Kuzz Agent replies now use your ChatGPT plan. You can review and
-              limit this usage in ChatGPT settings.
+              {t("agents.chatgpt.noticeDescription")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col items-center gap-3 sm:flex-col sm:justify-center">
             <Button onClick={() => setShowNotice(false)} type="button">
-              Got it
+              {t("agents.chatgpt.gotIt")}
             </Button>
             <ManageUsageLink />
           </DialogFooter>
@@ -111,22 +113,22 @@ export function ContinueWithChatGptButton({
 
 /** Settings › Models › Providers › OpenAI: the ChatGPT plan connection. */
 export function ChatGptPlanSettingsRow() {
+  const t = useT();
   const status = useChatGptPlanStatus();
   const signOut = useChatGptPlanSignOut();
   const data = status.data;
   const connected = Boolean(data?.signedIn && data.planEnabled);
 
-  let detail: React.ReactNode =
-    "Kuzz Agent replies use your ChatGPT plan instead of an API key.";
+  let detail: React.ReactNode = t("agents.chatgpt.detail");
   if (data?.signedIn && !data.planEnabled) {
-    detail =
-      "ChatGPT plan use wasn't allowed. Continue with ChatGPT again and allow it.";
+    detail = t("agents.chatgpt.notAllowed");
   } else if (connected) {
-    detail = `${data?.email ?? "Signed in"} · Kuzz Agent uses this plan`;
+    detail = data?.email
+      ? t("agents.chatgpt.connectedAs", { email: data.email })
+      : t("agents.chatgpt.connected");
   }
   if (signOut.isSuccess && signOut.data === false && !data?.signedIn) {
-    detail =
-      "Signed out on this computer. OpenAI didn't confirm the sign-out; you can disconnect Kuzz in ChatGPT settings.";
+    detail = t("agents.chatgpt.signedOutUnconfirmed");
   }
 
   return (
@@ -137,11 +139,13 @@ export function ChatGptPlanSettingsRow() {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium">
-            {connected ? "ChatGPT plan" : "Use your ChatGPT plan"}
+            {connected
+              ? t("agents.chatgpt.planTitle")
+              : t("agents.chatgpt.usePlanTitle")}
           </p>
           {connected ? (
             <span className="inline-flex shrink-0 items-center rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              Connected
+              {t("agents.chatgpt.connectedBadge")}
             </span>
           ) : null}
         </div>
@@ -173,7 +177,7 @@ export function ChatGptPlanSettingsRow() {
             {signOut.isPending ? (
               <Spinner aria-hidden className="h-3.5 w-3.5 border-2" />
             ) : (
-              "Sign out"
+              t("agents.chatgpt.signOut")
             )}
           </Button>
         </div>
@@ -189,6 +193,7 @@ export function ChatGptPlanSettingsRow() {
  * plan: sign in in place, or show that requests use the plan.
  */
 export function ChatGptPlanAgentNotice() {
+  const t = useT();
   const status = useChatGptPlanStatus();
   if (status.isPending) return null;
   const connected = Boolean(status.data?.signedIn && status.data.planEnabled);
@@ -198,7 +203,9 @@ export function ChatGptPlanAgentNotice() {
         className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs"
         data-testid="chatgpt-plan-in-use"
       >
-        <span className="flex-1 text-muted-foreground">Using ChatGPT plan</span>
+        <span className="flex-1 text-muted-foreground">
+          {t("agents.chatgpt.using")}
+        </span>
         <ManageUsageLink />
       </div>
     );
@@ -208,9 +215,7 @@ export function ChatGptPlanAgentNotice() {
       className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
       data-testid="chatgpt-plan-sign-in-needed"
     >
-      <span className="flex-1">
-        Connect your ChatGPT plan to use this provider.
-      </span>
+      <span className="flex-1">{t("agents.chatgpt.connectToUse")}</span>
       <ContinueWithChatGptButton />
     </div>
   );

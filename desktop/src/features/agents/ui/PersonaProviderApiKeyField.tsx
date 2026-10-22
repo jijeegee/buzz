@@ -8,6 +8,7 @@ import {
   PERSONA_FIELD_CONTROL_CLASS,
   PERSONA_FIELD_SHELL_CLASS,
 } from "./agentConfigOptions";
+import { useT } from "@/shared/i18n";
 
 /**
  * Top-level API key pseudo-field for providers that require a secret
@@ -59,6 +60,7 @@ export function PersonaProviderApiKeyField({
   /** Current agent-local value of the secret env var. */
   value: string;
 }) {
+  const t = useT();
   const [showValue, setShowValue] = React.useState(false);
   const uid = React.useId();
   const inputId = `persona-provider-api-key-${uid}`;
@@ -100,12 +102,18 @@ export function PersonaProviderApiKeyField({
           disabled={disabled}
           id={inputId}
           onChange={(event) => onValueChange(event.target.value)}
-          placeholder={isInherited ? inheritedLabel : "Paste API key…"}
+          placeholder={
+            isInherited ? inheritedLabel : t("agents.persona.pasteApiKey")
+          }
           type={showValue ? "text" : "password"}
           value={value}
         />
         <button
-          aria-label={showValue ? "Hide API key" : "Show API key"}
+          aria-label={
+            showValue
+              ? t("agents.persona.hideApiKey")
+              : t("agents.persona.showApiKey")
+          }
           className="shrink-0 text-muted-foreground hover:text-foreground"
           onClick={() => setShowValue((v) => !v)}
           type="button"
@@ -119,7 +127,7 @@ export function PersonaProviderApiKeyField({
       </div>
       {isValidating ? (
         <p className="text-xs text-muted-foreground" id={validationId}>
-          Checking API key…
+          {t("agents.persona.checkingApiKey")}
         </p>
       ) : validationMessage ? (
         <p className="text-xs text-destructive" id={validationId} role="alert">

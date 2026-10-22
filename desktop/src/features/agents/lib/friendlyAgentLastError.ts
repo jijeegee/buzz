@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 /**
  * Promote certain machine-readable `lastError` strings to user-facing copy.
  *
@@ -35,6 +36,7 @@ export type FriendlyAgentLastError =
 /**
  * The exact copy for the relay-mesh denial. Centralized as a constant so the
  * test asserts the user-facing string verbatim rather than a fuzzy pattern.
+ * These constants are the English source; the UI shows the `t()` versions.
  */
 export const RELAY_MESH_DENIED_COPY =
   "Community access denied this agent — check its community membership.";
@@ -78,9 +80,12 @@ export function friendlyAgentLastError(
   if (effectiveCode != null) {
     switch (effectiveCode) {
       case -32001:
-        return { severity: "denied", copy: RELAY_MESH_DENIED_COPY };
+        return { severity: "denied", copy: t("agents.lastError.relayDenied") };
       case -32002:
-        return { severity: "denied", copy: MODEL_NOT_FOUND_COPY };
+        return {
+          severity: "denied",
+          copy: t("agents.lastError.modelNotFound"),
+        };
       case -32603: {
         // Standard JSON-RPC "Internal error" — emitted by external harnesses
         // (e.g. codex-acp) when the configured model is unsupported. Only
@@ -94,7 +99,10 @@ export function friendlyAgentLastError(
         // ("Agent reported error (code -32603): Internal error").
         const remainder = embedded?.remainder ?? trimmed;
         if (remainder === BARE_INTERNAL_ERROR) {
-          return { severity: "generic", copy: CLI_ACP_INTERNAL_ERROR_COPY };
+          return {
+            severity: "generic",
+            copy: t("agents.lastError.harnessInternal"),
+          };
         }
         return { severity: "generic", copy: remainder };
       }
@@ -110,7 +118,7 @@ export function friendlyAgentLastError(
     trimmed.startsWith("Agent reported error: llm auth:") ||
     trimmed.startsWith("llm auth:")
   ) {
-    return { severity: "denied", copy: RELAY_MESH_DENIED_COPY };
+    return { severity: "denied", copy: t("agents.lastError.relayDenied") };
   }
 
   return { severity: "generic", copy: trimmed };

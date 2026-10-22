@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog";
 import { SnapshotOptionMenu } from "./SnapshotOptionMenu";
+import { useT, t } from "@/shared/i18n";
 
 type AgentSnapshotExportDialogProps = {
   agentName: string;
@@ -37,15 +38,21 @@ const MEMORY_LEVELS: {
 }[] = [
   {
     value: "none",
-    label: "Agent only",
+    get label() {
+      return t("agents.export.agentOnly");
+    },
   },
   {
     value: "core",
-    label: "Agent + core memory",
+    get label() {
+      return t("agents.export.coreMemory");
+    },
   },
   {
     value: "everything",
-    label: "Agent + all memories",
+    get label() {
+      return t("agents.export.allMemories");
+    },
   },
 ];
 
@@ -67,6 +74,7 @@ export function AgentSnapshotExportDialog({
   onSaveFile,
   onOpenChange,
 }: AgentSnapshotExportDialogProps) {
+  const t = useT();
   const [memoryLevel, setMemoryLevel] =
     React.useState<SnapshotMemoryLevel>("none");
   const [format, setFormat] = React.useState<SnapshotFormat>("png");
@@ -97,7 +105,9 @@ export function AgentSnapshotExportDialog({
         showCloseButton={false}
       >
         <DialogHeader className="space-y-0">
-          <DialogTitle className="truncate">Export {agentName}</DialogTitle>
+          <DialogTitle className="truncate">
+            {t("agents.export.title", { name: agentName })}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 pt-2">
@@ -105,11 +115,11 @@ export function AgentSnapshotExportDialog({
             <div className="flex min-h-8 items-center justify-between gap-4">
               <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
                 <Brain className="h-4 w-4 shrink-0 text-muted-foreground" />
-                Memories
+                {t("agents.export.memories")}
               </span>
               {hasLinkedAgent ? (
                 <SnapshotOptionMenu
-                  ariaLabel="Memories"
+                  ariaLabel={t("agents.export.memories")}
                   className="font-medium text-foreground"
                   disabled={isPending}
                   onValueChange={(value) =>
@@ -124,7 +134,7 @@ export function AgentSnapshotExportDialog({
                   className="inline-flex h-8 w-auto items-center justify-end px-2 text-sm font-medium"
                   data-testid="agent-snapshot-memory-value"
                 >
-                  Agent only
+                  {t("agents.export.agentOnly")}
                 </span>
               )}
             </div>
@@ -132,10 +142,10 @@ export function AgentSnapshotExportDialog({
             <div className="flex min-h-8 items-center justify-between gap-4">
               <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
                 <FileType2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                File format
+                {t("agents.export.fileFormat")}
               </span>
               <SnapshotOptionMenu
-                ariaLabel="File format"
+                ariaLabel={t("agents.export.fileFormat")}
                 className="font-medium text-foreground"
                 disabled={isPending}
                 onValueChange={(value) => setFormat(value as SnapshotFormat)}
@@ -163,8 +173,9 @@ export function AgentSnapshotExportDialog({
                 >
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <p>
-                    Memory is stored as <strong>plaintext</strong> in the
-                    snapshot. Only share it with people you trust.
+                    {t("agents.export.memoryWarning", {
+                      b: (chunks) => <strong>{chunks}</strong>,
+                    })}
                   </p>
                 </div>
               </motion.div>
@@ -182,7 +193,7 @@ export function AgentSnapshotExportDialog({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
             </DialogClose>
             <Button
@@ -193,7 +204,7 @@ export function AgentSnapshotExportDialog({
               type="button"
             >
               <Download className="h-4 w-4" />
-              Export
+              {t("agents.export.export")}
             </Button>
           </div>
         </div>

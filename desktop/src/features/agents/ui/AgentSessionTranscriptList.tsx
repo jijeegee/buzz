@@ -60,7 +60,7 @@ import { shouldShowTranscriptRowTimestamp } from "./agentSessionTranscriptPresen
 import { formatTranscriptTimestampTitle } from "./agentSessionUtils";
 import { hasFileEditLineDiff } from "./FileEditDiffView";
 import { UserMessageBubble } from "./activityRenderClasses/UserMessageBubble";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, useT } from "@/shared/i18n";
 
 const TRANSCRIPT_ACP_SOURCE_STORAGE_KEY = "kuzz:show-transcript-acp-source";
 
@@ -136,6 +136,7 @@ export function AgentSessionTranscriptList({
   scrollScopeKey?: string | null;
   variant?: AgentSessionTranscriptVariant;
 }) {
+  const t = useT();
   const activeTurns = useActiveAgentTurns(agentPubkey);
   const isTurnLive = React.useMemo(
     () => isAgentTurnLive(activeTurns, channelId),
@@ -210,7 +211,7 @@ export function AgentSessionTranscriptList({
         <div className="flex h-full min-h-40 flex-col items-center justify-center px-6 py-10 text-center">
           {isLoading ? (
             <FuzzyLogo
-              ariaLabel="Waiting for ACP activity"
+              ariaLabel={t("agents.transcriptList.waiting")}
               className="mx-auto text-muted-foreground"
               fuzz={false}
               loop
@@ -218,7 +219,9 @@ export function AgentSessionTranscriptList({
           ) : (
             <>
               <Radio className="mx-auto h-4 w-4 text-muted-foreground" />
-              <p className="mt-3 text-sm font-medium">No ACP activity yet</p>
+              <p className="mt-3 text-sm font-medium">
+                {t("agents.transcriptList.empty")}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {emptyDescription}
               </p>
@@ -237,7 +240,7 @@ export function AgentSessionTranscriptList({
       ref={autoTail ? scrollContainerRef : undefined}
     >
       <div
-        aria-label="Live ACP transcript"
+        aria-label={t("agents.transcriptList.liveLabel")}
         aria-live="polite"
         className={cn(
           "flex w-full flex-col",
@@ -339,11 +342,12 @@ function isRenderableCompactItem(item: TranscriptItem) {
 }
 
 function TranscriptAcpSourceBadge({ source }: { source: string }) {
+  const t = useT();
   return (
     <span
       className="mb-1 inline-flex max-w-full rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 font-mono text-xs leading-none text-amber-800 dark:text-amber-200"
       data-testid="transcript-acp-source"
-      title={`ACP wire source: ${source}`}
+      title={t("agents.transcriptList.acpSource", { source })}
     >
       {source}
     </span>
@@ -739,6 +743,7 @@ function PromptContextDialog({
   sections: PromptSection[];
   setup: Extract<TranscriptItem, { type: "lifecycle" }>[];
 }) {
+  const t = useT();
   if (!open || sections.length === 0) {
     return null;
   }
@@ -750,7 +755,7 @@ function PromptContextDialog({
       <DialogContent className="max-w-xl overflow-hidden p-0">
         <div className="flex min-w-0 max-h-[85vh] flex-col">
           <DialogHeader className="px-6 pb-3 pt-5 pr-14">
-            <DialogTitle>Prompt context</DialogTitle>
+            <DialogTitle>{t("agents.transcript.promptContext")}</DialogTitle>
             {setupText ? (
               <div className="flex items-center gap-1.5">
                 <CheckCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -792,6 +797,7 @@ function TurnSetupFooter({
   showTimestamp?: boolean;
   timestamp: string;
 }) {
+  const t = useT();
   const label = formatTurnSetupLabel(items);
   const detail = turnSetupDetail(items);
   const tooltipText = [label, detail].filter(Boolean).join(" · ");
@@ -811,13 +817,17 @@ function TurnSetupFooter({
     >
       {showContext ? (
         <Toggle
-          aria-label={`${contextOpen ? "Hide" : "Show"} prompt context`}
+          aria-label={
+            contextOpen
+              ? t("agents.transcriptList.hidePromptContext")
+              : t("agents.transcriptList.showPromptContext")
+          }
           className="data-[state=on]:bg-primary/10 data-[state=on]:text-primary dark:data-[state=on]:bg-primary/15"
           data-testid="transcript-prompt-context-toggle"
           onPressedChange={onContextOpenChange}
           pressed={contextOpen}
           size="xs"
-          title={tooltipText || "Show prompt context"}
+          title={tooltipText || t("agents.transcriptList.showPromptContext")}
           variant="ghost"
         >
           <CheckCheck aria-hidden="true" />
@@ -947,12 +957,13 @@ function SessionBoundaryDivider({
   labelState: "current" | "most-recent" | "earlier";
   sessionStartTimestamp: string;
 }) {
+  const t = useT();
   const label =
     labelState === "current"
-      ? "Latest live-observed session"
+      ? t("agents.transcriptList.sessionLatestLive")
       : labelState === "most-recent"
-        ? "Most recent observed session"
-        : "Earlier observed session";
+        ? t("agents.transcriptList.sessionMostRecent")
+        : t("agents.transcriptList.sessionEarlier");
   const formattedDate = new Date(sessionStartTimestamp).toLocaleString(
     formatLocale(),
   );

@@ -5,6 +5,7 @@ import {
   normalizeToolName,
 } from "./agentSessionToolCatalog";
 import { asRecord, asString, titleCase } from "./agentSessionUtils";
+import { t } from "@/shared/i18n";
 
 export function extractPromptBlocks(
   payload: Record<string, unknown>,
@@ -66,7 +67,7 @@ export function parsePromptText(text: string): {
     return {
       sections: [],
       userText: text.trim(),
-      userTitle: "Prompt",
+      userTitle: t("agents.transcript.prompt"),
       userPubkey: null,
       userEventId: null,
     };
@@ -88,7 +89,9 @@ export function parsePromptText(text: string): {
   return {
     sections,
     userText: eventContent,
-    userTitle: eventKind ? titleCase(eventKind) : "Kuzz event",
+    userTitle: eventKind
+      ? titleCase(eventKind)
+      : t("agents.transcript.kuzzEvent"),
     userPubkey: eventAuthorPubkey,
     userEventId: eventId,
   };
@@ -729,14 +732,14 @@ export function extractTriggeringEventIds(payload: unknown): string[] {
 export function describeTurnStarted(payload: unknown): string {
   const ids = extractTriggeringEventIds(payload);
   return ids.length > 0
-    ? `Triggered by ${ids.length === 1 ? "1 event" : `${ids.length} events`}.`
+    ? t("agents.transcript.triggeredBy", { count: ids.length })
     : "";
 }
 
 export function describeSessionResolved(payload: unknown): string {
   const record = asRecord(payload);
   const isNewSession = record.isNewSession === true;
-  return isNewSession ? "New session created." : "";
+  return isNewSession ? t("agents.transcript.newSessionCreated") : "";
 }
 
 export function describeRawEvent(event: ObserverEvent): string {

@@ -1,5 +1,6 @@
 import type { ControlResultFrame } from "@/shared/api/types";
 import { type ContextReading, parseContextReading } from "./contextUsageQuery";
+import { t } from "@/shared/i18n";
 
 /** Terminal outcome of one `compact_session` request, as seen by Desktop. */
 export type CompactSessionOutcome =
@@ -140,52 +141,54 @@ export function compactSessionOutcomeNotice(
     case "completed":
       return {
         tone: "success",
-        message: `${agentName}'s session context was compacted.`,
+        message: t("agents.compact.outcome.completed", { name: agentName }),
       };
     case "failed":
       return {
         tone: "error",
-        message: `${agentName} couldn't compact this session.`,
+        message: t("agents.compact.outcome.failed", { name: agentName }),
       };
     case "timeout":
       return {
         tone: "error",
-        message: `Compaction timed out before ${agentName} finished.`,
+        message: t("agents.compact.outcome.timeout", { name: agentName }),
       };
     case "busy":
       return {
         tone: "info",
-        message: `${agentName} is working in this session. Try again when the turn finishes.`,
+        message: t("agents.compact.outcome.busy", { name: agentName }),
       };
     case "no_session":
       return {
         tone: "info",
-        message: `${agentName} has no live session here to compact. It may have restarted since this reading.`,
+        message: t("agents.compact.outcome.noSession", { name: agentName }),
       };
     case "unsupported":
       return {
         tone: "info",
-        message: `${agentName}'s runtime doesn't support compaction.`,
+        message: t("agents.compact.outcome.unsupported", { name: agentName }),
       };
     case "ambiguous_target":
       return {
         tone: "error",
-        message: `${agentName} couldn't tell which session to compact.`,
+        message: t("agents.compact.outcome.ambiguous", { name: agentName }),
       };
     case "stale":
       return {
         tone: "info",
-        message: `${agentName}'s context changed since you looked, so nothing was compacted. Re-check the reading and try again.`,
+        message: t("agents.compact.outcome.stale", { name: agentName }),
       };
     case "unconfirmed":
       return {
         tone: "info",
-        message: `Compaction requested, but ${agentName} hasn't confirmed it.`,
+        message: t("agents.compact.outcome.unconfirmed", { name: agentName }),
       };
     case "unconfirmed_completion":
       return {
         tone: "info",
-        message: `${agentName} started compacting but hasn't reported a result yet.`,
+        message: t("agents.compact.outcome.unconfirmedCompletion", {
+          name: agentName,
+        }),
       };
   }
 }

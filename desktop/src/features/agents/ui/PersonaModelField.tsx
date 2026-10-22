@@ -11,6 +11,7 @@ import {
   PERSONA_FIELD_SHELL_CLASS,
   PERSONA_LABEL_OPTIONAL_CLASS,
 } from "./agentConfigOptions";
+import { useT } from "@/shared/i18n";
 
 type PersonaModelFieldProps = {
   disabled: boolean;
@@ -39,6 +40,7 @@ export function PersonaModelField({
   showCustomModelInput,
   transition,
 }: PersonaModelFieldProps) {
+  const t = useT();
   return (
     <motion.div
       animate={{ height: "auto", opacity: 1, scale: 1 }}
@@ -53,9 +55,11 @@ export function PersonaModelField({
           className="text-sm font-medium text-foreground"
           htmlFor="persona-model"
         >
-          Model
+          {t("agents.aiDefaults.model")}
           {!isExplicitModelRequired ? (
-            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+              {t("agents.dialog.optional")}
+            </span>
           ) : null}
         </label>
         <PersonaModelCombobox
@@ -64,7 +68,9 @@ export function PersonaModelField({
           onValueChange={onModelValueChange}
           options={modelDropdownOptions}
           placeholder={
-            isExplicitModelRequired ? "Choose a model" : "Default model"
+            isExplicitModelRequired
+              ? t("agents.persona.chooseModel")
+              : t("agents.modelLabel.default")
           }
           value={modelSelectValue}
         />
@@ -76,7 +82,7 @@ export function PersonaModelField({
             )}
           >
             <Input
-              aria-label="Custom model ID"
+              aria-label={t("agents.model.customId")}
               autoCorrect="off"
               className={cn(
                 "h-8 px-0 py-0 leading-6",
@@ -85,15 +91,14 @@ export function PersonaModelField({
               disabled={disabled}
               id="persona-custom-model"
               onChange={(event) => onCustomModelChange(event.target.value)}
-              placeholder="Custom model ID"
+              placeholder={t("agents.model.customId")}
               value={model}
             />
           </div>
         ) : null}
         {showSharedComputeAutoHint ? (
           <p className="text-xs text-muted-foreground">
-            Auto uses Mesh collective intelligence when two or more models stay
-            available, otherwise it chooses one available model.
+            {t("agents.persona.meshAutoHint")}
           </p>
         ) : null}
         {modelDiscoveryStatus ? (

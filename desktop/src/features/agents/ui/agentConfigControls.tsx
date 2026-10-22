@@ -28,6 +28,7 @@ import {
 import { MODEL_DISCOVERY_LOADING_VALUE } from "./usePersonaModelDiscovery";
 import type { PersonaModelDiscoveryStatus } from "./personaModelDiscoveryStatus";
 import { ChatGptPlanAgentNotice } from "./ChatGptPlanControls";
+import { t, useT } from "@/shared/i18n";
 
 export const MODEL_NO_MODELS_VALUE = "__no_models__";
 
@@ -50,7 +51,7 @@ export function appendNoModelsSentinel(
   if (options.length === 0 && !loading) {
     options.push({
       disabled: true,
-      label: "No models found",
+      label: t("agents.model.noneFound"),
       value: MODEL_NO_MODELS_VALUE,
     });
   }
@@ -66,10 +67,10 @@ export function resolveModelFieldStatusMessage({
   loading: boolean;
   status: PersonaModelDiscoveryStatus | null;
 }): string | null {
-  if (loading) return "Loading models...";
+  if (loading) return t("agents.model.loading");
   if (status !== null) return status.message;
   return discoveredModelOptions !== null
-    ? "Saved changes take effect on the next start."
+    ? t("agents.model.takesEffectNextStart")
     : null;
 }
 
@@ -114,11 +115,11 @@ export function AgentDropdownSelect({
   ariaRequired,
   className,
   disabled = false,
-  emptyOptionsLabel = "No options available",
+  emptyOptionsLabel,
   id,
   onValueChange,
   options,
-  placeholder = "Select",
+  placeholder,
   placeholderClassName,
   placeholderValue,
   searchable = false,
@@ -143,6 +144,7 @@ export function AgentDropdownSelect({
   testId?: string;
   value: string;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const selectedOption = options.find((option) => option.value === value);
@@ -196,7 +198,10 @@ export function AgentDropdownSelect({
                 (placeholderClassName ?? "text-foreground/45"),
             )}
           >
-            {selectedLabel ?? selectedOption?.label ?? placeholder}
+            {selectedLabel ??
+              selectedOption?.label ??
+              placeholder ??
+              t("agents.dropdown.select")}
           </span>
           <ChevronDown
             aria-hidden="true"
@@ -230,12 +235,12 @@ export function AgentDropdownSelect({
                 className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground/45"
               />
               <Input
-                aria-label="Search models"
+                aria-label={t("agents.model.search")}
                 autoFocus
                 className="h-9 rounded-xl border-foreground/10 bg-white pl-9 text-sm"
                 data-testid={testId ? `${testId}-search` : undefined}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search models…"
+                placeholder={t("agents.model.searchPlaceholder")}
                 value={query}
               />
             </div>
@@ -246,8 +251,8 @@ export function AgentDropdownSelect({
               data-testid={testId ? `${testId}-empty` : undefined}
             >
               {showSearch && query.trim().length > 0
-                ? "No matches"
-                : emptyOptionsLabel}
+                ? t("agents.dropdown.noMatches")
+                : (emptyOptionsLabel ?? t("agents.dropdown.noOptions"))}
             </p>
           ) : null}
           {filteredOptions.map((option) => {
@@ -330,7 +335,7 @@ export function resolveDefaultModelLabel({
     defaultModelLabel ??
     discoveredModelOptions?.find((option) => option.id.trim() === "")?.label ??
     (isSharedCompute
-      ? "Auto (collective when available)"
+      ? t("agents.model.autoCollective")
       : getDefaultLlmModelLabel(globalModel))
   );
 }
@@ -350,7 +355,7 @@ export function AgentModelField({
   modelDiscoveryStatus,
   onIsCustomModelEditingChange,
   onModelChange,
-  placeholder = "Select model",
+  placeholder,
   placeholderClassName,
   provider,
   fieldClassName,
@@ -408,6 +413,7 @@ export function AgentModelField({
   /** Match custom agent text inputs when this field is shown in that flow. */
   usePersonaInputStyle?: boolean;
 }) {
+  const t = useT();
   const trimmedModel = model.trim();
   const isSharedCompute = provider?.trim() === "relay-mesh";
   const discoveredDefaultOption = discoveredModelOptions?.find(
@@ -499,14 +505,19 @@ export function AgentModelField({
       ? [
           {
             disabled: true,
-            label: "Loading models...",
+            label: t("agents.model.loading"),
             value: MODEL_DISCOVERY_LOADING_VALUE,
           },
         ]
       : []),
     ...(!isSharedCompute &&
     (showCustomModelOption || modelSelectValue === CUSTOM_MODEL_DROPDOWN_VALUE)
-      ? [{ label: "Custom model...", value: CUSTOM_MODEL_DROPDOWN_VALUE }]
+      ? [
+          {
+            label: t("agents.model.customOption"),
+            value: CUSTOM_MODEL_DROPDOWN_VALUE,
+          },
+        ]
       : []),
   ];
   // An opened dropdown must never show a blank popover. When all the above
@@ -521,8 +532,8 @@ export function AgentModelField({
     discoveredModelOptions === null &&
     trimmedModel.length === 0 &&
     !isCustomModelEditing
-      ? "Loading models..."
-      : placeholder;
+      ? t("agents.model.loading")
+      : (placeholder ?? t("agents.model.selectPlaceholder"));
   const statusMessage = resolveModelFieldStatusMessage({
     discoveredModelOptions,
     loading: modelDiscoveryLoading,
@@ -534,7 +545,7 @@ export function AgentModelField({
       ariaRequired={isRequired}
       className={selectClassName}
       disabled={selectDisabled}
-      emptyOptionsLabel="Couldn't load models"
+      emptyOptionsLabel={t("agents.model.loadFailed")}
       id={id}
       onValueChange={handleModelSelectChange}
       options={modelOptions}
@@ -576,7 +587,7 @@ export function AgentModelField({
         htmlFor={id}
         isRequired={isRequired}
       >
-        Model
+        {t("agents.aiDefaults.model")}
       </RequiredFieldLabel>
       {!useCustomSelect && useChevronIcon ? (
         <div className="relative">
@@ -591,11 +602,11 @@ export function AgentModelField({
       )}
       {showCustomModelInput ? (
         <AgentConfigTextInput
-          aria-label="Custom model ID"
+          aria-label={t("agents.model.customId")}
           autoCorrect="off"
           disabled={disabled}
           onChange={(event) => onModelChange(event.target.value)}
-          placeholder="Custom model ID"
+          placeholder={t("agents.model.customId")}
           usePersonaInputStyle={usePersonaInputStyle}
           value={model}
         />
@@ -627,6 +638,7 @@ export function AgentProviderField({
   provider: string;
   selectedRuntime: AcpRuntimeCatalogEntry | undefined;
 }) {
+  const t = useT();
   const trimmedProvider = provider.trim();
   const providerOptions = getPersonaProviderOptions(
     trimmedProvider,
@@ -642,7 +654,7 @@ export function AgentProviderField({
   return (
     <div className="space-y-1.5">
       <RequiredFieldLabel htmlFor="agent-provider" isRequired={isRequired}>
-        LLM provider
+        {t("agents.provider.label")}
       </RequiredFieldLabel>
       <select
         aria-required={isRequired}
@@ -661,21 +673,21 @@ export function AgentProviderField({
           </option>
         ))}
         <option value={CUSTOM_PROVIDER_DROPDOWN_VALUE}>
-          Custom provider...
+          {t("agents.provider.customOption")}
         </option>
       </select>
       {isCustomProviderEditing ? (
         <Input
-          aria-label="Custom provider ID"
+          aria-label={t("agents.provider.customId")}
           autoCorrect="off"
           disabled={disabled}
           onChange={(event) => onProviderChange(event.target.value)}
-          placeholder="Custom provider ID"
+          placeholder={t("agents.provider.customId")}
           value={provider}
         />
       ) : null}
       <p className="text-xs text-muted-foreground">
-        Changing the provider updates the available model list immediately.
+        {t("agents.provider.help")}
       </p>
     </div>
   );

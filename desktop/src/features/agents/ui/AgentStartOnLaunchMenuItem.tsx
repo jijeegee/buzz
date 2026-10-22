@@ -8,6 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { useT } from "@/shared/i18n";
 
 export type AgentStartOnLaunchMenuItemProps = {
   /** The card's representative instance; `undefined` hides the entry. */
@@ -27,6 +28,7 @@ export function AgentStartOnLaunchMenuItem({
   isPending,
   onToggleStartOnLaunch,
 }: AgentStartOnLaunchMenuItemProps) {
+  const t = useT();
   const state = startOnLaunchMenuState(agent);
   if (state === "hidden" || agent === undefined) return null;
 
@@ -40,10 +42,10 @@ export function AgentStartOnLaunchMenuItem({
       onSelect={(event) => event.preventDefault()}
     >
       <span className="flex min-w-0 flex-col">
-        <span>Start on launch</span>
+        <span>{t("agents.startOnLaunch.label")}</span>
         {providerManaged ? (
           <span className="text-xs text-muted-foreground">
-            Managed by provider
+            {t("agents.startOnLaunch.managedByProvider")}
           </span>
         ) : null}
       </span>
@@ -60,11 +62,14 @@ export function StandaloneAgentActionsMenu({
   isPending,
   onToggleStartOnLaunch,
 }: AgentStartOnLaunchMenuItemProps & { agent: ManagedAgent }) {
+  const t = useT();
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label={`Open actions for ${agent.name}`}
+          aria-label={t("agents.startOnLaunch.openActions", {
+            name: agent.name,
+          })}
           className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           type="button"
         >

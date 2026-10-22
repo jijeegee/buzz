@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import type { KuzzToolInfo, ToolStatus } from "./agentSessionTypes";
+import { t } from "@/shared/i18n";
 
 export function normalizeToolStatus(status: string): ToolStatus {
   const normalized = status.toLowerCase();
@@ -34,7 +35,7 @@ export function normalizeToolStatus(status: string): ToolStatus {
 export function getToolStatusDisplay(status: ToolStatus, isError: boolean) {
   if (isError || status === "failed") {
     return {
-      label: "Error",
+      label: t("agents.toolStatus.error"),
       Icon: XCircle,
       state: "output-error" as const,
       variant: "destructive" as const,
@@ -42,7 +43,7 @@ export function getToolStatusDisplay(status: ToolStatus, isError: boolean) {
   }
   if (status === "completed") {
     return {
-      label: "Done",
+      label: t("agents.toolStatus.done"),
       Icon: CheckCircle2,
       state: "output-available" as const,
       variant: "secondary" as const,
@@ -50,14 +51,14 @@ export function getToolStatusDisplay(status: ToolStatus, isError: boolean) {
   }
   if (status === "pending") {
     return {
-      label: "Pending",
+      label: t("agents.toolStatus.pending"),
       Icon: CircleDot,
       state: "input-streaming" as const,
       variant: "secondary" as const,
     };
   }
   return {
-    label: "Running",
+    label: t("agents.toolStatus.running"),
     Icon: Clock3,
     state: "input-available" as const,
     variant: "secondary" as const,
@@ -148,8 +149,8 @@ export function getKuzzToolInfo(title: string): KuzzToolInfo | null {
     return {
       icon: Workflow,
       label: isRead
-        ? "Reads workflow state from Kuzz."
-        : "Updates workflow state in Kuzz.",
+        ? t("agents.kuzzTool.readsWorkflow")
+        : t("agents.kuzzTool.updatesWorkflow"),
       tone: isWrite ? "write" : "read",
     };
   }
@@ -161,8 +162,8 @@ export function getKuzzToolInfo(title: string): KuzzToolInfo | null {
     return {
       icon: Hash,
       label: isRead
-        ? "Reads channel context from the Kuzz relay."
-        : "Changes channel state in the Kuzz relay.",
+        ? t("agents.kuzzTool.readsChannel")
+        : t("agents.kuzzTool.changesChannel"),
       tone: isWrite ? "write" : "read",
     };
   }
@@ -174,15 +175,15 @@ export function getKuzzToolInfo(title: string): KuzzToolInfo | null {
     return {
       icon: Users,
       label: isRead
-        ? "Reads Kuzz identity or presence data."
-        : "Updates Kuzz identity or membership data.",
+        ? t("agents.kuzzTool.readsIdentity")
+        : t("agents.kuzzTool.updatesIdentity"),
       tone: isWrite ? "write" : "admin",
     };
   }
   if (name.includes("search") || name === "get_feed") {
     return {
       icon: Search,
-      label: "Searches relay-visible Kuzz history.",
+      label: t("agents.kuzzTool.searchesHistory"),
       tone: "read",
     };
   }
@@ -193,14 +194,14 @@ export function getKuzzToolInfo(title: string): KuzzToolInfo | null {
   ) {
     return {
       icon: Send,
-      label: "Publishes relay-visible Kuzz activity.",
+      label: t("agents.kuzzTool.publishesActivity"),
       tone: "write",
     };
   }
 
   return {
     icon: MessageSquare,
-    label: isRead ? "Reads from Kuzz." : "Writes to Kuzz.",
+    label: isRead ? t("agents.kuzzTool.reads") : t("agents.kuzzTool.writes"),
     tone: isWrite ? "write" : "read",
   };
 }

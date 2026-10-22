@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 import type { PromptSection } from "./agentSessionTypes";
+import { useT } from "@/shared/i18n";
 
 export function PromptSectionList({
   className,
@@ -31,6 +32,7 @@ export function PromptSectionAccordion({
 }: {
   section: PromptSection;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const body = section.body.trim();
 
@@ -63,7 +65,9 @@ export function PromptSectionAccordion({
               {body.length > 0 ? (
                 body
               ) : (
-                <span className="italic text-foreground/50">No metadata.</span>
+                <span className="italic text-foreground/50">
+                  {t("agents.prompt.noMetadata")}
+                </span>
               )}
             </div>
           </div>

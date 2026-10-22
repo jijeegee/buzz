@@ -26,6 +26,7 @@ import {
   filterAvailablePersonaIds,
   orderPersonasByInitiallySelected,
 } from "./teamDialogSelection";
+import { useT } from "@/shared/i18n";
 
 type TeamDialogProps = {
   open: boolean;
@@ -54,6 +55,7 @@ export function TeamDialog({
   onSubmit,
   onDeleteRemovedPersonas,
 }: TeamDialogProps) {
+  const t = useT();
   const [name, setName] = React.useState("");
   const [teamDescription, setTeamDescription] = React.useState("");
   const [instructions, setInstructions] = React.useState("");
@@ -187,7 +189,7 @@ export function TeamDialog({
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium" htmlFor="team-name">
-                  Name
+                  {t("agents.myTeams.name")}
                 </label>
                 <Input
                   autoCorrect="off"
@@ -204,14 +206,14 @@ export function TeamDialog({
                   className="text-sm font-medium"
                   htmlFor="team-description"
                 >
-                  Description
+                  {t("agents.identity.description")}
                 </label>
                 <Textarea
                   className="min-h-20"
                   disabled={isPending}
                   id="team-description"
                   onChange={(event) => setTeamDescription(event.target.value)}
-                  placeholder="Optional description for this team."
+                  placeholder={t("agents.teamDialog.descriptionPlaceholder")}
                   value={teamDescription}
                 />
               </div>
@@ -221,30 +223,30 @@ export function TeamDialog({
                   className="text-sm font-medium"
                   htmlFor="team-instructions"
                 >
-                  Team Instructions
+                  {t("agents.teamDialog.instructions")}
                 </label>
                 <Textarea
                   className="min-h-24"
                   disabled={isPending}
                   id="team-instructions"
                   onChange={(event) => setInstructions(event.target.value)}
-                  placeholder="Optional instructions applied to every deployed team member."
+                  placeholder={t("agents.teamDialog.instructionsPlaceholder")}
                   value={instructions}
                 />
               </div>
 
               <div className="space-y-2">
-                <span className="text-sm font-medium">Agents</span>
+                <span className="text-sm font-medium">
+                  {t("agents.list.title")}
+                </span>
                 <p className="text-xs text-muted-foreground">
-                  Select the agents to include in this team.
+                  {t("agents.teamDialog.selectAgents")}
                 </p>
                 {missingInitialPersonaCount > 0 ? (
                   <p className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                    This team references {missingInitialPersonaCount} agent
-                    {missingInitialPersonaCount === 1 ? "" : "s"} that{" "}
-                    {missingInitialPersonaCount === 1 ? "is" : "are"} no longer
-                    in My Agents. Save to remove them, or add them back to My
-                    Agents first.
+                    {t("agents.teamDialog.missing", {
+                      count: missingInitialPersonaCount,
+                    })}
                   </p>
                 ) : null}
                 {personas.length === 0 ? (
@@ -255,7 +257,7 @@ export function TeamDialog({
                   <div
                     className="max-h-60 space-y-1 overflow-y-auto rounded-lg border border-border/70 p-2"
                     role="listbox"
-                    aria-label="Agents"
+                    aria-label={t("agents.list.title")}
                     aria-multiselectable="true"
                   >
                     {orderedPersonas.map((persona) => {
@@ -300,7 +302,9 @@ export function TeamDialog({
                           />
                           <span className="text-sm">{persona.displayName}</span>
                           {persona.isBuiltIn ? (
-                            <Badge variant="secondary">Built-in</Badge>
+                            <Badge variant="secondary">
+                              {t("agents.teamDialog.builtIn")}
+                            </Badge>
                           ) : null}
                         </div>
                       );
@@ -324,7 +328,7 @@ export function TeamDialog({
                   type="button"
                   variant="outline"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button
                   disabled={
@@ -336,7 +340,7 @@ export function TeamDialog({
                   size="sm"
                   type="button"
                 >
-                  {isPending ? "Saving..." : submitLabel}
+                  {isPending ? t("agents.dialog.saving") : submitLabel}
                 </Button>
               </div>
             </div>

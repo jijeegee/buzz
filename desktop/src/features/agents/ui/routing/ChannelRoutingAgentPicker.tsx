@@ -6,6 +6,7 @@ import {
   useDefaultAiAutoJoin,
 } from "@/features/agents/lib/defaultAiPreferences";
 import { Checkbox } from "@/shared/ui/checkbox";
+import { useT } from "@/shared/i18n";
 
 /**
  * The routing-agent picker that unfolds under the selected Host or Lead
@@ -37,6 +38,7 @@ export function ChannelRoutingAgentPicker({
   /** The saved routing agent, or null while none is chosen for this mode. */
   selectedPubkey: string | null;
 }) {
+  const t = useT();
   const selectId = React.useId();
   const autoJoinId = React.useId();
   const autoJoin = useDefaultAiAutoJoin();
@@ -68,8 +70,8 @@ export function ChannelRoutingAgentPicker({
               data-testid="agents-channel-routing-no-agents"
             >
               {createAction
-                ? "No agents yet."
-                : "No agents yet — create one below."}
+                ? t("agents.routing.noAgents")
+                : t("agents.routing.noAgentsCreateBelow")}
             </p>
             {createAction}
           </>
@@ -86,7 +88,7 @@ export function ChannelRoutingAgentPicker({
           >
             {value === "" ? (
               <option disabled value="">
-                Choose an agent…
+                {t("agents.routing.chooseAgent")}
               </option>
             ) : null}
             {options.map((option) => (
@@ -97,7 +99,10 @@ export function ChannelRoutingAgentPicker({
               >
                 {option.disabledReason === null
                   ? option.name
-                  : `${option.name} (${option.disabledReason})`}
+                  : t("agents.routing.disabledOption", {
+                      name: option.name,
+                      reason: option.disabledReason,
+                    })}
               </option>
             ))}
           </select>
@@ -114,7 +119,7 @@ export function ChannelRoutingAgentPicker({
           onCheckedChange={(checked) => setDefaultAiAutoJoin(checked === true)}
         />
         <label className="text-sm text-foreground" htmlFor={autoJoinId}>
-          Join new groups I create
+          {t("agents.routing.autoJoin")}
         </label>
       </div>
     </div>

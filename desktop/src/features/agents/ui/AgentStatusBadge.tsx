@@ -3,6 +3,7 @@ import * as React from "react";
 import { Badge } from "@/shared/ui/badge";
 import type { ManagedAgent, PresenceStatus } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { useT } from "@/shared/i18n";
 
 /** Grace period after mount before treating "running + no presence" as "Starting…" */
 const PRESENCE_GRACE_MS = 15_000;
@@ -22,6 +23,7 @@ export function AgentStatusBadge({
   sentenceCase?: boolean;
   status: ManagedAgent["status"];
 }) {
+  const t = useT();
   const [inGracePeriod, setInGracePeriod] = React.useState(true);
 
   React.useEffect(() => {
@@ -45,10 +47,13 @@ export function AgentStatusBadge({
         : "secondary";
 
   const rawLabel = isWorking
-    ? "Working"
+    ? t("agents.tile.working")
     : isStarting
-      ? "Starting\u2026"
-      : status.replace(/_/g, " ");
+      ? t("agents.statusBadge.starting")
+      : t("agents.statusBadge.status", {
+          status,
+          raw: status.replace(/_/g, " "),
+        });
   const label = sentenceCase
     ? `${rawLabel.charAt(0).toUpperCase()}${rawLabel.slice(1)}`
     : rawLabel;

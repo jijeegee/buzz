@@ -13,6 +13,7 @@ import { useAgentSessionTranscriptVariant } from "../agentSessionTranscriptConte
 import type { TranscriptItem } from "../agentSessionTypes";
 import { MessageLinkHoverCue } from "./MessageLinkHoverCue";
 import { useTranscriptBubbleOverflow } from "./useTranscriptBubbleOverflow";
+import { useT } from "@/shared/i18n";
 
 export function UserMessageBubble({
   bubbleClassName,
@@ -29,6 +30,7 @@ export function UserMessageBubble({
   item: Extract<TranscriptItem, { type: "message" }>;
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const variant = useAgentSessionTranscriptVariant();
   const { goChannel } = useAppNavigation();
   const { openProfilePanel } = useProfilePanel();
@@ -50,7 +52,7 @@ export function UserMessageBubble({
         fallbackName: item.title,
         profiles,
       })
-    : item.title || "User";
+    : item.title || t("agents.transcript.user");
   const handleBubbleClick = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       if (!messageLink || isNestedInteractiveTarget(event)) return;
@@ -100,7 +102,7 @@ export function UserMessageBubble({
     >
       {isCompactPreview ? null : item.authorPubkey && openProfilePanel ? (
         <button
-          aria-label={`Open ${authorLabel} profile`}
+          aria-label={t("agents.transcript.openProfile", { name: authorLabel })}
           className={cn(
             "pointer-events-auto order-last ml-2 mt-1 size-7 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             authorProfile?.isAgent ? "rounded-[30%]" : "rounded-full",

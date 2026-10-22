@@ -2,6 +2,7 @@ import type * as React from "react";
 import type { InheritedDefault } from "./bakedEnvHelpers";
 import { PERSONA_LLM_PROVIDER_OPTIONS } from "./agentConfigOptions";
 import { Button } from "@/shared/ui/button";
+import { t, useT } from "@/shared/i18n";
 
 function providerLabel(providerId: string) {
   const option = PERSONA_LLM_PROVIDER_OPTIONS.find(
@@ -22,7 +23,9 @@ export function formatAiDefaultsSummary({
     model.value || null,
   ].filter((value): value is string => Boolean(value));
 
-  return parts.length > 0 ? parts.join(" · ") : "Not configured";
+  return parts.length > 0
+    ? parts.join(" · ")
+    : t("agents.aiDefaults.notConfigured");
 }
 
 export function AgentAiDefaultsNotice({
@@ -44,6 +47,7 @@ export function AgentAiDefaultsNotice({
   inheritedModel: InheritedDefault;
   inheritedProvider: InheritedDefault;
 }) {
+  const t = useT();
   const provider = explicitProvider.trim() || inheritedProvider.value;
   const model = explicitModel.trim() || inheritedModel.value;
 
@@ -54,7 +58,7 @@ export function AgentAiDefaultsNotice({
         data-testid="agent-ai-defaults-notice"
       >
         <p className="text-sm font-medium text-foreground">
-          Global defaults not set
+          {t("agents.aiDefaults.globalNotSet")}
         </p>
         <Button
           className="shrink-0"
@@ -65,7 +69,7 @@ export function AgentAiDefaultsNotice({
           type="button"
           variant="outline"
         >
-          Set
+          {t("agents.aiDefaults.set")}
         </Button>
       </div>
     );
@@ -76,19 +80,27 @@ export function AgentAiDefaultsNotice({
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-sm">
         {harness !== undefined ? (
           <>
-            <dt className="text-muted-foreground">Harness</dt>
+            <dt className="text-muted-foreground">
+              {t("agents.aiDefaults.harness")}
+            </dt>
             <dd className="truncate text-foreground">
-              {harness || "Not configured"}
+              {harness || t("agents.aiDefaults.notConfigured")}
             </dd>
           </>
         ) : null}
-        <dt className="text-muted-foreground">Provider</dt>
+        <dt className="text-muted-foreground">
+          {t("agents.aiDefaults.provider")}
+        </dt>
         <dd className="truncate text-foreground">
-          {provider ? providerLabel(provider) : "Not configured"}
+          {provider
+            ? providerLabel(provider)
+            : t("agents.aiDefaults.notConfigured")}
         </dd>
-        <dt className="text-muted-foreground">Model</dt>
+        <dt className="text-muted-foreground">
+          {t("agents.aiDefaults.model")}
+        </dt>
         <dd className="truncate text-foreground">
-          {model || "Not configured"}
+          {model || t("agents.aiDefaults.notConfigured")}
         </dd>
       </dl>
       <Button
@@ -100,7 +112,7 @@ export function AgentAiDefaultsNotice({
         type="button"
         variant="link"
       >
-        Edit global defaults
+        {t("agents.aiDefaults.editGlobal")}
       </Button>
     </div>
   );

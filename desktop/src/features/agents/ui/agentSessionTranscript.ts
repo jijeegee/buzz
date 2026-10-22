@@ -28,6 +28,7 @@ import {
   parseSystemPromptSections,
 } from "./agentSessionTranscriptHelpers";
 import { friendlyTurnErrorCopy } from "../lib/friendlyAgentLastError";
+import { t } from "@/shared/i18n";
 
 export { describeRawEvent } from "./agentSessionTranscriptHelpers";
 
@@ -177,7 +178,7 @@ function describePermissionRequest(payload: Record<string, unknown>) {
     asString(params.title) ??
     asString(params.message) ??
     asString(params.reason) ??
-    "Permission requested";
+    t("agents.transcript.permissionRequested");
   const toolCallId =
     asString(params.toolCallId) ?? asString(params.tool_call_id);
   const options = Array.isArray(params.options)
@@ -193,9 +194,13 @@ function describePermissionRequest(payload: Record<string, unknown>) {
         .filter((option): option is string => Boolean(option))
     : [];
   const detail: string[] = [];
-  if (title !== "Permission requested") detail.push(title);
-  if (toolCallId) detail.push(`Tool call: ${toolCallId}`);
-  if (options.length > 0) detail.push(`Options: ${options.join(", ")}`);
+  if (title !== t("agents.transcript.permissionRequested")) detail.push(title);
+  if (toolCallId)
+    detail.push(t("agents.transcript.permissionToolCall", { id: toolCallId }));
+  if (options.length > 0)
+    detail.push(
+      t("agents.transcript.permissionOptions", { options: options.join(", ") }),
+    );
 
   // Build optionId → kind map for outcome labeling on the response.
   const optionNames = new Map<string, string>();
@@ -216,9 +221,9 @@ function describePermissionRequest(payload: Record<string, unknown>) {
     optionNames,
     descriptor: {
       renderClass: "permission" as const,
-      label: "Permission requested",
+      label: t("agents.transcript.permissionRequested"),
       preview: title,
-      action: { verb: "Requested", object: title },
+      action: { verb: t("agents.transcript.verbRequested"), object: title },
       tone: "admin" as const,
       operation: "session/request_permission",
       object: title,
@@ -239,13 +244,14 @@ function describePermissionOutcome(
   optionNames: Map<string, string>,
 ): string {
   if (outcome === "cancelled") {
-    return "Cancelled";
+    return t("agents.transcript.permissionCancelled");
   }
   if (outcome === "selected" && optionId) {
     const kind = optionNames.get(optionId) ?? optionId;
     const isDenial = kind.startsWith("reject");
-    const verb = isDenial ? "Denied" : "Approved";
-    return `${verb} (${kind})`;
+    return isDenial
+      ? t("agents.transcript.permissionDenied", { kind })
+      : t("agents.transcript.permissionApproved", { kind });
   }
   return outcome;
 }
@@ -380,7 +386,11 @@ function upsertTextItem(
   upsertLifecycleItem(
     d,
     id,
-    title.toLowerCase().includes("error") ? "error" : "status",
+    acpSource === "acp_parse_error" ||
+      acpSource === "turn_error" ||
+      acpSource === "agent_panic"
+      ? "error"
+      : "status",
     title,
     text,
     timestamp,
@@ -513,7 +523,7 @@ function upsertPlan(
         id: updateMarkerId ?? `${id}:update:${timestamp}`,
         type: "plan",
         renderClass: "plan",
-        title: "Plan updated",
+        title: t("agents.transcript.planUpdated"),
         text: summarizePlanUpdate(text),
         timestamp,
         isUpdate: true,
@@ -719,7 +729,7 @@ export function processTranscriptEvent(
     upsertMetadata(
       d,
       `raw-json-rpc:${ch}:${event.seq}`,
-      "Raw ACP payload",
+      t("agents.transcript.rawAcpPayload"),
       [
         {
           title: rawPayloadTitle(event.payload),
@@ -741,7 +751,7 @@ export function processTranscriptEvent(
       d,
       `turn:${ch}:${event.turnId ?? event.seq}`,
       "lifecycle",
-      "Turn started",
+      t("agents.transcript.turnStarted"),
       describeTurnStarted(event.payload),
       event.timestamp,
       ctx,
@@ -752,7 +762,7 @@ export function processTranscriptEvent(
       d,
       `session:${ch}:${event.turnId ?? event.seq}`,
       "lifecycle",
-      "Session ready",
+      t("agents.transcript.sessionReady"),
       describeSessionResolved(event.payload),
       event.timestamp,
       ctx,
@@ -763,7 +773,7 @@ export function processTranscriptEvent(
       d,
       `parse-error:${ch}:${event.seq}`,
       "lifecycle",
-      "Wire parse error",
+      t("agents.transcript.wireParseError"),
       extractBlockText(event.payload),
       event.timestamp,
       ctx,
@@ -772,10 +782,13 @@ export function processTranscriptEvent(
   } else if (event.kind === "turn_error" || event.kind === "agent_panic") {
     const payload = asRecord(event.payload);
     const outcome = asString(payload.outcome) ?? "error";
-    const error = asString(payload.error) ?? "Unknown error";
+    const error =
+      asString(payload.error) ?? t("agents.transcript.unknownError");
     const displayError = friendlyTurnErrorCopy(error, payload.code);
     const title =
-      event.kind === "agent_panic" ? "Agent error (crash)" : "Turn error";
+      event.kind === "agent_panic"
+        ? t("agents.transcript.agentCrash")
+        : t("agents.transcript.turnError");
     upsertTextItem(
       d,
       `${event.kind}:${ch}:${event.turnId ?? event.seq}`,
@@ -797,7 +810,7 @@ export function processTranscriptEvent(
         d,
         itemId,
         "permission",
-        "Permission requested",
+        t("agents.transcript.permissionRequested"),
         request.text,
         event.timestamp,
         ctx,
@@ -861,7 +874,7 @@ export function processTranscriptEvent(
           upsertMetadata(
             d,
             `prompt-context:${ch}:${event.turnId ?? event.seq}`,
-            "Prompt context",
+            t("agents.transcript.promptContext"),
             parsedPrompt.sections,
             event.timestamp,
             ctx,
@@ -889,7 +902,7 @@ export function processTranscriptEvent(
           upsertMetadata(
             d,
             `system-prompt:${ch}:${event.seq}:${event.timestamp}`,
-            "System prompt",
+            t("agents.transcript.systemPrompt"),
             sections,
             event.timestamp,
             { ...ctx, turnId: null },
@@ -922,7 +935,7 @@ export function processTranscriptEvent(
           upsertMetadata(
             d,
             `steer-context:${ch}:${event.turnId ?? event.seq}`,
-            "Prompt context",
+            t("agents.transcript.promptContext"),
             parsedPrompt.sections,
             event.timestamp,
             ctx,
@@ -942,7 +955,7 @@ export function processTranscriptEvent(
           d,
           `assistant:${ch}:${messageId ?? turnKey}`,
           "assistant",
-          "Assistant",
+          t("agents.transcript.assistant"),
           extractContentText(update.content),
           event.timestamp,
           ctx,
@@ -960,7 +973,7 @@ export function processTranscriptEvent(
             d,
             `user:${ch}:${messageId ?? turnKey}`,
             "user",
-            "User",
+            t("agents.transcript.user"),
             extractContentText(update.content),
             event.timestamp,
             ctx,
@@ -974,7 +987,7 @@ export function processTranscriptEvent(
           d,
           `thinking:${ch}:${messageId ?? turnKey}`,
           "thought",
-          "Thinking",
+          t("agents.transcript.thinking"),
           extractContentText(update.content),
           event.timestamp,
           ctx,
@@ -1021,7 +1034,7 @@ export function processTranscriptEvent(
         upsertPlan(
           d,
           `plan:${ch}:${turnKey}`,
-          "Plan",
+          t("agents.transcript.plan"),
           extractPlanText(update),
           event.timestamp,
           ctx,
@@ -1035,7 +1048,7 @@ export function processTranscriptEvent(
             d,
             `mode:${ch}:${turnKey}`,
             "status",
-            "Mode",
+            t("agents.transcript.mode"),
             mode,
             event.timestamp,
             ctx,
@@ -1058,8 +1071,12 @@ export function processTranscriptEvent(
             d,
             `usage:${ch}:${turnKey}`,
             "status",
-            "Usage",
-            `Tokens: ${used}/${size}${costStr}`,
+            t("agents.transcript.usage"),
+            t("agents.transcript.usageTokens", {
+              used: String(used),
+              size: String(size),
+              cost: costStr,
+            }),
             event.timestamp,
             ctx,
             updateType,
@@ -1073,8 +1090,10 @@ export function processTranscriptEvent(
           d,
           `commands:${ch}:${turnKey}`,
           "status",
-          "Commands",
-          `Commands available: ${cmds.length}`,
+          t("agents.transcript.commands"),
+          t("agents.transcript.commandsAvailable", {
+            count: String(cmds.length),
+          }),
           event.timestamp,
           ctx,
           updateType,
@@ -1098,7 +1117,7 @@ export function processTranscriptEvent(
             d,
             `config:${ch}:${turnKey}`,
             "status",
-            "Config",
+            t("agents.transcript.config"),
             optText,
             event.timestamp,
             ctx,

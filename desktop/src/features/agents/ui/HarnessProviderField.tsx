@@ -5,6 +5,7 @@ import {
   PERSONA_FIELD_SHELL_CLASS,
 } from "./agentConfigOptions";
 import type { HarnessProviderChoice } from "./usePersonaModelDiscovery";
+import { useT } from "@/shared/i18n";
 
 /**
  * The provider of a harness that owns its providers (Hermes). The user set
@@ -27,14 +28,15 @@ export function HarnessProviderField({
   note?: string;
   onModelChange: (model: string) => void;
 }) {
+  const t = useT();
   const { providers, selectedId } = choice;
   const only = providers.length === 1 ? providers[0] : undefined;
-  const hint = `Set up in ${harnessLabel}. Change it there.`;
+  const hint = t("agents.harnessProvider.hint", { harness: harnessLabel });
 
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium text-foreground" htmlFor={id}>
-        LLM provider
+        {t("agents.provider.label")}
       </label>
       {only ? (
         <div
@@ -59,16 +61,19 @@ export function HarnessProviderField({
           }
           options={providers.map((provider) => ({
             label: provider.isDefault
-              ? `${provider.label} (${harnessLabel} default)`
+              ? t("agents.harnessProvider.defaultOption", {
+                  provider: provider.label,
+                  harness: harnessLabel,
+                })
               : provider.label,
             value: provider.id,
           }))}
-          placeholder="Choose a provider"
+          placeholder={t("agents.harnessProvider.choose")}
           value={selectedId ?? ""}
         />
       )}
       <p className="text-xs text-muted-foreground">
-        {note ? `${hint} ${note}` : hint}
+        {note ? t("agents.harnessProvider.hintWithNote", { hint, note }) : hint}
       </p>
     </div>
   );

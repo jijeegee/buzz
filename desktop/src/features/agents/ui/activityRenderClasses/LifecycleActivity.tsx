@@ -1,5 +1,7 @@
 import { AlertCircle, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
 
+import { t } from "@/shared/i18n";
+
 import { formatTranscriptTimestampTitle } from "../agentSessionUtils";
 import { ActivityRow, ActivityRowLabel } from "./ActivityRow";
 import { ToolActivity } from "./ToolActivity";
@@ -11,12 +13,20 @@ import type { ActivityRenderClassItemProps } from "./types";
  *   [request title?] [toolCallId?] ["Options: ..."]
  * We surface the options line separately so the render can style it distinctly.
  */
+/** The fixed text a translated template puts before its placeholder. */
+function textBeforePlaceholder(template: string): string {
+  return template.split("\u0000")[0] ?? "";
+}
+
 function splitPermissionText(text: string): {
   requestLines: string;
   optionsLine: string | null;
 } {
   const lines = text.split("\n");
-  const optionsIdx = lines.findIndex((l) => l.startsWith("Options: "));
+  const prefix = textBeforePlaceholder(
+    t("agents.transcript.permissionOptions", { options: "\u0000" }),
+  );
+  const optionsIdx = prefix ? lines.findIndex((l) => l.startsWith(prefix)) : -1;
   if (optionsIdx === -1) {
     return { requestLines: text, optionsLine: null };
   }
@@ -32,8 +42,14 @@ function splitPermissionText(text: string): {
  *   "Approved (...)" | "Denied (...)" | "Cancelled"
  */
 function permissionOutcomeTone(outcome: string): "approve" | "deny" | "cancel" {
-  if (outcome.startsWith("Approved")) return "approve";
-  if (outcome.startsWith("Denied")) return "deny";
+  const approved = textBeforePlaceholder(
+    t("agents.transcript.permissionApproved", { kind: "\u0000" }),
+  );
+  const denied = textBeforePlaceholder(
+    t("agents.transcript.permissionDenied", { kind: "\u0000" }),
+  );
+  if (approved && outcome.startsWith(approved)) return "approve";
+  if (denied && outcome.startsWith(denied)) return "deny";
   return "cancel";
 }
 
@@ -47,6 +63,7 @@ export function LifecycleActivity(props: ActivityRenderClassItemProps) {
 
   const isError =
     props.item.renderClass === "error" ||
+    props.item.acpSource === "acp_parse_error" ||
     props.item.title.toLowerCase().includes("error");
   const isPermission = props.item.renderClass === "permission";
   const timestampTitle = formatTranscriptTimestampTitle(props.item.timestamp);

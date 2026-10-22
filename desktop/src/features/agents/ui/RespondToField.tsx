@@ -19,6 +19,7 @@ import {
 import { useAgentRunLocation } from "./AgentRunLocationContext";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import type { PersonaDropdownOption } from "./agentConfigOptions";
+import { t, useT } from "@/shared/i18n";
 
 /**
  * Inbound author gate UI for create/edit agent dialogs.
@@ -78,6 +79,25 @@ const RESPOND_TO_OPTIONS: PersonaDropdownOption[] = [
 export const OWNER_ONLY_ACCESS_DISABLED_REASON =
   "This build disallows changing this setting.";
 
+/** Localized option label; RESPOND_TO_OPTIONS keeps the English source. */
+function respondToOptionLabel(value: string): string {
+  switch (value) {
+    case "owner-only":
+      return t("agents.respondTo.optionOwnerOnly");
+    case "anyone":
+      return t("agents.respondTo.mode.anyone");
+    case "allowlist":
+      return t("agents.respondTo.mode.allowlist");
+    default:
+      return value;
+  }
+}
+
+/** Localized reason shown when the build locks access to owner-only. */
+export function ownerOnlyAccessDisabledReason(): string {
+  return t("agents.respondTo.ownerOnlyLocked");
+}
+
 export function CreateAgentRespondToField({
   mode,
   allowlist,
@@ -111,6 +131,7 @@ export function CreateAgentRespondToField({
    */
   runLocation?: AgentRunLocation | null;
 }) {
+  const t = useT();
   const [query, setQuery] = React.useState("");
 
   const deferredQuery = React.useDeferredValue(query.trim());
@@ -183,15 +204,18 @@ export function CreateAgentRespondToField({
         }
         htmlFor="agent-respond-to"
       >
-        Who can send instructions
+        {t("agents.respondTo.label")}
       </label>
       {isPersonaVariant ? (
         <PersonaDropdownField
           disabled={disabled}
           id="agent-respond-to"
           onValueChange={(value) => onModeChange(value as RespondToMode)}
-          options={RESPOND_TO_OPTIONS}
-          placeholder="Only me (default)"
+          options={RESPOND_TO_OPTIONS.map((option) => ({
+            ...option,
+            label: respondToOptionLabel(option.value),
+          }))}
+          placeholder={t("agents.respondTo.optionOwnerOnly")}
           value={mode}
         />
       ) : (
@@ -205,7 +229,7 @@ export function CreateAgentRespondToField({
         >
           {RESPOND_TO_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
-              {option.label}
+              {respondToOptionLabel(option.value)}
             </option>
           ))}
         </select>
@@ -276,6 +300,7 @@ function AllowlistPicker({
   searchResults: UserSearchResult[];
   variant?: "default" | "persona";
 }) {
+  const t = useT();
   const isPersona = variant === "persona";
   const allowlistProfilesQuery = useUsersBatchQuery(allowlist);
   const allowlistProfiles = allowlistProfilesQuery.data?.profiles;
@@ -293,19 +318,21 @@ function AllowlistPicker({
     >
       {!isPersona ? (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium">Selected people</span>
+          <span className="text-sm font-medium">
+            {t("agents.respondTo.mode.allowlist")}
+          </span>
           <span className="rounded-full bg-background px-2 py-1 text-2xs font-medium leading-none text-muted-foreground">
-            {allowlist.length} selected
+            {t("agents.respondTo.selectedCount", { count: allowlist.length })}
           </span>
         </div>
       ) : null}
       {!isPersona && ownerPubkey ? (
         <p className="text-xs text-muted-foreground">
-          You can always use this agent. You don&apos;t need to add yourself.
+          {t("agents.respondTo.alwaysYouNoAdd")}
         </p>
       ) : !isPersona ? (
         <p className="text-xs text-muted-foreground">
-          You can always use this agent.
+          {t("agents.respondTo.alwaysYou")}
         </p>
       ) : null}
       <div className="rounded-lg border border-border/80 bg-background">
@@ -316,7 +343,11 @@ function AllowlistPicker({
             data-testid="agent-respond-to-search"
             disabled={disabled}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={isPersona ? "Search people" : "Search by name"}
+            placeholder={
+              isPersona
+                ? t("agents.shareRecipients.search")
+                : t("agents.respondTo.searchByName")
+            }
             value={query}
           />
         </div>
@@ -350,7 +381,9 @@ function AllowlistPicker({
                     <span>{chipLabel}</span>
                   )}
                   <button
-                    aria-label={`Remove ${chipLabel}`}
+                    aria-label={t("agents.respondTo.removePerson", {
+                      name: chipLabel,
+                    })}
                     className="text-muted-foreground transition-colors hover:text-foreground"
                     disabled={disabled}
                     onClick={() => onRemove(pubkey)}
@@ -367,7 +400,7 @@ function AllowlistPicker({
           <div className="border-t border-border/70 px-2 py-2">
             {searchIsLoading ? (
               <p className="px-2 py-1 text-sm text-muted-foreground">
-                Searching…
+                {t("agents.respondTo.searching")}
               </p>
             ) : searchResults.length > 0 ? (
               <div className="max-h-44 space-y-1 overflow-y-auto">
@@ -397,13 +430,15 @@ function AllowlistPicker({
                         ) : null}
                       </div>
                     </div>
-                    <span className="text-xs text-muted-foreground">Add</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t("common.add")}
+                    </span>
                   </button>
                 ))}
               </div>
             ) : (
               <p className="px-2 py-1 text-sm text-muted-foreground">
-                No matching users.
+                {t("agents.respondTo.noMatches")}
               </p>
             )}
           </div>

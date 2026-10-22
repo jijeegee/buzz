@@ -7,8 +7,10 @@ import {
 import { ToolActivity } from "./ToolActivity";
 import { formatTranscriptTimestampTitle } from "../agentSessionUtils";
 import type { ActivityRenderClassItemProps } from "./types";
+import { useT } from "@/shared/i18n";
 
 export function PlanActivity(props: ActivityRenderClassItemProps) {
+  const t = useT();
   if (props.item.type === "tool") {
     return <ToolActivity {...props} />;
   }
@@ -25,7 +27,7 @@ export function PlanActivity(props: ActivityRenderClassItemProps) {
         <ActivityRowLabel
           object={<PlanUpdateLabelObject text={props.item.text} />}
           openToneScope="none"
-          verb="Updated"
+          verb={t("agents.toolActivity.verbUpdated")}
         />
       </ActivityRow>
     );
@@ -36,11 +38,17 @@ export function PlanActivity(props: ActivityRenderClassItemProps) {
       testId="transcript-plan-item"
       title={formatTranscriptTimestampTitle(props.item.timestamp)}
     >
-      <ActivityRowLabel object="plan" openToneScope="tool" verb="Updated" />
+      <ActivityRowLabel
+        object={t("agents.transcript.objectPlan")}
+        openToneScope="tool"
+        verb={t("agents.toolActivity.verbUpdated")}
+      />
       <ActivityRowContent className="pt-1 pb-1.5 text-sm leading-5 text-muted-foreground">
         <Markdown
           className="leading-5"
-          content={props.item.text.trim() || "No plan details."}
+          content={
+            props.item.text.trim() || t("agents.transcript.noPlanDetails")
+          }
         />
       </ActivityRowContent>
     </ActivityRow>
@@ -48,9 +56,10 @@ export function PlanActivity(props: ActivityRenderClassItemProps) {
 }
 
 function PlanUpdateLabelObject({ text }: { text: string }) {
+  const t = useT();
   return (
     <>
-      plan
+      {t("agents.transcript.objectPlan")}
       {text ? (
         <>
           {" · "}

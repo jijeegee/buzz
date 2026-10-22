@@ -14,6 +14,7 @@ import {
   DeviceHeading,
   TileMenuTrigger,
 } from "./AgentTile";
+import { useT } from "@/shared/i18n";
 
 /** One of the owner's real agents, as a team shows and picks it. */
 export type TeamAgent = {
@@ -48,12 +49,13 @@ export function MyTeamsSection({
   onDelete: (team: MyTeam) => void;
   onEdit: (team: MyTeam) => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-3" data-testid="agents-my-teams">
       <DeviceHeading
-        detail="groups of my agents · adding a team to a group adds these agents"
+        detail={t("agents.teamsSection.detail")}
         robot={<Users className="h-4 w-4 text-muted-foreground" />}
-        title="Teams"
+        title={t("agents.catalog.teams")}
       />
       {isLoading ? (
         <div className={AGENT_TILE_GRID_CLASS}>
@@ -78,7 +80,7 @@ export function MyTeamsSection({
             type="button"
           >
             <Plus className="h-4 w-4" />
-            New team
+            {t("agents.myTeams.newTitle")}
           </button>
         </div>
       )}
@@ -104,6 +106,7 @@ function TeamTile({
   onDelete: (team: MyTeam) => void;
   onEdit: (team: MyTeam) => void;
 }) {
+  const t = useT();
   const members = team.agentPubkeys.map(
     (pubkey) => agentsByPubkey.get(pubkey) ?? null,
   );
@@ -113,9 +116,11 @@ function TeamTile({
   const missing = members.length - present.length;
   const computers = new Set(present.map((member) => member.computer));
   const summary = [
-    present.length === 1 ? "1 agent" : `${present.length} agents`,
-    computers.size > 1 ? `${computers.size} computers` : null,
-    missing > 0 ? `${missing} not found` : null,
+    t("agents.teamsSection.agentCount", { count: present.length }),
+    computers.size > 1
+      ? t("agents.teamsSection.computerCount", { count: computers.size })
+      : null,
+    missing > 0 ? t("agents.teamsSection.notFound", { count: missing }) : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -138,11 +143,13 @@ function TeamTile({
           </span>
         </div>
         <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground">
-          Team
+          {t("agents.teamsSection.badge")}
         </span>
         <span className="-mr-1 -mt-1 shrink-0">
           <DropdownMenu modal={false}>
-            <TileMenuTrigger label={`Open actions for ${team.name}`} />
+            <TileMenuTrigger
+              label={t("agents.teamsSection.openActions", { name: team.name })}
+            />
             <DropdownMenuContent
               align="end"
               onCloseAutoFocus={(event) => event.preventDefault()}
@@ -153,7 +160,7 @@ function TeamTile({
                 onClick={() => onDelete(team)}
               >
                 <Trash2 className="h-4 w-4" />
-                Delete team
+                {t("agents.teamsSection.deleteTeam")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -161,14 +168,20 @@ function TeamTile({
       </div>
       {present.length > 0 ? (
         <ul
-          aria-label={`${team.name} agents`}
+          aria-label={t("agents.teamsSection.membersLabel", {
+            name: team.name,
+          })}
           className="flex min-h-8 flex-wrap content-start gap-1"
         >
           {present.map((member) => (
             <li
               className="flex max-w-full items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-2xs text-foreground"
               key={member.pubkey}
-              title={`${member.name} · ${member.computer} · ${member.running ? "Running" : "Stopped"}`}
+              title={t("agents.teamsSection.memberTitle", {
+                name: member.name,
+                computer: member.computer,
+                running: member.running ? "yes" : "no",
+              })}
             >
               <span
                 aria-hidden
@@ -183,7 +196,7 @@ function TeamTile({
         </ul>
       ) : (
         <p className="min-h-8 text-xs text-muted-foreground">
-          No agents yet. Edit the team to add some.
+          {t("agents.teamsSection.empty")}
         </p>
       )}
       <div className="mt-auto flex flex-wrap gap-1.5">
@@ -193,7 +206,7 @@ function TeamTile({
           onClick={() => onAddToChannel(team)}
           size="xs"
         >
-          Add to group
+          {t("agents.addToGroup.add")}
         </Button>
         <Button
           data-testid={`my-team-edit-${team.id}`}
@@ -201,7 +214,7 @@ function TeamTile({
           size="xs"
           variant="outline"
         >
-          Edit
+          {t("common.edit")}
         </Button>
       </div>
     </div>

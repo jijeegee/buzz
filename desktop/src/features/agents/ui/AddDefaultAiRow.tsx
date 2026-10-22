@@ -1,7 +1,7 @@
-import { NO_DEFAULT_AI_HINT } from "@/features/agents/lib/defaultAi";
 import type { ManagedAgent } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { Switch } from "@/shared/ui/switch";
+import { useT } from "@/shared/i18n";
 
 /**
  * The "Add your default AI" switch row shared by the create-channel and
@@ -29,6 +29,7 @@ export function AddDefaultAiRow({
   joinTarget: string;
   onCheckedChange: (value: boolean) => void;
 }) {
+  const t = useT();
   const switchId = `${idPrefix}-add-default-ai`;
   const hintId = `${switchId}-hint`;
   const hasDefaultAi = defaultAi !== null;
@@ -46,12 +47,15 @@ export function AddDefaultAiRow({
           className="text-sm font-medium text-foreground"
           htmlFor={switchId}
         >
-          Add your default AI
+          {t("agents.defaultAi.addLabel")}
         </label>
         <p className="text-xs text-muted-foreground" id={hintId}>
           {defaultAi
-            ? `${defaultAi.name} joins ${joinTarget} as a bot`
-            : NO_DEFAULT_AI_HINT}
+            ? t("agents.defaultAi.joinsAsBot", {
+                name: defaultAi.name,
+                target: joinTarget,
+              })
+            : t("agents.defaultAi.noRoutingAgent")}
         </p>
       </div>
       <Switch

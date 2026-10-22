@@ -16,6 +16,7 @@ import {
   compactManagedAgentSession,
 } from "@/shared/api/agentControl";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 /** Wait this long for the harness `started` ack. */
 const COMPACT_ACK_TIMEOUT_MS = 10_000;
@@ -87,7 +88,7 @@ export async function runCompactSession(
   setPending(key, true);
   const requestId = crypto.randomUUID();
   const toastId = `compact-session-${requestId}`;
-  toast.loading(`Asking ${target.agentName} to compact this session…`, {
+  toast.loading(t("agents.compact.asking", { name: target.agentName }), {
     id: toastId,
   });
   try {
@@ -116,9 +117,10 @@ export async function runCompactSession(
         return () => window.clearTimeout(timeout);
       },
       onStarted: () => {
-        toast.loading(`Compacting ${target.agentName}'s session context…`, {
-          id: toastId,
-        });
+        toast.loading(
+          t("agents.compact.compacting", { name: target.agentName }),
+          { id: toastId },
+        );
         options.onStarted?.();
       },
       onStale: options.onStale,
@@ -130,7 +132,7 @@ export async function runCompactSession(
     toast.error(
       error instanceof Error
         ? error.message
-        : `Failed to ask ${target.agentName} to compact this session.`,
+        : t("agents.compact.askFailed", { name: target.agentName }),
       { id: toastId },
     );
     return null;

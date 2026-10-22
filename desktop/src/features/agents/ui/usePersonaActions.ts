@@ -64,10 +64,12 @@ import {
   buildInstanceInputForDefinition,
   type BackendIntent,
 } from "../lib/instanceInputForDefinition";
+import { useT } from "@/shared/i18n";
 
 type PersonaFeedbackSurface = "catalog" | "library";
 
 export function usePersonaActions() {
+  const t = useT();
   const queryClient = useQueryClient();
   const { activeCommunity } = useCommunities();
   const identityQuery = useIdentityQuery();
@@ -210,9 +212,7 @@ export function usePersonaActions() {
           (candidate) => candidate.id === input.runtime,
         );
         if (!runtime) {
-          setPersonaErrorMessage(
-            "Choose an available provider for this agent.",
-          );
+          setPersonaErrorMessage(t("agents.personaActions.chooseProvider"));
           return false;
         }
 
@@ -233,7 +233,9 @@ export function usePersonaActions() {
         });
 
         if (resolveCreateIntent(intent) === "definition") {
-          setPersonaNoticeMessage(`Created ${persona.displayName}.`);
+          setPersonaNoticeMessage(
+            t("agents.personaActions.created", { name: persona.displayName }),
+          );
           setPersonaDialogState(null);
           return true;
         }
@@ -272,7 +274,9 @@ export function usePersonaActions() {
       return true;
     } catch (error) {
       setPersonaErrorMessage(
-        error instanceof Error ? error.message : "Failed to save agent.",
+        error instanceof Error
+          ? error.message
+          : t("agents.personaActions.saveFailed"),
       );
       return false;
     } finally {
@@ -284,11 +288,15 @@ export function usePersonaActions() {
     clearFeedback("library");
     try {
       await deletePersonaMutation.mutateAsync(persona.id);
-      setPersonaNoticeMessage(`Deleted ${persona.displayName}.`);
+      setPersonaNoticeMessage(
+        t("agents.personaActions.deleted", { name: persona.displayName }),
+      );
       setPersonaToDelete(null);
     } catch (error) {
       setPersonaErrorMessage(
-        error instanceof Error ? error.message : "Failed to delete agent.",
+        error instanceof Error
+          ? error.message
+          : t("agents.actions.deleteFailed"),
       );
     }
   }
@@ -352,8 +360,10 @@ export function usePersonaActions() {
       }
       setPersonaNoticeMessage(
         active
-          ? `Selected ${persona.displayName} for My Agents.`
-          : `Deselected ${persona.displayName} from My Agents.`,
+          ? t("agents.personaActions.selected", { name: persona.displayName })
+          : t("agents.personaActions.deselected", {
+              name: persona.displayName,
+            }),
       );
       return updatedPersona;
     } catch (error) {
@@ -361,8 +371,8 @@ export function usePersonaActions() {
         error instanceof Error
           ? error.message
           : active
-            ? "Failed to select agent for My Agents."
-            : "Failed to deselect agent from My Agents.",
+            ? t("agents.personaActions.selectFailed")
+            : t("agents.personaActions.deselectFailed"),
       );
       return null;
     }
@@ -385,7 +395,7 @@ export function usePersonaActions() {
       setPersonaErrorMessage(
         err instanceof Error
           ? err.message
-          : "Failed to read agent snapshot file.",
+          : t("agents.personaActions.readFailed"),
       );
     }
   }
@@ -410,7 +420,9 @@ export function usePersonaActions() {
           `${result.displayName} imported, but ${result.memoryErrors.length} memory entr${result.memoryErrors.length === 1 ? "y" : "ies"} failed to restore.`,
         );
       } else {
-        setPersonaNoticeMessage(`Imported ${result.displayName}.`);
+        setPersonaNoticeMessage(
+          t("agents.personaActions.imported", { name: result.displayName }),
+        );
       }
     } catch (err) {
       setSnapshotImportConfirmError(
@@ -480,14 +492,16 @@ export function usePersonaActions() {
       {
         onSuccess: (saved) => {
           if (saved) {
-            setPersonaNoticeMessage(`Exported ${persona.displayName}.`);
+            setPersonaNoticeMessage(
+              t("agents.teamActions.exported", { name: persona.displayName }),
+            );
           }
         },
         onError: (error) => {
           setPersonaErrorMessage(
             error instanceof Error
               ? error.message
-              : "Failed to export agent snapshot.",
+              : t("agents.personaActions.exportFailed"),
           );
         },
       },
@@ -521,11 +535,11 @@ export function usePersonaActions() {
       if (result.publicationStatus === "queued") {
         if (shared) {
           setPersonaNoticeMessage(
-            `Sharing ${persona.displayName}… It will appear shortly.`,
+            t("agents.teamShare.sharingQueued", { name: persona.displayName }),
           );
         } else {
           setPersonaNoticeMessage(
-            `Removing ${persona.displayName}… It may stay visible for a moment.`,
+            t("agents.teamShare.removingQueued", { name: persona.displayName }),
           );
         }
         if (result.relayMessage) {
@@ -535,18 +549,18 @@ export function usePersonaActions() {
         }
       } else if (!shared) {
         setPersonaNoticeMessage(
-          `${persona.displayName} is no longer discoverable in the community catalog.`,
+          t("agents.teamShare.removed", { name: persona.displayName }),
         );
       } else {
         setPersonaNoticeMessage(
-          `Published ${persona.displayName} to the community catalog.`,
+          t("agents.teamShare.published", { name: persona.displayName }),
         );
       }
     } catch (error) {
       setPersonaErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to update catalog sharing.",
+          : t("agents.personaActions.shareFailed"),
       );
     }
   }

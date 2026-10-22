@@ -62,6 +62,7 @@ import {
   refreshAcpRuntimes,
   subscribeBootWarm,
 } from "@/features/agents/acpRuntimesQuery";
+import { t } from "@/shared/i18n";
 export {
   useAcpRuntimesQueryForced,
   useRetryBootWarm,
@@ -752,7 +753,7 @@ export function useAttachManagedAgentToChannelMutation(
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("agents.addAgent.noGroup"));
       }
 
       return attachManagedAgentToChannel(effectiveChannelId, rest);
@@ -819,7 +820,7 @@ export function useEnsureChannelAgentPresetMutation(channelId: string | null) {
       input: EnsureChannelAgentPresetInput,
     ): Promise<EnsureChannelAgentPresetResult> => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("agents.addAgent.noGroup"));
       }
 
       return ensureChannelAgentPresetInChannel(channelId, input);
@@ -843,7 +844,7 @@ export function useCreateChannelManagedAgentMutation(channelId: string | null) {
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("agents.addAgent.noGroup"));
       }
 
       const result = await createChannelManagedAgents(effectiveChannelId, [
@@ -861,7 +862,7 @@ export function useCreateChannelManagedAgentMutation(channelId: string | null) {
       }
 
       const failure = result.failures[0];
-      throw new Error(failure?.error ?? "Could not create agent.");
+      throw new Error(failure?.error ?? t("agents.addAgent.createFailed"));
     },
     onSuccess: (result, variables) => {
       const effectiveChannelId = variables.channelId ?? channelId;
@@ -905,7 +906,7 @@ export function useProvisionChannelManagedAgentMutation(
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("agents.addAgent.noGroup"));
       }
 
       const [managedAgents, members, personas] = await Promise.all([
@@ -954,7 +955,7 @@ export function useCreateChannelManagedAgentsMutation(
       inputs: readonly CreateChannelManagedAgentInput[],
     ): Promise<CreateChannelManagedAgentsResult> => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("agents.addAgent.noGroup"));
       }
 
       return createChannelManagedAgents(channelId, inputs);

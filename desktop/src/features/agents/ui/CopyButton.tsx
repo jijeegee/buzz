@@ -2,6 +2,7 @@ import { Copy } from "lucide-react";
 
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import { Button, type ButtonProps } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 export function CopyButton({
   className,
@@ -18,7 +19,8 @@ export function CopyButton({
   value: string;
   variant?: ButtonProps["variant"];
 }) {
-  const resolvedLabel = label ?? "Copy";
+  const t = useT();
+  const resolvedLabel = label ?? t("common.copy");
 
   return (
     <Button

@@ -28,6 +28,7 @@ import { Button } from "@/shared/ui/button";
 import { ChannelRoutingAgentPicker } from "./ChannelRoutingAgentPicker";
 import { ChannelRoutingSmartModelLine } from "./ChannelRoutingSmartModelLine";
 import { ChannelRoutingStatusLine } from "./ChannelRoutingStatusLine";
+import { useT } from "@/shared/i18n";
 
 /**
  * Agents page › "Channel routing": the one place the routing mode and the
@@ -59,6 +60,7 @@ export function ChannelRoutingCard({
   onRestartAgent: (pubkey: string) => void;
   restartingAgentPubkey: string | null;
 }) {
+  const t = useT();
   const titleId = React.useId();
   const descriptionId = React.useId();
   const groupName = React.useId();
@@ -146,15 +148,15 @@ export function ChannelRoutingCard({
       data-testid="agents-channel-routing"
     >
       <h2 className="text-base font-semibold text-foreground" id={titleId}>
-        Group routing
+        {t("agents.routing.title")}
       </h2>
       <p className="mt-0.5 text-sm text-muted-foreground" id={descriptionId}>
-        How agents pick up messages nobody @mentioned.
+        {t("agents.routing.description")}
       </p>
 
       {statusQuery.isError ? (
         <p className="mt-3 text-sm text-destructive" role="alert">
-          Couldn't load group routing.
+          {t("agents.routing.loadFailed")}
         </p>
       ) : null}
 
@@ -200,11 +202,14 @@ export function ChannelRoutingCard({
                       htmlFor={inputId}
                     >
                       <span className="block w-28 shrink-0 text-sm font-medium text-foreground">
-                        {option.label}
+                        {t(option.label)}
                       </span>
                       <span className="block text-sm text-muted-foreground">
-                        {option.description}
-                        {option.available ? null : " Coming soon."}
+                        {option.available
+                          ? t(option.description)
+                          : t("agents.routing.comingSoon", {
+                              description: t(option.description),
+                            })}
                       </span>
                     </label>
                   </div>
@@ -239,8 +244,8 @@ export function ChannelRoutingCard({
                               variant="outline"
                             >
                               {createHostMutation.isPending
-                                ? "Creating…"
-                                : "Create a Host agent"}
+                                ? t("agents.routing.creatingHost")
+                                : t("agents.routing.createHost")}
                             </Button>
                           ) : undefined
                         }
@@ -256,8 +261,9 @@ export function ChannelRoutingCard({
                           className="ml-7 mt-2 text-sm text-amber-700 dark:text-amber-400"
                           data-testid="agents-channel-routing-draft-hint"
                         >
-                          Choose a {option.label.toLowerCase()} agent to turn
-                          this on. Nothing changes until you do.
+                          {t("agents.routing.draftHint", {
+                            mode: option.mode,
+                          })}
                         </p>
                       ) : null}
                     </>

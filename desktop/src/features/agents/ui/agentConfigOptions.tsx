@@ -4,6 +4,7 @@ import type {
 } from "@/shared/api/types";
 import { KUZZ_AGENT_THINKING_EFFORT } from "./kuzzAgentConfig";
 import type { RuntimeFileConfigSubset } from "@/shared/api/tauri";
+import { t } from "@/shared/i18n";
 // Dialogs import getDefaultPersonaRuntime via this re-export; lib code imports
 // directly from lib/resolvePersonaRuntime.
 export { getDefaultPersonaRuntime } from "../lib/resolvePersonaRuntime";
@@ -121,12 +122,16 @@ const PROVIDER_CREDENTIAL_CONFIG: Partial<
   anthropic: {
     requiredEnvKeys: ["ANTHROPIC_API_KEY"],
     secretEnvVar: "ANTHROPIC_API_KEY",
-    apiKeyLabel: "Anthropic API Key",
+    get apiKeyLabel() {
+      return t("agents.provider.anthropicKey");
+    },
   },
   openai: {
     requiredEnvKeys: ["OPENAI_COMPAT_API_KEY"],
     secretEnvVar: "OPENAI_COMPAT_API_KEY",
-    apiKeyLabel: "OpenAI Runtime API Key",
+    get apiKeyLabel() {
+      return t("agents.provider.openaiKey");
+    },
   },
   "openai-subscription": {
     requiredEnvKeys: [],
@@ -134,7 +139,9 @@ const PROVIDER_CREDENTIAL_CONFIG: Partial<
   "openai-compat": {
     requiredEnvKeys: ["OPENAI_COMPAT_API_KEY"],
     secretEnvVar: "OPENAI_COMPAT_API_KEY",
-    apiKeyLabel: "OpenAI-compatible Runtime API Key",
+    get apiKeyLabel() {
+      return t("agents.provider.openaiCompatKey");
+    },
   },
   databricks: {
     // DATABRICKS_TOKEN is NOT required — OAuth PKCE is the normal path.
@@ -153,7 +160,9 @@ const PROVIDER_CREDENTIAL_CONFIG: Partial<
   openrouter: {
     requiredEnvKeys: ["OPENROUTER_API_KEY"],
     secretEnvVar: "OPENROUTER_API_KEY",
-    apiKeyLabel: "OpenRouter API Key",
+    get apiKeyLabel() {
+      return t("agents.provider.openrouterKey");
+    },
   },
 };
 
@@ -164,16 +173,34 @@ const PROVIDER_CREDENTIAL_CONFIG: Partial<
  */
 export const HARNESS_DEFAULT_MODEL_OPTION: PersonaModelOption = {
   id: "",
-  label: "Default model",
+  // Getters translate when shown, not at import.
+  get label() {
+    return t("agents.modelLabel.default");
+  },
 };
 
 export const PERSONA_LLM_PROVIDER_OPTIONS: readonly PersonaModelOption[] = [
   { id: "anthropic", label: "Anthropic" },
-  { id: "openai", label: "OpenAI · API key" },
-  { id: "openai-subscription", label: "OpenAI · ChatGPT subscription" },
+  {
+    id: "openai",
+    get label() {
+      return t("agents.provider.openaiApiKey");
+    },
+  },
+  {
+    id: "openai-subscription",
+    get label() {
+      return t("agents.provider.openaiSubscription");
+    },
+  },
   { id: "openai-compat", label: "OpenAI-compatible" },
   { id: "openrouter", label: "OpenRouter" },
-  { id: "relay-mesh", label: "Kuzz shared compute" },
+  {
+    id: "relay-mesh",
+    get label() {
+      return t("agents.provider.sharedCompute");
+    },
+  },
   { id: "databricks", label: "Databricks" },
   { id: "databricks_v2", label: "Databricks v2" },
 ];
@@ -352,7 +379,7 @@ export function providerRequiresExplicitModel(
 export function providerDisplayLabel(providerId: string) {
   const trimmedProvider = providerId.trim();
   return trimmedProvider === "relay-mesh"
-    ? "Kuzz shared compute"
+    ? t("agents.provider.sharedCompute")
     : trimmedProvider;
 }
 
@@ -362,8 +389,10 @@ export function getDefaultLlmProviderLabel(
 ) {
   const trimmedGlobal = (globalProvider ?? "").trim();
   return trimmedGlobal
-    ? `Use agent defaults (${providerDisplayLabel(trimmedGlobal)})`
-    : "Select a provider\u2026";
+    ? t("agents.provider.useAgentDefaults", {
+        provider: providerDisplayLabel(trimmedGlobal),
+      })
+    : t("agents.provider.selectPlaceholder");
 }
 
 /** Returns the zero-value model option label.
@@ -375,8 +404,8 @@ export function getDefaultLlmProviderLabel(
 export function getDefaultLlmModelLabel(globalModel?: string) {
   const trimmedGlobal = (globalModel ?? "").trim();
   return trimmedGlobal
-    ? `Use agent defaults (${trimmedGlobal})`
-    : "Default model";
+    ? t("agents.model.useAgentDefaults", { model: trimmedGlobal })
+    : t("agents.modelLabel.default");
 }
 
 /**
@@ -453,7 +482,10 @@ export function getPersonaProviderOptions(
 
   return [
     ...options,
-    { id: trimmedProvider, label: `${trimmedProvider} (current)` },
+    {
+      id: trimmedProvider,
+      label: t("agents.options.current", { value: trimmedProvider }),
+    },
   ];
 }
 
@@ -490,7 +522,9 @@ export function getProviderApiKeyLabel(providerId: string): string | null {
  * so the constant is defined once and never duplicated across surfaces.
  */
 export const CARD_MINT_KEY_ANNOTATIONS: Readonly<Record<string, string>> = {
-  OPENAI_API_KEY: "Used for minting agent trading cards",
+  get OPENAI_API_KEY() {
+    return t("agents.envVars.cardMintKeyNote");
+  },
 };
 
 export function shouldClearKnownModelForSelectionScope({
@@ -511,17 +545,19 @@ export function shouldClearKnownModelForSelectionScope({
 }
 
 export function formatRuntimeOptionLabel(runtime: AcpRuntimeCatalogEntry) {
-  const suffix =
-    runtime.availability === "adapter_missing"
-      ? " (adapter missing)"
-      : runtime.availability === "adapter_outdated"
-        ? " (adapter outdated)"
-        : runtime.availability === "cli_missing"
-          ? " (CLI missing)"
-          : runtime.availability === "not_installed"
-            ? " (not installed)"
-            : "";
-  return `${runtime.label}${suffix}`;
+  const name = runtime.label;
+  switch (runtime.availability) {
+    case "adapter_missing":
+      return t("agents.harness.adapterMissing", { name });
+    case "adapter_outdated":
+      return t("agents.harness.adapterOutdated", { name });
+    case "cli_missing":
+      return t("agents.harness.cliMissing", { name });
+    case "not_installed":
+      return t("agents.harness.notInstalled", { name });
+    default:
+      return name;
+  }
 }
 
 export function buildPersonaRuntimeDropdownOptions({
@@ -541,10 +577,10 @@ export function buildPersonaRuntimeDropdownOptions({
   runtimeDropdownOptions: PersonaDropdownOption[];
 } {
   const blankRuntimeOptionLabel = runtimesLoading
-    ? "Loading harnesses..."
+    ? t("agents.harness.loading")
     : isCreateMode
-      ? "Choose a harness"
-      : "No preference (use app default)";
+      ? t("agents.harness.choose")
+      : t("agents.harness.noPreference");
   const runtimeDropdownOptions: PersonaDropdownOption[] = [
     ...(!isCreateMode
       ? [
@@ -559,9 +595,12 @@ export function buildPersonaRuntimeDropdownOptions({
         isCreateMode &&
         defaultRuntimeId !== undefined &&
         candidate.availability !== "available",
-      label: `${formatRuntimeOptionLabel(candidate)}${
-        isCreateMode && candidate.id === defaultRuntimeId ? " (default)" : ""
-      }`,
+      label:
+        isCreateMode && candidate.id === defaultRuntimeId
+          ? t("agents.options.default", {
+              value: formatRuntimeOptionLabel(candidate),
+            })
+          : formatRuntimeOptionLabel(candidate),
       value: candidate.id,
     })),
   ];
@@ -571,7 +610,7 @@ export function buildPersonaRuntimeDropdownOptions({
     !runtimeDropdownOptions.some((option) => option.value === currentRuntime)
   ) {
     runtimeDropdownOptions.push({
-      label: `${currentRuntime} (current)`,
+      label: t("agents.options.current", { value: currentRuntime }),
       value: currentRuntime,
     });
   }

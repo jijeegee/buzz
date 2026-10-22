@@ -6,6 +6,7 @@ import {
   buildInstanceInputForDefinition,
   resolveStartRuntimeForDefinition,
 } from "./instanceInputForDefinition";
+import { t } from "@/shared/i18n";
 
 /** The Rust-seeded built-in persona that routes as the Host. */
 export const HOST_PERSONA_ID = "builtin:host";
@@ -21,7 +22,7 @@ export async function buildHostAgentCreateInput(): Promise<CreateManagedAgentInp
     (candidate) => candidate.id === HOST_PERSONA_ID,
   );
   if (!persona) {
-    throw new Error("The built-in Host agent is missing.");
+    throw new Error(t("agents.hostAgent.missing"));
   }
   if (!persona.isActive) {
     persona = await setPersonaActive(HOST_PERSONA_ID, true);

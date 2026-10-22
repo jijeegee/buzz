@@ -3,6 +3,7 @@ import type {
   ManagedAgentBackend,
 } from "@/shared/api/types";
 import type { PersonaDropdownOption } from "./agentConfigOptions";
+import { t } from "@/shared/i18n";
 
 /**
  * Sentinel dropdown value for "no explicit effort" — reverts the agent to the
@@ -18,7 +19,7 @@ export const EFFORT_DEFAULT_DROPDOWN_VALUE = "__effort_default__";
  */
 export const EFFORT_FALLBACK_HELPER_TEXT = "Options may vary by model.";
 
-/** Default label of the sentinel row — "no explicit effort". */
+/** Default label of the sentinel row — "no explicit effort". English source of `agents.effort.adapterDefault`. */
 export const EFFORT_DEFAULT_LABEL = "Adapter default";
 
 /**
@@ -38,8 +39,8 @@ export function effortSentinelLabel(
   template: { effortLevel: string | null } | null | undefined,
 ): string {
   return template?.effortLevel != null
-    ? EFFORT_TEMPLATE_DEFAULT_LABEL
-    : EFFORT_DEFAULT_LABEL;
+    ? t("agents.effort.templateDefault")
+    : t("agents.effort.adapterDefault");
 }
 
 /**
@@ -74,7 +75,7 @@ export function effortPickerState({
   effortOptions,
   fallbackValues,
   currentEffort,
-  defaultLabel = EFFORT_DEFAULT_LABEL,
+  defaultLabel,
 }: {
   /** The instance's backend; omit for a definition or global default. */
   backend?: ManagedAgentBackend;
@@ -126,7 +127,10 @@ export function effortPickerState({
       : EFFORT_DEFAULT_DROPDOWN_VALUE;
 
   const options: PersonaDropdownOption[] = [
-    { label: defaultLabel, value: EFFORT_DEFAULT_DROPDOWN_VALUE },
+    {
+      label: defaultLabel ?? t("agents.effort.adapterDefault"),
+      value: EFFORT_DEFAULT_DROPDOWN_VALUE,
+    },
     ...values.map((option) => ({
       label: option.displayName ?? option.value,
       value: option.value,

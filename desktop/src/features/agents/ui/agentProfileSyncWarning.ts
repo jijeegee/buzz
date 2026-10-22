@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { t } from "@/shared/i18n";
 
 export function showAgentProfileSyncWarning(
   agentName: string,
@@ -6,6 +7,9 @@ export function showAgentProfileSyncWarning(
 ) {
   if (!profileSyncError) return;
   toast.warning(
-    `${agentName} was saved on this device, but couldn't sync: ${profileSyncError}. Others may still see the previous name or access policy until Kuzz retries the sync.`,
+    t("agents.profileSync.warning", {
+      name: agentName,
+      error: profileSyncError,
+    }),
   );
 }
