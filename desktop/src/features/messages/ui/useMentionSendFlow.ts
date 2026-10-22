@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { claimDraftSend } from "@/features/messages/lib/useDrafts";
 import { toast } from "sonner";
@@ -214,7 +215,9 @@ export function useMentionSendFlow({
           defaultRuntime,
         );
         if (!runtime) {
-          errors.push(`${displayName}: No agent runtime available.`);
+          errors.push(
+            `${displayName}: ${t("messages.agentPrepare.noRuntime")}`,
+          );
           continue;
         }
         try {
@@ -252,7 +255,7 @@ export function useMentionSendFlow({
           errors.push(
             `${displayName}: ${getErrorMessage(
               error,
-              "Could not create agent.",
+              t("messages.agentPrepare.createFailed"),
             )}`,
           );
         }
@@ -546,10 +549,9 @@ export function useMentionSendFlow({
             if (isSendCancelled()) return restoreComposerAfterFailure();
           } catch (error) {
             if (isSendCancelled()) return restoreComposerAfterFailure();
-            const message = `Could not add mentioned agent to the Huddle: ${getErrorMessage(
-              error,
-              "Huddle enrollment failed.",
-            )}`;
+            const message = t("messages.send.huddleAddFailed", {
+              error: getErrorMessage(error, t("messages.send.huddleFallback")),
+            });
             setNonMemberPromptError(message);
             toast.error(message);
             return restoreComposerAfterFailure();
@@ -701,7 +703,9 @@ export function useMentionSendFlow({
             onError: (error) => {
               restoreComposerAfterFailure();
               toast.error(
-                `Upload failed: ${getErrorMessage(error, "Unknown error")}`,
+                t("messages.send.uploadFailed", {
+                  error: getErrorMessage(error, t("messages.errors.unknown")),
+                }),
               );
               settleUpload();
             },
@@ -730,9 +734,7 @@ export function useMentionSendFlow({
         }
       } catch (error) {
         restoreComposerAfterFailure();
-        toast.error(
-          getErrorMessage(error, "Could not send message. Please retry."),
-        );
+        toast.error(getErrorMessage(error, t("messages.send.retryFailed")));
       } finally {
         if (preview && !previewHandedOff) preview.discard();
         if (draft.preparedLinkPreviews) {
@@ -858,10 +860,12 @@ export function useMentionSendFlow({
         if (personaMentionResult.errors.length > 0) {
           const message =
             personaMentionResult.errors.length === 1
-              ? `Could not create agent mention: ${personaMentionResult.errors[0]}`
-              : `Could not create agent mentions: ${personaMentionResult.errors.join(
-                  "; ",
-                )}`;
+              ? t("messages.send.agentMentionFailed", {
+                  error: personaMentionResult.errors[0],
+                })
+              : t("messages.send.agentMentionsFailed", {
+                  errors: personaMentionResult.errors.join("; "),
+                });
           setNonMemberPromptError(message);
           toast.error(message);
           return;
@@ -957,7 +961,7 @@ export function useMentionSendFlow({
         await completeSend(pendingDraft, pubkeys);
       } catch (error) {
         toast.error(
-          getErrorMessage(error, "Could not prepare mentions. Please retry."),
+          getErrorMessage(error, t("messages.send.prepareMentionsFailed")),
         );
       } finally {
         if (!sendPromoted) {

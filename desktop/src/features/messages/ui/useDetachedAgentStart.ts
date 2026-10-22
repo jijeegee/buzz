@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { toast } from "sonner";
 import { useStartManagedAgentMutation } from "@/features/agents/hooks";
@@ -60,10 +61,10 @@ export function resetDetachedAgentStarts(): void {
  * published — only the wake was refused — so say what actually happened.
  */
 function detachedStartFailureDetail(error: unknown): string {
-  const message = getErrorMessage(error, "Could not start agent.");
+  const message = getErrorMessage(error, t("messages.agentStart.failed"));
   return message.includes("active community changed") ||
     message.includes("active identity changed")
-    ? "You switched community or identity before it could start."
+    ? t("messages.agentStart.scopeChanged")
     : toUserFacingErrorDetail(message);
 }
 
@@ -76,7 +77,7 @@ function detachedStartFailureDetail(error: unknown): string {
  */
 function warnAgentMayNotRespond(agentName: string, detail: string): void {
   toast.error(
-    `Could not start ${agentName} — your message was sent, but the agent may not respond. ${detail}`,
+    t("messages.agentStart.mayNotRespond", { name: agentName, detail }),
   );
 }
 
@@ -152,7 +153,7 @@ export function useDetachedAgentStart(): (
         // communities.
         warnAgentMayNotRespond(
           agent.name,
-          "Kuzz is still connecting to this community — mention the agent again in a moment.",
+          t("messages.agentStart.stillConnecting"),
         );
         return false;
       }

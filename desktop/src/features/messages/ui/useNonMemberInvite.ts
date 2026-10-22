@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { PRIVATE_CHANNEL_ADD_DENIED_MESSAGE } from "@/features/channels/lib/channelMemberAdmission";
 import type { MentionRevalidationOptions } from "@/features/messages/lib/agentMentionRevalidation";
@@ -160,7 +161,7 @@ export function useNonMemberInvite({
           setError(
             error instanceof Error
               ? error.message
-              : "Could not invite members.",
+              : t("messages.nonMember.inviteFailed"),
           );
       })
       .finally(() => {

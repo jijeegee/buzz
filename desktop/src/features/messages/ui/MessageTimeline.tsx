@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import type { ReadingPosition } from "@/features/channels/readingPositionStore";
@@ -19,7 +20,7 @@ import { channelChrome } from "@/shared/layout/chromeLayout";
 import { Spinner } from "@/shared/ui/spinner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 import { useCommittedEmptyTimeline } from "./useCommittedEmptyTimeline";
-import { UnreadPill, unreadCountLabel } from "@/shared/ui/UnreadPill";
+import { UnreadPill } from "@/shared/ui/UnreadPill";
 import { ChannelIntroBlock, type ChannelIntro } from "./ChannelIntroBlock";
 import { MessageTimelineErrorCard } from "./MessageTimelineErrorCard";
 import { TimelineSkeleton, useTimelineSkeletonRows } from "./TimelineSkeleton";
@@ -182,8 +183,8 @@ const MessageTimelineBase = React.forwardRef<
     onRetry,
     entranceMessageId = null,
     onEntranceMessageComplete,
-    emptyTitle = "No messages yet",
-    emptyDescription = "Send the first message to start the thread.",
+    emptyTitle: emptyTitleProp,
+    emptyDescription: emptyDescriptionProp,
     currentPubkey,
     fetchOlder,
     hasComposerOverlay = true,
@@ -231,6 +232,7 @@ const MessageTimelineBase = React.forwardRef<
   }: MessageTimelineProps,
   ref,
 ) {
+  const t = useT();
   const internalScrollRef = React.useRef<HTMLDivElement>(null);
   const scrollContainerRef = externalScrollRef ?? internalScrollRef;
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -661,15 +663,16 @@ const MessageTimelineBase = React.forwardRef<
             {activeDirectMessageIntro.displayName}
           </p>
           <p className="mt-1 max-w-full truncate whitespace-nowrap text-sm leading-5 text-muted-foreground">
-            This is the beginning of your direct message with{" "}
-            <span className="font-medium text-foreground">
-              {activeDirectMessageIntro.displayName}
-            </span>
-            .
+            {t("messages.intro.directMessageBeginning", {
+              name: activeDirectMessageIntro.displayName,
+              b: (chunks) => (
+                <span className="font-medium text-foreground">{chunks}</span>
+              ),
+            })}
           </p>
         </div>
       ) : null,
-    [activeChannelIntro, activeDirectMessageIntro, activePinnedIntro],
+    [activeChannelIntro, activeDirectMessageIntro, activePinnedIntro, t],
   );
 
   const handleVirtualizerRangeChanged = React.useCallback(() => {
@@ -745,7 +748,7 @@ const MessageTimelineBase = React.forwardRef<
           >
             <UnreadPill
               direction="up"
-              label={unreadCountLabel(unreadCount)}
+              label={t("messages.scroll.newMessages", { count: unreadCount })}
               onClick={handleJumpToOldestUnread}
               testId="message-unread-pill"
             />
@@ -855,11 +858,14 @@ const MessageTimelineBase = React.forwardRef<
                       {activeDirectMessageIntro.displayName}
                     </p>
                     <p className="mt-1 max-w-full truncate whitespace-nowrap text-sm leading-5 text-muted-foreground">
-                      This is the beginning of your direct message with{" "}
-                      <span className="font-medium text-foreground">
-                        {activeDirectMessageIntro.displayName}
-                      </span>
-                      .
+                      {t("messages.intro.directMessageBeginning", {
+                        name: activeDirectMessageIntro.displayName,
+                        b: (chunks) => (
+                          <span className="font-medium text-foreground">
+                            {chunks}
+                          </span>
+                        ),
+                      })}
                     </p>
                   </div>
                 ) : null}
@@ -883,10 +889,11 @@ const MessageTimelineBase = React.forwardRef<
                     data-testid="message-empty"
                   >
                     <p className="text-base font-semibold tracking-tight">
-                      {emptyTitle}
+                      {emptyTitleProp ?? t("messages.timeline.emptyTitle")}
                     </p>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      {emptyDescription}
+                      {emptyDescriptionProp ??
+                        t("messages.timeline.emptyDescription")}
                     </p>
                   </div>
                 ) : null}
@@ -926,10 +933,14 @@ const MessageTimelineBase = React.forwardRef<
               direction="down"
               label={
                 bufferedTimeline.pendingCount > 0
-                  ? unreadCountLabel(bufferedTimeline.pendingCount)
+                  ? t("messages.scroll.newMessages", {
+                      count: bufferedTimeline.pendingCount,
+                    })
                   : newMessageCount > 0
-                    ? unreadCountLabel(newMessageCount)
-                    : "Jump to latest"
+                    ? t("messages.scroll.newMessages", {
+                        count: newMessageCount,
+                      })
+                    : t("messages.scroll.jumpToLatest")
               }
               onClick={() => {
                 setIsSemanticallyAtBottom(true);

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 
 import {
@@ -167,10 +168,8 @@ export function useAutoPinMentionedAgents({
           ? getDisplayName(promotedPubkeys[0])?.trim()
           : null;
       const title = displayName
-        ? `${displayName} will be mentioned automatically`
-        : promotedPubkeys.length === 1
-          ? "Agent will be mentioned automatically"
-          : `${promotedPubkeys.length} agents will be mentioned automatically`;
+        ? t("messages.autoPin.named", { name: displayName })
+        : t("messages.autoPin.count", { count: promotedPubkeys.length });
       setConfirmationHovered(false);
       setConfirmation({
         expectedRevision: revision,

@@ -1430,5 +1430,485 @@
   "messages.reactions.toggle": "Toggle {emoji} reaction",
   "@messages.reactions.toggle": {
     "description": "Chat timeline, screen-reader label of a reaction pill under a message; clicking adds or removes your reaction."
+  },
+  "messages.row.removePreviewsFailed": "Failed to remove previews: {error}",
+  "@messages.row.removePreviewsFailed": {
+    "description": "Error toast shown when removing link previews from a message fails. {error} is the error detail."
+  },
+  "messages.row.loadingDiff": "Loading diff…",
+  "@messages.row.loadingDiff": {
+    "description": "Placeholder shown in a message while its code diff is loading. Short."
+  },
+  "messages.row.agentOpenToAnyone": "Anyone can send instructions to this agent",
+  "@messages.row.agentOpenToAnyone": {
+    "description": "Tooltip on an agent message badge when anyone may instruct the agent."
+  },
+  "messages.row.agentOpenToSelected": "Selected people can send instructions to this agent",
+  "@messages.row.agentOpenToSelected": {
+    "description": "Tooltip on an agent message badge when only selected people may instruct the agent."
+  },
+  "messages.row.edited": "(edited)",
+  "@messages.row.edited": {
+    "description": "Small marker after a message's text when it was edited. Short."
+  },
+  "messages.row.editedTooltip": "This message has been edited",
+  "@messages.row.editedTooltip": {
+    "description": "Tooltip on the (edited) marker of a message."
+  },
+  "messages.row.loadingDiffViewer": "Loading diff viewer…",
+  "@messages.row.loadingDiffViewer": {
+    "description": "Placeholder shown while the code diff viewer component loads. Short."
+  },
+  "messages.row.collapseRepliesToMessage": "Collapse replies to this message",
+  "@messages.row.collapseRepliesToMessage": {
+    "description": "Label of the guide line button that collapses the replies under a message in a thread."
+  },
+  "messages.thread.collapseThread": "Collapse thread",
+  "@messages.thread.collapseThread": {
+    "description": "Label of the thread guide line button that collapses the whole thread. Short."
+  },
+  "messages.thread.collapseReplies": "Collapse replies",
+  "@messages.thread.collapseReplies": {
+    "description": "Label of the thread guide line button that collapses replies under a reply. Short."
+  },
+  "messages.thread.showInGroup": "Show in group",
+  "@messages.thread.showInGroup": {
+    "description": "Thread panel header icon button (label and tooltip) that jumps to the thread's message in the group. Short."
+  },
+  "messages.thread.loadingEarlierReplies": "Loading earlier replies…",
+  "@messages.thread.loadingEarlierReplies": {
+    "description": "Thread panel link text while older replies are loading. Short."
+  },
+  "messages.thread.showEarlierReplies": "Show earlier replies",
+  "@messages.thread.showEarlierReplies": {
+    "description": "Thread panel link that loads older replies. Short."
+  },
+  "messages.scroll.newMessages": "{count, plural, one {# new message} other {# new messages}}",
+  "@messages.scroll.newMessages": {
+    "description": "Floating pill above the composer when new messages arrived while scrolled up. Short."
+  },
+  "messages.scroll.jumpToLatest": "Jump to latest",
+  "@messages.scroll.jumpToLatest": {
+    "description": "Floating pill above the composer that scrolls to the newest message. Short."
+  },
+  "messages.thread.huddlePlaceholder": "Message the huddle",
+  "@messages.thread.huddlePlaceholder": {
+    "description": "Placeholder text in the composer of a huddle transcript thread."
+  },
+  "messages.thread.reopenPlaceholder": "Sending will reopen this thread",
+  "@messages.thread.reopenPlaceholder": {
+    "description": "Placeholder text in the composer of a closed task thread the user can reopen."
+  },
+  "messages.thread.taskClosedPlaceholder": "Task closed. Start new work in the group, or reply to reopen",
+  "@messages.thread.taskClosedPlaceholder": {
+    "description": "Placeholder text in the composer of a closed task thread."
+  },
+  "messages.thread.replyPlaceholder": "Reply in thread to {author}",
+  "@messages.thread.replyPlaceholder": {
+    "description": "Placeholder text in the thread composer. {author} is the name of the thread's first message author."
+  },
+  "messages.thread.title": "Thread",
+  "@messages.thread.title": {
+    "description": "Default title of the thread side panel header. Short."
+  },
+  "messages.thread.openTitle": "Open {title}",
+  "@messages.thread.openTitle": {
+    "description": "Accessible label and tooltip of the thread panel header title button that opens the group. {title} is the panel title."
+  },
+  "messages.thread.backToConversation": "Back to conversation",
+  "@messages.thread.backToConversation": {
+    "description": "Accessible label of the back button in the thread panel header."
+  },
+  "messages.thread.repliesLoadFailedTitle": "Couldn't load replies",
+  "@messages.thread.repliesLoadFailedTitle": {
+    "description": "Title of the error card shown when a thread's replies fail to load."
+  },
+  "messages.thread.repliesLoadFailedBody": "The thread history didn't load. Check your connection and try again.",
+  "@messages.thread.repliesLoadFailedBody": {
+    "description": "Body of the error card shown when a thread's replies fail to load."
+  },
+  "messages.thread.emptyBranchTitle": "No replies in this branch yet",
+  "@messages.thread.emptyBranchTitle": {
+    "description": "Title of the empty state in a thread branch with no replies."
+  },
+  "messages.thread.emptyBranchBody": "Reply in the thread to continue this branch.",
+  "@messages.thread.emptyBranchBody": {
+    "description": "Body of the empty state in a thread branch with no replies."
+  },
+  "messages.threadSummary.replyCount": "{count, plural, one {# reply} other {# replies}}",
+  "@messages.threadSummary.replyCount": {
+    "description": "Reply count on the thread summary row under a message. Short."
+  },
+  "messages.threadSummary.aria": "{count, plural, one {View thread with # reply} other {View thread with # replies}}",
+  "@messages.threadSummary.aria": {
+    "description": "Accessible label of the thread summary row button under a message."
+  },
+  "messages.threadSummary.ariaWithLastReply": "{count, plural, one {View thread with # reply, last reply {time}} other {View thread with # replies, last reply {time}}}",
+  "@messages.threadSummary.ariaWithLastReply": {
+    "description": "Accessible label of the thread summary row button under a message. {time} is the relative time of the last reply."
+  },
+  "messages.threadSummary.unread": "({count} new)",
+  "@messages.threadSummary.unread": {
+    "description": "Unread reply count after the reply count on a thread summary row. Short."
+  },
+  "messages.threadSummary.lastReply": "last reply {time}",
+  "@messages.threadSummary.lastReply": {
+    "description": "Time of the last reply on a thread summary row. {time} is a relative time such as '5m ago'. Short."
+  },
+  "messages.threadSummary.viewThread": "View thread",
+  "@messages.threadSummary.viewThread": {
+    "description": "Hover text on a thread summary row that opens the thread. Short."
+  },
+  "messages.timeline.emptyTitle": "No messages yet",
+  "@messages.timeline.emptyTitle": {
+    "description": "Title of the empty state in a timeline with no messages."
+  },
+  "messages.timeline.emptyDescription": "Send the first message to start the thread.",
+  "@messages.timeline.emptyDescription": {
+    "description": "Description of the empty state in a timeline with no messages."
+  },
+  "messages.intro.directMessageBeginning": "This is the beginning of your direct message with <b>{name}</b>.",
+  "@messages.intro.directMessageBeginning": {
+    "description": "Top of an empty direct message timeline, under the other person's name. {name} is their display name, shown bold."
+  },
+  "messages.newMessage.alreadyAdded": "Already added {name}",
+  "@messages.newMessage.alreadyAdded": {
+    "description": "Accessible label of a person or agent row in the new message picker when they are already a recipient. {name} is their name."
+  },
+  "messages.newMessage.addRecipient": "Add {name}",
+  "@messages.newMessage.addRecipient": {
+    "description": "Accessible label of a person or agent row in the new message picker. {name} is their name."
+  },
+  "messages.newMessage.limit": "{count, plural, one {A new chat can start with up to # person.} other {A new chat can start with up to # people.}}",
+  "@messages.newMessage.limit": {
+    "description": "New message screen, note and error when the recipient limit is reached."
+  },
+  "messages.newMessage.startFailed": "Could not start the chat.",
+  "@messages.newMessage.startFailed": {
+    "description": "New message screen, error when the chat could not be opened or created."
+  },
+  "messages.newMessage.sendFailed": "Failed to send message.",
+  "@messages.newMessage.sendFailed": {
+    "description": "New message screen, error when the first message failed to send."
+  },
+  "messages.newMessage.chooseRecipient": "Choose a recipient to start a message",
+  "@messages.newMessage.chooseRecipient": {
+    "description": "New message screen, composer placeholder before any recipient is picked."
+  },
+  "messages.newMessage.messagePeople": "{count, plural, one {Message # person} other {Message # people}}",
+  "@messages.newMessage.messagePeople": {
+    "description": "New message screen, composer placeholder when several recipients are picked."
+  },
+  "messages.newMessage.toLabel": "To:",
+  "@messages.newMessage.toLabel": {
+    "description": "New message screen, label in front of the recipient field. Short."
+  },
+  "messages.newMessage.toAria": "To",
+  "@messages.newMessage.toAria": {
+    "description": "New message screen, accessible label of the recipient search input. Short."
+  },
+  "messages.newMessage.loadingDirectory": "Loading people and agents",
+  "@messages.newMessage.loadingDirectory": {
+    "description": "New message screen, accessible label of the loading list of people and agents."
+  },
+  "messages.newMessage.directoryEmpty": "No people or agents available to message.",
+  "@messages.newMessage.directoryEmpty": {
+    "description": "New message screen, empty recipient list with no search text."
+  },
+  "messages.newMessage.noMatches": "No matching users.",
+  "@messages.newMessage.noMatches": {
+    "description": "New message screen, empty recipient list for a search."
+  },
+  "messages.newMessage.opening": "Opening…",
+  "@messages.newMessage.opening": {
+    "description": "New message screen, status next to the recipient field while the chat opens. Short."
+  },
+  "messages.newMessage.chatNameAria": "Chat name",
+  "@messages.newMessage.chatNameAria": {
+    "description": "New message screen, accessible label of the optional chat name field."
+  },
+  "messages.newMessage.chatNamePlaceholder": "Chat name (optional)",
+  "@messages.newMessage.chatNamePlaceholder": {
+    "description": "New message screen, placeholder of the optional chat name field shown when several recipients are picked."
+  },
+  "messages.newMessage.channelName": "new message",
+  "@messages.newMessage.channelName": {
+    "description": "New message screen, name used for the draft conversation in composer texts such as 'Message {channel}'. Lowercase."
+  },
+  "messages.nonMember.chatTitle": "Add {names} to this chat?",
+  "@messages.nonMember.chatTitle": {
+    "description": "Dialog title when a message mentions people who are not in the chat. {names} is a comma-separated list of names."
+  },
+  "messages.nonMember.groupTitle": "Mention people outside this group?",
+  "@messages.nonMember.groupTitle": {
+    "description": "Dialog title when a message mentions people who are not in the group."
+  },
+  "messages.nonMember.chatBody": "{count, plural, one {{names} isn't in this chat.} other {{names} aren't in this chat.}}",
+  "@messages.nonMember.chatBody": {
+    "description": "Mention-outside-chat dialog text. {names} is a comma-separated list of names; count is how many."
+  },
+  "messages.nonMember.chatSendHint": "You can also send without adding them.",
+  "@messages.nonMember.chatSendHint": {
+    "description": "Mention-outside-chat dialog, sentence after the not-in-chat line when sending without adding is allowed."
+  },
+  "messages.nonMember.groupBody": "{count, plural, one {{names} is not in this group.} other {{names} are not in this group.}}",
+  "@messages.nonMember.groupBody": {
+    "description": "Mention-outside-group dialog text. {names} is a comma-separated list of names; count is how many."
+  },
+  "messages.nonMember.inviteOrSend": "Add them to the group, or send without inviting them.",
+  "@messages.nonMember.inviteOrSend": {
+    "description": "Mention-outside-group dialog, second sentence when the user can invite and may also send without inviting."
+  },
+  "messages.nonMember.canStillSend": "You can still send without inviting them.",
+  "@messages.nonMember.canStillSend": {
+    "description": "Mention-outside-group dialog, sentence after the 'can't add to private group' notice."
+  },
+  "messages.nonMember.inviteOrCancel": "Add them to the group, or cancel to keep your draft.",
+  "@messages.nonMember.inviteOrCancel": {
+    "description": "Mention-outside-group dialog, second sentence when inviting is required to send."
+  },
+  "messages.nonMember.sendWithoutAdding": "Send without adding",
+  "@messages.nonMember.sendWithoutAdding": {
+    "description": "Mention-outside-chat dialog button that sends without adding the people. Short."
+  },
+  "messages.nonMember.doNothing": "Do nothing",
+  "@messages.nonMember.doNothing": {
+    "description": "Mention-outside-group dialog button that sends without inviting the people. Short."
+  },
+  "messages.nonMember.sendAnyway": "Send anyway",
+  "@messages.nonMember.sendAnyway": {
+    "description": "Mention-outside-group dialog button that sends when inviting is not allowed. Short."
+  },
+  "messages.nonMember.adding": "Adding...",
+  "@messages.nonMember.adding": {
+    "description": "Mention-outside-chat dialog, Add button while adding. Short."
+  },
+  "messages.nonMember.inviting": "Inviting...",
+  "@messages.nonMember.inviting": {
+    "description": "Mention-outside-group dialog, Invite button while inviting. Short."
+  },
+  "messages.nonMember.invite": "Invite",
+  "@messages.nonMember.invite": {
+    "description": "Mention-outside-group dialog button that invites the mentioned people. Short."
+  },
+  "messages.system.memberCount": "{count, plural, one {# group member} other {# group members}}",
+  "@messages.system.memberCount": {
+    "description": "Accessible label of the avatar stack on a membership system message (people added or removed)."
+  },
+  "messages.formatting.selectionTray": "Selection formatting",
+  "@messages.formatting.selectionTray": {
+    "description": "Accessible label of the floating formatting toolbar shown over selected composer text."
+  },
+  "messages.sentFromThread": "Sent from thread:",
+  "@messages.sentFromThread": {
+    "description": "Label above a message that was also sent to the group from a thread, followed by a link to that thread. Short."
+  },
+  "messages.thread.follow": "Follow thread",
+  "@messages.thread.follow": {
+    "description": "Thread panel header icon button (tooltip and label) to get notified about new replies. Short."
+  },
+  "messages.thread.unfollow": "Unfollow thread",
+  "@messages.thread.unfollow": {
+    "description": "Thread panel header icon button (tooltip and label) to stop notifications for a followed thread. Short."
+  },
+  "messages.thread.close": "Close thread",
+  "@messages.thread.close": {
+    "description": "Thread panel header icon button that marks a task thread closed. Short."
+  },
+  "messages.thread.reopen": "Reopen thread",
+  "@messages.thread.reopen": {
+    "description": "Thread panel header icon button that reopens a closed task thread. Short."
+  },
+  "messages.thread.moreActions": "More thread actions",
+  "@messages.thread.moreActions": {
+    "description": "Accessible label of the thread panel header '…' menu button."
+  },
+  "messages.thread.markUnread": "Mark as unread",
+  "@messages.thread.markUnread": {
+    "description": "Thread panel header '…' menu item that marks the thread unread. Short."
+  },
+  "messages.threadMarker.youClosed": "You closed this thread",
+  "@messages.threadMarker.youClosed": {
+    "description": "System line in a thread where the current user closed it."
+  },
+  "messages.threadMarker.youReopened": "You reopened this thread",
+  "@messages.threadMarker.youReopened": {
+    "description": "System line in a thread where the current user reopened it."
+  },
+  "messages.threadMarker.closed": "{name} closed this thread",
+  "@messages.threadMarker.closed": {
+    "description": "System line in a thread where someone closed it. {name} is their name."
+  },
+  "messages.threadMarker.reopened": "{name} reopened this thread",
+  "@messages.threadMarker.reopened": {
+    "description": "System line in a thread where someone reopened it. {name} is their name."
+  },
+  "messages.typing.one": "{name} is typing...",
+  "@messages.typing.one": {
+    "description": "Typing indicator under the timeline when one person is typing. {name} is their name."
+  },
+  "messages.typing.two": "{first} and {second} are typing...",
+  "@messages.typing.two": {
+    "description": "Typing indicator under the timeline when two people are typing."
+  },
+  "messages.typing.three": "{first}, {second}, and {third} are typing...",
+  "@messages.typing.three": {
+    "description": "Typing indicator under the timeline when three people are typing."
+  },
+  "messages.typing.many": "{first}, {second}, and {count, plural, one {# other} other {# others}} are typing...",
+  "@messages.typing.many": {
+    "description": "Typing indicator under the timeline when four or more people are typing; count is how many beyond the first two."
+  },
+  "messages.addressLock.stopped": "Stopped automatically mentioning {name}",
+  "@messages.addressLock.stopped": {
+    "description": "Screen-reader announcement in the composer when an agent is no longer auto-mentioned. {name} is the agent's name."
+  },
+  "messages.addressLock.started": "Automatically mentioning {name}",
+  "@messages.addressLock.started": {
+    "description": "Screen-reader announcement in the composer when an agent will be auto-mentioned on every message. {name} is the agent's name."
+  },
+  "messages.autoPin.named": "{name} will be mentioned automatically",
+  "@messages.autoPin.named": {
+    "description": "Confirmation popup above the composer after an agent is set to be mentioned automatically. {name} is the agent's name."
+  },
+  "messages.autoPin.count": "{count, plural, one {Agent will be mentioned automatically} other {# agents will be mentioned automatically}}",
+  "@messages.autoPin.count": {
+    "description": "Confirmation popup above the composer after agents are set to be mentioned automatically."
+  },
+  "messages.linkPreview.loading": "Loading link preview",
+  "@messages.linkPreview.loading": {
+    "description": "Accessible label of the progress bar on a link preview card in the composer."
+  },
+  "messages.linkPreview.loadingDetails": "Loading link preview details",
+  "@messages.linkPreview.loadingDetails": {
+    "description": "Accessible label of the placeholder text lines on a loading link preview card in the composer."
+  },
+  "messages.linkPreview.open": "Open {title}",
+  "@messages.linkPreview.open": {
+    "description": "Accessible label of a link preview card in the composer that opens the link. {title} is the page title."
+  },
+  "messages.linkPreview.sendWithout": "Send without link previews",
+  "@messages.linkPreview.sendWithout": {
+    "description": "Tooltip and label of the small X button on a composer link preview card."
+  },
+  "messages.voiceNote.onlyAttachment": "A voice note must be the only attachment.",
+  "@messages.voiceNote.onlyAttachment": {
+    "description": "Error toast when recording or adding a voice note while other files are attached."
+  },
+  "messages.voiceNote.finishBeforeAttaching": "Finish or discard the voice note before attaching a file.",
+  "@messages.voiceNote.finishBeforeAttaching": {
+    "description": "Error toast when attaching a file while a voice note is being recorded."
+  },
+  "messages.agentStart.failed": "Could not start agent.",
+  "@messages.agentStart.failed": {
+    "description": "Fallback error detail when a mentioned agent could not be started."
+  },
+  "messages.agentStart.scopeChanged": "You switched community or identity before it could start.",
+  "@messages.agentStart.scopeChanged": {
+    "description": "Error detail when a mentioned agent was not started because the user switched community or account."
+  },
+  "messages.agentStart.mayNotRespond": "Could not start {name} — your message was sent, but the agent may not respond. {detail}",
+  "@messages.agentStart.mayNotRespond": {
+    "description": "Error toast after sending a message that mentions an agent which failed to start. {name} is the agent name, {detail} is a short reason sentence."
+  },
+  "messages.agentStart.stillConnecting": "Kuzz is still connecting to this community — mention the agent again in a moment.",
+  "@messages.agentStart.stillConnecting": {
+    "description": "Reason sentence in the agent-start error toast when the app is still connecting. Kuzz is the app name."
+  },
+  "messages.agentPrepare.failed": "Could not prepare agent.",
+  "@messages.agentPrepare.failed": {
+    "description": "Fallback error after an agent's name when a mentioned agent could not be prepared before sending."
+  },
+  "messages.errors.unknown": "Unknown error",
+  "@messages.errors.unknown": {
+    "description": "Fallback error detail when no reason is known. Short."
+  },
+  "messages.send.failed": "Message failed to send: {error}",
+  "@messages.send.failed": {
+    "description": "Error shown when a message fails to send. {error} is the error detail."
+  },
+  "messages.agentPrepare.noRuntime": "No agent runtime available.",
+  "@messages.agentPrepare.noRuntime": {
+    "description": "Error after an agent's name when a mentioned agent cannot be created because no runtime is installed."
+  },
+  "messages.agentPrepare.createFailed": "Could not create agent.",
+  "@messages.agentPrepare.createFailed": {
+    "description": "Fallback error after an agent's name when a mentioned agent could not be created."
+  },
+  "messages.send.huddleAddFailed": "Could not add mentioned agent to the Huddle: {error}",
+  "@messages.send.huddleAddFailed": {
+    "description": "Error in the mention dialog when a mentioned agent could not join the active huddle. {error} is the error detail."
+  },
+  "messages.send.huddleFallback": "Huddle enrollment failed.",
+  "@messages.send.huddleFallback": {
+    "description": "Fallback error detail when an agent could not join a huddle."
+  },
+  "messages.send.uploadFailed": "Upload failed: {error}",
+  "@messages.send.uploadFailed": {
+    "description": "Error toast when a file upload for a message fails. {error} is the error detail."
+  },
+  "messages.send.retryFailed": "Could not send message. Please retry.",
+  "@messages.send.retryFailed": {
+    "description": "Fallback error toast when a message could not be sent."
+  },
+  "messages.send.agentMentionFailed": "Could not create agent mention: {error}",
+  "@messages.send.agentMentionFailed": {
+    "description": "Error in the mention dialog when one agent mention could not be created. {error} is the detail."
+  },
+  "messages.send.agentMentionsFailed": "Could not create agent mentions: {errors}",
+  "@messages.send.agentMentionsFailed": {
+    "description": "Error in the mention dialog when several agent mentions could not be created. {errors} is a semicolon-separated list of details."
+  },
+  "messages.send.prepareMentionsFailed": "Could not prepare mentions. Please retry.",
+  "@messages.send.prepareMentionsFailed": {
+    "description": "Fallback error toast when mentions could not be prepared before sending."
+  },
+  "messages.nonMember.inviteFailed": "Could not invite members.",
+  "@messages.nonMember.inviteFailed": {
+    "description": "Fallback error in the mention dialog when inviting the mentioned people failed."
+  },
+  "messages.voiceRecorder.waitingAccess": "Waiting for microphone access",
+  "@messages.voiceRecorder.waitingAccess": {
+    "description": "Screen-reader name of the voice note recorder while waiting for microphone permission."
+  },
+  "messages.voiceRecorder.preparing": "Preparing voice note",
+  "@messages.voiceRecorder.preparing": {
+    "description": "Screen-reader name of the voice note recorder while the recording is processed."
+  },
+  "messages.voiceRecorder.recording": "Recording voice note",
+  "@messages.voiceRecorder.recording": {
+    "description": "Screen-reader name of the voice note recorder while recording."
+  },
+  "messages.voiceRecorder.discard": "Discard voice note",
+  "@messages.voiceRecorder.discard": {
+    "description": "Tooltip and label of the X button in the voice note recorder."
+  },
+  "messages.voiceRecorder.waitingShort": "Waiting for microphone…",
+  "@messages.voiceRecorder.waitingShort": {
+    "description": "Status text in the voice note recorder while waiting for microphone permission. Short."
+  },
+  "messages.voiceRecorder.preparingShort": "Preparing voice note…",
+  "@messages.voiceRecorder.preparingShort": {
+    "description": "Status text in the voice note recorder while the recording is processed. Short."
+  },
+  "messages.wave.startHuddleHint": "Start a huddle to talk to them.",
+  "@messages.wave.startHuddleHint": {
+    "description": "Hint under a wave message card ('X waved at you')."
+  },
+  "messages.wave.startHuddle": "Start huddle",
+  "@messages.wave.startHuddle": {
+    "description": "Button on a wave message card that starts a huddle. Short."
+  },
+  "messages.thread.closedToast": "Thread closed",
+  "@messages.thread.closedToast": {
+    "description": "Toast after the user closes a thread. Short."
+  },
+  "messages.thread.undo": "Undo",
+  "@messages.thread.undo": {
+    "description": "Action in the 'Thread closed' toast that reopens the thread. Short."
+  },
+  "messages.thread.updateFailed": "Could not update the thread",
+  "@messages.thread.updateFailed": {
+    "description": "Error toast when closing or reopening a thread fails."
   }
 }

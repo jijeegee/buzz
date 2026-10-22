@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { ImageOff, X } from "lucide-react";
 
@@ -78,6 +79,7 @@ function ComposerLinkPreviewCard({
   preview: ResolvedLinkPreview;
   tagReady: boolean;
 }) {
+  const t = useT();
   const imageSrc = preview.imageState === "image" ? preview.imageDataUrl : null;
   const [failedImageSrc, setFailedImageSrc] = React.useState<string | null>(
     null,
@@ -131,7 +133,7 @@ function ComposerLinkPreviewCard({
           {!done ? (
             <div className="absolute inset-x-0 bottom-0 px-1.5 pb-1.5">
               <Progress
-                aria-label="Loading link preview"
+                aria-label={t("messages.linkPreview.loading")}
                 className="h-1 bg-foreground/15 [&>div]:bg-foreground/80"
                 data-testid="link-preview-progress"
                 value={null}
@@ -154,7 +156,7 @@ function ComposerLinkPreviewCard({
             </>
           ) : (
             <div
-              aria-label="Loading link preview details"
+              aria-label={t("messages.linkPreview.loadingDetails")}
               className="space-y-2"
               data-testid="link-preview-text-placeholder"
               role="status"
@@ -166,22 +168,26 @@ function ComposerLinkPreviewCard({
         </AttachmentContent>
         <AttachmentTrigger asChild>
           <a
-            aria-label={`Open ${preview.title}`}
+            aria-label={t("messages.linkPreview.open", {
+              title: preview.title,
+            })}
             href={preview.href}
             rel="noreferrer"
             target="_blank"
           >
-            <span className="sr-only">Open {preview.title}</span>
+            <span className="sr-only">
+              {t("messages.linkPreview.open", { title: preview.title })}
+            </span>
           </a>
         </AttachmentTrigger>
       </Attachment>
       <Button
-        aria-label="Send without link previews"
+        aria-label={t("messages.linkPreview.sendWithout")}
         className="absolute -right-1 -top-1 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-foreground p-0 text-background opacity-0 shadow-none transition-opacity hover:bg-foreground group-hover/link-preview:opacity-100 group-focus-within/link-preview:opacity-100 focus-visible:opacity-100 [&_svg]:size-2.5"
         data-testid="composer-hide-link-previews"
         onClick={onSuppress}
         size="icon-xs"
-        title="Send without link previews"
+        title={t("messages.linkPreview.sendWithout")}
         type="button"
       >
         <X aria-hidden="true" />

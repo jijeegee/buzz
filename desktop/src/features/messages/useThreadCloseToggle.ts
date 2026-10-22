@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { toast } from "sonner";
@@ -109,9 +110,9 @@ export function useThreadCloseToggle(): {
         .then(() => {
           onSent?.();
           if (!closed) return;
-          toast("Thread closed", {
+          toast(t("messages.thread.closedToast"), {
             action: {
-              label: "Undo",
+              label: t("messages.thread.undo"),
               onClick: () => {
                 send(channelId, rootId, "reopened", scope)
                   .then(() => onSent?.())
@@ -131,6 +132,6 @@ export function useThreadCloseToggle(): {
 
 function reportFailure(error: unknown) {
   toast.error(
-    error instanceof Error ? error.message : "Could not update the thread",
+    error instanceof Error ? error.message : t("messages.thread.updateFailed"),
   );
 }
