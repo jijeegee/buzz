@@ -748,6 +748,95 @@ async fn ping_kr(auth: &str, body: &'static [u8]) -> (u16, Value) {
     (status, response.json().await.unwrap_or(Value::Null))
 }
 
+/// POST a propagation from jp to kr, signed with jp's link key.
+async fn propagate_to_kr(body: &Value) -> (u16, Value) {
+    let jp_key = Keys::parse(&std::env::var("REGION_JP_LINK_KEY").expect("REGION_JP_LINK_KEY"))
+        .expect("jp link key");
+    let community = kr_community().await;
+    let path = "/internal/region/propagate";
+    let bytes = serde_json::to_vec(body).expect("body");
+    let auth = jp_attestation(&jp_key, &community, path, &bytes, "kr");
+    let response = reqwest::Client::new()
+        .post(format!("{}{path}", http(&kr_url())))
+        .header("Authorization", auth)
+        .header("Content-Type", "application/json")
+        .body(bytes)
+        .send()
+        .await
+        .expect("propagate request");
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_block_from_jp_is_saved_in_kr_and_lifted_again() {
+    let blocker = Keys::generate().public_key().to_hex();
+    let blocked = Keys::generate().public_key().to_hex();
+    let url = std::env::var("REGION_KR_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz".into());
+    let kr = sqlx::PgPool::connect(&url).await.expect("kr database");
+    let state = |kr: sqlx::PgPool, blocker: String, blocked: String| async move {
+        let blocks: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM user_blocks WHERE blocker = decode($1, 'hex') AND blocked = decode($2, 'hex')",
+        )
+        .bind(&blocker)
+        .bind(&blocked)
+        .fetch_one(&kr)
+        .await
+        .expect("blocks");
+        let open: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM user_block_periods WHERE blocker = decode($1, 'hex') \
+               AND blocked = decode($2, 'hex') AND ended_at IS NULL",
+        )
+        .bind(&blocker)
+        .bind(&blocked)
+        .fetch_one(&kr)
+        .await
+        .expect("periods");
+        (blocks, open)
+    };
+
+    let block = serde_json::json!({
+        "topic": "block",
+        "payload": {"blocker": blocker, "blocked": blocked, "on": true, "version": 10}
+    });
+    let (status, answer) = propagate_to_kr(&block).await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(answer["applied"], true, "{answer}");
+    assert_eq!(
+        state(kr.clone(), blocker.clone(), blocked.clone()).await,
+        (1, 1)
+    );
+    // Again (a retry): still one block, one open period.
+    assert_eq!(propagate_to_kr(&block).await.0, 200);
+    assert_eq!(
+        state(kr.clone(), blocker.clone(), blocked.clone()).await,
+        (1, 1)
+    );
+
+    let unblock = serde_json::json!({
+        "topic": "block",
+        "payload": {"blocker": blocker, "blocked": blocked, "on": false, "version": 20}
+    });
+    let (status, answer) = propagate_to_kr(&unblock).await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(
+        state(kr.clone(), blocker.clone(), blocked.clone()).await,
+        (0, 0)
+    );
+
+    // The block arriving again after the newer unblock (out of order) is
+    // ignored, so kr stays unblocked like the region that sent both.
+    let (status, answer) = propagate_to_kr(&block).await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(answer["applied"], true, "{answer}");
+    assert_eq!(
+        state(kr.clone(), blocker.clone(), blocked.clone()).await,
+        (0, 0)
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
 async fn region_link_accepts_only_a_fresh_call_signed_by_a_known_region() {

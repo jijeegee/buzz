@@ -726,7 +726,14 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 84);
+        assert_eq!(migrations.len(), 85);
+        assert_eq!(migrations[84].version, 86);
+        assert!(migrations[84]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE user_block_versions"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TABLE user_block_versions"));
         assert_eq!(migrations[83].version, 85);
         assert!(migrations[83]
             .sql

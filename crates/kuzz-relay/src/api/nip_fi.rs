@@ -159,6 +159,8 @@ pub async fn disconnect(
             // Asynchronous: HTTP response does not wait on remote delivery.
             {
                 let pubsub = Arc::clone(&state.pubsub);
+                let db = state.db.clone();
+                let config = Arc::clone(&state.config);
                 let msg = nip_fi_disconnect_message(&cmd);
                 state.nip_fi_publish_tasks.spawn(async move {
                     if let Err(e) = pubsub.publish_nip_fi_disconnect(&msg).await {
@@ -166,6 +168,16 @@ pub async fn disconnect(
                         tracing::warn!("nip-fi: cross-pod propagation publish failed: {e}");
                         metrics::counter!("kuzz_nip_fi_disconnect_propagation_failures_total")
                             .increment(1);
+                    }
+                    // Other regions (S4-5b). Failures are logged by topic only.
+                    if let Some(community) = config.community_id {
+                        let _ = crate::region_propagate::spread_with(
+                            &db,
+                            &config,
+                            community,
+                            &crate::region_propagate::Propagate::NipFiDisconnect(msg),
+                        )
+                        .await;
                     }
                 });
             }
