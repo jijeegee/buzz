@@ -8,7 +8,7 @@ use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::blocks::{BlockOutcome, MAX_BLOCKS_PER_USER};
+use crate::blocks::{BlockChange, BlockOutcome, MAX_BLOCKS_PER_USER};
 use crate::channel::{ChannelType, ChannelVisibility, MemberRole};
 use crate::chat_list::{ChatListQuery, ChatRowKind};
 use crate::inbox_summary::InboxReadMarkers;
@@ -273,6 +273,57 @@ async fn block_store_is_idempotent_private_and_capped() {
     assert_eq!(
         f.db.block_user(f.scope, &pk(&a), &pk(&b)).await.unwrap(),
         BlockOutcome::LimitReached
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn versioned_block_changes_settle_on_the_newest_and_copies_skip_the_cap() {
+    let f = Fixture::new().await;
+    let (a, b) = (Keys::generate(), Keys::generate());
+    let set = |on: bool, version: i64, check_limit: bool| {
+        let (db, scope, a, b) = (f.db.clone(), f.scope, pk(&a), pk(&b));
+        async move {
+            db.set_block_at(scope, &a, &b, on, version, check_limit)
+                .await
+                .unwrap()
+        }
+    };
+
+    assert_eq!(
+        set(true, 10, true).await,
+        BlockChange::Blocked(BlockOutcome::Added)
+    );
+    assert_eq!(set(false, 20, true).await, BlockChange::Unblocked);
+    // The older block arriving after the newer unblock changes nothing.
+    assert_eq!(set(true, 10, true).await, BlockChange::Stale);
+    assert!(f.db.blocked_by(f.scope, &pk(&a)).await.unwrap().is_empty());
+    assert_eq!(f.periods(&a, &b).await, vec![true]);
+    // A repeat of the same version is stale too.
+    assert_eq!(set(false, 20, true).await, BlockChange::Stale);
+
+    // Fill A's list. The entry (check_limit) refuses and keeps no version,
+    // a copy from another region still blocks.
+    sqlx::query(
+        "INSERT INTO user_blocks (community_id, blocker, blocked)          SELECT $1, $2, decode(lpad(to_hex(g), 64, '0'), 'hex')            FROM generate_series(1, $3::bigint) g",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(pk(&a))
+    .bind(MAX_BLOCKS_PER_USER)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        set(true, 30, true).await,
+        BlockChange::Blocked(BlockOutcome::LimitReached)
+    );
+    assert_eq!(
+        set(true, 30, false).await,
+        BlockChange::Blocked(BlockOutcome::Added)
+    );
+    assert_eq!(
+        f.db.blockers_of(f.scope, &pk(&b)).await.unwrap(),
+        vec![pk(&a)]
     );
 }
 

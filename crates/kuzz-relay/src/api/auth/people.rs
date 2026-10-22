@@ -16,7 +16,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use kuzz_core::TenantContext;
-use kuzz_db::blocks::BlockOutcome;
+use kuzz_db::blocks::{BlockChange, BlockOutcome};
 use kuzz_db::people::{PersonLookup, PersonRecord, MAX_SHARED_PEOPLE};
 use serde::Deserialize;
 use serde_json::json;
@@ -139,17 +139,18 @@ pub(super) async fn put_block(
     if target == me.pubkey {
         return bad_request("you cannot block yourself");
     }
-    match state
-        .db
-        .block_user(me.tenant.community(), &me.pubkey, &target)
-        .await
+    let version = crate::region_propagate::block_version();
+    match crate::region_propagate::save_block(
+        &state,
+        me.tenant.community(),
+        &me.pubkey,
+        &target,
+        true,
+        version,
+    )
+    .await
     {
-        Ok(BlockOutcome::Added | BlockOutcome::AlreadyBlocked) => {
-            state.invalidate_block(&me.tenant, &me.pubkey, &target);
-            tracing::info!(principal = %me.principal, "auth.block");
-            StatusCode::NO_CONTENT.into_response()
-        }
-        Ok(BlockOutcome::LimitReached) => auth_error(
+        Ok(BlockChange::Blocked(BlockOutcome::LimitReached)) => auth_error(
             StatusCode::CONFLICT,
             "block_limit",
             &format!(
@@ -157,6 +158,26 @@ pub(super) async fn put_block(
                 kuzz_db::blocks::MAX_BLOCKS_PER_USER
             ),
         ),
+        // Stale: a newer change from another region is already here; sending
+        // this one on is harmless (the others ignore it too).
+        Ok(_) => {
+            state.invalidate_block(&me.tenant, &me.pubkey, &target);
+            // "Blocked" only once every region applied it (S4-5b).
+            if let Err(error) = crate::region_propagate::block_everywhere(
+                &state,
+                *me.tenant.community().as_uuid(),
+                &me.pubkey,
+                &target,
+                true,
+                version,
+            )
+            .await
+            {
+                return not_everywhere(&error);
+            }
+            tracing::info!(principal = %me.principal, "auth.block");
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(error) => internal("block_user", &error),
     }
 }
@@ -175,18 +196,47 @@ pub(super) async fn delete_block(
         Ok(target) => target,
         Err(response) => return response,
     };
-    match state
-        .db
-        .unblock_user(me.tenant.community(), &me.pubkey, &target)
-        .await
+    let version = crate::region_propagate::block_version();
+    match crate::region_propagate::save_block(
+        &state,
+        me.tenant.community(),
+        &me.pubkey,
+        &target,
+        false,
+        version,
+    )
+    .await
     {
         Ok(_) => {
             state.invalidate_block(&me.tenant, &me.pubkey, &target);
+            if let Err(error) = crate::region_propagate::block_everywhere(
+                &state,
+                *me.tenant.community().as_uuid(),
+                &me.pubkey,
+                &target,
+                false,
+                version,
+            )
+            .await
+            {
+                return not_everywhere(&error);
+            }
             tracing::info!(principal = %me.principal, "auth.unblock");
             StatusCode::NO_CONTENT.into_response()
         }
         Err(error) => internal("unblock_user", &error),
     }
+}
+
+/// The answer when a block or unblock was saved here but not in every
+/// region: retryable, and retrying is harmless.
+fn not_everywhere(error: &crate::region_propagate::BlockNotEverywhere) -> Response {
+    tracing::warn!(regions = ?error.regions, "Block not applied in every region");
+    auth_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "block_pending",
+        "could not reach every region; try again",
+    )
 }
 
 /// `?q=` (and `?limit=` for shared search).

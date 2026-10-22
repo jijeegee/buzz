@@ -59,6 +59,17 @@ pub struct BlockRecord {
     pub created_at: DateTime<Utc>,
 }
 
+/// Result of [`Db::set_block_at`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockChange {
+    /// A block was applied.
+    Blocked(BlockOutcome),
+    /// An unblock was applied.
+    Unblocked,
+    /// A newer change for this pair was already applied; nothing changed.
+    Stale,
+}
+
 /// Result of [`Db::block_user`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockOutcome {
@@ -138,47 +149,63 @@ impl Db {
         }
         let mut tx = self.pool.begin().await?;
         lock_blocker(&mut tx, community, blocker).await?;
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM user_blocks \
-              WHERE community_id = $1 AND blocker = $2 AND blocked = $3)",
-        )
-        .bind(community.as_uuid())
-        .bind(blocker)
-        .bind(blocked)
-        .fetch_one(&mut *tx)
-        .await?;
-        if exists {
-            // Heal a block row without an open period (rows written before
-            // migration 0073 are backfilled; this covers anything else).
-            open_period(&mut tx, community, blocker, blocked).await?;
-            tx.commit().await?;
-            return Ok(BlockOutcome::AlreadyBlocked);
-        }
-        let count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM user_blocks WHERE community_id = $1 AND blocker = $2",
-        )
-        .bind(community.as_uuid())
-        .bind(blocker)
-        .fetch_one(&mut *tx)
-        .await?;
-        if count >= MAX_BLOCKS_PER_USER {
-            tx.commit().await?;
-            return Ok(BlockOutcome::LimitReached);
-        }
-        // The period first: the user_blocks trigger recounts the blocker's
-        // DM rows and should see it.
-        open_period(&mut tx, community, blocker, blocked).await?;
-        sqlx::query(
-            "INSERT INTO user_blocks (community_id, blocker, blocked) VALUES ($1, $2, $3) \
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(community.as_uuid())
-        .bind(blocker)
-        .bind(blocked)
-        .execute(&mut *tx)
-        .await?;
+        let outcome = block_in(&mut tx, community, blocker, blocked, true).await?;
         tx.commit().await?;
-        Ok(BlockOutcome::Added)
+        Ok(outcome)
+    }
+
+    /// Apply a block (`on`) or unblock at `version`, unless a change with the
+    /// same or a newer version was already applied for this pair (then
+    /// [`BlockChange::Stale`]). Regions use it so changes arriving out of
+    /// order settle on the newest. `check_limit` is false where another
+    /// region already checked the limit, so copies never refuse a block.
+    #[datastore_span(name = "set_block_at", system = "postgresql")]
+    pub async fn set_block_at(
+        &self,
+        community: CommunityId,
+        blocker: &[u8],
+        blocked: &[u8],
+        on: bool,
+        version: i64,
+        check_limit: bool,
+    ) -> Result<BlockChange> {
+        check_key("blocker", blocker)?;
+        check_key("blocked", blocked)?;
+        if blocker == blocked {
+            return Err(DbError::InvalidData("cannot block yourself".into()));
+        }
+        let mut tx = self.pool.begin().await?;
+        lock_blocker(&mut tx, community, blocker).await?;
+        let newer: Option<bool> = sqlx::query_scalar(
+            "INSERT INTO user_block_versions (community_id, blocker, blocked, version) \
+             VALUES ($1, $2, $3, $4) \
+             ON CONFLICT (community_id, blocker, blocked) DO UPDATE SET version = EXCLUDED.version \
+             WHERE user_block_versions.version < EXCLUDED.version \
+             RETURNING true",
+        )
+        .bind(community.as_uuid())
+        .bind(blocker)
+        .bind(blocked)
+        .bind(version)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if newer.is_none() {
+            tx.commit().await?;
+            return Ok(BlockChange::Stale);
+        }
+        if !on {
+            unblock_in(&mut tx, community, blocker, blocked).await?;
+            tx.commit().await?;
+            return Ok(BlockChange::Unblocked);
+        }
+        let outcome = block_in(&mut tx, community, blocker, blocked, check_limit).await?;
+        if outcome == BlockOutcome::LimitReached {
+            // Not applied, so the version is not kept either.
+            tx.rollback().await?;
+        } else {
+            tx.commit().await?;
+        }
+        Ok(BlockChange::Blocked(outcome))
     }
 
     /// Remove a block and close its period. Returns whether a block row
@@ -192,30 +219,93 @@ impl Db {
     ) -> Result<bool> {
         let mut tx = self.pool.begin().await?;
         lock_blocker(&mut tx, community, blocker).await?;
-        // Closed before the block row goes, so the user_blocks trigger's
-        // recount sees the final period.
-        sqlx::query(
-            "UPDATE user_block_periods SET ended_at = GREATEST($4, started_at) \
-              WHERE community_id = $1 AND blocker = $2 AND blocked = $3 AND ended_at IS NULL",
-        )
-        .bind(community.as_uuid())
-        .bind(blocker)
-        .bind(blocked)
-        .bind(Utc::now())
-        .execute(&mut *tx)
-        .await?;
-        let result = sqlx::query(
-            "DELETE FROM user_blocks WHERE community_id = $1 AND blocker = $2 AND blocked = $3",
-        )
-        .bind(community.as_uuid())
-        .bind(blocker)
-        .bind(blocked)
-        .execute(&mut *tx)
-        .await?;
+        let existed = unblock_in(&mut tx, community, blocker, blocked).await?;
         tx.commit().await?;
-        Ok(result.rows_affected() > 0)
+        Ok(existed)
     }
+}
 
+/// Block inside a transaction holding [`lock_blocker`].
+async fn block_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community: CommunityId,
+    blocker: &[u8],
+    blocked: &[u8],
+    check_limit: bool,
+) -> Result<BlockOutcome> {
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM user_blocks \
+          WHERE community_id = $1 AND blocker = $2 AND blocked = $3)",
+    )
+    .bind(community.as_uuid())
+    .bind(blocker)
+    .bind(blocked)
+    .fetch_one(&mut **tx)
+    .await?;
+    if exists {
+        // Heal a block row without an open period (rows written before
+        // migration 0073 are backfilled; this covers anything else).
+        open_period(tx, community, blocker, blocked).await?;
+        return Ok(BlockOutcome::AlreadyBlocked);
+    }
+    if check_limit {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM user_blocks WHERE community_id = $1 AND blocker = $2",
+        )
+        .bind(community.as_uuid())
+        .bind(blocker)
+        .fetch_one(&mut **tx)
+        .await?;
+        if count >= MAX_BLOCKS_PER_USER {
+            return Ok(BlockOutcome::LimitReached);
+        }
+    }
+    // The period first: the user_blocks trigger recounts the blocker's
+    // DM rows and should see it.
+    open_period(tx, community, blocker, blocked).await?;
+    sqlx::query(
+        "INSERT INTO user_blocks (community_id, blocker, blocked) VALUES ($1, $2, $3) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(community.as_uuid())
+    .bind(blocker)
+    .bind(blocked)
+    .execute(&mut **tx)
+    .await?;
+    Ok(BlockOutcome::Added)
+}
+
+/// Unblock inside a transaction holding [`lock_blocker`].
+async fn unblock_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community: CommunityId,
+    blocker: &[u8],
+    blocked: &[u8],
+) -> Result<bool> {
+    // Closed before the block row goes, so the user_blocks trigger's
+    // recount sees the final period.
+    sqlx::query(
+        "UPDATE user_block_periods SET ended_at = GREATEST($4, started_at) \
+          WHERE community_id = $1 AND blocker = $2 AND blocked = $3 AND ended_at IS NULL",
+    )
+    .bind(community.as_uuid())
+    .bind(blocker)
+    .bind(blocked)
+    .bind(Utc::now())
+    .execute(&mut **tx)
+    .await?;
+    let result = sqlx::query(
+        "DELETE FROM user_blocks WHERE community_id = $1 AND blocker = $2 AND blocked = $3",
+    )
+    .bind(community.as_uuid())
+    .bind(blocker)
+    .bind(blocked)
+    .execute(&mut **tx)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+impl Db {
     /// Everyone `reader` blocked at any time (open or closed periods): the
     /// authors whose stored 1:1 DM messages may be hidden from `reader`.
     #[datastore_span(name = "period_blocked_by", system = "postgresql")]

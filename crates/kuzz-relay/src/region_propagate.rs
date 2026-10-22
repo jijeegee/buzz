@@ -17,6 +17,14 @@
 //! The receiving region never writes outbox rows for what it applies, so a
 //! command travels one hop.
 //!
+//! Blocks are different (S4-5b): they change data, not connections, and a
+//! DM's home reads them from its own database for every message. A block
+//! or unblock is therefore sent to every other region at once, before the
+//! answer ([`block_everywhere`]); if one region does not apply it, the
+//! request fails and the app retries it (blocking again is harmless). Each
+//! region records the block period with its own clock, the clock its own
+//! messages are stamped with, so regions' clocks never meet.
+//!
 //! Only active with the link on (`KUZZ_REGION_LINK`).
 
 use std::sync::Arc;
@@ -59,6 +67,134 @@ pub enum Propagate {
     AuthRevoked(AuthRevocation),
     /// Close a pubkey's connections, or every connection, of the community.
     ConnControl(ConnControl),
+    /// An identity provider's disconnect (NIP-FI): deny the pubkey for that
+    /// issuer until `until` and close its sessions.
+    NipFiDisconnect(kuzz_pubsub::NipFiDisconnect),
+    /// `blocker` blocked (`on`) or unblocked `blocked` (hex pubkeys).
+    Block {
+        /// Who blocks.
+        blocker: String,
+        /// Who is blocked.
+        blocked: String,
+        /// Block (true) or unblock (false).
+        on: bool,
+        /// The entry region's time of the change in microseconds; a region
+        /// ignores a change older than the one it applied last for the pair.
+        version: i64,
+    },
+}
+
+/// Why a block did not reach every region.
+#[derive(Debug)]
+pub struct BlockNotEverywhere {
+    /// Regions that did not apply it.
+    pub regions: Vec<String>,
+}
+
+/// The version of a block change made now (microseconds of this region's
+/// clock). Changes of one pair made in different regions within the clock
+/// difference may settle on either one.
+pub fn block_version() -> i64 {
+    Utc::now().timestamp_micros()
+}
+
+/// Save a block (`on`) or unblock made here. With the link on it is saved at
+/// `version`, so an older change arriving later from another region cannot
+/// undo it.
+pub async fn save_block(
+    state: &AppState,
+    community: kuzz_core::CommunityId,
+    blocker: &[u8],
+    blocked: &[u8],
+    on: bool,
+    version: i64,
+) -> kuzz_db::Result<kuzz_db::blocks::BlockChange> {
+    use kuzz_db::blocks::BlockChange;
+    if state.config.region_link {
+        return state
+            .db
+            .set_block_at(community, blocker, blocked, on, version, true)
+            .await;
+    }
+    if on {
+        state
+            .db
+            .block_user(community, blocker, blocked)
+            .await
+            .map(BlockChange::Blocked)
+    } else {
+        state
+            .db
+            .unblock_user(community, blocker, blocked)
+            .await
+            .map(|_| BlockChange::Unblocked)
+    }
+}
+
+/// Apply a block or unblock in every other region and wait for all of them.
+/// Ok with the link off or a single region.
+pub async fn block_everywhere(
+    state: &AppState,
+    community_id: Uuid,
+    blocker: &[u8],
+    blocked: &[u8],
+    on: bool,
+    version: i64,
+) -> Result<(), BlockNotEverywhere> {
+    if !state.config.region_link {
+        return Ok(());
+    }
+    let regions = match state.db.list_regions().await {
+        Ok(regions) => regions,
+        Err(error) => {
+            tracing::warn!(%error, "Could not list regions for a block");
+            return Err(BlockNotEverywhere {
+                regions: vec!["?".into()],
+            });
+        }
+    };
+    let body = serde_json::to_value(Propagate::Block {
+        blocker: hex::encode(blocker),
+        blocked: hex::encode(blocked),
+        on,
+        version,
+    })
+    .unwrap_or(Value::Null);
+    let others: Vec<String> = regions
+        .into_iter()
+        .map(|region| region.id)
+        .filter(|id| *id != state.config.region_id)
+        .collect();
+    let results = futures_util::future::join_all(others.iter().map(|region| {
+        crate::region_link::call(
+            state,
+            region,
+            community_id,
+            PROPAGATE_PATH,
+            &body,
+            None,
+            None,
+        )
+    }))
+    .await;
+    let failed: Vec<String> = others
+        .into_iter()
+        .zip(results)
+        .filter(|(_, result)| {
+            // An older region answers an unknown topic with applied: false.
+            !matches!(result, Ok(answer) if answer["applied"] == Value::Bool(true))
+        })
+        .map(|(region, result)| {
+            tracing::warn!(target = %region, ?result, "A region did not apply a block");
+            region
+        })
+        .collect();
+    metrics::counter!("kuzz_region_blocks_total", "result" => if failed.is_empty() { "ok" } else { "failed" }).increment(1);
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(BlockNotEverywhere { regions: failed })
+    }
 }
 
 /// Queue `command` for every other region. Does nothing with the link off.
@@ -246,7 +382,7 @@ pub async fn propagate(
             (StatusCode::OK, Json(json!({ "applied": true })))
         }
         Err(error) => {
-            tracing::warn!(%error, "Could not publish a region propagation here; the sender retries");
+            tracing::warn!(%error, "Could not apply a region propagation here; the sender retries");
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(json!({ "error": "error: try again" })),
@@ -261,8 +397,38 @@ async fn apply_here(
     state: &AppState,
     tenant: &TenantContext,
     command: &Propagate,
-) -> Result<(), kuzz_pubsub::PubSubError> {
+) -> Result<(), String> {
     match command {
+        Propagate::NipFiDisconnect(message) => {
+            crate::api::nip_fi::apply_nip_fi_disconnect(state, message, Utc::now());
+            state
+                .pubsub
+                .publish_nip_fi_disconnect(message)
+                .await
+                .map(drop)
+                .map_err(|error| error.to_string())
+        }
+        Propagate::Block {
+            blocker,
+            blocked,
+            on,
+            version,
+        } => {
+            let (Ok(blocker), Ok(blocked)) = (hex::decode(blocker), hex::decode(blocked)) else {
+                return Err("malformed block".into());
+            };
+            // The entry already checked the limit; a copy over it here still
+            // blocks, so regions never disagree. An older change is ignored.
+            let change = state
+                .db
+                .set_block_at(tenant.community(), &blocker, &blocked, *on, *version, false)
+                .await
+                .map_err(|error| error.to_string())?;
+            if change != kuzz_db::blocks::BlockChange::Stale {
+                state.invalidate_block(tenant, &blocker, &blocked);
+            }
+            Ok(())
+        }
         Propagate::AuthRevoked(message) => {
             crate::identity::apply_revocation(state, message);
             state
@@ -270,6 +436,7 @@ async fn apply_here(
                 .publish_auth_revocation(message)
                 .await
                 .map(drop)
+                .map_err(|error| error.to_string())
         }
         Propagate::ConnControl(control) => {
             match control {
@@ -298,6 +465,7 @@ async fn apply_here(
                 .publish_conn_control(tenant, control)
                 .await
                 .map(drop)
+                .map_err(|error| error.to_string())
         }
     }
 }
@@ -323,6 +491,18 @@ mod tests {
             revoked,
             ban,
             Propagate::ConnControl(ConnControl::DisconnectCommunity),
+            Propagate::Block {
+                blocker: "ab".repeat(32),
+                blocked: "cd".repeat(32),
+                on: true,
+                version: 1,
+            },
+            Propagate::NipFiDisconnect(kuzz_pubsub::NipFiDisconnect {
+                issuer: "https://idp.example".into(),
+                pubkey_bytes: vec![2; 32],
+                until_unix: 1,
+                until_unix_nanos: 0,
+            }),
         ] {
             let (topic, payload) = split(&command).expect("encode");
             assert!(!topic.is_empty());
