@@ -28,13 +28,13 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
   },
   access: {
     description:
-      "Repository access is granted through its channel, and you’re not a member. Ask the repository owner for an invite.",
+      "Repository access is granted through its group, and you’re not a member. Ask the repository owner for an invite.",
     title: "Repository access restricted",
   },
   unbound: {
     description:
-      "This repository isn't linked to a channel yet, so no one can open it. The repository owner can link a channel from the Access menu.",
-    title: "No access channel bound",
+      "This repository isn't linked to a group yet, so no one can open it. The repository owner can link a group from the Access menu.",
+    title: "No access group bound",
   },
   network: {
     description:

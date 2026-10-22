@@ -37,7 +37,7 @@ interface ProfilePopoverProps {
   onSetStatus: (status: PresenceStatus) => void;
   onSetUserStatus: (status: UserStatusInput) => void;
   onClearUserStatus: () => void;
-  onOpenSettings: (section?: "profile" | "appearance") => void;
+  onOpenSettings: (section?: "profile" | "account" | "appearance") => void;
   onSendFeedback?: () => void;
   children: React.ReactNode;
   // Optional outer container whose clicks should NOT close the popover.
@@ -110,9 +110,9 @@ export function ProfilePopover({
         <PopoverTrigger asChild>{children}</PopoverTrigger>
 
         <PopoverContent
-          side="top"
-          align="start"
-          sideOffset={-32}
+          side="right"
+          align="end"
+          sideOffset={8}
           className="w-[280px] p-1"
           data-testid="profile-popover"
           onInteractOutside={(event) => {
@@ -146,6 +146,7 @@ export function ProfilePopover({
                 size={32}
               >
                 <ProfileAvatar
+                  mediaVariant="small"
                   avatarDataUrl={avatarDataUrl}
                   avatarUrl={avatarUrl}
                   className="h-full w-full text-xs"
@@ -312,14 +313,30 @@ export function ProfilePopover({
               </button>
             ) : null}
 
-            {/* ── Settings ───────────────────────────────────────── */}
+            {/* ── Profile: how others see me ─────────────────────── */}
+            <button
+              className={MENU_ITEM_CLASS}
+              data-testid="profile-popover-profile"
+              onClick={() => {
+                closePopover();
+                window.requestAnimationFrame(() => {
+                  onOpenSettings("profile");
+                });
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <span className="flex-1">Profile</span>
+            </button>
+
+            {/* ── Settings: how my app works ─────────────────────── */}
             <button
               className={MENU_ITEM_CLASS}
               data-testid="profile-popover-settings"
               onClick={() => {
                 closePopover();
                 window.requestAnimationFrame(() => {
-                  onOpenSettings();
+                  onOpenSettings("account");
                 });
               }}
               role="menuitem"

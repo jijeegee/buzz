@@ -234,6 +234,7 @@ class App extends HookConsumerWidget {
             child: _TokenGateIfNeeded(
               child: HomePage(
                 settingsPageBuilder: _buildSettingsPage,
+                profilePageBuilder: _buildProfilePage,
                 hasUnreadInbox: hasUnreadInbox,
               ),
             ),
@@ -248,14 +249,21 @@ class App extends HookConsumerWidget {
   }
 }
 
-Widget _buildSettingsPage(BuildContext context) => const _SettingsPageContent();
+Widget _buildSettingsPage(BuildContext context) =>
+    const _SettingsPageContent(mode: SettingsPageMode.settings);
+
+Widget _buildProfilePage(BuildContext context) =>
+    const _SettingsPageContent(mode: SettingsPageMode.profile);
 
 class _SettingsPageContent extends ConsumerWidget {
-  const _SettingsPageContent();
+  const _SettingsPageContent({required this.mode});
+
+  final SettingsPageMode mode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return SettingsPage(
+      mode: mode,
       profileHeader: const SettingsProfileHeader(),
       profileEditPageBuilder: (_) =>
           const ProfileEditPage(startInPhotoEditor: true),

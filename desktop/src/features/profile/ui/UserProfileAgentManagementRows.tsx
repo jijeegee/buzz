@@ -271,14 +271,14 @@ function AgentDeleteConfirmDialog({
         </AlertDialogHeader>
         <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
           <li>Removes this agent from this device</li>
-          <li>Removes the agent from every channel it belongs to</li>
+          <li>Removes the agent from every group it belongs to</li>
           <li>
             Archives the agent&apos;s identity on the relay so it no longer
             appears in member lists or mention suggestions
           </li>
           <li>
             {isProviderAgent
-              ? "Unless the agent is known to be Offline, Kuzz first requests shutdown through a channel when available. A failed request cancels deletion. The remote process may still be running even after a successful request."
+              ? "Unless the agent is known to be Offline, Kuzz first requests shutdown through a group when available. A failed request cancels deletion. The remote process may still be running even after a successful request."
               : "Stops any local agent process before deleting the record"}
           </li>
         </ul>

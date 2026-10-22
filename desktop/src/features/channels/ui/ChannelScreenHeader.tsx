@@ -205,6 +205,8 @@ export function ChannelScreenHeader({
           )
         ) : activeChannel ? (
           <ChannelGlyph
+            avatarClassName="mr-1.5"
+            avatarSize="md"
             channel={activeChannel}
             className="h-4 w-4 translate-y-px text-muted-foreground"
           />

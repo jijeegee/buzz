@@ -445,6 +445,13 @@ impl ActionSink for RelayActionSink {
             // 5. Post-persist side effects (fan-out, search, audit)
             //    Only if actually inserted (idempotency guard).
             if was_inserted {
+                crate::media_access::record_event_media(
+                    &state,
+                    tenant.community(),
+                    &event,
+                    Some(channel_uuid),
+                )
+                .await;
                 let _ = dispatch_persistent_event(
                     &tenant,
                     &state,

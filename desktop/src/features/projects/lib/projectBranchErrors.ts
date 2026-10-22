@@ -10,8 +10,8 @@ const NO_CHANNEL_BINDING_TOKEN = "no_channel_binding";
 const NO_CHANNEL_BINDING_LEGACY_PHRASE = "no channel binding";
 
 const NO_CHANNEL_BINDING_COPY =
-  "This repository isn't linked to a channel yet, so no one can open it. " +
-  "The repository owner can link a channel from the Access menu.";
+  "This repository isn't linked to a group yet, so no one can open it. " +
+  "The repository owner can link a group from the Access menu.";
 
 /** True when a git/relay error text is the unbound-repository denial. */
 export function isNoChannelBindingError(message: string): boolean {

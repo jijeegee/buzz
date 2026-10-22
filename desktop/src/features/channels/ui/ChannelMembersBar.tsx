@@ -1,4 +1,9 @@
-import { EllipsisVertical, Settings2, Users } from "lucide-react";
+import {
+  EllipsisVertical,
+  Settings2,
+  UserRoundPlus,
+  Users,
+} from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,6 +36,9 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { AddChannelBotDialog } from "./AddChannelBotDialog";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
+import { AddPeopleToDmDialog } from "./AddPeopleToDmDialog";
+import { useChatTitle } from "../useChatTitle";
 
 type ChannelMembersBarProps = {
   channel: Channel;
@@ -140,6 +148,10 @@ export function ChannelMembersBar({
     currentPubkey,
     selfMember,
   });
+  const isChat = isGroupChat(channel);
+  const isDm = channel.channelType === "dm";
+  const chatTitle = useChatTitle(channel, channel.name);
+  const [isAddPeopleOpen, setIsAddPeopleOpen] = React.useState(false);
   const previousChannelIdRef = React.useRef(channel.id);
 
   React.useEffect(() => {
@@ -168,11 +180,13 @@ export function ChannelMembersBar({
           await startHuddle(
             channel.id,
             [...huddleMemberPubkeys],
-            buildHuddleChannelName({
-              channel,
-              currentPubkey,
-              members,
-            }),
+            isChat
+              ? `${chatTitle} huddle`
+              : buildHuddleChannelName({
+                  channel,
+                  currentPubkey,
+                  members,
+                }),
           );
           // Keep the channel cache current so the ephemeral transcript is
           // available immediately if the huddle returns to the in-app drawer.
@@ -195,7 +209,7 @@ export function ChannelMembersBar({
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label="Channel actions"
+              aria-label={isChat ? "Chat actions" : "Group actions"}
               data-testid="channel-actions-menu-trigger"
               size="icon"
               type="button"
@@ -215,13 +229,22 @@ export function ChannelMembersBar({
                 {memberCount}
               </span>
             </DropdownMenuItem>
+            {isDm ? (
+              <DropdownMenuItem
+                data-testid="dm-add-people-trigger"
+                onSelect={() => setIsAddPeopleOpen(true)}
+              >
+                <UserRoundPlus />
+                <span>Add people</span>
+              </DropdownMenuItem>
+            ) : null}
             {huddleIndicator}
             <DropdownMenuItem
               data-testid="channel-management-trigger"
               onSelect={onManageChannel}
             >
               <Settings2 />
-              <span>Manage channel</span>
+              <span>{isChat ? "Chat info" : "Manage group"}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -232,7 +255,11 @@ export function ChannelMembersBar({
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
             <Button
-              aria-label={`View channel members (${memberCount})`}
+              aria-label={
+                isChat
+                  ? `View people (${memberCount})`
+                  : `View group members (${memberCount})`
+              }
               className="h-8 px-2.5"
               data-testid="channel-members-trigger"
               onClick={onToggleMembers}
@@ -245,15 +272,33 @@ export function ChannelMembersBar({
               </span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Channel members</TooltipContent>
+          <TooltipContent>{isChat ? "People" : "Group members"}</TooltipContent>
         </Tooltip>
+
+        {isDm ? (
+          <Tooltip disableHoverableContent>
+            <TooltipTrigger asChild>
+              <Button
+                aria-label="Add people"
+                data-testid="dm-add-people-trigger"
+                onClick={() => setIsAddPeopleOpen(true)}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <UserRoundPlus />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Add people</TooltipContent>
+          </Tooltip>
+        ) : null}
 
         {huddleIndicator}
 
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
             <Button
-              aria-label="Manage channel"
+              aria-label={isChat ? "Chat info" : "Manage group"}
               data-testid="channel-management-trigger"
               onClick={onManageChannel}
               size="icon"
@@ -263,7 +308,9 @@ export function ChannelMembersBar({
               <EllipsisVertical />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Channel settings</TooltipContent>
+          <TooltipContent>
+            {isChat ? "Chat info" : "Group settings"}
+          </TooltipContent>
         </Tooltip>
 
         {endActions}
@@ -273,6 +320,14 @@ export function ChannelMembersBar({
   return (
     <React.Fragment>
       {controls}
+      {isDm ? (
+        <AddPeopleToDmDialog
+          channel={channel}
+          currentPubkey={currentPubkey}
+          onOpenChange={setIsAddPeopleOpen}
+          open={isAddPeopleOpen}
+        />
+      ) : null}
 
       <AddChannelBotDialog
         channelId={channel.id}

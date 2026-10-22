@@ -175,7 +175,7 @@ export function PersonaAdvancedFields({
               })
             }
             options={[
-              { label: "Entire channel", value: "channel" },
+              { label: "Entire group", value: "channel" },
               { label: "Each thread", value: "thread" },
             ]}
             placeholder="Select conversation context"
@@ -186,8 +186,8 @@ export function PersonaAdvancedFields({
             id="persona-session-policy-description"
           >
             {behaviorDraft.sessionPolicy === "thread"
-              ? "Keeps a separate conversation for each channel thread. Direct messages remain shared."
-              : "Shares one conversation across every thread in a channel."}
+              ? "Keeps a separate conversation for each group thread. Direct messages remain shared."
+              : "Shares one conversation across every thread in a group."}
           </p>
         </div>
 

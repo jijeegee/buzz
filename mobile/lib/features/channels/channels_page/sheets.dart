@@ -45,7 +45,7 @@ class _CreateChannelSheet extends HookConsumerWidget {
     final errorMessage = useState<String?>(null);
     useListenable(nameController);
 
-    final kindLabel = channelType == 'forum' ? 'forum' : 'channel';
+    final kindLabel = channelType == 'forum' ? 'forum' : 'group';
     final canSubmit =
         nameController.text.trim().isNotEmpty && !isSubmitting.value;
 
@@ -156,7 +156,7 @@ class _CreateChannelSheet extends HookConsumerWidget {
               const SizedBox(height: Grid.sm),
               _CreateChannelRadioGroup<bool>(
                 enabled: !isSubmitting.value,
-                label: 'Channel type',
+                label: 'Group type',
                 onSelected: (value) => temporary.value = value,
                 options: const [
                   _CreateChannelMenuOption(
@@ -445,6 +445,8 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
     final query = useState('');
     final debouncedQuery = useState('');
     final selectedUsers = useState<List<DirectoryUser>>([]);
+    final chatNameController = useTextEditingController();
+    final showAllSelected = useState(false);
     final isSubmitting = useState(false);
     final submitError = useState<String?>(null);
     final previewDirectoryActive = ref.watch(dmDirectoryPreviewEnabledProvider);
@@ -593,6 +595,15 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
       fallbackNames: {for (final user in recipients) user.pubkey: user.label},
     );
     final canSubmit = !isSubmitting.value && selectedUsers.value.isNotEmpty;
+    // Many picked people fold into "+N" until tapped.
+    const visibleSelectedLimit = 6;
+    final collapseSelected =
+        !showAllSelected.value &&
+        selectedUsers.value.length > visibleSelectedLimit;
+    final visibleSelected = collapseSelected
+        ? selectedUsers.value.take(visibleSelectedLimit - 1).toList()
+        : selectedUsers.value;
+    final hiddenSelected = selectedUsers.value.length - visibleSelected.length;
 
     Future<void> submit() async {
       if (selectedUsers.value.isEmpty || isSubmitting.value) {
@@ -605,14 +616,24 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
 
       isSubmitting.value = true;
       submitError.value = null;
+      final pubkeys = selectedUsers.value.map((user) => user.pubkey).toList();
       try {
-        final channel = await ref
+        // One person is a 1:1 DM; two or more start a chat of people.
+        if (pubkeys.length == 1) {
+          final channel = await ref
+              .read(channelActionsProvider)
+              .openDm(pubkeys: pubkeys);
+          if (context.mounted) Navigator.of(context).pop(channel);
+          return;
+        }
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        final result = await ref
             .read(channelActionsProvider)
-            .openDm(
-              pubkeys: selectedUsers.value.map((user) => user.pubkey).toList(),
-            );
-        if (context.mounted) {
-          Navigator.of(context).pop(channel);
+            .createGroupChat(pubkeys: pubkeys, name: chatNameController.text);
+        if (!context.mounted) return;
+        Navigator.of(context).pop(result.channel);
+        if (result.notice case final notice?) {
+          messenger?.showSnackBar(SnackBar(content: Text(notice)));
         }
       } catch (error) {
         submitError.value = friendlyError(
@@ -732,7 +753,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                                         ?.copyWith(fontWeight: FontWeight.w600),
                                   ),
                                 ),
-                                for (final user in selectedUsers.value)
+                                for (final user in visibleSelected)
                                   _SelectedDmRecipientChip(
                                     user: user,
                                     label: names.labelFor(user.pubkey),
@@ -746,6 +767,13 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                                       ];
                                       queryFocusNode.requestFocus();
                                     },
+                                  ),
+                                if (hiddenSelected > 0)
+                                  ActionChip(
+                                    key: const Key('new-dm-selected-more'),
+                                    label: Text('+$hiddenSelected'),
+                                    onPressed: () =>
+                                        showAllSelected.value = true,
                                   ),
                                 SizedBox(
                                   width: searchFieldWidth,
@@ -808,16 +836,35 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                   ),
                 ),
               ),
+              if (selectedUsers.value.length > 1) ...[
+                const SizedBox(height: Grid.xs),
+                TextField(
+                  key: const Key('new-chat-name'),
+                  controller: chatNameController,
+                  enabled: !isSubmitting.value,
+                  maxLength: channelNameMaxLength,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) {
+                    if (canSubmit) unawaited(submit());
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Chat name',
+                    hintText: 'Optional',
+                    counterText: '',
+                  ),
+                ),
+              ],
               const SizedBox(height: Grid.xs),
               Builder(
                 key: const Key('new-dm-results'),
                 builder: (context) {
-                  if (selectedUsers.value.length >= 8) {
+                  if (selectedUsers.value.length >= groupChatCreateLimit) {
                     return const SizedBox(
                       height: 96,
                       child: Center(
                         child: Text(
-                          'DMs support up to nine people, including you.',
+                          'A chat can start with up to '
+                          '$groupChatCreateLimit people.',
                         ),
                       ),
                     );
@@ -918,11 +965,11 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                       if (sharedResults.isNotEmpty ||
                           sharedPending ||
                           sharedFailed) ...[
-                        header('shared', 'In your channels'),
+                        header('shared', 'In your groups'),
                         if (sharedPending)
                           note('shared-loading', 'Searching…')
                         else if (sharedFailed)
-                          note('shared-error', 'Couldn’t search your channels')
+                          note('shared-error', 'Couldn’t search your groups')
                         else
                           for (final user in sharedResults) tileFor(user),
                       ],

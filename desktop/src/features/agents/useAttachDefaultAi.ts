@@ -49,11 +49,11 @@ export function useAttachDefaultAi() {
         });
         joins = routingJoinsNewChannels(routing.mode);
       } catch (error) {
-        toast.warning(`${agent.name} was not added to this channel`, {
+        toast.warning(`${agent.name} was not added to this group`, {
           description:
             error instanceof Error
               ? error.message
-              : "Couldn't read channel routing.",
+              : "Couldn't read group routing.",
         });
         return;
       }
@@ -66,7 +66,7 @@ export function useAttachDefaultAi() {
           ensureRunning: true,
         });
       } catch (error) {
-        toast.warning(`${agent.name} could not be added to this channel`, {
+        toast.warning(`${agent.name} could not be added to this group`, {
           description:
             error instanceof Error ? error.message : "Failed to add agent.",
         });

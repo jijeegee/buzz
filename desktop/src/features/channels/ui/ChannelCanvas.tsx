@@ -226,7 +226,7 @@ export function ChannelCanvas({
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No canvas set for this channel.
+          No canvas set for this group.
         </p>
       )}
       {canEdit && !isArchived ? (

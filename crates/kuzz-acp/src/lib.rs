@@ -85,7 +85,10 @@ fn is_subcommand(name: &str) -> bool {
 }
 
 /// Timeout for lightweight helper subcommands (spawn + initialize + model/method probes).
-const MODELS_TIMEOUT: Duration = Duration::from_secs(10);
+/// Hermes builds its model list from every connected provider during
+/// `session/new`, which took 9-12s cold on a real Windows install, so 10s
+/// dropped the model picker intermittently. Fast adapters return well within it.
+const MODELS_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Timeout for `kuzz-acp authenticate`. Browser-based vendor auth can require
 /// human interaction, so it must not share the short probe timeout.
@@ -255,6 +258,57 @@ async fn is_owner_or_sibling(
     is_sibling
 }
 
+/// Author policy used to label fetched context messages by trust.
+///
+/// Mirrors the listener's raw-author gate so a context message is trusted
+/// exactly when its author could have triggered the agent directly.
+pub(crate) struct ContextAuthorTrust {
+    respond_to: RespondTo,
+    allowlist: HashSet<String>,
+    owner_cache: OwnerCache,
+}
+
+impl ContextAuthorTrust {
+    pub(crate) fn new(
+        respond_to: RespondTo,
+        allowlist: HashSet<String>,
+        owner: Option<String>,
+    ) -> Self {
+        Self {
+            respond_to,
+            allowlist,
+            owner_cache: OwnerCache::new(owner),
+        }
+    }
+
+    /// The subset of `authors` allowed to instruct this agent.
+    pub(crate) async fn trusted_authors<'a>(
+        &self,
+        authors: impl IntoIterator<Item = &'a str>,
+        is_dm: bool,
+        rest_client: &relay::RestClient,
+    ) -> HashSet<String> {
+        let authors: HashSet<&str> = authors.into_iter().collect();
+        let checks = authors.into_iter().map(|author| async move {
+            inbound_author_gate::context_author_allowed(
+                &self.respond_to,
+                &self.allowlist,
+                author,
+                is_dm,
+                &self.owner_cache,
+                rest_client,
+            )
+            .await
+            .then(|| author.to_string())
+        });
+        futures_util::future::join_all(checks)
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+}
+
 /// Return the workflow owner attributed by a relay-signed workflow message.
 ///
 /// `kuzz:workflow-owner` alone is not authority: any ordinary event author can
@@ -415,6 +469,29 @@ mod inbound_author_gate {
         }
     }
 
+    /// Raw-author policy for labeling fetched context messages.
+    ///
+    /// Labeling only: it never admits an event, so exposing it does not open
+    /// a path around workflow attribution in the listener gate.
+    pub(crate) async fn context_author_allowed(
+        respond_to: &RespondTo,
+        allowlist: &HashSet<String>,
+        author: &str,
+        is_dm: bool,
+        owner_cache: &OwnerCache,
+        rest_client: &relay::RestClient,
+    ) -> bool {
+        author_allowed(
+            respond_to,
+            allowlist,
+            author,
+            is_dm,
+            owner_cache,
+            rest_client,
+        )
+        .await
+    }
+
     #[cfg(test)]
     pub(super) async fn test_author_allowed(
         respond_to: &RespondTo,
@@ -518,15 +595,35 @@ mod inbound_author_gate {
                     self.refreshed_generation = Some(kuzz_event.connection_generation);
                 }
             }
-            let channel_type = channel_info
+            let metadata = channel_info
                 .resolve_channel_metadata(kuzz_event.channel_id)
-                .await
-                .map(|info| info.channel_type);
+                .await;
+            let group_chat = metadata.as_ref().is_some_and(|info| info.group_chat);
+            let channel_type = metadata.map(|info| info.channel_type);
+            // Group chats: the agent hears a message only when @mentioned,
+            // owner included, in every routing mode (`all`, `config` rules
+            // such as Lead's owner listener, dispatcher). The subscription
+            // already requires the mention; drop anything that slipped past
+            // it (fail closed).
+            if group_chat && !crate::event_mentions_agent(&kuzz_event.event, &self.agent_pubkey_hex)
+            {
+                return InboundAuthorGateDecision {
+                    effective_author: effective_prompt_author(
+                        &kuzz_event.event,
+                        self.relay_self.as_deref(),
+                        &self.agent_pubkey_hex,
+                    ),
+                    allowed: false,
+                    is_dm: false,
+                };
+            }
             if let (Some(dispatcher), Some(channel_type)) =
                 (self.dispatcher.as_ref(), channel_type.as_deref())
             {
-                if channel_type == "dm" {
-                    // DMs stay on the ordinary author policy below.
+                if channel_type == "dm" || group_chat {
+                    // DMs and (mentioned) group chat messages stay on the
+                    // ordinary author policy below; group chats never get
+                    // dispatcher routing.
                 } else {
                     let effective_author = effective_prompt_author(
                         &kuzz_event.event,
@@ -2587,6 +2684,154 @@ fn idle_pool_sleep_due(
         && inactivity_expired(last_activity, now, bound, turn_in_flight)
 }
 
+/// How often the main loop handles output idle workers wrote between turns.
+const AGENT_OUTPUT_DRAIN_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Handle the output idle workers wrote since their last turn (see
+/// [`AcpClient::drain_between_turns`]). A worker working on its own counts
+/// as activity, so the pool does not sleep under it. A failure is kept for
+/// the worker's next turn, which recovers through the turn error path.
+async fn drain_idle_agent_output(pool: &mut AgentPool, last_activity: &mut tokio::time::Instant) {
+    let mut working = false;
+    for agent in pool.agents_mut().iter_mut().flatten() {
+        working |= agent.acp.drain_between_turns().await;
+    }
+    if working {
+        *last_activity = tokio::time::Instant::now();
+    }
+}
+
+/// Idle checks of one round before the pool sleeps. `busy` is set when any
+/// answered that background work is still running; `asked` holds the scopes
+/// already asked, since one worker answers for its scopes one at a time.
+#[derive(Debug, Default)]
+struct IdleCheckRound {
+    busy: bool,
+    asked: HashSet<scope::SessionScope>,
+}
+
+/// What the idle pool sleep does once its bound is reached.
+#[derive(Debug, PartialEq, Eq)]
+enum IdleCheckStep {
+    /// Idle checks were sent; decide when they return.
+    Asking,
+    /// The round found background work; wait another full interval.
+    Busy,
+    /// Every scope was asked and nothing is running: tear the pool down.
+    Sleep,
+}
+
+/// Decide the idle pool sleep. Called only when the sleep is due, which
+/// implies no task is in flight, so the checks sent so far have returned.
+/// `start` sends checks to the scopes not yet asked in this round and returns
+/// them; the round ends when one answered `BUSY` or none is left to ask.
+fn idle_check_step(
+    round: &mut Option<IdleCheckRound>,
+    start: impl FnOnce(&HashSet<scope::SessionScope>) -> Vec<scope::SessionScope>,
+) -> IdleCheckStep {
+    let mut current = round.take().unwrap_or_default();
+    if current.busy {
+        return IdleCheckStep::Busy;
+    }
+    let sent = start(&current.asked);
+    if sent.is_empty() {
+        return IdleCheckStep::Sleep;
+    }
+    current.asked.extend(sent);
+    *round = Some(current);
+    IdleCheckStep::Asking
+}
+
+/// Book a returned turn for the idle pool sleep. An idle check's answer goes
+/// to the round; `IDLE` or no answer drops its scope from the next check. A
+/// channel turn restarts the idle interval at its completion (upstream
+/// block/buzz #8149: a turn longer than the interval otherwise lets the pool
+/// sleep the moment it ends), marks its scope for the next check, and voids a
+/// round it overlapped. Heartbeats change nothing.
+fn record_idle_activity(
+    result: &mut PromptResult,
+    idle_check_scopes: &mut HashSet<scope::SessionScope>,
+    idle_check_round: &mut Option<IdleCheckRound>,
+    last_activity: &mut tokio::time::Instant,
+) {
+    let PromptSource::Channel(scope) = &result.source else {
+        return;
+    };
+    if result.turn_id.starts_with(pool::IDLE_CHECK_TURN_PREFIX) {
+        let answer = result
+            .agent
+            .state
+            .idle_check_answer
+            .take()
+            .unwrap_or(pool::IdleCheckAnswer::NoAnswer);
+        if answer == pool::IdleCheckAnswer::Busy {
+            if let Some(round) = idle_check_round.as_mut() {
+                round.busy = true;
+            }
+        } else {
+            idle_check_scopes.remove(scope);
+        }
+        return;
+    }
+    *last_activity = tokio::time::Instant::now();
+    idle_check_scopes.insert(scope.clone());
+    *idle_check_round = None;
+}
+
+/// Send an idle check to the live session of each scope in `scopes` not in
+/// `asked` and return the scopes it went to. A scope whose session is gone is
+/// dropped; one whose worker is already asking another scope waits for the
+/// next step.
+fn start_idle_checks(
+    pool: &mut AgentPool,
+    queue: &mut EventQueue,
+    ctx: &Arc<PromptContext>,
+    scopes: &mut HashSet<scope::SessionScope>,
+    asked: &HashSet<scope::SessionScope>,
+) -> Vec<scope::SessionScope> {
+    let mut started = Vec::new();
+    let candidates: Vec<_> = scopes.difference(asked).cloned().collect();
+    for scope in candidates {
+        if session_scope_busy(pool, queue, &scope) {
+            continue;
+        }
+        let Some(agent) = pool.try_claim_scope_owner(&scope) else {
+            scopes.remove(&scope);
+            continue;
+        };
+        queue.mark_scope_in_flight(scope.clone());
+        let agent_index = agent.index;
+        let turn_id = format!("{}{}", pool::IDLE_CHECK_TURN_PREFIX, Uuid::new_v4());
+        let task_turn_id = turn_id.clone();
+        let task_scope = scope.clone();
+        let result_tx = pool.result_tx();
+        let ctx = Arc::clone(ctx);
+        let abort_handle = pool.join_set.spawn(async move {
+            pool::run_idle_check_task(agent, task_scope, ctx, result_tx, task_turn_id).await;
+        });
+        pool.task_map_mut().insert(
+            abort_handle.id(),
+            pool::TaskMeta {
+                agent_index,
+                channel_id: Some(scope.channel_id()),
+                scope: Some(scope.clone()),
+                turn_id,
+                recoverable_batch: None,
+                control_tx: None,
+                steer_tx: None,
+                successful_steer_deliveries: HashSet::new(),
+            },
+        );
+        tracing::info!(
+            agent = agent_index,
+            scope = %scope.telemetry_label(),
+            "idle check sent"
+        );
+        started.push(scope);
+    }
+    started
+}
+
 #[cfg(test)]
 mod inactivity_tests {
     use super::*;
@@ -3258,8 +3503,15 @@ async fn run_harness(
 
     let runtime_start_nonce = std::env::var("KUZZ_MANAGED_AGENT_START_NONCE").unwrap_or_default();
     let dedup_mode = config.dedup_mode;
-    let mut queue =
-        EventQueue::new(dedup_mode).with_in_flight_deadline(config.max_turn_duration_secs);
+    // A turn still working at the cap is checked in on and renewed (up to
+    // TURN_CHECKIN_LIMIT times) inside the prompt task, so the queue's
+    // backstop must outlast every renewal; a stuck agent is still bounded by
+    // its own hard timeout.
+    let mut queue = EventQueue::new(dedup_mode).with_in_flight_deadline(
+        config
+            .max_turn_duration_secs
+            .saturating_mul(u64::from(pool::TURN_CHECKIN_LIMIT) + 1),
+    );
 
     // Online means the harness can receive work, not merely that its socket is
     // connected. Publishing after channel subscriptions gives desktop callers
@@ -3354,6 +3606,14 @@ async fn run_harness(
     } else {
         Duration::ZERO
     };
+    // Workers keep writing after a turn ends (work they continue on their
+    // own); their output is handled on this tick.
+    let mut agent_output_drain = tokio::time::interval(AGENT_OUTPUT_DRAIN_INTERVAL);
+    agent_output_drain.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Before the pool sleeps, every scope that ran a channel turn since its
+    // last idle check is asked whether background work is still running.
+    let mut idle_check_scopes: HashSet<scope::SessionScope> = HashSet::new();
+    let mut idle_check_round: Option<IdleCheckRound> = None;
     let mut idle_pool_sleep_reaper = if idle_pool_sleep_bound.is_zero() {
         None
     } else {
@@ -4127,6 +4387,14 @@ async fn run_harness(
                     }
                     None
                 }
+                _ = agent_output_drain.tick() => {
+                    let _ = result_rx; // end split borrow before touching pool
+                    // An agent working on its own keeps the pool awake like
+                    // a turn: the sleep and exit bounds count from its last
+                    // output.
+                    drain_idle_agent_output(&mut pool, &mut last_activity).await;
+                    None
+                }
                 _ = async {
                     match idle_pool_sleep_reaper.as_mut() {
                         Some(timer) => timer.tick().await,
@@ -4141,7 +4409,7 @@ async fn run_harness(
                     // keeps `work_queued` true for a retry-throttled batch too,
                     // so a failed turn awaiting backoff is never stranded — the
                     // next iteration dispatches or re-wakes it.
-                    if idle_pool_sleep_due(
+                    let sleep_due = idle_pool_sleep_due(
                         pool_ready,
                         last_activity,
                         tokio::time::Instant::now(),
@@ -4151,12 +4419,42 @@ async fn run_harness(
                         queue.has_undispatched_work(),
                         !wake_tasks.is_empty()
                             || any_respawn_in_flight(&crash_history),
-                    ) {
+                    );
+                    // Ask before sleeping: only the agent knows whether
+                    // background work it started is still running.
+                    let sleep_now = sleep_due
+                        && match idle_check_step(&mut idle_check_round, |asked| {
+                            start_idle_checks(
+                                &mut pool,
+                                &mut queue,
+                                &ctx,
+                                &mut idle_check_scopes,
+                                asked,
+                            )
+                        }) {
+                            IdleCheckStep::Asking => false,
+                            IdleCheckStep::Busy => {
+                                tracing::info!(
+                                    "idle check: background work still running — pool stays awake"
+                                );
+                                last_activity = tokio::time::Instant::now();
+                                false
+                            }
+                            IdleCheckStep::Sleep => true,
+                        };
+                    if sleep_now {
                         tracing::info!(
                             idle_pool_sleep_seconds = config.idle_pool_sleep_secs,
                             "idle pool sleep bound reached — tearing pool back to lazy state"
                         );
+                        idle_check_scopes.clear();
                         shutdown_agent_pool(&mut pool).await;
+                        // No worker holds a session any more and every
+                        // transcript is intact: the next turn in each scope
+                        // continues its session instead of starting over.
+                        if let Some(ledger) = &ctx.session_ledger {
+                            ledger.rearm_all();
+                        }
                         // Return to the exact pre-wake lazy state: empty slots,
                         // Listening lifecycle. The top-of-loop wake path re-wakes
                         // on the next accepted event. No second lifecycle.
@@ -4294,13 +4592,19 @@ async fn run_harness(
                     typing_channels.insert(scope, thread_tags);
                 }
             }
-            Some(PoolEvent::Result(result)) => {
+            Some(PoolEvent::Result(mut result)) => {
                 // Stop the typing indicator for the completed turn's exact scope,
                 // not the whole channel — a sibling thread still running in the
                 // same channel must keep its indicator.
                 if let Some(scope) = result.source.scope() {
                     typing_channels.remove(scope);
                 }
+                record_idle_activity(
+                    &mut result,
+                    &mut idle_check_scopes,
+                    &mut idle_check_round,
+                    &mut last_activity,
+                );
                 if handle_prompt_result(
                     &mut pool,
                     &mut queue,
@@ -4313,6 +4617,7 @@ async fn run_harness(
                     &mut respawn_tasks,
                     observer.clone(),
                     Some(&ctx.rest_client),
+                    ctx.session_ledger.as_ref(),
                 ) == LoopAction::Exit
                 {
                     break;
@@ -4328,6 +4633,7 @@ async fn run_harness(
                     &respawn_tx,
                     &mut respawn_tasks,
                     observer.clone(),
+                    ctx.session_ledger.as_ref(),
                 ) == LoopAction::Exit
                 {
                     break;
@@ -4356,6 +4662,7 @@ async fn run_harness(
                     &respawn_tx,
                     &mut respawn_tasks,
                     observer.clone(),
+                    ctx.session_ledger.as_ref(),
                 );
                 if pool.live_count() == 0 && !any_respawn_in_flight(&crash_history) {
                     tracing::error!("all agents dead — exiting");
@@ -5424,6 +5731,11 @@ fn dispatch_pending(
         // the worker-return event retries immediately instead of waiting for a
         // fresh timeout window.
         pool.clear_hold(&scope);
+        if pool.take_pending_reattach(&scope) {
+            if let Some(ledger) = &ctx.session_ledger {
+                ledger.allow_handoff(&scope);
+            }
+        }
         if let Some((held_for, owner_index)) = forked_after_hold {
             // The owner is mid-turn on another scope, so this scope's session
             // is idle: let the claimed worker reattach it.
@@ -5642,6 +5954,7 @@ fn handle_prompt_result(
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
     rest_client: Option<&relay::RestClient>,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
 ) -> LoopAction {
     let before = pool.task_map().len();
     let agent_index = result.agent.index;
@@ -5873,6 +6186,12 @@ fn handle_prompt_result(
         }
         // Fatal outcomes: the agent subprocess is dead or poisoned — respawn it.
         PromptOutcome::AgentExited | PromptOutcome::Timeout(_) => {
+            // The hard turn cap ends a long turn, not a broken session: the
+            // retried turn continues it. Exits and idle stalls count.
+            let failed_turn = !matches!(
+                result.outcome,
+                PromptOutcome::Timeout(TimeoutKind::Hard { .. })
+            );
             tracing::warn!(
                 agent = agent_index,
                 outcome = outcome_label,
@@ -5896,6 +6215,12 @@ fn handle_prompt_result(
             };
             emit_turn_error(&death_message, None);
 
+            let released = worker_session_releases(
+                &mut result.agent,
+                result.source.scope(),
+                failed_turn,
+                session_ledger,
+            );
             let index = result.agent.index;
             let slot_history = &mut crash_history[index];
             if !spawn_respawn_task(
@@ -5905,6 +6230,7 @@ fn handle_prompt_result(
                 respawn_tx,
                 respawn_tasks,
                 observer.clone(),
+                SessionReleases::new(session_ledger, released),
             ) {
                 // Circuit open — slot stays empty until maintenance refill.
                 if pool.live_count() == 0 && !any_respawn_in_flight(crash_history) {
@@ -5923,6 +6249,8 @@ fn handle_prompt_result(
         // removed channel) is decided above — the message stays fate-neutral
         // since it must be true in every case.
         PromptOutcome::CancelDrainTimeout(grace) => {
+            // The turn was being cancelled on request; the session did not fail.
+            let failed_turn = false;
             tracing::warn!(
                 agent = agent_index,
                 outcome = outcome_label,
@@ -5936,6 +6264,12 @@ fn handle_prompt_result(
             );
             emit_turn_error(&death_message, None);
 
+            let released = worker_session_releases(
+                &mut result.agent,
+                result.source.scope(),
+                failed_turn,
+                session_ledger,
+            );
             let index = result.agent.index;
             let slot_history = &mut crash_history[index];
             if !spawn_respawn_task(
@@ -5945,6 +6279,7 @@ fn handle_prompt_result(
                 respawn_tx,
                 respawn_tasks,
                 observer.clone(),
+                SessionReleases::new(session_ledger, released),
             ) {
                 // Circuit open — slot stays empty until maintenance refill.
                 if pool.live_count() == 0 && !any_respawn_in_flight(crash_history) {
@@ -6016,6 +6351,12 @@ fn handle_prompt_result(
                 );
                 emit_turn_error(&e.to_string(), error_code);
 
+                let released = worker_session_releases(
+                    &mut result.agent,
+                    result.source.scope(),
+                    true,
+                    session_ledger,
+                );
                 let index = result.agent.index;
                 let slot_history = &mut crash_history[index];
                 if !spawn_respawn_task(
@@ -6025,6 +6366,7 @@ fn handle_prompt_result(
                     respawn_tx,
                     respawn_tasks,
                     observer,
+                    SessionReleases::new(session_ledger, released),
                 ) && pool.live_count() == 0
                     && !any_respawn_in_flight(crash_history)
                 {
@@ -6061,6 +6403,7 @@ fn recover_panicked_agent(
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
 ) {
     let task_id = join_error.id();
     let Some(meta) = pool.task_map_mut().remove(&task_id) else {
@@ -6068,6 +6411,23 @@ fn recover_panicked_agent(
         return;
     };
     let i = meta.agent_index;
+
+    // The panicked task dropped the worker and its session map; the scopes
+    // the pool still records it as owning are the sessions it held. They are
+    // re-armed once the replacement starts, after the dropped adapter exited.
+    let released: Vec<SessionRelease> = session_ledger
+        .map(|ledger| {
+            pool.scopes_owned_by(i)
+                .into_iter()
+                .filter_map(|scope| {
+                    let session_id = ledger.session_id(&scope)?;
+                    let failed = meta.scope.as_ref() == Some(&scope);
+                    Some((scope, session_id, failed))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let releases = SessionReleases::new(session_ledger, released);
 
     // Requeue BEFORE mark_complete (same rationale as handle_prompt_result).
     if let Some(batch) = meta.recoverable_batch {
@@ -6130,6 +6490,7 @@ fn recover_panicked_agent(
     let delay = match slot.record_crash() {
         CrashVerdict::CircuitOpen => {
             tracing::error!(agent = i, "circuit open after panic — not respawning");
+            releases.apply();
             return;
         }
         CrashVerdict::HalfOpenProbe => {
@@ -6157,6 +6518,7 @@ fn recover_panicked_agent(
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
         }
+        releases.apply();
         let result = spawn_and_init(&cmd, &args, &env, has_codex, i, observer).await;
         guard.send(result);
     });
@@ -6174,6 +6536,7 @@ fn drain_ready_join_results(
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
 ) -> LoopAction {
     while let Some(Some(join_result)) = pool.join_set.join_next().now_or_never() {
         if let Err(join_error) = join_result {
@@ -6190,6 +6553,7 @@ fn drain_ready_join_results(
                 respawn_tx,
                 respawn_tasks,
                 observer.clone(),
+                session_ledger,
             );
             if pool.live_count() == 0 && !any_respawn_in_flight(crash_history) {
                 return LoopAction::Exit;
@@ -6369,6 +6733,81 @@ fn default_heartbeat_prompt() -> String {
 /// The result comes back through `respawn_tx` so the main loop stays responsive.
 ///
 /// Returns `true` if a respawn task was spawned, `false` if the circuit is open.
+/// A session a replaced worker held: scope, provider session id, and whether
+/// its turn took the worker down.
+type SessionRelease = (scope::SessionScope, String, bool);
+
+/// Sessions to re-arm once the worker that held them is gone. Applied only
+/// after the old adapter process tree has been shut down, so the next worker
+/// never reattaches a session the old one might still be writing.
+struct SessionReleases {
+    ledger: Option<Arc<session_ledger::SessionLedger>>,
+    released: Vec<SessionRelease>,
+}
+
+impl SessionReleases {
+    fn new(
+        ledger: Option<&Arc<session_ledger::SessionLedger>>,
+        released: Vec<SessionRelease>,
+    ) -> Self {
+        Self {
+            ledger: ledger.cloned(),
+            released,
+        }
+    }
+
+    fn apply(self) {
+        let Some(ledger) = self.ledger else {
+            return;
+        };
+        for (scope, session_id, failed) in self.released {
+            ledger.release(&scope, Some(&session_id), failed);
+        }
+    }
+}
+
+/// The worker is about to be replaced; its provider sessions are intact on
+/// disk, so the next turn in each of its scopes may reattach instead of
+/// starting over. `in_flight` is the scope whose turn was running; `failed`
+/// says that turn took the worker down, and a session that keeps doing so is
+/// forgotten by the ledger.
+fn worker_session_releases(
+    agent: &mut OwnedAgent,
+    in_flight: Option<&scope::SessionScope>,
+    failed: bool,
+    session_ledger: Option<&Arc<session_ledger::SessionLedger>>,
+) -> Vec<SessionRelease> {
+    let Some(ledger) = session_ledger else {
+        return Vec::new();
+    };
+    let mut released: Vec<SessionRelease> = agent
+        .state
+        .take_held_sessions()
+        .into_iter()
+        .map(|(scope, session_id)| {
+            let is_in_flight = in_flight == Some(&scope);
+            (scope, session_id, failed && is_in_flight)
+        })
+        .collect();
+    // Failure paths drop the running scope's handle before the worker returns.
+    // Blame only the session this turn actually ran on, or the one it was
+    // reattaching; a turn that was creating a new session leaves the recorded
+    // one alone.
+    if let Some(scope) = in_flight {
+        if !released.iter().any(|(held, _, _)| held == scope) {
+            let session_id = agent
+                .state
+                .turn_session(scope)
+                .map(str::to_owned)
+                .or_else(|| ledger.claimed(scope));
+            if let Some(session_id) = session_id {
+                released.push((scope.clone(), session_id, failed));
+            }
+        }
+    }
+    released
+}
+
 fn spawn_respawn_task(
     old_agent: OwnedAgent,
     config: &Config,
@@ -6376,6 +6815,7 @@ fn spawn_respawn_task(
     respawn_tx: &mpsc::Sender<RespawnResult>,
     respawn_tasks: &mut tokio::task::JoinSet<()>,
     observer: Option<observer::ObserverHandle>,
+    releases: SessionReleases,
 ) -> bool {
     let index = old_agent.index;
 
@@ -6383,6 +6823,13 @@ fn spawn_respawn_task(
     let delay = match slot.record_crash() {
         CrashVerdict::CircuitOpen => {
             tracing::error!(agent = index, "circuit open — not respawning");
+            // No replacement, but a later refill may serve these scopes.
+            respawn_tasks.spawn(async move {
+                let mut agent = old_agent;
+                agent.acp.shutdown().await;
+                drop(agent);
+                releases.apply();
+            });
             return false;
         }
         CrashVerdict::HalfOpenProbe => {
@@ -6408,6 +6855,7 @@ fn spawn_respawn_task(
         let mut agent = old_agent;
         agent.acp.shutdown().await;
         drop(agent);
+        releases.apply();
 
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
@@ -7972,6 +8420,24 @@ mod owner_cache_tests {
         let cache = OwnerCache::new(Some("ab".repeat(32)));
         assert_eq!(cache.get(), Some("ab".repeat(32)).as_deref());
     }
+
+    #[tokio::test]
+    async fn context_trust_follows_author_gate() {
+        let owner = "a".repeat(64);
+        let stranger = "b".repeat(64);
+        let rest = relay::RestClient {
+            http: reqwest::Client::new(),
+            base_url: "http://127.0.0.1:0".into(),
+            keys: nostr::Keys::generate().into(),
+            auth_tag_json: None,
+        };
+        let trust =
+            ContextAuthorTrust::new(RespondTo::OwnerOnly, HashSet::new(), Some(owner.clone()));
+        let trusted = trust
+            .trusted_authors([owner.as_str(), stranger.as_str()], false, &rest)
+            .await;
+        assert_eq!(trusted, HashSet::from([owner]));
+    }
 }
 
 #[cfg(test)]
@@ -8456,6 +8922,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: channel_type.into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -8772,6 +9239,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -8881,6 +9349,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -8946,6 +9415,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9006,6 +9476,7 @@ mod author_gate_tests {
                         name: "workflow".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 )]),
                 rest_client.clone(),
@@ -9083,6 +9554,7 @@ mod author_gate_tests {
                     name: "test".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9482,6 +9954,7 @@ mod author_gate_tests {
                     name: "dm".into(),
                     channel_type: "dm".into(),
                     description: None,
+                    group_chat: false,
                 },
             ),
             (
@@ -9490,6 +9963,7 @@ mod author_gate_tests {
                     name: "stream".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             ),
         ]);
@@ -9507,6 +9981,7 @@ mod author_gate_tests {
                 name: "unknown".into(),
                 channel_type: "unknown".into(),
                 description: None,
+                group_chat: false,
             },
         )]);
         assert!(
@@ -11075,35 +11550,30 @@ mod build_mcp_servers_tests {
     }
 }
 
-/// Resolve a dynamically joined channel's subscription. Dispatcher mode needs
-/// the channel type so DMs keep the mention filter; unresolved metadata fails
-/// closed to the ordinary filter (see `config::resolve_dynamic_channel_filter_for_type`).
+/// Resolve a dynamically joined channel's subscription. Every mode needs the
+/// group chat marker (group chats are mention-only); dispatcher mode also
+/// needs the channel type so DMs keep the mention filter. Unresolved metadata
+/// fails closed to a mention filter in every mode (see
+/// `config::resolve_dynamic_channel_filter_for_type`).
 async fn resolve_dynamic_listener_filter(
     config: &Config,
     channel_id: Uuid,
     rules: &[SubscriptionRule],
     channel_info: &pool::ChannelInfoResolver,
 ) -> Option<config::ChannelFilter> {
-    let channel_type = if config.dispatcher {
-        let channel_type = channel_info
-            .resolve_channel_metadata(channel_id)
-            .await
-            .map(|info| info.channel_type);
-        if channel_type.is_none() {
-            tracing::warn!(
-                channel_id = %channel_id,
-                "dispatcher: channel type unresolved on join — keeping the mention filter; \
-                 unmentioned requests in this channel will not be routed until restart"
-            );
-        }
-        channel_type
-    } else {
-        None
-    };
+    let metadata = channel_info.resolve_channel_metadata(channel_id).await;
+    if metadata.is_none() {
+        tracing::warn!(
+            channel_id = %channel_id,
+            "channel metadata unresolved on join — keeping the mention filter (it may be a \
+             group chat); unmentioned messages in this channel are not heard until restart"
+        );
+    }
     config::resolve_dynamic_channel_filter_for_type(
         config,
         channel_id,
-        channel_type.as_deref(),
+        metadata.as_ref().map(|info| info.channel_type.as_str()),
+        metadata.as_ref().is_some_and(|info| info.group_chat),
         rules,
     )
 }
@@ -11303,6 +11773,7 @@ mod dispatcher_admission_tests {
                         name: "general".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 ),
                 (
@@ -11311,6 +11782,7 @@ mod dispatcher_admission_tests {
                         name: "dm".into(),
                         channel_type: "dm".into(),
                         description: None,
+                        group_chat: false,
                     },
                 ),
             ]),
@@ -11461,6 +11933,176 @@ mod dispatcher_admission_tests {
             "control: the ordinary gate admits a sibling on an unresolved channel"
         );
         unresolved_server.abort();
+    }
+
+    /// Group chats never take the dispatcher policy: a mentioned message from
+    /// the agent's owner is admitted under the ordinary author policy (the
+    /// dispatcher policy would drop it, as group chats have no owner/admin
+    /// and the owner is not a configured human), and an unmentioned message
+    /// is dropped even from the owner.
+    #[tokio::test]
+    async fn dispatcher_gate_skips_group_chats_and_requires_a_mention() {
+        let relay_hex = Keys::generate().public_key().to_hex();
+        let agent = Keys::generate().public_key().to_hex();
+        let owner = Keys::generate();
+        let (rest_client, server) =
+            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+        let chat_id = Uuid::new_v4();
+        let dispatcher = std::sync::Arc::new(dispatcher::DispatcherGate::new(
+            DispatcherConfig::from_channels(HashMap::from([(
+                chat_id,
+                DispatcherChannelPolicy {
+                    humans: HashSet::new(),
+                    ais: HashSet::new(),
+                },
+            )])),
+            None,
+        ));
+        let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test")
+            .await
+            .with_dispatcher(Some(dispatcher));
+        let channel_info = pool::ChannelInfoResolver::new(
+            HashMap::from([(
+                chat_id,
+                relay::ChannelInfo {
+                    name: "unknown".into(),
+                    channel_type: "private".into(),
+                    description: None,
+                    group_chat: true,
+                },
+            )]),
+            rest_client.clone(),
+        );
+        let owner_cache = OwnerCache::new(Some(owner.public_key().to_hex()));
+
+        let mentioned = gate
+            .evaluate_listener_event(
+                &relay::KuzzEvent {
+                    connection_generation: 0,
+                    channel_id: chat_id,
+                    event: stream_message(&owner, &[agent.as_str()]),
+                },
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            mentioned.allowed && !mentioned.is_dm,
+            "the owner's @mention in a group chat takes the ordinary policy"
+        );
+
+        let unmentioned = gate
+            .evaluate_listener_event(
+                &relay::KuzzEvent {
+                    connection_generation: 0,
+                    channel_id: chat_id,
+                    event: stream_message(&owner, &[]),
+                },
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            !unmentioned.allowed,
+            "a group chat message without an @mention never reaches the agent"
+        );
+        server.abort();
+    }
+
+    /// Without a dispatcher (Lead routing = `config` mode with the desktop's
+    /// rules, or `--subscribe all`), the listener gate still drops a group
+    /// chat message that does not @mention the agent, even from its owner,
+    /// although the Lead `lead-listen` rule would match it. The same message
+    /// in an ordinary channel keeps reaching the agent.
+    #[tokio::test]
+    async fn gate_drops_unmentioned_group_chat_messages_without_a_dispatcher() {
+        let relay_hex = Keys::generate().public_key().to_hex();
+        let agent = Keys::generate().public_key().to_hex();
+        // The owner the Lead fixture's `lead-listen` rule names (secret key 1).
+        let owner = Keys::parse("0000000000000000000000000000000000000000000000000000000000000001")
+            .expect("owner key");
+        let lead_rules = config::load_rules(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/lead_rules.toml"),
+        )
+        .expect("lead rules load");
+        let (rest_client, server) =
+            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+        let chat_id = Uuid::new_v4();
+        let stream_id = Uuid::new_v4();
+        let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test").await;
+        let channel_info = pool::ChannelInfoResolver::new(
+            HashMap::from([
+                (
+                    chat_id,
+                    relay::ChannelInfo {
+                        name: "unknown".into(),
+                        channel_type: "private".into(),
+                        description: None,
+                        group_chat: true,
+                    },
+                ),
+                (
+                    stream_id,
+                    relay::ChannelInfo {
+                        name: "general".into(),
+                        channel_type: "stream".into(),
+                        description: None,
+                        group_chat: false,
+                    },
+                ),
+            ]),
+            rest_client.clone(),
+        );
+        let owner_cache = OwnerCache::new(Some(owner.public_key().to_hex()));
+        let unmentioned = stream_message(&owner, &[]);
+        let mentioned = stream_message(&owner, &[agent.as_str()]);
+        assert_eq!(
+            filter::match_event(&unmentioned, chat_id, &lead_rules, &agent)
+                .await
+                .map(|m| m.prompt_tag)
+                .as_deref(),
+            Some("lead-listen"),
+            "the Lead rules alone would admit the owner's unmentioned message"
+        );
+
+        for respond_to in [RespondTo::OwnerOnly, RespondTo::Anyone] {
+            let mut decide = async |channel_id: Uuid, event: &nostr::Event| {
+                gate.evaluate_listener_event(
+                    &relay::KuzzEvent {
+                        connection_generation: 0,
+                        channel_id,
+                        event: event.clone(),
+                    },
+                    &respond_to,
+                    &HashSet::new(),
+                    &owner_cache,
+                    &channel_info,
+                    &rest_client,
+                )
+                .await
+                .allowed
+            };
+            assert!(
+                !decide(chat_id, &unmentioned).await,
+                "{respond_to}: an unmentioned owner message in a group chat is dropped"
+            );
+            assert!(
+                decide(chat_id, &mentioned).await,
+                "{respond_to}: the owner's @mention in a group chat is admitted"
+            );
+            assert!(
+                decide(stream_id, &unmentioned).await,
+                "{respond_to}: an ordinary channel still hears the owner unmentioned"
+            );
+        }
+        server.abort();
     }
 }
 
@@ -11633,6 +12275,90 @@ mod error_outcome_emission_tests {
         }
     }
 
+    /// An idle worker writing on its own between turns counts as working;
+    /// bookkeeping output does not.
+    #[tokio::test]
+    async fn idle_worker_output_between_turns_is_handled_and_counts_as_work() {
+        const CHUNK: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"still going"}}}}"#;
+        const USAGE: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"usage_update","used":1,"size":2}}}"#;
+        async fn pool_writing(line: &str) -> AgentPool {
+            let mut agent = dummy_agent(0).await;
+            agent.acp = AcpClient::spawn(
+                "bash",
+                &["-c".into(), format!("echo '{line}'; sleep 30")],
+                &[],
+                false,
+            )
+            .await
+            .expect("spawn writer");
+            AgentPool::from_slots(vec![Some(agent), None])
+        }
+        /// Whether one drain moved the last activity forward.
+        async fn counts_as_work(pool: &mut AgentPool) -> bool {
+            let stale = tokio::time::Instant::now() - Duration::from_secs(60);
+            let mut last_activity = stale;
+            drain_idle_agent_output(pool, &mut last_activity).await;
+            last_activity != stale
+        }
+        async fn drained(pool: &mut AgentPool) -> bool {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            loop {
+                if counts_as_work(pool).await {
+                    return true;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return false;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+
+        let mut pool = pool_writing(CHUNK).await;
+        assert!(drained(&mut pool).await, "a reply chunk is work");
+        assert!(!counts_as_work(&mut pool).await, "handled once");
+
+        let mut pool = pool_writing(USAGE).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(!counts_as_work(&mut pool).await, "usage is not work");
+    }
+
+    #[tokio::test]
+    async fn a_dead_worker_is_blamed_only_for_the_session_its_turn_used() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ledger = Arc::new(session_ledger::SessionLedger::open(
+            dir.path().join("sessions.json"),
+        ));
+        let scope = scope::SessionScope::Main {
+            channel_id: Uuid::new_v4(),
+        };
+        ledger.record(&scope, "s", "id", "/c");
+
+        // The turn was creating a new session: the recorded one is untouched.
+        let mut agent = dummy_agent(0).await;
+        assert!(worker_session_releases(&mut agent, Some(&scope), true, Some(&ledger)).is_empty());
+
+        // The turn ran on `s` and its handle was dropped before returning.
+        agent.state.turn_session = Some((scope.clone(), "s".into()));
+        assert_eq!(
+            worker_session_releases(&mut agent, Some(&scope), true, Some(&ledger)),
+            vec![(scope.clone(), "s".to_string(), true)]
+        );
+
+        // The turn died while reattaching `s`.
+        agent.state.turn_session = None;
+        ledger.release(&scope, Some("s"), false);
+        assert_eq!(ledger.take_resumable(&scope, "id", "/c"), Some("s".into()));
+        let released = worker_session_releases(&mut agent, Some(&scope), true, Some(&ledger));
+        assert_eq!(released, vec![(scope.clone(), "s".to_string(), true)]);
+
+        // Re-armed only once applied (after the old adapter is gone).
+        let releases = SessionReleases::new(Some(&ledger), released);
+        assert!(ledger.take_resumable(&scope, "id", "/c").is_none());
+        releases.apply();
+        assert_eq!(ledger.take_resumable(&scope, "id", "/c"), Some("s".into()));
+        agent.acp.shutdown().await;
+    }
+
     fn bind_agent_scope_owner(
         pool: &mut AgentPool,
         agent: &mut OwnedAgent,
@@ -11640,6 +12366,209 @@ mod error_outcome_emission_tests {
     ) {
         let generation = pool.record_scope_owner(scope.clone(), agent.index);
         agent.state.set_scope_owner_generation(scope, generation);
+    }
+
+    async fn idle_test_result(source: PromptSource, turn_id: &str) -> PromptResult {
+        PromptResult {
+            agent: dummy_agent(0).await,
+            source,
+            turn_id: turn_id.into(),
+            outcome: PromptOutcome::Ok(crate::acp::StopReason::EndTurn),
+            batch: None,
+        }
+    }
+
+    fn idle_sleep_due(last_activity: tokio::time::Instant, now: tokio::time::Instant) -> bool {
+        idle_pool_sleep_due(
+            true,
+            last_activity,
+            now,
+            Duration::from_secs(30),
+            false,
+            false,
+            false,
+            false,
+        )
+    }
+
+    /// A channel turn longer than the idle interval gets a full interval
+    /// after it completes (upstream block/buzz #8149), is marked for the next
+    /// idle check, and voids a round it overlapped.
+    #[tokio::test(start_paused = true)]
+    async fn completed_channel_turn_gets_a_full_idle_interval() {
+        let scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let bound = Duration::from_secs(30);
+        let mut last_activity = tokio::time::Instant::now();
+        tokio::time::advance(bound * 2).await;
+        let completed_at = tokio::time::Instant::now();
+        assert!(idle_sleep_due(last_activity, completed_at), "precondition");
+
+        let mut scopes = HashSet::new();
+        let mut round = Some(IdleCheckRound {
+            busy: true,
+            ..Default::default()
+        });
+        let mut result = idle_test_result(PromptSource::Channel(scope.clone()), "turn").await;
+        record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+
+        assert_eq!(last_activity, completed_at);
+        assert!(scopes.contains(&scope));
+        assert!(round.is_none());
+        assert!(!idle_sleep_due(last_activity, completed_at));
+        assert!(!idle_sleep_due(
+            last_activity,
+            completed_at + bound - Duration::from_millis(1)
+        ));
+        assert!(idle_sleep_due(last_activity, completed_at + bound));
+    }
+
+    /// Heartbeats neither renew the interval nor need an idle check.
+    #[tokio::test(start_paused = true)]
+    async fn completed_heartbeat_does_not_extend_the_idle_interval() {
+        let mut last_activity = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        let before = last_activity;
+        let mut scopes = HashSet::new();
+        let mut round = None;
+        let mut result = idle_test_result(PromptSource::Heartbeat, "hb").await;
+        record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+        assert_eq!(last_activity, before);
+        assert!(scopes.is_empty());
+        assert!(idle_sleep_due(last_activity, tokio::time::Instant::now()));
+    }
+
+    /// An idle check's answer goes to the round and never renews the
+    /// interval: `BUSY` keeps the scope for the next check, `IDLE` and no
+    /// answer drop it.
+    #[tokio::test(start_paused = true)]
+    async fn idle_check_answers_update_the_round_not_the_interval() {
+        let busy_scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let idle_scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let stuck_scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut last_activity = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        let before = last_activity;
+        let mut scopes: HashSet<_> = [busy_scope.clone(), idle_scope.clone(), stuck_scope.clone()]
+            .into_iter()
+            .collect();
+        let mut round = Some(IdleCheckRound::default());
+        let check_id = format!("{}x", pool::IDLE_CHECK_TURN_PREFIX);
+
+        for (scope, answer) in [
+            (&idle_scope, Some(pool::IdleCheckAnswer::Idle)),
+            (&stuck_scope, None),
+        ] {
+            let mut result =
+                idle_test_result(PromptSource::Channel(scope.clone()), &check_id).await;
+            result.agent.state.idle_check_answer = answer;
+            record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+        }
+        assert!(!round.as_ref().unwrap().busy);
+        assert_eq!(scopes, [busy_scope.clone()].into_iter().collect());
+
+        let mut result =
+            idle_test_result(PromptSource::Channel(busy_scope.clone()), &check_id).await;
+        result.agent.state.idle_check_answer = Some(pool::IdleCheckAnswer::Busy);
+        record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+        assert!(round.as_ref().unwrap().busy);
+        assert!(scopes.contains(&busy_scope));
+        assert_eq!(last_activity, before, "an idle check is not activity");
+    }
+
+    /// Idle checks go only to a scope's owning worker; a scope whose session
+    /// is gone is dropped from the set.
+    #[tokio::test]
+    async fn idle_checks_go_to_live_scope_owners_only() {
+        let owned = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let gone = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut agent = dummy_agent(0).await;
+        let mut pool = AgentPool::from_slots(vec![None]);
+        bind_agent_scope_owner(&mut pool, &mut agent, owned.clone());
+        agent
+            .state
+            .sessions
+            .insert(owned.clone(), "sess-owned".into());
+        pool.return_agent(agent);
+        let mut queue = EventQueue::new(config::DedupMode::Queue);
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
+        let mut scopes: HashSet<_> = [owned.clone(), gone.clone()].into_iter().collect();
+
+        let none = HashSet::new();
+        assert_eq!(
+            start_idle_checks(&mut pool, &mut queue, &ctx, &mut scopes, &none),
+            vec![owned.clone()]
+        );
+        assert_eq!(scopes, [owned.clone()].into_iter().collect());
+        assert!(queue.is_scope_in_flight(&owned));
+        let meta = pool.task_map().values().next().expect("idle check task");
+        assert_eq!(meta.scope.as_ref(), Some(&owned));
+        assert!(meta.turn_id.starts_with(pool::IDLE_CHECK_TURN_PREFIX));
+        // While it runs the scope is busy: a second round sends nothing.
+        assert!(start_idle_checks(&mut pool, &mut queue, &ctx, &mut scopes, &none).is_empty());
+        pool.join_set.abort_all();
+    }
+
+    /// One worker answers for its scopes one at a time, so a round keeps
+    /// asking until every scope was asked; `BUSY` ends it without asking more.
+    #[test]
+    fn idle_check_step_asks_every_scope_before_sleeping() {
+        let a = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let b = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut round = None;
+        assert_eq!(
+            idle_check_step(&mut round, |_| Vec::new()),
+            IdleCheckStep::Sleep
+        );
+        assert!(round.is_none());
+
+        assert_eq!(
+            idle_check_step(&mut round, |asked| {
+                assert!(asked.is_empty());
+                vec![a.clone()]
+            }),
+            IdleCheckStep::Asking
+        );
+        assert_eq!(
+            idle_check_step(&mut round, |asked| {
+                assert_eq!(asked, &[a.clone()].into_iter().collect());
+                vec![b.clone()]
+            }),
+            IdleCheckStep::Asking
+        );
+        assert_eq!(
+            idle_check_step(&mut round, |asked| {
+                assert_eq!(asked.len(), 2);
+                Vec::new()
+            }),
+            IdleCheckStep::Sleep
+        );
+        assert!(round.is_none());
+
+        let mut round = Some(IdleCheckRound {
+            busy: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            idle_check_step(&mut round, |_| panic!("a busy round must not ask")),
+            IdleCheckStep::Busy
+        );
+        assert!(round.is_none());
     }
 
     #[tokio::test]
@@ -11711,6 +12640,7 @@ mod error_outcome_emission_tests {
             &mut crash_history,
             &respawn_tx,
             &mut respawn_tasks,
+            None,
             None,
             None,
         );
@@ -11791,6 +12721,7 @@ mod error_outcome_emission_tests {
             &mut crash_history,
             &respawn_tx,
             &mut respawn_tasks,
+            None,
             None,
             None,
         );
@@ -11914,6 +12845,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             None,
             None,
+            None,
         );
 
         let returned = pool.agents_mut()[0].as_ref().expect("returned agent");
@@ -11982,6 +12914,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12057,6 +12990,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
         );
 
         let panic = observer
@@ -12149,6 +13083,7 @@ mod error_outcome_emission_tests {
             &mut crash_history,
             &respawn_tx,
             &mut respawn_tasks,
+            None,
             None,
         );
 
@@ -12252,6 +13187,7 @@ mod error_outcome_emission_tests {
                 &mut respawn_tasks,
                 Some(observer.clone()),
                 None,
+                None,
             );
             let events = observer.snapshot();
             let turn_error = events.iter().find(|e| e.kind == "turn_error").unwrap();
@@ -12345,6 +13281,7 @@ mod error_outcome_emission_tests {
                 &mut crash_history,
                 &respawn_tx,
                 &mut respawn_tasks,
+                None,
                 None,
                 None,
             );
@@ -12456,6 +13393,7 @@ mod error_outcome_emission_tests {
                 &mut respawn_tasks,
                 None,
                 None,
+                None,
             );
             (
                 queue.pending_channels(),
@@ -12550,6 +13488,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12647,6 +13586,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12768,6 +13708,7 @@ mod error_outcome_emission_tests {
             &respawn_tx,
             &mut respawn_tasks,
             Some(observer.clone()),
+            None,
             None,
         );
 
@@ -12905,6 +13846,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             Some(observer.clone()),
             None,
+            None,
         );
 
         // No batch to merge — the queue has nothing pending for any channel.
@@ -13034,6 +13976,7 @@ mod error_outcome_emission_tests {
                 &mut crash_history,
                 &respawn_tx,
                 &mut respawn_tasks,
+                None,
                 None,
                 None,
             ),
@@ -13203,6 +14146,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             None,
             None,
+            None,
         );
 
         // The batch must not be requeued: pending_channels returns 0.
@@ -13311,6 +14255,7 @@ mod error_outcome_emission_tests {
             &mut respawn_tasks,
             Some(observer.clone()),
             Some(&rest),
+            None,
         );
 
         // The batch must not be requeued: pending_channels returns 0.
@@ -13580,6 +14525,7 @@ mod error_outcome_emission_tests {
             &mut crash_history,
             &respawn_tx,
             &mut respawn_tasks,
+            None,
             None,
             None,
         );

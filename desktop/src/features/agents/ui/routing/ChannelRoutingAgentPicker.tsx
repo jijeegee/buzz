@@ -114,7 +114,7 @@ export function ChannelRoutingAgentPicker({
           onCheckedChange={(checked) => setDefaultAiAutoJoin(checked === true)}
         />
         <label className="text-sm text-foreground" htmlFor={autoJoinId}>
-          Join new channels I create
+          Join new groups I create
         </label>
       </div>
     </div>

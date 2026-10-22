@@ -10,6 +10,83 @@ final _a = 'a' * 64;
 final _b = 'b' * 64;
 
 void main() {
+  group('writing thread pins (desktop register rules)', () {
+    test('pinning writes a register above every version seen', () {
+      final held = parseThreadPinRegisters({
+        'version': 1,
+        'meta': {
+          'v': 1,
+          'i': {
+            _a: [5000, 'aaaaaaaaaaaaaaaa', true],
+          },
+        },
+      });
+      final next = setThreadPinRegister(
+        held,
+        _b,
+        true,
+        nowMs: 10,
+        dev: '0123456789abcdef',
+      );
+      expect(next[_b], (v: 5001, dev: '0123456789abcdef', pinned: true));
+      expect(pinnedIdsOf(next), {_a, _b});
+      final doc = encodeThreadPins(next);
+      expect(doc['ids'], [_a, _b]);
+      expect(parseThreadPins(doc), {_a, _b});
+    });
+
+    test('unpinning keeps a false register; unpinning nothing is a no-op', () {
+      final pinned = setThreadPinRegister(
+        const {},
+        _a,
+        true,
+        nowMs: 1,
+        dev: 'd',
+      );
+      final unpinned = setThreadPinRegister(
+        pinned,
+        _a,
+        false,
+        nowMs: 2,
+        dev: 'd',
+      );
+      expect(unpinned[_a]?.pinned, false);
+      expect(pinnedIdsOf(unpinned), isEmpty);
+      expect(
+        setThreadPinRegister(const {}, _b, false, nowMs: 3, dev: 'd'),
+        isEmpty,
+      );
+    });
+
+    test('a newer register from another device wins the merge', () {
+      final mine = {_a: (v: 1, dev: 'm', pinned: true)};
+      final theirs = {_a: (v: 2, dev: 't', pinned: false)};
+      expect(mergeThreadPinRegisters(mine, theirs)[_a]?.pinned, false);
+      expect(mergeThreadPinRegisters(theirs, mine)[_a]?.pinned, false);
+    });
+
+    test('only the newest 50 unpins are kept', () {
+      var registers = <String, ThreadPinRegister>{
+        for (var i = 0; i < 60; i++)
+          i.toRadixString(16).padLeft(64, '0'): (
+            v: i + 1,
+            dev: 'd',
+            pinned: true,
+          ),
+      };
+      for (final id in registers.keys.toList()) {
+        registers = setThreadPinRegister(
+          registers,
+          id,
+          false,
+          nowMs: 0,
+          dev: 'd',
+        );
+      }
+      expect(registers.length, maxThreadPinTombstones);
+    });
+  });
+
   group('parseThreadPins (desktop thread-pins record)', () {
     test('reads the pinned registers of meta', () {
       expect(

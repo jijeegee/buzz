@@ -931,7 +931,7 @@ mobile-build-android:
     #!/usr/bin/env bash
     set -euo pipefail
     ./scripts/mobile-worktree-overrides.sh
-    set -- build apk --debug --no-pub --dart-define="KUZZ_KEY_BACKUP_ORIGIN=${KUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}" --dart-define="KUZZ_RELAY_URL=${KUZZ_RELAY_URL:-wss://jihobuzz.duckdns.org:8443}"
+    set -- build apk --debug --no-pub --dart-define="KUZZ_KEY_BACKUP_ORIGIN=${KUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org}" --dart-define="KUZZ_RELAY_URL=${KUZZ_RELAY_URL:-wss://jihobuzz.duckdns.org}"
     if [[ -n "${KUZZ_PUSH_GATEWAY_URL:-}" ]]; then
         set -- "$@" --dart-define="KUZZ_PUSH_GATEWAY_URL=${KUZZ_PUSH_GATEWAY_URL}"
     fi
@@ -953,7 +953,7 @@ mobile-dev:
     if [[ -z "$gateway_url" && -f "$overrides_file" ]]; then
         gateway_url="$(sed -nE 's/^[[:space:]]*KUZZ_PUSH_GATEWAY_URL[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$/\1/p' "$overrides_file" | tail -n 1 | sed 's/\$()//g')"
     fi
-    set -- run --dart-define="KUZZ_KEY_BACKUP_ORIGIN=${KUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org:8443}" --dart-define="KUZZ_RELAY_URL=${KUZZ_RELAY_URL:-wss://jihobuzz.duckdns.org:8443}"
+    set -- run --dart-define="KUZZ_KEY_BACKUP_ORIGIN=${KUZZ_KEY_BACKUP_ORIGIN:-https://jihobuzz.duckdns.org}" --dart-define="KUZZ_RELAY_URL=${KUZZ_RELAY_URL:-wss://jihobuzz.duckdns.org}"
     if [[ -n "$gateway_url" ]]; then
         set -- "$@" --dart-define="KUZZ_PUSH_GATEWAY_URL=${gateway_url}"
     fi

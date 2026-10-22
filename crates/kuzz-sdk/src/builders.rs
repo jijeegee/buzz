@@ -6,13 +6,13 @@
 use kuzz_core::{
     kind::{
         KIND_AGENT_OBSERVER_FRAME, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_DELETION,
-        KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_EMOJI_SET, KIND_GIT_ISSUE, KIND_GIT_PATCH,
-        KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
-        KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
-        KIND_GIT_STATUS_OPEN, KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST,
-        KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
-        KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_PRESENCE_UPDATE, KIND_PROJECT,
-        KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
+        KIND_DM_OPEN, KIND_EMOJI_SET, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
+        KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_STATUS_CLOSED,
+        KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
+        KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_MODERATION_BAN,
+        KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN,
+        KIND_MODERATION_UNTIMEOUT, KIND_PRESENCE_UPDATE, KIND_PROJECT, KIND_USER_STATUS,
+        KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
     },
     observer::{
         content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -902,6 +902,25 @@ pub fn build_update_channel(
     Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
 }
 
+/// Build a NIP-29 edit-metadata event that sets or removes the group photo
+/// (kind 9002). `Some(url)` sets it (a `/media/<sha256>[.ext]` URL on the
+/// relay, which the relay validates); `None` removes it (`["picture", ""]`).
+pub fn build_set_channel_picture(
+    channel_id: Uuid,
+    picture: Option<&str>,
+) -> Result<EventBuilder, SdkError> {
+    if picture.is_some_and(str::is_empty) {
+        return Err(SdkError::InvalidTag(
+            "picture URL must not be empty (use None to remove)".into(),
+        ));
+    }
+    let tags = vec![
+        tag(&["h", &channel_id.to_string()])?,
+        tag(&["picture", picture.unwrap_or("")])?,
+    ];
+    Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
+}
+
 /// Build a NIP-29 edit-metadata event for topic (kind 9002).
 pub fn build_set_topic(channel_id: Uuid, topic: &str) -> Result<EventBuilder, SdkError> {
     let tags = vec![
@@ -949,6 +968,61 @@ pub fn build_create_channel(
     }
     if let Some(secs) = ttl {
         tags.push(tag(&["ttl", &secs.to_string()])?);
+    }
+    Ok(EventBuilder::new(Kind::Custom(9007), "").tags(tags))
+}
+
+/// Most people a group chat can start with (`p` tags on its kind 9007).
+/// More can be added one at a time afterwards.
+pub const MAX_GROUP_CHAT_INITIAL_MEMBERS: usize = 100;
+
+/// Build a create-group-chat event (kind 9007 with the bare `["group_chat"]`
+/// marker).
+///
+/// A group chat is an ownerless private stream: the event always carries
+/// `["visibility","private"]` and `["channel_type","stream"]` and never
+/// ttl/about/picture/handle. `name` is optional; `None` or a blank name leaves
+/// the chat unnamed (clients draw a title from the members). `members` are the
+/// initial people besides the creator (`self_pubkey`): up to
+/// [`MAX_GROUP_CHAT_INITIAL_MEMBERS`] 64-character hex pubkeys. Duplicates are
+/// collapsed; the creator is rejected because the relay adds them itself.
+pub fn build_create_group_chat(
+    channel_id: Uuid,
+    name: Option<&str>,
+    members: &[&str],
+    self_pubkey: &str,
+) -> Result<EventBuilder, SdkError> {
+    let self_pubkey = check_pubkey_hex(self_pubkey, "self_pubkey")?;
+    let mut people: Vec<String> = Vec::with_capacity(members.len());
+    for member in members {
+        let pk = check_pubkey_hex(member, "member")?;
+        if pk == self_pubkey {
+            return Err(SdkError::InvalidInput(
+                "a group chat member must not be yourself; you are added automatically".into(),
+            ));
+        }
+        if !people.contains(&pk) {
+            people.push(pk);
+        }
+    }
+    if people.len() > MAX_GROUP_CHAT_INITIAL_MEMBERS {
+        return Err(SdkError::InvalidInput(format!(
+            "a group chat can start with at most {MAX_GROUP_CHAT_INITIAL_MEMBERS} people \
+             (got {}); add the rest afterwards",
+            people.len()
+        )));
+    }
+    let mut tags = vec![
+        tag(&["h", &channel_id.to_string()])?,
+        tag(&["group_chat"])?,
+        tag(&["visibility", "private"])?,
+        tag(&["channel_type", "stream"])?,
+    ];
+    if let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) {
+        tags.push(tag(&["name", name])?);
+    }
+    for pk in &people {
+        tags.push(tag(&["p", pk])?);
     }
     Ok(EventBuilder::new(Kind::Custom(9007), "").tags(tags))
 }
@@ -1914,28 +1988,42 @@ pub fn build_workflow_approval(
     Ok(EventBuilder::new(Kind::Custom(kind as u16), note).tags(tags))
 }
 
+/// Error text shared by the 1:1 DM builders.
+const DM_ONE_TO_ONE: &str = "direct messages are 1:1; to talk with more people, \
+     start a group chat instead (build_create_group_chat)";
+
 /// Build a DM open event (kind 41010).
 ///
-/// `pubkeys` must be 1–8 hex-encoded pubkeys to include in the DM conversation.
+/// Direct messages are 1:1: `pubkeys` must hold exactly one distinct
+/// hex-encoded pubkey — the other person, or your own for notes to self.
+/// For more people, use [`build_create_group_chat`].
 pub fn build_dm_open(pubkeys: &[&str]) -> Result<EventBuilder, SdkError> {
-    if pubkeys.is_empty() || pubkeys.len() > 8 {
-        return Err(SdkError::InvalidInput(
-            "dm open requires 1-8 pubkeys".into(),
-        ));
-    }
-    let mut tags = Vec::with_capacity(pubkeys.len());
+    let mut distinct: Vec<String> = Vec::with_capacity(1);
     for pk in pubkeys {
         let validated = check_pubkey_hex(pk, "pubkey")?;
-        tags.push(tag(&["p", &validated])?);
+        if !distinct.contains(&validated) {
+            distinct.push(validated);
+        }
     }
-    Ok(EventBuilder::new(Kind::Custom(KIND_DM_OPEN as u16), "").tags(tags))
+    match distinct.as_slice() {
+        [only] => {
+            let tags = vec![tag(&["p", only])?];
+            Ok(EventBuilder::new(Kind::Custom(KIND_DM_OPEN as u16), "").tags(tags))
+        }
+        [] => Err(SdkError::InvalidInput(
+            "dm open requires one pubkey (the other person, or your own for notes to self)".into(),
+        )),
+        _ => Err(SdkError::InvalidInput(DM_ONE_TO_ONE.into())),
+    }
 }
 
-/// Build a DM add-member event (kind 41011).
+/// DM add-member (kind 41011) is no longer supported: direct messages are
+/// 1:1 and the relay rejects 41011. Always returns
+/// [`SdkError::InvalidInput`]; start a group chat with
+/// [`build_create_group_chat`] instead.
 pub fn build_dm_add_member(channel_id: Uuid, pubkey: &str) -> Result<EventBuilder, SdkError> {
-    let pk = check_pubkey_hex(pubkey, "pubkey")?;
-    let tags = vec![tag(&["h", &channel_id.to_string()])?, tag(&["p", &pk])?];
-    Ok(EventBuilder::new(Kind::Custom(KIND_DM_ADD_MEMBER as u16), "").tags(tags))
+    let _ = (channel_id, pubkey);
+    Err(SdkError::InvalidInput(DM_ONE_TO_ONE.into()))
 }
 
 /// Build a presence update event (kind 20001).
@@ -3607,6 +3695,21 @@ mod tests {
     }
 
     #[test]
+    fn set_channel_picture_sets_and_removes() {
+        let cid = uuid();
+        let url = format!("https://relay.example/media/{}.jpg", "a".repeat(64));
+        let ev = sign(build_set_channel_picture(cid, Some(&url)).unwrap());
+        assert_eq!(ev.kind.as_u16(), 9002);
+        assert!(has_tag(&ev, "picture", &url));
+        let ev = sign(build_set_channel_picture(cid, None).unwrap());
+        assert!(has_tag(&ev, "picture", ""));
+        assert!(matches!(
+            build_set_channel_picture(cid, Some("")),
+            Err(SdkError::InvalidTag(_))
+        ));
+    }
+
+    #[test]
     fn set_purpose_happy_path() {
         let cid = uuid();
         let ev = sign(build_set_purpose(cid, "Team coordination").unwrap());
@@ -4628,11 +4731,29 @@ mod tests {
     }
 
     #[test]
-    fn dm_open_rejects_over_8_pubkeys() {
+    fn dm_open_rejects_more_than_one_person() {
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        let err = build_dm_open(&[&a, &b]).unwrap_err();
+        assert!(
+            matches!(&err, SdkError::InvalidInput(m) if m.contains("1:1") && m.contains("group chat")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn dm_open_collapses_repeats_of_one_pubkey() {
         let pk = "a".repeat(64);
-        let pks: Vec<&str> = vec![pk.as_str(); 9];
-        let err = build_dm_open(&pks).unwrap_err();
-        assert!(matches!(err, SdkError::InvalidInput(_)));
+        let upper = pk.to_ascii_uppercase();
+        let ev = sign(build_dm_open(&[&pk, &upper]).unwrap());
+        assert_eq!(tag_values(&ev, "p"), vec![pk]);
+    }
+
+    #[test]
+    fn dm_open_accepts_own_pubkey_for_notes_to_self() {
+        let me = keys().public_key().to_hex();
+        let ev = sign(build_dm_open(&[&me]).unwrap());
+        assert_eq!(tag_values(&ev, "p"), vec![me]);
     }
 
     #[test]
@@ -4642,19 +4763,86 @@ mod tests {
     }
 
     #[test]
-    fn dm_add_member_happy_path() {
-        let cid = uuid();
-        let pk = "b".repeat(64);
-        let ev = sign(build_dm_add_member(cid, &pk).unwrap());
-        assert_eq!(ev.kind.as_u16(), 41011);
-        assert!(has_tag(&ev, "h", &cid.to_string()));
-        assert!(has_tag(&ev, "p", &pk));
+    fn dm_add_member_always_points_to_group_chats() {
+        let err = build_dm_add_member(uuid(), &"b".repeat(64)).unwrap_err();
+        assert!(
+            matches!(&err, SdkError::InvalidInput(m) if m.contains("1:1") && m.contains("group chat")),
+            "{err}"
+        );
+    }
+
+    fn group_chat_tag_names(ev: &nostr::Event) -> Vec<String> {
+        ev.tags
+            .iter()
+            .filter_map(|t| t.as_slice().first().cloned())
+            .collect()
     }
 
     #[test]
-    fn dm_add_member_rejects_bad_pubkey() {
-        let err = build_dm_add_member(uuid(), "short").unwrap_err();
+    fn create_group_chat_carries_the_wire_contract() {
+        let cid = uuid();
+        let me = "c".repeat(64);
+        let a = "a".repeat(64);
+        let b = "B".repeat(64);
+        let ev = sign(build_create_group_chat(cid, Some("  Trip  "), &[&a, &b, &a], &me).unwrap());
+        assert_eq!(ev.kind.as_u16(), 9007);
+        assert!(has_tag(&ev, "h", &cid.to_string()));
+        assert!(ev
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["group_chat".to_string()]));
+        assert!(has_tag(&ev, "visibility", "private"));
+        assert!(has_tag(&ev, "channel_type", "stream"));
+        assert_eq!(tag_values(&ev, "name"), vec!["Trip".to_string()]);
+        assert_eq!(tag_values(&ev, "p"), vec![a, "b".repeat(64)]);
+        let names = group_chat_tag_names(&ev);
+        for forbidden in ["ttl", "about", "picture", "handle"] {
+            assert!(!names.iter().any(|n| n == forbidden), "{forbidden} present");
+        }
+    }
+
+    #[test]
+    fn create_group_chat_name_and_members_are_optional() {
+        let me = "c".repeat(64);
+        for name in [None, Some(""), Some("   ")] {
+            let ev = sign(build_create_group_chat(uuid(), name, &[], &me).unwrap());
+            assert!(tag_values(&ev, "name").is_empty(), "{name:?} stays unnamed");
+            assert!(tag_values(&ev, "p").is_empty());
+        }
+    }
+
+    #[test]
+    fn create_group_chat_rejects_self_and_bad_pubkeys() {
+        let me = "c".repeat(64);
+        let err =
+            build_create_group_chat(uuid(), None, &[&me.to_ascii_uppercase()], &me).unwrap_err();
+        assert!(
+            matches!(&err, SdkError::InvalidInput(m) if m.contains("yourself")),
+            "{err}"
+        );
+        let err = build_create_group_chat(uuid(), None, &["npub1short"], &me).unwrap_err();
         assert!(matches!(err, SdkError::InvalidInput(_)));
+        let err = build_create_group_chat(uuid(), None, &[], "bad").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn create_group_chat_caps_initial_members_at_100() {
+        let me = "c".repeat(64);
+        let pks: Vec<String> = (0..=MAX_GROUP_CHAT_INITIAL_MEMBERS)
+            .map(|i| format!("{i:064x}"))
+            .collect();
+        let refs: Vec<&str> = pks.iter().map(String::as_str).collect();
+        let ok = sign(
+            build_create_group_chat(uuid(), None, &refs[..MAX_GROUP_CHAT_INITIAL_MEMBERS], &me)
+                .unwrap(),
+        );
+        assert_eq!(tag_values(&ok, "p").len(), MAX_GROUP_CHAT_INITIAL_MEMBERS);
+        let err = build_create_group_chat(uuid(), None, &refs, &me).unwrap_err();
+        assert!(
+            matches!(&err, SdkError::InvalidInput(m) if m.contains("100")),
+            "{err}"
+        );
     }
 
     #[test]

@@ -820,6 +820,12 @@ async fn handle_search_req(
 
             let search_result = match state.search.search(&search_query).await {
                 Ok(r) => r,
+                Err(e) if e.is_statement_cancelled() => {
+                    // CLOSED (not EOSE) keeps partial results from reading as complete.
+                    warn!(sub_id = %sub_id, "NIP-50 search timed out: {e}");
+                    close_timed_out_subscription(sub_id, owner, conn, state).await;
+                    return;
+                }
                 Err(e) => {
                     warn!(sub_id = %sub_id, "NIP-50 search failed: {e}");
                     break;

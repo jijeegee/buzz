@@ -154,7 +154,10 @@ Future<void> _presentIosEmojiPicker({
       <String, Object>{
         'customEmoji': [
           for (final emoji in customEmoji)
-            <String, String>{'shortcode': emoji.shortcode, 'url': emoji.url},
+            <String, String>{
+              'shortcode': emoji.shortcode,
+              'url': mediaAuth.resolve(emoji.url),
+            },
         ],
         'recent': [for (final entry in recent) entry.emoji],
         'skinTone': _validSkinTone(prefs.getInt(_emojiSkinTonePrefsKey)),

@@ -9,7 +9,7 @@ use super::api::{self, ApiError, LoginTokens, SecretField};
 use crate::app_state::{AppState, IdentityStorage};
 
 pub(crate) fn binding_key(origin: &str) -> String {
-    format!("auth.key-backup.{origin}")
+    format!("auth.key-backup.{}", super::service::stored(origin))
 }
 
 /// Durably retire a fresh-install marker before publishing meaningful content.

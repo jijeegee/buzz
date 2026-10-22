@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 import { READ_STATE_MAX_PLAINTEXT_BYTES } from "@/features/channels/readState/readStateFormat";
 import type { Community } from "@/features/communities/types";
 import { fetchObservedChannels } from "@/features/communities/communityUnreadObserver";
@@ -98,7 +99,7 @@ export async function publishCommunityReadState(args: {
 
   for (let index = 0; index < chunks.length; index++) {
     const slotId = persistedId(
-      `${OBSERVER_SLOT_ID_KEY_PREFIX}:${pubkey}:${relayUrl}:${index}`,
+      `${OBSERVER_SLOT_ID_KEY_PREFIX}:${pubkey}:${relayStorageScope(relayUrl, relayUrl)}:${index}`,
     );
     const ciphertext = await encrypt(
       JSON.stringify({ v: 1, client_id: clientId, contexts: chunks[index] }),

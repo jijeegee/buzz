@@ -138,6 +138,17 @@ pub const KIND_AGENT_HOST_DEVICES: u32 = 30180;
 /// to the robot derived from the device id when absent or unknown.
 pub const KIND_DEVICE_ROBOT: u32 = 30181;
 
+/// Agent team (parameterized replaceable, owner-signed).
+///
+/// A group of the owner's real agents, which may run on different
+/// computers: `d` = the team id (a UUID), content =
+/// `{"v":1,"name":"…","description":"…","agent_pubkeys":["<hex>",...]}`.
+/// Unlike a [`KIND_TEAM`] team preset (a set of agent definitions used to
+/// set up a computer), adding a team to a channel adds these existing agents.
+/// Readable like personas (agent pubkeys are public already), so the
+/// owner's agents can read their owner's teams; only the owner writes them.
+pub const KIND_AGENT_TEAM: u32 = 30182;
+
 /// Kinds whose stored events are readable only by their author.
 ///
 /// The relay must never reveal the existence, count, tags, content, schedule,
@@ -711,6 +722,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_PRIVATE_MANAGED_AGENT,
     KIND_AGENT_HOST_DEVICES,
     KIND_DEVICE_ROBOT,
+    KIND_AGENT_TEAM,
     KIND_REPORT,
     KIND_PRODUCT_FEEDBACK,
     KIND_NIP29_PUT_USER,
@@ -933,6 +945,7 @@ const _: () = assert!(is_parameterized_replaceable(KIND_TEAM_CATALOG)); // 30178
 const _: () = assert!(is_parameterized_replaceable(KIND_PRIVATE_MANAGED_AGENT)); // 30179 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_AGENT_HOST_DEVICES)); // 30180 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_DEVICE_ROBOT)); // 30181 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_AGENT_TEAM)); // 30182 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WORKFLOW_DEF)); // 30620 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_EVENT_REMINDER)); // 30300 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_DM_VISIBILITY)); // 30622 ∈ 30000–39999

@@ -9,6 +9,7 @@ export type ChannelSuggestion = {
   id: string;
   name: string;
   channelType: "stream" | "forum";
+  picture?: string | null;
 };
 
 const CHANNEL_QUERY_DEBOUNCE_MS = 120;
@@ -20,9 +21,14 @@ const CHANNEL_QUERY_DEBOUNCE_MS = 120;
  * from the shared channel list.
  */
 function isChannelSuggestable(
-  channel: Pick<Channel, "channelType" | "archivedAt">,
+  channel: Pick<Channel, "channelType" | "archivedAt" | "groupChat">,
 ): boolean {
-  return channel.channelType !== "dm" && channel.archivedAt === null;
+  // Chats (1:1 and ownerless) are personal: never `#name` targets.
+  return (
+    channel.channelType !== "dm" &&
+    channel.groupChat !== true &&
+    channel.archivedAt === null
+  );
 }
 
 /** Exported for unit testing. */
@@ -41,6 +47,7 @@ export function selectChannelSuggestions(
       id: ch.id,
       name: ch.name,
       channelType: ch.channelType as "stream" | "forum",
+      ...(ch.picture ? { picture: ch.picture } : {}),
     }));
 }
 

@@ -92,8 +92,6 @@ fn make_snapshot(
             model: None,
             provider: None,
             parallelism: None,
-            respond_to: None,
-            respond_to_allowlist: vec![],
             name_pool: vec![],
             idle_timeout_seconds: None,
             max_turn_duration_seconds: None,

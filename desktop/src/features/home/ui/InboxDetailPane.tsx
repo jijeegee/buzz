@@ -511,14 +511,14 @@ function InboxMessageDetailPane({
     ? isDirectMessage
       ? `Thread with ${item.senderLabel}`
       : channelContextName
-        ? `Thread in #${channelContextName}`
+        ? `Thread in ${channelContextName}`
         : "Thread"
     : isDirectMessage
       ? `DM with ${item.senderLabel}`
       : isChannelMainRoom && channelContextName
-        ? `#${channelContextName}`
+        ? `${channelContextName}`
         : channelContextName
-          ? `Message in #${channelContextName}`
+          ? `Message in ${channelContextName}`
           : formatInboxTypeLabel(item);
   const contextChannelId = item.item.channelId;
   const sourceEventId = selectedEventId ?? item.id;
@@ -527,7 +527,7 @@ function InboxMessageDetailPane({
     ? "Open full thread"
     : isDirectMessage
       ? "Open conversation"
-      : "Open in channel";
+      : "Open in group";
 
   const handleSelectReplyTarget = (message: InboxDisplayMessage) => {
     setReplyTargetId((currentReplyTargetId) =>
@@ -835,7 +835,7 @@ function InboxMessageDetailPane({
                     }
               }
               channelId={item.item.channelId}
-              channelName={item.channelLabel ?? "channel"}
+              channelName={item.channelLabel ?? "group"}
               channelType={composerChannelType}
               containerClassName="px-4 pb-4 sm:px-4"
               disabled={!canReply && !composerEditTarget}
@@ -886,8 +886,8 @@ function InboxMessageDetailPane({
                   ? isDirectMessage
                     ? `Message ${item.senderLabel}`
                     : isChannelMainRoom
-                      ? `Message #${item.channelLabel ?? "channel"}`
-                      : `Send reply to ${item.channelLabel ? `#${item.channelLabel} thread` : "channel thread"}`
+                      ? `Message ${item.channelLabel ?? "group"}`
+                      : `Send reply to ${item.channelLabel ? `${item.channelLabel} thread` : "group thread"}`
                   : (disabledReplyReason ??
                     "Replies are not available for this item.")
               }

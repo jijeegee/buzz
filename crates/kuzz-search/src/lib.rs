@@ -3,8 +3,10 @@
 //! Kuzz search — community-scoped Postgres full-text search over Kuzz events.
 //!
 //! The index lives in the `events` table: `search_tsv TSVECTOR GENERATED
-//! ALWAYS AS (to_tsvector('simple', content)) STORED`, with `GIN
-//! (search_tsv)` as the access path. Because the column is `GENERATED ALWAYS`,
+//! ALWAYS AS (to_tsvector('simple', content) || to_tsvector('simple',
+//! regexp_replace(content, '[-/:._?=&#]+', ' ', 'g'))) STORED` (searchable
+//! kinds only), with `GIN (search_tsv)` as the access path. The second term
+//! splits URLs and paths so their inner words are lexemes too. Because the column is `GENERATED ALWAYS`,
 //! every row write *is* the index update — there is no separate indexer, no
 //! mpsc queue, no reindex job, no consistency window to reason about. A
 //! client cannot forge the tsvector out of sync with the content it signed.

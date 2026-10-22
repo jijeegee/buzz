@@ -1,4 +1,5 @@
 use super::*;
+use crate::managed_agents::RespondTo;
 use std::{collections::BTreeMap, path::PathBuf};
 mod acp_transport;
 mod concealment; // executable-text concealment gate (Carl P1)
@@ -96,30 +97,14 @@ fn test_projection_never_contains_a_source_allowlist_pubkey() {
 }
 
 #[test]
-fn test_allowlist_mode_downgrades_to_owner_only_not_an_empty_allowlist() {
-    // Must downgrade the mode itself, not empty the list — empty list reads as mode with no trust.
-    let mut one = member("m1", "One");
-    one.respond_to = Some(RespondTo::Allowlist.as_str().to_string());
-    one.respond_to_allowlist = vec!["a".repeat(64)];
-
-    let content = build_team_catalog_content(&team(), &[one]).unwrap();
-
-    assert_eq!(
-        content.members[0].respond_to.as_deref(),
-        Some(RespondTo::OwnerOnly.as_str())
-    );
-}
-
-#[test]
-fn test_non_allowlist_respond_to_modes_are_projected_verbatim() {
-    for mode in [RespondTo::OwnerOnly, RespondTo::Anyone] {
+fn test_projection_never_carries_an_audience() {
+    for mode in [RespondTo::OwnerOnly, RespondTo::Allowlist, RespondTo::Anyone] {
         let mut one = member("m1", "One");
         one.respond_to = Some(mode.as_str().to_string());
+        one.respond_to_allowlist = vec!["a".repeat(64)];
         let content = build_team_catalog_content(&team(), &[one]).unwrap();
-        assert_eq!(
-            content.members[0].respond_to.as_deref(),
-            Some(mode.as_str())
-        );
+        let json = team_catalog_content_json(&content).unwrap();
+        assert!(!json.contains("respond_to"), "{mode:?}: {json}");
     }
 }
 
@@ -623,10 +608,6 @@ fn test_members_violating_the_v1_contract_are_rejected_on_read() {
             r#""parallelism":999"#.to_string(),
         ),
         ("zero parallelism", r#""parallelism":0"#.to_string()),
-        (
-            "unknown respond_to mode",
-            r#""respond_to":"everyone""#.to_string(),
-        ),
         ("empty runtime", r#""runtime":"""#.to_string()),
         (
             "oversize model",
@@ -796,10 +777,6 @@ run_fixture_table!(
 run_fixture_table!(
     test_fixtures_that_must_be_rejected_are_rejected,
     false,
-    (
-        "invalid_respond_to_pascal_case",
-        "invalid_respond_to_pascal_case.json"
-    ),
     (
         "invalid_description_wrong_type",
         "invalid_description_wrong_type.json"

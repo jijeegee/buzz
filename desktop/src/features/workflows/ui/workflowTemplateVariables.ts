@@ -24,7 +24,7 @@ const COMMON_EVENT_VARIABLES: WorkflowTemplateVariable[] = [
   },
   {
     value: "trigger.channel_id",
-    description: "Channel UUID",
+    description: "Group UUID",
     group: "Trigger",
   },
   {
@@ -87,7 +87,7 @@ function triggerVariables(
       return [
         {
           value: "trigger.channel_id",
-          description: "Workflow channel UUID",
+          description: "Workflow group UUID",
           group: "Trigger",
         },
       ];

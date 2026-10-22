@@ -4,6 +4,7 @@ import { avatarSourceUrlForShape } from "@/features/profile/ui/ProfileAvatarEdit
 import { parseAnimatedAvatarUrl } from "@/shared/lib/animatedAvatar";
 import { cn } from "@/shared/lib/cn";
 import { getInitials } from "@/shared/lib/initials";
+import { useRelayMediaFallback } from "@/shared/lib/relayMediaVariants";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 
@@ -75,10 +76,16 @@ export function UserAvatar({
   // the animation.
   const animated = parseAnimatedAvatarUrl(shapedAvatarUrl);
   const [isHovered, setIsHovered] = React.useState(false);
+  // Every UserAvatar size is at most 36px: load the relay's small variant,
+  // then larger ones, then the original.
+  const still = useRelayMediaFallback(
+    animated ? null : shapedAvatarUrl,
+    "small",
+  );
   const src = animated
     ? rewriteRelayUrl(isHovered ? animated.animationUrl : animated.posterUrl)
-    : shapedAvatarUrl
-      ? rewriteRelayUrl(shapedAvatarUrl)
+    : still.src
+      ? rewriteRelayUrl(still.src)
       : null;
   const radiusClass =
     resolvedShape === "squircle" ? "rounded-squircle" : "rounded-full";
@@ -104,6 +111,9 @@ export function UserAvatar({
           className={cn("object-cover", !animated && "bg-secondary")}
           data-testid={testId ? `${testId}-image` : undefined}
           draggable={imageDraggable}
+          onLoadingStatusChange={(status) => {
+            if (status === "error") still.onError();
+          }}
           referrerPolicy="no-referrer"
           src={src}
         />

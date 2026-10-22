@@ -56,6 +56,7 @@ function setup({
     clients: [],
     failConnect,
     counts: 0,
+    messages: [],
   };
   const timers = [];
   let listed = channels;
@@ -80,6 +81,7 @@ function setup({
       mutedRootIds: new Set(),
     }),
     notify: (effect, event) => log.notified.push([effect.notify, event.id]),
+    onMessage: (event) => log.messages.push(event.id),
     store,
     listChannels: async () => listed,
     countUnread: async () => {
@@ -181,6 +183,19 @@ test("a message notifies once, bumps unread, and replays are ignored", async () 
     hasUnread: true,
     mentionCount: 0,
   });
+});
+
+test("every new message, the account's own included, reaches onMessage once", async () => {
+  const { watcher, log, client } = setup({
+    channels: [{ id: "ch", channelType: "dm" }],
+  });
+  watcher.start();
+  await flush();
+  client().emit("w-ch-0", msg("own", { pubkey: ME, content: "!start" }));
+  client().emit("w-ch-0", msg("own", { pubkey: ME, content: "!start" }));
+  client().emit("w-ch-0", msg("m1"));
+  assert.deepEqual(log.messages, ["own", "m1"]);
+  assert.deepEqual(log.notified, [["dm", "m1"]], "own messages never notify");
 });
 
 test("a membership event re-lists channels and resubscribes", async () => {

@@ -63,6 +63,10 @@ struct PendingLogin {
     /// The client's stable per-install id; see [`install_id_from_query`].
     #[serde(default)]
     install_id: Option<String>,
+    /// Device key the client will prove at `complete`/`signup` (normalized
+    /// hex; set only while the auth device surface is on).
+    #[serde(default)]
+    device_pubkey: Option<String>,
     nonce: String,
     /// The client asks before an unknown identity becomes an account.
     #[serde(default)]
@@ -82,6 +86,10 @@ struct LoginCodeRecord {
     device_name: String,
     #[serde(default)]
     install_id: Option<String>,
+    /// Device key the client will prove at `complete`/`signup` (normalized
+    /// hex; set only while the auth device surface is on).
+    #[serde(default)]
+    device_pubkey: Option<String>,
     /// The provider's email for the signed-in identity, when it sent one.
     #[serde(default)]
     email: Option<String>,
@@ -111,6 +119,10 @@ struct SignupTicket {
     device_name: String,
     #[serde(default)]
     install_id: Option<String>,
+    /// Device key the client will prove at `complete`/`signup` (normalized
+    /// hex; set only while the auth device surface is on).
+    #[serde(default)]
+    device_pubkey: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -122,6 +134,8 @@ struct StartQuery {
     redirect_uri: Option<String>,
     device_name: Option<String>,
     install_id: Option<String>,
+    /// SEC1 hex P-256 device key the login will prove (newer apps).
+    device_pubkey: Option<String>,
     /// `confirm`: ask before creating an account (key-backup logins only).
     signup: Option<String>,
 }
@@ -284,6 +298,11 @@ pub(super) async fn start(
     let Ok(install_id) = install_id_from_query(query.install_id) else {
         return bad_request("install_id must be 16-64 letters, digits or hyphens");
     };
+    let device_pubkey =
+        match crate::identity::device::start_device_key(&state, query.device_pubkey.as_deref()) {
+            Ok(key) => key,
+            Err(response) => return response,
+        };
     let nonce = {
         let bytes: [u8; 24] = rand::random();
         hex::encode(bytes)
@@ -296,6 +315,7 @@ pub(super) async fn start(
         redirect_uri,
         device_name,
         install_id,
+        device_pubkey,
         nonce: nonce.clone(),
         confirm_signup,
     };
@@ -468,6 +488,7 @@ pub(super) async fn callback(
         client: pending.client.clone(),
         device_name: pending.device_name.clone(),
         install_id: pending.install_id.clone(),
+        device_pubkey: pending.device_pubkey.clone(),
         email: identity.email.clone(),
         signup: login.is_none().then(|| PendingSignup {
             provider: provider_name.clone(),
@@ -623,6 +644,17 @@ pub(super) async fn complete(
     let Ok(principal) = PrincipalId::from_hex(&record.principal) else {
         return internal("login code principal", &"invalid principal id");
     };
+    let device_key = match crate::identity::device::login_device_key(
+        &state,
+        &body,
+        &format!("login:{}", hex::encode(code_hash)),
+        record.device_pubkey.as_deref(),
+    )
+    .await
+    {
+        Ok(key) => key,
+        Err(response) => return response,
+    };
     finish_login(
         &state,
         &principal,
@@ -630,6 +662,7 @@ pub(super) async fn complete(
         &record.client,
         &record.device_name,
         record.install_id.as_deref(),
+        device_key.as_ref(),
         record.email.as_deref(),
     )
     .await
@@ -649,6 +682,7 @@ async fn signup_needed(state: &AppState, record: LoginCodeRecord) -> Response {
         client: record.client,
         device_name: record.device_name,
         install_id: record.install_id,
+        device_pubkey: record.device_pubkey,
     };
     let Ok(ticket_json) = serde_json::to_string(&ticket) else {
         return unavailable();
@@ -734,6 +768,17 @@ pub(super) async fn signup(
             "PKCE verification failed",
         );
     }
+    let device_key = match crate::identity::device::login_device_key(
+        &state,
+        &body,
+        &format!("signup:{}", hex::encode(ticket_hash)),
+        ticket.device_pubkey.as_deref(),
+    )
+    .await
+    {
+        Ok(key) => key,
+        Err(response) => return response,
+    };
     let signup = &ticket.signup;
     // Creates the account; one created meanwhile (the same Google account
     // finishing a signup elsewhere) is signed into instead.
@@ -775,6 +820,7 @@ pub(super) async fn signup(
         &ticket.client,
         &ticket.device_name,
         ticket.install_id.as_deref(),
+        device_key.as_ref(),
         signup.email.as_deref(),
     )
     .await
@@ -782,6 +828,7 @@ pub(super) async fn signup(
 
 /// Open the session for `principal` and answer with its tokens (the end of
 /// `complete` and `signup`).
+#[allow(clippy::too_many_arguments)]
 async fn finish_login(
     state: &AppState,
     principal: &PrincipalId,
@@ -789,6 +836,7 @@ async fn finish_login(
     client: &str,
     device_name: &str,
     install_id: Option<&str>,
+    device_key: Option<&crate::identity::device::LoginDeviceKey>,
     email: Option<&str>,
 ) -> Response {
     let key_mode = match state.db.account_key_mode(principal).await {
@@ -813,11 +861,15 @@ async fn finish_login(
     let (access, refresh, access_issued, refresh_issued) = issue_session_tokens(state);
     let session = match state
         .db
-        .complete_login(
+        .complete_login_with_device_key(
             principal,
             device_name,
             client,
             install_id,
+            device_key.map(|device| kuzz_db::identity::DeviceKey {
+                pubkey: device.key.as_bytes(),
+                kind: device.kind,
+            }),
             refresh_issued,
             access_issued,
         )
@@ -830,6 +882,15 @@ async fn finish_login(
         Err(error) => return internal("complete_login", &error),
     };
     tracing::info!(principal = %principal, device = %session.device_id, "auth.login");
+    // Device-bound keys: a refusal cached before this login must not outlive it.
+    crate::identity::admission::forget_login(
+        state,
+        signing_pubkey
+            .as_deref()
+            .and_then(|key| hex::decode(key).ok())
+            .and_then(|key| key.try_into().ok()),
+        device_key.map(|device| *device.key.as_bytes()),
+    );
     let expires_in = state.identity.config().access_ttl.as_secs();
     if client == "web" {
         let cookie = refresh_cookie(

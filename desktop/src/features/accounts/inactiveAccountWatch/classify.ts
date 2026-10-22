@@ -36,7 +36,8 @@ const NONE: WatchedEventEffect = {
 
 /**
  * The same rules the open account notifies by, applied to a watched one:
- * DMs (`useAppShellDesktopNotifications` dm path), mentions (the home-feed
+ * DMs and ownerless chats (`useAppShellDesktopNotifications` dm path; muted
+ * ones stay quiet), mentions (the home-feed
  * mention path; `hasMentionForEvent`, so a reply's thread-participant p-tags
  * are not mentions), and replies in threads the account follows
  * (`useLiveChannelUpdates` thread-reply path). Each needs desktop
@@ -46,19 +47,22 @@ const NONE: WatchedEventEffect = {
  */
 export function classifyWatchedEvent(
   event: RelayEvent,
-  channel: { id: string; channelType: ChannelType },
+  channel: { id: string; channelType: ChannelType; groupChat?: boolean },
   context: WatchedAccountContext,
 ): WatchedEventEffect {
   const pubkey = context.pubkey.toLowerCase();
   if (event.pubkey.toLowerCase() === pubkey) return NONE;
   const isDm = channel.channelType === "dm";
+  // 1:1s and ownerless chats alert on every message.
+  const isChat = isDm || channel.groupChat === true;
   // Same kinds the unread count uses, so the dot and the count agree.
   if (!unreadKindsForChannel(channel.channelType).includes(event.kind)) {
     return NONE;
   }
-  if (context.mutedChannelIds.has(channel.id) && !isDm) {
-    // A muted channel still reports mentions, like the open account.
-    if (!hasMentionForEvent(event, pubkey)) return NONE;
+  if (context.mutedChannelIds.has(channel.id)) {
+    // A muted room still reports mentions, like the open account. A 1:1
+    // tags every participant, so there a tag is not a mention.
+    if (isDm || !hasMentionForEvent(event, pubkey)) return NONE;
   }
 
   const unread = shouldNotifyForEvent(event, pubkey, {
@@ -76,7 +80,7 @@ export function classifyWatchedEvent(
     settings.desktopEnabled && settings.slotAlertsEnabled[slot];
 
   let notify: WatchedEventEffect["notify"] = null;
-  if (isDm) {
+  if (isChat) {
     if (allowed("dm")) notify = "dm";
   } else if (mention) {
     if (allowed("mention")) notify = "mention";

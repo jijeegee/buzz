@@ -118,12 +118,10 @@ pub struct AgentSnapshotDefinition {
     /// ACP conversation boundary carried with the portable definition.
     #[serde(default, skip_serializing_if = "AcpSessionPolicy::is_channel")]
     pub session_policy: AcpSessionPolicy,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub respond_to: Option<String>,
-    /// Allowlist entries. These are flagged during import — they come from the
-    /// source environment and are meaningless on the importer's relay.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub respond_to_allowlist: Vec<String>,
+    // No `respond_to` / `respond_to_allowlist`: who may command an agent is
+    // never part of a shareable file. A file written by an older version that
+    // still carries them decodes with the fields dropped, and every import
+    // starts owner-only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub name_pool: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -204,9 +202,8 @@ pub fn build_snapshot(
     avatar_bytes: Option<&[u8]>,
 ) -> AgentSnapshot {
     // ── Definition ─────────────────────────────────────────────────────
-    // Use definition-level fields (respond_to, allowlist, parallelism) for
-    // portability — instance-level equivalents are spawn-time snapshots and
-    // would be stale.
+    // Use the definition-level parallelism for portability — the instance
+    // value is a spawn-time snapshot and would be stale.
     let definition = AgentSnapshotDefinition {
         name: record
             .display_name
@@ -221,8 +218,6 @@ pub fn build_snapshot(
         provider: record.provider.clone(),
         parallelism: record.definition_parallelism.or(Some(record.parallelism)),
         session_policy: record.session_policy,
-        respond_to: record.definition_respond_to.clone(),
-        respond_to_allowlist: record.definition_respond_to_allowlist.clone(),
         name_pool: record.name_pool.clone(),
         idle_timeout_seconds: record.idle_timeout_seconds,
         max_turn_duration_seconds: record.max_turn_duration_seconds,

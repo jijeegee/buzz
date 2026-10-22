@@ -463,7 +463,7 @@ test("Create: choosing Entire channel persists the explicit policy", async () =>
   });
   await act(async () => {
     fireEvent.click(
-      screen.getByRole("menuitemradio", { name: "Entire channel" }),
+      screen.getByRole("menuitemradio", { name: "Entire group" }),
     );
   });
   const { persona } = await submitCreate();

@@ -76,7 +76,7 @@ export function CreateChannelDialog({
           description ??
           (channelKind === "forum"
             ? "Forums organize threaded discussions around a topic."
-            : "Channels are real-time streams for team conversation.")
+            : "Groups are real-time streams for team conversation.")
         }
         footer={<CreateChannelFormFooter form={form} />}
       >

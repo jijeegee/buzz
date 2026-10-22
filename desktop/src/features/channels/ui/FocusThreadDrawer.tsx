@@ -165,6 +165,25 @@ function useViewportRightInsetPx(
 }
 
 /**
+ * Layers that float above the thread: dialogs (search, lightbox, modals) and
+ * Radix popper content (menus, popovers, selects). Tooltips are not layers.
+ * Lists and menus that are part of a page are not matched, so they never
+ * keep the thread from closing.
+ */
+const OVERLAY_LAYER_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]';
+
+/** True when a visible layer outside the thread drawer is open above it. */
+function hasOpenLayerAbove(drawer: HTMLElement | null) {
+  for (const layer of document.querySelectorAll(OVERLAY_LAYER_SELECTOR)) {
+    if (drawer && (drawer.contains(layer) || layer.contains(drawer))) continue;
+    if (layer.querySelector('[role="tooltip"]')) continue;
+    if (layer.getClientRects().length > 0) return true;
+  }
+  return false;
+}
+
+/**
  * Right-anchored thread drawer that overlays the channel content area.
  *
  * Must be rendered inside `ChannelPane`'s relative layout root, and beneath an
@@ -212,6 +231,9 @@ export function FocusThreadDrawer({
       ) {
         return;
       }
+      // The topmost layer closes first: a dialog or menu opened over the
+      // thread (e.g. search) handles this Escape, not the thread.
+      if (hasOpenLayerAbove(drawerRef.current)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       onClose();
@@ -256,7 +278,7 @@ export function FocusThreadDrawer({
     >
       <motion.button
         animate={{ opacity: 1 }}
-        aria-label={`Back to #${channelName}`}
+        aria-label={`Back to ${channelName}`}
         className={cn(
           "absolute inset-0 cursor-pointer transition-colors duration-150",
           FOCUS_SCRIM_CLASS,

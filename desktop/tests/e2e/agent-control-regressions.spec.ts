@@ -477,7 +477,7 @@ test.describe("agent control browser regressions", () => {
     const panel = page.getByTestId("agent-session-thread-panel");
     await expect(panel).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("agent-session-scope-label")).toHaveText(
-      "Activity · All channels",
+      "Activity · All groups",
     );
     await page.getByTestId("agent-session-settings-menu-trigger").click();
     await expect(page.getByTestId("agent-session-stop-turn")).toBeDisabled();

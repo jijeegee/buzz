@@ -121,7 +121,8 @@ class RecentEmojiNotifier extends Notifier<List<RecentEmojiEntry>> {
   List<RecentEmojiEntry> build() {
     final config = ref.watch(relayConfigProvider);
     final pubkey = ref.watch(myPubkeyProvider) ?? 'anon';
-    _prefsKey = '$_recentEmojiPrefsKey:${config.baseUrl}:$pubkey';
+    _prefsKey =
+        '$_recentEmojiPrefsKey:${storageScopeFor(config.baseUrl)}:$pubkey';
 
     final raw = ref.read(savedPrefsProvider).getString(_prefsKey);
     if (raw == null || raw.isEmpty) return const [];

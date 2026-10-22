@@ -342,12 +342,12 @@ Future<_NonMemberMentionChoice?> _promptNonMemberMention(
   return showKuzzDialog<_NonMemberMentionChoice>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Mention people outside this channel?'),
+      title: const Text('Mention people outside this group?'),
       content: Text(
         canInvite
-            ? '${names.join(', ')} $verb not in this channel. Invite them to '
-                  'the channel, or send without inviting them.'
-            : '${names.join(', ')} $verb not in this channel. '
+            ? '${names.join(', ')} $verb not in this group. Invite them to '
+                  'the group, or send without inviting them.'
+            : '${names.join(', ')} $verb not in this group. '
                   '$privateChannelAddDeniedMessage You can still send without '
                   'inviting them.',
       ),
@@ -428,7 +428,14 @@ class _NonMemberAddOutcome {
   final List<String> notAdded;
   final List<String> errors;
 
-  const _NonMemberAddOutcome({required this.notAdded, required this.errors});
+  /// People sent an invitation instead of being added.
+  final List<String> invited;
+
+  const _NonMemberAddOutcome({
+    required this.notAdded,
+    required this.errors,
+    this.invited = const [],
+  });
 
   static const empty = _NonMemberAddOutcome(notAdded: [], errors: []);
 }
@@ -465,23 +472,30 @@ Future<_NonMemberAddOutcome> _addMentionedNonMembers(
 
   final notAdded = <String>[];
   final errors = <String>[];
+  final invited = <String>[];
   for (final (pubkeys, role) in pending) {
     try {
-      await channelActions.addMembers(
+      final result = await channelActions.addMembers(
         channelId: channelId,
         pubkeys: pubkeys,
         role: role,
       );
+      invited.addAll(result.invited);
     } on StateError {
       rethrow;
     } catch (error) {
       notAdded.addAll(
         error is AddMembersException ? error.failures.keys : pubkeys,
       );
+      if (error is AddMembersException) invited.addAll(error.invited);
       errors.add(_composeSendErrorMessage(error));
     }
   }
-  return _NonMemberAddOutcome(notAdded: notAdded, errors: errors);
+  return _NonMemberAddOutcome(
+    notAdded: notAdded,
+    errors: errors,
+    invited: invited,
+  );
 }
 
 /// Mentioned identities that aren't in the channel yet, plus whether the sender
@@ -568,6 +582,7 @@ class _OutgoingMentions {
   List<String> pubkeys;
   final List<List<String>> referenceTags = [];
   List<String> _invitedHumanPubkeys = const [];
+  Map<String, String> _humanNames = const {};
 
   _OutgoingMentions(List<MentionCandidate> selectedMentions)
     : pubkeys = LinkedHashSet<String>.from(
@@ -597,6 +612,11 @@ class _OutgoingMentions {
     switch (choice) {
       case _NonMemberMentionChoice.invite:
         _invitedHumanPubkeys = humanPubkeys;
+        _humanNames = {
+          for (final candidate in humans)
+            if (candidate.displayName?.trim().isNotEmpty == true)
+              candidate.pubkey.toLowerCase(): candidate.displayName!.trim(),
+        };
       case _NonMemberMentionChoice.sendWithoutInviting:
         demote(humanPubkeys);
     }
@@ -615,11 +635,18 @@ class _OutgoingMentions {
       humanPubkeys: _invitedHumanPubkeys,
       canAddMembers: scan.canAddMembers,
     );
-    demote(outcome.notAdded);
-    if (outcome.errors.isNotEmpty) {
-      messenger?.showSnackBar(
-        SnackBar(content: Text(outcome.errors.join(' '))),
-      );
+    // Invited people are not members yet: mention them without notifying.
+    demote([...outcome.notAdded, ...outcome.invited]);
+    final messages = [
+      if (outcome.invited.isNotEmpty)
+        invitationSentMessage([
+          for (final pubkey in outcome.invited)
+            _humanNames[pubkey.toLowerCase()] ?? 'them',
+        ]),
+      ...outcome.errors,
+    ];
+    if (messages.isNotEmpty) {
+      messenger?.showSnackBar(SnackBar(content: Text(messages.join(' '))));
     }
   }
 }

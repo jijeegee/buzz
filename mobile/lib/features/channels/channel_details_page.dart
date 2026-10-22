@@ -208,7 +208,7 @@ class ChannelDetailsPage extends HookConsumerWidget {
     Future<void> openManageChannel() async {
       final shouldClose = await showKuzzModalBottomSheet<bool>(
         context: context,
-        title: 'Manage channel',
+        title: 'Manage group',
         isScrollControlled: true,
         showDragHandle: true,
         constraints: BoxConstraints(
@@ -253,7 +253,7 @@ class ChannelDetailsPage extends HookConsumerWidget {
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Couldn’t join channel. Try again.')),
+            const SnackBar(content: Text('Couldn’t join group. Try again.')),
           );
         }
       } finally {
@@ -439,6 +439,13 @@ class ChannelDetailsPage extends HookConsumerWidget {
               ],
             ],
           ),
+          if (!resolvedChannel.isDm &&
+              resolvedChannel.isMember &&
+              !resolvedChannel.isArchived)
+            GroupSettingsCard(
+              channel: resolvedChannel,
+              canManage: canManageLifecycle,
+            ),
           AppListCard(
             key: const ValueKey('channel-details-goals-card'),
             verticalPadding: _channelDetailsSectionPadding,
@@ -471,23 +478,23 @@ class ChannelDetailsPage extends HookConsumerWidget {
               ),
               AppListRow(
                 icon: LucideIcons.copy,
-                title: 'Copy channel name',
+                title: 'Copy group name',
                 onTap: () {
                   copyToClipboard(
                     context,
                     resolvedChannel.name,
-                    message: 'Channel name copied to clipboard',
+                    message: 'Group name copied to clipboard',
                   );
                 },
               ),
               AppListRow(
-                icon: LucideIcons.hash,
-                title: 'Copy channel ID',
+                icon: LucideIcons.fingerprint,
+                title: 'Copy group ID',
                 onTap: () {
                   copyToClipboard(
                     context,
                     resolvedChannel.id,
-                    message: 'Channel ID copied to clipboard',
+                    message: 'Group ID copied to clipboard',
                   );
                 },
               ),
@@ -507,21 +514,19 @@ class ChannelDetailsPage extends HookConsumerWidget {
                 if (canJoin)
                   AppListRow(
                     icon: LucideIcons.logIn,
-                    title: isJoining.value
-                        ? 'Joining channel…'
-                        : 'Join channel',
+                    title: isJoining.value ? 'Joining group…' : 'Join group',
                     onTap: isJoining.value ? null : joinChannel,
                   ),
                 if (resolvedChannel.isMember && !resolvedChannel.isArchived)
                   AppListRow(
                     icon: LucideIcons.logOut,
-                    title: 'Leave channel',
+                    title: 'Leave group',
                     titleColor: context.colors.error,
                     onTap: () => _confirmAndRun(
                       context,
                       ref,
-                      title: 'Leave #${resolvedChannel.name}?',
-                      body: 'You’ll stop receiving messages from this channel.',
+                      title: 'Leave ${resolvedChannel.name}?',
+                      body: 'You’ll stop receiving messages from this group.',
                       confirmLabel: 'Leave',
                       action: () => ref
                           .read(channelActionsProvider)
@@ -531,27 +536,27 @@ class ChannelDetailsPage extends HookConsumerWidget {
                 if (lifecycleCapabilitiesLoading)
                   const AppListRow(
                     icon: LucideIcons.loaderCircle,
-                    title: 'Loading channel actions…',
+                    title: 'Loading group actions…',
                     trailing: KuzzLoadingIndicator(
                       size: 20,
-                      semanticLabel: 'Loading channel actions',
+                      semanticLabel: 'Loading group actions',
                     ),
                   )
                 else if (lifecycleCapabilitiesUnavailable)
                   const AppListRow(
                     icon: LucideIcons.triangleAlert,
-                    title: 'Channel actions unavailable',
+                    title: 'Group actions unavailable',
                   )
                 else ...[
                   if (canArchive)
                     AppListRow(
                       icon: LucideIcons.archive,
-                      title: 'Archive channel',
+                      title: 'Archive group',
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Archive #${resolvedChannel.name}?',
-                        body: 'The channel will become read-only.',
+                        title: 'Archive ${resolvedChannel.name}?',
+                        body: 'The group will become read-only.',
                         confirmLabel: 'Archive',
                         action: () => ref
                             .read(channelActionsProvider)
@@ -561,12 +566,12 @@ class ChannelDetailsPage extends HookConsumerWidget {
                   if (canUnarchive)
                     AppListRow(
                       icon: LucideIcons.archiveRestore,
-                      title: 'Unarchive channel',
+                      title: 'Unarchive group',
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Unarchive #${resolvedChannel.name}?',
-                        body: 'The channel will become active again.',
+                        title: 'Unarchive ${resolvedChannel.name}?',
+                        body: 'The group will become active again.',
                         confirmLabel: 'Unarchive',
                         action: () => ref
                             .read(channelActionsProvider)
@@ -576,14 +581,14 @@ class ChannelDetailsPage extends HookConsumerWidget {
                   if (canDelete)
                     AppListRow(
                       icon: LucideIcons.trash2,
-                      title: 'Delete channel',
+                      title: 'Delete group',
                       titleColor: context.colors.error,
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Delete #${resolvedChannel.name}?',
+                        title: 'Delete ${resolvedChannel.name}?',
                         body:
-                            'This permanently deletes the channel and cannot be undone.',
+                            'This permanently deletes the group and cannot be undone.',
                         confirmLabel: 'Delete',
                         action: () => ref
                             .read(channelActionsProvider)
@@ -625,11 +630,16 @@ class _ChannelDetailsHero extends StatelessWidget {
               color: context.colors.primaryContainer,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              _channelDetailsIcon(channel),
-              size: 32,
-              color: context.colors.onPrimaryContainer,
-            ),
+            child: channel.isForum || channel.isDm
+                ? GroupAvatar(
+                    channel: channel,
+                    size: 32,
+                    iconColor: context.colors.onPrimaryContainer,
+                  )
+                : GroupPhotoViewerTap(
+                    picture: channel.picture,
+                    child: GroupAvatar(channel: channel, size: 80),
+                  ),
           ),
           const SizedBox(height: Grid.xxs),
           KeyedSubtree(
@@ -736,12 +746,6 @@ String _channelMemberRoleLabel(String role) {
   if (role == 'bot') return 'Agent';
   if (role.isEmpty) return 'Member';
   return '${role[0].toUpperCase()}${role.substring(1)}';
-}
-
-IconData _channelDetailsIcon(Channel channel) {
-  if (channel.isPrivate) return LucideIcons.lock;
-  if (channel.isForum) return LucideIcons.messageSquareText;
-  return LucideIcons.hash;
 }
 
 class _ChannelDetailsChevron extends StatelessWidget {

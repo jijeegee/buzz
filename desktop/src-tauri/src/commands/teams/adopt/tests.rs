@@ -62,7 +62,6 @@ fn member(member_key: &str, prompt: &str) -> TeamCatalogMember {
         model: None,
         provider: None,
         name_pool: Vec::new(),
-        respond_to: None,
         parallelism: None,
         builtin_slug: None,
         projection_hash: None,
@@ -496,59 +495,20 @@ fn test_a_newer_version_of_a_member_becomes_a_separate_copy() {
 
 #[test]
 fn test_a_copy_inherits_no_secrets_and_no_audience() {
+    // An older publisher may still put `respond_to: "anyone"` on a member; the
+    // field is not part of the format, so the copy starts owner-only.
     let source = source(&"a".repeat(64));
-    let mut published = member("m1", "Do the work.");
-    published.respond_to = Some("anyone".to_string());
+    let mut body = serde_json::to_value(content(vec![member("m1", "Do the work.")])).unwrap();
+    body["members"][0]["respond_to"] = "anyone".into();
+    let legacy: TeamCatalogContent = serde_json::from_value(body).unwrap();
 
-    let (after, _) = plan(&[], &[], &source, &content(vec![published]))
-        .stores
-        .unwrap();
+    let (after, _) = plan(&[], &[], &source, &legacy).stores.unwrap();
 
     let copy = &after[0];
     assert!(copy.env_vars.is_empty(), "env vars are never projected");
-    assert!(
-        copy.respond_to_allowlist.is_empty(),
-        "an allowlist is the owner's social graph and is never inherited"
-    );
-    assert_eq!(copy.respond_to.as_deref(), Some("anyone"));
+    assert!(copy.respond_to.is_none(), "a copy starts owner-only");
+    assert!(copy.respond_to_allowlist.is_empty());
     assert!(!copy.shared, "a copy is not itself published");
-}
-
-#[test]
-fn test_an_unrecognized_respond_to_mode_fails_the_whole_add() {
-    // Copying an unknown mode opaquely would give the copy an audience the
-    // recipient's UI cannot render — and cannot be trusted to be restrictive.
-    let source = source(&"a".repeat(64));
-    let mut published = member("m1", "Do the work.");
-    published.respond_to = Some("everyone-forever".to_string());
-
-    let error = plan_add(&[], &[], &source, &content(vec![published]), NOW).unwrap_err();
-
-    assert!(
-        error.contains("not a recognized mode"),
-        "the failure must name the bad mode: {error}"
-    );
-}
-
-#[test]
-fn test_a_failed_member_leaves_the_plan_unwritten() {
-    // All-or-nothing before any I/O: a failed member leaves no earlier members written.
-    let source = source(&"a".repeat(64));
-    let mut bad = member("m2", "Do the work.");
-    bad.respond_to = Some("everyone-forever".to_string());
-
-    let resolved = plan_add(
-        &[],
-        &[],
-        &source,
-        &content(vec![member("m1", "Do the work."), bad]),
-        NOW,
-    );
-
-    assert!(
-        resolved.is_err(),
-        "no partial plan is returned when a member cannot be resolved"
-    );
 }
 
 #[test]
@@ -653,35 +613,6 @@ fn test_delete_catalog_team_seam_then_re_add_reactivates_copies() {
         .unwrap();
     assert_eq!(after[0].id, copy_id, "re-add reuses same copy id");
     assert!(after[0].is_active, "copy is reactivated");
-}
-
-#[test]
-fn test_allowlist_respond_to_is_normalized_to_owner_only_on_adoption() {
-    // The publisher's allowlist is their social graph and must not be copied.
-    // The mode itself downgrades to owner-only so the copy is launch-valid.
-    let src = source(&"e".repeat(64));
-    let mut m = member("m1", "Review the work.");
-    m.respond_to = Some("allowlist".to_string());
-    let (personas, _) = plan(&[], &[], &src, &content(vec![m])).stores.unwrap();
-    assert_eq!(
-        personas[0].respond_to.as_deref(),
-        Some("owner-only"),
-        "allowlist mode must be normalized to owner-only at adoption"
-    );
-    assert!(personas[0].respond_to_allowlist.is_empty());
-    let mint = crate::managed_agents::resolve_mint_behavioral_defaults(
-        personas[0]
-            .respond_to
-            .as_deref()
-            .and_then(|w| crate::managed_agents::RespondTo::parse_wire(w).ok()),
-        personas[0].respond_to_allowlist.clone(),
-        None,
-        None,
-    );
-    assert!(
-        mint.is_ok(),
-        "normalized respond_to must be launch-valid: {mint:?}"
-    );
 }
 
 #[test]

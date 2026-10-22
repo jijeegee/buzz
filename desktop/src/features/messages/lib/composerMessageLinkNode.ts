@@ -350,7 +350,7 @@ function composerLinkPresentation(
   const message = parseMessageLink(href);
   if (message.ok) {
     const resolvedChannelName =
-      resolveChannelName(message.value.channelId) || channelName || "channel";
+      resolveChannelName(message.value.channelId) || channelName || "group";
     return {
       ariaLabel: getMessageLinkLabel({ channelName: resolvedChannelName }),
       channelName: resolvedChannelName,
@@ -372,7 +372,7 @@ function composerLinkPresentation(
       channelName ||
       channel.value.channelId.slice(0, 8);
     return {
-      ariaLabel: `Open channel ${resolvedChannelName}`,
+      ariaLabel: `Open group ${resolvedChannelName}`,
       channelName: resolvedChannelName,
       dataAttributes: { "data-channel-deep-link": "" },
       icon: "channel",

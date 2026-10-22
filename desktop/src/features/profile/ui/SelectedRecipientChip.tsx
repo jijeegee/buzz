@@ -74,6 +74,7 @@ export function SelectedRecipientChip({
         type="button"
       >
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={user.avatarUrl}
           className="h-5 w-5 text-3xs shadow-none transition-opacity group-hover/remove-recipient:opacity-0 group-focus-visible/remove-recipient:opacity-0"
           iconClassName="h-2.5 w-2.5"

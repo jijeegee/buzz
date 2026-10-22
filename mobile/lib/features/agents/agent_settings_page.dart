@@ -11,6 +11,7 @@ import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/load_error_view.dart';
 import 'agent_settings.dart';
 import 'agent_settings_provider.dart';
+import 'my_agent_status_card.dart';
 
 part 'agent_settings_page/agent_settings_form.dart';
 
@@ -41,6 +42,7 @@ class AgentSettingsPage extends ConsumerWidget {
       AsyncData(value: final AgentSettingsEditable loaded) =>
         _AgentSettingsForm(key: ValueKey(loaded.event.id), loaded: loaded),
       AsyncData(value: AgentSettingsReadOnly(:final name)) => _ReadOnly(
+        agentPubkey: agentPubkey,
         name: name,
       ),
       AsyncError() => Scaffold(
@@ -59,8 +61,9 @@ class AgentSettingsPage extends ConsumerWidget {
 }
 
 class _ReadOnly extends StatelessWidget {
-  const _ReadOnly({required this.name});
+  const _ReadOnly({required this.agentPubkey, required this.name});
 
+  final String agentPubkey;
   final String name;
 
   @override
@@ -71,6 +74,10 @@ class _ReadOnly extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: Grid.xs),
           children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Grid.sm),
+              child: MyAgentStatusCard(agentPubkey: agentPubkey, name: name),
+            ),
             AppListCard(
               key: const Key('agent-settings-read-only'),
               description: agentSettingsReadOnlyMessage,

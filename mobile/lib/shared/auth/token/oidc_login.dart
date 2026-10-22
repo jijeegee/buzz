@@ -56,7 +56,9 @@ Future<LoginGrant> runOidcLogin({
   if (callback.scheme != redirectUri.scheme ||
       callback.authority != redirectUri.authority ||
       callback.path != redirectUri.path ||
-      callback.hasFragment) {
+      // iOS appends a bare `#` to the ASWebAuthenticationSession callback,
+      // so only a fragment carrying data is rejected.
+      callback.fragment.isNotEmpty) {
     throw const OidcLoginException(
       'The sign-in response used an unexpected callback address. Try again.',
       code: 'invalid_callback',

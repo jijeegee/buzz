@@ -2,10 +2,7 @@ import 'package:kuzz/features/settings/account_page.dart';
 import 'package:kuzz/features/settings/devices_page.dart';
 import 'package:kuzz/features/settings/settings_page.dart';
 import 'package:kuzz/shared/auth/auth.dart';
-import 'package:kuzz/shared/utils/string_utils.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
@@ -13,6 +10,12 @@ import '../../shared/auth/token/token_auth_test_fakes.dart';
 import 'token_settings_harness.dart';
 
 Widget _settings() => SettingsPage(
+  profileHeader: const SizedBox.shrink(),
+  invitePageBuilder: (_) => const SizedBox.shrink(),
+);
+
+Widget _profile() => SettingsPage(
+  mode: SettingsPageMode.profile,
   profileHeader: const SizedBox.shrink(),
   invitePageBuilder: (_) => const SizedBox.shrink(),
 );
@@ -203,37 +206,8 @@ void main() {
       expect(find.textContaining('@ada'), findsOneWidget);
       expect(find.byKey(const Key('settings-devices-row')), findsOneWidget);
 
-      final copied = <String>[];
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        (call) async {
-          if (call.method == 'Clipboard.setData') {
-            copied.add((call.arguments as Map)['text'] as String);
-          }
-          return null;
-        },
-      );
-      await _centerInView(
-        tester,
-        find.byKey(const Key('settings-account-id-row')),
-      );
-      await tester.tap(find.byKey(const Key('settings-account-id-row')));
-      await frames(tester);
-      expect(copied, [fullNpub(tokenPrincipal)]);
-
-      // The merged button node owns the tap: screen-reader activation copies
-      // too (AGENTS.md rule 7).
-      final semantics = tester.ensureSemantics();
-      await tester.pump();
-      final node = tester.getSemantics(
-        find.byKey(const Key('settings-account-id-row')),
-      );
-      expect(node.label, 'Copy account public key');
-      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
-      node.owner!.performAction(node.id, SemanticsAction.tap);
-      await frames(tester);
-      expect(copied, [fullNpub(tokenPrincipal), fullNpub(tokenPrincipal)]);
-      semantics.dispose();
+      // Keys are never shown: there is no Account ID row.
+      expect(find.byKey(const Key('settings-account-id-row')), findsNothing);
     });
 
     testWidgets('the account rows open Account and Devices', (tester) async {
@@ -267,7 +241,7 @@ void main() {
       h.server.refreshResponses.add(
         (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),
       );
-      await h.pump(tester, _settings());
+      await h.pump(tester, _profile());
 
       await tester.tap(find.byKey(const ValueKey('settings-edit-profile')));
       await frames(tester);

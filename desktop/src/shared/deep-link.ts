@@ -305,6 +305,39 @@ export async function listenForNavigationDeepLinks(
 export function listenForEntityDeepLinks(
   onOpen: (href: string) => boolean,
 ): Promise<UnlistenFn> {
+  return listenForQueuedDeepLinks(
+    {
+      event: "deep-link-entity",
+      take: "take_pending_entity_deep_link",
+      acknowledge: "acknowledge_pending_entity_deep_link",
+      label: "entity",
+    },
+    onOpen,
+  );
+}
+
+/**
+ * Register a listener for `deep-link-group-join` events: `kuzz://join/<code>`
+ * and `kuzz://join/@<handle>` group links, canonicalized by the backend.
+ */
+export function listenForGroupJoinDeepLinks(
+  onOpen: (href: string) => boolean,
+): Promise<UnlistenFn> {
+  return listenForQueuedDeepLinks(
+    {
+      event: "deep-link-group-join",
+      take: "take_pending_group_join_deep_link",
+      acknowledge: "acknowledge_pending_group_join_deep_link",
+      label: "group join",
+    },
+    onOpen,
+  );
+}
+
+function listenForQueuedDeepLinks(
+  queue: { event: string; take: string; acknowledge: string; label: string },
+  onOpen: (href: string) => boolean,
+): Promise<UnlistenFn> {
   let drainRunning = false;
   let drainRequested = false;
   const drain = () => {
@@ -317,19 +350,21 @@ export function listenForEntityDeepLinks(
           drainRequested = false;
           while (true) {
             const pending = await invoke<PendingEntityDeepLink | null>(
-              "take_pending_entity_deep_link",
+              queue.take,
             );
             if (!pending) break;
             if (!onOpen(pending.href)) return;
-            const acknowledged = await invoke<boolean>(
-              "acknowledge_pending_entity_deep_link",
-              { id: pending.id },
-            );
+            const acknowledged = await invoke<boolean>(queue.acknowledge, {
+              id: pending.id,
+            });
             if (!acknowledged) break;
           }
         }
       } catch (error: unknown) {
-        console.warn("Failed to drain pending entity deep links", error);
+        console.warn(
+          `Failed to drain pending ${queue.label} deep links`,
+          error,
+        );
       } finally {
         drainRunning = false;
         if (drainRequested) drain();
@@ -337,7 +372,7 @@ export function listenForEntityDeepLinks(
     })();
   };
 
-  return listen<PendingEntityDeepLink | string>("deep-link-entity", (event) => {
+  return listen<PendingEntityDeepLink | string>(queue.event, (event) => {
     // String payloads are retained for older backends and E2E bridge calls.
     if (typeof event.payload === "string") {
       onOpen(event.payload);

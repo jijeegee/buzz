@@ -73,6 +73,8 @@ pub async fn download_image(
 ) -> Result<bool, String> {
     // SSRF protection: only allow downloads from the relay's /media/ path.
     let relay_base = relay_api_base_url_with_override(&state);
+    // Media signed into events on an earlier address of the service.
+    let url = crate::auth::service::current_url(&url);
     validate_download_url(&url, &relay_base)?;
 
     // Infer filename from the URL path (e.g. "abcdef123.jpg" from a Blossom URL).
@@ -120,6 +122,8 @@ pub async fn download_file(
 ) -> Result<bool, String> {
     // SSRF protection: only allow downloads from the relay's /media/ path.
     let relay_base = relay_api_base_url_with_override(&state);
+    // Media signed into events on an earlier address of the service.
+    let url = crate::auth::service::current_url(&url);
     validate_download_url(&url, &relay_base)?;
 
     // The imeta filename is the only human-readable name we have; sanitize it
@@ -160,6 +164,8 @@ pub async fn copy_image_to_clipboard(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let relay_base = relay_api_base_url_with_override(&state);
+    // Media signed into events on an earlier address of the service.
+    let url = crate::auth::service::current_url(&url);
     validate_download_url(&url, &relay_base)?;
 
     let bytes = fetch_blob_bytes(&url, &state).await?;
@@ -461,6 +467,8 @@ pub async fn fetch_snapshot_bytes(
 ) -> Result<tauri::ipc::Response, String> {
     // ── Pre-fetch validation ──────────────────────────────────────────────
     let relay_base = relay_api_base_url_with_override(&state);
+    // Media signed into events on an earlier address of the service.
+    let url = crate::auth::service::current_url(&url);
     validate_download_url(&url, &relay_base)?;
 
     // Sanitize the filename and verify it is a recognised snapshot extension.
@@ -621,8 +629,6 @@ mod tests {
                 model: None,
                 provider: None,
                 parallelism: None,
-                respond_to: None,
-                respond_to_allowlist: vec![],
                 name_pool: vec![],
                 idle_timeout_seconds: None,
                 max_turn_duration_seconds: None,
@@ -673,8 +679,6 @@ mod tests {
                 model: None,
                 provider: None,
                 parallelism: None,
-                respond_to: None,
-                respond_to_allowlist: vec![],
                 name_pool: vec![],
                 idle_timeout_seconds: None,
                 max_turn_duration_seconds: None,
@@ -721,8 +725,6 @@ mod tests {
                 model: None,
                 provider: None,
                 parallelism: None,
-                respond_to: None,
-                respond_to_allowlist: vec![],
                 name_pool: vec![],
                 idle_timeout_seconds: None,
                 max_turn_duration_seconds: None,

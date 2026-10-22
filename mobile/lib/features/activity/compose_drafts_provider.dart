@@ -104,13 +104,14 @@ class ComposeDraftsNotifier extends Notifier<List<ComposeDraft>> {
     // community or the derived account pubkey changes.
     final config = ref.watch(relayConfigProvider);
     final pubkey = ref.watch(myPubkeyProvider) ?? 'anon';
-    _prefsKey = '$_draftsPrefsKey:${config.baseUrl}:$pubkey';
+    _prefsKey = '$_draftsPrefsKey:${storageScopeFor(config.baseUrl)}:$pubkey';
 
     final prefs = ref.read(savedPrefsProvider);
     final raw = readMigratedPref<String>(
       prefs,
       canonicalKey: _prefsKey,
-      legacyKey: '$_draftsPrefsKey:${config.storedOrigin}:$pubkey',
+      legacyKey:
+          '$_draftsPrefsKey:${storageScopeFor(config.storedOrigin)}:$pubkey',
       read: prefs.getString,
       write: prefs.setString,
     );

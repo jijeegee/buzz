@@ -280,14 +280,14 @@ test("routingTransitionFor: after a save, the losing host restarts now and the h
 test("the Settings summary names the saved mode and its agent", () => {
   assert.equal(
     routingSummaryText(status({ mode: "off" }), nameOf),
-    "Channel routing: Off",
+    "Group routing: Off",
   );
   assert.equal(
     routingSummaryText(status({}), nameOf),
-    "Channel routing: Host (Honey)",
+    "Group routing: Host (Honey)",
   );
   assert.equal(
     routingSummaryText(status({ routingAgent: null }), nameOf),
-    "Channel routing: Host (no agent chosen)",
+    "Group routing: Host (no agent chosen)",
   );
 });

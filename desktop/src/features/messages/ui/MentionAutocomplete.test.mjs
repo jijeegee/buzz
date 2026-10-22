@@ -156,7 +156,7 @@ test("automatic mention setting is visible by default without an options ingress
   });
   assert.equal(toggle.getAttribute("data-state"), "checked");
   assert.ok(
-    view.getByText("Address selected agents in channel and thread replies"),
+    view.getByText("Address selected agents in group and thread replies"),
   );
   assert.ok(view.getByRole("button", { name: "Mention Agent Ada" }));
 

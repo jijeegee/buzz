@@ -251,7 +251,6 @@ function writeControls(container) {
     ),
     ...container.querySelectorAll('[data-testid$="-save-key"]'),
     ...container.querySelectorAll('[data-testid$="-remove-key"]'),
-    ...container.querySelectorAll('input[type="radio"]'),
   ];
 }
 
@@ -393,88 +392,6 @@ test("the OpenAI key row names OpenAI-compatible as a reader instead of a second
   );
 });
 
-test("the default radio group is one group with one checked option and one label owner each", async () => {
-  resetConfig();
-  mounted = await mount(ProvidersSettingsTab);
-  const { container } = mounted;
-  await waitFor(
-    container,
-    '[data-testid="settings-models-default-anthropic:api-key"]',
-  );
-  const groups = container.querySelectorAll('[role="radiogroup"]');
-  assert.equal(groups.length, 1, "exactly one radio group across providers");
-  const group = groups[0];
-  const title = document.getElementById(group.getAttribute("aria-labelledby"));
-  assert.equal(title?.textContent, "Default for new agents");
-
-  const radios = [...group.querySelectorAll('input[type="radio"]')];
-  assert.ok(radios.length >= 6);
-  assert.equal(radios.filter((radio) => radio.checked).length, 1);
-  assert.equal(
-    radios.find((radio) => radio.checked).value,
-    "anthropic:api-key",
-  );
-  for (const radio of radios) {
-    assert.equal(
-      container.querySelectorAll(`label[for="${radio.id}"]`).length,
-      1,
-      `${radio.value} has one label`,
-    );
-    assert.equal(radio.hasAttribute("aria-label"), false);
-  }
-  // Codex is not installed: its option is offered but locked.
-  const codex = radios.find((radio) => radio.value === "openai:subscription");
-  assert.equal(codex.disabled, true);
-  assert.match(
-    container.querySelector(
-      '[data-testid="settings-models-default-openai:subscription"]',
-    ).textContent,
-    /not installed/,
-  );
-});
-
-test("choosing a subscription default persists the harness switch once, clearing model and effort", async () => {
-  resetConfig();
-  mounted = await mount(ProvidersSettingsTab);
-  const { container } = mounted;
-  await waitFor(
-    container,
-    '[data-testid="settings-models-default-anthropic:subscription"]',
-  );
-  const radio = container.querySelector(
-    'input[type="radio"][value="anthropic:subscription"]',
-  );
-  assert.equal(radio.disabled, false);
-  await act(async () => radio.click());
-  await settle(30);
-
-  const saves = setCalls();
-  assert.equal(saves.length, 1);
-  const sent = saves[0].args.config;
-  assert.equal(sent.preferred_runtime, "claude");
-  assert.equal(sent.model, null);
-  assert.equal(sent.effort_level, null);
-  assert.equal(sent.provider, null, "a login harness takes no provider");
-  assert.equal(
-    sent.env_vars.OPENAI_COMPAT_API_KEY,
-    "sk-openai",
-    "keys survive",
-  );
-
-  await settle(30);
-  const checked = [...container.querySelectorAll('input[type="radio"]')].filter(
-    (candidate) => candidate.checked,
-  );
-  assert.deepEqual(
-    checked.map((candidate) => candidate.value),
-    ["anthropic:subscription"],
-  );
-  // Re-choosing the current default writes nothing.
-  await act(async () => radio.click());
-  await settle(20);
-  assert.equal(setCalls().length, 1);
-});
-
 test("a failed global-config read disables every write and never persists the empty placeholder", async () => {
   resetConfig();
   configFetch = "reject";
@@ -485,12 +402,9 @@ test("a failed global-config read disables every write and never persists the em
     '[data-testid="settings-models-config-error"]',
   );
   assert.equal(error.getAttribute("role"), "alert");
-  await waitFor(
-    container,
-    'input[type="radio"][value="anthropic:subscription"]',
-  );
+  await waitFor(container, 'input[data-testid="persona-provider-api-key"]');
   const controls = writeControls(container);
-  assert.ok(controls.length >= 8, "inputs, buttons and radios all rendered");
+  assert.ok(controls.length >= 2, "key inputs and buttons all rendered");
   for (const control of controls) {
     assert.equal(
       control.disabled,
@@ -498,11 +412,9 @@ test("a failed global-config read disables every write and never persists the em
       `${control.outerHTML.slice(0, 60)} is disabled`,
     );
   }
-  // Even a forced click on a locked radio must not reach the backend.
-  const radio = container.querySelector(
-    'input[type="radio"][value="anthropic:subscription"]',
-  );
-  await act(async () => radio.click());
+  // Even a forced click on a locked save must not reach the backend.
+  const save = container.querySelector('[data-testid$="-save-key"]');
+  await act(async () => save.click());
   await settle(30);
   assert.equal(setCalls().length, 0);
 });
@@ -560,33 +472,7 @@ test("writes stay locked while the global config is still loading, then open onc
   assert.equal(saves[0].args.config.model, "claude-sonnet");
 });
 
-test("status lines sit outside the radio group", async () => {
-  resetConfig();
-  mounted = await mount(ProvidersSettingsTab);
-  const { container } = mounted;
-  await waitFor(
-    container,
-    'input[type="radio"][value="anthropic:subscription"]',
-  );
-  const radio = container.querySelector(
-    'input[type="radio"][value="anthropic:subscription"]',
-  );
-  await act(async () => radio.click());
-  const notice = await waitFor(
-    container,
-    '[data-testid="settings-models-default"] [data-testid="settings-models-save-notice"]',
-  );
-  assert.equal(notice.closest('[role="radiogroup"]'), null);
-  const group = container.querySelector('[role="radiogroup"]');
-  for (const child of group.children) {
-    assert.ok(
-      child.querySelector('input[type="radio"]'),
-      "each group row is an option",
-    );
-  }
-});
-
-test("Models renders an accessible tablist; Task models lists Message routing and links back to Providers", async () => {
+test("Models renders an accessible tablist; App tasks lists Message routing and links back to Connections", async () => {
   resetConfig();
   mounted = await mount(ModelsSettingsPanel);
   const { container } = mounted;
@@ -596,13 +482,13 @@ test("Models renders an accessible tablist; Task models lists Message routing an
   const tabs = [...tablist.querySelectorAll('[role="tab"]')];
   assert.deepEqual(
     tabs.map((tab) => tab.textContent),
-    ["Providers", "Task models"],
+    ["Connections", "Default for new agents", "App tasks"],
   );
   assert.equal(tabs[0].getAttribute("aria-selected"), "true");
   await waitFor(container, '[data-testid="settings-models-providers"]');
 
   await act(async () => {
-    tabs[1].dispatchEvent(
+    tabs[2].dispatchEvent(
       new globalThis.window.MouseEvent("mousedown", {
         bubbles: true,
         button: 0,
@@ -610,7 +496,7 @@ test("Models renders an accessible tablist; Task models lists Message routing an
     );
   });
   await settle(20);
-  assert.equal(tabs[1].getAttribute("aria-selected"), "true");
+  assert.equal(tabs[2].getAttribute("aria-selected"), "true");
   const row = await waitFor(
     container,
     '[data-testid="settings-models-task-message-routing"]',

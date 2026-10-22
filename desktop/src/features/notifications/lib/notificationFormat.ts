@@ -15,7 +15,7 @@ export function resolveNotificationChannelLabel(
   if (!channelId) return null;
   const channel = channels.find((c) => c.id === channelId);
   const name = channel?.name?.trim();
-  return name ? `#${name}` : null;
+  return name ? `${name}` : null;
 }
 
 /**
@@ -53,6 +53,7 @@ export type MessageNotificationSource =
   | "approval"
   | "needs_action"
   | "dm"
+  | "chat"
   | "thread_reply";
 
 const MESSAGE_BODY_FALLBACKS: Record<MessageNotificationSource, string> = {
@@ -60,6 +61,7 @@ const MESSAGE_BODY_FALLBACKS: Record<MessageNotificationSource, string> = {
   approval: "A workflow is waiting for your approval.",
   needs_action: "Something in Kuzz needs your attention.",
   dm: "New message",
+  chat: "New message",
   thread_reply: "New reply",
 };
 
@@ -91,8 +93,13 @@ export function formatMessageNotification(opts: {
   if (source === "dm") {
     return { title: senderName ?? channelName ?? "Direct message", body };
   }
+  // Ownerless chat: who said it, and in which chat.
+  if (source === "chat") {
+    const chat = channelName ?? "Chat";
+    return { title: senderName ? `${senderName} in ${chat}` : chat, body };
+  }
 
-  const channelLabel = channelName ? `#${channelName}` : null;
+  const channelLabel = channelName ? `${channelName}` : null;
   const prefix =
     source === "mention"
       ? senderName

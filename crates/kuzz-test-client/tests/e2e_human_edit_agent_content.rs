@@ -815,6 +815,23 @@ async fn test_agent_can_self_delete_channel() {
     agent_client.disconnect().await.ok();
 }
 
+/// `who` publishes a kind:3 contact list naming `friend`, so `friend` may add
+/// `who` to groups directly instead of sending an invitation.
+async fn victim_friends(who: &Keys, friend: &Keys) {
+    let mut client = KuzzTestClient::connect(&relay_url(), who)
+        .await
+        .expect("connect to publish contact list");
+    let contacts = EventBuilder::new(Kind::ContactList, "")
+        .tags(vec![
+            Tag::parse(["p", &friend.public_key().to_hex()]).unwrap()
+        ])
+        .sign_with_keys(who)
+        .unwrap();
+    let ok = client.send_event(contacts).await.expect("send kind 3");
+    assert!(ok.accepted, "contact list rejected: {}", ok.message);
+    client.disconnect().await.ok();
+}
+
 // ─── Removed-author rejection tests (Option A regression guard) ─────────────
 //
 // These tests verify that removing a user from a private channel revokes their
@@ -833,6 +850,10 @@ async fn test_removed_author_cannot_edit_own_message_in_private_channel() {
 
     // Establish NIP-OA ownership; agent is now in the channel.
     let mut agent_client = connect_agent_with_owner(&agent_keys, &owner_keys).await;
+
+    // The victim is a person, so "who can add me" (default `friends`)
+    // applies: they list the agent in their kind:3 contact list first.
+    victim_friends(&victim_keys, &agent_keys).await;
 
     // Agent adds victim to the private channel via kind:9000 (PUT_USER).
     let add_event = EventBuilder::new(Kind::Custom(9000), "")
@@ -917,6 +938,10 @@ async fn test_removed_author_cannot_delete_own_message_in_private_channel() {
 
     // Establish NIP-OA ownership; agent is now in the channel.
     let mut agent_client = connect_agent_with_owner(&agent_keys, &owner_keys).await;
+
+    // The victim is a person, so "who can add me" (default `friends`)
+    // applies: they list the agent in their kind:3 contact list first.
+    victim_friends(&victim_keys, &agent_keys).await;
 
     // Agent adds victim to the private channel via kind:9000 (PUT_USER).
     let add_event = EventBuilder::new(Kind::Custom(9000), "")

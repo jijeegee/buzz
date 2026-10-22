@@ -24,7 +24,7 @@ export function ProjectChannelRequestDetails({
     <dl className="space-y-2 rounded-xl border border-border/60 bg-muted/25 p-3 text-sm">
       <div className="flex gap-3">
         <dt className="w-24 shrink-0 text-muted-foreground">Name</dt>
-        <dd className="min-w-0 break-words text-foreground">#{request.name}</dd>
+        <dd className="min-w-0 break-words text-foreground">{request.name}</dd>
       </div>
       {request.description ? (
         <div className="flex gap-3">
@@ -73,9 +73,9 @@ export function ProjectChannelRequestDialog() {
     >
       <AlertDialogContent data-testid="project-channel-request-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Create project channel?</AlertDialogTitle>
+          <AlertDialogTitle>Create project group?</AlertDialogTitle>
           <AlertDialogDescription>
-            Your agent requested a new channel in{" "}
+            Your agent requested a new group in{" "}
             {management.project?.name ?? "this project"}. Review the details
             before creating it.
           </AlertDialogDescription>
@@ -96,7 +96,7 @@ export function ProjectChannelRequestDialog() {
               void management.approve();
             }}
           >
-            {management.isPending ? "Creating…" : "Create channel"}
+            {management.isPending ? "Creating…" : "Create group"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

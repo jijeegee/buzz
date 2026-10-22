@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:kuzz/features/settings/experiments_settings.dart';
+import 'package:kuzz/features/channels/chat_bubble_row.dart';
+import 'package:kuzz/features/settings/messages_settings.dart';
 import 'package:kuzz/shared/community/community_provider.dart';
 import 'package:kuzz/shared/read_aloud/speech_audio_gate.dart';
 import 'package:kuzz/shared/read_aloud/read_aloud_controller.dart';
@@ -260,7 +261,7 @@ void main() {
             home: Scaffold(
               body: Column(
                 children: [
-                  const ExperimentsSettings(),
+                  const MessagesSettings(),
                   ReadAloudMessage(
                     messageId: 'one',
                     content: '하나 둘',
@@ -363,4 +364,40 @@ void main() {
       expect(box.highlightRects(), isEmpty);
     },
   );
+
+  testWidgets('read-aloud body keeps a short own bubble narrow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(
+            body: SizedBox(
+              width: 412,
+              child: ReadAloudMessage(
+                messageId: 'short',
+                content: 'hi',
+                builder: (context, slots) => ChatBubbleRow(
+                  isOwn: true,
+                  showTime: true,
+                  createdAt: 0,
+                  bubbleKey: const ValueKey('short-bubble'),
+                  leading: const SizedBox.shrink(),
+                  ownLeading: slots?.button,
+                  child: ReadAloudBody(slots: slots, child: const Text('hi')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byTooltip('메시지 읽어주기'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('short-bubble'))).width,
+      lessThan(412 * chatOwnBubbleWidthFactor / 2),
+    );
+  });
 }

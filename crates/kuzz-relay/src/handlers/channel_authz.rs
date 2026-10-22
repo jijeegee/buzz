@@ -52,6 +52,30 @@ pub enum ChannelAuthzError {
     /// `nobody` policy — the agent has opted out of third-party adds.
     #[error("policy:nobody — this agent has disabled external channel additions")]
     PolicyNobody,
+    /// Group chats have no owner/admin/guest roles.
+    #[error("chats have no owners, admins or guests")]
+    GroupChatRoleDenied,
+    /// Only agents take the `bot` role in a group chat.
+    #[error("only agents join a chat as bots")]
+    GroupChatBotRoleForPerson,
+}
+
+/// The role a kind:9000 add may request in a group chat: people are
+/// `member` and agents `bot`. An absent role (or `member` for an agent, which
+/// the applier stores as `bot`) is accepted; `owner`, `admin` and `guest`
+/// never are, and a person cannot be made a `bot`.
+pub fn decide_group_chat_role(
+    requested: Option<MemberRole>,
+    target_is_agent: bool,
+) -> Result<MemberRole, ChannelAuthzError> {
+    match requested {
+        None | Some(MemberRole::Member) | Some(MemberRole::Bot) if target_is_agent => {
+            Ok(MemberRole::Bot)
+        }
+        None | Some(MemberRole::Member) => Ok(MemberRole::Member),
+        Some(MemberRole::Bot) => Err(ChannelAuthzError::GroupChatBotRoleForPerson),
+        Some(_) => Err(ChannelAuthzError::GroupChatRoleDenied),
+    }
 }
 
 /// Whether `pubkey` is the channel's only remaining `owner`.
@@ -193,6 +217,100 @@ pub fn decide_channel_add_policy(
     }
 }
 
+/// The outcome of a third-party add of a person (not an agent) who is not yet
+/// a member of a group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PersonAddDecision {
+    /// Add them now.
+    Allow,
+    /// Do not add them: send an invitation they can accept or decline.
+    SendInvitation,
+}
+
+/// Decide a third-party add of a person who is not yet a member of a group
+/// (`stream`/`forum`), after [`decide_put_user`] returned
+/// [`PutUserDecision::CheckAddPolicy`]. Agents keep their own
+/// [`decide_channel_add_policy`] and never reach this.
+///
+/// - `invite_policy` `admins`: only owners/admins may add anyone.
+/// - The target's `add_policy` (`friends` by default) admits the actor when
+///   it is `everyone` or the target lists the actor as a friend
+///   (`actor_is_friend`). Otherwise the add becomes an invitation, which only
+///   an active member may send. Owners/admins get no bypass: stranger
+///   protection applies to everyone.
+pub fn decide_person_add(
+    invite_policy: &str,
+    actor_role: Option<MemberRole>,
+    add_policy: &str,
+    actor_is_friend: bool,
+) -> Result<PersonAddDecision, ChannelAuthzError> {
+    if invite_policy == "admins" && !actor_role.is_some_and(|role| role.is_elevated()) {
+        return Err(ChannelAuthzError::ActorNotAuthorized);
+    }
+    if add_policy == "everyone" || actor_is_friend {
+        return Ok(PersonAddDecision::Allow);
+    }
+    if actor_role.is_none() {
+        return Err(ChannelAuthzError::NotActiveMember);
+    }
+    Ok(PersonAddDecision::SendInvitation)
+}
+
+/// Whether "who can add me" treats `actor` as the target's friend: the target
+/// lists the actor in their kind:3 contact list, or the actor is an agent the
+/// target owns AND the agent runs this group (created it, or is an
+/// owner/admin) — agents routinely add their owner to rooms they create.
+///
+/// The `actor_runs_group` condition matters: anyone can add V's agent to
+/// their own group (agents keep their own add policy), so "V's agent adds V"
+/// alone would let a stranger pull V in through the agent.
+pub fn admits_as_friend(
+    in_target_contacts: bool,
+    actor_agent_owner: Option<&[u8]>,
+    target: &[u8],
+    actor_runs_group: bool,
+) -> bool {
+    in_target_contacts || (actor_runs_group && actor_agent_owner == Some(target))
+}
+
+/// What a refused add writes. See [`decide_invitation_write`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvitationWrite {
+    /// Store nothing, but answer "invitation sent" anyway.
+    Skip,
+    /// Create the pending invitation, or refresh the existing one.
+    Upsert,
+    /// The inviter hit the daily cap: refuse the add.
+    RateLimited,
+}
+
+/// Decide what a refused add (an invitation) writes:
+///
+/// - the target blocks the actor, or declined an invitation to this group
+///   recently → [`InvitationWrite::Skip`] (no row, no notification spam; the
+///   actor still sees "invitation sent");
+/// - a pending invitation exists → refresh it (does not count toward the cap);
+/// - the inviter already created `cap` invitations in the last 24 hours →
+///   [`InvitationWrite::RateLimited`];
+/// - otherwise create one.
+pub fn decide_invitation_write(
+    target_blocks_actor: bool,
+    declined_recently: bool,
+    already_pending: bool,
+    sent_last_day: i64,
+    cap: i64,
+) -> InvitationWrite {
+    if target_blocks_actor || declined_recently {
+        InvitationWrite::Skip
+    } else if already_pending {
+        InvitationWrite::Upsert
+    } else if sent_last_day >= cap {
+        InvitationWrite::RateLimited
+    } else {
+        InvitationWrite::Upsert
+    }
+}
+
 /// What authority `actor` holds to remove *somebody else* (kind:9001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoveOtherDecision {
@@ -251,6 +369,65 @@ mod tests {
     type RemoveOtherCase<'a> = (Roster<'a>, u8, RemoveOtherDecision);
     /// `(policy, owner_tag, actor, expected_error)`.
     type AddPolicyCase<'a> = (&'a str, Option<u8>, u8, Option<ChannelAuthzError>);
+
+    /// Group chat roles over requested role × target kind.
+    #[test]
+    fn group_chat_role_table() {
+        use MemberRole::*;
+        let cases: &[(
+            Option<MemberRole>,
+            bool,
+            Result<MemberRole, ChannelAuthzError>,
+        )] = &[
+            (None, false, Ok(Member)),
+            (Some(Member), false, Ok(Member)),
+            (
+                Some(Bot),
+                false,
+                Err(ChannelAuthzError::GroupChatBotRoleForPerson),
+            ),
+            (
+                Some(Owner),
+                false,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Admin),
+                false,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Guest),
+                false,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (None, true, Ok(Bot)),
+            (Some(Member), true, Ok(Bot)),
+            (Some(Bot), true, Ok(Bot)),
+            (
+                Some(Owner),
+                true,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Admin),
+                true,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Guest),
+                true,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+        ];
+        for (requested, agent, expected) in cases {
+            assert_eq!(
+                decide_group_chat_role(*requested, *agent),
+                *expected,
+                "requested {requested:?} agent {agent}"
+            );
+        }
+    }
 
     /// The single definition of last-owner protection, over the full shape
     /// space the five former call sites covered.
@@ -636,6 +813,103 @@ mod tests {
                 classify_remove_other(&members, &pk(*actor)),
                 *expected,
                 "roster {entries:?} actor {actor}"
+            );
+        }
+    }
+
+    #[test]
+    fn person_add_table() {
+        use PersonAddDecision::{Allow, SendInvitation};
+        let owner = Some(MemberRole::Owner);
+        let admin = Some(MemberRole::Admin);
+        let member = Some(MemberRole::Member);
+        type Case = (
+            &'static str,
+            Option<MemberRole>,
+            &'static str,
+            bool,
+            Result<PersonAddDecision, ChannelAuthzError>,
+        );
+        let cases: &[Case] = &[
+            // Friends policy: a friend adds directly, a stranger invites.
+            ("members", member, "friends", true, Ok(Allow)),
+            ("members", member, "friends", false, Ok(SendInvitation)),
+            // Owners and admins get no bypass.
+            ("members", owner, "friends", false, Ok(SendInvitation)),
+            ("members", admin, "friends", false, Ok(SendInvitation)),
+            // Everyone policy: anyone allowed to add may add.
+            ("members", member, "everyone", false, Ok(Allow)),
+            ("members", None, "everyone", false, Ok(Allow)),
+            ("members", None, "friends", true, Ok(Allow)),
+            // A non-member (open group) cannot send an invitation.
+            (
+                "members",
+                None,
+                "friends",
+                false,
+                Err(ChannelAuthzError::NotActiveMember),
+            ),
+            // Unknown add policy fails safe to an invitation.
+            ("members", member, "bogus", false, Ok(SendInvitation)),
+            // Admins-only groups: members are refused before any policy.
+            (
+                "admins",
+                member,
+                "everyone",
+                true,
+                Err(ChannelAuthzError::ActorNotAuthorized),
+            ),
+            (
+                "admins",
+                None,
+                "everyone",
+                true,
+                Err(ChannelAuthzError::ActorNotAuthorized),
+            ),
+            ("admins", admin, "everyone", false, Ok(Allow)),
+            ("admins", owner, "friends", true, Ok(Allow)),
+            ("admins", owner, "friends", false, Ok(SendInvitation)),
+        ];
+        for (invite_policy, actor_role, add_policy, friend, expected) in cases {
+            assert_eq!(
+                &decide_person_add(invite_policy, *actor_role, add_policy, *friend),
+                expected,
+                "invite_policy={invite_policy} actor={actor_role:?} add_policy={add_policy} friend={friend}"
+            );
+        }
+    }
+
+    #[test]
+    fn own_agent_counts_as_friend() {
+        let owner = [1u8; 32];
+        let other = [2u8; 32];
+        assert!(admits_as_friend(true, None, &owner, false));
+        assert!(admits_as_friend(false, Some(&owner), &owner, true));
+        // A plain member agent (someone else's group) cannot pull its owner in.
+        assert!(!admits_as_friend(false, Some(&owner), &owner, false));
+        assert!(!admits_as_friend(false, Some(&other), &owner, true));
+        assert!(!admits_as_friend(false, None, &owner, true));
+    }
+
+    #[test]
+    fn invitation_write_table() {
+        use InvitationWrite::{RateLimited, Skip, Upsert};
+        // (blocks, declined_recently, already_pending, sent_last_day) -> write
+        let cases = [
+            ((false, false, false, 0), Upsert),
+            ((false, false, false, 49), Upsert),
+            ((false, false, false, 50), RateLimited),
+            ((false, false, true, 50), Upsert),
+            ((false, true, false, 0), Skip),
+            ((false, true, true, 99), Skip),
+            ((true, false, false, 0), Skip),
+            ((true, false, false, 99), Skip),
+        ];
+        for ((blocks, declined, pending, sent), expected) in cases {
+            assert_eq!(
+                decide_invitation_write(blocks, declined, pending, sent, 50),
+                expected,
+                "blocks={blocks} declined={declined} pending={pending} sent={sent}"
             );
         }
     }

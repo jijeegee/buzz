@@ -277,6 +277,7 @@ export function PersonaShareRecipients({
                   type="button"
                 >
                   <ProfileAvatar
+                    mediaVariant="small"
                     avatarUrl={user.avatarUrl}
                     className="h-8 w-8 text-xs shadow-none"
                     iconClassName="h-4 w-4"

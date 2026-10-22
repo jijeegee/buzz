@@ -6,8 +6,11 @@
 //! stored values migration 0072 added (Telegram's dialog model), so a row
 //! costs a few key lookups. Two cases still search messages as before: the
 //! stored latest message is deleted or (in a DM) from someone the reader
-//! blocked, and a pinned thread the reader has no follow row for. Counts
-//! stop at [`CHAT_UNREAD_CAP`] + 1. Close and reopen markers count nowhere.
+//! blocked, and a pinned thread the reader has no follow row for. In a DM
+//! with someone the reader blocked, the sort time and latest sequence are
+//! searched too, so the blocked person's messages neither move the row up
+//! nor bring back an archived room. Counts stop at [`CHAT_UNREAD_CAP`] + 1.
+//! Close and reopen markers count nowhere.
 //!
 //! - Rooms: current memberships of live channels, minus hidden DMs. Archived
 //!   rooms stay only while they have something unread or an unread mark.
@@ -86,8 +89,13 @@ pub struct ChatListRow {
     pub channel_name: String,
     /// Whether the room is archived.
     pub archived: bool,
-    /// For DM rooms: the other current members (raw 32-byte pubkeys, at most
-    /// [`MAX_DM_MEMBERS`]). Empty otherwise.
+    /// Ownerless group chat.
+    pub group_chat: bool,
+    /// Group chats only: active members, the reader included.
+    pub member_count: Option<i64>,
+    /// For DM rooms and every group chat row: the other current members (raw
+    /// 32-byte pubkeys, oldest first, at most [`MAX_DM_MEMBERS`]). Empty
+    /// otherwise.
     pub dm_members: Vec<Vec<u8>>,
     /// Thread root id for thread rows.
     pub root_id: Option<Vec<u8>>,
@@ -168,13 +176,15 @@ macro_rules! mentions_reader {
     };
 }
 
-/// Not a DM message from someone the reader blocked (silent block). `m` is
-/// the reader's membership row for the same room.
+/// Not a 1:1 DM message received from someone while the reader blocked
+/// them (silent block). `m` is the reader's membership row for the same room.
 macro_rules! not_blocked_dm {
     () => {
-        "NOT (m.channel_type = 'dm' AND EXISTS (
-            SELECT 1 FROM user_blocks ub
-            WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))"
+        concat!(
+            "NOT (m.dm_blocked AND ",
+            crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+            ")"
+        )
     };
 }
 
@@ -198,11 +208,23 @@ macro_rules! thread_unread_from {
 
 const CHAT_LIST_SQL: &str = concat!(
     r#"
-WITH my AS MATERIALIZED (
+WITH blk AS MATERIALIZED (
+    -- Everyone the reader blocked at any time (open or closed periods).
+    SELECT DISTINCT bp.blocked FROM user_block_periods bp
+    WHERE bp.community_id = $1 AND bp.blocker = $2
+),
+my AS MATERIALIZED (
     SELECT cm.channel_id, c.channel_type::text AS channel_type, c.name AS channel_name,
-           c.archived_at, cm.joined_at, cm.hidden_at, cm.read_seq, cm.unread_mark,
+           c.group_chat, c.archived_at, cm.joined_at, cm.hidden_at, cm.read_seq, cm.unread_mark,
            c.main_last_seq, c.main_last_at, c.main_last_event_id,
-           cm.unread_count, cm.unread_mentions
+           cm.unread_count, cm.unread_mentions,
+           -- A 1:1 DM with someone the reader blocks or once blocked: its
+           -- stored latest may be a message hidden from the reader, so
+           -- ordering is searched below.
+           (c.channel_type = 'dm' AND EXISTS (
+               SELECT 1 FROM blk JOIN channel_members bm ON bm.community_id = $1
+                   AND bm.channel_id = cm.channel_id AND bm.pubkey = blk.blocked
+           ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
     WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
@@ -210,15 +232,34 @@ WITH my AS MATERIALIZED (
 ),
 rooms AS (
     SELECT 'room'::text AS row_kind, m.channel_id, NULL::bytea AS root_id,
-           COALESCE(m.main_last_at, m.joined_at) AS at, m.channel_id::text AS row_key,
-           m.main_last_seq AS last_seq, m.read_seq, m.unread_mark,
+           COALESCE(v.last_at, m.joined_at) AS at, m.channel_id::text AS row_key,
+           v.last_seq, m.read_seq, m.unread_mark,
            NULL::text AS follow_state, FALSE AS closed,
-           m.main_last_event_id AS last_event_id, NULL::text AS stored_name,
+           v.last_event_id, NULL::text AS stored_name,
            m.unread_count AS stored_unread, m.unread_mentions AS stored_mentions
     FROM my m
+    -- In such a DM, messages hidden by a block neither sort nor revive an
+    -- archived room: use the latest main message the reader can see
+    -- (deleted ones too, as the stored values never move back).
+    LEFT JOIN LATERAL (
+        SELECT e.channel_sequence, e.received_at, e.id FROM events e
+        WHERE m.dm_blocked AND e.community_id = $1 AND e.channel_id = m.channel_id
+          AND e.kind = ANY($3) AND "#,
+    main_timeline!(),
+    r#"
+          AND NOT "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#"
+        ORDER BY e.channel_sequence DESC LIMIT 1
+    ) l ON TRUE
+    CROSS JOIN LATERAL (
+        SELECT CASE WHEN m.dm_blocked THEN l.channel_sequence ELSE m.main_last_seq END AS last_seq,
+               CASE WHEN m.dm_blocked THEN l.received_at ELSE m.main_last_at END AS last_at,
+               CASE WHEN m.dm_blocked THEN l.id ELSE m.main_last_event_id END AS last_event_id
+    ) v
     WHERE m.hidden_at IS NULL
       AND (m.archived_at IS NULL OR m.unread_mark
-           OR COALESCE(m.main_last_seq, 0) > COALESCE(m.read_seq, 0))
+           OR COALESCE(v.last_seq, 0) > COALESCE(m.read_seq, 0))
 ),
 pinned AS (
     SELECT DISTINCT root_id FROM unnest($7::bytea[]) AS pr(root_id)
@@ -247,19 +288,37 @@ candidates AS (
 ),
 threads AS (
     SELECT 'thread'::text, t.channel_id, t.root_id,
-           COALESCE(ts.last_at, t.root_at, m.joined_at), encode(t.root_id, 'hex'),
-           ts.last_seq, t.read_seq, t.unread_mark, t.follow_state,
+           COALESCE(v.last_at, t.root_at, m.joined_at), encode(t.root_id, 'hex'),
+           v.last_seq, t.read_seq, t.unread_mark, t.follow_state,
            ts.closed_at IS NOT NULL,
-           ts.last_event_id, ts.name, t.stored_unread, t.stored_mentions
+           v.last_event_id, ts.name, t.stored_unread, t.stored_mentions
     FROM candidates t
     JOIN my m ON m.channel_id = t.channel_id AND m.hidden_at IS NULL
     LEFT JOIN thread_state ts ON ts.community_id = $1 AND ts.root_event_id = t.root_id
         AND ts.channel_id = t.channel_id
+    -- Same as rooms: replies hidden by a block do not count.
+    LEFT JOIN LATERAL (
+        SELECT e.channel_sequence, e.received_at, e.id FROM thread_metadata r
+        JOIN events e ON e.community_id = r.community_id
+            AND e.created_at = r.event_created_at AND e.id = r.event_id
+        WHERE m.dm_blocked AND r.community_id = $1 AND r.root_event_id = t.root_id
+          AND r.depth > 0 AND e.kind = ANY($3)
+          AND NOT chat_is_thread_marker(e.tags, t.root_id)
+          AND NOT "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#"
+        ORDER BY e.channel_sequence DESC LIMIT 1
+    ) l ON TRUE
+    CROSS JOIN LATERAL (
+        SELECT CASE WHEN m.dm_blocked THEN l.channel_sequence ELSE ts.last_seq END AS last_seq,
+               CASE WHEN m.dm_blocked THEN l.received_at ELSE ts.last_at END AS last_at,
+               CASE WHEN m.dm_blocked THEN l.id ELSE ts.last_event_id END AS last_event_id
+    ) v
     WHERE t.root_id = ANY($7)
        OR (ts.closed_at IS NULL
            AND (t.unread_mark
-                OR COALESCE(ts.last_seq, 0) > COALESCE(t.read_seq, 0)
-                OR (m.archived_at IS NULL AND ts.last_at >= $8)))
+                OR COALESCE(v.last_seq, 0) > COALESCE(t.read_seq, 0)
+                OR (m.archived_at IS NULL AND v.last_at >= $8)))
 ),
 page AS (
     SELECT * FROM (SELECT * FROM rooms UNION ALL SELECT * FROM threads) x
@@ -269,8 +328,13 @@ page AS (
 )
 SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_seq,
     p.unread_mark, p.follow_state, p.closed,
-    m.channel_type, m.channel_name, m.archived_at IS NOT NULL AS archived,
-    CASE WHEN p.row_kind = 'room' AND m.channel_type = 'dm' THEN ARRAY(
+    m.channel_type, m.channel_name, m.archived_at IS NOT NULL AS archived, m.group_chat,
+    -- Group chats: room and thread rows (titles are drawn from members).
+    CASE WHEN m.group_chat THEN (
+        SELECT count(*) FROM channel_members o
+        WHERE o.community_id = $1 AND o.channel_id = p.channel_id AND o.removed_at IS NULL
+    ) END AS member_count,
+    CASE WHEN (p.row_kind = 'room' AND m.channel_type = 'dm') OR m.group_chat THEN ARRAY(
         SELECT o.pubkey FROM channel_members o
         WHERE o.community_id = $1 AND o.channel_id = p.channel_id
           AND o.removed_at IS NULL AND o.pubkey <> $2
@@ -410,6 +474,8 @@ impl Db {
                     channel_type: row.try_get("channel_type")?,
                     channel_name: row.try_get("channel_name")?,
                     archived: row.try_get("archived")?,
+                    group_chat: row.try_get("group_chat")?,
+                    member_count: row.try_get("member_count")?,
                     dm_members: row.try_get("dm_members")?,
                     root_id: row.try_get("root_id")?,
                     thread_name: row.try_get("thread_name")?,

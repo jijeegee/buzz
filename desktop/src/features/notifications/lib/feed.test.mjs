@@ -30,7 +30,7 @@ test("enriches a feed notification with its loaded channel name", () => {
 
   assert.equal(item.channelName, "ship-room");
   assert.equal(item.channelType, "stream");
-  assert.equal(notificationTitle(item), "Needs Action in #ship-room");
+  assert.equal(notificationTitle(item), "Needs Action in ship-room");
 });
 
 test("preserves feed-provided channel metadata", () => {
@@ -41,7 +41,7 @@ test("preserves feed-provided channel metadata", () => {
   const item = enrichFeedItemChannel(original, channels);
 
   assert.equal(item, original);
-  assert.equal(notificationTitle(item), "Needs Action in #backend-name");
+  assert.equal(notificationTitle(item), "Needs Action in backend-name");
 });
 
 test("falls back safely when the channel list has not loaded the channel", () => {
@@ -116,6 +116,28 @@ test("resolves and excludes a DM whose feed item has a name but no type", () => 
     feedResponse([namedItem]),
     allSlots,
     [{ id: "dm-channel", name: "alice-tyler", channelType: "dm" }],
+  );
+
+  assert.equal(items.length, 0);
+});
+
+test("excludes a group chat mention; the live path alerts for chats", () => {
+  const chatItem = feedItem({
+    category: "mention",
+    channelId: "chat-channel",
+    channelType: "stream",
+  });
+  const items = eligibleFeedNotificationItems(
+    feedResponse([chatItem]),
+    allSlots,
+    [
+      {
+        id: "chat-channel",
+        name: "",
+        channelType: "stream",
+        groupChat: true,
+      },
+    ],
   );
 
   assert.equal(items.length, 0);

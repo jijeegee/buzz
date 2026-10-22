@@ -58,7 +58,7 @@ export const COMING_SOON_SLOTS: ReadonlySet<SoundSlot> = new Set([
 
 export const SLOT_DESCRIPTIONS: Record<SoundSlot, string> = {
   dm: "When someone messages you directly.",
-  mention: "When someone tags you in a channel.",
+  mention: "When someone tags you in a group.",
   thread_reply: "When someone replies in a thread you follow or posted in.",
   needs_action: "When an approval or reminder is waiting on you.",
   job_accepted: "When an agent picks up a job.",

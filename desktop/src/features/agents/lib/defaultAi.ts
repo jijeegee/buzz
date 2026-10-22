@@ -10,7 +10,7 @@ type DefaultAiCandidate = Pick<ManagedAgent, "pubkey" | "isDefaultAi">;
  * pointer, not a dead end.
  */
 export const NO_DEFAULT_AI_HINT =
-  "No routing agent yet — choose one in Settings › Experiments › Channel routing";
+  "No routing agent yet — choose one in Settings › Experiments › Group routing";
 
 /**
  * A key-less definition record has no identity to star. This mirrors the

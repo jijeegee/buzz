@@ -1,4 +1,3 @@
-import * as React from "react";
 import { AlertCircle, Lock, Upload } from "lucide-react";
 
 import type {
@@ -31,8 +30,8 @@ type AgentSnapshotImportDialogProps = {
   result: AgentSnapshotImportResult | null;
   /** Error from the confirm mutation, if any. */
   confirmError: string | null;
-  /** Called with keepAllowlist when user clicks Import. */
-  onConfirm: (keepAllowlist: boolean) => void;
+  /** Called when user clicks Import. */
+  onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
 };
 
@@ -47,16 +46,6 @@ export function AgentSnapshotImportDialog({
   onConfirm,
   onOpenChange,
 }: AgentSnapshotImportDialogProps) {
-  // Default: clear the source allowlist (safe default per spec).
-  const [keepAllowlist, setKeepAllowlist] = React.useState(false);
-
-  // Reset choice whenever the dialog opens with new data.
-  React.useEffect(() => {
-    if (open) {
-      setKeepAllowlist(false);
-    }
-  }, [open]);
-
   const phase: ImportPhase =
     result !== null ? "result" : isConfirming ? "confirming" : "preview";
 
@@ -87,7 +76,7 @@ export function AgentSnapshotImportDialog({
                   <Button
                     data-testid="agent-snapshot-import-confirm"
                     disabled={isConfirming}
-                    onClick={() => onConfirm(keepAllowlist)}
+                    onClick={() => onConfirm()}
                     size="sm"
                     type="button"
                     variant="default"
@@ -124,8 +113,6 @@ export function AgentSnapshotImportDialog({
             preview={preview}
             hasMemory={hasMemory}
             memoryLevelLabel={memoryLevelLabel}
-            keepAllowlist={keepAllowlist}
-            onKeepAllowlistChange={setKeepAllowlist}
           />
         ) : phase === "confirming" ? (
           <div className="py-4 text-center text-sm text-muted-foreground">
@@ -145,14 +132,10 @@ export function PreviewBody({
   preview,
   hasMemory,
   memoryLevelLabel,
-  keepAllowlist,
-  onKeepAllowlistChange,
 }: {
   preview: AgentSnapshotImportPreview;
   hasMemory: boolean;
   memoryLevelLabel: string;
-  keepAllowlist: boolean;
-  onKeepAllowlistChange: (v: boolean) => void;
 }) {
   return (
     <div className="space-y-4 py-1">
@@ -204,7 +187,8 @@ export function PreviewBody({
 
       <p className="text-sm text-muted-foreground">
         A new agent will be created with a fresh keypair. The imported agent is
-        independent of the source — identity never travels.
+        independent of the source — identity never travels. It starts as
+        owner-only.
       </p>
 
       {/* Memory section */}
@@ -229,49 +213,6 @@ export function PreviewBody({
           No memory included — config only.
         </p>
       )}
-
-      {/* Allowlist section */}
-      {preview.hasSourceAllowlist ? (
-        <div
-          className="space-y-2 rounded-md border border-border p-3"
-          data-testid="agent-snapshot-import-allowlist-section"
-        >
-          <p className="text-sm font-medium">
-            Respond-to allowlist ({preview.sourceAllowlistCount} entr
-            {preview.sourceAllowlistCount === 1 ? "y" : "ies"})
-          </p>
-          <p className="text-xs text-muted-foreground">
-            This snapshot lists people from another workspace. Choose Clear if
-            you don't recognize them.
-          </p>
-          <div className="flex flex-col gap-1.5">
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                checked={!keepAllowlist}
-                data-testid="agent-snapshot-import-allowlist-clear"
-                name="allowlist-choice"
-                onChange={() => onKeepAllowlistChange(false)}
-                type="radio"
-              />
-              <span className="text-sm">
-                <strong>Clear</strong> — start with an empty allowlist (safer)
-              </span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                checked={keepAllowlist}
-                data-testid="agent-snapshot-import-allowlist-keep"
-                name="allowlist-choice"
-                onChange={() => onKeepAllowlistChange(true)}
-                type="radio"
-              />
-              <span className="text-sm">
-                <strong>Keep</strong> — copy source allowlist to the new agent
-              </span>
-            </label>
-          </div>
-        </div>
-      ) : null}
 
       <details
         className="rounded-md border border-border p-3"

@@ -253,13 +253,16 @@ async fn invite_bearer(
     let Some(token) = crate::api::auth::bearer_token(headers) else {
         return Ok(None);
     };
-    let binding = crate::identity::verify_access_token(state, &token)
+    let binding = crate::identity::verify_message_token(state, &token)
         .await
         .map_err(|rejection| match rejection {
             crate::identity::TokenRejection::Unavailable => api_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "authentication backend unavailable",
             ),
+            crate::identity::TokenRejection::MessagePathClosed => {
+                api_error(StatusCode::FORBIDDEN, rejection.code())
+            }
             other => api_error(StatusCode::UNAUTHORIZED, other.code()),
         })?;
     if binding.kind != kuzz_core::principal::AccessTokenKind::User {
@@ -303,6 +306,7 @@ async fn authenticate(
         ..
     } = bridge::verify_nip98_exempt_invite_claim(headers, "POST", &url, Some(body))?;
     bridge::check_nip98_replay(state, &tenant, event_id_bytes).await?;
+    bridge::admit_bridge_key(state, headers, &pubkey).await?;
 
     Ok((tenant, pubkey))
 }
@@ -406,6 +410,9 @@ async fn mint_invite_checked(
 
     // Replay detection runs after NIP-98+assertion admission (both proofs verified).
     if let Err(e) = bridge::check_nip98_replay(&state, &tenant, event_id_bytes).await {
+        return e.into_response();
+    }
+    if let Err(e) = bridge::admit_bridge_key(&state, &headers, &pubkey).await {
         return e.into_response();
     }
 
@@ -1984,11 +1991,11 @@ mod postgres_tests {
     /// ES256 verifier over the static test key is injected so a signed
     /// assertion passes the router guard and reaches the handler.
     fn nip_fi_enforce_state(base: &AppState, with_verifier: bool) -> Arc<AppState> {
+        use jsonwebtoken::{jwk::JwkSet, Algorithm};
         use kuzz_auth::{
             AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
             IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
         };
-        use jsonwebtoken::{jwk::JwkSet, Algorithm};
 
         let mut state = base.clone();
         let mut config = (*state.config).clone();

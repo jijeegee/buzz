@@ -138,13 +138,18 @@ class _InboxRow extends HookConsumerWidget {
 
     final isDm = channel?.isDm ?? false;
     final feedChannelName = item.item.channelName.trim();
+    // A chat of people reads by its resolved title.
+    final chatTitle = channel?.isGroupChat == true
+        ? watchChannelTitle(ref, channel!)
+        : null;
     final channelName = isDm
         ? null
-        : channel != null && channel!.name.isNotEmpty
-        ? channel!.name
-        : feedChannelName.isNotEmpty
-        ? feedChannelName
-        : null;
+        : chatTitle ??
+              (channel != null && channel!.name.isNotEmpty
+                  ? channel!.name
+                  : feedChannelName.isNotEmpty
+                  ? feedChannelName
+                  : null);
     final threadRootId = isDm ? null : item.threadRootId;
     final threadName = channelId != null && threadRootId != null
         ? ref
@@ -165,6 +170,7 @@ class _InboxRow extends HookConsumerWidget {
             currentPubkey: currentPubkey,
             senderLabel: senderLabel,
             names: ref.watch(identityNameSourcesProvider),
+            chatTitle: chatTitle,
           )
         : null;
     final roomTitle = room == null
@@ -173,8 +179,8 @@ class _InboxRow extends HookConsumerWidget {
     final channelChipLabel = channelName == null
         ? null
         : threadRootId == null
-        ? '#$channelName'
-        : '#$channelName › ${threadName ?? 'Thread'}';
+        ? channelName
+        : '$channelName › ${threadName ?? 'Thread'}';
     final label = inboxTypeLabel(
       item,
       channelName: channelName,
@@ -361,7 +367,7 @@ class _InboxRow extends HookConsumerWidget {
                                     ],
                                   ),
                                   const SizedBox(height: Grid.quarter),
-                                  // Contextual label: "Mentioned in #channel" etc.
+                                  // Contextual label: "Mentioned in group" etc.
                                   Row(
                                     children: [
                                       Flexible(
@@ -392,7 +398,7 @@ class _InboxRow extends HookConsumerWidget {
                                             ),
                                             child: Text(
                                               channelChipLabel ??
-                                                  '#${label.channelLabel}',
+                                                  label.channelLabel!,
                                               style: activityContextTextStyle
                                                   .copyWith(color: mutedColor),
                                               overflow: TextOverflow.ellipsis,
@@ -590,6 +596,21 @@ class _ConversationRoomAvatar extends HookConsumerWidget {
         (cache) => personPubkey == null ? null : cache[personPubkey],
       ),
     );
+    final roomChannelId = switch (room) {
+      ChannelConversationRoom(:final channelId) => channelId,
+      ThreadConversationRoom(:final channelId) => channelId,
+      _ => null,
+    };
+    final roomChannel = ref.watch(
+      channelsProvider.select((channels) {
+        if (roomChannelId == null || roomChannelId.isEmpty) return null;
+        for (final channel in channels.value ?? const <Channel>[]) {
+          if (channel.id == roomChannelId) return channel;
+        }
+        return null;
+      }),
+    );
+    final groupPicture = roomChannel?.picture;
     useEffect(() {
       if (personPubkey != null && personProfile == null) {
         Future.microtask(
@@ -609,17 +630,21 @@ class _ConversationRoomAvatar extends HookConsumerWidget {
               personProfile?.ownerPubkey != null ||
               personProfile?.isAgent == true,
         );
+      case ChannelConversationRoom() when roomChannel?.isGroupChat == true:
+        return ChatGridAvatar(memberPubkeys: roomChannel!.participantPubkeys);
       case ChannelConversationRoom(:final channelId, :final channelName):
         return ConversationLetterAvatar(
           seed: channelId.isEmpty ? channelName : channelId,
           label: channelName,
           isThread: false,
+          imageUrl: groupPicture,
         );
       case ThreadConversationRoom(:final channelId, :final channelName):
         return ConversationLetterAvatar(
           seed: channelId.isEmpty ? channelName : channelId,
           label: channelName,
           isThread: true,
+          imageUrl: groupPicture,
         );
     }
   }

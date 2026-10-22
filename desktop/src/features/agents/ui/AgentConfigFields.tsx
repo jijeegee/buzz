@@ -48,6 +48,7 @@ import {
 } from "@/features/agents/ui/agentConfigControls";
 import { PersonaProviderApiKeyField } from "@/features/agents/ui/PersonaProviderApiKeyField";
 import { usePersonaModelDiscovery } from "@/features/agents/ui/usePersonaModelDiscovery";
+import { HarnessProviderField } from "@/features/agents/ui/HarnessProviderField";
 import { resolveModelLabel } from "@/features/agents/lib/formatAgentModelLabel";
 import {
   KUZZ_AGENT_THINKING_EFFORT,
@@ -363,16 +364,21 @@ export function AgentConfigFields({
     onValidityChange?.(configIsValid);
   }, [configIsValid, onValidityChange]);
 
+  // The model saved before this form opened, kept listed if Hermes dropped it.
+  const savedModelRef = React.useRef(config.model ?? "");
   const {
     discoveredModelOptions,
+    harnessProviderChoice,
     modelDiscoveryLoading,
     modelDiscoveryStatus,
     modelDiscoverySuccessfulEmpty,
   } = usePersonaModelDiscovery({
     envVars: config.env_vars,
     isCustomProviderEditing: isCustomProvider,
+    model: config.model ?? "",
     modelFieldVisible: !dependentFieldsDisabled,
     open: true,
+    persistedModel: savedModelRef.current,
     provider: providerForDiscovery,
     selectedRuntime,
   });
@@ -820,6 +826,16 @@ export function AgentConfigFields({
 
   const modelAndEffortFields = (
     <>
+      {!providerFieldVisible &&
+      !dependentFieldsDisabled &&
+      harnessProviderChoice ? (
+        <HarnessProviderField
+          choice={harnessProviderChoice}
+          harnessLabel={selectedRuntime?.label ?? "the harness"}
+          id="global-agent-harness-provider"
+          onModelChange={handleModelChange}
+        />
+      ) : null}
       {/* Model field — omitted only after confirmed successful empty discovery.
           Its thought-level effort companion (the global `effort_level`
           column) renders beneath it through ModelEffortFields. */}

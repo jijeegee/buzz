@@ -1,5 +1,5 @@
 import { captureRelayRemovals } from "@/features/agents/managedAgentRelayCleanup";
-import { sendChannelMessage } from "@/shared/api/tauri";
+import { openDm, sendChannelMessage } from "@/shared/api/tauri";
 import type { Channel, ManagedAgent, RelayAgent } from "@/shared/api/types";
 import type { AgentAvailabilityReader } from "./useAgentAvailability";
 import { normalizePubkey } from "@/shared/lib/pubkey";
@@ -132,7 +132,7 @@ export async function stopManagedAgentWithRules({
       relayAgents,
     });
     if (!channelId) {
-      throw new Error("Cannot stop: agent is not in any channel");
+      throw new Error("Cannot stop: agent is not in any group");
     }
 
     await sendChannelMessage(channelId, "!shutdown", undefined, undefined, [
@@ -149,25 +149,25 @@ export async function stopManagedAgentWithRules({
 }
 
 /**
+ * The owner's DM with an agent, opened when there is none. Commands to an
+ * agent on another computer go there, so no one else sees them and an agent
+ * in no channel can still be reached.
+ */
+async function ownerCommandChannelId(pubkey: string): Promise<string> {
+  return (await openDm({ pubkeys: [pubkey] })).id;
+}
+
+/**
  * Ask an agent running on another of the owner's computers to stop: the
- * owner's `!shutdown` in a channel it is in makes its harness exit, and the
+ * owner's `!shutdown` in their DM with it makes its harness exit, and the
  * hosting desktop leaves a cleanly exited agent stopped.
  */
 export async function stopRemoteOwnedAgent({
   pubkey,
-  channels,
-  preferredChannelId,
-  relayAgents,
 }: {
   pubkey: string;
-} & ManagedAgentChannelContext): Promise<ManagedAgentActionResult> {
-  const channelId = resolveManagedAgentChannelId(
-    { pubkey },
-    { channels, preferredChannelId, relayAgents },
-  );
-  if (!channelId) {
-    throw new Error("Cannot stop: agent is not in any channel");
-  }
+}): Promise<ManagedAgentActionResult> {
+  const channelId = await ownerCommandChannelId(pubkey);
   await sendChannelMessage(channelId, "!shutdown", undefined, undefined, [
     pubkey,
   ]);
@@ -178,28 +178,20 @@ export async function stopRemoteOwnedAgent({
 }
 
 /**
- * Ask the computer an agent runs on to start it: the owner's `!start` in a
- * channel it is in reaches that computer's Kuzz app (`useRemoteStartListener`),
- * which starts the stopped agent. Nothing happens while that app is closed.
+ * Ask the computer an agent runs on to start it: the owner's `!start` in
+ * their DM with it reaches that computer's Kuzz app (`useRemoteStartListener`
+ * listens to the owner's messages in any channel), which starts the stopped
+ * agent. Nothing happens while that app is closed.
  */
 export async function startRemoteOwnedAgent({
   pubkey,
   hostName,
-  channels,
-  preferredChannelId,
-  relayAgents,
 }: {
   pubkey: string;
   /** The hosting computer's name, when known. */
   hostName?: string | null;
-} & ManagedAgentChannelContext): Promise<ManagedAgentActionResult> {
-  const channelId = resolveManagedAgentChannelId(
-    { pubkey },
-    { channels, preferredChannelId, relayAgents },
-  );
-  if (!channelId) {
-    throw new Error("Cannot start: agent is not in any channel");
-  }
+}): Promise<ManagedAgentActionResult> {
+  const channelId = await ownerCommandChannelId(pubkey);
   await sendChannelMessage(channelId, "!start", undefined, undefined, [pubkey]);
   return {
     noticeMessage: `Start requested. It starts only if Kuzz is open on ${hostName?.trim() || "that computer"} now.`,
@@ -262,7 +254,7 @@ export async function deleteManagedAgentWithRules({
     } else {
       if (!skipRemoteDeleteConfirm) {
         const confirmed = window.confirm(
-          "This agent is deployed but not in any channel. " +
+          "This agent is deployed but not in any group. " +
             "Deleting removes the local management record; the remote deployment may still be running. Continue?",
         );
         if (!confirmed) {

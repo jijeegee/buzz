@@ -145,7 +145,7 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
               : null,
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SpokenTextSurface(
               key: surfaceKey,

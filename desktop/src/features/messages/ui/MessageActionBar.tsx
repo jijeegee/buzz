@@ -9,6 +9,7 @@ import {
   Link2,
   MailCheck,
   MailOpen,
+  MessageSquareShare,
   Pencil,
   Quote,
   SmilePlus,
@@ -47,7 +48,6 @@ import { emojiDisplayName } from "@/shared/lib/emojiName";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { KIND_HUDDLE_STARTED } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
-import { HashArrowIn } from "@/shared/ui/icons";
 import { DeleteMessageConfirmDialog } from "./DeleteMessageConfirmDialog";
 import {
   DropdownMenu,
@@ -265,26 +265,26 @@ function MoreActionsMenu({
 
           {onSendToChannel ? (
             <DropdownMenuItem
-              aria-label="Send to channel"
+              aria-label="Send to group"
               data-testid={`send-to-channel-${message.id}`}
               onClick={() => {
                 void onSendToChannel(message)
-                  .then(() => toast.success("Sent to channel"))
+                  .then(() => toast.success("Sent to group"))
                   .catch((error) => {
                     console.error(
                       "Failed to send thread message to channel",
                       error,
                     );
-                    toast.error("Couldn't send to channel");
+                    toast.error("Couldn't send to group");
                   });
               }}
             >
-              <HashArrowIn
+              <MessageSquareShare
                 aria-hidden="true"
                 className="h-4 w-4"
                 data-testid="send-to-channel-icon"
               />
-              Send to channel
+              Send to group
             </DropdownMenuItem>
           ) : null}
 

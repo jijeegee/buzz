@@ -16,6 +16,7 @@ enum SystemEventType {
   channelArchived,
   channelUnarchived,
   goalsChanged,
+  pictureChanged,
   huddleStarted,
   huddleEnded,
 }
@@ -28,6 +29,9 @@ class SystemEvent {
   final String? topic;
   final String? purpose;
 
+  /// `picture_changed`: the new group photo URL; blank when it was removed.
+  final String? picture;
+
   /// `goals_changed`: the room's goals switch, `on` or `off`.
   final String? goals;
   final String? ephemeralChannelId;
@@ -38,6 +42,7 @@ class SystemEvent {
     this.targetPubkey,
     this.topic,
     this.purpose,
+    this.picture,
     this.goals,
     this.ephemeralChannelId,
   });
@@ -66,6 +71,7 @@ class SystemEvent {
       'channel_archived' => SystemEventType.channelArchived,
       'channel_unarchived' => SystemEventType.channelUnarchived,
       'goals_changed' => SystemEventType.goalsChanged,
+      'picture_changed' => SystemEventType.pictureChanged,
       _ => null,
     };
 
@@ -85,6 +91,7 @@ class SystemEvent {
       targetPubkey: _readString(json, 'target'),
       topic: _readString(json, 'topic'),
       purpose: _readString(json, 'purpose'),
+      picture: _readString(json, 'picture'),
       goals: goals,
     );
   }
@@ -116,30 +123,40 @@ class SystemEvent {
 
   /// Human-readable description. [resolveLabel] maps a pubkey to a display
   /// name — the caller provides it so this class stays free of provider deps.
-  String describe(String Function(String? pubkey) resolveLabel) {
+  /// [roomNoun] names the room: ownerless chats are a "chat", never a
+  /// "group" (mirrors desktop's SystemMessageRow `roomNoun`).
+  String describe(
+    String Function(String? pubkey) resolveLabel, {
+    String roomNoun = 'group',
+  }) {
     final actor = resolveLabel(actorPubkey);
 
     return switch (type) {
       SystemEventType.memberJoined => () {
         if (actorPubkey != null && actorPubkey == targetPubkey) {
-          return '$actor joined the channel';
+          return '$actor joined the $roomNoun';
         }
         final target = resolveLabel(targetPubkey);
         return '$target was added by $actor';
       }(),
-      SystemEventType.memberLeft => '$actor left the channel',
+      SystemEventType.memberLeft => '$actor left the $roomNoun',
       SystemEventType.memberRemoved => () {
         final target = resolveLabel(targetPubkey);
-        return '$actor removed $target from the channel';
+        return '$actor removed $target from the $roomNoun';
       }(),
       SystemEventType.topicChanged =>
         '$actor ${_describeTextFieldChange('topic', topic)}',
       SystemEventType.purposeChanged =>
         '$actor ${_describeTextFieldChange('purpose', purpose)}',
-      SystemEventType.channelCreated => '$actor created this channel',
-      SystemEventType.channelArchived => '$actor archived this channel',
-      SystemEventType.channelUnarchived => '$actor unarchived this channel',
+      SystemEventType.channelCreated => '$actor created this $roomNoun',
+      SystemEventType.channelArchived => '$actor archived this $roomNoun',
+      SystemEventType.channelUnarchived => '$actor unarchived this $roomNoun',
       SystemEventType.goalsChanged => '$actor turned goals $goals',
+      // Mirrors desktop's SystemMessageRow `picture_changed` copy.
+      SystemEventType.pictureChanged =>
+        picture?.trim().isNotEmpty ?? false
+            ? '$actor changed the $roomNoun photo'
+            : '$actor removed the $roomNoun photo',
       SystemEventType.huddleStarted => '$actor started a huddle',
       SystemEventType.huddleEnded => '$actor ended the huddle',
     };

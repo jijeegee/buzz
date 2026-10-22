@@ -603,7 +603,7 @@ export function MessageThreadPanel({
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          aria-label="Show in channel"
+          aria-label="Show in group"
           className="text-muted-foreground hover:text-foreground"
           data-testid="message-thread-show-in-channel"
           onClick={onShowInChannel}
@@ -614,7 +614,7 @@ export function MessageThreadPanel({
           <LocateFixed />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Show in channel</TooltipContent>
+      <TooltipContent>Show in group</TooltipContent>
     </Tooltip>
   ) : null;
   const goalHeaderChip = renderHeaderActions(goalChip, showInChannelButton);
@@ -1025,7 +1025,7 @@ export function MessageThreadPanel({
                   : isClosedTaskThread
                     ? threadHeaderActions
                       ? "Sending will reopen this thread"
-                      : "Task closed. Start new work in the channel, or reply to reopen"
+                      : "Task closed. Start new work in the group, or reply to reopen"
                     : `Reply in thread to ${threadHead.author}`
               }
               profiles={profiles}

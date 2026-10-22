@@ -6,14 +6,19 @@
 //! authorize token messaging, token profiles, bots or account deletion.
 //!
 //! - [`verify_access_token`] is the single token → principal seam (WS AUTH and
-//!   HTTP `Bearer`).
+//!   HTTP `Bearer`); message paths use [`verify_message_token`], which the
+//!   device admission `token` surface can close.
 //! - [`ws`] binds a connection to one token hash, swaps it on same-principal
 //!   re-AUTH, and enforces the bound token's deadline.
 //! - [`publish_revocations`] closes bound connections on this instance and
 //!   fans the revoked hashes out over Redis after the revoking commit.
 
+pub(crate) mod admission;
+#[cfg(test)]
+mod admission_routes;
 pub mod client_ip;
 pub mod config;
+pub mod device;
 pub(crate) mod kv;
 pub(crate) mod profile;
 pub(crate) mod ws;
@@ -43,6 +48,14 @@ pub enum TokenRejection {
     TokenRevoked,
     /// The principal is disabled.
     PrincipalDisabled,
+    /// The use was not proven by the token's device key (enforced).
+    DeviceProofRequired,
+    /// The device proof's time is outside the window: the client should
+    /// correct its clock from `x-kuzz-server-time` and retry (enforced).
+    DeviceProofStale,
+    /// A token on a message path while token messaging is closed
+    /// (device-bound keys, surface `token` enforced).
+    MessagePathClosed,
     /// The token store could not be read; fail closed.
     Unavailable,
 }
@@ -55,6 +68,9 @@ impl TokenRejection {
             Self::TokenExpired => "token_expired",
             Self::TokenRevoked => "token_revoked",
             Self::PrincipalDisabled => "principal_disabled",
+            Self::DeviceProofRequired => "device_proof_required",
+            Self::DeviceProofStale => "device_proof_stale",
+            Self::MessagePathClosed => "token_message_path_closed",
             Self::Unavailable => "unavailable",
         }
     }
@@ -71,6 +87,10 @@ pub struct IdentityRuntime {
     pub(crate) write_triggers: profile::WriteTriggers,
     /// Bound on concurrent kind:0 publishes (see [`profile::PublishSlots`]).
     pub(crate) publish_slots: profile::PublishSlots,
+    /// Device-check modes and "would refuse" log dedup.
+    pub(crate) devices: device::DeviceRuntime,
+    /// Recently admitted (message key, device key) pairs.
+    pub(crate) admissions: admission::AdmissionCache,
 }
 
 impl std::fmt::Debug for IdentityRuntime {
@@ -110,6 +130,8 @@ impl IdentityRuntime {
             sessions: ws::TokenSessionRegistry::default(),
             write_triggers: profile::WriteTriggers::default(),
             publish_slots: profile::PublishSlots::default(),
+            devices: device::DeviceRuntime::default(),
+            admissions: admission::AdmissionCache::default(),
         }
     }
 
@@ -199,6 +221,18 @@ pub(crate) async fn verify_access_token(
     Ok(binding)
 }
 
+/// [`verify_access_token`] for a message path (WS and audio AUTH, `Bearer`
+/// on the bridge, media and invites, git tokens): also closed by the device
+/// admission `token` surface ([`device::close_token_path`]).
+pub(crate) async fn verify_message_token(
+    state: &AppState,
+    token: &TokenSecret,
+) -> Result<TokenBinding, TokenRejection> {
+    let binding = verify_access_token(state, token).await?;
+    device::close_token_path(state, &binding)?;
+    Ok(binding)
+}
+
 /// Verify a server-issued session for account management. Custodial sessions
 /// deliberately cannot authenticate the signed-message or token-bot surfaces.
 pub(crate) async fn verify_session_token(
@@ -246,6 +280,9 @@ pub(crate) async fn verify_session_token(
         bot_id: record.bot_id,
         bot_owner: record.bot_owner,
         is_operator: record.is_operator,
+        // A stored key of the wrong length counts as keyless: proofs then
+        // fail closed under `enforce`.
+        device_pubkey: record.device_pubkey.and_then(|key| key.try_into().ok()),
     })
 }
 

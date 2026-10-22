@@ -109,6 +109,7 @@ export function TypingIndicatorRow({
                   data-testid="message-typing-avatar"
                 >
                   <ProfileAvatar
+                    mediaVariant="small"
                     avatarUrl={profile?.avatarUrl ?? null}
                     label={label}
                     className={cn(

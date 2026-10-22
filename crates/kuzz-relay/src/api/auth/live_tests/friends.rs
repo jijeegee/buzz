@@ -330,15 +330,39 @@ async fn silent_block_hides_dm_events_from_the_blocker_only() {
     )
     .await
     .unwrap();
-    assert_eq!(put_block(&inst, &alice, &bob.principal).await, 204);
+    let carol = new_user(&inst).await;
+    let group = kuzz_db::dm::create_dm(
+        &pool,
+        scope,
+        &[
+            &key(&alice.principal),
+            &key(&bob.principal),
+            &key(&carol.principal),
+        ],
+        &key(&alice.principal),
+    )
+    .await
+    .unwrap()
+    .id;
 
     let mut alice_ws = inst.ws().await;
     assert_eq!(auth_ws(&mut alice_ws, &alice.access).await[2], true);
     let mut bob_ws = inst.ws().await;
     assert_eq!(auth_ws(&mut bob_ws, &bob.access).await[2], true);
-    let filter = json!({"kinds": [9], "#h": [dm.to_string(), room.to_string()]});
+    let filter = json!({"kinds": [9], "#h": [dm.to_string(), room.to_string(), group.to_string()]});
+    let dm_filter = json!({"kinds": [9], "#h": [dm.to_string()]});
     req_eose(&mut alice_ws, "live", filter.clone()).await;
     req_eose(&mut bob_ws, "live", filter.clone()).await;
+
+    // Before the block: delivered as usual, and it stays visible.
+    let early = send_message(&mut bob_ws, dm, "before the block").await;
+    assert_eq!(
+        maybe_event(&mut alice_ws, "live", Duration::from_secs(5))
+            .await
+            .unwrap()["id"],
+        early.as_str()
+    );
+    assert_eq!(put_block(&inst, &alice, &bob.principal).await, 204);
 
     // Bob's DM message: accepted as usual, never delivered to Alice.
     let hidden = send_message(&mut bob_ws, dm, "you cannot see this").await;
@@ -348,7 +372,8 @@ async fn silent_block_hides_dm_events_from_the_blocker_only() {
             .is_none(),
         "blocked DM message must not reach the blocker"
     );
-    // Bob's shared-channel message is delivered (the client folds it).
+    // Bob's shared-channel and group DM messages are delivered (the client
+    // folds them).
     let shared = send_message(&mut bob_ws, room, "shared room").await;
     assert_eq!(
         maybe_event(&mut alice_ws, "live", Duration::from_secs(5))
@@ -356,11 +381,22 @@ async fn silent_block_hides_dm_events_from_the_blocker_only() {
             .unwrap()["id"],
         shared.as_str()
     );
+    let grouped = send_message(&mut bob_ws, group, "group dm").await;
+    assert_eq!(
+        maybe_event(&mut alice_ws, "live", Duration::from_secs(5))
+            .await
+            .unwrap()["id"],
+        grouped.as_str()
+    );
 
-    // History, COUNT and the HTTP bridge agree.
+    // History, COUNT and the HTTP bridge agree: only what Bob sent while
+    // blocked in the 1:1 DM is missing.
     let history = req_eose(&mut alice_ws, "hist", filter.clone()).await;
     let ids: Vec<&str> = history.iter().map(|e| e["id"].as_str().unwrap()).collect();
-    assert!(ids.contains(&shared.as_str()) && !ids.contains(&hidden.as_str()));
+    for seen in [&early, &shared, &grouped] {
+        assert!(ids.contains(&seen.as_str()), "{seen} missing from {ids:?}");
+    }
+    assert!(!ids.contains(&hidden.as_str()));
     let bob_history = req_eose(&mut bob_ws, "hist", filter.clone()).await;
     assert!(bob_history.iter().any(|e| e["id"] == hidden.as_str()));
     send(
@@ -371,23 +407,37 @@ async fn silent_block_hides_dm_events_from_the_blocker_only() {
     loop {
         let frame = next_json(&mut alice_ws).await;
         if frame[0] == "COUNT" {
-            assert_eq!(frame[2]["count"], 0, "{frame}");
+            assert_eq!(frame[2]["count"], 1, "{frame}");
             break;
         }
     }
-    let queried: Value = inst
-        .post("/query")
-        .bearer_auth(&alice.access)
-        .json(&json!([{"kinds": [9], "#h": [dm.to_string()]}]))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(queried, json!([]), "bridge hides the DM message too");
+    let bridge_ids = || async {
+        let queried: Value = inst
+            .post("/query")
+            .bearer_auth(&alice.access)
+            .json(&json!([dm_filter.clone()]))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let mut ids: Vec<String> = queried
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_str().unwrap().to_owned())
+            .collect();
+        ids.sort();
+        ids
+    };
+    assert_eq!(
+        bridge_ids().await,
+        vec![early.clone()],
+        "bridge hides the DM message too"
+    );
 
-    // Unblock: delivery resumes.
+    // Unblock: delivery resumes, but what Bob sent while blocked stays hidden.
     let code = inst
         .delete(&format!("/auth/blocks/{}", bob.principal))
         .bearer_auth(&alice.access)
@@ -403,6 +453,16 @@ async fn silent_block_hides_dm_events_from_the_blocker_only() {
             .unwrap()["id"],
         visible.as_str()
     );
+    let history = req_eose(&mut alice_ws, "hist2", dm_filter.clone()).await;
+    let mut ids: Vec<String> = history
+        .iter()
+        .map(|e| e["id"].as_str().unwrap().to_owned())
+        .collect();
+    ids.sort();
+    let mut expected = vec![early.clone(), visible.clone()];
+    expected.sort();
+    assert_eq!(ids, expected, "messages sent while blocked stay hidden");
+    assert_eq!(bridge_ids().await, expected);
 }
 
 #[tokio::test]

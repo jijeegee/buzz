@@ -17,6 +17,7 @@ late FakeOwnDeviceSession _session;
 Future<TokenSettingsHarness> _pumpDevices(
   WidgetTester tester, {
   bool botTokens = true,
+  DevicesPagePart part = DevicesPagePart.devices,
 }) async {
   final h = TokenSettingsHarness();
   h.server.refreshResponses.add(
@@ -25,7 +26,7 @@ Future<TokenSettingsHarness> _pumpDevices(
   _session = FakeOwnDeviceSession();
   await h.pump(
     tester,
-    DevicesPage(origin: tokenOrigin, botTokens: botTokens),
+    DevicesPage(origin: tokenOrigin, botTokens: botTokens, part: part),
     overrides: [relaySessionProvider.overrideWith(() => _session)],
   );
   return h;
@@ -50,7 +51,7 @@ void main() {
   testWidgets('account deletion is hidden and cancellation does not delete', (
     tester,
   ) async {
-    final h = await _pumpDevices(tester);
+    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
     expect(find.byKey(const Key('devices-delete-account')), findsNothing);
     await tester.ensureVisible(
       find.byKey(const Key('devices-account-deletion')),
@@ -68,11 +69,20 @@ void main() {
   });
 
   testWidgets('bot token revocation can be left out', (tester) async {
-    await _pumpDevices(tester, botTokens: false);
+    await _pumpDevices(tester, botTokens: false, part: DevicesPagePart.account);
 
+    expect(find.byKey(const Key('devices-account-deletion')), findsOneWidget);
+    expect(find.byKey(const Key('devices-revoke-bots')), findsNothing);
+  });
+
+  testWidgets('Devices shows only devices; Security only account actions', (
+    tester,
+  ) async {
+    await _pumpDevices(tester);
     expect(find.text('Test phone'), findsOneWidget);
     expect(find.byKey(const Key('devices-sign-out-others')), findsOneWidget);
     expect(find.byKey(const Key('devices-revoke-bots')), findsNothing);
+    expect(find.byKey(const Key('devices-account-deletion')), findsNothing);
   });
 
   testWidgets('lists devices and marks this one', (tester) async {
@@ -263,7 +273,7 @@ void main() {
   });
 
   testWidgets('revoke all bot tokens', (tester) async {
-    final h = await _pumpDevices(tester);
+    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
 
     await _tapAndConfirm(tester, const Key('devices-revoke-bots'));
 
@@ -272,7 +282,7 @@ void main() {
   });
 
   testWidgets('cancelling a confirmation sends nothing', (tester) async {
-    final h = await _pumpDevices(tester);
+    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
 
     await tester.ensureVisible(find.byKey(const Key('devices-revoke-bots')));
     await tester.tap(find.byKey(const Key('devices-revoke-bots')));
@@ -286,7 +296,7 @@ void main() {
   testWidgets('delete account: confirm, delete on relay, sign out locally', (
     tester,
   ) async {
-    final h = await _pumpDevices(tester);
+    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
 
     await _tapAndConfirm(tester, const Key('devices-delete-account'));
 
@@ -307,7 +317,7 @@ void main() {
   testWidgets('a failed delete keeps the account and the community', (
     tester,
   ) async {
-    final h = await _pumpDevices(tester);
+    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
     h.account.failures['/auth/account'] = (_) =>
         jsonResponse({'error': 'relay unavailable'}, status: 503);
 
@@ -321,7 +331,7 @@ void main() {
   testWidgets(
     'a deleted account whose local cleanup fails retries only the cleanup',
     (tester) async {
-      final h = await _pumpDevices(tester);
+      final h = await _pumpDevices(tester, part: DevicesPagePart.account);
       h.tokens.deleteError = StateError('keychain locked');
 
       await _tapAndConfirm(tester, const Key('devices-delete-account'));

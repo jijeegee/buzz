@@ -107,7 +107,7 @@ export function AddAgentDialog({
         // Agent was added to the ephemeral channel but parent channel add failed.
         // Show as a warning — don't close the dialog so the user can see it.
         setWarning(
-          `Added to huddle, but parent channel failed: ${result.parent_error}`,
+          `Added to huddle, but parent group failed: ${result.parent_error}`,
         );
       } else {
         onClose();
@@ -178,6 +178,7 @@ export function AddAgentDialog({
                     type="button"
                   >
                     <ProfileAvatar
+                      mediaVariant="small"
                       avatarUrl={agent.avatar_url}
                       className="h-9 w-9 shrink-0 text-xs"
                       label={agent.name}

@@ -108,6 +108,14 @@ CREATE TABLE channels (
     main_last_seq   BIGINT,
     main_last_at    TIMESTAMPTZ,
     main_last_event_id BYTEA,
+    -- Public address of an open group and who may invite (migration 0075).
+    handle          TEXT CONSTRAINT chk_channels_handle CHECK (handle ~ '^[a-z0-9_]{3,32}$'),
+    invite_policy   TEXT NOT NULL DEFAULT 'members'
+        CONSTRAINT chk_channels_invite_policy CHECK (invite_policy IN ('members', 'admins')),
+    -- Group photo URL on this relay's /media, or NULL (migration 0076).
+    picture         TEXT,
+    -- Ownerless group chat, set only at creation (migration 0079).
+    group_chat      BOOLEAN NOT NULL DEFAULT false,
     PRIMARY KEY (community_id, id),
     CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
 );
@@ -117,6 +125,8 @@ CREATE UNIQUE INDEX idx_channels_nip29_group ON channels (community_id, nip29_gr
     WHERE nip29_group_id IS NOT NULL;
 CREATE UNIQUE INDEX idx_channels_dm_hash ON channels (community_id, participant_hash)
     WHERE participant_hash IS NOT NULL;
+CREATE UNIQUE INDEX idx_channels_handle ON channels (community_id, lower(handle))
+    WHERE handle IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX idx_channels_community_type ON channels (community_id, channel_type);
 CREATE INDEX idx_channels_community_visibility ON channels (community_id, visibility);
 CREATE INDEX idx_channels_created_by ON channels (community_id, created_by);
@@ -235,10 +245,14 @@ CREATE TABLE events (
     -- Privacy: encrypted/private routing wrappers and p-gated membership notices
     -- must never be discoverable through NIP-50 full-text search. NULL tsvector
     -- never matches `@@`.
-    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033 + 0062).
+    -- URL/path punctuation is also split into words (migration 0077), so
+    -- `callback` finds `https://x.org/auth/oidc/google/callback`; the original
+    -- tokens stay for exact URL searches.
+    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033 + 0062 + 0077).
     search_tsv  TSVECTOR GENERATED ALWAYS AS (
         CASE WHEN kind IN (1059, 30179, 30180, 30181, 30300, 30350, 30622, 44100, 44101, 44200) THEN NULL::tsvector
              ELSE to_tsvector('simple', content)
+                  || to_tsvector('simple', regexp_replace(content, '[-/:._?=&#]+', ' ', 'g'))
         END
     ) STORED,
     -- Nullable since migration 0057: token-authenticated events are server
@@ -624,6 +638,93 @@ CREATE TABLE user_blocks (
     CONSTRAINT user_blocks_not_self CHECK (blocker <> blocked)
 );
 CREATE INDEX idx_user_blocks_blocked ON user_blocks (community_id, blocked);
+
+-- Block periods (migration 0073): one row per block's time span, open while
+-- the block is on. Stored 1:1 DM messages received during a period are hidden
+-- from the blocker, also after unblocking.
+CREATE TABLE user_block_periods (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    blocker      BYTEA NOT NULL CHECK (length(blocker) = 32),
+    blocked      BYTEA NOT NULL CHECK (length(blocked) = 32),
+    started_at   TIMESTAMPTZ NOT NULL,
+    ended_at     TIMESTAMPTZ,
+    PRIMARY KEY (community_id, blocker, blocked, started_at),
+    CONSTRAINT user_block_periods_not_self CHECK (blocker <> blocked),
+    CONSTRAINT user_block_periods_ordered CHECK (ended_at IS NULL OR ended_at >= started_at)
+);
+CREATE UNIQUE INDEX user_block_periods_open
+    ON user_block_periods (community_id, blocker, blocked) WHERE ended_at IS NULL;
+
+-- ── Media access ──────────────────────────────────────────────────────────────
+-- Attachment permissions (migration 0074): a blob is readable by its uploaders
+-- and by whoever can currently read an event that references it. NULL
+-- `channel_id` means a community-wide event (profile, emoji set, shared persona).
+
+CREATE TABLE media_uploads (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    sha256       TEXT NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    uploader     BYTEA NOT NULL CHECK (length(uploader) = 32),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, sha256, uploader)
+);
+
+CREATE TABLE media_references (
+    community_id     UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    sha256           TEXT NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    event_id         BYTEA NOT NULL CHECK (length(event_id) = 32),
+    event_created_at TIMESTAMPTZ NOT NULL,
+    channel_id       UUID,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, sha256, event_id)
+);
+
+-- ── Groups ────────────────────────────────────────────────────────────────────
+-- Invite links, "who can add me" and invitations (migration 0075).
+
+CREATE TABLE group_invite_links (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    channel_id   UUID NOT NULL,
+    code         TEXT NOT NULL CHECK (code ~ '^[A-Za-z0-9_-]{22,64}$'),
+    created_by   BYTEA NOT NULL CHECK (length(created_by) = 32),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at   TIMESTAMPTZ,
+    PRIMARY KEY (community_id, code),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX idx_group_invite_links_active
+    ON group_invite_links (community_id, channel_id) WHERE revoked_at IS NULL;
+
+CREATE TABLE group_add_settings (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    pubkey       BYTEA NOT NULL CHECK (length(pubkey) = 32),
+    policy       TEXT NOT NULL DEFAULT 'friends' CHECK (policy IN ('friends', 'everyone')),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, pubkey)
+);
+
+CREATE TABLE group_invitations (
+    community_id UUID NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    id           UUID NOT NULL DEFAULT gen_random_uuid(),
+    channel_id   UUID NOT NULL,
+    inviter      BYTEA NOT NULL CHECK (length(inviter) = 32),
+    invitee      BYTEA NOT NULL CHECK (length(invitee) = 32),
+    status       TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'accepted', 'declined', 'expired')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    responded_at TIMESTAMPTZ,
+    PRIMARY KEY (community_id, id),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE,
+    CONSTRAINT group_invitations_not_self CHECK (inviter <> invitee)
+);
+CREATE UNIQUE INDEX idx_group_invitations_pending
+    ON group_invitations (community_id, channel_id, invitee) WHERE status = 'pending';
+CREATE INDEX idx_group_invitations_invitee
+    ON group_invitations (community_id, invitee) WHERE status = 'pending';
+-- Per-inviter daily invitation cap.
+CREATE INDEX idx_group_invitations_inviter
+    ON group_invitations (community_id, inviter, created_at);
 
 -- ── Reactions ─────────────────────────────────────────────────────────────────
 -- Conformance: reactions filter by community before event/pubkey matching.
@@ -1869,7 +1970,12 @@ SELECT attach_community_write_fence('delivery_log');
 SELECT attach_community_write_fence('event_mentions');
 SELECT attach_community_write_fence('events');
 SELECT attach_community_write_fence('git_repo_names');
+SELECT attach_community_write_fence('group_add_settings');
+SELECT attach_community_write_fence('group_invitations');
+SELECT attach_community_write_fence('group_invite_links');
 SELECT attach_community_write_fence('join_policy_acceptances');
+SELECT attach_community_write_fence('media_references');
+SELECT attach_community_write_fence('media_uploads');
 SELECT attach_community_write_fence('moderation_actions');
 SELECT attach_community_write_fence('moderation_reports');
 SELECT attach_community_write_fence('parameterized_event_watermarks');
@@ -1885,6 +1991,7 @@ SELECT attach_community_write_fence('subscriptions');
 SELECT attach_community_write_fence('thread_follows');
 SELECT attach_community_write_fence('thread_metadata');
 SELECT attach_community_write_fence('thread_state');
+SELECT attach_community_write_fence('user_block_periods');
 SELECT attach_community_write_fence('user_blocks');
 SELECT attach_community_write_fence('users');
 SELECT attach_community_write_fence('workflow_approvals');
@@ -1952,12 +2059,19 @@ CREATE TABLE devices (
     last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at    TIMESTAMPTZ,
     -- Stable per-install id; re-login with it reuses the row (migration 0063).
-    install_id    TEXT
+    install_id    TEXT,
+    -- Device key (P-256, SEC1 compressed) proving use from this device (0078).
+    device_pubkey BYTEA CHECK (device_pubkey IS NULL OR octet_length(device_pubkey) = 33),
+    device_key_kind TEXT CHECK (device_key_kind IS NULL OR device_key_kind IN ('hardware', 'software')),
+    CONSTRAINT devices_key_kind_with_key CHECK ((device_pubkey IS NULL) = (device_key_kind IS NULL))
 );
 CREATE INDEX devices_principal ON devices (principal_id);
 CREATE UNIQUE INDEX devices_principal_install
     ON devices (principal_id, install_id)
     WHERE install_id IS NOT NULL;
+CREATE UNIQUE INDEX devices_principal_key
+    ON devices (principal_id, device_pubkey)
+    WHERE device_pubkey IS NOT NULL AND revoked_at IS NULL;
 
 CREATE TABLE sessions (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2038,6 +2152,21 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('bots', 'deployment-global bot registrations owned by a user principal'),
     ('access_tokens', 'deployment-global opaque access-token hashes'),
     ('account_key_backups', 'deployment-global immutable Google account to Nostr key backup binding');
+
+-- Which agent key may be used on which device (migration 0078).
+CREATE TABLE key_registry (
+    pubkey         BYTEA PRIMARY KEY CHECK (length(pubkey) = 32),
+    principal_id   BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    role           TEXT NOT NULL CHECK (role IN ('agent', 'external')),
+    host_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at     TIMESTAMPTZ
+);
+CREATE INDEX key_registry_principal ON key_registry (principal_id);
+CREATE INDEX key_registry_host ON key_registry (host_device_id) WHERE host_device_id IS NOT NULL;
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('key_registry', 'deployment-global agent key to owner account and host device binding');
 
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable
@@ -2350,7 +2479,20 @@ LANGUAGE sql IMMUTABLE AS $$
           AND lower(mt->>1) = encode(p_root, 'hex'))
 $$;
 
+-- A DM between exactly two people (migration 0073). DM participant sets never
+-- change, so the member row count is the participant count.
+CREATE FUNCTION dm_is_one_to_one(p_cid UUID, p_chid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (SELECT 1 FROM channels c
+                    WHERE c.community_id = p_cid AND c.id = p_chid AND c.channel_type = 'dm')
+       AND (SELECT count(*) FROM channel_members m
+             WHERE m.community_id = p_cid AND m.channel_id = p_chid) = 2
+$$;
+
 -- Unread and unread-mention counts of a room's main timeline for one reader.
+-- In a 1:1 DM, messages received during one of the reader's block periods of
+-- their author do not count (migration 0073).
 CREATE FUNCTION chat_room_unread(
     p_cid UUID, p_chid UUID, p_reader BYTEA, p_after BIGINT,
     OUT unread INTEGER, OUT mentions INTEGER)
@@ -2359,9 +2501,7 @@ DECLARE
     v_dm BOOLEAN;
     v_reader_hex TEXT := encode(p_reader, 'hex');
 BEGIN
-    SELECT c.channel_type = 'dm' INTO v_dm
-      FROM channels c WHERE c.community_id = p_cid AND c.id = p_chid;
-    v_dm := COALESCE(v_dm, FALSE);
+    v_dm := dm_is_one_to_one(p_cid, p_chid);
     SELECT count(*) INTO unread FROM (
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
@@ -2373,9 +2513,10 @@ BEGIN
                 WHERE r.community_id = p_cid AND r.event_id = e.id AND r.depth > 0
                   AND (NOT r.broadcast OR chat_is_thread_marker(e.tags, r.root_event_id)))
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
          LIMIT 100) n;
     SELECT count(*) INTO mentions FROM (
         SELECT 1 FROM events e
@@ -2388,9 +2529,10 @@ BEGIN
                 WHERE r.community_id = p_cid AND r.event_id = e.id AND r.depth > 0
                   AND (NOT r.broadcast OR chat_is_thread_marker(e.tags, r.root_event_id)))
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
            AND EXISTS (
                SELECT 1 FROM event_mentions em
                 WHERE em.community_id = p_cid AND em.pubkey_hex = v_reader_hex
@@ -2400,7 +2542,7 @@ END
 $$;
 
 -- Unread and unread-mention counts of a thread for one reader. `p_chid` is
--- the thread's room (it decides whether the DM block rule applies).
+-- the thread's room (it decides whether the 1:1 DM block rule applies).
 CREATE FUNCTION chat_thread_unread(
     p_cid UUID, p_chid UUID, p_root BYTEA, p_reader BYTEA, p_after BIGINT,
     OUT unread INTEGER, OUT mentions INTEGER)
@@ -2409,9 +2551,7 @@ DECLARE
     v_dm BOOLEAN;
     v_reader_hex TEXT := encode(p_reader, 'hex');
 BEGIN
-    SELECT c.channel_type = 'dm' INTO v_dm
-      FROM channels c WHERE c.community_id = p_cid AND c.id = p_chid;
-    v_dm := COALESCE(v_dm, FALSE);
+    v_dm := dm_is_one_to_one(p_cid, p_chid);
     SELECT count(*) INTO unread FROM (
         SELECT 1 FROM thread_metadata r
           JOIN events e ON e.community_id = r.community_id
@@ -2422,9 +2562,10 @@ BEGIN
            AND e.pubkey <> p_reader
            AND NOT chat_is_thread_marker(e.tags, p_root)
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
          LIMIT 100) n;
     SELECT count(*) INTO mentions FROM (
         SELECT 1 FROM thread_metadata r
@@ -2436,9 +2577,10 @@ BEGIN
            AND e.pubkey <> p_reader
            AND NOT chat_is_thread_marker(e.tags, p_root)
            AND NOT (v_dm AND EXISTS (
-               SELECT 1 FROM user_blocks ub
-                WHERE ub.community_id = p_cid AND ub.blocker = p_reader
-                  AND ub.blocked = e.pubkey))
+               SELECT 1 FROM user_block_periods bp
+                WHERE bp.community_id = p_cid AND bp.blocker = p_reader
+                  AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at
+                  AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))
            AND EXISTS (
                SELECT 1 FROM event_mentions em
                 WHERE em.community_id = p_cid AND em.pubkey_hex = v_reader_hex

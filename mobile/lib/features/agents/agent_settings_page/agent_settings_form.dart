@@ -82,6 +82,10 @@ class _AgentSettingsForm extends HookConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.all(Grid.sm),
           children: [
+            MyAgentStatusCard(
+              agentPubkey: loaded.agentPubkey,
+              name: loaded.agentName,
+            ),
             if (error.value case final message?)
               Padding(
                 padding: const EdgeInsets.only(bottom: Grid.xs),

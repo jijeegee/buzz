@@ -278,8 +278,8 @@ function MessageComposerImpl({
     ? "Edit your message"
     : (placeholder ??
       (replyTarget
-        ? `Reply to ${replyTarget.author} in #${channelName}`
-        : `Message #${channelName}`));
+        ? `Reply to ${replyTarget.author} in ${channelName}`
+        : `Message ${channelName}`));
   const richText = useRichTextEditor({
     placeholder: computedPlaceholder,
     editable: !composerDisabled,

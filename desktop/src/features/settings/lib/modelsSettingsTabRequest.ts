@@ -6,7 +6,7 @@
  * tab again. Read and clear are separate so a StrictMode double-invoked
  * state initializer sees the same answer both times.
  */
-export type ModelsSettingsTab = "providers" | "tasks";
+export type ModelsSettingsTab = "providers" | "defaults" | "tasks";
 
 let requestedTab: ModelsSettingsTab | null = null;
 

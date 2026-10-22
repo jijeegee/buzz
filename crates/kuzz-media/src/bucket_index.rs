@@ -13,7 +13,7 @@
 //!
 //! | Class | Shape |
 //! |---|---|
-//! | thumb | `{sha256}.thumb.jpg` |
+//! | thumb | `{sha256}.thumb.jpg`, `{sha256}.small.jpg` |
 //! | blob | `{sha256}.{ext}` (ext: 1-8 mixed-case alphanumeric) |
 //! | sidecar | `_meta/{community-uuid}/{sha256}.json` |
 //! | auxiliary | `_uploads/{community-uuid}/{sha256}/{ulid}.json` |
@@ -32,7 +32,8 @@ use crate::error::MediaError;
 /// `Auxiliary`, so visibility gauges stay loud instead of silently wrong.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyClass {
-    /// `{sha256}.thumb.jpg` — attributed to the blob's sha.
+    /// `{sha256}.thumb.jpg` or `{sha256}.small.jpg` — derived JPEG
+    /// variants, attributed to the blob's sha.
     Thumb { sha256: String },
     /// `{sha256}.{ext}` — physical bytes, logical join key.
     Blob { sha256: String, ext: String },
@@ -125,13 +126,17 @@ fn parse_canonical_uuid(s: &str) -> Option<Uuid> {
     Uuid::parse_str(s).ok()
 }
 
-/// `{sha256}.thumb.jpg`
+/// `{sha256}.thumb.jpg` or `{sha256}.small.jpg`
 fn parse_thumb_key(key: &str) -> Option<String> {
     let mut parts = key.split('.');
     let sha256 = parts.next()?;
-    let thumb = parts.next()?;
+    let variant = parts.next()?;
     let jpg = parts.next()?;
-    if parts.next().is_some() || thumb != "thumb" || jpg != "jpg" || !is_sha256(sha256) {
+    if parts.next().is_some()
+        || !matches!(variant, "thumb" | "small")
+        || jpg != "jpg"
+        || !is_sha256(sha256)
+    {
         return None;
     }
     Some(sha256.to_string())
@@ -233,8 +238,8 @@ pub struct BucketAggregate {
     /// sha -> bytes of every blob variant seen for that sha (D-EXT: multiple
     /// entries is the multi-variant anomaly).
     blob_variant_bytes: HashMap<String, Vec<u64>>,
-    /// sha -> thumb bytes. At most one thumb key per sha, so a plain insert
-    /// is correct (no accumulation needed).
+    /// sha -> bytes of its derived JPEG variants (thumb + small). Each
+    /// variant key is listed once, so accumulating is exact.
     thumb_bytes: HashMap<String, u64>,
     /// (community, sha) -> sidecar object's own byte size (informational;
     /// not part of logical bytes).
@@ -252,7 +257,7 @@ impl BucketAggregate {
         self.physical_bytes += size;
         match classify_key(key) {
             KeyClass::Thumb { sha256 } => {
-                self.thumb_bytes.insert(sha256, size);
+                *self.thumb_bytes.entry(sha256).or_default() += size;
             }
             KeyClass::Blob { sha256, .. } => {
                 self.blob_variant_bytes
@@ -450,8 +455,14 @@ mod tests {
         let s = sha(0xaa);
         assert_eq!(
             classify_key(&format!("{s}.thumb.jpg")),
-            KeyClass::Thumb { sha256: s }
+            KeyClass::Thumb { sha256: s.clone() }
         );
+        assert_eq!(
+            classify_key(&format!("{s}.small.jpg")),
+            KeyClass::Thumb { sha256: s.clone() }
+        );
+        assert_eq!(classify_key(&format!("{s}.small.png")), KeyClass::Unknown);
+        assert_eq!(classify_key(&format!("{s}.big.jpg")), KeyClass::Unknown);
     }
 
     #[test]
@@ -630,14 +641,15 @@ mod tests {
         let mut agg = BucketAggregate::default();
         agg.fold(&format!("{s}.jpg"), 1000);
         agg.fold(&format!("{s}.thumb.jpg"), 50);
+        agg.fold(&format!("{s}.small.jpg"), 20);
         agg.fold(&format!("_meta/{c}/{s}.json"), 5);
 
         let snap = agg.finish();
-        assert_eq!(snap.per_community[&c].bytes, 1050);
+        assert_eq!(snap.per_community[&c].bytes, 1070);
         assert_eq!(snap.per_community[&c].objects, 1);
         // Fleet physical totals count every object separately.
-        assert_eq!(snap.physical_objects, 3);
-        assert_eq!(snap.physical_bytes, 1055);
+        assert_eq!(snap.physical_objects, 4);
+        assert_eq!(snap.physical_bytes, 1075);
     }
 
     #[test]

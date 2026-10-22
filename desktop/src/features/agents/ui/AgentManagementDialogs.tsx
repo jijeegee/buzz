@@ -11,6 +11,8 @@ export function AgentManagementDialogs() {
     <>
       {management.request?.action === "create" ? (
         <AgentDialog
+          // A new agent's baseline is owner-only.
+          draftReview={{ savedAccess: null }}
           definitionError={
             management.error ? new Error(management.error) : null
           }
@@ -28,6 +30,7 @@ export function AgentManagementDialogs() {
       {management.request?.action === "update" ? (
         <AgentDialog
           description=""
+          draftReview={{ savedAccess: management.editSavedAccess }}
           error={management.editError ? new Error(management.editError) : null}
           initialValues={management.editInitialValues}
           isPending={management.isPending}

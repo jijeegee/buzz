@@ -76,14 +76,16 @@ import {
   type SettingsSection,
   isSettingsSection,
 } from "@/features/settings/ui/SettingsPanels";
-import { useDueReminderBadgeCount } from "@/features/reminders/hooks";
 import { useReminderNotifications } from "@/features/reminders/useReminderNotifications";
 import { AppSidebar } from "@/features/sidebar/ui/AppSidebar";
 import { requestFocusedThreadClose } from "@/features/channels/focusedThreadCloseRequest";
 import { AppNavRail } from "@/features/sidebar/ui/AppNavRail";
+import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
 import { CommunityRail } from "@/features/sidebar/ui/CommunityRail";
 import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
+import { ChatPrefsPublisher } from "@/features/channels/ChatPrefsContext";
+import { useChatPrivateNamesSync } from "@/features/channels/useChatPrivateNamesSync";
 import { isJoinedChat } from "@/features/sidebar/lib/chatList";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useBuiltInServer } from "@/features/communities/builtInServer";
@@ -117,7 +119,10 @@ import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { ChatStateSync } from "@/app/ChatStateSync";
 import { useChatStateWiring } from "@/app/useChatStateWiring";
 import { useChatThreadRowActions } from "@/app/useChatThreadRowActions";
-import { useChatsRailNavigation } from "@/app/useChatsRailNavigation";
+import {
+  isFreshStartLandingPending,
+  useChatsRailNavigation,
+} from "@/app/useChatsRailNavigation";
 import {
   listTabForView,
   setSidebarListTab,
@@ -215,6 +220,14 @@ export function AppShell() {
   const { mutedChannelIds, muteChannel, unmuteChannel } = useChannelMutes(
     identityQuery.data?.pubkey,
     communitiesHook.activeCommunity?.relayUrl,
+  );
+  const setPrivateChatName = useChatPrivateNamesSync(
+    identityQuery.data?.pubkey,
+    communitiesHook.activeCommunity?.relayUrl,
+  );
+  const chatPrefs = React.useMemo(
+    () => ({ mutedChannelIds, muteChannel, unmuteChannel, setPrivateChatName }),
+    [mutedChannelIds, muteChannel, unmuteChannel, setPrivateChatName],
   );
   const { starredChannelIds, starChannel, unstarChannel } = useChannelStars(
     identityQuery.data?.pubkey,
@@ -375,9 +388,12 @@ export function AppShell() {
   });
   const sidebarListTab = useSidebarListTab();
   // A screen opened by route (a link, search, back) shows its own list.
+  // A fresh launch starts on the Activity route but shows Chats.
   React.useEffect(() => {
     const tab = listTabForView(selectedView);
-    if (tab) setSidebarListTab(tab);
+    if (!tab) return;
+    if (tab === "activity" && isFreshStartLandingPending()) return;
+    setSidebarListTab(tab);
   }, [selectedView]);
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
@@ -505,29 +521,24 @@ export function AppShell() {
     unreadThreadFeedItems,
   ]);
 
-  const { homeBadgeCount, homeBadgeCountExcludingHighPriority } =
-    useHomeFeedNotificationState(
-      homeFeedQuery.data,
-      identityQuery.data?.pubkey,
-      notificationSettings.settings,
-      notificationSettings.setDesktopEnabled,
-      !isHuddleRoom,
-      selectedView === "home" && !settingsOpen,
-      getChannelReadAt,
-      readStateVersion,
-      highPriorityUnreadChannelIds,
-      feedProfilesQuery.data?.profiles,
-      mutedChannelIds,
-      feedItemState.unreadSet,
-      threadActivityFeedItems,
-      getThreadReadAt,
-      getMessageReadAt,
-      channels,
-      huddleBackingChannelIds,
-    );
-  const dueReminderBadge = useDueReminderBadgeCount(
+  const { homeBadgeCountExcludingHighPriority } = useHomeFeedNotificationState(
+    homeFeedQuery.data,
     identityQuery.data?.pubkey,
-    notificationSettings.settings.homeBadgeEnabled,
+    notificationSettings.settings,
+    notificationSettings.setDesktopEnabled,
+    !isHuddleRoom,
+    selectedView === "home" && !settingsOpen,
+    getChannelReadAt,
+    readStateVersion,
+    highPriorityUnreadChannelIds,
+    feedProfilesQuery.data?.profiles,
+    mutedChannelIds,
+    feedItemState.unreadSet,
+    threadActivityFeedItems,
+    getThreadReadAt,
+    getMessageReadAt,
+    channels,
+    huddleBackingChannelIds,
   );
   const isNotifiedForThread = React.useCallback(
     (rootId: string) =>
@@ -819,6 +830,7 @@ export function AppShell() {
         />
       ) : null}
       <ChatStateSync {...chatState.syncProps} />
+      <ChatPrefsPublisher value={chatPrefs} />
       <ChannelNavigationProvider channels={channels}>
         <AppShellProvider
           value={{
@@ -886,17 +898,51 @@ export function AppShell() {
             ) : null}
             {!isHuddleRoom ? (
               <AppNavRail
-                homeBadgeCount={homeBadgeCount + dueReminderBadge}
                 listTab={sidebarListTab}
                 // Rail tabs switch only the left list; the main pane keeps
                 // what it shows until an item in that list is opened.
                 onSelectAgents={() => setSidebarListTab("agents")}
                 onSelectChats={handleSelectChats}
-                onSelectHome={() => setSidebarListTab("activity")}
                 onSelectPeople={() => setSidebarListTab("people")}
                 onSelectProjects={() => setSidebarListTab("projects")}
-                onSelectPulse={() => setSidebarListTab("pulse")}
                 onSelectWorkflows={() => void goWorkflows()}
+                profileSlot={
+                  <SidebarProfileCard
+                    activeCommunity={communitiesHook.activeCommunity}
+                    communities={communitiesHook.communities}
+                    isPresencePending={presenceSession.isPending}
+                    onClearUserStatus={() =>
+                      setUserStatusMutation.mutate({ text: "", emoji: "" })
+                    }
+                    onLeaveCommunity={handleLeaveCommunity}
+                    onOpenAddCommunity={addCommunityDialog.openDialog}
+                    onOpenSettings={handleOpenSettings}
+                    onRemoveCommunityFromDevice={removeFromDevice}
+                    onSendFeedback={() => setIsSendFeedbackOpen(true)}
+                    onSetPresenceStatus={(status) =>
+                      presenceSession.setStatus(status)
+                    }
+                    onSetUserStatus={setUserStatusMutation.mutate}
+                    onSwitchCommunity={handleSwitchCommunity}
+                    onUpdateCommunity={communitiesHook.updateCommunity}
+                    profile={profileQuery.data}
+                    resolvedDisplayName={
+                      profileQuery.data?.displayName?.trim() ||
+                      identityQuery.data?.displayName?.trim() ||
+                      "Current identity"
+                    }
+                    selfPresenceStatus={presenceSession.currentStatus}
+                    selfUserStatus={
+                      deferredPubkey
+                        ? (visibleUserStatus(
+                            selfStatusQuery.data?.[
+                              deferredPubkey.toLowerCase()
+                            ],
+                          ) ?? undefined)
+                        : undefined
+                    }
+                  />
+                }
                 selectedView={selectedView}
               />
             ) : null}
@@ -972,7 +1018,6 @@ export function AppShell() {
                           isLoading={channelsQuery.isLoading}
                           isCreateChannelOpen={isCreateChannelOpen}
                           isHuddleCompanionOpen={isHuddleCompanionOpen}
-                          isPresencePending={presenceSession.isPending}
                           onAddCommunity={(community) => {
                             const id = communitiesHook.addCommunity({
                               ...community,
@@ -987,14 +1032,7 @@ export function AppShell() {
                           onNewMessage={goNewMessage}
                           onBackgroundClick={requestFocusedThreadClose}
                           onCreateChannelOpenChange={setIsCreateChannelOpen}
-                          onOpenAddCommunity={addCommunityDialog.openDialog}
-                          onSendFeedback={() => setIsSendFeedbackOpen(true)}
-                          onUpdateCommunity={communitiesHook.updateCommunity}
-                          onLeaveCommunity={handleLeaveCommunity}
-                          onRemoveCommunityFromDevice={removeFromDevice}
-                          onSwitchCommunity={handleSwitchCommunity}
                           onCreateAgent={() => requestOpenCreateAgent()}
-                          selfPresenceStatus={presenceSession.currentStatus}
                           communities={communitiesHook.communities}
                           onCreateChannel={handleCreateChannel}
                           onCreateForum={handleCreateForum}
@@ -1019,27 +1057,7 @@ export function AppShell() {
                             scopeSearchFocusRequest,
                           ]}
                           onSelectHome={() => void goHome()}
-                          onSelectSettings={handleOpenSettings}
-                          onSetPresenceStatus={(status) =>
-                            presenceSession.setStatus(status)
-                          }
-                          onSetUserStatus={setUserStatusMutation.mutate}
-                          onClearUserStatus={() =>
-                            setUserStatusMutation.mutate({
-                              text: "",
-                              emoji: "",
-                            })
-                          }
                           profile={profileQuery.data}
-                          selfUserStatus={
-                            deferredPubkey
-                              ? (visibleUserStatus(
-                                  selfStatusQuery.data?.[
-                                    deferredPubkey.toLowerCase()
-                                  ],
-                                ) ?? undefined)
-                              : undefined
-                          }
                           selectedChannelId={selectedChannelId}
                           selectedView={selectedView}
                           unreadChannelIds={unreadChannelIds}

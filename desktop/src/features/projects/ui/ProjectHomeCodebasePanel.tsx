@@ -70,7 +70,7 @@ export function ProjectHomeCodebasePanel({
         data-testid="project-home-codebase-empty"
       >
         <p className="text-sm text-muted-foreground">
-          Attach a repository to browse the file tree beside this channel.
+          Attach a repository to browse the file tree beside this group.
         </p>
         <ProjectRepositoryManagement
           identityPubkey={identityPubkey}

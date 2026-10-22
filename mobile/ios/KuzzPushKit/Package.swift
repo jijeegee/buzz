@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "KuzzPushKit", targets: ["KuzzPushKit"])
     ],
     dependencies: [
-        .package(url: "https://github.com/21-DOT-DEV/swift-secp256k1.git", exact: "0.21.1")
+        .package(url: "https://github.com/21-DOT-DEV/swift-secp256k1.git", exact: "0.24.0")
     ],
     targets: [
         .target(

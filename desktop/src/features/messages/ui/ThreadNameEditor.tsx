@@ -90,8 +90,8 @@ export function ThreadNameEditor({
             <DialogHeader>
               <DialogTitle>Thread name</DialogTitle>
               <DialogDescription>
-                Visible to everyone in this channel. Up to 40 English or 20
-                Korean characters. Leave empty to remove the name.
+                Visible to everyone in this group. Up to 40 English or 20 Korean
+                characters. Leave empty to remove the name.
               </DialogDescription>
             </DialogHeader>
             <Input

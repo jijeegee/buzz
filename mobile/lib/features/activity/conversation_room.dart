@@ -23,7 +23,7 @@ final class DmConversationRoom extends ConversationRoom {
   const DmConversationRoom({required this.title, required this.personPubkey});
 }
 
-/// A channel's main timeline: the channel's letter avatar and `#name`.
+/// A channel's main timeline: the group's letter avatar and name.
 final class ChannelConversationRoom extends ConversationRoom {
   final String channelId;
   final String channelName;
@@ -54,6 +54,9 @@ ConversationRoom resolveConversationRoom(
   required String? currentPubkey,
   required String senderLabel,
   IdentityNameSources? names,
+
+  /// A chat of people's resolved title, which names its room.
+  String? chatTitle,
 }) {
   final senderPubkey = item.item.pubkey.toLowerCase();
   if (channel?.isDm ?? false) {
@@ -73,7 +76,7 @@ ConversationRoom resolveConversationRoom(
   }
 
   final channelId = channel?.id ?? item.item.channelId ?? '';
-  final loadedName = channel?.name.trim() ?? '';
+  final loadedName = chatTitle ?? channel?.name.trim() ?? '';
   final feedName = item.item.channelName.trim();
   final channelName = loadedName.isNotEmpty
       ? loadedName
@@ -94,7 +97,7 @@ ConversationRoom resolveConversationRoom(
 String conversationRoomTitle(ConversationRoom room, {String? threadName}) =>
     switch (room) {
       DmConversationRoom(:final title) => title,
-      ChannelConversationRoom(:final channelName) => '#$channelName',
+      ChannelConversationRoom(:final channelName) => channelName,
       ThreadConversationRoom(:final channelName) =>
-        '#$channelName › ${threadName ?? 'Thread'}',
+        '$channelName › ${threadName ?? 'Thread'}',
     };

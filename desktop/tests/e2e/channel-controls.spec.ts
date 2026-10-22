@@ -32,7 +32,7 @@ async function selectTemporaryChannelType(
   page: import("@playwright/test").Page,
 ) {
   await page.getByTestId("channel-management-channel-type").click();
-  await page.getByLabel("Temporary channel").click();
+  await page.getByLabel("Temporary group").click();
 }
 
 test.describe("channel controls", () => {
@@ -43,7 +43,7 @@ test.describe("channel controls", () => {
     await openManagementSheet(page);
     await openEditDialog(page);
     await expect(
-      page.getByRole("dialog", { name: "Edit public channel" }),
+      page.getByRole("dialog", { name: "Edit public group" }),
     ).toBeVisible();
     await expect(page.getByText(/Update settings for/)).toHaveCount(0);
 
@@ -106,7 +106,7 @@ test.describe("channel controls", () => {
       .getByTestId("channel-management-permissions-option-private")
       .click();
     await expect(
-      page.getByRole("dialog", { name: "Edit private channel" }),
+      page.getByRole("dialog", { name: "Edit private group" }),
     ).toBeVisible();
     await expect(permissions).toHaveAccessibleName("Visibility: Private");
     await expect(permissions).not.toHaveAttribute("aria-busy", "true");
@@ -125,7 +125,7 @@ test.describe("channel controls", () => {
       .getByTestId("channel-management-permissions-option-open")
       .click();
     await expect(
-      page.getByRole("dialog", { name: "Edit public channel" }),
+      page.getByRole("dialog", { name: "Edit public group" }),
     ).toBeVisible();
     await expect(permissions).toHaveAccessibleName("Visibility: Public");
     await expect(
@@ -156,7 +156,7 @@ test.describe("channel controls", () => {
     // Reopen to confirm the visibility change persisted.
     await openEditDialog(page);
     await expect(
-      page.getByRole("dialog", { name: "Edit private channel" }),
+      page.getByRole("dialog", { name: "Edit private group" }),
     ).toBeVisible();
     await expect(
       page.getByTestId("channel-management-permissions"),
@@ -194,7 +194,7 @@ test.describe("channel controls", () => {
       page.getByTestId("channel-management-save-changes"),
     ).toBeEnabled();
     await page.getByTestId("channel-management-channel-type").click();
-    await page.getByLabel("Ongoing channel").click();
+    await page.getByLabel("Ongoing group").click();
     await expect(ephemeralSettings).toHaveCount(0);
     await expect(
       page.getByTestId("channel-management-save-changes"),
@@ -274,7 +274,7 @@ test.describe("channel controls", () => {
       .getByTestId("channel-management-permissions-option-private")
       .click();
     await expect(
-      page.getByRole("dialog", { name: "Edit private channel" }),
+      page.getByRole("dialog", { name: "Edit private group" }),
     ).toBeVisible();
     await selectTemporaryChannelType(page);
     await page.getByTestId("channel-management-save-changes").click();
@@ -291,7 +291,7 @@ test.describe("channel controls", () => {
     await page.getByTestId("channel-management-trigger").click();
     await openEditDialog(page);
     await expect(
-      page.getByRole("dialog", { name: "Edit private channel" }),
+      page.getByRole("dialog", { name: "Edit private group" }),
     ).toBeVisible();
 
     const lifecycle = page.getByTestId("channel-management-lifecycle");
@@ -322,7 +322,7 @@ test.describe("channel controls", () => {
       .getByTestId("channel-management-permissions-option-private")
       .click();
     await expect(
-      page.getByRole("dialog", { name: "Edit private channel" }),
+      page.getByRole("dialog", { name: "Edit private group" }),
     ).toBeVisible();
     await selectTemporaryChannelType(page);
     await expect(
@@ -344,7 +344,7 @@ test.describe("channel controls", () => {
       page.getByRole("textbox", { name: "Description" }),
     ).toHaveValue("General discussion for everyone");
     await expect(
-      page.getByRole("dialog", { name: "Edit public channel" }),
+      page.getByRole("dialog", { name: "Edit public group" }),
     ).toBeVisible();
     await expect(
       page.getByTestId("channel-management-permissions"),
@@ -374,7 +374,7 @@ test.describe("channel controls", () => {
       .click();
     // Draft only — never saved. The dialog title reflects the pending choice.
     await expect(
-      page.getByRole("dialog", { name: "Edit private channel" }),
+      page.getByRole("dialog", { name: "Edit private group" }),
     ).toBeVisible();
 
     const agentsChannelId = await page
@@ -400,7 +400,7 @@ test.describe("channel controls", () => {
     // The unsaved draft must not carry over: the new channel re-syncs from
     // server state and shows its own (public) visibility.
     await expect(
-      page.getByRole("dialog", { name: "Edit public channel" }),
+      page.getByRole("dialog", { name: "Edit public group" }),
     ).toBeVisible();
     await expect(permissions).toHaveAccessibleName("Visibility: Public");
   });

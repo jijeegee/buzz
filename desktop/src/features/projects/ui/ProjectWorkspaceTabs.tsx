@@ -3,7 +3,6 @@ import {
   Files as FilesIcon,
   GitCommitHorizontal,
   GitPullRequest,
-  Hash,
   RefreshCw,
   Users,
 } from "lucide-react";
@@ -392,8 +391,8 @@ export function WorkspaceTabs({
     ) : selectedTab === "channels" ? (
       <ProjectSectionHeader
         className={PROJECT_SECTION_HEADER_CLASS}
-        icon={Hash}
-        title="Channels"
+        icon={Users}
+        title="Groups"
       />
     ) : selectedTab === "contributors" ? (
       <ProjectSectionHeader

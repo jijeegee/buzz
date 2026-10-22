@@ -447,6 +447,128 @@ async fn actor_owns_any_owner_agent(
     Ok(false)
 }
 
+/// A kind:9000 add that became an invitation. Ingest turns it into an `OK`
+/// false whose message starts with [`INVITE_SENT_PREFIX`].
+#[derive(Debug, thiserror::Error)]
+#[error("invitation sent")]
+pub struct InvitationSent;
+
+/// `OK` message prefix for a kind:9000 add the target's "who can add me"
+/// setting turned into an invitation.
+pub const INVITE_SENT_PREFIX: &str = "invite-sent:";
+
+/// A kind:9000 add refused because the actor already sent
+/// [`kuzz_db::groups::INVITATIONS_PER_DAY`] invitations in the last 24 hours.
+/// Ingest answers with [`INVITATIONS_RATE_LIMITED`] verbatim.
+#[derive(Debug, thiserror::Error)]
+#[error("too many invitations")]
+pub struct InvitationRateLimited;
+
+/// `OK` message for [`InvitationRateLimited`].
+pub const INVITATIONS_RATE_LIMITED: &str = "rate-limited: too many invitations, try later";
+
+/// Whether `actor` is in `target`'s latest contact list (kind:3): the target
+/// added the actor as a friend.
+pub(crate) async fn is_friend_of(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    target: &[u8],
+    actor: &[u8],
+) -> anyhow::Result<bool> {
+    let Some(contacts) = state
+        .db
+        .get_latest_global_replaceable(
+            tenant.community(),
+            kuzz_core::kind::KIND_CONTACT_LIST as i32,
+            target,
+        )
+        .await?
+    else {
+        return Ok(false);
+    };
+    let actor_hex = hex::encode(actor);
+    Ok(contacts.event.tags.iter().any(|tag| {
+        let parts = tag.as_slice();
+        parts.len() >= 2 && parts[0] == "p" && parts[1].eq_ignore_ascii_case(&actor_hex)
+    }))
+}
+
+/// Group invite policy and the target's "who can add me" setting for a
+/// third-party add of a person who is not yet a member. Refused adds by a
+/// member become a pending invitation and fail with [`InvitationSent`]; when
+/// the target blocked the actor nothing is stored, but the actor sees the
+/// same answer.
+async fn check_person_add(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    channel_created_by: &[u8],
+    actor_role: Option<MemberRole>,
+    actor: &[u8],
+    target: &[u8],
+) -> anyhow::Result<()> {
+    let community = tenant.community();
+    let invite_policy = state
+        .db
+        .group_invite_policy(community, channel_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("channel not found"))?;
+    let add_policy = state.db.group_add_policy(community, target).await?;
+    let friend = if add_policy == "everyone" {
+        false
+    } else {
+        let actor_agent_owner = state
+            .db
+            .get_agent_channel_policy(community, actor)
+            .await?
+            .and_then(|(_, owner)| owner);
+        let actor_runs_group =
+            channel_created_by == actor || actor_role.is_some_and(|r| r.is_elevated());
+        channel_authz::admits_as_friend(
+            false,
+            actor_agent_owner.as_deref(),
+            target,
+            actor_runs_group,
+        ) || is_friend_of(tenant, state, target, actor).await?
+    };
+    let decision =
+        channel_authz::decide_person_add(&invite_policy, actor_role, &add_policy, friend)?;
+    // A target who blocks the actor is never added by them, whatever their
+    // setting: silently answer "invitation sent" and store nothing.
+    let blocked = state.db.is_blocked_by(community, target, actor).await?;
+    match decision {
+        channel_authz::PersonAddDecision::Allow if blocked => Err(InvitationSent.into()),
+        channel_authz::PersonAddDecision::Allow => Ok(()),
+        channel_authz::PersonAddDecision::SendInvitation => {
+            let write_state = state
+                .db
+                .group_invitation_write_state(community, channel_id, actor, target)
+                .await?;
+            match channel_authz::decide_invitation_write(
+                blocked,
+                write_state.declined_recently,
+                write_state.already_pending,
+                write_state.sent_last_day,
+                kuzz_db::groups::INVITATIONS_PER_DAY,
+            ) {
+                channel_authz::InvitationWrite::Skip => {}
+                channel_authz::InvitationWrite::RateLimited => {
+                    return Err(InvitationRateLimited.into())
+                }
+                channel_authz::InvitationWrite::Upsert => {
+                    // TODO(groups): push the invitation live; v1 clients
+                    // refresh the invitation list on focus / Chats open.
+                    state
+                        .db
+                        .upsert_group_invitation(community, channel_id, actor, target)
+                        .await?;
+                }
+            }
+            Err(InvitationSent.into())
+        }
+    }
+}
+
 /// Validate an admin kind event BEFORE storage.
 pub async fn validate_admin_event(
     tenant: &TenantContext,
@@ -482,6 +604,9 @@ pub async fn validate_admin_event(
     }
 
     match kind {
+        9000 if channel.channel_type == "dm" => Err(anyhow::anyhow!(
+            "direct messages are 1:1; start a group chat to add people"
+        )),
         9000 => {
             // An absent role tag means "no role change requested": for an existing
             // member that preserves the role they already hold, and only defaults
@@ -504,6 +629,21 @@ pub async fn validate_admin_event(
             let target_pubkey =
                 extract_p_tag(event).ok_or_else(|| anyhow::anyhow!("missing p tag"))?;
 
+            // Group chats: people are members and agents bots — nobody may
+            // grant owner/admin/guest — and the chat holds at most
+            // GROUP_CHAT_MAX_MEMBERS (re-checked under the lock in add_member).
+            if channel.group_chat {
+                let target_is_agent =
+                    super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?;
+                channel_authz::decide_group_chat_role(requested_role, target_is_agent)?;
+                let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
+                if !already_member
+                    && members.len() as i64 >= kuzz_db::channel::GROUP_CHAT_MAX_MEMBERS
+                {
+                    return Err(anyhow::anyhow!(kuzz_db::channel::GROUP_CHAT_FULL));
+                }
+            }
+
             // Authorization policy — visibility gate, elevated-grant gate,
             // active-member role-change gate, and last-owner demotion — lives in
             // `channel_authz`, which is pure and table-tested. The database reads
@@ -520,16 +660,41 @@ pub async fn validate_admin_event(
                 PutUserDecision::Allow => Ok(()),
                 // Third-party add: check channel_add_policy on the target.
                 PutUserDecision::CheckAddPolicy => {
-                    if let Some((policy, owner)) = state
+                    let agent_policy = state
                         .db
                         .get_agent_channel_policy(tenant.community(), &target_pubkey)
-                        .await?
-                    {
+                        .await?;
+                    if let Some((policy, owner)) = &agent_policy {
                         channel_authz::decide_channel_add_policy(
-                            &policy,
+                            policy,
                             owner.as_deref(),
                             &actor_bytes,
                         )?;
+                    }
+
+                    // People (not agents) joining a group get stranger
+                    // protection and the group's invite policy. Agents keep
+                    // only their channel_add_policy above; role changes of
+                    // existing members are unaffected.
+                    let is_group = matches!(channel.channel_type.as_str(), "stream" | "forum");
+                    let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
+                    if is_group && !already_member {
+                        let target_is_agent = agent_policy
+                            .as_ref()
+                            .is_some_and(|(_, owner)| owner.is_some())
+                            || state.db.is_bot_principal(&target_pubkey).await?;
+                        if !target_is_agent {
+                            check_person_add(
+                                tenant,
+                                state,
+                                channel_id,
+                                &channel.created_by,
+                                actor_role,
+                                &actor_bytes,
+                                &target_pubkey,
+                            )
+                            .await?;
+                        }
                     }
 
                     Ok(())
@@ -546,7 +711,13 @@ pub async fn validate_admin_event(
                 channel_authz::decide_self_departure(&members, &actor_bytes)?;
                 Ok(())
             } else {
-                match channel_authz::classify_remove_other(&members, &actor_bytes) {
+                let mut decision = channel_authz::classify_remove_other(&members, &actor_bytes);
+                // Nobody runs a group chat: a member may remove only their
+                // own agent, whatever role a row claims.
+                if channel.group_chat && decision == RemoveOtherDecision::Allow {
+                    decision = RemoveOtherDecision::CheckAgentOwner;
+                }
+                match decision {
                     RemoveOtherDecision::Allow => Ok(()),
                     RemoveOtherDecision::CheckAgentOwner => {
                         if state
@@ -577,6 +748,7 @@ pub async fn validate_admin_event(
                 "visibility",
                 "ttl",
                 "goals",
+                "picture",
             ];
             let has_recognized = event
                 .tags
@@ -584,7 +756,20 @@ pub async fn validate_admin_event(
                 .any(|t| RECOGNIZED_TAGS.contains(&t.kind().to_string().as_str()));
             if !has_recognized {
                 return Err(anyhow::anyhow!(
-                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals)"
+                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals, picture)"
+                ));
+            }
+
+            // Group chats have no shared settings to edit except goals: the
+            // shared name is set only at creation (members rename privately).
+            if channel.group_chat
+                && event.tags.iter().any(|t| {
+                    let k = t.kind().to_string();
+                    k != "goals" && RECOGNIZED_TAGS.contains(&k.as_str())
+                })
+            {
+                return Err(anyhow::anyhow!(
+                    "chats have no shared name, photo or settings to change; only goals can be switched"
                 ));
             }
 
@@ -680,10 +865,33 @@ pub async fn validate_admin_event(
                 }
             }
 
-            // name/about/archived/visibility/ttl require owner/admin;
+            // Validate picture values before storage: empty removes the photo,
+            // otherwise it must be a blob URL on this relay's /media.
+            if event.tags.iter().any(|t| t.kind().to_string() == "picture") {
+                let media_base = crate::api::media::media_base_url_for_tenant(
+                    &state.config.relay_url,
+                    tenant.host(),
+                );
+                for t in event.tags.iter() {
+                    if t.kind().to_string() == "picture" {
+                        match t.content() {
+                            Some(v) => validate_group_picture(v, &media_base)
+                                .map_err(|e| anyhow::anyhow!(e))?,
+                            None => {
+                                return Err(anyhow::anyhow!(
+                                    "picture tag must have a value (media URL, or empty string to remove)"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // name/about/archived/visibility/ttl/picture require owner/admin;
             // topic/purpose allow any member. goals is owner/admin in a
             // channel, but a DM has no owner, so any participant may switch it.
-            let is_dm = channel.channel_type == "dm";
+            // Ownerless rooms (DMs and group chats): any member switches goals.
+            let is_dm = channel.channel_type == "dm" || channel.group_chat;
             let has_privileged_tag = event.tags.iter().any(|t| {
                 let k = t.kind().to_string();
                 k == "name"
@@ -691,6 +899,7 @@ pub async fn validate_admin_event(
                     || k == "archived"
                     || k == "visibility"
                     || k == "ttl"
+                    || k == "picture"
                     || (k == "goals" && !is_dm)
             });
             if has_privileged_tag {
@@ -713,7 +922,7 @@ pub async fn validate_admin_event(
                             return Ok(());
                         }
                         Err(anyhow::anyhow!(
-                            "actor not authorized for name/about/archived/visibility/ttl/goals changes"
+                            "actor not authorized for name/about/archived/visibility/ttl/goals/picture changes"
                         ))
                     }
                 }
@@ -821,6 +1030,9 @@ pub async fn validate_admin_event(
                 }
             }
         }
+        9008 if channel.group_chat => Err(anyhow::anyhow!(
+            "chats cannot be deleted; leave the chat instead"
+        )),
         9008 => {
             // DELETE_GROUP: owner only, or the owning human of the channel's agent-owner.
             let members = state.db.get_members(tenant.community(), channel_id).await?;
@@ -1259,6 +1471,11 @@ pub async fn emit_group_discovery_events(
                 tags.push(Tag::parse(["p", &pubkey_hex])?);
             }
         }
+        // Ownerless group chat marker (clients: no owner controls, title
+        // and photo drawn from members).
+        if channel.group_chat {
+            tags.push(Tag::parse([super::group_chat::GROUP_CHAT_TAG])?);
+        }
         // Kuzz channels always require explicit membership
         tags.push(Tag::parse(["closed"])?);
         // Channel type tag so clients can distinguish stream/forum/dm without inference
@@ -1289,6 +1506,12 @@ pub async fn emit_group_discovery_events(
         // and conversations that never changed it read as on.
         if !channel.goals_enabled {
             tags.push(Tag::parse(["goals", "off"])?);
+        }
+        // Group photo (a /media blob on this relay); absent means letter avatar.
+        if let Some(ref picture) = channel.picture {
+            if !picture.is_empty() {
+                tags.push(Tag::parse(["picture", picture])?);
+            }
         }
         emit_addressable_discovery_event(
             tenant,
@@ -1473,10 +1696,26 @@ async fn handle_put_user(
     // No role tag = no role change: preserve an existing member's current role and
     // fall back to Member only for a new member. Unconditionally defaulting to
     // Member let a bare PUT_USER silently demote an existing owner/admin.
-    let role: MemberRole = match extract_tag_value(event, "role") {
-        Some(role_str) => role_str
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid role: {role_str}"))?,
+    let requested: Option<MemberRole> = match extract_tag_value(event, "role") {
+        Some(role_str) => Some(
+            role_str
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid role: {role_str}"))?,
+        ),
+        None => None,
+    };
+    let group_chat = state
+        .db
+        .get_channel_for_event_write(tenant.community(), channel_id)
+        .await?
+        .group_chat;
+    let role: MemberRole = match requested {
+        // Group chats: people are members, agents bots.
+        _ if group_chat => channel_authz::decide_group_chat_role(
+            requested,
+            super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?,
+        )?,
+        Some(role) => role,
         None => state
             .db
             .get_members_for_event_write(tenant.community(), channel_id)
@@ -1489,28 +1728,82 @@ async fn handle_put_user(
 
     let actor_bytes = event.pubkey.to_bytes().to_vec();
 
+    add_channel_member(
+        tenant,
+        state,
+        channel_id,
+        &target_pubkey,
+        role,
+        Some(&actor_bytes),
+        &actor_bytes,
+    )
+    .await?;
+
+    info!(channel = %channel_id, target = %hex::encode(&target_pubkey), "NIP-29 PUT_USER processed");
+    Ok(())
+}
+
+/// Add `target` to the channel and publish everything a membership change
+/// publishes: the `member_joined` system message (`actor` added `target`;
+/// equal for a self-join), the NIP-29 discovery events (kind:39002 member
+/// list) and the member-added notification. Every join path uses this —
+/// kind:9000, kind:9021, group invite links and accepted invitations — so
+/// they look identical to clients.
+///
+/// `invited_by` is passed to [`kuzz_db::Db::add_member`], which enforces the
+/// private-channel inviter rule. A pending group invitation for `target` is
+/// settled as accepted.
+pub(crate) async fn add_channel_member(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    target: &[u8],
+    role: MemberRole,
+    invited_by: Option<&[u8]>,
+    actor: &[u8],
+) -> anyhow::Result<()> {
     state
         .db
-        .add_member(
-            tenant.community(),
-            channel_id,
-            &target_pubkey,
-            role,
-            Some(&actor_bytes),
-        )
+        .add_member(tenant.community(), channel_id, target, role, invited_by)
         .await?;
-    state.invalidate_membership(tenant, channel_id, &target_pubkey);
+    publish_member_added(tenant, state, channel_id, target, actor).await
+}
 
-    let actor_hex = hex::encode(&actor_bytes);
-    let target_hex = hex::encode(&target_pubkey);
+/// Accept `target`'s invitation to a group chat from `inviter`, who may have
+/// left since: valid while the chat has any active member. Publishes like
+/// [`add_channel_member`].
+pub(crate) async fn add_group_chat_member_by_invitation(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    target: &[u8],
+    inviter: &[u8],
+) -> anyhow::Result<()> {
+    state
+        .db
+        .add_member_via_group_chat_invitation(tenant.community(), channel_id, target, inviter)
+        .await?;
+    publish_member_added(tenant, state, channel_id, target, inviter).await
+}
+
+/// Everything a committed membership add publishes; see [`add_channel_member`].
+async fn publish_member_added(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    target: &[u8],
+    actor: &[u8],
+) -> anyhow::Result<()> {
+    state.invalidate_membership(tenant, channel_id, target);
+
     emit_system_message(
         tenant,
         state,
         channel_id,
         serde_json::json!({
             "type": "member_joined",
-            "actor": actor_hex,
-            "target": target_hex,
+            "actor": hex::encode(actor),
+            "target": hex::encode(target),
         }),
         chrono::Utc::now(),
     )
@@ -1524,8 +1817,8 @@ async fn handle_put_user(
         tenant,
         state,
         channel_id,
-        &target_pubkey,
-        &actor_bytes,
+        target,
+        actor,
         KIND_MEMBER_ADDED_NOTIFICATION,
     )
     .await
@@ -1533,7 +1826,13 @@ async fn handle_put_user(
         warn!(channel = %channel_id, error = %e, "membership notification emission failed");
     }
 
-    info!(channel = %channel_id, target = %target_hex, "NIP-29 PUT_USER processed");
+    if let Err(e) = state
+        .db
+        .settle_group_invitations(tenant.community(), channel_id, target)
+        .await
+    {
+        warn!(channel = %channel_id, error = %e, "settling group invitations failed");
+    }
     Ok(())
 }
 
@@ -1604,6 +1903,43 @@ async fn handle_remove_user(
     }
 
     Ok(())
+}
+
+/// Longest accepted group photo URL.
+const MAX_GROUP_PICTURE_LEN: usize = 512;
+
+/// Validates a kind:9002 `picture` value. Empty removes the photo; anything
+/// else must be `<media_base>/<64 lowercase hex>[.ext]` on this relay (no
+/// query, fragment, or extra path), at most [`MAX_GROUP_PICTURE_LEN`] chars.
+pub(crate) fn validate_group_picture(value: &str, media_base: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Ok(());
+    }
+    if value.len() > MAX_GROUP_PICTURE_LEN {
+        return Err(format!(
+            "invalid picture value: longer than {MAX_GROUP_PICTURE_LEN} characters"
+        ));
+    }
+    let invalid = || {
+        format!(
+            "invalid picture value: {value} (must be a {media_base}/<sha256>[.ext] URL from this relay, or empty to remove)"
+        )
+    };
+    let name = value
+        .strip_prefix(media_base)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .ok_or_else(invalid)?;
+    let (hash, ext) = match name.split_once('.') {
+        Some((hash, ext)) => (hash, Some(ext)),
+        None => (name, None),
+    };
+    let hash_ok = hash.len() == 64 && hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'));
+    let ext_ok = ext.is_none_or(crate::api::media::is_safe_ext);
+    if hash_ok && ext_ok {
+        Ok(())
+    } else {
+        Err(invalid())
+    }
 }
 
 async fn handle_edit_metadata(
@@ -1771,6 +2107,32 @@ async fn handle_edit_metadata(
                         channel_id,
                         serde_json::json!({
                             "type": "goals_changed", "actor": actor_hex, "goals": val
+                        }),
+                        chrono::Utc::now(),
+                    )
+                    .await?;
+                }
+                "picture" => {
+                    // Empty removes the photo; otherwise a /media URL on this
+                    // relay, validated during authorization.
+                    let picture = (!val.is_empty()).then(|| val.to_string());
+                    state
+                        .db
+                        .update_channel(
+                            tenant.community(),
+                            channel_id,
+                            kuzz_db::channel::ChannelUpdate {
+                                picture: Some(picture),
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                    emit_system_message(
+                        tenant,
+                        state,
+                        channel_id,
+                        serde_json::json!({
+                            "type": "picture_changed", "actor": actor_hex, "picture": val
                         }),
                         chrono::Utc::now(),
                     )
@@ -1968,6 +2330,9 @@ async fn handle_create_group(
     event: &Event,
     state: &Arc<AppState>,
 ) -> anyhow::Result<()> {
+    if super::group_chat::has_group_chat_tag(event) {
+        return handle_create_group_chat(tenant, event, state).await;
+    }
     let name =
         extract_tag_value(event, "name").ok_or_else(|| anyhow::anyhow!("missing name tag"))?;
     let visibility_str =
@@ -2091,6 +2456,67 @@ async fn handle_create_group(
     Ok(())
 }
 
+/// Side effects of a group chat creation. Ingest already wrote the chat, its
+/// initial members and invitations in one transaction; this publishes it
+/// once: the `channel_created` system message (with the initial members), one
+/// rebuild of the discovery events (39000/39001/39002), and a member-added
+/// notification to everyone in it so their clients and agents subscribe.
+async fn handle_create_group_chat(
+    tenant: &TenantContext,
+    event: &Event,
+    state: &Arc<AppState>,
+) -> anyhow::Result<()> {
+    let channel_id =
+        extract_h_tag_channel(event).ok_or_else(|| anyhow::anyhow!("missing h tag"))?;
+    let actor_bytes = event.pubkey.to_bytes().to_vec();
+    let members = state
+        .db
+        .get_members_for_event_write(tenant.community(), channel_id)
+        .await?;
+    for member in &members {
+        state.invalidate_membership(tenant, channel_id, &member.pubkey);
+    }
+
+    emit_system_message(
+        tenant,
+        state,
+        channel_id,
+        serde_json::json!({
+            "type": "channel_created",
+            "actor": hex::encode(&actor_bytes),
+            "members": members
+                .iter()
+                .filter(|m| m.pubkey != actor_bytes)
+                .map(|m| hex::encode(&m.pubkey))
+                .collect::<Vec<_>>(),
+        }),
+        chrono::Utc::now(),
+    )
+    .await?;
+
+    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
+        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
+    }
+
+    for member in &members {
+        if let Err(e) = emit_membership_notification(
+            tenant,
+            state,
+            channel_id,
+            &member.pubkey,
+            &actor_bytes,
+            KIND_MEMBER_ADDED_NOTIFICATION,
+        )
+        .await
+        {
+            warn!(channel = %channel_id, error = %e, "membership notification emission failed");
+        }
+    }
+
+    info!(channel_id = %channel_id, members = members.len(), "group chat created");
+    Ok(())
+}
+
 async fn handle_delete_group(
     tenant: &TenantContext,
     event: &Event,
@@ -2176,48 +2602,16 @@ async fn handle_join_request(
     }
 
     // Add as member (idempotent — add_member handles duplicates).
-    state
-        .db
-        .add_member(
-            tenant.community(),
-            channel_id,
-            &actor_bytes,
-            kuzz_db::channel::MemberRole::Member,
-            None,
-        )
-        .await?;
-    state.invalidate_membership(tenant, channel_id, &actor_bytes);
-
-    let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
+    add_channel_member(
         tenant,
         state,
         channel_id,
-        serde_json::json!({
-            "type": "member_joined",
-            "actor": actor_hex,
-            "target": actor_hex,
-        }),
-        chrono::Utc::now(),
+        &actor_bytes,
+        MemberRole::Member,
+        None,
+        &actor_bytes,
     )
     .await?;
-
-    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
-        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
-    }
-
-    if let Err(e) = emit_membership_notification(
-        tenant,
-        state,
-        channel_id,
-        &actor_bytes,
-        &actor_bytes,
-        kuzz_core::kind::KIND_MEMBER_ADDED_NOTIFICATION,
-    )
-    .await
-    {
-        warn!("membership notification for join failed: {e}");
-    }
 
     info!(channel = %channel_id, "kind:9021 join processed");
     Ok(())
@@ -2585,33 +2979,8 @@ fn extract_p_tag(event: &Event) -> Option<Vec<u8>> {
     None
 }
 
-/// Extract the effective message author from a stored event.
-///
-/// REST-created messages are signed by the relay keypair and attribute the real
-/// sender via a `p` tag. For user-signed events (WebSocket), `event.pubkey` is
-/// the author. Returns the correct author bytes in both cases.
 fn effective_message_author(event: &Event, relay_pubkey: &nostr::PublicKey) -> Vec<u8> {
-    if event.pubkey == *relay_pubkey {
-        if let Some(actor_hex) = extract_tag_value(event, "actor") {
-            if let Ok(bytes) = hex::decode(actor_hex) {
-                if bytes.len() == 32 {
-                    return bytes;
-                }
-            }
-        }
-        for tag in event.tags.iter() {
-            if tag.kind().to_string() == "p" {
-                if let Some(hex) = tag.content() {
-                    if let Ok(bytes) = hex::decode(hex) {
-                        if bytes.len() == 32 {
-                            return bytes;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    event.pubkey.to_bytes().to_vec()
+    super::ingest::effective_message_author(event, relay_pubkey)
 }
 
 /// True if the event carries any `e` tag at all, regardless of whether its
@@ -3896,6 +4265,42 @@ pub async fn publish_nipia_unarchived(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_picture_accepts_only_media_urls_on_this_relay() {
+        let base = "https://relay.example/media";
+        let hash = "0123456789abcdef".repeat(4);
+        for ok in [
+            String::new(),
+            format!("{base}/{hash}"),
+            format!("{base}/{hash}.jpg"),
+            format!("{base}/{hash}.webp"),
+        ] {
+            assert_eq!(validate_group_picture(&ok, base), Ok(()), "{ok}");
+        }
+        for bad in [
+            format!("https://evil.example/media/{hash}.jpg"),
+            format!("http://relay.example/media/{hash}.jpg"),
+            format!("https://relay.example.evil/media/{hash}.jpg"),
+            format!("https://relay.example/media/{}.jpg", &hash[..63]),
+            format!("https://relay.example/media/{}.jpg", hash.to_uppercase()),
+            format!("{base}/{hash}.jpg?x=1"),
+            format!("{base}/{hash}.jpg#x"),
+            format!("{base}/{hash}.thumb.jpg"),
+            format!("{base}/{hash}.JPG"),
+            format!("{base}/{hash}/x.jpg"),
+            format!("{base}/../{hash}.jpg"),
+            format!("{base}{hash}.jpg"),
+            format!("{base}/"),
+            "not a url".to_owned(),
+            "javascript:alert(1)".to_owned(),
+        ] {
+            assert!(validate_group_picture(&bad, base).is_err(), "{bad}");
+        }
+        let long = format!("{base}/{hash}.{}", "a".repeat(600));
+        let err = validate_group_picture(&long, base).unwrap_err();
+        assert!(err.contains("512"), "{err}");
+    }
 
     #[test]
     fn workflow_deletion_retry_matches_authorized_dispatch() {

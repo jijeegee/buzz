@@ -3,6 +3,103 @@ part of 'channels_provider_test.dart';
 void _liveSubscriptionTests() {
   const myPk = 'me';
 
+  group('live group metadata changes', () {
+    const photo = 'https://relay.example/media/photo.jpg';
+
+    setUp(() {
+      final delay = ChannelsNotifier.liveMetadataRefreshDelay;
+      ChannelsNotifier.liveMetadataRefreshDelay = Duration.zero;
+      addTearDown(() => ChannelsNotifier.liveMetadataRefreshDelay = delay);
+    });
+
+    Future<(ProviderContainer, _FakeRelaySession)> loaded() async {
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'room')],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _waitUntil(() => session.activeSubscriptionCount == 1);
+      return (container, session);
+    }
+
+    test('picture_changed refetches the photo and cached details', () async {
+      final (container, session) = await loaded();
+      final primed = await container.read(
+        channelDetailsProvider(_channelA).future,
+      );
+      expect(primed.picture, isNull);
+      final requests = session.membershipRequestCount;
+
+      session.metadata = [_meta(id: _channelA, name: 'room', picture: photo)];
+      session.emit(
+        _systemMessage(_channelA, {
+          'type': 'picture_changed',
+          'actor': 'alice',
+          'picture': photo,
+        }),
+      );
+      await _waitUntil(
+        () =>
+            container.read(channelsProvider).requireValue.single.picture ==
+            photo,
+      );
+
+      expect(session.membershipRequestCount, greaterThan(requests));
+      final details = await container.read(
+        channelDetailsProvider(_channelA).future,
+      );
+      expect(details.picture, photo);
+    });
+
+    test('a removed photo clears it without a restart', () async {
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'room', picture: photo)],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _waitUntil(() => session.activeSubscriptionCount == 1);
+
+      session.metadata = [_meta(id: _channelA, name: 'room')];
+      session.emit(
+        _systemMessage(_channelA, {
+          'type': 'picture_changed',
+          'actor': 'alice',
+          'picture': '',
+        }),
+      );
+      await _waitUntil(
+        () =>
+            container.read(channelsProvider).requireValue.single.picture ==
+            null,
+      );
+    });
+
+    test('a topic change refetches; other system rows do not', () async {
+      final (container, session) = await loaded();
+      final requests = session.membershipRequestCount;
+
+      session.emit(
+        _systemMessage(_channelA, {'type': 'member_left', 'actor': 'alice'}),
+      );
+      session.emit(_liveMessage(_channelA));
+      await _settle();
+      expect(session.membershipRequestCount, requests);
+
+      session.emit(
+        _systemMessage(_channelA, {
+          'type': 'topic_changed',
+          'actor': 'alice',
+          'topic': 'Launch',
+        }),
+      );
+      await _waitUntil(() => session.membershipRequestCount > requests);
+    });
+  });
+
   test(
     'subscribes once for joined non-archived channels without blocking snapshot',
     () async {
@@ -401,6 +498,19 @@ void _liveSubscriptionTests() {
     },
   );
 }
+
+NostrEvent _systemMessage(String channelId, Map<String, Object?> payload) =>
+    NostrEvent(
+      id: 'system-$channelId-${payload['type']}',
+      pubkey: 'relay',
+      createdAt: 30,
+      kind: EventKind.systemMessage,
+      tags: [
+        ['h', channelId],
+      ],
+      content: jsonEncode(payload),
+      sig: 'sig',
+    );
 
 NostrEvent _liveMessage(String channelId) => NostrEvent(
   id: 'live-$channelId',

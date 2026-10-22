@@ -20,6 +20,7 @@ import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../../shared/widgets/kuzz_view_switch.dart';
 import '../channels/channel.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';
@@ -28,11 +29,15 @@ import '../channels/channel_stars/channel_stars_provider.dart';
 import '../channels/channels_page.dart';
 import '../channels/channels_provider.dart';
 import '../channels/dm_channel_labels.dart';
+import '../channels/group_chat/chat_grid_avatar.dart';
+import '../channels/group_chat/chat_title.dart';
+import '../groups/group_invitations.dart';
 import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
 import 'chat_list_provider.dart';
 import 'chat_row_visible_latest.dart';
+import 'chat_thread_row_menu.dart';
 import 'chat_working.dart';
 import 'thread_pins_provider.dart';
 
@@ -115,6 +120,8 @@ ChatListRow localChatRow(Channel channel) {
     channelType: channel.channelType,
     channelName: channel.name,
     dmMembers: channel.participantPubkeys,
+    groupChat: channel.isGroupChat,
+    memberCount: channel.isGroupChat ? channel.memberCount : null,
   );
 }
 
@@ -184,7 +191,20 @@ class ChatsPage extends HookConsumerWidget {
     final pinnedThreads = ref.watch(threadPinsProvider);
     final working = _watchWorking(ref, rows);
     final readState = ref.watch(readStateProvider);
-    final expanded = useState(<String>{});
+    // Pending group invitations: loaded with Chats, refreshed on resume.
+    ref.watch(groupInvitationsProvider);
+    ref.listen<AppLifecycleState>(appLifecycleProvider, (previous, next) {
+      if (next == AppLifecycleState.resumed &&
+          previous != AppLifecycleState.resumed) {
+        unawaited(
+          Future<void>.microtask(
+            ref.read(groupInvitationsProvider.notifier).refresh,
+          ),
+        );
+      }
+    });
+    // "+ 10 more" taps per channel, for this session only.
+    final expanded = useState(<String, int>{});
     final scrollController = useScrollController();
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     useEffect(() {
@@ -260,8 +280,28 @@ class ChatsPage extends HookConsumerWidget {
     // reloads behind it.
     Future<void> refresh() async {
       ref.read(channelsProvider.notifier).refresh().ignore();
+      ref.read(groupInvitationsProvider.notifier).refresh().ignore();
       await refreshChatList(ref);
     }
+
+    VoidCallback? threadMenu(ChatListRow row, {required bool pinned}) =>
+        row.isThread
+        ? () {
+            unawaited(HapticFeedback.mediumImpact());
+            unawaited(
+              showChatThreadRowMenu(
+                context,
+                ref,
+                row,
+                pinned: pinned,
+                hasUnread: chatRowUnread(
+                  row,
+                  readState.effectiveTimestamp(chatRowContextId(row)),
+                ).isUnread,
+              ),
+            );
+          }
+        : null;
 
     int unreadOf(ChatListRow row) {
       final unread = chatRowUnread(
@@ -279,9 +319,17 @@ class ChatsPage extends HookConsumerWidget {
     } else if (rows.isEmpty) {
       body = Padding(
         padding: EdgeInsets.only(top: topSectionHeight),
-        child: _ChatsEmptyState(
-          onFindChannels: () => unawaited(showBrowseChannelsSheet(context)),
-          onMessageSomeone: () => unawaited(openNewMessage()),
+        child: Column(
+          children: [
+            const GroupInvitationsRow(),
+            Expanded(
+              child: _ChatsEmptyState(
+                onFindChannels: () =>
+                    unawaited(showBrowseChannelsSheet(context)),
+                onMessageSomeone: () => unawaited(openNewMessage()),
+              ),
+            ),
+          ],
         ),
       );
     } else {
@@ -293,7 +341,7 @@ class ChatsPage extends HookConsumerWidget {
       final entries = mode == ChatsViewMode.byChannel
           ? groupChatRowsByChannel(
               ordered,
-              expandedChannelIds: expanded.value,
+              expandedSteps: expanded.value,
               unreadOf: unreadOf,
               pinnedThreadIds: pinnedThreads,
             )
@@ -318,6 +366,7 @@ class ChatsPage extends HookConsumerWidget {
           controller: scrollController,
           slivers: [
             SliverToBoxAdapter(child: SizedBox(height: topSectionHeight)),
+            const SliverToBoxAdapter(child: GroupInvitationsRow()),
             SliverPadding(
               padding: EdgeInsets.only(
                 top: Grid.xxs,
@@ -342,6 +391,7 @@ class ChatsPage extends HookConsumerWidget {
                       ),
                       working: working.of(row),
                       onTap: () => unawaited(openRow(row)),
+                      onLongPress: threadMenu(row, pinned: pinnedRow(row)),
                     ),
                     ChatGroupRoom(:final channelId, :final row) =>
                       row == null
@@ -367,6 +417,10 @@ class ChatsPage extends HookConsumerWidget {
                               ),
                               working: working.of(row),
                               onTap: () => unawaited(openRow(row)),
+                              onLongPress: threadMenu(
+                                row,
+                                pinned: pinnedRow(row),
+                              ),
                             ),
                     ChatGroupThread(:final row) => _ChatRow(
                       key: ValueKey('chat-row-${row.key}'),
@@ -380,17 +434,19 @@ class ChatsPage extends HookConsumerWidget {
                       threadUnread: false,
                       working: working.of(row),
                       onTap: () => unawaited(openRow(row)),
+                      onLongPress: threadMenu(row, pinned: pinnedRow(row)),
                     ),
                     ChatGroupMore() => _MoreThreadsRow(
                       key: ValueKey('chat-more-${entry.channelId}'),
                       more: entry,
-                      onTap: () {
-                        final next = {...expanded.value};
-                        if (!next.remove(entry.channelId)) {
-                          next.add(entry.channelId);
-                        }
-                        expanded.value = next;
+                      onShowMore: () => expanded.value = {
+                        ...expanded.value,
+                        entry.channelId:
+                            (expanded.value[entry.channelId] ?? 0) + 1,
                       },
+                      onShowLess: () =>
+                          expanded.value = {...expanded.value}
+                            ..remove(entry.channelId),
                     ),
                     _ => const SizedBox.shrink(),
                   };
@@ -414,8 +470,8 @@ class ChatsPage extends HookConsumerWidget {
         actions: [
           IconButton(
             key: const ValueKey('chats-browse-channels'),
-            tooltip: 'Browse channels',
-            icon: const Icon(LucideIcons.hash, size: 20),
+            tooltip: 'Find groups',
+            icon: const Icon(LucideIcons.usersRound, size: 20),
             onPressed: () => unawaited(showBrowseChannelsSheet(context)),
           ),
           IconButton(
@@ -437,8 +493,21 @@ class ChatsPage extends HookConsumerWidget {
           ),
           child: SizedBox(
             height: switchHeight,
-            child: _ViewModeSwitch(
-              mode: mode,
+            child: KuzzViewSwitch<ChatsViewMode>(
+              semanticsLabel: 'Chats view',
+              options: const [
+                KuzzViewOption(
+                  value: ChatsViewMode.all,
+                  label: 'All chats',
+                  key: ValueKey('chats-view-all'),
+                ),
+                KuzzViewOption(
+                  value: ChatsViewMode.byChannel,
+                  label: 'By group',
+                  key: ValueKey('chats-view-byChannel'),
+                ),
+              ],
+              selected: mode,
               onChanged: (next) =>
                   ref.read(chatsViewModeProvider.notifier).set(next),
             ),

@@ -6,18 +6,25 @@ import type { Channel } from "@/shared/api/types";
 /**
  * State and save path for the per-room goals switch in channel settings.
  *
- * Who may flip it: any participant in a DM; elsewhere the same owner/admin
+ * Who may flip it: any participant in a DM or an ownerless chat; elsewhere
+ * the same owner/admin
  * rule as name and description edits (`canManageChannel`). The switch saves
  * immediately as a kind:9002 edit carrying only `["goals", "on" | "off"]`.
  * It uses its own mutation instance so a failure stays on the switch row and
  * never shows up in (or blocks) the edit dialog.
  */
 export function useChannelGoalsSwitch(
-  channel: Pick<Channel, "channelType" | "goalsEnabled" | "id"> | null,
+  channel: Pick<
+    Channel,
+    "channelType" | "goalsEnabled" | "groupChat" | "id"
+  > | null,
   canManageChannel: boolean,
 ) {
   const mutation = useUpdateChannelMutation(channel?.id ?? null);
-  const canToggle = channel?.channelType === "dm" ? true : canManageChannel;
+  const canToggle =
+    channel?.channelType === "dm" || channel?.groupChat === true
+      ? true
+      : canManageChannel;
   const pendingEnabled = mutation.isPending
     ? mutation.variables?.goalsEnabled
     : undefined;

@@ -22,6 +22,15 @@ pub struct LoginSession {
     pub session_id: Uuid,
 }
 
+/// The device key a login presents (migration 0078).
+#[derive(Debug, Clone, Copy)]
+pub struct DeviceKey<'a> {
+    /// SEC1 compressed P-256 public key.
+    pub pubkey: &'a [u8; 33],
+    /// `hardware` or `software`.
+    pub kind: &'a str,
+}
+
 /// A live device of a principal.
 #[derive(Debug, Clone)]
 pub struct DeviceRecord {
@@ -75,12 +84,21 @@ pub enum RefreshOutcome {
 /// and name and is un-revoked. Its earlier sessions are left alone: the client
 /// may still discard this grant (a failed mode check, a lost response), and
 /// must then keep the session it had.
+///
+/// With a device key, the device is the one holding that key (a live one
+/// first). Otherwise the keyless device of the install takes the key (the
+/// app was upgraded), or a new device is made (the old key was lost). The
+/// install id then moves to that device, so later logins from the install
+/// find it; other devices keep their sessions until they are signed out.
+/// Nothing is revoked here.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn complete_login(
     pool: &PgPool,
     principal: &PrincipalId,
     device_name: &str,
     platform: &str,
     install_id: Option<&str>,
+    device_key: Option<DeviceKey<'_>>,
     refresh: IssuedToken,
     access: IssuedToken,
 ) -> Result<LoginSession> {
@@ -89,10 +107,11 @@ pub(super) async fn complete_login(
         .ok_or_else(|| DbError::InvalidData("refresh token requires an expiry".into()))?;
     let mut tx = begin(pool).await?;
     super::lock_subject(&mut tx, principal).await?;
-    let known: Option<Uuid> = match install_id {
+    let by_install: Option<(Uuid, bool)> = match install_id {
         Some(install_id) => {
-            sqlx::query_scalar(
-                "SELECT id FROM devices WHERE principal_id = $1 AND install_id = $2 FOR UPDATE",
+            sqlx::query_as(
+                "SELECT id, device_pubkey IS NULL FROM devices \
+                 WHERE principal_id = $1 AND install_id = $2 FOR UPDATE",
             )
             .bind(principal.as_bytes().as_slice())
             .bind(install_id)
@@ -101,6 +120,38 @@ pub(super) async fn complete_login(
         }
         None => None,
     };
+    let by_key: Option<Uuid> = match device_key {
+        Some(key) => {
+            sqlx::query_scalar(
+                "SELECT id FROM devices WHERE principal_id = $1 AND device_pubkey = $2 \
+                 ORDER BY revoked_at IS NULL DESC, last_seen_at DESC LIMIT 1 FOR UPDATE",
+            )
+            .bind(principal.as_bytes().as_slice())
+            .bind(key.pubkey.as_slice())
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        None => None,
+    };
+    // (device to reuse, whether it takes the key)
+    let (known, takes_key) = match (device_key, by_key, by_install) {
+        (None, _, install) => (install.map(|(id, _)| id), false),
+        (Some(_), Some(id), _) => (Some(id), false),
+        (Some(_), None, Some((id, true))) => (Some(id), true),
+        (Some(_), None, _) => (None, false),
+    };
+    if let (Some(_), Some(install_id)) = (device_key, install_id) {
+        // Unique per principal: free it before it moves.
+        sqlx::query(
+            "UPDATE devices SET install_id = NULL \
+             WHERE principal_id = $1 AND install_id = $2 AND id IS DISTINCT FROM $3",
+        )
+        .bind(principal.as_bytes().as_slice())
+        .bind(install_id)
+        .bind(known)
+        .execute(&mut *tx)
+        .await?;
+    }
     let live_devices: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM devices \
          WHERE principal_id = $1 AND revoked_at IS NULL AND id IS DISTINCT FROM $2",
@@ -122,17 +173,37 @@ pub(super) async fn complete_login(
             .bind(platform)
             .execute(&mut *tx)
             .await?;
+            if let (Some(_), Some(install_id)) = (device_key, install_id) {
+                sqlx::query("UPDATE devices SET install_id = $2 WHERE id = $1")
+                    .bind(device_id)
+                    .bind(install_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            if let (true, Some(key)) = (takes_key, device_key) {
+                sqlx::query(
+                    "UPDATE devices SET device_pubkey = $2, device_key_kind = $3 WHERE id = $1",
+                )
+                .bind(device_id)
+                .bind(key.pubkey.as_slice())
+                .bind(key.kind)
+                .execute(&mut *tx)
+                .await?;
+            }
             device_id
         }
         None => {
             sqlx::query_scalar(
-                "INSERT INTO devices (principal_id, name, platform, install_id) \
-                 VALUES ($1, $2, $3, $4) RETURNING id",
+                "INSERT INTO devices \
+                   (principal_id, name, platform, install_id, device_pubkey, device_key_kind) \
+                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             )
             .bind(principal.as_bytes().as_slice())
             .bind(device_name)
             .bind(platform)
             .bind(install_id)
+            .bind(device_key.map(|key| key.pubkey.to_vec()))
+            .bind(device_key.map(|key| key.kind))
             .fetch_one(&mut *tx)
             .await?
         }
@@ -166,6 +237,24 @@ pub(super) async fn complete_login(
         device_id,
         session_id,
     })
+}
+
+/// The device key of the device a refresh token belongs to: `None` for an
+/// unknown token, `Some(None)` for a keyless device.
+pub(super) async fn refresh_device_key(
+    pool: &PgPool,
+    refresh_hash: &[u8; 32],
+) -> Result<Option<Option<Vec<u8>>>> {
+    let row: Option<(Option<Vec<u8>>,)> = sqlx::query_as(
+        "SELECT d.device_pubkey FROM refresh_tokens rt \
+         JOIN sessions s ON s.id = rt.session_id \
+         JOIN devices d ON d.id = s.device_id \
+         WHERE rt.token_hash = $1",
+    )
+    .bind(refresh_hash.as_slice())
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(key,)| key))
 }
 
 /// Present refresh token `old_hash`; rotate it on success.
@@ -455,10 +544,48 @@ impl crate::Db {
             device_name,
             platform,
             install_id,
+            None,
             refresh,
             access,
         )
         .await
+    }
+
+    /// [`Self::complete_login`] for a client that may present a device key:
+    /// the device is the one holding that key (see `complete_login`).
+    #[allow(clippy::too_many_arguments)]
+    #[datastore_span(name = "complete_login", system = "postgresql")]
+    pub async fn complete_login_with_device_key(
+        &self,
+        principal: &PrincipalId,
+        device_name: &str,
+        platform: &str,
+        install_id: Option<&str>,
+        device_key: Option<DeviceKey<'_>>,
+        refresh: IssuedToken,
+        access: IssuedToken,
+    ) -> Result<LoginSession> {
+        complete_login(
+            &self.pool,
+            principal,
+            device_name,
+            platform,
+            install_id,
+            device_key,
+            refresh,
+            access,
+        )
+        .await
+    }
+
+    /// The device key behind a refresh token (`None`: unknown token;
+    /// `Some(None)`: keyless device).
+    #[datastore_span(name = "refresh_device_key", system = "postgresql")]
+    pub async fn refresh_device_key(
+        &self,
+        refresh_hash: &[u8; 32],
+    ) -> Result<Option<Option<Vec<u8>>>> {
+        refresh_device_key(&self.pool, refresh_hash).await
     }
 
     /// Rotate a refresh token (or detect its reuse). A token consumed less

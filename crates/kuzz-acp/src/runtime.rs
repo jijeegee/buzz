@@ -232,6 +232,11 @@ fn make_prompt_context(
         rest_client: rest_client.clone(),
         channel_info: pool::ChannelInfoResolver::new(channels, rest_client),
         context_message_limit: config.context_message_limit,
+        context_author_trust: crate::ContextAuthorTrust::new(
+            config.respond_to.clone(),
+            config.respond_to_allowlist.clone(),
+            resolve_agent_owner(config),
+        ),
         context_history: config.context_history,
         max_turns_per_session: config.max_turns_per_session,
         permission_mode: config.permission_mode,
@@ -261,10 +266,20 @@ fn session_ledger_for(
         return None;
     }
     let state_dir = config.state_dir.as_ref()?;
-    let path = crate::session_ledger::ledger_path(
+    let scope = std::env::var("KUZZ_SESSION_SCOPE").ok();
+    let addresses: Vec<String> = std::env::var("KUZZ_PREVIOUS_RELAY_URLS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let path = crate::session_ledger::service_ledger_path(
         state_dir,
         &config.keys.public_key().to_hex(),
         &config.relay_url,
+        scope.as_deref(),
+        &addresses,
     );
     tracing::info!(target: "acp::ledger", path = %path.display(), "session resume ledger enabled");
     Some(std::sync::Arc::new(

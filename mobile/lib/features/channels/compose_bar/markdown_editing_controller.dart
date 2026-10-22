@@ -404,14 +404,14 @@ class _MarkdownEditingController extends TextEditingController {
     final link = parseKuzzDeepLink(uri) ?? parseEntityDeepLink(uri);
     return switch (link) {
       ChannelDeepLink(:final channelId) => (
-        LucideIcons.hash,
+        LucideIcons.users,
         _resolvedChannelName(channelId),
-        'Channel ${_resolvedChannelName(channelId)}',
+        'Group ${_resolvedChannelName(channelId)}',
       ),
       MessageDeepLink(:final channelId, :final messageId) => (
         LucideIcons.messageSquare,
         '${_resolvedChannelName(channelId)} · ${messageId.substring(0, 8)}',
-        'Message ${messageId.substring(0, 8)} in channel ${_resolvedChannelName(channelId)}',
+        'Message ${messageId.substring(0, 8)} in group ${_resolvedChannelName(channelId)}',
       ),
       EntityDeepLink(:final type, :final repository, :final eventId) => (
         switch (type) {

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart' show Override;
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart' as http_testing;
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
@@ -260,7 +262,7 @@ void main() {
 
     final row = find.byKey(ValueKey('chat-row-$_root'));
     expect(
-      find.descendant(of: row, matching: find.text('#general')),
+      find.descendant(of: row, matching: find.text('general')),
       findsOneWidget,
     );
     expect(
@@ -283,11 +285,58 @@ void main() {
     expect(thread.center.dy, closeTo(channel.center.dy, 0.01));
     // The front circle and its ring stay clear of the title.
     final title = tester.getRect(
-      find.descendant(of: row, matching: find.text('#general')),
+      find.descendant(of: row, matching: find.text('general')),
     );
     expect(thread.right + 2, lessThan(title.left));
     expect(find.text('G'), findsOneWidget);
     expect(find.text('R'), findsOneWidget);
+  });
+
+  testWidgets('a thread shows its group photo over the channel circle', (
+    tester,
+  ) async {
+    final sha = 'b' * 64;
+    final requested = <String>[];
+    await _pump(
+      tester,
+      [_thread(_root, 'Release notes', 100)],
+      extra: [
+        channelsProvider.overrideWith(
+          () => _FakeChannels([
+            _channel(
+              _general,
+              'general',
+              DateTime(2026),
+            ).copyWith(picture: 'https://relay.example.com/media/$sha.png'),
+          ]),
+        ),
+        mediaHttpClientProvider.overrideWithValue(
+          http_testing.MockClient((request) async {
+            requested.add(request.url.path);
+            return http.Response('missing', 404);
+          }),
+        ),
+      ],
+    );
+    await tester.pump();
+
+    final back = find.byKey(
+      const ValueKey('conversation-thread-avatar-channel'),
+    );
+    expect(
+      find.descendant(
+        of: back,
+        matching: find.byKey(
+          const ValueKey('conversation-thread-avatar-photo'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    // The letter stays underneath while the photo loads or fails.
+    expect(find.descendant(of: back, matching: find.text('G')), findsOneWidget);
+    // A 33 px circle asks for the small variant first.
+    expect(requested, isNotEmpty);
+    expect(requested.first, '/media/$sha.small.jpg');
   });
 
   testWidgets('a channel shows its letter and a group DM two people', (
