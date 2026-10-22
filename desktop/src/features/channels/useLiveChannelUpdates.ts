@@ -40,6 +40,7 @@ import {
 
 import { isDmNotifiableKind } from "./isDmNotifiableKind";
 import { refreshChannelsWhenIdle } from "./refreshChannelsWhenIdle";
+import { isChatRoom } from "./lib/groupChat";
 
 export type UseLiveChannelUpdatesOptions = {
   currentPubkey?: string;
@@ -216,11 +217,12 @@ export function useLiveChannelUpdates(
     () => new Set(channels.map((channel) => channel.id)),
     [channels],
   );
+  // 1:1s and ownerless chats: alert and count unread on every message.
   const dmChannelMap = React.useMemo(
     () =>
       new Map(
         channels
-          .filter((channel) => channel.channelType === "dm")
+          .filter((channel) => isChatRoom(channel))
           .map((channel) => [channel.id, channel]),
       ),
     [channels],
@@ -265,6 +267,16 @@ export function useLiveChannelUpdates(
 
       const dmChannel = dmChannelMap.get(channelId);
       if (!dmChannel) {
+        return;
+      }
+
+      // Muted rooms stay quiet. In a chat a mention of you still breaks
+      // through; a 1:1 tags every participant, so it has no such signal.
+      if (
+        options.mutedChannelIds?.has(channelId) &&
+        (dmChannel.channelType === "dm" ||
+          !hasMentionForEvent(event, normalizedCurrentPubkey))
+      ) {
         return;
       }
 
@@ -350,7 +362,10 @@ export function useLiveChannelUpdates(
           applyLiveEventToInboxSummary(
             current,
             event,
-            { id: channelId, channelType: isDmChannel ? "dm" : "stream" },
+            {
+              id: channelId,
+              channelType: dmChannelMap.get(channelId)?.channelType ?? "stream",
+            },
             normalizedCurrentPubkey,
           ),
       );

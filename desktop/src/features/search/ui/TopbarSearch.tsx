@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 import * as React from "react";
 import type { ChatListRow } from "@/features/chats/chatListState";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { getMinimumSearchQueryLength } from "@/features/search/hooks";
 import { parseSearchOperators } from "@/features/search/lib/parseSearchOperators";
@@ -216,7 +217,9 @@ function getSearchHitContextLabel(
 
 function getResultSectionKey(result: SearchResult): SearchResultSectionKey {
   if (result.kind === "channel") {
-    return result.channel.channelType === "dm" ? "direct-messages" : "channels";
+    return result.channel.channelType === "dm" || result.channel.groupChat
+      ? "direct-messages"
+      : "channels";
   }
 
   if (result.kind === "thread") {
@@ -239,7 +242,7 @@ function getSectionTitle(sectionKey: SearchResultSectionKey) {
     case "channels":
       return "Groups";
     case "direct-messages":
-      return "Direct messages";
+      return "Chats";
     case "people":
       return "People";
     case "agents":
@@ -834,6 +837,8 @@ export function TopbarSearch({
             shape={result.user.isAgent ? "squircle" : "circle"}
             size="sm"
           />
+        ) : result.kind === "channel" && result.channel.groupChat ? (
+          <ChannelChatAvatar channel={result.channel} size="md" />
         ) : (
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground">
             {React.createElement(resultIcon(result, channelLookup), {

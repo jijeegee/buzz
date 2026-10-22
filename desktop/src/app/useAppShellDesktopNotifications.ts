@@ -40,6 +40,11 @@ import {
 } from "@/features/notifications/lib/sound";
 import { useNotificationSenderName } from "@/features/notifications/useNotificationSenderName";
 import { listWatchableAccounts, switchAccount } from "@/shared/api/tokenAuth";
+import { getChatPrivateName } from "@/features/channels/lib/chatPrivateNames";
+import {
+  groupChatTitleWithNames,
+  isGroupChat,
+} from "@/features/channels/lib/groupChat";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 
 const UNAVAILABLE_TEXT = {
@@ -104,9 +109,16 @@ export function useAppShellDesktopNotifications({
         return;
       }
 
-      const channelName = channel.name?.trim() || "Direct message";
+      const channelName = isGroupChat(channel)
+        ? groupChatTitleWithNames({
+            channel,
+            currentPubkey: pubkey,
+            privateName: getChatPrivateName(channel.id),
+            nameOf: resolveSenderName,
+          })
+        : channel.name?.trim() || "Direct message";
       const { title, body } = formatMessageNotification({
-        source: "dm",
+        source: isGroupChat(channel) ? "chat" : "dm",
         senderName: resolveSenderName(event.pubkey),
         channelName,
         content: event.content,

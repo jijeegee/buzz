@@ -5,6 +5,12 @@ import { toast } from "sonner";
 
 import { channelsQueryKey } from "@/features/channels/hooks";
 import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import {
+  invitationChatPeople,
+  invitationChatTitle,
+  peopleCountLabel,
+} from "@/features/channels/lib/groupChat";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -102,7 +108,14 @@ function InvitationsDialog({
   );
   const state = invitationsViewState({ data, isError, isLoading });
   const inviters = React.useMemo(
-    () => [...new Set((data ?? []).map((invitation) => invitation.inviter))],
+    () => [
+      ...new Set(
+        (data ?? []).flatMap((invitation) => [
+          invitation.inviter,
+          ...(invitation.channel.memberPubkeys ?? []),
+        ]),
+      ),
+    ],
     [data],
   );
   const profiles = useUsersBatchQuery(inviters, {
@@ -184,21 +197,32 @@ function InvitationsDialog({
                   data-testid={`invitation-${invitation.id}`}
                   key={invitation.id}
                 >
-                  <GroupLetterAvatar
-                    channelId={invitation.channel.id}
-                    isPrivate={invitation.channel.visibility === "private"}
-                    label={invitation.channel.name}
-                    picture={invitation.channel.picture}
-                    size="md"
-                  />
+                  {invitation.channel.groupChat ? (
+                    <ChannelChatAvatar
+                      className="size-9"
+                      memberPubkeys={invitationChatPeople(invitation)}
+                    />
+                  ) : (
+                    <GroupLetterAvatar
+                      channelId={invitation.channel.id}
+                      isPrivate={invitation.channel.visibility === "private"}
+                      label={invitation.channel.name}
+                      picture={invitation.channel.picture}
+                      size="md"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
-                      {invitation.channel.name}
+                      {invitation.channel.groupChat
+                        ? invitationChatTitle(invitation, profiles)
+                        : invitation.channel.name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {`${invitedYouText(inviterName)} · ${memberCountLabel(
-                        invitation.channel.memberCount,
-                      )}`}
+                      {`${invitedYouText(inviterName)} · ${
+                        invitation.channel.groupChat
+                          ? peopleCountLabel(invitation.channel.memberCount)
+                          : memberCountLabel(invitation.channel.memberCount)
+                      }`}
                     </p>
                   </div>
                   <Button

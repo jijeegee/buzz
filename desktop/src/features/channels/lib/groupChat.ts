@@ -88,15 +88,70 @@ export function resolveGroupChatTitle({
   privateName?: string | null;
   profiles: UserProfileLookup | undefined;
 }): string {
+  return groupChatTitleWithNames({
+    channel,
+    currentPubkey,
+    privateName,
+    nameOf: (pubkey) =>
+      resolveKnownUserLabel({ currentPubkey, profiles, pubkey }),
+  });
+}
+
+/**
+ * {@link resolveGroupChatTitle} with a caller-supplied name lookup, for
+ * non-React paths (desktop notifications) that read names from a cache.
+ */
+export function groupChatTitleWithNames({
+  channel,
+  currentPubkey,
+  privateName,
+  nameOf,
+}: {
+  channel: Pick<Channel, "name" | "memberPubkeys">;
+  currentPubkey: string | undefined;
+  privateName?: string | null;
+  nameOf: (pubkey: string) => string | null;
+}): string {
   const mine = privateName?.trim();
   if (mine) return mine;
   const shared = channel.name.trim();
   if (shared) return shared;
   return formatChatMemberTitle(
-    otherChatPeople(channel.memberPubkeys, currentPubkey).map((pubkey) =>
-      resolveKnownUserLabel({ currentPubkey, profiles, pubkey }),
-    ),
+    otherChatPeople(channel.memberPubkeys, currentPubkey).map(nameOf),
   );
+}
+
+/** The people an invitation's chat picture shows (inviter if none listed). */
+export function invitationChatPeople(invitation: {
+  channel: { memberPubkeys?: string[] };
+  inviter: string;
+}): string[] {
+  const listed = invitation.channel.memberPubkeys ?? [];
+  return listed.length > 0 ? listed : [invitation.inviter];
+}
+
+/**
+ * Title of a chat you're invited to: its name, else its members' names
+ * ("+N" counts members not listed), else "Empty chat".
+ */
+export function invitationChatTitle(
+  invitation: {
+    channel: { name: string; memberCount: number; memberPubkeys?: string[] };
+    inviter: string;
+  },
+  profiles: UserProfileLookup | undefined,
+): string {
+  const shared = invitation.channel.name.trim();
+  if (shared) return shared;
+  const people = invitationChatPeople(invitation);
+  const labels = people.map((pubkey) =>
+    resolveKnownUserLabel({ currentPubkey: undefined, profiles, pubkey }),
+  );
+  const title = formatChatMemberTitle(labels.slice(0, CHAT_TITLE_NAME_LIMIT));
+  const hidden =
+    Math.max(invitation.channel.memberCount, people.length) -
+    Math.min(people.length, CHAT_TITLE_NAME_LIMIT);
+  return hidden > 0 && labels.length > 0 ? `${title} +${hidden}` : title;
 }
 
 /** "1 person" / "N people". */

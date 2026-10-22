@@ -105,6 +105,8 @@ export type ObservedChannel = {
   name?: string | null;
   channelType: ChannelType;
   archived: boolean;
+  /** Ownerless chat (kind:39000 `["group_chat"]`): alerts like a 1:1. */
+  groupChat?: boolean;
 };
 
 /**
@@ -341,6 +343,9 @@ export function resolveObservedChannels(
       id,
       ...(name ? { name } : {}),
       channelType: toChannelType(typeTag),
+      ...(metadata?.tags.some((tag) => tag[0] === "group_chat")
+        ? { groupChat: true }
+        : {}),
       archived:
         metadata?.tags.some(
           (tag) => tag[0] === "archived" && tag[1] === "true",

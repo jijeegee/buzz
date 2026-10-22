@@ -61,6 +61,7 @@ import { Switch } from "@/shared/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ConversationLetterAvatar } from "./ConversationLetterAvatar";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
 const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
@@ -147,11 +148,21 @@ function ConversationRoomAvatar({
   testId: string;
 }) {
   const { channels } = useChannelNavigation();
-  const channelPicture =
+  const roomChannel =
     room.kind === "dm"
       ? null
-      : (channels.find((channel) => channel.id === room.channelId)?.picture ??
-        null);
+      : (channels.find((channel) => channel.id === room.channelId) ?? null);
+  const channelPicture = roomChannel?.picture ?? null;
+  if (roomChannel?.groupChat) {
+    // An ownerless chat's picture is its people.
+    return (
+      <ChannelChatAvatar
+        channel={roomChannel}
+        className="size-9"
+        testId={testId}
+      />
+    );
+  }
   if (room.kind === "dm") {
     // A DM room's picture is the other participant's profile.
     const { person } = room;

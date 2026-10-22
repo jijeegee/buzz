@@ -24,6 +24,8 @@ import {
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
+import { useChatPrivateNames } from "@/features/channels/lib/chatPrivateNames";
+import { chatTitlePubkeys } from "@/features/channels/useChatTitle";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { getEventById } from "@/shared/api/tauri";
 import type { Channel } from "@/shared/api/types";
@@ -533,23 +535,25 @@ export function useDraftViewItems(enabled: boolean): DraftViewItem[] {
 
   const rootStatusMap = useDraftRootStatus(threadRootIds, enabled);
 
-  const profilePubkeys = React.useMemo(
-    () => [
-      ...new Set(
-        (channelsQuery.data ?? [])
-          .filter((channel) =>
-            drafts.some((entry) => entry.draft.channelId === channel.id),
-          )
-          .flatMap((channel) => channel.participantPubkeys),
-      ),
-    ],
-    [channelsQuery.data, drafts],
-  );
+  const profilePubkeys = React.useMemo(() => {
+    const draftChannels = (channelsQuery.data ?? []).filter((channel) =>
+      drafts.some((entry) => entry.draft.channelId === channel.id),
+    );
+    return [
+      ...new Set([
+        ...draftChannels.flatMap((channel) => channel.participantPubkeys),
+        ...chatTitlePubkeys(draftChannels, currentPubkey),
+      ]),
+    ];
+  }, [channelsQuery.data, currentPubkey, drafts]);
+  // Re-title chats when a private name changes.
+  const privateNames = useChatPrivateNames();
   const usersBatchQuery = useUsersBatchQuery(profilePubkeys, {
     enabled: profilePubkeys.length > 0,
   });
   const profiles = usersBatchQuery.data?.profiles;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: privateNames re-titles chats read from the shared store
   const sources = React.useMemo(
     () =>
       resolveDraftSources({
@@ -558,7 +562,7 @@ export function useDraftViewItems(enabled: boolean): DraftViewItem[] {
         drafts,
         profiles,
       }),
-    [channelsQuery.data, currentPubkey, drafts, profiles],
+    [channelsQuery.data, currentPubkey, drafts, profiles, privateNames],
   );
 
   return drafts.map((entry) => {

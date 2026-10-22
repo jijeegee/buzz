@@ -67,6 +67,8 @@ import { useChannelIntro } from "@/features/channels/ui/useChannelIntro";
 import type { ChannelPaneProps } from "@/features/channels/ui/ChannelPane.types";
 import * as agentSessionSelection from "@/features/channels/ui/agentSessionSelection";
 import { usePrepareDmSendChannel } from "@/features/channels/ui/usePrepareDmSendChannel";
+import { useStartChatConfirm } from "@/features/channels/ui/StartChatConfirm";
+import { useChatTitle } from "@/features/channels/useChatTitle";
 import { useChannelPaneMessages } from "@/features/channels/ui/useChannelPaneMessages";
 import { useRoutedMessageEdit } from "@/features/channels/ui/useRoutedMessageEdit";
 import { Button } from "@/shared/ui/button";
@@ -203,9 +205,15 @@ export const ChannelPane = React.memo(function ChannelPane({
   const messageTimelineRef = React.useRef<MessageTimelineHandle>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement>(null);
   const { goChannel } = useAppNavigation();
+  const startChatConfirm = useStartChatConfirm();
+  const activeChannelTitle = useChatTitle(
+    activeChannel,
+    activeChannel?.name ?? "",
+  );
   const prepareDmSendChannel = usePrepareDmSendChannel(
     activeChannel,
     currentPubkey,
+    startChatConfirm.confirm,
   );
   const mainComposerMedia = useMediaUpload({ deferUploadsUntilSend: true });
   const searchHighlightProps = useSearchHighlightProps(
@@ -825,7 +833,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                                   ? activeChannel.channelType === "dm" &&
                                     directMessageIntro
                                     ? `Message ${directMessageIntro.displayName}`
-                                    : `Message ${activeChannel.name}`
+                                    : `Message ${activeChannelTitle}`
                                   : "Select a group"
                       }
                       showTopBorder={false}
@@ -851,6 +859,7 @@ export const ChannelPane = React.memo(function ChannelPane({
           </MessageQuoteScope>
         </section>
       ) : null}
+      {startChatConfirm.dialog}
       {/* Serialize replacements so focus drawers keep one travel direction. */}
       <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
         {channelManagementOpen && activeChannel ? (

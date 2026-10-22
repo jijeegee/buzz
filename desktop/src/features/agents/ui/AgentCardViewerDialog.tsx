@@ -125,20 +125,25 @@ function AgentCardViewerContent({
 
   async function sendToRecipients() {
     if (recipients.length === 0) return;
-    const sent = await sendController.beginSend(
-      async () => ({
-        fileBytes: cardBytesFromBase64(card.cardPngBase64),
-        fileName: card.fileName,
-      }),
-      async () => {
-        const directMessage = await openDmMutation.mutateAsync({
-          pubkeys: recipients.map((recipient) => recipient.pubkey),
-        });
-        await upsertCachedChannel(directMessage);
-        return directMessage.id;
-      },
-      agentName,
-    );
+    // One 1:1 per recipient: sharing never starts a multi-person chat.
+    let sent: boolean | null = true;
+    for (const recipient of recipients) {
+      sent = await sendController.beginSend(
+        async () => ({
+          fileBytes: cardBytesFromBase64(card.cardPngBase64),
+          fileName: card.fileName,
+        }),
+        async () => {
+          const directMessage = await openDmMutation.mutateAsync({
+            pubkeys: [recipient.pubkey],
+          });
+          await upsertCachedChannel(directMessage);
+          return directMessage.id;
+        },
+        agentName,
+      );
+      if (sent !== true) break;
+    }
     if (sent) {
       toast.success(`Sent ${agentName}'s card.`);
       closeCardViewer();

@@ -92,6 +92,8 @@ import {
 import { ChannelMemberAvatarStack } from "./ChannelMemberAvatarStack";
 import { ChannelGoalsSwitchRow } from "./ChannelGoalsSwitchRow";
 import { useChannelGoalsSwitch } from "./useChannelGoalsSwitch";
+import { isGroupChat } from "../lib/groupChat";
+import { ChatInfoSummary, MuteNotificationsRow } from "./ChatInfoSummary";
 
 type ManagementView = "summary" | "canvas" | "workflows" | "goals";
 
@@ -163,12 +165,18 @@ export function ChannelManagementSheet({
 
   const { canDeleteChannel, canManageChannel } =
     useChannelModerationCapabilities(membersQuery.data, currentPubkey, open);
-  const canEditChannel = canManageChannel && detail?.channelType !== "dm";
+  // Ownerless chats have no owner/admin controls at all.
+  const isChat = isGroupChat(detail);
+  const canEditChannel =
+    canManageChannel && detail?.channelType !== "dm" && !isChat;
   // Room goal UI (ingress + goals view) follows the per-room switch.
   const goalsSwitch = useChannelGoalsSwitch(detail, canManageChannel);
   const goalsEnabled = goalsSwitch.enabled;
   const canEditNarrative =
-    canManageChannel && selfMember !== null && detail?.channelType !== "dm";
+    canManageChannel &&
+    selfMember !== null &&
+    detail?.channelType !== "dm" &&
+    !isChat;
   const isArchived =
     detail?.archivedAt !== null && detail?.archivedAt !== undefined;
   const canJoin =
@@ -202,7 +210,7 @@ export function ChannelManagementSheet({
     React.useState(false);
   const [activeView, setActiveView] = React.useState<ManagementView>("summary");
   const visibleActiveView =
-    (activeView === "workflows" && !workflowsEnabled) ||
+    (activeView === "workflows" && (!workflowsEnabled || isChat)) ||
     (activeView === "goals" && !goalsEnabled)
       ? "summary"
       : activeView;
@@ -438,7 +446,8 @@ export function ChannelManagementSheet({
             canvasQuery={canvasQuery}
             channelId={channelId}
             currentPubkey={currentPubkey}
-            workflowsEnabled={workflowsEnabled}
+            isChat={isChat}
+            workflowsEnabled={workflowsEnabled && !isChat}
             workflowsQuery={workflowsQuery}
             onCreateWorkflow={handleCreateWorkflow}
             onOpenWorkflow={handleOpenWorkflow}
@@ -496,7 +505,8 @@ export function ChannelManagementSheet({
               canvasQuery={canvasQuery}
               channelId={channelId}
               currentPubkey={currentPubkey}
-              workflowsEnabled={workflowsEnabled}
+              isChat={isChat}
+              workflowsEnabled={workflowsEnabled && !isChat}
               workflowsQuery={workflowsQuery}
               onCreateWorkflow={handleCreateWorkflow}
               onOpenWorkflow={handleOpenWorkflow}
@@ -714,6 +724,8 @@ type ChannelManagementPanelContentProps = {
   isSavingGoals: boolean;
   onGoalsEnabledChange: (enabled: boolean) => void;
   onOpenGoalLink?: (target: GoalLinkTarget) => void;
+  /** Ownerless chat: show "Chat info" instead of group settings. */
+  isChat: boolean;
   workflowsEnabled: boolean;
   workflowsQuery: {
     data?: Workflow[];
@@ -763,6 +775,7 @@ function ChannelManagementPanelContent({
   isSavingGoals,
   onGoalsEnabledChange,
   onOpenGoalLink,
+  isChat,
   workflowsEnabled,
   workflowsQuery,
   onCreateWorkflow,
@@ -812,7 +825,7 @@ function ChannelManagementPanelContent({
         transparent={transparentChrome}
       >
         <AuxiliaryPanelHeaderGroup
-          backButtonAriaLabel="Back to group"
+          backButtonAriaLabel={isChat ? "Back to chat" : "Back to group"}
           backButtonTestId="channel-management-back"
           mode={mode}
           onBack={
@@ -829,12 +842,14 @@ function ChannelManagementPanelContent({
                   ? "Goals"
                   : activeView === "workflows"
                     ? "Workflows"
-                    : "Group settings"}
+                    : isChat
+                      ? "Chat info"
+                      : "Group settings"}
             </AuxiliaryPanelTitle>
           </DialogPrimitive.Title>
         </AuxiliaryPanelHeaderGroup>
         <DialogPrimitive.Description className="sr-only">
-          Group settings
+          {isChat ? "Chat info" : "Group settings"}
         </DialogPrimitive.Description>
       </AuxiliaryPanelHeader>
 
@@ -844,7 +859,31 @@ function ChannelManagementPanelContent({
         panelPadding
         ref={scrollRef}
       >
-        {activeView === "summary" ? (
+        {activeView === "summary" && isChat ? (
+          <ChatInfoSummary
+            channel={resolvedChannel}
+            currentPubkey={currentPubkey}
+            goals={{
+              canToggle: canToggleGoals,
+              enabled: goalsEnabled,
+              error: goalsSwitchError,
+              isSaving: isSavingGoals,
+              onChange: onGoalsEnabledChange,
+              onOpenGoals: () => setActiveView("goals"),
+            }}
+            isLeaving={leaveChannelMutation.isPending}
+            leaveError={leaveChannelMutation.error}
+            memberCount={memberCount}
+            members={members}
+            membersError={membersError}
+            onLeave={() => {
+              void leaveChannelMutation.mutateAsync().then(() => {
+                onOpenChange(false);
+              });
+            }}
+            onOpenPeople={onOpenMembers}
+          />
+        ) : activeView === "summary" ? (
           <div className="space-y-6 pt-3">
             <ChannelHero
               channel={resolvedChannel}
@@ -914,6 +953,8 @@ function ChannelManagementPanelContent({
                 visibility={resolvedChannel.visibility}
               />
             ) : null}
+
+            <MuteNotificationsRow channelId={resolvedChannel.id} />
 
             <ChannelGoalsSwitchRow
               canToggle={canToggleGoals}

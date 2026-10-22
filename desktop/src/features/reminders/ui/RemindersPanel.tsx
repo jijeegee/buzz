@@ -21,6 +21,8 @@ import {
 import type { Reminder } from "@/features/reminders/lib/reminderTypes";
 import { SnoozeMenu } from "@/features/reminders/ui/SnoozeMenu";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
+import { useChatPrivateNames } from "@/features/channels/lib/chatPrivateNames";
+import { chatTitlePubkeys } from "@/features/channels/useChatTitle";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { Channel } from "@/shared/api/types";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
@@ -59,10 +61,22 @@ export function useReminderSources(reminders: readonly Reminder[]) {
         .filter((authorPubkey): authorPubkey is string => !!authorPubkey),
     [reminders],
   );
-  const usersBatchQuery = useUsersBatchQuery(authorPubkeys);
+  const titlePubkeys = React.useMemo(
+    () => [
+      ...new Set([
+        ...authorPubkeys,
+        ...chatTitlePubkeys([...channelsById.values()], currentPubkey),
+      ]),
+    ],
+    [authorPubkeys, channelsById, currentPubkey],
+  );
+  const usersBatchQuery = useUsersBatchQuery(titlePubkeys);
+  // Re-title chats when a private name changes.
+  const privateNames = useChatPrivateNames();
   const profiles: UserProfileLookup | undefined =
     usersBatchQuery.data?.profiles;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: privateNames re-titles chats read from the shared store
   return React.useMemo(() => {
     const map = new Map<string, ReminderSource>();
     for (const reminder of reminders) {
@@ -87,7 +101,7 @@ export function useReminderSources(reminders: readonly Reminder[]) {
       });
     }
     return map;
-  }, [channelsById, currentPubkey, profiles, reminders]);
+  }, [channelsById, currentPubkey, profiles, reminders, privateNames]);
 }
 
 function formatRelativeTime(timestamp: number): string {

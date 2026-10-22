@@ -51,6 +51,10 @@ export type GroupInvitation = {
     memberCount: number;
     visibility: GroupVisibility;
     picture?: string | null;
+    /** Ownerless chat: drawn from its people, titled by their names. */
+    groupChat?: boolean;
+    /** Up to four active members (you excluded), for a chat's picture. */
+    memberPubkeys?: string[];
   };
   /** Inviter pubkey (hex). */
   inviter: string;

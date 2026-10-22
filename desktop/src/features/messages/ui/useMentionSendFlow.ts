@@ -15,6 +15,7 @@ import { resolvePersonaRuntime } from "@/features/agents/lib/resolvePersonaRunti
 import { useAddChannelMembersMutation } from "@/features/channels/hooks";
 import { useCanAddChannelMembers } from "@/features/channels/useCanAddChannelMembers";
 import { useNonMemberInvite } from "./useNonMemberInvite";
+import { useIsGroupChatChannel } from "@/features/channels/useIsGroupChatChannel";
 import { dmThreadAgentMentionError } from "@/features/messages/lib/dmThreadAgentMentionError";
 import {
   prepareBackgroundMediaUpload,
@@ -116,6 +117,7 @@ export function useMentionSendFlow({
   }, []);
   const addMembersMutation = useAddChannelMembersMutation(channelId);
   const canInviteNonMembers = useCanAddChannelMembers(channelId);
+  const isGroupChatChannel = useIsGroupChatChannel(channelId);
   const attachAgentMutation = useAttachManagedAgentToChannelMutation(channelId);
   const createPersonaAgentMutation =
     useCreateChannelManagedAgentMutation(channelId);
@@ -479,8 +481,17 @@ export function useMentionSendFlow({
           ...agentMentionPubkeys,
         ]);
         let sendChannelId = draft.capturedChannelId;
-        if (preparedAgentPubkeys.length > 0 && onPrepareSendChannel) {
-          sendChannelId = await onPrepareSendChannel(preparedAgentPubkeys);
+        // In a 1:1 every mentioned person (not only agents) goes through the
+        // preparer, which asks before starting a new chat with them.
+        const preparePubkeys =
+          channelType === "dm"
+            ? uniqueNormalizedPubkeys([
+                ...preparedAgentPubkeys,
+                ...normalizedMentionPubkeys,
+              ])
+            : preparedAgentPubkeys;
+        if (preparePubkeys.length > 0 && onPrepareSendChannel) {
+          sendChannelId = await onPrepareSendChannel(preparePubkeys);
           if (isSendCancelled()) return restoreComposerAfterFailure();
           if (!sendChannelId) {
             return restoreComposerAfterFailure();
@@ -724,6 +735,7 @@ export function useMentionSendFlow({
       }
     },
     [
+      channelType,
       clearComposer,
       getComposerRevision,
       runComposerUpdate,
@@ -1074,6 +1086,7 @@ export function useMentionSendFlow({
       createPersonaAgentMutation.isPending,
     nonMemberPromptProps: {
       canInvite: canInviteNonMembers,
+      isChat: isGroupChatChannel,
       error: nonMemberPromptError,
       isInvitePending:
         invitation.isPending ||
