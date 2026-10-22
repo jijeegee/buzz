@@ -28,10 +28,9 @@ import type { Channel } from "@/shared/api/types";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { t as translate, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-
-const UNKNOWN_CHANNEL_LABEL = "Unknown group";
 
 /** Author identity + source channel resolved for a reminder's target. */
 export type ReminderSource = {
@@ -43,6 +42,7 @@ export type ReminderSource = {
 };
 
 export function useReminderSources(reminders: readonly Reminder[]) {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const currentPubkey = identityQuery.data?.pubkey;
   const channelIds = React.useMemo(
@@ -94,14 +94,14 @@ export function useReminderSources(reminders: readonly Reminder[]) {
         channel: channel ?? null,
         channelLabel: channel
           ? resolveChannelDisplayLabel(channel, currentPubkey, profiles)
-          : UNKNOWN_CHANNEL_LABEL,
+          : t("reminders.unknownChannel"),
         ...(profiles?.[normalizePubkey(target.authorPubkey)]?.isAgent === true
           ? { isAgent: true }
           : {}),
       });
     }
     return map;
-  }, [channelsById, currentPubkey, profiles, reminders, privateNames]);
+  }, [channelsById, currentPubkey, profiles, reminders, privateNames, t]);
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -110,22 +110,38 @@ function formatRelativeTime(timestamp: number): string {
 
   if (diff < 0) {
     const absDiff = Math.abs(diff);
-    if (absDiff < 60) return "just now";
-    if (absDiff < 3600) return `${Math.floor(absDiff / 60)}m overdue`;
-    if (absDiff < 86400) return `${Math.floor(absDiff / 3600)}h overdue`;
-    return `${Math.floor(absDiff / 86400)}d overdue`;
+    if (absDiff < 60) return translate("time.justNow");
+    if (absDiff < 3600)
+      return translate("reminders.relative.minutesOverdue", {
+        count: Math.floor(absDiff / 60),
+      });
+    if (absDiff < 86400)
+      return translate("reminders.relative.hoursOverdue", {
+        count: Math.floor(absDiff / 3600),
+      });
+    return translate("reminders.relative.daysOverdue", {
+      count: Math.floor(absDiff / 86400),
+    });
   }
 
-  if (diff < 60) return "in less than a minute";
-  if (diff < 3600) return `in ${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
-  return `in ${Math.floor(diff / 86400)}d`;
+  if (diff < 60) return translate("reminders.relative.inLessThanMinute");
+  if (diff < 3600)
+    return translate("reminders.relative.inMinutes", {
+      count: Math.floor(diff / 60),
+    });
+  if (diff < 86400)
+    return translate("reminders.relative.inHours", {
+      count: Math.floor(diff / 3600),
+    });
+  return translate("reminders.relative.inDays", {
+    count: Math.floor(diff / 86400),
+  });
 }
 
 function formatReminderSourceLocation(source: ReminderSource): string {
   if (!source.channel) return source.channelLabel;
   return source.channel.channelType === "dm"
-    ? `DM with ${source.channelLabel}`
+    ? translate("reminders.source.dmWith", { name: source.channelLabel })
     : `${source.channelLabel}`;
 }
 
@@ -146,6 +162,7 @@ function ReminderRow({
   onNavigate: (reminder: Reminder) => void;
   onSelect?: (reminder: Reminder) => void;
 }) {
+  const t = useT();
   const { complete, snooze, cancel } = useReminderMutations(pubkey);
   const isDone = reminder.content.status === "done";
   const isActing = complete.isPending || snooze.isPending || cancel.isPending;
@@ -153,8 +170,8 @@ function ReminderRow({
 
   const handleComplete = () => {
     complete.mutate(reminder, {
-      onSuccess: () => toast.success("Reminder completed"),
-      onError: () => toast.error("Failed to complete reminder"),
+      onSuccess: () => toast.success(t("reminders.toast.completed")),
+      onError: () => toast.error(t("reminders.toast.completeFailed")),
     });
   };
 
@@ -162,16 +179,16 @@ function ReminderRow({
     snooze.mutate(
       { reminder, notBefore },
       {
-        onSuccess: () => toast.success("Reminder snoozed"),
-        onError: () => toast.error("Failed to snooze reminder"),
+        onSuccess: () => toast.success(t("reminders.toast.snoozed")),
+        onError: () => toast.error(t("reminders.toast.snoozeFailed")),
       },
     );
   };
 
   const handleCancel = () => {
     cancel.mutate(reminder, {
-      onSuccess: () => toast.success("Reminder cancelled"),
-      onError: () => toast.error("Failed to cancel reminder"),
+      onSuccess: () => toast.success(t("reminders.toast.cancelled")),
+      onError: () => toast.error(t("reminders.toast.cancelFailed")),
     });
   };
 
@@ -215,19 +232,23 @@ function ReminderRow({
               shape={source.isAgent ? "squircle" : "circle"}
               size="xs"
             />
-            <span className="truncate font-medium text-foreground">
-              {source.authorLabel}
-            </span>
-            <span className="shrink-0">in</span>
-            <span className="truncate">
-              {formatReminderSourceLocation(source)}
-            </span>
+            {t("reminders.source.authorIn", {
+              author: source.authorLabel,
+              location: formatReminderSourceLocation(source),
+              a: (chunks) => (
+                <span className="truncate font-medium text-foreground">
+                  {chunks}
+                </span>
+              ),
+              sep: (chunks) => <span className="shrink-0">{chunks}</span>,
+              place: (chunks) => <span className="truncate">{chunks}</span>,
+            })}
           </div>
         ) : null}
         <p className="max-w-full truncate text-sm font-medium">
           {reminder.content.target?.preview ||
             reminder.content.note ||
-            "Reminder"}
+            t("reminders.fallbackTitle")}
         </p>
         {reminder.content.target && reminder.content.note ? (
           <p className="max-w-full truncate text-xs text-muted-foreground">
@@ -250,7 +271,7 @@ function ReminderRow({
             disabled={isActing}
             onClick={handleComplete}
             size="sm"
-            title="Complete"
+            title={t("reminders.action.complete")}
             type="button"
             variant="ghost"
           >
@@ -262,7 +283,7 @@ function ReminderRow({
             disabled={isActing}
             onClick={handleCancel}
             size="sm"
-            title="Cancel"
+            title={t("common.cancel")}
             type="button"
             variant="ghost"
           >
@@ -291,6 +312,7 @@ export function RemindersPanel({
   presentation?: "inbox-list" | "card";
   selectedReminderId?: string | null;
 }) {
+  const t = useT();
   const remindersQuery = useRemindersQuery(pubkey);
   const reminders = remindersQuery.data;
   const { goChannel } = useAppNavigation();
@@ -324,7 +346,9 @@ export function RemindersPanel({
   if (remindersQuery.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading reminders...</p>
+        <p className="text-sm text-muted-foreground">
+          {t("reminders.panel.loading")}
+        </p>
       </div>
     );
   }
@@ -333,9 +357,11 @@ export function RemindersPanel({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8">
         <Bell className="h-8 w-8 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">No reminders</p>
+        <p className="text-sm text-muted-foreground">
+          {t("reminders.panel.emptyTitle")}
+        </p>
         <p className="text-xs text-muted-foreground/70">
-          Use "Remind me later" on any message to create one.
+          {t("reminders.panel.emptyHint")}
         </p>
       </div>
     );
@@ -363,9 +389,9 @@ export function RemindersPanel({
   return (
     <div className="flex-1 space-y-4 overflow-y-auto p-4">
       {groups.map((group) => (
-        <div key={group.label} className="space-y-2">
+        <div key={group.labelKey} className="space-y-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {group.label}
+            {t(group.labelKey)}
           </h3>
           {group.reminders.map((r) => (
             <ReminderRow
@@ -391,6 +417,7 @@ export function ReminderDetailPane({
   pubkey: string;
   reminder: Reminder | null;
 }) {
+  const t = useT();
   const { goChannel } = useAppNavigation();
   const reminderList = React.useMemo(
     () => (reminder ? [reminder] : []),
@@ -404,11 +431,13 @@ export function ReminderDetailPane({
       <section className="flex min-h-0 min-w-0 flex-col bg-background">
         <TopChromeInsetHeader flush>
           <div className="flex min-h-9 items-center px-4 py-2">
-            <span className="text-sm font-semibold">Reminder</span>
+            <span className="text-sm font-semibold">
+              {t("reminders.detail.title")}
+            </span>
           </div>
         </TopChromeInsetHeader>
         <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-          Select a reminder
+          {t("reminders.detail.empty")}
         </div>
       </section>
     );
@@ -419,7 +448,9 @@ export function ReminderDetailPane({
   const isActing = complete.isPending || snooze.isPending || cancel.isPending;
   const isNavigable = hasNavigableTarget(reminder.content.target);
   const preview =
-    reminder.content.target?.preview || reminder.content.note || "Reminder";
+    reminder.content.target?.preview ||
+    reminder.content.note ||
+    t("reminders.fallbackTitle");
 
   const handleNavigate = async () => {
     const destination = await resolveReminderDestination(
@@ -441,7 +472,7 @@ export function ReminderDetailPane({
         <div className="flex min-h-9 items-center gap-2 px-4 py-2">
           {onBack ? (
             <Button
-              aria-label="Back to reminders"
+              aria-label={t("reminders.detail.back")}
               className="h-8 w-8 p-0"
               onClick={onBack}
               size="icon"
@@ -451,7 +482,9 @@ export function ReminderDetailPane({
               <ArrowLeft className="h-4 w-4" />
             </Button>
           ) : null}
-          <span className="text-sm font-semibold">Reminder</span>
+          <span className="text-sm font-semibold">
+            {t("reminders.detail.title")}
+          </span>
         </div>
       </TopChromeInsetHeader>
 
@@ -466,11 +499,15 @@ export function ReminderDetailPane({
                 shape={source.isAgent ? "squircle" : "circle"}
                 size="sm"
               />
-              <span className="font-medium text-foreground">
-                {source.authorLabel}
-              </span>
-              <span>in</span>
-              <span>{formatReminderSourceLocation(source)}</span>
+              {t("reminders.source.authorIn", {
+                author: source.authorLabel,
+                location: formatReminderSourceLocation(source),
+                a: (chunks) => (
+                  <span className="font-medium text-foreground">{chunks}</span>
+                ),
+                sep: (chunks) => <span>{chunks}</span>,
+                place: (chunks) => <span>{chunks}</span>,
+              })}
             </div>
           ) : null}
 
@@ -480,7 +517,7 @@ export function ReminderDetailPane({
           {reminder.content.target && reminder.content.note ? (
             <div className="mt-5 border-l-2 border-border pl-4">
               <p className="text-xs font-medium uppercase text-muted-foreground">
-                Note
+                {t("reminders.detail.note")}
               </p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
                 {reminder.content.note}
@@ -504,7 +541,7 @@ export function ReminderDetailPane({
               variant="outline"
             >
               <ExternalLink className="h-4 w-4" />
-              Open message
+              {t("reminders.detail.openMessage")}
             </Button>
             {isDone ? null : (
               <>
@@ -512,15 +549,17 @@ export function ReminderDetailPane({
                   disabled={isActing}
                   onClick={() =>
                     complete.mutate(reminder, {
-                      onSuccess: () => toast.success("Reminder completed"),
-                      onError: () => toast.error("Failed to complete reminder"),
+                      onSuccess: () =>
+                        toast.success(t("reminders.toast.completed")),
+                      onError: () =>
+                        toast.error(t("reminders.toast.completeFailed")),
                     })
                   }
                   size="sm"
                   type="button"
                 >
                   <Check className="h-4 w-4" />
-                  Complete
+                  {t("reminders.action.complete")}
                 </Button>
                 <SnoozeMenu
                   disabled={isActing}
@@ -528,8 +567,10 @@ export function ReminderDetailPane({
                     snooze.mutate(
                       { reminder, notBefore },
                       {
-                        onSuccess: () => toast.success("Reminder snoozed"),
-                        onError: () => toast.error("Failed to snooze reminder"),
+                        onSuccess: () =>
+                          toast.success(t("reminders.toast.snoozed")),
+                        onError: () =>
+                          toast.error(t("reminders.toast.snoozeFailed")),
                       },
                     )
                   }
@@ -538,8 +579,10 @@ export function ReminderDetailPane({
                   disabled={isActing}
                   onClick={() =>
                     cancel.mutate(reminder, {
-                      onSuccess: () => toast.success("Reminder cancelled"),
-                      onError: () => toast.error("Failed to cancel reminder"),
+                      onSuccess: () =>
+                        toast.success(t("reminders.toast.cancelled")),
+                      onError: () =>
+                        toast.error(t("reminders.toast.cancelFailed")),
                     })
                   }
                   size="sm"
@@ -547,7 +590,7 @@ export function ReminderDetailPane({
                   variant="ghost"
                 >
                   <X className="h-4 w-4" />
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </>
             )}

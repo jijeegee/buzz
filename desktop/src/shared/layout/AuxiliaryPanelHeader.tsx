@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { ArrowLeft, X } from "lucide-react";
 
@@ -57,7 +58,6 @@ type AuxiliaryPanelSurface = "default" | "soft" | "transparent";
 const AUXILIARY_PANEL_HEADER_HEIGHT_CLASS = "pt-13";
 export const AUXILIARY_PANEL_DEFAULT_SURFACE_CLASS =
   "bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 dark:bg-background/70 dark:backdrop-blur-xl dark:supports-[backdrop-filter]:bg-background/55";
-const AUXILIARY_PANEL_CLOSE_LABEL = "Close panel";
 const AUXILIARY_PANEL_CLOSE_TEST_ID = "auxiliary-panel-close";
 const AUXILIARY_PANEL_RESIZE_BORDER_CLASS =
   "after:absolute after:bottom-0 after:-left-px after:top-0 after:w-px after:bg-border/45 after:transition-colors peer-hover/auxiliary-panel-resize:after:bg-border/80 peer-focus-visible/auxiliary-panel-resize:after:bg-border/80";
@@ -262,7 +262,7 @@ export function getAuxiliaryPanelBodyClass({
 
 export function AuxiliaryPanelHeaderGroup({
   align = "center",
-  backButtonAriaLabel = "Back",
+  backButtonAriaLabel,
   backButtonTestId,
   leading,
   mode,
@@ -270,6 +270,7 @@ export function AuxiliaryPanelHeaderGroup({
   onBack,
   ...props
 }: AuxiliaryPanelHeaderGroupProps) {
+  const t = useT();
   const panelContext = React.useContext(AuxiliaryPanelContext);
   const resolvedMode = mode ?? panelContext?.mode ?? "docked";
   const isOverlayLayout = resolvedMode === "panel";
@@ -284,7 +285,7 @@ export function AuxiliaryPanelHeaderGroup({
     >
       {onBack ? (
         <Button
-          aria-label={backButtonAriaLabel}
+          aria-label={backButtonAriaLabel ?? t("common.back")}
           // Header text needs a comfortable left inset in split layouts, but a
           // leading icon should visually sit closer to the panel edge. Overlay
           // headers already use compact row padding, so keep that button flush.
@@ -329,6 +330,7 @@ export function AuxiliaryPanelHeaderActions({
 }
 
 function AuxiliaryPanelHeaderCloseAction() {
+  const t = useT();
   const panelContext = React.useContext(AuxiliaryPanelContext);
 
   if (!panelContext?.onClose) {
@@ -337,7 +339,7 @@ function AuxiliaryPanelHeaderCloseAction() {
 
   return (
     <Button
-      aria-label={AUXILIARY_PANEL_CLOSE_LABEL}
+      aria-label={t("ui.auxiliaryPanel.close")}
       className="shrink-0"
       data-testid={AUXILIARY_PANEL_CLOSE_TEST_ID}
       onClick={panelContext.onClose}

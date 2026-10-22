@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { getTokenAuthStatus } from "@/shared/api/tokenAuth";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { useCommunityOnboarding } from "../communityOnboarding";
 import { OnboardingCard } from "./OnboardingCard";
@@ -13,14 +14,18 @@ export function DefaultCommunitySetup({
   onManualSetup: () => void;
   onBack: () => void;
 }) {
+  const t = useT();
   const { start } = useCommunityOnboarding();
   const [attempt, retry] = React.useReducer((value: number) => value + 1, 0);
   const [error, setError] = React.useState<string | null>(null);
   // One built-in server: no manual setup to fall back to.
   const singleServer = useBuiltInServer() !== null;
-  const fallbackHint = singleServer
-    ? "Check your internet connection and try again."
-    : "Try again or use advanced setup.";
+  const noResponseMessage = singleServer
+    ? t("onboarding.defaultCommunity.noResponseOffline")
+    : t("onboarding.defaultCommunity.noResponseAdvanced");
+  const prepareFailedMessage = singleServer
+    ? t("onboarding.defaultCommunity.prepareFailedOffline")
+    : t("onboarding.defaultCommunity.prepareFailedAdvanced");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: an explicit retry starts a new bounded attempt.
   React.useEffect(() => {
@@ -28,7 +33,7 @@ export function DefaultCommunitySetup({
     setError(null);
     const timer = window.setTimeout(() => {
       cancelled = true;
-      setError(`The default community did not respond. ${fallbackHint}`);
+      setError(noResponseMessage);
     }, 15_000);
     void getTokenAuthStatus()
       .then(({ origin }) => {
@@ -49,7 +54,7 @@ export function DefaultCommunitySetup({
       })
       .catch(() => {
         if (!cancelled) {
-          setError(`Could not prepare the default community. ${fallbackHint}`);
+          setError(prepareFailedMessage);
         }
       })
       .finally(() => window.clearTimeout(timer));
@@ -57,7 +62,7 @@ export function DefaultCommunitySetup({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [attempt, fallbackHint, start]);
+  }, [attempt, noResponseMessage, prepareFailedMessage, start]);
 
   return (
     <OnboardingCard
@@ -65,15 +70,17 @@ export function DefaultCommunitySetup({
       backAction={{ onClick: onBack }}
       testId="default-community-setup"
     >
-      <h1 className="text-title font-normal">Connecting to your community</h1>
+      <h1 className="text-title font-normal">
+        {t("onboarding.defaultCommunity.title")}
+      </h1>
       <p className="mt-3 text-sm" role={error ? "alert" : "status"}>
-        {error ?? "Preparing your default community…"}
+        {error ?? t("onboarding.defaultCommunity.preparing")}
       </p>
       <div className="mt-6 flex justify-center gap-3">
-        {error ? <Button onClick={retry}>Retry</Button> : null}
+        {error ? <Button onClick={retry}>{t("common.retry")}</Button> : null}
         {singleServer ? null : (
           <Button variant="ghost" onClick={onManualSetup}>
-            Advanced setup
+            {t("onboarding.defaultCommunity.advancedSetup")}
           </Button>
         )}
       </div>

@@ -1,12 +1,14 @@
 import type { Workflow } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 import {
   scheduleFormFromTrigger,
-  SCHEDULE_FREQUENCY_LABELS,
+  SCHEDULE_FREQUENCY_LABEL_KEYS,
 } from "./workflowSchedule";
 import {
-  ACTION_LABELS,
-  TRIGGER_LABELS,
+  ACTION_LABEL_KEYS,
+  actionTypeLabel,
   TRIGGER_TYPES,
+  triggerTypeLabel,
 } from "./workflowFormTypes";
 import type {
   ActionType,
@@ -120,19 +122,21 @@ function getScheduleCardClause(trigger: Record<string, unknown>): string {
 
   switch (schedule.frequency) {
     case "daily":
-      return `Every day at ${schedule.time} UTC`;
+      return t("workflows.card.everyDayAt", { time: schedule.time });
     case "weekly":
-      return `Every week at ${schedule.time} UTC`;
+      return t("workflows.card.everyWeekAt", { time: schedule.time });
     case "monthly":
-      return `Every month at ${schedule.time} UTC`;
+      return t("workflows.card.everyMonthAt", { time: schedule.time });
     case "custom_interval":
       return schedule.customInterval
-        ? `Every ${schedule.customInterval}`
-        : "On a schedule";
+        ? t("workflows.card.everyInterval", {
+            interval: schedule.customInterval,
+          })
+        : t("workflows.card.onASchedule");
     case "custom_cron":
-      return "On a custom schedule";
+      return t("workflows.card.onACustomSchedule");
     default:
-      return SCHEDULE_FREQUENCY_LABELS[schedule.frequency];
+      return t(SCHEDULE_FREQUENCY_LABEL_KEYS[schedule.frequency]);
   }
 }
 
@@ -142,32 +146,38 @@ function getTriggerCardClause(
 ): string {
   const trigger = asRecord(definition.trigger);
   const triggerType = nonEmptyString(trigger?.on);
-  if (!trigger || !triggerType) return "When this workflow starts";
+  if (!trigger || !triggerType) return t("workflows.card.whenStarts");
 
   switch (triggerType) {
     case "message_posted":
       return nonEmptyString(trigger.filter)
-        ? "When a matching message is posted"
-        : "When a message is posted";
+        ? t("workflows.card.whenMatchingMessage")
+        : t("workflows.card.whenMessage");
     case "reaction_added": {
       const emoji = nonEmptyString(presentedReaction ?? trigger.emoji);
       return emoji
-        ? `When someone reacts with ${emoji}`
-        : "When someone adds a reaction";
+        ? t("workflows.card.whenReactsWith", { emoji })
+        : t("workflows.card.whenReaction");
     }
     case "diff_posted":
       return nonEmptyString(trigger.filter)
-        ? "When a matching diff is posted"
-        : "When a diff is posted";
+        ? t("workflows.card.whenMatchingDiff")
+        : t("workflows.card.whenDiff");
     case "webhook":
-      return "When a webhook arrives";
+      return t("workflows.card.whenWebhook");
     case "schedule":
       return getScheduleCardClause(trigger);
     default:
-      return `When ${humanizeIdentifier(triggerType)} happens`;
+      return t("workflows.card.whenEventHappens", {
+        event: humanizeIdentifier(triggerType),
+      });
   }
 }
 
+// The clauses below rewrite an English trigger summary ("Message contains
+// “x”") into a "When …" clause by matching its English wording. In other
+// languages the summary does not match and the card falls back to the
+// translated generic clause from getTriggerCardClause.
 function eventDescriptionCardClause(
   description: string,
   event: "message" | "diff",
@@ -295,7 +305,10 @@ function getActionCardClause(
   const action = nonEmptyString(step.action);
   if (!action) return null;
 
-  const actionLabel = ACTION_LABELS[action as ActionType];
+  const actionLabel =
+    action in ACTION_LABEL_KEYS
+      ? actionTypeLabel(action as ActionType)
+      : undefined;
   const parsedStep: StepFormState | null = actionLabel
     ? {
         action: action as ActionType,
@@ -331,33 +344,41 @@ function getActionCardClause(
   switch (action) {
     case "delay": {
       return configuredDetail
-        ? `wait ${configuredDetail}`
-        : "wait for a moment";
+        ? t("workflows.card.action.waitFor", { detail: configuredDetail })
+        : t("workflows.card.action.waitAMoment");
     }
     case "send_message":
-      if (!configuredDetail) return "send a group message";
+      if (!configuredDetail) return t("workflows.card.action.sendGroupMessage");
       return nonEmptyString(step.text)
-        ? `send ${configuredDetail}`
-        : `send a message in ${configuredDetail}`;
+        ? t("workflows.card.action.send", { detail: configuredDetail })
+        : t("workflows.card.action.sendMessageIn", {
+            detail: configuredDetail,
+          });
     case "call_webhook":
-      return configuredDetail ? `call ${configuredDetail}` : "call a webhook";
+      return configuredDetail
+        ? t("workflows.card.action.call", { detail: configuredDetail })
+        : t("workflows.card.action.callWebhook");
     case "send_dm":
       return configuredDetail
-        ? `send ${configuredDetail}`
-        : "send a direct message";
+        ? t("workflows.card.action.send", { detail: configuredDetail })
+        : t("workflows.card.action.sendDirectMessage");
     case "request_approval":
       return configuredDetail
-        ? `request approval: ${configuredDetail}`
-        : "request approval";
+        ? t("workflows.card.action.requestApprovalFor", {
+            detail: configuredDetail,
+          })
+        : t("workflows.card.action.requestApproval");
     case "add_reaction": {
       return configuredDetail
-        ? `add a ${configuredDetail} reaction`
-        : "add a reaction";
+        ? t("workflows.card.action.addEmojiReaction", {
+            detail: configuredDetail,
+          })
+        : t("workflows.card.action.addReaction");
     }
     case "set_channel_topic":
       return configuredDetail
-        ? `set the group topic to ${configuredDetail}`
-        : "update the group topic";
+        ? t("workflows.card.action.setTopicTo", { detail: configuredDetail })
+        : t("workflows.card.action.updateTopic");
     default: {
       return (actionLabel ?? humanizeIdentifier(action)).toLocaleLowerCase();
     }
@@ -397,11 +418,18 @@ export function getWorkflowCardLabel(
   if (!firstAction) return triggerClause;
 
   const remainingStepCount = steps.length - 1;
-  if (remainingStepCount === 0) return `${triggerClause}, ${firstAction}`;
+  if (remainingStepCount === 0) {
+    return t("workflows.card.label", {
+      trigger: triggerClause,
+      action: firstAction,
+    });
+  }
 
-  return `${triggerClause}, ${firstAction}, then ${remainingStepCount} more ${
-    remainingStepCount === 1 ? "step" : "steps"
-  }`;
+  return t("workflows.card.labelWithMore", {
+    trigger: triggerClause,
+    action: firstAction,
+    count: remainingStepCount,
+  });
 }
 
 export function getWorkflowDescription(
@@ -450,7 +478,8 @@ export function getWorkflowTriggerSummary(
 
   const rawTrigger = asRecord(definition.trigger);
   const triggerType = nonEmptyString(rawTrigger?.on);
-  return triggerType
-    ? (TRIGGER_LABELS[triggerType as TriggerType] ?? triggerType)
-    : null;
+  if (!triggerType) return null;
+  return TRIGGER_TYPES.includes(triggerType as TriggerType)
+    ? triggerTypeLabel(triggerType as TriggerType)
+    : triggerType;
 }

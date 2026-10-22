@@ -1,4 +1,5 @@
 import type { ManagedAgent, RelayAgent } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 export type ProfileActivityAgent = Pick<ManagedAgent, "pubkey" | "name"> & {
   status: ManagedAgent["status"] | "unknown";
@@ -35,7 +36,10 @@ export function resolveProfileActivityAgent({
 
   return {
     avatarUrl: profile?.avatarUrl ?? null,
-    name: relayAgent?.name ?? profile?.displayName?.trim() ?? "Agent",
+    name:
+      relayAgent?.name ??
+      profile?.displayName?.trim() ??
+      t("profile.activityAgent.fallbackName"),
     pubkey: effectivePubkey,
     status:
       !relayAgent || relayAgent.status === "unknown"

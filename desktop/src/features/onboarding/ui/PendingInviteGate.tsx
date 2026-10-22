@@ -1,5 +1,6 @@
 import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
+import { useT } from "@/shared/i18n";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { FlappingBee } from "@/shared/ui/kuzz-logo/FlappingBee";
@@ -11,6 +12,7 @@ import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
  * wait until setup finishes so only the user's final identity is admitted.
  */
 export function PendingInviteGate() {
+  const t = useT();
   const { transaction, update, clear } = useCommunityOnboarding();
   const systemColorScheme = useSystemColorScheme();
   const singleServer = useBuiltInServer() !== null;
@@ -27,12 +29,16 @@ export function PendingInviteGate() {
       <div className="relative flex w-full max-w-[500px] flex-col items-center text-center">
         <FlappingBee className="h-auto w-24" />
         <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-          {singleServer ? "Opening invite" : "Opening community link"}
+          {singleServer
+            ? t("onboarding.pendingInvite.titleInvite")
+            : t("onboarding.pendingInvite.titleCommunity")}
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           {singleServer
-            ? "You’ll join after you sign in."
-            : `You’ll connect to ${transaction.communityName} once setup is finished.`}
+            ? t("onboarding.pendingInvite.bodyInvite")
+            : t("onboarding.pendingInvite.bodyCommunity", {
+                name: transaction.communityName,
+              })}
         </p>
         <div className="mt-8 flex w-full max-w-[300px] flex-col gap-3">
           <Button
@@ -41,7 +47,7 @@ export function PendingInviteGate() {
             onClick={() => update({ acknowledged: true })}
             type="button"
           >
-            Continue setup
+            {t("onboarding.pendingInvite.continue")}
           </Button>
           <Button
             className="h-10 w-full"
@@ -50,7 +56,7 @@ export function PendingInviteGate() {
             type="button"
             variant="ghost"
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
         </div>
       </div>

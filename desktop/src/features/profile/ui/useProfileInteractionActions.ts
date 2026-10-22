@@ -21,6 +21,7 @@ import { useIdentityQuery } from "@/shared/api/hooks";
 import { sendChannelMessage } from "@/shared/api/tauri";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
+import { t } from "@/shared/i18n";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 export type ProfileInteractionAction = "huddle" | "message" | "wave";
@@ -134,8 +135,8 @@ export function useProfileInteractionActions({
             error instanceof Error
               ? error.message
               : action === "wave"
-                ? "Couldn't send the wave."
-                : "Couldn't open the direct message.",
+                ? t("profile.actions.waveFailed")
+                : t("profile.actions.openDmFailed"),
           );
         }
       } finally {
@@ -195,7 +196,7 @@ export function useProfileInteractionActions({
     void runAction("wave", async (targetPubkey) => {
       const identity = identityQuery.data;
       if (!identity) {
-        throw new Error("No identity is available to send messages.");
+        throw new Error(t("profile.actions.noIdentity"));
       }
 
       const dm =

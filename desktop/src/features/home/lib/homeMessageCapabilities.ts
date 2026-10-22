@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import type { InboxItem } from "@/features/home/lib/inbox";
 
 export function getHomeMessageCapabilities(
@@ -15,9 +16,9 @@ export function getHomeMessageCapabilities(
       ? null
       : item.item.channelId
         ? availableChannelIds.has(item.item.channelId)
-          ? "This item does not support inline replies yet."
-          : "Open the linked group to reply."
-        : "This inbox item does not have a reply target.";
+          ? t("home.reply.unsupported")
+          : t("home.reply.openGroup")
+        : t("home.reply.noTarget");
 
   return {
     canDelete:

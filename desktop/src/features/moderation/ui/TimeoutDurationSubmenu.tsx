@@ -4,6 +4,7 @@ import {
   TIMEOUT_PRESETS,
   timeoutExpiresAt,
 } from "@/features/moderation/lib/timeout";
+import { useT } from "@/shared/i18n";
 import {
   DropdownMenuItem,
   DropdownMenuSub,
@@ -20,7 +21,7 @@ import {
  * timeout resolution can share it and stay on one preset list.
  */
 export function TimeoutDurationSubmenu({
-  label = "Time out",
+  label,
   disabled = false,
   testIdPrefix,
   onSelect,
@@ -33,11 +34,12 @@ export function TimeoutDurationSubmenu({
   /** Called with the absolute expiry in epoch seconds for the chosen preset. */
   onSelect: (expiresAt: number) => void;
 }) {
+  const t = useT();
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger disabled={disabled}>
         <Clock className="h-4 w-4" />
-        {label}
+        {label ?? t("moderation.timeout.menuLabel")}
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
         {TIMEOUT_PRESETS.map((preset) => (
@@ -49,7 +51,7 @@ export function TimeoutDurationSubmenu({
             key={preset.seconds}
             onClick={() => onSelect(timeoutExpiresAt(preset.seconds))}
           >
-            {preset.label}
+            {t(preset.labelKey)}
           </DropdownMenuItem>
         ))}
       </DropdownMenuSubContent>

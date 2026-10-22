@@ -12,6 +12,7 @@
  * document — no cross-relay media fetch behind another relay's auth wall.
  */
 
+import { t } from "@/shared/i18n";
 import { relayClient } from "@/shared/api/relayClient";
 import { invokeTauri, signRelayEvent } from "@/shared/api/tauri";
 
@@ -45,7 +46,7 @@ export async function setCommunityIcon(icon: string): Promise<void> {
   });
   await relayClient.publishEvent(
     event,
-    "Timed out while updating the community icon.",
-    "Failed to update the community icon.",
+    t("ui.communityIcon.updateTimedOut"),
+    t("ui.communityIcon.updateFailed"),
   );
 }

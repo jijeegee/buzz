@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Target } from "lucide-react";
 
+import { useT } from "@/shared/i18n";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { type GoalLinkTarget, goalRoot } from "../goalTree";
@@ -26,16 +27,19 @@ export function GoalHeaderChip({
   compact?: boolean;
   onOpenGoals: () => void;
 }) {
+  const t = useT();
   const goalQuery = useGoalTreeQuery(channelId);
   const root = goalQuery.data ? goalRoot(goalQuery.data.tree) : null;
-  const label = root ? root.title : "Set a goal";
+  const label = root ? root.title : t("goals.headerChip.setGoal");
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           aria-label={
-            root ? `Goal: ${root.title}` : "Set a goal for this conversation"
+            root
+              ? t("goals.headerChip.goalLabel", { title: root.title })
+              : t("goals.headerChip.setGoalLabel")
           }
           className={`inline-flex h-7 ${compact ? "max-w-[8rem]" : "max-w-[16rem]"} items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 text-xs text-foreground transition-colors hover:bg-muted`}
           data-testid="goal-header-chip"
@@ -48,7 +52,9 @@ export function GoalHeaderChip({
           </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent>{root ? root.title : "Goals"}</TooltipContent>
+      <TooltipContent>
+        {root ? root.title : t("goals.headerChip.tooltip")}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -112,6 +118,7 @@ export function ThreadGoalHeaderChip({
   onOpenLink?: (target: GoalLinkTarget) => void;
   threadRootId: string;
 }) {
+  const t = useT();
   const goalQuery = useGoalTreeQuery(channelId);
   const root = goalQuery.data ? goalRoot(goalQuery.data.tree) : null;
   const [open, setOpen] = React.useState(false);
@@ -130,7 +137,7 @@ export function ThreadGoalHeaderChip({
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <button
-          aria-label={`Goal: ${root.title}`}
+          aria-label={t("goals.headerChip.goalLabel", { title: root.title })}
           className="inline-flex h-7 max-w-[10rem] items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 text-xs text-foreground transition-colors hover:bg-muted"
           data-testid="thread-goal-header-chip"
           title={root.title}

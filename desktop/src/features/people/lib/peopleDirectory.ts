@@ -1,4 +1,5 @@
 import type { UserProfileSummary, UserSearchResult } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 export type PeopleDirectory = {
   favorites: UserSearchResult[];
@@ -11,10 +12,12 @@ export type PeopleDirectory = {
   inChannels: UserSearchResult[];
 };
 
-const UNKNOWN_PERSON = "Unknown";
-
 export function personName(user: UserSearchResult): string {
-  return user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_PERSON;
+  return (
+    user.displayName?.trim() ||
+    user.nip05Handle?.trim() ||
+    t("people.unknownPerson")
+  );
 }
 
 const byName = (left: UserSearchResult, right: UserSearchResult) =>

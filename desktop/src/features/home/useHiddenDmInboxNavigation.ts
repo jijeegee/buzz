@@ -8,6 +8,7 @@ import type { InboxRoomEntry } from "@/features/home/lib/inboxRoomEntry";
 import type { InboxItem } from "@/features/home/lib/inbox";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { getChannelMembers } from "@/shared/api/tauriChannels";
+import { t } from "@/shared/i18n";
 import { openHiddenDmInboxContext } from "./hiddenDmInboxAction";
 
 type UseHiddenDmInboxNavigationOptions = {
@@ -81,7 +82,7 @@ export function useHiddenDmInboxNavigation({
           if (generationRef.current === generation) {
             errorChannelIdsRef.current.add(channelId);
           }
-          toast.error("Could not reopen conversation. Try again.");
+          toast.error(t("home.reopenConversationFailed"));
         },
         onPendingChange: () => setPendingVersion((version) => version + 1),
       });

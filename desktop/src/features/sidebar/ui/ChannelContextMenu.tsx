@@ -31,6 +31,7 @@ import {
 import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import type { Channel } from "@/shared/api/types";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { useT } from "@/shared/i18n";
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import {
   ContextMenuItem,
@@ -55,13 +56,14 @@ function MoveToSectionSubmenu({
   onUnassignChannel: (channelId: string) => void;
   onCreateSectionForChannel: (channelId: string) => void;
 }) {
+  const t = useT();
   const currentSectionId = assignments[channelId];
 
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
         <ContextMenuIconSlot />
-        <span>Move to section</span>
+        <span>{t("sidebar.channelMenu.moveToSection")}</span>
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
         {sections.map((section) => (
@@ -90,14 +92,14 @@ function MoveToSectionSubmenu({
           <ContextMenuIconSlot>
             <Plus className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>New section...</span>
+          <span>{t("sidebar.channelMenu.newSection")}</span>
         </ContextMenuItem>
         {currentSectionId ? (
           <ContextMenuItem
             onSelect={() => deferMenuAction(() => onUnassignChannel(channelId))}
           >
             <ContextMenuIconSlot />
-            <span>Remove from section</span>
+            <span>{t("sidebar.channelMenu.removeFromSection")}</span>
           </ContextMenuItem>
         ) : null}
       </ContextMenuSubContent>
@@ -110,33 +112,36 @@ function MoveToSectionSubmenu({
  * "Copy" submenu (channel name / channel ID).
  */
 function CopyChannelSubmenu({ channel }: { channel: Channel }) {
-  const noun = channel.channelType === "dm" ? "chat" : "group";
-  const Noun = channel.channelType === "dm" ? "Chat" : "Group";
+  const t = useT();
+  const kind = channel.channelType === "dm" ? "dm" : "group";
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
         <ContextMenuIconSlot>
           <Copy className="h-4 w-4" />
         </ContextMenuIconSlot>
-        <span>Copy</span>
+        <span>{t("common.copy")}</span>
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
         <ContextMenuItem
           onSelect={() =>
             copyTextToClipboard(
               channel.name,
-              `${Noun} name copied to clipboard`,
+              t("sidebar.channelMenu.nameCopied", { kind }),
             )
           }
         >
-          <span>Copy {noun} name</span>
+          <span>{t("sidebar.channelMenu.copyName", { kind })}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() =>
-            copyTextToClipboard(channel.id, `${Noun} ID copied to clipboard`)
+            copyTextToClipboard(
+              channel.id,
+              t("sidebar.channelMenu.idCopied", { kind }),
+            )
           }
         >
-          <span>Copy {noun} ID</span>
+          <span>{t("sidebar.channelMenu.copyId", { kind })}</span>
         </ContextMenuItem>
       </ContextMenuSubContent>
     </ContextMenuSub>
@@ -186,6 +191,8 @@ export function ChannelContextMenuItems({
   /** A 1:1 DM's way out: hide it until the next message. */
   onHideDm?: (channelId: string) => void;
 }) {
+  const t = useT();
+  const roomKind = channel.channelType === "dm" ? "dm" : "group";
   const {
     feedItemState,
     hasSidebarUnreadProjections,
@@ -269,7 +276,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <CheckCircle2 className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Mark as read</span>
+          <span>{t("sidebar.menu.markRead")}</span>
         </ContextMenuItem>
       ) : !hasProjectedUnread && onMarkChannelUnread ? (
         <ContextMenuItem
@@ -280,7 +287,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <CircleDot className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Mark as unread</span>
+          <span>{t("sidebar.menu.markUnread")}</span>
         </ContextMenuItem>
       ) : null}
       {showMuteToggle || showStar ? <ContextMenuSeparator /> : null}
@@ -294,9 +301,7 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <Bell className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>
-              Unmute {channel.channelType === "dm" ? "chat" : "group"}
-            </span>
+            <span>{t("sidebar.channelMenu.unmute", { kind: roomKind })}</span>
           </ContextMenuItem>
         ) : (
           <ContextMenuItem
@@ -305,7 +310,7 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <BellOff className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>Mute {channel.channelType === "dm" ? "chat" : "group"}</span>
+            <span>{t("sidebar.channelMenu.mute", { kind: roomKind })}</span>
           </ContextMenuItem>
         )
       ) : null}
@@ -319,7 +324,7 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <PinOff aria-hidden="true" className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>Unpin</span>
+            <span>{t("sidebar.menu.unpin")}</span>
           </ContextMenuItem>
         ) : (
           <ContextMenuItem
@@ -328,7 +333,7 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <Pin aria-hidden="true" className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>Pin</span>
+            <span>{t("sidebar.menu.pin")}</span>
           </ContextMenuItem>
         )
       ) : null}
@@ -343,10 +348,10 @@ export function ChannelContextMenuItems({
           </ContextMenuIconSlot>
           <span>
             {channel.channelType === "dm"
-              ? "Leave conversation"
+              ? t("sidebar.channelMenu.leaveConversation")
               : isGroupChat(channel)
-                ? "Leave chat"
-                : "Leave group"}
+                ? t("sidebar.channelMenu.leaveChat")
+                : t("sidebar.channelMenu.leaveGroup")}
           </span>
         </ContextMenuItem>
       ) : null}
@@ -358,7 +363,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <EyeOff className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Hide conversation</span>
+          <span>{t("sidebar.channelMenu.hideConversation")}</span>
         </ContextMenuItem>
       ) : null}
       {ownerActionsLoading ? (
@@ -366,14 +371,14 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <LoaderCircle className="h-4 w-4 animate-spin" />
           </ContextMenuIconSlot>
-          <span>Loading group actions...</span>
+          <span>{t("sidebar.channelMenu.loadingActions")}</span>
         </ContextMenuItem>
       ) : ownerActionsError ? (
         <ContextMenuItem disabled>
           <ContextMenuIconSlot>
             <TriangleAlert className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Group actions unavailable</span>
+          <span>{t("sidebar.channelMenu.actionsUnavailable")}</span>
         </ContextMenuItem>
       ) : null}
       {canManageChannel ? (
@@ -385,7 +390,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <Archive className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Archive group</span>
+          <span>{t("sidebar.channelMenu.archiveGroup")}</span>
         </ContextMenuItem>
       ) : null}
       {canDeleteChannel ? (
@@ -397,7 +402,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <Trash2 className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Delete group</span>
+          <span>{t("sidebar.channelMenu.deleteGroup")}</span>
         </ContextMenuItem>
       ) : null}
     </>

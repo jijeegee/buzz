@@ -1,23 +1,53 @@
+import { type MessageKey, t } from "@/shared/i18n";
 import { truncatePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { parseConditionExpressions } from "./workflowConditionExpression";
-import { TRIGGER_LABELS } from "./workflowFormTypes";
+import { triggerTypeLabel } from "./workflowFormTypes";
 import type { ParsedConditionExpression } from "./workflowConditionExpression";
 import type { TriggerConfig } from "./workflowFormTypes";
 
-const EVENT_PHRASES = {
-  diff_posted: "Diff posted",
-  message_posted: "Message posted",
-  reaction_added: "Reaction added",
-} as const;
+const EVENT_PHRASE_KEYS = {
+  diff_posted: "workflows.triggerDescription.diffPosted",
+  message_posted: "workflows.triggerDescription.messagePosted",
+  reaction_added: "workflows.triggerDescription.reactionAdded",
+} as const satisfies Record<string, MessageKey>;
 
-export const TRIGGER_MESSAGE_LOADING_LABEL = "loading message";
-export const TRIGGER_AUTHOR_LOADING_LABEL = "loading author";
+type DescribedEvent = keyof typeof EVENT_PHRASE_KEYS;
+
+/** The event name without "posted", used before text conditions. */
+function eventSubject(event: DescribedEvent): string {
+  switch (event) {
+    case "diff_posted":
+      return t("workflows.triggerDescription.diffSubject");
+    case "message_posted":
+      return t("workflows.triggerDescription.messageSubject");
+    case "reaction_added":
+      return t(EVENT_PHRASE_KEYS.reaction_added);
+  }
+}
+
+function byAuthor(description: string, author: string, except: boolean) {
+  return except
+    ? t("workflows.triggerDescription.byAnyoneExcept", { description, author })
+    : t("workflows.triggerDescription.byAuthor", { description, author });
+}
+
+function emojiReaction(emoji: string, except: boolean): string {
+  return except
+    ? t("workflows.triggerDescription.anyReactionExcept", { emoji })
+    : t("workflows.triggerDescription.emojiReactionAdded", { emoji });
+}
+
+function toMessage(description: string, message: string, except: boolean) {
+  return except
+    ? t("workflows.triggerDescription.anywhereExcept", { description, message })
+    : t("workflows.triggerDescription.toMessage", { description, message });
+}
 
 function authorReference(
   authorLabel?: string,
   authorLoading?: boolean,
 ): string {
-  if (authorLoading) return TRIGGER_AUTHOR_LOADING_LABEL;
+  if (authorLoading) return t("workflows.triggerDescription.loadingAuthor");
   // The trigger author is a pubkey identity; an unresolved author renders the
   // generic unknown-user label, never key text.
   return authorLabel ?? UNKNOWN_USER_LABEL;
@@ -35,7 +65,7 @@ function messageReference(
   messageLabel?: string,
   messageLoading?: boolean,
 ): string {
-  if (messageLoading) return TRIGGER_MESSAGE_LOADING_LABEL;
+  if (messageLoading) return t("workflows.triggerDescription.loadingMessage");
   // The referenced message is an event id, not a pubkey identity: it keeps
   // the generic hex truncation.
   return messageLabel
@@ -44,29 +74,47 @@ function messageReference(
 }
 
 function textConditionDescription(
-  eventPhrase: string,
+  subject: string,
   condition: ParsedConditionExpression,
 ): string {
-  const subject = eventPhrase.replace(/ posted$/, "");
   const value = quotedValue(condition.value);
   switch (condition.operator) {
     case "contains":
-      return `${subject} contains ${value}`;
+      return t("workflows.triggerDescription.textContains", { subject, value });
     case "not_contains":
-      return `${subject} doesn’t contain ${value}`;
+      return t("workflows.triggerDescription.textNotContains", {
+        subject,
+        value,
+      });
     case "starts_with":
-      return `${subject} starts with ${value}`;
+      return t("workflows.triggerDescription.textStartsWith", {
+        subject,
+        value,
+      });
     case "ends_with":
-      return `${subject} ends with ${value}`;
+      return t("workflows.triggerDescription.textEndsWith", { subject, value });
     case "equals":
-      return `${subject} ${value} is posted`;
+      return t("workflows.triggerDescription.textEquals", { subject, value });
     case "not_equals":
-      return `${subject} with text other than ${value} posted`;
+      return t("workflows.triggerDescription.textNotEquals", {
+        subject,
+        value,
+      });
     case "is_not_empty":
-      return `${subject} with text posted`;
+      return t("workflows.triggerDescription.textNotEmpty", { subject });
     case "is_empty":
-      return `${subject} without text posted`;
+      return t("workflows.triggerDescription.textEmpty", { subject });
   }
+}
+
+/** Text conditions that end with the event's "posted" wording. */
+function endsWithPosted(condition: ParsedConditionExpression): boolean {
+  return (
+    condition.operator === "equals" ||
+    condition.operator === "not_equals" ||
+    condition.operator === "is_not_empty" ||
+    condition.operator === "is_empty"
+  );
 }
 
 export type WorkflowAuthorDescriptionSegments = {
@@ -79,7 +127,10 @@ export function splitWorkflowAuthorDescription(
   description: string,
   label: string,
 ): WorkflowAuthorDescriptionSegments | null {
-  const markers = [` by anyone except ${label}`, ` by ${label}`];
+  const markers = [
+    byAuthor("", label, true),
+    byAuthor("", label, false),
+  ].filter((marker) => marker.trim() !== label);
 
   for (const marker of markers) {
     let insideQuote = false;
@@ -110,9 +161,9 @@ export function compactWorkflowTriggerDescription(
   triggerEmoji?: string,
 ): string {
   if (!triggerEmoji) return description;
-  const emojiPrefix = `${triggerEmoji} reaction added`;
+  const emojiPrefix = emojiReaction(triggerEmoji, false);
   return description.startsWith(emojiPrefix)
-    ? `Reaction added${description.slice(emojiPrefix.length)}`
+    ? `${t(EVENT_PHRASE_KEYS.reaction_added)}${description.slice(emojiPrefix.length)}`
     : description;
 }
 
@@ -127,11 +178,11 @@ export function workflowTriggerDescription(
     omitUnresolvedReferences?: boolean;
   } = {},
 ): string {
-  const baseLabel =
-    EVENT_PHRASES[trigger.on as keyof typeof EVENT_PHRASES] ??
-    TRIGGER_LABELS[trigger.on];
-  const eventPhrase = EVENT_PHRASES[trigger.on as keyof typeof EVENT_PHRASES];
-  if (!eventPhrase) return baseLabel;
+  if (!(trigger.on in EVENT_PHRASE_KEYS)) return triggerTypeLabel(trigger.on);
+  const event = trigger.on as DescribedEvent;
+  const eventPhrase = t(EVENT_PHRASE_KEYS[event]);
+  const baseLabel = eventPhrase;
+  const subject = eventSubject(event);
 
   const conditions = trigger.filter
     ? parseConditionExpressions(trigger.filter, trigger.on)
@@ -158,14 +209,14 @@ export function workflowTriggerDescription(
       ({ field }) => field === "trigger_message_id",
     );
     let description = textCondition
-      ? textConditionDescription(eventPhrase, textCondition)
+      ? textConditionDescription(subject, textCondition)
       : eventPhrase;
 
     if (emojiCondition) {
-      description =
-        emojiCondition.operator === "not_equals"
-          ? `Any reaction except ${emojiCondition.value} added`
-          : `${emojiCondition.value} reaction added`;
+      description = emojiReaction(
+        emojiCondition.value,
+        emojiCondition.operator === "not_equals",
+      );
     }
     if (
       authorCondition &&
@@ -177,17 +228,15 @@ export function workflowTriggerDescription(
         options.authorLabel,
         options.authorLoading,
       );
-      const attribution =
-        authorCondition.operator === "not_equals"
-          ? ` by anyone except ${author}`
-          : ` by ${author}`;
-      const subject = eventPhrase.replace(/ posted$/, "");
+      const except = authorCondition.operator === "not_equals";
+      // "Message by Carl contains …" reads better than "… contains … by Carl".
       description =
-        textCondition &&
-        description.startsWith(subject) &&
-        !/ (?:is )?posted$/.test(description)
-          ? `${subject}${attribution}${description.slice(subject.length)}`
-          : `${description}${attribution}`;
+        textCondition && !emojiCondition && !endsWithPosted(textCondition)
+          ? textConditionDescription(
+              byAuthor(subject, author, except),
+              textCondition,
+            )
+          : byAuthor(description, author, except);
     }
     if (
       messageCondition &&
@@ -200,10 +249,11 @@ export function workflowTriggerDescription(
         options.messageLabel,
         options.messageLoading,
       );
-      description +=
-        messageCondition.operator === "not_equals"
-          ? ` anywhere except ${message}`
-          : ` to ${message}`;
+      description = toMessage(
+        description,
+        message,
+        messageCondition.operator === "not_equals",
+      );
     }
     return description;
   }
@@ -217,19 +267,15 @@ export function workflowTriggerDescription(
       return baseLabel;
     }
     const author = authorReference(options.authorLabel, options.authorLoading);
-    return condition.operator === "not_equals"
-      ? `${eventPhrase} by anyone except ${author}`
-      : `${eventPhrase} by ${author}`;
+    return byAuthor(eventPhrase, author, condition.operator === "not_equals");
   }
 
   if (condition.field === "trigger_text") {
-    return textConditionDescription(eventPhrase, condition);
+    return textConditionDescription(subject, condition);
   }
 
   if (condition.field === "trigger_emoji") {
-    return condition.operator === "not_equals"
-      ? `Any reaction except ${condition.value} added`
-      : `${condition.value} reaction added`;
+    return emojiReaction(condition.value, condition.operator === "not_equals");
   }
 
   if (condition.field === "trigger_message_id") {
@@ -245,9 +291,11 @@ export function workflowTriggerDescription(
       options.messageLabel,
       options.messageLoading,
     );
-    return condition.operator === "not_equals"
-      ? `Reaction added anywhere except ${message}`
-      : `Reaction added to ${message}`;
+    return toMessage(
+      t(EVENT_PHRASE_KEYS.reaction_added),
+      message,
+      condition.operator === "not_equals",
+    );
   }
 
   return baseLabel;

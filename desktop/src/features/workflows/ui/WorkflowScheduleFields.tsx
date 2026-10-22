@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import * as React from "react";
 
+import { type MessageKey, t, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Input } from "@/shared/ui/input";
 import { CronExpressionInput } from "./CronExpressionInput";
@@ -8,29 +9,56 @@ import { FieldLabel, FormSelect } from "./workflowFormPrimitives";
 import type { TriggerConfig } from "./workflowFormTypes";
 import {
   SCHEDULE_FREQUENCIES,
-  SCHEDULE_FREQUENCY_LABELS,
+  SCHEDULE_FREQUENCY_LABEL_KEYS,
   scheduleFormFromTrigger,
   scheduleTriggerFromForm,
   scheduleWeekdaysFromCronField,
 } from "./workflowSchedule";
 import type { ScheduleFormState } from "./workflowSchedule";
 
-const WEEKDAYS = [
-  ["0", "Sunday", "S"],
-  ["1", "Monday", "M"],
-  ["2", "Tuesday", "T"],
-  ["3", "Wednesday", "W"],
-  ["4", "Thursday", "T"],
-  ["5", "Friday", "F"],
-  ["6", "Saturday", "S"],
-] as const;
+// Language-file keys of the full and one-letter day names.
+const WEEKDAYS: ReadonlyArray<readonly [string, MessageKey, MessageKey]> = [
+  [
+    "0",
+    "workflows.schedule.weekday.sunday",
+    "workflows.schedule.weekday.sundayShort",
+  ],
+  [
+    "1",
+    "workflows.schedule.weekday.monday",
+    "workflows.schedule.weekday.mondayShort",
+  ],
+  [
+    "2",
+    "workflows.schedule.weekday.tuesday",
+    "workflows.schedule.weekday.tuesdayShort",
+  ],
+  [
+    "3",
+    "workflows.schedule.weekday.wednesday",
+    "workflows.schedule.weekday.wednesdayShort",
+  ],
+  [
+    "4",
+    "workflows.schedule.weekday.thursday",
+    "workflows.schedule.weekday.thursdayShort",
+  ],
+  [
+    "5",
+    "workflows.schedule.weekday.friday",
+    "workflows.schedule.weekday.fridayShort",
+  ],
+  [
+    "6",
+    "workflows.schedule.weekday.saturday",
+    "workflows.schedule.weekday.saturdayShort",
+  ],
+];
 
 const MONTH_DAYS = Array.from({ length: 31 }, (_, index) => String(index + 1));
 
 function monthlyDayWarning(monthDay: string): string | null {
-  return Number(monthDay) > 28
-    ? "This schedule won’t run in some months."
-    : null;
+  return Number(monthDay) > 28 ? t("workflows.schedule.monthDayWarning") : null;
 }
 
 function customCronSeed(schedule: ScheduleFormState): string {
@@ -58,6 +86,7 @@ export function WorkflowScheduleFields({
   onUpdate: (trigger: TriggerConfig) => void;
   trigger: TriggerConfig;
 }) {
+  const t = useT();
   const [forceCustomCron, setForceCustomCron] = React.useState(false);
   const parsedSchedule = scheduleFormFromTrigger(trigger);
   const schedule: ScheduleFormState = forceCustomCron
@@ -79,7 +108,7 @@ export function WorkflowScheduleFields({
   return (
     <div className="space-y-3">
       <fieldset>
-        <legend className="sr-only">Repeats</legend>
+        <legend className="sr-only">{t("workflows.schedule.repeats")}</legend>
         <div className="grid grid-cols-2 gap-2.5">
           {SCHEDULE_FREQUENCIES.map((frequency) => {
             const id = `wf-trigger-frequency-${frequency}`;
@@ -122,7 +151,7 @@ export function WorkflowScheduleFields({
                   )}
                   htmlFor={id}
                 >
-                  {SCHEDULE_FREQUENCY_LABELS[frequency]}
+                  {t(SCHEDULE_FREQUENCY_LABEL_KEYS[frequency])}
                 </label>
               </div>
             );
@@ -133,15 +162,15 @@ export function WorkflowScheduleFields({
       {schedule.frequency === "weekly" ? (
         <fieldset className="space-y-1.5">
           <legend className="text-xs font-medium text-muted-foreground">
-            Repeat on
+            {t("workflows.schedule.repeatOn")}
           </legend>
           <div className="grid grid-cols-7 gap-2">
-            {WEEKDAYS.map(([value, label, shortLabel]) => {
+            {WEEKDAYS.map(([value, labelKey, shortLabelKey]) => {
               const id = `wf-trigger-weekday-${value}`;
               return (
                 <div className="relative" key={value}>
                   <input
-                    aria-label={label}
+                    aria-label={t(labelKey)}
                     checked={selectedWeekdays.has(value)}
                     className="peer sr-only"
                     disabled={disabled}
@@ -175,7 +204,7 @@ export function WorkflowScheduleFields({
                     )}
                     htmlFor={id}
                   >
-                    {shortLabel}
+                    {t(shortLabelKey)}
                   </label>
                 </div>
               );
@@ -186,7 +215,9 @@ export function WorkflowScheduleFields({
 
       {schedule.frequency === "monthly" ? (
         <div className="space-y-1.5">
-          <FieldLabel htmlFor="wf-trigger-month-day">Day of month</FieldLabel>
+          <FieldLabel htmlFor="wf-trigger-month-day">
+            {t("workflows.schedule.dayOfMonth")}
+          </FieldLabel>
           <FormSelect
             disabled={disabled}
             id="wf-trigger-month-day"
@@ -213,7 +244,9 @@ export function WorkflowScheduleFields({
 
       {usesTime ? (
         <div className="space-y-1.5">
-          <FieldLabel htmlFor="wf-trigger-time">Run time (UTC)</FieldLabel>
+          <FieldLabel htmlFor="wf-trigger-time">
+            {t("workflows.schedule.runTime")}
+          </FieldLabel>
           <Input
             disabled={disabled}
             id="wf-trigger-time"
@@ -235,7 +268,7 @@ export function WorkflowScheduleFields({
       {schedule.frequency === "custom_interval" ? (
         <div className="space-y-1.5">
           <FieldLabel htmlFor="wf-trigger-interval">
-            Existing interval
+            {t("workflows.schedule.existingInterval")}
           </FieldLabel>
           <Input
             autoCapitalize="off"
@@ -248,8 +281,7 @@ export function WorkflowScheduleFields({
             value={schedule.customInterval}
           />
           <p className="text-xs text-muted-foreground">
-            Keep this legacy interval or choose a repeat option above. All
-            schedules use UTC.
+            {t("workflows.schedule.legacyIntervalHint")}
           </p>
         </div>
       ) : null}

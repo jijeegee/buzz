@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { useMyRelayMembershipQuery } from "@/features/community-members/hooks";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { t } from "@/shared/i18n";
 import {
   archiveIdentity,
   listArchivedIdentities,
@@ -153,10 +154,12 @@ export function useIdentityArchive(
     archiveMutation.mutate(
       { targetPubkey },
       {
-        onSuccess: () => toast.success("Archived"),
+        onSuccess: () => toast.success(t("identityArchive.toast.archived")),
         onError: (error) =>
           toast.error(
-            `Archive failed: ${error instanceof Error ? error.message : String(error)}`,
+            t("identityArchive.toast.archiveFailed", {
+              error: error instanceof Error ? error.message : String(error),
+            }),
           ),
       },
     );
@@ -167,10 +170,12 @@ export function useIdentityArchive(
     unarchiveMutation.mutate(
       { targetPubkey },
       {
-        onSuccess: () => toast.success("Unarchived"),
+        onSuccess: () => toast.success(t("identityArchive.toast.unarchived")),
         onError: (error) =>
           toast.error(
-            `Unarchive failed: ${error instanceof Error ? error.message : String(error)}`,
+            t("identityArchive.toast.unarchiveFailed", {
+              error: error instanceof Error ? error.message : String(error),
+            }),
           ),
       },
     );
