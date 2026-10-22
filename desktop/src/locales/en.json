@@ -158,5 +158,3477 @@
   "common.you": "You",
   "@common.you": {
     "description": "Refers to the current user, e.g. in a member list or as a message author. Short."
+  },
+  "settings.nav.appearance": "Appearance",
+  "@settings.nav.appearance": {
+    "description": "Settings sidebar, section link and tooltip. Short."
+  },
+  "settings.nav.profile": "Profile",
+  "@settings.nav.profile": {
+    "description": "Settings sidebar, section link and tooltip. Short."
+  },
+  "settings.nav.account": "Account",
+  "@settings.nav.account": {
+    "description": "Settings sidebar, section link and tooltip. Short."
+  },
+  "settings.nav.devices": "Devices",
+  "@settings.nav.devices": {
+    "description": "Settings sidebar, section link and tooltip. Short."
+  },
+  "settings.nav.privacy": "Friends & privacy",
+  "@settings.nav.privacy": {
+    "description": "Settings sidebar, section link and tooltip for friend and privacy options. Short."
+  },
+  "settings.nav.notifications": "Notifications",
+  "@settings.nav.notifications": {
+    "description": "Settings sidebar, section link and tooltip. Short."
+  },
+  "settings.nav.voice": "Voice",
+  "@settings.nav.voice": {
+    "description": "Settings sidebar, section link and tooltip for voice and audio options. Short."
+  },
+  "settings.nav.experimental": "Experiments",
+  "@settings.nav.experimental": {
+    "description": "Settings sidebar, section link and tooltip for experimental features. Short."
+  },
+  "settings.nav.models": "Models",
+  "@settings.nav.models": {
+    "description": "Settings sidebar, section link and tooltip for AI models. Short."
+  },
+  "settings.nav.agents": "Agents",
+  "@settings.nav.agents": {
+    "description": "Settings sidebar, section link and tooltip for AI agents. Short."
+  },
+  "settings.nav.channelTemplates": "Group templates",
+  "@settings.nav.channelTemplates": {
+    "description": "Settings sidebar, section link and tooltip for group chat templates. Short."
+  },
+  "settings.nav.compute": "Compute",
+  "@settings.nav.compute": {
+    "description": "Settings sidebar, section link and tooltip for shared computing power. Short."
+  },
+  "settings.nav.shortcuts": "Shortcuts",
+  "@settings.nav.shortcuts": {
+    "description": "Settings sidebar, section link and tooltip for keyboard shortcuts. Short."
+  },
+  "settings.nav.hostedCommunities": "Hosted communities",
+  "@settings.nav.hostedCommunities": {
+    "description": "Settings sidebar, section link and tooltip. Short."
+  },
+  "settings.nav.communityMembers": "Invites",
+  "@settings.nav.communityMembers": {
+    "description": "Settings sidebar, section link and tooltip for community invites and members. Short."
+  },
+  "settings.nav.relayAdmin": "Admin",
+  "@settings.nav.relayAdmin": {
+    "description": "Settings sidebar, section link and tooltip for server administration. Short."
+  },
+  "settings.nav.customEmoji": "Custom emoji",
+  "@settings.nav.customEmoji": {
+    "description": "Settings sidebar, section link and tooltip. Short."
+  },
+  "settings.nav.localArchive": "Local archive",
+  "@settings.nav.localArchive": {
+    "description": "Settings sidebar, section link and tooltip for message archive stored on this computer. Short."
+  },
+  "settings.nav.mobile": "Mobile",
+  "@settings.nav.mobile": {
+    "description": "Settings sidebar, section link and tooltip for pairing a phone. Short."
+  },
+  "settings.nav.updates": "Updates",
+  "@settings.nav.updates": {
+    "description": "Settings sidebar, section link and tooltip for app updates. Short."
+  },
+  "settings.nav.groupMe": "Me",
+  "@settings.nav.groupMe": {
+    "description": "Settings sidebar, small group heading above the user's own profile link. Short."
+  },
+  "settings.nav.groupSettings": "Settings",
+  "@settings.nav.groupSettings": {
+    "description": "Settings sidebar, small group heading above general app settings. Short."
+  },
+  "settings.nav.groupMembers": "Members",
+  "@settings.nav.groupMembers": {
+    "description": "Settings sidebar, small group heading above community and member settings. Short."
+  },
+  "settings.nav.groupApp": "App",
+  "@settings.nav.groupApp": {
+    "description": "Settings sidebar, small group heading above app-wide settings (models, agents, experiments). Short."
+  },
+  "settings.nav.groupAria": "{group} settings sections",
+  "@settings.nav.groupAria": {
+    "description": "Settings sidebar, screen-reader label for one group of section links. {group} is the group heading, e.g. Members."
+  },
+  "settings.nav.backToApp": "Back to app",
+  "@settings.nav.backToApp": {
+    "description": "Settings sidebar, top button and tooltip that closes Settings. Short."
+  },
+  "settings.view.checkingInvites": "Checking invite permissions…",
+  "@settings.view.checkingInvites": {
+    "description": "Settings sidebar, small loading notice while checking whether the user may manage invites."
+  },
+  "settings.view.invitesCheckFailed": "Invite settings could not be checked.",
+  "@settings.view.invitesCheckFailed": {
+    "description": "Settings sidebar, small error notice when the invite permission check failed."
+  },
+  "settings.view.tryAgain": "Try again",
+  "@settings.view.tryAgain": {
+    "description": "Settings sidebar, button under the invite check error that retries. Short."
+  },
+  "settings.view.invitesUnavailable": "Invite settings are unavailable right now. Try again shortly.",
+  "@settings.view.invitesUnavailable": {
+    "description": "Settings sidebar, small warning when invite information is not available from the server."
+  },
+  "settings.view.loading": "Loading",
+  "@settings.view.loading": {
+    "description": "Settings content area, screen-reader label for the spinner while admin access is checked."
+  },
+  "settings.appearanceTheme.title": "Appearance",
+  "@settings.appearanceTheme.title": {
+    "description": "Settings › Appearance, page title."
+  },
+  "settings.appearanceTheme.description": "Choose how Kuzz looks and feels.",
+  "@settings.appearanceTheme.description": {
+    "description": "Settings › Appearance, text under the page title."
+  },
+  "settings.appearanceTheme.theme": "Theme",
+  "@settings.appearanceTheme.theme": {
+    "description": "Settings › Appearance, heading of the theme options group. Short."
+  },
+  "settings.appearanceTheme.perCommunity": "(per community)",
+  "@settings.appearanceTheme.perCommunity": {
+    "description": "Settings › Appearance, grey note after the Theme heading saying the theme is set separately for each community. Short."
+  },
+  "settings.appearanceTheme.colorMode": "Color mode",
+  "@settings.appearanceTheme.colorMode": {
+    "description": "Settings › Appearance, option name and screen-reader name of the System/Light/Dark switch."
+  },
+  "settings.appearanceTheme.colorModeDescription": "Follow your system or choose a light or dark appearance.",
+  "@settings.appearanceTheme.colorModeDescription": {
+    "description": "Settings › Appearance, grey text under Color mode."
+  },
+  "settings.appearanceTheme.modeSystem": "System",
+  "@settings.appearanceTheme.modeSystem": {
+    "description": "Settings › Appearance, Color mode switch option that follows the computer's setting. Short."
+  },
+  "settings.appearanceTheme.modeLight": "Light",
+  "@settings.appearanceTheme.modeLight": {
+    "description": "Settings › Appearance, Color mode switch option. Short."
+  },
+  "settings.appearanceTheme.modeDark": "Dark",
+  "@settings.appearanceTheme.modeDark": {
+    "description": "Settings › Appearance, Color mode switch option. Short."
+  },
+  "settings.appearanceTheme.themeStyle": "Theme style",
+  "@settings.appearanceTheme.themeStyle": {
+    "description": "Settings › Appearance, option name for picking a color theme."
+  },
+  "settings.appearanceTheme.themeStyleDescription": "Choose the colors used throughout Kuzz.",
+  "@settings.appearanceTheme.themeStyleDescription": {
+    "description": "Settings › Appearance, grey text under Theme style."
+  },
+  "settings.appearanceTheme.themeStyleAria": "Theme style, {theme}",
+  "@settings.appearanceTheme.themeStyleAria": {
+    "description": "Settings › Appearance, screen-reader label of the button that opens the theme list. {theme} is the selected theme name."
+  },
+  "settings.appearanceTheme.preferences": "Preferences",
+  "@settings.appearanceTheme.preferences": {
+    "description": "Settings › Appearance, heading of the display preferences group. Short."
+  },
+  "settings.shortcuts.title": "Keyboard shortcuts",
+  "@settings.shortcuts.title": {
+    "description": "Settings › Shortcuts, page title."
+  },
+  "settings.shortcuts.description": "All available keyboard shortcuts. Shortcuts are read-only.",
+  "@settings.shortcuts.description": {
+    "description": "Settings › Shortcuts, text under the page title."
+  },
+  "settings.agents.title": "Agents",
+  "@settings.agents.title": {
+    "description": "Settings › Agents, page title."
+  },
+  "settings.agents.description": "How agents behave in conversations and run on this computer. Their AI and models live in Settings › Models.",
+  "@settings.agents.description": {
+    "description": "Settings › Agents, text under the page title. 'Settings › Models' names another settings page."
+  },
+  "settings.agents.conversations": "Conversations",
+  "@settings.agents.conversations": {
+    "description": "Settings › Agents, heading of the conversation options group. Short."
+  },
+  "settings.agents.autoMention": "Automatically mention agents",
+  "@settings.agents.autoMention": {
+    "description": "Settings › Agents, switch name (also its screen-reader label)."
+  },
+  "settings.agents.autoMentionDescription": "Address selected agents in group and thread replies",
+  "@settings.agents.autoMentionDescription": {
+    "description": "Settings › Agents, grey text under 'Automatically mention agents'."
+  },
+  "settings.agentDefaults.title": "Default for new agents",
+  "@settings.agentDefaults.title": {
+    "description": "Settings › Models, heading of the card with default settings for newly created agents."
+  },
+  "settings.agentDefaults.description": "What a new agent starts with: runtime, provider, model, effort and environment. An agent's own settings always take priority. Sign-in and API keys live under Connections.",
+  "@settings.agentDefaults.description": {
+    "description": "Settings › Models, grey text under 'Default for new agents'. 'Connections' names another settings tab."
+  },
+  "settings.hostedCommunities.title": "Hosted communities",
+  "@settings.hostedCommunities.title": {
+    "description": "Settings › Hosted communities, page title."
+  },
+  "settings.hostedCommunities.description": "Kuzz works with any relay. This page is only for relay hosting provided by Block — sign in with a Builderlab account to create and manage Block-hosted communities. Builderlab sign-in is used on this page alone.",
+  "@settings.hostedCommunities.description": {
+    "description": "Settings › Hosted communities, text under the page title. Block and Builderlab are names; relay = chat server."
+  },
+  "settings.hostedCommunities.loadIdentityFailed": "Could not load the connected Kuzz identity.",
+  "@settings.hostedCommunities.loadIdentityFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.loadCommunitiesFailed": "Could not load communities.",
+  "@settings.hostedCommunities.loadCommunitiesFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.signingIn": "Signing in…",
+  "@settings.hostedCommunities.signingIn": {
+    "description": "Settings › Hosted communities, button text while signing in. Short."
+  },
+  "settings.hostedCommunities.signingOut": "Signing out…",
+  "@settings.hostedCommunities.signingOut": {
+    "description": "Settings › Hosted communities, button text while signing out. Short."
+  },
+  "settings.hostedCommunities.connectingIdentity": "Connecting Kuzz identity…",
+  "@settings.hostedCommunities.connectingIdentity": {
+    "description": "Settings › Hosted communities, button text while linking the Kuzz identity. Short."
+  },
+  "settings.hostedCommunities.connectIdentityFailed": "Could not connect the Kuzz identity.",
+  "@settings.hostedCommunities.connectIdentityFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.unpairingIdentity": "Unpairing identity…",
+  "@settings.hostedCommunities.unpairingIdentity": {
+    "description": "Settings › Hosted communities, button text while unlinking the identity. Short."
+  },
+  "settings.hostedCommunities.unpairIdentityFailed": "Could not unpair the Kuzz identity.",
+  "@settings.hostedCommunities.unpairIdentityFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.switchingIdentity": "Switching identity…",
+  "@settings.hostedCommunities.switchingIdentity": {
+    "description": "Settings › Hosted communities, button text while switching to this device's identity. Short."
+  },
+  "settings.hostedCommunities.releaseIdentityFailed": "Could not release the previously connected Kuzz identity.",
+  "@settings.hostedCommunities.releaseIdentityFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.identityReservedElsewhere": "This device's Kuzz identity is already reserved by another Builderlab account, so it can't be connected here. Sign in with that account, or transfer the identity there first.",
+  "@settings.hostedCommunities.identityReservedElsewhere": {
+    "description": "Settings › Hosted communities, error at the top of the page when switching identity fails."
+  },
+  "settings.hostedCommunities.connectDeviceIdentityFailed": "Could not connect this device's Kuzz identity.",
+  "@settings.hostedCommunities.connectDeviceIdentityFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.archiving": "Archiving community…",
+  "@settings.hostedCommunities.archiving": {
+    "description": "Settings › Hosted communities, busy text while archiving. Short."
+  },
+  "settings.hostedCommunities.archiveFailed": "Could not archive the community.",
+  "@settings.hostedCommunities.archiveFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.unarchiving": "Unarchiving community…",
+  "@settings.hostedCommunities.unarchiving": {
+    "description": "Settings › Hosted communities, busy text while unarchiving. Short."
+  },
+  "settings.hostedCommunities.unarchiveFailed": "Could not unarchive the community.",
+  "@settings.hostedCommunities.unarchiveFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.transferring": "Transferring ownership…",
+  "@settings.hostedCommunities.transferring": {
+    "description": "Settings › Hosted communities, busy text while transferring a community. Short."
+  },
+  "settings.hostedCommunities.transferFailed": "Could not transfer ownership.",
+  "@settings.hostedCommunities.transferFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.creating": "Creating community…",
+  "@settings.hostedCommunities.creating": {
+    "description": "Settings › Hosted communities, create button text while creating. Short."
+  },
+  "settings.hostedCommunities.addressTakenError": "That Kuzz address is already taken.",
+  "@settings.hostedCommunities.addressTakenError": {
+    "description": "Settings › Hosted communities, error at the top of the page when the chosen address is in use."
+  },
+  "settings.hostedCommunities.createFailed": "Could not create the community.",
+  "@settings.hostedCommunities.createFailed": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.noRelayAddress": "The new community did not return a relay address.",
+  "@settings.hostedCommunities.noRelayAddress": {
+    "description": "Settings › Hosted communities, error at the top of the page. Relay = chat server."
+  },
+  "settings.hostedCommunities.anotherConnecting": "Another community is already being connected. Finish it before connecting this one.",
+  "@settings.hostedCommunities.anotherConnecting": {
+    "description": "Settings › Hosted communities, error at the top of the page."
+  },
+  "settings.hostedCommunities.checkingSignIn": "Checking sign-in…",
+  "@settings.hostedCommunities.checkingSignIn": {
+    "description": "Settings › Hosted communities, loading text next to a spinner."
+  },
+  "settings.hostedCommunities.signInTitle": "Sign in to manage hosted communities",
+  "@settings.hostedCommunities.signInTitle": {
+    "description": "Settings › Hosted communities, card heading when signed out."
+  },
+  "settings.hostedCommunities.signInBody": "Authentication opens in your browser and returns securely to Kuzz. You can use every other part of the app without signing in.",
+  "@settings.hostedCommunities.signInBody": {
+    "description": "Settings › Hosted communities, grey text in the sign-in card."
+  },
+  "settings.hostedCommunities.signInButton": "Sign in with Builderlab",
+  "@settings.hostedCommunities.signInButton": {
+    "description": "Settings › Hosted communities, sign-in button. Builderlab is a name. Short."
+  },
+  "settings.hostedCommunities.accountFallback": "Builderlab account",
+  "@settings.hostedCommunities.accountFallback": {
+    "description": "Settings › Hosted communities, account name shown when the account has no name or email."
+  },
+  "settings.hostedCommunities.signOut": "Sign out",
+  "@settings.hostedCommunities.signOut": {
+    "description": "Settings › Hosted communities, button that signs out of Builderlab. Short."
+  },
+  "settings.hostedCommunities.linkTitle": "Link this account to your Kuzz identity",
+  "@settings.hostedCommunities.linkTitle": {
+    "description": "Settings › Hosted communities, card heading when the account has no linked identity."
+  },
+  "settings.hostedCommunities.linkBody": "This Builderlab account isn't linked to a Kuzz identity yet. Connect this device's key to create and own communities under it — Kuzz signs a one-time challenge locally, so your private key never leaves Desktop.",
+  "@settings.hostedCommunities.linkBody": {
+    "description": "Settings › Hosted communities, grey text in the link-identity card."
+  },
+  "settings.hostedCommunities.connectIdentity": "Connect Kuzz identity",
+  "@settings.hostedCommunities.connectIdentity": {
+    "description": "Settings › Hosted communities, button in the link-identity card. Short."
+  },
+  "settings.hostedCommunities.mismatchTitle": "This account is connected to a different Kuzz identity",
+  "@settings.hostedCommunities.mismatchTitle": {
+    "description": "Settings › Hosted communities, warning card heading."
+  },
+  "settings.hostedCommunities.mismatchBody": "Your Builderlab account owns communities under another Kuzz key, so connecting them here would join a relay this device isn't a member of. Creating and connecting are paused until the identities match.",
+  "@settings.hostedCommunities.mismatchBody": {
+    "description": "Settings › Hosted communities, grey text in the identity mismatch warning. Relay = chat server."
+  },
+  "settings.hostedCommunities.accountUses": "Account uses",
+  "@settings.hostedCommunities.accountUses": {
+    "description": "Settings › Hosted communities, label before the account's key in the mismatch warning. Short."
+  },
+  "settings.hostedCommunities.thisDevice": "This device",
+  "@settings.hostedCommunities.thisDevice": {
+    "description": "Settings › Hosted communities, label before this device's key in the mismatch warning. Short."
+  },
+  "settings.hostedCommunities.switchIdentity": "Switch to this device's identity",
+  "@settings.hostedCommunities.switchIdentity": {
+    "description": "Settings › Hosted communities, button in the mismatch warning. Short."
+  },
+  "settings.hostedCommunities.identityConnected": "Kuzz identity connected",
+  "@settings.hostedCommunities.identityConnected": {
+    "description": "Settings › Hosted communities, status next to a green check, followed by the key."
+  },
+  "settings.hostedCommunities.yourCommunities": "Your communities",
+  "@settings.hostedCommunities.yourCommunities": {
+    "description": "Settings › Hosted communities, list heading."
+  },
+  "settings.hostedCommunities.usage": "{used} of {max} used",
+  "@settings.hostedCommunities.usage": {
+    "description": "Settings › Hosted communities, small grey text after the list heading, e.g. '1 of 3 used'. Short."
+  },
+  "settings.hostedCommunities.refreshing": "Refreshing…",
+  "@settings.hostedCommunities.refreshing": {
+    "description": "Settings › Hosted communities, busy text while reloading the list. Short."
+  },
+  "settings.hostedCommunities.refresh": "Refresh",
+  "@settings.hostedCommunities.refresh": {
+    "description": "Settings › Hosted communities, button that reloads the list. Short."
+  },
+  "settings.hostedCommunities.empty": "No hosted communities yet.",
+  "@settings.hostedCommunities.empty": {
+    "description": "Settings › Hosted communities, empty list."
+  },
+  "settings.hostedCommunities.createTitle": "Create a community",
+  "@settings.hostedCommunities.createTitle": {
+    "description": "Settings › Hosted communities, create form heading."
+  },
+  "settings.hostedCommunities.createBody": "Choose the address your team will use to connect.",
+  "@settings.hostedCommunities.createBody": {
+    "description": "Settings › Hosted communities, grey text under the create form heading."
+  },
+  "settings.hostedCommunities.limitReached": "You've reached the limit of {max} hosted communities. Transfer one to free up a slot before creating another.",
+  "@settings.hostedCommunities.limitReached": {
+    "description": "Settings › Hosted communities, notice in the create form when no more communities can be created. {max} is a number."
+  },
+  "settings.hostedCommunities.addressLabel": "Community address",
+  "@settings.hostedCommunities.addressLabel": {
+    "description": "Settings › Hosted communities, screen-reader label of the address field."
+  },
+  "settings.hostedCommunities.invalidName": "Use lowercase letters, numbers, and single hyphens.",
+  "@settings.hostedCommunities.invalidName": {
+    "description": "Settings › Hosted communities, error under the address field."
+  },
+  "settings.hostedCommunities.checkingAvailability": "Checking availability…",
+  "@settings.hostedCommunities.checkingAvailability": {
+    "description": "Settings › Hosted communities, grey text under the address field."
+  },
+  "settings.hostedCommunities.addressTaken": "That address is already taken.",
+  "@settings.hostedCommunities.addressTaken": {
+    "description": "Settings › Hosted communities, error under the address field."
+  },
+  "settings.hostedCommunities.addressAvailable": "That address is available.",
+  "@settings.hostedCommunities.addressAvailable": {
+    "description": "Settings › Hosted communities, green text under the address field."
+  },
+  "settings.hostedCommunities.createAndConnect": "Create and connect",
+  "@settings.hostedCommunities.createAndConnect": {
+    "description": "Settings › Hosted communities, create form submit button. Short."
+  },
+  "settings.hostedCommunities.unpairIdentity": "Unpair identity",
+  "@settings.hostedCommunities.unpairIdentity": {
+    "description": "Settings › Hosted communities, button that unlinks the identity, and the confirm button of its dialog. Short."
+  },
+  "settings.hostedCommunities.unpairTitle": "Unpair this Kuzz identity?",
+  "@settings.hostedCommunities.unpairTitle": {
+    "description": "Settings › Hosted communities, unpair confirmation dialog title."
+  },
+  "settings.hostedCommunities.unpairBody": "Your Builderlab account will no longer be connected to this Kuzz key. You can reconnect any key later, but community actions stay unavailable until you do.",
+  "@settings.hostedCommunities.unpairBody": {
+    "description": "Settings › Hosted communities, unpair confirmation dialog text."
+  },
+  "settings.hostedCommunities.communityFallback": "Hosted community",
+  "@settings.hostedCommunities.communityFallback": {
+    "description": "Settings › Hosted communities, community name shown when a community has no name."
+  },
+  "settings.hostedCommunities.archived": "Archived",
+  "@settings.hostedCommunities.archived": {
+    "description": "Settings › Hosted communities, status after the address of an archived community, shown after a ' · ' separator. Short."
+  },
+  "settings.hostedCommunities.unarchive": "Unarchive",
+  "@settings.hostedCommunities.unarchive": {
+    "description": "Settings › Hosted communities, row button and confirm button that restores an archived community. Short."
+  },
+  "settings.hostedCommunities.unarchiveTitle": "Unarchive {name}?",
+  "@settings.hostedCommunities.unarchiveTitle": {
+    "description": "Settings › Hosted communities, unarchive confirmation dialog title. {name} is the community name."
+  },
+  "settings.hostedCommunities.unarchiveBody": "This address becomes connectable again. Connections that closed during archival will not reconnect automatically.",
+  "@settings.hostedCommunities.unarchiveBody": {
+    "description": "Settings › Hosted communities, unarchive confirmation dialog text."
+  },
+  "settings.hostedCommunities.connect": "Connect",
+  "@settings.hostedCommunities.connect": {
+    "description": "Settings › Hosted communities, row button that joins the community on this device. Short."
+  },
+  "settings.hostedCommunities.transfer": "Transfer",
+  "@settings.hostedCommunities.transfer": {
+    "description": "Settings › Hosted communities, row button that opens the transfer ownership dialog. Short."
+  },
+  "settings.hostedCommunities.archive": "Archive",
+  "@settings.hostedCommunities.archive": {
+    "description": "Settings › Hosted communities, row button and confirm button that archives a community. Short."
+  },
+  "settings.hostedCommunities.archiveTitle": "Archive {name}?",
+  "@settings.hostedCommunities.archiveTitle": {
+    "description": "Settings › Hosted communities, archive confirmation dialog title. {name} is the community name."
+  },
+  "settings.hostedCommunities.archiveBody": "New and existing connections stop and the address stays reserved. Archiving can't be undone from here without unarchiving, and the community keeps counting toward your quota — it isn't deleted.",
+  "@settings.hostedCommunities.archiveBody": {
+    "description": "Settings › Hosted communities, archive confirmation dialog text."
+  },
+  "settings.hostedCommunities.transferTitle": "Transfer ownership",
+  "@settings.hostedCommunities.transferTitle": {
+    "description": "Settings › Hosted communities, transfer dialog title and its confirm button. Short."
+  },
+  "settings.hostedCommunities.transferBody": "Transfer {name} to another person. You become a regular member. The recipient needs a connected Kuzz identity first, and this can't be undone.",
+  "@settings.hostedCommunities.transferBody": {
+    "description": "Settings › Hosted communities, transfer dialog text. {name} is the community name."
+  },
+  "settings.hostedCommunities.recipientLabel": "Recipient npub",
+  "@settings.hostedCommunities.recipientLabel": {
+    "description": "Settings › Hosted communities, screen-reader label of the recipient key field in the transfer dialog. npub is a public key format; keep it."
+  },
+  "settings.hostedCommunities.invalidNpub": "Enter a valid npub that starts with npub1.",
+  "@settings.hostedCommunities.invalidNpub": {
+    "description": "Settings › Hosted communities, error under the recipient field. Keep 'npub' and 'npub1' as is."
+  },
+  "settings.profile.title": "Profile",
+  "@settings.profile.title": {
+    "description": "Settings > Profile, section title."
+  },
+  "settings.profile.description": "Update how your name, avatar, and bio appear across Kuzz.",
+  "@settings.profile.description": {
+    "description": "Settings > Profile, grey text under the section title."
+  },
+  "settings.profile.yourProfile": "Your profile",
+  "@settings.profile.yourProfile": {
+    "description": "Settings > Profile, fallback name for the avatar preview when no display name is set."
+  },
+  "settings.profile.notSet": "Not set",
+  "@settings.profile.notSet": {
+    "description": "Settings > Profile, shown in place of an empty display name, description or NIP-05 handle. Short."
+  },
+  "settings.profile.saved": "Profile saved",
+  "@settings.profile.saved": {
+    "description": "Settings > Profile, toast after the profile was saved."
+  },
+  "settings.profile.copiedToClipboard": "Copied to clipboard",
+  "@settings.profile.copiedToClipboard": {
+    "description": "Settings > Profile > Identity details, toast after copying the public key or NIP-05 handle."
+  },
+  "settings.profile.editPhoto": "Edit profile photo",
+  "@settings.profile.editPhoto": {
+    "description": "Settings > Profile, pencil button on the big avatar: screen-reader label and tooltip."
+  },
+  "settings.profile.savingPhoto": "Saving profile photo",
+  "@settings.profile.savingPhoto": {
+    "description": "Settings > Profile, avatar pencil button while the new photo is saving: screen-reader label and tooltip."
+  },
+  "settings.profile.savingAvatar": "Saving avatar",
+  "@settings.profile.savingAvatar": {
+    "description": "Settings > Profile, screen-reader label of the spinner on the avatar button while saving."
+  },
+  "settings.profile.avatarLabel": "{name} avatar",
+  "@settings.profile.avatarLabel": {
+    "description": "Settings > Profile, screen-reader label of the emoji avatar preview. {name} is the user's display name."
+  },
+  "settings.profile.infoTitle": "Profile info",
+  "@settings.profile.infoTitle": {
+    "description": "Settings > Profile, title of the card with display name and description."
+  },
+  "settings.profile.editInfo": "Edit profile info",
+  "@settings.profile.editInfo": {
+    "description": "Settings > Profile > Profile info, Edit button: screen-reader label and tooltip."
+  },
+  "settings.profile.doneEditingInfo": "Done editing profile info",
+  "@settings.profile.doneEditingInfo": {
+    "description": "Settings > Profile > Profile info, Done button while editing: screen-reader label and tooltip."
+  },
+  "settings.profile.displayName": "Display name",
+  "@settings.profile.displayName": {
+    "description": "Settings > Profile > Profile info, label of the display name field."
+  },
+  "settings.profile.displayNamePlaceholder": "Display name",
+  "@settings.profile.displayNamePlaceholder": {
+    "description": "Settings > Profile > Profile info, placeholder of the empty display name field."
+  },
+  "settings.profile.about": "Profile description",
+  "@settings.profile.about": {
+    "description": "Settings > Profile > Profile info, label of the bio field."
+  },
+  "settings.profile.aboutPlaceholder": "Profile description",
+  "@settings.profile.aboutPlaceholder": {
+    "description": "Settings > Profile > Profile info, placeholder of the empty bio field."
+  },
+  "settings.profile.identityTitle": "Identity",
+  "@settings.profile.identityTitle": {
+    "description": "Settings > Profile, title of the card with key details. Short."
+  },
+  "settings.profile.identityDetails": "Identity details",
+  "@settings.profile.identityDetails": {
+    "description": "Settings > Profile > Identity, title of the expandable row."
+  },
+  "settings.profile.identityHint": "Your keypair and NIP-05 handle are fixed for this device.",
+  "@settings.profile.identityHint": {
+    "description": "Settings > Profile > Identity, grey text under 'Identity details'."
+  },
+  "settings.profile.publicKey": "Public key",
+  "@settings.profile.publicKey": {
+    "description": "Settings > Profile > Identity details, row label."
+  },
+  "settings.profile.copyPublicKey": "Copy Public key",
+  "@settings.profile.copyPublicKey": {
+    "description": "Settings > Profile > Identity details, Copy button next to the public key: screen-reader label and tooltip."
+  },
+  "settings.profile.nip05Handle": "NIP-05 handle",
+  "@settings.profile.nip05Handle": {
+    "description": "Settings > Profile > Identity details, row label. NIP-05 is a technical name; keep it."
+  },
+  "settings.profile.copyNip05Handle": "Copy NIP-05 handle",
+  "@settings.profile.copyNip05Handle": {
+    "description": "Settings > Profile > Identity details, Copy button next to the NIP-05 handle: screen-reader label and tooltip."
+  },
+  "settings.profile.clearNotSupported": "Clearing existing profile fields is not supported yet. Blank display name and avatar values are ignored for now.",
+  "@settings.profile.clearNotSupported": {
+    "description": "Settings > Profile, grey note shown when the user emptied the name or avatar."
+  },
+  "settings.channelTemplates.title": "Group templates",
+  "@settings.channelTemplates.title": {
+    "description": "Settings > Group templates, section title."
+  },
+  "settings.channelTemplates.description": "Save reusable group configurations and apply them when creating new groups.",
+  "@settings.channelTemplates.description": {
+    "description": "Settings > Group templates, grey text under the section title."
+  },
+  "settings.channelTemplates.listTitle": "Templates",
+  "@settings.channelTemplates.listTitle": {
+    "description": "Settings > Group templates, title of the template list card. Short."
+  },
+  "settings.channelTemplates.loading": "Loading templates...",
+  "@settings.channelTemplates.loading": {
+    "description": "Settings > Group templates, shown while the list loads."
+  },
+  "settings.channelTemplates.empty": "No templates yet. Create one to save a reusable group configuration.",
+  "@settings.channelTemplates.empty": {
+    "description": "Settings > Group templates, empty list text."
+  },
+  "settings.channelTemplates.duplicated": "Duplicated as \"{name}\"",
+  "@settings.channelTemplates.duplicated": {
+    "description": "Settings > Group templates, toast after duplicating. {name} is the new template's name."
+  },
+  "settings.channelTemplates.duplicateFailed": "Failed to duplicate",
+  "@settings.channelTemplates.duplicateFailed": {
+    "description": "Settings > Group templates, error toast when duplicating failed."
+  },
+  "settings.channelTemplates.deleted": "Deleted \"{name}\"",
+  "@settings.channelTemplates.deleted": {
+    "description": "Settings > Group templates, toast after deleting a template. {name} is its name."
+  },
+  "settings.channelTemplates.deleteFailed": "Failed to delete",
+  "@settings.channelTemplates.deleteFailed": {
+    "description": "Settings > Group templates, error toast when deleting failed."
+  },
+  "settings.channelTemplates.deleteTitle": "Delete template",
+  "@settings.channelTemplates.deleteTitle": {
+    "description": "Settings > Group templates, delete confirmation dialog title."
+  },
+  "settings.channelTemplates.deleteConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+  "@settings.channelTemplates.deleteConfirm": {
+    "description": "Settings > Group templates, delete confirmation dialog text. {name} is the template name."
+  },
+  "settings.channelTemplates.builtIn": "built-in",
+  "@settings.channelTemplates.builtIn": {
+    "description": "Settings > Group templates, small badge on templates that come with the app (shown uppercase). Short."
+  },
+  "settings.channelTemplates.agentCount": "{count, plural, one {# agent} other {# agents}}",
+  "@settings.channelTemplates.agentCount": {
+    "description": "Settings > Group templates, small grey count in a template row. Short."
+  },
+  "settings.channelTemplates.teamCount": "{count, plural, one {# team} other {# teams}}",
+  "@settings.channelTemplates.teamCount": {
+    "description": "Settings > Group templates, small grey count in a template row. Short."
+  },
+  "settings.channelTemplates.canvas": "canvas",
+  "@settings.channelTemplates.canvas": {
+    "description": "Settings > Group templates, small grey tag in a template row meaning it includes a canvas. Short."
+  },
+  "settings.channelTemplates.duplicate": "Duplicate",
+  "@settings.channelTemplates.duplicate": {
+    "description": "Settings > Group templates, row menu item that copies the template. Short."
+  },
+  "settings.channelTemplates.updated": "Updated \"{name}\"",
+  "@settings.channelTemplates.updated": {
+    "description": "Template dialog, toast after saving changes. {name} is the template name."
+  },
+  "settings.channelTemplates.updateFailed": "Failed to update",
+  "@settings.channelTemplates.updateFailed": {
+    "description": "Template dialog, error toast when saving changes failed."
+  },
+  "settings.channelTemplates.created": "Created \"{name}\"",
+  "@settings.channelTemplates.created": {
+    "description": "Template dialog, toast after creating a template. {name} is its name."
+  },
+  "settings.channelTemplates.createFailed": "Failed to create",
+  "@settings.channelTemplates.createFailed": {
+    "description": "Template dialog, error toast when creating failed."
+  },
+  "settings.channelTemplates.editTitle": "Edit template",
+  "@settings.channelTemplates.editTitle": {
+    "description": "Template dialog title when editing."
+  },
+  "settings.channelTemplates.createTitle": "Create template",
+  "@settings.channelTemplates.createTitle": {
+    "description": "Template dialog title when creating."
+  },
+  "settings.channelTemplates.editDescription": "Update this group template configuration.",
+  "@settings.channelTemplates.editDescription": {
+    "description": "Template dialog, grey text under the title when editing."
+  },
+  "settings.channelTemplates.createDescription": "Save a reusable group configuration.",
+  "@settings.channelTemplates.createDescription": {
+    "description": "Template dialog, grey text under the title when creating."
+  },
+  "settings.channelTemplates.saving": "Saving...",
+  "@settings.channelTemplates.saving": {
+    "description": "Template dialog, Save button while saving. Short."
+  },
+  "settings.channelTemplates.creating": "Creating...",
+  "@settings.channelTemplates.creating": {
+    "description": "Template dialog, Create button while creating. Short."
+  },
+  "settings.channelTemplates.nameLabel": "Name",
+  "@settings.channelTemplates.nameLabel": {
+    "description": "Template dialog, label of the name field. Short."
+  },
+  "settings.channelTemplates.namePlaceholder": "Sprint Planning",
+  "@settings.channelTemplates.namePlaceholder": {
+    "description": "Template dialog, example name shown in the empty name field."
+  },
+  "settings.channelTemplates.descriptionLabel": "Description <muted>(optional)</muted>",
+  "@settings.channelTemplates.descriptionLabel": {
+    "description": "Template dialog, label of the description field; the part in tags is shown grey."
+  },
+  "settings.channelTemplates.descriptionPlaceholder": "What this template is for",
+  "@settings.channelTemplates.descriptionPlaceholder": {
+    "description": "Template dialog, placeholder of the empty description field."
+  },
+  "settings.channelTemplates.canvasLabel": "Canvas template <muted>(optional)</muted>",
+  "@settings.channelTemplates.canvasLabel": {
+    "description": "Template dialog, label of the canvas text field; the part in tags is shown grey."
+  },
+  "settings.channelTemplates.canvasPlaceholder": "Canvas content here...",
+  "@settings.channelTemplates.canvasPlaceholder": {
+    "description": "Template dialog, placeholder of the empty canvas field."
+  },
+  "settings.channelTemplates.canvasHelp": "Use {channelName} and {templateName} as placeholders.",
+  "@settings.channelTemplates.canvasHelp": {
+    "description": "Template dialog, grey help under the canvas field. {channelName} and {templateName} are code tokens the user can type; keep them."
+  },
+  "settings.channelTemplates.teams": "Teams",
+  "@settings.channelTemplates.teams": {
+    "description": "Template dialog, title of the team picker. Short."
+  },
+  "settings.channelTemplates.teamsHint": "Select teams to include in this template.",
+  "@settings.channelTemplates.teamsHint": {
+    "description": "Template dialog, grey text under 'Teams'."
+  },
+  "settings.channelTemplates.runtimes": "Runtimes",
+  "@settings.channelTemplates.runtimes": {
+    "description": "Template dialog, title of the per-agent runtime choices. Short."
+  },
+  "settings.channelTemplates.runtimesHint": "Choose which runtime to use for each agent.",
+  "@settings.channelTemplates.runtimesHint": {
+    "description": "Template dialog, grey text under 'Runtimes'."
+  },
+  "settings.channelTemplates.discoveringRuntimes": "Discovering runtimes...",
+  "@settings.channelTemplates.discoveringRuntimes": {
+    "description": "Template dialog, shown while looking for installed runtimes."
+  },
+  "settings.channelTemplates.noRuntimes": "No ACP runtimes detected. Install one to assign runtimes.",
+  "@settings.channelTemplates.noRuntimes": {
+    "description": "Template dialog, shown when no agent runtime is installed. ACP is a technical name; keep it."
+  },
+  "settings.channelTemplates.defaultRuntime": "Default",
+  "@settings.channelTemplates.defaultRuntime": {
+    "description": "Template dialog, first option in each agent's runtime dropdown. Short."
+  },
+  "settings.appearance.thisCommunity": "this community",
+  "@settings.appearance.thisCommunity": {
+    "description": "Settings > Appearance, used as the community name inside a sentence when no community is active. Lowercase."
+  },
+  "settings.appearance.prominentActiveTab": "Prominent active tab",
+  "@settings.appearance.prominentActiveTab": {
+    "description": "Settings > Appearance, switch label."
+  },
+  "settings.appearance.prominentActiveTabHint": "Give the selected navigation item a higher-contrast background.",
+  "@settings.appearance.prominentActiveTabHint": {
+    "description": "Settings > Appearance, grey text under 'Prominent active tab'."
+  },
+  "settings.appearance.linkPreviewCompact": "Compact",
+  "@settings.appearance.linkPreviewCompact": {
+    "description": "Settings > Appearance > Link previews, segmented option. Short."
+  },
+  "settings.appearance.linkPreviewCompactHint": "Small cards with a thumbnail",
+  "@settings.appearance.linkPreviewCompactHint": {
+    "description": "Settings > Appearance > Link previews, grey text when 'Compact' is chosen."
+  },
+  "settings.appearance.linkPreviewRich": "Rich",
+  "@settings.appearance.linkPreviewRich": {
+    "description": "Settings > Appearance > Link previews, segmented option. Short."
+  },
+  "settings.appearance.linkPreviewRichHint": "Large previews with images and descriptions",
+  "@settings.appearance.linkPreviewRichHint": {
+    "description": "Settings > Appearance > Link previews, grey text when 'Rich' is chosen."
+  },
+  "settings.appearance.densityCompact": "Compact",
+  "@settings.appearance.densityCompact": {
+    "description": "Settings > Appearance > Conversation density, segmented option. Short."
+  },
+  "settings.appearance.densityComfortable": "Comfy",
+  "@settings.appearance.densityComfortable": {
+    "description": "Settings > Appearance > Conversation density, segmented option (comfortable, medium spacing). Short."
+  },
+  "settings.appearance.densitySpacious": "Spacious",
+  "@settings.appearance.densitySpacious": {
+    "description": "Settings > Appearance > Conversation density, segmented option. Short."
+  },
+  "settings.appearance.fontSizeSmaller": "Smaller",
+  "@settings.appearance.fontSizeSmaller": {
+    "description": "Settings > Appearance > Font size, segmented option. Short."
+  },
+  "settings.appearance.fontSizeDefault": "Default",
+  "@settings.appearance.fontSizeDefault": {
+    "description": "Settings > Appearance > Font size, segmented option. Short."
+  },
+  "settings.appearance.fontSizeLarger": "Larger",
+  "@settings.appearance.fontSizeLarger": {
+    "description": "Settings > Appearance > Font size, segmented option. Short."
+  },
+  "settings.appearance.preview": "Preview",
+  "@settings.appearance.preview": {
+    "description": "Settings > Appearance, small grey tag in the corner of a sample preview card. Short."
+  },
+  "settings.appearance.sampleMessage1": "The revised conversation layout is ready to review.",
+  "@settings.appearance.sampleMessage1": {
+    "description": "Settings > Appearance, sample chat message in the density preview."
+  },
+  "settings.appearance.sampleMessage2": "I added a longer message so you can compare line height and text spacing.",
+  "@settings.appearance.sampleMessage2": {
+    "description": "Settings > Appearance, sample chat message in the density preview, first paragraph."
+  },
+  "settings.appearance.sampleMessage3": "The same rhythm carries through groups, threads, DMs, and Inbox.",
+  "@settings.appearance.sampleMessage3": {
+    "description": "Settings > Appearance, sample chat message in the density preview, second paragraph."
+  },
+  "settings.appearance.fontSize": "Font size",
+  "@settings.appearance.fontSize": {
+    "description": "Settings > Appearance, row title and group label of the font size control."
+  },
+  "settings.appearance.fontSizeHint": "Applies across conversations and interface text",
+  "@settings.appearance.fontSizeHint": {
+    "description": "Settings > Appearance, grey text under 'Font size'."
+  },
+  "settings.appearance.density": "Conversation density",
+  "@settings.appearance.density": {
+    "description": "Settings > Appearance, row title and group label of the spacing control."
+  },
+  "settings.appearance.densityHint": "Spacing in conversations and Markdown content across Kuzz",
+  "@settings.appearance.densityHint": {
+    "description": "Settings > Appearance, grey text under 'Conversation density'."
+  },
+  "settings.appearance.sampleLinkTitle": "Product updates — a fresh look at conversations",
+  "@settings.appearance.sampleLinkTitle": {
+    "description": "Settings > Appearance > Link previews, title of the sample link card."
+  },
+  "settings.appearance.sampleLinkDescription": "Highlights from this release: refreshed conversation layout, quicker link handling, and readability improvements.",
+  "@settings.appearance.sampleLinkDescription": {
+    "description": "Settings > Appearance > Link previews, description of the sample link card."
+  },
+  "settings.appearance.linkPreviews": "Link previews",
+  "@settings.appearance.linkPreviews": {
+    "description": "Settings > Appearance, row title and group label of the link preview style control."
+  },
+  "settings.appearance.threadFocus": "Focus",
+  "@settings.appearance.threadFocus": {
+    "description": "Settings > Appearance > Thread layout, segmented option: thread covers the group. Short."
+  },
+  "settings.appearance.threadFocusHint": "Threads open over the group",
+  "@settings.appearance.threadFocusHint": {
+    "description": "Settings > Appearance > Thread layout, grey text when 'Focus' is chosen."
+  },
+  "settings.appearance.threadSplit": "Split",
+  "@settings.appearance.threadSplit": {
+    "description": "Settings > Appearance > Thread layout, segmented option: thread beside the group. Short."
+  },
+  "settings.appearance.threadSplitHint": "Threads open in a side panel next to the group",
+  "@settings.appearance.threadSplitHint": {
+    "description": "Settings > Appearance > Thread layout, grey text when 'Split' is chosen."
+  },
+  "settings.appearance.glassOpacity": "Glass opacity",
+  "@settings.appearance.glassOpacity": {
+    "description": "Settings > Appearance, slider row title and slider screen-reader label."
+  },
+  "settings.appearance.glassOpacityHint": "Lower values reveal more of the desktop blur.",
+  "@settings.appearance.glassOpacityHint": {
+    "description": "Settings > Appearance, grey text under 'Glass opacity'."
+  },
+  "settings.appearance.glassOpacityValue": "{value}% opacity",
+  "@settings.appearance.glassOpacityValue": {
+    "description": "Settings > Appearance, screen-reader value of the glass opacity slider."
+  },
+  "settings.appearance.resetGlassOpacity": "Reset glass opacity",
+  "@settings.appearance.resetGlassOpacity": {
+    "description": "Settings > Appearance, reset button on the glass opacity slider: screen-reader label."
+  },
+  "settings.appearance.glassBackground": "Glass background",
+  "@settings.appearance.glassBackground": {
+    "description": "Settings > Appearance, switch label."
+  },
+  "settings.appearance.glassBackgroundHint": "Blur the desktop behind navigation while keeping content solid.",
+  "@settings.appearance.glassBackgroundHint": {
+    "description": "Settings > Appearance, grey text under 'Glass background'."
+  },
+  "settings.appearance.glassBackgroundUnavailable": "Available in the macOS desktop app.",
+  "@settings.appearance.glassBackgroundUnavailable": {
+    "description": "Settings > Appearance, grey text under 'Glass background' when this computer cannot use it."
+  },
+  "settings.appearance.threadLayout": "Thread layout",
+  "@settings.appearance.threadLayout": {
+    "description": "Settings > Appearance, row title and group label of the thread layout control."
+  },
+  "settings.appearance.allCommunities": "(all communities)",
+  "@settings.appearance.allCommunities": {
+    "description": "Settings > Appearance, grey text after 'Thread layout' saying it applies to every community. Short."
+  },
+  "settings.appearance.accentColor": "Accent color",
+  "@settings.appearance.accentColor": {
+    "description": "Settings > Appearance, row title of the color swatches."
+  },
+  "settings.appearance.accentColorHint": "Choose the highlight color used throughout Kuzz.",
+  "@settings.appearance.accentColorHint": {
+    "description": "Settings > Appearance, grey text under 'Accent color'."
+  },
+  "settings.appearance.useAccent": "Use {name} accent",
+  "@settings.appearance.useAccent": {
+    "description": "Settings > Appearance, screen-reader label of a color swatch. {name} is the color name."
+  },
+  "settings.peoplePrivacy.help": "Help",
+  "@settings.peoplePrivacy.help": {
+    "description": "Settings > Profile, title of the help card. Short."
+  },
+  "settings.peoplePrivacy.contactUs": "Contact us",
+  "@settings.peoplePrivacy.contactUs": {
+    "description": "Settings > Profile > Help, row title."
+  },
+  "settings.peoplePrivacy.contactHint": "Questions, problems or reports: {email}",
+  "@settings.peoplePrivacy.contactHint": {
+    "description": "Settings > Profile > Help, grey text under 'Contact us'. {email} is the support address."
+  },
+  "settings.peoplePrivacy.writeToUs": "Write to us at {email}",
+  "@settings.peoplePrivacy.writeToUs": {
+    "description": "Settings > Profile > Help, error toast when the mail app could not open. {email} is the support address."
+  },
+  "settings.peoplePrivacy.emailUs": "Email us",
+  "@settings.peoplePrivacy.emailUs": {
+    "description": "Settings > Profile > Help, button that opens the mail app. Short."
+  },
+  "settings.peoplePrivacy.kuzzIdSaved": "Kuzz ID saved",
+  "@settings.peoplePrivacy.kuzzIdSaved": {
+    "description": "Settings > Profile > Finding you, toast after saving the Kuzz ID (the user's @name)."
+  },
+  "settings.peoplePrivacy.kuzzIdRemoved": "Kuzz ID removed",
+  "@settings.peoplePrivacy.kuzzIdRemoved": {
+    "description": "Settings > Profile > Finding you, toast after clearing the Kuzz ID."
+  },
+  "settings.peoplePrivacy.kuzzIdSaveFailed": "Couldn't save your Kuzz ID",
+  "@settings.peoplePrivacy.kuzzIdSaveFailed": {
+    "description": "Settings > Profile > Finding you, red error under the Kuzz ID field."
+  },
+  "settings.peoplePrivacy.changeFailed": "Couldn't change this setting",
+  "@settings.peoplePrivacy.changeFailed": {
+    "description": "Settings > Profile > Finding you, error toast when the switch could not be saved."
+  },
+  "settings.peoplePrivacy.findingYouTitle": "Finding you",
+  "@settings.peoplePrivacy.findingYouTitle": {
+    "description": "Settings > Profile, card title about how others can find the user."
+  },
+  "settings.peoplePrivacy.findingYouDescription": "Friends can add you by your Kuzz ID or email address.",
+  "@settings.peoplePrivacy.findingYouDescription": {
+    "description": "Settings > Profile > Finding you, grey text under the card title."
+  },
+  "settings.peoplePrivacy.kuzzId": "Kuzz ID",
+  "@settings.peoplePrivacy.kuzzId": {
+    "description": "Settings > Profile > Finding you, label of the @ID field. Short."
+  },
+  "settings.peoplePrivacy.kuzzIdPlaceholder": "your_id",
+  "@settings.peoplePrivacy.kuzzIdPlaceholder": {
+    "description": "Settings > Profile > Finding you, example in the empty ID field. Only lowercase letters, numbers and _ are allowed."
+  },
+  "settings.peoplePrivacy.signInForKuzzId": "Sign in with Google to set your Kuzz ID.",
+  "@settings.peoplePrivacy.signInForKuzzId": {
+    "description": "Settings > Profile > Finding you, grey text under the ID field when not signed in."
+  },
+  "settings.peoplePrivacy.kuzzIdLoadFailed": "Couldn't load your Kuzz ID.",
+  "@settings.peoplePrivacy.kuzzIdLoadFailed": {
+    "description": "Settings > Profile > Finding you, text under the ID field when loading failed."
+  },
+  "settings.peoplePrivacy.kuzzIdRules": "3 to 32 lowercase letters, numbers or _.",
+  "@settings.peoplePrivacy.kuzzIdRules": {
+    "description": "Settings > Profile > Finding you, grey help under the ID field."
+  },
+  "settings.peoplePrivacy.tryAgain": "Try again",
+  "@settings.peoplePrivacy.tryAgain": {
+    "description": "Settings > Profile, button to reload after a failed load. Short."
+  },
+  "settings.peoplePrivacy.discoverable": "Let people find me by ID or email",
+  "@settings.peoplePrivacy.discoverable": {
+    "description": "Settings > Profile > Finding you, switch label."
+  },
+  "settings.peoplePrivacy.discoverableHint": "When this is off, only people in your groups can find you.",
+  "@settings.peoplePrivacy.discoverableHint": {
+    "description": "Settings > Profile > Finding you, grey text under the switch."
+  },
+  "settings.peoplePrivacy.blockedTitle": "Blocked users",
+  "@settings.peoplePrivacy.blockedTitle": {
+    "description": "Settings > Profile, card title listing blocked people."
+  },
+  "settings.peoplePrivacy.blockedDescription": "Blocked people can't reach you, and their messages in shared groups are hidden.",
+  "@settings.peoplePrivacy.blockedDescription": {
+    "description": "Settings > Profile > Blocked users, grey text under the card title."
+  },
+  "settings.peoplePrivacy.blockedLoadFailed": "Couldn't load the people you blocked.",
+  "@settings.peoplePrivacy.blockedLoadFailed": {
+    "description": "Settings > Profile > Blocked users, shown when the list failed to load."
+  },
+  "settings.peoplePrivacy.blockedEmpty": "You haven't blocked anyone.",
+  "@settings.peoplePrivacy.blockedEmpty": {
+    "description": "Settings > Profile > Blocked users, empty list text."
+  },
+  "settings.peoplePrivacy.unknownPerson": "Unknown",
+  "@settings.peoplePrivacy.unknownPerson": {
+    "description": "Settings > Profile > Blocked users, name shown for a person without a profile name. Short."
+  },
+  "settings.peoplePrivacy.unblockLabel": "Unblock {name}",
+  "@settings.peoplePrivacy.unblockLabel": {
+    "description": "Settings > Profile > Blocked users, screen-reader label of the Unblock button. {name} is the person's name."
+  },
+  "settings.peoplePrivacy.unblocked": "{name} is unblocked",
+  "@settings.peoplePrivacy.unblocked": {
+    "description": "Settings > Profile > Blocked users, toast after unblocking. {name} is the person's name."
+  },
+  "settings.peoplePrivacy.unblockFailed": "Couldn't unblock",
+  "@settings.peoplePrivacy.unblockFailed": {
+    "description": "Settings > Profile > Blocked users, error toast when unblocking failed."
+  },
+  "settings.peoplePrivacy.unblock": "Unblock",
+  "@settings.peoplePrivacy.unblock": {
+    "description": "Settings > Profile > Blocked users, button on each row. Short."
+  },
+  "settings.account.title": "Account",
+  "@settings.account.title": {
+    "description": "Settings > Account, section title. Short."
+  },
+  "settings.account.protectTitle": "Protect your account",
+  "@settings.account.protectTitle": {
+    "description": "Settings > Account, section title when the account is not yet connected to Google."
+  },
+  "settings.account.description": "You sign in to Kuzz with your Google account.",
+  "@settings.account.description": {
+    "description": "Settings > Account, text under the section title."
+  },
+  "settings.account.protectDescription": "Continue with Google so you can sign in to Kuzz on other computers and get back into your account if this one is lost. Your Kuzz server keeps a protected copy for this.",
+  "@settings.account.protectDescription": {
+    "description": "Settings > Account, text under 'Protect your account' explaining why to connect Google."
+  },
+  "settings.account.restoring": "Restoring your sign-in…",
+  "@settings.account.restoring": {
+    "description": "Settings > Account, status line while the saved sign-in is being restored."
+  },
+  "settings.account.needsLogin": "Your sign-in has ended",
+  "@settings.account.needsLogin": {
+    "description": "Settings > Account, status line when the user must sign in again."
+  },
+  "settings.account.notConnected": "Not connected to Google yet",
+  "@settings.account.notConnected": {
+    "description": "Settings > Account, status line when the account is not connected to Google."
+  },
+  "settings.account.notSignedIn": "Not signed in",
+  "@settings.account.notSignedIn": {
+    "description": "Settings > Account, status line when nobody is signed in."
+  },
+  "settings.account.needsLoginHintKept": "Sign in with Google again to manage your account. Kuzz and your agents keep working.",
+  "@settings.account.needsLoginHintKept": {
+    "description": "Settings > Account, grey text under 'Your sign-in has ended' when the account still works."
+  },
+  "settings.account.needsLoginHint": "Sign in with Google again to keep using this community and its agents.",
+  "@settings.account.needsLoginHint": {
+    "description": "Settings > Account, grey text under 'Your sign-in has ended'."
+  },
+  "settings.account.protectHint": "Your browser opens to finish. Your profile, communities and agents stay the same.",
+  "@settings.account.protectHint": {
+    "description": "Settings > Account, grey text under 'Not connected to Google yet'."
+  },
+  "settings.account.signInHint": "Sign in with Google to use your account on this community. Your browser opens to finish signing in.",
+  "@settings.account.signInHint": {
+    "description": "Settings > Account, grey text under 'Not signed in'."
+  },
+  "settings.account.signingIn": "Signing in…",
+  "@settings.account.signingIn": {
+    "description": "Settings > Account, sign-in button text while signing in. Short."
+  },
+  "settings.account.signInAgain": "Sign in again",
+  "@settings.account.signInAgain": {
+    "description": "Settings > Account, button when the sign-in has ended. Short."
+  },
+  "settings.account.continueWithGoogle": "Continue with Google",
+  "@settings.account.continueWithGoogle": {
+    "description": "Settings > Account, button that connects the account to Google. Short."
+  },
+  "settings.account.signInWithGoogle": "Sign in with Google",
+  "@settings.account.signInWithGoogle": {
+    "description": "Settings > Account, sign-in button. Short."
+  },
+  "settings.account.signOut": "Sign out",
+  "@settings.account.signOut": {
+    "description": "Settings > Account, button and confirm-dialog button that signs out of this account. Short."
+  },
+  "settings.account.signedInWithGoogle": "Signed in with Google",
+  "@settings.account.signedInWithGoogle": {
+    "description": "Settings > Account, shown in place of the account name or email when they are unknown."
+  },
+  "settings.account.accountsOnThisComputer": "Accounts on this computer",
+  "@settings.account.accountsOnThisComputer": {
+    "description": "Settings > Account, heading of the list of accounts signed in on this computer."
+  },
+  "settings.account.signOutTitleNamed": "Sign out of {name}?",
+  "@settings.account.signOutTitleNamed": {
+    "description": "Settings > Account, sign-out confirm dialog title; {name} is the account name."
+  },
+  "settings.account.signOutTitle": "Sign out of Kuzz?",
+  "@settings.account.signOutTitle": {
+    "description": "Settings > Account, sign-out confirm dialog title when the account name is unknown."
+  },
+  "settings.account.signOutDescription": "You'll be signed out on this computer. Sign in with Google to get back to your conversations. Nothing is deleted.",
+  "@settings.account.signOutDescription": {
+    "description": "Settings > Account, sign-out confirm dialog text."
+  },
+  "settings.account.signOutDescriptionSwitch": "You'll be signed out on this computer and switched to {account}. Nothing is deleted.",
+  "@settings.account.signOutDescriptionSwitch": {
+    "description": "Settings > Account, sign-out confirm dialog text when another account on this computer takes over; {account} is that account's name."
+  },
+  "settings.account.agentsWillStop": "{count, plural, one {# agent of this account will stop.} other {# agents of this account will stop.}}",
+  "@settings.account.agentsWillStop": {
+    "description": "Settings > Account, sign-out confirm dialog, extra line: how many running agents stop."
+  },
+  "settings.account.agentsNewIdentity": "{count, plural, one {An agent got a new identity on this community. Its earlier messages stay under its old identity.} other {# agents got new identities on this community. Their earlier messages stay under their old identities.}}",
+  "@settings.account.agentsNewIdentity": {
+    "description": "Notification (toast) shown in Settings > Account after agents were given new identities."
+  },
+  "settings.account.disconnectHint": "Disconnect every agent right away. Agents on this computer reconnect the next time they start.",
+  "@settings.account.disconnectHint": {
+    "description": "Settings > Account, grey text next to the 'Disconnect all agents' button."
+  },
+  "settings.account.disconnectAll": "Disconnect all agents",
+  "@settings.account.disconnectAll": {
+    "description": "Settings > Account, button. Short."
+  },
+  "settings.account.disconnectTitle": "Disconnect all agents?",
+  "@settings.account.disconnectTitle": {
+    "description": "Settings > Account, confirm dialog title."
+  },
+  "settings.account.disconnectDescription": "All of your agents are disconnected from this community right away. Agents on this computer reconnect on their own the next time they start.",
+  "@settings.account.disconnectDescription": {
+    "description": "Settings > Account, 'Disconnect all agents?' confirm dialog text."
+  },
+  "settings.account.disconnectConfirm": "Disconnect agents",
+  "@settings.account.disconnectConfirm": {
+    "description": "Settings > Account, confirm button in the 'Disconnect all agents?' dialog. Short."
+  },
+  "settings.account.disconnected": "All agents were disconnected.",
+  "@settings.account.disconnected": {
+    "description": "Notification (toast) after all agents were disconnected."
+  },
+  "settings.account.deletionSummary": "Account deletion",
+  "@settings.account.deletionSummary": {
+    "description": "Settings > Account, collapsible section label that hides the delete-account button. Short."
+  },
+  "settings.account.deleteHint": "Delete your account on this community. Signing in again within 30 days restores it.",
+  "@settings.account.deleteHint": {
+    "description": "Settings > Account, grey text next to the 'Delete account' button."
+  },
+  "settings.account.deleteAccount": "Delete account",
+  "@settings.account.deleteAccount": {
+    "description": "Settings > Account, button and confirm-dialog button that deletes the account. Short."
+  },
+  "settings.account.deleteTitle": "Delete your account?",
+  "@settings.account.deleteTitle": {
+    "description": "Settings > Account, delete-account confirm dialog title."
+  },
+  "settings.account.deleteDescription": "Every device and agent is signed out now. The account is removed after 30 days unless you sign in with Google again before then.",
+  "@settings.account.deleteDescription": {
+    "description": "Settings > Account, delete-account confirm dialog text."
+  },
+  "settings.account.signInFailed": "Sign in failed.",
+  "@settings.account.signInFailed": {
+    "description": "Error notification (toast) when signing in fails without a more specific reason."
+  },
+  "settings.account.signOutFailed": "Sign out failed.",
+  "@settings.account.signOutFailed": {
+    "description": "Error notification (toast) when signing out fails without a more specific reason."
+  },
+  "settings.account.disconnectFailed": "Disconnect agents failed.",
+  "@settings.account.disconnectFailed": {
+    "description": "Error notification (toast) when disconnecting all agents fails."
+  },
+  "settings.account.deleteFailed": "Delete account failed.",
+  "@settings.account.deleteFailed": {
+    "description": "Error notification (toast) when deleting the account fails."
+  },
+  "settings.device.title": "Devices",
+  "@settings.device.title": {
+    "description": "Settings > Devices, section title and list heading. Short."
+  },
+  "settings.device.description": "Computers and phones signed in to your account.",
+  "@settings.device.description": {
+    "description": "Settings > Devices, text under the section title."
+  },
+  "settings.device.signInHint": "Sign in with Google under Account to see your devices.",
+  "@settings.device.signInHint": {
+    "description": "Settings > Devices, shown when not signed in."
+  },
+  "settings.device.loadFailed": "Could not load devices.",
+  "@settings.device.loadFailed": {
+    "description": "Error notification (toast) when the device list fails to load."
+  },
+  "settings.device.signOutOthersHint": "Sign out every other device. Your agents keep running.",
+  "@settings.device.signOutOthersHint": {
+    "description": "Settings > Devices, grey text next to the 'Sign out other devices' button."
+  },
+  "settings.device.signOutOthers": "Sign out other devices",
+  "@settings.device.signOutOthers": {
+    "description": "Settings > Devices, button and confirm-dialog button. Short."
+  },
+  "settings.device.signOutOthersTitle": "Sign out other devices?",
+  "@settings.device.signOutOthersTitle": {
+    "description": "Settings > Devices, confirm dialog title."
+  },
+  "settings.device.signOutOthersDescription": "Every other computer and phone using your account is signed out and will need to sign in with Google again. This computer stays signed in, and your agents keep running.",
+  "@settings.device.signOutOthersDescription": {
+    "description": "Settings > Devices, 'Sign out other devices?' confirm dialog text."
+  },
+  "settings.device.signedOutOthers": "Signed out of all other devices.",
+  "@settings.device.signedOutOthers": {
+    "description": "Notification (toast) after other devices were signed out."
+  },
+  "settings.device.signOutOthersFailed": "Sign out other devices failed.",
+  "@settings.device.signOutOthersFailed": {
+    "description": "Error notification (toast) when signing out other devices fails."
+  },
+  "settings.device.signOutDeviceFailed": "Sign out device failed.",
+  "@settings.device.signOutDeviceFailed": {
+    "description": "Error notification (toast) when signing out one device fails."
+  },
+  "settings.device.renameFailed": "Rename device failed.",
+  "@settings.device.renameFailed": {
+    "description": "Error notification (toast) when renaming a device fails."
+  },
+  "settings.device.changeRobotFailed": "Change device robot failed.",
+  "@settings.device.changeRobotFailed": {
+    "description": "Error notification (toast) when changing a device's robot icon fails."
+  },
+  "settings.device.platform": "· {platform}",
+  "@settings.device.platform": {
+    "description": "Settings > Devices, device row, grey text after the device name; {platform} is the operating system (Windows, iOS). Short."
+  },
+  "settings.device.platformCurrent": "· {platform} · this device",
+  "@settings.device.platformCurrent": {
+    "description": "Settings > Devices, device row for this computer, grey text after the device name; {platform} is the operating system. Short."
+  },
+  "settings.device.rename": "Rename {name}",
+  "@settings.device.rename": {
+    "description": "Settings > Devices, screen-reader label of the pencil button; {name} is the device name."
+  },
+  "settings.device.newName": "New name for {name}",
+  "@settings.device.newName": {
+    "description": "Settings > Devices, screen-reader label of the rename text field; {name} is the current device name."
+  },
+  "settings.device.signOutNamed": "Sign out {name}",
+  "@settings.device.signOutNamed": {
+    "description": "Settings > Devices, screen-reader label of a device's sign-out button; {name} is the device name."
+  },
+  "settings.device.signOut": "Sign out",
+  "@settings.device.signOut": {
+    "description": "Settings > Devices, button that signs out one device. Short."
+  },
+  "settings.robotPicker.change": "Change robot for {name}",
+  "@settings.robotPicker.change": {
+    "description": "Settings > Devices, screen-reader label of the robot icon button that opens the robot picker; {name} is the device name."
+  },
+  "settings.robotPicker.shape": "Shape",
+  "@settings.robotPicker.shape": {
+    "description": "Settings > Devices, robot picker, small heading above the robot shapes. Short."
+  },
+  "settings.robotPicker.colour": "Colour",
+  "@settings.robotPicker.colour": {
+    "description": "Settings > Devices, robot picker, small heading above the robot colours. Short."
+  },
+  "settings.robotPicker.shapeClassic": "Classic robot",
+  "@settings.robotPicker.shapeClassic": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot shape choice. Short."
+  },
+  "settings.robotPicker.shapeDome": "Dome robot",
+  "@settings.robotPicker.shapeDome": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot shape choice (round head). Short."
+  },
+  "settings.robotPicker.shapeBoxy": "Boxy robot",
+  "@settings.robotPicker.shapeBoxy": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot shape choice (square head). Short."
+  },
+  "settings.robotPicker.shapeVisor": "Visor robot",
+  "@settings.robotPicker.shapeVisor": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot shape choice (eye visor). Short."
+  },
+  "settings.robotPicker.shapeTall": "Tall robot",
+  "@settings.robotPicker.shapeTall": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot shape choice. Short."
+  },
+  "settings.robotPicker.shapeHex": "Hex robot",
+  "@settings.robotPicker.shapeHex": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot shape choice (hexagon head). Short."
+  },
+  "settings.robotPicker.paintRed": "Red robot",
+  "@settings.robotPicker.paintRed": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice. Short."
+  },
+  "settings.robotPicker.paintGreen": "Green robot",
+  "@settings.robotPicker.paintGreen": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice. Short."
+  },
+  "settings.robotPicker.paintViolet": "Violet robot",
+  "@settings.robotPicker.paintViolet": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice. Short."
+  },
+  "settings.robotPicker.paintOrange": "Orange robot",
+  "@settings.robotPicker.paintOrange": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice. Short."
+  },
+  "settings.robotPicker.paintBlue": "Blue robot",
+  "@settings.robotPicker.paintBlue": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice. Short."
+  },
+  "settings.robotPicker.paintYellow": "Yellow robot",
+  "@settings.robotPicker.paintYellow": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice. Short."
+  },
+  "settings.robotPicker.paintRainbow": "Rainbow robot",
+  "@settings.robotPicker.paintRainbow": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice (rainbow gradient). Short."
+  },
+  "settings.robotPicker.paintGold": "Gold robot",
+  "@settings.robotPicker.paintGold": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice (metallic gold). Short."
+  },
+  "settings.robotPicker.paintSilver": "Silver robot",
+  "@settings.robotPicker.paintSilver": {
+    "description": "Robot picker, tooltip and screen-reader label of a robot colour choice (metallic silver). Short."
+  },
+  "settings.mobilePairing.title": "Mobile",
+  "@settings.mobilePairing.title": {
+    "description": "Settings > Mobile, section title. Short."
+  },
+  "settings.mobilePairing.description": "Connect the Kuzz mobile app by scanning a QR code. The connection is secured with end-to-end encryption and a verification code.",
+  "@settings.mobilePairing.description": {
+    "description": "Settings > Mobile, text under the section title."
+  },
+  "settings.mobilePairing.scanTitle": "Scan QR code",
+  "@settings.mobilePairing.scanTitle": {
+    "description": "Settings > Mobile, pairing step 1 title. Short."
+  },
+  "settings.mobilePairing.scanHint": "Open Kuzz on your mobile device and scan the code shown here.",
+  "@settings.mobilePairing.scanHint": {
+    "description": "Settings > Mobile, pairing step 1 text."
+  },
+  "settings.mobilePairing.confirmTitle": "Confirm mobile code",
+  "@settings.mobilePairing.confirmTitle": {
+    "description": "Settings > Mobile, pairing step 2 title and title above the six-digit code. Short."
+  },
+  "settings.mobilePairing.confirmHint": "Check that the six-digit code matches on both devices, then confirm it.",
+  "@settings.mobilePairing.confirmHint": {
+    "description": "Settings > Mobile, pairing step 2 text."
+  },
+  "settings.mobilePairing.pairTitle": "Pair your mobile app",
+  "@settings.mobilePairing.pairTitle": {
+    "description": "Settings > Mobile, pairing step 3 title before pairing. Short."
+  },
+  "settings.mobilePairing.paired": "Paired",
+  "@settings.mobilePairing.paired": {
+    "description": "Settings > Mobile, pairing step 3 title and status after pairing succeeded. Short."
+  },
+  "settings.mobilePairing.pairHint": "Your mobile app will connect after you confirm the code.",
+  "@settings.mobilePairing.pairHint": {
+    "description": "Settings > Mobile, pairing step 3 text before pairing."
+  },
+  "settings.mobilePairing.pairedHint": "Your mobile app is now connected.",
+  "@settings.mobilePairing.pairedHint": {
+    "description": "Settings > Mobile, pairing step 3 text after pairing succeeded."
+  },
+  "settings.mobilePairing.codeLegend": "Confirmation code {code}",
+  "@settings.mobilePairing.codeLegend": {
+    "description": "Settings > Mobile, screen-reader label of the six-digit code; {code} is the code as two groups of three digits."
+  },
+  "settings.mobilePairing.codesMatch": "Codes match",
+  "@settings.mobilePairing.codesMatch": {
+    "description": "Settings > Mobile, button confirming the codes on both devices match. Short."
+  },
+  "settings.mobilePairing.tooLong": "Pairing took too long. Try again.",
+  "@settings.mobilePairing.tooLong": {
+    "description": "Settings > Mobile, error shown when pairing timed out."
+  },
+  "settings.mobilePairing.startFailed": "We couldn't start pairing. Try again.",
+  "@settings.mobilePairing.startFailed": {
+    "description": "Settings > Mobile, error shown when pairing could not start."
+  },
+  "settings.mobilePairing.stopped": "Pairing stopped: {reason}",
+  "@settings.mobilePairing.stopped": {
+    "description": "Settings > Mobile, error shown when the phone stopped pairing; {reason} is the reason given by the phone (may be English)."
+  },
+  "settings.mobilePairing.copied": "Copied to clipboard",
+  "@settings.mobilePairing.copied": {
+    "description": "Notification (toast) after the pairing code was copied. Short."
+  },
+  "settings.mobilePairing.sendFailed": "We couldn't send your identity. Try again.",
+  "@settings.mobilePairing.sendFailed": {
+    "description": "Settings > Mobile, error when sending the account to the phone failed."
+  },
+  "settings.mobilePairing.codesMismatch": "The codes didn't match. Pairing was canceled.",
+  "@settings.mobilePairing.codesMismatch": {
+    "description": "Settings > Mobile, error after the user said the codes do not match."
+  },
+  "settings.mobilePairing.statusCodeReady": "Verification code {code} ready. Check that it matches on your mobile device, then confirm the codes match.",
+  "@settings.mobilePairing.statusCodeReady": {
+    "description": "Settings > Mobile, screen-reader announcement; {code} is the six-digit code as two groups of three digits."
+  },
+  "settings.mobilePairing.statusConfirmed": "Codes confirmed. Pairing your mobile device.",
+  "@settings.mobilePairing.statusConfirmed": {
+    "description": "Settings > Mobile, screen-reader announcement after the codes were confirmed."
+  },
+  "settings.mobilePairing.statusPaired": "Your mobile app is now paired.",
+  "@settings.mobilePairing.statusPaired": {
+    "description": "Settings > Mobile, screen-reader announcement after pairing succeeded."
+  },
+  "settings.mobilePairing.transferring": "Pairing mobile device...",
+  "@settings.mobilePairing.transferring": {
+    "description": "Settings > Mobile, text under a spinner while pairing finishes."
+  },
+  "settings.mobilePairing.qrTitle": "Mobile pairing QR code",
+  "@settings.mobilePairing.qrTitle": {
+    "description": "Settings > Mobile, screen-reader title of the QR code image."
+  },
+  "settings.mobilePairing.expired": "Pairing code expired.",
+  "@settings.mobilePairing.expired": {
+    "description": "Settings > Mobile, shown when the QR code expired."
+  },
+  "settings.mobilePairing.regenerate": "Generate new pairing code",
+  "@settings.mobilePairing.regenerate": {
+    "description": "Settings > Mobile, button after the pairing code expired."
+  },
+  "settings.mobilePairing.sessionEnded": "Pairing session ended.",
+  "@settings.mobilePairing.sessionEnded": {
+    "description": "Settings > Mobile, error shown when pairing ended without a reason."
+  },
+  "settings.mobilePairing.tryAgain": "Try again",
+  "@settings.mobilePairing.tryAgain": {
+    "description": "Settings > Mobile, button after a pairing error. Short."
+  },
+  "settings.mobilePairing.start": "Start pairing",
+  "@settings.mobilePairing.start": {
+    "description": "Settings > Mobile, button that starts pairing and shows the QR code. Short."
+  },
+  "settings.mobilePairing.signInHint": "Sign in to generate a mobile pairing code.",
+  "@settings.mobilePairing.signInHint": {
+    "description": "Settings > Mobile, shown instead of the start button when not signed in."
+  },
+  "settings.mobilePairing.starting": "Starting pairing...",
+  "@settings.mobilePairing.starting": {
+    "description": "Settings > Mobile, text under a spinner while the QR code is created."
+  },
+  "settings.mobilePairing.copyCode": "Copy pairing code",
+  "@settings.mobilePairing.copyCode": {
+    "description": "Settings > Mobile, button under the QR code that copies the pairing link. Short."
+  },
+  "settings.signOut.deletionSummary": "Local data deletion",
+  "@settings.signOut.deletionSummary": {
+    "description": "Settings, collapsible section label that hides the delete-local-data button. Short."
+  },
+  "settings.signOut.title": "Delete local data",
+  "@settings.signOut.title": {
+    "description": "Settings, section title inside 'Local data deletion'. Short."
+  },
+  "settings.signOut.hintKeyBackup": "Removes your identity key and all local app data from this device. This is not regular sign-out or account deletion. Create and test a password-protected key backup above — this cannot be undone.",
+  "@settings.signOut.hintKeyBackup": {
+    "description": "Settings > Delete local data, text next to the button (test-only key mode)."
+  },
+  "settings.signOut.hint": "Removes all Kuzz data from this computer. Your account is not deleted — sign in with Google again to get back in.",
+  "@settings.signOut.hint": {
+    "description": "Settings > Delete local data, text next to the button."
+  },
+  "settings.signOut.deleting": "Deleting local data",
+  "@settings.signOut.deleting": {
+    "description": "Screen-reader label of the spinner while local data is deleted."
+  },
+  "settings.signOut.deletingProgress": "Deleting local data…",
+  "@settings.signOut.deletingProgress": {
+    "description": "Delete-local-data button text while deleting. Short."
+  },
+  "settings.signOut.deleteMyData": "Delete my data",
+  "@settings.signOut.deleteMyData": {
+    "description": "Settings > Delete local data, button and confirm-dialog button. Short."
+  },
+  "settings.signOut.dialogTitle": "Delete all local data?",
+  "@settings.signOut.dialogTitle": {
+    "description": "Delete local data confirm dialog title."
+  },
+  "settings.signOut.dialogDescriptionKeyBackup": "This will delete your identity key, all agent settings, and cached data from this device, then relaunch Kuzz into first-run setup. This cannot be undone.",
+  "@settings.signOut.dialogDescriptionKeyBackup": {
+    "description": "Delete local data confirm dialog text (test-only key mode)."
+  },
+  "settings.signOut.dialogDescription": "This deletes all agent settings and saved data from this computer, then restarts Kuzz. Your account is not deleted — sign in with Google again to get back in.",
+  "@settings.signOut.dialogDescription": {
+    "description": "Delete local data confirm dialog text."
+  },
+  "settings.signOut.confirmRestoreStep": "1. Confirm you can restore your identity",
+  "@settings.signOut.confirmRestoreStep": {
+    "description": "Delete local data dialog, step 1 heading (test-only key mode)."
+  },
+  "settings.signOut.confirmBackup": "I have tested a key backup or saved this private key somewhere safe.",
+  "@settings.signOut.confirmBackup": {
+    "description": "Delete local data dialog, checkbox label (test-only key mode)."
+  },
+  "settings.signOut.typeToConfirm": "Type <b>\"{phrase}\"</b> to confirm",
+  "@settings.signOut.typeToConfirm": {
+    "description": "Delete local data dialog, label above the text field; {phrase} is the exact English phrase the user must type (wipe all my data), shown in bold with its quotes."
+  },
+  "settings.signOut.typeToConfirmStep": "2. Type <b>\"{phrase}\"</b> to confirm",
+  "@settings.signOut.typeToConfirmStep": {
+    "description": "Delete local data dialog, step 2 label above the text field (test-only key mode); {phrase} is the exact English phrase the user must type, shown in bold with its quotes."
+  },
+  "settings.signOut.keyLoadFailed": "Failed to retrieve private key.",
+  "@settings.signOut.keyLoadFailed": {
+    "description": "Delete local data dialog, error when the private key could not be loaded."
+  },
+  "settings.signOut.deleteFailed": "Could not delete local data.",
+  "@settings.signOut.deleteFailed": {
+    "description": "Error notification (toast) when deleting local data fails."
+  },
+  "settings.keyBackup.privateKey": "Private key",
+  "@settings.keyBackup.privateKey": {
+    "description": "Settings, private key row label. Short."
+  },
+  "settings.keyBackup.downloadBackup": "Download backup",
+  "@settings.keyBackup.downloadBackup": {
+    "description": "Settings, private key row, button that saves the ready key backup file. Short."
+  },
+  "settings.keyBackup.hideKey": "Hide private key",
+  "@settings.keyBackup.hideKey": {
+    "description": "Settings, screen-reader label of the hide button on the private key row."
+  },
+  "settings.keyBackup.revealKey": "Reveal private key",
+  "@settings.keyBackup.revealKey": {
+    "description": "Settings, screen-reader label of the reveal button on the private key row."
+  },
+  "settings.keyBackup.hide": "Hide",
+  "@settings.keyBackup.hide": {
+    "description": "Settings, private key row, button that hides the key. Short."
+  },
+  "settings.keyBackup.reveal": "Reveal",
+  "@settings.keyBackup.reveal": {
+    "description": "Settings, private key row, button that shows the key. Short."
+  },
+  "settings.keyBackup.loadFailed": "Failed to retrieve private key.",
+  "@settings.keyBackup.loadFailed": {
+    "description": "Settings, private key row, error when the key could not be loaded."
+  },
+  "settings.keyBackup.createBackup": "Create backup",
+  "@settings.keyBackup.createBackup": {
+    "description": "Settings, private key menu item that opens the key backup dialog. Short."
+  },
+  "settings.keyBackup.testBackup": "Test backup",
+  "@settings.keyBackup.testBackup": {
+    "description": "Settings, private key menu item that opens the backup test dialog. Short."
+  },
+  "settings.keyBackup.testTitle": "Test a key backup",
+  "@settings.keyBackup.testTitle": {
+    "description": "Backup test dialog title."
+  },
+  "settings.keyBackup.testDescription": "Confirm that a backup file and its password can unlock an identity.",
+  "@settings.keyBackup.testDescription": {
+    "description": "Backup test dialog text under the title."
+  },
+  "settings.keyBackup.nip49Note": "Backups use the standard NIP-49 format, so this works for backups from compatible Nostr apps too.",
+  "@settings.keyBackup.nip49Note": {
+    "description": "Backup test dialog, small note at the bottom. NIP-49 and Nostr are technical names; keep them."
+  },
+  "settings.backupTest.readFailed": "Could not read that file.",
+  "@settings.backupTest.readFailed": {
+    "description": "Backup test dialog, error when the chosen file cannot be read."
+  },
+  "settings.backupTest.notBackupFile": "That doesn't look like a key backup file.",
+  "@settings.backupTest.notBackupFile": {
+    "description": "Backup test dialog, error when the chosen file is not a key backup."
+  },
+  "settings.backupTest.verifyFailed": "Could not verify this backup.",
+  "@settings.backupTest.verifyFailed": {
+    "description": "Backup test dialog, error when the check failed without a reason."
+  },
+  "settings.backupTest.works": "This backup works",
+  "@settings.backupTest.works": {
+    "description": "Backup test dialog, big success title."
+  },
+  "settings.backupTest.restoresCurrent": "It restores your current Kuzz identity.",
+  "@settings.backupTest.restoresCurrent": {
+    "description": "Backup test dialog, success text when the backup is for this account."
+  },
+  "settings.backupTest.restoresDifferent": "It restores a different identity than the one signed in here.",
+  "@settings.backupTest.restoresDifferent": {
+    "description": "Backup test dialog, success text when the backup is for another account."
+  },
+  "settings.backupTest.testAnother": "Test another backup",
+  "@settings.backupTest.testAnother": {
+    "description": "Backup test dialog, button after success. Short."
+  },
+  "settings.backupTest.selectFile": "Select your backup file",
+  "@settings.backupTest.selectFile": {
+    "description": "Backup test dialog, button that opens the file picker. Short."
+  },
+  "settings.backupTest.dropHere": "Drop your backup file here",
+  "@settings.backupTest.dropHere": {
+    "description": "Backup test dialog, overlay text while a file is dragged over the window."
+  },
+  "settings.backupTest.fileAccepted": "That's the one. Now enter your password to prove you can unlock it.",
+  "@settings.backupTest.fileAccepted": {
+    "description": "Backup test dialog, text after a valid backup file was chosen."
+  },
+  "settings.backupTest.passwordLabel": "Backup password",
+  "@settings.backupTest.passwordLabel": {
+    "description": "Backup test dialog, screen-reader label of the password field."
+  },
+  "settings.backupTest.passwordPlaceholder": "Your backup password",
+  "@settings.backupTest.passwordPlaceholder": {
+    "description": "Backup test dialog, password field placeholder."
+  },
+  "settings.backupTest.hidePassword": "Hide password",
+  "@settings.backupTest.hidePassword": {
+    "description": "Backup test dialog, screen-reader label of the eye button."
+  },
+  "settings.backupTest.revealPassword": "Reveal password",
+  "@settings.backupTest.revealPassword": {
+    "description": "Backup test dialog, screen-reader label of the eye button."
+  },
+  "settings.backupTest.checking": "Checking…",
+  "@settings.backupTest.checking": {
+    "description": "Backup test dialog, verify button text while checking. Short."
+  },
+  "settings.backupTest.verify": "Verify backup",
+  "@settings.backupTest.verify": {
+    "description": "Backup test dialog, button that checks the password. Short."
+  },
+  "settings.backupTest.useDifferentFile": "Use a different file",
+  "@settings.backupTest.useDifferentFile": {
+    "description": "Backup test dialog, small button to pick another file. Short."
+  },
+  "settings.encryptedBackup.encrypting": "Encrypting your key",
+  "@settings.encryptedBackup.encrypting": {
+    "description": "Key backup dialog, screen-reader label of the progress bar."
+  },
+  "settings.encryptedBackup.generatePassword": "Generate a password",
+  "@settings.encryptedBackup.generatePassword": {
+    "description": "Key backup dialog, screen-reader label of the button that makes a random password."
+  },
+  "settings.encryptedBackup.generateFailed": "Failed to generate a password.",
+  "@settings.encryptedBackup.generateFailed": {
+    "description": "Key backup dialog, password generator error."
+  },
+  "settings.encryptedBackup.words": "Words",
+  "@settings.encryptedBackup.words": {
+    "description": "Key backup dialog, password generator, label of the word-count slider. Short."
+  },
+  "settings.encryptedBackup.separator": "Separator",
+  "@settings.encryptedBackup.separator": {
+    "description": "Key backup dialog, password generator, label of the list of characters between words. Short."
+  },
+  "settings.encryptedBackup.separatorSpaces": "Spaces",
+  "@settings.encryptedBackup.separatorSpaces": {
+    "description": "Key backup dialog, password generator separator option. Short."
+  },
+  "settings.encryptedBackup.separatorHyphens": "Hyphens",
+  "@settings.encryptedBackup.separatorHyphens": {
+    "description": "Key backup dialog, password generator separator option (-). Short."
+  },
+  "settings.encryptedBackup.separatorPeriods": "Periods",
+  "@settings.encryptedBackup.separatorPeriods": {
+    "description": "Key backup dialog, password generator separator option (.). Short."
+  },
+  "settings.encryptedBackup.separatorCommas": "Commas",
+  "@settings.encryptedBackup.separatorCommas": {
+    "description": "Key backup dialog, password generator separator option (,). Short."
+  },
+  "settings.encryptedBackup.dialogTitle": "Create a key backup",
+  "@settings.encryptedBackup.dialogTitle": {
+    "description": "Key backup dialog title."
+  },
+  "settings.encryptedBackup.dialogDescription": "You can close this window while Kuzz finishes the backup in the background.",
+  "@settings.encryptedBackup.dialogDescription": {
+    "description": "Key backup dialog text under the title."
+  },
+  "settings.encryptedBackup.passwordLabel": "Encryption password",
+  "@settings.encryptedBackup.passwordLabel": {
+    "description": "Key backup dialog, screen-reader label of the password field."
+  },
+  "settings.encryptedBackup.passwordPlaceholder": "Password (min {min} characters)",
+  "@settings.encryptedBackup.passwordPlaceholder": {
+    "description": "Key backup dialog, password field placeholder; {min} is the minimum length (12)."
+  },
+  "settings.encryptedBackup.hidePassword": "Hide password",
+  "@settings.encryptedBackup.hidePassword": {
+    "description": "Key backup dialog, screen-reader label of the eye button."
+  },
+  "settings.encryptedBackup.revealPassword": "Reveal password",
+  "@settings.encryptedBackup.revealPassword": {
+    "description": "Key backup dialog, screen-reader label of the eye button."
+  },
+  "settings.encryptedBackup.note": "Keep the file private and save its password somewhere safe — Kuzz cannot reset it. Once ready, the backup remains available to download for 5 minutes.",
+  "@settings.encryptedBackup.note": {
+    "description": "Key backup dialog, small note under the password field."
+  },
+  "settings.encryptedBackup.backupKey": "Backup key",
+  "@settings.encryptedBackup.backupKey": {
+    "description": "Key backup dialog, main button that creates and saves the backup. Short."
+  },
+  "settings.encryptedBackup.passphraseTooShort": "Use at least {min} characters.",
+  "@settings.encryptedBackup.passphraseTooShort": {
+    "description": "Key backup password error; {min} is the minimum length (12)."
+  },
+  "settings.encryptedBackup.encryptFailed": "Failed to encrypt your key.",
+  "@settings.encryptedBackup.encryptFailed": {
+    "description": "Key backup error when encryption failed without a reason."
+  },
+  "settings.encryptedBackup.preparing": "Preparing backup…",
+  "@settings.encryptedBackup.preparing": {
+    "description": "Notification (toast) title while the key backup is being made."
+  },
+  "settings.encryptedBackup.preparingDescription": "You can close this window while Kuzz finishes.",
+  "@settings.encryptedBackup.preparingDescription": {
+    "description": "Notification (toast) text under 'Preparing backup…'."
+  },
+  "settings.encryptedBackup.createFailed": "Couldn’t create backup",
+  "@settings.encryptedBackup.createFailed": {
+    "description": "Error notification (toast) title when the key backup failed."
+  },
+  "settings.encryptedBackup.openSettings": "Open settings",
+  "@settings.encryptedBackup.openSettings": {
+    "description": "Notification (toast) action button that opens Settings. Short."
+  },
+  "settings.encryptedBackup.ready": "Backup ready to download",
+  "@settings.encryptedBackup.ready": {
+    "description": "Notification (toast) title when the key backup file is ready."
+  },
+  "settings.encryptedBackup.saving": "Saving backup…",
+  "@settings.encryptedBackup.saving": {
+    "description": "Notification (toast) title while the backup file is being saved."
+  },
+  "settings.encryptedBackup.savingDescription": "The download window will open when it’s ready.",
+  "@settings.encryptedBackup.savingDescription": {
+    "description": "Notification (toast) text under 'Saving backup…'."
+  },
+  "settings.encryptedBackup.availableFor5Minutes": "Your backup will be available to download for 5 minutes.",
+  "@settings.encryptedBackup.availableFor5Minutes": {
+    "description": "Notification (toast) text under 'Backup ready to download' when the save window was closed."
+  },
+  "settings.encryptedBackup.anotherCopy": "You can download another copy for 5 minutes.",
+  "@settings.encryptedBackup.anotherCopy": {
+    "description": "Notification (toast) text under 'Backup ready to download' after the file was saved."
+  },
+  "settings.encryptedBackup.saveFailed": "Failed to save your key.",
+  "@settings.encryptedBackup.saveFailed": {
+    "description": "Key backup error when saving the file failed without a reason."
+  },
+  "settings.encryptedBackup.saveFailedAvailable": "{message} It will be available to download for 5 minutes.",
+  "@settings.encryptedBackup.saveFailedAvailable": {
+    "description": "Error notification (toast) text when saving the backup failed; {message} is the error (may be English)."
+  },
+  "settings.kuzzId.rules": "Use 3 to 32 lowercase letters, numbers or _",
+  "@settings.kuzzId.rules": {
+    "description": "Settings > Profile, error under the Kuzz ID field when the ID is not allowed."
+  },
+  "meshCompute.title": "Share compute",
+  "@meshCompute.title": {
+    "description": "Settings > Compute, section title of the Share compute card."
+  },
+  "meshCompute.description": "Share this computer with members of this community so they can run agents here.",
+  "@meshCompute.description": {
+    "description": "Settings > Share compute, grey text under the section title."
+  },
+  "meshCompute.statusError": "Couldn't check shared compute: {error}",
+  "@meshCompute.statusError": {
+    "description": "Settings > Share compute, red error banner; {error} is a technical error message."
+  },
+  "meshCompute.sharingGroup": "Sharing",
+  "@meshCompute.sharingGroup": {
+    "description": "Settings > Share compute, title of the group of sharing controls. Short."
+  },
+  "meshCompute.shareThisMachine": "Share this machine",
+  "@meshCompute.shareThisMachine": {
+    "description": "Settings > Share compute, label next to the on/off switch. Short."
+  },
+  "meshCompute.advanced": "Advanced",
+  "@meshCompute.advanced": {
+    "description": "Settings > Share compute, button that expands advanced options. Short."
+  },
+  "meshCompute.maxVram": "Max VRAM (GB)",
+  "@meshCompute.maxVram": {
+    "description": "Settings > Share compute > Advanced, field label: maximum graphics-card memory in gigabytes. Short."
+  },
+  "meshCompute.maxVramPlaceholder": "No limit",
+  "@meshCompute.maxVramPlaceholder": {
+    "description": "Settings > Share compute > Advanced, placeholder of the Max VRAM field when empty. Short."
+  },
+  "meshCompute.debugConsole": "Debug console: {url}",
+  "@meshCompute.debugConsole": {
+    "description": "Settings > Share compute > Advanced, grey line; {url} is a link to a local web address."
+  },
+  "meshCompute.status": "Status",
+  "@meshCompute.status": {
+    "description": "Settings > Share compute, small heading above the live sharing status. Short."
+  },
+  "meshCompute.download.preparing": "Preparing {name}",
+  "@meshCompute.download.preparing": {
+    "description": "Settings > Share compute, progress bar title before a model download starts; {name} is the AI model name. Short."
+  },
+  "meshCompute.download.downloading": "Downloading {name}",
+  "@meshCompute.download.downloading": {
+    "description": "Settings > Share compute, progress bar title while an AI model downloads; {name} is the model name. Short."
+  },
+  "meshCompute.fit.comfortable": "Fits well",
+  "@meshCompute.fit.comfortable": {
+    "description": "Settings > Share compute, model list badge: the AI model fits this computer's memory well. Short."
+  },
+  "meshCompute.fit.tight": "Tight fit",
+  "@meshCompute.fit.tight": {
+    "description": "Settings > Share compute, model list badge: the AI model barely fits this computer's memory. Short."
+  },
+  "meshCompute.fit.tradeoff": "Trade-off",
+  "@meshCompute.fit.tradeoff": {
+    "description": "Settings > Share compute, model list badge: the AI model fits only with reduced performance. Short."
+  },
+  "meshCompute.fit.tooLarge": "Too large",
+  "@meshCompute.fit.tooLarge": {
+    "description": "Settings > Share compute, model list badge: the AI model is too big for this computer. Short."
+  },
+  "meshCompute.badge.installed": "Installed",
+  "@meshCompute.badge.installed": {
+    "description": "Settings > Share compute, model list badge: the model is already on this computer. Short."
+  },
+  "meshCompute.badge.recommended": "Recommended",
+  "@meshCompute.badge.recommended": {
+    "description": "Settings > Share compute, model list badge: the suggested model. Short."
+  },
+  "meshCompute.badge.advanced": "Advanced",
+  "@meshCompute.badge.advanced": {
+    "description": "Settings > Share compute, model list badge: a model for experienced users. Short."
+  },
+  "meshCompute.customModel": "Custom model…",
+  "@meshCompute.customModel": {
+    "description": "Settings > Share compute, last item in the model dropdown; opens a field to type a model reference. Short."
+  },
+  "meshCompute.model": "Model",
+  "@meshCompute.model": {
+    "description": "Settings > Share compute, label of the AI model dropdown. Short."
+  },
+  "meshCompute.modelPlaceholder": "Select a model",
+  "@meshCompute.modelPlaceholder": {
+    "description": "Settings > Share compute, placeholder of the model dropdown when nothing is chosen. Short."
+  },
+  "meshCompute.customModelLabel": "Custom model reference",
+  "@meshCompute.customModelLabel": {
+    "description": "Settings > Share compute, screen-reader label of the custom model text field."
+  },
+  "meshCompute.customModelPlaceholder": "Qwen3-8B-Q4_K_M or hf://meshllm/qwen3-8b@main",
+  "@meshCompute.customModelPlaceholder": {
+    "description": "Settings > Share compute, placeholder of the custom model field: two example model references. Translate only the word 'or'."
+  },
+  "meshCompute.recommendedWithGpu": "Recommended for this machine ({gpu}, {memory} AI memory).",
+  "@meshCompute.recommendedWithGpu": {
+    "description": "Settings > Share compute, grey text under the model dropdown; {gpu} is the graphics card name, {memory} a size like 16 GB."
+  },
+  "meshCompute.recommendedForMachine": "Recommended for this machine.",
+  "@meshCompute.recommendedForMachine": {
+    "description": "Settings > Share compute, grey text under the model dropdown when the graphics card is unknown."
+  },
+  "meshCompute.chooseModel": "Choose a model or enter a model reference or local file.",
+  "@meshCompute.chooseModel": {
+    "description": "Settings > Share compute, grey text under the model dropdown when no recommendations are available."
+  },
+  "meshCompute.downloadsNote": "Kuzz downloads remote models when sharing starts.",
+  "@meshCompute.downloadsNote": {
+    "description": "Settings > Share compute, grey sentence under the model dropdown, after the recommendation sentence."
+  },
+  "meshCompute.state.starting": "Starting…",
+  "@meshCompute.state.starting": {
+    "description": "Settings > Share compute, status text while sharing starts. Short."
+  },
+  "meshCompute.state.stopping": "Stopping…",
+  "@meshCompute.state.stopping": {
+    "description": "Settings > Share compute, status text while sharing stops. Short."
+  },
+  "meshCompute.state.consuming": "This machine is currently using another member's shared compute. Turn on sharing to switch to the selected local model; Kuzz may briefly restart.",
+  "@meshCompute.state.consuming": {
+    "description": "Settings > Share compute, status text under the switch when this computer uses someone else's shared computer."
+  },
+  "meshCompute.state.checking": "Checking status…",
+  "@meshCompute.state.checking": {
+    "description": "Settings > Share compute, status text before the status is known. Short."
+  },
+  "meshCompute.state.loadFailed": "Couldn't load: {reason}",
+  "@meshCompute.state.loadFailed": {
+    "description": "Settings > Share compute, red status text; {reason} is a technical reason."
+  },
+  "meshCompute.state.degradedWithModel": "Active — {model}. {reason}",
+  "@meshCompute.state.degradedWithModel": {
+    "description": "Settings > Share compute, amber status text when sharing runs with a problem; {model} is the AI model name, {reason} a technical reason."
+  },
+  "meshCompute.state.degraded": "Active. {reason}",
+  "@meshCompute.state.degraded": {
+    "description": "Settings > Share compute, amber status text when sharing runs with a problem; {reason} is a technical reason."
+  },
+  "meshCompute.state.sharingModel": "Sharing {model} with relay members.",
+  "@meshCompute.state.sharingModel": {
+    "description": "Settings > Share compute, status text while sharing; {model} is the AI model name."
+  },
+  "meshCompute.state.sharing": "Sharing with relay members.",
+  "@meshCompute.state.sharing": {
+    "description": "Settings > Share compute, status text while sharing (model unknown)."
+  },
+  "meshCompute.state.modelWithMembers": "{model} with relay members.",
+  "@meshCompute.state.modelWithMembers": {
+    "description": "Settings > Share compute, status line under the Status heading while sharing; {model} is the AI model name being shared."
+  },
+  "meshCompute.state.withMembers": "with relay members.",
+  "@meshCompute.state.withMembers": {
+    "description": "Settings > Share compute, status line under the Status heading while sharing an unknown model. Lowercase."
+  },
+  "meshCompute.state.startFailed": "Couldn't start.",
+  "@meshCompute.state.startFailed": {
+    "description": "Settings > Share compute, red status text when sharing failed to start. Short."
+  },
+  "meshCompute.usage.inUseByMember": "In use now by another member · {count} live",
+  "@meshCompute.usage.inUseByMember": {
+    "description": "Settings > Share compute status: someone else is using this computer now; {count} is the number of requests running."
+  },
+  "meshCompute.usage.usedByMember": "Used by another member · {count, plural, one {# request} other {# requests}}",
+  "@meshCompute.usage.usedByMember": {
+    "description": "Settings > Share compute status: someone else used this computer; {count} is the number of AI requests."
+  },
+  "meshCompute.usage.peersAndRate": "{peers, plural, one {# peer} other {# peers}} on the mesh · {rate} tok/s",
+  "@meshCompute.usage.peersAndRate": {
+    "description": "Settings > Share compute, tooltip and grey detail: number of connected computers and AI speed in tokens per second (tok/s)."
+  },
+  "meshCompute.usage.rate": "{rate} tok/s",
+  "@meshCompute.usage.rate": {
+    "description": "Settings > Share compute, tooltip and grey detail: AI speed in tokens per second. Short."
+  },
+  "meshCompute.usage.servingYourAgent": "Serving your agent · {count} live",
+  "@meshCompute.usage.servingYourAgent": {
+    "description": "Settings > Share compute status: your own AI agent uses this computer now; {count} is the number of requests running."
+  },
+  "meshCompute.usage.idleNow": "Idle · no one using it right now",
+  "@meshCompute.usage.idleNow": {
+    "description": "Settings > Share compute status: sharing is on but nobody uses it at the moment."
+  },
+  "meshCompute.usage.servedThisSession": "{count, plural, one {# request} other {# requests}} served this session",
+  "@meshCompute.usage.servedThisSession": {
+    "description": "Settings > Share compute, tooltip and grey detail: how many AI requests were answered since sharing started."
+  },
+  "meshCompute.usage.idleYet": "Idle · no one using it yet",
+  "@meshCompute.usage.idleYet": {
+    "description": "Settings > Share compute status: sharing is on and nobody has used it yet."
+  },
+  "accounts.switcher.label": "Accounts",
+  "@accounts.switcher.label": {
+    "description": "Profile menu, screen-reader name of the list of accounts on this computer. Short."
+  },
+  "accounts.switcher.signInAgain": "Sign in again",
+  "@accounts.switcher.signInAgain": {
+    "description": "Profile menu > accounts list, red text under an account whose sign-in ended. Short."
+  },
+  "accounts.switcher.mentions": "{count, plural, one {# mention} other {# mentions}}",
+  "@accounts.switcher.mentions": {
+    "description": "Profile menu > accounts list, screen-reader label of the mention-count badge on another account. Short."
+  },
+  "accounts.switcher.unread": "Unread",
+  "@accounts.switcher.unread": {
+    "description": "Profile menu > accounts list, screen-reader label of the unread dot on another account. Short."
+  },
+  "accounts.switcher.current": "Current account",
+  "@accounts.switcher.current": {
+    "description": "Profile menu > accounts list, screen-reader label of the check mark on the account in use. Short."
+  },
+  "accounts.switcher.add": "Add account",
+  "@accounts.switcher.add": {
+    "description": "Profile menu > accounts list, last item: sign in with another Google account. Short."
+  },
+  "accounts.fallbackName": "Account {id}",
+  "@accounts.fallbackName": {
+    "description": "Name shown for an account without a name or email (menus, captions); {id} is a short code like ab12cd34. Short."
+  },
+  "accounts.switch.incompleteNotice": "Switched accounts. Some communities could not move to this account yet; sign in again there if they ask.",
+  "@accounts.switch.incompleteNotice": {
+    "description": "Warning toast after the app restarts into another account when some communities need a new sign-in."
+  },
+  "accounts.switch.switchingTo": "Switching to {name}…",
+  "@accounts.switch.switchingTo": {
+    "description": "Full-screen caption while the app restarts into another account; {name} is the account name or email."
+  },
+  "accounts.switch.switching": "Switching accounts…",
+  "@accounts.switch.switching": {
+    "description": "Full-screen caption while the app restarts into another account. Short."
+  },
+  "accounts.signOut.agentsNotStopped": "Signed out. {count, plural, one {# agent} other {# agents}} from that account did not stop in time; restart Kuzz if they keep replying.",
+  "@accounts.signOut.agentsNotStopped": {
+    "description": "Warning toast after signing out when some of the account's AI agents did not stop; {count} is how many."
+  },
+  "accounts.menu.finishInBrowser": "Finish signing in in your browser…",
+  "@accounts.menu.finishInBrowser": {
+    "description": "Loading toast while the user signs in with Google in the web browser, with a Cancel button."
+  },
+  "accounts.menu.switchFailed": "Could not switch accounts.",
+  "@accounts.menu.switchFailed": {
+    "description": "Error toast when switching to another account fails."
+  },
+  "accounts.menu.signedIn": "You're signed in to this account.",
+  "@accounts.menu.signedIn": {
+    "description": "Success toast after signing in again to the account already in use."
+  },
+  "accounts.menu.googleSignInFailed": "Google sign-in failed. Try again.",
+  "@accounts.menu.googleSignInFailed": {
+    "description": "Error toast when adding an account with Google sign-in fails."
+  },
+  "notifications.titleInChannel": "{prefix} in {channel}",
+  "@notifications.titleInChannel": {
+    "description": "Desktop notification title: {prefix} is a short title like 'Reminder due' or a person's name, {channel} the channel name."
+  },
+  "notifications.body.needsAttention": "Something in Kuzz needs your attention.",
+  "@notifications.body.needsAttention": {
+    "description": "Desktop notification body when the message has no text to show."
+  },
+  "notifications.body.approvalWaiting": "A workflow is waiting for your approval.",
+  "@notifications.body.approvalWaiting": {
+    "description": "Desktop notification body for an approval request without text."
+  },
+  "notifications.body.newMessage": "New message",
+  "@notifications.body.newMessage": {
+    "description": "Desktop notification body when a message has no text to show. Short."
+  },
+  "notifications.body.newReply": "New reply",
+  "@notifications.body.newReply": {
+    "description": "Desktop notification body when a thread reply has no text to show. Short."
+  },
+  "notifications.title.directMessage": "Direct message",
+  "@notifications.title.directMessage": {
+    "description": "Desktop notification title for a direct message from an unknown sender. Short."
+  },
+  "notifications.title.chat": "Chat",
+  "@notifications.title.chat": {
+    "description": "Desktop notification title for a group chat message when the chat name is unknown. Short."
+  },
+  "notifications.title.senderInChat": "{name} in {chat}",
+  "@notifications.title.senderInChat": {
+    "description": "Desktop notification title: {name} is the sender, {chat} the chat name. Short."
+  },
+  "notifications.title.mentionedYouIn": "{name} mentioned you in {channel}",
+  "@notifications.title.mentionedYouIn": {
+    "description": "Desktop notification title; {name} is a person, {channel} a channel name."
+  },
+  "notifications.title.mentionedYou": "{name} mentioned you",
+  "@notifications.title.mentionedYou": {
+    "description": "Desktop notification title; {name} is a person."
+  },
+  "notifications.title.mentionIn": "@Mention in {channel}",
+  "@notifications.title.mentionIn": {
+    "description": "Desktop notification title when the sender is unknown; {channel} is a channel name. Keep the @."
+  },
+  "notifications.title.mention": "@Mention",
+  "@notifications.title.mention": {
+    "description": "Desktop notification title when the sender and channel are unknown. Keep the @. Short."
+  },
+  "notifications.title.requestedApprovalIn": "{name} requested approval in {channel}",
+  "@notifications.title.requestedApprovalIn": {
+    "description": "Desktop notification title for a workflow approval request; {name} is a person, {channel} a channel name."
+  },
+  "notifications.title.requestedApproval": "{name} requested approval",
+  "@notifications.title.requestedApproval": {
+    "description": "Desktop notification title for a workflow approval request; {name} is a person."
+  },
+  "notifications.title.approvalRequestedIn": "Approval Requested in {channel}",
+  "@notifications.title.approvalRequestedIn": {
+    "description": "Desktop notification title for a workflow approval request from an unknown sender; {channel} is a channel name. Title case."
+  },
+  "notifications.title.approvalRequested": "Approval Requested",
+  "@notifications.title.approvalRequested": {
+    "description": "Desktop notification title for a workflow approval request. Title case. Short."
+  },
+  "notifications.title.repliedIn": "{name} replied in {channel}",
+  "@notifications.title.repliedIn": {
+    "description": "Desktop notification title for a thread reply; {name} is a person, {channel} a channel name."
+  },
+  "notifications.title.replied": "{name} replied",
+  "@notifications.title.replied": {
+    "description": "Desktop notification title for a thread reply; {name} is a person."
+  },
+  "notifications.title.replyIn": "Reply in {channel}",
+  "@notifications.title.replyIn": {
+    "description": "Desktop notification title for a thread reply from an unknown sender; {channel} is a channel name."
+  },
+  "notifications.title.reply": "Reply",
+  "@notifications.title.reply": {
+    "description": "Desktop notification title for a thread reply. Short."
+  },
+  "notifications.title.needsAction": "Needs Action",
+  "@notifications.title.needsAction": {
+    "description": "Desktop notification title for an item that waits on the user. Title case. Short."
+  },
+  "notifications.slot.dm": "Direct messages",
+  "@notifications.slot.dm": {
+    "description": "Settings > Notifications > Sounds, row name: sound for direct messages. Short."
+  },
+  "notifications.slot.mention": "@Mentions",
+  "@notifications.slot.mention": {
+    "description": "Settings > Notifications > Sounds, row name: sound when someone tags you. Keep the @. Short."
+  },
+  "notifications.slot.threadReply": "Thread replies",
+  "@notifications.slot.threadReply": {
+    "description": "Settings > Notifications > Sounds, row name. Short."
+  },
+  "notifications.slot.needsAction": "Needs action",
+  "@notifications.slot.needsAction": {
+    "description": "Settings > Notifications > Sounds, row name: approvals and reminders. Short."
+  },
+  "notifications.slot.jobAccepted": "Agent: job accepted",
+  "@notifications.slot.jobAccepted": {
+    "description": "Settings > Notifications > Sounds, row name: an AI agent took a task. Short."
+  },
+  "notifications.slot.jobProgress": "Agent: progress update",
+  "@notifications.slot.jobProgress": {
+    "description": "Settings > Notifications > Sounds, row name: an AI agent reports progress. Short."
+  },
+  "notifications.slot.jobResult": "Agent: job result",
+  "@notifications.slot.jobResult": {
+    "description": "Settings > Notifications > Sounds, row name: an AI agent finished a task. Short."
+  },
+  "notifications.slot.jobError": "Agent: job error",
+  "@notifications.slot.jobError": {
+    "description": "Settings > Notifications > Sounds, row name: an AI agent's task failed. Short."
+  },
+  "notifications.slotDescription.dm": "When someone messages you directly.",
+  "@notifications.slotDescription.dm": {
+    "description": "Settings > Notifications > Sounds, grey text under the Direct messages row."
+  },
+  "notifications.slotDescription.mention": "When someone tags you in a group.",
+  "@notifications.slotDescription.mention": {
+    "description": "Settings > Notifications > Sounds, grey text under the @Mentions row."
+  },
+  "notifications.slotDescription.threadReply": "When someone replies in a thread you follow or posted in.",
+  "@notifications.slotDescription.threadReply": {
+    "description": "Settings > Notifications > Sounds, grey text under the Thread replies row."
+  },
+  "notifications.slotDescription.needsAction": "When an approval or reminder is waiting on you.",
+  "@notifications.slotDescription.needsAction": {
+    "description": "Settings > Notifications > Sounds, grey text under the Needs action row."
+  },
+  "notifications.slotDescription.jobAccepted": "When an agent picks up a job.",
+  "@notifications.slotDescription.jobAccepted": {
+    "description": "Settings > Notifications > Sounds, grey text under the 'job accepted' row."
+  },
+  "notifications.slotDescription.jobProgress": "While an agent works through a job.",
+  "@notifications.slotDescription.jobProgress": {
+    "description": "Settings > Notifications > Sounds, grey text under the 'progress update' row."
+  },
+  "notifications.slotDescription.jobResult": "When an agent finishes a job.",
+  "@notifications.slotDescription.jobResult": {
+    "description": "Settings > Notifications > Sounds, grey text under the 'job result' row."
+  },
+  "notifications.slotDescription.jobError": "When an agent job fails.",
+  "@notifications.slotDescription.jobError": {
+    "description": "Settings > Notifications > Sounds, grey text under the 'job error' row."
+  },
+  "notifications.permission.blocked": "Desktop notifications are blocked for Kuzz. Enable them in system settings to turn alerts on.",
+  "@notifications.permission.blocked": {
+    "description": "Settings > Notifications, error text when the computer blocks notifications for the app."
+  },
+  "notifications.permission.unavailable": "Desktop notifications are unavailable in this environment.",
+  "@notifications.permission.unavailable": {
+    "description": "Settings > Notifications, error text when notifications are not supported."
+  },
+  "notifications.permission.enableFailed": "Failed to enable desktop notifications.",
+  "@notifications.permission.enableFailed": {
+    "description": "Settings > Notifications, error text when turning on notifications fails."
+  },
+  "terminal.resize": "Resize Kuzz Term",
+  "@terminal.resize": {
+    "description": "Kuzz Term (built-in command terminal panel), screen-reader label of the drag handle that changes its height. 'Kuzz Term' is the product name; keep it."
+  },
+  "terminal.closeTab": "Close {title}",
+  "@terminal.closeTab": {
+    "description": "Kuzz Term tab bar, screen-reader label of the X button on a tab; {title} is the tab name, e.g. SHELL. Short."
+  },
+  "terminal.tab": "Terminal {number}",
+  "@terminal.tab": {
+    "description": "Kuzz Term tab bar, screen-reader label of a tab; {number} is 1, 2, 3… Short."
+  },
+  "terminal.tabWithTitle": "Terminal {number}, {title}",
+  "@terminal.tabWithTitle": {
+    "description": "Kuzz Term tab bar, screen-reader label of a tab; {number} is 1, 2, 3…, {title} the program shown in it. Short."
+  },
+  "terminal.tabClosing": "Terminal {number}, closing",
+  "@terminal.tabClosing": {
+    "description": "Kuzz Term tab bar, screen-reader label of a tab that is closing; {number} is 1, 2, 3… Short."
+  },
+  "terminal.closing": "Closing…",
+  "@terminal.closing": {
+    "description": "Kuzz Term tab bar, small text on a tab that is closing. Short."
+  },
+  "terminal.newTab": "New Kuzz Term tab",
+  "@terminal.newTab": {
+    "description": "Kuzz Term tab bar, screen-reader label of the + button. 'Kuzz Term' is the product name; keep it. Short."
+  },
+  "terminal.restore": "Restore Kuzz Term",
+  "@terminal.restore": {
+    "description": "Kuzz Term, screen-reader label of the button that shrinks the full-window terminal back to a panel. Keep 'Kuzz Term'. Short."
+  },
+  "terminal.maximize": "Maximize Kuzz Term",
+  "@terminal.maximize": {
+    "description": "Kuzz Term, screen-reader label of the button that makes the terminal fill the window. Keep 'Kuzz Term'. Short."
+  },
+  "terminal.hide": "Hide Kuzz Term",
+  "@terminal.hide": {
+    "description": "Kuzz Term, screen-reader label of the X button that hides the terminal panel. Keep 'Kuzz Term'. Short."
+  },
+  "terminal.input": "Terminal input",
+  "@terminal.input": {
+    "description": "Kuzz Term, screen-reader label of the hidden typing field. Short."
+  },
+  "terminal.ownerTerminal": "Kuzz Term mode",
+  "@terminal.ownerTerminal": {
+    "description": "Screen-reader announcement when keyboard input goes to the terminal. Keep 'Kuzz Term'. Short."
+  },
+  "terminal.ownerApp": "Kuzz mode",
+  "@terminal.ownerApp": {
+    "description": "Screen-reader announcement when keyboard input goes back to the app. Keep 'Kuzz'. Short."
+  },
+  "settings.notifications.title": "Notifications",
+  "@settings.notifications.title": {
+    "description": "Settings > Notifications, section title. Short."
+  },
+  "settings.notifications.description": "Desktop alerts are on by default. Fine-tune what gets through below.",
+  "@settings.notifications.description": {
+    "description": "Settings > Notifications, text under the section title."
+  },
+  "settings.notifications.stateUnavailable": "Unavailable",
+  "@settings.notifications.stateUnavailable": {
+    "description": "Settings > Notifications, hidden screen-reader state of desktop alerts when the system does not support them. Short."
+  },
+  "settings.notifications.stateBlocked": "Blocked",
+  "@settings.notifications.stateBlocked": {
+    "description": "Settings > Notifications, hidden screen-reader state of desktop alerts when the system blocks them. Short."
+  },
+  "settings.notifications.stateOn": "On",
+  "@settings.notifications.stateOn": {
+    "description": "Settings > Notifications, hidden screen-reader state: desktop alerts are on. Short."
+  },
+  "settings.notifications.stateOff": "Off",
+  "@settings.notifications.stateOff": {
+    "description": "Settings > Notifications, hidden screen-reader state: desktop alerts are off. Short."
+  },
+  "settings.notifications.desktopGroup": "Desktop",
+  "@settings.notifications.desktopGroup": {
+    "description": "Settings > Notifications, group title for desktop alert options. Short."
+  },
+  "settings.notifications.requesting": "Requesting...",
+  "@settings.notifications.requesting": {
+    "description": "Settings > Notifications, switch label while the app asks the system for notification permission. Short."
+  },
+  "settings.notifications.desktopAlerts": "Desktop alerts",
+  "@settings.notifications.desktopAlerts": {
+    "description": "Settings > Notifications, switch label that turns desktop alerts on or off. Short."
+  },
+  "settings.notifications.desktopAlertsOnHint": "Native desktop alerts are enabled for the categories you have armed below.",
+  "@settings.notifications.desktopAlertsOnHint": {
+    "description": "Settings > Notifications, text under the Desktop alerts switch when it is on."
+  },
+  "settings.notifications.desktopAlertsOffHint": "Request OS permission and surface new mentions or needs-action items outside the app.",
+  "@settings.notifications.desktopAlertsOffHint": {
+    "description": "Settings > Notifications, text under the Desktop alerts switch when it is off."
+  },
+  "settings.notifications.notifyWhileViewing": "Notify while viewing",
+  "@settings.notifications.notifyWhileViewing": {
+    "description": "Settings > Notifications, switch label. Short."
+  },
+  "settings.notifications.notifyWhileViewingHint": "Also alert for direct messages in the conversation you have open.",
+  "@settings.notifications.notifyWhileViewingHint": {
+    "description": "Settings > Notifications, text under the Notify while viewing switch."
+  },
+  "settings.notifications.soundGroup": "Sound",
+  "@settings.notifications.soundGroup": {
+    "description": "Settings > Notifications, group title for sound options. Short."
+  },
+  "settings.notifications.sound": "Sound",
+  "@settings.notifications.sound": {
+    "description": "Settings > Notifications, switch label that turns all alert sounds on or off. Short."
+  },
+  "settings.notifications.soundHint": "Alert with a sound for the events below.",
+  "@settings.notifications.soundHint": {
+    "description": "Settings > Notifications, text under the Sound switch."
+  },
+  "settings.notifications.alertSounds": "Alert sounds",
+  "@settings.notifications.alertSounds": {
+    "description": "Settings > Notifications, group title for the per-event sound list. Short."
+  },
+  "settings.notifications.comingSoon": "Coming soon",
+  "@settings.notifications.comingSoon": {
+    "description": "Settings > Notifications, small badge next to an event that is not available yet. Short."
+  },
+  "settings.notifications.showLess": "Show less",
+  "@settings.notifications.showLess": {
+    "description": "Settings > Notifications, button that hides the coming-soon events. Short."
+  },
+  "settings.notifications.viewAll": "View all",
+  "@settings.notifications.viewAll": {
+    "description": "Settings > Notifications, button that shows all events including coming-soon ones. Short."
+  },
+  "settings.notifications.badgesGroup": "Badges",
+  "@settings.notifications.badgesGroup": {
+    "description": "Settings > Notifications, group title for badge options. Short."
+  },
+  "settings.notifications.homeBadge": "Home badge",
+  "@settings.notifications.homeBadge": {
+    "description": "Settings > Notifications, switch label. Short."
+  },
+  "settings.notifications.homeBadgeHint": "Show a Home badge for mentions and needs-action items in the sidebar.",
+  "@settings.notifications.homeBadgeHint": {
+    "description": "Settings > Notifications, text under the Home badge switch."
+  },
+  "settings.notifications.unsupportedNotice": "Desktop notifications are not supported in this environment.",
+  "@settings.notifications.unsupportedNotice": {
+    "description": "Settings > Notifications, red notice at the bottom when the system has no notifications."
+  },
+  "settings.notifications.blockedNotice": "Desktop notifications are blocked. Enable them in your system settings.",
+  "@settings.notifications.blockedNotice": {
+    "description": "Settings > Notifications, red notice at the bottom when the system blocks notifications."
+  },
+  "settings.voice.loadFailed": "Voice settings could not be loaded.",
+  "@settings.voice.loadFailed": {
+    "description": "Settings > Voice, red error under the section when settings fail to load."
+  },
+  "settings.voice.saveFailed": "Voice settings could not be saved.",
+  "@settings.voice.saveFailed": {
+    "description": "Settings > Voice, red error under the section when a change fails to save."
+  },
+  "settings.voice.importFailed": "Voice could not be imported.",
+  "@settings.voice.importFailed": {
+    "description": "Settings > Voice, red error when adding a voice file fails."
+  },
+  "settings.voice.deleteFailed": "Voice could not be deleted.",
+  "@settings.voice.deleteFailed": {
+    "description": "Settings > Voice, red error when deleting an imported voice fails."
+  },
+  "settings.voice.title": "Voice",
+  "@settings.voice.title": {
+    "description": "Settings > Voice, section title. Short."
+  },
+  "settings.voice.description": "Choose whether Kuzz reads new agent responses aloud during an active huddle.",
+  "@settings.voice.description": {
+    "description": "Settings > Voice, text under the section title. A huddle is a live voice call."
+  },
+  "settings.voice.playbackGroup": "Playback",
+  "@settings.voice.playbackGroup": {
+    "description": "Settings > Voice, group title. Short."
+  },
+  "settings.voice.agentTts": "Agent text to speech",
+  "@settings.voice.agentTts": {
+    "description": "Settings > Voice, switch label that turns reading agent messages aloud on or off. Short."
+  },
+  "settings.voice.agentTtsHint": "Read new agent messages aloud in the order they arrive.",
+  "@settings.voice.agentTtsHint": {
+    "description": "Settings > Voice, text under the Agent text to speech switch."
+  },
+  "settings.voice.voiceGroup": "Voice",
+  "@settings.voice.voiceGroup": {
+    "description": "Settings > Voice, group title for the voice picker. Short."
+  },
+  "settings.voice.pocketVoice": "Pocket TTS voice",
+  "@settings.voice.pocketVoice": {
+    "description": "Settings > Voice, row label for choosing the speaking voice. 'Pocket TTS' is the name of the speech engine; keep it. Short."
+  },
+  "settings.voice.pocketVoiceHint": "Voice files stay private on this device.",
+  "@settings.voice.pocketVoiceHint": {
+    "description": "Settings > Voice, text under the Pocket TTS voice row."
+  },
+  "settings.voice.selectorLabel": "Pocket TTS voice: {name}",
+  "@settings.voice.selectorLabel": {
+    "description": "Settings > Voice, screen-reader label of the voice picker button. {name} is the selected voice name. Keep 'Pocket TTS'."
+  },
+  "settings.voice.previewLabel": "Preview {name}",
+  "@settings.voice.previewLabel": {
+    "description": "Settings > Voice, screen-reader label of the Preview button. {name} is the voice name. Short."
+  },
+  "settings.voice.previewFailed": "Voice preview could not be played.",
+  "@settings.voice.previewFailed": {
+    "description": "Settings > Voice, red error when playing a voice sample fails."
+  },
+  "settings.voice.preview": "Preview",
+  "@settings.voice.preview": {
+    "description": "Settings > Voice, button that plays a sample of the voice. Short."
+  },
+  "settings.voice.addVoice": "Add voice",
+  "@settings.voice.addVoice": {
+    "description": "Settings > Voice, button that imports a voice file. Short."
+  },
+  "settings.voice.deleteLabel": "Delete {name}",
+  "@settings.voice.deleteLabel": {
+    "description": "Settings > Voice, screen-reader label of the trash button for an imported voice. {name} is the voice name. Short."
+  },
+  "settings.voice.deleteDialogTitle": "Delete imported voice?",
+  "@settings.voice.deleteDialogTitle": {
+    "description": "Settings > Voice, confirm dialog title."
+  },
+  "settings.voice.deleteDialogBody": "{name} and its local audio file will be removed.",
+  "@settings.voice.deleteDialogBody": {
+    "description": "Settings > Voice, delete confirm dialog text. {name} is the voice name."
+  },
+  "settings.voice.deleteDialogBodyGeneric": "This imported voice and its local audio file will be removed.",
+  "@settings.voice.deleteDialogBodyGeneric": {
+    "description": "Settings > Voice, delete confirm dialog text when the voice name is unknown."
+  },
+  "settings.voice.deleteDialogFallback": "Mary will be selected instead.",
+  "@settings.voice.deleteDialogFallback": {
+    "description": "Settings > Voice, delete confirm dialog, extra sentence after the main text when the deleted voice is the selected one. 'Mary' is the default voice's name; keep it."
+  },
+  "settings.voice.deleteVoice": "Delete voice",
+  "@settings.voice.deleteVoice": {
+    "description": "Settings > Voice, red confirm button in the delete dialog. Short."
+  },
+  "settings.feedback.categoryBug": "Bug",
+  "@settings.feedback.categoryBug": {
+    "description": "Send feedback dialog, category pill for reporting a bug. Short."
+  },
+  "settings.feedback.categoryPraise": "Praise",
+  "@settings.feedback.categoryPraise": {
+    "description": "Send feedback dialog, category pill for positive feedback. Short."
+  },
+  "settings.feedback.categoryNeedsWork": "Needs work",
+  "@settings.feedback.categoryNeedsWork": {
+    "description": "Send feedback dialog, category pill for something that should be improved. Short."
+  },
+  "settings.feedback.attachFailed": "Failed to attach image.",
+  "@settings.feedback.attachFailed": {
+    "description": "Send feedback dialog, red error when attaching an image fails."
+  },
+  "settings.feedback.sendFailed": "Failed to send feedback.",
+  "@settings.feedback.sendFailed": {
+    "description": "Send feedback dialog, red error when sending fails."
+  },
+  "settings.feedback.timedOut": "Timed out while sending feedback.",
+  "@settings.feedback.timedOut": {
+    "description": "Send feedback dialog, red error when sending takes too long."
+  },
+  "settings.feedback.title": "Send feedback",
+  "@settings.feedback.title": {
+    "description": "Send feedback dialog, title. Short."
+  },
+  "settings.feedback.privacy": "Feedback is sent privately to this Kuzz deployment and is not posted to a group. Attachments are uploaded before you send.",
+  "@settings.feedback.privacy": {
+    "description": "Send feedback dialog, text under the title explaining where feedback goes."
+  },
+  "settings.feedback.placeholder": "Tell us what went wrong, or share general feedback.",
+  "@settings.feedback.placeholder": {
+    "description": "Send feedback dialog, placeholder of the message box."
+  },
+  "settings.feedback.viewImage": "View attached image",
+  "@settings.feedback.viewImage": {
+    "description": "Send feedback dialog, screen-reader label of the attached image thumbnail button. Short."
+  },
+  "settings.feedback.imageAlt": "Attached",
+  "@settings.feedback.imageAlt": {
+    "description": "Send feedback dialog, alt text of the attached image. Short."
+  },
+  "settings.feedback.attachedImage": "Attached image",
+  "@settings.feedback.attachedImage": {
+    "description": "Send feedback dialog, caption under the image thumbnail and hidden title of the full-size preview. Short."
+  },
+  "settings.feedback.removeAttachment": "Remove attachment",
+  "@settings.feedback.removeAttachment": {
+    "description": "Send feedback dialog, screen-reader label of the X button on the attached image. Short."
+  },
+  "settings.feedback.attachImage": "Attach image",
+  "@settings.feedback.attachImage": {
+    "description": "Send feedback dialog, button next to the message box that adds an image. Short."
+  },
+  "settings.feedback.attaching": "Attaching…",
+  "@settings.feedback.attaching": {
+    "description": "Send feedback dialog, Attach image button text while uploading. Short."
+  },
+  "settings.feedback.attachDiagnostics": "Attach diagnostics",
+  "@settings.feedback.attachDiagnostics": {
+    "description": "Send feedback dialog, checkbox label. Short."
+  },
+  "settings.feedback.diagnosticsHint": "Includes capture time, app version, platform, user agent, and language. No application log lines are collected.",
+  "@settings.feedback.diagnosticsHint": {
+    "description": "Send feedback dialog, text under the Attach diagnostics checkbox."
+  },
+  "settings.feedback.sending": "Sending…",
+  "@settings.feedback.sending": {
+    "description": "Send feedback dialog, submit button text while sending. Short."
+  },
+  "settings.feedback.submit": "Send feedback",
+  "@settings.feedback.submit": {
+    "description": "Send feedback dialog, submit button. Short."
+  },
+  "settings.harnessCatalog.description.kuzzAgent": "Kuzz's built-in agent runtime, bundled with the app.",
+  "@settings.harnessCatalog.description.kuzzAgent": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of the built-in Kuzz agent runtime."
+  },
+  "settings.harnessCatalog.description.claude": "Anthropic's agentic coding tool that runs in the terminal.",
+  "@settings.harnessCatalog.description.claude": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Claude Code. Keep the company name."
+  },
+  "settings.harnessCatalog.description.codex": "OpenAI's coding agent, connected through the codex-acp adapter.",
+  "@settings.harnessCatalog.description.codex": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Codex. 'codex-acp' is a package name; keep it."
+  },
+  "settings.harnessCatalog.description.goose": "Open-source, extensible AI agent.",
+  "@settings.harnessCatalog.description.goose": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Goose."
+  },
+  "settings.harnessCatalog.description.cursor": "Cursor's coding agent, connected to Kuzz through its ACP server.",
+  "@settings.harnessCatalog.description.cursor": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Cursor. ACP is a protocol name; keep it."
+  },
+  "settings.harnessCatalog.description.omp": "A terminal coding agent with integrated development tools.",
+  "@settings.harnessCatalog.description.omp": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of oh-my-pi."
+  },
+  "settings.harnessCatalog.description.pi": "A minimal terminal coding harness, connected through the buzz-pi-acp adapter.",
+  "@settings.harnessCatalog.description.pi": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Pi. 'buzz-pi-acp' is a package name; keep it."
+  },
+  "settings.harnessCatalog.description.grok": "xAI's coding agent, connected to Kuzz through its ACP entrypoint.",
+  "@settings.harnessCatalog.description.grok": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Grok. ACP is a protocol name; keep it."
+  },
+  "settings.harnessCatalog.description.opencode": "An open-source coding agent.",
+  "@settings.harnessCatalog.description.opencode": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of OpenCode."
+  },
+  "settings.harnessCatalog.description.kimi": "A terminal coding agent for software development and command-line tasks.",
+  "@settings.harnessCatalog.description.kimi": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Kimi CLI."
+  },
+  "settings.harnessCatalog.description.amp": "The coding agent and development environment that runs anywhere and everywhere.",
+  "@settings.harnessCatalog.description.amp": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Amp."
+  },
+  "settings.harnessCatalog.description.hermes": "A general-purpose AI agent from Nous Research.",
+  "@settings.harnessCatalog.description.hermes": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of Hermes. Keep 'Nous Research'."
+  },
+  "settings.harnessCatalog.description.openclaw": "A personal AI assistant that runs on your own devices.",
+  "@settings.harnessCatalog.description.openclaw": {
+    "description": "Settings > Harnesses / Add runtimes catalog, one-line description of OpenClaw."
+  },
+  "settings.harnessCatalog.status.configError": "Config error",
+  "@settings.harnessCatalog.status.configError": {
+    "description": "Settings > Harnesses, status badge on a runtime whose config is invalid. Short."
+  },
+  "settings.harnessCatalog.status.adapterNeeded": "Adapter needed",
+  "@settings.harnessCatalog.status.adapterNeeded": {
+    "description": "Settings > Harnesses, status badge on a runtime that needs its adapter installed. Short."
+  },
+  "settings.harnessCatalog.status.updateNeeded": "Update needed",
+  "@settings.harnessCatalog.status.updateNeeded": {
+    "description": "Settings > Harnesses, status badge on a runtime whose adapter is outdated. Short."
+  },
+  "settings.harnessCatalog.status.cliNeeded": "CLI needed",
+  "@settings.harnessCatalog.status.cliNeeded": {
+    "description": "Settings > Harnesses, status badge on a runtime whose command-line tool is not installed. Short."
+  },
+  "settings.harnessCatalog.status.signInNeeded": "Sign-in needed",
+  "@settings.harnessCatalog.status.signInNeeded": {
+    "description": "Settings > Harnesses, status badge on a runtime that needs the user to sign in. Short."
+  },
+  "settings.harnessCatalog.updateWarningCodex": "This replaces the machine-wide codex-acp adapter. Older Kuzz releases using the legacy adapter may lose community access until {package} is restored.",
+  "@settings.harnessCatalog.updateWarningCodex": {
+    "description": "Add runtimes catalog, confirm dialog text before updating the Codex adapter. {package} is a package name with version."
+  },
+  "settings.harnessCatalog.updateWarning": "This replaces the machine-wide {adapter} adapter. Other tools using the currently installed adapter will switch to the updated version.",
+  "@settings.harnessCatalog.updateWarning": {
+    "description": "Add runtimes catalog, confirm dialog text before updating a runtime adapter. {adapter} is the adapter command name."
+  },
+  "settings.harnessCatalog.downloadPage": "Download page",
+  "@settings.harnessCatalog.downloadPage": {
+    "description": "Add runtimes catalog, link button that opens the vendor's download page. Short."
+  },
+  "settings.harnessCatalog.setupGuide": "Setup guide",
+  "@settings.harnessCatalog.setupGuide": {
+    "description": "Add runtimes catalog, link button that opens the vendor's setup instructions. Short."
+  },
+  "settings.harnessCatalog.update": "Update",
+  "@settings.harnessCatalog.update": {
+    "description": "Add runtimes catalog, button that updates an outdated adapter. Short."
+  },
+  "settings.harnessCatalog.install": "Install",
+  "@settings.harnessCatalog.install": {
+    "description": "Add runtimes catalog, button that installs a runtime. Short."
+  },
+  "settings.harnesses.deleteConfirm": "Delete {label}?",
+  "@settings.harnesses.deleteConfirm": {
+    "description": "Settings > Harnesses, delete confirm dialog text for a custom harness. {label} is the harness name."
+  },
+  "settings.harnesses.deleteConfirmInUse": "{count, plural, one {# agent uses} other {# agents use}} this harness and will stop launching. Delete {label}?",
+  "@settings.harnesses.deleteConfirmInUse": {
+    "description": "Settings > Harnesses, delete confirm dialog text when agents still use the harness. {label} is the harness name."
+  },
+  "settings.harnesses.deleteChecking": "Checking which agents use this harness…",
+  "@settings.harnesses.deleteChecking": {
+    "description": "Settings > Harnesses, delete confirm dialog text while the app counts agents using the harness."
+  },
+  "settings.harnesses.deleteCheckFailed": "Couldn't check which agents use this harness — some agents may stop launching. Delete {label}?",
+  "@settings.harnesses.deleteCheckFailed": {
+    "description": "Settings > Harnesses, delete confirm dialog text when counting agents failed. {label} is the harness name."
+  },
+  "settings.harnessForm.argCommaError": "Argument \"{arg}\" contains a comma — arguments are passed via a comma-delimited transport and would be split at spawn time. Use separate argument entries instead.",
+  "@settings.harnessForm.argCommaError": {
+    "description": "Custom harness form, red error under the arguments field. {arg} is the argument the user typed."
+  },
+  "settings.harnessCatalog.title": "Add runtimes",
+  "@settings.harnessCatalog.title": {
+    "description": "Add runtimes dialog (from Settings > Harnesses), title. A runtime is an agent tool such as Claude Code or Codex. Short."
+  },
+  "settings.harnessCatalog.searchLabel": "Search runtimes",
+  "@settings.harnessCatalog.searchLabel": {
+    "description": "Add runtimes dialog, screen-reader label of the search box. Short."
+  },
+  "settings.harnessCatalog.searchPlaceholder": "Search runtimes…",
+  "@settings.harnessCatalog.searchPlaceholder": {
+    "description": "Add runtimes dialog, placeholder of the search box. Short."
+  },
+  "settings.harnessCatalog.refreshing": "Refreshing…",
+  "@settings.harnessCatalog.refreshing": {
+    "description": "Add runtimes dialog, small status above the list while it reloads. Short."
+  },
+  "settings.harnessCatalog.refreshFailed": "Couldn't refresh runtimes.",
+  "@settings.harnessCatalog.refreshFailed": {
+    "description": "Add runtimes dialog, small red error above the list when reloading fails. Short."
+  },
+  "settings.harnessCatalog.loadFailed": "Couldn't load runtimes.",
+  "@settings.harnessCatalog.loadFailed": {
+    "description": "Add runtimes dialog, error in the list when it fails to load. Short."
+  },
+  "settings.harnessCatalog.noMatch": "No runtimes match.",
+  "@settings.harnessCatalog.noMatch": {
+    "description": "Add runtimes dialog, empty list text when the search finds nothing. Short."
+  },
+  "settings.harnessCatalog.empty": "No runtimes found.",
+  "@settings.harnessCatalog.empty": {
+    "description": "Add runtimes dialog, empty list text when there are no runtimes. Short."
+  },
+  "settings.harnessCatalog.sectionSetup": "Setup",
+  "@settings.harnessCatalog.sectionSetup": {
+    "description": "Add runtimes dialog, list section title for runtimes that still need setup. Shown in capitals. Short."
+  },
+  "settings.harnessCatalog.sectionInstalled": "Installed",
+  "@settings.harnessCatalog.sectionInstalled": {
+    "description": "Add runtimes dialog, list section title for installed runtimes. Shown in capitals. Short."
+  },
+  "settings.harnessCatalog.customHarness": "Custom harness",
+  "@settings.harnessCatalog.customHarness": {
+    "description": "Add runtimes dialog, list item and detail title for adding your own agent tool. Short."
+  },
+  "settings.harnessCatalog.customHarnessHint": "Register any ACP-speaking agent tool as a selectable runtime.",
+  "@settings.harnessCatalog.customHarnessHint": {
+    "description": "Add runtimes dialog, text under the Custom harness title. ACP is a protocol name; keep it."
+  },
+  "settings.harnessCatalog.selectPrompt": "Select a runtime on the left, or add a custom one.",
+  "@settings.harnessCatalog.selectPrompt": {
+    "description": "Add runtimes dialog, empty detail pane text."
+  },
+  "settings.harnessCatalog.loadingList": "Loading runtimes",
+  "@settings.harnessCatalog.loadingList": {
+    "description": "Add runtimes dialog, screen-reader label of the list placeholder while loading. Short."
+  },
+  "settings.harnessCatalog.loadingDetails": "Loading runtime details",
+  "@settings.harnessCatalog.loadingDetails": {
+    "description": "Add runtimes dialog, screen-reader label of the detail placeholder while loading. Short."
+  },
+  "settings.harnessCatalog.readyLabel": "{name} is ready",
+  "@settings.harnessCatalog.readyLabel": {
+    "description": "Add runtimes dialog, screen-reader label of the green dot next to a ready runtime. {name} is the runtime name. Short."
+  },
+  "settings.harnessCatalog.installFailed": "Install failed.",
+  "@settings.harnessCatalog.installFailed": {
+    "description": "Add runtimes dialog, red error when installing a runtime fails. Short."
+  },
+  "settings.harnessCatalog.ready": "Ready",
+  "@settings.harnessCatalog.ready": {
+    "description": "Add runtimes dialog, green badge under the runtime name when it is ready to use. Short."
+  },
+  "settings.harnessCatalog.setupHeading": "Setup",
+  "@settings.harnessCatalog.setupHeading": {
+    "description": "Add runtimes dialog, small heading above setup instructions. Short."
+  },
+  "settings.harnessCatalog.alreadySetUp": "Already set up",
+  "@settings.harnessCatalog.alreadySetUp": {
+    "description": "Add runtimes dialog, small text next to the bottom button when nothing needs doing. Short."
+  },
+  "settings.harnessCatalog.updateDialogTitle": "Update {name} adapter?",
+  "@settings.harnessCatalog.updateDialogTitle": {
+    "description": "Add runtimes dialog, confirm dialog title before updating a runtime adapter. {name} is the runtime name."
+  },
+  "settings.harnessCatalog.detailId": "ID",
+  "@settings.harnessCatalog.detailId": {
+    "description": "Add runtimes dialog, technical details table, row label for the runtime id. Short."
+  },
+  "settings.harnessCatalog.detailCommand": "Command",
+  "@settings.harnessCatalog.detailCommand": {
+    "description": "Add runtimes dialog, technical details table, row label. Short."
+  },
+  "settings.harnessCatalog.detailArguments": "Arguments",
+  "@settings.harnessCatalog.detailArguments": {
+    "description": "Add runtimes dialog, technical details table, row label for command-line arguments. Short."
+  },
+  "settings.harnessCatalog.detailUnderlyingCli": "Underlying CLI",
+  "@settings.harnessCatalog.detailUnderlyingCli": {
+    "description": "Add runtimes dialog, technical details table, row label for the command-line tool the adapter wraps. Short."
+  },
+  "settings.harnessCatalog.detailPath": "Path",
+  "@settings.harnessCatalog.detailPath": {
+    "description": "Add runtimes dialog, technical details table, row label for the file path. Short."
+  },
+  "settings.harnessCatalog.detailSource": "Source",
+  "@settings.harnessCatalog.detailSource": {
+    "description": "Add runtimes dialog, technical details table, row label for where the runtime comes from. Short."
+  },
+  "settings.harnessCatalog.sourceBuiltIn": "Built-in",
+  "@settings.harnessCatalog.sourceBuiltIn": {
+    "description": "Add runtimes dialog, technical details table, Source value: comes with the app. Short."
+  },
+  "settings.harnessCatalog.sourceBundledPreset": "Bundled preset",
+  "@settings.harnessCatalog.sourceBundledPreset": {
+    "description": "Add runtimes dialog, technical details table, Source value: a preset shipped with the app. Short."
+  },
+  "settings.harnessForm.foundOnPath": "Found on PATH",
+  "@settings.harnessForm.foundOnPath": {
+    "description": "Custom harness form, green badge next to Command when the command exists. PATH is the system search path; keep it. Short."
+  },
+  "settings.harnessForm.notFoundOnPath": "Not found on PATH",
+  "@settings.harnessForm.notFoundOnPath": {
+    "description": "Custom harness form, amber badge next to Command when the command is missing. PATH is the system search path; keep it. Short."
+  },
+  "settings.harnessForm.argPlaceholder": "arg {number}",
+  "@settings.harnessForm.argPlaceholder": {
+    "description": "Custom harness form, placeholder of an argument field. {number} is the argument position (1, 2, …). Short."
+  },
+  "settings.harnessForm.removeArg": "Remove argument",
+  "@settings.harnessForm.removeArg": {
+    "description": "Custom harness form, screen-reader label of the X button next to an argument. Short."
+  },
+  "settings.harnessForm.addArg": "Add argument",
+  "@settings.harnessForm.addArg": {
+    "description": "Custom harness form, button under the arguments list. Short."
+  },
+  "settings.harnessForm.envValuePlaceholder": "value",
+  "@settings.harnessForm.envValuePlaceholder": {
+    "description": "Custom harness form, placeholder of an environment variable value field. Short."
+  },
+  "settings.harnessForm.removeEnv": "Remove env var",
+  "@settings.harnessForm.removeEnv": {
+    "description": "Custom harness form, screen-reader label of the X button next to an environment variable. Short."
+  },
+  "settings.harnessForm.addEnv": "Add env var",
+  "@settings.harnessForm.addEnv": {
+    "description": "Custom harness form, button under the environment variables list. Short."
+  },
+  "settings.harnessForm.editTitle": "Edit harness",
+  "@settings.harnessForm.editTitle": {
+    "description": "Custom harness form, title when editing an existing harness. Short."
+  },
+  "settings.harnessForm.addTitle": "Add custom harness",
+  "@settings.harnessForm.addTitle": {
+    "description": "Custom harness form, title when adding a new harness. Short."
+  },
+  "settings.harnessForm.name": "Name",
+  "@settings.harnessForm.name": {
+    "description": "Custom harness form, field label. Short."
+  },
+  "settings.harnessForm.namePlaceholder": "My Runtime",
+  "@settings.harnessForm.namePlaceholder": {
+    "description": "Custom harness form, example placeholder in the Name field. Short."
+  },
+  "settings.harnessForm.id": "ID",
+  "@settings.harnessForm.id": {
+    "description": "Custom harness form, field label. Short."
+  },
+  "settings.harnessForm.autoDerived": "(auto-derived)",
+  "@settings.harnessForm.autoDerived": {
+    "description": "Custom harness form, grey note after the ID label: filled in from the name. Short."
+  },
+  "settings.harnessForm.command": "Command",
+  "@settings.harnessForm.command": {
+    "description": "Custom harness form, field label for the program to run. Short."
+  },
+  "settings.harnessForm.commandHint": "Any command that speaks ACP over stdio works.",
+  "@settings.harnessForm.commandHint": {
+    "description": "Custom harness form, small text under the Command field. ACP and stdio are technical names; keep them."
+  },
+  "settings.harnessForm.arguments": "Arguments",
+  "@settings.harnessForm.arguments": {
+    "description": "Custom harness form, label above the command-line arguments list. Short."
+  },
+  "settings.harnessForm.envVars": "Env vars",
+  "@settings.harnessForm.envVars": {
+    "description": "Custom harness form, label above the environment variables list. Short."
+  },
+  "settings.harnessForm.envVarsNote": "(override at spawn time; Kuzz-managed vars always win)",
+  "@settings.harnessForm.envVarsNote": {
+    "description": "Custom harness form, grey note after the Env vars label."
+  },
+  "settings.harnessForm.docsUrl": "Docs URL",
+  "@settings.harnessForm.docsUrl": {
+    "description": "Custom harness form, field label for a documentation link. Short."
+  },
+  "settings.harnessForm.optional": "(optional)",
+  "@settings.harnessForm.optional": {
+    "description": "Custom harness form, grey note after an optional field label. Short."
+  },
+  "settings.harnessForm.installHint": "Install hint",
+  "@settings.harnessForm.installHint": {
+    "description": "Custom harness form, field label for install instructions. Short."
+  },
+  "settings.harnesses.gitBashAvailable": "Available",
+  "@settings.harnesses.gitBashAvailable": {
+    "description": "Settings > Agent runtimes, green badge next to 'Git Bash' when it is installed. Short."
+  },
+  "settings.harnesses.gitBashActionNeeded": "Action needed",
+  "@settings.harnesses.gitBashActionNeeded": {
+    "description": "Settings > Agent runtimes, amber badge next to 'Git Bash' when it is missing. Short."
+  },
+  "settings.harnesses.installGitForWindows": "Install Git for Windows",
+  "@settings.harnesses.installGitForWindows": {
+    "description": "Settings > Agent runtimes, link button. 'Git for Windows' is a product name; keep it. Short."
+  },
+  "settings.harnesses.gitBashRequired": "Required for kuzz-agent shell tools on Windows.",
+  "@settings.harnesses.gitBashRequired": {
+    "description": "Settings > Agent runtimes, text under Git Bash when it is missing. 'kuzz-agent' is a program name; keep it."
+  },
+  "settings.harnesses.description": "Choose which agent tools Kuzz can use on this device.",
+  "@settings.harnesses.description": {
+    "description": "Settings > Agent runtimes, text under the section title."
+  },
+  "settings.harnesses.checkAgain": "Check again",
+  "@settings.harnesses.checkAgain": {
+    "description": "Settings > Agent runtimes, button that re-checks installed runtimes. Short."
+  },
+  "settings.harnesses.title": "Agent runtimes",
+  "@settings.harnesses.title": {
+    "description": "Settings > Agents, section title for agent tools such as Claude Code or Codex. Short."
+  },
+  "settings.harnesses.prerequisites": "System prerequisites",
+  "@settings.harnesses.prerequisites": {
+    "description": "Settings > Agent runtimes, sub-section title (Windows only). Short."
+  },
+  "settings.harnesses.prerequisitesHint": "Windows tools required by supported agents.",
+  "@settings.harnesses.prerequisitesHint": {
+    "description": "Settings > Agent runtimes, text under System prerequisites."
+  },
+  "settings.harnesses.yourRuntimes": "Your runtimes",
+  "@settings.harnesses.yourRuntimes": {
+    "description": "Settings > Agent runtimes, sub-section title and screen-reader label of the runtime list. Short."
+  },
+  "settings.harnesses.yourRuntimesHint": "Ready to use, or one click from installed.",
+  "@settings.harnesses.yourRuntimesHint": {
+    "description": "Settings > Agent runtimes, text under Your runtimes."
+  },
+  "settings.harnesses.checking": "Checking agent runtimes...",
+  "@settings.harnesses.checking": {
+    "description": "Settings > Agent runtimes, text while the list loads."
+  },
+  "settings.harnesses.noneReady": "No agent runtimes ready yet — add one below.",
+  "@settings.harnesses.noneReady": {
+    "description": "Settings > Agent runtimes, amber text when no runtime is ready."
+  },
+  "settings.harnesses.addRuntimes": "Add runtimes",
+  "@settings.harnesses.addRuntimes": {
+    "description": "Settings > Agent runtimes, button that opens the Add runtimes dialog. Short."
+  },
+  "settings.harnesses.adapterInstallGuide": "Adapter install guide",
+  "@settings.harnesses.adapterInstallGuide": {
+    "description": "Settings > Agent runtimes, row ••• menu item that opens adapter install instructions. Short."
+  },
+  "settings.harnesses.cliSetupGuide": "CLI setup guide",
+  "@settings.harnesses.cliSetupGuide": {
+    "description": "Settings > Agent runtimes, row ••• menu item that opens command-line tool setup instructions. Short."
+  },
+  "settings.harnesses.openActions": "Open actions for {name}",
+  "@settings.harnesses.openActions": {
+    "description": "Settings > Agent runtimes, screen-reader label of the ••• button on a runtime row. {name} is the runtime name."
+  },
+  "settings.harnesses.installNode": "Install Node.js",
+  "@settings.harnesses.installNode": {
+    "description": "Settings > Agent runtimes, row ••• menu item. 'Node.js' is a product name; keep it. Short."
+  },
+  "settings.harnesses.installingLabel": "{name} installing",
+  "@settings.harnesses.installingLabel": {
+    "description": "Settings > Agent runtimes, screen-reader label of the spinner while a runtime installs. {name} is the runtime name. Short."
+  },
+  "settings.harnesses.connectingLabel": "{name} connecting",
+  "@settings.harnesses.connectingLabel": {
+    "description": "Settings > Agent runtimes, screen-reader label of the spinner while a runtime signs in. {name} is the runtime name. Short."
+  },
+  "settings.harnesses.installLabel": "Install {name}",
+  "@settings.harnesses.installLabel": {
+    "description": "Settings > Agent runtimes, screen-reader label of the Install button on a row. {name} is the runtime name. Short."
+  },
+  "settings.harnesses.connectFailed": "Couldn't connect {name}: {error}",
+  "@settings.harnesses.connectFailed": {
+    "description": "Settings > Agent runtimes, red error under a row when signing in fails. {name} is the runtime name; {error} is the error detail."
+  },
+  "settings.harnesses.connectionFailed": "Connection failed.",
+  "@settings.harnesses.connectionFailed": {
+    "description": "Settings > Agent runtimes, fallback error detail when signing in fails without a message. Short."
+  },
+  "settings.harnesses.signInOptionsFailed": "Couldn't load sign-in options: {error}",
+  "@settings.harnesses.signInOptionsFailed": {
+    "description": "Settings > Agent runtimes, red error under a row when sign-in methods fail to load. {error} is the error detail."
+  },
+  "settings.harnesses.requestFailed": "Request failed.",
+  "@settings.harnesses.requestFailed": {
+    "description": "Settings > Agent runtimes, fallback error detail when a request fails without a message. Short."
+  },
+  "settings.harnesses.configError": "Config error: {diagnostic}",
+  "@settings.harnesses.configError": {
+    "description": "Settings > Agent runtimes, red text under a row with a broken config. {diagnostic} is the technical detail."
+  },
+  "settings.harnesses.terminalSignInHint": "Finish signing in from the Terminal window, then click Check again to re-check {name}.",
+  "@settings.harnesses.terminalSignInHint": {
+    "description": "Settings > Agent runtimes, hint under a row after a sign-in Terminal window opened. 'Check again' is the button name. {name} is the runtime name."
+  },
+  "settings.updates.title": "Software Updates",
+  "@settings.updates.title": {
+    "description": "Settings > Updates, section title. Short."
+  },
+  "settings.updates.description": "Keep Kuzz up to date with the latest features and fixes.",
+  "@settings.updates.description": {
+    "description": "Settings > Updates, text under the section title."
+  },
+  "settings.updates.statusGroup": "Update status",
+  "@settings.updates.statusGroup": {
+    "description": "Settings > Updates, group title. Short."
+  },
+  "settings.updates.idleHint": "Check if a new version is available.",
+  "@settings.updates.idleHint": {
+    "description": "Settings > Updates, text next to the Check for Updates button."
+  },
+  "settings.updates.check": "Check for Updates",
+  "@settings.updates.check": {
+    "description": "Settings > Updates, button. Short."
+  },
+  "settings.updates.checking": "Checking for updates...",
+  "@settings.updates.checking": {
+    "description": "Settings > Updates, status text while checking."
+  },
+  "settings.updates.upToDate": "You're on the latest version.",
+  "@settings.updates.upToDate": {
+    "description": "Settings > Updates, status text when no update exists."
+  },
+  "settings.updates.checkAgain": "Check Again",
+  "@settings.updates.checkAgain": {
+    "description": "Settings > Updates, button that checks for updates again. Short."
+  },
+  "settings.updates.unavailable": "Automatic updates aren't available on this build. Download the latest release manually.",
+  "@settings.updates.unavailable": {
+    "description": "Settings > Updates, status text when this build cannot update itself."
+  },
+  "settings.updates.manualTitle": "Update available — v{version}",
+  "@settings.updates.manualTitle": {
+    "description": "Settings > Updates, title when a new version must be downloaded by hand. {version} is the version number, e.g. 1.2.3."
+  },
+  "settings.updates.manualHint": "In-app updates aren't supported on this Linux package. Download the new version from GitHub.",
+  "@settings.updates.manualHint": {
+    "description": "Settings > Updates, text under the manual update title (Linux only). Keep 'GitHub'."
+  },
+  "settings.updates.manualAppImage": "Switch to the AppImage build for automatic updates.",
+  "@settings.updates.manualAppImage": {
+    "description": "Settings > Updates, sentence after the manual update text (Linux only). 'AppImage' is a package format name; keep it."
+  },
+  "settings.updates.download": "Download Update",
+  "@settings.updates.download": {
+    "description": "Settings > Updates, button that opens the download page. Short."
+  },
+  "settings.updates.preparing": "Preparing update...",
+  "@settings.updates.preparing": {
+    "description": "Settings > Updates, status text."
+  },
+  "settings.updates.downloading": "Downloading update...",
+  "@settings.updates.downloading": {
+    "description": "Settings > Updates, status text."
+  },
+  "settings.updates.installing": "Installing update...",
+  "@settings.updates.installing": {
+    "description": "Settings > Updates, status text."
+  },
+  "settings.updates.ready": "Update downloaded. Click to apply.",
+  "@settings.updates.ready": {
+    "description": "Settings > Updates, status text next to Update Now."
+  },
+  "settings.updates.updateNow": "Update Now",
+  "@settings.updates.updateNow": {
+    "description": "Settings > Updates, button that installs the update and restarts. Short."
+  },
+  "settings.updates.failed": "Update failed: {message}",
+  "@settings.updates.failed": {
+    "description": "Settings > Updates, red error. {message} is the error detail."
+  },
+  "settings.updateCard.updateNow": "Update now",
+  "@settings.updateCard.updateNow": {
+    "description": "Sidebar update card, screen-reader label of the card button. Short."
+  },
+  "settings.updateCard.updating": "Updating",
+  "@settings.updateCard.updating": {
+    "description": "Sidebar update card, small text while the update installs. Short."
+  },
+  "settings.updateCard.clickToUpdate": "Click to update",
+  "@settings.updateCard.clickToUpdate": {
+    "description": "Sidebar update card, small text under the title. Short."
+  },
+  "settings.updateCard.dismiss": "Dismiss update notification",
+  "@settings.updateCard.dismiss": {
+    "description": "Sidebar update card, screen-reader label of the X button. Short."
+  },
+  "settings.updateCard.readyTitle": "Ready to update!",
+  "@settings.updateCard.readyTitle": {
+    "description": "Sidebar update card, title. Short."
+  },
+  "settings.updateCard.downloadLabel": "Download update from GitHub",
+  "@settings.updateCard.downloadLabel": {
+    "description": "Sidebar update card (Linux manual update), screen-reader label of the card button. Keep 'GitHub'. Short."
+  },
+  "settings.updateCard.manualDescription": "v{version} available — download from GitHub. Switch to AppImage for automatic updates.",
+  "@settings.updateCard.manualDescription": {
+    "description": "Sidebar update card (Linux manual update), small text. {version} is the version number. Keep 'GitHub' and 'AppImage'."
+  },
+  "settings.updateCard.availableTitle": "Update available",
+  "@settings.updateCard.availableTitle": {
+    "description": "Sidebar update card (Linux manual update), title. Short."
+  },
+  "settings.updateIndicator.available": "Update available",
+  "@settings.updateIndicator.available": {
+    "description": "Top bar update icon, tooltip and screen-reader label. Short."
+  },
+  "settings.updateIndicator.downloading": "Downloading update…",
+  "@settings.updateIndicator.downloading": {
+    "description": "Top bar update icon, tooltip and screen-reader label. Short."
+  },
+  "settings.updateIndicator.installing": "Installing update…",
+  "@settings.updateIndicator.installing": {
+    "description": "Top bar update icon, tooltip and screen-reader label. Short."
+  },
+  "settings.updateIndicator.manual": "Update available — download from GitHub (use AppImage for auto-updates)",
+  "@settings.updateIndicator.manual": {
+    "description": "Top bar update icon (Linux manual update), tooltip and screen-reader label. Keep 'GitHub' and 'AppImage'."
+  },
+  "settings.updateIndicator.ready": "Update now",
+  "@settings.updateIndicator.ready": {
+    "description": "Top bar update icon when the update is ready, tooltip and screen-reader label. Short."
+  },
+  "settings.experiments.contextGauge": "Show context gauge",
+  "@settings.experiments.contextGauge": {
+    "description": "Settings > Experiments, switch label. The context gauge shows how full an agent's memory window is. Short."
+  },
+  "settings.experiments.contextGaugeHint": "Show each session's context usage on agent avatars, with Compact",
+  "@settings.experiments.contextGaugeHint": {
+    "description": "Settings > Experiments, text under Show context gauge. 'Compact' is the name of an action that shrinks the context."
+  },
+  "settings.experiments.title": "Experiments",
+  "@settings.experiments.title": {
+    "description": "Settings > Experiments, section title. Short."
+  },
+  "settings.experiments.description": "These features are functional but still being refined. Enable them to try new capabilities early.",
+  "@settings.experiments.description": {
+    "description": "Settings > Experiments, text under the section title."
+  },
+  "settings.experiments.featuresGroup": "Features",
+  "@settings.experiments.featuresGroup": {
+    "description": "Settings > Experiments, group title. Short."
+  },
+  "settings.experiments.agentsGroup": "Agents",
+  "@settings.experiments.agentsGroup": {
+    "description": "Settings > Experiments, group title. Short."
+  },
+  "settings.preventSleep.group": "Preferences",
+  "@settings.preventSleep.group": {
+    "description": "Settings > Agents, group title. Short."
+  },
+  "settings.preventSleep.label": "Keep awake while agents are active",
+  "@settings.preventSleep.label": {
+    "description": "Settings > Agents, switch label. Short."
+  },
+  "settings.preventSleep.hint": "Prevents your computer from sleeping while local agents are running. Automatically releases when all agents stop or after 1 hour without agent activity.",
+  "@settings.preventSleep.hint": {
+    "description": "Settings > Agents, text under Keep awake while agents are active."
+  },
+  "settings.preventSleep.waiting": "Waiting for agents to start",
+  "@settings.preventSleep.waiting": {
+    "description": "Settings > Agents, grey status under the keep-awake switch when no agent runs."
+  },
+  "settings.preventSleep.expired": "Sleep prevention expired after 1 hour without agent activity. It will resume on the next agent activity, or toggle off and on to re-enable now.",
+  "@settings.preventSleep.expired": {
+    "description": "Settings > Agents, yellow notice under the keep-awake switch."
+  },
+  "settings.contextHistory.modeRecent": "Recent 12",
+  "@settings.contextHistory.modeRecent": {
+    "description": "Settings > Experiments > New session history, segmented option: read only the 12 latest messages. Short."
+  },
+  "settings.contextHistory.modeFull": "Full history",
+  "@settings.contextHistory.modeFull": {
+    "description": "Settings > Experiments > New session history, segmented option: read as much history as fits the size budget. Short."
+  },
+  "settings.contextHistory.budgetSmall": "Small",
+  "@settings.contextHistory.budgetSmall": {
+    "description": "Settings > Experiments > New session history, size budget option. Short."
+  },
+  "settings.contextHistory.budgetMedium": "Medium",
+  "@settings.contextHistory.budgetMedium": {
+    "description": "Settings > Experiments > New session history, size budget option. Short."
+  },
+  "settings.contextHistory.budgetLarge": "Large",
+  "@settings.contextHistory.budgetLarge": {
+    "description": "Settings > Experiments > New session history, size budget option. Short."
+  },
+  "settings.contextHistory.budgetSmallDescription": "About 8k tokens, oldest messages dropped first",
+  "@settings.contextHistory.budgetSmallDescription": {
+    "description": "Settings > Experiments > New session history, text under Size budget when Small is chosen. 8k = 8,000."
+  },
+  "settings.contextHistory.budgetMediumDescription": "About 20k tokens, oldest messages dropped first",
+  "@settings.contextHistory.budgetMediumDescription": {
+    "description": "Settings > Experiments > New session history, text under Size budget when Medium is chosen. 20k = 20,000."
+  },
+  "settings.contextHistory.budgetLargeDescription": "About 50k tokens, oldest messages dropped first",
+  "@settings.contextHistory.budgetLargeDescription": {
+    "description": "Settings > Experiments > New session history, text under Size budget when Large is chosen. 50k = 50,000."
+  },
+  "settings.contextHistory.budgetFallbackDescription": "Within the budget, oldest messages dropped first",
+  "@settings.contextHistory.budgetFallbackDescription": {
+    "description": "Settings > Experiments > New session history, text under Size budget when the budget is unknown."
+  },
+  "settings.contextHistory.budgetHintRecent": "Pick a size to read as much history as fits",
+  "@settings.contextHistory.budgetHintRecent": {
+    "description": "Settings > Experiments > New session history, text under Size budget while Recent 12 is chosen."
+  },
+  "settings.contextHistory.description": "What an agent reads when it starts a new session for a group or thread, for example when its previous session could not be resumed. Resumed sessions and group hosts keep the recent messages. Applies to the next new session, without a restart.",
+  "@settings.contextHistory.description": {
+    "description": "Settings > Experiments, text under the New session history group title."
+  },
+  "settings.contextHistory.title": "New session history",
+  "@settings.contextHistory.title": {
+    "description": "Settings > Experiments, group title and screen-reader name of its option control. Short."
+  },
+  "settings.contextHistory.reads": "Reads",
+  "@settings.contextHistory.reads": {
+    "description": "Settings > Experiments > New session history, row label for what the agent reads. Short."
+  },
+  "settings.contextHistory.readsHint": "Recent 12 reads only the latest messages",
+  "@settings.contextHistory.readsHint": {
+    "description": "Settings > Experiments > New session history, text under Reads. 'Recent 12' is the option name."
+  },
+  "settings.contextHistory.sizeBudget": "Size budget",
+  "@settings.contextHistory.sizeBudget": {
+    "description": "Settings > Experiments > New session history, row label. Short."
+  },
+  "settings.contextHistory.sizeBudgetLegend": "History size budget",
+  "@settings.contextHistory.sizeBudgetLegend": {
+    "description": "Settings > Experiments > New session history, screen-reader name of the size option control. Short."
+  },
+  "settings.contextHistory.saveFailed": "Couldn't save the new session history setting.",
+  "@settings.contextHistory.saveFailed": {
+    "description": "Settings > Experiments > New session history, red error."
+  },
+  "settings.taskThreads.trigger.longRunning": "Long-running work",
+  "@settings.taskThreads.trigger.longRunning": {
+    "description": "Settings > Experiments > Agents open task threads, checkbox label. Short."
+  },
+  "settings.taskThreads.trigger.longRunningDescription": "Builds, deploys, test suites, or broad research that takes more than a few minutes",
+  "@settings.taskThreads.trigger.longRunningDescription": {
+    "description": "Settings > Experiments > Agents open task threads, text under Long-running work."
+  },
+  "settings.taskThreads.trigger.multiStep": "Multi-step work",
+  "@settings.taskThreads.trigger.multiStep": {
+    "description": "Settings > Experiments > Agents open task threads, checkbox label. Short."
+  },
+  "settings.taskThreads.trigger.multiStepDescription": "Work that goes through several stages, like investigate, change, and verify",
+  "@settings.taskThreads.trigger.multiStepDescription": {
+    "description": "Settings > Experiments > Agents open task threads, text under Multi-step work."
+  },
+  "settings.taskThreads.trigger.parallel": "Several tasks in one request",
+  "@settings.taskThreads.trigger.parallel": {
+    "description": "Settings > Experiments > Agents open task threads, checkbox label. Short."
+  },
+  "settings.taskThreads.trigger.parallelDescription": "One thread per independent task",
+  "@settings.taskThreads.trigger.parallelDescription": {
+    "description": "Settings > Experiments > Agents open task threads, text under Several tasks in one request."
+  },
+  "settings.taskThreads.trigger.sideDiscussion": "Side discussions",
+  "@settings.taskThreads.trigger.sideDiscussion": {
+    "description": "Settings > Experiments > Agents open task threads, checkbox label. Short."
+  },
+  "settings.taskThreads.trigger.sideDiscussionDescription": "Long tangents that would crowd out the main timeline",
+  "@settings.taskThreads.trigger.sideDiscussionDescription": {
+    "description": "Settings > Experiments > Agents open task threads, text under Side discussions."
+  },
+  "settings.taskThreads.trigger.delegation": "Delegating to another agent",
+  "@settings.taskThreads.trigger.delegation": {
+    "description": "Settings > Experiments > Agents open task threads, checkbox label. Short."
+  },
+  "settings.taskThreads.trigger.delegationDescription": "Keep the assignment, progress, and result in one thread",
+  "@settings.taskThreads.trigger.delegationDescription": {
+    "description": "Settings > Experiments > Agents open task threads, text under Delegating to another agent."
+  },
+  "settings.taskThreads.level.off": "Off",
+  "@settings.taskThreads.level.off": {
+    "description": "Settings > Experiments > Agents open task threads, level option. Short."
+  },
+  "settings.taskThreads.level.minimal": "Light",
+  "@settings.taskThreads.level.minimal": {
+    "description": "Settings > Experiments > Agents open task threads, level option: only for long-running work. Short."
+  },
+  "settings.taskThreads.level.standard": "Standard",
+  "@settings.taskThreads.level.standard": {
+    "description": "Settings > Experiments > Agents open task threads, level option. Short."
+  },
+  "settings.taskThreads.level.proactive": "Eager",
+  "@settings.taskThreads.level.proactive": {
+    "description": "Settings > Experiments > Agents open task threads, level option: open threads readily. Short."
+  },
+  "settings.taskThreads.level.custom": "Custom",
+  "@settings.taskThreads.level.custom": {
+    "description": "Settings > Experiments > Agents open task threads, level option when the user ticks situations by hand. Short."
+  },
+  "settings.taskThreads.description": "When agents move work into its own thread without being asked. Applies to agents whose conversation context is Each thread, from their next message.",
+  "@settings.taskThreads.description": {
+    "description": "Settings > Experiments, text under the Agents open task threads group title. 'Each thread' is an option name."
+  },
+  "settings.taskThreads.title": "Agents open task threads",
+  "@settings.taskThreads.title": {
+    "description": "Settings > Experiments, group title. Short."
+  },
+  "settings.taskThreads.levelLabel": "Level",
+  "@settings.taskThreads.levelLabel": {
+    "description": "Settings > Experiments > Agents open task threads, row label. Short."
+  },
+  "settings.taskThreads.levelHint": "Off keeps threads to when someone asks for one",
+  "@settings.taskThreads.levelHint": {
+    "description": "Settings > Experiments > Agents open task threads, text under Level. 'Off' is the option name."
+  },
+  "settings.taskThreads.levelLegend": "Task thread level",
+  "@settings.taskThreads.levelLegend": {
+    "description": "Settings > Experiments > Agents open task threads, screen-reader name of the level control. Short."
+  },
+  "settings.taskThreads.saveFailed": "Couldn't save the task thread setting.",
+  "@settings.taskThreads.saveFailed": {
+    "description": "Settings > Experiments > Agents open task threads, red error."
+  },
+  "settings.taskModels.messageRouting": "Message routing",
+  "@settings.taskModels.messageRouting": {
+    "description": "Settings > Models > App tasks, row title for the task that picks which agent answers. Short."
+  },
+  "settings.taskModels.messageRoutingDescription": "Picks which agent handles a message you send without an @mention (Smart routing).",
+  "@settings.taskModels.messageRoutingDescription": {
+    "description": "Settings > Models > App tasks, text under Message routing. 'Smart routing' is a feature name."
+  },
+  "settings.taskModels.providerUnavailable": "{provider} — {reason}",
+  "@settings.taskModels.providerUnavailable": {
+    "description": "Settings > Models > App tasks, Provider dropdown option for a provider that cannot be used. {provider} is the provider name; {reason} says what is missing."
+  },
+  "settings.taskModels.notAvailable": "not available",
+  "@settings.taskModels.notAvailable": {
+    "description": "Settings > Models > App tasks, fallback reason after a provider name in the Provider dropdown. Short."
+  },
+  "settings.taskModels.routingPrivacy": "The messages you write in groups — including drafts while you type — plus your agents' names and descriptions are sent to this provider to pick an agent.",
+  "@settings.taskModels.routingPrivacy": {
+    "description": "Settings > Models > App tasks, privacy note under Message routing."
+  },
+  "settings.taskModels.provider": "Provider",
+  "@settings.taskModels.provider": {
+    "description": "Settings > Models > App tasks, dropdown label. Short."
+  },
+  "settings.taskModels.automatic": "Automatic",
+  "@settings.taskModels.automatic": {
+    "description": "Settings > Models > App tasks, Provider dropdown option: let the app choose. Short."
+  },
+  "settings.taskModels.model": "Model",
+  "@settings.taskModels.model": {
+    "description": "Settings > Models > App tasks, dropdown label. Short."
+  },
+  "settings.taskModels.defaultFastest": "Default — {model} (fastest)",
+  "@settings.taskModels.defaultFastest": {
+    "description": "Settings > Models > App tasks, Model dropdown option. {model} is a model name."
+  },
+  "settings.taskModels.defaultCheapest": "Default — {model} (cheapest)",
+  "@settings.taskModels.defaultCheapest": {
+    "description": "Settings > Models > App tasks, Model dropdown option. {model} is a model name."
+  },
+  "settings.taskModels.default": "Default",
+  "@settings.taskModels.default": {
+    "description": "Settings > Models > App tasks, Model dropdown option when no provider is chosen. Short."
+  },
+  "settings.taskModels.ready": "Ready — {model}",
+  "@settings.taskModels.ready": {
+    "description": "Settings > Models > App tasks, status line under the dropdowns. {model} is a model name."
+  },
+  "settings.taskModels.readyVia": "Ready — {model} via {provider}",
+  "@settings.taskModels.readyVia": {
+    "description": "Settings > Models > App tasks, status line under the dropdowns. {model} is a model name; {provider} is a provider name."
+  },
+  "settings.taskModels.readyViaSubscription": "Ready — {model} via {provider}. About 5 s per pick, so it usually lands while you type.",
+  "@settings.taskModels.readyViaSubscription": {
+    "description": "Settings > Models > App tasks, status line when a subscription provider is used. {model} is a model name; {provider} is a provider name. 5 s = 5 seconds."
+  },
+  "settings.taskModels.notReadyReason": "{reason}.",
+  "@settings.taskModels.notReadyReason": {
+    "description": "Settings > Models > App tasks, amber status line; {reason} says why the task cannot run. Keep the full stop if your language uses one."
+  },
+  "settings.taskModels.notReady": "Not ready",
+  "@settings.taskModels.notReady": {
+    "description": "Settings > Models > App tasks, fallback reason in the amber status line. Short."
+  },
+  "settings.taskModels.setUpInProviders": "Set up in Providers",
+  "@settings.taskModels.setUpInProviders": {
+    "description": "Settings > Models > App tasks, link button that opens the Connections tab. Short."
+  },
+  "settings.taskModels.description": "Each task Kuzz runs on its own behalf picks its provider and model here, independently of your agents. Changing one never restarts an agent.",
+  "@settings.taskModels.description": {
+    "description": "Settings > Models > App tasks, text under the group title."
+  },
+  "settings.taskModels.title": "App tasks",
+  "@settings.taskModels.title": {
+    "description": "Settings > Models > App tasks, group title. Short."
+  },
+  "settings.taskModels.loadFailed": "Couldn't load task models.",
+  "@settings.taskModels.loadFailed": {
+    "description": "Settings > Models > App tasks, red error."
+  },
+  "settings.providers.optionSubscription": "{provider} · Subscription",
+  "@settings.providers.optionSubscription": {
+    "description": "Settings > Models > Default for new agents, option label. {provider} is the provider name, e.g. Anthropic. Short."
+  },
+  "settings.providers.optionChatgptSubscription": "{provider} · ChatGPT subscription",
+  "@settings.providers.optionChatgptSubscription": {
+    "description": "Settings > Models > Default for new agents, option label. {provider} is the provider name. Keep 'ChatGPT'. Short."
+  },
+  "settings.providers.optionApiKey": "{provider} · API key",
+  "@settings.providers.optionApiKey": {
+    "description": "Settings > Models > Default for new agents, option label. {provider} is the provider name. Short."
+  },
+  "settings.providers.optionWorkspace": "{provider} · Workspace",
+  "@settings.providers.optionWorkspace": {
+    "description": "Settings > Models > Default for new agents, option label for workspace sign-in. {provider} is the provider name. Short."
+  },
+  "settings.providers.detailChatgptSubscription": "{runtime} with ChatGPT subscription",
+  "@settings.providers.detailChatgptSubscription": {
+    "description": "Settings > Models > Default for new agents, small text under an option. {runtime} is an agent tool name. Keep 'ChatGPT'."
+  },
+  "settings.providers.detailSignIn": "{runtime} sign-in",
+  "@settings.providers.detailSignIn": {
+    "description": "Settings > Models > Default for new agents, small text under an option. {runtime} is an agent tool name. Short."
+  },
+  "settings.providers.detailSignInNotInstalled": "{runtime} sign-in — not installed",
+  "@settings.providers.detailSignInNotInstalled": {
+    "description": "Settings > Models > Default for new agents, small text under an option whose tool is missing. {runtime} is an agent tool name."
+  },
+  "settings.providers.detailWithKey": "{runtime} with {envVar}",
+  "@settings.providers.detailWithKey": {
+    "description": "Settings > Models > Default for new agents, small text under an API key option. {runtime} is an agent tool name; {envVar} is an environment variable name like ANTHROPIC_API_KEY."
+  },
+  "settings.providers.detailWithWorkspace": "{runtime} with workspace sign-in",
+  "@settings.providers.detailWithWorkspace": {
+    "description": "Settings > Models > Default for new agents, small text under a workspace option. {runtime} is an agent tool name."
+  },
+  "settings.providers.detailNeedsRuntime": "Needs an installed runtime that takes a provider",
+  "@settings.providers.detailNeedsRuntime": {
+    "description": "Settings > Models > Default for new agents, small text under an option that cannot be used yet."
+  },
+  "settings.providers.restartFailed": "{count, plural, one {# agent} other {# agents}} couldn't restart — check the Agents page.",
+  "@settings.providers.restartFailed": {
+    "description": "Settings > Models, green/red save result, extra sentence when some agents failed to restart."
+  },
+  "settings.providers.savedRestarted": "Saved. Restarted {count, plural, one {# agent} other {# agents}}.",
+  "@settings.providers.savedRestarted": {
+    "description": "Settings > Models, save result when running agents were restarted."
+  },
+  "settings.providers.saved": "Saved.",
+  "@settings.providers.saved": {
+    "description": "Settings > Models, save result. Short."
+  },
+  "settings.providers.saveFailed": "Couldn't save.",
+  "@settings.providers.saveFailed": {
+    "description": "Settings > Models, red save result. Short."
+  },
+  "settings.providers.chatgptPlanHeading": "ChatGPT plan · used by Kuzz Agent",
+  "@settings.providers.chatgptPlanHeading": {
+    "description": "Settings > Models > Connections, OpenAI group, small heading. Keep 'ChatGPT' and 'Kuzz Agent'. Short."
+  },
+  "settings.providers.codexCliHeading": "Codex CLI · used by Codex agents",
+  "@settings.providers.codexCliHeading": {
+    "description": "Settings > Models > Connections, OpenAI group, small heading above the Codex sign-in row. Keep 'Codex'. Short."
+  },
+  "settings.providers.subscriptionHeading": "Subscription",
+  "@settings.providers.subscriptionHeading": {
+    "description": "Settings > Models > Connections, small heading above a provider's subscription sign-in row. Short."
+  },
+  "settings.providers.workspaceSignIn": "Workspace sign-in",
+  "@settings.providers.workspaceSignIn": {
+    "description": "Settings > Models > Connections, row title for providers that use a workspace login. Short."
+  },
+  "settings.providers.workspaceSignInHint": "{provider} uses a workspace host and OAuth sign-in, configured under Default for new agents.",
+  "@settings.providers.workspaceSignInHint": {
+    "description": "Settings > Models > Connections, text under Workspace sign-in. {provider} is the provider name. 'Default for new agents' is a tab name."
+  },
+  "settings.providers.configLoadFailed": "Couldn't load your AI settings, so keys can't be changed here right now. Reopen Settings to try again.",
+  "@settings.providers.configLoadFailed": {
+    "description": "Settings > Models > Connections, red error at the top."
+  },
+  "settings.providers.apiKeyHeading": "API key",
+  "@settings.providers.apiKeyHeading": {
+    "description": "Settings > Models > Connections, small heading above the API key field. Short."
+  },
+  "settings.providers.apiKeySaved": "Saved on this device — paste a new key to replace it",
+  "@settings.providers.apiKeySaved": {
+    "description": "Settings > Models > Connections, placeholder of the API key field when a key is already saved."
+  },
+  "settings.providers.alsoUsedBy": "Also used by {providers} agents.",
+  "@settings.providers.alsoUsedBy": {
+    "description": "Settings > Models > Connections, small note under the API key field. {providers} is a comma-separated list of provider names."
+  },
+  "settings.providers.removeKey": "Remove key",
+  "@settings.providers.removeKey": {
+    "description": "Settings > Models > Connections, button and confirm button that delete the saved API key. Short."
+  },
+  "settings.providers.removeKeyBody": "Agents that use {provider} through this key stop working until you add a key again.",
+  "@settings.providers.removeKeyBody": {
+    "description": "Settings > Models > Connections, Remove key confirm dialog text. {provider} is the provider name."
+  },
+  "settings.providers.removeKeyTitle": "Remove your {keyLabel}?",
+  "@settings.providers.removeKeyTitle": {
+    "description": "Settings > Models > Connections, Remove key confirm dialog title. {keyLabel} is the key's name, e.g. 'Anthropic API key'."
+  },
+  "settings.models.title": "Models",
+  "@settings.models.title": {
+    "description": "Settings > Models, section title. Short."
+  },
+  "settings.models.description": "Connect the AI you pay for, pick what new agents start with, and choose the model for each app task.",
+  "@settings.models.description": {
+    "description": "Settings > Models, text under the section title."
+  },
+  "settings.models.tabsLabel": "Models settings",
+  "@settings.models.tabsLabel": {
+    "description": "Settings > Models, screen-reader label of the tab bar. Short."
+  },
+  "settings.models.tabConnections": "Connections",
+  "@settings.models.tabConnections": {
+    "description": "Settings > Models, tab. Short."
+  },
+  "settings.models.tabDefaults": "Default for new agents",
+  "@settings.models.tabDefaults": {
+    "description": "Settings > Models, tab. Short."
+  },
+  "settings.models.tabTasks": "App tasks",
+  "@settings.models.tabTasks": {
+    "description": "Settings > Models, tab. Short."
+  },
+  "settings.soundPicker.recommended": "rec.",
+  "@settings.soundPicker.recommended": {
+    "description": "Settings > Notifications, sound list, tiny badge next to the recommended sound (short for 'recommended'). Shown in capitals. Very short."
+  },
+  "settings.soundPicker.pause": "Pause {sound}",
+  "@settings.soundPicker.pause": {
+    "description": "Settings > Notifications, screen-reader label of the play/pause button while a sound plays. {sound} is the sound name. Short."
+  },
+  "settings.soundPicker.preview": "Preview {sound}",
+  "@settings.soundPicker.preview": {
+    "description": "Settings > Notifications, screen-reader label of the play button next to a sound. {sound} is the sound name. Short."
+  },
+  "accounts.watch.notificationTitle": "{account} · {title}",
+  "@accounts.watch.notificationTitle": {
+    "description": "Desktop notification title for a message in another signed-in account (not the open one). {account} is the account name; {title} is the usual notification title, e.g. a sender name."
   }
 }

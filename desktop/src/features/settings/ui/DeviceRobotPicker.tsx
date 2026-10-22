@@ -1,17 +1,37 @@
+import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   DEVICE_ROBOT_PAINTS,
   DEVICE_ROBOT_SHAPES,
   type DeviceRobotOverride,
+  type DeviceRobotShape,
   type DeviceRobotVariant,
   resolveDeviceRobotVariant,
 } from "@/shared/lib/deviceRobot";
 import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 
-function titleCase(name: string) {
-  return name.charAt(0).toUpperCase() + name.slice(1);
-}
+/** Choice labels ("Dome robot"), by shape and by paint name. */
+const SHAPE_LABELS: Record<DeviceRobotShape, MessageKey> = {
+  classic: "settings.robotPicker.shapeClassic",
+  dome: "settings.robotPicker.shapeDome",
+  boxy: "settings.robotPicker.shapeBoxy",
+  visor: "settings.robotPicker.shapeVisor",
+  tall: "settings.robotPicker.shapeTall",
+  hex: "settings.robotPicker.shapeHex",
+};
+
+const PAINT_LABELS: Record<string, MessageKey> = {
+  red: "settings.robotPicker.paintRed",
+  green: "settings.robotPicker.paintGreen",
+  violet: "settings.robotPicker.paintViolet",
+  orange: "settings.robotPicker.paintOrange",
+  blue: "settings.robotPicker.paintBlue",
+  yellow: "settings.robotPicker.paintYellow",
+  rainbow: "settings.robotPicker.paintRainbow",
+  gold: "settings.robotPicker.paintGold",
+  silver: "settings.robotPicker.paintSilver",
+};
 
 function Choice({
   label,
@@ -63,6 +83,7 @@ export function DeviceRobotPicker({
   onPick: (override: DeviceRobotOverride) => void;
   variant: DeviceRobotVariant | null;
 }) {
+  const t = useT();
   if (!variant) {
     return <DeviceRobotIcon className="h-5 w-5" variant={null} />;
   }
@@ -79,7 +100,7 @@ export function DeviceRobotPicker({
     <Popover>
       <PopoverTrigger asChild>
         <button
-          aria-label={`Change robot for ${deviceName}`}
+          aria-label={t("settings.robotPicker.change", { name: deviceName })}
           className="flex shrink-0 rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed"
           data-testid="device-robot-picker-trigger"
           disabled={disabled}
@@ -93,13 +114,15 @@ export function DeviceRobotPicker({
         className="w-auto space-y-2 p-3"
         data-testid="device-robot-picker"
       >
-        <p className="text-xs font-medium text-muted-foreground">Shape</p>
+        <p className="text-xs font-medium text-muted-foreground">
+          {t("settings.robotPicker.shape")}
+        </p>
         <div className="flex gap-1">
           {DEVICE_ROBOT_SHAPES.map((shape) => (
             <Choice
               disabled={disabled}
               key={shape}
-              label={`${titleCase(shape)} robot`}
+              label={t(SHAPE_LABELS[shape])}
               onClick={() => pick({ shape, colorIndex: variant.colorIndex })}
               selected={shape === variant.shape}
               variant={resolveDeviceRobotVariant(deviceId, {
@@ -109,13 +132,15 @@ export function DeviceRobotPicker({
             />
           ))}
         </div>
-        <p className="text-xs font-medium text-muted-foreground">Colour</p>
+        <p className="text-xs font-medium text-muted-foreground">
+          {t("settings.robotPicker.colour")}
+        </p>
         <div className="flex gap-1">
           {DEVICE_ROBOT_PAINTS.map((paint, colorIndex) => (
             <Choice
               disabled={disabled}
               key={paint.name}
-              label={`${titleCase(paint.name)} robot`}
+              label={t(PAINT_LABELS[paint.name])}
               onClick={() => pick({ shape: variant.shape, colorIndex })}
               selected={colorIndex === variant.colorIndex}
               variant={resolveDeviceRobotVariant(deviceId, {

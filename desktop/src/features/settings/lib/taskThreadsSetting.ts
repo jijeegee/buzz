@@ -3,51 +3,54 @@ import type {
   TaskThreadsSetting,
   TaskThreadTrigger,
 } from "@/shared/api/tauriTaskThreads";
+import type { MessageKey } from "@/shared/i18n";
 
-/** Display order and copy for each situation, matching the harness guidance. */
+/**
+ * Display order and copy for each situation, matching the harness guidance.
+ * Labels and descriptions are message keys; translate where shown.
+ */
 export const TASK_THREAD_TRIGGERS: readonly {
   value: TaskThreadTrigger;
-  label: string;
-  description: string;
+  label: MessageKey;
+  description: MessageKey;
 }[] = [
   {
     value: "long_running",
-    label: "Long-running work",
-    description:
-      "Builds, deploys, test suites, or broad research that takes more than a few minutes",
+    label: "settings.taskThreads.trigger.longRunning",
+    description: "settings.taskThreads.trigger.longRunningDescription",
   },
   {
     value: "multi_step",
-    label: "Multi-step work",
-    description:
-      "Work that goes through several stages, like investigate, change, and verify",
+    label: "settings.taskThreads.trigger.multiStep",
+    description: "settings.taskThreads.trigger.multiStepDescription",
   },
   {
     value: "parallel",
-    label: "Several tasks in one request",
-    description: "One thread per independent task",
+    label: "settings.taskThreads.trigger.parallel",
+    description: "settings.taskThreads.trigger.parallelDescription",
   },
   {
     value: "side_discussion",
-    label: "Side discussions",
-    description: "Long tangents that would crowd out the main timeline",
+    label: "settings.taskThreads.trigger.sideDiscussion",
+    description: "settings.taskThreads.trigger.sideDiscussionDescription",
   },
   {
     value: "delegation",
-    label: "Delegating to another agent",
-    description: "Keep the assignment, progress, and result in one thread",
+    label: "settings.taskThreads.trigger.delegation",
+    description: "settings.taskThreads.trigger.delegationDescription",
   },
 ];
 
+/** Labels are message keys; translate where shown. */
 export const TASK_THREAD_LEVEL_OPTIONS: readonly {
   value: TaskThreadLevel;
-  label: string;
+  label: MessageKey;
 }[] = [
-  { value: "off", label: "Off" },
-  { value: "minimal", label: "Light" },
-  { value: "standard", label: "Standard" },
-  { value: "proactive", label: "Eager" },
-  { value: "custom", label: "Custom" },
+  { value: "off", label: "settings.taskThreads.level.off" },
+  { value: "minimal", label: "settings.taskThreads.level.minimal" },
+  { value: "standard", label: "settings.taskThreads.level.standard" },
+  { value: "proactive", label: "settings.taskThreads.level.proactive" },
+  { value: "custom", label: "settings.taskThreads.level.custom" },
 ];
 
 const PRESETS: Record<

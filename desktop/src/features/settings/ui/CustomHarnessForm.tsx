@@ -10,6 +10,7 @@ import {
   PERSONA_FIELD_SHELL_CLASS,
   PERSONA_LABEL_OPTIONAL_CLASS,
 } from "@/features/agents/ui/agentConfigOptions";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -37,6 +38,7 @@ export const EMPTY_CUSTOM_FORM: CustomFormValues = {
 // ── Inline command validation ─────────────────────────────────────────────────
 
 function CommandAvailabilityBadge({ command }: { command: string }) {
+  const t = useT();
   const trimmed = command.trim();
   const prereqs = useManagedAgentPrereqsQuery(trimmed, "", {
     enabled: trimmed.length > 0,
@@ -56,7 +58,9 @@ function CommandAvailabilityBadge({ command }: { command: string }) {
           : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
       )}
     >
-      {available ? "Found on PATH" : "Not found on PATH"}
+      {available
+        ? t("settings.harnessForm.foundOnPath")
+        : t("settings.harnessForm.notFoundOnPath")}
     </span>
   );
 }
@@ -97,6 +101,7 @@ function ArgsEditor({
   args: string[];
   onChange: (next: string[]) => void;
 }) {
+  const t = useT();
   function set(index: number, value: string) {
     const next = [...args];
     next[index] = value;
@@ -112,12 +117,14 @@ function ArgsEditor({
             <Input
               className={cn(FIELD_INPUT_CLASS, "font-mono")}
               onChange={(e) => set(i, e.target.value)}
-              placeholder={`arg ${i + 1}`}
+              placeholder={t("settings.harnessForm.argPlaceholder", {
+                number: i + 1,
+              })}
               value={arg}
             />
           </FieldShell>
           <Button
-            aria-label="Remove argument"
+            aria-label={t("settings.harnessForm.removeArg")}
             onClick={() => onChange(args.filter((_, idx) => idx !== i))}
             size="icon"
             type="button"
@@ -134,7 +141,7 @@ function ArgsEditor({
         variant="outline"
       >
         <Plus className="mr-1 h-4 w-4" />
-        Add argument
+        {t("settings.harnessForm.addArg")}
       </Button>
     </div>
   );
@@ -147,6 +154,7 @@ function EnvEditor({
   env: Array<{ key: string; value: string }>;
   onChange: (next: Array<{ key: string; value: string }>) => void;
 }) {
+  const t = useT();
   function set(index: number, field: "key" | "value", value: string) {
     onChange(env.map((e, i) => (i === index ? { ...e, [field]: value } : e)));
   }
@@ -168,12 +176,12 @@ function EnvEditor({
             <Input
               className={cn(FIELD_INPUT_CLASS, "font-mono")}
               onChange={(e) => set(i, "value", e.target.value)}
-              placeholder="value"
+              placeholder={t("settings.harnessForm.envValuePlaceholder")}
               value={pair.value}
             />
           </FieldShell>
           <Button
-            aria-label="Remove env var"
+            aria-label={t("settings.harnessForm.removeEnv")}
             onClick={() => onChange(env.filter((_, idx) => idx !== i))}
             size="icon"
             type="button"
@@ -190,7 +198,7 @@ function EnvEditor({
         variant="outline"
       >
         <Plus className="mr-1 h-4 w-4" />
-        Add env var
+        {t("settings.harnessForm.addEnv")}
       </Button>
     </div>
   );
@@ -225,6 +233,7 @@ export function CustomHarnessForm({
    * (chromeless mode) so it scrolls with the fields. */
   header?: React.ReactNode;
 }) {
+  const t = useT();
   const [form, setForm] = React.useState<CustomFormValues>({
     ...EMPTY_CUSTOM_FORM,
     ...initial,
@@ -295,10 +304,12 @@ export function CustomHarnessForm({
       {chromeless ? null : (
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium">
-            {originalId ? "Edit harness" : "Add custom harness"}
+            {originalId
+              ? t("settings.harnessForm.editTitle")
+              : t("settings.harnessForm.addTitle")}
           </p>
           <button
-            aria-label="Cancel"
+            aria-label={t("common.cancel")}
             className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={onCancel}
             type="button"
@@ -322,14 +333,14 @@ export function CustomHarnessForm({
               className="text-sm font-medium text-foreground"
               htmlFor="ch-label"
             >
-              Name
+              {t("settings.harnessForm.name")}
             </label>
             <FieldShell>
               <Input
                 className={FIELD_INPUT_CLASS}
                 id="ch-label"
                 onChange={field("label")}
-                placeholder="My Runtime"
+                placeholder={t("settings.harnessForm.namePlaceholder")}
                 required
                 value={form.label}
               />
@@ -341,9 +352,9 @@ export function CustomHarnessForm({
               className="text-sm font-medium text-foreground"
               htmlFor="ch-id"
             >
-              ID
+              {t("settings.harnessForm.id")}
               <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
-                (auto-derived)
+                {t("settings.harnessForm.autoDerived")}
               </span>
             </label>
             <FieldShell>
@@ -365,7 +376,7 @@ export function CustomHarnessForm({
               className="text-sm font-medium text-foreground"
               htmlFor="ch-command"
             >
-              Command
+              {t("settings.harnessForm.command")}
             </label>
             <CommandAvailabilityBadge command={form.command} />
           </div>
@@ -380,12 +391,14 @@ export function CustomHarnessForm({
             />
           </FieldShell>
           <p className="text-xs text-muted-foreground">
-            Any command that speaks ACP over stdio works.
+            {t("settings.harnessForm.commandHint")}
           </p>
         </div>
 
         <div className="space-y-1.5">
-          <p className="text-sm font-medium text-foreground">Arguments</p>
+          <p className="text-sm font-medium text-foreground">
+            {t("settings.harnessForm.arguments")}
+          </p>
           <ArgsEditor
             args={form.args}
             onChange={(args) => setForm((p) => ({ ...p, args }))}
@@ -394,9 +407,9 @@ export function CustomHarnessForm({
 
         <div className="space-y-1.5">
           <p className="text-sm font-medium text-foreground">
-            Env vars
+            {t("settings.harnessForm.envVars")}
             <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
-              (override at spawn time; Kuzz-managed vars always win)
+              {t("settings.harnessForm.envVarsNote")}
             </span>
           </p>
           <EnvEditor
@@ -410,8 +423,10 @@ export function CustomHarnessForm({
             className="text-sm font-medium text-foreground"
             htmlFor="ch-docs-url"
           >
-            Docs URL
-            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>(optional)</span>
+            {t("settings.harnessForm.docsUrl")}
+            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+              {t("settings.harnessForm.optional")}
+            </span>
           </label>
           <FieldShell>
             <Input
@@ -429,8 +444,10 @@ export function CustomHarnessForm({
             className="text-sm font-medium text-foreground"
             htmlFor="ch-install-hint"
           >
-            Install hint
-            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>(optional)</span>
+            {t("settings.harnessForm.installHint")}
+            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+              {t("settings.harnessForm.optional")}
+            </span>
           </label>
           <FieldShell>
             <Input
@@ -463,7 +480,7 @@ export function CustomHarnessForm({
           type="submit"
         >
           {save.isPending ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
-          Save
+          {t("common.save")}
         </Button>
       </div>
     </form>

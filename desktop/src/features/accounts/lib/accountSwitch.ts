@@ -1,4 +1,5 @@
 import { identityReload } from "@/shared/api/tokenAuth";
+import { t } from "@/shared/i18n";
 
 /**
  * Reloads into another account, and the one-reload overlay that bridges it.
@@ -11,7 +12,10 @@ import { identityReload } from "@/shared/api/tokenAuth";
  * it can write the overlay caption and any notice first, then reloads once.
  */
 
-/** Left for the next start when a server's session did not move over. */
+/**
+ * Left for the next start when a server's session did not move over. Callers
+ * pass this marker; `reload` stores it in the current language.
+ */
 export const SWITCH_INCOMPLETE_NOTICE =
   "Switched accounts. Some communities could not move to this account yet; sign in again there if they ask.";
 
@@ -55,7 +59,13 @@ export function beginAccountAction(): AccountAction {
       release();
       try {
         if (caption) window.sessionStorage.setItem(SWITCHING_KEY, caption);
-        if (notice) window.sessionStorage.setItem(NOTICE_KEY, notice);
+        if (notice)
+          window.sessionStorage.setItem(
+            NOTICE_KEY,
+            notice === SWITCH_INCOMPLETE_NOTICE
+              ? t("accounts.switch.incompleteNotice")
+              : notice,
+          );
       } catch {
         // Only the overlay caption is lost.
       }

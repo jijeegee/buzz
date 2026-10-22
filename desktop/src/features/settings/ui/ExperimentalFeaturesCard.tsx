@@ -12,6 +12,7 @@ import {
   useFeatureToggle,
 } from "@/shared/features";
 import type { FeatureDefinition } from "@/shared/features";
+import { useT } from "@/shared/i18n";
 import { Switch } from "@/shared/ui/switch";
 import { ContextHistoryExperimentGroup } from "./ContextHistoryExperimentGroup";
 import {
@@ -57,6 +58,7 @@ function FeatureRow({ feature }: { feature: FeatureDefinition }) {
 }
 
 function ContextGaugeRow() {
+  const t = useT();
   const contextGaugeEnabled = useContextGaugeEnabled();
 
   return (
@@ -66,17 +68,17 @@ function ContextGaugeRow() {
           className="font-medium text-foreground"
           htmlFor="settings-context-gauge-switch"
         >
-          Show context gauge
+          {t("settings.experiments.contextGauge")}
         </label>
         <p
           className="mt-0.5 text-sm text-muted-foreground/70"
           data-settings-subcopy
         >
-          Show each session's context usage on agent avatars, with Compact
+          {t("settings.experiments.contextGaugeHint")}
         </p>
       </div>
       <Switch
-        aria-label="Show context gauge"
+        aria-label={t("settings.experiments.contextGauge")}
         checked={contextGaugeEnabled}
         id="settings-context-gauge-switch"
         onCheckedChange={setContextGaugeEnabled}
@@ -109,6 +111,7 @@ function ExperimentsChannelRouting() {
 }
 
 export function ExperimentalFeaturesCard() {
+  const t = useT();
   // Manifest is preview-only by definition; every desktop entry is a preview
   // feature.
   const previewFeatures = desktopFeatures;
@@ -118,24 +121,19 @@ export function ExperimentalFeaturesCard() {
   return (
     <section className="min-w-0" data-testid="settings-experimental">
       <SettingsSectionHeader
-        title="Experiments"
-        description={
-          <>
-            These features are functional but still being refined. Enable them
-            to try new capabilities early.
-          </>
-        }
+        title={t("settings.experiments.title")}
+        description={t("settings.experiments.description")}
       />
 
       <SettingsOptionGroupList>
-        <SettingsOptionGroup title="Features">
+        <SettingsOptionGroup title={t("settings.experiments.featuresGroup")}>
           {previewFeatures.map((f) => (
             <FeatureRow feature={f} key={f.id} />
           ))}
         </SettingsOptionGroup>
         {managedAgentsEnabled ? (
           <>
-            <SettingsOptionGroup title="Agents">
+            <SettingsOptionGroup title={t("settings.experiments.agentsGroup")}>
               <ContextGaugeRow />
             </SettingsOptionGroup>
             <TaskThreadsExperimentGroup />

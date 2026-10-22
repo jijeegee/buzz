@@ -9,6 +9,8 @@
  * running local agents, which an app-task change must never do. Rust keeps
  * the matching id list (`task_models::KNOWN_TASK_IDS`) and rejects others.
  */
+
+import { t } from "@/shared/i18n";
 export type TaskModelTask = {
   /** Stable identifier; the `task-models.json` key. */
   id: string;
@@ -26,9 +28,13 @@ export type TaskModelTask = {
 export const TASK_MODEL_TASKS: readonly TaskModelTask[] = [
   {
     id: "message-routing",
-    label: "Message routing",
-    description:
-      "Picks which agent handles a message you send without an @mention (Smart routing).",
+    // Getters translate on read, never at module load.
+    get label() {
+      return t("settings.taskModels.messageRouting");
+    },
+    get description() {
+      return t("settings.taskModels.messageRoutingDescription");
+    },
     // The router never thinks: its row offers provider and model only.
     defaultEffortTier: "lowest",
   },

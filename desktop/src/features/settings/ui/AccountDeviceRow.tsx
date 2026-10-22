@@ -5,6 +5,7 @@ import { Pencil } from "lucide-react";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { normalizeDeviceId } from "@/shared/api/ownerDevices";
 import { type AuthDevice, renameAuthDevice } from "@/shared/api/tokenAuth";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { applyAuthDeviceRename } from "@/shared/api/useAuthDeviceNames";
 import {
   publishDeviceRobot,
@@ -33,12 +34,14 @@ export function AccountDeviceRow({
 }: {
   device: AuthDevice;
   disabled: boolean;
-  run: (label: string, action: () => Promise<unknown>) => Promise<void>;
+  /** `label` is the message shown if the action fails without its own error. */
+  run: (label: MessageKey, action: () => Promise<unknown>) => Promise<void>;
   onChanged: () => Promise<void>;
   onSignOut: () => void;
   /** Injection seam for tests; publishes the kind:30181 robot choice. */
   publishRobot?: typeof publishDeviceRobot;
 }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const ownerPubkey = useIdentityQuery().data?.pubkey;
   const { robotOverrides } = useOwnerDevices();
@@ -55,7 +58,7 @@ export function AccountDeviceRow({
       setDraft(null);
       return;
     }
-    void run("Rename device", async () => {
+    void run("settings.device.renameFailed", async () => {
       await renameAuthDevice(device.id, trimmed);
       setDraft(null);
       applyAuthDeviceRename(queryClient, device.id, trimmed);
@@ -72,7 +75,7 @@ export function AccountDeviceRow({
           disabled={disabled || !ownerPubkey}
           onPick={(override) => {
             if (!ownerPubkey) return;
-            void run("Change device robot", () =>
+            void run("settings.device.changeRobotFailed", () =>
               publishRobot(queryClient, {
                 ownerPubkey,
                 deviceId: device.id,
@@ -88,12 +91,16 @@ export function AccountDeviceRow({
               {device.name}
               <span className="text-muted-foreground/70">
                 {" "}
-                · {device.platform}
-                {device.current ? " · this device" : ""}
+                {t(
+                  device.current
+                    ? "settings.device.platformCurrent"
+                    : "settings.device.platform",
+                  { platform: device.platform },
+                )}
               </span>
             </span>
             <Button
-              aria-label={`Rename ${device.name}`}
+              aria-label={t("settings.device.rename", { name: device.name })}
               className="h-6 w-6 shrink-0"
               disabled={disabled}
               onClick={() => setDraft(device.name)}
@@ -113,7 +120,7 @@ export function AccountDeviceRow({
             }}
           >
             <Input
-              aria-label={`New name for ${device.name}`}
+              aria-label={t("settings.device.newName", { name: device.name })}
               autoFocus
               className="h-7 min-w-0 flex-1 text-sm"
               disabled={disabled}
@@ -132,7 +139,7 @@ export function AccountDeviceRow({
               size="sm"
               type="submit"
             >
-              Save
+              {t("common.save")}
             </Button>
             <Button
               disabled={disabled}
@@ -141,21 +148,21 @@ export function AccountDeviceRow({
               type="button"
               variant="ghost"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
           </form>
         )}
       </span>
       {device.current || draft !== null ? null : (
         <Button
-          aria-label={`Sign out ${device.name}`}
+          aria-label={t("settings.device.signOutNamed", { name: device.name })}
           disabled={disabled}
           onClick={onSignOut}
           size="sm"
           type="button"
           variant="outline"
         >
-          Sign out
+          {t("settings.device.signOut")}
         </Button>
       )}
     </li>
