@@ -37,6 +37,8 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Room history cut (`since_join`) lookups.
+pub mod history;
 /// Centralized identity: principals, devices, sessions, bots, access tokens.
 pub mod identity;
 /// One-statement inbox summary of member rooms and active threads.
@@ -103,6 +105,9 @@ mod channel_history_postgres_tests;
 
 #[cfg(test)]
 mod channel_sequence_page_postgres_tests;
+
+#[cfg(test)]
+mod channel_since_join_postgres_tests;
 
 #[cfg(test)]
 mod chat_backfill_postgres_tests;

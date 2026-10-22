@@ -98,6 +98,9 @@ pub struct SearchQuery {
     pub per_page: u32,
     /// Matching semantics for the search text.
     pub mode: SearchMode,
+    /// Reader whose `since_join` history cut applies: hits from before their
+    /// join are not candidates. `None` = no cut.
+    pub history_reader: Option<Vec<u8>>,
 }
 
 /// A single FTS hit. The relay refetches the canonical `StoredEvent` and
@@ -308,6 +311,14 @@ pub async fn search(pool: &PgPool, query: &SearchQuery) -> Result<SearchResult, 
     if let Some(until) = query.until {
         qb.push(" AND created_at <= to_timestamp(");
         qb.push_bind(until);
+        qb.push(")");
+    }
+
+    if let Some(ref reader) = query.history_reader {
+        qb.push(" AND NOT channel_event_before_join(community_id, channel_id, channel_sequence, ");
+        qb.push_bind(reader.clone());
+        qb.push(") AND NOT channel_event_targets_before_join(community_id, channel_id, kind, tags, ");
+        qb.push_bind(reader.clone());
         qb.push(")");
     }
 

@@ -109,14 +109,16 @@ WITH my AS MATERIALIZED (
                JOIN channel_members bm ON bm.community_id = bp.community_id
                    AND bm.channel_id = cm.channel_id AND bm.pubkey = bp.blocked
                WHERE bp.community_id = $1 AND bp.blocker = $2
-           ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked
+           ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked,
+           -- since_join rooms: nothing at or below this sequence is shown.
+           channel_history_floor($1, cm.channel_id, $2) AS history_floor
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
     WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
       AND c.deleted_at IS NULL AND c.archived_at IS NULL
 ),
 rooms AS (
-    SELECT 'room'::text AS row_kind, m.channel_id, m.channel_type, m.dm_blocked,
+    SELECT 'room'::text AS row_kind, m.channel_id, m.channel_type, m.dm_blocked, m.history_floor,
            NULL::bytea AS root_id, NULL::timestamptz AS root_created_at,
            COALESCE(l.created_at, m.joined_at) AS at, m.channel_id::text AS row_key,
            NULL::int AS reply_count, l.id AS latest_id, l.created_at AS latest_created_at
@@ -124,7 +126,7 @@ rooms AS (
     LEFT JOIN LATERAL (
         SELECT e.id, e.created_at FROM events e
         WHERE e.community_id = $1 AND e.channel_id = m.channel_id
-          AND e.kind = ANY($3) AND e.deleted_at IS NULL
+          AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.channel_sequence > m.history_floor
           AND NOT EXISTS (
               SELECT 1 FROM thread_metadata r
               WHERE r.community_id = $1 AND r.event_id = e.id
@@ -138,7 +140,7 @@ rooms AS (
 threads AS (
     -- No room can contribute more than one page to the global top-N, so each
     -- room reads at most $6 roots from idx_thread_metadata_inbox.
-    SELECT 'thread'::text, m.channel_id, m.channel_type, m.dm_blocked,
+    SELECT 'thread'::text, m.channel_id, m.channel_type, m.dm_blocked, m.history_floor,
            t.event_id, t.event_created_at, t.last_reply_at, encode(t.event_id, 'hex'),
            t.reply_count, NULL::bytea, NULL::timestamptz
     FROM my m
@@ -147,6 +149,11 @@ threads AS (
         FROM thread_metadata t
         WHERE t.community_id = $1 AND t.channel_id = m.channel_id
           AND t.depth = 0 AND t.reply_count > 0 AND t.last_reply_at IS NOT NULL
+          -- A root from before the join is not shown (its replies follow it).
+          AND (m.history_floor = 0 OR EXISTS (
+              SELECT 1 FROM events re
+              WHERE re.community_id = $1 AND re.created_at = t.event_created_at
+                AND re.id = t.event_id AND re.channel_sequence > m.history_floor))
           AND ($4::timestamptz IS NULL
                OR (t.last_reply_at, encode(t.event_id, 'hex')) < ($4, $5))
         ORDER BY t.last_reply_at DESC, t.event_id DESC
@@ -196,7 +203,7 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             SELECT 1 FROM events e
             WHERE e.community_id = $1 AND e.channel_id = p.channel_id
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
-              AND e.created_at > cm.read_at
+              AND e.created_at > cm.read_at AND e.channel_sequence > p.history_floor
               AND NOT (p.dm_blocked AND "#,
     crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
     r#")

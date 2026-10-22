@@ -62,6 +62,19 @@ pub(super) async fn query(
         .resolve_thread_root_summaries(tenant.community(), channel, &ids)
         .await
         .map_err(|e| internal_error(&format!("thread ownership summaries: {e}")))?;
+    // A root from before the reader joined a since_join room is not found.
+    let roots: Vec<Vec<u8>> = summaries.iter().map(|(root, _)| root.clone()).collect();
+    let mut before_join = std::collections::HashSet::new();
+    for chunk in roots.chunks(kuzz_db::history::MAX_HISTORY_EVENT_LOOKUP) {
+        before_join.extend(
+            state
+                .db
+                .history_hidden_event_ids(tenant.community(), reader, chunk)
+                .await
+                .map_err(|e| internal_error(&format!("thread root history cut: {e}")))?,
+        );
+    }
+    summaries.retain(|(root, _)| !before_join.contains(root));
     state
         .hide_blocked_in_thread_summaries(
             tenant.community(),

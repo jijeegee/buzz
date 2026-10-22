@@ -895,7 +895,7 @@ async fn dm_thread_summary_without_blocked_replies() {
     assert!(quiet_summary.participants.contains(&pk(&friend)));
 
     let hidden =
-        f.db.blocked_thread_replies(f.scope, &pk(&reader), &[id(&root), id(&quiet)])
+        f.db.blocked_thread_replies(f.scope, &pk(&reader), &[id(&root), id(&quiet)], true)
             .await
             .expect("blocked replies");
     assert_eq!(hidden.len(), 2);
@@ -929,7 +929,7 @@ async fn dm_thread_summary_without_blocked_replies() {
     // Someone who never blocked anyone: nothing to take out.
     assert!(f
         .db
-        .blocked_thread_replies(f.scope, &pk(&friend), &[id(&root), id(&quiet)])
+        .blocked_thread_replies(f.scope, &pk(&friend), &[id(&root), id(&quiet)], true)
         .await
         .expect("blocked replies")
         .is_empty());

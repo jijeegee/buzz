@@ -861,6 +861,7 @@ async fn handle_channel_window_filter(
                     limit,
                     cursor.clone(),
                     kind_filter.as_deref(),
+                    Some(reader),
                 )
                 .await
         }
@@ -873,6 +874,7 @@ async fn handle_channel_window_filter(
                     limit,
                     cursor.clone(),
                     kind_filter.as_deref(),
+                    Some(reader),
                 )
                 .await
         }
@@ -975,8 +977,9 @@ async fn push_window_rows(
             std::collections::HashSet::new();
         let mut hop_ids = row_ids_hex.clone();
         for hop_kinds in [&WINDOW_AUX_KINDS[..], &WINDOW_AUX_DELETE_KINDS[..]] {
-            let aux_query =
+            let mut aux_query =
                 build_aux_query(tenant.community(), std::mem::take(&mut hop_ids), hop_kinds);
+            aux_query.history_reader = Some(reader.to_vec());
             let aux_events = query_all_pages(
                 aux_query,
                 AUX_PAGE_LIMIT,
@@ -1163,6 +1166,7 @@ async fn handle_sequence_window_filter(
             limit,
             cursor,
             kind_filter.as_deref(),
+            Some(reader),
         )
         .await
         .map_err(|e| internal_error(&format!("channel window error: {e}")))?;
@@ -2149,6 +2153,7 @@ async fn query_events_authed(
                         &accessible_channels,
                         since,
                         remaining,
+                        Some(&pubkey_bytes),
                     )
                     .await
                     .map_err(|e| internal_error(&format!("feed activity error: {e}")))?,
@@ -2212,12 +2217,13 @@ async fn query_events_authed(
         let thread_cursor = extract_thread_cursor(raw);
         let thread_replies = state
             .db
-            .get_thread_replies(
+            .get_thread_replies_for_reader(
                 tenant.community(),
                 &root_bytes,
                 Some(depth),
                 limit,
                 thread_cursor.as_deref(),
+                Some(&pubkey_bytes),
             )
             .await
             .map_err(|e| internal_error(&format!("thread query error: {e}")))?;
@@ -2245,8 +2251,9 @@ async fn query_events_authed(
             let mut seen_aux = std::collections::HashSet::new();
             let mut hop_ids = thread_row_ids;
             for hop_kinds in [&WINDOW_AUX_KINDS[..], &WINDOW_AUX_DELETE_KINDS[..]] {
-                let aux_query =
+                let mut aux_query =
                     build_aux_query(tenant.community(), std::mem::take(&mut hop_ids), hop_kinds);
+                aux_query.history_reader = Some(pubkey_bytes.clone());
                 let aux_events = query_all_pages(
                     aux_query,
                     AUX_PAGE_LIMIT,
@@ -2990,6 +2997,7 @@ async fn handle_bridge_search(
             page: search_page,
             per_page: limit,
             mode: search_mode,
+            history_reader: Some(pubkey_bytes.to_vec()),
         };
 
         let search_result = state
