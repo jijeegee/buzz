@@ -109,6 +109,7 @@ import { joinChannel } from "@/shared/api/tauri";
 import type { Channel, ChannelVisibility, SearchHit } from "@/shared/api/types";
 import { ChannelNavigationProvider } from "@/shared/context/ChannelNavigationContext";
 import { useAppDeepLinks } from "@/shared/useAppDeepLinks";
+import { AreaErrorBoundary } from "@/shared/ui/AreaErrorBoundary";
 import { SidebarProvider } from "@/shared/ui/sidebar";
 import { RelayConnectionOverlay } from "@/app/RelayConnectionOverlay";
 import { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
@@ -963,115 +964,127 @@ export function AppShell() {
                   ) : null}
                   {settingsOpen ? (
                     <div className="flex min-h-0 flex-1 overflow-hidden">
-                      <React.Suspense fallback={null}>
-                        <LazySettingsScreen
-                          currentPubkey={identityQuery.data?.pubkey}
-                          fallbackDisplayName={identityQuery.data?.displayName}
-                          isUpdatingDesktopNotifications={
-                            notificationSettings.isUpdatingDesktopEnabled
-                          }
-                          notificationErrorMessage={
-                            notificationSettings.errorMessage
-                          }
-                          notificationPermission={
-                            notificationSettings.permission
-                          }
-                          notificationSettings={notificationSettings.settings}
-                          onClose={handleCloseSettings}
-                          onSectionChange={handleSettingsSectionChange}
-                          onSetDesktopNotificationsEnabled={
-                            notificationSettings.setDesktopEnabled
-                          }
-                          onSetHomeBadgeEnabled={
-                            notificationSettings.setHomeBadgeEnabled
-                          }
-                          onSetSlotAlertsEnabled={
-                            notificationSettings.setSlotAlertsEnabled
-                          }
-                          onSetNotifyWhileViewing={
-                            notificationSettings.setNotifyWhileViewing
-                          }
-                          onSetAllSlotAlertsEnabled={
-                            notificationSettings.setAllSlotAlertsEnabled
-                          }
-                          onSetSoundForSlot={
-                            notificationSettings.setSoundForSlot
-                          }
-                          section={settingsSection}
-                        />
-                      </React.Suspense>
+                      <AreaErrorBoundary area="settings">
+                        <React.Suspense fallback={null}>
+                          <LazySettingsScreen
+                            currentPubkey={identityQuery.data?.pubkey}
+                            fallbackDisplayName={
+                              identityQuery.data?.displayName
+                            }
+                            isUpdatingDesktopNotifications={
+                              notificationSettings.isUpdatingDesktopEnabled
+                            }
+                            notificationErrorMessage={
+                              notificationSettings.errorMessage
+                            }
+                            notificationPermission={
+                              notificationSettings.permission
+                            }
+                            notificationSettings={notificationSettings.settings}
+                            onClose={handleCloseSettings}
+                            onSectionChange={handleSettingsSectionChange}
+                            onSetDesktopNotificationsEnabled={
+                              notificationSettings.setDesktopEnabled
+                            }
+                            onSetHomeBadgeEnabled={
+                              notificationSettings.setHomeBadgeEnabled
+                            }
+                            onSetSlotAlertsEnabled={
+                              notificationSettings.setSlotAlertsEnabled
+                            }
+                            onSetNotifyWhileViewing={
+                              notificationSettings.setNotifyWhileViewing
+                            }
+                            onSetAllSlotAlertsEnabled={
+                              notificationSettings.setAllSlotAlertsEnabled
+                            }
+                            onSetSoundForSlot={
+                              notificationSettings.setSoundForSlot
+                            }
+                            section={settingsSection}
+                          />
+                        </React.Suspense>
+                      </AreaErrorBoundary>
                     </div>
                   ) : (
                     <div className="relative flex min-h-0 flex-1 overflow-visible">
                       {!isHuddleRoom ? (
-                        <AppSidebar
-                          activeCommunity={communitiesHook.activeCommunity}
-                          channels={sidebarChannels}
-                          currentPubkey={identityQuery.data?.pubkey}
-                          errorMessage={channelsErrorMessage}
-                          fallbackDisplayName={identityQuery.data?.displayName}
-                          addCommunityPrefill={addCommunityDialog.prefill}
-                          isAddCommunityOpen={addCommunityDialog.open}
-                          relayConnectionCard={relayConnectionCard}
-                          isCreatingChannel={createChannelMutation.isPending}
-                          isCreatingForum={createForumMutation.isPending}
-                          isLoading={channelsQuery.isLoading}
-                          isCreateChannelOpen={isCreateChannelOpen}
-                          isHuddleCompanionOpen={isHuddleCompanionOpen}
-                          onAddCommunity={(community) => {
-                            const id = communitiesHook.addCommunity({
-                              ...community,
-                              pubkey:
-                                community.pubkey ?? identityQuery.data?.pubkey,
-                            });
-                            handleSwitchCommunity(id);
-                          }}
-                          onAddCommunityOpenChange={
-                            addCommunityDialog.onOpenChange
-                          }
-                          onNewMessage={goNewMessage}
-                          onBackgroundClick={requestFocusedThreadClose}
-                          onCreateChannelOpenChange={setIsCreateChannelOpen}
-                          onCreateAgent={() => requestOpenCreateAgent()}
-                          communities={communitiesHook.communities}
-                          onCreateChannel={handleCreateChannel}
-                          onCreateForum={handleCreateForum}
-                          onHideDm={handleHideDm}
-                          onHuddleEnded={handleHuddleEnded}
-                          onMarkAllChannelsRead={markAllChannelsRead}
-                          onMarkChannelRead={markChannelRead}
-                          onMarkChannelUnread={markChannelUnread}
-                          onBrowseChannels={handleOpenBrowseChannels}
-                          onOpenDm={async ({ pubkeys }) => {
-                            const directMessage =
-                              await openDmMutation.mutateAsync({
-                                pubkeys,
+                        <AreaErrorBoundary
+                          area="sidebar"
+                          className="flex h-full w-(--sidebar-width) shrink-0 flex-col items-center justify-center gap-3 bg-sidebar px-4 text-sidebar-foreground"
+                        >
+                          <AppSidebar
+                            activeCommunity={communitiesHook.activeCommunity}
+                            channels={sidebarChannels}
+                            currentPubkey={identityQuery.data?.pubkey}
+                            errorMessage={channelsErrorMessage}
+                            fallbackDisplayName={
+                              identityQuery.data?.displayName
+                            }
+                            addCommunityPrefill={addCommunityDialog.prefill}
+                            isAddCommunityOpen={addCommunityDialog.open}
+                            relayConnectionCard={relayConnectionCard}
+                            isCreatingChannel={createChannelMutation.isPending}
+                            isCreatingForum={createForumMutation.isPending}
+                            isLoading={channelsQuery.isLoading}
+                            isCreateChannelOpen={isCreateChannelOpen}
+                            isHuddleCompanionOpen={isHuddleCompanionOpen}
+                            onAddCommunity={(community) => {
+                              const id = communitiesHook.addCommunity({
+                                ...community,
+                                pubkey:
+                                  community.pubkey ??
+                                  identityQuery.data?.pubkey,
                               });
-                            await goChannel(directMessage.id);
-                          }}
-                          onSelectChannel={handleSidebarChannelSelect}
-                          onOpenSearchResult={handleOpenSearchResult}
-                          searchChannels={channels}
-                          searchFocusRequests={[
-                            searchFocusRequest,
-                            scopeSearchFocusRequest,
-                          ]}
-                          onSelectHome={() => void goHome()}
-                          profile={profileQuery.data}
-                          selectedChannelId={selectedChannelId}
-                          selectedView={selectedView}
-                          unreadChannelIds={unreadChannelIds}
-                          {...{ highPriorityUnreadChannelIds }}
-                          previewActivityChannelIds={unreadThreadChannelIds}
-                          unreadChannelCounts={unreadChannelCounts}
-                          mutedChannelIds={mutedChannelIds}
-                          onMuteChannel={muteChannel}
-                          onUnmuteChannel={unmuteChannel}
-                          starredChannelIds={starredChannelIds}
-                          onStarChannel={starChannel}
-                          onUnstarChannel={unstarChannel}
-                          serverChats={serverChats}
-                        />
+                              handleSwitchCommunity(id);
+                            }}
+                            onAddCommunityOpenChange={
+                              addCommunityDialog.onOpenChange
+                            }
+                            onNewMessage={goNewMessage}
+                            onBackgroundClick={requestFocusedThreadClose}
+                            onCreateChannelOpenChange={setIsCreateChannelOpen}
+                            onCreateAgent={() => requestOpenCreateAgent()}
+                            communities={communitiesHook.communities}
+                            onCreateChannel={handleCreateChannel}
+                            onCreateForum={handleCreateForum}
+                            onHideDm={handleHideDm}
+                            onHuddleEnded={handleHuddleEnded}
+                            onMarkAllChannelsRead={markAllChannelsRead}
+                            onMarkChannelRead={markChannelRead}
+                            onMarkChannelUnread={markChannelUnread}
+                            onBrowseChannels={handleOpenBrowseChannels}
+                            onOpenDm={async ({ pubkeys }) => {
+                              const directMessage =
+                                await openDmMutation.mutateAsync({
+                                  pubkeys,
+                                });
+                              await goChannel(directMessage.id);
+                            }}
+                            onSelectChannel={handleSidebarChannelSelect}
+                            onOpenSearchResult={handleOpenSearchResult}
+                            searchChannels={channels}
+                            searchFocusRequests={[
+                              searchFocusRequest,
+                              scopeSearchFocusRequest,
+                            ]}
+                            onSelectHome={() => void goHome()}
+                            profile={profileQuery.data}
+                            selectedChannelId={selectedChannelId}
+                            selectedView={selectedView}
+                            unreadChannelIds={unreadChannelIds}
+                            {...{ highPriorityUnreadChannelIds }}
+                            previewActivityChannelIds={unreadThreadChannelIds}
+                            unreadChannelCounts={unreadChannelCounts}
+                            mutedChannelIds={mutedChannelIds}
+                            onMuteChannel={muteChannel}
+                            onUnmuteChannel={unmuteChannel}
+                            starredChannelIds={starredChannelIds}
+                            onStarChannel={starChannel}
+                            onUnstarChannel={unstarChannel}
+                            serverChats={serverChats}
+                          />
+                        </AreaErrorBoundary>
                       ) : null}
                       <TerminalContextOverrideProvider
                         onChange={setTerminalContextOverride}
@@ -1085,7 +1098,12 @@ export function AppShell() {
                             <TerminalBootstrap {...effectiveTerminalContext} />
                           }
                         >
-                          <Outlet />
+                          <AreaErrorBoundary
+                            area="main"
+                            resetKey={location.pathname}
+                          >
+                            <Outlet />
+                          </AreaErrorBoundary>
                         </AppShellChannelSurface>
                       </TerminalContextOverrideProvider>
                       {!isHuddleRoom ? (
