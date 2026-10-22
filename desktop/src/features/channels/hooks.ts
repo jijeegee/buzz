@@ -34,7 +34,9 @@ import type {
   UpdateChannelInput,
 } from "@/shared/api/types";
 import {
+  createGroupChat,
   syncAgentsToActiveHuddle,
+  type CreateGroupChatInput,
   type GetChannelsPayload,
   type OpenDmInput,
 } from "@/shared/api/tauriChannels";
@@ -557,6 +559,26 @@ export function useOpenDmMutation() {
         refetchType: "none",
       });
       void queryClient.invalidateQueries({ queryKey: dmVisibilityKey });
+    },
+  });
+}
+
+/** Create an ownerless chat with its first people (one relay write). */
+export function useCreateGroupChatMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: CreateGroupChatInput) => createGroupChat(input),
+    onSuccess: ({ channel }) => {
+      queryClient.setQueryData<Channel[]>(channelsQueryKey, (current) =>
+        upsertCachedChannel(current, channel),
+      );
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: channelsQueryKey,
+        refetchType: "none",
+      });
     },
   });
 }

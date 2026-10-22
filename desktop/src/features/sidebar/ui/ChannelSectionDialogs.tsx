@@ -26,6 +26,7 @@ import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import { Input } from "@/shared/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import type { Channel } from "@/shared/api/types";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
 import {
   useDeleteChannelMutation,
   useLeaveChannelMutation,
@@ -283,6 +284,8 @@ export type LeaveChannelAlertDialogProps = {
   channelName: string;
   /** A group DM: no name to quote and no way back in on your own. */
   isConversation?: boolean;
+  /** An ownerless chat: leaving removes only you; someone can add you back. */
+  isChat?: boolean;
   onConfirm: () => void;
 };
 
@@ -291,6 +294,7 @@ export function LeaveChannelAlertDialog({
   onOpenChange,
   channelName,
   isConversation = false,
+  isChat = false,
   onConfirm,
 }: LeaveChannelAlertDialogProps) {
   return (
@@ -298,12 +302,18 @@ export function LeaveChannelAlertDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {isConversation ? "Leave conversation" : "Leave group"}
+            {isChat
+              ? "Leave chat"
+              : isConversation
+                ? "Leave conversation"
+                : "Leave group"}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {isConversation
-              ? "Leave this conversation? You'll stop receiving its messages."
-              : `Leave "${channelName}"? You'll stop receiving its messages and can rejoin later.`}
+            {isChat
+              ? "Leave this chat? You'll stop receiving its messages. Someone in the chat can add you back."
+              : isConversation
+                ? "Leave this conversation? You'll stop receiving its messages."
+                : `Leave "${channelName}"? You'll stop receiving its messages and can rejoin later.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -335,6 +345,7 @@ export function useLeaveChannelDialog() {
         if (!open) setTarget(null);
       }}
       channelName={target?.name ?? ""}
+      isChat={isGroupChat(target)}
       isConversation={target?.channelType === "dm"}
       onConfirm={() => {
         if (target) {

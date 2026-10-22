@@ -19,6 +19,8 @@ use crate::{
 // lives in the `fetch` submodule to keep this file under the per-file line cap.
 mod fetch;
 use fetch::{compute_channels_hash, fetch_channels, DirectoryScope};
+mod group_chat;
+pub use group_chat::*;
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 

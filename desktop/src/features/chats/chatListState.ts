@@ -47,7 +47,12 @@ export type ChatListRow = {
   channel_type: string;
   channel_name: string;
   archived: boolean;
+  /** DM people, or up to 16 other members of an ownerless chat. */
   dm_members: string[];
+  /** Ownerless chat row; absent from older relays. */
+  group_chat?: boolean;
+  /** Active members of an ownerless chat row. */
+  member_count?: number;
   root_id: string | null;
   thread_name: string | null;
   follow_state: string | null;

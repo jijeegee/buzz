@@ -25,6 +25,11 @@ export type Channel = {
   goalsEnabled: boolean;
   /** Group photo URL from kind:39000 `["picture", url]`; null/absent = none. */
   picture?: string | null;
+  /**
+   * Ownerless multi-person chat (kind:39000 `["group_chat"]`). A private
+   * stream with no owner; the UI calls it a "Chat" alongside 1:1 DMs.
+   */
+  groupChat?: boolean;
 };
 export type ChannelDetail = Channel & {
   createdBy: string;
