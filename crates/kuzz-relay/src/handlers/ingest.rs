@@ -3078,9 +3078,12 @@ async fn ingest_event_inner(
     }
 
     // Global regions (S3): a room that lives in another region is not
-    // written here.
+    // written here. A new room is placed by its reservation at the primary
+    // instead (S4-6), which answers the same question.
     if let Some(ch_id) = channel_id {
-        ensure_room_here(state, tenant, ch_id).await?;
+        if !(kind_u32 == KIND_NIP29_CREATE_GROUP && state.config.region_link) {
+            ensure_room_here(state, tenant, ch_id).await?;
+        }
     }
 
     if let Some(ch_id) = channel_id {
@@ -3559,6 +3562,14 @@ async fn ingest_event_inner(
             });
 
             let ttl_seconds = super::resolve_ttl(&event, state.config.ephemeral_ttl_override);
+
+            // Global regions (S4-6): the room id is reserved for this region
+            // at the primary first; one another region holds is created there.
+            if let crate::region_directory::Reserved::Elsewhere(home) =
+                crate::region_directory::reserve(state, tenant, client_uuid, None).await?
+            {
+                return Err(IngestError::WrongRegion(home));
+            }
 
             let actor_bytes = event.pubkey.to_bytes().to_vec();
             let (_, was_created) = state

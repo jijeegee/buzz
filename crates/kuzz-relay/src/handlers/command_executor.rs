@@ -300,6 +300,32 @@ fn compute_definition_hash(json_str: &str) -> Vec<u8> {
     Sha256::digest(json_str.as_bytes()).to_vec()
 }
 
+/// Global regions (S4-6): for a DM not open here yet, reserve its
+/// participant set at the primary. `Ok(id)` is the room id to create it with
+/// (`None`: no reservation needed); `Err(home)` is the region holding it.
+async fn reserve_dm(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    participants: &[&[u8]],
+) -> Result<Result<Option<Uuid>, crate::routing::RemoteHome>, IngestError> {
+    if !state.config.region_link {
+        return Ok(Ok(None));
+    }
+    let hash = kuzz_db::dm::compute_participant_hash(participants);
+    let existing = state
+        .db
+        .find_dm_by_participants(tenant.community(), &hash)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db find_dm: {e}")))?;
+    if existing.is_some() {
+        return Ok(Ok(None));
+    }
+    match crate::region_directory::reserve(state, tenant, Uuid::new_v4(), Some(&hash)).await? {
+        crate::region_directory::Reserved::Here(id) => Ok(Ok(Some(id))),
+        crate::region_directory::Reserved::Elsewhere(home) => Ok(Err(home)),
+    }
+}
+
 async fn handle_dm_open(
     tenant: &TenantContext,
     state: &Arc<AppState>,
@@ -338,6 +364,14 @@ async fn handle_dm_open(
         }
     }
 
+    // A new DM is reserved at the primary region first (S4-6); one that
+    // another region holds is opened there.
+    let all_refs: Vec<&[u8]> = all_bytes.iter().map(|b| b.as_slice()).collect();
+    let dm_id = match reserve_dm(tenant, state, &all_refs).await? {
+        Ok(id) => id,
+        Err(home) => return Err(IngestError::WrongRegion(home)),
+    };
+
     // Persist the command event (idempotency) — returns open transaction
     let tx = match persist_command_event(&state.db, tenant, event, None).await? {
         PersistResult::Duplicate => {
@@ -351,13 +385,23 @@ async fn handle_dm_open(
         PersistResult::Inserted(tx) => tx,
     };
 
-    // 4. Execute: open_dm
-    let all_refs: Vec<&[u8]> = all_bytes.iter().map(|b| b.as_slice()).collect();
-    let (channel, was_created) = state
+    // 4. Execute: open_dm. A reserved DM can race with its own region
+    // creating it (a forwarded open, S4-6): the loser takes the winner's room.
+    let opened = state
         .db
-        .open_dm(tenant.community(), &all_refs, &self_bytes)
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: db open_dm: {e}")))?;
+        .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
+        .await;
+    let (channel, was_created) = match opened {
+        Ok(opened) => opened,
+        Err(e) => match dm_id {
+            Some(_) => state
+                .db
+                .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
+                .await
+                .map_err(|_| IngestError::Internal(format!("error: db open_dm: {e}")))?,
+            None => return Err(IngestError::Internal(format!("error: db open_dm: {e}"))),
+        },
+    };
 
     // Finalize the idempotency record after the separate mutation succeeds.
     tx.commit()
@@ -556,6 +600,17 @@ async fn handle_dm_add_member(
         ));
     }
 
+    // The expanded set is a new DM: reserved at the primary first (S4-6).
+    let all_refs: Vec<&[u8]> = all_bytes.iter().map(|b| b.as_slice()).collect();
+    let dm_id = match reserve_dm(tenant, state, &all_refs).await? {
+        Ok(id) => id,
+        Err(_) => {
+            return Err(IngestError::Rejected(
+                "invalid: a DM with these people already exists; open it directly".into(),
+            ))
+        }
+    };
+
     // Persist the command event — returns open transaction
     let tx = match persist_command_event(&state.db, tenant, event, None).await? {
         PersistResult::Duplicate => {
@@ -570,10 +625,9 @@ async fn handle_dm_add_member(
     };
 
     // 6. Execute: open_dm with expanded set (creates NEW DM — DM sets are immutable)
-    let all_refs: Vec<&[u8]> = all_bytes.iter().map(|b| b.as_slice()).collect();
     let (new_channel, was_created) = state
         .db
-        .open_dm(tenant.community(), &all_refs, &self_bytes)
+        .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
         .await
         .map_err(|e| IngestError::Internal(format!("error: db open_dm: {e}")))?;
 

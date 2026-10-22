@@ -1733,9 +1733,30 @@ impl AppState {
         community_id: CommunityId,
         channel_id: Uuid,
     ) -> Result<crate::routing::RoomRoute, kuzz_db::DbError> {
-        self.room_router
-            .route(&self.db, community_id, channel_id)
-            .await
+        match self
+            .room_router
+            .route_or_unknown(&self.db, community_id, channel_id)
+            .await?
+        {
+            Some(route) => Ok(route),
+            // Not in this region's directory: the primary knows every room
+            // (S4-6). Not found there either means "not found" here.
+            None => {
+                use crate::region_directory::Asked;
+                match crate::region_directory::ask_primary(self, community_id, channel_id).await {
+                    Asked::Elsewhere(home) => Ok(crate::routing::RoomRoute::Elsewhere(home)),
+                    Asked::Unknown => Ok(crate::routing::RoomRoute::Here),
+                    // Late rather than split: a room the primary could not be
+                    // asked about fails retryably instead of "not found".
+                    Asked::Failed => Err(kuzz_db::DbError::Sqlx(sqlx::Error::Io(
+                        std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "primary region unreachable",
+                        ),
+                    ))),
+                }
+            }
+        }
     }
 
     /// The home of the first of `channels` that another region serves.
