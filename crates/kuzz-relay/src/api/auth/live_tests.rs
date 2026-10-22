@@ -29,6 +29,7 @@ mod friends;
 mod groups;
 mod invites;
 mod key_backup;
+mod key_sockets;
 mod operators;
 mod profile;
 
@@ -157,9 +158,10 @@ async fn instance_configured(
         crate::identity::init_relay_principal(&state)
             .await
             .expect("relay principal");
-        crate::identity::spawn_revocation_consumer(Arc::clone(&state));
     }
     if state.identity.sessions_enabled() {
+        crate::identity::spawn_revocation_consumer(Arc::clone(&state));
+        crate::identity::spawn_key_socket_recheck(Arc::clone(&state));
         state
             .identity
             .register_provider("google", Arc::new(TestProvider));

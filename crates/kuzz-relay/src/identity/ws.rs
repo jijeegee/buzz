@@ -59,7 +59,7 @@ struct Bound {
 pub(crate) type CloseFrame = fn(&str) -> WsMessage;
 
 /// The root relay route's close frame: `["NOTICE", …]`.
-fn notice_frame(notice: &str) -> WsMessage {
+pub(crate) fn notice_frame(notice: &str) -> WsMessage {
     WsMessage::Text(RelayMessage::notice(notice).into())
 }
 

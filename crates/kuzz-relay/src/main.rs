@@ -1346,17 +1346,18 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
 
     // Centralized identity (Phase 0, AUTH_TOKEN_ENABLED): resolve the relay
     // principal (created once per deployment; concurrent boots converge on
-    // the partial unique index) and consume cross-instance token revocations.
-    // Nothing here runs with the flag off.
+    // the partial unique index). Nothing here runs with the flag off.
     if state.identity.enabled() {
         let relay_principal = kuzz_relay::identity::init_relay_principal(&state).await?;
         info!(relay_principal = %relay_principal, "Token auth enabled");
-
-        kuzz_relay::identity::spawn_revocation_consumer(Arc::clone(&state));
     }
-    // Device-bound keys: per-surface modes can be switched in Redis without
-    // a restart (`KUZZ_DEVICE_ADMISSION` is the default).
+    // Account sessions (token accounts or key backup): consume cross-instance
+    // revocations (token hashes, signed-out devices, moved keys), recheck
+    // open key sockets, and let per-surface device modes be switched in
+    // Redis without a restart (`KUZZ_DEVICE_ADMISSION` is the default).
     if state.identity.sessions_enabled() {
+        kuzz_relay::identity::spawn_revocation_consumer(Arc::clone(&state));
+        kuzz_relay::identity::spawn_key_socket_recheck(Arc::clone(&state));
         kuzz_relay::identity::device::spawn_mode_poller(Arc::clone(&state));
     }
 

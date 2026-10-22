@@ -63,7 +63,7 @@ export function reportDoneMessage(blocked: boolean): string {
  */
 export function reportBlockFailureMessage(error: unknown): string {
   if (error instanceof Error && error.message === BLOCKED_BUT_STILL_FRIEND) {
-    return "Report sent and the person is blocked. Couldn't remove them from your friends; remove them in People.";
+    return "Report sent and the person is blocked. Couldn't remove them from your friends; remove them in the Friends list.";
   }
   return "Report sent, but blocking didn't work. Try blocking them again.";
 }

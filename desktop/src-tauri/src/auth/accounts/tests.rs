@@ -283,8 +283,11 @@ fn a_lost_account_list_is_rebuilt_from_the_secure_index() {
 fn an_identity_imported_outside_the_list_is_adopted_without_dropping_accounts() {
     let dir = tempfile::tempdir().unwrap();
     let mem = Mem::default();
+    // A key-only account is active (no login account to protect).
     let a = Keys::generate();
-    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", Some(&a)).unwrap();
+    mem.put("identity", &nsec(&a));
+    mem.put("identity.bootstrap", "");
+    assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Migrated);
     let imported = Keys::generate();
     mem.put("identity", &nsec(&imported));
     assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Adopted);
@@ -295,6 +298,144 @@ fn an_identity_imported_outside_the_list_is_adopted_without_dropping_accounts() 
         mem.get(&identity_slot(&imported.public_key())),
         Some(nsec(&imported))
     );
+}
+
+#[test]
+fn a_key_written_outside_the_list_never_replaces_an_active_google_account() {
+    // 2026-10-21: the app ran a person's login account on an agent's key.
+    // A key another process (or a leftover file, or an import) writes into
+    // the active copy must never become that person's key.
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    let person = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &person, "token-a", Some(&person)).unwrap();
+    let agent = Keys::generate();
+    mem.put("identity", &nsec(&agent));
+    assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Refilled);
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(registry.active_pubkey(), Some(person.public_key()));
+    assert!(!registry.contains_pubkey(&agent.public_key()));
+    assert_eq!(mem.get("identity"), Some(nsec(&person)));
+    // The person's binding and session copies are kept.
+    assert_eq!(
+        mem.get(&super::super::key_recovery::binding_key(ORIGIN)),
+        Some(person.public_key().to_hex())
+    );
+    assert_eq!(
+        mem.get(&super::super::refresh_key(ORIGIN)).as_deref(),
+        Some("token-a")
+    );
+}
+
+#[test]
+fn the_last_sign_out_removes_the_key_and_sign_in_restores_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    let person = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &person, "token-a", Some(&person)).unwrap();
+    mark_signed_out(&mem, dir.path(), ORIGIN, &person.public_key()).unwrap();
+    let placeholder = forget_signed_out_key(&mem, dir.path(), &person.public_key())
+        .unwrap()
+        .expect("the active copy is replaced");
+    assert_ne!(placeholder.public_key(), person.public_key());
+    // No copy of the person's key is left in secure storage.
+    let secret = nsec(&person);
+    assert!(mem.map.borrow().values().all(|value| *value != secret));
+    assert_eq!(mem.get("identity"), Some(nsec(&placeholder)));
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(registry.active, None);
+    assert_eq!(
+        registry.get(ORIGIN, &person.public_key()).map(|a| a.state),
+        Some(AccountState::SignedOut)
+    );
+    // The binding stays, so the signed-out screen names this account.
+    assert_eq!(
+        mem.get(&super::super::key_recovery::binding_key(ORIGIN)),
+        Some(person.public_key().to_hex())
+    );
+    // A relaunch never lists the placeholder or drops the binding.
+    assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Loaded);
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert!(!registry.contains_pubkey(&placeholder.public_key()));
+    assert!(mem
+        .get(&super::super::key_recovery::binding_key(ORIGIN))
+        .is_some());
+    // Signing in again (key restored from the server backup) never keeps the
+    // placeholder as an account.
+    commit_sign_in(
+        &mem,
+        dir.path(),
+        ORIGIN,
+        &person,
+        "token-b",
+        Some(&placeholder),
+    )
+    .unwrap();
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(registry.accounts.len(), 1);
+    assert_eq!(registry.active_pubkey(), Some(person.public_key()));
+    assert_eq!(mem.get("identity"), Some(nsec(&person)));
+    assert_eq!(mem.get(PLACEHOLDER_SLOT), None);
+}
+
+#[test]
+fn a_sign_out_with_another_account_left_removes_only_that_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    let a = Keys::generate();
+    let b = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &a, "token-a", Some(&a)).unwrap();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &b, "token-b", Some(&a)).unwrap();
+    mark_signed_out(&mem, dir.path(), ORIGIN, &a.public_key()).unwrap();
+    assert!(forget_signed_out_key(&mem, dir.path(), &a.public_key())
+        .unwrap()
+        .is_none());
+    assert_eq!(mem.get(&identity_slot(&a.public_key())), None);
+    assert_eq!(mem.get(&identity_slot(&b.public_key())), Some(nsec(&b)));
+    assert_eq!(mem.get("identity"), Some(nsec(&b)));
+}
+
+#[test]
+fn keys_without_a_server_backup_or_still_signed_in_are_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Mem::default();
+    // Key-only: the only copy is here.
+    let key_only = Keys::generate();
+    mem.put("identity", &nsec(&key_only));
+    mem.put("identity.bootstrap", "");
+    assert_eq!(reconcile(&mem, dir.path()).unwrap(), Reconciled::Migrated);
+    // A sign-out on a server it was never listed on leaves it key-only.
+    mark_signed_out(&mem, dir.path(), ORIGIN, &key_only.public_key()).unwrap();
+    let registry = load_registry(dir.path()).unwrap().unwrap();
+    assert!(registry.get(ORIGIN, &key_only.public_key()).is_none());
+    assert!(
+        forget_signed_out_key(&mem, dir.path(), &key_only.public_key())
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        mem.get(&identity_slot(&key_only.public_key())),
+        Some(nsec(&key_only))
+    );
+    // Still signed in on another server.
+    let person = Keys::generate();
+    commit_sign_in(&mem, dir.path(), ORIGIN, &person, "t1", Some(&key_only)).unwrap();
+    commit_sign_in(
+        &mem,
+        dir.path(),
+        "https://other.test",
+        &person,
+        "t2",
+        Some(&person),
+    )
+    .unwrap();
+    mark_signed_out(&mem, dir.path(), ORIGIN, &person.public_key()).unwrap();
+    assert!(
+        forget_signed_out_key(&mem, dir.path(), &person.public_key())
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(mem.get("identity"), Some(nsec(&person)));
 }
 
 #[test]
@@ -345,7 +486,8 @@ fn signing_out_keeps_the_account_listed_without_a_session() {
     );
     assert!(registry.inactive_signed_in().is_empty());
     assert_eq!(mem.get(&refresh_slot(&a.public_key(), ORIGIN)), None);
-    // Its key stays (agents it owns keep their attestation; it can sign in again).
+    // The list alone keeps the key; the sign-out command then removes it
+    // (`forget_signed_out_key`).
     assert!(mem.get(&identity_slot(&a.public_key())).is_some());
 }
 

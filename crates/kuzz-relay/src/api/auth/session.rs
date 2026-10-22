@@ -20,7 +20,7 @@ use super::{
     internal, json_object, not_found, optional_string, rate_limit, unavailable,
     validate_avatar_url, validate_device_name, validate_display_name,
 };
-use crate::identity::{kv, publish_revocations};
+use crate::identity::{kv, publish_key_revocation, publish_revocations};
 use crate::state::AppState;
 
 /// Refresh replay cache lifetime (plan §3.6): a retry of the same refresh
@@ -239,6 +239,8 @@ pub(super) async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMa
     {
         Ok(Some(revoked)) => {
             publish_revocations(&state, &revoked, RevokeReason::Logout.as_str(), None).await;
+            // Key sockets signed in from this device close too (A4b).
+            publish_key_revocation(&state, &[device_id], &[], RevokeReason::Logout.as_str()).await;
             tracing::info!(principal = %binding.principal, device = %device_id, "auth.logout");
             (StatusCode::NO_CONTENT, clear_cookie()).into_response()
         }
@@ -332,6 +334,13 @@ pub(super) async fn revoke_device(
     {
         Ok(Some(revoked)) => {
             publish_revocations(&state, &revoked, RevokeReason::DeviceRevoked.as_str(), None).await;
+            publish_key_revocation(
+                &state,
+                &[device_id],
+                &[],
+                RevokeReason::DeviceRevoked.as_str(),
+            )
+            .await;
             tracing::info!(principal = %binding.principal, device = %device_id, "auth.device_revoked");
             StatusCode::NO_CONTENT.into_response()
         }
@@ -357,8 +366,9 @@ pub(super) async fn revoke_others(
         .revoke_other_sessions(&binding.principal, session_id)
         .await
     {
-        Ok(revoked) => {
+        Ok((revoked, devices)) => {
             publish_revocations(&state, &revoked, RevokeReason::RevokeAll.as_str(), None).await;
+            publish_key_revocation(&state, &devices, &[], RevokeReason::RevokeAll.as_str()).await;
             tracing::info!(principal = %binding.principal, "auth.sessions_revoke_others");
             StatusCode::NO_CONTENT.into_response()
         }
@@ -569,6 +579,30 @@ pub(super) async fn delete_account(
                 None,
             )
             .await;
+            // Every device of the account (rows stay; the account is
+            // disabled): their key sockets close as `restricted: revoked`.
+            // No read at all while key sockets are off.
+            let devices = if crate::identity::key_sockets::enabled(&state) {
+                Some(state.db.list_devices(&binding.principal).await)
+            } else {
+                None
+            };
+            match devices {
+                None => {}
+                Some(Ok(devices)) => {
+                    let ids: Vec<Uuid> = devices.iter().map(|device| device.id).collect();
+                    publish_key_revocation(
+                        &state,
+                        &ids,
+                        &[],
+                        RevokeReason::AccountDisabled.as_str(),
+                    )
+                    .await;
+                }
+                Some(Err(error)) => {
+                    tracing::warn!(%error, "account devices unreadable; key socket recheck backstops");
+                }
+            }
             tracing::info!(principal = %binding.principal, "auth.account_deleted");
             (StatusCode::NO_CONTENT, clear_cookie()).into_response()
         }

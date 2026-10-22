@@ -75,7 +75,7 @@ export function AppNavRail({
       <RailButton
         active={!onWorkflows && listTab === "people"}
         icon={<Users className="h-5 w-5" />}
-        label="People"
+        label="Friends"
         onClick={onSelectPeople}
         testId="open-people-view"
       />

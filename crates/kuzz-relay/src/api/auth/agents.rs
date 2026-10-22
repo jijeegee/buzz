@@ -339,6 +339,12 @@ pub(super) async fn register(
     };
     // The key's host changed (or first got one): drop cached answers here.
     state.identity.admissions.evict_key(&agent.to_bytes());
+    if result == "moved" {
+        // Every replica rechecks the agent's open sockets: the old host's
+        // close as no longer this key's device (A4b).
+        crate::identity::publish_key_revocation(&state, &[], &[agent.to_bytes()], "agent_moved")
+            .await;
+    }
     axum::Json(json!({
         "agent_pubkey": agent.to_hex(),
         "owner": hex::encode(owner_key),
