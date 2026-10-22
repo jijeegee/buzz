@@ -497,12 +497,15 @@ pub(crate) async fn is_friend_of(
 /// third-party add of a person who is not yet a member. Refused adds by a
 /// member become a pending invitation and fail with [`InvitationSent`]; when
 /// the target blocked the actor nothing is stored, but the actor sees the
-/// same answer.
+/// same answer. In a group chat, someone who already shares a room with the
+/// actor counts as a friend (added directly).
+#[allow(clippy::too_many_arguments)]
 async fn check_person_add(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     channel_id: Uuid,
     channel_created_by: &[u8],
+    group_chat: bool,
     actor_role: Option<MemberRole>,
     actor: &[u8],
     target: &[u8],
@@ -530,6 +533,7 @@ async fn check_person_add(
             target,
             actor_runs_group,
         ) || is_friend_of(tenant, state, target, actor).await?
+            || (group_chat && state.db.share_a_room(community, actor, target).await?)
     };
     let decision =
         channel_authz::decide_person_add(&invite_policy, actor_role, &add_policy, friend)?;
@@ -689,6 +693,7 @@ pub async fn validate_admin_event(
                                 state,
                                 channel_id,
                                 &channel.created_by,
+                                channel.group_chat,
                                 actor_role,
                                 &actor_bytes,
                                 &target_pubkey,
@@ -749,6 +754,7 @@ pub async fn validate_admin_event(
                 "ttl",
                 "goals",
                 "picture",
+                "history",
             ];
             let has_recognized = event
                 .tags
@@ -756,7 +762,7 @@ pub async fn validate_admin_event(
                 .any(|t| RECOGNIZED_TAGS.contains(&t.kind().to_string().as_str()));
             if !has_recognized {
                 return Err(anyhow::anyhow!(
-                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals, picture)"
+                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals, picture, history)"
                 ));
             }
 
@@ -771,6 +777,29 @@ pub async fn validate_admin_event(
                 return Err(anyhow::anyhow!(
                     "chats have no shared name, photo or settings to change; only goals can be switched"
                 ));
+            }
+
+            // Earlier messages: "all" or "since_join". DMs and group chats
+            // always hide them (refused above for group chats).
+            for t in event.tags.iter() {
+                if t.kind().to_string() == "history" {
+                    if channel.channel_type == "dm" {
+                        return Err(anyhow::anyhow!(
+                            "chats always hide messages from before a member joined"
+                        ));
+                    }
+                    match t.content() {
+                        Some("all") | Some("since_join") => {}
+                        Some(v) => {
+                            return Err(anyhow::anyhow!(
+                                "invalid history value: {v} (must be \"all\" or \"since_join\")"
+                            ));
+                        }
+                        None => {
+                            return Err(anyhow::anyhow!("history tag must have a value"));
+                        }
+                    }
+                }
             }
 
             // Validate archived values before storage.
@@ -900,6 +929,7 @@ pub async fn validate_admin_event(
                     || k == "visibility"
                     || k == "ttl"
                     || k == "picture"
+                    || k == "history"
                     || (k == "goals" && !is_dm)
             });
             if has_privileged_tag {
@@ -922,7 +952,7 @@ pub async fn validate_admin_event(
                             return Ok(());
                         }
                         Err(anyhow::anyhow!(
-                            "actor not authorized for name/about/archived/visibility/ttl/goals/picture changes"
+                            "actor not authorized for name/about/archived/visibility/ttl/goals/picture/history changes"
                         ))
                     }
                 }
@@ -1512,6 +1542,15 @@ pub async fn emit_group_discovery_events(
             if !picture.is_empty() {
                 tags.push(Tag::parse(["picture", picture])?);
             }
+        }
+        // Whether new members see earlier messages (groups only; DMs and
+        // group chats always hide them).
+        if channel.channel_type != "dm" && !channel.group_chat {
+            let policy = state
+                .db
+                .channel_history_policy(tenant.community(), channel_id)
+                .await?;
+            tags.push(Tag::parse(["history", &policy])?);
         }
         emit_addressable_discovery_event(
             tenant,
@@ -2107,6 +2146,27 @@ async fn handle_edit_metadata(
                         channel_id,
                         serde_json::json!({
                             "type": "goals_changed", "actor": actor_hex, "goals": val
+                        }),
+                        chrono::Utc::now(),
+                    )
+                    .await?;
+                }
+                "history" => {
+                    // "all" / "since_join", validated during authorization.
+                    state
+                        .db
+                        .set_channel_history_policy(tenant.community(), channel_id, val)
+                        .await?;
+                    // Open rooms: visitors' reads change, so drop cached
+                    // access before later events fan out.
+                    state.invalidate_all_accessible_channels(tenant);
+                    state.invalidate_channel_visibility(tenant, channel_id);
+                    emit_system_message(
+                        tenant,
+                        state,
+                        channel_id,
+                        serde_json::json!({
+                            "type": "history_changed", "actor": actor_hex, "history": val
                         }),
                         chrono::Utc::now(),
                     )

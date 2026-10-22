@@ -34,7 +34,7 @@ impl Db {
             .push_bind(reader.to_vec()).push(" AND m.removed_at IS NULL)))");
         // since_join rooms: revisions from before the reader's join are hidden.
         qb.push(
-            " AND NOT channel_event_before_join(e.community_id, e.channel_id, e.channel_sequence, ",
+            " AND NOT channel_event_before_join(e.community_id, e.channel_id, event_history_sequence(e.channel_sequence, e.thread_root_sequence), ",
         )
         .push_bind(reader.to_vec())
         .push(")");

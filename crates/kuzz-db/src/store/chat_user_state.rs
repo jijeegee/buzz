@@ -226,7 +226,8 @@ async fn before_join(
     Ok(sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM events e \
          WHERE e.community_id = $1 AND e.id = $2 \
-           AND channel_event_before_join(e.community_id, e.channel_id, e.channel_sequence, $3))",
+           AND channel_event_before_join(e.community_id, e.channel_id, \
+            event_history_sequence(e.channel_sequence, e.thread_root_sequence), $3))",
     )
     .bind(community)
     .bind(event)

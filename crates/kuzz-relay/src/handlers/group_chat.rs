@@ -236,8 +236,10 @@ pub async fn plan_initial_people(
         } else {
             // The creator runs the chat it is creating, so an agent may bring
             // in its own owner (see `admits_as_friend`).
+            // Someone already in a room with the creator is added directly.
             channel_authz::admits_as_friend(false, creator_agent_owner.as_deref(), target, true)
                 || super::side_effects::is_friend_of(tenant, state, target, creator).await?
+                || state.db.share_a_room(community, creator, target).await?
         };
         let invitation_allowed = if blocked || !add_policy_allows || is_agent || admitted {
             true

@@ -186,7 +186,7 @@ async fn members_only_room_hides_rows_from_before_the_current_join() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
-async fn open_rooms_show_all_history_to_members_and_visitors() {
+async fn open_rooms_follow_the_history_policy() {
     let f = Fixture::new(ChannelVisibility::Open).await;
     let policy: String =
         sqlx::query_scalar("SELECT history_policy FROM channels WHERE community_id=$1 AND id=$2")
@@ -199,6 +199,12 @@ async fn open_rooms_show_all_history_to_members_and_visitors() {
     let before = f.send("before join").await;
     f.join().await;
     let after = f.send("after join").await;
+    // since_join: members from their join, visitors nothing.
+    assert_eq!(f.read(Some(&f.member)).await, (vec![after.clone()], 1));
+    assert_eq!(f.read(Some(&Keys::generate())).await, (vec![], 0));
+    // all: everyone reads everything.
+    f.set("UPDATE channels SET history_policy='all' WHERE community_id=$1 AND id=$2")
+        .await;
     let all = (vec![before, after], 2);
     assert_eq!(f.read(Some(&f.member)).await, all);
     assert_eq!(f.read(Some(&Keys::generate())).await, all);
@@ -355,8 +361,9 @@ async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
         )
         .await
         .unwrap();
-    assert!(window.root_in_channel);
-    assert_eq!(rows(window), [late.clone()]);
+    // The whole thread of a pre-join root is cut, later replies included.
+    assert!(!window.root_in_channel);
+    assert!(rows(window).is_empty());
     let (window, _) = db
         .get_thread_window_with_session(f.scope, &req, &mut ScanBudget::default())
         .await
@@ -373,7 +380,7 @@ async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
         .await
         .unwrap();
     let ids: Vec<String> = replies.iter().map(|r| hex::encode(&r.event_id)).collect();
-    assert_eq!(ids, [late.clone()]);
+    assert!(ids.is_empty(), "{ids:?}");
     let replies = db
         .get_thread_replies(f.scope, &root_bytes, Some(1), 10, None)
         .await
@@ -445,7 +452,7 @@ async fn summaries_and_id_lookups_treat_pre_join_events_as_absent() {
         .await
         .unwrap();
     hidden.sort();
-    let mut expected = vec![bytes(&root), bytes(&early)];
+    let mut expected = vec![bytes(&root), bytes(&early), bytes(&late)];
     expected.sort();
     assert_eq!(hidden, expected);
     assert!(db
@@ -454,16 +461,14 @@ async fn summaries_and_id_lookups_treat_pre_join_events_as_absent() {
         .unwrap()
         .is_empty());
 
-    // Stored counters (2 replies) minus the pre-join one; the author still
-    // has a visible reply, so stays a participant.
+    // Stored counters (2 replies): both are cut with their pre-join root,
+    // the later one included, so the author has no visible reply left.
     let cut = db
         .blocked_thread_replies(f.scope, &member, &[bytes(&root)], false)
         .await
         .unwrap();
     assert_eq!(cut.len(), 1);
-    assert_eq!((cut[0].direct, cut[0].descendants), (1, 1));
-    assert!(cut[0].hidden_authors.is_empty());
-    assert!(cut[0].last_other_reply_at.is_some());
+    assert_eq!((cut[0].direct, cut[0].descendants), (2, 2));
     assert!(db
         .blocked_thread_replies(f.scope, &owner, &[bytes(&root)], false)
         .await
@@ -1011,4 +1016,270 @@ async fn a_reader_without_current_membership_sees_nothing() {
     f.set("UPDATE channels SET history_policy='all' WHERE community_id=$1 AND id=$2")
         .await;
     assert_eq!(f.read(Some(&f.member)).await.1, 2);
+}
+
+impl Fixture {
+    /// A kind:9 reply to `root` copied to the main timeline ("also send to
+    /// channel").
+    async fn broadcast_reply(&self, root: &str, content: &str) -> String {
+        let root_id = nostr::EventId::from_hex(root).expect("root id");
+        let event = EventBuilder::new(Kind::Custom(9), content)
+            .tags([
+                Tag::parse(["h", &self.channel.to_string()]).expect("h tag"),
+                Tag::parse(["e", root, "", "reply"]).expect("e tag"),
+            ])
+            .sign_with_keys(&self.owner)
+            .expect("fixture signature");
+        event::insert_event(&self.pool, self.scope, &event, Some(self.channel))
+            .await
+            .expect("real event writer");
+        let created = |id: &[u8]| {
+            let pool = self.pool.clone();
+            let scope = self.scope;
+            let id = id.to_vec();
+            async move {
+                sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
+                    "SELECT created_at FROM events WHERE community_id = $1 AND id = $2",
+                )
+                .bind(scope.as_uuid())
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .expect("row")
+            }
+        };
+        let root_at = created(root_id.as_bytes()).await;
+        let at = created(event.id.as_bytes()).await;
+        crate::thread::insert_thread_metadata(
+            &self.pool,
+            self.scope,
+            event.id.as_bytes(),
+            at,
+            self.channel,
+            Some(root_id.as_bytes()),
+            Some(root_at),
+            Some(root_id.as_bytes()),
+            Some(root_at),
+            1,
+            true,
+        )
+        .await
+        .expect("thread index");
+        event.id.to_hex()
+    }
+
+    /// A kind:9 message from the owner quoting `quoted` (`q` tag).
+    async fn quote(&self, quoted: &str, content: &str) -> String {
+        let message = EventBuilder::new(Kind::Custom(9), content)
+            .tags([
+                Tag::parse(["h", &self.channel.to_string()]).expect("h tag"),
+                Tag::parse(["q", quoted, ""]).expect("q tag"),
+            ])
+            .sign_with_keys(&self.owner)
+            .expect("fixture signature");
+        event::insert_event(&self.pool, self.scope, &message, Some(self.channel))
+            .await
+            .expect("real event writer");
+        message.id.to_hex()
+    }
+}
+
+fn id_bytes(hex_id: &str) -> Vec<u8> {
+    nostr::EventId::from_hex(hex_id)
+        .unwrap()
+        .to_bytes()
+        .to_vec()
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn replies_in_an_old_thread_are_cut_with_their_root() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let root = f.send("old root").await;
+    f.join().await;
+    let late = f.reply(&root, 9, "late reply in old thread").await;
+    let copy = f.broadcast_reply(&root, "late copy to channel").await;
+    let reaction = f.reply(&late, 7, "+").await;
+    let fresh = f.send("new message").await;
+    let member = f.member.public_key().to_bytes().to_vec();
+    let owner = f.owner.public_key().to_bytes().to_vec();
+
+    // Stored on the reply rows (migration 0082 trigger).
+    let stamped: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM events WHERE community_id = $1 AND channel_id = $2 \
+          AND thread_root_sequence > 0",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(f.channel)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(stamped, 2, "late reply and its channel copy");
+
+    // One channel (index path) and many channels (per-row path).
+    assert_eq!(f.read(Some(&f.member)).await, (vec![fresh.clone()], 1));
+    let mut q = EventQuery::for_community(f.scope);
+    q.kinds = Some(vec![7, 9]);
+    q.history_reader = Some(member.clone());
+    let ids: Vec<String> = event::query_events(&f.pool, &q)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|s| s.event.id.to_hex())
+        .collect();
+    assert_eq!(ids, [fresh.clone()]);
+
+    // Id lookups, live delivery and push wakes agree.
+    let hidden = db
+        .history_hidden_event_ids(f.scope, &member, &[id_bytes(&late), id_bytes(&copy)])
+        .await
+        .unwrap();
+    assert_eq!(hidden.len(), 2);
+    let blind = db
+        .readers_blind_to_targets(
+            f.scope,
+            f.channel,
+            &[id_bytes(&late), id_bytes(&reaction)],
+            &[member.clone(), owner.clone()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(blind, [member.clone()]);
+    let pairs = db
+        .history_hidden_pairs(
+            f.scope,
+            &[id_bytes(&copy), id_bytes(&copy), id_bytes(&fresh)],
+            &[member.clone(), owner.clone(), member.clone()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(pairs, [(id_bytes(&copy), member.clone())]);
+
+    // The channel copy never counts as unread.
+    let (unread, _): (i32, i32) =
+        sqlx::query_as("SELECT unread, mentions FROM chat_room_unread($1, $2, $3, 0)")
+            .bind(f.scope.as_uuid())
+            .bind(f.channel)
+            .bind(&member)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(unread, 1, "only the new message");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn switching_to_since_join_keeps_what_current_members_see() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    db.set_channel_history_policy(f.scope, f.channel, "all")
+        .await
+        .unwrap();
+    let before = f.send("before join").await;
+    f.join().await;
+    let after = f.send("after join").await;
+    let everything = (vec![before.clone(), after.clone()], 2);
+    assert_eq!(f.read(Some(&f.member)).await, everything);
+
+    db.set_channel_history_policy(f.scope, f.channel, "since_join")
+        .await
+        .unwrap();
+    assert_eq!(
+        db.channel_history_policy(f.scope, f.channel).await.unwrap(),
+        "since_join"
+    );
+    // The current member keeps everything; a later rejoin is cut.
+    assert_eq!(f.read(Some(&f.member)).await, everything);
+    f.leave().await;
+    f.join().await;
+    let later = f.send("after rejoin").await;
+    assert_eq!(f.read(Some(&f.member)).await, (vec![later], 1));
+    assert!(db
+        .set_channel_history_policy(f.scope, f.channel, "sometimes")
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn group_chats_always_cut_history() {
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    f.set(
+        "UPDATE channels SET group_chat = true, history_policy = 'all' \
+          WHERE community_id = $1 AND id = $2",
+    )
+    .await;
+    f.send("before join").await;
+    f.join().await;
+    let after = f.send("after join").await;
+    assert_eq!(f.read(Some(&f.member)).await, (vec![after], 1));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn quote_preview_serves_a_pre_join_original_only_through_a_visible_quote() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let original = f.send("said before you joined").await;
+    let other = f.send("not quoted").await;
+    f.join().await;
+    let quoting = f.quote(&original, "look at this").await;
+    let plain = f.send("no quote").await;
+    let member = f.member.public_key().to_bytes().to_vec();
+
+    // The original itself stays hidden.
+    assert_eq!(f.read(Some(&f.member)).await.1, 2);
+    let preview = db
+        .quote_preview(
+            f.scope,
+            f.channel,
+            &member,
+            &id_bytes(&quoting),
+            &id_bytes(&original),
+        )
+        .await
+        .unwrap()
+        .expect("preview");
+    assert_eq!(preview.content, "said before you joined");
+    assert_eq!(preview.author, f.owner.public_key().to_bytes().to_vec());
+    // Not the quoted id, not a quote, or a reader outside the room: nothing.
+    for (by, about, reader) in [
+        (&quoting, &other, member.clone()),
+        (&plain, &original, member.clone()),
+        (
+            &quoting,
+            &original,
+            Keys::generate().public_key().to_bytes().to_vec(),
+        ),
+    ] {
+        assert!(db
+            .quote_preview(f.scope, f.channel, &reader, &id_bytes(by), &id_bytes(about))
+            .await
+            .unwrap()
+            .is_none());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn share_a_room_needs_both_current_members() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let owner = f.owner.public_key().to_bytes().to_vec();
+    let member = f.member.public_key().to_bytes().to_vec();
+    assert!(!db.share_a_room(f.scope, &owner, &member).await.unwrap());
+    f.join().await;
+    assert!(db.share_a_room(f.scope, &owner, &member).await.unwrap());
+    assert!(db.share_a_room(f.scope, &member, &owner).await.unwrap());
+    f.leave().await;
+    assert!(!db.share_a_room(f.scope, &owner, &member).await.unwrap());
 }

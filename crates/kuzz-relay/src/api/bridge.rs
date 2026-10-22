@@ -28,6 +28,7 @@ use super::{
     api_error, db_read_error, internal_error, not_found, parse_query_or_400, QUERY_TIMED_OUT,
 };
 
+mod quote_preview;
 mod thread_roots;
 mod thread_window;
 
@@ -1705,6 +1706,25 @@ async fn query_events_authed(
             StatusCode::BAD_REQUEST,
             "resolve_thread_roots permits at most 100 targets per request",
         ));
+    }
+    let quote_previews = raw_filters
+        .iter()
+        .filter(|raw| extension_flag(raw, quote_preview::FLAG))
+        .count();
+    if quote_previews > quote_preview::MAX_PER_REQUEST {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "quote_preview permits at most 50 filters per request",
+        ));
+    }
+    for (idx, (raw, filter)) in raw_filters.iter().zip(filters.iter()).enumerate() {
+        if extension_flag(raw, quote_preview::FLAG) {
+            events.extend(
+                quote_preview::query(state, tenant, filter, &accessible_channels, &pubkey_bytes)
+                    .await?,
+            );
+            handled.insert(idx);
+        }
     }
     // Resolve reply owners from retained thread metadata, including tombstones.
     for (idx, (raw, filter)) in raw_filters.iter().zip(filters.iter()).enumerate() {

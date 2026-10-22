@@ -226,7 +226,15 @@ my AS MATERIALIZED (
                    AND bm.channel_id = cm.channel_id AND bm.pubkey = blk.blocked
            ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked,
            -- since_join rooms: nothing at or below this sequence is shown.
-           channel_history_floor($1, cm.channel_id, $2) AS history_floor
+           channel_history_floor($1, cm.channel_id, $2) AS history_floor,
+           -- The stored latest is an "also send to channel" copy of a reply
+           -- in a thread from before the join: search like a blocked DM.
+           EXISTS (
+               SELECT 1 FROM events le
+               WHERE le.community_id = $1 AND le.channel_id = cm.channel_id
+                 AND le.channel_sequence = c.main_last_seq AND le.thread_root_sequence > 0
+                 AND le.thread_root_sequence <= channel_history_floor($1, cm.channel_id, $2)
+           ) AS last_cut
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
     WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
@@ -245,8 +253,10 @@ rooms AS (
     -- (deleted ones too, as the stored values never move back).
     LEFT JOIN LATERAL (
         SELECT e.channel_sequence, e.received_at, e.id FROM events e
-        WHERE m.dm_blocked AND e.community_id = $1 AND e.channel_id = m.channel_id
-          AND e.kind = ANY($3) AND e.channel_sequence > m.history_floor AND "#,
+        WHERE (m.dm_blocked OR m.last_cut) AND e.community_id = $1
+          AND e.channel_id = m.channel_id AND e.kind = ANY($3)
+          AND e.channel_sequence > m.history_floor
+          AND (e.thread_root_sequence = 0 OR e.thread_root_sequence > m.history_floor) AND "#,
     main_timeline!(),
     r#"
           AND NOT "#,
@@ -257,11 +267,11 @@ rooms AS (
     -- The stored latest is the newest main message: at or below the history
     -- floor, the reader has no main message yet.
     CROSS JOIN LATERAL (
-        SELECT CASE WHEN m.dm_blocked THEN l.channel_sequence
+        SELECT CASE WHEN m.dm_blocked OR m.last_cut THEN l.channel_sequence
                     WHEN m.main_last_seq > m.history_floor THEN m.main_last_seq END AS last_seq,
-               CASE WHEN m.dm_blocked THEN l.received_at
+               CASE WHEN m.dm_blocked OR m.last_cut THEN l.received_at
                     WHEN m.main_last_seq > m.history_floor THEN m.main_last_at END AS last_at,
-               CASE WHEN m.dm_blocked THEN l.id
+               CASE WHEN m.dm_blocked OR m.last_cut THEN l.id
                     WHEN m.main_last_seq > m.history_floor THEN m.main_last_event_id END
                    AS last_event_id
     ) v

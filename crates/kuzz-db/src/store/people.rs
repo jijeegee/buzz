@@ -163,6 +163,27 @@ impl Db {
         row.as_ref().map(person_from_row).transpose()
     }
 
+    /// Whether `a` and `b` are both current members of some live room.
+    #[datastore_span(name = "share_a_room", system = "postgresql")]
+    pub async fn share_a_room(&self, community: CommunityId, a: &[u8], b: &[u8]) -> Result<bool> {
+        let shared: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+               SELECT 1 FROM channel_members ma \
+                 JOIN channel_members mb ON mb.community_id = ma.community_id \
+                      AND mb.channel_id = ma.channel_id AND mb.pubkey = $3 \
+                      AND mb.removed_at IS NULL \
+                 JOIN channels c ON c.community_id = ma.community_id AND c.id = ma.channel_id \
+                WHERE ma.community_id = $1 AND ma.pubkey = $2 AND ma.removed_at IS NULL \
+                  AND c.deleted_at IS NULL)",
+        )
+        .bind(community.as_uuid())
+        .bind(a)
+        .bind(b)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(shared)
+    }
+
     /// People sharing a live channel with `reader` whose display name or
     /// username starts with `prefix` (case-insensitive).
     ///

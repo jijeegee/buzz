@@ -332,7 +332,18 @@ pub async fn filter_fanout_by_access(
         }
     };
     match visibility {
-        Ok(v) if v != "private" => return matches,
+        // Open rooms: members and visitors see history by the room's policy.
+        Ok(v) if v != "private" => {
+            return drop_readers_blind_to_history(
+                state,
+                community_id,
+                stored_event,
+                channel_id,
+                matches,
+                true,
+            )
+            .await;
+        }
         Ok(_) => {}
         Err(e) => {
             // Fail closed: if we cannot determine visibility, do not leak a
@@ -364,7 +375,15 @@ pub async fn filter_fanout_by_access(
             }
         }
     }
-    drop_readers_blind_to_targets(state, community_id, stored_event, channel_id, allowed).await
+    drop_readers_blind_to_history(
+        state,
+        community_id,
+        stored_event,
+        channel_id,
+        allowed,
+        false,
+    )
+    .await
 }
 
 /// Kinds that are about other events (named in `e` tags) rather than new
@@ -377,20 +396,24 @@ const TARGETING_KINDS: [u32; 5] = [
     KIND_THREAD_SUMMARY,
 ];
 
-/// since_join rooms: a reaction, edit, deletion or summary naming a target
-/// written before a recipient joined does not reach that recipient (the
-/// stored reads hide the same events). Fails closed.
-async fn drop_readers_blind_to_targets(
+/// since_join rooms (and group chats): an event does not reach a recipient
+/// who cannot read it in the stored history: a reply in a thread whose root
+/// came before their join, a reaction, edit, deletion or summary about such
+/// an event, or, in an open room that cuts history, anything but room state
+/// for a visitor. Fails closed.
+async fn drop_readers_blind_to_history(
     state: &AppState,
     community_id: CommunityId,
     stored_event: &StoredEvent,
     channel_id: uuid::Uuid,
     matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
+    open_room: bool,
 ) -> Vec<(crate::subscription::ConnId, crate::subscription::SubId)> {
-    if matches.is_empty() || !TARGETING_KINDS.contains(&event_kind_u32(&stored_event.event)) {
+    let kind = event_kind_u32(&stored_event.event);
+    if matches.is_empty() || kuzz_db::history::is_room_state_kind(kind as i32) {
         return matches;
     }
-    let mut targets: Vec<Vec<u8>> = stored_event
+    let mut named: Vec<Vec<u8>> = stored_event
         .event
         .tags
         .iter()
@@ -402,11 +425,40 @@ async fn drop_readers_blind_to_targets(
                 .filter(|id| id.len() == 32)
         })
         .collect();
-    targets.sort_unstable();
-    targets.dedup();
-    if targets.is_empty() {
+    // Members always see a new event itself; only a thread reply (it names
+    // its root) or a targeting kind can be about hidden history. Visitors of
+    // an open room are checked for everything.
+    let mut visitor = false;
+    if open_room {
+        for (conn_id, _) in &matches {
+            let Some(pubkey) = state.conn_manager.pubkey_for_conn(*conn_id) else {
+                visitor = true;
+                break;
+            };
+            if !matches!(
+                state
+                    .is_member_cached(community_id, channel_id, &pubkey)
+                    .await,
+                Ok(true)
+            ) {
+                visitor = true;
+                break;
+            }
+        }
+    }
+    if named.is_empty() && !visitor {
         return matches;
     }
+    // The event's own history sequence carries its thread root's (stored
+    // by ingest, migration 0082), so its id stands for the reply case.
+    let mut targets = if TARGETING_KINDS.contains(&kind) {
+        std::mem::take(&mut named)
+    } else {
+        Vec::new()
+    };
+    targets.push(stored_event.event.id.as_bytes().to_vec());
+    targets.sort_unstable();
+    targets.dedup();
     let mut readers: Vec<Vec<u8>> = matches
         .iter()
         .filter_map(|(conn_id, _)| state.conn_manager.pubkey_for_conn(*conn_id))

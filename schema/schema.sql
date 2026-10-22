@@ -265,6 +265,7 @@ CREATE TABLE events (
     d_tag       TEXT,
     not_before  BIGINT,
     delivered_at BIGINT,
+    thread_root_sequence BIGINT NOT NULL DEFAULT 0 CHECK (thread_root_sequence >= 0),
     PRIMARY KEY (community_id, created_at, id)
 ) PARTITION BY RANGE (created_at);
 
@@ -2465,7 +2466,9 @@ BEGIN
         IF OLD.removed_at IS NULL OR NEW.removed_at IS NOT NULL THEN
             NEW.join_sequence := OLD.join_sequence;
             NEW.joined_at := OLD.joined_at;
-            NEW.join_cutoff_is_legacy := OLD.join_cutoff_is_legacy;
+            NEW.join_cutoff_is_legacy := OLD.join_cutoff_is_legacy
+                OR (NEW.join_cutoff_is_legacy AND OLD.removed_at IS NULL
+                    AND NEW.removed_at IS NULL);
             RETURN NEW;
         END IF;
     END IF;
@@ -2503,15 +2506,25 @@ $$;
 -- with channel_sequence <= floor are hidden from that reader. Legacy-stamped
 -- memberships keep all history. Channel access itself is checked elsewhere.
 -- Room state kinds (channel_kind_is_room_state) are never cut.
+CREATE OR REPLACE FUNCTION event_history_sequence(p_seq BIGINT, p_root_seq BIGINT)
+RETURNS BIGINT
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT CASE WHEN p_root_seq > 0 AND p_root_seq < p_seq THEN p_root_seq ELSE p_seq END
+$$;
+
+CREATE OR REPLACE FUNCTION channel_cuts_history(p_cid UUID, p_chid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM channels hc
+         WHERE hc.community_id = p_cid AND hc.id = p_chid
+           AND (hc.history_policy = 'since_join' OR hc.group_chat))
+$$;
+
 CREATE OR REPLACE FUNCTION channel_history_floor(p_cid UUID, p_chid UUID, p_reader BYTEA)
 RETURNS BIGINT
 LANGUAGE sql STABLE PARALLEL SAFE AS $$
-    -- No current membership in such a room (a replica that has not seen the
-    -- join yet): fail closed with the largest sequence, hiding everything.
-    SELECT CASE WHEN NOT EXISTS (
-            SELECT 1 FROM channels hc
-             WHERE hc.community_id = p_cid AND hc.id = p_chid
-               AND hc.history_policy = 'since_join' AND hc.visibility <> 'open') THEN 0
+    SELECT CASE WHEN NOT channel_cuts_history(p_cid, p_chid) THEN 0
         ELSE COALESCE((
             SELECT CASE WHEN hm.join_cutoff_is_legacy THEN 0 ELSE hm.join_sequence END
               FROM channel_members hm
@@ -2552,8 +2565,9 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
             JOIN events te ON te.community_id = p_cid
              AND te.id = CASE WHEN t->>1 ~ '^[0-9a-fA-F]{64}$' THEN decode(t->>1, 'hex') END
             WHERE t->>0 = 'e'
-              AND channel_event_before_join(te.community_id, te.channel_id, te.channel_sequence,
-                                            p_reader))
+              AND channel_event_before_join(te.community_id, te.channel_id,
+                    event_history_sequence(te.channel_sequence, te.thread_root_sequence),
+                    p_reader))
     END
 $$;
 
@@ -2578,18 +2592,20 @@ LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_dm BOOLEAN;
     v_reader_hex TEXT := encode(p_reader, 'hex');
-    v_after BIGINT;
+    v_after BIGINT := COALESCE(p_after, 0);
+    v_floor BIGINT;
 BEGIN
     v_dm := dm_is_one_to_one(p_cid, p_chid);
-    -- since_join rooms: messages from before the reader's join never count.
     -- (The fail-closed floor of a missing membership is ignored: the tally
     -- trigger counts a row before it is in the table and passes its own cut.)
-    v_after := GREATEST(COALESCE(p_after, 0),
-                        NULLIF(channel_history_floor(p_cid, p_chid, p_reader), 9223372036854775807));
+    v_floor := COALESCE(NULLIF(channel_history_floor(p_cid, p_chid, p_reader),
+                               9223372036854775807), 0);
+    v_after := GREATEST(v_after, v_floor);
     SELECT count(*) INTO unread FROM (
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
            AND e.channel_sequence > v_after
+           AND (v_floor = 0 OR e.thread_root_sequence = 0 OR e.thread_root_sequence > v_floor)
            AND e.kind IN (9, 40002, 45001, 45003) AND e.deleted_at IS NULL
            AND e.pubkey <> p_reader
            AND NOT EXISTS (
@@ -2606,6 +2622,7 @@ BEGIN
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
            AND e.channel_sequence > v_after
+           AND (v_floor = 0 OR e.thread_root_sequence = 0 OR e.thread_root_sequence > v_floor)
            AND e.kind IN (9, 40002, 45001, 45003) AND e.deleted_at IS NULL
            AND e.pubkey <> p_reader
            AND NOT EXISTS (
@@ -2782,19 +2799,18 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'UPDATE' AND NEW.read_seq IS NOT DISTINCT FROM OLD.read_seq
-       AND OLD.removed_at IS NULL THEN
+       AND OLD.removed_at IS NULL
+       AND NEW.join_cutoff_is_legacy IS NOT DISTINCT FROM OLD.join_cutoff_is_legacy THEN
         RETURN NEW;
     END IF;
     IF chat_read_to_end(NEW.community_id, NEW.channel_id, NEW.read_seq) THEN
         NEW.unread_count := 0;
         NEW.unread_mentions := 0;
     ELSE
-        -- since_join rooms: count only after this (re)join. The table row is
-        -- not this membership yet, so channel_history_floor cannot see it.
-        IF NOT NEW.join_cutoff_is_legacy AND EXISTS (
-            SELECT 1 FROM channels c
-             WHERE c.community_id = NEW.community_id AND c.id = NEW.channel_id
-               AND c.history_policy = 'since_join' AND c.visibility <> 'open') THEN
+        -- Count only after this (re)join. The table row is not this
+        -- membership yet, so channel_history_floor cannot see it.
+        IF NOT NEW.join_cutoff_is_legacy
+           AND channel_cuts_history(NEW.community_id, NEW.channel_id) THEN
             v_after := GREATEST(COALESCE(v_after, 0), NEW.join_sequence);
         END IF;
         SELECT u.unread, u.mentions INTO NEW.unread_count, NEW.unread_mentions
@@ -3061,3 +3077,29 @@ BEGIN
     RETURN filled;
 END
 $$;
+
+CREATE OR REPLACE FUNCTION stamp_thread_root_sequence() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_root BIGINT;
+BEGIN
+    IF NEW.depth <= 0 OR NEW.root_event_id IS NULL THEN
+        RETURN NULL;
+    END IF;
+    SELECT r.channel_sequence INTO v_root FROM events r
+     WHERE r.community_id = NEW.community_id AND r.id = NEW.root_event_id
+       AND r.channel_id = NEW.channel_id
+       AND (NEW.root_event_created_at IS NULL OR r.created_at = NEW.root_event_created_at)
+     LIMIT 1;
+    IF COALESCE(v_root, 0) > 0 THEN
+        UPDATE events SET thread_root_sequence = v_root
+         WHERE community_id = NEW.community_id AND id = NEW.event_id
+           AND created_at = NEW.event_created_at AND thread_root_sequence <> v_root;
+    END IF;
+    RETURN NULL;
+END
+$$;
+
+CREATE TRIGGER stamp_thread_root_sequence
+AFTER INSERT ON thread_metadata
+FOR EACH ROW EXECUTE FUNCTION stamp_thread_root_sequence();

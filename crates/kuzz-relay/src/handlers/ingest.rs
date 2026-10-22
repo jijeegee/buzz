@@ -718,6 +718,43 @@ async fn target_before_join(
         .map_err(|e| format!("db error checking target history: {e}"))
 }
 
+/// Most `q` tags one channel event may carry.
+const MAX_QUOTE_TAGS: usize = 20;
+
+/// since_join: a quote (`q` tag) may only name an event its author can read.
+/// Later readers see a pre-join original only through the quote preview, so
+/// an author must not be able to point it at history they cannot see.
+async fn check_quote_targets(
+    db: &kuzz_db::Db,
+    community_id: CommunityId,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let quoted: Vec<Vec<u8>> = event
+        .tags
+        .iter()
+        .filter(|tag| tag.kind().to_string() == "q")
+        .filter_map(|tag| tag.content().and_then(|id| hex::decode(id).ok()))
+        .filter(|id| id.len() == 32)
+        .collect();
+    if quoted.is_empty() {
+        return Ok(());
+    }
+    if quoted.len() > MAX_QUOTE_TAGS {
+        return Err(IngestError::Rejected(format!(
+            "invalid: at most {MAX_QUOTE_TAGS} quotes"
+        )));
+    }
+    let hidden = db
+        .history_hidden_event_ids(community_id, &event.pubkey.to_bytes(), &quoted)
+        .await
+        .map_err(|e| IngestError::Internal(format!("db error checking quote history: {e}")))?;
+    if hidden.is_empty() {
+        Ok(())
+    } else {
+        Err(IngestError::Rejected("invalid: quoted event not found".into()))
+    }
+}
+
 pub(crate) async fn derive_reaction_channel(
     community_id: CommunityId,
     db: &kuzz_db::Db,
@@ -3701,6 +3738,9 @@ async fn ingest_event_inner(
     } else {
         None
     };
+    if requires_h_channel_scope(kind_u32) {
+        check_quote_targets(&state.db, tenant.community(), &event).await?;
+    }
 
     // Pre-validate kind:0 content before storage so we don't store an event
     // whose profile sync will silently fail in the side-effect handler.

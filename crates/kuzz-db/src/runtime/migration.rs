@@ -724,7 +724,14 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 81);
+        assert_eq!(migrations.len(), 82);
+        assert_eq!(migrations[81].version, 82);
+        assert!(migrations[81]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN thread_root_sequence"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("FUNCTION stamp_thread_root_sequence"));
         assert_eq!(migrations[80].version, 81);
         assert!(migrations[80]
             .sql

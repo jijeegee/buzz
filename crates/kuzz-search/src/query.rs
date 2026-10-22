@@ -321,7 +321,10 @@ pub async fn search(pool: &PgPool, query: &SearchQuery) -> Result<SearchResult, 
     }
 
     if let Some(ref reader) = query.history_reader {
-        qb.push(" AND NOT channel_event_before_join(community_id, channel_id, channel_sequence, ");
+        qb.push(
+            " AND NOT channel_event_before_join(community_id, channel_id, \
+             event_history_sequence(channel_sequence, thread_root_sequence), ",
+        );
         qb.push_bind(reader.clone());
         qb.push(") AND NOT channel_event_targets_before_join(community_id, channel_id, kind, tags, ");
         qb.push_bind(reader.clone());
