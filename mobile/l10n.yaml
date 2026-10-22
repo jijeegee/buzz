@@ -1,0 +1,8 @@
+# Flutter gen-l10n. English is the source; other languages are written by
+# i18n/scripts/i18n.mjs (see i18n/TRANSLATING.md). Generated Dart goes next to
+# the .arb files and is not committed: `flutter pub get` regenerates it.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false

@@ -1,0 +1,32 @@
+{
+  "@@locale": "en",
+  "navChats": "Chats",
+  "@navChats": {
+    "description": "Bottom tab bar, tab for the chat list. Icon tab, also read by screen readers. Short."
+  },
+  "navFriends": "Friends",
+  "@navFriends": {
+    "description": "Bottom tab bar, tab for the friends list. Short."
+  },
+  "navAgents": "Agents",
+  "@navAgents": {
+    "description": "Bottom tab bar, tab for AI agents. Short."
+  },
+  "navProfile": "Profile",
+  "@navProfile": {
+    "description": "Bottom tab bar, opens your own profile. Short."
+  },
+  "navSettings": "Settings",
+  "@navSettings": {
+    "description": "Bottom tab bar, opens app settings. Short."
+  },
+  "navUnread": "{tab}, unread",
+  "@navUnread": {
+    "description": "Screen-reader label of a bottom tab that has unread items, e.g. \"Chats, unread\".",
+    "placeholders": {
+      "tab": {
+        "type": "String"
+      }
+    }
+  }
+}
