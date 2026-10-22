@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { t } from "@/shared/i18n";
 import { safeNpub } from "@/shared/lib/nostrUtils";
 
 export const HOSTED_COMMUNITY_SUFFIX = "communities.buzz.xyz";
@@ -68,22 +69,23 @@ export function hostedCommunityErrorMessage(
   fallback: string,
 ) {
   const messages: Record<string, string> = {
-    missing_mapping: "Connect your Kuzz identity before creating a community.",
-    invalid_name: "Use lowercase letters, numbers, and hyphens.",
-    taken: "That Kuzz address is already taken.",
-    limit_reached: `You've reached the limit of ${HOSTED_COMMUNITY_LIMIT} hosted communities.`,
-    relay_unavailable: "Community provisioning is temporarily unavailable.",
-    identity_already_bound:
-      "This Builderlab account is connected to another Kuzz identity.",
-    pubkey_already_bound:
-      "This Kuzz identity is connected to another Builderlab account.",
-    not_owner: "Only the community owner can do that.",
-    transferee_not_registered:
-      "That person needs a connected Kuzz identity before you can transfer ownership to them.",
+    missing_mapping: t("communities.hostedApi.missingMapping"),
+    invalid_name: t("communities.hostedApi.invalidName"),
+    taken: t("communities.hosted.error.taken"),
+    limit_reached: t("communities.hostedApi.limitReached", {
+      limit: HOSTED_COMMUNITY_LIMIT,
+    }),
+    relay_unavailable: t("communities.hostedApi.relayUnavailable"),
+    identity_already_bound: t("communities.hostedApi.identityAlreadyBound"),
+    pubkey_already_bound: t("communities.hostedApi.pubkeyAlreadyBound"),
+    not_owner: t("communities.hostedApi.notOwner"),
+    transferee_not_registered: t(
+      "communities.hostedApi.transfereeNotRegistered",
+    ),
   };
   const message = messages[error?.code ?? ""] ?? error?.message ?? fallback;
   return correlationId
-    ? `${message} Correlation ID: ${correlationId}`
+    ? t("communities.hostedApi.withCorrelationId", { message, correlationId })
     : message;
 }
 
@@ -171,7 +173,7 @@ export async function loadHostedCommunityAccount(): Promise<HostedCommunityAccou
       hostedCommunityErrorMessage(
         identityResponse.error,
         identityResponse.correlation_id,
-        "Could not load the connected Kuzz identity.",
+        t("communities.hostedApi.loadIdentityFailed"),
       ),
     );
   }
@@ -180,7 +182,7 @@ export async function loadHostedCommunityAccount(): Promise<HostedCommunityAccou
       hostedCommunityErrorMessage(
         communitiesResponse.error,
         communitiesResponse.correlation_id,
-        "Could not load communities.",
+        t("communities.hostedApi.loadCommunitiesFailed"),
       ),
     );
   }

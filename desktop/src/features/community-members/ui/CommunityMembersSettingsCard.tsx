@@ -31,7 +31,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 import { CommunityInviteDialog } from "./CommunityInviteDialog";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, type MessageKey, t, useT } from "@/shared/i18n";
 
 function formatDisplayName(member: RelayMember, displayName?: string | null) {
   const trimmedDisplayName = displayName?.trim();
@@ -41,8 +41,16 @@ function formatDisplayName(member: RelayMember, displayName?: string | null) {
   ) {
     return trimmedDisplayName;
   }
-  return member.role === "owner" ? "Community owner" : UNKNOWN_USER_LABEL;
+  return member.role === "owner"
+    ? t("communityMembers.settings.communityOwner")
+    : UNKNOWN_USER_LABEL;
 }
+
+const ROLE_KEYS: Record<RelayMemberRole, MessageKey> = {
+  owner: "communityMembers.role.owner",
+  admin: "communityMembers.role.admin",
+  member: "communityMembers.role.member",
+};
 
 function npubFromPubkey(pubkey: string): string | null {
   try {
@@ -88,6 +96,7 @@ function RelayMemberRow({
   profile?: UserProfileSummary;
   member: RelayMember;
 }) {
+  const t = useT();
   const removeMutation = useRemoveRelayMemberMutation();
   const changeRoleMutation = useChangeRelayMemberRoleMutation();
   const isSelf = currentPubkey
@@ -115,7 +124,7 @@ function RelayMemberRow({
       toast.error(
         error instanceof Error
           ? error.message
-          : "Couldn’t update this community member.",
+          : t("communityMembers.settings.updateFailed"),
       );
     }
   }
@@ -127,7 +136,9 @@ function RelayMemberRow({
     >
       <UserProfilePopover
         pubkey={member.pubkey}
-        triggerAriaLabel={`Open profile for ${displayName}`}
+        triggerAriaLabel={t("communityMembers.settings.openProfile", {
+          name: displayName,
+        })}
         triggerElement="span"
       >
         <ProfileAvatar
@@ -152,17 +163,23 @@ function RelayMemberRow({
           className="flex items-center gap-1.5 text-xs text-muted-foreground/70"
           data-settings-subcopy
         >
-          <span className="shrink-0 capitalize">{member.role}</span>
+          <span className="shrink-0 capitalize">
+            {ROLE_KEYS[member.role] ? t(ROLE_KEYS[member.role]) : member.role}
+          </span>
           <span aria-hidden="true" className="shrink-0">
             ·
           </span>
-          <span className="shrink-0">Added {formatDate(member.createdAt)}</span>
+          <span className="shrink-0">
+            {t("communityMembers.settings.added", {
+              date: formatDate(member.createdAt),
+            })}
+          </span>
           {isSelf ? (
             <>
               <span aria-hidden="true" className="shrink-0">
                 ·
               </span>
-              <span className="shrink-0">You</span>
+              <span className="shrink-0">{t("common.you")}</span>
             </>
           ) : null}
         </div>
@@ -172,7 +189,9 @@ function RelayMemberRow({
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={`Actions for ${displayName}`}
+              aria-label={t("communityMembers.settings.actionsFor", {
+                name: displayName,
+              })}
               data-testid={`relay-member-actions-${member.pubkey}`}
               disabled={isBusy}
               size="icon"
@@ -191,11 +210,11 @@ function RelayMemberRow({
                         pubkey: member.pubkey,
                         role: "admin",
                       }),
-                    "Made community admin",
+                    t("communityMembers.settings.madeAdmin"),
                   )
                 }
               >
-                Make admin
+                {t("communityMembers.settings.makeAdmin")}
               </DropdownMenuItem>
             ) : null}
             {canDemote ? (
@@ -207,11 +226,11 @@ function RelayMemberRow({
                         pubkey: member.pubkey,
                         role: "member",
                       }),
-                    "Made community member",
+                    t("communityMembers.settings.madeMember"),
                   )
                 }
               >
-                Make member
+                {t("communityMembers.settings.makeMember")}
               </DropdownMenuItem>
             ) : null}
             {canRemove && (canPromote || canDemote) ? (
@@ -222,7 +241,7 @@ function RelayMemberRow({
                 className="text-destructive focus:text-destructive"
                 onClick={() => setConfirmRemove(true)}
               >
-                Remove from community
+                {t("communityMembers.settings.removeFromCommunity")}
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
@@ -230,19 +249,23 @@ function RelayMemberRow({
       ) : null}
       {canRemove ? (
         <SettingsConfirmDialog
-          confirmLabel="Remove"
-          description={`${displayName} will lose access to this community's groups and conversations. You can invite them again later.`}
+          confirmLabel={t("common.remove")}
+          description={t("communityMembers.settings.removeDescription", {
+            name: displayName,
+          })}
           destructive
           onConfirm={() =>
             void mutateWithToast(
               () => removeMutation.mutateAsync(member.pubkey),
-              "Removed community member",
+              t("communityMembers.settings.removed"),
             )
           }
           onOpenChange={setConfirmRemove}
           open={confirmRemove}
           testId="relay-member-remove-dialog"
-          title={`Remove ${displayName}?`}
+          title={t("communityMembers.settings.removeTitle", {
+            name: displayName,
+          })}
         />
       ) : null}
     </div>
@@ -254,6 +277,7 @@ export function CommunityMembersSettingsCard({
 }: {
   currentPubkey?: string;
 }) {
+  const t = useT();
   const myMembershipQuery = useMyRelayMembershipLookupQuery();
   const currentRole = myMembershipQuery.data?.membership?.role ?? null;
   const canManageRelay = currentRole === "owner" || currentRole === "admin";
@@ -295,7 +319,7 @@ export function CommunityMembersSettingsCard({
     return (
       <section className="min-w-0" data-testid="settings-community-members">
         <p className="text-sm text-muted-foreground">
-          Checking invite permissions…
+          {t("communityMembers.settings.checkingPermissions")}
         </p>
       </section>
     );
@@ -313,17 +337,17 @@ export function CommunityMembersSettingsCard({
             data-testid="community-invite-dialog-trigger"
             onClick={() => setInviteDialogOpen(true)}
           >
-            Invite to community
+            {t("communityMembers.invite.title")}
           </Button>
         }
-        title="Invites"
-        description="Manage members and community access."
+        title={t("communityMembers.settings.title")}
+        description={t("communityMembers.settings.description")}
       />
 
       <SettingsOptionGroup
         title={
           <>
-            Members
+            {t("communityMembers.settings.members")}
             {members.length > 0 ? (
               <span className="ml-1.5 font-normal">{members.length}</span>
             ) : null}
@@ -339,7 +363,7 @@ export function CommunityMembersSettingsCard({
               className="w-full rounded-lg border border-border/70 bg-background py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               data-testid="community-members-search"
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search members"
+              placeholder={t("communityMembers.settings.searchPlaceholder")}
               spellCheck={false}
               type="text"
               value={search}
@@ -354,15 +378,15 @@ export function CommunityMembersSettingsCard({
 
           {membersQuery.isLoading ? (
             <p className="py-3 text-sm text-muted-foreground">
-              Loading community members…
+              {t("communityMembers.settings.loading")}
             </p>
           ) : members.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">
-              No community members yet.
+              {t("communityMembers.settings.empty")}
             </p>
           ) : filteredMembers.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">
-              No members match your search.
+              {t("communityMembers.settings.noMatch")}
             </p>
           ) : (
             <VirtualizedList

@@ -4,6 +4,7 @@ import {
   signOutActiveAccountOnThisDevice,
   useHasSignedInSession,
 } from "@/features/accounts/lib/signOutActiveAccount";
+import { useT } from "@/shared/i18n";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
@@ -23,6 +24,7 @@ export function CommunityApplyErrorScreen({
   onChangeCommunity,
   onRetry,
 }: CommunityApplyErrorScreenProps) {
+  const t = useT();
   const systemColorScheme = useSystemColorScheme();
   const [isSigningOut, setIsSigningOut] = React.useState(false);
   const [signOutError, setSignOutError] = React.useState<string | null>(null);
@@ -39,11 +41,11 @@ export function CommunityApplyErrorScreen({
       setSignOutError(
         cause instanceof Error
           ? cause.message
-          : "Couldn't sign out. Try again.",
+          : t("communities.applyError.signOutFailed"),
       );
       setIsSigningOut(false);
     }
-  }, []);
+  }, [t]);
 
   return (
     <div
@@ -54,12 +56,12 @@ export function CommunityApplyErrorScreen({
       <StartupWindowDragRegion />
       <div className="relative flex w-full max-w-[500px] flex-col items-center text-center">
         <h1 className="text-3xl font-semibold tracking-tight">
-          Community connection failed
+          {t("communities.applyError.title")}
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">{error}</p>
         {onChangeCommunity ? null : (
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Check your internet connection and try again.
+            {t("communities.applyError.checkConnection")}
           </p>
         )}
         <div className="mt-8 flex w-full max-w-[300px] flex-col gap-3">
@@ -69,7 +71,7 @@ export function CommunityApplyErrorScreen({
             onClick={onRetry}
             type="button"
           >
-            Retry
+            {t("common.retry")}
           </Button>
           {onChangeCommunity ? (
             <Button
@@ -78,7 +80,7 @@ export function CommunityApplyErrorScreen({
               type="button"
               variant="secondary"
             >
-              Change community
+              {t("communities.applyError.changeCommunity")}
             </Button>
           ) : signedIn ? (
             <Button
@@ -89,7 +91,7 @@ export function CommunityApplyErrorScreen({
               type="button"
               variant="secondary"
             >
-              Sign out
+              {t("communities.applyError.signOut")}
             </Button>
           ) : null}
           {signOutError ? (

@@ -11,15 +11,16 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
+import { t, useT } from "@/shared/i18n";
 
 /** Toast text after adding a friend. */
 export function friendAddedMessage(name: string): string {
-  return `${name} is now your friend`;
+  return t("people.friend.addedToast", { name });
 }
 
 /** Toast text after removing a friend. */
 export function friendRemovedMessage(name: string): string {
-  return `${name} was removed from your friends`;
+  return t("people.friend.removedToast", { name });
 }
 
 function errorText(error: unknown, fallback: string): string {
@@ -37,7 +38,7 @@ export function addFriendWithToast(
       toast.success(friendAddedMessage(name));
     },
     (error: unknown) => {
-      toast.error(errorText(error, "Could not add friend"));
+      toast.error(errorText(error, t("people.friend.addFailed")));
     },
   );
 }
@@ -57,6 +58,7 @@ export function RemoveFriendDialog({
   onRemoveFriend: (pubkey: string) => Promise<unknown>;
   target: RemoveFriendTarget | null;
 }) {
+  const translate = useT();
   const [pending, setPending] = React.useState(false);
   // Keep the name while the dialog animates closed.
   const lastTarget = React.useRef(target);
@@ -72,7 +74,9 @@ export function RemoveFriendDialog({
           toast.success(friendRemovedMessage(target.name));
         },
         (error: unknown) => {
-          toast.error(errorText(error, "Could not remove friend"));
+          toast.error(
+            errorText(error, translate("people.friend.removeFailed")),
+          );
         },
       )
       .finally(() => {
@@ -90,15 +94,17 @@ export function RemoveFriendDialog({
     >
       <AlertDialogContent data-testid="remove-friend-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Remove {name} from friends?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {translate("people.removeFriend.title", { name })}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            You can add them again anytime.
+            {translate("people.removeFriend.description")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button disabled={pending} type="button" variant="outline">
-              Cancel
+              {translate("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <Button
@@ -108,7 +114,7 @@ export function RemoveFriendDialog({
             type="button"
             variant="destructive"
           >
-            Remove
+            {translate("common.remove")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

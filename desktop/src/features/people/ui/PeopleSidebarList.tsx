@@ -15,6 +15,7 @@ import { useSharedPeopleSearch } from "@/features/people/useSharedPeopleSearch";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { UserSearchResult } from "@/shared/api/types";
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -42,6 +43,7 @@ export function PeopleSidebarList({
 }: {
   currentPubkey: string | undefined;
 }) {
+  const t = useT();
   const [filter, setFilter] = React.useState("");
   const [addFriendOpen, setAddFriendOpen] = React.useState(false);
   const favorites = usePeopleFavorites();
@@ -130,7 +132,7 @@ export function PeopleSidebarList({
       <div className="space-y-2 px-2 pb-2 pt-1">
         <div className="flex items-center justify-between gap-2">
           <h2 className="px-1 text-base font-semibold text-sidebar-foreground">
-            Friends
+            {t("people.list.title")}
           </h2>
           <Button
             className="h-7 px-2 text-xs"
@@ -140,27 +142,29 @@ export function PeopleSidebarList({
             variant="ghost"
           >
             <UserPlus className="h-4 w-4" />
-            Add friend
+            {t("people.friend.add")}
           </Button>
         </div>
         <Input
-          aria-label="Find people by name"
+          aria-label={t("people.list.filterLabel")}
           className="h-8 bg-background"
           data-testid="people-filter"
           onChange={(event) => setFilter(event.target.value)}
-          placeholder="Find people"
+          placeholder={t("people.list.filterPlaceholder")}
           value={filter}
         />
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-1 pb-4">
         {directory.favorites.length > 0 ? (
-          <Section testId="people-favorites" title="Favorites">
+          <Section testId="people-favorites" title={t("people.list.favorites")}>
             {directory.favorites.map((user) => renderRow(user, "favorite"))}
           </Section>
         ) : null}
         <Section
           testId="people-friends"
-          title={`Friends · ${directory.friends.length}`}
+          title={t("people.list.friendsCount", {
+            count: directory.friends.length,
+          })}
         >
           {loading ? (
             <PeopleSkeleton />
@@ -169,13 +173,16 @@ export function PeopleSidebarList({
           ) : (
             <p className="px-2 py-3 text-xs text-sidebar-foreground/60">
               {searching
-                ? "No friends match that name."
-                : "No friends yet. Use Add friend to find someone by Kuzz ID or email."}
+                ? t("people.list.noFriendsMatch")
+                : t("people.list.noFriendsYet")}
             </p>
           )}
         </Section>
         {searching ? (
-          <Section testId="people-in-channels" title="In your groups">
+          <Section
+            testId="people-in-channels"
+            title={t("people.list.inYourGroups")}
+          >
             {directory.inChannels.length > 0 ? (
               directory.inChannels.map((user) => renderRow(user, "channel"))
             ) : shared.isLoading ? (
@@ -184,7 +191,7 @@ export function PeopleSidebarList({
               <p className="px-2 py-3 text-xs text-sidebar-foreground/60">
                 {shared.error
                   ? shared.error.message
-                  : "No one in your groups matches that name. Use Add friend to find someone by Kuzz ID or email."}
+                  : t("people.list.noGroupMatch")}
               </p>
             )}
           </Section>
