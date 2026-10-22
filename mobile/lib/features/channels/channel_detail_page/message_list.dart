@@ -1215,6 +1215,7 @@ class _MessageList extends HookConsumerWidget {
                                   message.id == landingHighlightId.value,
                               child: BlockedMessageGate(
                                 authorPubkey: message.pubkey,
+                                channelId: channelId,
                                 child: _MessageBubble(
                                   message: message,
                                   showAuthor: showAuthor,

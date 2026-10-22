@@ -259,8 +259,11 @@ class _ChatRow extends HookConsumerWidget {
 
   /// The cleaned preview with each `@mention` by its cached name. When the
   /// latest message is from someone I blocked, the newest earlier one stored
-  /// on this device stands in; with none, a neutral line.
+  /// on this device stands in; with none, a neutral line. Not in a
+  /// one-to-one DM: the server leaves out what they sent while blocked, so
+  /// a stored message of theirs is from before the block and shows as is.
   String _watchPreview(WidgetRef ref, NostrEvent latest) {
+    if (_isOneToOneDm) return _watchMentions(ref, latest);
     final author = latest.pubkey.toLowerCase();
     final blocked = ref.watch(
       blockedPubkeysProvider.select(
@@ -281,6 +284,12 @@ class _ChatRow extends HookConsumerWidget {
       return _watchMentions(ref, visible);
     }
     return _watchMentions(ref, latest);
+  }
+
+  bool get _isOneToOneDm {
+    if (!row.isDm) return false;
+    final members = channel?.participantPubkeys ?? const <String>[];
+    return isOneToOneDmMembers(members.isNotEmpty ? members : row.dmMembers);
   }
 
   /// [event]'s cleaned preview with each `@mention` by its cached name.

@@ -165,6 +165,7 @@ class _ThreadMessageList extends StatelessWidget {
             ),
             BlockedMessageGate(
               authorPubkey: head.pubkey,
+              channelId: channelId,
               child: _ThreadMessage(
                 message: head,
                 channelNames: channelNames,
@@ -271,6 +272,7 @@ class _ThreadMessageList extends StatelessWidget {
               ),
             BlockedMessageGate(
               authorPubkey: reply.pubkey,
+              channelId: channelId,
               child: _ThreadMessage(
                 message: reply,
                 channelNames: channelNames,

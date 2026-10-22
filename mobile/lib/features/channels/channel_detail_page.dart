@@ -89,7 +89,9 @@ import 'reaction_row.dart';
 import 'recent_emoji_provider.dart';
 import 'room_position_store.dart';
 import 'send_message_provider.dart';
+import '../people/blocked_dm_bar.dart';
 import '../people/blocked_message_gate.dart';
+import '../people/blocked_users_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import 'small_avatar.dart';
 import 'sticky_date_header.dart';
@@ -494,6 +496,21 @@ class ChannelDetailPage extends HookConsumerWidget {
         !resolvedChannel.isForum &&
         resolvedChannel.isMember &&
         !resolvedChannel.isArchived;
+    // In a one-to-one DM with someone I blocked a bar with Unblock stands in
+    // for the composer, and their typing is not shown.
+    final blockedCounterpart = isOneToOneDm
+        ? blockedDmCounterpart(
+            resolvedChannel,
+            currentPubkey: currentPubkey,
+            blocked: ref.watch(blockedPubkeysProvider),
+          )
+        : null;
+    final showsComposeBar = showsComposer && blockedCounterpart == null;
+    final visibleTypingEntries = blockedCounterpart == null
+        ? typingEntries
+        : typingEntries
+              .where((e) => e.pubkey.toLowerCase() != blockedCounterpart)
+              .toList();
     final profileOwnedAgentPubkeys = <String>[];
     for (final participantPubkey in resolvedChannel.participantPubkeys) {
       final normalized = participantPubkey.trim().toLowerCase();
@@ -1125,13 +1142,13 @@ class ChannelDetailPage extends HookConsumerWidget {
                               composerBottomInset: showsComposer
                                   ? composerDockHeight.value
                                   : 0,
-                              composerFocusNode: showsComposer
+                              composerFocusNode: showsComposeBar
                                   ? composerFocusNode
                                   : null,
-                              restoreComposerFocus: showsComposer
+                              restoreComposerFocus: showsComposeBar
                                   ? () => restoreComposerFocus.value?.call()
                                   : null,
-                              quoteScope: showsComposer ? quoteScope : null,
+                              quoteScope: showsComposeBar ? quoteScope : null,
                             );
                           },
                         ),
@@ -1146,11 +1163,11 @@ class ChannelDetailPage extends HookConsumerWidget {
                       : const Duration(milliseconds: 180),
                   curve: Curves.easeOutCubic,
                   alignment: Alignment.bottomCenter,
-                  child: typingEntries.isEmpty
+                  child: visibleTypingEntries.isEmpty
                       ? const SizedBox.shrink()
                       : ChannelTypingIndicator(
                           channelId: resolvedChannel.id,
-                          entries: typingEntries,
+                          entries: visibleTypingEntries,
                         ),
                 ),
                 if (resolvedChannel.canJoin)
@@ -1179,52 +1196,56 @@ class ChannelDetailPage extends HookConsumerWidget {
                             : const Duration(milliseconds: 180),
                         curve: Curves.easeOutCubic,
                         alignment: Alignment.bottomCenter,
-                        child: typingEntries.isEmpty
+                        child: visibleTypingEntries.isEmpty
                             ? const SizedBox.shrink()
                             : ChannelTypingIndicator(
                                 channelId: resolvedChannel.id,
-                                entries: typingEntries,
+                                entries: visibleTypingEntries,
                               ),
                       ),
-                      ComposerQuoteChip(scope: quoteScope),
-                      ComposeBar(
-                        channelId: channel.id,
-                        channelMainAgentAudience: !resolvedChannel.isDm,
-                        focusNode: composerFocusNode,
-                        onFocusRestorerChanged: (restoreFocus) =>
-                            restoreComposerFocus.value = restoreFocus,
-                        channelName: resolvedChannel.isPersonChat
-                            ? ''
-                            : resolvedChannel.name,
-                        onSend:
-                            (
-                              content,
-                              mentionPubkeys, {
-                              mediaTags = const <List<String>>[],
-                            }) async {
-                              // Sending returns the reader to the newest row.
-                              roomPositions?.clear(channel.id);
-                              // Main timeline: top-level message (no thread
-                              // tags) plus the optional quote reference.
-                              await sendMessage.call(
-                                channelId: channel.id,
-                                content: content,
-                                mentionPubkeys: mentionPubkeys,
-                                channel: resolvedChannel,
-                                mediaTags: mediaTags,
-                                quote: pendingQuote,
-                              );
-                              if (pendingQuote != null && context.mounted) {
-                                ref
-                                    .read(
-                                      composerQuoteProvider(
-                                        quoteScope,
-                                      ).notifier,
-                                    )
-                                    .clearIf(pendingQuote);
-                              }
-                            },
-                      ),
+                      if (blockedCounterpart != null)
+                        BlockedDmBar(pubkey: blockedCounterpart)
+                      else ...[
+                        ComposerQuoteChip(scope: quoteScope),
+                        ComposeBar(
+                          channelId: channel.id,
+                          channelMainAgentAudience: !resolvedChannel.isDm,
+                          focusNode: composerFocusNode,
+                          onFocusRestorerChanged: (restoreFocus) =>
+                              restoreComposerFocus.value = restoreFocus,
+                          channelName: resolvedChannel.isPersonChat
+                              ? ''
+                              : resolvedChannel.name,
+                          onSend:
+                              (
+                                content,
+                                mentionPubkeys, {
+                                mediaTags = const <List<String>>[],
+                              }) async {
+                                // Sending returns the reader to the newest row.
+                                roomPositions?.clear(channel.id);
+                                // Main timeline: top-level message (no thread
+                                // tags) plus the optional quote reference.
+                                await sendMessage.call(
+                                  channelId: channel.id,
+                                  content: content,
+                                  mentionPubkeys: mentionPubkeys,
+                                  channel: resolvedChannel,
+                                  mediaTags: mediaTags,
+                                  quote: pendingQuote,
+                                );
+                                if (pendingQuote != null && context.mounted) {
+                                  ref
+                                      .read(
+                                        composerQuoteProvider(
+                                          quoteScope,
+                                        ).notifier,
+                                      )
+                                      .clearIf(pendingQuote);
+                                }
+                              },
+                        ),
+                      ],
                     ],
                   ),
                 ),

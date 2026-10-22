@@ -13,6 +13,15 @@ String? _nonEmpty(Object? value) {
 const privateChannelAddDeniedMessage =
     'Only group members can add people to a private group.';
 
+/// Whether a DM's [members] (me included) are exactly two people.
+bool isOneToOneDmMembers(Iterable<String> members) =>
+    members
+        .map((pubkey) => pubkey.trim().toLowerCase())
+        .where((pubkey) => pubkey.isNotEmpty)
+        .toSet()
+        .length ==
+    2;
+
 @immutable
 class Channel {
   final String id;
@@ -103,6 +112,9 @@ class Channel {
   bool get isStream => channelType == 'stream';
   bool get isForum => channelType == 'forum';
   bool get isDm => channelType == 'dm';
+
+  /// A DM between exactly two people (me and one other).
+  bool get isOneToOneDm => isDm && isOneToOneDmMembers(participantPubkeys);
 
   /// A multi-person chat with no owner (stream + `group_chat` marker).
   bool get isGroupChat => groupChat && !isDm;

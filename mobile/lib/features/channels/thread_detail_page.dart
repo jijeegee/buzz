@@ -47,7 +47,9 @@ import 'jump_to_latest_switcher.dart';
 import 'local_message_send_animation_provider.dart';
 import 'local_message_send_transition.dart';
 import 'channel_management_provider.dart';
+import '../people/blocked_dm_bar.dart';
 import '../people/blocked_message_gate.dart';
+import '../people/blocked_users_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import '../goals/thread_goal_chip.dart';
 import 'message_actions.dart';
@@ -1267,6 +1269,20 @@ class ThreadDetailPage extends HookConsumerWidget {
     final channel = channelsAsync.value
         ?.where((candidate) => candidate.id == channelId)
         .firstOrNull;
+    // A thread in a one-to-one DM with someone I blocked: the Unblock bar
+    // stands in for the reply composer and their typing is not shown.
+    final blockedCounterpart = channel != null && channel.isOneToOneDm
+        ? blockedDmCounterpart(
+            channel,
+            currentPubkey: currentPubkey,
+            blocked: ref.watch(blockedPubkeysProvider),
+          )
+        : null;
+    final visibleThreadTyping = blockedCounterpart == null
+        ? threadTyping
+        : threadTyping
+              .where((e) => e.pubkey.toLowerCase() != blockedCounterpart)
+              .toList();
     final channelNamesMap = <String, String>{};
     channelsAsync.whenData((channels) {
       for (final ch in channels) {
@@ -1415,7 +1431,10 @@ class ThreadDetailPage extends HookConsumerWidget {
                           restoreComposerFocus: () =>
                               restoreComposerFocus.value?.call(),
                           childrenByParent: childrenByParent,
-                          quoteScope: isMember && !isArchived
+                          quoteScope:
+                              isMember &&
+                                  !isArchived &&
+                                  blockedCounterpart == null
                               ? quoteScope
                               : null,
                         ),
@@ -1446,7 +1465,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                 onHeightChanged: updateComposerDockHeight,
                 child: _ThreadTypingIndicator(
                   channelId: channelId,
-                  entries: threadTyping,
+                  entries: visibleThreadTyping,
                   animated: false,
                 ),
               ),
@@ -1463,61 +1482,67 @@ class ThreadDetailPage extends HookConsumerWidget {
                     children: [
                       _ThreadTypingIndicator(
                         channelId: channelId,
-                        entries: threadTyping,
+                        entries: visibleThreadTyping,
                       ),
-                      ComposerQuoteChip(scope: quoteScope),
-                      ComposeBar(
-                        channelId: channelId,
-                        focusNode: composerFocusNode,
-                        onFocusRestorerChanged: (restoreFocus) =>
-                            restoreComposerFocus.value = restoreFocus,
-                        hintText: 'Reply in thread\u2026',
-                        threadHeadId: threadHead.id,
-                        rootId: effectiveRootId,
-                        threadRootTags: threadHead.tags,
-                        // Replying is about the newest replies: focusing the
-                        // composer while reading further up returns there.
-                        onFocusRequested: () {
-                          if (detachedByDrag.value) return;
-                          if (!isAtLatest.value ||
-                              hasPendingReplies ||
-                              windowHasNewer) {
-                            scrollToThreadLatest(animate: false);
-                          }
-                        },
-                        onSend:
-                            (
-                              content,
-                              mentionPubkeys, {
-                              mediaTags = const <List<String>>[],
-                            }) async {
-                              // Sending returns the reader to the newest
-                              // reply, past replies not loaded yet.
-                              roomPositions?.clear(roomKey);
-                              if (windowNotifier.hasNewer) jumpToLatestWindow();
-                              // Thread reply tags place the message; the
-                              // quote only adds a `q` reference.
-                              await sendMessage.call(
-                                channelId: channelId,
-                                content: content,
-                                mentionPubkeys: mentionPubkeys,
-                                channel: channel,
-                                parentEventId: threadHead.id,
-                                rootEventId: effectiveRootId,
-                                mediaTags: mediaTags,
-                                quote: pendingQuote,
-                              );
-                              if (pendingQuote != null && context.mounted) {
-                                ref
-                                    .read(
-                                      composerQuoteProvider(
-                                        quoteScope,
-                                      ).notifier,
-                                    )
-                                    .clearIf(pendingQuote);
-                              }
-                            },
-                      ),
+                      if (blockedCounterpart != null)
+                        BlockedDmBar(pubkey: blockedCounterpart)
+                      else ...[
+                        ComposerQuoteChip(scope: quoteScope),
+                        ComposeBar(
+                          channelId: channelId,
+                          focusNode: composerFocusNode,
+                          onFocusRestorerChanged: (restoreFocus) =>
+                              restoreComposerFocus.value = restoreFocus,
+                          hintText: 'Reply in thread\u2026',
+                          threadHeadId: threadHead.id,
+                          rootId: effectiveRootId,
+                          threadRootTags: threadHead.tags,
+                          // Replying is about the newest replies: focusing the
+                          // composer while reading further up returns there.
+                          onFocusRequested: () {
+                            if (detachedByDrag.value) return;
+                            if (!isAtLatest.value ||
+                                hasPendingReplies ||
+                                windowHasNewer) {
+                              scrollToThreadLatest(animate: false);
+                            }
+                          },
+                          onSend:
+                              (
+                                content,
+                                mentionPubkeys, {
+                                mediaTags = const <List<String>>[],
+                              }) async {
+                                // Sending returns the reader to the newest
+                                // reply, past replies not loaded yet.
+                                roomPositions?.clear(roomKey);
+                                if (windowNotifier.hasNewer) {
+                                  jumpToLatestWindow();
+                                }
+                                // Thread reply tags place the message; the
+                                // quote only adds a `q` reference.
+                                await sendMessage.call(
+                                  channelId: channelId,
+                                  content: content,
+                                  mentionPubkeys: mentionPubkeys,
+                                  channel: channel,
+                                  parentEventId: threadHead.id,
+                                  rootEventId: effectiveRootId,
+                                  mediaTags: mediaTags,
+                                  quote: pendingQuote,
+                                );
+                                if (pendingQuote != null && context.mounted) {
+                                  ref
+                                      .read(
+                                        composerQuoteProvider(
+                                          quoteScope,
+                                        ).notifier,
+                                      )
+                                      .clearIf(pendingQuote);
+                                }
+                              },
+                        ),
+                      ],
                     ],
                   ),
                 ),
