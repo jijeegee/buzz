@@ -487,8 +487,14 @@ async fn authorize_nip98(
 /// signer never consumes a slot. Redis failure fails closed.
 async fn claim_nip98_replay(state: &AppState, event_id: &nostr::EventId) -> Result<(), ApiError> {
     let unauth = ApiError::unauthorized;
-    match state
-        .nip98_replay
+    // Global regions (S4-7): the primary region's seen-set when linked.
+    let primary = crate::region_shared::PrimaryReplay(state);
+    let guard: &dyn kuzz_auth::Nip98ReplayGuard = if crate::region_shared::forwards(state) {
+        &primary
+    } else {
+        state.nip98_replay.as_ref()
+    };
+    match guard
         .try_mark_in_scope(
             ADMIN_REPLAY_SCOPE,
             event_id,

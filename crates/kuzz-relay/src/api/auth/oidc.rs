@@ -303,7 +303,7 @@ pub(super) async fn start(
         return unavailable();
     };
     match kv::put_new(
-        &state.redis_pool,
+        &state,
         "oidc:pending",
         &client_state,
         &pending_json,
@@ -341,7 +341,7 @@ pub(super) async fn callback(
     let Some(client_state) = query.state.filter(|s| s.len() <= MAX_STATE_LEN) else {
         return bad_request("missing state");
     };
-    let pending = match kv::take(&state.redis_pool, "oidc:pending", &client_state).await {
+    let pending = match kv::take(&state, "oidc:pending", &client_state).await {
         Ok(Some(json)) => match serde_json::from_str::<PendingLogin>(&json) {
             Ok(pending) => pending,
             Err(_) => return bad_request("unknown or expired login state"),
@@ -501,7 +501,7 @@ pub(super) async fn callback(
         return fail("server_error");
     };
     match kv::put_new(
-        &state.redis_pool,
+        &state,
         "login",
         &hex::encode(code_hash),
         &record_json,
@@ -614,7 +614,7 @@ pub(super) async fn complete(
         return bad_request("login_code and code_verifier are required");
     };
     let code_hash = kuzz_auth::hash_token(login_code);
-    let record = match kv::take(&state.redis_pool, "login", &hex::encode(code_hash)).await {
+    let record = match kv::take(&state, "login", &hex::encode(code_hash)).await {
         Ok(Some(json)) => serde_json::from_str::<LoginCodeRecord>(&json).ok(),
         Ok(None) => None,
         Err(error) => {
@@ -674,7 +674,7 @@ async fn signup_needed(state: &AppState, record: LoginCodeRecord) -> Response {
         return unavailable();
     };
     match kv::put_new(
-        &state.redis_pool,
+        &state,
         "oidc:signup",
         &hex::encode(ticket_hash),
         &ticket_json,
@@ -730,8 +730,7 @@ pub(super) async fn signup(
         return bad_request("signup_token and code_verifier are required");
     };
     let ticket_hash = kuzz_auth::hash_token(signup_token);
-    let ticket = match kv::take(&state.redis_pool, "oidc:signup", &hex::encode(ticket_hash)).await
-    {
+    let ticket = match kv::take(&state, "oidc:signup", &hex::encode(ticket_hash)).await {
         Ok(Some(json)) => serde_json::from_str::<SignupTicket>(&json).ok(),
         Ok(None) => None,
         Err(error) => {

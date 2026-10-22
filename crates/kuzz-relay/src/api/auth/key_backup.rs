@@ -178,7 +178,7 @@ pub(super) async fn challenge(
         Err(_) => return unavailable(),
     };
     match kv::put_new(
-        &state.redis_pool,
+        &state,
         "key-backup:challenge",
         &challenge,
         &json,
@@ -223,15 +223,14 @@ pub(super) async fn initialize(
     };
     // GETDEL consumes the challenge before every signature/key check, so bad
     // proofs and concurrent replays never get another attempt.
-    let record: Challenge =
-        match kv::take(&state.redis_pool, "key-backup:challenge", challenge).await {
-            Ok(Some(json)) => match serde_json::from_str(&json) {
-                Ok(record) => record,
-                Err(_) => return invalid_proof(),
-            },
-            Ok(None) => return invalid_proof(),
-            Err(_) => return unavailable(),
-        };
+    let record: Challenge = match kv::take(&state, "key-backup:challenge", challenge).await {
+        Ok(Some(json)) => match serde_json::from_str(&json) {
+            Ok(record) => record,
+            Err(_) => return invalid_proof(),
+        },
+        Ok(None) => return invalid_proof(),
+        Err(_) => return unavailable(),
+    };
     if record.account != binding.principal.to_hex() || Some(record.session) != binding.session_id {
         return invalid_proof();
     }
