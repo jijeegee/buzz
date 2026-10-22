@@ -26,6 +26,7 @@ import { useMyRelayMembershipLookupQuery } from "@/features/community-members/ho
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
 import type { PresenceStatus, Profile, UserStatus } from "@/shared/api/types";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { useT } from "@/shared/i18n";
 
 type SidebarProfileCardProps = {
   activeCommunity: Community | null;
@@ -69,6 +70,7 @@ export function SidebarProfileCard({
   selfUserStatus,
   communities,
 }: SidebarProfileCardProps) {
+  const t = useT();
   const selfProfileCache = useSelfProfileCache();
   const myMembershipQuery = useMyRelayMembershipLookupQuery();
   const activeRole = myMembershipQuery.data?.membership?.role;
@@ -154,7 +156,9 @@ export function SidebarProfileCard({
         }
       >
         <button
-          aria-label={`Open profile menu for ${resolvedDisplayName}`}
+          aria-label={t("sidebar.profileCard.openMenu", {
+            name: resolvedDisplayName,
+          })}
           className="relative flex items-center justify-center rounded-xl p-1.5 outline-hidden transition-colors hover:bg-sidebar-accent focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           data-testid="open-settings"
           title={
@@ -204,7 +208,7 @@ export function SidebarProfileCard({
                 data-testid="sidebar-other-account-unread"
               >
                 <span className="sr-only">
-                  Another account has unread messages
+                  {t("sidebar.profileCard.otherAccountUnread")}
                 </span>
               </span>
             ) : null}

@@ -1,12 +1,27 @@
+import { type MessageKey, t } from "@/shared/i18n";
+
 /**
  * Shared reminder time presets — the single source of truth for both the
  * create dialog and the snooze dropdown. Each preset returns a Unix timestamp
  * (seconds) strictly in the future.
  */
 export type TimePreset = {
-  label: string;
+  /** Message key of the label; components translate it with `useT()`. */
+  labelKey: MessageKey;
+  /** The label in the current language (read when accessed, not at load). */
+  readonly label: string;
   getTimestamp: () => number;
 };
+
+function preset(labelKey: MessageKey, getTimestamp: () => number): TimePreset {
+  return {
+    labelKey,
+    get label() {
+      return t(labelKey);
+    },
+    getTimestamp,
+  };
+}
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1_000);
@@ -29,17 +44,14 @@ function nextDayAt9am(dayOffset: number): number {
 }
 
 export const TIME_PRESETS: TimePreset[] = [
-  { label: "In 30 minutes", getTimestamp: () => nowSeconds() + 30 * 60 },
-  { label: "In 1 hour", getTimestamp: () => nowSeconds() + 60 * 60 },
-  { label: "In 3 hours", getTimestamp: () => nowSeconds() + 3 * 60 * 60 },
-  { label: "Tomorrow at 9am", getTimestamp: () => nextDayAt9am(1) },
-  {
-    label: "Next Monday at 9am",
-    getTimestamp: () => {
-      const daysUntilMonday = (8 - new Date().getDay()) % 7 || 7;
-      return nextDayAt9am(daysUntilMonday);
-    },
-  },
+  preset("reminders.preset.in30Minutes", () => nowSeconds() + 30 * 60),
+  preset("reminders.preset.in1Hour", () => nowSeconds() + 60 * 60),
+  preset("reminders.preset.in3Hours", () => nowSeconds() + 3 * 60 * 60),
+  preset("reminders.preset.tomorrow9am", () => nextDayAt9am(1)),
+  preset("reminders.preset.nextMonday9am", () => {
+    const daysUntilMonday = (8 - new Date().getDay()) % 7 || 7;
+    return nextDayAt9am(daysUntilMonday);
+  }),
 ];
 
 /** Today as `YYYY-MM-DD` in local time, for the custom date input `min`. */

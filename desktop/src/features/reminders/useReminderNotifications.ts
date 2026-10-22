@@ -7,6 +7,7 @@ import {
 } from "@/features/reminders/hooks";
 import { dueSince } from "@/features/reminders/lib/reminderFilters";
 import type { Reminder } from "@/features/reminders/lib/reminderTypes";
+import { t } from "@/shared/i18n";
 import {
   requestDockBounce,
   sendDesktopNotification,
@@ -101,12 +102,15 @@ export function useReminderNotifications(
       due.length === 1
         ? truncateNotificationBody(
             due[0].content.target?.preview ?? due[0].content.note ?? "",
-            "A reminder is waiting",
+            t("reminders.notification.fallbackBody"),
           )
-        : `${due.length} reminders are due`;
+        : t("reminders.notification.manyDue", { count: due.length });
 
     void sendDesktopNotification({
-      title: formatNotificationTitle({ prefix: "Reminder due", channelLabel }),
+      title: formatNotificationTitle({
+        prefix: t("reminders.notification.title"),
+        channelLabel,
+      }),
       body,
     }).then((didSend) => {
       if (!didSend) return;

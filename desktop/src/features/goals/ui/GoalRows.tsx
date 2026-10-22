@@ -17,6 +17,7 @@ import type {
   GoalTree,
 } from "@/shared/api/tauriGoals";
 import { newGoalId } from "@/shared/api/tauriGoals";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
@@ -72,15 +73,19 @@ export function GoalStatusButton({
   node: GoalNode;
   readOnly?: boolean;
 }) {
+  const t = useT();
   const status = node.status;
+  const statusLabel = t(GOAL_STATUS_LABEL[status]);
   if (readOnly) {
     return (
       <span
-        aria-label={`Status: ${GOAL_STATUS_LABEL[status]}`}
+        aria-label={t("goals.statusButton.statusLabel", {
+          status: statusLabel,
+        })}
         className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
         data-testid={`goal-status-${node.id}`}
         role="img"
-        title={GOAL_STATUS_LABEL[status]}
+        title={statusLabel}
       />
     );
   }
@@ -88,13 +93,16 @@ export function GoalStatusButton({
     STATUS_ORDER[(STATUS_ORDER.indexOf(status) + 1) % STATUS_ORDER.length];
   return (
     <button
-      aria-label={`Status: ${GOAL_STATUS_LABEL[status]}. Change to ${GOAL_STATUS_LABEL[nextStatus]}`}
+      aria-label={t("goals.statusButton.changeLabel", {
+        status: statusLabel,
+        next: t(GOAL_STATUS_LABEL[nextStatus]),
+      })}
       className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
       data-testid={`goal-status-${node.id}`}
       onClick={() =>
         runGoalEdit(apply({ op: "update", id: node.id, status: nextStatus }))
       }
-      title={GOAL_STATUS_LABEL[status]}
+      title={statusLabel}
       type="button"
     />
   );
@@ -105,7 +113,7 @@ export function GoalEditor({
   initialTitle,
   onCancel,
   onSave,
-  submitLabel = "Save",
+  submitLabel,
   titleLabel,
 }: {
   initialNote: string;
@@ -115,6 +123,7 @@ export function GoalEditor({
   submitLabel?: string;
   titleLabel: string;
 }) {
+  const t = useT();
   const [title, setTitle] = React.useState(initialTitle);
   const [note, setNote] = React.useState(initialNote);
   const [saving, setSaving] = React.useState(false);
@@ -162,7 +171,7 @@ export function GoalEditor({
         className="block text-xs font-medium text-muted-foreground"
         htmlFor={noteId}
       >
-        Key information (optional)
+        {t("goals.editor.noteLabel")}
       </label>
       <Textarea
         id={noteId}
@@ -175,7 +184,7 @@ export function GoalEditor({
       <div className="flex justify-end gap-2">
         {onCancel ? (
           <Button onClick={onCancel} size="sm" type="button" variant="ghost">
-            Cancel
+            {t("common.cancel")}
           </Button>
         ) : null}
         <Button
@@ -184,7 +193,9 @@ export function GoalEditor({
           size="sm"
           type="submit"
         >
-          {saving ? "Saving…" : submitLabel}
+          {saving
+            ? t("goals.editor.saving")
+            : (submitLabel ?? t("common.save"))}
         </Button>
       </div>
     </form>
@@ -200,6 +211,7 @@ export function AddGoalInline({
   label: string;
   parentId: string;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   if (!open) {
     return (
@@ -232,8 +244,8 @@ export function AddGoalInline({
           });
           setOpen(false);
         }}
-        submitLabel="Add"
-        titleLabel="New goal"
+        submitLabel={t("common.add")}
+        titleLabel={t("goals.addInline.titleLabel")}
       />
     </div>
   );
@@ -264,6 +276,7 @@ export function GoalRow({
   onOpenLink?: (target: GoalLinkTarget) => void;
   tree: GoalTree;
 }) {
+  const t = useT();
   const children = goalChildren(tree, node.id);
   const scope = access?.(node.id) ?? "edit";
   const editable = scope === "focus" || scope === "edit";
@@ -283,7 +296,9 @@ export function GoalRow({
         className={`group flex items-start gap-1.5 rounded-lg px-1 py-1 hover:bg-muted/40 ${scope === "focus" ? "bg-primary/10" : ""} ${scope === "muted" ? "opacity-50" : ""}`}
       >
         <button
-          aria-label={expanded ? "Collapse" : "Expand"}
+          aria-label={
+            expanded ? t("goals.row.collapse") : t("goals.row.expand")
+          }
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground disabled:opacity-0"
           disabled={children.length === 0}
           onClick={() => setExpanded((value) => !value)}
@@ -300,7 +315,9 @@ export function GoalRow({
           <p
             className={`break-words text-sm ${status === "done" || status === "dropped" ? "text-muted-foreground line-through" : "text-foreground"}`}
           >
-            <span className="mr-1 text-xs text-muted-foreground">L{layer}</span>
+            <span className="mr-1 text-xs text-muted-foreground">
+              {t("goals.layerBadge", { layer })}
+            </span>
             {node.title}
           </p>
           <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
@@ -327,10 +344,10 @@ export function GoalRow({
                   ? MessagesSquare
                   : MessageSquare;
               const name = isCurrent
-                ? "This thread"
+                ? t("goals.row.thisThread")
                 : label === "Thread"
-                  ? "Open thread"
-                  : "Go to message";
+                  ? t("goals.row.openThread")
+                  : t("goals.row.goToMessage");
               return (
                 <button
                   aria-label={name}
@@ -349,11 +366,15 @@ export function GoalRow({
             {node.note ? (
               <button
                 aria-expanded={noteOpen}
-                aria-label={noteOpen ? "Hide note" : "Show note"}
+                aria-label={
+                  noteOpen ? t("goals.row.hideNote") : t("goals.row.showNote")
+                }
                 className={`inline-flex items-center hover:text-foreground ${noteOpen ? "text-foreground" : ""}`}
                 data-testid={`goal-note-toggle-${node.id}`}
                 onClick={() => setNoteOpen((value) => !value)}
-                title={noteOpen ? "Hide note" : "Show note"}
+                title={
+                  noteOpen ? t("goals.row.hideNote") : t("goals.row.showNote")
+                }
                 type="button"
               >
                 <StickyNote className="h-3.5 w-3.5" />
@@ -369,7 +390,7 @@ export function GoalRow({
         {editable ? (
           <div className="flex shrink-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
             <Button
-              aria-label="Edit goal"
+              aria-label={t("goals.row.edit")}
               onClick={() => setEditing(true)}
               size="icon"
               type="button"
@@ -378,7 +399,7 @@ export function GoalRow({
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             <Button
-              aria-label="Remove goal"
+              aria-label={t("goals.row.remove")}
               data-testid={`goal-remove-${node.id}`}
               onClick={() => setConfirmingRemove(true)}
               size="icon"
@@ -395,8 +416,10 @@ export function GoalRow({
         <div className="ml-6 flex items-center gap-2 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs">
           <span className="flex-1 text-destructive">
             {subtreeSize > 0
-              ? `Remove this goal and its ${subtreeSize} sub-goals? History keeps them.`
-              : "Remove this goal? History keeps it."}
+              ? t("goals.row.removeConfirmWithChildren", {
+                  count: subtreeSize,
+                })
+              : t("goals.row.removeConfirm")}
           </span>
           <Button
             onClick={() => setConfirmingRemove(false)}
@@ -404,7 +427,7 @@ export function GoalRow({
             type="button"
             variant="ghost"
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             data-testid={`goal-remove-confirm-${node.id}`}
@@ -421,7 +444,7 @@ export function GoalRow({
             type="button"
             variant="destructive"
           >
-            Remove
+            {t("common.remove")}
           </Button>
         </div>
       ) : null}
@@ -441,7 +464,7 @@ export function GoalRow({
               });
               setEditing(false);
             }}
-            titleLabel="Goal"
+            titleLabel={t("goals.row.editTitleLabel")}
           />
         </div>
       ) : null}
@@ -465,7 +488,7 @@ export function GoalRow({
           {editable ? (
             <AddGoalInline
               apply={apply}
-              label={`Add a layer ${layer + 1} goal`}
+              label={t("goals.addLayerGoal", { layer: layer + 1 })}
               parentId={node.id}
             />
           ) : null}

@@ -26,6 +26,7 @@ import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import { Input } from "@/shared/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import type { Channel } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { isGroupChat } from "@/features/channels/lib/groupChat";
 import {
   useDeleteChannelMutation,
@@ -61,6 +62,7 @@ function SectionNameDialog({
   isConfirmDisabled,
   onConfirm,
 }: SectionNameDialogProps) {
+  const t = useT();
   const [name, setName] = React.useState(initialValue);
   const [icon, setIcon] = React.useState(initialIcon);
   const [pickerOpen, setPickerOpen] = React.useState(false);
@@ -109,7 +111,7 @@ function SectionNameDialog({
               <div className="relative shrink-0">
                 <PopoverTrigger asChild>
                   <button
-                    aria-label="Choose section icon"
+                    aria-label={t("sidebar.sectionDialog.chooseIcon")}
                     className="flex h-9 w-9 items-center justify-center rounded-md border border-input text-lg transition-colors hover:bg-accent"
                     type="button"
                   >
@@ -122,7 +124,7 @@ function SectionNameDialog({
                 </PopoverTrigger>
                 {icon ? (
                   <button
-                    aria-label="Clear section icon"
+                    aria-label={t("sidebar.sectionDialog.clearIcon")}
                     className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-background bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
                     onClick={(event) => {
                       event.stopPropagation();
@@ -148,7 +150,7 @@ function SectionNameDialog({
               autoCorrect="off"
               className="flex-1"
               onChange={(event) => setName(event.target.value)}
-              placeholder="Section name"
+              placeholder={t("sidebar.sectionDialog.namePlaceholder")}
               ref={inputRef}
               spellCheck={false}
               value={name}
@@ -157,7 +159,7 @@ function SectionNameDialog({
           <div className="flex justify-end gap-2 mt-4">
             <DialogClose asChild>
               <Button variant="ghost" type="button">
-                Cancel
+                {t("common.cancel")}
               </Button>
             </DialogClose>
             <Button
@@ -184,14 +186,15 @@ export function CreateSectionDialog({
   onOpenChange,
   onConfirm,
 }: CreateSectionDialogProps) {
+  const t = useT();
   return (
     <SectionNameDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Create section"
-      description="Sections let you organize related groups in the sidebar."
+      title={t("sidebar.sectionDialog.createTitle")}
+      description={t("sidebar.sectionDialog.createDescription")}
       initialValue=""
-      confirmLabel="Create"
+      confirmLabel={t("common.create")}
       isConfirmDisabled={(trimmed) => trimmed.length === 0}
       onConfirm={onConfirm}
     />
@@ -213,15 +216,16 @@ export function RenameSectionDialog({
   sectionIcon,
   onConfirm,
 }: RenameSectionDialogProps) {
+  const t = useT();
   return (
     <SectionNameDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Rename section"
-      description="Enter a new name for this section."
+      title={t("sidebar.sectionDialog.renameTitle")}
+      description={t("sidebar.sectionDialog.renameDescription")}
       initialValue={sectionName}
       initialIcon={sectionIcon}
-      confirmLabel="Save"
+      confirmLabel={t("common.save")}
       isConfirmDisabled={(trimmed, icon) =>
         trimmed.length === 0 ||
         (trimmed === sectionName && icon === (sectionIcon ?? ""))
@@ -246,27 +250,28 @@ export function DeleteSectionAlertDialog({
   channelCount,
   onConfirm,
 }: DeleteSectionAlertDialogProps) {
-  const channelLabel =
-    channelCount === 1 ? "1 group" : `${channelCount} groups`;
-  const description =
-    channelCount === 0
-      ? `Delete section "${sectionName}"? It has no groups.`
-      : `Delete section "${sectionName}"? Its ${channelLabel} will move back to the default Groups section.`;
+  const t = useT();
+  const description = t("sidebar.deleteSection.description", {
+    count: channelCount,
+    name: sectionName,
+  });
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete section</AlertDialogTitle>
+          <AlertDialogTitle>
+            {t("sidebar.deleteSection.title")}
+          </AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={onConfirm}
           >
-            Delete
+            {t("common.delete")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -297,32 +302,35 @@ export function LeaveChannelAlertDialog({
   isChat = false,
   onConfirm,
 }: LeaveChannelAlertDialogProps) {
+  const t = useT();
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
             {isChat
-              ? "Leave chat"
+              ? t("sidebar.leaveDialog.chatTitle")
               : isConversation
-                ? "Leave conversation"
-                : "Leave group"}
+                ? t("sidebar.leaveDialog.conversationTitle")
+                : t("sidebar.leaveDialog.groupTitle")}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {isChat
-              ? "Leave this chat? You'll stop receiving its messages. Someone in the chat can add you back."
+              ? t("sidebar.leaveDialog.chatDescription")
               : isConversation
-                ? "Leave this conversation? You'll stop receiving its messages."
-                : `Leave "${channelName}"? You'll stop receiving its messages and can rejoin later.`}
+                ? t("sidebar.leaveDialog.conversationDescription")
+                : t("sidebar.leaveDialog.groupDescription", {
+                    name: channelName,
+                  })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={onConfirm}
           >
-            Leave
+            {t("sidebar.leaveDialog.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

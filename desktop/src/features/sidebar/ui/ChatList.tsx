@@ -17,6 +17,7 @@ import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { foldsBlockedAuthors } from "@/features/people/lib/blockedDm";
 import { isJoinedChat, sortChatList } from "@/features/sidebar/lib/chatList";
 import type { Channel } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import {
   groupChatRowsByChannel,
   type ChatsViewMode,
@@ -254,6 +255,7 @@ export function ChatList({
   view = "all",
   ...props
 }: ChatListProps) {
+  const t = useT();
   const { isBlocked } = useBlockedPeople();
   const items = useMemo(
     () =>
@@ -318,7 +320,7 @@ export function ChatList({
       <SidebarSection
         {...props}
         items={items}
-        title="Chats"
+        title={t("nav.chats")}
         testId="chat-list"
       />
     );
@@ -333,7 +335,7 @@ export function ChatList({
       }
       items={items}
       rows={server.rows}
-      title="Chats"
+      title={t("nav.chats")}
       testId="chat-list"
       unreadChannelCounts={server.counts}
       unreadChannelIds={server.unreadIds}

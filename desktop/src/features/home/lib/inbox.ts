@@ -23,7 +23,7 @@ import {
   formatItemTimestamp,
 } from "@/shared/lib/datetime";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
-import { localeDateTimeFormat } from "@/shared/i18n";
+import { localeDateTimeFormat, t } from "@/shared/i18n";
 
 export type InboxFilter =
   | "all"
@@ -152,9 +152,9 @@ function projectRootItem(item: FeedItem, groupItems: readonly FeedItem[]) {
 }
 
 function projectTypeLabel(item: FeedItem) {
-  if (item.kind === 1618) return "Review";
-  if (item.kind === 1621) return "Task";
-  return "Project update";
+  if (item.kind === 1618) return t("home.projectType.review");
+  if (item.kind === 1621) return t("home.projectType.task");
+  return t("home.projectType.update");
 }
 
 function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
@@ -168,35 +168,35 @@ function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
 
   switch (item.kind) {
     case 40007:
-      return "Reminder";
+      return t("home.itemKind.reminder");
     case 43001:
-      return "Job requested";
+      return t("home.itemKind.jobRequested");
     case 43002:
-      return "Job accepted";
+      return t("home.itemKind.jobAccepted");
     case 43003:
-      return "Progress update";
+      return t("home.itemKind.progressUpdate");
     case 43004:
-      return "Job result";
+      return t("home.itemKind.jobResult");
     case 43005:
-      return "Job cancelled";
+      return t("home.itemKind.jobCancelled");
     case 43006:
-      return "Job failed";
+      return t("home.itemKind.jobFailed");
     case 45001:
-      return "Forum post";
+      return t("home.itemKind.forumPost");
     case 45003:
-      return "Forum reply";
+      return t("home.itemKind.forumReply");
     case 46010:
-      return "Approval requested";
+      return t("home.itemKind.approvalRequested");
     default:
       if (item.category === "mention") {
-        return "Mention";
+        return t("home.itemKind.mention");
       }
 
       if (item.category === "agent_activity") {
-        return "Agent update";
+        return t("home.itemKind.agentUpdate");
       }
 
-      return "Group update";
+      return t("home.itemKind.groupUpdate");
   }
 }
 
@@ -207,14 +207,14 @@ function feedPreview(item: FeedItem) {
   }
 
   if (item.kind === 46010) {
-    return "A workflow is waiting for approval.";
+    return t("home.itemPreview.approvalWaiting");
   }
 
   if (item.kind === 40007) {
-    return "A reminder is waiting for you.";
+    return t("home.itemPreview.reminderWaiting");
   }
 
-  return "No additional details were attached to this event.";
+  return t("home.itemPreview.noDetails");
 }
 
 function categoryLabelFor(category: FeedItemCategory) {
@@ -320,7 +320,9 @@ export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
 
   if (item.item.channelType === "dm") {
     return {
-      text: item.senderLabel ? `DM from ${item.senderLabel}` : "DM",
+      text: item.senderLabel
+        ? t("home.inboxLabel.dmFrom", { name: item.senderLabel })
+        : t("home.inboxLabel.dm"),
       channelLabel: null,
     };
   }
@@ -328,28 +330,36 @@ export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
   const primaryCategory = item.item.category;
   if (primaryCategory === "mention") {
     return {
-      text: channelName ? "Mentioned in" : "Mentioned",
+      text: channelName
+        ? t("home.inboxLabel.mentionedIn")
+        : t("home.inboxLabel.mentioned"),
       channelLabel: channelName,
     };
   }
 
   if (primaryCategory === "needs_action") {
     return {
-      text: channelName ? "Needs action in" : "Needs action",
+      text: channelName
+        ? t("home.inboxLabel.needsActionIn")
+        : t("home.inboxLabel.needsAction"),
       channelLabel: channelName,
     };
   }
 
   if (isThreadActivityItem(item.item)) {
     return {
-      text: channelName ? "Thread in" : "Thread",
+      text: channelName
+        ? t("home.inboxLabel.threadIn")
+        : t("home.inboxLabel.thread"),
       channelLabel: channelName,
     };
   }
 
   return {
     text: channelName
-      ? `${activityHeadline(item.item)} in`
+      ? t("home.inboxLabel.headlineIn", {
+          headline: activityHeadline(item.item),
+        })
       : activityHeadline(item.item),
     channelLabel: channelName,
   };
