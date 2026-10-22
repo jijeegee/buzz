@@ -7,6 +7,7 @@ import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../auth/default_community.dart';
+import '../device_key/device_proof.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
 
@@ -40,6 +41,16 @@ class RelayTokenRefreshedException implements Exception {
   String toString() =>
       'RelayTokenRefreshedException: token refreshed, reconnect required';
 }
+
+/// The relay's answer when this person key is no longer signed in on this
+/// device (signed out from another device): `OK false` to AUTH, or a
+/// `NOTICE`/close reason on an open socket.
+const relaySignedOutReason = 'restricted: signed_out';
+
+/// Whether [error] is the relay saying this device was signed out.
+bool isRelaySignedOut(Object? error) =>
+    error is RelayAuthRejectedException &&
+    error.message.startsWith(relaySignedOutReason);
 
 Exception classifyRelayAuthFailure(String message) {
   if (message.startsWith('error:')) return Exception(message);
@@ -85,6 +96,9 @@ class RelaySocket {
   String? _queuedReauthToken;
   String? _boundToken;
   bool _tokenRefreshUsed = false;
+
+  /// The relay sent a [relaySignedOutReason] notice on this connection.
+  bool _sawSignedOut = false;
 
   SocketState get state => _state;
 
@@ -141,9 +155,14 @@ class RelaySocket {
         _onDisconnected(error);
       },
       onDone: () {
-        _failAuth(null);
+        final reason = _channel?.closeReason ?? '';
+        final Object? error =
+            _sawSignedOut || reason.startsWith(relaySignedOutReason)
+            ? const RelayAuthRejectedException(relaySignedOutReason)
+            : null;
+        _failAuth(error);
         _resetConnection();
-        _onDisconnected(null);
+        _onDisconnected(error);
       },
     );
 
@@ -210,6 +229,7 @@ class RelaySocket {
 
   void _resetConnection() {
     _state = SocketState.disconnected;
+    _sawSignedOut = false;
     _subscription?.cancel();
     _subscription = null;
     _authTimeout?.cancel();
@@ -366,6 +386,12 @@ class RelaySocket {
         _handleAuthChallenge(data);
       case 'OK':
         _handleOk(data);
+      case 'NOTICE'
+          when data.length > 1 &&
+              data[1] is String &&
+              (data[1] as String).startsWith(relaySignedOutReason):
+        _sawSignedOut = true;
+        _onMessage(data);
       default:
         // Pass EVENT, EOSE, NOTICE, etc. upstream.
         _onMessage(data);
@@ -386,10 +412,17 @@ class RelaySocket {
       _failAuth(Exception('No nsec available for NIP-42 auth'));
       return;
     }
+    unawaited(_answerChallenge(challenge, _nsec));
+  }
 
+  /// Sign the kind:22242 AUTH event (with this phone's device tag, when it
+  /// has a device key) and send it, unless the connection was reset while
+  /// the device key was signing.
+  Future<void> _answerChallenge(String challenge, String nsec) async {
+    final epoch = _epoch;
     try {
       // Decode bech32 nsec to hex private key.
-      final privkeyHex = nostr.Nip19.decode(payload: _nsec).data;
+      final privkeyHex = nostr.Nip19.decode(payload: nsec).data;
       if (privkeyHex.isEmpty) {
         _failAuth(Exception('Invalid nsec'));
         return;
@@ -402,17 +435,18 @@ class RelaySocket {
       ];
 
       // Create and sign the kind:22242 AUTH event.
-      final event = nostr.Event.from(
+      final event = await signDeviceTaggedEvent(
         kind: EventKind.auth,
         content: '',
         tags: tags,
         secretKey: privkeyHex,
       );
+      if (epoch != _epoch) return;
 
       _pendingAuthEventId = event.id;
       send(['AUTH', event.toMap()]);
     } catch (e) {
-      _failAuth(e);
+      if (epoch == _epoch) _failAuth(e);
     }
   }
 

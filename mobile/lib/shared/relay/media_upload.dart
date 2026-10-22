@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
 
+import '../device_key/device_proof.dart';
 import 'animated_image_sanitizer.dart';
 import 'media_auth.dart';
 import 'mp4_fast_start.dart';
@@ -651,7 +652,7 @@ class MediaUploadService {
     );
     final tokens = _accessTokens;
     if (tokens != null) return sendWithBearer(tokens, send);
-    return Future.sync(() => send(_buildUploadAuthHeader(sha256)));
+    return _buildUploadAuthHeader(sha256).then(send);
   }
 
   Future<http.Response> _sendUploadAttempt({
@@ -690,14 +691,16 @@ class MediaUploadService {
     }
   }
 
-  String _buildUploadAuthHeader(String sha256) {
-    final authEvent = _buildUploadAuthEvent(sha256);
+  Future<String> _buildUploadAuthHeader(String sha256) async {
+    final authEvent = await _buildUploadAuthEvent(sha256);
     final authJson = authEvent.toJson();
     final encoded = base64Url.encode(utf8.encode(authJson)).replaceAll('=', '');
     return 'Nostr $encoded';
   }
 
-  nostr.Event _buildUploadAuthEvent(String sha256) {
+  /// The kind 24242 upload proof, with this phone's device tag when it has a
+  /// device key (device-bound keys plan §2.1).
+  Future<nostr.Event> _buildUploadAuthEvent(String sha256) async {
     final nsec = _nsec;
     if (nsec == null || nsec.isEmpty) {
       throw Exception('Cannot upload media: no signing key available');
@@ -723,12 +726,11 @@ class MediaUploadService {
       ['server', serverAuthority],
     ];
 
-    return nostr.Event.from(
+    return signDeviceTaggedEvent(
       kind: _uploadAuthKind,
       content: 'Upload kuzz-media',
       tags: tags,
       secretKey: privkeyHex,
-      verify: false,
     );
   }
 

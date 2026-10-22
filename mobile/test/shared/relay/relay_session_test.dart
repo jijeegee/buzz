@@ -265,6 +265,8 @@ void main() {
     expect(clients.single.closed, isTrue);
 
     final nextQuery = session.queryRelay(const []);
+    // The NIP-98 header is signed (device key) before the request goes out.
+    await Future<void>.delayed(Duration.zero);
     expect(clients, hasLength(2));
     clients.last.complete(http.Response('[]', 200));
 
@@ -304,12 +306,15 @@ void main() {
         timeout: const Duration(milliseconds: 10),
       );
       final peerQuery = session.queryRelay(const []);
+      // The NIP-98 headers are signed (device key) before requests go out.
+      await Future<void>.delayed(Duration.zero);
       expect(clients.single.requestCount, 2);
 
       await expectLater(timedOutQuery, throwsA(isA<TimeoutException>()));
       expect(clients.single.closed, isFalse);
 
       final nextQuery = session.queryRelay(const []);
+      await Future<void>.delayed(Duration.zero);
       expect(clients, hasLength(2));
       clients.first.complete(1, http.Response('[]', 200));
       expect(await peerQuery, isEmpty);

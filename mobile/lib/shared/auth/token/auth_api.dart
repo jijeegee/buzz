@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../device_key/device_key.dart';
+import '../../device_key/device_proof.dart';
+
 /// Whether retrying the same request can succeed.
 enum AuthFailureKind {
   /// The relay rejected the credential (400/401/403/404; for a refresh only
@@ -75,12 +78,36 @@ class AuthApi {
     required this.origin,
     required http.Client client,
     this.timeout = const Duration(seconds: 15),
+    this.deviceKey,
   }) : _client = client;
 
   /// Canonical relay origin (see `normalizeRelayOrigin`).
   final String origin;
   final http.Client _client;
   final Duration timeout;
+
+  /// This install's device key, presented and proven at sign-in; `null`
+  /// signs in without one (older relays ignore the extra fields).
+  final DeviceKey? deviceKey;
+
+  /// The device key to bind at sign-in, or `null` when there is none.
+  Future<DeviceKeyInfo?> deviceKeyInfo() async => await deviceKey?.info();
+
+  /// Learn the relay clock before a proof must be stamped in it (a fresh
+  /// install knows none). Any `/auth/*` answer carries
+  /// [serverTimeHeader]; an unauthenticated `GET /auth/me` is the cheapest.
+  /// Failures are ignored: the proof then uses phone time.
+  Future<void> syncClock() async {
+    if (hasServerClock(origin)) return;
+    try {
+      final response = await _client
+          .get(Uri.parse('$origin/auth/me'))
+          .timeout(timeout);
+      noteServerTime(origin, response.headers[serverTimeHeader]);
+    } catch (_) {
+      // Offline or slow: sign in phone time.
+    }
+  }
 
   /// The browser URL that starts an OIDC login for a mobile client.
   Uri startUri({
@@ -91,6 +118,7 @@ class AuthApi {
     String? deviceName,
     String? installId,
     String identityMode = 'token',
+    String? devicePubkey,
   }) {
     final name = deviceName?.trim();
     return Uri.parse(
@@ -104,6 +132,7 @@ class AuthApi {
         'redirect_uri': redirectUri,
         if (name != null && name.isNotEmpty) 'device_name': name,
         if (installId != null && installId.isNotEmpty) 'install_id': installId,
+        'device_pubkey': ?devicePubkey,
       },
     );
   }
@@ -112,13 +141,33 @@ class AuthApi {
   ///
   /// The relay consumes the code on the first attempt, so a failure here is
   /// never retried with the same code.
+  ///
+  /// With [device] (the key `start` was given), the body also carries
+  /// `device_pubkey`, `device_key_kind` and `device_proof`: a `bind` proof
+  /// over `login:<sha256(code)>`. If signing fails the key fields are left
+  /// out, and the relay records the device without a key.
   Future<LoginGrant> completeLogin({
     required String loginCode,
     required String codeVerifier,
+    DeviceKeyInfo? device,
   }) async {
+    final key = deviceKey;
+    final proof = device == null || key == null
+        ? null
+        : await signHeaderProof(
+            device: key,
+            origin: origin,
+            purpose: proofPurposeBind,
+            binding: loginProofBinding(loginCode),
+          );
     final json = await _post('/auth/oidc/complete', {
       'login_code': loginCode,
       'code_verifier': codeVerifier,
+      if (device != null && proof != null) ...{
+        'device_pubkey': device.publicKeyHex,
+        'device_key_kind': device.kind,
+        'device_proof': proof,
+      },
     });
     return LoginGrant(
       principalId: _string(json, 'principal_id'),
@@ -135,7 +184,9 @@ class AuthApi {
   /// Rotate [refreshToken]. The relay consumes it; persist the returned
   /// refresh before using the returned access token.
   ///
-  /// Only a 400/401 here is a credential verdict. The refresh handler never
+  /// Only a 400/401 here is a credential verdict, except a 401 refusing the
+  /// device proof (`device_proof_required`/`device_proof_stale`), which is
+  /// transient like a failure to sign the proof at all. The refresh handler never
   /// answers 403/404; those come from the relay's unrouted fallback when
   /// `AUTH_TOKEN_ENABLED` is off (e.g. a rollback or misrouted proxy), so they
   /// are transient: the session stalls and is kept rather than wiped.
@@ -145,7 +196,11 @@ class AuthApi {
       json = await _post('/auth/refresh', {'refresh': refreshToken});
     } on AuthApiException catch (error) {
       final status = error.statusCode;
-      if (status != 403 && status != 404) rethrow;
+      // A refused device proof says nothing about the session itself (the
+      // phone's key or clock was off): keep the session and retry later.
+      final proofRefused =
+          status == 401 && _transientProofCodes.contains(error.code);
+      if (status != 403 && status != 404 && !proofRefused) rethrow;
       throw AuthApiException(
         AuthFailureKind.transient,
         error.message,
@@ -194,6 +249,7 @@ class AuthApi {
         'Could not reach the relay: $error',
       );
     }
+    noteServerTime(origin, response.headers[serverTimeHeader]);
     final status = response.statusCode;
     if (status < 200 || status >= 300) {
       final error = _decodeObject(response.body);
@@ -223,6 +279,12 @@ class AuthApi {
   /// Statuses meaning "this credential/input is rejected": retrying the
   /// same request cannot succeed. 408/429/5xx stay transient.
   static const _terminalStatuses = {400, 401, 403, 404};
+
+  /// Device-proof refusals that a refresh treats as transient.
+  static const _transientProofCodes = {
+    'device_proof_required',
+    'device_proof_stale',
+  };
 
   static Map<String, Object?>? _decodeObject(String body) {
     try {

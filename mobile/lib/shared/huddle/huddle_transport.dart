@@ -515,11 +515,21 @@ final class HuddleTransport implements HuddleTransportClient {
       return;
     }
 
+    unawaited(_answerWithEvent(challenge, generation));
+  }
+
+  /// Sign and send the NIP-42 AUTH frame, unless this connection attempt
+  /// ended while the device key was signing.
+  Future<void> _answerWithEvent(String challenge, int generation) async {
     try {
-      final auth = HuddleAuthV2.buildMessage(
+      final auth = await HuddleAuthV2.buildMessage(
         parameters: parameters,
         challenge: challenge,
       );
+      if (!_isCurrent(generation) ||
+          _state.phase != HuddleTransportPhase.awaitingChallenge) {
+        return;
+      }
       _channel?.sink.add(jsonEncode(auth));
       _emitState(
         HuddleTransportState(

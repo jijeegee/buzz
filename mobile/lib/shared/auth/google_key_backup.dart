@@ -8,6 +8,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../community/community.dart';
 import '../community/community_provider.dart';
 import '../community/community_storage.dart';
+import '../device_key/device_proof.dart';
 import '../relay/service_address.dart';
 import 'token/token.dart';
 
@@ -317,7 +318,7 @@ class GoogleKeyBackupService {
         !_validHex(challenge['challenge'])) {
       throw _tryAgain;
     }
-    final proof = nostr.Event.from(
+    final proof = await signDeviceTaggedEvent(
       kind: 27235,
       content: '',
       secretKey: keys.secret,

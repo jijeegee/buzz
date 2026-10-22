@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
@@ -5,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:nostr/nostr.dart' as nostr;
 
+import '../device_key/device_proof.dart';
 import 'relay_access_tokens.dart';
 import 'relay_provider.dart';
 import 'service_address.dart';
@@ -17,6 +19,15 @@ const _mediaGetAuthLifetimeSeconds = 60;
 /// With a 60-second lifetime, the margin equals the lifetime: each request
 /// mints a fresh token (mint-per-request pattern for NIP-FI compliance).
 const _mediaGetAuthRefreshMarginSeconds = 60;
+
+/// A device-tagged read token is re-signed this long after signing...
+const _taggedRefreshAfter = Duration(seconds: 25);
+
+/// ...and no longer sent this close to its expiry.
+const _taggedExpiryMarginSeconds = 15;
+
+/// Wait this long before trying to device-sign again after a failure.
+const _tagRetryDelay = Duration(seconds: 60);
 
 /// Builds BUD-01 Blossom `t=get` auth headers for relay-host media URLs.
 ///
@@ -50,6 +61,18 @@ class MediaGetAuthService {
 
   Map<String, String>? _cachedHeaders;
   DateTime? _refreshAt;
+
+  /// The last read token carrying this phone's device tag (plan §2.1), kept
+  /// because the device key signs in secure hardware, which is too slow to
+  /// sign every image. Used until [_taggedUseUntil]; re-signed in the
+  /// background from [_taggedRefreshAt].
+  Map<String, String>? _taggedHeaders;
+  DateTime? _taggedRefreshAt;
+  DateTime? _taggedUseUntil;
+  Future<Map<String, String>?>? _minting;
+
+  /// No device-tagged token before this (no device key, or signing failed).
+  DateTime? _nextTagAttempt;
 
   MediaGetAuthService({
     required String baseUrl,
@@ -85,6 +108,9 @@ class MediaGetAuthService {
     if (nsec == null || nsec.isEmpty) return const {};
     if (!isRelayMediaUrl(url)) return const {};
 
+    final tagged = _currentTaggedHeaders();
+    if (tagged != null) return tagged;
+
     final cached = _cachedHeaders;
     final refreshAt = _refreshAt;
     if (cached != null && refreshAt != null && _now().isBefore(refreshAt)) {
@@ -93,7 +119,7 @@ class MediaGetAuthService {
 
     try {
       final signedAt = _now();
-      final authEvent = _buildGetAuthEvent(nsec);
+      final authEvent = _buildUntaggedGetAuthEvent(nsec);
       final encoded = base64Url
           .encode(utf8.encode(authEvent.toJson()))
           .replaceAll('=', '');
@@ -116,6 +142,81 @@ class MediaGetAuthService {
     }
   }
 
+  /// Start signing a device-tagged read token, so later requests carry it.
+  void warmUp() {
+    final nsec = _nsec;
+    if (_accessTokens != null || nsec == null || nsec.isEmpty) return;
+    unawaited(_mintTagged(nsec));
+  }
+
+  /// The cached device-tagged headers while usable, starting a background
+  /// re-sign when they are due; `null` when there are none yet.
+  Map<String, String>? _currentTaggedHeaders() {
+    final nsec = _nsec;
+    if (nsec == null || nsec.isEmpty) return null;
+    final now = _now();
+    final refreshAt = _taggedRefreshAt;
+    if (refreshAt == null || !now.isBefore(refreshAt)) {
+      unawaited(_mintTagged(nsec));
+    }
+    final useUntil = _taggedUseUntil;
+    if (useUntil != null && now.isBefore(useUntil)) return _taggedHeaders;
+    return null;
+  }
+
+  /// Device-tagged read headers for an async caller: the cached ones, or a
+  /// freshly signed set; `null` when this phone cannot tag.
+  Future<Map<String, String>?> _taggedHeadersNow(String nsec) async {
+    final current = _currentTaggedHeaders();
+    if (current != null) return current;
+    final minted = await _mintTagged(nsec);
+    final useUntil = _taggedUseUntil;
+    return minted != null && useUntil != null && _now().isBefore(useUntil)
+        ? minted
+        : null;
+  }
+
+  Future<Map<String, String>?> _mintTagged(String nsec) {
+    final next = _nextTagAttempt;
+    if (next != null && _now().isBefore(next)) return Future.value();
+    final inFlight = _minting;
+    if (inFlight != null) return inFlight;
+    final minting = () async {
+      try {
+        final signedAt = _now();
+        final event = await _buildGetAuthEvent(nsec, tagged: true);
+        if (!event.tags.any((tag) => tag.first == deviceTagName)) {
+          _nextTagAttempt = signedAt.add(_tagRetryDelay);
+          return null;
+        }
+        final encoded = base64Url
+            .encode(utf8.encode(event.toJson()))
+            .replaceAll('=', '');
+        final headers = Map<String, String>.unmodifiable({
+          'Authorization': 'Nostr $encoded',
+        });
+        _taggedHeaders = headers;
+        _taggedRefreshAt = signedAt.add(_taggedRefreshAfter);
+        _taggedUseUntil = signedAt.add(
+          const Duration(
+            seconds: _mediaGetAuthLifetimeSeconds - _taggedExpiryMarginSeconds,
+          ),
+        );
+        return headers;
+      } catch (_) {
+        _nextTagAttempt = _now().add(_tagRetryDelay);
+        return null;
+      }
+    }();
+    _minting = minting;
+    unawaited(
+      minting.whenComplete(() {
+        if (identical(_minting, minting)) _minting = null;
+      }),
+    );
+    return minting;
+  }
+
   /// GET [url] with this community's media auth. On a token community a
   /// relay media URL awaits a fresh bearer (the synchronous [headersFor]
   /// sends none inside the expiry margin) and a 401 `token_expired` rotates
@@ -125,6 +226,15 @@ class MediaGetAuthService {
     final uri = Uri.parse(target);
     final tokens = _accessTokens;
     if (tokens == null || !isRelayMediaUrl(target)) {
+      final nsec = _nsec;
+      if (tokens == null &&
+          nsec != null &&
+          nsec.isNotEmpty &&
+          isRelayMediaUrl(target)) {
+        return _taggedHeadersNow(nsec).then(
+          (tagged) => client.get(uri, headers: tagged ?? headersFor(target)),
+        );
+      }
       return client.get(uri, headers: headersFor(target));
     }
     return sendWithBearer(
@@ -149,27 +259,42 @@ class MediaGetAuthService {
     return uri.path.startsWith('/media/');
   }
 
-  nostr.Event _buildGetAuthEvent(String nsec) {
-    final privkeyHex = nostr.Nip19.decode(payload: nsec).data;
-    if (privkeyHex.isEmpty) {
-      throw Exception('Invalid nsec');
-    }
-
+  List<List<String>> _getAuthTags() {
     final expiration =
         (_now().millisecondsSinceEpoch ~/ 1000) + _mediaGetAuthLifetimeSeconds;
-    final tags = <List<String>>[
+    return <List<String>>[
       ['t', 'get'],
       ['expiration', '$expiration'],
       if (extractServerAuthority(_baseUrl) case final authority?)
         ['server', authority],
     ];
+  }
 
-    return nostr.Event.from(
+  static String _secretKey(String nsec) {
+    final privkeyHex = nostr.Nip19.decode(payload: nsec).data;
+    if (privkeyHex.isEmpty) {
+      throw Exception('Invalid nsec');
+    }
+    return privkeyHex;
+  }
+
+  /// The read token signed by the person key only (synchronous fallback
+  /// while no device-tagged token is ready).
+  nostr.Event _buildUntaggedGetAuthEvent(String nsec) => nostr.Event.from(
+    kind: _mediaGetAuthKind,
+    content: 'Get kuzz-media',
+    tags: _getAuthTags(),
+    secretKey: _secretKey(nsec),
+    verify: false,
+  );
+
+  Future<nostr.Event> _buildGetAuthEvent(String nsec, {required bool tagged}) {
+    if (!tagged) return Future.value(_buildUntaggedGetAuthEvent(nsec));
+    return signDeviceTaggedEvent(
       kind: _mediaGetAuthKind,
       content: 'Get kuzz-media',
-      tags: tags,
-      secretKey: privkeyHex,
-      verify: false,
+      tags: _getAuthTags(),
+      secretKey: _secretKey(nsec),
     );
   }
 }
@@ -192,7 +317,7 @@ final mediaGetAuthServiceProvider = Provider<MediaGetAuthService>((ref) {
     baseUrl: config.baseUrl,
     nsec: config.nsec,
     cacheScope: cacheScope,
-  );
+  )..warmUp();
 });
 
 Map<String, String> mediaGetHeadersFor(WidgetRef ref, String url) {

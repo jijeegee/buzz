@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
+import '../device_key/device_proof.dart';
 import '../relay/nostr_models.dart';
 import '../relay/relay_access_tokens.dart';
 import 'huddle_wire.dart';
@@ -69,17 +70,19 @@ final class HuddleConnectionParameters {
 
 /// Fixed NIP-42 + Huddle auth envelope used after the audio relay challenge.
 abstract final class HuddleAuthV2 {
-  static Map<String, dynamic> buildMessage({
+  /// The AUTH frame, its event carrying this phone's device tag when it has
+  /// a device key (device-bound keys plan §2.1).
+  static Future<Map<String, dynamic>> buildMessage({
     required HuddleConnectionParameters parameters,
     required String challenge,
     int? createdAt,
-  }) {
+  }) async {
     if (challenge.isEmpty) {
       throw const HuddleAuthException('Relay challenge must not be empty.');
     }
 
     final secretKey = _decodeSecretKey(parameters.nsec ?? '');
-    final event = nostr.Event.from(
+    final event = await signDeviceTaggedEvent(
       kind: EventKind.auth,
       content: '',
       tags: [
@@ -88,7 +91,6 @@ abstract final class HuddleAuthV2 {
       ],
       secretKey: secretKey,
       createdAt: createdAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      verify: false,
     );
 
     return {
