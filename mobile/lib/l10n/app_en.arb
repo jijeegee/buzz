@@ -829,5 +829,451 @@
         "type": "int"
       }
     }
+  },
+  "commonSavingEllipsis": "Saving…",
+  "@commonSavingEllipsis": {
+    "description": "Save button text while saving. Short."
+  },
+  "profileYourProfile": "Your profile",
+  "@profileYourProfile": {
+    "description": "Profile screen header, shown in place of the name before the profile loads. Short."
+  },
+  "profilePresenceOnline": "Online",
+  "@profilePresenceOnline": {
+    "description": "Presence status: the person is active now. Shown on the profile and in its menu. Short."
+  },
+  "profilePresenceAway": "Away",
+  "@profilePresenceAway": {
+    "description": "Presence status: the person is away. Shown on the profile and in its menu. Short."
+  },
+  "profilePresenceOffline": "Offline",
+  "@profilePresenceOffline": {
+    "description": "Presence status: the person is offline. Shown on the profile and in its menu. Short."
+  },
+  "profilePresenceUnknown": "Unknown",
+  "@profilePresenceUnknown": {
+    "description": "Presence status on someone's profile sheet when it is not known. Short."
+  },
+  "profilePresenceLabel": "Presence: {status}",
+  "@profilePresenceLabel": {
+    "description": "Screen-reader label of the presence pill on a profile; {status} is Online, Away, Offline or Unknown.",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "profileUnnamedUser": "Kuzz user",
+  "@profileUnnamedUser": {
+    "description": "Profile sheet heading for someone whose name has not loaded yet. 'Kuzz' is the app name. Short."
+  },
+  "profileAgentDeviceRobot": "Robot of the device this agent runs on",
+  "@profileAgentDeviceRobot": {
+    "description": "Profile sheet of an AI agent, screen-reader label of the small robot icon of the computer the agent runs on."
+  },
+  "profileSheetMessage": "Message",
+  "@profileSheetMessage": {
+    "description": "Profile sheet, button that opens a direct message with the person. Short."
+  },
+  "profileSheetOpening": "Opening…",
+  "@profileSheetOpening": {
+    "description": "Profile sheet, Message button text while the direct message opens. Short."
+  },
+  "profileSheetOpeningLabel": "Opening direct message",
+  "@profileSheetOpeningLabel": {
+    "description": "Profile sheet, screen-reader label of the spinner while the direct message opens."
+  },
+  "profileSheetBlock": "Block",
+  "@profileSheetBlock": {
+    "description": "Profile sheet, button that blocks the person. Short."
+  },
+  "profileSheetUnblock": "Unblock",
+  "@profileSheetUnblock": {
+    "description": "Profile sheet, button that unblocks the person. Short."
+  },
+  "profileSheetReport": "Report",
+  "@profileSheetReport": {
+    "description": "Profile sheet, button that reports the person. Short."
+  },
+  "profileSheetAbout": "About",
+  "@profileSheetAbout": {
+    "description": "Profile sheet, small heading above the person's profile description. Short."
+  },
+  "profileStatusSetTitle": "Set a status",
+  "@profileStatusSetTitle": {
+    "description": "Set status sheet title; also screen-reader label of the status badge on your profile picture. Short."
+  },
+  "profileStatusSave": "Save status",
+  "@profileStatusSave": {
+    "description": "Set status sheet, tooltip of the check button that saves the status."
+  },
+  "profileStatusDuration": "Duration",
+  "@profileStatusDuration": {
+    "description": "Set status sheet: heading and row for how long the status lasts; also the title of the duration picker. Short."
+  },
+  "profileStatusDurationHours": "{count, plural, one{{count} hour} other{{count} hours}}",
+  "@profileStatusDurationHours": {
+    "description": "Set status sheet, duration option: the status clears after this many hours. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileStatusDurationDays": "{count, plural, one{{count} day} other{{count} days}}",
+  "@profileStatusDurationDays": {
+    "description": "Set status sheet, duration option: the status clears after this many days. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileStatusDurationWeeks": "{count, plural, one{{count} week} other{{count} weeks}}",
+  "@profileStatusDurationWeeks": {
+    "description": "Set status sheet, duration option: the status clears after this many weeks. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileStatusDurationCustom": "Custom",
+  "@profileStatusDurationCustom": {
+    "description": "Set status sheet, duration option that lets you pick a date and time. Short."
+  },
+  "profileStatusUntil": "Until",
+  "@profileStatusUntil": {
+    "description": "Set status sheet, row showing the chosen end date and time of the status. Short."
+  },
+  "profileStatusQuick": "Quick statuses",
+  "@profileStatusQuick": {
+    "description": "Set status sheet, heading above the list of ready-made statuses. Short."
+  },
+  "profileStatusClear": "Clear status",
+  "@profileStatusClear": {
+    "description": "Set status sheet, red row that removes the current status. Short."
+  },
+  "profileStatusChooseEmoji": "Choose a status emoji",
+  "@profileStatusChooseEmoji": {
+    "description": "Set status sheet, screen-reader label of the emoji button next to the status text."
+  },
+  "profileStatusRemoveEmoji": "Remove status emoji",
+  "@profileStatusRemoveEmoji": {
+    "description": "Set status sheet, tooltip of the small X on the status emoji."
+  },
+  "profileStatusHint": "What’s your status?",
+  "@profileStatusHint": {
+    "description": "Set status sheet, placeholder in the status text field."
+  },
+  "profileStatusPickerDone": "Done",
+  "@profileStatusPickerDone": {
+    "description": "Set status sheet, iOS date picker button that confirms the chosen end time. Short."
+  },
+  "profileEditPhoto": "Edit Photo",
+  "@profileEditPhoto": {
+    "description": "Profile editor: title while editing the photo, and the button under the photo. Short."
+  },
+  "profileEditPhotoLabel": "Edit profile photo",
+  "@profileEditPhotoLabel": {
+    "description": "Profile editor, screen-reader label of the Edit Photo button."
+  },
+  "profileBackToProfile": "Back to profile",
+  "@profileBackToProfile": {
+    "description": "Photo editor, tooltip and screen-reader label of the back button."
+  },
+  "profileSaveChangeFailed": "We couldn't save this change. Try again.",
+  "@profileSaveChangeFailed": {
+    "description": "Profile editor, error when saving the name or description failed."
+  },
+  "profileSavePhotoFailed": "We couldn't save your profile photo. Try again.",
+  "@profileSavePhotoFailed": {
+    "description": "Photo editor, error when saving the profile photo failed."
+  },
+  "profileLoadFailed": "We couldn't load your profile. Go back and try again.",
+  "@profileLoadFailed": {
+    "description": "Profile editor, error when the profile failed to load."
+  },
+  "profileLoading": "Loading your profile…",
+  "@profileLoading": {
+    "description": "Profile editor, text while the profile loads."
+  },
+  "profileSavingPhoto": "Saving photo",
+  "@profileSavingPhoto": {
+    "description": "Photo editor, screen-reader label of the spinner on the Save button while the photo is saved."
+  },
+  "profileCloseSheet": "Close sheet",
+  "@profileCloseSheet": {
+    "description": "Profile text editor sheet, tooltip and screen-reader label of the close (X) button."
+  },
+  "profilePreparePhotoFailed": "We couldn't prepare that photo. Try again.",
+  "@profilePreparePhotoFailed": {
+    "description": "Photo editor, error when a picked photo could not be opened."
+  },
+  "profilePreparingPhoto": "Preparing photo",
+  "@profilePreparingPhoto": {
+    "description": "Photo editor, screen-reader label of the spinner while a photo is being prepared."
+  },
+  "profileAvatarModeImage": "Image",
+  "@profileAvatarModeImage": {
+    "description": "Photo editor, tab for a photo avatar. Short."
+  },
+  "profileAvatarModeEmoji": "Emoji",
+  "@profileAvatarModeEmoji": {
+    "description": "Photo editor, tab for an emoji avatar; also the emoji section button. Short."
+  },
+  "profileAvatarModeAnimated": "Animated",
+  "@profileAvatarModeAnimated": {
+    "description": "Photo editor, tab for an animated (short video) avatar. Short."
+  },
+  "profileAvatarBackground": "Background",
+  "@profileAvatarBackground": {
+    "description": "Photo editor, button that shows background colors for the avatar. Short."
+  },
+  "profileAvatarColorOption": "Avatar color {number}",
+  "@profileAvatarColorOption": {
+    "description": "Photo editor, screen-reader label of one background color; {number} is its position (1, 2, …).",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "profileEmojiSearch": "Search emoji",
+  "@profileEmojiSearch": {
+    "description": "Emoji avatar editor, placeholder in the emoji search field."
+  },
+  "profileEmojiClearSearch": "Clear search",
+  "@profileEmojiClearSearch": {
+    "description": "Emoji avatar editor, tooltip of the X button that clears the search."
+  },
+  "profileEmojiNoResults": "No emoji found",
+  "@profileEmojiNoResults": {
+    "description": "Emoji avatar editor, text when the search finds no emoji."
+  },
+  "profileSkinTone": "Skin tone",
+  "@profileSkinTone": {
+    "description": "Emoji avatar editor, tooltip of the skin tone picker. Short."
+  },
+  "profileSkinToneDefault": "Default",
+  "@profileSkinToneDefault": {
+    "description": "Emoji avatar editor, skin tone option: the default yellow. Short."
+  },
+  "profileSkinToneLight": "Light",
+  "@profileSkinToneLight": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneMediumLight": "Medium-light",
+  "@profileSkinToneMediumLight": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneMedium": "Medium",
+  "@profileSkinToneMedium": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneMediumDark": "Medium-dark",
+  "@profileSkinToneMediumDark": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneDark": "Dark",
+  "@profileSkinToneDark": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileCamera": "Camera",
+  "@profileCamera": {
+    "description": "Photo editor, button that opens the camera to take a profile photo. Short."
+  },
+  "profilePhotoLibrary": "Photo Library",
+  "@profilePhotoLibrary": {
+    "description": "Photo editor, button that opens the phone's photo library. Short."
+  },
+  "profileCameraAccessFailed": "Could not access the camera.",
+  "@profileCameraAccessFailed": {
+    "description": "Camera screen of the photo editor, error when the camera could not start."
+  },
+  "profileCameraSwitchFailed": "Could not switch cameras.",
+  "@profileCameraSwitchFailed": {
+    "description": "Camera screen of the photo editor, error when flipping between front and back camera failed."
+  },
+  "profileCameraStarting": "Starting camera",
+  "@profileCameraStarting": {
+    "description": "Camera screen of the photo editor, screen-reader label of the spinner while the camera starts."
+  },
+  "profileCameraRetry": "Retry",
+  "@profileCameraRetry": {
+    "description": "Camera screen of the photo editor, button that discards the photo just taken. Short."
+  },
+  "profileCameraClose": "Close camera",
+  "@profileCameraClose": {
+    "description": "Camera screen of the photo editor, screen-reader label of the close button."
+  },
+  "profileCameraUsePhoto": "Use Photo",
+  "@profileCameraUsePhoto": {
+    "description": "Camera screen of the photo editor, button that keeps the photo just taken. Short."
+  },
+  "profileCameraFlip": "Flip camera",
+  "@profileCameraFlip": {
+    "description": "Camera screen of the photo editor, screen-reader label of the front/back camera button."
+  },
+  "profileTakePhoto": "Take photo",
+  "@profileTakePhoto": {
+    "description": "Camera screen of the photo editor, screen-reader label of the shutter button."
+  },
+  "profileTakingPhoto": "Taking photo",
+  "@profileTakingPhoto": {
+    "description": "Camera screen of the photo editor, screen-reader label of the spinner on the shutter button."
+  },
+  "profileTakePhotoFailed": "We couldn't take that photo. Try again.",
+  "@profileTakePhotoFailed": {
+    "description": "Camera screen of the photo editor, error when taking the photo failed."
+  },
+  "profileCropTitle": "Position Photo",
+  "@profileCropTitle": {
+    "description": "Photo crop screen, title in the top bar. Short."
+  },
+  "profileCropPrepareFailed": "We couldn't prepare that photo.",
+  "@profileCropPrepareFailed": {
+    "description": "Photo crop screen, error when the photo could not be opened."
+  },
+  "profileCropLabel": "Photo crop",
+  "@profileCropLabel": {
+    "description": "Photo crop screen, screen-reader label of the area where you move and zoom the photo."
+  },
+  "profileCropZoomValue": "{percent}% zoom",
+  "@profileCropZoomValue": {
+    "description": "Photo crop screen, screen-reader value of the crop area; {percent} is the zoom level (100, 150, …).",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "profileCropHint": "Move and scale",
+  "@profileCropHint": {
+    "description": "Photo crop screen, hint under the circle. Short."
+  },
+  "profileMoveLeft": "Move left",
+  "@profileMoveLeft": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture left. Short."
+  },
+  "profileMoveRight": "Move right",
+  "@profileMoveRight": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture right. Short."
+  },
+  "profileMoveUp": "Move up",
+  "@profileMoveUp": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture up. Short."
+  },
+  "profileMoveDown": "Move down",
+  "@profileMoveDown": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture down. Short."
+  },
+  "profileZoomIn": "Zoom in",
+  "@profileZoomIn": {
+    "description": "Photo crop screen, screen-reader action that enlarges the photo. Short."
+  },
+  "profileZoomOut": "Zoom out",
+  "@profileZoomOut": {
+    "description": "Photo crop screen, screen-reader action that shrinks the photo. Short."
+  },
+  "profileAvatarPosition": "Avatar position",
+  "@profileAvatarPosition": {
+    "description": "Animated avatar editor, screen-reader label of the preview you can drag."
+  },
+  "profileAvatarPositionValue": "{x} horizontal, {y} vertical",
+  "@profileAvatarPositionValue": {
+    "description": "Animated avatar editor, screen-reader value of the preview position; {x} and {y} are numbers from -100 to 100.",
+    "placeholders": {
+      "x": {
+        "type": "int"
+      },
+      "y": {
+        "type": "int"
+      }
+    }
+  },
+  "profileAvatarSize": "Avatar size",
+  "@profileAvatarSize": {
+    "description": "Animated avatar editor, screen-reader label of the size slider."
+  },
+  "profileAnimatedYou": "You",
+  "@profileAnimatedYou": {
+    "description": "Animated avatar editor, button that shows the controls for your own cut-out picture. Short."
+  },
+  "profileAnimatedFrame": "Frame",
+  "@profileAnimatedFrame": {
+    "description": "Animated avatar editor, button that shows the still frame picker. Short."
+  },
+  "profileAnimatedRetake": "Retake",
+  "@profileAnimatedRetake": {
+    "description": "Animated avatar editor, button that records again. Short."
+  },
+  "profileAnimatedOutlineOn": "Turn outline on",
+  "@profileAnimatedOutlineOn": {
+    "description": "Animated avatar editor, tooltip of the button that adds an outline around you."
+  },
+  "profileAnimatedOutlineOff": "Turn outline off",
+  "@profileAnimatedOutlineOff": {
+    "description": "Animated avatar editor, tooltip of the button that removes the outline around you."
+  },
+  "profileAnimatedDragHint": "Drag the preview to reposition",
+  "@profileAnimatedDragHint": {
+    "description": "Animated avatar editor, hint under the size controls."
+  },
+  "profileAnimatedChooseFrame": "Choose the still frame",
+  "@profileAnimatedChooseFrame": {
+    "description": "Animated avatar editor, hint under the frame picker: the frame shown when the avatar is not playing."
+  },
+  "profileAnimatedChooseFrameLabel": "Choose still frame",
+  "@profileAnimatedChooseFrameLabel": {
+    "description": "Animated avatar editor, screen-reader label of the frame picker slider."
+  },
+  "profileAnimatedFramePosition": "{position} of {count}",
+  "@profileAnimatedFramePosition": {
+    "description": "Animated avatar editor, screen-reader value of the frame picker slider, e.g. '3 of 12'.",
+    "placeholders": {
+      "position": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileAnimatedRecord": "Record",
+  "@profileAnimatedRecord": {
+    "description": "Animated avatar camera, button that starts recording. Short."
+  },
+  "profileAnimatedRecordLabel": "Record animated avatar",
+  "@profileAnimatedRecordLabel": {
+    "description": "Animated avatar camera, screen-reader label of the Record button."
+  },
+  "profileAnimatedCapturing": "Capturing animated avatar",
+  "@profileAnimatedCapturing": {
+    "description": "Animated avatar camera, screen-reader label of the spinner while recording."
+  },
+  "profileAnimatedPreparing": "Preparing animated avatar",
+  "@profileAnimatedPreparing": {
+    "description": "Animated avatar camera, screen-reader label of the spinner after recording."
+  },
+  "profileAnimatedRecording": "Recording…",
+  "@profileAnimatedRecording": {
+    "description": "Animated avatar camera, text under the preview while recording. Short."
+  },
+  "profileAnimatedCuttingOut": "Cutting you out of the background…",
+  "@profileAnimatedCuttingOut": {
+    "description": "Animated avatar camera, text under the preview while the app removes the background."
+  },
+  "profileAnimatedLineUp": "Line up your shot.",
+  "@profileAnimatedLineUp": {
+    "description": "Animated avatar camera, text under the preview before recording."
+  },
+  "profileAnimatedCreateFailed": "We couldn't create that animation. Try again.",
+  "@profileAnimatedCreateFailed": {
+    "description": "Animated avatar editor, error when building the animation failed."
+  },
+  "profileAnimatedRecordingFailed": "Recording failed. Try again.",
+  "@profileAnimatedRecordingFailed": {
+    "description": "Animated avatar camera, error when recording failed."
   }
 }

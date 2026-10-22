@@ -15,6 +15,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../shared/emoji/emoji_avatar.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -63,6 +64,7 @@ class AnimatedAvatarCapture extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final controller = useState<CameraController?>(null);
     final controllerRef = useRef<CameraController?>(null);
     final controllerDisposal = useRef(
@@ -193,7 +195,7 @@ class AnimatedAvatarCapture extends HookConsumerWidget {
             candidateRef.value = null;
             await reservation?.dispose(next.dispose);
           }
-          if (!disposed) error.value = 'Could not access the camera.';
+          if (!disposed) error.value = l10n.profileCameraAccessFailed;
         } finally {
           if (!disposed) isInitializing.value = false;
         }
@@ -226,7 +228,7 @@ class AnimatedAvatarCapture extends HookConsumerWidget {
           poster: result.poster,
         );
       } catch (_) {
-        error.value = "We couldn't create that animation. Try again.";
+        error.value = l10n.profileAnimatedCreateFailed;
         return null;
       } finally {
         if (context.mounted) isProcessing.value = false;
@@ -363,7 +365,7 @@ class AnimatedAvatarCapture extends HookConsumerWidget {
         await releaseCamera();
         if (context.mounted) {
           cameraGeneration.value++;
-          error.value = 'Recording failed. Try again.';
+          error.value = l10n.profileAnimatedRecordingFailed;
         }
       } finally {
         timer.cancel();
@@ -597,16 +599,16 @@ class AnimatedAvatarCapture extends HookConsumerWidget {
                             child: KuzzLoadingIndicator(
                               size: 44,
                               color: context.colors.onSurface,
-                              semanticLabel: 'Preparing animated avatar',
+                              semanticLabel: l10n.profileAnimatedPreparing,
                             ),
                           )
                         : active != null
                         ? _AspectCorrectCameraPreview(controller: active)
                         : Center(
                             child: isInitializing.value
-                                ? const KuzzLoadingIndicator(
+                                ? KuzzLoadingIndicator(
                                     color: Colors.white,
-                                    semanticLabel: 'Starting camera',
+                                    semanticLabel: l10n.profileCameraStarting,
                                   )
                                 : const Icon(
                                     LucideIcons.cameraOff,
@@ -637,10 +639,10 @@ class AnimatedAvatarCapture extends HookConsumerWidget {
         const SizedBox(height: Grid.xs),
         Text(
           isRecording.value
-              ? 'Recording…'
+              ? l10n.profileAnimatedRecording
               : isPreparingFrames.value
-              ? 'Cutting you out of the background…'
-              : 'Line up your shot.',
+              ? l10n.profileAnimatedCuttingOut
+              : l10n.profileAnimatedLineUp,
           textAlign: TextAlign.center,
           style: context.textTheme.bodyMedium?.copyWith(
             color: context.colors.onSurfaceVariant,

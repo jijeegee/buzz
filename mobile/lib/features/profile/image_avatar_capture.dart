@@ -11,6 +11,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:image/image.dart' as image;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -83,6 +84,7 @@ class ImageAvatarCapture extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final lifecycle = ref.watch(appLifecycleProvider);
     final controller = useState<CameraController?>(null);
@@ -209,7 +211,7 @@ class ImageAvatarCapture extends HookConsumerWidget {
             if (active != null) {
               selectedLens.value = active.description.lensDirection;
             }
-            error.value = 'Could not access the camera.';
+            error.value = l10n.profileCameraAccessFailed;
           }
         } finally {
           if (!disposed && generation == cameraGeneration.value) {
@@ -251,7 +253,7 @@ class ImageAvatarCapture extends HookConsumerWidget {
         if (context.mounted) capturedBytes.value = cropped;
       } catch (_) {
         if (context.mounted) {
-          error.value = "We couldn't take that photo. Try again.";
+          error.value = l10n.profileTakePhotoFailed;
           try {
             await active.resumePreview();
           } on CameraException {
@@ -313,7 +315,7 @@ class ImageAvatarCapture extends HookConsumerWidget {
         if (context.mounted) selectedLens.value = nextLens;
         await active.lockCaptureOrientation(DeviceOrientation.portraitUp);
       } on CameraException {
-        if (context.mounted) error.value = 'Could not switch cameras.';
+        if (context.mounted) error.value = l10n.profileCameraSwitchFailed;
       } finally {
         if (context.mounted && flipMotion != null) {
           try {
@@ -434,8 +436,8 @@ class ImageAvatarCapture extends HookConsumerWidget {
                             )
                           : Center(
                               child: isInitializing.value
-                                  ? const KuzzLoadingIndicator(
-                                      semanticLabel: 'Starting camera',
+                                  ? KuzzLoadingIndicator(
+                                      semanticLabel: l10n.profileCameraStarting,
                                     )
                                   : const Icon(LucideIcons.cameraOff, size: 32),
                             ),
@@ -502,10 +504,10 @@ class ImageAvatarCapture extends HookConsumerWidget {
                                   ? IosGlassNavigationIcon.camera
                                   : IosGlassNavigationIcon.close,
                               label: captured != null && !isClosing.value
-                                  ? 'Retry'
+                                  ? l10n.profileCameraRetry
                                   : null,
                               transitionLabel: isClosing.value
-                                  ? 'Camera'
+                                  ? l10n.profileCamera
                                   : null,
                               transitionLabelMaxWidth: 96,
                               transitionProgress: isClosing.value
@@ -513,10 +515,10 @@ class ImageAvatarCapture extends HookConsumerWidget {
                                   : 0,
                               showEnabledAppearance: isClosing.value,
                               semanticLabel: isClosing.value
-                                  ? 'Camera'
+                                  ? l10n.profileCamera
                                   : captured == null
-                                  ? 'Close camera'
-                                  : 'Retry',
+                                  ? l10n.profileCameraClose
+                                  : l10n.profileCameraRetry,
                               onTap:
                                   isFlipping.value ||
                                       isCapturing.value ||
@@ -577,10 +579,10 @@ class ImageAvatarCapture extends HookConsumerWidget {
                                   ? IosGlassNavigationIcon.photoLibrary
                                   : IosGlassNavigationIcon.rotateCamera,
                               label: captured != null && !isClosing.value
-                                  ? 'Use Photo'
+                                  ? l10n.profileCameraUsePhoto
                                   : null,
                               transitionLabel: isClosing.value
-                                  ? 'Photo Library'
+                                  ? l10n.profilePhotoLibrary
                                   : null,
                               transitionLabelMaxWidth: 104,
                               transitionProgress: isClosing.value
@@ -588,10 +590,10 @@ class ImageAvatarCapture extends HookConsumerWidget {
                                   : 0,
                               showEnabledAppearance: isClosing.value,
                               semanticLabel: isClosing.value
-                                  ? 'Photo Library'
+                                  ? l10n.profilePhotoLibrary
                                   : captured == null
-                                  ? 'Flip camera'
-                                  : 'Use Photo',
+                                  ? l10n.profileCameraFlip
+                                  : l10n.profileCameraUsePhoto,
                               onTap: isClosing.value
                                   ? null
                                   : captured != null

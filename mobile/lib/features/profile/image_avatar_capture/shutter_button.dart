@@ -17,7 +17,7 @@ class _ShutterButton extends StatelessWidget {
       child: isIos
           ? IosGlassNavigationButton(
               icon: IosGlassNavigationIcon.shutter,
-              semanticLabel: 'Take photo',
+              semanticLabel: context.l10n.profileTakePhoto,
               onPressed: onTap,
               width: _shutterSize,
               height: _shutterSize,
@@ -44,7 +44,7 @@ class _ShutterButton extends StatelessWidget {
                             key: const ValueKey('image-camera-capturing'),
                             size: 24,
                             color: context.colors.onSurface,
-                            semanticLabel: 'Taking photo',
+                            semanticLabel: context.l10n.profileTakingPhoto,
                           )
                         : Container(
                             key: const ValueKey('image-camera-shutter-icon'),
@@ -66,7 +66,7 @@ class _ShutterButton extends StatelessWidget {
     );
     if (isIos) return content;
     return Semantics(
-      label: 'Take photo',
+      label: context.l10n.profileTakePhoto,
       button: true,
       enabled: onTap != null,
       child: ExcludeSemantics(child: content),

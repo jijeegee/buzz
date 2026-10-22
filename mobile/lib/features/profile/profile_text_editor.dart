@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -30,9 +31,9 @@ Future<void> showProfileDisplayNameEditor(BuildContext context) async {
   );
   await _showProfileTextEditor(
     context: context,
-    title: 'Display name',
+    title: context.l10n.settingsEditProfileDisplayName,
     initialValue: profile?.displayName ?? '',
-    hintText: 'Display name',
+    hintText: context.l10n.settingsEditProfileDisplayName,
     onSave: onSave,
   );
 }
@@ -55,9 +56,9 @@ Future<void> showProfileDescriptionEditor(BuildContext context) async {
   );
   await _showProfileTextEditor(
     context: context,
-    title: 'Profile description',
+    title: context.l10n.settingsEditProfileDescription,
     initialValue: profile?.about ?? '',
-    hintText: 'Profile description',
+    hintText: context.l10n.settingsEditProfileDescription,
     multiline: true,
     onSave: onSave,
   );
@@ -141,9 +142,9 @@ Future<void> _showProfileTextEditor({
 }
 
 void _showSaveError(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text("We couldn't save this change. Try again.")),
-  );
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(context.l10n.profileSaveChangeFailed)));
 }
 
 class _ProfileTextEditSheet extends HookWidget {
@@ -161,6 +162,7 @@ class _ProfileTextEditSheet extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final controller = useTextEditingController(text: initialValue);
     useListenable(controller);
     final isSaving = useState(false);
@@ -177,7 +179,7 @@ class _ProfileTextEditSheet extends HookWidget {
       } on ProfileCommunityChangedException {
         if (context.mounted) Navigator.of(context).pop();
       } catch (_) {
-        error.value = "We couldn't save this change. Try again.";
+        error.value = l10n.profileSaveChangeFailed;
       } finally {
         if (context.mounted) isSaving.value = false;
       }
@@ -223,7 +225,9 @@ class _ProfileTextEditSheet extends HookWidget {
             FilledButton(
               key: const ValueKey('profile-field-save'),
               onPressed: hasChanges && !isSaving.value ? save : null,
-              child: Text(isSaving.value ? 'Saving…' : 'Save'),
+              child: Text(
+                isSaving.value ? l10n.commonSavingEllipsis : l10n.commonSave,
+              ),
             ),
           ],
         ),

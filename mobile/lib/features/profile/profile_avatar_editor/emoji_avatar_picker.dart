@@ -2,13 +2,31 @@ part of '../profile_avatar_editor.dart';
 
 const _emojiPreviewGlyphSize = _previewSize * 258 / 512;
 const _skinTones = [
-  (label: 'Default', color: Color(0xFFFFC93A)),
-  (label: 'Light', color: Color(0xFFFFDAB7)),
-  (label: 'Medium-light', color: Color(0xFFE7B98F)),
-  (label: 'Medium', color: Color(0xFFC88C61)),
-  (label: 'Medium-dark', color: Color(0xFFA46134)),
-  (label: 'Dark', color: Color(0xFF5D4437)),
+  (color: Color(0xFFFFC93A)),
+  (color: Color(0xFFFFDAB7)),
+  (color: Color(0xFFE7B98F)),
+  (color: Color(0xFFC88C61)),
+  (color: Color(0xFFA46134)),
+  (color: Color(0xFF5D4437)),
 ];
+
+/// The name of skin tone [index] in [_skinTones].
+String _skinToneLabel(AppLocalizations l10n, int index) => switch (index) {
+  1 => l10n.profileSkinToneLight,
+  2 => l10n.profileSkinToneMediumLight,
+  3 => l10n.profileSkinToneMedium,
+  4 => l10n.profileSkinToneMediumDark,
+  5 => l10n.profileSkinToneDark,
+  _ => l10n.profileSkinToneDefault,
+};
+
+/// The label of an avatar editor mode tab.
+String _avatarModeLabel(AppLocalizations l10n, ProfileAvatarMode mode) =>
+    switch (mode) {
+      ProfileAvatarMode.image => l10n.profileAvatarModeImage,
+      ProfileAvatarMode.emoji => l10n.profileAvatarModeEmoji,
+      ProfileAvatarMode.animated => l10n.profileAvatarModeAnimated,
+    };
 
 enum _EmojiEditorSection { background, emoji }
 
@@ -105,7 +123,7 @@ class _EmojiMode extends HookConsumerWidget {
                                     controller: searchController,
                                     textInputAction: TextInputAction.search,
                                     decoration: InputDecoration(
-                                      hintText: 'Search emoji',
+                                      hintText: context.l10n.profileEmojiSearch,
                                       filled: true,
                                       fillColor: context
                                           .colors
@@ -139,7 +157,9 @@ class _EmojiMode extends HookConsumerWidget {
                                       suffixIcon: searchController.text.isEmpty
                                           ? null
                                           : IconButton(
-                                              tooltip: 'Clear search',
+                                              tooltip: context
+                                                  .l10n
+                                                  .profileEmojiClearSearch,
                                               onPressed: searchController.clear,
                                               icon: const Icon(
                                                 LucideIcons.x,
@@ -165,7 +185,7 @@ class _EmojiMode extends HookConsumerWidget {
                                   : visibleEmoji.isEmpty
                                   ? Center(
                                       child: Text(
-                                        'No emoji found',
+                                        context.l10n.profileEmojiNoResults,
                                         style: context.textTheme.bodyMedium
                                             ?.copyWith(
                                               color: context
@@ -229,7 +249,7 @@ class _EmojiMode extends HookConsumerWidget {
                         key: const ValueKey('emoji-editor-background'),
                         icon: LucideIcons.palette,
                         iosIcon: IosGlassNavigationIcon.palette,
-                        label: 'Background',
+                        label: context.l10n.profileAvatarBackground,
                         selected:
                             activeSection == _EmojiEditorSection.background,
                         onTap: () =>
@@ -243,7 +263,7 @@ class _EmojiMode extends HookConsumerWidget {
                         key: const ValueKey('emoji-editor-emoji'),
                         icon: LucideIcons.smile,
                         iosIcon: IosGlassNavigationIcon.emoji,
-                        label: 'Emoji',
+                        label: context.l10n.profileAvatarModeEmoji,
                         selected: activeSection == _EmojiEditorSection.emoji,
                         onTap: () =>
                             onSectionChanged(_EmojiEditorSection.emoji),
@@ -319,14 +339,17 @@ class _AvatarSkinToneSelector extends StatelessWidget {
         key: const ValueKey('emoji-avatar-skin-tone'),
         value: value,
         colors: [for (final tone in _skinTones) tone.color],
-        labels: [for (final tone in _skinTones) tone.label],
+        labels: [
+          for (var index = 0; index < _skinTones.length; index++)
+            _skinToneLabel(context.l10n, index),
+        ],
         onChanged: onChanged,
       );
     }
     return PopupMenuButton<int>(
       key: const ValueKey('emoji-avatar-skin-tone'),
       initialValue: value,
-      tooltip: 'Skin tone',
+      tooltip: context.l10n.profileSkinTone,
       position: PopupMenuPosition.under,
       onSelected: onChanged,
       itemBuilder: (context) => [
@@ -337,7 +360,7 @@ class _AvatarSkinToneSelector extends StatelessWidget {
               children: [
                 _SkinToneDot(color: tone.color),
                 const SizedBox(width: Grid.xs),
-                Expanded(child: Text(tone.label)),
+                Expanded(child: Text(_skinToneLabel(context.l10n, index))),
                 if (index == value)
                   Icon(
                     LucideIcons.check,
