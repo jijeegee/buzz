@@ -3,7 +3,11 @@
   "private": true,
   "packageManager": "pnpm@11.4.0",
   "scripts": {
-    "check": "pnpm -r check"
+    "check": "pnpm -r check",
+    "i18n:prepare": "node i18n/scripts/i18n.mjs prepare",
+    "i18n:apply": "node i18n/scripts/i18n.mjs apply",
+    "i18n:check": "node i18n/scripts/i18n.mjs check",
+    "i18n:pseudo": "node i18n/scripts/i18n.mjs pseudo"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6"

@@ -10,8 +10,8 @@ import { formatItemTimestamp } from "@/shared/lib/datetime";
 
 /**
  * A Chats row with the Inbox row's look: avatar, name with the working
- * timer and the time on the first line, the latest message below in up to
- * two lines, and the unread and @ badges under the time. No hover actions.
+ * timer and the time on the first line, the latest message below in one
+ * line, and the unread and @ badges under the time. No hover actions.
  */
 export function ChatConversationRow({
   ariaLabel,
@@ -63,7 +63,7 @@ export function ChatConversationRow({
         rest.className,
         dimmed && "sidebar-muted-content opacity-50 dark:opacity-45",
       )}
-      contentClassName={indent ? "pl-6" : undefined}
+      contentClassName={cn("py-2.5", indent && "pl-6")}
       isSelected={isActive}
       meta={
         <>
@@ -89,7 +89,7 @@ export function ChatConversationRow({
           <p
             className={cn(
               conversationRowPreviewClass(bold),
-              "line-clamp-2 min-w-0 flex-1 whitespace-normal break-words",
+              "min-w-0 flex-1 truncate",
             )}
           >
             {preview.line}

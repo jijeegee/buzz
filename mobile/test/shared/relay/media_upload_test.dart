@@ -9,8 +9,12 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:image_picker/image_picker.dart';
 import 'package:nostr/nostr.dart' as nostr;
+import 'package:kuzz/shared/device_key/device_key.dart';
+import 'package:kuzz/shared/device_key/device_proof.dart';
 import 'package:kuzz/shared/relay/media_auth.dart';
 import 'package:kuzz/shared/relay/media_upload.dart';
+
+import '../../helpers/software_device_key.dart';
 
 final _pngBytes = Uint8List.fromList([
   0x89,
@@ -357,6 +361,10 @@ void main() {
     test('signs Blossom auth and uploads gallery image bytes', () async {
       final keychain = nostr.Keys.generate();
       final nsec = keychain.nsec;
+      final previousDeviceKey = DeviceKey.instance;
+      final device = SoftwareDeviceKey(List.filled(32, 6));
+      DeviceKey.instance = device;
+      addTearDown(() => DeviceKey.instance = previousDeviceKey);
 
       http.Request? capturedRequest;
       final client = http_testing.MockClient((request) async {
@@ -423,6 +431,25 @@ void main() {
       expect(
         tags,
         anyElement(equals(<String>['server', 'relay.example:8443'])),
+      );
+      // The device tag (device-bound keys plan §2.1) covers the event.
+      final deviceTag = tags.singleWhere((tag) => tag.first == deviceTagName);
+      expect(deviceTag[1], hexEncode(device.publicKey));
+      expect(
+        verifyDeviceSignature(
+          device.publicKey,
+          utf8.encode(
+            eventProofMessage(
+              pubkey: authEvent['pubkey'] as String,
+              createdAt: authEvent['created_at'] as int,
+              kind: 24242,
+              tags: tags,
+              content: authEvent['content'] as String,
+            ),
+          ),
+          hexDecode(deviceTag[2]),
+        ),
+        isTrue,
       );
     });
 

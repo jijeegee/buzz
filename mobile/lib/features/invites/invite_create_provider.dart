@@ -236,7 +236,7 @@ class RelayCommunityInviteActions implements CommunityInviteActions {
     final response = tokens != null
         ? await sendWithBearer(tokens, post)
         : await post(
-            buildNip98AuthHeader(
+            await buildNip98AuthHeader(
               method: 'POST',
               url: url,
               bodyBytes: bodyBytes,

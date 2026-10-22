@@ -163,6 +163,14 @@ export async function setup({ lifecycle = false } = {}) {
     },
     "@/features/messages/lib/imetaMediaMarkdown": {
       buildOutgoingMessage: (text) => ({ content: text, mediaTags: [] }),
+      mergeOutgoingTags: (mediaTags, emojiTags) =>
+        !mediaTags && emojiTags.length === 0
+          ? undefined
+          : [...(mediaTags ?? []), ...emojiTags],
+    },
+    "@/features/messages/lib/failedSends": {
+      hasFailedSend: () => false,
+      replaceFailedSendRetry: () => {},
     },
     "@/shared/api/tauriChannels": { syncAgentsToActiveHuddle: async () => {} },
     "@/shared/lib/pubkey": {
@@ -173,7 +181,19 @@ export async function setup({ lifecycle = false } = {}) {
       truncateNpub: (key) => key,
     },
     "@/shared/lib/customEmojiTags": { buildCustomEmojiTags: () => [] },
-    "./useMentionSendFlow.helpers": helpers,
+    "./useMentionSendFlow.helpers": {
+      ...helpers,
+      // Sending no longer re-checks mentions with the server; the preview-tag
+      // step is the remaining await before publish, so the "prepare" and
+      // "publish" gates hold the send there.
+      resolvePreviewTags: async (...args) => {
+        for (const phase of ["prepare", "publish"]) {
+          calls.push([phase, args[0]?.capturedChannelId]);
+          if (control[phase]) await control[phase].promise;
+        }
+        return helpers.resolvePreviewTags(...args);
+      },
+    },
     "@/features/messages/lib/agentAddressMention.mjs": {
       AUTO_ROUTE_MENTION_MARKER: "auto-route",
       SOFT_MENTION_MARKER: "soft",

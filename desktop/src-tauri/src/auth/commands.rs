@@ -132,7 +132,8 @@ fn current_status(
                 .map(|keys| keys.public_key().to_hex())
         })
         .flatten();
-    status.device_signed_out = state.token_auth.device_signed_out(origin);
+    status.device_signed_out =
+        state.token_auth.device_signed_out(origin) || state.held_key_unpaired(origin);
     status
 }
 
@@ -773,6 +774,9 @@ pub(crate) fn ws_auth_mode(
 pub async fn get_ws_auth_frame(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
+    if state.held_key_unpaired(&origin) {
+        return Err(super::signed_out::SIGNED_OUT_MESSAGE.into());
+    }
     match ws_auth_mode(&state.token_auth, &origin)? {
         CredentialMode::Keys => Ok(None),
         CredentialMode::Blocked(reason) => Err(reason),
@@ -793,7 +797,8 @@ fn api_error(error: ApiError) -> String {
 /// on this computer: revoke its session server-side, durably mark it signed
 /// out, stop its agents, and when it was the active account switch to another
 /// account still signed in here (`switchedTo`), else the signed-out screen.
-/// Keys, communities and history are never deleted. A network failure keeps
+/// The account's key leaves this computer (the server backup restores it on
+/// the next sign-in); communities and history stay. A network failure keeps
 /// everything so the user can retry (the server-side session would otherwise
 /// stay alive unrevoked).
 #[tauri::command]
@@ -1041,6 +1046,7 @@ async fn sign_out_account_now(
             Ok(None) => {}
             Err(error) => {
                 eprintln!("kuzz-desktop: auth: no switch after sign-out: {error}");
+                forget_key_after_sign_out(app, account, data_dir.as_deref());
                 emit_changed(app, origin);
                 return Ok(SignedOut {
                     switched_to: None,
@@ -1048,16 +1054,52 @@ async fn sign_out_account_now(
                 });
             }
         }
+        forget_key_after_sign_out(app, account, data_dir.as_deref());
         return Ok(SignedOut {
             switched_to: Some(next),
             agents_not_stopped,
         });
     }
+    forget_key_after_sign_out(app, account, data_dir.as_deref());
     emit_changed(app, origin);
     Ok(SignedOut {
         switched_to: None,
         agents_not_stopped,
     })
+}
+
+/// The signed-out account's key leaves this computer (after any switch, so
+/// the active copy has moved on): a copy left behind could still sign as the
+/// person. Signing in again restores it from the server backup. Best effort: a
+/// failure is logged, the sign-out itself already happened.
+fn forget_key_after_sign_out(
+    app: &AppHandle,
+    account: Option<PublicKey>,
+    data_dir: Option<&std::path::Path>,
+) {
+    let (Some(account), Some(data_dir)) = (account, data_dir) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let Ok(_guard) = state.identity_mutation.lock() else {
+        eprintln!("kuzz-desktop: auth: signed-out key kept: identity storage is busy");
+        return;
+    };
+    match super::accounts::forget_signed_out_key(
+        super::accounts::shared_secrets(),
+        data_dir,
+        &account,
+    ) {
+        Ok(Some(placeholder)) => {
+            if let Ok(mut keys) = state.keys.lock() {
+                if keys.public_key() == account {
+                    *keys = placeholder;
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(error) => eprintln!("kuzz-desktop: auth: signed-out key not removed: {error}"),
+    }
 }
 
 /// What a sign-out did besides signing the account out.

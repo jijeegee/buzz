@@ -482,6 +482,9 @@ fn preserve_outgoing(
     outgoing: &Keys,
 ) -> Result<(), String> {
     let pubkey = outgoing.public_key();
+    if !registry.contains_pubkey(&pubkey) && is_placeholder(secrets, &pubkey)? {
+        return Ok(());
+    }
     ensure_owners_recorded(data_dir, registry, &pubkey);
     let marker = secrets.load("identity.bootstrap")?;
     if is_unused_bootstrap_key(
@@ -635,6 +638,9 @@ pub(crate) fn commit_sign_in(
     registry.clear_pending(origin, &pubkey);
     save_registry(secrets, data_dir, &registry)?;
     write_active_copy(secrets, keys, Some((origin, refresh_token)))?;
+    if let Err(error) = secrets.delete(PLACEHOLDER_SLOT) {
+        eprintln!("kuzz-desktop: accounts: placeholder marker not cleared: {error}");
+    }
     Ok(registry)
 }
 
@@ -860,12 +866,78 @@ pub(crate) fn mark_signed_out(
 ) -> Result<(), String> {
     let _lock = registry_lock();
     let mut registry = load_registry(data_dir)?.unwrap_or_default();
-    if registry.get(origin, pubkey).is_none() && !registry.contains_pubkey(pubkey) {
+    // Only an account listed on `origin` is signed out of it: a key-only
+    // account must never turn into a server account here, or the sign-out
+    // would remove its only key (`forget_signed_out_key`).
+    if registry.get(origin, pubkey).is_none() {
         return Ok(());
     }
     registry.upsert(origin, pubkey, AccountState::SignedOut);
     let _ = secrets.delete(&refresh_slot(pubkey, origin));
     save_registry(secrets, data_dir, &registry)
+}
+
+/// Secure-storage entry naming the throwaway key that stands in as the active
+/// copy after the last login account signed out here. It is nobody's
+/// account: never listed, never kept, replaced by the next sign-in.
+pub(crate) const PLACEHOLDER_SLOT: &str = "identity.placeholder";
+
+/// Whether `pubkey` is the signed-out placeholder key.
+fn is_placeholder(secrets: &dyn Secrets, pubkey: &PublicKey) -> Result<bool, String> {
+    Ok(secrets.load(PLACEHOLDER_SLOT)?.as_deref() == Some(pubkey.to_hex().as_str()))
+}
+
+/// Remove a login account's key from this computer once it is signed out
+/// everywhere here. The server keeps its backup, so signing in
+/// restores it; a copy left behind could still sign as the person after
+/// sign-out. A key-only account (no backup) or one still signed in on another
+/// server keeps its key. When the account is still the active one (no other
+/// account to switch to), the active copy is replaced by a placeholder key,
+/// returned so the caller can swap it in memory too.
+pub(crate) fn forget_signed_out_key(
+    secrets: &dyn Secrets,
+    data_dir: &Path,
+    pubkey: &PublicKey,
+) -> Result<Option<Keys>, String> {
+    let _lock = registry_lock();
+    let Some(mut registry) = load_registry(data_dir)? else {
+        return Ok(None);
+    };
+    let hex = pubkey.to_hex();
+    let entries: Vec<&Account> = registry
+        .accounts
+        .iter()
+        .filter(|a| a.pubkey == hex)
+        .collect();
+    let backed_up = entries.iter().any(|a| a.origin != ANY_ORIGIN);
+    let all_signed_out = entries.iter().all(|a| a.state == AccountState::SignedOut);
+    if !backed_up || !all_signed_out {
+        return Ok(None);
+    }
+    let placeholder = if registry.active.as_deref() == Some(hex.as_str()) {
+        let keys = Keys::generate();
+        let nsec = nsec_of(&keys)?;
+        let mut entries = HashMap::from([
+            ("identity".to_owned(), nsec.to_string()),
+            ("identity.bootstrap".to_owned(), String::new()),
+            (PLACEHOLDER_SLOT.to_owned(), keys.public_key().to_hex()),
+        ]);
+        let stored = secrets.store_all(&entries);
+        for value in entries.values_mut() {
+            zeroize::Zeroize::zeroize(value);
+        }
+        stored?;
+        if secrets.load("identity")?.as_deref() != Some(nsec.as_str()) {
+            return Err("OS secure storage verification failed".into());
+        }
+        registry.active = None;
+        save_registry(secrets, data_dir, &registry)?;
+        Some(keys)
+    } else {
+        None
+    };
+    secrets.delete(&identity_slot(pubkey))?;
+    Ok(placeholder)
 }
 
 // ── Launch reconciliation and migration ────────────────────────────────────
@@ -914,10 +986,24 @@ pub(crate) fn reconcile(secrets: &dyn Secrets, data_dir: &Path) -> Result<Reconc
         .map(Zeroizing::new)
         .and_then(|nsec| Keys::parse(nsec.as_str()).ok());
     let active = registry.active_pubkey();
+    // A login account is active here: a key written outside the list (by
+    // another process, a leftover file, an import) never replaces it. Only
+    // that account's own key may sign as it; its copy is refilled below.
+    let google_active = active.is_some_and(|active| {
+        let hex = active.to_hex();
+        registry
+            .accounts
+            .iter()
+            .any(|a| a.pubkey == hex && a.origin != ANY_ORIGIN)
+    });
     match (legacy, active) {
+        // The stand-in after the last sign-out: nobody's account.
+        (Some(keys), _)
+            if !registry.contains_pubkey(&keys.public_key())
+                && is_placeholder(secrets, &keys.public_key())? => {}
         // Written outside the list (key import): keep every listed account
         // and adopt it as the active one.
-        (Some(keys), _) if !registry.contains_pubkey(&keys.public_key()) => {
+        (Some(keys), _) if !registry.contains_pubkey(&keys.public_key()) && !google_active => {
             let pubkey = keys.public_key();
             if let Some(previous) = active {
                 ensure_owners_recorded(data_dir, &mut registry, &previous);
@@ -952,6 +1038,17 @@ pub(crate) fn reconcile(secrets: &dyn Secrets, data_dir: &Path) -> Result<Reconc
                 }
                 Err(error) => return Err(error),
             };
+            if let Some(unknown) = legacy
+                .as_ref()
+                .map(Keys::public_key)
+                .filter(|key| !registry.contains_pubkey(key))
+            {
+                eprintln!(
+                    "kuzz-desktop: accounts: replaced a key written outside the account list \
+                     ({}…) with the active login account's own key",
+                    &unknown.to_hex()[..8]
+                );
+            }
             let mut refilled = legacy.as_ref().map(Keys::public_key) != Some(active);
             if refilled {
                 write_active_copy(secrets, &keys, None)?;
@@ -1735,6 +1832,11 @@ pub async fn switch_account(
         save_registry(secrets, &data_dir, &registry)?;
         write_active_copy(secrets, &keys, None)?;
         *state.keys.lock().map_err(|_| "identity storage is busy")? = keys;
+        // With the key, so the pairing check never sees the new key against
+        // the old binding (the hand-over below settles every origin).
+        if registry.get(&origin, &target).is_some() {
+            state.token_auth.set_key_backup(&origin, target);
+        }
         outgoing.public_key()
     };
     // This origin's lock is still held: no session here can rotate until it

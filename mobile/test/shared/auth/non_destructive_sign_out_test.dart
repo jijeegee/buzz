@@ -27,13 +27,14 @@ class _Harness {
   late Community first;
   late Community second;
 
-  Future<void> start({bool token = false}) async {
+  Future<void> start({bool token = false, String? googleAccount}) async {
     first = Community.create(
       name: 'First',
       relayUrl: 'https://first.test',
       pubkey: keys.public,
       nsec: keys.nsec,
       tokenAuth: token,
+      googleBackupAccountId: googleAccount,
     );
     second = Community.create(
       name: 'Second',
@@ -164,6 +165,71 @@ void main() {
       expect(find.text('Signed in'), findsNothing);
       final saved = await h.storage.loadAll();
       expect(saved.every((c) => c.signedOut && c.nsec == h.keys.nsec), isTrue);
+    },
+  );
+
+  test(
+    'logout deletes a person key Google holds and keeps one it does not',
+    () async {
+      final h = _Harness();
+      await h.start(googleAccount: 'google-account');
+      await h.container.read(authProvider.notifier).signOut();
+      final saved = await h.storage.loadAll();
+      final first = saved.singleWhere((c) => c.id == h.first.id);
+      final second = saved.singleWhere((c) => c.id == h.second.id);
+      // Google restores the first one's key at the next sign-in.
+      expect(first.signedOut, isTrue);
+      expect(first.nsec, isNull);
+      expect(first.pubkey, h.keys.public);
+      expect(first.googleBackupAccountId, 'google-account');
+      // Nothing else could restore the second one's key.
+      expect(second.signedOut, isTrue);
+      expect(second.nsec, h.keys.nsec);
+      expect(h.ended, [h.first.id, h.second.id]);
+    },
+  );
+
+  test(
+    'a remote sign-out of one community leaves the other accounts signed in',
+    () async {
+      final h = _Harness();
+      await h.start(googleAccount: 'google-account');
+      final auth = h.container.read(authProvider.notifier);
+
+      // Another account (not the active one) was signed out elsewhere.
+      await auth.signOutCommunity(h.second.id, deviceOnly: true);
+      var saved = await h.storage.loadAll();
+      expect(saved.singleWhere((c) => c.id == h.second.id).signedOut, isTrue);
+      expect(saved.singleWhere((c) => c.id == h.first.id).signedOut, isFalse);
+      expect(saved.singleWhere((c) => c.id == h.first.id).nsec, h.keys.nsec);
+      expect(h.ended, [h.second.id]);
+      expect(
+        h.container.read(authProvider).value?.status,
+        AuthStatus.authenticated,
+      );
+      expect(
+        (await h.container.read(activeCommunityProvider.future))?.id,
+        h.first.id,
+      );
+
+      // Now the active one: it is shown signed out, its Google-held key
+      // leaves the phone, and the other community is not touched again.
+      await auth.signOutCommunity(h.first.id, deviceOnly: true);
+      saved = await h.storage.loadAll();
+      final first = saved.singleWhere((c) => c.id == h.first.id);
+      expect(first.signedOut, isTrue);
+      expect(first.nsec, isNull);
+      expect(first.pubkey, h.keys.public);
+      expect(saved.singleWhere((c) => c.id == h.second.id).nsec, h.keys.nsec);
+      expect(h.ended, [h.second.id, h.first.id]);
+      expect(
+        h.container.read(authProvider).value?.status,
+        AuthStatus.unauthenticated,
+      );
+
+      // An unknown community changes nothing.
+      await auth.signOutCommunity('gone', deviceOnly: true);
+      expect(h.ended, [h.second.id, h.first.id]);
     },
   );
 

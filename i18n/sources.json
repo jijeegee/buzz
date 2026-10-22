@@ -1,0 +1,12 @@
+{
+  "sources": [
+    { "id": "desktop", "path": "desktop/src/locales/{lang}.json" },
+    {
+      "id": "mobile",
+      "path": "mobile/lib/l10n/app_{lang_}.arb",
+      "localeHeader": true
+    },
+    { "id": "web", "path": "web/src/locales/{lang}.json" },
+    { "id": "relay", "path": "crates/kuzz-relay/locales/{lang}.json" }
+  ]
+}

@@ -130,7 +130,7 @@ export function PeopleSidebarList({
       <div className="space-y-2 px-2 pb-2 pt-1">
         <div className="flex items-center justify-between gap-2">
           <h2 className="px-1 text-base font-semibold text-sidebar-foreground">
-            People
+            Friends
           </h2>
           <Button
             className="h-7 px-2 text-xs"

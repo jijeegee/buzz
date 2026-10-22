@@ -414,15 +414,16 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     });
     validateInviteRelayUri(Uri.parse(invite.relayUrl));
     final url = _claimUrlFromRelay(invite.relayUrl);
+    final authorization = await buildNip98AuthHeader(
+      method: 'POST',
+      url: url,
+      bodyBytes: utf8.encode(body),
+      nsec: nsec,
+    );
     final request = http.Request('POST', Uri.parse(url))
       ..followRedirects = false
       ..headers.addAll({
-        'Authorization': buildNip98AuthHeader(
-          method: 'POST',
-          url: url,
-          bodyBytes: utf8.encode(body),
-          nsec: nsec,
-        ),
+        'Authorization': authorization,
         'Content-Type': 'application/json',
       })
       ..body = body;

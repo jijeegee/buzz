@@ -430,6 +430,7 @@ class ConversationRowLayout extends StatelessWidget {
     this.preview,
     this.side,
     this.startInset = 0,
+    this.verticalPadding = Grid.twelve,
   });
 
   final Widget avatar;
@@ -443,6 +444,9 @@ class ConversationRowLayout extends StatelessWidget {
 
   /// Extra start padding (Chats' By channel thread indent).
   final double startInset;
+
+  /// Space above and below the row (Chats packs rows tighter).
+  final double verticalPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -468,9 +472,9 @@ class ConversationRowLayout extends StatelessWidget {
     return Padding(
       padding: EdgeInsetsDirectional.fromSTEB(
         Grid.gutter + startInset,
-        Grid.twelve,
+        verticalPadding,
         Grid.gutter,
-        Grid.twelve,
+        verticalPadding,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

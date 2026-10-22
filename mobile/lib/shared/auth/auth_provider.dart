@@ -234,14 +234,32 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     }();
   }
 
-  /// Ends this app's sessions without removing accounts, communities or keys.
-  Future<void> signOut({bool deviceOnly = false}) {
+  /// Ends this app's sessions without removing accounts or communities.
+  /// Person keys backed up to Google are deleted from this phone; keys with
+  /// no backup are kept, since nothing else could restore them.
+  Future<void> signOut({bool deviceOnly = false}) =>
+      _signOutWhere((_) => true, deviceOnly: deviceOnly);
+
+  /// Ends the session of one community only (the relay signed it out from
+  /// another device); every other account stays signed in. When it is the
+  /// active community, this phone shows it signed out, as [signOut] does.
+  Future<void> signOutCommunity(
+    String communityId, {
+    bool deviceOnly = false,
+  }) => _signOutWhere((item) => item.id == communityId, deviceOnly: deviceOnly);
+
+  Future<void> _signOutWhere(
+    bool Function(Community community) target, {
+    required bool deviceOnly,
+  }) {
     _logoutGeneration++;
     return ref.read(communityTransitionProvider).runExclusive(() async {
       final storage = ref.read(communityStorageProvider);
       final communities = await storage.loadAll();
+      final targets = communities.where(target).toList();
+      if (targets.isEmpty) return;
       var hasRevocations = false;
-      for (final community in communities.where((item) => !item.signedOut)) {
+      for (final community in targets.where((item) => !item.signedOut)) {
         hasRevocations =
             await ref.read(communityPushLeaseRevocationEnqueuerProvider)(
               community,
@@ -255,9 +273,11 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       await ref.read(communityTransitionProvider).run();
       final signedOut = [
         for (final community in communities)
-          community.copyWith(signedOut: true),
+          target(community) ? _signedOutCopy(community) : community,
       ];
-      // One durable commit: all stored identities survive, all sessions stop.
+      // One durable commit: all sessions stop; every identity stays listed.
+      // A person key held by Google is deleted from this phone (signing in
+      // with Google restores it); this install's device key is kept.
       await storage.saveAll(signedOut);
       // Cached message heads are derived data; signing out leaves none behind.
       unawaited(
@@ -271,6 +291,18 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       final active =
           signedOut.where((item) => item.id == activeId).firstOrNull ??
           signedOut.firstOrNull;
+      if (active != null && !target(active)) {
+        // Another account was signed out; the active one carries on.
+        ref.invalidate(communityListProvider);
+        if (hasRevocations) {
+          unawaited(
+            ref
+                .read(communityPushLeaseRevocationTriggerProvider)()
+                .catchError(reportPushLeaseCleanupError),
+          );
+        }
+        return;
+      }
       state = AsyncData(
         AuthState(
           status: AuthStatus.unauthenticated,
@@ -335,6 +367,20 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       isCurrent: () => generation == _logoutGeneration,
     );
   }
+}
+
+/// [community] signed out. A person key backed up to Google is deleted
+/// (its public key is kept, so the next Google sign-in restores the same
+/// account); one with no backup is kept.
+Community _signedOutCopy(Community community) {
+  if (community.googleBackupAccountId == null) {
+    return community.copyWith(signedOut: true);
+  }
+  return community.copyWith(
+    signedOut: true,
+    pubkey: community.pubkey ?? _pubkey(community.nsec),
+    nsec: null,
+  );
 }
 
 String? _pubkey(String? nsec) {

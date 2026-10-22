@@ -101,6 +101,10 @@ export function resolve(specifier, context, nextResolve) {
     const resolved = path.join(srcRoot, "protectedFeatures", variant);
     return nextResolve(toFileSpecifier(resolved), context);
   }
+  if (specifier === "@i18n-languages") {
+    const resolved = path.join(repoRoot, "i18n", "languages.json");
+    return nextResolve(toFileSpecifier(resolved), context);
+  }
   if (specifier === "@model-capabilities-manifest") {
     const resolved = path.join(repoRoot, "scripts", "model-capabilities.json");
     return nextResolve(toFileSpecifier(resolved), context);

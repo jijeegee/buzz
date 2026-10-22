@@ -49,6 +49,7 @@ export default defineConfig(async ({ mode }) => {
           __dirname,
           "../scripts/model-capabilities.json",
         ),
+        "@i18n-languages": path.resolve(__dirname, "../i18n/languages.json"),
       },
     },
 

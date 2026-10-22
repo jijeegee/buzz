@@ -12,7 +12,7 @@ String chatRowTimestamp(int unixSeconds, {DateTime? now}) =>
 
 /// One Chats row: the Activity conversation row ([ConversationRowLayout])
 /// with desktop's Chats row rules: avatar | title, then the latest message in
-/// up to two lines | a right column with the time on top and @ and the unread
+/// one line | a right column with the time on top and @ and the unread
 /// count under it.
 /// The preview never runs under the right column. No author in the preview.
 class _ChatRow extends HookConsumerWidget {
@@ -163,6 +163,8 @@ class _ChatRow extends HookConsumerWidget {
     final titleLineHeight = conversationTitleLineHeight(context);
     final content = ConversationRowLayout(
       startInset: indent ? _threadIndent : 0,
+      // Telegram/KakaoTalk density: one preview line, tight rows.
+      verticalPadding: Grid.xxs,
       avatar: avatar,
       title: SizedBox(
         height: titleLineHeight,
@@ -204,7 +206,7 @@ class _ChatRow extends HookConsumerWidget {
           : Text(
               preview,
               key: ValueKey('chat-row-preview-${row.key}'),
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: activityPreviewTextStyle.copyWith(
                 color: bold ? context.colors.onSurface : mutedColor,

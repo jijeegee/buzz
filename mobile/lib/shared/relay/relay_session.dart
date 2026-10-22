@@ -12,7 +12,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/age_gate/age_signal_provider.dart';
 import '../auth/auth.dart';
+import '../auth/remote_sign_out.dart';
+import '../auth/token/relay_origin.dart';
 import '../auth/token/token_session.dart';
+import '../device_key/device_proof.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
 import 'relay_client.dart';
@@ -208,6 +211,33 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _connectionGeneration++;
     _socket?.dispose();
     _socket = null;
+  }
+
+  /// The relay refused this socket as signed out elsewhere: confirm with
+  /// the account of the community this socket belongs to, and sign out
+  /// only that community.
+  void _checkRemoteSignOut() {
+    final community = ref.read(activeCommunityProvider).value;
+    if (community == null) return;
+    if (!community.tokenAuth && community.googleBackupAccountId == null) {
+      return; // No account to confirm with.
+    }
+    final String origin;
+    try {
+      origin = normalizeRelayOrigin(community.relayUrl);
+      if (normalizeRelayOrigin(ref.read(relayConfigProvider).baseUrl) !=
+          origin) {
+        return; // The active community changed under this socket.
+      }
+    } on FormatException {
+      return;
+    }
+    unawaited(
+      ref.read(remoteSignOutCheckProvider)(
+        communityId: community.id,
+        origin: origin,
+      ),
+    );
   }
 
   /// Execute a one-shot query via the relay's HTTP bridge (`POST /query`).
@@ -630,6 +660,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     if (error is RelayAuthRejectedException) {
       _reconnectTimer?.cancel();
       state = const SessionState(status: SessionStatus.disconnected);
+      // Signed out from another device: confirm with the account, then sign
+      // out here too.
+      if (isRelaySignedOut(error)) _checkRemoteSignOut();
       return;
     }
     _scheduleReconnect();

@@ -10,7 +10,12 @@ function getLocalRenderKey(message: RelayEvent) {
   return message.localKey ?? message.id;
 }
 
-function isMatchingPendingMessage(pending: RelayEvent, incoming: RelayEvent) {
+// A failed row matches too: a send can time out after the relay stored it,
+// and its echo must then replace the row rather than sit beside it.
+export function isMatchingPendingMessage(
+  pending: RelayEvent,
+  incoming: RelayEvent,
+) {
   if (
     !pending.pending ||
     incoming.pending ||

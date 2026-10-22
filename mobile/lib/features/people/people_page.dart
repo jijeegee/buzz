@@ -285,7 +285,7 @@ class PeoplePage extends HookConsumerWidget {
         horizontalInset: Grid.gutter,
         showBottomDivider: true,
         bottomDividerOpacity: 0.07,
-        title: Text('People', style: headerTitleStyle),
+        title: Text('Friends', style: headerTitleStyle),
         titleStyle: headerTitleStyle,
         actions: [
           IconButton(

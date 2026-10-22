@@ -19,6 +19,7 @@ import {
 } from "@/features/messages/ui/MessageThreadPanel";
 import { MessageQuoteScope } from "@/features/messages/ui/messageQuoteScope";
 import { useComposerQuotes } from "@/features/channels/ui/useComposerQuotes";
+import type { SendPreview } from "@/features/messages/hooks";
 import { MessageThreadPanelSkeleton } from "@/features/messages/ui/MessageThreadPanelSkeleton";
 import { ThreadRepliesErrorCard } from "@/features/messages/ui/MessageThreadReplyState";
 import {
@@ -158,6 +159,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   onOpenMembers,
   onOpenProfilePanel,
   onOpenThread,
+  onPreviewSend,
   onResetThreadPanelWidth,
   onSelectThreadReplyTarget,
   onSendMessage,
@@ -324,6 +326,7 @@ export const ChannelPane = React.memo(function ChannelPane({
         threadHeadId: string | null;
       } | null,
       forceRest?: boolean,
+      optimisticLocalKey?: string,
     ) => {
       const shouldCompleteWelcomeBanner =
         isActiveWelcomeChannel &&
@@ -337,6 +340,7 @@ export const ChannelPane = React.memo(function ChannelPane({
         channelId,
         threadContext,
         forceRest,
+        optimisticLocalKey,
       );
       if (
         channelId &&
@@ -360,6 +364,15 @@ export const ChannelPane = React.memo(function ChannelPane({
       onSendMessage,
     ],
   );
+  const previewMainSend = React.useMemo<SendPreview | undefined>(
+    () =>
+      onPreviewSend &&
+      ((input) => {
+        messageTimelineRef.current?.scrollToBottomOnNextUpdate();
+        return onPreviewSend(input);
+      }),
+    [onPreviewSend],
+  );
   // Quote lands in the composer of the conversation the row belongs to: the
   // main timeline's composer or the open thread's composer.
   const composerQuotes = useComposerQuotes({
@@ -371,6 +384,8 @@ export const ChannelPane = React.memo(function ChannelPane({
       activeChannel?.channelType !== "forum" &&
       !isModerationDmChannel &&
       blockedPeer === null,
+    previewMain: previewMainSend,
+    previewThread: onPreviewSend,
     sendMain: handleSendMessage,
     sendThread: onSendThreadReply,
     threadHeadId: threadHeadMessage?.id ?? null,
@@ -833,6 +848,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                           ? prepareDmSendChannel
                           : undefined
                       }
+                      onPreviewSend={composerQuotes.previewMain}
                       onSend={composerQuotes.sendMain}
                       {...{ profiles, recentMentionPubkeys: recentMentions }}
                       showBackgroundUploadProgress={false}
@@ -934,6 +950,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                   onMarkRead={onMarkRead}
                   onExpandReplies={onExpandThreadReplies}
                   onSelectReplyTarget={onSelectThreadReplyTarget}
+                  onPreviewSend={composerQuotes.previewThread}
                   onSend={composerQuotes.sendThread}
                   onSendToChannel={
                     isComposerDisabled ? undefined : onSendToChannel

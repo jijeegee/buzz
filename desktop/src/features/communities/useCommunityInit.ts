@@ -59,6 +59,7 @@ import { resetSidebarRelayConnectionCardState } from "@/features/sidebar/ui/useS
 import { clearMarkdownNodeCache } from "@/shared/ui/markdown/nodeCache";
 import { resetMessageLinkMetadataCache } from "@/shared/ui/markdown/useMessageLinkMetadata";
 import { resetVideoPlayerState } from "@/shared/ui/videoPlayerState";
+import { resetFailedSends } from "@/features/messages/lib/failedSends";
 
 import {
   initFirstCommunity,
@@ -106,6 +107,7 @@ async function resetCommunityState({
   resetAutoRouteLedger();
   resetAutoRouteStatus();
   resetChannelMembershipWrites();
+  resetFailedSends();
   // Intentionally NOT reset: the in-flight detached agent-start map
   // (`useDetachedAgentStart`). Its entries are keyed by the scope each start
   // asserts (relay URL + signer + agent pubkey), so they cannot leak into the

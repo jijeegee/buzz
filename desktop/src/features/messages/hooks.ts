@@ -1,5 +1,11 @@
 import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
-import { useEffect, useEffectEvent, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import {
   type QueryClient,
   useMutation,
@@ -32,6 +38,7 @@ import {
 } from "@/features/messages/lib/channelHeadCache";
 import { storeChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
 import {
+  isMatchingPendingMessage,
   mergeMessages,
   mergeTimelineCacheMessages,
 } from "@/features/messages/lib/messageMerge";
@@ -66,8 +73,10 @@ import {
 } from "@/features/channels/membershipSystemRefresh";
 import { applyEditTagOverlay } from "@/features/messages/lib/applyEditTagOverlay.mjs";
 import { cancelAutoRoute } from "@/features/messages/lib/autoRouteStatus";
+import { registerFailedSend } from "@/features/messages/lib/failedSends";
 import {
   emptyChannelWindowStore,
+  flattenChannelWindowEvents,
   mapChannelWindowEvents,
   mergeLiveChannelWindowEvent,
   mergeLiveThreadSummary,
@@ -86,6 +95,24 @@ import {
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
 import { INBOX_DELETIONS_QUERY_KEY } from "@/features/home/lib/inboxDeletions";
+
+type SendMessageVariables = {
+  channelId?: string;
+  targetChannel?: Channel;
+  content: string;
+  mentionPubkeys?: string[];
+  parentEventId?: string | null;
+  mediaTags?: string[][];
+  forceRest?: boolean;
+  sentFromThreadRootId?: string | null;
+  sentFromThreadRootExcerpt?: string | null;
+  transport?: "auto" | "http";
+  /**
+   * Reuse the row a send preview already drew. Such a send keeps its row on
+   * failure, marked failed with Retry / Delete, instead of rolling back.
+   */
+  optimisticLocalKey?: string;
+};
 
 type MessageQueryContext = {
   optimisticId: string;
@@ -120,8 +147,8 @@ export function createOptimisticMessage(
   mediaTags: string[][] = [],
   sentFromThreadRootId: string | null = null,
   sentFromThreadRootExcerpt: string | null = null,
+  localKey = `optimistic-${crypto.randomUUID()}`,
 ): RelayEvent {
-  const localKey = `optimistic-${crypto.randomUUID()}`;
   const tags: string[][] = [];
 
   if (parentEventId) {
@@ -165,6 +192,184 @@ export function createOptimisticMessage(
     sig: "",
     pending: true,
   };
+}
+
+function channelThreadCaches(
+  queryClient: QueryClient,
+  channelId: string,
+): RelayEvent[][] {
+  return queryClient
+    .getQueriesData<RelayEvent[]>({ queryKey: ["thread-replies", channelId] })
+    .flatMap(([, events]) => (events ? [events] : []));
+}
+
+/**
+ * Put an own optimistic row (or its replacement with the same id) into the
+ * channel window and, for a reply, into its thread's cache when that thread
+ * is loaded. Leaves an unloaded thread alone so its first fetch still runs.
+ */
+export function writeOptimisticMessage(
+  queryClient: QueryClient,
+  channelId: string,
+  event: RelayEvent,
+) {
+  const windowKey = channelWindowKey(channelId);
+  queryClient.setQueryData(
+    windowKey,
+    mergeLiveChannelWindowEvent(
+      queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
+        emptyChannelWindowStore(),
+      event,
+    ),
+  );
+  projectChannelWindowMessages(queryClient, channelId);
+  const { parentId, rootId } = getThreadReference(event.tags);
+  if (!parentId || !rootId) return;
+  const repliesKey = threadRepliesKey(channelId, rootId);
+  if (queryClient.getQueryData(repliesKey) === undefined) return;
+  queryClient.setQueryData<RelayEvent[]>(repliesKey, (current = []) =>
+    mergeMessages(current, event),
+  );
+}
+
+export function updateOptimisticMessage(
+  queryClient: QueryClient,
+  channelId: string,
+  localKey: string,
+  update: (event: RelayEvent) => RelayEvent | null,
+) {
+  const matches = (event: RelayEvent) =>
+    event.pending === true && (event.localKey ?? event.id) === localKey;
+  const apply = (events: RelayEvent[]) =>
+    events.flatMap((event) => {
+      if (!matches(event)) return [event];
+      const next = update(event);
+      return next ? [next] : [];
+    });
+  const windowKey = channelWindowKey(channelId);
+  const store = queryClient.getQueryData<ChannelWindowStore>(windowKey);
+  if (store?.liveOverlay.some(matches)) {
+    queryClient.setQueryData(windowKey, {
+      ...store,
+      liveOverlay: apply(store.liveOverlay),
+    });
+  }
+  // The rendered timeline retains pending rows the window lacks, so it must
+  // change too or projection would bring the old row back.
+  const messagesKey = channelMessagesKey(channelId);
+  const messages = queryClient.getQueryData<RelayEvent[]>(messagesKey);
+  if (messages?.some(matches)) {
+    queryClient.setQueryData(messagesKey, apply(messages));
+  }
+  projectChannelWindowMessages(queryClient, channelId);
+  for (const [key, events] of queryClient.getQueriesData<RelayEvent[]>({
+    queryKey: ["thread-replies", channelId],
+  })) {
+    if (events?.some(matches)) queryClient.setQueryData(key, apply(events));
+  }
+}
+
+function findOptimisticMessage(
+  queryClient: QueryClient,
+  channelId: string,
+  localKey: string,
+): RelayEvent | undefined {
+  return [
+    queryClient.getQueryData<RelayEvent[]>(channelMessagesKey(channelId)) ?? [],
+    ...channelThreadCaches(queryClient, channelId),
+  ]
+    .flat()
+    .find((event) => event.pending === true && event.id === localKey);
+}
+
+/** Whether the relay's copy of an own optimistic row has already arrived. */
+function hasOwnEcho(
+  queryClient: QueryClient,
+  channelId: string,
+  localKey: string,
+): boolean {
+  const row = findOptimisticMessage(queryClient, channelId, localKey);
+  if (!row) return false;
+  const store = queryClient.getQueryData<ChannelWindowStore>(
+    channelWindowKey(channelId),
+  );
+  return [
+    store ? flattenChannelWindowEvents(store) : [],
+    queryClient.getQueryData<RelayEvent[]>(channelMessagesKey(channelId)) ?? [],
+    ...channelThreadCaches(queryClient, channelId),
+  ]
+    .flat()
+    .some(
+      (event) =>
+        event.created_at >= row.created_at &&
+        isMatchingPendingMessage(row, event),
+    );
+}
+
+/** Drop an own optimistic row that will not be sent. */
+export function removeOptimisticMessage(
+  queryClient: QueryClient,
+  channelId: string,
+  localKey: string,
+) {
+  updateOptimisticMessage(queryClient, channelId, localKey, () => null);
+}
+
+/** What a composer knows about a message at the moment the user sends it. */
+export type SendPreviewInput = {
+  channelId: string | null;
+  content: string;
+  mentionPubkeys: string[];
+  mediaTags: string[][];
+  parentEventId: string | null;
+};
+
+export type SendPreview = (
+  input: SendPreviewInput,
+) => { localKey: string; discard: () => void } | null;
+
+/**
+ * Draw the user's own message the moment they press send, before any
+ * preparation or relay round trip. The send later reuses the row through
+ * `optimisticLocalKey`; `discard` removes it when the send is abandoned.
+ */
+export function useSendPreview(
+  channel: Channel | null,
+  identity: Identity | undefined,
+): SendPreview {
+  const queryClient = useQueryClient();
+  return useCallback(
+    ({ channelId, content, mentionPubkeys, mediaTags, parentEventId }) => {
+      const target = resolveEffectiveChannel(
+        channelId,
+        queryClient.getQueryData<Channel[]>(channelsQueryKey),
+        channel,
+      );
+      if (!target || !identity || target.channelType === "forum") return null;
+      const event = createOptimisticMessage(
+        target.id,
+        content.trim(),
+        identity,
+        [
+          ...(queryClient.getQueryData<RelayEvent[]>(
+            channelMessagesKey(target.id),
+          ) ?? []),
+          ...channelThreadCaches(queryClient, target.id).flat(),
+        ],
+        mentionPubkeys,
+        parentEventId,
+        mediaTags,
+      );
+      writeOptimisticMessage(queryClient, target.id, event);
+      const localKey = event.id;
+      return {
+        localKey,
+        discard: () =>
+          removeOptimisticMessage(queryClient, target.id, localKey),
+      };
+    },
+    [channel, identity, queryClient],
+  );
 }
 
 /**
@@ -477,22 +682,16 @@ export function useSendMessageMutation(
   identity: Identity | undefined,
 ) {
   const queryClient = useQueryClient();
+  // Retry from a failed row re-runs this mutation even after the screen that
+  // sent it unmounted; the variables carry the captured channel.
+  const retrySendRef = useRef<
+    (variables: SendMessageVariables) => Promise<RelayEvent>
+  >(() => Promise.reject(new Error("Send is not ready.")));
 
-  return useMutation<
+  const mutation = useMutation<
     RelayEvent,
     Error,
-    {
-      channelId?: string;
-      targetChannel?: Channel;
-      content: string;
-      mentionPubkeys?: string[];
-      parentEventId?: string | null;
-      mediaTags?: string[][];
-      forceRest?: boolean;
-      sentFromThreadRootId?: string | null;
-      sentFromThreadRootExcerpt?: string | null;
-      transport?: "auto" | "http";
-    },
+    SendMessageVariables,
     MessageQueryContext | undefined
   >({
     mutationFn: async ({
@@ -506,6 +705,7 @@ export function useSendMessageMutation(
       sentFromThreadRootId,
       sentFromThreadRootExcerpt,
       transport = "auto",
+      optimisticLocalKey,
     }) => {
       // Prefer a channel captured by the caller at compose time. Otherwise,
       // resolve a captured id from the shared channel cache so navigation
@@ -559,6 +759,15 @@ export function useSendMessageMutation(
         );
       }
 
+      // Sign with the second the sender's row already shows, so the
+      // acknowledged message stays exactly where it was drawn.
+      const shownSendTime = optimisticLocalKey
+        ? findOptimisticMessage(
+            queryClient,
+            effectiveChannel.id,
+            optimisticLocalKey,
+          )?.created_at
+        : undefined;
       const sentFromThreadTag = sentFromThreadRootId
         ? buildSentFromThreadTag(
             sentFromThreadRootId,
@@ -583,11 +792,10 @@ export function useSendMessageMutation(
           queryClient.getQueryData<RelayEvent[]>(
             channelMessagesKey(effectiveChannel.id),
           ) ?? [];
-        const threadCaches = queryClient
-          .getQueriesData<RelayEvent[]>({
-            queryKey: ["thread-replies", effectiveChannel.id],
-          })
-          .flatMap(([, events]) => (events ? [events] : []));
+        const threadCaches = channelThreadCaches(
+          queryClient,
+          effectiveChannel.id,
+        );
         const suppliedRootEventId = parentEventId
           ? resolveCachedReplyRootId(parentEventId, [
               cachedMessages,
@@ -609,6 +817,8 @@ export function useSendMessageMutation(
           undefined,
           suppliedRootEventId,
           quoteTag,
+          undefined,
+          shownSendTime,
         );
 
         // Build tags matching relay-emitted shape: h, author p, mention ps, reply es, imeta, emoji.
@@ -660,6 +870,7 @@ export function useSendMessageMutation(
         content,
         recipientPubkeys,
         [...mentionTags, ...(sentFromThreadTag ? [sentFromThreadTag] : [])],
+        shownSendTime,
       );
     },
     onMutate: async ({
@@ -671,6 +882,7 @@ export function useSendMessageMutation(
       mediaTags,
       sentFromThreadRootId,
       sentFromThreadRootExcerpt,
+      optimisticLocalKey,
     }) => {
       // Mirror mutationFn's target resolution so the optimistic message lands
       // in the cache for the same channel as the real send. A caller-supplied
@@ -708,20 +920,33 @@ export function useSendMessageMutation(
         effectiveChannel.id,
         content.trim(),
         identity,
-        previousMessages,
+        [
+          ...previousMessages,
+          ...channelThreadCaches(queryClient, effectiveChannel.id).flat(),
+        ],
         mentionPubkeys ?? [],
         parentEventId ?? null,
         mediaTags ?? [],
         sentFromThreadRootId ?? null,
         sentFromThreadRootExcerpt ?? null,
+        optimisticLocalKey,
       );
-
-      const nextWindow = mergeLiveChannelWindowEvent(
-        previousWindow ?? emptyChannelWindowStore(),
-        optimisticMessage,
+      // A previewed row is replaced in place: same id and time, so it never
+      // moves.
+      const previewed = optimisticLocalKey
+        ? findOptimisticMessage(
+            queryClient,
+            effectiveChannel.id,
+            optimisticLocalKey,
+          )
+        : undefined;
+      writeOptimisticMessage(
+        queryClient,
+        effectiveChannel.id,
+        previewed
+          ? { ...optimisticMessage, created_at: previewed.created_at }
+          : optimisticMessage,
       );
-      queryClient.setQueryData(windowKey, nextWindow);
-      projectChannelWindowMessages(queryClient, effectiveChannel.id);
 
       return {
         optimisticId: optimisticMessage.id,
@@ -731,11 +956,39 @@ export function useSendMessageMutation(
         queryKey,
       };
     },
-    onError: (error, _variables, context) => {
+    onError: (error, variables, context) => {
       // A community timeout surfaces here as the relay's `OK false` reason.
       // Record it so the composer can show the timeout chip and block further
       // sends until it expires; other errors fall through to the caller.
       recordTimeoutFromRejection(error?.message);
+      const localKey = variables.optimisticLocalKey;
+      if (localKey) {
+        const channelId = context?.channelId ?? variables.channelId;
+        if (!channelId) return;
+        if (!context) {
+          // Nothing was sent and the row cannot be retried: drop it so the
+          // caller restores the draft.
+          removeOptimisticMessage(queryClient, channelId, localKey);
+          return;
+        }
+        if (hasOwnEcho(queryClient, channelId, localKey)) {
+          // Timed out, but the relay stored it: its echo is already shown.
+          removeOptimisticMessage(queryClient, channelId, localKey);
+          return;
+        }
+        updateOptimisticMessage(queryClient, channelId, localKey, (event) => ({
+          ...event,
+          failed: true,
+        }));
+        registerFailedSend(localKey, {
+          retry: () => {
+            retrySendRef.current(variables).catch(() => {});
+          },
+          discard: () =>
+            removeOptimisticMessage(queryClient, channelId, localKey),
+        });
+        return;
+      }
       if (!context) {
         return;
       }
@@ -764,14 +1017,25 @@ export function useSendMessageMutation(
           (event) => event.id !== context.optimisticId,
         ),
       };
-      const next = mergeLiveChannelWindowEvent(withoutPending, {
-        ...message,
-        localKey: context.optimisticId,
-      });
+      const confirmed = { ...message, localKey: context.optimisticId };
+      const next = mergeLiveChannelWindowEvent(withoutPending, confirmed);
       queryClient.setQueryData(windowKey, next);
       projectChannelWindowMessages(queryClient, context.channelId);
+      const { rootId } = getThreadReference(confirmed.tags);
+      if (rootId) {
+        const repliesKey = threadRepliesKey(context.channelId, rootId);
+        const replies = queryClient.getQueryData<RelayEvent[]>(repliesKey);
+        if (replies?.some((event) => event.id === context.optimisticId)) {
+          queryClient.setQueryData(
+            repliesKey,
+            mergeMessages(replies, confirmed),
+          );
+        }
+      }
     },
   });
+  retrySendRef.current = mutation.mutateAsync;
+  return mutation;
 }
 
 export function useToggleReactionMutation() {

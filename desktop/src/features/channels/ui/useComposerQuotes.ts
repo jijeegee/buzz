@@ -7,6 +7,7 @@ import {
 } from "@/features/messages/lib/messageQuote";
 import type { MessageQuoteScopeValue } from "@/features/messages/ui/messageQuoteScope";
 import type { TimelineMessage } from "@/features/messages/types";
+import type { SendPreview } from "@/features/messages/hooks";
 
 type ComposerSend<Result> = (
   content: string,
@@ -18,6 +19,7 @@ type ComposerSend<Result> = (
     threadHeadId: string | null;
   } | null,
   forceRest?: boolean,
+  optimisticLocalKey?: string,
 ) => Promise<Result>;
 
 /** A quote is bound to the conversation it was started in. */
@@ -34,7 +36,12 @@ function useQuoteScope<Result>(
   scopeKey: string | null,
   enabled: boolean,
   send: ComposerSend<Result>,
-): { scope: MessageQuoteScopeValue; send: ComposerSend<Result> } {
+  preview: SendPreview | undefined,
+): {
+  scope: MessageQuoteScopeValue;
+  send: ComposerSend<Result>;
+  preview: SendPreview | undefined;
+} {
   const [quote, setQuote] = React.useState<ScopedQuote | null>(null);
   const target =
     enabled && quote && scopeKey !== null && quote.scopeKey === scopeKey
@@ -79,6 +86,18 @@ function useQuoteScope<Result>(
     [send],
   );
 
+  // The preview shows the quote the send is about to consume.
+  const wrappedPreview = React.useMemo<SendPreview | undefined>(
+    () =>
+      preview &&
+      ((input) =>
+        preview({
+          ...input,
+          mediaTags: withQuoteTags(input.mediaTags, targetRef.current) ?? [],
+        })),
+    [preview],
+  );
+
   const scope = React.useMemo<MessageQuoteScopeValue>(
     () => ({
       cancel,
@@ -87,32 +106,39 @@ function useQuoteScope<Result>(
     }),
     [cancel, enabled, scopeKey, startQuote, target],
   );
-  return { scope, send: wrappedSend };
+  return { scope, send: wrappedSend, preview: wrappedPreview };
 }
 
 export function useComposerQuotes<MainResult, ThreadResult>({
   activeChannelId,
   enabled,
+  previewMain,
+  previewThread,
   sendMain,
   sendThread,
   threadHeadId,
 }: {
   activeChannelId: string | null;
   enabled: boolean;
+  previewMain?: SendPreview;
+  previewThread?: SendPreview;
   sendMain: ComposerSend<MainResult>;
   sendThread: ComposerSend<ThreadResult>;
   threadHeadId: string | null;
 }) {
-  const main = useQuoteScope(activeChannelId, enabled, sendMain);
+  const main = useQuoteScope(activeChannelId, enabled, sendMain, previewMain);
   const thread = useQuoteScope(
     activeChannelId && threadHeadId
       ? `${activeChannelId}:${threadHeadId}`
       : null,
     enabled,
     sendThread,
+    previewThread,
   );
   return {
     mainScope: main.scope,
+    previewMain: main.preview,
+    previewThread: thread.preview,
     sendMain: main.send,
     sendThread: thread.send,
     threadScope: thread.scope,

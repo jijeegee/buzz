@@ -419,6 +419,7 @@ pub async fn send_channel_message(
     expected_relay_url: Option<String>,
     expected_signer_pubkey: Option<String>,
     thread_marker: Option<String>,
+    created_at: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<SendChannelMessageResponse, String> {
     let channel_uuid = uuid::Uuid::parse_str(&channel_id)
@@ -539,6 +540,12 @@ pub async fn send_channel_message(
         (Some(_), None) => return Err("thread marker requires a thread root".into()),
         (None, _) => builder,
     };
+    // The sender already sees this message at the second they pressed send;
+    // signing it with that second keeps it from moving on acknowledgement.
+    let builder = match created_at.filter(|at| is_recent_send_time(*at)) {
+        Some(at) => builder.custom_created_at(nostr::Timestamp::from(at as u64)),
+        None => builder,
+    };
 
     // `created_at` is the signed event's own second, not a post-publication
     // clock read — persisted as an event cursor by the Projects opener.
@@ -562,6 +569,13 @@ pub async fn send_channel_message(
         depth,
         created_at,
     })
+}
+
+/// A caller-chosen send time is honoured only when it is the recent past:
+/// never in the future, never more than two minutes old.
+fn is_recent_send_time(at: i64) -> bool {
+    let now = nostr::Timestamp::now().as_secs() as i64;
+    at <= now && now - at <= 120
 }
 
 fn event_has_client_marker(event: &Event, marker: &str) -> bool {
@@ -688,7 +702,7 @@ fn managed_agent_submission_auth_tag(
         return Ok(Some(auth_tag));
     }
 
-    let owner_keys = state.keys.lock().map_err(|error| error.to_string())?;
+    let owner_keys = state.signing_keys()?;
     legacy_managed_agent_auth_tag(&owner_keys, agent_pubkey)
 }
 

@@ -165,7 +165,7 @@ pub async fn get_agent_memory(
     // Owner = viewer. Clone the secret key out of the lock immediately so
     // we don't hold the mutex across the relay round trip.
     let (owner_pubkey, owner_seckey) = {
-        let keys = state.keys.lock().map_err(|e| e.to_string())?;
+        let keys = state.signing_keys()?;
         (keys.public_key(), keys.secret_key().clone())
     };
 

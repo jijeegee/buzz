@@ -132,6 +132,8 @@ jobs:
         run: node --test scripts/ci-selection.test.mjs scripts/ci-required-gates.test.mjs
       - name: File size policy
         run: just file-size-check
+      - name: Language packs
+        run: just i18n-check
 
   dead-token-guard:
     name: Dead Token Reference Guard

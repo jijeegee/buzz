@@ -40,6 +40,7 @@ import {
   useDeleteMessageMutation,
   useEditMessageMutation,
   useSendMessageMutation,
+  useSendPreview,
   useToggleReactionMutation,
 } from "@/features/messages/hooks";
 import { buildMessageComposerEditTarget } from "@/features/messages/lib/draftMentionRefs";
@@ -271,6 +272,7 @@ export function ChannelScreen({
     activeChannel,
     currentIdentity,
   );
+  const previewSend = useSendPreview(activeChannel, currentIdentity);
   const toggleReactionMutation = useToggleReactionMutation();
   const deleteMessageMutation = useDeleteMessageMutation(activeChannel);
   const editMessageMutation = useEditMessageMutation(activeChannel);
@@ -1017,6 +1019,7 @@ export function ChannelScreen({
                   onOpenThread={handleOpenThreadAndCloseAgentSession}
                   onSelectThreadReplyTarget={handleSelectThreadReplyTarget}
                   onSendMessage={handleSendMessage}
+                  onPreviewSend={previewSend}
                   onSendToChannel={handleSendToChannel}
                   onSendVideoReviewComment={effectiveSendVideoReviewComment}
                   onSendThreadReply={handleSendThreadReply}

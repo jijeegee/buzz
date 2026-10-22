@@ -112,7 +112,7 @@ pub fn build_nip98_auth_header(
     // Google sends its bearer access token instead.
     match state.current_credential_mode() {
         crate::auth::CredentialMode::Keys => {
-            let keys = state.keys.lock().map_err(|error| error.to_string())?;
+            let keys = state.signing_keys()?;
             build_nip98_auth_header_for_keys(&keys, method, url, body)
         }
         crate::auth::CredentialMode::Token(session) => {

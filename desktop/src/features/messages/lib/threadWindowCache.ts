@@ -110,8 +110,11 @@ export function mergeNewestThreadPage(
   const previous = (cached ?? []).filter((event) => !pageIds.has(event.id));
   const previousRows = previous.filter(isReplyRow);
   const carried = previous.filter((event) => !isReplyRow(event));
+  // Own unsent rows (pending or failed) are local; no page can replace them.
   const newerRows = pageNewest
-    ? previousRows.filter((event) => isNewerThan(event, pageNewest))
+    ? previousRows.filter(
+        (event) => event.pending || isNewerThan(event, pageNewest),
+      )
     : previousRows;
   const keep = [...page.events, ...newerRows, ...carried];
   if (!pageOldest || !page.hasMore) {
@@ -128,8 +131,8 @@ export function mergeNewestThreadPage(
       state: { ...olderState(page), newestCovered: pageNewest },
     };
   }
-  const olderRows = previousRows.filter((event) =>
-    isOlderThan(event, pageOldest),
+  const olderRows = previousRows.filter(
+    (event) => !event.pending && isOlderThan(event, pageOldest),
   );
   return {
     events: sortMessages([...olderRows, ...keep]),

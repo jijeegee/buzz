@@ -111,6 +111,14 @@ impl RelaySigner for UserCredential {
     }
 }
 
+/// Whether `keys` holds a key other than `bound` (a poisoned lock counts as
+/// different: fail closed).
+fn held_key_differs(keys: &std::sync::Mutex<Keys>, bound: &PublicKey) -> bool {
+    keys.lock()
+        .map(|keys| keys.public_key() != *bound)
+        .unwrap_or(true)
+}
+
 impl AppState {
     /// HTTP origin of the current workspace relay (the token-session key).
     pub(crate) fn current_auth_origin(&self) -> String {
@@ -120,13 +128,38 @@ impl AppState {
     /// `Err` while this device is signed out of the current community: no
     /// user-identity relay work (signing, HTTP auth, socket auth) may run.
     pub(crate) fn ensure_signed_in_here(&self) -> Result<(), String> {
-        if self
-            .token_auth
-            .device_signed_out(&self.current_auth_origin())
-        {
+        let origin = self.current_auth_origin();
+        if self.token_auth.device_signed_out(&origin) || self.held_key_unpaired(&origin) {
             return Err(super::signed_out::SIGNED_OUT_MESSAGE.into());
         }
         Ok(())
+    }
+
+    /// Whether the key held here is not the key paired with the login
+    /// account of `origin` (the binding the relay confirmed at sign-in and on
+    /// every session refresh). Then nothing may sign as that person: the
+    /// device counts as signed out until signing in again restores the paired
+    /// key. Whatever put another key here (an agent's environment, a key
+    /// written by another process, a leftover file, an import) can never sign
+    /// as the person. No binding = not a login account here: unaffected.
+    pub(crate) fn held_key_unpaired(&self, origin: &str) -> bool {
+        let Some(bound) = self.paired_pubkey(origin) else {
+            return false;
+        };
+        held_key_differs(&self.keys, &bound)
+    }
+
+    /// The key paired with the login account of `origin`, if any. The stored
+    /// binding counts before the first restore of a launch puts it in memory
+    /// (as in `device_signed_out`).
+    pub(crate) fn paired_pubkey(&self, origin: &str) -> Option<PublicKey> {
+        self.token_auth.signing_pubkey(origin).or_else(|| {
+            use super::RefreshStore;
+            super::KeyringRefreshStore
+                .signing_pubkey(origin)
+                .ok()
+                .flatten()
+        })
     }
 
     /// The token-auth mode of the current workspace relay.
@@ -257,5 +290,25 @@ mod tests {
         state.token_auth.set(&origin, OriginAuth::Restoring);
         assert!(state.user_credential().is_err());
         assert!(state.signing_keys().is_err());
+    }
+
+    #[test]
+    fn a_key_other_than_the_paired_one_never_signs() {
+        // 2026-10-21: a person's account ran on an agent's key.
+        let state = crate::app_state::build_app_state();
+        let origin = state.current_auth_origin();
+        state
+            .token_auth
+            .set_key_backup(&origin, Keys::generate().public_key());
+        assert!(state.held_key_unpaired(&origin));
+        assert!(state.ensure_signed_in_here().is_err());
+        assert!(state.signing_keys().is_err());
+        assert!(state.user_credential().is_err());
+        // Its own paired key signs as before.
+        let own = state.keys.lock().unwrap().public_key();
+        state.token_auth.set_key_backup(&origin, own);
+        assert!(!state.held_key_unpaired(&origin));
+        assert!(state.ensure_signed_in_here().is_ok());
+        assert!(state.signing_keys().is_ok());
     }
 }

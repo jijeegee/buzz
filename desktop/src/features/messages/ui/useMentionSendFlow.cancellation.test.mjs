@@ -123,19 +123,12 @@ test("reference-only supersedes preparation and emits no triggering recipient", 
 
 // Readiness is a nested continuation owned by completeSend. Cancelling while
 // policy preparation is pending must also stop a subsequent local attachment.
-test("cancelled invitation cannot attach a local recipient after delayed policy preparation", async () => {
+test("sending to a local agent does not rewrite its channel access first", async () => {
   const s = await setup();
   s.query.data = [{ pubkey: KEY, name: "LocalScout", status: "running" }];
   s.rerender();
-  const gate = deferred();
-  s.control.policy = gate;
   await s.invite();
-  assert.equal(s.events("local-policy").length, 1);
-  s.dismiss();
-  await s.finish(gate);
-  assert.equal(s.events("add").length, 0);
-  assert.equal(s.events("SEND").length, 0);
-  assert.equal(s.options.contentRef.current, TEXT);
+  assert.equal(s.events("local-policy").length, 0);
 });
 
 // Real draft lifecycle + real send/Invite hooks share one reused StrictMode host.
@@ -378,8 +371,10 @@ for (const action of ["untouched", "deleted", "superseded"]) {
     const s = await setup({ lifecycle: true });
     s.dismiss();
     s.options.mentions.memberPubkeys = new Set([KEY]);
+    // The agent inventory read is the first await of an ordinary send.
     const gate = deferred();
-    s.control.prepare = gate;
+    s.control.inventory = gate;
+    s.query.data = undefined;
     s.rerender();
     let send;
     await s.act(async () => {

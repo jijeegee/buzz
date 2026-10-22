@@ -120,9 +120,7 @@ fn user_audio_auth(state: &AppState) -> Result<UserAudioAuth, String> {
     match state.current_credential_mode() {
         crate::auth::CredentialMode::Token(session) => Ok(UserAudioAuth::Token(session.access)),
         crate::auth::CredentialMode::Blocked(reason) => Err(reason),
-        crate::auth::CredentialMode::Keys => Ok(UserAudioAuth::Keys(
-            state.keys.lock().map_err(|e| e.to_string())?.clone(),
-        )),
+        crate::auth::CredentialMode::Keys => Ok(UserAudioAuth::Keys(state.signing_keys()?)),
     }
 }
 

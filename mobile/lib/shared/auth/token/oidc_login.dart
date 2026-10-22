@@ -29,6 +29,10 @@ class OidcLoginException implements Exception {
 /// Throws [WebAuthCancelledException] when the user dismisses the browser,
 /// [OidcLoginException] for a rejected or forged callback, and
 /// [AuthApiException] when the code exchange fails.
+///
+/// The device key proof at `complete` is stamped in relay time, learned
+/// while the browser is open. If the relay still finds it stale (the login
+/// code is then spent), the login starts over once with the corrected clock.
 Future<LoginGrant> runOidcLogin({
   required AuthApi api,
   required WebAuthLauncher launcher,
@@ -39,7 +43,40 @@ Future<LoginGrant> runOidcLogin({
   String callbackScheme = kuzzMobileCallbackScheme,
   Random? random,
 }) async {
+  Future<LoginGrant> attempt() => _runOidcLoginOnce(
+    api: api,
+    launcher: launcher,
+    provider: provider,
+    deviceName: deviceName,
+    installId: installId,
+    identityMode: identityMode,
+    callbackScheme: callbackScheme,
+    random: random,
+  );
+  try {
+    return await attempt();
+  } on AuthApiException catch (error) {
+    if (error.code != 'device_proof_stale') rethrow;
+    // The refusal carried the relay time; sign in again with it.
+    return attempt();
+  }
+}
+
+Future<LoginGrant> _runOidcLoginOnce({
+  required AuthApi api,
+  required WebAuthLauncher launcher,
+  required String provider,
+  required String? deviceName,
+  required String? installId,
+  required String identityMode,
+  required String callbackScheme,
+  required Random? random,
+}) async {
   final pkce = PkcePair.generate(random);
+  // The device key `start` binds must be the one proven at `complete`.
+  final device = await api.deviceKeyInfo();
+  // Learn the relay clock while the user is in the browser.
+  final clock = device == null ? Future<void>.value() : api.syncClock();
   final redirectUri = Uri.parse('$callbackScheme://auth/cb');
   final callback = await launcher.authenticate(
     url: api.startUri(
@@ -50,6 +87,7 @@ Future<LoginGrant> runOidcLogin({
       deviceName: deviceName,
       installId: installId,
       identityMode: identityMode,
+      devicePubkey: device?.publicKeyHex,
     ),
     callbackUrlScheme: callbackScheme,
   );
@@ -95,7 +133,12 @@ Future<LoginGrant> runOidcLogin({
       code: 'missing_code',
     );
   }
-  return api.completeLogin(loginCode: code, codeVerifier: pkce.verifier);
+  await clock;
+  return api.completeLogin(
+    loginCode: code,
+    codeVerifier: pkce.verifier,
+    device: device,
+  );
 }
 
 String _describeError(String code) => switch (code) {

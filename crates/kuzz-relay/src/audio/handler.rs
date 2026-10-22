@@ -794,18 +794,31 @@ pub(crate) async fn handle_active_audio_connection(
     // Device-bound keys: the key is used from its own device, and a
     // registered key's NIP-OA tag names its registry owner. Refuses only in
     // enforce, with the root route's reasons (`restricted: signed_out`, ...).
+    // The socket stays registered (dropped with the handler) so a later
+    // sign-out of its device closes it (A4b).
+    let _key_socket_guard;
     if let Some(device_tag) = device_tag {
         let claimed_owner = crate::api::relay_members::extract_nip_oa_owner(
             pubkey.as_bytes(),
             auth_tag_json.as_deref(),
             signed_auth_created_at,
         );
-        if let Err(refused) = crate::identity::admission::admit_key_with_owner(
+        let socket = Arc::new(crate::identity::key_sockets::KeySocket::new(
+            &pubkey,
+            device_tag.as_ref().ok().copied().flatten(),
+            crate::identity::device::Surface::Audio,
+            cancel.clone(),
+            terminal_ctrl_tx.clone(),
+            crate::audio::token_auth::audio_close_frame,
+        ));
+        _key_socket_guard =
+            crate::identity::key_sockets::KeySocketGuard::register(&state, Arc::clone(&socket));
+        if let Err(refused) = crate::identity::admission::admit_key_socket(
             &state,
             &pubkey,
             device_tag,
             claimed_owner,
-            crate::identity::device::Surface::Audio,
+            &socket,
         )
         .await
         {
