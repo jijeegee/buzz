@@ -1,17 +1,16 @@
 import * as React from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { UserPlus } from "lucide-react";
-import { toast } from "sonner";
 
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { usePeopleFavorites } from "@/features/people/PeopleFavoritesContext";
-import { buildPeopleDirectory } from "@/features/people/lib/peopleDirectory";
-import { useMessagePerson } from "@/features/people/useMessagePerson";
 import {
-  usePeopleFriends,
-  useSeedFriendsFromDms,
-} from "@/features/people/usePeopleFriends";
+  buildPeopleDirectory,
+  personName,
+} from "@/features/people/lib/peopleDirectory";
+import { useMessagePerson } from "@/features/people/useMessagePerson";
+import { usePeopleFriends } from "@/features/people/usePeopleFriends";
 import { useSharedPeopleSearch } from "@/features/people/useSharedPeopleSearch";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { UserSearchResult } from "@/shared/api/types";
@@ -21,6 +20,11 @@ import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { AddFriendDialog } from "./AddFriendDialog";
 import { PersonRow } from "./PersonRow";
+import {
+  addFriendWithToast,
+  RemoveFriendDialog,
+  type RemoveFriendTarget,
+} from "./RemoveFriendDialog";
 
 const PROFILE_KEYS = ["profile", "profileTab", "profileView"] as const;
 const EMPTY_IDS: ReadonlySet<string> = new Set();
@@ -43,7 +47,6 @@ export function PeopleSidebarList({
   const favorites = usePeopleFavorites();
   const friends = usePeopleFriends(currentPubkey);
   const { isBlocked } = useBlockedPeople();
-  useSeedFriendsFromDms(currentPubkey);
   const onMessage = useMessagePerson();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -91,17 +94,12 @@ export function PeopleSidebarList({
     ],
   );
 
-  const onToggleFriend = (pubkey: string, next: boolean) => {
-    (next ? friends.addFriend(pubkey) : friends.removeFriend(pubkey)).catch(
-      (error: unknown) =>
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : next
-              ? "Could not add friend"
-              : "Could not remove friend",
-        ),
-    );
+  const [removeTarget, setRemoveTarget] =
+    React.useState<RemoveFriendTarget | null>(null);
+  const onToggleFriend = (user: UserSearchResult, next: boolean) => {
+    const name = personName(user);
+    if (next) void addFriendWithToast(friends.addFriend, user.pubkey, name);
+    else setRemoveTarget({ pubkey: user.pubkey, name });
   };
   const renderRow = (user: UserSearchResult, section: string) => (
     <PersonRow
@@ -119,7 +117,7 @@ export function PeopleSidebarList({
                 : favorites.removeFavorite(pubkey)
           : undefined
       }
-      onToggleFriend={onToggleFriend}
+      onToggleFriend={(_pubkey, next) => onToggleFriend(user, next)}
       user={user}
     />
   );
@@ -197,8 +195,17 @@ export function PeopleSidebarList({
         isBlocked={isBlocked}
         isFriend={friends.isFriend}
         onAddFriend={friends.addFriend}
+        onMessage={(pubkey) => {
+          setAddFriendOpen(false);
+          onMessage(pubkey);
+        }}
         onOpenChange={setAddFriendOpen}
         open={addFriendOpen}
+      />
+      <RemoveFriendDialog
+        onClose={() => setRemoveTarget(null)}
+        onRemoveFriend={friends.removeFriend}
+        target={removeTarget}
       />
     </div>
   );

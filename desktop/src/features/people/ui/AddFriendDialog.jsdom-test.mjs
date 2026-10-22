@@ -5,10 +5,17 @@ import test from "node:test";
 
 const ALICE = "a".repeat(64);
 const lookups = [];
+// When set, the next lookup waits until the test resolves it.
+let holdNextLookup = null;
 const tauriMock = {
   invoke(command, args) {
     if (command === "lookup_person") {
       lookups.push(args.query);
+      if (holdNextLookup) {
+        const hold = holdNextLookup;
+        holdNextLookup = null;
+        return hold.promise;
+      }
       return Promise.resolve(
         args.query === "alice"
           ? {
@@ -53,6 +60,8 @@ async function mount(props = {}) {
   document.body.appendChild(container);
   const root = createRoot(container);
   const added = [];
+  const messaged = [];
+  const closed = [];
   await act(async () => {
     root.render(
       React.createElement(
@@ -65,7 +74,8 @@ async function mount(props = {}) {
           onAddFriend: async (pubkey) => {
             added.push(pubkey);
           },
-          onOpenChange: () => {},
+          onMessage: (pubkey) => messaged.push(pubkey),
+          onOpenChange: (open) => closed.push(open),
           open: true,
           ...props,
         }),
@@ -82,7 +92,9 @@ async function mount(props = {}) {
   };
   return {
     added,
+    closed,
     find,
+    messaged,
     search,
     unmount: async () => {
       await act(async () => root.unmount());
@@ -114,6 +126,48 @@ test("a blocked person can't be added from here", async () => {
   const view = await mount({ isBlocked: (pubkey) => pubkey === ALICE });
   await view.search("alice");
   assert.match(view.find("add-friend-result").textContent, /Blocked/);
+  assert.equal(view.find("add-friend-add"), null);
+  await view.unmount();
+});
+
+test("after Add the result says Added and offers Message", async () => {
+  const view = await mount();
+  await view.search("alice");
+  await act(async () => fireEvent.click(view.find("add-friend-add")));
+  assert.deepEqual(view.added, [ALICE]);
+  assert.match(view.find("add-friend-added").textContent, /Added/);
+  assert.equal(view.find("add-friend-add"), null);
+  // The dialog stays open so Message is reachable.
+  assert.deepEqual(view.closed, []);
+  await act(async () => fireEvent.click(view.find("add-friend-message")));
+  assert.deepEqual(view.messaged, [ALICE]);
+  await view.unmount();
+});
+
+test("a slow lookup for an old query never shows under the new query", async () => {
+  let release;
+  holdNextLookup = {
+    promise: new Promise((resolve) => {
+      release = resolve;
+    }),
+  };
+  const view = await mount();
+  await view.search("alice");
+  // Change the query while "alice" is still being looked up.
+  await act(async () =>
+    fireEvent.change(view.find("add-friend-query"), {
+      target: { value: "bob" },
+    }),
+  );
+  await act(async () =>
+    release({
+      pubkey: ALICE,
+      displayName: "Alice",
+      avatarUrl: null,
+      username: "alice",
+    }),
+  );
+  assert.equal(view.find("add-friend-result"), null);
   assert.equal(view.find("add-friend-add"), null);
   await view.unmount();
 });

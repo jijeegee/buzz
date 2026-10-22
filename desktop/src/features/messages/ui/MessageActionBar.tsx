@@ -29,6 +29,12 @@ import { useMessageMentionIdentities } from "@/features/messages/lib/useMessageM
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { ReportMessageDialog } from "@/features/moderation/ui/ReportMessageDialog";
 import {
+  canReportMessage,
+  isModeratableMessage,
+} from "@/features/messages/lib/canReportMessage";
+import { useKnownAgentPubkeys } from "@/features/agents/useKnownAgentPubkeys";
+import { useIdentityQuery } from "@/shared/api/hooks";
+import {
   LinkMessageToGoalDialog,
   LinkToGoalMenuItem,
 } from "@/features/goals/ui/LinkMessageToGoal";
@@ -142,13 +148,17 @@ function MoreActionsMenu({
   // paste back into Kuzz re-light each chip with the pubkey the author tagged.
   const mentionIdentities = useMessageMentionIdentities(message.tags, profiles);
 
-  // A report needs a real, delivered event to target and a known author to
-  // name in the NIP-56 `p` tag. Pending sends and system huddle rows have
-  // neither, so the entry is hidden for them.
-  const canReport =
-    !message.pending &&
-    message.kind !== KIND_HUDDLE_STARTED &&
-    Boolean(message.pubkey);
+  // Moderator actions need a real, delivered event with a known author.
+  // Report additionally excludes my own messages and agent messages.
+  const canModerate = isModeratableMessage(message);
+  const currentPubkey = useIdentityQuery().data?.pubkey;
+  const knownAgentPubkeys = useKnownAgentPubkeys();
+  const canReport = canReportMessage({
+    currentPubkey,
+    isAgentPubkey: (pubkey) =>
+      knownAgentPubkeys.has(pubkey) || profiles?.[pubkey]?.isAgent === true,
+    message,
+  });
 
   return (
     <>
@@ -335,7 +345,7 @@ function MoreActionsMenu({
             </DropdownMenuItem>
           ) : null}
 
-          {canReport ? (
+          {canModerate ? (
             <MessageModerationMenuItems
               channelId={channelId}
               message={message}

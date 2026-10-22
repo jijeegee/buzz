@@ -68,10 +68,13 @@ export function reportBlockFailureMessage(error: unknown): string {
   return "Report sent, but blocking didn't work. Try blocking them again.";
 }
 
+/** "Also block" starts off: a report never blocks unless the user opts in. */
+export const ALSO_BLOCK_DEFAULT = false;
+
 /**
- * Report a message (`eventId`) or, without one, a person. "Also block" is on
- * by default: the report goes first, then the block (which also removes them
- * from friends).
+ * Report a message (`eventId`) or, without one, a person. "Also block" is off
+ * by default; when checked, the report goes first, then the block (which also
+ * removes them from friends).
  */
 export function ReportMessageDialog({
   open,
@@ -91,7 +94,7 @@ export function ReportMessageDialog({
   const blockPerson = useBlockPersonMutation(identityQuery.data?.pubkey);
   const [category, setCategory] = React.useState<ReportType | null>(null);
   const [note, setNote] = React.useState("");
-  const [alsoBlock, setAlsoBlock] = React.useState(true);
+  const [alsoBlock, setAlsoBlock] = React.useState(ALSO_BLOCK_DEFAULT);
   const isPerson = !eventId;
   const pending = submitReport.isPending || blockPerson.isPending;
 
@@ -101,7 +104,7 @@ export function ReportMessageDialog({
     if (open) {
       setCategory(null);
       setNote("");
-      setAlsoBlock(true);
+      setAlsoBlock(ALSO_BLOCK_DEFAULT);
     }
   }, [open]);
 

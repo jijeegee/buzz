@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Check, UserPlus } from "lucide-react";
+import { Check, MessageSquare, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
@@ -14,6 +14,7 @@ import {
 } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
+import { friendAddedMessage } from "./RemoveFriendDialog";
 
 export const NO_ONE_FOUND = "No one found with that ID or email";
 
@@ -33,13 +34,14 @@ function errorText(error: unknown): string {
 /**
  * "Add friend": type someone's exact Kuzz ID or email; the server answers
  * with that one person (or no one). No partial matches, so nobody's email
- * can be guessed from a list.
+ * can be guessed from a list. After adding, the result offers Message.
  */
 export function AddFriendDialog({
   currentPubkey,
   isBlocked,
   isFriend,
   onAddFriend,
+  onMessage,
   onOpenChange,
   open,
 }: {
@@ -47,12 +49,17 @@ export function AddFriendDialog({
   isBlocked: (pubkey: string) => boolean;
   isFriend: (pubkey: string) => boolean;
   onAddFriend: (pubkey: string) => Promise<unknown>;
+  /** Opens the DM with someone just added. */
+  onMessage: (pubkey: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
   const [query, setQuery] = React.useState("");
   const [lookup, setLookup] = React.useState<LookupState>({ status: "idle" });
   const [adding, setAdding] = React.useState(false);
+  const [addedPubkey, setAddedPubkey] = React.useState<string | null>(null);
+  // Bumped whenever the query or dialog changes, so a lookup or add that
+  // finishes afterwards can't show its result under the new query.
   const generation = React.useRef(0);
 
   React.useEffect(() => {
@@ -60,6 +67,7 @@ export function AddFriendDialog({
       setQuery("");
       setLookup({ status: "idle" });
       setAdding(false);
+      setAddedPubkey(null);
     }
     generation.current += 1;
   }, [open]);
@@ -84,11 +92,13 @@ export function AddFriendDialog({
   };
 
   const add = (person: PersonInfo) => {
+    const pubkey = person.pubkey.toLowerCase();
+    const current = generation.current;
     setAdding(true);
-    onAddFriend(person.pubkey.toLowerCase())
+    onAddFriend(pubkey)
       .then(() => {
-        toast.success(`${personLabel(person)} is now your friend`);
-        onOpenChange(false);
+        toast.success(friendAddedMessage(personLabel(person)));
+        if (current === generation.current) setAddedPubkey(pubkey);
       })
       .catch((error: unknown) =>
         toast.error(
@@ -120,7 +130,10 @@ export function AddFriendDialog({
             data-testid="add-friend-query"
             onChange={(event) => {
               setQuery(event.target.value);
-              if (lookup.status !== "searching") setLookup({ status: "idle" });
+              // Drop any result or in-flight lookup for the old query.
+              generation.current += 1;
+              setLookup({ status: "idle" });
+              setAddedPubkey(null);
             }}
             placeholder="Kuzz ID or email"
             value={query}
@@ -152,10 +165,12 @@ export function AddFriendDialog({
             </p>
           ) : lookup.status === "found" ? (
             <FoundPerson
+              added={addedPubkey === lookup.person.pubkey.toLowerCase()}
               adding={adding}
               blocked={isBlocked(lookup.person.pubkey.toLowerCase())}
               friend={isFriend(lookup.person.pubkey.toLowerCase())}
               onAdd={() => add(lookup.person)}
+              onMessage={() => onMessage(lookup.person.pubkey.toLowerCase())}
               person={lookup.person}
               self={
                 currentPubkey?.toLowerCase() ===
@@ -174,17 +189,21 @@ function personLabel(person: PersonInfo): string {
 }
 
 function FoundPerson({
+  added,
   adding,
   blocked,
   friend,
   onAdd,
+  onMessage,
   person,
   self,
 }: {
+  added: boolean;
   adding: boolean;
   blocked: boolean;
   friend: boolean;
   onAdd: () => void;
+  onMessage: () => void;
   person: PersonInfo;
   self: boolean;
 }) {
@@ -214,6 +233,24 @@ function FoundPerson({
         <span className="text-xs text-muted-foreground">This is you</span>
       ) : blocked ? (
         <span className="text-xs text-muted-foreground">Blocked</span>
+      ) : added ? (
+        <div className="flex items-center gap-2">
+          <span
+            className="flex items-center gap-1 text-xs text-muted-foreground"
+            data-testid="add-friend-added"
+          >
+            <Check className="h-3.5 w-3.5" />
+            Added
+          </span>
+          <Button
+            data-testid="add-friend-message"
+            onClick={onMessage}
+            size="sm"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Message
+          </Button>
+        </div>
       ) : friend ? (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <Check className="h-3.5 w-3.5" />

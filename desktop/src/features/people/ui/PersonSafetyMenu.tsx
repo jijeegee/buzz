@@ -34,7 +34,7 @@ export function blockDescription(name: string): string {
 
 /**
  * "More" menu on a person's profile: Block (or Unblock) and Report. Block
- * asks first; Report opens the report dialog with "Also block" on.
+ * asks first; Report opens the report dialog ("Also block" starts off).
  */
 export function PersonSafetyMenu({
   className,
