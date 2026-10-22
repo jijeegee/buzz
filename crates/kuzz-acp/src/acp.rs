@@ -147,6 +147,123 @@ fn build_initialize_params() -> serde_json::Value {
     })
 }
 
+/// Stdout lines the reader task holds before it waits for them to be taken.
+/// Between turns the pool takes them every second
+/// ([`AcpClient::drain_between_turns`]); a full queue only makes the agent
+/// wait on its pipe as it would with no reader.
+const OUTPUT_QUEUE_LINES: usize = 1024;
+
+/// Bytes of stdout lines the reader task holds, bounding the queue by size
+/// as well as count: tool call updates can carry whole files.
+const OUTPUT_QUEUE_BYTES: usize = 16 * 1024 * 1024;
+
+/// How long a write to the agent may take between turns. The main loop
+/// waits on it, so an agent not reading its stdin must not hold the loop
+/// for the full [`AcpClient::write_ndjson`] timeout.
+const BETWEEN_TURNS_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The agent's stdout, read by its own task for the life of the process.
+///
+/// A turn ending does not stop the agent: Claude Code continues on its own
+/// when a background command or subagent it started finishes. Read only
+/// while a request waited for it, that output filled the pipe and the agent
+/// blocked mid-write until the next prompt arrived.
+struct OutputReader {
+    /// Each line with the bytes of [`room`](Self::room) it holds.
+    lines: tokio::sync::mpsc::Receiver<(Result<String, LinesCodecError>, u32)>,
+    room: std::sync::Arc<tokio::sync::Semaphore>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl OutputReader {
+    /// Lines are bounded by `MAX_LINE_SIZE` at the read level, so a rogue
+    /// agent writing endless non-newline bytes cannot exhaust memory.
+    fn spawn(stdout: ChildStdout) -> Self {
+        let (tx, lines) = tokio::sync::mpsc::channel(OUTPUT_QUEUE_LINES);
+        let room = std::sync::Arc::new(tokio::sync::Semaphore::new(OUTPUT_QUEUE_BYTES));
+        let task_room = room.clone();
+        let mut framed = FramedRead::new(stdout, LinesCodec::new_with_max_length(MAX_LINE_SIZE));
+        let task = tokio::spawn(async move {
+            while let Some(line) = framed.next().await {
+                let size = queued_size(&line);
+                match task_room.acquire_many(size).await {
+                    Ok(permit) => permit.forget(),
+                    Err(_) => break,
+                }
+                if tx.send((line, size)).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Self { lines, room, task }
+    }
+
+    /// The next line, waiting for it; `None` once stdout ended and every
+    /// earlier line was taken. Cancel-safe.
+    async fn next(&mut self) -> Option<Result<String, LinesCodecError>> {
+        let (line, size) = self.lines.recv().await?;
+        self.room.add_permits(size as usize);
+        Some(line)
+    }
+
+    /// A line already read, without waiting.
+    fn try_next(&mut self) -> Option<Result<String, LinesCodecError>> {
+        let (line, size) = self.lines.try_recv().ok()?;
+        self.room.add_permits(size as usize);
+        Some(line)
+    }
+}
+
+/// Bytes of the output queue a line holds: its length, at least 1 and at
+/// most the whole queue (lines are already bounded by `MAX_LINE_SIZE`).
+fn queued_size(line: &Result<String, LinesCodecError>) -> u32 {
+    let len = line.as_ref().map_or(1, String::len);
+    len.clamp(1, OUTPUT_QUEUE_BYTES) as u32
+}
+
+/// Marks an [`AcpClient`] as handling output between turns until dropped,
+/// so a cancelled drain cannot leave the mark set.
+struct BetweenTurns(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl BetweenTurns {
+    fn begin(flag: &std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        Self(flag.clone())
+    }
+}
+
+impl Drop for BetweenTurns {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Drop for OutputReader {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// Whether an agent message shows the agent working: streaming a reply or
+/// thoughts, running tools, planning, or asking for permission. Usage,
+/// command lists and other bookkeeping updates do not count.
+fn is_agent_work(msg: &serde_json::Value) -> bool {
+    match msg.get("method").and_then(|v| v.as_str()) {
+        Some("session/update") => matches!(
+            msg["params"]["update"]["sessionUpdate"].as_str(),
+            Some(
+                "agent_message_chunk"
+                    | "agent_thought_chunk"
+                    | "tool_call"
+                    | "tool_call_update"
+                    | "plan"
+            )
+        ),
+        Some("session/request_permission") => true,
+        _ => false,
+    }
+}
+
 /// ACP client that owns an agent subprocess and communicates over its stdio.
 ///
 /// One `AcpClient` per agent process. Multiple sessions can be created on the
@@ -156,10 +273,9 @@ pub struct AcpClient {
     child: Child,
     /// Sole stdin writer; None after an interrupted/failed frame closes it.
     stdin: Option<ChildStdin>,
-    /// Framed reader over the agent's stdout pipe (line-oriented, bounded).
-    /// Uses `LinesCodec::new_with_max_length` to enforce MAX_LINE_SIZE at the
-    /// read level — prevents OOM from rogue agents writing infinite non-newline bytes.
-    reader: FramedRead<ChildStdout, LinesCodec>,
+    /// The agent's stdout lines, read for the life of the process (see
+    /// [`OutputReader`]).
+    reader: OutputReader,
     /// Monotonically increasing JSON-RPC request id counter.
     /// Harness-generated IDs are always numeric.
     next_id: u64,
@@ -199,6 +315,13 @@ pub struct AcpClient {
     /// The agent's reply text of the current turn, collected only while
     /// [`set_capture_reply`](Self::set_capture_reply) is on (idle checks).
     reply_text: Option<String>,
+    /// Set while output written between turns is handled (see
+    /// [`drain_between_turns`](Self::drain_between_turns)): it is neither
+    /// observed nor captured as a reply, and writes get a short timeout.
+    between_turns: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// A failure met between turns, returned by the next turn so the pool
+    /// replaces the worker as it does for a failure during a turn.
+    between_turns_error: Option<AcpError>,
     /// Optional local observer feed used by the desktop app.
     observer: Option<ObserverHandle>,
     /// Pool slot index for this agent process.
@@ -687,7 +810,7 @@ impl AcpClient {
         Ok(Self {
             child,
             stdin: Some(stdin),
-            reader: FramedRead::new(stdout, LinesCodec::new_with_max_length(MAX_LINE_SIZE)),
+            reader: OutputReader::spawn(stdout),
             next_id: 0,
             pending_permission_id: None,
             permission_responded: false,
@@ -699,6 +822,8 @@ impl AcpClient {
             checkin_armed: false,
             open_tool_calls: std::collections::HashSet::new(),
             reply_text: None,
+            between_turns: Default::default(),
+            between_turns_error: None,
             observer: None,
             observer_agent_index: None,
             observer_context: ObserverContext::default(),
@@ -810,6 +935,9 @@ impl AcpClient {
 
     /// Emit a semantic event to the local observer feed, if enabled.
     pub fn observe(&self, kind: impl Into<String>, payload: serde_json::Value) {
+        if self.is_between_turns() {
+            return;
+        }
         if let Some(observer) = &self.observer {
             observer.emit(
                 kind,
@@ -1002,6 +1130,11 @@ impl AcpClient {
         idle_timeout: std::time::Duration,
         max_duration: std::time::Duration,
     ) -> Result<StopReason, AcpError> {
+        // Output from before this turn belongs to no turn: handle it first so
+        // it is not read as part of this turn or its reply. Only lines the
+        // reader already took are handled; one still in the pipe can land in
+        // this turn, a narrow window as the pool drains every second.
+        self.handle_between_turns().await?;
         let params = build_prompt_params(session_id, prompt_blocks);
         let hard_deadline = tokio::time::Instant::now() + max_duration;
         self.current_hard_deadline = Some(hard_deadline);
@@ -1394,13 +1527,18 @@ impl AcpClient {
     /// (e.g., it's stuck or dead), the write would otherwise block forever.
     async fn write_ndjson(&mut self, value: &serde_json::Value) -> Result<(), AcpError> {
         const WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        let timeout = if self.is_between_turns() {
+            BETWEEN_TURNS_WRITE_TIMEOUT
+        } else {
+            WRITE_TIMEOUT
+        };
         let line = serde_json::to_string(value)?;
         tokio::time::timeout(
-            WRITE_TIMEOUT,
+            timeout,
             frame_writer::write_frame(&mut self.stdin, line.as_bytes()),
         )
         .await
-        .map_err(|_| AcpError::WriteTimeout(WRITE_TIMEOUT))?
+        .map_err(|_| AcpError::WriteTimeout(timeout))?
         .map_err(AcpError::Io)?;
         self.observe("acp_write", value.clone());
         Ok(())
@@ -1534,30 +1672,8 @@ impl AcpClient {
                 Some(Ok(line)) => line,
             };
 
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
+            let Some(msg) = self.parse_agent_line(&line) else {
                 continue;
-            }
-
-            // Only log and reset idle after we have a valid non-empty line.
-            tracing::debug!(target: "acp::wire", "← {trimmed}");
-
-            let msg: serde_json::Value = match serde_json::from_str(trimmed) {
-                Ok(v) => v,
-                Err(e) => {
-                    self.observe(
-                        "acp_parse_error",
-                        serde_json::json!({
-                            "line": trimmed,
-                            "error": e.to_string(),
-                        }),
-                    );
-                    tracing::warn!(
-                        target: "acp::wire",
-                        "failed to parse line as JSON: {e} — skipping"
-                    );
-                    continue;
-                }
             };
             self.observe("acp_read", msg.clone());
 
@@ -1573,37 +1689,140 @@ impl AcpClient {
                 }
             }
 
-            // Dispatch by method name (notifications and agent-initiated requests).
-            if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-                match method {
-                    "session/update" => {
-                        let _ = self.handle_session_update(&msg);
-                    }
-                    "_goose/unstable/session/update" => {
-                        self.handle_goose_usage_update(&msg);
-                    }
-                    "session/request_permission" => {
-                        self.handle_permission_request(&msg).await?;
-                    }
-                    other => {
-                        // If the unknown message has an id, it's a request expecting a reply.
-                        // Silence would cause the agent to hang waiting for a response.
-                        // Send a JSON-RPC -32601 "Method not found" error.
-                        if msg.get("id").is_some() {
-                            let err_resp = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "id": msg["id"],
-                                "error": {"code": -32601, "message": format!("Method not found: {other}")}
-                            });
-                            // Surface write failures — a broken pipe means the
-                            // agent process is dead and continuing would hang.
-                            self.write_ndjson(&err_resp).await?;
-                        }
-                        tracing::debug!(target: "acp::wire", "ignoring unknown method: {other}");
-                    }
-                }
+            self.handle_agent_message(&msg).await?;
+        }
+    }
+
+    /// Handle output the agent wrote while no request was waiting for it:
+    /// work it continues on its own after a turn ended. The same handlers as
+    /// during a turn run, so permission requests are answered. It is neither
+    /// published to the observer feed (no turn owns it, and a frame of an
+    /// ended turn would show that turn running again) nor captured as a
+    /// reply.
+    ///
+    /// Takes at most [`OUTPUT_QUEUE_LINES`] lines per call. Returns whether
+    /// any of them showed the agent working. A failure (the agent is gone,
+    /// wrote an oversized line, or does not read its stdin) is kept for the
+    /// next turn, which returns it so the pool replaces the worker; until
+    /// then nothing more is read.
+    pub async fn drain_between_turns(&mut self) -> bool {
+        if self.between_turns_error.is_some() {
+            return false;
+        }
+        match self.handle_between_turns().await {
+            Ok(working) => working,
+            Err(e) => {
+                tracing::warn!("agent output between turns: {e}; replacing it at its next turn");
+                self.between_turns_error = Some(e);
+                false
             }
         }
+    }
+
+    async fn handle_between_turns(&mut self) -> Result<bool, AcpError> {
+        if let Some(e) = self.between_turns_error.take() {
+            return Err(e);
+        }
+        let _between_turns = BetweenTurns::begin(&self.between_turns);
+        self.handle_queued_output().await
+    }
+
+    fn is_between_turns(&self) -> bool {
+        self.between_turns
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    async fn handle_queued_output(&mut self) -> Result<bool, AcpError> {
+        let mut working = false;
+        for _ in 0..OUTPUT_QUEUE_LINES {
+            let line = match self.reader.try_next() {
+                None => break,
+                Some(Ok(line)) => line,
+                Some(Err(LinesCodecError::MaxLineLengthExceeded)) => {
+                    return Err(AcpError::Protocol(
+                        "agent stdout line exceeded 10MB limit".into(),
+                    ));
+                }
+                Some(Err(e)) => return Err(AcpError::Io(std::io::Error::other(e))),
+            };
+            let Some(msg) = self.parse_agent_line(&line) else {
+                continue;
+            };
+            if msg.get("method").is_none() {
+                tracing::debug!(
+                    target: "acp::wire",
+                    "ignoring a response no request is waiting for"
+                );
+                continue;
+            }
+            working |= is_agent_work(&msg);
+            self.handle_agent_message(&msg).await?;
+        }
+        Ok(working)
+    }
+
+    /// Parse one stdout line; `None` for a blank line or one that is not
+    /// JSON (logged and skipped).
+    fn parse_agent_line(&self, line: &str) -> Option<serde_json::Value> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        tracing::debug!(target: "acp::wire", "← {trimmed}");
+        match serde_json::from_str(trimmed) {
+            Ok(msg) => Some(msg),
+            Err(e) => {
+                self.observe(
+                    "acp_parse_error",
+                    serde_json::json!({
+                        "line": trimmed,
+                        "error": e.to_string(),
+                    }),
+                );
+                tracing::warn!(
+                    target: "acp::wire",
+                    "failed to parse line as JSON: {e} — skipping"
+                );
+                None
+            }
+        }
+    }
+
+    /// Handle an agent notification or agent-initiated request: anything but
+    /// a response to one of our requests. Every reader uses it, so agent
+    /// output is handled the same during a turn, a setup request or between
+    /// turns. Returns `true` when a tool call started (see
+    /// [`handle_session_update`](Self::handle_session_update)).
+    async fn handle_agent_message(&mut self, msg: &serde_json::Value) -> Result<bool, AcpError> {
+        let Some(method) = msg.get("method").and_then(|v| v.as_str()) else {
+            return Ok(false);
+        };
+        match method {
+            "session/update" => return Ok(self.handle_session_update(msg)),
+            "_goose/unstable/session/update" => {
+                self.handle_goose_usage_update(msg);
+            }
+            "session/request_permission" => {
+                self.handle_permission_request(msg).await?;
+            }
+            other => {
+                // If the unknown message has an id, it's a request expecting a reply.
+                // Silence would cause the agent to hang waiting for a response.
+                // Send a JSON-RPC -32601 "Method not found" error.
+                if msg.get("id").is_some() {
+                    let err_resp = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": msg["id"],
+                        "error": {"code": -32601, "message": format!("Method not found: {other}")}
+                    });
+                    // Surface write failures — a broken pipe means the
+                    // agent process is dead and continuing would hang.
+                    self.write_ndjson(&err_resp).await?;
+                }
+                tracing::debug!(target: "acp::wire", "ignoring unknown method: {other}");
+            }
+        }
+        Ok(false)
     }
 
     /// Idle-aware message loop: like [`read_until_response`] but resets an idle
@@ -1950,29 +2169,8 @@ impl AcpClient {
                     return Err(AcpError::Io(std::io::Error::other(e)));
                 }
                 Some(Ok(line)) => {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
+                    let Some(msg) = self.parse_agent_line(&line) else {
                         continue;
-                    }
-
-                    tracing::debug!(target: "acp::wire", "← {trimmed}");
-
-                    let msg: serde_json::Value = match serde_json::from_str(trimmed) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            self.observe(
-                                "acp_parse_error",
-                                serde_json::json!({
-                                    "line": trimmed,
-                                    "error": e.to_string(),
-                                }),
-                            );
-                            tracing::warn!(
-                                target: "acp::wire",
-                                "failed to parse line as JSON: {e} — skipping"
-                            );
-                            continue;
-                        }
                     };
                     self.observe("acp_read", msg.clone());
 
@@ -2146,39 +2344,11 @@ impl AcpClient {
                     }
 
                     // Dispatch notifications and agent-initiated requests.
-                    if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-                        match method {
-                            "session/update" => {
-                                if self.handle_session_update(&msg) {
-                                    let activity_now = Instant::now();
-                                    idle_deadline = activity_now + idle_timeout;
-                                    last_activity_at = activity_now;
-                                    tracing::debug!("idle clock reset: tool call started");
-                                }
-                            }
-                            "_goose/unstable/session/update" => {
-                                self.handle_goose_usage_update(&msg);
-                            }
-                            "session/request_permission" => {
-                                self.handle_permission_request(&msg).await?;
-                            }
-                            other => {
-                                // If the unknown message has an id, it's a request expecting a reply.
-                                // Silence would cause the agent to hang waiting for a response.
-                                // Send a JSON-RPC -32601 "Method not found" error.
-                                if msg.get("id").is_some() {
-                                    let err_resp = serde_json::json!({
-                                        "jsonrpc": "2.0",
-                                        "id": msg["id"],
-                                        "error": {"code": -32601, "message": format!("Method not found: {other}")}
-                                    });
-                                    // Surface write failures — a broken pipe means the
-                                    // agent process is dead and continuing would hang.
-                                    self.write_ndjson(&err_resp).await?;
-                                }
-                                tracing::debug!(target: "acp::wire", "ignoring unknown method: {other}");
-                            }
-                        }
+                    if self.handle_agent_message(&msg).await? {
+                        let activity_now = Instant::now();
+                        idle_deadline = activity_now + idle_timeout;
+                        last_activity_at = activity_now;
+                        tracing::debug!("idle clock reset: tool call started");
                     }
                 }
             }
@@ -2210,7 +2380,8 @@ impl AcpClient {
             "agent_message_chunk" => {
                 if let Some(text) = update["content"]["text"].as_str() {
                     tracing::info!(target: "acp::stream", "{text}");
-                    if let Some(reply) = self.reply_text.as_mut() {
+                    let between_turns = self.is_between_turns();
+                    if let Some(reply) = self.reply_text.as_mut().filter(|_| !between_turns) {
                         if reply.len() < MAX_CAPTURED_REPLY {
                             reply.push_str(text);
                         }
@@ -5171,6 +5342,158 @@ Start-Sleep -Seconds 1"#;
             "both check-ins must renew before the limit, ended at {:?}",
             started.elapsed()
         );
+    }
+
+    /// Output the agent writes after its turn ended (it continues on its own
+    /// once a background command finishes) is read with no request waiting
+    /// for it. Unread, it fills the pipe and the agent blocks mid-write until
+    /// the next prompt arrives.
+    #[tokio::test]
+    async fn output_after_a_turn_is_read_without_a_new_prompt() {
+        // Relative to the working directory, which the test and the script
+        // share on every platform (bash may be WSL's on Windows).
+        let marker =
+            std::path::PathBuf::from(format!("kuzz-acp-after-turn-{}", uuid::Uuid::new_v4()));
+        let marker_path = marker.display().to_string();
+        let chunk = format!(
+            r#"{{"jsonrpc":"2.0","method":"session/update","params":{{"sessionId":"sess-test","update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"{}"}}}}}}}}"#,
+            "x".repeat(8 * 1024)
+        );
+        let script = format!(
+            "read -r _; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             for i in {{1..200}}; do echo '{chunk}'; done; \
+             touch '{marker_path}'; sleep 30"
+        );
+        let mut client = spawn_script(&script).await;
+        let max_dur = std::time::Duration::from_secs(10);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "go", max_dur, max_dur)
+            .await
+            .expect("turn");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !marker.exists() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let finished = marker.exists();
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            finished,
+            "the agent must finish writing after its turn without a new prompt"
+        );
+        assert!(
+            client.drain_between_turns().await,
+            "reply chunks after the turn are the agent working"
+        );
+        assert!(
+            !client.drain_between_turns().await,
+            "nothing is left once handled"
+        );
+    }
+
+    const CHUNK_STALE: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-test","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"STALE "}}}}"#;
+    const CHUNK_BUSY: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-test","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"BUSY: build"}}}}"#;
+
+    /// What the agent wrote after the previous turn is handled before the
+    /// next prompt, so it is not taken as that turn's reply (an idle check
+    /// reads its answer from the reply).
+    #[tokio::test]
+    async fn output_from_before_a_turn_is_not_its_reply() {
+        let script = format!(
+            "read -r _; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             echo '{CHUNK_STALE}'; \
+             read -r _; \
+             echo '{CHUNK_BUSY}'; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             sleep 30"
+        );
+        let mut client = spawn_script(&script).await;
+        let max_dur = std::time::Duration::from_secs(10);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "first", max_dur, max_dur)
+            .await
+            .expect("first turn");
+        // Let the reader take the late chunk before the next prompt.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        client.set_capture_reply(true);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "check", max_dur, max_dur)
+            .await
+            .expect("second turn");
+        assert_eq!(client.take_reply_text(), "BUSY: build");
+    }
+
+    /// A permission request written between turns is answered, as during a
+    /// turn, instead of leaving the agent waiting for the next prompt.
+    #[tokio::test]
+    async fn permission_request_between_turns_is_answered() {
+        // Relative: the test and the script share the working directory.
+        let answer =
+            std::path::PathBuf::from(format!("kuzz-acp-permission-{}", uuid::Uuid::new_v4()));
+        let answer_path = answer.display().to_string();
+        let request = r#"{"jsonrpc":"2.0","id":"perm-1","method":"session/request_permission","params":{"sessionId":"sess-test","options":[{"optionId":"yes","kind":"allow_once","name":"Allow"},{"optionId":"no","kind":"reject_once","name":"Reject"}]}}"#;
+        let script = format!(
+            "read -r _; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             echo '{request}'; \
+             head -n 1 > '{answer_path}.part'; \
+             mv '{answer_path}.part' '{answer_path}'; sleep 30"
+        );
+        let mut client = spawn_script(&script).await;
+        let max_dur = std::time::Duration::from_secs(10);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "go", max_dur, max_dur)
+            .await
+            .expect("turn");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut working = false;
+        while !answer.exists() && std::time::Instant::now() < deadline {
+            working |= client.drain_between_turns().await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let reply = std::fs::read_to_string(&answer).unwrap_or_default();
+        let _ = std::fs::remove_file(&answer);
+        assert!(working, "a permission request is the agent working");
+        let reply: serde_json::Value = serde_json::from_str(&reply).expect("JSON answer");
+        assert_eq!(reply["id"], "perm-1");
+        assert_eq!(reply["result"]["outcome"]["optionId"], "yes");
+    }
+
+    #[test]
+    fn only_reply_tool_and_permission_messages_are_agent_work() {
+        let update = |kind: &str| {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {"sessionId": "s", "update": {"sessionUpdate": kind}}
+            })
+        };
+        for kind in [
+            "agent_message_chunk",
+            "agent_thought_chunk",
+            "tool_call",
+            "tool_call_update",
+            "plan",
+        ] {
+            assert!(is_agent_work(&update(kind)), "{kind} is work");
+        }
+        for kind in [
+            "usage_update",
+            "available_commands_update",
+            "session_info_update",
+            "keepalive",
+        ] {
+            assert!(!is_agent_work(&update(kind)), "{kind} is bookkeeping");
+        }
+        assert!(is_agent_work(&serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "session/request_permission", "params": {}
+        })));
+        assert!(!is_agent_work(&serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "result": {}
+        })));
     }
 
     /// Reply text is collected only while capture is on (idle checks).

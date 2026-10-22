@@ -618,10 +618,11 @@ pub struct CliArgs {
     pub lazy_pool: bool,
 
     /// Tear the woken pool back down to the lazy empty-slot state after this
-    /// many seconds since the last channel dispatch or completion, with no turn
-    /// in flight and an empty queue. Heartbeat completion does not renew the
-    /// interval. Each conversation that ran a turn since its last check is
-    /// first asked whether background work is still running; any `BUSY` answer
+    /// many seconds since the last channel dispatch or completion, or the last
+    /// work an agent did on its own between turns, with no turn in flight and
+    /// an empty queue. Heartbeat completion does not renew the interval. Each
+    /// conversation that ran a turn since its last check is first asked
+    /// whether background work is still running; any `BUSY` answer
     /// keeps the pool for another interval. Worker subprocesses are released
     /// until the next accepted event re-wakes.
     /// Requires `--lazy-pool`; ignored otherwise. 0 disables idle re-sleep.
