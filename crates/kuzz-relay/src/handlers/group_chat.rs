@@ -4,8 +4,9 @@
 //!
 //! The creation request is checked here ([`parse_group_chat_create`], pure),
 //! then every initial person is resolved against the same rules a kind:9000
-//! add uses ([`plan_initial_people`]): a target who blocks the creator is
-//! skipped, agents follow their `channel_add_policy` and join as `bot`,
+//! add uses ([`plan_initial_people`]): a person who blocks the creator is
+//! counted as invited but nothing is stored (as a kind:9000 add answers
+//! "invitation sent"), agents follow their `channel_add_policy` and join as `bot`,
 //! people join as `member` when their "who can add me" setting admits the
 //! creator and otherwise get an invitation. One person needing an invitation
 //! never fails the whole creation.
@@ -31,6 +32,9 @@ pub fn has_group_chat_tag(event: &Event) -> bool {
         .iter()
         .any(|t| t.as_slice().first().map(String::as_str) == Some(GROUP_CHAT_TAG))
 }
+
+/// Longest chat name, in characters (`channels.name` is `VARCHAR(255)`).
+pub const GROUP_CHAT_MAX_NAME_CHARS: usize = 255;
 
 /// A validated group chat creation request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +102,11 @@ pub fn parse_group_chat_create(event: &Event, creator: &[u8]) -> Result<GroupCha
     let name = kuzz_core::channel::canonical_channel_name(&name.unwrap_or_default())
         .trim()
         .to_owned();
+    if name.chars().count() > GROUP_CHAT_MAX_NAME_CHARS {
+        return Err(format!(
+            "a chat name has at most {GROUP_CHAT_MAX_NAME_CHARS} characters"
+        ));
+    }
     Ok(GroupChatCreate { name, people })
 }
 
@@ -110,7 +119,10 @@ pub enum InitialAdd {
     Bot,
     /// Sent an invitation.
     Invite,
-    /// Not added and nothing stored (blocked, or an agent refusing the add).
+    /// A person who blocks the creator: reported as invited, nothing stored,
+    /// so the creator cannot tell the block from a pending invitation.
+    HiddenInvite,
+    /// Not added and nothing stored (an agent blocking or refusing the add).
     Skip,
     /// Not added: the creator hit the daily invitation cap.
     RateLimited,
@@ -118,8 +130,9 @@ pub enum InitialAdd {
 
 /// Decide one initial person from already-resolved facts, mirroring a
 /// kind:9000 add by an active member:
-/// - the target blocks the creator → skip silently;
-/// - the target's `channel_add_policy` refuses the creator → skip;
+/// - a person who blocks the creator → reported as invited, nothing stored;
+/// - an agent that blocks the creator, or whose `channel_add_policy` refuses
+///   the creator → skip;
 /// - agents → `bot`;
 /// - people the "who can add me" setting admits → `member`;
 /// - otherwise an invitation, unless the daily cap is used up.
@@ -130,7 +143,9 @@ pub fn decide_initial_person(
     admitted: bool,
     invitation_allowed: bool,
 ) -> InitialAdd {
-    if target_blocks_creator || !add_policy_allows {
+    if target_blocks_creator && !is_agent {
+        InitialAdd::HiddenInvite
+    } else if target_blocks_creator || !add_policy_allows {
         InitialAdd::Skip
     } else if is_agent {
         InitialAdd::Bot
@@ -150,6 +165,8 @@ pub struct InitialPeople {
     pub members: Vec<(Vec<u8>, MemberRole)>,
     /// Sent an invitation.
     pub invitees: Vec<Vec<u8>>,
+    /// People who block the creator: counted as invited, nothing stored.
+    pub hidden_invites: usize,
     /// Skipped because the creator hit the daily invitation cap.
     pub rate_limited: usize,
 }
@@ -159,11 +176,11 @@ impl InitialPeople {
     /// `rate-limited:<n>` (space separated).
     pub fn ok_message(&self) -> String {
         let mut parts = Vec::new();
-        if !self.invitees.is_empty() {
+        let invited = self.invitees.len() + self.hidden_invites;
+        if invited > 0 {
             parts.push(format!(
-                "{}{}",
-                super::side_effects::INVITE_SENT_PREFIX,
-                self.invitees.len()
+                "{}{invited}",
+                super::side_effects::INVITE_SENT_PREFIX
             ));
         }
         if self.rate_limited > 0 {
@@ -264,6 +281,7 @@ pub async fn plan_initial_people(
             InitialAdd::Member => plan.members.push((target.clone(), MemberRole::Member)),
             InitialAdd::Bot => plan.members.push((target.clone(), MemberRole::Bot)),
             InitialAdd::Invite => plan.invitees.push(target.clone()),
+            InitialAdd::HiddenInvite => plan.hidden_invites += 1,
             InitialAdd::RateLimited => plan.rate_limited += 1,
             InitialAdd::Skip => {}
         }
@@ -382,7 +400,9 @@ mod tests {
                 for agent in [false, true] {
                     for admitted in [false, true] {
                         for invite_ok in [false, true] {
-                            let expected = if blocked || !policy_ok {
+                            let expected = if blocked && !agent {
+                                InitialAdd::HiddenInvite
+                            } else if blocked || !policy_ok {
                                 InitialAdd::Skip
                             } else if agent {
                                 InitialAdd::Bot
@@ -417,6 +437,31 @@ mod tests {
         assert_eq!(plan.ok_message(), "invite-sent:2");
         plan.rate_limited = 1;
         assert_eq!(plan.ok_message(), "invite-sent:2 rate-limited:1");
+        plan.hidden_invites = 1;
+        assert_eq!(
+            plan.ok_message(),
+            "invite-sent:3 rate-limited:1",
+            "people who block the creator count as invited"
+        );
+        let only_hidden = InitialPeople {
+            hidden_invites: 1,
+            ..InitialPeople::default()
+        };
+        assert_eq!(only_hidden.ok_message(), "invite-sent:1");
+    }
+
+    #[test]
+    fn name_longer_than_the_column_is_rejected() {
+        let keys = Keys::generate();
+        let me = keys.public_key().to_bytes();
+        let max = "가".repeat(GROUP_CHAT_MAX_NAME_CHARS);
+        let ok = parse_group_chat_create(&create_event(&keys, vec![s(&["name", &max])]), &me)
+            .expect("a name at the limit is accepted");
+        assert_eq!(ok.name.chars().count(), GROUP_CHAT_MAX_NAME_CHARS);
+        let long = format!("{max}a");
+        let err = parse_group_chat_create(&create_event(&keys, vec![s(&["name", &long])]), &me)
+            .unwrap_err();
+        assert!(err.contains("at most"), "{err}");
     }
 }
 

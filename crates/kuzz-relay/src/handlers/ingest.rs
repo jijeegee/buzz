@@ -3411,6 +3411,20 @@ async fn ingest_event_inner(
                 "invalid: a chat needs an h tag".into(),
             ));
         };
+        // A replayed or colliding creation must not run the per-person
+        // planning queries; the transactional insert below still decides
+        // the race.
+        match state.db.get_channel(tenant.community(), client_uuid).await {
+            Ok(_) => {
+                return Ok(IngestResult {
+                    event_id: event_id_hex,
+                    accepted: false,
+                    message: "duplicate: channel already exists".into(),
+                });
+            }
+            Err(kuzz_db::DbError::ChannelNotFound(_)) => {}
+            Err(e) => return Err(IngestError::Internal(format!("error: {e}"))),
+        }
         let people = super::group_chat::plan_initial_people(
             tenant,
             state,

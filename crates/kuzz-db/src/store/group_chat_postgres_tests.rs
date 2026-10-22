@@ -497,11 +497,13 @@ async fn dm_open_is_one_to_one_or_notes_to_self() {
         .expect("1:1");
     assert!(created);
     assert_eq!(f.roles(one.id).await.len(), 2);
+    assert_eq!(one.name, "DM");
 
     let (notes, created) = dm::open_dm(&f.pool, f.scope, &[&pk(&me)], &pk(&me))
         .await
         .expect("notes to self");
     assert!(created);
+    assert_eq!(notes.name, "DM", "notes to self is named like any DM");
     assert_eq!(
         f.roles(notes.id).await,
         vec![(pk(&me), "member".to_owned())]

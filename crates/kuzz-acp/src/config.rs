@@ -1951,6 +1951,9 @@ pub(crate) fn dispatcher_subscribes_channel_type(
 
 /// [`resolve_channel_filters`] over discovered channels, with the dispatcher
 /// override applied to every in-scope non-DM channel except group chats.
+/// Group chats are mention-only in every mode (`all`, `config` rules such as
+/// Lead's owner listener, dispatcher): the agent hears a message there only
+/// when @mentioned, owner included.
 pub fn resolve_startup_channel_filters(
     config: &Config,
     channels: &HashMap<Uuid, crate::relay::ChannelInfo>,
@@ -1959,19 +1962,23 @@ pub fn resolve_startup_channel_filters(
     let channel_ids: Vec<Uuid> = channels.keys().copied().collect();
     let mut filters = resolve_channel_filters(config, &channel_ids, rules);
     for (channel_id, info) in channels {
-        if dispatcher_subscribes_channel_type(config, &info.channel_type, info.group_chat) {
-            if let Some(filter) = filters.get_mut(channel_id) {
-                *filter = dispatcher_channel_filter(config);
-            }
+        let Some(filter) = filters.get_mut(channel_id) else {
+            continue;
+        };
+        if info.group_chat {
+            filter.require_mention = true;
+        } else if dispatcher_subscribes_channel_type(config, &info.channel_type, false) {
+            *filter = dispatcher_channel_filter(config);
         }
     }
     filters
 }
 
 /// [`resolve_dynamic_channel_filter`] with the dispatcher override for a
-/// channel whose type was resolved (`None` = unresolved, fails closed).
-/// `group_chat` comes from the same metadata; group chats keep the ordinary
-/// filter.
+/// channel whose type was resolved. `group_chat` comes from the same
+/// metadata; group chats are mention-only in every mode. Unresolved metadata
+/// (`None`) fails closed to a mention filter, since the channel may be a
+/// group chat.
 pub fn resolve_dynamic_channel_filter_for_type(
     config: &Config,
     channel_id: Uuid,
@@ -1979,7 +1986,11 @@ pub fn resolve_dynamic_channel_filter_for_type(
     group_chat: bool,
     rules: &[crate::filter::SubscriptionRule],
 ) -> Option<ChannelFilter> {
-    let filter = resolve_dynamic_channel_filter(config, channel_id, rules)?;
+    let mut filter = resolve_dynamic_channel_filter(config, channel_id, rules)?;
+    if group_chat || channel_type.is_none() {
+        filter.require_mention = true;
+        return Some(filter);
+    }
     if dispatcher_subscribes_channel_type(config, channel_type.unwrap_or("unknown"), group_chat) {
         return Some(dispatcher_channel_filter(config));
     }
@@ -3978,6 +3989,86 @@ channels = "ALL"
             assert!(
                 filter.require_mention,
                 "a group chat joined at runtime keeps the mention filter ({channel_type:?})"
+            );
+        }
+    }
+
+    /// Group chats are mention-only in every mode: `all`, `mentions` with the
+    /// mention filter turned off, and `config` mode under the desktop's Lead
+    /// rules (whose `lead-listen` rule hears every owner message elsewhere).
+    #[test]
+    fn group_chats_are_mention_only_in_every_subscribe_mode() {
+        let lead_rules = crate::config::load_rules(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/lead_rules.toml"),
+        )
+        .expect("lead rules load");
+        let mut no_filter = test_config(SubscribeMode::Mentions);
+        no_filter.no_mention_filter = true;
+        let mut all_dispatcher = test_config(SubscribeMode::All);
+        all_dispatcher.dispatcher = true;
+        let cases = [
+            ("all", test_config(SubscribeMode::All), vec![]),
+            ("all + dispatcher", all_dispatcher, vec![]),
+            ("mentions --no-mention-filter", no_filter, vec![]),
+            (
+                "config (Lead rules)",
+                test_config(SubscribeMode::Config),
+                lead_rules,
+            ),
+        ];
+        let stream = Uuid::new_v4();
+        let chat = Uuid::new_v4();
+        let mut channels = channel_map(&[(stream, "stream")]);
+        channels.insert(
+            chat,
+            crate::relay::ChannelInfo {
+                name: "unknown".into(),
+                channel_type: "private".into(),
+                description: None,
+                group_chat: true,
+            },
+        );
+        for (label, config, rules) in cases {
+            let filters = resolve_startup_channel_filters(&config, &channels, &rules);
+            assert!(
+                !filters[&stream].require_mention,
+                "{label}: an ordinary channel keeps the mode's unfiltered subscription"
+            );
+            assert!(
+                filters[&chat].require_mention,
+                "{label}: a group chat found at startup is mention-only"
+            );
+            let joined = resolve_dynamic_channel_filter_for_type(
+                &config,
+                chat,
+                Some("private"),
+                true,
+                &rules,
+            )
+            .expect("in scope");
+            assert!(
+                joined.require_mention,
+                "{label}: a group chat joined at runtime is mention-only"
+            );
+            let unresolved =
+                resolve_dynamic_channel_filter_for_type(&config, chat, None, false, &rules)
+                    .expect("in scope");
+            assert!(
+                unresolved.require_mention,
+                "{label}: unresolved metadata fails closed to the mention filter"
+            );
+            let ordinary = resolve_dynamic_channel_filter_for_type(
+                &config,
+                stream,
+                Some("stream"),
+                false,
+                &rules,
+            )
+            .expect("in scope");
+            assert!(
+                !ordinary.require_mention,
+                "{label}: an ordinary channel joined at runtime is unfiltered"
             );
         }
     }

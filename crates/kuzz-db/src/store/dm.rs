@@ -159,8 +159,8 @@ pub async fn create_dm(
         return row_to_channel_record(row);
     }
 
-    // Name the DM based on participant count.
-    let name = if participants.len() == 2 {
+    // Name the DM based on participant count (notes to self is a DM too).
+    let name = if participants.len() <= 2 {
         "DM".to_string()
     } else {
         format!("Group DM ({})", participants.len())

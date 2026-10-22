@@ -134,8 +134,9 @@ fn role_of(members: &[(Vec<u8>, String)], keys: &Keys) -> Option<String> {
 }
 
 /// Creation adds friends as members and the creator's agent as a bot in one
-/// step, invites strangers, silently skips someone who blocked the creator,
-/// and announces the marker on kind:39000.
+/// step, invites strangers, counts someone who blocked the creator as invited
+/// without storing anything (the reply must not reveal the block), and
+/// announces the marker on kind:39000.
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn create_adds_friends_bots_invites_strangers_and_skips_blockers() {
@@ -184,7 +185,9 @@ async fn create_adds_friends_bots_invites_strangers_and_skips_blockers() {
     .await;
     let result = result.expect("create chat");
     assert!(result.accepted);
-    assert_eq!(result.message, "invite-sent:1");
+    // The stranger and the blocker: the block is indistinguishable from a
+    // pending invitation.
+    assert_eq!(result.message, "invite-sent:2");
 
     let channel = state
         .db
@@ -227,6 +230,63 @@ async fn create_adds_friends_bots_invites_strangers_and_skips_blockers() {
     .await
     .expect("39000 lookup");
     assert!(marker, "kind:39000 must carry the group_chat marker");
+}
+
+/// A name longer than the column is a validation error, not an internal one,
+/// and a replayed creation of an existing chat is a duplicate.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn create_rejects_overlong_names_and_reports_duplicates() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let creator = Keys::generate();
+    ensure_users(&state, &tenant, &[&creator]).await;
+    let id = Uuid::new_v4();
+    let long = "a".repeat(super::GROUP_CHAT_MAX_NAME_CHARS + 1);
+    let event = sign(
+        &creator,
+        9007,
+        "",
+        vec![
+            tag(&["h", &id.to_string()]),
+            tag(&["group_chat"]),
+            tag(&["name", &long]),
+        ],
+    );
+    let msg = rejection(send(&state, &tenant, &creator, event).await);
+    assert!(msg.starts_with("invalid:"), "{msg}");
+    assert!(state.db.get_channel(tenant.community(), id).await.is_err());
+
+    let max = "a".repeat(super::GROUP_CHAT_MAX_NAME_CHARS);
+    let first = sign(
+        &creator,
+        9007,
+        "",
+        vec![
+            tag(&["h", &id.to_string()]),
+            tag(&["group_chat"]),
+            tag(&["name", &max]),
+        ],
+    );
+    let r = send(&state, &tenant, &creator, first)
+        .await
+        .expect("create chat");
+    assert!(r.accepted, "{}", r.message);
+    let again = sign(
+        &creator,
+        9007,
+        "",
+        vec![
+            tag(&["h", &id.to_string()]),
+            tag(&["group_chat"]),
+            tag(&["name", "again"]),
+        ],
+    );
+    let r = send(&state, &tenant, &creator, again)
+        .await
+        .expect("duplicate is not an error");
+    assert!(!r.accepted);
+    assert_eq!(r.message, "duplicate: channel already exists");
 }
 
 /// Malformed creations are refused before anything is written.
