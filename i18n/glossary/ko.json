@@ -1,0 +1,17 @@
+{
+  "Chat": "채팅",
+  "Channel": "채널",
+  "Thread": "스레드",
+  "Agent": "에이전트",
+  "Goal": "목표",
+  "Inbox": "받은 알림",
+  "Friend": "친구",
+  "Project": "프로젝트",
+  "Mention": "멘션",
+  "Reply": "답장",
+  "Huddle": "음성 통화",
+  "Community": "커뮤니티",
+  "Pin": "고정",
+  "Mute": "알림 끄기",
+  "Invite": "초대"
+}

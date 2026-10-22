@@ -1,0 +1,17 @@
+{
+  "Chat": "A one-to-one or small group conversation, and the tab listing them",
+  "Channel": "A named room many people and agents join",
+  "Thread": "Replies under one message, shown beside the room",
+  "Agent": "An AI helper that reads and writes in rooms like a person",
+  "Goal": "A tracked aim of a room, split into smaller goals",
+  "Inbox": "The list of mentions and replies waiting for you",
+  "Friend": "A person you added so you can chat directly",
+  "Project": "Shared work (code, issues) linked to a room",
+  "Mention": "Calling someone with @name so they get notified",
+  "Reply": "Answering a specific message",
+  "Huddle": "A live voice call inside a room",
+  "Community": "The group of people using the same Kuzz space",
+  "Pin": "Keep a message or chat at the top",
+  "Mute": "Stop notifications from a room or chat",
+  "Invite": "Ask someone to join a room or Kuzz"
+}
