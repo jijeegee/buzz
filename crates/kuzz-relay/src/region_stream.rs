@@ -32,6 +32,11 @@
 //!   served (unknown room, the room lives elsewhere, limits).
 //! - `{"op":"global_event","event":{…},"to":[<hex>…]}` for a room-less event
 //!   of watched readers.
+//! - `{"op":"evicted","room":<uuid>,"readers":[<hex>…]}` when watched readers
+//!   lost the room (removed, kicked, or the room turned private without
+//!   them; S4-5). They are no longer watched, and the entry closes their
+//!   subscriptions to the room, as a kick does here. Events never needed
+//!   this: each one is judged when it is sent.
 //!
 //! A frame of an unknown op is ignored, so either side can be newer.
 //!
@@ -163,6 +168,26 @@ pub enum HomeFrame {
         /// Hex pubkeys of the watched readers allowed to see it.
         to: Vec<String>,
     },
+    /// Watched readers that can no longer read the room.
+    Evicted {
+        /// The room.
+        room: Uuid,
+        /// Hex pubkeys.
+        readers: Vec<String>,
+    },
+}
+
+/// A room's membership or visibility changed in this region (from the cache
+/// invalidation every pod receives). `reader` is the member concerned, or
+/// `None` for every reader of the room.
+#[derive(Debug, Clone)]
+pub struct RoomAccessChange {
+    /// The room's community.
+    pub community: kuzz_core::CommunityId,
+    /// The room.
+    pub room: Uuid,
+    /// The member concerned.
+    pub reader: Option<Vec<u8>>,
 }
 
 /// Decode hex pubkeys, sorted and without repeats; `None` if any is not a
@@ -222,6 +247,7 @@ async fn run(state: Arc<AppState>, tenant: TenantContext, entry: String, socket:
     // a watch is live is missed.
     let mut events = state.pubsub.subscribe_local();
     let mut resync = state.pubsub.subscribe_resync();
+    let mut access = state.room_access_changes.subscribe();
     let community = tenant.community();
     let mut watched = Watched::default();
     let mut ping = tokio::time::interval(PING_INTERVAL);
@@ -259,6 +285,16 @@ async fn run(state: Arc<AppState>, tenant: TenantContext, entry: String, socket:
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break "shutdown",
             },
             _ = resync.recv() => break "home resync",
+            changed = access.recv() => match changed {
+                Ok(change) => recheck(&state, community, &mut watched, change).await,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    // Missed changes only leave readers watched; every
+                    // event is still judged when it is sent.
+                    metrics::counter!("kuzz_region_stream_access_lag_total").increment(n);
+                    None
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break "shutdown",
+            },
             _ = ping.tick() => {
                 if last_pong.elapsed() > PONG_GRACE {
                     break "no pong";
@@ -442,6 +478,53 @@ async fn deliver(
         seq: stored.channel_sequence,
         event: stored.event,
         to: allowed.iter().map(hex::encode).collect(),
+    })
+}
+
+/// After a membership or visibility change: stop watching the readers of
+/// the room that can no longer read it, and tell the entry.
+async fn recheck(
+    state: &AppState,
+    community: kuzz_core::CommunityId,
+    watched: &mut Watched,
+    change: RoomAccessChange,
+) -> Option<Message> {
+    if change.community != community {
+        return None;
+    }
+    let room = change.room;
+    let readers = watched.rooms.get(&room)?;
+    let candidates = match change.reader {
+        Some(reader) if readers.contains(&reader) => vec![reader],
+        Some(_) => return None,
+        None => readers.clone(),
+    };
+    // Same rule as the gate: an open room is read by everyone.
+    match state.channel_visibility_cached(community, room, None).await {
+        Ok(visibility) if visibility != "private" => return None,
+        Ok(_) => {}
+        Err(_) => return None,
+    }
+    let mut gone = Vec::new();
+    for reader in candidates {
+        if matches!(
+            state.is_member_cached(community, room, &reader).await,
+            Ok(false)
+        ) {
+            gone.push(reader);
+        }
+    }
+    if gone.is_empty() {
+        return None;
+    }
+    if let Some(readers) = watched.rooms.get_mut(&room) {
+        readers.retain(|reader| !gone.contains(reader));
+    }
+    watched.readers -= gone.len();
+    metrics::counter!("kuzz_region_stream_readers_evicted_total").increment(gone.len() as u64);
+    encode(&HomeFrame::Evicted {
+        room,
+        readers: gone.iter().map(hex::encode).collect(),
     })
 }
 

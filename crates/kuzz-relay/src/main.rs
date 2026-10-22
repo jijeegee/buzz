@@ -1130,6 +1130,14 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         info!("Admin outbox delivery worker started");
     }
 
+    // Region propagation worker: delivers logouts and disconnects to the
+    // other regions (`region_outbox`, leased like the admin outbox).
+    if state.config.region_link {
+        let outbox_state = Arc::clone(&state);
+        tokio::spawn(async move { kuzz_relay::region_propagate::run(outbox_state).await });
+        info!("Region propagation worker started");
+    }
+
     // Action recovery worker: re-drives stranded relay_admin_actions rows whose
     // action lease expired before the enforcement state machine completed.
     // Crash safety: a process that died between claim and finalization leaves

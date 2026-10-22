@@ -600,6 +600,19 @@ fn deliver(
     }
 }
 
+/// Close the subscriptions readers of this region hold to a room they lost
+/// at its home, as a kick closes them there. The next reconcile watches the
+/// room for the readers left.
+async fn evict(state: Arc<AppState>, tenant: TenantContext, room: Uuid, readers: Vec<String>) {
+    for reader in readers.iter().filter_map(|reader| hex::decode(reader).ok()) {
+        crate::handlers::side_effects::evict_live_channel_subscriptions(
+            &tenant, &state, room, &reader,
+        )
+        .await;
+    }
+    metrics::counter!("kuzz_region_live_evicted_total").increment(readers.len() as u64);
+}
+
 /// One link: connect while there is something to watch, reconnect on drops.
 async fn run_link(
     state: Arc<AppState>,
@@ -647,7 +660,7 @@ async fn run_link(
         };
         tracing::info!(target_region = %region, rooms = rooms.readers.len(), "Region stream connected");
         let opened = Instant::now();
-        let end = serve(&state, community, &mut rooms, &mut requests, &mut socket).await;
+        let end = serve(&state, &tenant, &mut rooms, &mut requests, &mut socket).await;
         let _ = socket.close(None).await;
         rooms.dropped();
         metrics::counter!("kuzz_region_live_drops_total", "target" => region.clone(), "reason" => end)
@@ -674,7 +687,7 @@ async fn run_link(
 /// Run one connected stream until it ends; returns why.
 async fn serve<S>(
     state: &Arc<AppState>,
-    community: CommunityId,
+    tenant: &TenantContext,
     rooms: &mut Rooms,
     requests: &mut mpsc::Receiver<Ensure>,
     socket: &mut S,
@@ -684,6 +697,7 @@ where
         + futures_util::Sink<Message>
         + Unpin,
 {
+    let community = tenant.community();
     // A new stream: nothing sent on it is unanswered yet.
     rooms.inflight.clear();
     let watched: Vec<Uuid> = rooms.readers.keys().copied().collect();
@@ -748,6 +762,12 @@ where
                     }
                     Ok(HomeFrame::GlobalEvent { event, to }) => {
                         deliver_global(state, community, event, &to);
+                        Vec::new()
+                    }
+                    Ok(HomeFrame::Evicted { room, readers }) => {
+                        // Off the link task: eviction waits on each
+                        // connection's subscription lock.
+                        tokio::spawn(evict(Arc::clone(state), tenant.clone(), room, readers));
                         Vec::new()
                     }
                     // A frame this version does not know (a newer home).

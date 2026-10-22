@@ -71,6 +71,8 @@ pub mod relay_operators;
 pub mod reminder;
 /// Deployment regions (migration 0078).
 pub mod region;
+/// Region propagation outbox (migration 0085).
+pub mod region_outbox;
 /// Replaceable-event persistence and coordinate locking.
 pub mod replaceable;
 /// Durable completed snapshots from the isolated media-storage worker.

@@ -516,6 +516,163 @@ async fn a_reader_in_jp_is_told_live_when_added_to_a_kr_room() {
     );
 }
 
+/// Whether the relay closes `client` within `within` (frames before the
+/// close, such as the closing `OK`, are skipped).
+async fn closed_within(client: &mut KuzzTestClient, within: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + within;
+    loop {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        match client.recv_event(left).await {
+            Ok(_) => {}
+            Err(kuzz_test_client::TestClientError::Timeout) => return false,
+            Err(_) => return true,
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_disconnect_queued_in_kr_closes_the_connection_in_jp() {
+    // Someone banned or logged out in kr is connected to jp; a bystander too.
+    let banned = Keys::generate();
+    let bystander = Keys::generate();
+    let mut jp = KuzzTestClient::connect(&jp_url(), &banned)
+        .await
+        .expect("jp connect");
+    let mut other = KuzzTestClient::connect(&jp_url(), &bystander)
+        .await
+        .expect("jp connect");
+
+    // What a ban in kr writes for jp (the worker in kr delivers it).
+    let reason = format!("blocked: regions test {}", uuid::Uuid::new_v4());
+    let payload = serde_json::json!({
+        "op": "DisconnectPubkey",
+        "pubkey": banned.public_key().to_bytes().to_vec(),
+        "event_id": "0".repeat(64),
+        "reason": reason,
+    });
+    let url = std::env::var("REGION_KR_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz".into());
+    let kr = sqlx::PgPool::connect(&url).await.expect("kr database");
+    sqlx::query(
+        "INSERT INTO region_outbox (target_region, community_id, topic, payload) \
+         VALUES ('jp', $1::uuid, 'conn_control', $2)",
+    )
+    .bind(kr_community().await)
+    .bind(&payload)
+    .execute(&kr)
+    .await
+    .expect("outbox row");
+
+    assert!(
+        closed_within(&mut jp, Duration::from_secs(20)).await,
+        "the banned connection in jp was not closed"
+    );
+    // kr deletes the row once jp has answered, just after the close.
+    let mut left: i64 = 1;
+    for _ in 0..50 {
+        left =
+            sqlx::query_scalar("SELECT count(*) FROM region_outbox WHERE payload->>'reason' = $1")
+                .bind(&reason)
+                .fetch_one(&kr)
+                .await
+                .expect("outbox rows");
+        if left == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert_eq!(left, 0, "a delivered row is deleted");
+
+    // The bystander is still served.
+    other
+        .subscribe("still", vec![Filter::new().kind(Kind::Custom(1)).limit(1)])
+        .await
+        .expect("req");
+    other
+        .collect_until_eose("still", Duration::from_secs(5))
+        .await
+        .expect("bystander still connected");
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_member_removed_in_kr_loses_the_live_room_in_jp() {
+    // A private kr room with a member who reads it live from jp.
+    let owner = Keys::generate();
+    let member = Keys::generate();
+    let room = uuid::Uuid::new_v4().to_string();
+    let private_room = EventBuilder::new(Kind::Custom(9007), "")
+        .tags([
+            Tag::parse(["h", &room]).unwrap(),
+            Tag::parse(["name", &format!("regions-{room}")]).unwrap(),
+            Tag::parse(["channel_type", "stream"]).unwrap(),
+            Tag::parse(["visibility", "private"]).unwrap(),
+        ])
+        .sign_with_keys(&owner)
+        .unwrap();
+    let (status, body) = post(&kr_url(), &owner, &private_room).await;
+    assert_eq!(status, 200, "{body}");
+    let member_tag = |kind: u16| {
+        EventBuilder::new(Kind::Custom(kind), "")
+            .tags([
+                Tag::parse(["h", &room]).unwrap(),
+                Tag::parse(["p", &member.public_key().to_hex()]).unwrap(),
+            ])
+            .sign_with_keys(&owner)
+            .unwrap()
+    };
+    let (status, body) = post(&kr_url(), &owner, &member_tag(9000)).await;
+    assert_eq!(status, 200, "{body}");
+    tell_jp_room_lives_in_kr(&room).await;
+
+    let mut jp = KuzzTestClient::connect(&jp_url(), &member)
+        .await
+        .expect("jp connect");
+    let live = Filter::new()
+        .kind(Kind::Custom(9))
+        .custom_tag(SingleLetterTag::lowercase(nostr::Alphabet::H), room.clone());
+    jp.subscribe("room", vec![live]).await.expect("req");
+    loop {
+        match jp.recv_event(Duration::from_secs(10)).await.expect("eose") {
+            RelayMessage::Eose { subscription_id } if subscription_id == "room" => break,
+            RelayMessage::Closed {
+                subscription_id,
+                message,
+            } if subscription_id == "room" => panic!("room read refused: {message}"),
+            _ => {}
+        }
+    }
+    // The watch is acknowledged before history is read, but give the
+    // stream a moment like the other live tests.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    // The member reads it live.
+    let (status, body) = post(&kr_url(), &owner, &message(&owner, &room, "hello")).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(live_event(&mut jp, "room").await.content, "hello");
+
+    let (status, body) = post(&kr_url(), &owner, &member_tag(9001)).await;
+    assert_eq!(status, 200, "{body}");
+    let closed = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match jp.recv_event(Duration::from_secs(15)).await {
+                Ok(RelayMessage::Closed {
+                    subscription_id,
+                    message,
+                }) if subscription_id == "room" => return message,
+                Ok(_) => {}
+                Err(error) => panic!("no CLOSED: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("the removed member's subscription in jp was not closed");
+    assert!(closed.starts_with("restricted:"), "{closed}");
+}
+
 /// A region link call from jp to kr: signed with jp's link key, for kr's
 /// community, this exact path and body. Built here independently of the
 /// relay's own signer, so the wire format is pinned.
