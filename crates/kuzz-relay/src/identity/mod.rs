@@ -12,6 +12,8 @@
 //!   re-AUTH, and enforces the bound token's deadline.
 //! - [`publish_revocations`] closes bound connections on this instance and
 //!   fans the revoked hashes out over Redis after the revoking commit.
+//! - [`publish_key_revocation`] does the same for signed-out or revoked
+//!   devices and moved keys: [`key_sockets`] closes their open key sockets.
 
 pub(crate) mod admission;
 #[cfg(test)]
@@ -19,6 +21,7 @@ mod admission_routes;
 pub mod client_ip;
 pub mod config;
 pub mod device;
+pub(crate) mod key_sockets;
 pub(crate) mod kv;
 pub(crate) mod profile;
 pub(crate) mod ws;
@@ -91,6 +94,8 @@ pub struct IdentityRuntime {
     pub(crate) devices: device::DeviceRuntime,
     /// Recently admitted (message key, device key) pairs.
     pub(crate) admissions: admission::AdmissionCache,
+    /// Open key-authenticated sockets (NIP-42 AUTH, huddle audio).
+    pub(crate) key_sockets: key_sockets::KeySocketRegistry,
 }
 
 impl std::fmt::Debug for IdentityRuntime {
@@ -132,6 +137,7 @@ impl IdentityRuntime {
             publish_slots: profile::PublishSlots::default(),
             devices: device::DeviceRuntime::default(),
             admissions: admission::AdmissionCache::default(),
+            key_sockets: key_sockets::KeySocketRegistry::default(),
         }
     }
 
@@ -286,14 +292,19 @@ pub(crate) async fn verify_session_token(
     })
 }
 
-/// Apply a revocation message to this instance's bound connections. Returns
-/// how many connections were closed or had their deadline lowered.
+/// Apply a revocation message to this instance's bound connections, and
+/// forget cached key admissions for its devices and keys. Synchronous: the
+/// key sockets it names are closed by [`key_sockets::close_revoked`], which
+/// reads the registry and so runs after it. Returns how many token
+/// connections were closed or had their deadline lowered.
 pub fn apply_revocation(state: &AppState, message: &AuthRevocation) -> usize {
     let hashes = message.hashes();
-    state
+    let affected = state
         .identity
         .sessions
-        .apply(&hashes, &message.reason, message.not_after)
+        .apply(&hashes, &message.reason, message.not_after);
+    key_sockets::forget(state, message);
+    affected
 }
 
 /// Subscribe to the cross-instance revocation channel and apply every message
@@ -310,6 +321,14 @@ pub fn spawn_revocation_consumer(state: Arc<AppState>) {
             match revocation_rx.recv().await {
                 Ok(message) => {
                     apply_revocation(&state, &message);
+                    // Registry reads off the consumer: a slow database
+                    // must not lag the channel and drop token revocations.
+                    if !message.device_ids.is_empty() || !message.pubkeys.is_empty() {
+                        let state = Arc::clone(&state);
+                        tokio::spawn(async move {
+                            key_sockets::close_revoked(&state, &message).await;
+                        });
+                    }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     metrics::counter!("kuzz_auth_revocation_lag_total").increment(n);
@@ -322,6 +341,12 @@ pub fn spawn_revocation_consumer(state: Arc<AppState>) {
             }
         }
     });
+}
+
+/// Recheck open key sockets against the registry every
+/// [`key_sockets::RECHECK_INTERVAL`] for the life of the process (plan S7).
+pub fn spawn_key_socket_recheck(state: Arc<AppState>) {
+    key_sockets::spawn_recheck(state);
 }
 
 /// After a revoking transaction committed: close matching connections here,
@@ -340,11 +365,35 @@ pub(crate) async fn publish_revocations(
         return;
     }
     for message in AuthRevocation::batches(hashes, reason, not_after) {
-        apply_revocation(state, &message);
-        if let Err(error) = state.pubsub.publish_auth_revocation(&message).await {
-            metrics::counter!("kuzz_auth_revocation_publish_failures_total").increment(1);
-            tracing::warn!(%error, reason, "auth revocation publish failed; DB recheck backstops");
-        }
+        apply_and_publish(state, &message).await;
+    }
+}
+
+/// After a sign-out, device revoke, account deletion or agent move
+/// committed: close key sockets admitted on `device_ids` or using `pubkeys`
+/// here, then fan the revocation out to every instance. Best-effort like
+/// [`publish_revocations`]: the key socket recheck backstops a lost message.
+/// Nothing at all while key sockets are off ([`key_sockets::enabled`]).
+pub(crate) async fn publish_key_revocation(
+    state: &AppState,
+    device_ids: &[uuid::Uuid],
+    pubkeys: &[[u8; 32]],
+    reason: &str,
+) {
+    if !key_sockets::enabled(state) {
+        return;
+    }
+    for message in AuthRevocation::key_batches(device_ids, pubkeys, reason) {
+        apply_and_publish(state, &message).await;
+        key_sockets::close_revoked(state, &message).await;
+    }
+}
+
+async fn apply_and_publish(state: &AppState, message: &AuthRevocation) {
+    apply_revocation(state, message);
+    if let Err(error) = state.pubsub.publish_auth_revocation(message).await {
+        metrics::counter!("kuzz_auth_revocation_publish_failures_total").increment(1);
+        tracing::warn!(%error, reason = %message.reason, "auth revocation publish failed; DB recheck backstops");
     }
 }
 

@@ -20,6 +20,8 @@ pub struct LoginSession {
     pub device_id: Uuid,
     /// New session id.
     pub session_id: Uuid,
+    /// The login created the device row (not a re-login of a known device).
+    pub new_device: bool,
 }
 
 /// The device key a login presents (migration 0078).
@@ -236,6 +238,7 @@ pub(super) async fn complete_login(
     Ok(LoginSession {
         device_id,
         session_id,
+        new_device: known.is_none(),
     })
 }
 
@@ -439,12 +442,13 @@ pub(super) async fn revoke_device(
 }
 
 /// Revoke every human session of `principal` except `keep_session`. Bot
-/// tokens are untouched (Telegram "terminate other sessions").
+/// tokens are untouched (Telegram "terminate other sessions"). Returns the
+/// revoked token hashes and device ids.
 pub(super) async fn revoke_other_sessions(
     pool: &PgPool,
     principal: &PrincipalId,
     keep_session: Uuid,
-) -> Result<Vec<[u8; 32]>> {
+) -> Result<(Vec<[u8; 32]>, Vec<Uuid>)> {
     let mut tx = begin(pool).await?;
     super::lock_subject(&mut tx, principal).await?;
     let sessions: Vec<Uuid> = sqlx::query_scalar(
@@ -456,17 +460,17 @@ pub(super) async fn revoke_other_sessions(
     .bind(keep_session)
     .fetch_all(&mut *tx)
     .await?;
-    sqlx::query(
+    let devices: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE devices SET revoked_at = now() WHERE principal_id = $1 AND revoked_at IS NULL \
-         AND id <> (SELECT device_id FROM sessions WHERE id = $2)",
+         AND id <> (SELECT device_id FROM sessions WHERE id = $2) RETURNING id",
     )
     .bind(principal.as_bytes().as_slice())
     .bind(keep_session)
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
     let revoked = revoke_session_tokens(&mut tx, &sessions, RevokeReason::RevokeAll).await?;
     tx.commit().await?;
-    Ok(revoked)
+    Ok((revoked, devices))
 }
 
 pub(super) async fn list_devices(
@@ -613,13 +617,14 @@ impl crate::Db {
         revoke_device(&self.pool, principal, device_id, reason).await
     }
 
-    /// Revoke all human sessions of `principal` except `keep_session`.
+    /// Revoke all human sessions of `principal` except `keep_session`:
+    /// (revoked token hashes, revoked device ids).
     #[datastore_span(name = "revoke_other_sessions", system = "postgresql")]
     pub async fn revoke_other_sessions(
         &self,
         principal: &PrincipalId,
         keep_session: Uuid,
-    ) -> Result<Vec<[u8; 32]>> {
+    ) -> Result<(Vec<[u8; 32]>, Vec<Uuid>)> {
         revoke_other_sessions(&self.pool, principal, keep_session).await
     }
 

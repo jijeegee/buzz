@@ -40,6 +40,7 @@ const VERIFIER_NAMES: &[&str] = &[
 const ADMISSION_NAMES: &[&str] = &[
     "admit_key",
     "admit_key_with_owner",
+    "admit_key_socket",
     "admit_key_for_event",
     "admit_key_for_nip98",
     "admit_bridge_key",

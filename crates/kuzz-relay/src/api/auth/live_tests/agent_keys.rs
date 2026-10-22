@@ -13,7 +13,7 @@ use crate::identity::config::DeviceAdmissionMode;
 use crate::identity::device::PROOF_HEADER;
 use kuzz_auth::device_proof::{event_proof_message, DevicePubkey, DEVICE_TAG};
 
-async fn agents_instance(mode: DeviceAdmissionMode) -> Instance {
+pub(super) async fn agents_instance(mode: DeviceAdmissionMode) -> Instance {
     let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
         .await
         .expect("pg");
@@ -28,7 +28,7 @@ async fn agents_instance(mode: DeviceAdmissionMode) -> Instance {
     .await
 }
 
-fn device_key() -> SigningKey {
+pub(super) fn device_key() -> SigningKey {
     loop {
         if let Ok(key) = SigningKey::from_slice(&rand::random::<[u8; 32]>()) {
             return key;
@@ -63,15 +63,15 @@ fn proof(
 }
 
 /// A key-backup account signed in on one device.
-struct Owner {
-    access: String,
-    device: SigningKey,
-    device_id: uuid::Uuid,
-    keys: nostr::Keys,
+pub(super) struct Owner {
+    pub(super) access: String,
+    pub(super) device: SigningKey,
+    pub(super) device_id: uuid::Uuid,
+    pub(super) keys: nostr::Keys,
 }
 
 /// Keyed key-backup sign-in of `subject` from `device`.
-async fn sign_in(
+pub(super) async fn sign_in(
     inst: &Instance,
     subject: &str,
     device: SigningKey,
@@ -129,7 +129,7 @@ async fn sign_in(
 }
 
 /// A new account with its own key, signed in on a new device.
-async fn owner(inst: &Instance) -> (Owner, String) {
+pub(super) async fn owner(inst: &Instance) -> (Owner, String) {
     let subject = uuid::Uuid::new_v4().to_string();
     let (principal, access, device_id, device) = sign_in(inst, &subject, device_key()).await;
     let keys = nostr::Keys::generate();
@@ -156,7 +156,7 @@ async fn owner(inst: &Instance) -> (Owner, String) {
 }
 
 /// The same account signed in on another device.
-async fn other_device(inst: &Instance, owner: &Owner, subject: &str) -> Owner {
+pub(super) async fn other_device(inst: &Instance, owner: &Owner, subject: &str) -> Owner {
     let (_, access, device_id, device) = sign_in(inst, subject, device_key()).await;
     Owner {
         access,
@@ -167,7 +167,7 @@ async fn other_device(inst: &Instance, owner: &Owner, subject: &str) -> Owner {
 }
 
 /// An `/auth/*` call with Bearer and header proof.
-async fn call(
+pub(super) async fn call(
     inst: &Instance,
     who: &Owner,
     method: &str,
@@ -191,6 +191,7 @@ async fn call_proven_by(
     let binding = format!("{method} {}{path}", inst.state.identity.config().public_url);
     let mut request = match method {
         "GET" => inst.get(path),
+        "DELETE" => inst.delete(path),
         _ => inst.post(path),
     }
     .bearer_auth(&who.access);
