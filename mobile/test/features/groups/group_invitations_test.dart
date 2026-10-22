@@ -283,7 +283,7 @@ void main() {
           'a' * 64: tooManyInvitationsMessage,
           'b' * 64: tooManyInvitationsMessage,
         }).message,
-        'Too many invitations. Try again later.',
+        'Too many invitations today',
       );
       expect(
         AddMembersException({

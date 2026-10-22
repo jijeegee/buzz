@@ -21,6 +21,9 @@ import '../room_goals_switch.dart';
 import 'chat_grid_avatar.dart';
 import 'chat_title.dart';
 
+/// Chat info shows a search field above more members than this.
+const chatInfoSearchThreshold = 8;
+
 /// "1 person" / "N people".
 String chatPeopleLabel(int count) => count == 1 ? '1 person' : '$count people';
 
@@ -51,6 +54,7 @@ class ChatInfoSheet extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final displayed = useState(channel);
+    final memberQuery = useState('');
     final members =
         ref.watch(channelMembersProvider(channel.id)).value ??
         const <ChannelMember>[];
@@ -215,14 +219,28 @@ class ChatInfoSheet extends HookConsumerWidget {
             ),
           ),
           const Divider(),
-          for (final pubkey in memberPubkeys)
-            _MemberTile(
-              key: ValueKey('chat-info-member-$pubkey'),
-              pubkey: pubkey,
-              label: pubkey == me
-                  ? '${names.labelFor(pubkey)} (you)'
-                  : names.labelFor(pubkey),
+          if (memberPubkeys.length > chatInfoSearchThreshold)
+            TextField(
+              key: const ValueKey('chat-info-member-search'),
+              onChanged: (value) => memberQuery.value = value,
+              decoration: const InputDecoration(
+                hintText: 'Search people',
+                prefixIcon: Icon(LucideIcons.search),
+              ),
             ),
+          for (final pubkey in memberPubkeys)
+            if (memberQuery.value.trim().isEmpty ||
+                names
+                    .labelFor(pubkey)
+                    .toLowerCase()
+                    .contains(memberQuery.value.trim().toLowerCase()))
+              _MemberTile(
+                key: ValueKey('chat-info-member-$pubkey'),
+                pubkey: pubkey,
+                label: pubkey == me
+                    ? '${names.labelFor(pubkey)} (you)'
+                    : names.labelFor(pubkey),
+              ),
           if (channel.isMember) ...[
             const Divider(),
             ListTile(

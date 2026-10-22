@@ -163,6 +163,47 @@ void main() {
     expect(find.text('Trip'), findsOneWidget);
   });
 
+  testWidgets('many members get a search field', (tester) async {
+    final many = [
+      for (var i = 0; i < 10; i++) i.toRadixString(16).padLeft(64, '1'),
+    ];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          myPubkeyProvider.overrideWithValue(_me),
+          channelMembersProvider('chat-1').overrideWith(
+            (ref) async => [
+              for (final pubkey in many)
+                ChannelMember(
+                  pubkey: pubkey,
+                  role: 'member',
+                  joinedAt: DateTime(2026),
+                ),
+            ],
+          ),
+          channelNamesProvider.overrideWith(_FakeNames.new),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: Scaffold(body: ChatInfoSheet(channel: _chat())),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('10 people'), findsOneWidget);
+    final search = find.byKey(const ValueKey('chat-info-member-search'));
+    await tester.scrollUntilVisible(
+      search,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.enterText(search, 'no such person');
+    await tester.pumpAndSettle();
+    for (final pubkey in many) {
+      expect(find.byKey(ValueKey('chat-info-member-$pubkey')), findsNothing);
+    }
+  });
+
   testWidgets('a chat menu offers Chat info and Leave chat only', (
     tester,
   ) async {
