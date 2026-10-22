@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,8 +31,10 @@ export function ArchiveConfirmDialog({
   isBot: boolean;
   isPending: boolean;
 }) {
-  const title = isBot ? "Archive this agent?" : "Archive this identity?";
-  const subject = isBot ? "this agent" : "this person";
+  const t = useT();
+  const title = isBot
+    ? t("profile.archiveDialog.titleAgent")
+    : t("profile.archiveDialog.titleIdentity");
 
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
@@ -39,33 +42,34 @@ export function ArchiveConfirmDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>
-            Archiving hides {subject} from the space.
+            {isBot
+              ? t("profile.archiveDialog.hidesAgent")
+              : t("profile.archiveDialog.hidesPerson")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {/* The list + closing paragraph sit outside AlertDialogDescription on
             purpose — that component renders a <p>, which can't legally contain
             a <ul> or another block <p>. */}
         <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground">
+          <li>{t("profile.archiveDialog.notInSearch")}</li>
           <li>
-            They won't appear in search, autocomplete, or when adding members
+            {t("profile.archiveDialog.onlyThisSpace", {
+              b: (chunks) => (
+                <span className="font-medium text-foreground">{chunks}</span>
+              ),
+            })}
           </li>
-          <li>
-            This only affects{" "}
-            <span className="font-medium text-foreground">this space</span> —
-            not their account anywhere else
-          </li>
-          <li>You can unarchive them at any time to restore them</li>
+          <li>{t("profile.archiveDialog.canUnarchive")}</li>
         </ul>
         {isBot ? (
           <p className="text-sm text-muted-foreground">
-            You can also delete this agent from the profile settings menu if you
-            want to remove the agent instead of hiding it.
+            {t("profile.archiveDialog.deleteInstead")}
           </p>
         ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction
@@ -74,7 +78,9 @@ export function ArchiveConfirmDialog({
             disabled={isPending}
             onClick={onConfirm}
           >
-            {isPending ? "Archiving…" : "Archive"}
+            {isPending
+              ? t("profile.archive.archiving")
+              : t("profile.archiveDialog.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

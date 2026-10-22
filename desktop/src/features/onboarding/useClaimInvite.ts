@@ -7,6 +7,7 @@ import {
   isInviteExpiredError,
 } from "@/shared/api/inviteHelpers";
 import { claimInvite } from "@/shared/api/invites";
+import { t } from "@/shared/i18n";
 
 /**
  * Drive the `claiming` stage after machine onboarding completes: claim the
@@ -39,9 +40,9 @@ export function useClaimInvite() {
         update(
           {
             error: isInviteExpiredError(error)
-              ? "This invite code has expired — ask for a new one."
+              ? t("onboarding.claimInvite.expired")
               : isInviteExhaustedError(error)
-                ? "This invite has reached its use limit. Ask for a new invite."
+                ? t("onboarding.claimInvite.exhausted")
                 : inviteErrorMessage(error),
           },
           transaction.id,

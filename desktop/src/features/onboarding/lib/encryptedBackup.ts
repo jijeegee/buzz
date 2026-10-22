@@ -1,4 +1,6 @@
 /** Pure state model for NIP-49 backup creation. */
+import { t } from "@/shared/i18n";
+
 export const MIN_PASSPHRASE_LEN = 12;
 
 export type EncryptedBackupState = {
@@ -106,7 +108,9 @@ export function encryptedBackupReducer(
 export function passphraseIssue(passphrase: string): string | null {
   if (passphrase.length === 0) return null;
   return [...passphrase].length < MIN_PASSPHRASE_LEN
-    ? `Use at least ${MIN_PASSPHRASE_LEN} characters.`
+    ? t("onboarding.encryptedBackup.passphraseTooShort", {
+        count: MIN_PASSPHRASE_LEN,
+      })
     : null;
 }
 export function effectivePassphrase(

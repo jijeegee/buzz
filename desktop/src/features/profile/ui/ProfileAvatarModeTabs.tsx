@@ -4,20 +4,17 @@ import type {
   AvatarEditorPresentation,
   AvatarMode,
 } from "@/features/profile/ui/ProfileAvatarEditor.types";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 
 const MODE_TAB_ORDER: AvatarMode[] = ["image", "emoji", "animated"];
-const MODE_TAB_LABELS: Record<AvatarMode, string> = {
-  animated: "Animated",
-  emoji: "Emoji",
-  image: "Image",
+const MODE_TAB_LABELS: Record<AvatarMode, MessageKey> = {
+  animated: "profile.avatarMode.animated",
+  emoji: "profile.avatarMode.emoji",
+  image: "profile.avatarMode.image",
 };
-const MODE_SEGMENT_OPTIONS = MODE_TAB_ORDER.map((value) => ({
-  label: MODE_TAB_LABELS[value],
-  value,
-}));
 
 type ProfileAvatarModeTabsProps = {
   disabled: boolean;
@@ -34,6 +31,11 @@ export function ProfileAvatarModeTabs({
   presentation,
   portalContainer,
 }: ProfileAvatarModeTabsProps) {
+  const t = useT();
+  const modeSegmentOptions = MODE_TAB_ORDER.map((value) => ({
+    label: t(MODE_TAB_LABELS[value]),
+    value,
+  }));
   const isOnboardingModal = presentation === "onboarding-modal";
   const isOnboardingInline = presentation === "onboarding-inline";
   const tabs = isOnboardingInline ? (
@@ -41,10 +43,10 @@ export function ProfileAvatarModeTabs({
       className="w-full bg-muted"
       disabled={disabled}
       indicatorTestId="onboarding-avatar-mode-indicator"
-      legend="Avatar type"
+      legend={t("profile.avatarMode.label")}
       onValueChange={onModeChange}
       optionTestIdPrefix="onboarding-avatar-mode"
-      options={MODE_SEGMENT_OPTIONS}
+      options={modeSegmentOptions}
       testId="onboarding-avatar-mode-control"
       value={mode}
     />
@@ -57,7 +59,7 @@ export function ProfileAvatarModeTabs({
       value={mode}
     >
       <TabsList
-        aria-label="Avatar type"
+        aria-label={t("profile.avatarMode.label")}
         className={cn(
           isOnboardingModal
             ? "relative isolate grid h-10 w-full max-w-[320px] grid-cols-3 overflow-hidden rounded-full bg-[color:rgb(var(--kuzz-onboarding-avatar-control-fg)_/_0.12)] p-1 text-muted-foreground"
@@ -89,7 +91,7 @@ export function ProfileAvatarModeTabs({
             key={tabMode}
             value={tabMode}
           >
-            {MODE_TAB_LABELS[tabMode]}
+            {t(MODE_TAB_LABELS[tabMode])}
           </TabsTrigger>
         ))}
       </TabsList>

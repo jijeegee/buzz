@@ -1,11 +1,13 @@
+import { useT } from "@/shared/i18n";
 import { RecoveryScreen } from "./RecoveryScreen";
 
 export function RelaunchRequiredScreen() {
+  const t = useT();
   return (
     <RecoveryScreen
       testId="relaunch-required"
-      title="Restart Kuzz to finish recovery"
-      body="Your identity was updated. Kuzz needs to restart so syncing and agents run under it."
+      title={t("onboarding.relaunchRequired.title")}
+      body={t("onboarding.relaunchRequired.body")}
     />
   );
 }
