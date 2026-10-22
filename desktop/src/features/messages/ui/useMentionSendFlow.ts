@@ -26,7 +26,10 @@ import {
   type ImetaMedia,
   mergeOutgoingTags,
 } from "@/features/messages/lib/imetaMediaMarkdown";
-import { hasFailedSend } from "@/features/messages/lib/failedSends";
+import {
+  hasFailedSend,
+  replaceFailedSendRetry,
+} from "@/features/messages/lib/failedSends";
 import { useActivePreparedLinkPreviews } from "./useActivePreparedLinkPreviews";
 import { useDetachedAgentStart } from "./useDetachedAgentStart";
 import { useEnsureAgentMentionsReady } from "./useEnsureAgentMentionsReady";
@@ -602,25 +605,41 @@ export function useMentionSendFlow({
               ? preview.localKey
               : undefined;
           previewHandedOff = previewKey !== undefined;
-          const published = await send(
-            finalContent,
-            deliveredMentionPubkeys,
-            finalTagsWithAgentAddress,
-            sendChannelId,
-            draft.capturedThreadContext,
-            draft.preparedLinkPreviews != null,
-            previewKey,
-          );
-          // The relay accepted the publish: flush the queued wakes now,
-          // before the post-send cancellation check — a cancellation racing
-          // a successful publish must not drop the wake for a message that
-          // did land. Fire-and-forget: the send awaits nothing here, and
-          // each wake carries its enqueue-time replay floor so the spawned
-          // harness replays back past this message however late the flush.
-          for (const wake of agentsToWake) {
-            startAgentDetached(wake.agent, wake.replayFloorUnix);
-          }
-          if (published) draft.onPublished?.(published);
+          const publish = async (): Promise<unknown> => {
+            try {
+              const published = await send(
+                finalContent,
+                deliveredMentionPubkeys,
+                finalTagsWithAgentAddress,
+                sendChannelId,
+                draft.capturedThreadContext,
+                draft.preparedLinkPreviews != null,
+                previewKey,
+              );
+              // The relay accepted the publish: flush the queued wakes now,
+              // before the post-send cancellation check — a cancellation
+              // racing a successful publish must not drop the wake for a
+              // message that did land. Fire-and-forget: the send awaits
+              // nothing here, and each wake carries its enqueue-time replay
+              // floor so the spawned harness replays back past this message
+              // however late the flush.
+              for (const wake of agentsToWake) {
+                startAgentDetached(wake.agent, wake.replayFloorUnix);
+              }
+              if (published) draft.onPublished?.(published);
+              return published;
+            } catch (error) {
+              // The failed row's Retry publishes again with the same
+              // after-publish steps (wakes, routing) as this send.
+              if (previewKey) {
+                replaceFailedSendRetry(previewKey, () => {
+                  publish().catch(() => {});
+                });
+              }
+              throw error;
+            }
+          };
+          await publish();
           if (signal?.aborted || isSendCancelled()) return;
           const sentMentionPubkeys = new Set(
             deliveredMentionPubkeys.map(normalizePubkey),

@@ -73,6 +73,13 @@ import {
 import { createRelayInboundBuffer } from "@/shared/api/relayInboundBuffer";
 import { buildThreadReferenceTags } from "@/features/messages/lib/threading";
 type UserStatusInput = { text: string; emoji: string; expiresAt?: number };
+/** A send time the sender saw, kept only if it is within the last two minutes. */
+function recentSendTime(createdAt: number | undefined): number | undefined {
+  if (createdAt === undefined) return undefined;
+  const now = Math.floor(Date.now() / 1_000);
+  return createdAt <= now && now - createdAt <= 120 ? createdAt : undefined;
+}
+
 export class RelayClient {
   private wsId: number | null = null;
   private relayUrl: string | null = null;
@@ -260,6 +267,7 @@ export class RelayClient {
     content: string,
     mentionPubkeys: string[] = [],
     extraTags: string[][] = [],
+    createdAt?: number,
   ) {
     await this.ensureConnected();
 
@@ -274,6 +282,7 @@ export class RelayClient {
     const event = await signRelayEvent({
       kind: KIND_STREAM_MESSAGE,
       content: content.trim(),
+      createdAt: recentSendTime(createdAt),
       tags,
     });
 

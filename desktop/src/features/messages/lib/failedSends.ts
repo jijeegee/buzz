@@ -18,6 +18,12 @@ export function hasFailedSend(localKey: string): boolean {
   return failedSends.has(localKey);
 }
 
+/** Let the sender's flow supply a richer retry for a row it handed off. */
+export function replaceFailedSendRetry(localKey: string, retry: () => void) {
+  const entry = failedSends.get(localKey);
+  if (entry) failedSends.set(localKey, { ...entry, retry });
+}
+
 /** Re-send a failed row. The row returns to pending until the relay answers. */
 export function retryFailedSend(localKey: string) {
   const entry = failedSends.get(localKey);

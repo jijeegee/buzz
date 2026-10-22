@@ -16,6 +16,7 @@ import {
   discardFailedSend,
   hasFailedSend,
   registerFailedSend,
+  replaceFailedSendRetry,
   resetFailedSends,
   retryFailedSend,
 } from "./failedSends.ts";
@@ -155,13 +156,14 @@ test("an unopened thread is left unloaded so its first fetch still runs", () => 
   );
 });
 
-test("a relay echo does not adopt a failed row", () => {
+test("a relay echo adopts a failed row (send timed out after the relay stored it)", () => {
   const failed = { ...optimistic("hi", "local-5"), failed: true };
   const echo = sent("hi", failed.created_at);
   echo.content = "hi";
   const merged = reconcileIncomingMessage([failed], echo);
-  assert.equal(merged.length, 2);
-  assert.ok(merged.some((event) => event.id === "local-5"));
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, echo.id);
+  assert.equal(merged[0].localKey, "local-5");
 });
 
 test("a newest thread page keeps own unsent replies", () => {
@@ -200,4 +202,33 @@ test("failed sends run retry or delete once", () => {
   discardFailedSend("k");
   assert.deepEqual(calls, ["retry"]);
   assert.equal(hasFailedSend("k"), false);
+});
+
+test("an echo of a send marked failed takes its place in the main timeline", () => {
+  const { client } = harness();
+  writeOptimisticMessage(client, CHANNEL, optimistic("hi", "local-7"));
+  updateOptimisticMessage(client, CHANNEL, "local-7", (event) => ({
+    ...event,
+    failed: true,
+  }));
+  const failed = timeline(client).find((event) => event.id === "local-7");
+  const echo = { ...sent("echo", failed.created_at), content: "hi" };
+  writeOptimisticMessage(client, CHANNEL, echo);
+  const rows = timeline(client).filter((event) => event.content === "hi");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, echo.id);
+  assert.equal(rows[0].localKey, "local-7");
+});
+
+test("the composer flow can supply the retry for a failed row", () => {
+  resetFailedSends();
+  const calls = [];
+  registerFailedSend("k", {
+    retry: () => calls.push("plain"),
+    discard: () => calls.push("discard"),
+  });
+  replaceFailedSendRetry("k", () => calls.push("flow"));
+  replaceFailedSendRetry("missing", () => calls.push("never"));
+  retryFailedSend("k");
+  assert.deepEqual(calls, ["flow"]);
 });

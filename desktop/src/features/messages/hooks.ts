@@ -38,6 +38,7 @@ import {
 } from "@/features/messages/lib/channelHeadCache";
 import { storeChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
 import {
+  isMatchingPendingMessage,
   mergeMessages,
   mergeTimelineCacheMessages,
 } from "@/features/messages/lib/messageMerge";
@@ -75,6 +76,7 @@ import { cancelAutoRoute } from "@/features/messages/lib/autoRouteStatus";
 import { registerFailedSend } from "@/features/messages/lib/failedSends";
 import {
   emptyChannelWindowStore,
+  flattenChannelWindowEvents,
   mapChannelWindowEvents,
   mergeLiveChannelWindowEvent,
   mergeLiveThreadSummary,
@@ -265,6 +267,43 @@ export function updateOptimisticMessage(
   })) {
     if (events?.some(matches)) queryClient.setQueryData(key, apply(events));
   }
+}
+
+function findOptimisticMessage(
+  queryClient: QueryClient,
+  channelId: string,
+  localKey: string,
+): RelayEvent | undefined {
+  return [
+    queryClient.getQueryData<RelayEvent[]>(channelMessagesKey(channelId)) ?? [],
+    ...channelThreadCaches(queryClient, channelId),
+  ]
+    .flat()
+    .find((event) => event.pending === true && event.id === localKey);
+}
+
+/** Whether the relay's copy of an own optimistic row has already arrived. */
+function hasOwnEcho(
+  queryClient: QueryClient,
+  channelId: string,
+  localKey: string,
+): boolean {
+  const row = findOptimisticMessage(queryClient, channelId, localKey);
+  if (!row) return false;
+  const store = queryClient.getQueryData<ChannelWindowStore>(
+    channelWindowKey(channelId),
+  );
+  return [
+    store ? flattenChannelWindowEvents(store) : [],
+    queryClient.getQueryData<RelayEvent[]>(channelMessagesKey(channelId)) ?? [],
+    ...channelThreadCaches(queryClient, channelId),
+  ]
+    .flat()
+    .some(
+      (event) =>
+        event.created_at >= row.created_at &&
+        isMatchingPendingMessage(row, event),
+    );
 }
 
 /** Drop an own optimistic row that will not be sent. */
@@ -666,6 +705,7 @@ export function useSendMessageMutation(
       sentFromThreadRootId,
       sentFromThreadRootExcerpt,
       transport = "auto",
+      optimisticLocalKey,
     }) => {
       // Prefer a channel captured by the caller at compose time. Otherwise,
       // resolve a captured id from the shared channel cache so navigation
@@ -719,6 +759,15 @@ export function useSendMessageMutation(
         );
       }
 
+      // Sign with the second the sender's row already shows, so the
+      // acknowledged message stays exactly where it was drawn.
+      const shownSendTime = optimisticLocalKey
+        ? findOptimisticMessage(
+            queryClient,
+            effectiveChannel.id,
+            optimisticLocalKey,
+          )?.created_at
+        : undefined;
       const sentFromThreadTag = sentFromThreadRootId
         ? buildSentFromThreadTag(
             sentFromThreadRootId,
@@ -768,6 +817,8 @@ export function useSendMessageMutation(
           undefined,
           suppliedRootEventId,
           quoteTag,
+          undefined,
+          shownSendTime,
         );
 
         // Build tags matching relay-emitted shape: h, author p, mention ps, reply es, imeta, emoji.
@@ -819,6 +870,7 @@ export function useSendMessageMutation(
         content,
         recipientPubkeys,
         [...mentionTags, ...(sentFromThreadTag ? [sentFromThreadTag] : [])],
+        shownSendTime,
       );
     },
     onMutate: async ({
@@ -882,7 +934,11 @@ export function useSendMessageMutation(
       // A previewed row is replaced in place: same id and time, so it never
       // moves.
       const previewed = optimisticLocalKey
-        ? previousMessages.find((event) => event.id === optimisticLocalKey)
+        ? findOptimisticMessage(
+            queryClient,
+            effectiveChannel.id,
+            optimisticLocalKey,
+          )
         : undefined;
       writeOptimisticMessage(
         queryClient,
@@ -912,6 +968,11 @@ export function useSendMessageMutation(
         if (!context) {
           // Nothing was sent and the row cannot be retried: drop it so the
           // caller restores the draft.
+          removeOptimisticMessage(queryClient, channelId, localKey);
+          return;
+        }
+        if (hasOwnEcho(queryClient, channelId, localKey)) {
+          // Timed out, but the relay stored it: its echo is already shown.
           removeOptimisticMessage(queryClient, channelId, localKey);
           return;
         }

@@ -168,7 +168,10 @@ export async function setup({ lifecycle = false } = {}) {
           ? undefined
           : [...(mediaTags ?? []), ...emojiTags],
     },
-    "@/features/messages/lib/failedSends": { hasFailedSend: () => false },
+    "@/features/messages/lib/failedSends": {
+      hasFailedSend: () => false,
+      replaceFailedSendRetry: () => {},
+    },
     "@/shared/api/tauriChannels": { syncAgentsToActiveHuddle: async () => {} },
     "@/shared/lib/pubkey": {
       normalizePubkey: (key) => key.toLowerCase(),

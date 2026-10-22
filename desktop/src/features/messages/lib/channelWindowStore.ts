@@ -1,4 +1,5 @@
 import type { RelayEvent } from "@/shared/api/types";
+import { isMatchingPendingMessage } from "./messageMerge";
 
 export type ChannelWindowCursor = { createdAt: number; eventId: string };
 export type ChannelWindowThreadSummary = {
@@ -212,11 +213,25 @@ export function mergeLiveChannelWindowEvent(
   ) {
     return current;
   }
+  // An echo of an own send that was marked failed (it timed out after the
+  // relay stored it) takes that row's place and render key.
+  const failedRow = event.pending
+    ? undefined
+    : current.liveOverlay.find(
+        (candidate) =>
+          candidate.failed === true &&
+          isMatchingPendingMessage(candidate, event),
+      );
+  const incoming = failedRow
+    ? { ...event, localKey: failedRow.localKey ?? failedRow.id }
+    : event;
   return {
     ...current,
     liveOverlay: current.liveOverlay
-      .filter((candidate) => candidate.id !== event.id)
-      .concat(event)
+      .filter(
+        (candidate) => candidate.id !== event.id && candidate !== failedRow,
+      )
+      .concat(incoming)
       .sort(compareRelayOrder),
   };
 }
