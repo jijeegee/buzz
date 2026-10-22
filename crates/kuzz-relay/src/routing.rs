@@ -150,6 +150,9 @@ pub struct RoomRouter {
     local: String,
     regions: moka::sync::Cache<(), Arc<Vec<RegionRecord>>>,
     homes: moka::sync::Cache<(CommunityId, Uuid), Option<RoomHome>>,
+    /// Rooms the primary did not know either (S4-6), so they are not asked
+    /// about again for a while.
+    unknown: moka::sync::Cache<(CommunityId, Uuid), ()>,
 }
 
 impl RoomRouter {
@@ -162,6 +165,10 @@ impl RoomRouter {
                 .time_to_live(CACHE_TTL)
                 .build(),
             homes: moka::sync::Cache::builder()
+                .max_capacity(100_000)
+                .time_to_live(CACHE_TTL)
+                .build(),
+            unknown: moka::sync::Cache::builder()
                 .max_capacity(100_000)
                 .time_to_live(CACHE_TTL)
                 .build(),
@@ -180,9 +187,23 @@ impl RoomRouter {
         community_id: CommunityId,
         channel_id: Uuid,
     ) -> Result<RoomRoute, kuzz_db::DbError> {
+        Ok(self
+            .route_or_unknown(db, community_id, channel_id)
+            .await?
+            .unwrap_or(RoomRoute::Here))
+    }
+
+    /// [`Self::route`], but `None` when there are several regions and this
+    /// region's directory has no row for the room.
+    pub async fn route_or_unknown(
+        &self,
+        db: &Db,
+        community_id: CommunityId,
+        channel_id: Uuid,
+    ) -> Result<Option<RoomRoute>, kuzz_db::DbError> {
         let regions = self.region_list(db).await?;
         if regions.len() <= 1 {
-            return Ok(RoomRoute::Here);
+            return Ok(Some(RoomRoute::Here));
         }
         let key = (community_id, channel_id);
         let home = match self.homes.get(&key) {
@@ -193,13 +214,28 @@ impl RoomRouter {
                 home
             }
         };
-        Ok(match route_for(&self.local, &regions, home.as_ref()) {
-            RoomRoute::Elsewhere(remote) => RoomRoute::Elsewhere(RemoteHome {
-                room: Some(channel_id),
-                ..remote
-            }),
-            RoomRoute::Here => RoomRoute::Here,
-        })
+        if home.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(
+            match route_for(&self.local, &regions, home.as_ref()) {
+                RoomRoute::Elsewhere(remote) => RoomRoute::Elsewhere(RemoteHome {
+                    room: Some(channel_id),
+                    ..remote
+                }),
+                RoomRoute::Here => RoomRoute::Here,
+            },
+        ))
+    }
+
+    /// Whether the primary recently did not know this room either.
+    pub fn recently_unknown(&self, community_id: CommunityId, channel_id: Uuid) -> bool {
+        self.unknown.contains_key(&(community_id, channel_id))
+    }
+
+    /// Record that the primary did not know this room.
+    pub fn note_unknown(&self, community_id: CommunityId, channel_id: Uuid) {
+        self.unknown.insert((community_id, channel_id), ());
     }
 
     /// Split a multi-room read by the region that serves each room. With one
@@ -254,6 +290,7 @@ impl RoomRouter {
     /// Drop a cached home (the room moved or was deleted).
     pub fn forget(&self, community_id: CommunityId, channel_id: Uuid) {
         self.homes.invalidate(&(community_id, channel_id));
+        self.unknown.invalidate(&(community_id, channel_id));
     }
 }
 

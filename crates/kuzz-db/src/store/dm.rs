@@ -106,6 +106,18 @@ pub async fn create_dm(
     participants: &[&[u8]],
     created_by: &[u8],
 ) -> Result<ChannelRecord> {
+    create_dm_with_id(pool, community_id, participants, created_by, None).await
+}
+
+/// [`create_dm`] with the room id to use when the DM is new (a fresh one when
+/// `None`). Global regions reserve the id at the primary first (S4-6).
+pub async fn create_dm_with_id(
+    pool: &PgPool,
+    community_id: CommunityId,
+    participants: &[&[u8]],
+    created_by: &[u8],
+    id: Option<Uuid>,
+) -> Result<ChannelRecord> {
     if participants.len() < 2 {
         return Err(DbError::InvalidData(
             "DM requires at least 2 participants".to_string(),
@@ -163,7 +175,7 @@ pub async fn create_dm(
         format!("Group DM ({})", participants.len())
     };
 
-    let id = Uuid::new_v4();
+    let id = id.unwrap_or_else(Uuid::new_v4);
 
     sqlx::query(
         r#"
@@ -376,6 +388,17 @@ pub async fn open_dm(
     pubkeys: &[&[u8]],
     created_by: &[u8],
 ) -> Result<(ChannelRecord, bool)> {
+    open_dm_with_id(pool, community_id, pubkeys, created_by, None).await
+}
+
+/// [`open_dm`] with the room id to use when the DM is new.
+pub async fn open_dm_with_id(
+    pool: &PgPool,
+    community_id: CommunityId,
+    pubkeys: &[&[u8]],
+    created_by: &[u8],
+    id: Option<Uuid>,
+) -> Result<(ChannelRecord, bool)> {
     // Merge created_by into the participant set (dedup handled by compute_participant_hash).
     let mut all: Vec<&[u8]> = pubkeys.to_vec();
     if !all.contains(&created_by) {
@@ -399,7 +422,7 @@ pub async fn open_dm(
     }
 
     // Create new DM.
-    let channel = create_dm(pool, community_id, &all, created_by).await?;
+    let channel = create_dm_with_id(pool, community_id, &all, created_by, id).await?;
 
     Ok((channel, true))
 }
@@ -577,6 +600,18 @@ impl Db {
         created_by: &[u8],
     ) -> Result<(ChannelRecord, bool)> {
         crate::dm::open_dm(&self.pool, community_id, pubkeys, created_by).await
+    }
+
+    /// [`Db::open_dm`] with the room id to use when the DM is new.
+    #[datastore_span(name = "open_dm", system = "postgresql")]
+    pub async fn open_dm_with_id(
+        &self,
+        community_id: CommunityId,
+        pubkeys: &[&[u8]],
+        created_by: &[u8],
+        id: Option<Uuid>,
+    ) -> Result<(ChannelRecord, bool)> {
+        crate::dm::open_dm_with_id(&self.pool, community_id, pubkeys, created_by, id).await
     }
 
     /// Hide a DM channel for a specific user.

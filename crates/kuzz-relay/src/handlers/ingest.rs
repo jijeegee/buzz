@@ -3560,6 +3560,14 @@ async fn ingest_event_inner(
 
             let ttl_seconds = super::resolve_ttl(&event, state.config.ephemeral_ttl_override);
 
+            // Global regions (S4-6): the room id is reserved for this region
+            // at the primary first; one another region holds is created there.
+            if let crate::region_directory::Reserved::Elsewhere(home) =
+                crate::region_directory::reserve(state, tenant, client_uuid, None).await?
+            {
+                return Err(IngestError::WrongRegion(home));
+            }
+
             let actor_bytes = event.pubkey.to_bytes().to_vec();
             let (_, was_created) = state
                 .db

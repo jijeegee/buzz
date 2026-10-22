@@ -21,6 +21,16 @@ pub struct RoomHome {
     pub epoch: i32,
 }
 
+/// The directory row a reservation ended on ([`Db::reserve_room_home`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReservedRoom {
+    /// The room id the directory holds: the one asked for, or for a DM the
+    /// room already holding that participant set.
+    pub channel_id: Uuid,
+    /// Its home.
+    pub home: RoomHome,
+}
+
 /// One region row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegionRecord {
@@ -166,6 +176,86 @@ impl Db {
             .await?;
         row.map(|row| Ok((row.try_get("home_region")?, row.try_get("country")?)))
             .transpose()
+    }
+
+    /// Reserve `channel_id` for `home` unless the directory already holds
+    /// the room or, for a DM (`participant_hash`), its participant set.
+    /// Returns the row that holds it now, so two regions creating the same
+    /// room or DM at once end on one (global regions S4-6, run at the
+    /// primary). Safe to repeat.
+    #[datastore_span(name = "reserve_room_home", system = "postgresql")]
+    pub async fn reserve_room_home(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        home: &str,
+        participant_hash: Option<&[u8]>,
+    ) -> Result<ReservedRoom> {
+        sqlx::query(
+            "INSERT INTO room_directory (community_id, channel_id, home_region, participant_hash) \
+             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        )
+        .bind(community_id.as_uuid())
+        .bind(channel_id)
+        .bind(home)
+        .bind(participant_hash)
+        .execute(&self.pool)
+        .await?;
+        let row = match participant_hash {
+            Some(hash) => {
+                sqlx::query(
+                    "SELECT channel_id, home_region, epoch FROM room_directory \
+                      WHERE community_id = $1 AND participant_hash = $2",
+                )
+                .bind(community_id.as_uuid())
+                .bind(hash)
+                .fetch_optional(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query(
+                    "SELECT channel_id, home_region, epoch FROM room_directory \
+                      WHERE community_id = $1 AND channel_id = $2",
+                )
+                .bind(community_id.as_uuid())
+                .bind(channel_id)
+                .fetch_optional(&self.pool)
+                .await?
+            }
+        };
+        // Only a room id already used by a room that is not this DM leaves
+        // no row for the participant set.
+        let row =
+            row.ok_or_else(|| DbError::InvalidData("room id already used by another room".into()))?;
+        Ok(ReservedRoom {
+            channel_id: row.try_get("channel_id")?,
+            home: RoomHome {
+                region: row.try_get("home_region")?,
+                epoch: row.try_get("epoch")?,
+            },
+        })
+    }
+
+    /// Remember where another region's room lives (learned from the
+    /// primary). Keeps an existing row.
+    #[datastore_span(name = "remember_room_home", system = "postgresql")]
+    pub async fn remember_room_home(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        home: &RoomHome,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO room_directory (community_id, channel_id, home_region, epoch) \
+             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        )
+        .bind(community_id.as_uuid())
+        .bind(channel_id)
+        .bind(&home.region)
+        .bind(home.epoch)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     /// The room's home, or `None` when the directory has no row for it.
@@ -466,6 +556,64 @@ mod postgres_tests {
             .await
             .expect("delete room");
         assert_eq!(db.room_home(scope, dm).await.expect("home"), None);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn reservations_keep_the_first_home_per_room_and_dm_set() {
+        let db = db().await;
+        let scope = community(&db).await;
+        let home = |region: &str| RoomHome {
+            region: region.to_string(),
+            epoch: 0,
+        };
+
+        // A room id: the first region keeps it; a repeat or a rival gets it.
+        let room = Uuid::new_v4();
+        let first = db
+            .reserve_room_home(scope, room, "jp", None)
+            .await
+            .expect("reserve");
+        assert_eq!((first.channel_id, first.home.clone()), (room, home("jp")));
+        let rival = db
+            .reserve_room_home(scope, room, "kr", None)
+            .await
+            .expect("rival");
+        assert_eq!(rival, first);
+
+        // A DM set: a rival's own id is ignored; it gets the first DM's id.
+        let hash = [3u8; 32];
+        let (dm, other) = (Uuid::new_v4(), Uuid::new_v4());
+        let first = db
+            .reserve_room_home(scope, dm, "kr", Some(&hash))
+            .await
+            .expect("reserve dm");
+        assert_eq!((first.channel_id, first.home.clone()), (dm, home("kr")));
+        let rival = db
+            .reserve_room_home(scope, other, "jp", Some(&hash))
+            .await
+            .expect("rival dm");
+        assert_eq!(rival, first);
+        assert_eq!(db.room_home(scope, other).await.expect("home"), None);
+
+        // A DM set reserved with an id another room already uses is refused.
+        assert!(db
+            .reserve_room_home(scope, room, "jp", Some(&[4u8; 32]))
+            .await
+            .is_err());
+
+        // A learned home is kept, never overwritten.
+        let learned = Uuid::new_v4();
+        db.remember_room_home(scope, learned, &home("kr"))
+            .await
+            .expect("remember");
+        db.remember_room_home(scope, learned, &home("jp"))
+            .await
+            .expect("remember again");
+        assert_eq!(
+            db.room_home(scope, learned).await.expect("home"),
+            Some(home("kr"))
+        );
     }
 
     #[tokio::test]

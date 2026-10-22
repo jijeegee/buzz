@@ -1733,9 +1733,21 @@ impl AppState {
         community_id: CommunityId,
         channel_id: Uuid,
     ) -> Result<crate::routing::RoomRoute, kuzz_db::DbError> {
-        self.room_router
-            .route(&self.db, community_id, channel_id)
-            .await
+        match self
+            .room_router
+            .route_or_unknown(&self.db, community_id, channel_id)
+            .await?
+        {
+            Some(route) => Ok(route),
+            // Not in this region's directory: the primary knows every room
+            // (S4-6). Not found there either means "not found" here.
+            None => Ok(
+                match crate::region_directory::ask_primary(self, community_id, channel_id).await {
+                    Some(home) => crate::routing::RoomRoute::Elsewhere(home),
+                    None => crate::routing::RoomRoute::Here,
+                },
+            ),
+        }
     }
 
     /// The home of the first of `channels` that another region serves.

@@ -12,8 +12,9 @@
 //! cargo test -p kuzz-test-client --test e2e_regions -- --ignored --test-threads=1
 //! ```
 //!
-//! Regions do not copy their room directories to each other until stage S5,
-//! so the test writes the other region's directory row itself.
+//! Regions do not copy their room directories to each other until stage S5.
+//! Since S4-6 a region asks the primary (kr) about a room it does not know;
+//! older tests still write the other region's directory row themselves.
 
 use std::time::Duration;
 
@@ -73,7 +74,7 @@ async fn tell_jp_room_lives_in_kr(room: &str) {
     let pool = sqlx::PgPool::connect(&url).await.expect("jp database");
     sqlx::query(
         "INSERT INTO room_directory (community_id, channel_id, home_region) \
-         SELECT id, $1::uuid, 'kr' FROM communities",
+         SELECT id, $1::uuid, 'kr' FROM communities ON CONFLICT DO NOTHING",
     )
     .bind(room)
     .execute(&pool)
@@ -835,6 +836,130 @@ async fn a_block_from_jp_is_saved_in_kr_and_lifted_again() {
         state(kr.clone(), blocker.clone(), blocked.clone()).await,
         (0, 0)
     );
+}
+
+async fn region_db(region: &str) -> sqlx::PgPool {
+    let (var, port) = match region {
+        "kr" => ("REGION_KR_DATABASE_URL", 5491),
+        _ => ("REGION_JP_DATABASE_URL", 5492),
+    };
+    let url = std::env::var(var)
+        .unwrap_or_else(|_| format!("postgres://kuzz:kuzz_dev@127.0.0.1:{port}/kuzz"));
+    sqlx::PgPool::connect(&url).await.expect("region database")
+}
+
+/// `room`'s home in `region`'s directory.
+async fn directory_home(region: &str, room: &str) -> Option<String> {
+    sqlx::query_scalar("SELECT home_region FROM room_directory WHERE channel_id = $1::uuid")
+        .bind(room)
+        .fetch_optional(&region_db(region).await)
+        .await
+        .expect("directory row")
+}
+
+/// How many rooms `region`'s database has with this id.
+async fn room_rows(region: &str, room: &str) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM channels WHERE id = $1::uuid")
+        .bind(room)
+        .fetch_one(&region_db(region).await)
+        .await
+        .expect("channel rows")
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_room_is_registered_at_the_primary_and_found_from_the_other_region() {
+    let keys = Keys::generate();
+
+    // Created in jp: reserved in kr (the primary) for jp first.
+    let jp_room = uuid::Uuid::new_v4().to_string();
+    let (status, body) = post(&jp_url(), &keys, &create_room(&keys, &jp_room)).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    assert_eq!(directory_home("kr", &jp_room).await.as_deref(), Some("jp"));
+    assert_eq!(room_rows("jp", &jp_room).await, 1);
+    assert_eq!(room_rows("kr", &jp_room).await, 0);
+
+    // The same id created again in kr goes to jp, its holder: no second room.
+    let (status, body) = post(&kr_url(), &keys, &create_room(&keys, &jp_room)).await;
+    assert!(status < 500, "{status} {body}");
+    assert_eq!(room_rows("kr", &jp_room).await, 0, "kr made a second room");
+
+    // Created in kr, never told to jp: jp asks kr where it lives and
+    // forwards the write there.
+    let kr_room = uuid::Uuid::new_v4().to_string();
+    let (status, body) = post(&kr_url(), &keys, &create_room(&keys, &kr_room)).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    let (status, body) = post(&jp_url(), &keys, &message(&keys, &kr_room, "found")).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    assert!(body["channel_sequence"].as_i64().is_some(), "{body}");
+    assert_eq!(directory_home("jp", &kr_room).await.as_deref(), Some("kr"));
+    assert_eq!(room_rows("jp", &kr_room).await, 0);
+}
+
+fn open_dm(keys: &Keys, other: &Keys) -> Event {
+    EventBuilder::new(Kind::Custom(41010), "")
+        .tags([Tag::parse(["p", &other.public_key().to_hex()]).unwrap()])
+        .sign_with_keys(keys)
+        .unwrap()
+}
+
+/// DM rooms either of `a` / `b` created in `region`.
+async fn dm_rows(region: &str, a: &Keys, b: &Keys) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM channels WHERE channel_type = 'dm' \
+           AND created_by IN (decode($1, 'hex'), decode($2, 'hex'))",
+    )
+    .bind(a.public_key().to_hex())
+    .bind(b.public_key().to_hex())
+    .fetch_one(&region_db(region).await)
+    .await
+    .expect("dm rows")
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn two_regions_opening_the_same_dm_at_once_get_one_room() {
+    let (a, b) = (Keys::generate(), Keys::generate());
+    let (jp_open, kr_open) = (open_dm(&a, &b), open_dm(&b, &a));
+    let (jp, kr) = (jp_url(), kr_url());
+    let ((jp_status, jp_body), (kr_status, kr_body)) =
+        tokio::join!(post(&jp, &a, &jp_open), post(&kr, &b, &kr_open),);
+    assert_eq!(
+        (jp_status, &jp_body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{jp_body}"
+    );
+    assert_eq!(
+        (kr_status, &kr_body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{kr_body}"
+    );
+    assert_eq!(
+        dm_rows("jp", &a, &b).await + dm_rows("kr", &a, &b).await,
+        1,
+        "one DM across both regions"
+    );
+
+    // Opening it again from either side keeps the one room.
+    let again = EventBuilder::new(Kind::Custom(41010), "again")
+        .tags([Tag::parse(["p", &b.public_key().to_hex()]).unwrap()])
+        .sign_with_keys(&a)
+        .unwrap();
+    let (status, body) = post(&kr_url(), &a, &again).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(dm_rows("jp", &a, &b).await + dm_rows("kr", &a, &b).await, 1);
 }
 
 #[tokio::test]

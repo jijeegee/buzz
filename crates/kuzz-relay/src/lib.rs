@@ -67,6 +67,8 @@ pub mod push_runtime;
 pub mod readiness;
 /// Chats and Inbox across regions (S4-3b).
 pub mod region_chats;
+/// Global room registration at the primary region (S4-6).
+pub mod region_directory;
 /// Writes forwarded to a room's home region.
 pub mod region_forward;
 /// Reads that span regions, merged (S4-3c).
