@@ -99,6 +99,7 @@ export const settingsNavGroups: Array<{
   {
     label: "App",
     sections: [
+      "general",
       "models",
       "agents",
       "compute",

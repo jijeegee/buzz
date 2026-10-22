@@ -16,6 +16,7 @@ mod events;
 mod hpke_key_backup;
 mod huddle;
 mod identity_storage;
+mod autostart;
 mod initial_window;
 mod key_backup;
 mod link_preview_tags;
@@ -151,6 +152,10 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
                 .build(),
         )
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![autostart::AUTOSTART_ARG]),
+        ))
         .plugin(
             tauri::plugin::Builder::<_, ()>::new("initial-window-reveal")
                 .on_webview_ready(|webview| {
@@ -161,6 +166,12 @@ pub fn run() {
                     // permission-request handler for getUserMedia; no-op
                     // on macOS/Windows.
                     linux_media::enable_media_capture(&webview);
+
+                    // Opened by the OS at login: stay in the tray until the
+                    // tray icon (or the Dock) asks for the window.
+                    if autostart::launched_at_login() {
+                        return;
+                    }
 
                     // macOS applies the restored geometry asynchronously. Wait
                     // for several identical outer bounds and for React to
@@ -302,6 +313,7 @@ pub fn run() {
                 let secrets = crate::auth::accounts::shared_secrets();
                 crate::auth::service::migrate_on_launch(secrets, &data_dir);
                 crate::auth::accounts::reconcile_on_launch(&data_dir);
+                autostart::apply_default(&app_handle, &data_dir);
             }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
                 eprintln!("kuzz-desktop: fatal: identity resolution failed: {e}");
@@ -567,6 +579,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            autostart::get_open_at_login,
+            autostart::set_open_at_login,
             terminal_runtime::terminal_attach,
             terminal_runtime::terminal_detach,
             terminal_runtime::terminal_close,
