@@ -245,10 +245,14 @@ CREATE TABLE events (
     -- Privacy: encrypted/private routing wrappers and p-gated membership notices
     -- must never be discoverable through NIP-50 full-text search. NULL tsvector
     -- never matches `@@`.
-    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033 + 0062).
+    -- URL/path punctuation is also split into words (migration 0077), so
+    -- `callback` finds `https://x.org/auth/oidc/google/callback`; the original
+    -- tokens stay for exact URL searches.
+    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033 + 0062 + 0077).
     search_tsv  TSVECTOR GENERATED ALWAYS AS (
         CASE WHEN kind IN (1059, 30179, 30180, 30181, 30300, 30350, 30622, 44100, 44101, 44200) THEN NULL::tsvector
              ELSE to_tsvector('simple', content)
+                  || to_tsvector('simple', regexp_replace(content, '[-/:._?=&#]+', ' ', 'g'))
         END
     ) STORED,
     -- Nullable since migration 0057: token-authenticated events are server
@@ -2055,12 +2059,19 @@ CREATE TABLE devices (
     last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at    TIMESTAMPTZ,
     -- Stable per-install id; re-login with it reuses the row (migration 0063).
-    install_id    TEXT
+    install_id    TEXT,
+    -- Device key (P-256, SEC1 compressed) proving use from this device (0078).
+    device_pubkey BYTEA CHECK (device_pubkey IS NULL OR octet_length(device_pubkey) = 33),
+    device_key_kind TEXT CHECK (device_key_kind IS NULL OR device_key_kind IN ('hardware', 'software')),
+    CONSTRAINT devices_key_kind_with_key CHECK ((device_pubkey IS NULL) = (device_key_kind IS NULL))
 );
 CREATE INDEX devices_principal ON devices (principal_id);
 CREATE UNIQUE INDEX devices_principal_install
     ON devices (principal_id, install_id)
     WHERE install_id IS NOT NULL;
+CREATE UNIQUE INDEX devices_principal_key
+    ON devices (principal_id, device_pubkey)
+    WHERE device_pubkey IS NOT NULL AND revoked_at IS NULL;
 
 CREATE TABLE sessions (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2141,6 +2152,21 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('bots', 'deployment-global bot registrations owned by a user principal'),
     ('access_tokens', 'deployment-global opaque access-token hashes'),
     ('account_key_backups', 'deployment-global immutable Google account to Nostr key backup binding');
+
+-- Which agent key may be used on which device (migration 0078).
+CREATE TABLE key_registry (
+    pubkey         BYTEA PRIMARY KEY CHECK (length(pubkey) = 32),
+    principal_id   BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    role           TEXT NOT NULL CHECK (role IN ('agent', 'external')),
+    host_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at     TIMESTAMPTZ
+);
+CREATE INDEX key_registry_principal ON key_registry (principal_id);
+CREATE INDEX key_registry_host ON key_registry (host_device_id) WHERE host_device_id IS NOT NULL;
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('key_registry', 'deployment-global agent key to owner account and host device binding');
 
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable

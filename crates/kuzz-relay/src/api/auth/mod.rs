@@ -98,6 +98,10 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             "/auth/operators/{principal}",
             put(operators::grant).delete(operators::revoke),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&state),
+            crate::identity::device::proof_context_layer,
+        ))
         .layer(RequestBodyLimitLayer::new(AUTH_BODY_LIMIT))
         .with_state(state)
 }
@@ -143,7 +147,7 @@ fn not_found(message: &str) -> Response {
     auth_error(StatusCode::NOT_FOUND, "not_found", message)
 }
 
-fn unavailable() -> Response {
+pub(crate) fn unavailable() -> Response {
     auth_error(
         StatusCode::SERVICE_UNAVAILABLE,
         "unavailable",
@@ -151,7 +155,7 @@ fn unavailable() -> Response {
     )
 }
 
-fn internal(context: &str, error: &dyn std::fmt::Display) -> Response {
+pub(crate) fn internal(context: &str, error: &dyn std::fmt::Display) -> Response {
     tracing::error!(%error, "{context}");
     auth_error(
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -196,9 +200,13 @@ pub(crate) async fn authenticate(
             "missing bearer token",
         )
     })?;
-    verify_access_token(state, &token)
+    let binding = verify_access_token(state, &token)
         .await
-        .map_err(rejection_response)
+        .map_err(rejection_response)?;
+    crate::identity::device::check_request_proof(state, &binding, headers)
+        .await
+        .map_err(rejection_response)?;
+    Ok(binding)
 }
 
 /// Authenticate and require a human (user session) token.
@@ -225,9 +233,13 @@ async fn authenticate_session(
             "missing bearer token",
         )
     })?;
-    verify_session_token(state, &token)
+    let binding = verify_session_token(state, &token)
         .await
-        .map_err(rejection_response)
+        .map_err(rejection_response)?;
+    crate::identity::device::check_request_proof(state, &binding, headers)
+        .await
+        .map_err(rejection_response)?;
+    Ok(binding)
 }
 
 async fn authenticate_user_session(

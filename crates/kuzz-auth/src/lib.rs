@@ -19,6 +19,8 @@
 
 /// Channel access checking trait and helpers.
 pub mod access;
+/// Device keys: proof that a message key or token is used from its own device.
+pub mod device_proof;
 /// Authentication error types.
 pub mod error;
 /// Custodial encryption and account-bound proof verification for key recovery.
@@ -121,6 +123,9 @@ pub struct TokenBinding {
     pub bot_owner: Option<kuzz_core::principal::PrincipalId>,
     /// Whether the principal holds the `operator` role in the DB roster.
     pub is_operator: bool,
+    /// SEC1 compressed device key of a user token's device (`None`:
+    /// keyless device, bot). Parsed only when a proof is checked.
+    pub device_pubkey: Option<[u8; 33]>,
 }
 
 /// The result of a successful authentication, bound to a connection.

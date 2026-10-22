@@ -690,221 +690,194 @@ void main() {
     expect(title(first), isNot('Scout'));
   });
 
-  testWidgets('uses compact content styles and keeps message time by author', (
-    tester,
-  ) async {
-    late _FakeRecentSearchesNotifier recentSearches;
-    final createdAt = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 120;
-    final state = SearchState(
-      query: 'design',
-      userResults: const [
-        DirectoryUser(
-          pubkey: 'maya',
-          displayName: 'Maya',
-          nip05Handle: 'maya@example.com',
-        ),
-      ],
-      messageResults: [
-        SearchHit(
-          eventId: 'message-1',
-          content: 'The latest design is ready',
-          kind: 9,
-          pubkey: 'alice',
-          channelName: 'design',
-          createdAt: createdAt,
-          score: 1,
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(
-      WidgetHelpers.testable(
-        overrides: [
-          searchProvider.overrideWith(() => _FakeSearchNotifier(state)),
-          recentSearchesProvider.overrideWith(
-            () => recentSearches = _FakeRecentSearchesNotifier(const []),
-          ),
-          profileProvider.overrideWith(() => _FakeProfileNotifier()),
-          channelsProvider.overrideWith(
-            () => _FakeChannelsNotifier([
-              Channel(
-                id: 'design',
-                name: 'design',
-                channelType: 'stream',
-                visibility: 'open',
-                description: 'Design discussion',
-                createdBy: 'test',
-                createdAt: DateTime(2025),
-                memberCount: 4,
-                isMember: true,
-              ),
-            ]),
-          ),
-          userCacheProvider.overrideWith(
-            () => _FakeUserCacheNotifier(
-              const UserProfile(
-                pubkey: 'alice',
-                displayName: 'Alice',
-                nip05Handle: 'alice@example.com',
-              ),
-            ),
+  testWidgets(
+    'uses compact content styles and puts the chat above the author',
+    (tester) async {
+      late _FakeRecentSearchesNotifier recentSearches;
+      final createdAt = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 120;
+      final state = SearchState(
+        query: 'design',
+        userResults: const [
+          DirectoryUser(
+            pubkey: 'maya',
+            displayName: 'Maya',
+            nip05Handle: 'maya@example.com',
           ),
         ],
-        child: const SearchPage(),
-      ),
-    );
-    await tester.pumpAndSettle();
+        messageResults: [
+          SearchHit(
+            eventId: 'message-1',
+            content: 'The latest design is ready',
+            kind: 9,
+            pubkey: 'alice',
+            channelName: 'design',
+            createdAt: createdAt,
+            score: 1,
+          ),
+        ],
+      );
 
-    final channelTitle = tester.widget<Text>(
-      find.byKey(const ValueKey('search-channel-title-design')),
-    );
-    final personTitle = tester.widget<Text>(
-      find.byKey(const ValueKey('search-person-title-maya')),
-    );
-    for (final title in [channelTitle, personTitle]) {
-      expect(title.style?.fontSize, contentListTitleTextStyle.fontSize);
-      expect(title.style?.fontWeight, contentListTitleTextStyle.fontWeight);
-      expect(title.style?.height, contentListTitleTextStyle.height);
-    }
-    for (final label in ['channels', 'people', 'messages']) {
-      final sectionLabel = tester.widget<Text>(
-        find.byKey(ValueKey('search-section-$label')),
+      await tester.pumpWidget(
+        WidgetHelpers.testable(
+          overrides: [
+            searchProvider.overrideWith(() => _FakeSearchNotifier(state)),
+            recentSearchesProvider.overrideWith(
+              () => recentSearches = _FakeRecentSearchesNotifier(const []),
+            ),
+            profileProvider.overrideWith(() => _FakeProfileNotifier()),
+            channelsProvider.overrideWith(
+              () => _FakeChannelsNotifier([
+                Channel(
+                  id: 'design',
+                  name: 'design',
+                  channelType: 'stream',
+                  visibility: 'open',
+                  description: 'Design discussion',
+                  createdBy: 'test',
+                  createdAt: DateTime(2025),
+                  memberCount: 4,
+                  isMember: true,
+                ),
+              ]),
+            ),
+            userCacheProvider.overrideWith(
+              () => _FakeUserCacheNotifier(
+                const UserProfile(
+                  pubkey: 'alice',
+                  displayName: 'Alice',
+                  nip05Handle: 'alice@example.com',
+                ),
+              ),
+            ),
+          ],
+          child: const SearchPage(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final channelTitle = tester.widget<Text>(
+        find.byKey(const ValueKey('search-channel-title-design')),
+      );
+      final personTitle = tester.widget<Text>(
+        find.byKey(const ValueKey('search-person-title-maya')),
+      );
+      for (final title in [channelTitle, personTitle]) {
+        expect(title.style?.fontSize, contentListTitleTextStyle.fontSize);
+        expect(title.style?.fontWeight, contentListTitleTextStyle.fontWeight);
+        expect(title.style?.height, contentListTitleTextStyle.height);
+      }
+      for (final label in ['channels', 'people', 'messages']) {
+        final sectionLabel = tester.widget<Text>(
+          find.byKey(ValueKey('search-section-$label')),
+        );
+        expect(
+          sectionLabel.data,
+          label == 'channels'
+              ? 'Groups'
+              : '${label[0].toUpperCase()}${label.substring(1)}',
+        );
+        expect(sectionLabel.style?.fontSize, activityContextTextStyle.fontSize);
+        expect(
+          sectionLabel.style?.fontWeight,
+          activityContextTextStyle.fontWeight,
+        );
+        expect(sectionLabel.style?.letterSpacing, 0);
+      }
+      for (final rowKey in [
+        'search-channel-row-design',
+        'search-person-row-maya',
+        'search-message-row-message-1',
+      ]) {
+        final row = tester.widget<ListTile>(find.byKey(ValueKey(rowKey)));
+        expect(
+          row.contentPadding,
+          const EdgeInsets.symmetric(horizontal: Grid.gutter),
+        );
+      }
+      for (final alignment in [
+        ('channels', 'search-channel-leading-design'),
+        ('people', 'search-person-leading-maya'),
+        ('messages', 'search-message-avatar-message-1'),
+      ]) {
+        expect(
+          tester
+              .getTopLeft(
+                find.byKey(ValueKey('search-section-${alignment.$1}')),
+              )
+              .dx,
+          tester.getTopLeft(find.byKey(ValueKey(alignment.$2))).dx,
+        );
+      }
+
+      // As in Chats: the chat is the title with the time beside it, and the
+      // author goes with the text below.
+      final placeFinder = find.byKey(
+        const ValueKey('search-message-channel-message-1'),
+      );
+      final timestampFinder = find.byKey(
+        const ValueKey('search-message-timestamp-message-1'),
+      );
+      final authorFinder = find.byKey(
+        const ValueKey('search-message-author-message-1'),
+      );
+      final bodyFinder = find.byKey(
+        const ValueKey('search-message-body-message-1'),
+      );
+      final place = tester.widget<Text>(placeFinder);
+      expect(place.data, 'design');
+      expect(place.style?.fontSize, messageUsernameTextStyle.fontSize);
+      expect(place.style?.fontWeight, messageUsernameTextStyle.fontWeight);
+      final timestamp = tester.widget<Text>(timestampFinder);
+      expect(timestamp.style?.fontSize, messageTimestampTextStyle.fontSize);
+      expect(timestamp.style?.height, messageTimestampTextStyle.height);
+      expect(
+        (tester.getCenter(placeFinder).dy -
+                tester.getCenter(timestampFinder).dy)
+            .abs(),
+        lessThan(1),
       );
       expect(
-        sectionLabel.data,
-        label == 'channels'
-            ? 'Groups'
-            : '${label[0].toUpperCase()}${label.substring(1)}',
+        (tester
+                    .getTopLeft(
+                      find.byKey(
+                        const ValueKey('search-message-avatar-message-1'),
+                      ),
+                    )
+                    .dy -
+                tester.getTopLeft(placeFinder).dy)
+            .abs(),
+        lessThan(8),
       );
-      expect(sectionLabel.style?.fontSize, activityContextTextStyle.fontSize);
+      expect(tester.widget<Text>(authorFinder).data, endsWith(': '));
       expect(
-        sectionLabel.style?.fontWeight,
-        activityContextTextStyle.fontWeight,
+        tester.getTopLeft(authorFinder).dy,
+        greaterThan(tester.getBottomLeft(placeFinder).dy - 1),
       );
-      expect(sectionLabel.style?.letterSpacing, 0);
-    }
-    for (final rowKey in [
-      'search-channel-row-design',
-      'search-person-row-maya',
-      'search-message-row-message-1',
-    ]) {
-      final row = tester.widget<ListTile>(find.byKey(ValueKey(rowKey)));
       expect(
-        row.contentPadding,
-        const EdgeInsets.symmetric(horizontal: Grid.gutter),
+        (tester.getTopLeft(authorFinder).dy - tester.getTopLeft(bodyFinder).dy)
+            .abs(),
+        lessThan(4),
       );
-    }
-    for (final alignment in [
-      ('channels', 'search-channel-leading-design'),
-      ('people', 'search-person-leading-maya'),
-      ('messages', 'search-message-avatar-message-1'),
-    ]) {
       expect(
-        tester
-            .getTopLeft(find.byKey(ValueKey('search-section-${alignment.$1}')))
-            .dx,
-        tester.getTopLeft(find.byKey(ValueKey(alignment.$2))).dx,
+        tester.getTopLeft(bodyFinder).dx,
+        greaterThan(tester.getTopLeft(authorFinder).dx),
       );
-    }
 
-    final authorFinder = find.byKey(
-      const ValueKey('search-message-author-message-1'),
-    );
-    final usernameFinder = find.byKey(
-      const ValueKey('search-message-username-message-1'),
-    );
-    final timestampFinder = find.byKey(
-      const ValueKey('search-message-timestamp-message-1'),
-    );
-    final author = tester.widget<Text>(authorFinder);
-    final username = tester.widget<Text>(usernameFinder);
-    final timestamp = tester.widget<Text>(timestampFinder);
-    expect(author.style?.fontSize, messageUsernameTextStyle.fontSize);
-    expect(author.style?.fontWeight, messageUsernameTextStyle.fontWeight);
-    expect(author.style?.height, messageUsernameTextStyle.height);
-    expect(username.data, 'alice@example.com');
-    expect(username.style?.fontSize, messageMetadataTextStyle.fontSize);
-    expect(username.style?.fontWeight, FontWeight.w400);
-    expect(username.style?.height, messageMetadataTextStyle.height);
-    expect(timestamp.style?.fontSize, messageTimestampTextStyle.fontSize);
-    expect(timestamp.style?.height, messageTimestampTextStyle.height);
-    expect(
-      (tester.getCenter(authorFinder).dy - tester.getCenter(timestampFinder).dy)
-          .abs(),
-      lessThan(1),
-    );
-    expect(
-      (tester
-                  .getTopLeft(
-                    find.byKey(
-                      const ValueKey('search-message-avatar-message-1'),
-                    ),
-                  )
-                  .dy -
-              tester.getTopLeft(authorFinder).dy)
-          .abs(),
-      lessThan(6),
-    );
+      final body = tester.widget<MessageContent>(bodyFinder);
+      expect(body.baseStyle?.fontSize, activityPreviewTextStyle.fontSize);
+      expect(body.baseStyle?.height, activityPreviewTextStyle.height);
+      expect(
+        tester.widget<SmallAvatar>(find.byType(SmallAvatar)).size,
+        compactMessageAvatarSize,
+      );
 
-    final body = tester.widget<MessageContent>(
-      find.byKey(const ValueKey('search-message-body-message-1')),
-    );
-    expect(body.baseStyle?.fontSize, activityPreviewTextStyle.fontSize);
-    expect(body.baseStyle?.height, activityPreviewTextStyle.height);
-    expect(
-      tester.widget<SmallAvatar>(find.byType(SmallAvatar)).size,
-      compactMessageAvatarSize,
-    );
-    final contextLabel = tester.widget<Text>(find.text('Message in'));
-    final channelLabel = tester.widget<Text>(
-      find.byKey(const ValueKey('search-message-channel-message-1')),
-    );
-    expect(contextLabel.style?.fontSize, activityContextTextStyle.fontSize);
-    expect(contextLabel.style?.height, activityContextTextStyle.height);
-    expect(channelLabel.data, 'design');
-    expect(channelLabel.style?.fontSize, activityContextTextStyle.fontSize);
-    final channelChip = tester.widget<Container>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Container &&
-            widget.child is Text &&
-            (widget.child as Text).key ==
-                const ValueKey('search-message-channel-message-1'),
-      ),
-    );
-    expect(
-      (channelChip.decoration! as BoxDecoration).borderRadius,
-      BorderRadius.circular(Radii.xs),
-    );
-    expect(
-      tester
-          .getTopLeft(
-            find.byKey(const ValueKey('search-message-context-message-1')),
-          )
-          .dy,
-      greaterThan(tester.getTopLeft(authorFinder).dy),
-    );
-    expect(
-      tester
-          .getTopLeft(
-            find.byKey(const ValueKey('search-message-body-message-1')),
-          )
-          .dy,
-      greaterThan(
-        tester
-            .getBottomLeft(
-              find.byKey(const ValueKey('search-message-context-message-1')),
-            )
-            .dy,
-      ),
-    );
-
-    await tester.tap(
-      find.byKey(const ValueKey('search-message-row-message-1')),
-    );
-    await tester.pump();
-    expect(recentSearches.searches, const ['design']);
-  });
+      await tester.tap(
+        find.byKey(const ValueKey('search-message-row-message-1')),
+      );
+      await tester.pump();
+      expect(recentSearches.searches, const ['design']);
+    },
+  );
 
   testWidgets('renders channel-role bots in message previews', (tester) async {
     final channel = Channel(
