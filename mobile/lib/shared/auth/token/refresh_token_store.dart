@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../../relay/service_address.dart';
+
 /// The durable half of a token session: the refresh token and the principal
 /// it belongs to, written together in one record.
 class StoredTokenSession {
@@ -47,14 +49,16 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
 
   final FlutterSecureStorage _storage;
   final String keyPrefix;
-  String _keyFor(String origin) => '$keyPrefix:$origin';
+  String _keyFor(String origin) => '$keyPrefix:${storageScopeFor(origin)}';
 
-  /// Storage key for [origin]'s record.
-  static String keyFor(String origin) => 'kuzz.auth.refresh.v1:$origin';
+  /// Storage key for [origin]'s record: the service scope for this build's
+  /// service (any of its addresses), otherwise the origin itself.
+  static String keyFor(String origin) =>
+      'kuzz.auth.refresh.v1:${storageScopeFor(origin)}';
 
   /// Readable after the first unlock (background refresh) but never synced
   /// or restored to another device: a refresh token is bound to this device.
-  static const _iOptions = IOSOptions(
+  static const iOptions = IOSOptions(
     accessibility: KeychainAccessibility.first_unlock_this_device,
   );
 
@@ -63,12 +67,12 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
   @override
   Future<StoredTokenSession?> read(String origin) async {
     final key = _keyFor(origin);
-    final raw = await _storage.read(key: key, iOptions: _iOptions);
+    final raw = await _storage.read(key: key, iOptions: iOptions);
     if (raw == null) return null;
     final session = _decode(raw);
     if (session == null) {
       debugPrint('Discarding unreadable token session for $origin');
-      await _storage.delete(key: key, iOptions: _iOptions);
+      await _storage.delete(key: key, iOptions: iOptions);
     }
     return session;
   }
@@ -83,12 +87,12 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
           if (session.identityMode != 'token')
             'identity_mode': session.identityMode,
         }),
-        iOptions: _iOptions,
+        iOptions: iOptions,
       );
 
   @override
   Future<void> delete(String origin) =>
-      _storage.delete(key: _keyFor(origin), iOptions: _iOptions);
+      _storage.delete(key: _keyFor(origin), iOptions: iOptions);
 
   static StoredTokenSession? _decode(String raw) {
     try {

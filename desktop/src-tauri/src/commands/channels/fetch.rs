@@ -100,6 +100,8 @@ struct ChannelInfoForHash<'a> {
     ttl_seconds: &'a Option<i32>,
     ttl_deadline: &'a Option<String>,
     goals_enabled: bool,
+    picture: &'a Option<String>,
+    group_chat: bool,
 }
 
 /// Compute a stable 64-bit FNV-1a hash over the channel list, canonicalized
@@ -128,6 +130,8 @@ pub(super) fn compute_channels_hash(channels: &[ChannelInfo]) -> String {
             ttl_seconds: &c.ttl_seconds,
             ttl_deadline: &c.ttl_deadline,
             goals_enabled: c.goals_enabled,
+            picture: &c.picture,
+            group_chat: c.group_chat,
         })
         .collect();
 

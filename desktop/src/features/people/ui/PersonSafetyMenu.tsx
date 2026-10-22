@@ -29,7 +29,7 @@ import {
 
 /** What blocking does, in the words the confirm dialog uses. */
 export function blockDescription(name: string): string {
-  return `You won't get messages from ${name}, and their messages in shared channels are hidden. They're removed from your friends and aren't told you blocked them. You can unblock them in Settings.`;
+  return `You won't get messages from ${name}, and their messages in shared groups are hidden. They're removed from your friends and aren't told you blocked them. You can unblock them in Settings.`;
 }
 
 /**

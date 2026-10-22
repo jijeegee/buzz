@@ -74,7 +74,7 @@ export function WorkflowMessagePicker({
     initialPageParam: null as ChannelPageCursor | null,
     queryKey: ["workflow-message-picker", channelId],
     queryFn: async ({ pageParam }) => {
-      if (!channelId) throw new Error("Choose a channel first.");
+      if (!channelId) throw new Error("Choose a group first.");
       return parseChannelWindowResponse(
         await getChannelWindowEvents(channelId, pageParam, PAGE_SIZE),
         channelId,
@@ -288,7 +288,7 @@ export function WorkflowMessagePicker({
           placeholder={
             channelId
               ? "Search messages or paste a message ID…"
-              : "Choose a channel first"
+              : "Choose a group first"
           }
           role="combobox"
           spellCheck={false}
@@ -306,7 +306,7 @@ export function WorkflowMessagePicker({
       </div>
       {invalidDirectResult ? (
         <p className="shrink-0 border-b border-border/70 px-3 py-2 text-xs text-destructive">
-          That message is not available in this channel.
+          That message is not available in this group.
         </p>
       ) : null}
       <div

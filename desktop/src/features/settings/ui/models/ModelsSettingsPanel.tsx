@@ -7,18 +7,23 @@ import {
   type ModelsSettingsTab,
   readRequestedModelsSettingsTab,
 } from "../../lib/modelsSettingsTabRequest";
+import { AgentDefaultsSettingsCard } from "../AgentDefaultsSettingsCard";
 import { SettingsSectionHeader } from "../SettingsSectionHeader";
 import { ProvidersSettingsTab } from "./ProvidersSettingsTab";
 import { TaskModelsSettingsTab } from "./TaskModelsSettingsTab";
 
 /**
- * Settings › Models: the AI Kuzz itself relies on.
+ * Settings › Models: which AI Kuzz and your agents run on.
  *
- * - **Providers** — per provider, the subscription sign-in (the harness whose
- *   CLI login bills it) and the API key, plus the single "Default for new
- *   agents" choice. A provider-centric view over `GlobalAgentConfig`.
- * - **Task models** — which provider/model each app task uses (today:
+ * - **Connections** — per provider, the subscription sign-in (the harness
+ *   whose CLI login bills it) and the API key.
+ * - **Default for new agents** — the runtime, provider, model and effort a
+ *   new agent starts with.
+ * - **App tasks** — which provider/model each app task uses (today:
  *   Smart routing's message router).
+ *
+ * Connections and the defaults both write `GlobalAgentConfig`; only the
+ * active tab is mounted, so each reads the saved record fresh when opened.
  */
 export function ModelsSettingsPanel() {
   const [tab, setTab] = React.useState<ModelsSettingsTab>(
@@ -30,7 +35,7 @@ export function ModelsSettingsPanel() {
     <section className="min-w-0" data-testid="settings-models">
       <SettingsSectionHeader
         title="Models"
-        description="AI that Kuzz itself uses — which provider you pay for, and which model handles each app task."
+        description="Connect the AI you pay for, pick what new agents start with, and choose the model for each app task."
       />
       <Tabs
         onValueChange={(value) => setTab(value as ModelsSettingsTab)}
@@ -41,14 +46,23 @@ export function ModelsSettingsPanel() {
             data-testid="settings-models-tab-providers"
             value="providers"
           >
-            Providers
+            Connections
+          </TabsTrigger>
+          <TabsTrigger
+            data-testid="settings-models-tab-defaults"
+            value="defaults"
+          >
+            Default for new agents
           </TabsTrigger>
           <TabsTrigger data-testid="settings-models-tab-tasks" value="tasks">
-            Task models
+            App tasks
           </TabsTrigger>
         </TabsList>
         <TabsContent className="mt-0" value="providers">
           <ProvidersSettingsTab />
+        </TabsContent>
+        <TabsContent className="mt-0" value="defaults">
+          <AgentDefaultsSettingsCard />
         </TabsContent>
         <TabsContent className="mt-0" value="tasks">
           <TaskModelsSettingsTab onOpenProviders={() => setTab("providers")} />

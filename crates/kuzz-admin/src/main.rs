@@ -855,6 +855,11 @@ async fn reconcile_channels(
                 }
                 tags.push(Tag::parse(["closed"])?);
                 tags.push(Tag::parse(["t", &channel.channel_type])?);
+                if let Some(ref picture) = channel.picture {
+                    if !picture.is_empty() {
+                        tags.push(Tag::parse(["picture", picture])?);
+                    }
+                }
 
                 let event = EventBuilder::new(Kind::Custom(39000), "")
                     .tags(tags)

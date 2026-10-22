@@ -8,6 +8,7 @@ import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
+import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/kuzz_search_field.dart';
 import '../../shared/widgets/filter_chip_bar.dart';
@@ -19,15 +20,25 @@ import '../channels/channel_detail_page.dart';
 import '../channels/channel_identity_names_provider.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
+import '../channels/group_avatar.dart';
+import '../channels/group_chat/chat_grid_avatar.dart';
+import '../channels/group_chat/chat_title.dart';
 import '../channels/small_avatar.dart';
 import '../channels/message_content.dart';
 import '../channels/date_formatters.dart';
+import '../channels/dm_channel_labels.dart';
 import '../forum/forum_thread_page.dart';
+import '../activity/inbox_item.dart';
+import '../chats/chat_list.dart';
+import '../chats/chats_page.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import 'recent_searches_provider.dart';
 import '../people/blocked_users_provider.dart';
+import 'search_chat_results.dart';
 import 'search_provider.dart';
+
+part 'search_page/results.dart';
 
 enum _SearchFilter { all, messages, channels, people }
 
@@ -317,7 +328,7 @@ class SearchPage extends HookConsumerWidget {
                 child: KuzzSearchField(
                   controller: textController,
                   focusNode: focusNode,
-                  hintText: 'Search messages, channels, and people',
+                  hintText: 'Search messages, groups, and people',
                   iconColor: searchPrimaryColor,
                   inputColor: searchPrimaryColor,
                   placeholderColor: searchPlaceholderColor,
@@ -460,7 +471,7 @@ class _SearchBody extends ConsumerWidget {
               ),
               const SizedBox(height: Grid.xs),
               Text(
-                'Search messages, channels, and people',
+                'Search messages, groups, and people',
                 textAlign: TextAlign.center,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
@@ -479,13 +490,22 @@ class _SearchBody extends ConsumerWidget {
     final showMessages =
         filter == _SearchFilter.all || filter == _SearchFilter.messages;
 
+    final chats = ref.watch(searchChatResultsProvider);
     final blockedPubkeys = ref.watch(blockedPubkeysProvider);
+    // People with an existing DM shown above are not offered again.
+    final me = currentPubkey?.toLowerCase();
+    final dmPartners = {
+      for (final dm in chats.dms)
+        if (!dm.isThread && dm.channel != null) ..._dmPartners(dm.channel!, me),
+    };
     final userResults = [
       for (final user in state.userResults)
-        if (!blockedPubkeys.contains(user.pubkey.toLowerCase())) user,
+        if (!blockedPubkeys.contains(user.pubkey.toLowerCase()) &&
+            !dmPartners.contains(user.pubkey.toLowerCase()))
+          user,
     ];
     final hasAnyResults =
-        state.channelResults.isNotEmpty ||
+        !chats.isEmpty ||
         userResults.isNotEmpty ||
         state.messageResults.isNotEmpty;
     void recordResultSelection() =>
@@ -517,9 +537,20 @@ class _SearchBody extends ConsumerWidget {
             MediaQuery.viewInsetsOf(context).bottom,
       ),
       children: [
-        if (showChannels && state.channelResults.isNotEmpty)
-          _ChannelsSection(
-            channels: state.channelResults,
+        if (showChannels && chats.groups.isNotEmpty)
+          _ChatsSection(
+            label: 'Groups',
+            id: 'channels',
+            results: chats.groups,
+            currentPubkey: currentPubkey,
+            onResultSelected: recordResultSelection,
+          ),
+        if (showPeople && chats.dms.isNotEmpty)
+          _ChatsSection(
+            label: 'Direct messages',
+            id: 'dms',
+            results: chats.dms,
+            currentPubkey: currentPubkey,
             onResultSelected: recordResultSelection,
           ),
         if (showPeople && userResults.isNotEmpty)
@@ -643,387 +674,11 @@ class _RecentSearches extends StatelessWidget {
   }
 }
 
-class _ChannelsSection extends StatelessWidget {
-  final List<Channel> channels;
-  final VoidCallback onResultSelected;
-  const _ChannelsSection({
-    required this.channels,
-    required this.onResultSelected,
-  });
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionLabel(label: 'Channels'),
-        for (final channel in channels)
-          ListTile(
-            key: ValueKey('search-channel-row-${channel.id}'),
-            contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
-            leading: Icon(
-              channelIcon(channel),
-              key: ValueKey('search-channel-leading-${channel.id}'),
-              size: 20,
-            ),
-            title: Text(
-              channel.name,
-              key: ValueKey('search-channel-title-${channel.id}'),
-              style: contentListTitleTextStyle,
-            ),
-            subtitle: channel.isMember
-                ? Text(
-                    '${channel.memberCount} member${channel.memberCount == 1 ? '' : 's'}',
-                    style: contentListBodyTextStyle.copyWith(
-                      color: context.colors.onSurfaceVariant,
-                    ),
-                  )
-                : null,
-            trailing: !channel.isMember && !channel.isDm
-                ? Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: Grid.half + 2,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.colors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(Radii.sm),
-                    ),
-                    child: Text(
-                      'Open',
-                      style: context.textTheme.labelSmall?.copyWith(
-                        color: context.colors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  )
-                : null,
-            onTap: () {
-              onResultSelected();
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => ChannelDetailPage(channel: channel),
-                ),
-              );
-            },
-          ),
-      ],
-    );
-  }
-}
-
-class _PeopleSection extends ConsumerWidget {
-  final List<DirectoryUser> users;
-  final VoidCallback onResultSelected;
-
-  const _PeopleSection({required this.users, required this.onResultSelected});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // The shown results are the comparison context.
-    final names = watchIdentityNames(
-      ref,
-      [for (final user in users) user.pubkey],
-      agentPubkeys: {
-        for (final user in users)
-          if (user.isAgent) user.pubkey,
-      },
-      fallbackNames: {for (final user in users) user.pubkey: user.label},
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionLabel(label: 'People'),
-        for (final user in users)
-          ListTile(
-            key: ValueKey('search-person-row-${user.pubkey}'),
-            contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
-            leading: AvatarImage(
-              key: ValueKey('search-person-leading-${user.pubkey}'),
-              imageUrl: user.avatarUrl,
-              radius: 20,
-              fallback: Text(user.initial),
-              isAgent: user.isAgent,
-            ),
-            title: Text(
-              names.labelFor(user.pubkey),
-              key: ValueKey('search-person-title-${user.pubkey}'),
-              style: contentListTitleTextStyle,
-            ),
-            subtitle: Text(
-              user.secondaryLabel,
-              style: contentListBodyTextStyle.copyWith(
-                color: context.colors.onSurfaceVariant,
-              ),
-            ),
-            onTap: () async {
-              onResultSelected();
-              final channel = await ref
-                  .read(channelActionsProvider)
-                  .openDm(pubkeys: [user.pubkey]);
-              if (!context.mounted) return;
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => ChannelDetailPage(channel: channel),
-                ),
-              );
-            },
-          ),
-      ],
-    );
-  }
-}
-
-class _MessagesSection extends HookConsumerWidget {
-  final List<SearchHit> hits;
-  final String? currentPubkey;
-  final VoidCallback onResultSelected;
-
-  const _MessagesSection({
-    required this.hits,
-    required this.currentPubkey,
-    required this.onResultSelected,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final profiles = ref.watch(userCacheProvider);
-    final channels = ref.watch(channelsProvider).value ?? [];
-
-    // Preload author profiles.
-    final preloadPubkeys = {
-      for (final hit in hits) hit.pubkey.toLowerCase(),
-      for (final hit in hits) ...mentionedPubkeysFromTags(hit.tags),
-    }.toList()..sort();
-    final preloadPubkeysKey = preloadPubkeys.join('\u0000');
-    useEffect(() {
-      ref.read(userCacheProvider.notifier).preload(preloadPubkeys);
-      return null;
-    }, [preloadPubkeysKey]);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionLabel(label: 'Messages'),
-        for (final hit in hits)
-          _MessageTile(
-            hit: hit,
-            authorProfile: profiles[hit.pubkey.toLowerCase()],
-            userCache: profiles,
-            channel: channels.where((c) => c.id == hit.channelId).firstOrNull,
-            currentPubkey: currentPubkey,
-            onResultSelected: onResultSelected,
-          ),
-      ],
-    );
-  }
-}
-
-class _MessageTile extends ConsumerWidget {
-  final SearchHit hit;
-  final UserProfile? authorProfile;
-  final Map<String, UserProfile> userCache;
-  final Channel? channel;
-  final String? currentPubkey;
-  final VoidCallback onResultSelected;
-
-  const _MessageTile({
-    required this.hit,
-    required this.authorProfile,
-    required this.userCache,
-    required this.channel,
-    required this.currentPubkey,
-    required this.onResultSelected,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mentionedPubkeys = mentionedPubkeysFromTags(hit.tags);
-    // A hit is labelled within its channel, as it would be there.
-    final hitChannelId = channel?.id ?? hit.channelId;
-    final labelPubkeys = {hit.pubkey.toLowerCase(), ...mentionedPubkeys};
-    final Map<String, String> labels;
-    if (hitChannelId == null) {
-      final names = watchIdentityNames(ref, labelPubkeys);
-      labels = {
-        for (final pubkey in labelPubkeys) pubkey: names.labelFor(pubkey),
-      };
-    } else {
-      labels = watchChannelIdentityLabels(ref, hitChannelId, labelPubkeys);
-    }
-    final authorName =
-        labels[hit.pubkey.toLowerCase()] ??
-        authorProfile?.label ??
-        shortPubkey(hit.pubkey);
-    final timeAgo = relativeTime(hit.createdAt);
-    final channelName = hit.channelName?.trim().replaceFirst(RegExp(r'^#'), '');
-    final hasChannelName = channelName != null && channelName.isNotEmpty;
-    final isDm = channel?.isDm ?? false;
-    final profileMentionNames = {
-      for (final pubkey in mentionedPubkeysFromTags(hit.tags))
-        if (userCache[pubkey]?.displayName?.trim().isNotEmpty == true)
-          pubkey: userCache[pubkey]!.displayName!.trim(),
-    };
-    final mentionPubkeys = mentionedPubkeysFromTags(hit.tags);
-    final knownAgentPubkeys = channel == null
-        ? ref.watch(knownAgentPubkeysProvider)
-        : ref.watch(agentMentionPubkeysProvider(channel!.id));
-    final agentMentionPubkeys = agentPubkeysWithProfileOwners(
-      knownAgentPubkeys: knownAgentPubkeys,
-      profileOwnedAgentPubkeys: [
-        for (final profile in userCache.values)
-          if (profile.ownerPubkey != null) profile.pubkey,
-      ],
-    );
-    final mentionNames = mentionNamesWithDirectoryLabels(
-      mentionPubkeys: mentionPubkeys,
-      profileMentionNames: profileMentionNames,
-      directoryDisplayNames: ref.watch(agentDirectoryDisplayNamesProvider),
-      agentMentionPubkeys: agentMentionPubkeys,
-    );
-
-    return ListTile(
-      key: ValueKey('search-message-row-${hit.eventId}'),
-      contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
-      titleAlignment: ListTileTitleAlignment.top,
-      horizontalTitleGap: messageAvatarContentGap,
-      leading: SmallAvatar(
-        key: ValueKey('search-message-avatar-${hit.eventId}'),
-        pubkey: hit.pubkey,
-        userCache: userCache,
-        size: compactMessageAvatarSize,
-      ),
-      title: MessageAuthorMeta(
-        displayName: authorName,
-        username: messageUsernameLabel(authorProfile),
-        timestamp: timeAgo,
-        nameColor: context.colors.onSurface,
-        metadataColor: context.colors.onSurfaceVariant,
-        displayNameKey: ValueKey('search-message-author-${hit.eventId}'),
-        usernameKey: ValueKey('search-message-username-${hit.eventId}'),
-        timestampKey: ValueKey('search-message-timestamp-${hit.eventId}'),
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 2),
-          Row(
-            key: ValueKey('search-message-context-${hit.eventId}'),
-            children: [
-              Flexible(
-                child: Text(
-                  isDm
-                      ? 'Direct message'
-                      : hasChannelName
-                      ? 'Message in'
-                      : 'Message',
-                  style: activityContextTextStyle.copyWith(
-                    color: context.colors.onSurfaceVariant,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (!isDm && hasChannelName) ...[
-                const SizedBox(width: Grid.half),
-                Flexible(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: Grid.half + Grid.quarter,
-                      vertical: Grid.quarter / 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(Radii.xs),
-                    ),
-                    child: Text(
-                      '#$channelName',
-                      key: ValueKey('search-message-channel-${hit.eventId}'),
-                      style: activityContextTextStyle.copyWith(
-                        color: context.colors.onSurfaceVariant,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: Grid.half),
-          MessageContent(
-            key: ValueKey('search-message-body-${hit.eventId}'),
-            content: hit.content,
-            mentionNames: mentionNames,
-            mentionLabels: labels,
-            agentMentionPubkeys: agentMentionPubkeys,
-            tags: hit.tags,
-            maxLines: 2,
-            baseStyle: activityPreviewTextStyle.copyWith(
-              color: context.colors.onSurface,
-            ),
-          ),
-        ],
-      ),
-      onTap: () {
-        onResultSelected();
-        _navigateToHit(context, hit, channel);
-      },
-    );
-  }
-
-  void _navigateToHit(BuildContext context, SearchHit hit, Channel? channel) {
-    if (channel == null) return;
-
-    if (hit.kind == 45001) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ForumThreadPage(
-            channelId: channel.id,
-            postEventId: hit.eventId,
-            currentPubkey: currentPubkey,
-            isMember: channel.isMember,
-            isArchived: channel.isArchived,
-          ),
-        ),
-      );
-    } else {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ChannelDetailPage(channel: channel),
-        ),
-      );
-    }
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  final String label;
-
-  const _SectionLabel({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Grid.gutter,
-        Grid.xs,
-        Grid.gutter,
-        Grid.half,
-      ),
-      child: Text(
-        label,
-        key: ValueKey('search-section-${label.toLowerCase()}'),
-        style: activityContextTextStyle.copyWith(
-          color: context.colors.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
 extension on _SearchFilter {
   String get label => switch (this) {
     _SearchFilter.all => 'All',
     _SearchFilter.messages => 'Messages',
-    _SearchFilter.channels => 'Channels',
+    _SearchFilter.channels => 'Groups',
     _SearchFilter.people => 'People',
   };
 }

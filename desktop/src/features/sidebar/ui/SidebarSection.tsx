@@ -37,6 +37,8 @@ import { useAppShell } from "@/app/AppShellContext";
 import { UserNameIndicators } from "@/features/user-status/ui/UserNameIndicators";
 import type { ChatRowPreview } from "@/features/chats/chatRowPreview";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { ChatConversationRow } from "@/features/sidebar/ui/ChatRowLines";
 
 const SECTION_LABEL_BUTTON_CLASS =
@@ -269,17 +271,35 @@ function SidebarChannelIcon({
     );
   }
 
+  if (isGroupChat(channel)) {
+    return (
+      <ChannelChatAvatar
+        channel={channel}
+        className={large ? "size-9" : "size-6"}
+        testId={`chat-row-avatar-${channel.id}`}
+      />
+    );
+  }
+
   if (large) {
     return (
       <ConversationLetterAvatar
         channelId={channel.id}
         channelLabel={channel.name}
+        isPrivate={channel.visibility === "private"}
         isThread={false}
+        picture={channel.picture}
         testId={`chat-row-avatar-${channel.id}`}
       />
     );
   }
-  return <ChannelGlyph channel={channel} className={className} />;
+  return (
+    <ChannelGlyph
+      avatarClassName={className}
+      channel={channel}
+      className={className}
+    />
+  );
 }
 
 export function ChannelMenuButton({
@@ -368,7 +388,7 @@ export function ChannelMenuButton({
       title={
         <>
           <span className="min-w-0 truncate">
-            {channel.channelType === "dm" ? resolvedLabel : `#${resolvedLabel}`}
+            {channel.channelType === "dm" ? resolvedLabel : `${resolvedLabel}`}
           </span>
           {channel.channelType === "dm" &&
           (channel.participantPubkeys.length === 2 ||
@@ -715,7 +735,7 @@ export function SidebarSection({
                         onStarChannel={onStarChannel}
                         onUnstarChannel={onUnstarChannel}
                         onDeleteChannel={
-                          channel.channelType === "dm"
+                          channel.channelType === "dm" || isGroupChat(channel)
                             ? undefined
                             : onDeleteChannel
                         }

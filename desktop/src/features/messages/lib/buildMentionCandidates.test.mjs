@@ -78,62 +78,88 @@ test("archived identities never become candidates", () => {
   );
 });
 
+const CHANNEL_ID = "room";
+
 test("an agent outside the mentionable set is hidden once its directory is ready", () => {
   const relayAgents = [
-    { pubkey: AGENT_PUBKEY, name: "Scout", ownerPubkey: null, status: "away" },
+    {
+      pubkey: AGENT_PUBKEY,
+      name: "Scout",
+      ownerPubkey: null,
+      status: "away",
+      channelIds: [CHANNEL_ID],
+    },
   ];
 
-  assert.deepEqual(buildMentionCandidates(input({ relayAgents })), []);
+  assert.deepEqual(
+    buildMentionCandidates(
+      input({ mentionChannelId: CHANNEL_ID, relayAgents }),
+    ),
+    [],
+  );
   assert.equal(
     buildMentionCandidates(
-      input({ mentionableAgentPubkeys: new Set([AGENT_PUBKEY]), relayAgents }),
+      input({
+        mentionChannelId: CHANNEL_ID,
+        mentionableAgentPubkeys: new Set([AGENT_PUBKEY]),
+        relayAgents,
+      }),
     ).length,
     1,
   );
 });
 
-test("active personas join unless a managed agent already carries them", () => {
-  const activePersonas = [
-    { id: "planner", displayName: "Planner", avatarUrl: null, isActive: true },
-  ];
-
-  const standalone = buildMentionCandidates(input({ activePersonas }));
-  assert.equal(standalone.length, 1);
-  assert.equal(standalone[0].kind, "persona");
-  assert.equal(standalone[0].personaId, "planner");
+test("only room members are offered: outside agents, personas and searched people never are", () => {
+  const candidates = buildMentionCandidates(
+    input({
+      activePersonas: [
+        {
+          id: "planner",
+          displayName: "Planner",
+          avatarUrl: null,
+          isActive: true,
+        },
+      ],
+      canSearchGlobalUsers: true,
+      currentPubkey: MEMBER_PUBKEY,
+      managedAgentNamesByPubkey: new Map([[ARCHIVED_PUBKEY, "Mine"]]),
+      managedAgents: [
+        { pubkey: ARCHIVED_PUBKEY, name: "Mine", status: "running" },
+      ],
+      members: [{ pubkey: MEMBER_PUBKEY, displayName: "Ada", isAgent: false }],
+      mentionChannelId: CHANNEL_ID,
+      mentionableAgentPubkeys: new Set([AGENT_PUBKEY, ARCHIVED_PUBKEY]),
+      relayAgents: [
+        {
+          pubkey: AGENT_PUBKEY,
+          name: "Scout",
+          ownerPubkey: MEMBER_PUBKEY,
+          status: "online",
+          channelIds: ["elsewhere"],
+        },
+      ],
+      userSearchResults: [
+        {
+          pubkey: SEARCHED_PUBKEY,
+          displayName: "Dana",
+          isAgent: false,
+          nip05Handle: null,
+          ownerPubkey: null,
+        },
+      ],
+    }),
+  );
 
   assert.deepEqual(
-    buildMentionCandidates(
-      input({ activePersonas, managedAgentPersonaIds: new Set(["planner"]) }),
-    ),
-    [],
+    candidates.map((candidate) => candidate.pubkey),
+    [MEMBER_PUBKEY],
   );
 });
 
-test("global search results join only while global search is enabled", () => {
-  const userSearchResults = [
-    {
-      pubkey: SEARCHED_PUBKEY,
-      displayName: "Dana",
-      isAgent: false,
-      nip05Handle: null,
-      ownerPubkey: null,
-    },
-  ];
-
-  assert.deepEqual(buildMentionCandidates(input({ userSearchResults })), []);
-
-  const searched = buildMentionCandidates(
-    input({ canSearchGlobalUsers: true, userSearchResults }),
-  );
-  assert.equal(searched.length, 1);
-  assert.equal(searched[0].displayName, "Dana");
-  assert.equal(searched[0].isGlobalSearchResult, true);
-});
-
-test("policy-only discovery stays selectable without claiming active presence", () => {
+test("a directory agent already in this room counts as a member", () => {
   const [candidate] = buildMentionCandidates(
     input({
+      mentionChannelId: CHANNEL_ID,
       mentionableAgentPubkeys: new Set([AGENT_PUBKEY]),
       relayAgents: [
         {
@@ -141,11 +167,14 @@ test("policy-only discovery stays selectable without claiming active presence", 
           name: "Scout",
           ownerPubkey: MEMBER_PUBKEY,
           status: "unknown",
+          channelIds: [CHANNEL_ID],
         },
       ],
     }),
   );
   assert.equal(candidate.pubkey, AGENT_PUBKEY);
+  assert.equal(candidate.isMember, true);
+  // Policy-only discovery stays selectable without claiming active presence.
   assert.equal(candidate.isActiveAgent, false);
   assert.equal(candidate.ownerPubkey, MEMBER_PUBKEY);
 });

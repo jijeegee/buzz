@@ -2638,7 +2638,7 @@ test("sends a thread message to its parent channel with a root-thread link", asy
   await sendToChannelItem.click();
 
   await expect(
-    page.locator("[data-sonner-toast]").filter({ hasText: "Sent to channel" }),
+    page.locator("[data-sonner-toast]").filter({ hasText: "Sent to group" }),
   ).toBeVisible();
   await expect
     .poll(() =>
@@ -4148,7 +4148,7 @@ test("a refused message deep link retries after the thread edit is canceled", as
     .getByTestId("message-row")
     .filter({ hasText: "Retry link" })
     .last()
-    .getByRole("button", { name: "Open message in channel general" });
+    .getByRole("button", { name: "Open message in group general" });
   await expect(destinationLink).toBeVisible();
 
   await mainInput.fill(sourceRoot);
@@ -4496,7 +4496,7 @@ for (const targetKind of ["reply", "root"] as const) {
     const targetLink = timeline
       .getByTestId("message-row")
       .filter({ hasText: `Same-thread ${targetKind} target` })
-      .getByRole("button", { name: "Open message in channel general" });
+      .getByRole("button", { name: "Open message in group general" });
     const navigationBefore = await page.evaluate(() => ({
       historyLength: history.length,
       url: location.href,

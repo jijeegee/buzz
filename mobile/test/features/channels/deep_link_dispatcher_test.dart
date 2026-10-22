@@ -455,7 +455,7 @@ void main() {
 
     expect(
       find.text(
-        'Starter channels could not be set up. Retry setup to try again.',
+        'Starter groups could not be set up. Retry setup to try again.',
       ),
       findsOneWidget,
     );

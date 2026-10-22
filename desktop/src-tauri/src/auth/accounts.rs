@@ -60,7 +60,7 @@ pub(crate) fn identity_slot(pubkey: &PublicKey) -> String {
 
 /// The account's refresh-token slot for `origin`.
 pub(crate) fn refresh_slot(pubkey: &PublicKey, origin: &str) -> String {
-    format!("account.{}.refresh.{origin}", pubkey.to_hex())
+    super::service::account_refresh_slot(&pubkey.to_hex(), origin)
 }
 
 /// Whether an account is usable on its relay.
@@ -209,14 +209,14 @@ impl Registry {
                 AccountState::KeyOnly => "key",
                 AccountState::NeedsLogin => "need",
             };
-            lines.push(format!("{} {} {}", account.pubkey, account.origin, state));
+            let origin = super::service::stored(&account.origin);
+            lines.push(format!("{} {origin} {state}", account.pubkey));
         }
         // Pending keys are listed so a reset can find their slots too.
         for pending in &self.pending {
-            lines.push(format!(
-                "{} {} pending {}",
-                pending.pubkey, pending.origin, pending.account_id
-            ));
+            let origin = super::service::stored(&pending.origin);
+            let (pubkey, id) = (&pending.pubkey, &pending.account_id);
+            lines.push(format!("{pubkey} {origin} pending {id}"));
         }
         lines.join("\n")
     }
@@ -234,7 +234,7 @@ impl Registry {
             if state == "pending" {
                 let account_id = extra.ok_or("invalid account index")?;
                 registry.pending.push(PendingKey {
-                    origin: origin.to_owned(),
+                    origin: super::service::live(origin),
                     account_id: account_id.to_owned(),
                     pubkey: pubkey.to_hex(),
                 });
@@ -253,7 +253,7 @@ impl Registry {
             if registry.active.is_none() {
                 registry.active = Some(pubkey.to_hex());
             }
-            registry.upsert(origin, &pubkey, state);
+            registry.upsert(&super::service::live(origin), &pubkey, state);
         }
         Ok(registry)
     }
@@ -270,6 +270,24 @@ pub(crate) trait Secrets {
     /// Every key held in the shared blob (standalone credentials included as
     /// their markers).
     fn blob_keys(&self) -> Result<Vec<String>, String>;
+    /// Move blob-held entries in one write: each `from` is removed and its
+    /// value lands under `to` (when given and not already set). The blob never
+    /// holds both names at once, so a move to a shorter name never grows it.
+    /// The default (test doubles) removes before it inserts.
+    fn move_in_blob(&self, moves: &[(String, Option<String>)]) -> Result<(), String> {
+        for (from, to) in moves {
+            let Some(value) = self.load(from)?.map(Zeroizing::new) else {
+                continue;
+            };
+            self.delete(from)?;
+            if let Some(to) = to {
+                if self.load(to)?.is_none() {
+                    self.store(to, &value)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Secrets for crate::secret_store::SecretStore {
@@ -290,6 +308,9 @@ impl Secrets for crate::secret_store::SecretStore {
             .load_all_readonly()?
             .map(|map| map.into_keys().collect())
             .unwrap_or_default())
+    }
+    fn move_in_blob(&self, moves: &[(String, Option<String>)]) -> Result<(), String> {
+        crate::secret_store::SecretStore::move_in_blob(self, moves)
     }
 }
 
@@ -340,8 +361,8 @@ pub(crate) fn load_registry(data_dir: &Path) -> Result<Option<Registry>, String>
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(format!("account list unreadable: {error}")),
     };
-    let registry: Registry =
-        serde_json::from_slice(&bytes).map_err(|e| format!("account list invalid: {e}"))?;
+    let registry =
+        super::service::live_registry(&bytes).map_err(|e| format!("account list invalid: {e}"))?;
     if registry.version != VERSION {
         return Err(format!(
             "account list has unsupported version {}",
@@ -355,7 +376,7 @@ fn write_registry_file(data_dir: &Path, registry: &Registry) -> Result<(), Strin
     use atomic_write_file::AtomicWriteFile;
     use std::io::Write;
 
-    let json = serde_json::to_vec_pretty(registry).map_err(|e| e.to_string())?;
+    let json = super::service::stored_registry_json(registry).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(data_dir).map_err(|e| format!("account list: {e}"))?;
     let mut file =
         AtomicWriteFile::open(registry_path(data_dir)).map_err(|e| format!("account list: {e}"))?;
@@ -1012,7 +1033,7 @@ fn bound_origins(secrets: &dyn Secrets, pubkey: &PublicKey) -> Result<Vec<String
     for key in secrets.blob_keys()? {
         if let Some(origin) = key.strip_prefix(PREFIX) {
             if secrets.load(&key)?.as_deref() == Some(pubkey.to_hex().as_str()) {
-                origins.insert(origin.to_owned());
+                origins.insert(super::service::live(origin));
             }
         }
     }

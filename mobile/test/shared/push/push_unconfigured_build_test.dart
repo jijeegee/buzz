@@ -107,7 +107,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Notifications'), findsNothing);
       expect(find.text('Push notifications'), findsNothing);
-      expect(find.byType(Switch), findsNothing);
+      expect(
+        find.byKey(const ValueKey('push-notifications-enabled')),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
       debugDefaultTargetPlatformOverride = null;
     });

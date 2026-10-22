@@ -375,17 +375,22 @@ export function SnapshotShareDialog({
   async function sendToRecipients(memoryLevel: SnapshotMemoryLevel) {
     if (isActionPending || selectedRecipients.length === 0) return;
 
-    const sent = await snapshotSendController.beginSend(
-      () => getEncodedSnapshot(memoryLevel),
-      async () => {
-        const directMessage = await openDmMutation.mutateAsync({
-          pubkeys: selectedRecipients.map((recipient) => recipient.pubkey),
-        });
-        await upsertCachedChannel(directMessage);
-        return directMessage.id;
-      },
-      displayName,
-    );
+    // One 1:1 per recipient: sharing never starts a multi-person chat.
+    let sent: boolean | null = true;
+    for (const recipient of selectedRecipients) {
+      sent = await snapshotSendController.beginSend(
+        () => getEncodedSnapshot(memoryLevel),
+        async () => {
+          const directMessage = await openDmMutation.mutateAsync({
+            pubkeys: [recipient.pubkey],
+          });
+          await upsertCachedChannel(directMessage);
+          return directMessage.id;
+        },
+        displayName,
+      );
+      if (sent !== true) break;
+    }
 
     if (sent) {
       toast.success(`Sent a copy of ${displayName}`);

@@ -11,6 +11,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=KUZZ_ENV");
     println!("cargo:rerun-if-env-changed=KUZZ_RELAY_URL");
     println!("cargo:rerun-if-env-changed=KUZZ_RELAY_HTTP");
+    println!("cargo:rerun-if-env-changed=KUZZ_PREVIOUS_RELAY_URLS");
     println!("cargo:rerun-if-env-changed=KUZZ_UPDATER_PUBLIC_KEY");
     println!("cargo:rerun-if-env-changed=KUZZ_UPDATER_ENDPOINT");
     println!("cargo:rerun-if-env-changed=KUZZ_BUILD_KUZZ_AGENT_PROVIDER");
@@ -98,6 +99,11 @@ fn main() {
     }
     if let Some(relay_http) = relay_http {
         println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_RELAY_HTTP={relay_http}");
+    }
+    // Earlier addresses of the same server (comma-separated): their stored
+    // logins and settings are this service's (see `auth::service`).
+    if let Some(previous) = configured("KUZZ_PREVIOUS_RELAY_URLS") {
+        println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_PREVIOUS_RELAY_URLS={previous}");
     }
 
     if let Ok(provider) = std::env::var("KUZZ_BUILD_KUZZ_AGENT_PROVIDER") {

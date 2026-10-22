@@ -126,7 +126,7 @@ test("appearance samples preview locally and commit only on selection", async ({
   await expect(page.getByTestId("thread-layout-diagram-split")).toBeVisible();
   await scrubTo(threadControl, focusOption);
   await expect(page.getByTestId("thread-layout-diagram-focus")).toBeVisible();
-  await expect(page.getByText("Threads open over the channel")).toBeVisible();
+  await expect(page.getByText("Threads open over the group")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(

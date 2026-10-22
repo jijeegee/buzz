@@ -1215,6 +1215,11 @@ async fn test_kind0_nip05_sync() {
 }
 
 /// NIP-29 kind 9000 (PUT_USER): default policy ("anyone") allows a third party to add an agent.
+///
+/// The target here is a bare key with no agent owner, so the relay treats it
+/// as a person: its "who can add me" setting (default `friends`) applies. The
+/// target lists the channel owner in its kind:3 contact list first, so the add
+/// goes straight through instead of becoming an invitation.
 #[tokio::test]
 #[ignore]
 async fn test_nip29_put_user_default_policy_allows() {
@@ -1226,6 +1231,18 @@ async fn test_nip29_put_user_default_policy_allows() {
 
     // Create a channel owned by channel_owner.
     let channel_id = create_test_channel(&channel_owner_keys).await;
+
+    // The target friends the channel owner (kind:3 contact list).
+    let mut target_ws = KuzzTestClient::connect(&url, &agent_keys)
+        .await
+        .expect("connect as target");
+    let contacts = nostr::EventBuilder::new(Kind::ContactList, "")
+        .tags([nostr::Tag::parse(["p", &channel_owner_keys.public_key().to_hex()]).expect("p tag")])
+        .sign_with_keys(&agent_keys)
+        .expect("sign kind 3");
+    let ok = target_ws.send_event(contacts).await.expect("send kind 3");
+    assert!(ok.accepted, "contact list rejected: {}", ok.message);
+    target_ws.disconnect().await.expect("disconnect target");
 
     // Connect as channel_owner.
     let mut ws = KuzzTestClient::connect(&url, &channel_owner_keys)

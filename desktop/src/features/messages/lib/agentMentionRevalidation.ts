@@ -16,7 +16,7 @@ export type MentionRevalidationOptions = {
 export class AgentMentionAuthorizationError extends Error {
   constructor() {
     super(
-      "Could not authorize a mentioned agent. Check its access and channel membership, then retry or remove the mention.",
+      "Could not authorize a mentioned agent. Check its access and group membership, then retry or remove the mention.",
     );
     this.name = "AgentMentionAuthorizationError";
   }

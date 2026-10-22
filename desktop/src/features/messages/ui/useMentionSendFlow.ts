@@ -1,6 +1,7 @@
 import * as React from "react";
 import { claimDraftSend } from "@/features/messages/lib/useDrafts";
 import { toast } from "sonner";
+import { invitationSentText } from "@/shared/api/groupAddOutcome";
 import {
   type CreateChannelManagedAgentInput,
   useAttachManagedAgentToChannelMutation,
@@ -14,6 +15,7 @@ import { resolvePersonaRuntime } from "@/features/agents/lib/resolvePersonaRunti
 import { useAddChannelMembersMutation } from "@/features/channels/hooks";
 import { useCanAddChannelMembers } from "@/features/channels/useCanAddChannelMembers";
 import { useNonMemberInvite } from "./useNonMemberInvite";
+import { useIsGroupChatChannel } from "@/features/channels/useIsGroupChatChannel";
 import { dmThreadAgentMentionError } from "@/features/messages/lib/dmThreadAgentMentionError";
 import {
   prepareBackgroundMediaUpload,
@@ -115,6 +117,7 @@ export function useMentionSendFlow({
   }, []);
   const addMembersMutation = useAddChannelMembersMutation(channelId);
   const canInviteNonMembers = useCanAddChannelMembers(channelId);
+  const isGroupChatChannel = useIsGroupChatChannel(channelId);
   const attachAgentMutation = useAttachManagedAgentToChannelMutation(channelId);
   const createPersonaAgentMutation =
     useCreateChannelManagedAgentMutation(channelId);
@@ -478,8 +481,17 @@ export function useMentionSendFlow({
           ...agentMentionPubkeys,
         ]);
         let sendChannelId = draft.capturedChannelId;
-        if (preparedAgentPubkeys.length > 0 && onPrepareSendChannel) {
-          sendChannelId = await onPrepareSendChannel(preparedAgentPubkeys);
+        // In a 1:1 every mentioned person (not only agents) goes through the
+        // preparer, which asks before starting a new chat with them.
+        const preparePubkeys =
+          channelType === "dm"
+            ? uniqueNormalizedPubkeys([
+                ...preparedAgentPubkeys,
+                ...normalizedMentionPubkeys,
+              ])
+            : preparedAgentPubkeys;
+        if (preparePubkeys.length > 0 && onPrepareSendChannel) {
+          sendChannelId = await onPrepareSendChannel(preparePubkeys);
           if (isSendCancelled()) return restoreComposerAfterFailure();
           if (!sendChannelId) {
             return restoreComposerAfterFailure();
@@ -723,6 +735,7 @@ export function useMentionSendFlow({
       }
     },
     [
+      channelType,
       clearComposer,
       getComposerRevision,
       runComposerUpdate,
@@ -983,6 +996,17 @@ export function useMentionSendFlow({
     addMembers: addMembersMutation.mutateAsync,
     completeSend,
     setError: setNonMemberPromptError,
+    onInvited: (pubkeys) =>
+      toast(
+        invitationSentText(
+          pubkeys
+            .map(
+              (pubkey) =>
+                mentions.getMentionDisplayName(pubkey) ?? UNKNOWN_USER_LABEL,
+            )
+            .join(", "),
+        ),
+      ),
   });
   const handleSendWithoutInviting = React.useCallback(() => {
     if (!pendingNonMemberSend) return;
@@ -1004,7 +1028,7 @@ export function useMentionSendFlow({
   const deliverAutoRoute = React.useCallback<AutoRouteDeliver>(
     async (message, pubkeys, isCurrent, route) => {
       const messageChannelId = message.tags.find((tag) => tag[0] === "h")?.[1];
-      if (!messageChannelId) throw new Error("Message has no channel.");
+      if (!messageChannelId) throw new Error("Message has no group.");
       const readiness = await ensureManagedAgentMentionsReady(
         pubkeys,
         messageChannelId,
@@ -1062,6 +1086,7 @@ export function useMentionSendFlow({
       createPersonaAgentMutation.isPending,
     nonMemberPromptProps: {
       canInvite: canInviteNonMembers,
+      isChat: isGroupChatChannel,
       error: nonMemberPromptError,
       isInvitePending:
         invitation.isPending ||

@@ -130,6 +130,7 @@ function RelayMemberRow({
         triggerElement="span"
       >
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={profile?.avatarUrl ?? null}
           className="h-9 w-9 text-xs shadow-none"
           label={displayName}
@@ -229,7 +230,7 @@ function RelayMemberRow({
       {canRemove ? (
         <SettingsConfirmDialog
           confirmLabel="Remove"
-          description={`${displayName} will lose access to this community's channels and conversations. You can invite them again later.`}
+          description={`${displayName} will lose access to this community's groups and conversations. You can invite them again later.`}
           destructive
           onConfirm={() =>
             void mutateWithToast(

@@ -16,17 +16,28 @@ export type SidebarListTab =
   | "pulse";
 
 const STORAGE_KEY = "kuzz.desktop.sidebar-list-tab";
+// Tabs a reload may return to. Activity and Pulse have no rail item for
+// now, so a stored one falls back to Chats.
 const TABS: readonly SidebarListTab[] = [
   "chats",
   "people",
-  "activity",
   "agents",
   "projects",
-  "pulse",
 ];
 
+/**
+ * The app was started without a route (no hash), as on a fresh launch. A
+ * reload keeps its hash, so it returns to the screen it was on.
+ */
+export const STARTED_WITHOUT_ROUTE =
+  typeof window === "undefined" ||
+  window.location.hash === "" ||
+  window.location.hash === "#";
+
 const listeners = new Set<() => void>();
-let current = readStored();
+// A fresh launch always opens on Chats; a reload keeps the list it was on.
+let current: SidebarListTab = STARTED_WITHOUT_ROUTE ? "chats" : readStored();
+if (STARTED_WITHOUT_ROUTE) setInboxPanelOpen(false);
 
 function readStored(): SidebarListTab {
   try {

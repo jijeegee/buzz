@@ -19,7 +19,7 @@ export const PROJECT_TAB_CRUMB_LABELS: Record<string, string> = {
   issues: "Tasks",
   prs: "Review",
   contributors: "Contributors",
-  channels: "Channels",
+  channels: "Groups",
 };
 
 export type ProjectDetailScreenProps = {

@@ -109,7 +109,7 @@ export function buildRepositoryChannelBindingTemplate({
     throw new Error("Only the repository owner can repair its access.");
   }
   if (!isValidProjectChannelId(normalizedChannelId)) {
-    throw new Error("Repository access channel is invalid.");
+    throw new Error("Repository access group is invalid.");
   }
   if (!repository.eventTags) {
     throw new Error(
@@ -222,12 +222,10 @@ export function buildAddedRepositoryEventTemplatesFromHead({
   ];
   const normalizedAccessChannelId = accessChannelId?.trim();
   if (!normalizedAccessChannelId) {
-    throw new Error(
-      "This project has no repository access channel to inherit.",
-    );
+    throw new Error("This project has no repository access group to inherit.");
   }
   if (!isValidProjectChannelId(normalizedAccessChannelId)) {
-    throw new Error("Repository access channel is invalid.");
+    throw new Error("Repository access group is invalid.");
   }
   repositoryTags.push(["kuzz-channel", normalizedAccessChannelId]);
   if (normalizedDescription) {

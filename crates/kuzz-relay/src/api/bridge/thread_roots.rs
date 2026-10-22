@@ -45,6 +45,7 @@ pub(super) async fn query(
     tenant: &TenantContext,
     filter: &Filter,
     accessible_channels: &[Uuid],
+    reader: &[u8],
 ) -> Result<Vec<Value>, QueryError> {
     let channel = request_channel(filter)?;
     if !accessible_channels.contains(&channel) {
@@ -56,11 +57,23 @@ pub(super) async fn query(
         .flatten()
         .map(|id| id.as_bytes().to_vec())
         .collect::<Vec<_>>();
-    let summaries = state
+    let mut summaries = state
         .db
         .resolve_thread_root_summaries(tenant.community(), channel, &ids)
         .await
         .map_err(|e| internal_error(&format!("thread ownership summaries: {e}")))?;
+    state
+        .hide_blocked_in_thread_summaries(
+            tenant.community(),
+            reader,
+            channel,
+            summaries
+                .iter_mut()
+                .map(|(root, summary)| (root.clone(), summary))
+                .collect(),
+        )
+        .await
+        .map_err(|e| internal_error(&format!("thread summary block filter: {e}")))?;
     let mut events = Vec::with_capacity(summaries.len());
     for (root, summary) in summaries {
         let root_hex = hex::encode(root);

@@ -34,6 +34,7 @@ pub(crate) mod pkce;
 pub(crate) mod redact;
 pub(crate) mod refresh;
 pub(crate) mod restore;
+pub(crate) mod service;
 pub(crate) mod signed_out;
 pub(crate) mod watchdog;
 
@@ -57,7 +58,7 @@ const SUPPORT_TTL: Duration = Duration::from_secs(60);
 
 /// Keyring key holding the refresh token for `origin`.
 pub(crate) fn refresh_key(origin: &str) -> String {
-    format!("auth.refresh.{origin}")
+    format!("auth.refresh.{}", service::stored(origin))
 }
 
 /// Normalised HTTP origin for a relay WebSocket (or HTTP) URL.
@@ -132,7 +133,7 @@ pub(crate) struct KeyringRefreshStore;
 impl RefreshStore for KeyringRefreshStore {
     fn legacy_token_account(&self, origin: &str) -> Result<bool, String> {
         match crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
-            .load(&format!("auth.legacy-token.{origin}"))?
+            .load(&format!("auth.legacy-token.{}", service::stored(origin)))?
             .as_deref()
         {
             None => Ok(false),
@@ -141,8 +142,10 @@ impl RefreshStore for KeyringRefreshStore {
         }
     }
     fn remember_legacy_token_account(&self, origin: &str) -> Result<(), String> {
-        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())
-            .store(&format!("auth.legacy-token.{origin}"), "token")
+        crate::secret_store::SecretStore::shared(crate::app_state::keyring_service()).store(
+            &format!("auth.legacy-token.{}", service::stored(origin)),
+            "token",
+        )
     }
     fn signing_pubkey(&self, origin: &str) -> Result<Option<PublicKey>, String> {
         crate::secret_store::SecretStore::shared(crate::app_state::keyring_service())

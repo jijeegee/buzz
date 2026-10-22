@@ -264,16 +264,26 @@ fn load_agent_store<R: tauri::Runtime>(
 
     let content = fs::read_to_string(&path)
         .map_err(|error| format!("failed to read agent store: {error}"))?;
-    serde_json::from_str(&content).map_err(|error| {
-        // Fail loudly and preserve the evidence: a later in-app save rewrites
-        // this file wholesale, which would silently destroy a malformed hand
-        // edit. Best-effort file-authoring contract (see managed_agents::
-        // reconcile): the broken content survives as `.invalid` for the user
-        // to recover, and the parse error propagates instead of being
-        // swallowed into an empty store.
-        backup_invalid_store(&path);
-        format!("failed to parse agent store (preserved as .invalid): {error}")
-    })
+    serde_json::from_str::<Vec<ManagedAgentRecord>>(&content)
+        .map(|mut records| {
+            // Stored by service scope; live by the current server origin.
+            for record in &mut records {
+                if let Some(origin) = record.bot_origin.as_mut() {
+                    *origin = crate::auth::service::live(origin);
+                }
+            }
+            records
+        })
+        .map_err(|error| {
+            // Fail loudly and preserve the evidence: a later in-app save rewrites
+            // this file wholesale, which would silently destroy a malformed hand
+            // edit. Best-effort file-authoring contract (see managed_agents::
+            // reconcile): the broken content survives as `.invalid` for the user
+            // to recover, and the parse error propagates instead of being
+            // swallowed into an empty store.
+            backup_invalid_store(&path);
+            format!("failed to parse agent store (preserved as .invalid): {error}")
+        })
 }
 
 /// Load the keyed agent *instances*. Key-less definitions (former personas,
@@ -452,6 +462,11 @@ fn write_agent_store<R: tauri::Runtime>(
     definitions.sort_by(|left, right| left.slug.cmp(&right.slug));
     let mut all = definitions;
     all.extend(instances);
+    for record in &mut all {
+        if let Some(origin) = record.bot_origin.as_mut() {
+            *origin = crate::auth::service::stored(origin);
+        }
+    }
 
     let path = managed_agents_store_path(app)?;
     let payload = serde_json::to_vec_pretty(&all)

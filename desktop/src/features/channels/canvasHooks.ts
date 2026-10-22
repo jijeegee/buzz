@@ -16,7 +16,7 @@ export function useCanvasQuery(channelId: string | null, enabled = true) {
     queryKey: ["channel-canvas", channelId],
     queryFn: () => {
       if (!channelId) {
-        return Promise.reject(new Error("No channel selected"));
+        return Promise.reject(new Error("No group selected"));
       }
       return getCanvas(channelId);
     },
@@ -32,7 +32,7 @@ export function useCanvasHistoryQuery(
     queryKey: ["channel-canvas-history", channelId],
     queryFn: ({ pageParam }) => {
       if (!channelId) {
-        return Promise.reject(new Error("No channel selected"));
+        return Promise.reject(new Error("No group selected"));
       }
       return getCanvasHistory(channelId, {
         cursor: (pageParam as CanvasHistoryCursor | null) ?? null,
@@ -53,7 +53,7 @@ export function useSetCanvasMutation(channelId: string | null) {
       expectedRevision?: string | null;
     }) => {
       if (!channelId) {
-        return Promise.reject(new Error("No channel selected"));
+        return Promise.reject(new Error("No group selected"));
       }
       return setCanvas({
         channelId,

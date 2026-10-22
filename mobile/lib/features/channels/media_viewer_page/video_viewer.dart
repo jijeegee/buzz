@@ -53,7 +53,7 @@ class MediaVideoViewerPage extends HookConsumerWidget {
       var disposed = false;
       Future<void> initializeVideo() async {
         final auth = ref.read(mediaGetAuthServiceProvider);
-        final uri = Uri.parse(videoUrl);
+        final uri = Uri.parse(auth.resolve(videoUrl));
 
         // All platforms: download to an authenticated local file so the proof
         // is bound at request time rather than frozen into controller headers.

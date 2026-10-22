@@ -26,6 +26,8 @@ export type SystemMessagePayload = {
   purpose?: string;
   /** `goals_changed`: the room's goals switch, `"on"` or `"off"`. */
   goals?: string;
+  /** `picture_changed`: the new group photo URL, `""` when removed. */
+  picture?: string;
   // Moderation tombstone fields (kind:40099 "message_deleted"). All optional and
   // moderator-authored — present when a moderator removed the message, absent for
   // a plain member self-delete. Reporter identity/evidence never appears here.

@@ -101,6 +101,12 @@ pub enum AcpError {
     #[error("Hard turn timeout exceeded (silence {silence:?})")]
     HardTimeout { silence: std::time::Duration },
 
+    /// The turn reached the hard cap again after its last allowed check-in
+    /// while still working. The adapter is healthy; the caller pauses the
+    /// turn (cancel, keep the session) and asks the requester.
+    #[error("Turn still running after {checkins} check-ins")]
+    CheckinLimit { checkins: u32 },
+
     #[error("Agent did not stop within {0:?} after cancellation")]
     CancelDrainTimeout(std::time::Duration),
 
@@ -141,6 +147,123 @@ fn build_initialize_params() -> serde_json::Value {
     })
 }
 
+/// Stdout lines the reader task holds before it waits for them to be taken.
+/// Between turns the pool takes them every second
+/// ([`AcpClient::drain_between_turns`]); a full queue only makes the agent
+/// wait on its pipe as it would with no reader.
+const OUTPUT_QUEUE_LINES: usize = 1024;
+
+/// Bytes of stdout lines the reader task holds, bounding the queue by size
+/// as well as count: tool call updates can carry whole files.
+const OUTPUT_QUEUE_BYTES: usize = 16 * 1024 * 1024;
+
+/// How long a write to the agent may take between turns. The main loop
+/// waits on it, so an agent not reading its stdin must not hold the loop
+/// for the full [`AcpClient::write_ndjson`] timeout.
+const BETWEEN_TURNS_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The agent's stdout, read by its own task for the life of the process.
+///
+/// A turn ending does not stop the agent: Claude Code continues on its own
+/// when a background command or subagent it started finishes. Read only
+/// while a request waited for it, that output filled the pipe and the agent
+/// blocked mid-write until the next prompt arrived.
+struct OutputReader {
+    /// Each line with the bytes of [`room`](Self::room) it holds.
+    lines: tokio::sync::mpsc::Receiver<(Result<String, LinesCodecError>, u32)>,
+    room: std::sync::Arc<tokio::sync::Semaphore>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl OutputReader {
+    /// Lines are bounded by `MAX_LINE_SIZE` at the read level, so a rogue
+    /// agent writing endless non-newline bytes cannot exhaust memory.
+    fn spawn(stdout: ChildStdout) -> Self {
+        let (tx, lines) = tokio::sync::mpsc::channel(OUTPUT_QUEUE_LINES);
+        let room = std::sync::Arc::new(tokio::sync::Semaphore::new(OUTPUT_QUEUE_BYTES));
+        let task_room = room.clone();
+        let mut framed = FramedRead::new(stdout, LinesCodec::new_with_max_length(MAX_LINE_SIZE));
+        let task = tokio::spawn(async move {
+            while let Some(line) = framed.next().await {
+                let size = queued_size(&line);
+                match task_room.acquire_many(size).await {
+                    Ok(permit) => permit.forget(),
+                    Err(_) => break,
+                }
+                if tx.send((line, size)).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Self { lines, room, task }
+    }
+
+    /// The next line, waiting for it; `None` once stdout ended and every
+    /// earlier line was taken. Cancel-safe.
+    async fn next(&mut self) -> Option<Result<String, LinesCodecError>> {
+        let (line, size) = self.lines.recv().await?;
+        self.room.add_permits(size as usize);
+        Some(line)
+    }
+
+    /// A line already read, without waiting.
+    fn try_next(&mut self) -> Option<Result<String, LinesCodecError>> {
+        let (line, size) = self.lines.try_recv().ok()?;
+        self.room.add_permits(size as usize);
+        Some(line)
+    }
+}
+
+/// Bytes of the output queue a line holds: its length, at least 1 and at
+/// most the whole queue (lines are already bounded by `MAX_LINE_SIZE`).
+fn queued_size(line: &Result<String, LinesCodecError>) -> u32 {
+    let len = line.as_ref().map_or(1, String::len);
+    len.clamp(1, OUTPUT_QUEUE_BYTES) as u32
+}
+
+/// Marks an [`AcpClient`] as handling output between turns until dropped,
+/// so a cancelled drain cannot leave the mark set.
+struct BetweenTurns(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl BetweenTurns {
+    fn begin(flag: &std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        Self(flag.clone())
+    }
+}
+
+impl Drop for BetweenTurns {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Drop for OutputReader {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// Whether an agent message shows the agent working: streaming a reply or
+/// thoughts, running tools, planning, or asking for permission. Usage,
+/// command lists and other bookkeeping updates do not count.
+fn is_agent_work(msg: &serde_json::Value) -> bool {
+    match msg.get("method").and_then(|v| v.as_str()) {
+        Some("session/update") => matches!(
+            msg["params"]["update"]["sessionUpdate"].as_str(),
+            Some(
+                "agent_message_chunk"
+                    | "agent_thought_chunk"
+                    | "tool_call"
+                    | "tool_call_update"
+                    | "plan"
+            )
+        ),
+        Some("session/request_permission") => true,
+        _ => false,
+    }
+}
+
 /// ACP client that owns an agent subprocess and communicates over its stdio.
 ///
 /// One `AcpClient` per agent process. Multiple sessions can be created on the
@@ -150,10 +273,9 @@ pub struct AcpClient {
     child: Child,
     /// Sole stdin writer; None after an interrupted/failed frame closes it.
     stdin: Option<ChildStdin>,
-    /// Framed reader over the agent's stdout pipe (line-oriented, bounded).
-    /// Uses `LinesCodec::new_with_max_length` to enforce MAX_LINE_SIZE at the
-    /// read level — prevents OOM from rogue agents writing infinite non-newline bytes.
-    reader: FramedRead<ChildStdout, LinesCodec>,
+    /// The agent's stdout lines, read for the life of the process (see
+    /// [`OutputReader`]).
+    reader: OutputReader,
     /// Monotonically increasing JSON-RPC request id counter.
     /// Harness-generated IDs are always numeric.
     next_id: u64,
@@ -175,6 +297,31 @@ pub struct AcpClient {
     /// Inherited by `cancel_with_cleanup` so the drain loop shares the same budget
     /// rather than starting a fresh timer (prevents double-jeopardy).
     current_hard_deadline: Option<tokio::time::Instant>,
+    /// How many check-ins a turn that is still working gets at the hard cap
+    /// before it is paused ([`AcpError::CheckinLimit`]); 0 keeps the plain
+    /// hard timeout. Set per turn by the pool.
+    turn_checkin_limit: u32,
+    /// Check-ins sent in the current turn.
+    checkins_sent: u32,
+    /// When the current `session/prompt` was sent.
+    turn_started_at: Option<tokio::time::Instant>,
+    /// True only while `session/prompt` itself is being read, so a cancel
+    /// drain never sends a check-in.
+    checkin_armed: bool,
+    /// Tool calls of the current turn that started and have not finished.
+    /// A check-in waits for them: steering into a running command makes
+    /// Claude Code move it to the background and end the turn.
+    open_tool_calls: std::collections::HashSet<String>,
+    /// The agent's reply text of the current turn, collected only while
+    /// [`set_capture_reply`](Self::set_capture_reply) is on (idle checks).
+    reply_text: Option<String>,
+    /// Set while output written between turns is handled (see
+    /// [`drain_between_turns`](Self::drain_between_turns)): it is neither
+    /// observed nor captured as a reply, and writes get a short timeout.
+    between_turns: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// A failure met between turns, returned by the next turn so the pool
+    /// replaces the worker as it does for a failure during a turn.
+    between_turns_error: Option<AcpError>,
     /// Optional local observer feed used by the desktop app.
     observer: Option<ObserverHandle>,
     /// Pool slot index for this agent process.
@@ -457,12 +604,13 @@ impl AcpClient {
         // Kill the entire process group when possible. The child was spawned
         // with process_group(0), so its PID == its PGID. Killing the group
         // ensures subprocesses (MCP servers, tool processes) are cleaned up
-        // rather than orphaned to init.
+        // rather than orphaned to init. Windows kills the process tree.
         //
-        // Falls back to start_kill() (direct child only) on non-Unix or if
+        // Falls back to start_kill() (direct child only) if neither works or
         // the child has been polled to completion (id() returns None).
         match self.child.id() {
             Some(pid) if kill_process_group(pid) => {}
+            Some(pid) if kill_process_tree(pid).await => {}
             _ => {
                 let _ = self.child.start_kill();
             }
@@ -662,12 +810,20 @@ impl AcpClient {
         Ok(Self {
             child,
             stdin: Some(stdin),
-            reader: FramedRead::new(stdout, LinesCodec::new_with_max_length(MAX_LINE_SIZE)),
+            reader: OutputReader::spawn(stdout),
             next_id: 0,
             pending_permission_id: None,
             permission_responded: false,
             last_prompt_id: None,
             current_hard_deadline: None,
+            turn_checkin_limit: 0,
+            checkins_sent: 0,
+            turn_started_at: None,
+            checkin_armed: false,
+            open_tool_calls: std::collections::HashSet::new(),
+            reply_text: None,
+            between_turns: Default::default(),
+            between_turns_error: None,
             observer: None,
             observer_agent_index: None,
             observer_context: ObserverContext::default(),
@@ -685,6 +841,34 @@ impl AcpClient {
             standard_adapter,
             broker_lease,
         })
+    }
+
+    /// Check-ins the next turns get at the hard cap while still working; 0
+    /// keeps the plain hard timeout.
+    pub fn set_turn_checkin_limit(&mut self, limit: u32) {
+        self.turn_checkin_limit = limit;
+    }
+
+    /// Collect the agent's reply text of the next turns (`true`) or stop
+    /// collecting and drop it (`false`).
+    pub fn set_capture_reply(&mut self, on: bool) {
+        self.reply_text = on.then(String::new);
+    }
+
+    /// The reply text collected since the last turn started; empty when not
+    /// collecting.
+    pub fn take_reply_text(&mut self) -> String {
+        self.reply_text
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
+    }
+
+    /// How long the current (or last) `session/prompt` has been running.
+    pub fn turn_elapsed(&self) -> std::time::Duration {
+        self.turn_started_at
+            .map(|started| started.elapsed())
+            .unwrap_or_default()
     }
 
     /// Attach a local observer feed to this ACP client.
@@ -751,6 +935,9 @@ impl AcpClient {
 
     /// Emit a semantic event to the local observer feed, if enabled.
     pub fn observe(&self, kind: impl Into<String>, payload: serde_json::Value) {
+        if self.is_between_turns() {
+            return;
+        }
         if let Some(observer) = &self.observer {
             observer.emit(
                 kind,
@@ -943,9 +1130,20 @@ impl AcpClient {
         idle_timeout: std::time::Duration,
         max_duration: std::time::Duration,
     ) -> Result<StopReason, AcpError> {
+        // Output from before this turn belongs to no turn: handle it first so
+        // it is not read as part of this turn or its reply. Only lines the
+        // reader already took are handled; one still in the pipe can land in
+        // this turn, a narrow window as the pool drains every second.
+        self.handle_between_turns().await?;
         let params = build_prompt_params(session_id, prompt_blocks);
         let hard_deadline = tokio::time::Instant::now() + max_duration;
         self.current_hard_deadline = Some(hard_deadline);
+        self.checkins_sent = 0;
+        self.open_tool_calls.clear();
+        if let Some(text) = self.reply_text.as_mut() {
+            text.clear();
+        }
+        self.turn_started_at = Some(tokio::time::Instant::now());
 
         // Mark the usage tracker as in-flight for this turn BEFORE sending the
         // prompt so that any setup notifications recorded earlier are not
@@ -971,6 +1169,7 @@ impl AcpClient {
             return Err(e);
         }
 
+        self.checkin_armed = true;
         let result = self
             .read_until_response_with_idle_timeout(
                 session_id,
@@ -980,6 +1179,7 @@ impl AcpClient {
                 max_duration,
             )
             .await;
+        self.checkin_armed = false;
 
         // On timeout errors, leave current_hard_deadline set so cancel_with_cleanup
         // can inherit the remaining budget. Clear it on all other outcomes.
@@ -988,7 +1188,11 @@ impl AcpClient {
                 self.last_prompt_id = None;
                 self.current_hard_deadline = None;
             }
-            Err(AcpError::IdleTimeout(_) | AcpError::HardTimeout { .. }) => {
+            Err(
+                AcpError::IdleTimeout(_)
+                | AcpError::HardTimeout { .. }
+                | AcpError::CheckinLimit { .. },
+            ) => {
                 // Leave last_prompt_id and current_hard_deadline set —
                 // caller will invoke cancel_with_cleanup.
             }
@@ -1039,6 +1243,34 @@ impl AcpClient {
     ///
     /// The read loop's steer arm reads the field directly; this accessor exists
     /// for the supervisor's post-initialize log line.
+    /// The steer transport and request for injecting `prompt_blocks` into the
+    /// running turn, or `None` when the agent cannot be steered.
+    ///
+    /// Precedence: a goose run id wins (`expectedRunId` names the exact run);
+    /// otherwise the cross-adapter [`ACP_STEER_METHOD`], only when advertised.
+    /// Probing an unknown method is unsafe: codex-acp answers unrecognized
+    /// extension methods with `{}` — a JSON-RPC success — which would read as
+    /// a delivered steer.
+    fn steer_target(
+        &self,
+        session_id: &str,
+        prompt_blocks: &[&str],
+    ) -> Option<(SteerTransport, &'static str, serde_json::Value)> {
+        match (&self.active_run_id, self.steering_supported) {
+            (Some(run_id), _) => Some((
+                SteerTransport::Goose,
+                GOOSE_STEER_METHOD,
+                build_goose_steer_params(session_id, run_id, prompt_blocks),
+            )),
+            (None, true) => Some((
+                SteerTransport::AcpExtension,
+                ACP_STEER_METHOD,
+                build_acp_steer_params(session_id, prompt_blocks),
+            )),
+            (None, false) => None,
+        }
+    }
+
     pub fn steering_supported(&self) -> bool {
         self.steering_supported
     }
@@ -1240,6 +1472,10 @@ impl AcpClient {
         session_id: &str,
         hard_deadline: tokio::time::Instant,
     ) -> Result<StopReason, AcpError> {
+        // A prompt read dropped by a control signal never cleared this; a
+        // cancel drain must never steer a check-in.
+        self.checkin_armed = false;
+
         // Validate precondition before any side effects — fail fast if there's
         // no in-flight prompt (prevents writing permission responses or cancel
         // notifications to the agent when no prompt is active).
@@ -1291,13 +1527,18 @@ impl AcpClient {
     /// (e.g., it's stuck or dead), the write would otherwise block forever.
     async fn write_ndjson(&mut self, value: &serde_json::Value) -> Result<(), AcpError> {
         const WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        let timeout = if self.is_between_turns() {
+            BETWEEN_TURNS_WRITE_TIMEOUT
+        } else {
+            WRITE_TIMEOUT
+        };
         let line = serde_json::to_string(value)?;
         tokio::time::timeout(
-            WRITE_TIMEOUT,
+            timeout,
             frame_writer::write_frame(&mut self.stdin, line.as_bytes()),
         )
         .await
-        .map_err(|_| AcpError::WriteTimeout(WRITE_TIMEOUT))?
+        .map_err(|_| AcpError::WriteTimeout(timeout))?
         .map_err(AcpError::Io)?;
         self.observe("acp_write", value.clone());
         Ok(())
@@ -1431,30 +1672,8 @@ impl AcpClient {
                 Some(Ok(line)) => line,
             };
 
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
+            let Some(msg) = self.parse_agent_line(&line) else {
                 continue;
-            }
-
-            // Only log and reset idle after we have a valid non-empty line.
-            tracing::debug!(target: "acp::wire", "← {trimmed}");
-
-            let msg: serde_json::Value = match serde_json::from_str(trimmed) {
-                Ok(v) => v,
-                Err(e) => {
-                    self.observe(
-                        "acp_parse_error",
-                        serde_json::json!({
-                            "line": trimmed,
-                            "error": e.to_string(),
-                        }),
-                    );
-                    tracing::warn!(
-                        target: "acp::wire",
-                        "failed to parse line as JSON: {e} — skipping"
-                    );
-                    continue;
-                }
             };
             self.observe("acp_read", msg.clone());
 
@@ -1470,37 +1689,140 @@ impl AcpClient {
                 }
             }
 
-            // Dispatch by method name (notifications and agent-initiated requests).
-            if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-                match method {
-                    "session/update" => {
-                        let _ = self.handle_session_update(&msg);
-                    }
-                    "_goose/unstable/session/update" => {
-                        self.handle_goose_usage_update(&msg);
-                    }
-                    "session/request_permission" => {
-                        self.handle_permission_request(&msg).await?;
-                    }
-                    other => {
-                        // If the unknown message has an id, it's a request expecting a reply.
-                        // Silence would cause the agent to hang waiting for a response.
-                        // Send a JSON-RPC -32601 "Method not found" error.
-                        if msg.get("id").is_some() {
-                            let err_resp = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "id": msg["id"],
-                                "error": {"code": -32601, "message": format!("Method not found: {other}")}
-                            });
-                            // Surface write failures — a broken pipe means the
-                            // agent process is dead and continuing would hang.
-                            self.write_ndjson(&err_resp).await?;
-                        }
-                        tracing::debug!(target: "acp::wire", "ignoring unknown method: {other}");
-                    }
-                }
+            self.handle_agent_message(&msg).await?;
+        }
+    }
+
+    /// Handle output the agent wrote while no request was waiting for it:
+    /// work it continues on its own after a turn ended. The same handlers as
+    /// during a turn run, so permission requests are answered. It is neither
+    /// published to the observer feed (no turn owns it, and a frame of an
+    /// ended turn would show that turn running again) nor captured as a
+    /// reply.
+    ///
+    /// Takes at most [`OUTPUT_QUEUE_LINES`] lines per call. Returns whether
+    /// any of them showed the agent working. A failure (the agent is gone,
+    /// wrote an oversized line, or does not read its stdin) is kept for the
+    /// next turn, which returns it so the pool replaces the worker; until
+    /// then nothing more is read.
+    pub async fn drain_between_turns(&mut self) -> bool {
+        if self.between_turns_error.is_some() {
+            return false;
+        }
+        match self.handle_between_turns().await {
+            Ok(working) => working,
+            Err(e) => {
+                tracing::warn!("agent output between turns: {e}; replacing it at its next turn");
+                self.between_turns_error = Some(e);
+                false
             }
         }
+    }
+
+    async fn handle_between_turns(&mut self) -> Result<bool, AcpError> {
+        if let Some(e) = self.between_turns_error.take() {
+            return Err(e);
+        }
+        let _between_turns = BetweenTurns::begin(&self.between_turns);
+        self.handle_queued_output().await
+    }
+
+    fn is_between_turns(&self) -> bool {
+        self.between_turns
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    async fn handle_queued_output(&mut self) -> Result<bool, AcpError> {
+        let mut working = false;
+        for _ in 0..OUTPUT_QUEUE_LINES {
+            let line = match self.reader.try_next() {
+                None => break,
+                Some(Ok(line)) => line,
+                Some(Err(LinesCodecError::MaxLineLengthExceeded)) => {
+                    return Err(AcpError::Protocol(
+                        "agent stdout line exceeded 10MB limit".into(),
+                    ));
+                }
+                Some(Err(e)) => return Err(AcpError::Io(std::io::Error::other(e))),
+            };
+            let Some(msg) = self.parse_agent_line(&line) else {
+                continue;
+            };
+            if msg.get("method").is_none() {
+                tracing::debug!(
+                    target: "acp::wire",
+                    "ignoring a response no request is waiting for"
+                );
+                continue;
+            }
+            working |= is_agent_work(&msg);
+            self.handle_agent_message(&msg).await?;
+        }
+        Ok(working)
+    }
+
+    /// Parse one stdout line; `None` for a blank line or one that is not
+    /// JSON (logged and skipped).
+    fn parse_agent_line(&self, line: &str) -> Option<serde_json::Value> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        tracing::debug!(target: "acp::wire", "← {trimmed}");
+        match serde_json::from_str(trimmed) {
+            Ok(msg) => Some(msg),
+            Err(e) => {
+                self.observe(
+                    "acp_parse_error",
+                    serde_json::json!({
+                        "line": trimmed,
+                        "error": e.to_string(),
+                    }),
+                );
+                tracing::warn!(
+                    target: "acp::wire",
+                    "failed to parse line as JSON: {e} — skipping"
+                );
+                None
+            }
+        }
+    }
+
+    /// Handle an agent notification or agent-initiated request: anything but
+    /// a response to one of our requests. Every reader uses it, so agent
+    /// output is handled the same during a turn, a setup request or between
+    /// turns. Returns `true` when a tool call started (see
+    /// [`handle_session_update`](Self::handle_session_update)).
+    async fn handle_agent_message(&mut self, msg: &serde_json::Value) -> Result<bool, AcpError> {
+        let Some(method) = msg.get("method").and_then(|v| v.as_str()) else {
+            return Ok(false);
+        };
+        match method {
+            "session/update" => return Ok(self.handle_session_update(msg)),
+            "_goose/unstable/session/update" => {
+                self.handle_goose_usage_update(msg);
+            }
+            "session/request_permission" => {
+                self.handle_permission_request(msg).await?;
+            }
+            other => {
+                // If the unknown message has an id, it's a request expecting a reply.
+                // Silence would cause the agent to hang waiting for a response.
+                // Send a JSON-RPC -32601 "Method not found" error.
+                if msg.get("id").is_some() {
+                    let err_resp = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": msg["id"],
+                        "error": {"code": -32601, "message": format!("Method not found: {other}")}
+                    });
+                    // Surface write failures — a broken pipe means the
+                    // agent process is dead and continuing would hang.
+                    self.write_ndjson(&err_resp).await?;
+                }
+                tracing::debug!(target: "acp::wire", "ignoring unknown method: {other}");
+            }
+        }
+        Ok(false)
     }
 
     /// Idle-aware message loop: like [`read_until_response`] but resets an idle
@@ -1563,6 +1885,18 @@ impl AcpClient {
             tokio::sync::oneshot::Sender<crate::pool::SteerAck>,
         )> = None;
 
+        // The check-in steer written at the hard cap, awaiting its response.
+        // Gates the steer arm like `pending_steer`.
+        let mut pending_checkin: Option<(u64, SteerTransport)> = None;
+        // A check-in was rejected or could not be written: the next hard
+        // deadline is a plain hard timeout.
+        let mut checkin_unavailable = false;
+        // Set once the cap waited for a pending user steer's ack.
+        let mut cap_deferred_for_steer = false;
+        // When the cap first found a tool call still running; the check-in
+        // waits for it to finish (at most `idle_timeout`).
+        let mut checkin_waiting_since: Option<Instant> = None;
+
         let now = Instant::now();
         let mut idle_deadline = now + idle_timeout;
         let mut hard_deadline = hard_deadline;
@@ -1586,6 +1920,111 @@ impl AcpClient {
             // exists). Check the classified deadline here so a steady-
             // stream agent is still bounded.
             if Instant::now() >= next_deadline {
+                // Hard cap while the agent is still working: instead of
+                // ending the turn, steer a check-in into it and give it
+                // another `max_duration`. The session and work stay as they
+                // are; only a silent (stuck) agent times out.
+                if !idle_fires_first && self.checkin_armed {
+                    // "Stuck" has one definition: no output for
+                    // `idle_timeout`, which already allows for a long silent
+                    // tool call (a build or test run). An agent quiet for
+                    // less than that is still working.
+                    let silence = Instant::now().saturating_duration_since(last_activity_at);
+                    let working = silence < idle_timeout;
+                    if working
+                        && self.turn_checkin_limit > 0
+                        && pending_steer.is_some()
+                        && !cap_deferred_for_steer
+                    {
+                        // A user steer's ack renews the cap itself; wait for
+                        // it once instead of cutting the turn.
+                        cap_deferred_for_steer = true;
+                        checkin_waiting_since = None;
+                        hard_deadline = Instant::now() + CHECKIN_ACK_GRACE;
+                        tracing::info!(
+                            "hard cap reached while a steer is pending — waiting for its ack"
+                        );
+                        continue;
+                    }
+                    let can_checkin = working
+                        && self.turn_checkin_limit > 0
+                        && !checkin_unavailable
+                        && pending_steer.is_none()
+                        && pending_checkin.is_none();
+                    if can_checkin && !self.open_tool_calls.is_empty() {
+                        // Let the running command finish first, then check
+                        // in between steps. Bounded by `idle_timeout` so a
+                        // tool that never finishes cannot hold it off; a
+                        // silent one ends in the idle timeout (stuck).
+                        let since = *checkin_waiting_since.get_or_insert_with(|| {
+                            tracing::info!(
+                                "hard cap reached during {} running tool call(s) — check-in waits for them",
+                                self.open_tool_calls.len()
+                            );
+                            Instant::now()
+                        });
+                        if since.elapsed() < idle_timeout {
+                            hard_deadline = Instant::now() + CHECKIN_TOOL_POLL;
+                            continue;
+                        }
+                        tracing::warn!(
+                            "tool call(s) still running after {idle_timeout:?} — checking in anyway"
+                        );
+                    }
+                    checkin_waiting_since = None;
+                    if can_checkin && self.checkins_sent >= self.turn_checkin_limit {
+                        tracing::warn!(
+                            "turn still working after {} check-ins — pausing it",
+                            self.checkins_sent
+                        );
+                        return Err(AcpError::CheckinLimit {
+                            checkins: self.checkins_sent,
+                        });
+                    }
+                    if can_checkin {
+                        let number = self.checkins_sent + 1;
+                        let elapsed = self
+                            .turn_started_at
+                            .map(|started| started.elapsed())
+                            .unwrap_or_else(|| max_duration.saturating_mul(number));
+                        let text = turn_checkin_prompt(number, self.turn_checkin_limit, elapsed);
+                        match self.steer_target(session_id, &[text.as_str()]) {
+                            Some((transport, method, params)) => {
+                                let id = self.next_id;
+                                self.next_id += 1;
+                                let msg = serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "method": method,
+                                    "params": params,
+                                });
+                                match self.write_ndjson(&msg).await {
+                                    Ok(()) => {
+                                        self.checkins_sent = number;
+                                        pending_checkin = Some((id, transport));
+                                        // Wait briefly for the adapter to
+                                        // accept it; acceptance renews the
+                                        // deadline by `max_duration`.
+                                        hard_deadline = Instant::now() + CHECKIN_ACK_GRACE;
+                                        tracing::info!(
+                                            "hard cap reached while working — sent turn check-in {number}/{}",
+                                            self.turn_checkin_limit
+                                        );
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("turn check-in write failed: {e}");
+                                    }
+                                }
+                            }
+                            None => {
+                                tracing::warn!(
+                                    "hard cap reached while working, but the agent cannot be steered — no check-in"
+                                );
+                            }
+                        }
+                    }
+                }
                 if let Some((_, _, ack_tx)) = pending_steer.take() {
                     // Prompt is timing out — release the withheld event via
                     // PromptCompletedNeutral (no fallback signal: there is
@@ -1620,7 +2059,7 @@ impl AcpClient {
                         Some(rx) => rx.recv().await,
                         None => None,
                     }
-                }, if pending_steer.is_none() => {
+                }, if pending_steer.is_none() && pending_checkin.is_none() => {
                     // Selected: choose the steer transport and build its
                     // params at write time using the lexical `session_id`
                     // and the freshest `active_run_id`.
@@ -1649,20 +2088,7 @@ impl AcpClient {
                     // delivered steer and silently drop the user's message.
                     let prompt_block_refs: Vec<&str> =
                         req.prompt_blocks.iter().map(String::as_str).collect();
-                    let selected = match (&self.active_run_id, self.steering_supported) {
-                        (Some(run_id), _) => Some((
-                            SteerTransport::Goose,
-                            GOOSE_STEER_METHOD,
-                            build_goose_steer_params(session_id, run_id, &prompt_block_refs),
-                        )),
-                        (None, true) => Some((
-                            SteerTransport::AcpExtension,
-                            ACP_STEER_METHOD,
-                            build_acp_steer_params(session_id, &prompt_block_refs),
-                        )),
-                        (None, false) => None,
-                    };
-                    match selected {
+                    match self.steer_target(session_id, &prompt_block_refs) {
                         None => {
                             tracing::warn!(
                                 "steer: no active_run_id and agent did not advertise \
@@ -1707,21 +2133,9 @@ impl AcpClient {
                     None
                 }
                 _ = tokio::time::sleep_until(next_deadline) => {
-                    // The pre-select check at the top of the next iteration
-                    // would catch this anyway, but firing the deadline arm
-                    // here makes the wakeup immediate (no extra reader poll
-                    // round-trip when stdout is idle).
-                    if let Some((_, _, ack_tx)) = pending_steer.take() {
-                        let _ = ack_tx.send(crate::pool::SteerAck::PromptCompletedNeutral);
-                    }
-                    if idle_fires_first {
-                        tracing::warn!("idle timeout ({idle_timeout:?}) — no agent activity");
-                        return Err(AcpError::IdleTimeout(idle_timeout));
-                    } else {
-                        let silence = Instant::now().saturating_duration_since(last_activity_at);
-                        tracing::warn!("hard turn timeout exceeded (silence {silence:?})");
-                        return Err(AcpError::HardTimeout { silence });
-                    }
+                    // Woken by the deadline: the pre-select check at the top
+                    // of the loop handles it (timeout or turn check-in).
+                    None
                 }
             };
 
@@ -1755,29 +2169,8 @@ impl AcpClient {
                     return Err(AcpError::Io(std::io::Error::other(e)));
                 }
                 Some(Ok(line)) => {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
+                    let Some(msg) = self.parse_agent_line(&line) else {
                         continue;
-                    }
-
-                    tracing::debug!(target: "acp::wire", "← {trimmed}");
-
-                    let msg: serde_json::Value = match serde_json::from_str(trimmed) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            self.observe(
-                                "acp_parse_error",
-                                serde_json::json!({
-                                    "line": trimmed,
-                                    "error": e.to_string(),
-                                }),
-                            );
-                            tracing::warn!(
-                                target: "acp::wire",
-                                "failed to parse line as JSON: {e} — skipping"
-                            );
-                            continue;
-                        }
                     };
                     self.observe("acp_read", msg.clone());
 
@@ -1792,6 +2185,42 @@ impl AcpClient {
                     // share the `no method` guard.
                     if let Some(id) = msg.get("id") {
                         if msg.get("method").is_none() {
+                            if let Some((checkin_id, transport)) = pending_checkin {
+                                if *id == serde_json::json!(checkin_id) {
+                                    pending_checkin = None;
+                                    let delivered = msg.get("error").is_none()
+                                        && match transport {
+                                            SteerTransport::Goose => true,
+                                            SteerTransport::AcpExtension => {
+                                                msg.pointer("/result/outcome")
+                                                    .and_then(|v| v.as_str())
+                                                    == Some(STEER_OUTCOME_INJECTED)
+                                            }
+                                        };
+                                    if delivered {
+                                        hard_deadline = Instant::now() + max_duration;
+                                        self.current_hard_deadline = Some(hard_deadline);
+                                        checkin_waiting_since = None;
+                                        tracing::info!(
+                                            "turn check-in {} delivered: renewed hard deadline ({max_duration:?} from now)",
+                                            self.checkins_sent
+                                        );
+                                    } else {
+                                        // Not delivered into this turn: time
+                                        // it out as before.
+                                        tracing::warn!(
+                                            "turn check-in not delivered ({}) — hard timeout",
+                                            msg.get("error")
+                                                .or_else(|| msg.pointer("/result/outcome"))
+                                                .map(|v| v.to_string())
+                                                .unwrap_or_else(|| "<absent>".into())
+                                        );
+                                        checkin_unavailable = true;
+                                        hard_deadline = Instant::now();
+                                    }
+                                    continue;
+                                }
+                            }
                             if let Some((steer_id, _, _)) = pending_steer.as_ref() {
                                 if *id == serde_json::json!(*steer_id) {
                                     // Take the ack_tx out and route the
@@ -1859,6 +2288,7 @@ impl AcpClient {
                                                 if new_deadline > hard_deadline {
                                                     hard_deadline = new_deadline;
                                                     self.current_hard_deadline = Some(new_deadline);
+                                                    checkin_waiting_since = None;
                                                     tracing::info!(
                                                         "steer success: renewed hard deadline ({max_duration:?} from now)"
                                                     );
@@ -1914,39 +2344,11 @@ impl AcpClient {
                     }
 
                     // Dispatch notifications and agent-initiated requests.
-                    if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-                        match method {
-                            "session/update" => {
-                                if self.handle_session_update(&msg) {
-                                    let activity_now = Instant::now();
-                                    idle_deadline = activity_now + idle_timeout;
-                                    last_activity_at = activity_now;
-                                    tracing::debug!("idle clock reset: tool call started");
-                                }
-                            }
-                            "_goose/unstable/session/update" => {
-                                self.handle_goose_usage_update(&msg);
-                            }
-                            "session/request_permission" => {
-                                self.handle_permission_request(&msg).await?;
-                            }
-                            other => {
-                                // If the unknown message has an id, it's a request expecting a reply.
-                                // Silence would cause the agent to hang waiting for a response.
-                                // Send a JSON-RPC -32601 "Method not found" error.
-                                if msg.get("id").is_some() {
-                                    let err_resp = serde_json::json!({
-                                        "jsonrpc": "2.0",
-                                        "id": msg["id"],
-                                        "error": {"code": -32601, "message": format!("Method not found: {other}")}
-                                    });
-                                    // Surface write failures — a broken pipe means the
-                                    // agent process is dead and continuing would hang.
-                                    self.write_ndjson(&err_resp).await?;
-                                }
-                                tracing::debug!(target: "acp::wire", "ignoring unknown method: {other}");
-                            }
-                        }
+                    if self.handle_agent_message(&msg).await? {
+                        let activity_now = Instant::now();
+                        idle_deadline = activity_now + idle_timeout;
+                        last_activity_at = activity_now;
+                        tracing::debug!("idle clock reset: tool call started");
                     }
                 }
             }
@@ -1978,10 +2380,24 @@ impl AcpClient {
             "agent_message_chunk" => {
                 if let Some(text) = update["content"]["text"].as_str() {
                     tracing::info!(target: "acp::stream", "{text}");
+                    let between_turns = self.is_between_turns();
+                    if let Some(reply) = self.reply_text.as_mut().filter(|_| !between_turns) {
+                        if reply.len() < MAX_CAPTURED_REPLY {
+                            reply.push_str(text);
+                        }
+                    }
                 }
                 false
             }
             "tool_call" => {
+                if let Some(id) = update.get("toolCallId").and_then(|v| v.as_str()) {
+                    let status = update.get("status").and_then(|v| v.as_str());
+                    if tool_call_finished(status) {
+                        self.open_tool_calls.remove(id);
+                    } else {
+                        self.open_tool_calls.insert(id.to_string());
+                    }
+                }
                 let title = update
                     .get("title")
                     .and_then(|v| v.as_str())
@@ -1998,7 +2414,11 @@ impl AcpClient {
                     .get("toolCallId")
                     .and_then(|v| v.as_str())
                     .unwrap_or("?");
-                let status = update.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = update.get("status").and_then(|v| v.as_str());
+                if tool_call_finished(status) {
+                    self.open_tool_calls.remove(tool_id);
+                }
+                let status = status.unwrap_or("?");
                 tracing::info!(target: "acp::tool", "tool_call_update: {tool_id} → {status}");
                 false
             }
@@ -2387,6 +2807,46 @@ fn build_goose_steer_params(
     })
 }
 
+/// How long a check-in may take to be accepted before the turn times out.
+const CHECKIN_ACK_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Reply text collected for an idle check beyond this is dropped; the answer
+/// is one line.
+const MAX_CAPTURED_REPLY: usize = 16 * 1024;
+
+/// How often a check-in waiting for running tool calls re-checks them.
+const CHECKIN_TOOL_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Whether an ACP tool call status means the call has finished.
+fn tool_call_finished(status: Option<&str>) -> bool {
+    matches!(status, Some("completed" | "failed"))
+}
+
+/// The check-in steered into a turn still working at the hard cap: the agent
+/// checks its work against what the requester needs, reports briefly, and
+/// continues or wraps up.
+pub(crate) fn turn_checkin_prompt(number: u32, limit: u32, elapsed: std::time::Duration) -> String {
+    let secs = elapsed.as_secs();
+    let elapsed = if secs >= 3600 {
+        let hours = (secs + 1800) / 3600;
+        format!("{hours} hour{}", if hours == 1 { "" } else { "s" })
+    } else {
+        let minutes = (secs + 30) / 60;
+        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
+    };
+    format!(
+        "[System: turn check-in {number} of {limit}]\n\
+         This request has been running for {elapsed}. Before you continue, check:\n\
+         1. Are you doing what the requester asked for?\n\
+         2. Is the depth what they need?\n\
+         3. Are you spending time on details that don't matter to them?\n\
+         Post one or two lines in the conversation on what is done and what remains \
+         (no @mention). Then continue if you are on track; otherwise narrow the scope or \
+         wrap up. After check-in {limit} the turn is paused and the requester is asked \
+         whether to continue."
+    )
+}
+
 /// Build the params for an [`ACP_STEER_METHOD`] request.
 ///
 /// Wire shape:
@@ -2678,6 +3138,28 @@ fn kill_process_group(pid: u32) -> bool {
 /// Returns `false` so the caller falls back to `child.start_kill()`.
 #[cfg(not(unix))]
 fn kill_process_group(_pid: u32) -> bool {
+    false
+}
+
+/// Windows has no process groups: killing the direct child (often a `.cmd`
+/// shim) leaves the adapter and its CLI running, possibly still writing the
+/// session the next worker reattaches. `taskkill /T` ends the whole tree.
+#[cfg(windows)]
+async fn kill_process_tree(pid: u32) -> bool {
+    let mut cmd = tokio::process::Command::new("taskkill");
+    cmd.args(["/T", "/F", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    configure_no_window(&mut cmd);
+    matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), cmd.status()).await,
+        Ok(Ok(status)) if status.success()
+    )
+}
+
+#[cfg(not(windows))]
+async fn kill_process_tree(_pid: u32) -> bool {
     false
 }
 
@@ -4751,6 +5233,610 @@ Start-Sleep -Seconds 1"#;
             matches!(ack, crate::pool::SteerAck::Success { .. }),
             "injected must ack Success, got {ack:?}"
         );
+    }
+
+    /// Arm turn check-ins the way `session_prompt_blocks_with_idle_timeout`
+    /// does, so `read_until_response_with_idle_timeout` can be driven directly.
+    fn arm_checkins(client: &mut AcpClient, limit: u32) {
+        client.set_turn_checkin_limit(limit);
+        client.checkins_sent = 0;
+        client.checkin_armed = true;
+    }
+
+    /// Fake agent output that keeps the turn "working": a session/update
+    /// notification every 50ms in the background.
+    const CHECKIN_NOISE: &str = "(while true; do \
+        echo '{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-test\",\"update\":{}}}'; \
+        sleep 0.05; done) & ";
+
+    /// Hard cap while the agent is working: a check-in is steered (not a
+    /// timeout), and `injected` renews the deadline by `max_duration` so the
+    /// prompt response after the original cap still lands.
+    ///
+    /// The fake agent answers whatever line it reads: on Windows the bash
+    /// fixture cannot see stdin content (see the baseline failures of the
+    /// wire-shape steer tests), so the check-in text is covered by
+    /// `turn_checkin_prompt_states_number_limit_and_elapsed` and the
+    /// transport by `steer_target`'s shared use with user steers.
+    ///
+    /// Timeline: cap at t≈1s → check-in; renewed to t≈2s; response t≈1.6s.
+    #[tokio::test]
+    async fn hard_cap_while_working_sends_checkin_and_renews() {
+        let script = format!(
+            "{CHECKIN_NOISE} read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+             sleep 0.6; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{{\"done\":true}}}}'; \
+             kill $! 2>/dev/null; sleep 5"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_secs(1);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "a delivered check-in must renew the cap, got {result:?}"
+        );
+        assert_eq!(result.unwrap()["done"], serde_json::json!(true));
+        assert_eq!(client.checkins_sent, 1);
+        // Renewed by `max_duration` (≈1s), not left at the 60s ack grace.
+        let renewed = client
+            .current_hard_deadline
+            .expect("delivered check-in records the renewed deadline");
+        assert!(
+            renewed.saturating_duration_since(tokio::time::Instant::now())
+                < std::time::Duration::from_secs(5),
+            "deadline must be renewed by max_duration"
+        );
+    }
+
+    /// Still working after the last check-in: `CheckinLimit`, not
+    /// `HardTimeout`, so the pool pauses the turn and keeps the session.
+    ///
+    /// Timeline (cap 0.5s): check-in 1 at t≈0.5s, check-in 2 at t≈1s,
+    /// limit at t≈1.5s.
+    #[tokio::test]
+    async fn checkin_limit_reached_returns_checkin_limit() {
+        let script = format!(
+            "{CHECKIN_NOISE} read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+             read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+             sleep 10"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 2);
+
+        let max_dur = std::time::Duration::from_millis(500);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let started = tokio::time::Instant::now();
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::CheckinLimit { checkins: 2 })),
+            "expected CheckinLimit after 2 check-ins, got {result:?}"
+        );
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(1400),
+            "both check-ins must renew before the limit, ended at {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// Output the agent writes after its turn ended (it continues on its own
+    /// once a background command finishes) is read with no request waiting
+    /// for it. Unread, it fills the pipe and the agent blocks mid-write until
+    /// the next prompt arrives.
+    #[tokio::test]
+    async fn output_after_a_turn_is_read_without_a_new_prompt() {
+        // Relative to the working directory, which the test and the script
+        // share on every platform (bash may be WSL's on Windows).
+        let marker =
+            std::path::PathBuf::from(format!("kuzz-acp-after-turn-{}", uuid::Uuid::new_v4()));
+        let marker_path = marker.display().to_string();
+        let chunk = format!(
+            r#"{{"jsonrpc":"2.0","method":"session/update","params":{{"sessionId":"sess-test","update":{{"sessionUpdate":"agent_message_chunk","content":{{"type":"text","text":"{}"}}}}}}}}"#,
+            "x".repeat(8 * 1024)
+        );
+        let script = format!(
+            "read -r _; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             for i in {{1..200}}; do echo '{chunk}'; done; \
+             touch '{marker_path}'; sleep 30"
+        );
+        let mut client = spawn_script(&script).await;
+        let max_dur = std::time::Duration::from_secs(10);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "go", max_dur, max_dur)
+            .await
+            .expect("turn");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !marker.exists() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let finished = marker.exists();
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            finished,
+            "the agent must finish writing after its turn without a new prompt"
+        );
+        assert!(
+            client.drain_between_turns().await,
+            "reply chunks after the turn are the agent working"
+        );
+        assert!(
+            !client.drain_between_turns().await,
+            "nothing is left once handled"
+        );
+    }
+
+    const CHUNK_STALE: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-test","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"STALE "}}}}"#;
+    const CHUNK_BUSY: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-test","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"BUSY: build"}}}}"#;
+
+    /// What the agent wrote after the previous turn is handled before the
+    /// next prompt, so it is not taken as that turn's reply (an idle check
+    /// reads its answer from the reply).
+    #[tokio::test]
+    async fn output_from_before_a_turn_is_not_its_reply() {
+        let script = format!(
+            "read -r _; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             echo '{CHUNK_STALE}'; \
+             read -r _; \
+             echo '{CHUNK_BUSY}'; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             sleep 30"
+        );
+        let mut client = spawn_script(&script).await;
+        let max_dur = std::time::Duration::from_secs(10);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "first", max_dur, max_dur)
+            .await
+            .expect("first turn");
+        // Let the reader take the late chunk before the next prompt.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        client.set_capture_reply(true);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "check", max_dur, max_dur)
+            .await
+            .expect("second turn");
+        assert_eq!(client.take_reply_text(), "BUSY: build");
+    }
+
+    /// A permission request written between turns is answered, as during a
+    /// turn, instead of leaving the agent waiting for the next prompt.
+    #[tokio::test]
+    async fn permission_request_between_turns_is_answered() {
+        // Relative: the test and the script share the working directory.
+        let answer =
+            std::path::PathBuf::from(format!("kuzz-acp-permission-{}", uuid::Uuid::new_v4()));
+        let answer_path = answer.display().to_string();
+        let request = r#"{"jsonrpc":"2.0","id":"perm-1","method":"session/request_permission","params":{"sessionId":"sess-test","options":[{"optionId":"yes","kind":"allow_once","name":"Allow"},{"optionId":"no","kind":"reject_once","name":"Reject"}]}}"#;
+        let script = format!(
+            "read -r _; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"stopReason\":\"end_turn\"}}}}'; \
+             echo '{request}'; \
+             head -n 1 > '{answer_path}.part'; \
+             mv '{answer_path}.part' '{answer_path}'; sleep 30"
+        );
+        let mut client = spawn_script(&script).await;
+        let max_dur = std::time::Duration::from_secs(10);
+        client
+            .session_prompt_with_idle_timeout("sess-test", "go", max_dur, max_dur)
+            .await
+            .expect("turn");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut working = false;
+        while !answer.exists() && std::time::Instant::now() < deadline {
+            working |= client.drain_between_turns().await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let reply = std::fs::read_to_string(&answer).unwrap_or_default();
+        let _ = std::fs::remove_file(&answer);
+        assert!(working, "a permission request is the agent working");
+        let reply: serde_json::Value = serde_json::from_str(&reply).expect("JSON answer");
+        assert_eq!(reply["id"], "perm-1");
+        assert_eq!(reply["result"]["outcome"]["optionId"], "yes");
+    }
+
+    #[test]
+    fn only_reply_tool_and_permission_messages_are_agent_work() {
+        let update = |kind: &str| {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {"sessionId": "s", "update": {"sessionUpdate": kind}}
+            })
+        };
+        for kind in [
+            "agent_message_chunk",
+            "agent_thought_chunk",
+            "tool_call",
+            "tool_call_update",
+            "plan",
+        ] {
+            assert!(is_agent_work(&update(kind)), "{kind} is work");
+        }
+        for kind in [
+            "usage_update",
+            "available_commands_update",
+            "session_info_update",
+            "keepalive",
+        ] {
+            assert!(!is_agent_work(&update(kind)), "{kind} is bookkeeping");
+        }
+        assert!(is_agent_work(&serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "session/request_permission", "params": {}
+        })));
+        assert!(!is_agent_work(&serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "result": {}
+        })));
+    }
+
+    /// Reply text is collected only while capture is on (idle checks).
+    #[tokio::test]
+    async fn reply_text_is_captured_only_when_enabled() {
+        let script = "for i in 1 2; do \
+                      echo '{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-test\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"BUSY: \"}}}}'; \
+                      echo '{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-test\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"build\"}}}}'; \
+                      echo '{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{\"stopReason\":\"end_turn\"}}'; \
+                      done; sleep 5";
+        let mut client = spawn_script(script).await;
+        let max_dur = std::time::Duration::from_secs(5);
+        for capture in [false, true] {
+            client.set_capture_reply(capture);
+            client
+                .read_until_response_with_idle_timeout(
+                    "sess-test",
+                    999,
+                    std::time::Duration::from_secs(5),
+                    tokio::time::Instant::now() + max_dur,
+                    max_dur,
+                )
+                .await
+                .expect("turn");
+            if !capture {
+                assert_eq!(
+                    client.take_reply_text(),
+                    "",
+                    "not collected without capture"
+                );
+            }
+        }
+        assert_eq!(client.take_reply_text(), "BUSY: build");
+        client.set_capture_reply(false);
+        assert_eq!(client.take_reply_text(), "");
+    }
+
+    /// An agent quiet at the cap but within `idle_timeout` (waiting on a long
+    /// tool call such as a build) is still working: it gets a check-in, not a
+    /// hard timeout.
+    ///
+    /// Timeline: one update at t≈0, silent until the cap at t≈0.5s →
+    /// check-in; response at t≈0.8s.
+    #[tokio::test]
+    async fn hard_cap_while_quiet_within_idle_timeout_sends_checkin() {
+        let script = "echo '{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-test\",\"update\":{}}}'; \
+                      read line; \
+                      echo '{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"outcome\":\"injected\"}}'; \
+                      sleep 0.3; \
+                      echo '{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{\"done\":true}}'; \
+                      sleep 5";
+        let mut client = spawn_script(script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_millis(500);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "a quiet agent within idle_timeout must get a check-in, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 1);
+    }
+
+    /// The cap during a running tool call: the check-in waits for the call
+    /// to finish (steering into a running command makes Claude Code move it
+    /// to the background and end the turn), then goes in between steps.
+    ///
+    /// Timeline: tool starts at t≈0, cap at t≈0.3s (waits), tool finishes at
+    /// t≈0.8s → check-in; response right after. A check-in written while
+    /// the tool runs is read by `read -t` and answered `done: "early"`.
+    #[tokio::test]
+    async fn checkin_waits_for_running_tool_call() {
+        let script = format!(
+            "{CHECKIN_NOISE} \
+             echo '{{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{{\"sessionId\":\"sess-test\",\"update\":{{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"t1\",\"title\":\"build\",\"status\":\"pending\"}}}}}}'; \
+             if read -t 0.8 line; then \
+               echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+               echo '{{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{{\"done\":\"early\"}}}}'; \
+             else \
+               echo '{{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{{\"sessionId\":\"sess-test\",\"update\":{{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"t1\",\"status\":\"completed\"}}}}}}'; \
+               read line; \
+               echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+               sleep 0.2; \
+               echo '{{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{{\"done\":true}}}}'; \
+             fi; \
+             kill $! 2>/dev/null; sleep 5"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let started = tokio::time::Instant::now();
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        let result = result.expect("expected the turn to finish");
+        assert_eq!(
+            result["done"],
+            serde_json::json!(true),
+            "the check-in must not be written while the tool runs"
+        );
+        assert_eq!(client.checkins_sent, 1);
+        assert!(client.open_tool_calls.is_empty());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "the check-in must go in when the tool finishes, ended at {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// A tool call that never finishes cannot hold the check-in off for
+    /// longer than `idle_timeout`.
+    ///
+    /// Timeline: cap at t≈0.3s waits for the open tool; after the 0.9s idle
+    /// timeout (t≈1.2s) the check-in goes in anyway.
+    #[tokio::test]
+    async fn checkin_waits_for_tool_call_at_most_idle_timeout() {
+        let script = format!(
+            "{CHECKIN_NOISE} \
+             echo '{{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{{\"sessionId\":\"sess-test\",\"update\":{{\"sessionUpdate\":\"tool_call\",\"toolCallId\":\"t1\",\"title\":\"watch\",\"status\":\"in_progress\"}}}}}}'; \
+             read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"injected\"}}}}'; \
+             sleep 0.2; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":{{\"done\":true}}}}'; \
+             kill $! 2>/dev/null; sleep 5"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let started = tokio::time::Instant::now();
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_millis(900),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "expected the turn to finish, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 1);
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(1100),
+            "the check-in must wait for the running tool, ended at {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// An agent silent for `idle_timeout` is stuck: the idle timeout fires
+    /// before the cap and no check-in is sent.
+    #[tokio::test]
+    async fn silent_agent_idle_times_out_without_checkin() {
+        // Any line on stdin (a check-in) would be answered `injected`; an
+        // IdleTimeout therefore proves none was sent.
+        let script = "read line; \
+                      echo '{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"outcome\":\"injected\"}}'; \
+                      sleep 10";
+        let mut client = spawn_script(script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_secs(2);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_millis(300),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::IdleTimeout(_))),
+            "expected IdleTimeout for a silent agent, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+    }
+
+    /// Working, but the agent cannot be steered: plain hard timeout.
+    #[tokio::test]
+    async fn hard_cap_while_working_without_steering_times_out() {
+        let script = format!("{CHECKIN_NOISE} sleep 10");
+        let mut client = spawn_script(&script).await;
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::HardTimeout { .. })),
+            "expected HardTimeout without steering, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+    }
+
+    /// A check-in the adapter does not inject (e.g. `startedNewTurn`) ends
+    /// the turn with the hard timeout instead of renewing it.
+    #[tokio::test]
+    async fn checkin_not_injected_times_out() {
+        let script = format!(
+            "{CHECKIN_NOISE} read line; \
+             echo '{{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{{\"outcome\":\"startedNewTurn\"}}}}'; \
+             sleep 10"
+        );
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let started = tokio::time::Instant::now();
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::HardTimeout { .. })),
+            "expected HardTimeout after an undelivered check-in, got {result:?}"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "must not wait out the ack grace, took {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// Without `checkin_armed` (cancel drains, other reads) the cap stays a
+    /// plain hard timeout even with a limit set.
+    #[tokio::test]
+    async fn unarmed_read_never_sends_checkin() {
+        let script = format!("{CHECKIN_NOISE} sleep 10");
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        client.set_turn_checkin_limit(3);
+
+        let max_dur = std::time::Duration::from_millis(300);
+        let hard_deadline = tokio::time::Instant::now() + max_dur;
+        let result = client
+            .read_until_response_with_idle_timeout(
+                "sess-test",
+                999,
+                std::time::Duration::from_secs(30),
+                hard_deadline,
+                max_dur,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::HardTimeout { .. })),
+            "expected HardTimeout when unarmed, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+    }
+
+    /// A prompt read dropped by a control signal leaves `checkin_armed` set;
+    /// the cancel drain must still end at its own grace, never steering a
+    /// check-in (which would wait out the 60s ack grace).
+    #[tokio::test]
+    async fn cancel_drain_never_sends_checkin() {
+        let script = format!("{CHECKIN_NOISE} sleep 10");
+        let mut client = spawn_script(&script).await;
+        set_steering_supported(&mut client);
+        arm_checkins(&mut client, 3);
+        client.last_prompt_id = Some(999);
+
+        let started = tokio::time::Instant::now();
+        let result = client
+            .cancel_with_cleanup_grace("sess-test", std::time::Duration::from_millis(500))
+            .await;
+
+        assert!(
+            matches!(result, Err(AcpError::CancelDrainTimeout(_))),
+            "expected CancelDrainTimeout, got {result:?}"
+        );
+        assert_eq!(client.checkins_sent, 0);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "drain must end at its grace, took {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn turn_checkin_prompt_states_number_limit_and_elapsed() {
+        let text = turn_checkin_prompt(2, 3, std::time::Duration::from_secs(4 * 3600));
+        assert!(
+            text.starts_with("[System: turn check-in 2 of 3]\n"),
+            "{text}"
+        );
+        assert!(text.contains("running for 4 hours"), "{text}");
+        assert!(text.contains("no @mention"), "{text}");
+        assert!(
+            text.contains("After check-in 3 the turn is paused"),
+            "{text}"
+        );
+        let short = turn_checkin_prompt(1, 3, std::time::Duration::from_secs(60));
+        assert!(short.contains("running for 1 minute."), "{short}");
+        let hour = turn_checkin_prompt(1, 3, std::time::Duration::from_secs(3600));
+        assert!(hour.contains("running for 1 hour."), "{hour}");
     }
 
     /// Test 6: **red/green for the no-renewal rule.** `startedNewTurn` means

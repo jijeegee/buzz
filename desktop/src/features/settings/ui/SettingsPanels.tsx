@@ -19,6 +19,9 @@ import {
   Smile,
   Sun,
   SunMoon,
+  KeyRound,
+  MonitorSmartphone,
+  ShieldCheck,
   Ticket,
   UserRound,
   Volume2,
@@ -82,6 +85,7 @@ import {
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { PeoplePrivacySettingsCard } from "./PeoplePrivacySettingsCard";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
+import { DevicesSettingsCard } from "./AccountSettingsCard";
 import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { VoiceSettingsCard } from "./VoiceSettingsCard";
@@ -89,6 +93,9 @@ import { Layer0GoalCard } from "@/features/goals/ui/Layer0GoalCard";
 
 export type SettingsSection =
   | "profile"
+  | "account"
+  | "devices"
+  | "privacy"
   | "notifications"
   | "voice"
   | "experimental"
@@ -106,10 +113,13 @@ export type SettingsSection =
   | "mobile"
   | "updates";
 
-export const DEFAULT_SETTINGS_SECTION: SettingsSection = "profile";
+export const DEFAULT_SETTINGS_SECTION: SettingsSection = "account";
 
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "profile",
+  "account",
+  "devices",
+  "privacy",
   "notifications",
   "voice",
   "experimental",
@@ -170,6 +180,21 @@ export const settingsSections: SettingsSectionDescriptor[] = [
     icon: UserRound,
   },
   {
+    value: "account",
+    label: "Account",
+    icon: KeyRound,
+  },
+  {
+    value: "devices",
+    label: "Devices",
+    icon: MonitorSmartphone,
+  },
+  {
+    value: "privacy",
+    label: "Friends & privacy",
+    icon: ShieldCheck,
+  },
+  {
     value: "notifications",
     label: "Notifications",
     icon: BellRing,
@@ -198,7 +223,7 @@ export const settingsSections: SettingsSectionDescriptor[] = [
   },
   {
     value: "channel-templates",
-    label: "Channel templates",
+    label: "Group templates",
     icon: LayoutTemplate,
     featureGate: "channel-templates",
   },
@@ -828,13 +853,25 @@ export function renderSettingsSection(
           <ProfileSettingsCard
             currentPubkey={props.currentPubkey}
             fallbackDisplayName={props.fallbackDisplayName}
+            part="profile"
           />
-          <PeoplePrivacySettingsCard />
           <div className="mt-6">
             <Layer0GoalCard agentPubkey={null} />
           </div>
         </>
       );
+    case "account":
+      return (
+        <ProfileSettingsCard
+          currentPubkey={props.currentPubkey}
+          fallbackDisplayName={props.fallbackDisplayName}
+          part="account"
+        />
+      );
+    case "devices":
+      return <DevicesSettingsCard />;
+    case "privacy":
+      return <PeoplePrivacySettingsCard />;
     case "notifications":
       return (
         <NotificationSettingsCard

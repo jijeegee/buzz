@@ -65,10 +65,11 @@ pub use commands::print_agent_access_owner_only_probe_if_requested;
 use commands::*;
 use deep_link::{
     acknowledge_pending_community_deep_link, acknowledge_pending_entity_deep_link,
-    acknowledge_pending_navigation_deep_link, clear_pending_navigation_deep_links,
-    handle_deep_link_url, take_pending_community_deep_link, take_pending_entity_deep_link,
+    acknowledge_pending_group_join_deep_link, acknowledge_pending_navigation_deep_link,
+    clear_pending_navigation_deep_links, handle_deep_link_url, take_pending_community_deep_link,
+    take_pending_entity_deep_link, take_pending_group_join_deep_link,
     take_pending_navigation_deep_link, PendingCommunityDeepLinks, PendingEntityDeepLinks,
-    PendingNavigationDeepLinks,
+    PendingGroupJoinDeepLinks, PendingNavigationDeepLinks,
 };
 use huddle::{
     add_agent_to_huddle,
@@ -233,6 +234,7 @@ pub fn run() {
         .manage(PendingCommunityDeepLinks::default())
         .manage(PendingNavigationDeepLinks::default())
         .manage(PendingEntityDeepLinks::default())
+        .manage(PendingGroupJoinDeepLinks::default())
         .manage(BuilderlabSession::default())
         .manage(BuilderlabLogin::default())
         .manage(commands::pairing::PairingHandle::new())
@@ -296,6 +298,9 @@ pub fn run() {
             // Accounts on this computer: rebuild or migrate the list and refill
             // the active-account copy before the identity is read from it.
             if let Ok(data_dir) = app_handle.path().app_data_dir() {
+                // Sign-ins stored under an earlier server address, once.
+                let secrets = crate::auth::accounts::shared_secrets();
+                crate::auth::service::migrate_on_launch(secrets, &data_dir);
                 crate::auth::accounts::reconcile_on_launch(&data_dir);
             }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
@@ -578,6 +583,8 @@ pub fn run() {
             clear_pending_navigation_deep_links,
             take_pending_entity_deep_link,
             acknowledge_pending_entity_deep_link,
+            take_pending_group_join_deep_link,
+            acknowledge_pending_group_join_deep_link,
             start_builderlab_login,
             cancel_builderlab_login,
             get_builderlab_auth,
@@ -635,6 +642,7 @@ pub fn run() {
             get_os_idle_seconds,
             get_default_relay_url,
             get_built_in_relay_url,
+            get_service_info,
             auto_connect_default_relay_enabled,
             get_legacy_workspace_storage,
             is_shared_identity,
@@ -693,6 +701,7 @@ pub fn run() {
             get_channels,
             get_open_channel_directory,
             create_channel,
+            create_group_chat,
             open_dm,
             get_bestie_assignment,
             assign_bestie,
@@ -942,6 +951,7 @@ pub fn run() {
             get_active_workspace,
             fetch_workspace_icon,
             fetch_join_policy,
+            groups_request,
             set_prevent_sleep_active,
             get_agent_memory,
             relay_reconnect_hook,

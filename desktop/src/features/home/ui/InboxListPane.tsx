@@ -40,6 +40,7 @@ import {
 } from "@/features/reminders/ui/RemindersPanel";
 import { TopChromeInsetHeader } from "@/shared/layout/TopChromeInsetHeader";
 import { cn } from "@/shared/lib/cn";
+import { useChannelNavigation } from "@/shared/context/ChannelNavigationContext";
 import type { SidebarDmParticipant } from "@/features/sidebar/ui/SidebarSection";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
@@ -60,6 +61,7 @@ import { Switch } from "@/shared/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ConversationLetterAvatar } from "./ConversationLetterAvatar";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
 const INBOX_EMPTY_STATE_TITLES: Record<InboxFilter, string> = {
@@ -128,7 +130,7 @@ function InboxLabel({
           data-channel-link=""
         >
           <span className="truncate">
-            #{label.channelLabel}
+            {label.channelLabel}
             {threadId ? ` › ${threadName || "Thread"}` : null}
           </span>
         </span>
@@ -145,6 +147,22 @@ function ConversationRoomAvatar({
   room: InboxConversationRoom;
   testId: string;
 }) {
+  const { channels } = useChannelNavigation();
+  const roomChannel =
+    room.kind === "dm"
+      ? null
+      : (channels.find((channel) => channel.id === room.channelId) ?? null);
+  const channelPicture = roomChannel?.picture ?? null;
+  if (roomChannel?.groupChat) {
+    // An ownerless chat's picture is its people.
+    return (
+      <ChannelChatAvatar
+        channel={roomChannel}
+        className="size-9"
+        testId={testId}
+      />
+    );
+  }
   if (room.kind === "dm") {
     // A DM room's picture is the other participant's profile.
     const { person } = room;
@@ -182,6 +200,7 @@ function ConversationRoomAvatar({
       channelId={room.channelId}
       channelLabel={room.channelLabel}
       isThread={room.kind === "thread"}
+      picture={channelPicture}
     />
   );
 }
@@ -407,10 +426,10 @@ export function InboxListPane({
     const hasReopenError = isReopenErrored?.(item.item.channelId) ?? false;
     const canOpen = hasChannelTarget && !isReopening;
     const openLabel = !hasChannelTarget
-      ? "No channel link"
+      ? "No group link"
       : isReopening
         ? "Reopening…"
-        : "Open in channel";
+        : "Open in group";
     const typeLabel = getInboxTypeLabel(item);
     const threadRootId = getInboxThreadRootId(item);
     const videoReviewCommentRootId = getInboxVideoReviewCommentRootId(item);
@@ -508,7 +527,7 @@ export function InboxListPane({
                   ? hasActiveReminder
                     ? "Reminder set"
                     : "Remind me later"
-                  : "Cannot remind without a channel"
+                  : "Cannot remind without a group"
               }
               onClick={() => onRemindLater(item)}
             >

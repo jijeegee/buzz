@@ -1,3 +1,5 @@
+import 'dart:math' show max, min;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -8,7 +10,7 @@ import '../theme/theme.dart';
 import 'avatar_image.dart';
 
 /// The look shared by the Activity and Chats conversation rows: a colour
-/// fixed per id, the row time, person and channel avatars, and `@name`
+/// fixed per id, the row time, person and group avatars, and `@name`
 /// lookup for plain-text previews. Data and layout stay with each list.
 
 /// Background of the Chats and People lists: white in a light theme (not the
@@ -61,11 +63,11 @@ String conversationTimestamp(int unixSeconds, {DateTime? now}) {
   return date.year == current.year ? label : '$label, ${date.year}';
 }
 
-/// First letter of [label], upper-cased; `#` when blank.
+/// First letter of [label], upper-cased; `?` when blank.
 String conversationInitial(String label) {
   final trimmed = label.trim();
   return trimmed.isEmpty
-      ? '#'
+      ? '?'
       : String.fromCharCode(trimmed.runes.first).toUpperCase();
 }
 
@@ -107,65 +109,109 @@ class ConversationPersonAvatar extends StatelessWidget {
   }
 }
 
-/// A channel's picture: its first letter on its colour. [isThread] adds a
-/// small speech-bubble badge (the Activity thread rows).
+/// A group's picture: its photo ([imageUrl]) when it has one, else its first
+/// letter on its colour (also shown while the photo loads or when it fails).
+/// [isThread] adds a small speech-bubble badge (the Activity thread rows);
+/// [isPrivate] a small lock badge on the corner.
 class ConversationLetterAvatar extends StatelessWidget {
   const ConversationLetterAvatar({
     super.key,
     required this.seed,
     required this.label,
     this.isThread = false,
+    this.isPrivate = false,
+    this.size = activityAvatarSize,
     this.avatarKey = const ValueKey('activity-conversation-avatar'),
+    this.imageUrl,
   });
 
   final String seed;
   final String label;
   final bool isThread;
+  final bool isPrivate;
+
+  /// Diameter of the circle.
+  final double size;
 
   /// Key of the circle itself.
-  final Key avatarKey;
+  final Key? avatarKey;
+
+  /// Group photo URL; null or blank shows the letter.
+  final String? imageUrl;
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-    dimension: activityAvatarSize,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        CircleAvatar(
-          key: avatarKey,
-          radius: activityAvatarSize / 2,
-          backgroundColor: conversationHue(seed),
-          child: Text(
-            conversationInitial(label),
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+  Widget build(BuildContext context) {
+    final badgeSize = (size * 0.381).clamp(10.0, 16.0);
+    // A third of the circle (14 at the row's 42) shrinks the letter to a
+    // few pixels in pills and pickers; small circles get up to half of it.
+    final letterSize = max(size / 3, min(size / 2, 14.0));
+    final badgeIcon = isThread
+        ? LucideIcons.messagesSquare
+        : isPrivate
+        ? LucideIcons.lock
+        : null;
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            key: avatarKey,
+            width: size,
+            height: size,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: conversationHue(seed),
             ),
+            child: _photoOrLetter(letterSize),
           ),
-        ),
-        if (isThread)
-          Positioned(
-            right: -2,
-            bottom: -2,
-            child: Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: context.colors.surface,
-                border: Border.all(color: context.colors.outlineVariant),
-              ),
-              child: Icon(
-                LucideIcons.messagesSquare,
-                size: 10,
-                color: context.colors.onSurfaceVariant,
+          if (badgeIcon != null)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                key: isPrivate && !isThread
+                    ? const ValueKey('group-avatar-lock-badge')
+                    : null,
+                width: badgeSize,
+                height: badgeSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: context.colors.surface,
+                  border: Border.all(color: context.colors.outlineVariant),
+                ),
+                child: Icon(
+                  badgeIcon,
+                  size: badgeSize * 0.625,
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ),
-          ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
+
+  Widget _photoOrLetter(double letterSize) {
+    final letter = Text(
+      conversationInitial(label),
+      style: TextStyle(
+        fontSize: letterSize,
+        fontWeight: FontWeight.w600,
+        color: Colors.white,
+      ),
+    );
+    final url = imageUrl?.trim();
+    if (url == null || url.isEmpty) return letter;
+    return ClipOval(
+      child: SizedBox.square(
+        key: const ValueKey('group-avatar-photo'),
+        dimension: size,
+        child: AvatarImageContent(imageUrl: url, fallback: letter),
+      ),
+    );
+  }
 }
 
 /// Circle size in a two-circle avatar (desktop 28 of 36, scaled to 42).
@@ -237,7 +283,9 @@ class ConversationAvatarPair extends StatelessWidget {
 
 /// A thread's picture (desktop's A design): the channel's circle behind with
 /// its letter kept to the left so the front circle never covers it, and the
-/// thread's own circle and letter in front.
+/// thread's own circle and letter in front. The group photo
+/// ([channelPicture]), when set, covers the channel's circle; its letter
+/// shows while the photo loads or when it fails.
 class ConversationThreadAvatar extends StatelessWidget {
   const ConversationThreadAvatar({
     super.key,
@@ -246,6 +294,7 @@ class ConversationThreadAvatar extends StatelessWidget {
     required this.threadSeed,
     required this.threadLabel,
     required this.ringColor,
+    this.channelPicture,
   });
 
   final String channelSeed;
@@ -254,15 +303,13 @@ class ConversationThreadAvatar extends StatelessWidget {
   final String threadLabel;
   final Color ringColor;
 
+  /// Group photo URL; null or blank shows the channel's letter.
+  final String? channelPicture;
+
   @override
-  Widget build(BuildContext context) => ConversationAvatarPair(
-    ringColor: ringColor,
-    back: Container(
-      key: const ValueKey('conversation-thread-avatar-channel'),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: conversationHue(channelSeed),
-      ),
+  Widget build(BuildContext context) {
+    final picture = channelPicture?.trim();
+    final letter = Container(
       alignment: Alignment.centerLeft,
       // Clear of the front circle's ring (which starts at 16).
       padding: const EdgeInsets.only(left: 6),
@@ -275,25 +322,50 @@ class ConversationThreadAvatar extends StatelessWidget {
           height: 1,
         ),
       ),
-    ),
-    front: Container(
-      key: const ValueKey('conversation-thread-avatar-thread'),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: conversationHue(threadSeed),
+    );
+    return ConversationAvatarPair(
+      ringColor: ringColor,
+      back: Container(
+        key: const ValueKey('conversation-thread-avatar-channel'),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: conversationHue(channelSeed),
+        ),
+        child: picture == null || picture.isEmpty
+            ? letter
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  letter,
+                  ClipOval(
+                    key: const ValueKey('conversation-thread-avatar-photo'),
+                    child: AvatarImageContent(
+                      imageUrl: picture,
+                      fallback: const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ),
       ),
-      alignment: Alignment.center,
-      child: Text(
-        conversationInitial(threadLabel),
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
-          height: 1,
+      front: Container(
+        key: const ValueKey('conversation-thread-avatar-thread'),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: conversationHue(threadSeed),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          conversationInitial(threadLabel),
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+            height: 1,
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 final _qualifiedMention = RegExp(

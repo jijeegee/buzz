@@ -9,13 +9,13 @@ import {
 
 test("ordinary message links expose an Inbox-style prefix and channel label", () => {
   assert.equal(MESSAGE_LINK_PREFIX, "Thread in");
-  assert.equal(getMessageLinkChannelLabel("general"), "#general");
+  assert.equal(getMessageLinkChannelLabel("general"), "general");
 });
 
 test("ordinary message links name their target thread", () => {
   assert.equal(
     getMessageLinkLabel({ channelName: "general" }),
-    "Thread in #general",
+    "Thread in general",
   );
 });
 
@@ -25,7 +25,7 @@ test("ordinary message links include a provided root excerpt", () => {
       channelName: "general",
       threadExcerpt: "Release notes",
     }),
-    "Thread in #general — Release notes",
+    "Thread in general — Release notes",
   );
 });
 

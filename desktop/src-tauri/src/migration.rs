@@ -783,6 +783,10 @@ fn replace_builtin_avatar(record: &mut serde_json::Value, persona_id: &str, now:
 /// - The canonical dir must differ from the current dir (skip if we ARE canonical)
 /// - The canonical dir must exist
 pub fn sync_shared_agent_data(app: &tauri::AppHandle) {
+    // Prod builds never take the person's key from the environment.
+    if !crate::app_state::env_identity_allowed(crate::relay::server::kuzz_env()) {
+        return;
+    }
     // Guard: only runs when sharing identity with a worktree.
     let is_shared = std::env::var("KUZZ_SHARE_IDENTITY")
         .map(|v| v == "1")

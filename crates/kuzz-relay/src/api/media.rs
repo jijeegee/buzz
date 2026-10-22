@@ -434,6 +434,9 @@ async fn admit_blossom_upload(
         Ok(Nip98Proof::new(pubkey, auth_event))
     })?;
     let auth_event = admission.into_extra();
+    admit_media_key(state, &auth_event, headers)
+        .await
+        .map_err(IntoResponse::into_response)?;
 
     // Post-admission: validate X-SHA-256 header and hash binding.
     // These are Blossom-protocol checks, not NIP-FI — Off mode still enforces
@@ -609,6 +612,20 @@ async fn upload_blob_result(
         // get the same NIP-FI shape as pre-body ones.
         .map_err(|e| media_denial(e, strictness))?;
 
+    // The uploader may open the blob before any message references it.
+    state
+        .db
+        .record_media_upload(
+            auth.tenant.community(),
+            &descriptor.sha256,
+            &auth.auth_event.pubkey.to_bytes(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("recording media uploader failed: {e}");
+            media_denial(MediaError::Internal, strictness)
+        })?;
+
     rewrite_descriptor_urls_for_tenant(
         &mut descriptor,
         &state.config.relay_url,
@@ -721,9 +738,29 @@ fn extract_blossom_read_proof(
     Ok(crate::nip_fi_http::Nip98Proof::new(pubkey, auth_event))
 }
 
+/// Device-bound keys (surface `media`): the signer of a verified kind-24242
+/// event is used from its own device (the event's `device` tag), and a
+/// registered key's `X-Auth-Tag` owner is its registry owner. Blossom tokens
+/// already expire within 60 s of signing (`kuzz_media::auth`).
+async fn admit_media_key(
+    state: &AppState,
+    auth_event: &nostr::Event,
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, axum::Json<serde_json::Value>)> {
+    crate::identity::admission::admit_key_for_event(
+        state,
+        auth_event,
+        crate::api::relay_members::extract_auth_tag_header(headers),
+        crate::identity::device::Surface::Media,
+    )
+    .await
+    .map_err(crate::identity::admission::KeyRefused::http_error)
+}
+
 /// Kind-24242 Blossom read authorization: NIP-FI admission with Blossom
-/// extraction as the NIP-98 closure, then the membership gate. `Ok(Some)` is
-/// the admission's own denial response, to be returned as-is.
+/// extraction as the NIP-98 closure, then the membership gate. Returns the
+/// proven reader, or `Err` with the admission's own denial response, to be
+/// returned as-is.
 #[allow(clippy::result_large_err)] // Response is the natural error type for axum closures
 async fn authorize_blossom_read(
     state: &AppState,
@@ -731,7 +768,7 @@ async fn authorize_blossom_read(
     headers: &HeaderMap,
     sha256: &str,
     strictness: BlossomStrictness,
-) -> Result<Option<Response>, MediaDenial> {
+) -> Result<Result<nostr::PublicKey, Response>, MediaDenial> {
     // In Enforce mode: extraction failure → NIP-FI denial bytes (MissingEvidence/
     // EvidenceRejected).  In Off mode: MediaError propagates unchanged [FI-INV-15].
     use crate::nip_fi_http::admit_nip_fi_http_on_state;
@@ -743,11 +780,68 @@ async fn authorize_blossom_read(
             .map_err(|e| e.into_response())
     }) {
         Ok(a) => a,
-        Err(resp) => return Ok(Some(resp)),
+        Err(resp) => return Ok(Err(resp)),
     };
     let auth_event = admission.into_extra();
+    if let Err(refused) = admit_media_key(state, &auth_event, headers).await {
+        return Ok(Err(refused.into_response()));
+    }
     enforce_blossom_read_membership(state, tenant, &auth_event, headers, strictness).await?;
-    Ok(None)
+    Ok(Ok(auth_event.pubkey))
+}
+
+/// Media read admission shared by GET and HEAD: the token door or the
+/// kind-24242 door proves the reader, then the attachment permission check
+/// decides whether that reader may open this blob. `Err` is a denial response
+/// to return as-is.
+#[allow(clippy::result_large_err)] // Response is the natural error type for axum closures
+async fn admit_media_read(
+    state: &AppState,
+    tenant: &TenantContext,
+    headers: &HeaderMap,
+    sha256: &str,
+    strictness: BlossomStrictness,
+) -> Result<Result<(), Response>, MediaDenial> {
+    let token_principal =
+        match token_auth::media_token_principal(state, tenant, headers, strictness).await {
+            Ok(principal) => principal,
+            Err(resp) => return Ok(Err(resp)),
+        };
+    let reader = match token_principal {
+        Some(principal) => principal.as_bytes().to_vec(),
+        None => match authorize_blossom_read(state, tenant, headers, sha256, strictness).await? {
+            Ok(pubkey) => pubkey.to_bytes().to_vec(),
+            Err(resp) => return Ok(Err(resp)),
+        },
+    };
+    enforce_media_read_access(state, tenant, &reader, sha256, strictness).await?;
+    Ok(Ok(()))
+}
+
+/// Attachment permission: the reader uploaded the blob or can currently read
+/// an event that references it ([`crate::media_access`]). Anyone else gets the
+/// same 404 as a missing blob, so a hash never confirms that a file exists.
+async fn enforce_media_read_access(
+    state: &AppState,
+    tenant: &TenantContext,
+    reader: &[u8],
+    sha256: &str,
+    strictness: BlossomStrictness,
+) -> Result<(), MediaDenial> {
+    match crate::media_access::reader_may_open(state, tenant.community(), reader, sha256).await {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            metrics::counter!("kuzz_media_read_denied_total", "reason" => "no_access").increment(1);
+            Err(media_denial(MediaError::NotFound, strictness))
+        }
+        Err(e) => {
+            tracing::error!("media read access lookup failed: {e}");
+            Err(media_denial(
+                MediaError::AuthorizationUnavailable,
+                strictness,
+            ))
+        }
+    }
 }
 
 /// Post-admission membership gate for media reads.
@@ -792,12 +886,126 @@ pub(crate) fn is_safe_ext(ext: &str) -> bool {
     !ext.is_empty() && ext.len() <= 8 && ext.chars().all(|c| matches!(c, 'a'..='z' | '0'..='9'))
 }
 
+/// Derived JPEG variants served as `/media/{sha256}.{variant}.jpg`: `thumb`
+/// (320px, written at upload) and `small` (160px, rendered on first read).
+const DERIVED_VARIANTS: [&str; 2] = ["thumb", "small"];
+
+const SMALL_SUFFIX: &str = ".small.jpg";
+
+/// The blob hash a validated media path names. Derived variants resolve to
+/// their parent, so they are authorized exactly like the original.
+fn media_path_hash(sha256_ext: &str) -> &str {
+    sha256_ext.split('.').next().unwrap_or(sha256_ext)
+}
+
+/// The parent hash of a derived-variant path (`{sha256}.thumb.jpg`,
+/// `{sha256}.small.jpg`), or `None` for the original.
+fn derived_variant_parent(sha256_ext: &str) -> Option<&str> {
+    let (hash, variant) = sha256_ext.strip_suffix(".jpg")?.split_once('.')?;
+    DERIVED_VARIANTS.contains(&variant).then_some(hash)
+}
+
+/// Content type of a validated media path, after the tenant sidecar gate.
+/// Derived variants require the parent's sidecar and are always JPEG; a
+/// missing `small` variant is rendered from the original first.
+async fn gated_content_type(
+    state: &AppState,
+    tenant: &TenantContext,
+    sha256_ext: &str,
+) -> Result<String, MediaError> {
+    if let Some(parent_hash) = derived_variant_parent(sha256_ext) {
+        let parent_mime = state
+            .media_storage
+            .read_sidecar_mime(tenant, parent_hash)
+            .await
+            .ok_or(MediaError::NotFound)?;
+        if sha256_ext.ends_with(SMALL_SUFFIX) {
+            ensure_small_variant(state, tenant, parent_hash, &parent_mime).await?;
+        }
+        return Ok("image/jpeg".to_string());
+    }
+    // For explicit paths (hash.ext), verify the requested extension matches
+    // the sidecar's canonical extension — sidecar is authoritative.
+    let sidecar_mime = state
+        .media_storage
+        .read_sidecar_mime(tenant, sha256_ext)
+        .await
+        .ok_or(MediaError::NotFound)?;
+    if sha256_ext.contains('.') {
+        let requested_ext = sha256_ext.rsplit('.').next().unwrap_or("");
+        let sidecar = state
+            .media_storage
+            .get_sidecar(tenant, media_path_hash(sha256_ext))
+            .await
+            .map_err(|_| MediaError::NotFound)?;
+        if requested_ext != sidecar.ext {
+            return Err(MediaError::NotFound);
+        }
+    }
+    Ok(sidecar_mime)
+}
+
+/// Make sure `{sha256}.small.jpg` exists, rendering it from the original on
+/// first read (this covers images uploaded before the variant existed). Two
+/// concurrent first reads may both render; the output is deterministic, so
+/// the later write is an idempotent overwrite. A parent that is not a
+/// decodable image, or whose original is gone, is 404.
+async fn ensure_small_variant(
+    state: &AppState,
+    tenant: &TenantContext,
+    sha256: &str,
+    parent_mime: &str,
+) -> Result<(), MediaError> {
+    let storage = &state.media_storage;
+    let key = format!("{sha256}{SMALL_SUFFIX}");
+    // A one-key listing, not HEAD: the S3 client sleeps and retries a failed
+    // request, and a missing object is a failed HEAD.
+    let page = storage.list_prefix_page(&key, None, 1).await?;
+    if page.objects.iter().any(|(found, _)| *found == key) {
+        return Ok(());
+    }
+    if !kuzz_media::thumbnail::is_renderable_image(parent_mime) {
+        return Err(MediaError::NotFound);
+    }
+    let sidecar = storage
+        .get_sidecar(tenant, sha256)
+        .await
+        .map_err(|_| MediaError::NotFound)?;
+    if !is_safe_ext(&sidecar.ext) {
+        return Err(MediaError::NotFound);
+    }
+    let parent_key = format!("{sha256}.{}", sidecar.ext);
+    let parent_size = storage
+        .head_with_metadata(&parent_key)
+        .await?
+        .ok_or(MediaError::NotFound)?
+        .size;
+    // Bound decode memory: never render anything larger than an image upload.
+    if parent_size > state.config.media.max_image_bytes {
+        return Err(MediaError::NotFound);
+    }
+    let original = storage.get(&parent_key).await?;
+    let small = tokio::task::spawn_blocking(move || {
+        kuzz_media::thumbnail::render_small_jpeg_sync(&original)
+    })
+    .await
+    .map_err(|_| MediaError::Internal)?
+    .map_err(|e| {
+        tracing::debug!(sha256, "small variant render failed: {e}");
+        MediaError::NotFound
+    })?;
+    storage.put(&key, &small, "image/jpeg").await?;
+    metrics::counter!("kuzz_media_small_variant_rendered_total").increment(1);
+    Ok(())
+}
+
 /// Validate that `sha256_ext` is a safe path segment.
 ///
 /// Accepted forms (max 3 segments):
 ///   - `{sha256}`                   — bare 64-char lowercase hex
 ///   - `{sha256}.{ext}`             — hash + extension
 ///   - `{sha256}.thumb.jpg`          — hash + thumb variant (always JPEG)
+///   - `{sha256}.small.jpg`          — hash + small variant (always JPEG)
 ///
 /// `{ext}` must be a safe token (see [`is_safe_ext`]); the sidecar comparison
 /// downstream enforces the actual canonical extension.
@@ -805,7 +1013,7 @@ pub(crate) fn is_safe_ext(ext: &str) -> bool {
 fn validate_media_path(sha256_ext: &str) -> Result<(), MediaError> {
     let segments: Vec<&str> = sha256_ext.split('.').collect();
 
-    // 1–3 segments only (hash, optional thumb, optional ext)
+    // 1–3 segments only (hash, optional variant, optional ext)
     if segments.is_empty() || segments.len() > 3 {
         return Err(MediaError::NotFound);
     }
@@ -826,8 +1034,8 @@ fn validate_media_path(sha256_ext: &str) -> Result<(), MediaError> {
             }
         }
         3 => {
-            // {hash}.thumb.jpg — thumbnails are always JPEG
-            if segments[1] != "thumb" || segments[2] != "jpg" {
+            // {hash}.thumb.jpg / {hash}.small.jpg — derived variants are always JPEG
+            if !DERIVED_VARIANTS.contains(&segments[1]) || segments[2] != "jpg" {
                 return Err(MediaError::NotFound);
             }
         }
@@ -850,6 +1058,7 @@ const MAX_RANGE_CHUNK: u64 = 16 * 1024 * 1024;
 ///   - `<sha256>.<ext>` — direct key (e.g. `abc123.jpg`)
 ///   - `<sha256>` — bare hash; extension resolved from sidecar
 ///   - `<sha256>.thumb.jpg` — thumbnail variant
+///   - `<sha256>.small.jpg` — 160px variant, rendered on first read
 ///
 /// Range request behaviour (RFC 9110 §14.2):
 ///   - No `Range` header → 200 with full body
@@ -870,23 +1079,10 @@ pub(crate) async fn get_blob(
     // so that in Enforce mode a missing/malformed Authorization header produces
     // NIP-FI denial bytes (not legacy MediaError JSON). [FI-TRACE-AUTHORITY-UNIFORM]
     let tenant = bind_media_read_tenant(&state, &req_headers).await?;
-    let sha256 = sha256_ext
-        .split('.')
-        .next()
-        .unwrap_or(&sha256_ext)
-        .to_owned();
+    let sha256 = media_path_hash(&sha256_ext).to_owned();
     let strictness = blossom_strictness_from_state(&state);
-    let token_principal =
-        match token_auth::media_token_principal(&state, &tenant, &req_headers, strictness).await {
-            Ok(principal) => principal,
-            Err(resp) => return Ok(resp),
-        };
-    if token_principal.is_none() {
-        if let Some(resp) =
-            authorize_blossom_read(&state, &tenant, &req_headers, &sha256, strictness).await?
-        {
-            return Ok(resp);
-        }
+    if let Err(resp) = admit_media_read(&state, &tenant, &req_headers, &sha256, strictness).await? {
+        return Ok(resp);
     }
     serve_blob_for_tenant(&state, &tenant, &sha256_ext, &req_headers)
         .await
@@ -908,35 +1104,7 @@ pub(crate) async fn serve_blob_for_tenant(
     let cache_control = blob_cache_control();
 
     // Sidecar gate FIRST — reject before any blob I/O. Storage is not authoritative.
-    let content_type = if sha256_ext.ends_with(".thumb.jpg") {
-        let parent_hash = sha256_ext.strip_suffix(".thumb.jpg").unwrap_or(sha256_ext);
-        let _ = state
-            .media_storage
-            .read_sidecar_mime(tenant, parent_hash)
-            .await
-            .ok_or(MediaError::NotFound)?;
-        "image/jpeg".to_string()
-    } else {
-        // For explicit paths (hash.ext), verify the requested extension matches
-        // the sidecar's canonical extension — sidecar is authoritative.
-        let sidecar_mime = state
-            .media_storage
-            .read_sidecar_mime(tenant, sha256_ext)
-            .await
-            .ok_or(MediaError::NotFound)?;
-        if sha256_ext.contains('.') {
-            let requested_ext = sha256_ext.rsplit('.').next().unwrap_or("");
-            let sidecar = state
-                .media_storage
-                .get_sidecar(tenant, sha256_ext.split('.').next().unwrap_or(sha256_ext))
-                .await
-                .map_err(|_| MediaError::NotFound)?;
-            if requested_ext != sidecar.ext {
-                return Err(MediaError::NotFound);
-            }
-        }
-        sidecar_mime
-    };
+    let content_type = gated_content_type(state, tenant, sha256_ext).await?;
 
     // Images and video render inline; generic files force download. This is the
     // primary defence for non-previewable types — combined with `nosniff` and
@@ -1159,54 +1327,15 @@ pub(crate) async fn head_blob(
     // so that in Enforce mode a missing/malformed Authorization header produces
     // NIP-FI denial bytes (not legacy MediaError JSON). [FI-TRACE-AUTHORITY-UNIFORM]
     let tenant = bind_media_read_tenant(&state, &headers).await?;
-    let sha256 = sha256_ext
-        .split('.')
-        .next()
-        .unwrap_or(&sha256_ext)
-        .to_owned();
+    let sha256 = media_path_hash(&sha256_ext).to_owned();
     let strictness = blossom_strictness_from_state(&state);
-    let token_principal =
-        match token_auth::media_token_principal(&state, &tenant, &headers, strictness).await {
-            Ok(principal) => principal,
-            Err(resp) => return Ok(resp),
-        };
-    if token_principal.is_none() {
-        if let Some(resp) =
-            authorize_blossom_read(&state, &tenant, &headers, &sha256, strictness).await?
-        {
-            return Ok(resp);
-        }
+    if let Err(resp) = admit_media_read(&state, &tenant, &headers, &sha256, strictness).await? {
+        return Ok(resp);
     }
     let cache_control = blob_cache_control();
 
     // Sidecar gate FIRST — reject before any blob I/O.
-    let content_type = if sha256_ext.ends_with(".thumb.jpg") {
-        let parent_hash = sha256_ext.strip_suffix(".thumb.jpg").unwrap_or(&sha256_ext);
-        let _ = state
-            .media_storage
-            .read_sidecar_mime(&tenant, parent_hash)
-            .await
-            .ok_or(MediaError::NotFound)?;
-        "image/jpeg".to_string()
-    } else {
-        let sidecar_mime = state
-            .media_storage
-            .read_sidecar_mime(&tenant, &sha256_ext)
-            .await
-            .ok_or(MediaError::NotFound)?;
-        if sha256_ext.contains('.') {
-            let requested_ext = sha256_ext.rsplit('.').next().unwrap_or("");
-            let sidecar = state
-                .media_storage
-                .get_sidecar(&tenant, sha256_ext.split('.').next().unwrap_or(&sha256_ext))
-                .await
-                .map_err(|_| MediaError::NotFound)?;
-            if requested_ext != sidecar.ext {
-                return Err(MediaError::NotFound.into());
-            }
-        }
-        sidecar_mime
-    };
+    let content_type = gated_content_type(&state, &tenant, &sha256_ext).await?;
 
     let key = resolve_s3_key(&state.media_storage, &tenant, &sha256_ext).await?;
     match state.media_storage.head_with_metadata(&key).await? {
@@ -1957,6 +2086,39 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_media_path_small_jpg_only() {
+        assert!(validate_media_path(&format!("{VALID_HASH}.small.jpg")).is_ok());
+        // The small variant is always JPEG; other variant names are unknown.
+        assert!(validate_media_path(&format!("{VALID_HASH}.small.png")).is_err());
+        assert!(validate_media_path(&format!("{VALID_HASH}.medium.jpg")).is_err());
+        assert!(validate_media_path(&format!("{VALID_HASH}.small.jpg.x")).is_err());
+    }
+
+    #[test]
+    fn derived_variants_resolve_to_the_parent_hash() {
+        // Authorization runs on `media_path_hash`, so a variant is readable
+        // exactly when its parent is (uploader, references, group photo).
+        for path in [
+            VALID_HASH.to_owned(),
+            format!("{VALID_HASH}.jpg"),
+            format!("{VALID_HASH}.thumb.jpg"),
+            format!("{VALID_HASH}.small.jpg"),
+        ] {
+            assert_eq!(media_path_hash(&path), VALID_HASH, "{path}");
+        }
+        assert_eq!(
+            derived_variant_parent(&format!("{VALID_HASH}.thumb.jpg")),
+            Some(VALID_HASH)
+        );
+        assert_eq!(
+            derived_variant_parent(&format!("{VALID_HASH}.small.jpg")),
+            Some(VALID_HASH)
+        );
+        assert_eq!(derived_variant_parent(&format!("{VALID_HASH}.jpg")), None);
+        assert_eq!(derived_variant_parent(VALID_HASH), None);
+    }
+
+    #[test]
     fn test_validate_media_path_accepts_generic_exts() {
         // Path validation now accepts any safe ext token — the deny-list for
         // dangerous *content* lives in the upload validator, not here. The
@@ -2198,11 +2360,11 @@ mod tests {
 
         /// Build an AppState with NIP-FI Enforce and a real injected P-256 verifier.
         async fn media_enforce_test_state() -> Option<Arc<AppState>> {
+            use jsonwebtoken::{jwk::JwkSet, Algorithm};
             use kuzz_auth::{
                 AssertionKeySet, FederatedAssertionVerifier, FreshnessClass, IssuerPolicy,
                 IssuerRegistry, StaticIssuerKeySource, TokenClass, VerifyAssertion,
             };
-            use jsonwebtoken::{jwk::JwkSet, Algorithm};
 
             let mut config = crate::config::Config::for_test();
             config.database_url = crate::test_support::database_url();
@@ -3908,18 +4070,12 @@ mod tests {
         // tag), so reverting `blossom_strictness_from_state` to Permissive
         // turns the Enforce denials into the 415 the Off cases pin.
 
-        fn permissive_only_upload_proofs(keys: &Keys, host: &str) -> [(String, &'static str); 2] {
+        fn permissive_only_upload_proofs(keys: &Keys, _host: &str) -> [(String, &'static str); 1] {
             let sha = sha256_hex(AUDIO_BODY);
-            [
-                (
-                    blossom_upload_auth_value_with(keys, Some(host), &sha, 300),
-                    "300s lifetime",
-                ),
-                (
-                    blossom_upload_auth_value_with(keys, None, &sha, 55),
-                    "no server tag",
-                ),
-            ]
+            [(
+                blossom_upload_auth_value_with(keys, None, &sha, 55),
+                "no server tag",
+            )]
         }
 
         fn mutate_state(state: &mut Arc<AppState>, f: impl FnOnce(&mut crate::config::Config)) {
@@ -3993,6 +4149,20 @@ mod tests {
                     );
                 }
             }
+            // The 60-second window applies in Off too: a long-lived proof is
+            // refused before the body is read.
+            let sha = sha256_hex(AUDIO_BODY);
+            let long_lived =
+                blossom_upload_auth_value_with(&Keys::generate(), Some(&host), &sha, 300);
+            for route in UPLOAD_ROUTES {
+                let (status, _, body) =
+                    upload_request(&rt, &state, route, &host, &[&long_lived], None);
+                assert_eq!(
+                    status,
+                    StatusCode::UNAUTHORIZED,
+                    "Off {route}: 300s; body {body:?}"
+                );
+            }
         }
 
         /// GET and HEAD each derive strictness independently; HEAD carries the
@@ -4020,7 +4190,16 @@ mod tests {
             }
 
             let (rt, state, host) = media_fixture(media_off_test_state());
-            let proof = blossom_get_auth_value_with(&keys, &host, &sha, 300);
+            let long_lived = blossom_get_auth_value_with(&keys, &host, &sha, 300);
+            for (method, _) in READ_METHODS {
+                let (status, _, body) = media_read(&rt, &state, method, &host, &long_lived, None);
+                assert_eq!(
+                    status,
+                    StatusCode::UNAUTHORIZED,
+                    "Off {method} keeps the 60-second window; body {body:?}"
+                );
+            }
+            let proof = blossom_get_auth_value_with(&keys, &host, &sha, 55);
             for (method, _) in READ_METHODS {
                 let (status, _, body) = media_read(&rt, &state, method, &host, &proof, None);
                 assert_eq!(
@@ -4436,6 +4615,152 @@ mod tests {
                         .execute(&admin),
                 );
             }
+        }
+
+        /// `.small.jpg` end to end against Postgres and MinIO: authorized
+        /// exactly like its parent hash (a group photo is readable by any
+        /// signed-in user, an unrelated blob is not), rendered on first read at
+        /// most 160px with the thumbnail's headers, stored for later reads, and
+        /// 404 for a parent that is not an image. Needs `KUZZ_S3_*` pointing at
+        /// an existing bucket.
+        #[test]
+        #[ignore = "requires Postgres and MinIO"]
+        fn small_variant_follows_parent_access_and_renders_on_first_read() {
+            use std::io::Cursor;
+
+            let (rt, state, host) = media_fixture(media_off_test_state());
+            let community = rt
+                .block_on(state.db.ensure_configured_community(&host))
+                .expect("community")
+                .id;
+            let tenant = TenantContext::resolved(community, host.clone());
+            let owner = Keys::generate();
+            let stranger = Keys::generate();
+
+            let mut png = Vec::new();
+            image::DynamicImage::new_rgb8(640, 480)
+                .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+                .expect("encode png");
+            let pdf = format!("%PDF-1.7 {}", uuid::Uuid::new_v4()).into_bytes();
+            let (photo, doc) = (sha256_hex(&png), sha256_hex(&pdf));
+            // Stored the way an upload stores them, minus any small variant.
+            let meta = |mime: &str, ext: &str, size: usize| kuzz_media::BlobMeta {
+                ext: ext.into(),
+                mime_type: mime.into(),
+                size: size as u64,
+                uploaded_at: chrono::Utc::now().timestamp(),
+                ..kuzz_media::BlobMeta::default()
+            };
+            for (sha, bytes, mime, ext) in [
+                (&photo, &png, "image/png", "png"),
+                (&doc, &pdf, "application/pdf", "pdf"),
+            ] {
+                rt.block_on(async {
+                    let storage = &state.media_storage;
+                    storage
+                        .put(&format!("{sha}.{ext}"), bytes, mime)
+                        .await
+                        .expect("put blob");
+                    storage
+                        .put_sidecar(&tenant, sha, &meta(mime, ext, bytes.len()))
+                        .await
+                        .expect("put sidecar");
+                    state
+                        .db
+                        .record_media_upload(community, sha, &owner.public_key().to_bytes())
+                        .await
+                        .expect("record upload");
+                });
+            }
+            rt.block_on(state.media_storage.put(
+                &format!("{photo}.thumb.jpg"),
+                b"thumb",
+                "image/jpeg",
+            ))
+            .expect("put thumb");
+            let small_exists = |sha: &str| {
+                let key = format!("{sha}.small.jpg");
+                rt.block_on(state.media_storage.head(&key))
+                    .expect("head small")
+            };
+            let read = |method: &str, keys: &Keys, sha: &str, path: &str| {
+                let mut headers = axum::http::HeaderMap::new();
+                headers.insert(
+                    axum::http::header::AUTHORIZATION,
+                    blossom_get_auth_value(keys, &host, sha)
+                        .parse()
+                        .expect("valid header"),
+                );
+                rt.block_on(media_oneshot(
+                    Arc::clone(&state),
+                    method,
+                    &format!("/media/{path}"),
+                    &host,
+                    headers,
+                    b"",
+                ))
+            };
+            let small = format!("{photo}.small.jpg");
+
+            // Not a group photo yet: the stranger is refused like for the
+            // parent, and nothing is rendered for them.
+            for path in [format!("{photo}.png"), small.clone()] {
+                let (status, _, _) = read("GET", &stranger, &photo, &path);
+                assert_eq!(status, StatusCode::NOT_FOUND, "stranger before: {path}");
+            }
+            assert!(!small_exists(&photo), "a refused read renders nothing");
+
+            // The group photo rule opens the parent and its variant to anyone.
+            let channel = rt
+                .block_on(kuzz_db::channel::create_channel(
+                    state.db.pool(),
+                    community,
+                    "small-variant",
+                    kuzz_db::channel::ChannelType::Stream,
+                    kuzz_db::channel::ChannelVisibility::Private,
+                    None,
+                    &owner.public_key().to_bytes(),
+                    None,
+                ))
+                .expect("channel")
+                .id;
+            rt.block_on(
+                sqlx::query("UPDATE channels SET picture = $1 WHERE id = $2")
+                    .bind(format!("https://{host}/media/{photo}.png"))
+                    .bind(channel)
+                    .execute(state.db.pool()),
+            )
+            .expect("set group photo");
+
+            // HEAD on a missing variant renders it too.
+            let (status, headers, _) = read("HEAD", &stranger, &photo, &small);
+            assert_eq!(status, StatusCode::OK, "stranger HEAD small");
+            assert_eq!(headers["content-type"], "image/jpeg");
+            assert!(small_exists(&photo), "first read stores the variant");
+
+            let (status, headers, body) = read("GET", &stranger, &photo, &small);
+            assert_eq!(status, StatusCode::OK, "stranger GET small");
+            let (_, thumb_headers, _) =
+                read("HEAD", &stranger, &photo, &format!("{photo}.thumb.jpg"));
+            assert_eq!(headers["content-type"], "image/jpeg");
+            assert_eq!(
+                headers["cache-control"],
+                "private, max-age=31536000, immutable"
+            );
+            assert_eq!(headers["cache-control"], thumb_headers["cache-control"]);
+            assert_eq!(headers["content-length"], body.len().to_string().as_str());
+            let rendered = image::load_from_memory(&body).expect("decode small");
+            assert_eq!((rendered.width(), rendered.height()), (160, 120));
+
+            // A parent that is not an image has no small variant, even for
+            // its uploader.
+            let (status, _, _) = read("GET", &owner, &doc, &format!("{doc}.small.jpg"));
+            assert_eq!(status, StatusCode::NOT_FOUND, "pdf small");
+            assert!(!small_exists(&doc));
+            // A missing parent is 404 as well.
+            let missing = "e".repeat(64);
+            let (status, _, _) = read("GET", &owner, &missing, &format!("{missing}.small.jpg"));
+            assert_eq!(status, StatusCode::NOT_FOUND, "missing parent small");
         }
     }
 }

@@ -708,8 +708,8 @@ test("discussion rows label a cold readable channel without a directory scan", a
   await mounted.settle();
   await mounted.settle();
 
-  assert.match(mounted.container.textContent, /#cold-discussion/);
-  assert.doesNotMatch(mounted.container.textContent, /#abc12345/);
+  assert.match(mounted.container.textContent, /cold-discussion/);
+  assert.doesNotMatch(mounted.container.textContent, /abc12345/);
   assert.deepEqual(ipc.detailCalls, ["abc12345-cold-discussion-channel"]);
   assert.equal(ipc.directoryCalls, 0);
   await mounted.unmount();

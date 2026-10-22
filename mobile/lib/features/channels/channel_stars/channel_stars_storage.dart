@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../shared/auth/token/relay_origin.dart';
+import '../../../shared/relay/service_address.dart';
 
 /// Durable personal pins are isolated by signer and normalized community.
 String channelStarsKey(String pubkey, {String? origin}) => origin == null
     ? 'kuzz.channel-stars.v1:$pubkey'
-    : 'kuzz.channel-stars.v2:${jsonEncode([pubkey, normalizeRelayOrigin(origin)])}';
+    : 'kuzz.channel-stars.v2:'
+          '${jsonEncode([pubkey, storageScopeFor(normalizeRelayOrigin(origin))])}';
 
 class ChannelStarEntry {
   final bool starred;
@@ -100,8 +102,12 @@ class ChannelStarsStorage {
     final legacy = _prefs.getString(channelStarsKey(pubkey));
     if (legacy == null) return const ChannelStarStore();
     final claim = 'kuzz.channel-stars.migrated-origin:$pubkey';
+    // The claim holds the owning origin; any address of this build's service
+    // is the same owner (see [storageScopeFor]).
     final owner = _prefs.getString(claim);
-    if (owner != null && owner != canonical) return const ChannelStarStore();
+    if (owner != null && storageScopeFor(owner) != storageScopeFor(canonical)) {
+      return const ChannelStarStore();
+    }
     if (owner == null && !await _prefs.setString(claim, canonical)) {
       throw StateError('Could not preserve legacy pin scope');
     }

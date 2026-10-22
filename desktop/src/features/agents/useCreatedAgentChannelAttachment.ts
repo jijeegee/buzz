@@ -25,20 +25,20 @@ function showAttachmentFailure(
 ) {
   const error = cause instanceof Error ? cause.message : "Failed to add agent.";
   const id = toast.warning("Agent created", {
-    description: `${created.agent.name} couldn’t be added to #${targetChannel.name}. ${error}`,
+    description: `${created.agent.name} couldn’t be added to ${targetChannel.name}. ${error}`,
     id: toastId,
     action: {
       label: "Try again",
       onClick: (event) => {
         event.preventDefault();
         toast.loading("Agent created", {
-          description: `Adding ${created.agent.name} to #${targetChannel.name}…`,
+          description: `Adding ${created.agent.name} to ${targetChannel.name}…`,
           id,
         });
         void attach(created, targetChannel).then(
           () => {
             toast.success("Agent created", {
-              description: `Added ${created.agent.name} to #${targetChannel.name}`,
+              description: `Added ${created.agent.name} to ${targetChannel.name}`,
               id,
             });
           },

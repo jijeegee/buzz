@@ -30,19 +30,18 @@ class ThreadNameEditor extends HookConsumerWidget {
     final failure = useState<String?>(null);
     final writes = useRef<Future<void>>(Future.value());
     final error = threadNameError(controller.text.trim());
-    final composing =
-        controller.value.composing.isValid &&
-        !controller.value.composing.isCollapsed;
 
     Future<void> save() async {
-      if (saving.value || composing || error != null) return;
+      final name = controller.text;
+      if (saving.value || threadNameError(name.trim()) != null) return;
       saving.value = true;
       failure.value = null;
+      // A Korean keyboard can keep the final syllable composing indefinitely.
+      // Explicit Save/Done accepts the visible text, including that syllable.
+      FocusScope.of(context).unfocus();
       try {
         await writes.value;
-        await ref
-            .read(threadNameProvider(target).notifier)
-            .save(controller.text);
+        await ref.read(threadNameProvider(target).notifier).save(name);
         if (context.mounted) Navigator.of(context).pop();
       } catch (e) {
         if (context.mounted) failure.value = e.toString();
@@ -61,7 +60,7 @@ class ThreadNameEditor extends HookConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Visible to everyone in this channel. Up to 40 English or 20 Korean characters. Leave empty to remove the name.',
+                'Visible to everyone in this group. Up to 40 English or 20 Korean characters. Leave empty to remove the name.',
               ),
               const SizedBox(height: Grid.md),
               TextField(
@@ -101,7 +100,7 @@ class ThreadNameEditor extends HookConsumerWidget {
           ),
           FilledButton(
             key: const ValueKey('thread-name-save'),
-            onPressed: saving.value || composing || error != null ? null : save,
+            onPressed: saving.value || error != null ? null : save,
             child: Text(saving.value ? 'Saving…' : 'Save'),
           ),
         ],

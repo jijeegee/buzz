@@ -177,7 +177,7 @@ function actionVariant(
  */
 function friendlyEnforcementError(message: string): string {
   if (message.includes("kick target was already absent")) {
-    return "No channel membership to remove — use Timeout or Ban for open channels.";
+    return "No group membership to remove — use Timeout or Ban for open groups.";
   }
   return message;
 }
@@ -831,7 +831,7 @@ function ReportFields({ data }: { data: AdminReportDetailDto }) {
       ) : (
         <DetailRow label="Target" value={data.target} mono />
       )}
-      <DetailRow label="Channel" value={data.channelId ?? null} mono />
+      <DetailRow label="Group" value={data.channelId ?? null} mono />
       <DetailRow label="Note" value={data.note ?? null} />
       <DetailRow label="Resolved by" value={data.resolvedBy ?? null} mono />
       <DetailRow label="Resolved at" value={formatTimestamp(data.resolvedAt)} />

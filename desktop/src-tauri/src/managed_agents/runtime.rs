@@ -716,6 +716,15 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         &effective_relay_url,
     )?;
     command.env("KUZZ_RELAY_URL", &effective_relay_url);
+    // Session resume is kept per service, not per address (`auth::service`).
+    let service = crate::auth::service::service();
+    if service.is_service(&effective_relay_url) {
+        command.env("KUZZ_SESSION_SCOPE", &service.scope);
+        command.env("KUZZ_PREVIOUS_RELAY_URLS", service.relay_urls().join(","));
+    } else {
+        command.env_remove("KUZZ_SESSION_SCOPE");
+        command.env_remove("KUZZ_PREVIOUS_RELAY_URLS");
+    }
     command.env("KUZZ_ACP_LAZY_POOL", if lazy { "true" } else { "false" });
     command.env("KUZZ_ACP_IDLE_POOL_SLEEP", idle_pool_sleep_env(lazy));
     // Publish-first mention sends hand the harness the send timestamp as a

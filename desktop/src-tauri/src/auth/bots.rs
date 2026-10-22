@@ -263,9 +263,19 @@ fn journal_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(Mutex::default)
 }
 
+/// Keyed by service scope: entries an older build keyed by an earlier
+/// server address are read under the scope (and saved so).
 fn load_journal(dir: &Path) -> Result<AdoptionJournal, String> {
     match std::fs::read(dir.join(ADOPTION_JOURNAL_FILE)) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
+        Ok(bytes) => serde_json::from_slice::<AdoptionJournal>(&bytes)
+            .map(|journal| {
+                let mut scoped = AdoptionJournal::new();
+                for (origin, entries) in journal {
+                    let key = super::service::stored(&origin);
+                    scoped.entry(key).or_default().extend(entries);
+                }
+                scoped
+            })
             .map_err(|e| format!("{ADOPTION_JOURNAL_FILE} is unreadable: {e}")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(HashMap::new()),
         Err(error) => Err(format!("read {ADOPTION_JOURNAL_FILE}: {error}")),
@@ -288,7 +298,7 @@ fn journal_get(dir: &Path, origin: &str, from: &str) -> Result<Option<String>, S
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     Ok(load_journal(dir)?
-        .get(origin)
+        .get(&super::service::stored(origin))
         .and_then(|entries| entries.get(from))
         .cloned())
 }
@@ -301,12 +311,12 @@ fn journal_set(dir: &Path, origin: &str, from: &str, bot_id: Option<&str>) -> Re
     match bot_id {
         Some(id) => {
             journal
-                .entry(origin.to_owned())
+                .entry(super::service::stored(origin))
                 .or_default()
                 .insert(from.to_owned(), id.to_owned());
         }
         None => {
-            if let Some(entries) = journal.get_mut(origin) {
+            if let Some(entries) = journal.get_mut(&super::service::stored(origin)) {
                 entries.remove(from);
             }
             journal.retain(|_, entries| !entries.is_empty());

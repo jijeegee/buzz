@@ -9,6 +9,7 @@ import 'package:nostr/nostr.dart' as nostr;
 
 import '../auth/default_community.dart';
 import '../community/community.dart';
+import '../relay/service_address.dart';
 import '../relay/signed_event_relay.dart';
 import 'dev_push_lease.dart';
 import 'push_bridge.dart';
@@ -514,18 +515,19 @@ Uri _kuzzPushRelayUri(String relayUrl) {
 Future<void> publishKuzzPushLeaseRevocation(
   KuzzPushLeaseRevocationRecord record,
 ) async {
+  // A record queued on a previous address of this build's service is sent to
+  // the service's current address; the lease identity (relayOrigin) is kept
+  // and still must match what the relay reports.
+  final relayUrl = currentServiceUrl(record.relayUrl);
   // Records for other servers are kept (retried with backoff) but never sent.
-  if (!isServerAllowed(
-    record.relayUrl,
-    builtInOrigin: appBuiltInServerOrigin(),
-  )) {
+  if (!isServerAllowed(relayUrl, builtInOrigin: appBuiltInServerOrigin())) {
     throw StateError(differentServerMessage);
   }
-  final descriptor = await fetchKuzzPushLeaseDescriptor(record.relayUrl);
+  final descriptor = await fetchKuzzPushLeaseDescriptor(relayUrl);
   if (descriptor.origin != record.relayOrigin) {
     throw StateError('Relay push origin changed while revocation was pending.');
   }
-  final uri = Uri.parse(record.relayUrl);
+  final uri = Uri.parse(relayUrl);
   final wsUrl = uri
       .replace(scheme: uri.scheme == 'https' ? 'wss' : 'ws')
       .toString();

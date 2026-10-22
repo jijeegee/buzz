@@ -12,6 +12,7 @@ import {
 } from "../lib/agentAccessWarning";
 import { AgentRunLocationProvider } from "./AgentRunLocationContext";
 import type { BackendIntent } from "../lib/instanceInputForDefinition";
+import type { RespondToAccess } from "../lib/respondToWidening";
 import type { AgentCreateIntent } from "./agentCreateIntent";
 import type { EditAgentFocusTarget } from "@/features/agents/openEditAgentEvent";
 import { AgentInstanceEditDialog } from "./AgentInstanceEditDialog";
@@ -43,6 +44,8 @@ type AgentDialogCreateProps = {
     intent: AgentCreateIntent,
     backendIntent: BackendIntent | null,
   ) => Promise<boolean>;
+  /** Agent-authored draft review: warn when access widens (see dialog). */
+  draftReview?: { savedAccess: RespondToAccess | null };
 };
 
 type AgentDialogInstanceEditProps = {
@@ -78,6 +81,8 @@ type AgentDialogDefinitionEditProps = {
     options: AgentDefinitionSubmitOptions,
   ) => Promise<unknown>;
   publishCatalogUpdatesOnSave?: boolean;
+  /** Agent-authored draft review: warn when access widens (see dialog). */
+  draftReview?: { savedAccess: RespondToAccess | null };
 };
 
 type AgentDialogProps =
@@ -133,6 +138,7 @@ function AgentCreateDialogRouter({
   submitLabel,
   onDirtyChange,
   onSubmitDefinition,
+  draftReview,
 }: AgentDialogCreateProps) {
   const [runDraft, setRunDraft] = React.useState(emptyWhereToRunDraft);
   const initialValues = React.useMemo(
@@ -159,6 +165,7 @@ function AgentCreateDialogRouter({
         }
         createSubmitBlocked={!canSubmitWhereToRun(runDraft)}
         description={copy.description}
+        draftReview={draftReview}
         embedded={embedded}
         error={definitionError}
         initialValues={initialValues}

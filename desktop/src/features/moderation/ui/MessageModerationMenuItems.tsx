@@ -162,12 +162,12 @@ export function MessageModerationMenuItems({
           onClick={() =>
             void run(
               () => removeMutation.mutateAsync(targetPubkey),
-              "Author removed from channel",
+              "Author removed from group",
             )
           }
         >
           <UserMinus className="h-4 w-4" />
-          Kick from channel
+          Kick from group
         </DropdownMenuItem>
       ) : null}
 

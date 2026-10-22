@@ -594,10 +594,9 @@ fn definition_fields_present_in_snapshot() {
     assert_eq!(snapshot.definition.model.as_deref(), Some("claude-opus-4"));
     assert_eq!(snapshot.definition.provider.as_deref(), Some("anthropic"));
     assert_eq!(snapshot.definition.name_pool, vec!["Alice", "Bob"]);
-    // definition_respond_to maps to respond_to in the snapshot definition
-    assert_eq!(snapshot.definition.respond_to.as_deref(), Some("allowlist"));
-    // definition_respond_to_allowlist should be included
-    assert!(!snapshot.definition.respond_to_allowlist.is_empty());
+    // Who may command the agent never goes into a shareable file.
+    let json = String::from_utf8(encode_snapshot_json(&snapshot).unwrap()).unwrap();
+    assert!(!json.contains("respondTo"), "{json}");
 }
 
 #[test]

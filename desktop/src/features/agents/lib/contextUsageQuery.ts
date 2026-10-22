@@ -280,7 +280,7 @@ export function compactUnavailableReason({
     return "A compaction request for this session is already in progress.";
   }
   if (hasActiveTurn) {
-    return "The agent is working in this channel. Compact after the turn finishes.";
+    return "The agent is working in this group. Compact after the turn finishes.";
   }
   return null;
 }

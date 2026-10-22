@@ -24,6 +24,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
+import '../groups/group_preview.dart' show GroupJoinBar;
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/bouncing_dots_indicator.dart';
@@ -44,6 +45,7 @@ import '../../shared/profile/user_profile.dart';
 import '../forum/forum_posts_view.dart';
 import 'android_ime_lift.dart';
 import 'channel.dart';
+import 'group_avatar.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_link_navigation.dart';
@@ -873,6 +875,7 @@ class ChannelDetailPage extends HookConsumerWidget {
               isMember: resolvedChannel.isMember,
               isArchived: resolvedChannel.isArchived,
               initialMessageId: initialMessageId,
+              channelBelow: false,
             ),
           ),
         );
@@ -986,7 +989,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                       Navigator.of(context).pop();
                     }
                   },
-                  tooltip: 'Channel actions',
+                  tooltip: 'Group actions',
                   icon: const Icon(LucideIcons.ellipsisVertical, size: 22),
                 ),
               ]
@@ -1150,7 +1153,9 @@ class ChannelDetailPage extends HookConsumerWidget {
                           entries: typingEntries,
                         ),
                 ),
-                if (!resolvedChannel.isDm)
+                if (resolvedChannel.canJoin)
+                  GroupJoinBar(channel: resolvedChannel)
+                else if (!resolvedChannel.isPersonChat)
                   _ReadOnlyNotice(channel: resolvedChannel),
               ],
             ],
@@ -1188,7 +1193,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                         focusNode: composerFocusNode,
                         onFocusRestorerChanged: (restoreFocus) =>
                             restoreComposerFocus.value = restoreFocus,
-                        channelName: resolvedChannel.isDm
+                        channelName: resolvedChannel.isPersonChat
                             ? ''
                             : resolvedChannel.name,
                         onSend:

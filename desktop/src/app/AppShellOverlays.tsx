@@ -8,6 +8,7 @@ import {
   mergeOpenChannelDirectory,
   useOpenChannelDirectoryQuery,
 } from "@/features/channels/openChannelDirectory";
+import { useJoinWithLinkState } from "@/features/groups/joinWithLinkStore";
 
 const ChannelBrowserDialog = React.lazy(async () => {
   const module = await import("@/features/channels/ui/ChannelBrowserDialog");
@@ -17,6 +18,11 @@ const ChannelBrowserDialog = React.lazy(async () => {
 const ChannelManagementSheet = React.lazy(async () => {
   const module = await import("@/features/channels/ui/ChannelManagementSheet");
   return { default: module.ChannelManagementSheet };
+});
+
+const JoinWithLinkDialog = React.lazy(async () => {
+  const module = await import("@/features/groups/ui/JoinWithLinkDialog");
+  return { default: module.JoinWithLinkDialog };
 });
 
 const MembersSidebar = React.lazy(async () => {
@@ -78,14 +84,16 @@ export function AppShellOverlays({
     });
   }, [browseDialogType, cancelDeferredModalOpen, openModalNextFrame]);
 
+  const isJoinWithLinkOpen = useJoinWithLinkState().open;
   const renderedBrowseDialogType = visibleBrowseDialogType ?? browseDialogType;
 
-  // The channel browser is the only overlay that shows non-member open
-  // channels, so it — not the 60s poll — pays for the all-open directory scan,
-  // and only while it is open. Merge the superset over the member list so a
-  // just-joined or optimistic channel keeps its live state.
+  // Find groups gets public groups from the server search API, so it never
+  // downloads the all-open directory. Only the forum browser ("Add a forum",
+  // which lists every forum) still pays for that scan, and only while open.
+  // Merge the superset over the member list so a just-joined or optimistic
+  // channel keeps its live state.
   const openDirectoryQuery = useOpenChannelDirectoryQuery({
-    enabled: browseDialogType !== null,
+    enabled: browseDialogType === "forum",
   });
   const browserChannels = React.useMemo(
     () => mergeOpenChannelDirectory(channels, openDirectoryQuery.data),
@@ -119,6 +127,12 @@ export function AppShellOverlays({
             onOpenChange={onChannelManagementOpenChange}
             open={true}
           />
+        </React.Suspense>
+      ) : null}
+
+      {isJoinWithLinkOpen ? (
+        <React.Suspense fallback={null}>
+          <JoinWithLinkDialog onOpenGroup={onSelectChannel} />
         </React.Suspense>
       ) : null}
 

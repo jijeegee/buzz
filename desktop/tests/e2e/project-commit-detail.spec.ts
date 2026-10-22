@@ -344,7 +344,7 @@ test("creating a project opens its channel conversation", async ({ page }) => {
   ).not.toContainText("#multi-repo-demo");
   await expect(
     page.getByTestId("project-home-context-channel"),
-  ).not.toContainText("people in this channel");
+  ).not.toContainText("people in this group");
   const channelSection = page.getByTestId("project-home-context-channel");
   const channelSectionToggle = channelSection.getByRole("button", {
     name: "Channels",

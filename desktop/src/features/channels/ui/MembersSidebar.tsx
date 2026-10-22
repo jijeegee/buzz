@@ -1,6 +1,8 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserRoundPlus, X } from "lucide-react";
+import { toast } from "sonner";
+import { invitationSentText } from "@/shared/api/groupAddOutcome";
 import {
   invalidateChannelState,
   useAddChannelMembersMutation,
@@ -159,7 +161,7 @@ export function MembersSidebar({
   const addMembersMutation = useAddChannelMembersMutation(channelId);
   const changeRoleMutation = useMutation({
     mutationFn: async ({ pubkey, role }: { pubkey: string; role: string }) => {
-      if (!channelId) throw new Error("No channel selected.");
+      if (!channelId) throw new Error("No group selected.");
       await changeChannelMemberRole(channelId, pubkey, role);
     },
     onSettled: async () => {
@@ -603,6 +605,9 @@ export function MembersSidebar({
           label: formatAddCandidateName(user),
         })),
       ]);
+      if (result.invited.length > 0) {
+        toast(invitationSentText(formatAddCandidateName(user)));
+      }
     } finally {
       setAddingMemberPubkeys((prev) => {
         const next = new Set(prev);
@@ -712,7 +717,9 @@ export function MembersSidebar({
         >
           <DialogHeader className="space-y-0 pb-5">
             <div className="flex items-center justify-between gap-4">
-              <DialogTitle>Channel members</DialogTitle>
+              <DialogTitle>
+                {channel.groupChat ? "People" : "Group members"}
+              </DialogTitle>
               <DialogClose className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus:ring-1 focus:ring-ring">
                 <X className="h-4 w-4" />
                 <span className="sr-only">Close</span>
@@ -783,7 +790,9 @@ export function MembersSidebar({
                       <>
                         {addSearchResults.length > 0 || isAddSearchLoading ? (
                           <SearchResultSectionTitle>
-                            Not in this channel
+                            {channel.groupChat
+                              ? "Not in this chat"
+                              : "Not in this group"}
                           </SearchResultSectionTitle>
                         ) : null}
                         {addSearchResults.map((user) => (

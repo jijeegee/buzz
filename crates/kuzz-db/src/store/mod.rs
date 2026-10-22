@@ -37,10 +37,14 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Group search, public addresses, invite links and invitations.
+pub mod groups;
 /// Centralized identity: principals, devices, sessions, bots, access tokens.
 pub mod identity;
 /// One-statement inbox summary of member rooms and active threads.
 pub mod inbox_summary;
+/// Attachment permissions: uploaders and event references.
+pub mod media_access;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
 /// Deployment-global operator-listener mention registrations and delivery queues.
@@ -94,6 +98,9 @@ mod artifact_postgres_tests;
 mod blocks_postgres_tests;
 
 #[cfg(test)]
+mod media_access_postgres_tests;
+
+#[cfg(test)]
 mod channel_history_postgres_tests;
 
 #[cfg(test)]
@@ -113,3 +120,6 @@ mod chat_stored_state_postgres_tests;
 
 #[cfg(test)]
 mod inbox_summary_postgres_tests;
+
+#[cfg(test)]
+mod group_chat_postgres_tests;

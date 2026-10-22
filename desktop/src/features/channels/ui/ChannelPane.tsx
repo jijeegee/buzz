@@ -1,5 +1,4 @@
 import * as React from "react";
-import { LogIn } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useMediaUpload } from "@/features/messages/lib/useMediaUpload";
@@ -66,12 +65,13 @@ import {
   shouldUseFocusIdleDrawer,
 } from "@/features/channels/ui/ChannelPane.helpers";
 import { HuddleStartingView, HuddleTranscriptIntro } from "@/features/huddle";
-import { ChannelGlyph } from "@/features/channels/ui/ChannelGlyph";
 import { useSearchHighlightProps } from "@/features/channels/ui/useSearchHighlightProps";
 import { useChannelIntro } from "@/features/channels/ui/useChannelIntro";
 import type { ChannelPaneProps } from "@/features/channels/ui/ChannelPane.types";
 import * as agentSessionSelection from "@/features/channels/ui/agentSessionSelection";
 import { usePrepareDmSendChannel } from "@/features/channels/ui/usePrepareDmSendChannel";
+import { useStartChatConfirm } from "@/features/channels/ui/StartChatConfirm";
+import { useChatTitle } from "@/features/channels/useChatTitle";
 import { useChannelPaneMessages } from "@/features/channels/ui/useChannelPaneMessages";
 import { useRoutedMessageEdit } from "@/features/channels/ui/useRoutedMessageEdit";
 import { Button } from "@/shared/ui/button";
@@ -208,9 +208,15 @@ export const ChannelPane = React.memo(function ChannelPane({
   const messageTimelineRef = React.useRef<MessageTimelineHandle>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement>(null);
   const { goChannel } = useAppNavigation();
+  const startChatConfirm = useStartChatConfirm();
+  const activeChannelTitle = useChatTitle(
+    activeChannel,
+    activeChannel?.name ?? "",
+  );
   const prepareDmSendChannel = usePrepareDmSendChannel(
     activeChannel,
     currentPubkey,
+    startChatConfirm.confirm,
   );
   const mainComposerMedia = useMediaUpload({ deferUploadsUntilSend: true });
   const searchHighlightProps = useSearchHighlightProps(
@@ -566,7 +572,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     );
   const wrapThreadPanel = (panel: React.ReactNode) => (
     <ThreadPanelSurface
-      channelName={activeChannel?.name ?? "channel"}
+      channelName={activeChannel?.name ?? "group"}
       covered={threadSurface.covered}
       hasActiveEdit={threadEditTarget !== null}
       isFocusDrawer={useFocusThreadDrawer}
@@ -584,7 +590,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   const wrapIdlePanel = (panel: React.ReactNode) =>
     useFocusIdleDrawer && onCloseIdleAuxiliaryPanel ? (
       <FocusThreadDrawer
-        channelName={activeChannel?.name ?? "channel"}
+        channelName={activeChannel?.name ?? "group"}
         key="idle-auxiliary-surface"
         label={idleAuxiliaryTitle || "Panel"}
         onClose={onCloseIdleAuxiliaryPanel}
@@ -642,7 +648,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       ) : null}
       {!isSinglePanelView ? (
         <section
-          aria-label="Channel messages and composer"
+          aria-label="Group messages and composer"
           className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           inert={channelIsCovered ? true : undefined}
           data-testid="channel-drop-zone"
@@ -706,9 +712,9 @@ export const ChannelPane = React.memo(function ChannelPane({
                 emptyTitle={
                   activeChannel
                     ? activeChannel.channelType === "forum"
-                      ? "Forum channels are next"
+                      ? "Forum groups are next"
                       : "No messages yet"
-                    : "No channel selected"
+                    : "No group selected"
                 }
                 isError={isTimelineError}
                 isLoading={isHuddleTranscript ? false : isTimelineLoading}
@@ -749,34 +755,22 @@ export const ChannelPane = React.memo(function ChannelPane({
                 threadUnreadCounts={threadUnreadCounts}
               />
               {isNonMemberView ? (
+                // Public group preview: read-only timeline, and one
+                // full-width Join group in place of the composer.
                 <div
                   data-testid="join-banner"
-                  className="flex items-center gap-3 border-t border-border/80 bg-card/50 px-5 py-3"
+                  className="border-t border-border/80 bg-card/50 px-5 py-3"
                 >
-                  <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
-                    {activeChannel ? (
-                      <ChannelGlyph
-                        channel={activeChannel}
-                        className="h-4 w-4 shrink-0"
-                      />
-                    ) : null}
-                    <span className="truncate">
-                      Viewing{" "}
-                      <span className="font-medium text-foreground">
-                        #{activeChannel?.name}
-                      </span>
-                    </span>
-                  </div>
                   <Button
+                    className="w-full"
+                    data-testid="join-group-button"
                     disabled={isJoining}
                     onClick={() => {
                       void onJoinChannel?.();
                     }}
-                    size="sm"
                     variant="default"
                   >
-                    <LogIn className="mr-1.5 h-4 w-4" />
-                    {isJoining ? "Joining..." : "Join to participate"}
+                    {isJoining ? "Joining..." : "Join group"}
                   </Button>
                 </div>
               ) : (
@@ -819,7 +813,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                           : null
                       }
                       channelId={activeChannel?.id ?? null}
-                      channelName={activeChannel?.name ?? "channel"}
+                      channelName={activeChannel?.name ?? "group"}
                       channelType={activeChannel?.channelType ?? null}
                       containerClassName="px-5 pb-0"
                       layoutMode="dock"
@@ -848,17 +842,17 @@ export const ChannelPane = React.memo(function ChannelPane({
                           : blockedPeer
                             ? "You can't send messages to someone you blocked."
                             : isModerationDmChannel
-                              ? "This channel is read-only."
+                              ? "This group is read-only."
                               : activeChannel?.archivedAt
-                                ? "Archived channels are read-only."
+                                ? "Archived groups are read-only."
                                 : activeChannel?.channelType === "forum"
                                   ? "Forum posting is not wired in this pass."
                                   : activeChannel
                                     ? activeChannel.channelType === "dm" &&
                                       directMessageIntro
                                       ? `Message ${directMessageIntro.displayName}`
-                                      : `Message #${activeChannel.name}`
-                                    : "Select a channel"
+                                      : `Message ${activeChannelTitle}`
+                                    : "Select a group"
                       }
                       showTopBorder={false}
                     />
@@ -883,6 +877,7 @@ export const ChannelPane = React.memo(function ChannelPane({
           </MessageQuoteScope>
         </section>
       ) : null}
+      {startChatConfirm.dialog}
       {/* Serialize replacements so focus drawers keep one travel direction. */}
       <AnimatePresence mode="wait" onExitComplete={markExitComplete}>
         {channelManagementOpen && activeChannel ? (
@@ -913,7 +908,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                   channel={activeChannel}
                   onOpenGoalLink={onOpenGoalLink}
                   channelId={activeChannel?.id ?? null}
-                  channelName={activeChannel?.name ?? "channel"}
+                  channelName={activeChannel?.name ?? "group"}
                   currentPubkey={currentPubkey}
                   disabled={isComposerDisabled}
                   editTarget={threadEditTarget}

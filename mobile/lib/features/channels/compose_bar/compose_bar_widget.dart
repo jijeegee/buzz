@@ -168,7 +168,7 @@ class ComposeBar extends HookConsumerWidget {
     }, [appView, focusNode, voiceNote.isPreparing]);
     final resolvedHint =
         hintText ??
-        (channelName.isNotEmpty ? 'Message #$channelName' : 'Message\u2026');
+        (channelName.isNotEmpty ? 'Message $channelName' : 'Message\u2026');
     useEffect(
       () {
         final target =

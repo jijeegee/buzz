@@ -74,7 +74,7 @@ test.describe("welcome and channel agent entry points", () => {
     await expect(page.getByTestId("chat-title")).toHaveText("Welcome");
     await expect(
       page.getByTestId("message-channel-intro").getByRole("button"),
-    ).toHaveText(["Browse channels", "Create a channel", "Create an agent"]);
+    ).toHaveText(["Find groups", "New group", "Create an agent"]);
     await page.getByTestId("welcome-intro-action-create-agent").click();
     const dialog = page.getByRole("dialog");
     await expect(
@@ -217,7 +217,7 @@ test.describe("welcome and channel agent entry points", () => {
     });
     const dialog = await openAgentPicker(page);
     await expect(dialog).toContainText(
-      "All of your agents are already in this channel.",
+      "All of your agents are already in this group.",
     );
     await dialog.screenshot({ path: `${SHOTS}/02-only-fizz-in-channel.png` });
   });
@@ -285,7 +285,7 @@ test.describe("welcome and channel agent entry points", () => {
     });
     const dialog = await openAgentPicker(page);
     await expect(dialog).toContainText(
-      "All of your agents are already in this channel.",
+      "All of your agents are already in this group.",
     );
     await dialog.screenshot({ path: `${SHOTS}/04-all-agents-in-channel.png` });
   });

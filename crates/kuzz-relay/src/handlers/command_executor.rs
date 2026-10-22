@@ -303,34 +303,14 @@ async fn handle_dm_open(
     let self_bytes = auth.pubkey().to_bytes().to_vec();
     let self_hex = hex::encode(&self_bytes);
 
-    // 1. Extract participant pubkeys from `p` tags
-    let p_tags = extract_p_tags(event);
-
-    // 2. Validate: at least 1 other participant, max 8 others (9 total)
-    if p_tags.is_empty() {
-        return Err(IngestError::Rejected(
-            "invalid: pubkeys must contain at least 1 other participant".into(),
-        ));
+    // 1-3. Participants from `p` tags: exactly one other person, or only
+    // the caller (notes to self). DMs are 1:1; more people = a group chat.
+    let mut decoded: Vec<Vec<u8>> = Vec::new();
+    for hex_str in &extract_p_tags(event) {
+        decoded.push(decode_pubkey(hex_str)?);
     }
-    if p_tags.len() > 8 {
-        return Err(IngestError::Rejected(
-            "invalid: pubkeys may contain at most 8 other participants (9 total)".into(),
-        ));
-    }
-
-    // Decode all provided pubkeys
-    let mut other_bytes: Vec<Vec<u8>> = Vec::with_capacity(p_tags.len());
-    for hex_str in &p_tags {
-        other_bytes.push(decode_pubkey(hex_str)?);
-    }
-
-    // 3. Build full participant set (self + others, deduplicated)
-    let mut all_bytes: Vec<Vec<u8>> = vec![self_bytes.clone()];
-    for ob in &other_bytes {
-        if !all_bytes.iter().any(|b| b == ob) {
-            all_bytes.push(ob.clone());
-        }
-    }
+    let all_bytes = dm_open_participants(&self_bytes, &decoded)
+        .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
 
     // Persist the command event (idempotency) — returns open transaction
     let tx = match persist_command_event(&state.db, tenant, event, None).await? {
@@ -392,7 +372,7 @@ async fn handle_dm_open(
             warn!(channel = %channel.id, "DM open: discovery emission failed: {e}");
         }
 
-        let silent = opener_blockers(tenant, state, &self_bytes).await;
+        let silent = opener_blockers(tenant, state, &self_bytes, all_bytes.len()).await;
         for participant in &all_bytes {
             if silent.skips(participant) {
                 // Their membership starts hidden. Refresh their hidden-DM
@@ -438,14 +418,16 @@ async fn handle_dm_open(
     })
 }
 
-/// Participants who blocked a DM's opener: their membership starts hidden
-/// (see `kuzz_db::dm::create_dm`), they get no "added" notification and their
-/// hidden-DM snapshot is republished, so the opener cannot tell. A failed
-/// lookup treats every other participant this way (fail closed); anyone not
-/// actually hidden still sees the DM via the chats list.
+/// Participants of a new 1:1 DM who block its opener: their membership
+/// starts hidden (see `kuzz_db::dm::create_dm`), they get no "added"
+/// notification and their hidden-DM snapshot is republished, so the opener
+/// cannot tell. A failed lookup treats the other participant this way (fail
+/// closed); anyone not actually hidden still sees the DM via the chats list.
+/// Group DMs open normally for everyone.
 enum OpenerBlockers {
     Known(crate::blocks::PubkeySet, Vec<u8>),
     Unknown(Vec<u8>),
+    GroupDm,
 }
 
 impl OpenerBlockers {
@@ -456,6 +438,7 @@ impl OpenerBlockers {
                     && <[u8; 32]>::try_from(participant).is_ok_and(|pk| blockers.contains(&pk))
             }
             Self::Unknown(opener) => participant != opener.as_slice(),
+            Self::GroupDm => false,
         }
     }
 }
@@ -464,7 +447,11 @@ async fn opener_blockers(
     tenant: &TenantContext,
     state: &AppState,
     opener: &[u8],
+    participant_count: usize,
 ) -> OpenerBlockers {
+    if participant_count != 2 {
+        return OpenerBlockers::GroupDm;
+    }
     match state.blockers_of_cached(tenant.community(), opener).await {
         Ok(blockers) => OpenerBlockers::Known(blockers, opener.to_vec()),
         Err(e) => {
@@ -474,153 +461,39 @@ async fn opener_blockers(
     }
 }
 
+/// Rejection of a workflow definition in a group chat.
+pub const WORKFLOWS_IN_GROUP_CHAT_REJECTED: &str = "forbidden: chats cannot have workflows";
+
+/// Rejection of kind:41011 (DM add member): DMs are 1:1.
+pub const DM_ADD_MEMBER_REJECTED: &str =
+    "invalid: direct messages are 1:1; start a group chat to add people";
+
+/// The participant set of a kind:41010 DM open by `opener` from its decoded
+/// `p` tags: `[opener, other]` for exactly one distinct other person, or
+/// `[opener]` when the tags name only the opener (notes to self).
+fn dm_open_participants(opener: &[u8], tagged: &[Vec<u8>]) -> Result<Vec<Vec<u8>>, String> {
+    if tagged.is_empty() {
+        return Err("pubkeys must contain 1 other participant".into());
+    }
+    let mut others: Vec<&Vec<u8>> = tagged.iter().filter(|pk| pk.as_slice() != opener).collect();
+    others.sort();
+    others.dedup();
+    match others.as_slice() {
+        [] => Ok(vec![opener.to_vec()]),
+        [other] => Ok(vec![opener.to_vec(), (*other).clone()]),
+        _ => Err("direct messages are 1:1; start a group chat for more people".into()),
+    }
+}
+
+/// kind:41011 used to make a new, larger DM. DMs are 1:1 now: always rejected
+/// (a group chat is created with kind:9007 instead).
 async fn handle_dm_add_member(
-    tenant: &TenantContext,
-    state: &Arc<AppState>,
-    event: &Event,
-    auth: &IngestAuth,
+    _tenant: &TenantContext,
+    _state: &Arc<AppState>,
+    _event: &Event,
+    _auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
-    let self_bytes = auth.pubkey().to_bytes().to_vec();
-
-    // 1. Extract target channel from `h` tag, new member pubkeys from `p` tags
-    let channel_id_str = extract_h_tag(event)
-        .ok_or_else(|| IngestError::Rejected("invalid: missing h tag (channel_id)".into()))?;
-    let channel_id = Uuid::parse_str(&channel_id_str)
-        .map_err(|_| IngestError::Rejected("invalid: bad channel_id format".into()))?;
-
-    let p_tags = extract_p_tags(event);
-    if p_tags.is_empty() {
-        return Err(IngestError::Rejected(
-            "invalid: must specify at least 1 new participant in p tags".into(),
-        ));
-    }
-
-    // 2. Validate caller is member of existing DM
-    let is_member = state
-        .is_member_cached(tenant.community(), channel_id, &self_bytes)
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: membership check: {e}")))?;
-    if !is_member {
-        return Err(IngestError::Rejected(
-            "forbidden: not a member of this DM".into(),
-        ));
-    }
-
-    // 3. Validate channel is type "dm"
-    let existing_channel = state
-        .db
-        .get_channel_for_event_write(tenant.community(), channel_id)
-        .await
-        .map_err(|_| IngestError::Rejected("invalid: DM not found".into()))?;
-    if existing_channel.channel_type != "dm" {
-        return Err(IngestError::Rejected("invalid: channel is not a DM".into()));
-    }
-
-    // 4. Get existing members, merge with new
-    let existing_members = state
-        .db
-        .get_members_for_event_write(tenant.community(), channel_id)
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: get members: {e}")))?;
-
-    let mut all_bytes: Vec<Vec<u8>> = existing_members.into_iter().map(|m| m.pubkey).collect();
-
-    // Decode and merge new pubkeys
-    for hex_str in &p_tags {
-        let bytes = decode_pubkey(hex_str)?;
-        if !all_bytes.iter().any(|b| b == &bytes) {
-            all_bytes.push(bytes);
-        }
-    }
-
-    // 5. Enforce max 9 participants
-    if all_bytes.len() > 9 {
-        return Err(IngestError::Rejected(
-            "invalid: DM supports at most 9 participants".into(),
-        ));
-    }
-
-    // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
-        PersistResult::Duplicate => {
-            return Ok(IngestResult {
-                event_id: event.id.to_hex(),
-                accepted: true,
-                message: "duplicate: already processed".into(),
-            });
-        }
-        PersistResult::Inserted(tx) => tx,
-    };
-
-    // 6. Execute: open_dm with expanded set (creates NEW DM — DM sets are immutable)
-    let all_refs: Vec<&[u8]> = all_bytes.iter().map(|b| b.as_slice()).collect();
-    let (new_channel, was_created) = state
-        .db
-        .open_dm(tenant.community(), &all_refs, &self_bytes)
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: db open_dm: {e}")))?;
-
-    // Finalize the idempotency record after the separate mutation succeeds.
-    tx.commit()
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: commit transaction: {e}")))?;
-
-    // 7. Cache invalidation + notifications for new DM (post-commit, best-effort)
-    if was_created {
-        metrics::counter!(
-            "kuzz_channels_created_total",
-            "community" => tenant.host().to_owned(),
-            "type" => "dm"
-        )
-        .increment(1);
-
-        for pk in &all_bytes {
-            state.invalidate_membership(tenant, new_channel.id, pk);
-        }
-
-        if let Err(e) = emit_group_discovery_events(tenant, state, new_channel.id).await {
-            warn!(channel = %new_channel.id, "DM add_member: discovery emission failed: {e}");
-        }
-
-        let silent = opener_blockers(tenant, state, &self_bytes).await;
-        for participant_bytes in &all_bytes {
-            if silent.skips(participant_bytes) {
-                // Their membership starts hidden. Refresh their hidden-DM
-                // snapshot so their clients drop the DM that the channel's
-                // member list (kind:39002) would otherwise surface.
-                if let Err(e) =
-                    publish_dm_visibility_snapshot(tenant, state, participant_bytes).await
-                {
-                    warn!("DM add_member: blocker visibility snapshot failed: {e}");
-                }
-                continue;
-            }
-            if let Err(e) = emit_membership_notification(
-                tenant,
-                state,
-                new_channel.id,
-                participant_bytes,
-                &self_bytes,
-                KIND_MEMBER_ADDED_NOTIFICATION,
-            )
-            .await
-            {
-                warn!("DM add_member: membership notification failed: {e}");
-            }
-        }
-    }
-
-    // 8. Return response
-    Ok(IngestResult {
-        event_id: event.id.to_hex(),
-        accepted: true,
-        message: format!(
-            "response:{}",
-            serde_json::json!({
-                "channel_id": new_channel.id.to_string(),
-            })
-        ),
-    })
+    Err(IngestError::Rejected(DM_ADD_MEMBER_REJECTED.into()))
 }
 
 async fn handle_dm_hide(
@@ -723,6 +596,19 @@ async fn handle_workflow_def(
     if !is_member {
         return Err(IngestError::Rejected(
             "forbidden: not a member of this channel".into(),
+        ));
+    }
+
+    // Group chats have nobody who could moderate a workflow: none may be
+    // created or updated there.
+    let channel = state
+        .db
+        .get_channel_for_event_write(tenant.community(), channel_id)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: channel lookup: {e}")))?;
+    if channel.group_chat {
+        return Err(IngestError::Rejected(
+            WORKFLOWS_IN_GROUP_CHAT_REJECTED.into(),
         ));
     }
 

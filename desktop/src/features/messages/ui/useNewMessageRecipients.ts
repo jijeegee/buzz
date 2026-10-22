@@ -10,6 +10,7 @@ import {
   getSharedChannelIds,
 } from "@/features/agents/lib/agentAutocompleteEligibility";
 import { useChannelsQuery } from "@/features/channels/hooks";
+import { MAX_NEW_CHAT_PEOPLE } from "@/features/channels/lib/groupChat";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { useSharedPeopleSearch } from "@/features/people/useSharedPeopleSearch";
@@ -26,8 +27,8 @@ import type {
 } from "@/shared/api/types";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 
-/** Maximum recipients (excluding the current user) a DM can address. */
-export const NEW_MESSAGE_RECIPIENT_LIMIT = 8;
+/** Most people (excluding you) a new conversation can start with. */
+export const NEW_MESSAGE_RECIPIENT_LIMIT = MAX_NEW_CHAT_PEOPLE;
 
 const DIRECTORY_PAGE_SIZE = 50;
 

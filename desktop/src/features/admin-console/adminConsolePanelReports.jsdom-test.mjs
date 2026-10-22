@@ -2501,7 +2501,7 @@ test("kick-already-gone-friendly-copy: enforcement block shows friendly message 
 
     const text = block.textContent ?? "";
     assert.ok(
-      text.includes("No channel membership to remove"),
+      text.includes("No group membership to remove"),
       `enforcement block must show friendly kick-absent copy; got: ${text}`,
     );
     assert.ok(

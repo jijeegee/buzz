@@ -214,6 +214,7 @@ function FoundPerson({
       data-testid="add-friend-result"
     >
       <ProfileAvatar
+        mediaVariant="small"
         avatarUrl={person.avatarUrl}
         className="h-9 w-9 text-xs shadow-none"
         iconClassName="h-4 w-4"

@@ -20,7 +20,6 @@ function publication(overrides = {}) {
       model: null,
       provider: null,
       namePool: [],
-      respondTo: null,
       parallelism: null,
       sessionPolicy: "channel",
     },

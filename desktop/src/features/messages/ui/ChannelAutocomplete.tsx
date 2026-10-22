@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import type { ChannelSuggestion } from "@/features/messages/lib/useChannelLinks";
 import { Badge } from "@/shared/ui/badge";
 import { cn } from "@/shared/lib/cn";
@@ -78,7 +79,13 @@ export const ChannelAutocomplete = React.memo(function ChannelAutocomplete({
             tabIndex={-1}
             type="button"
           >
-            <span className="truncate font-medium">#{suggestion.name}</span>
+            <GroupLetterAvatar
+              channelId={suggestion.id}
+              label={suggestion.name}
+              picture={suggestion.picture}
+              size="sm"
+            />
+            <span className="truncate font-medium">{suggestion.name}</span>
             <Badge variant="secondary">{suggestion.channelType}</Badge>
           </button>
         ))}

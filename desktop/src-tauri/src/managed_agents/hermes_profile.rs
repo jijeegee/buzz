@@ -169,7 +169,7 @@ fn is_under(path: &Path, base: &Path) -> bool {
 
 /// Hermes's native home: `%LOCALAPPDATA%\hermes` on Windows, `~/.hermes`
 /// elsewhere.
-fn native_hermes_home() -> Option<PathBuf> {
+pub(crate) fn native_hermes_home() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         std::env::var_os("LOCALAPPDATA")

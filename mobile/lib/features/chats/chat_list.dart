@@ -16,7 +16,10 @@ const chatListBackgroundRows = 400;
 const chatUnreadCap = 99;
 
 /// Threads shown under their channel in By channel before "+ N more".
-const byChannelVisibleThreads = 2;
+const byChannelVisibleThreads = 3;
+
+/// Threads each "+ 10 more" tap reveals under a channel.
+const byChannelThreadStep = 10;
 
 /// Message kinds the relay counts (kuzz-db `MESSAGE_KINDS`).
 const _messageKinds = {9, 40002, 45001, 45003};
@@ -73,6 +76,8 @@ class ChatListRow {
     required this.channelName,
     this.archived = false,
     this.dmMembers = const [],
+    this.groupChat = false,
+    this.memberCount,
     this.rootId,
     this.threadName,
     this.closed = false,
@@ -95,7 +100,15 @@ class ChatListRow {
   final String channelType;
   final String channelName;
   final bool archived;
+
+  /// A DM's people, or up to 16 other active members of a group chat.
   final List<String> dmMembers;
+
+  /// An ownerless chat of people (relay `group_chat`).
+  final bool groupChat;
+
+  /// A group chat's active members (relay `member_count`).
+  final int? memberCount;
   final String? rootId;
   final String? threadName;
   final bool closed;
@@ -108,6 +121,12 @@ class ChatListRow {
   final NostrEvent? root;
 
   bool get isDm => channelType == 'dm';
+
+  /// A group chat: titled and drawn from its members, like a DM.
+  bool get isGroupChat => groupChat && !isDm;
+
+  /// A 1:1 or a group chat: a room of people rather than a managed group.
+  bool get isPersonChat => isDm || isGroupChat;
 
   static ChatListRow? fromJson(Object? json) {
     if (json is! Map<String, dynamic>) return null;
@@ -142,6 +161,10 @@ class ChatListRow {
       dmMembers: members is List
           ? [for (final member in members) ?(member is String ? member : null)]
           : const [],
+      groupChat: flag('group_chat'),
+      memberCount: json['member_count'] is int
+          ? json['member_count'] as int
+          : null,
       rootId: json['root_id'] is String ? json['root_id'] as String : null,
       threadName: json['thread_name'] is String
           ? json['thread_name'] as String
@@ -167,6 +190,8 @@ class ChatListRow {
     'channel_name': channelName,
     'archived': archived,
     'dm_members': dmMembers,
+    'group_chat': groupChat,
+    'member_count': memberCount,
     'root_id': rootId,
     'thread_name': threadName,
     'closed': closed,
@@ -198,6 +223,8 @@ class ChatListRow {
     channelName: channelName,
     archived: archived,
     dmMembers: dmMembers,
+    groupChat: groupChat,
+    memberCount: memberCount,
     rootId: rootId,
     threadName: threadName,
     closed: closed,
@@ -633,7 +660,7 @@ final class ChatGroupThread extends ChatGroupEntry {
   final ChatListRow row;
 }
 
-/// "+ N more threads" (or "Show less") under a channel.
+/// "+ N more threads", "+ 10 more · N left" and "Show less" under a channel.
 final class ChatGroupMore extends ChatGroupEntry {
   const ChatGroupMore({
     required this.channelId,
@@ -644,22 +671,24 @@ final class ChatGroupMore extends ChatGroupEntry {
 
   final String channelId;
 
-  /// Threads hidden while folded.
+  /// Threads still hidden; 0 once every thread shows.
   final int hidden;
 
-  /// Unread messages in the hidden threads.
+  /// Unread messages in the still hidden threads.
   final int hiddenUnread;
+
+  /// Shows threads past the first ones, so "Show less" is offered.
   final bool expanded;
 }
 
 /// Groups ordered rows by channel: each channel once, at the position of its
 /// newest row, followed by its threads newest first (pinned threads first and
-/// always shown). Only [byChannelVisibleThreads] threads show unless the
-/// channel is in [expandedChannelIds]. [unreadOf] gives a row's shown unread
-/// count.
+/// always shown). [byChannelVisibleThreads] threads show, plus
+/// [byChannelThreadStep] more per step in [expandedSteps] (channel id to
+/// "+ 10 more" taps). [unreadOf] gives a row's shown unread count.
 List<ChatGroupEntry> groupChatRowsByChannel(
   List<ChatListRow> ordered, {
-  required Set<String> expandedChannelIds,
+  required Map<String, int> expandedSteps,
   required int Function(ChatListRow row) unreadOf,
   Set<String> pinnedThreadIds = const {},
 }) {
@@ -685,17 +714,19 @@ List<ChatGroupEntry> groupChatRowsByChannel(
         pinnedThreadIds.contains(row.rootId ?? row.key);
     final list = [...all.where(pinned), ...all.where((row) => !pinned(row))];
     final limit = math.max(byChannelVisibleThreads, all.where(pinned).length);
-    final expanded = expandedChannelIds.contains(channelId);
-    final visible = expanded ? list : list.take(limit).toList();
-    entries.addAll(visible.map(ChatGroupThread.new));
+    final shown = math.min(
+      list.length,
+      limit + (expandedSteps[channelId] ?? 0) * byChannelThreadStep,
+    );
+    entries.addAll(list.take(shown).map(ChatGroupThread.new));
     if (list.length > limit) {
-      final hidden = list.skip(limit);
+      final hidden = list.skip(shown);
       entries.add(
         ChatGroupMore(
           channelId: channelId,
-          hidden: list.length - limit,
+          hidden: list.length - shown,
           hiddenUnread: hidden.fold(0, (sum, row) => sum + unreadOf(row)),
-          expanded: expanded,
+          expanded: shown > limit,
         ),
       );
     }

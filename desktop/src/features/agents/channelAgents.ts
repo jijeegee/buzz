@@ -622,3 +622,67 @@ async function attachRemoteAgentToChannel(
   if (error) throw new Error(error.error);
   return pubkey;
 }
+
+export type AddAgentsToChannelResult = {
+  /** Pubkeys now in the channel because of this call. */
+  added: string[];
+  /** Pubkeys that were already members. */
+  alreadyIn: string[];
+  failures: { pubkey: string; error: string }[];
+};
+
+/**
+ * Add existing agents (a team's) to a channel; nothing is created. An agent
+ * of this computer is attached and started like "Add to channel" on its
+ * card; one running on another of the owner's computers is added as a
+ * member, and that computer picks the channel up from the membership.
+ */
+export async function addAgentsToChannel(
+  channelId: string,
+  pubkeys: readonly string[],
+  role: Exclude<ChannelRole, "owner"> = "bot",
+): Promise<AddAgentsToChannelResult> {
+  const [managedAgents, members] = await Promise.all([
+    listManagedAgents(),
+    getChannelMembers(channelId, { readYourWrites: true }),
+  ]);
+  const memberPubkeys = new Set(members.map((m) => normalizePubkey(m.pubkey)));
+  const localByPubkey = new Map(
+    managedAgents.map((agent) => [normalizePubkey(agent.pubkey), agent]),
+  );
+  const result: AddAgentsToChannelResult = {
+    added: [],
+    alreadyIn: [],
+    failures: [],
+  };
+  // Sequential: concurrent writes to the replaceable kind:39002 membership
+  // event lose members (last write wins).
+  for (const raw of pubkeys) {
+    const pubkey = normalizePubkey(raw);
+    if (memberPubkeys.has(pubkey)) {
+      result.alreadyIn.push(pubkey);
+      continue;
+    }
+    try {
+      const local = localByPubkey.get(pubkey);
+      if (local) {
+        await attachManagedAgentToChannel(channelId, { agent: local, role });
+      } else {
+        await attachRemoteAgentToChannel(
+          channelId,
+          pubkey,
+          role,
+          memberPubkeys,
+        );
+      }
+      memberPubkeys.add(pubkey);
+      result.added.push(pubkey);
+    } catch (error) {
+      result.failures.push({
+        pubkey,
+        error: error instanceof Error ? error.message : "Failed to add agent.",
+      });
+    }
+  }
+  return result;
+}

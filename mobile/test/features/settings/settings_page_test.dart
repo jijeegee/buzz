@@ -327,6 +327,7 @@ void main() {
         child: MaterialApp(
           theme: AppTheme.light(),
           home: SettingsPage(
+            mode: SettingsPageMode.profile,
             profileHeader: const SizedBox.square(dimension: 128),
             profileEditPageBuilder: (_) =>
                 const Scaffold(body: Text('Profile editor destination')),
@@ -337,7 +338,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Profile'), findsNothing);
+    expect(find.text('Edit profile'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('settings-edit-profile')));
     await tester.pumpAndSettle();
     expect(find.text('Edit profile'), findsOneWidget);
@@ -395,6 +396,7 @@ void main() {
         child: MaterialApp(
           theme: AppTheme.light(),
           home: SettingsPage(
+            mode: SettingsPageMode.profile,
             profileHeader: const SizedBox.shrink(),
             onEditDisplayName: (_) async => opened.add('name'),
             onEditProfileDescription: (_) async => opened.add('description'),
@@ -468,6 +470,7 @@ void main() {
         child: MaterialApp(
           theme: AppTheme.light(),
           home: SettingsPage(
+            mode: SettingsPageMode.profile,
             profileHeader: const SizedBox.shrink(),
             invitePageBuilder: (_) => const SizedBox.shrink(),
           ),
@@ -489,7 +492,7 @@ void main() {
     expect(nativeClose.creationParams, containsPair('icon', 'close'));
     expect(nativeEdit.viewType, 'kuzz/navigation_glass');
     expect(nativeEdit.creationParams, containsPair('controlWidth', 56.0));
-    expect(find.byTooltip('Close settings'), findsOneWidget);
+    expect(find.byTooltip('Close profile'), findsOneWidget);
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -590,7 +593,7 @@ void main() {
     expect(find.text('Invite to community'), findsNothing);
   });
 
-  testWidgets('groups read-aloud under Experiments before sign out', (
+  testWidgets('shows read-aloud under Messages, without Experiments', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 1600);
@@ -618,30 +621,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final experiments = find.byKey(const ValueKey('settings-experiments'));
-    expect(experiments, findsOneWidget);
+    final messages = find.byKey(const ValueKey('settings-messages'));
+    expect(messages, findsOneWidget);
     expect(
-      find.descendant(of: experiments, matching: find.text('Experiments')),
+      find.descendant(
+        of: messages,
+        matching: find.byKey(const ValueKey('read-aloud-enabled')),
+      ),
       findsOneWidget,
     );
-    final toggle = find.descendant(
-      of: experiments,
-      matching: find.byKey(const ValueKey('read-aloud-enabled')),
-    );
-    expect(toggle, findsOneWidget);
-    expect(find.text('화면 설정'), findsNothing);
-
-    final signOut = find.byKey(const Key('settings-sign-out'));
-    await tester.scrollUntilVisible(signOut, 200);
-    expect(
-      tester.getTopLeft(experiments).dy,
-      lessThan(tester.getTopLeft(signOut).dy),
-    );
-
-    await tester.ensureVisible(toggle);
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
-    expect(prefs.getBool('kuzz_mobile_read_aloud_enabled'), isTrue);
+    // No experiments are left, so Settings has no Experiments row.
+    expect(find.byKey(const ValueKey('settings-experiments')), findsNothing);
+    // The profile header and Edit belong to the Profile screen.
+    expect(find.byKey(const ValueKey('settings-edit-profile')), findsNothing);
   });
 
   testWidgets('uses a 24dp rhythm between profile settings groups', (

@@ -169,7 +169,7 @@ function MessageLinkPillContents({
   const shouldLoadMetadata = openable && interactive && variant === "default";
   const metadata = useMessageLinkMetadata(link, shouldLoadMetadata);
   const destination =
-    channel?.channelType === "dm" ? channelLabel : `#${channelLabel}`;
+    channel?.channelType === "dm" ? channelLabel : `${channelLabel}`;
   const tooltipFooter = link.threadRootId
     ? `Thread in ${destination}`
     : channel?.channelType === "dm"
@@ -196,12 +196,12 @@ function MessageLinkPillContents({
         icon="message"
         aria-label={
           !openable
-            ? `Message in channel ${channelLabel}`
+            ? `Message in group ${channelLabel}`
             : isDeleted
               ? link.threadRootId
-                ? `Open thread in channel ${channelLabel}; linked message was deleted`
-                : `Open channel ${channelLabel}; linked message was deleted`
-              : `Open message in channel ${channelLabel}`
+                ? `Open thread in group ${channelLabel}; linked message was deleted`
+                : `Open group ${channelLabel}; linked message was deleted`
+              : `Open message in group ${channelLabel}`
         }
         className={cn(
           metadata.state.kind === "unavailable" && "kuzz-link-unavailable",

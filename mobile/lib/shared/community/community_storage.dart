@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../relay/service_address.dart';
 import 'community.dart';
 
 class CommunityStorage {
@@ -23,7 +24,24 @@ class CommunityStorage {
 
   /// Load all communities. On first call, migrates legacy single-community
   /// credentials if present.
-  Future<List<Community>> loadAll() async {
+  ///
+  /// A community stored on any address of this build's service (see
+  /// [ServiceAddresses]) is returned on the service's current address, so a
+  /// server move or domain change keeps the same row and account. The row is
+  /// rewritten on every load, never duplicated or dropped; the next save
+  /// persists the current address.
+  Future<List<Community>> loadAll() async => [
+    for (final community in await _loadStored()) _onCurrentAddress(community),
+  ];
+
+  static Community _onCurrentAddress(Community community) {
+    final current = currentServiceUrl(community.relayUrl);
+    return current == community.relayUrl
+        ? community
+        : community.copyWith(relayUrl: current);
+  }
+
+  Future<List<Community>> _loadStored() async {
     final raw = await _secure.read(key: _keyCommunities);
     if (raw != null) return _decodeList(raw);
 

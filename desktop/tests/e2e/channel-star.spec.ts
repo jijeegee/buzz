@@ -21,10 +21,10 @@ test("personal Pin/Unpin uses one Chats list and survives reload", async ({
     page.getByRole("menuitem", { name: "Mark unread", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("menuitem", { name: "Mute channel", exact: true }),
+    page.getByRole("menuitem", { name: "Mute group", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("menuitem", { name: "Leave channel", exact: true }),
+    page.getByRole("menuitem", { name: "Leave group", exact: true }),
   ).toBeVisible();
   await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
   await expect(first).toHaveAttribute("data-channel-id", ENGINEERING_ID);
@@ -56,7 +56,7 @@ test("DM pin keeps DM controls without channel leave", async ({ page }) => {
   const dm = list.getByTestId("channel-alice-tyler");
   await dm.click({ button: "right" });
   await expect(
-    page.getByRole("menuitem", { name: "Leave channel", exact: true }),
+    page.getByRole("menuitem", { name: "Leave group", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
   await expect(list.locator("[data-channel-id]").first()).toHaveAttribute(

@@ -483,13 +483,13 @@ void main() {
     // Contextual labels + channel chips.
     expect(find.text('Mentioned in'), findsOneWidget);
     expect(find.text('Thread in'), findsOneWidget);
-    expect(find.text('#general'), findsNWidgets(2)); // mention + agent
+    expect(find.text('general'), findsNWidgets(2)); // mention + agent
     // Thread rows name the thread after the channel; unnamed ones say so.
-    expect(find.text('#engineering › Thread'), findsOneWidget);
+    expect(find.text('engineering › Thread'), findsOneWidget);
 
     // Context labels and channel pills share the compact Activity style.
     final contextLabel = tester.widget<Text>(find.text('Mentioned in'));
-    final channelLabel = tester.widgetList<Text>(find.text('#general')).first;
+    final channelLabel = tester.widgetList<Text>(find.text('general')).first;
     expect(contextLabel.style?.fontSize, activityContextTextStyle.fontSize);
     expect(contextLabel.style?.fontWeight, activityContextTextStyle.fontWeight);
     expect(contextLabel.style?.height, activityContextTextStyle.height);
@@ -763,7 +763,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('activity-filter-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Channels + Threads'));
+    await tester.tap(find.text('Groups + Threads'));
     await tester.pumpAndSettle();
 
     // Room avatars and names replace sender avatars and names.
@@ -771,8 +771,8 @@ void main() {
       find.byKey(const ValueKey('activity-conversation-avatar')),
       findsWidgets,
     );
-    expect(find.text('#general'), findsOneWidget);
-    expect(find.text('#engineering › Thread'), findsOneWidget);
+    expect(find.text('general'), findsOneWidget);
+    expect(find.text('engineering › Thread'), findsOneWidget);
     expect(find.text('Alice'), findsNothing);
     expect(find.text('Bob'), findsNothing);
     expect(find.text('Thread in'), findsNothing);
@@ -781,9 +781,10 @@ void main() {
     expect(find.textContaining('Deployed the fix'), findsOneWidget);
   });
 
-  for (final (label, isThread) in [
-    ('#general', false),
-    ('#engineering › Thread', true),
+  // [label] names the test; the row itself reads [rowText] (no `#`).
+  for (final (label, rowText, isThread) in [
+    ('#general', 'general', false),
+    ('#engineering › Thread', 'engineering › Thread', true),
   ]) {
     testWidgets('Channels + Threads row $label opens by id at the newest '
         'message', (tester) async {
@@ -798,10 +799,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('activity-filter-menu')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Channels + Threads'));
+      await tester.tap(find.text('Groups + Threads'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(label));
+      await tester.tap(find.text(rowText));
       await tester.pumpAndSettle();
 
       final page = tester.widget<ChannelDetailPage>(
@@ -873,7 +874,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('activity-filter-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Channels + Threads'));
+    await tester.tap(find.text('Groups + Threads'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Latest from the summary'), findsOneWidget);

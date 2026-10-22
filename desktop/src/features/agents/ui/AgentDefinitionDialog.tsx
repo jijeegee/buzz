@@ -19,6 +19,7 @@ import { PersonaAdvancedFields } from "./PersonaAdvancedFields";
 import { KuzzAgentModelTuningFields } from "./kuzzAgentModelTuningFields";
 import { isKuzzAgentRuntime } from "./kuzzAgentConfig";
 import { PersonaModelField } from "./PersonaModelField";
+import { HarnessProviderField } from "./HarnessProviderField";
 import { runtimeAvailabilityWarning } from "./runtimeAvailabilityWarning";
 import { PersonaProviderApiKeyField } from "./PersonaProviderApiKeyField";
 import {
@@ -95,6 +96,8 @@ import { buildRuntimeModelProviderPayload } from "./agentDefinitionSubmitPayload
 import { AgentDefinitionDialogFooter } from "./AgentDefinitionDialogFooter";
 import { AgentDefinitionDialogShell } from "./AgentDefinitionDialogShell";
 import { AddCustomHarnessDialog } from "./AddCustomHarnessDialog";
+import { DraftAccessWideningBanner } from "./DraftAccessWideningBanner";
+import type { RespondToAccess } from "../lib/respondToWidening";
 import {
   ADD_CUSTOM_HARNESS_OPTION,
   runtimeDropdownAction,
@@ -122,6 +125,12 @@ type AgentDefinitionDialogProps = {
   createRunSection?: React.ReactNode;
   /** Extra create-mode submit gate (e.g. incomplete provider config). */
   createSubmitBlocked?: boolean;
+  /**
+   * Set when reviewing an agent-authored draft: the saved access to compare
+   * against (null for a draft that creates a new agent). Widening shows a
+   * warning at the top of the dialog.
+   */
+  draftReview?: { savedAccess: RespondToAccess | null };
 };
 export type AgentDefinitionSubmitOptions = {
   publishCatalogUpdates: boolean;
@@ -143,6 +152,7 @@ export function AgentDefinitionDialog({
   publishCatalogUpdatesOnSave = false,
   createRunSection,
   createSubmitBlocked = false,
+  draftReview,
 }: AgentDefinitionDialogProps) {
   const runtimesLoading = runtimeCatalogStatus === "loading";
   const acpCommandsQuery = useAcpCommandsQuery({ enabled: open });
@@ -571,13 +581,16 @@ export function AgentDefinitionDialog({
   );
   const {
     discoveredModelOptions,
+    harnessProviderChoice,
     modelDiscoveryLoading,
     modelDiscoveryStatus,
   } = usePersonaModelDiscovery({
     envVars: envVarsForDiscovery,
     isCustomProviderEditing,
+    model,
     modelFieldVisible,
     open,
+    persistedModel: initialValues?.model ?? undefined,
     // Gate provider by runtime: runtimes that don't support LLM provider
     // selection (codex, claude) must not inherit the global provider — doing
     // so causes them to discover models from the wrong provider.
@@ -816,6 +829,12 @@ export function AgentDefinitionDialog({
       onChangeCapture={() => setHasUserChanges(true)}
       onSubmit={handleSubmitForm}
     >
+      {draftReview ? (
+        <DraftAccessWideningBanner
+          draftAccess={behaviorDraft}
+          savedAccess={draftReview.savedAccess}
+        />
+      ) : null}
       <AgentCreationPreview
         avatarUrl={previewAvatarUrl}
         disabled={isPending || isAvatarUploadPending}
@@ -938,6 +957,23 @@ export function AgentDefinitionDialog({
                 </div>
               ) : null}
             </div>
+          ) : null}
+
+          {!llmProviderFieldVisible &&
+          aiConfigurationMode === "custom" &&
+          harnessProviderChoice ? (
+            <HarnessProviderField
+              choice={harnessProviderChoice}
+              disabled={isPending}
+              harnessLabel={selectedRuntime?.label ?? "the harness"}
+              id="persona-harness-provider"
+              note="The list comes from Hermes on this computer."
+              onModelChange={(nextModel) =>
+                handleModelDropdownChange(
+                  nextModel || AUTO_MODEL_DROPDOWN_VALUE,
+                )
+              }
+            />
           ) : null}
 
           {llmProviderFieldVisible &&

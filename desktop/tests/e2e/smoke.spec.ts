@@ -314,7 +314,7 @@ test("opens a mocked channel from the inbox feed", async ({ page }) => {
 
   const releaseRow = page.getByTestId("home-inbox-item-mock-feed-mention");
   await releaseRow.hover();
-  await releaseRow.getByRole("button", { name: "Open in channel" }).click();
+  await releaseRow.getByRole("button", { name: "Open in group" }).click();
 
   await expect(page).toHaveURL(
     /#\/channels\/9a1657ac-f7aa-5db0-b632-d8bbeb6dfb50\?messageId=mock-feed-mention$/,
@@ -592,7 +592,7 @@ test("global search offers an optional current-channel scope", async ({
     .toBe("Search in #general");
   await expect(scopeControl).toContainText("Search in");
   await expect(scopeControl).toContainText("#general");
-  await expect(scopeControl).toContainText("Search messages in this channel");
+  await expect(scopeControl).toContainText("Search messages in this group");
   await expect(page.getByTestId("search-dialog-input-row")).toHaveCSS(
     "border-bottom-width",
     "1px",
@@ -623,7 +623,7 @@ test("global search offers an optional current-channel scope", async ({
   await expect(scopeChip).toHaveText(/#general/);
   await expect(input).toBeFocused();
   await input.fill("w");
-  const relevantHeader = page.getByText("Most relevant", { exact: true });
+  const relevantHeader = page.getByText("Messages", { exact: true });
   const firstScopedResult = page
     .locator('[data-search-section="messages"] .search-result-row')
     .first();
@@ -953,7 +953,7 @@ test("replaces the channel pane when switching channels", async ({ page }) => {
   await expect(page.getByTestId("chat-title")).toHaveText("random");
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "This is the beginning of the regular channel.",
+    "This is the beginning of the regular group.",
   );
   await expect(page.getByTestId("message-timeline")).not.toContainText(
     "Welcome to general",

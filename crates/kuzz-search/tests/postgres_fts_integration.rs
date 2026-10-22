@@ -481,6 +481,86 @@ async fn prefix_mode_handles_tsquery_boundary_punctuation() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn words_inside_urls_and_paths_are_searchable() {
+    let (pool, schema) = setup().await;
+
+    let c = mk_community(&pool, "url-words.example").await;
+    let url_id = rand_bytes32();
+    let path_id = rand_bytes32();
+    insert_event(
+        &pool,
+        c,
+        url_id,
+        rand_bytes32(),
+        9,
+        "login fails at https://x.org/auth/oidc/google/callback today",
+        None,
+        1_700_000_000,
+    )
+    .await;
+    insert_event(
+        &pool,
+        c,
+        path_id,
+        rand_bytes32(),
+        9,
+        "route is /auth/oidc/google/callback",
+        None,
+        1_700_000_001,
+    )
+    .await;
+
+    let svc = SearchService::new(pool.clone());
+    let search = |q: &str, mode| SearchQuery {
+        community: c,
+        q: q.into(),
+        channel_scope: ChannelScope::Any,
+        kinds: Some(vec![9]),
+        authors: None,
+        since: None,
+        until: None,
+        page: 1,
+        per_page: 10,
+        mode,
+    };
+    let ids = |hits: &[kuzz_search::SearchHit]| {
+        let mut ids: Vec<[u8; 32]> = hits.iter().map(|hit| hit.event_id).collect();
+        ids.sort();
+        ids
+    };
+    let mut both = vec![url_id, path_id];
+    both.sort();
+
+    for (q, mode) in [
+        ("callback", kuzz_search::SearchMode::FullText),
+        ("callback", kuzz_search::SearchMode::Prefix),
+        ("callb", kuzz_search::SearchMode::Prefix),
+        ("oidc google", kuzz_search::SearchMode::FullText),
+    ] {
+        let result = svc
+            .search(&search(q, mode))
+            .await
+            .unwrap_or_else(|err| panic!("search {q:?} ({mode:?}) failed: {err}"));
+        assert_eq!(ids(&result.hits), both, "query {q:?} ({mode:?})");
+    }
+
+    // The original URL token is still indexed, so an exact URL search keeps
+    // working and only matches the message that contains that URL. (The
+    // scheme is left out: websearch_to_tsquery splits `https:` off on its own.)
+    let exact = svc
+        .search(&search(
+            "x.org/auth/oidc/google/callback",
+            kuzz_search::SearchMode::FullText,
+        ))
+        .await
+        .expect("exact url search ok");
+    assert_eq!(ids(&exact.hits), vec![url_id]);
+
+    teardown(pool, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn prefix_mode_preserves_storage_level_privacy_exclusions() {
     let (pool, schema) = setup().await;
 
@@ -1504,5 +1584,70 @@ async fn artifact_search_uses_only_live_current_head() {
         .unwrap();
     let result = svc.search(&query).await.unwrap();
     assert!(result.hits.is_empty());
+    teardown(pool, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn search_budget_is_scoped_to_the_search_and_cancels_as_timeout() {
+    let (pool, schema) = setup().await;
+    // One connection, so the check below reuses the search's connection.
+    let single = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with(pool.connect_options().as_ref().clone())
+        .await
+        .expect("connect single-connection pool");
+
+    let c = mk_community(&pool, "budget.example").await;
+    insert_event(
+        &pool,
+        c,
+        rand_bytes32(),
+        rand_bytes32(),
+        9,
+        "budget probe",
+        None,
+        1700000000,
+    )
+    .await;
+    let result = SearchService::new(single.clone())
+        .search(&SearchQuery {
+            community: c,
+            q: "budget".into(),
+            channel_scope: ChannelScope::Any,
+            kinds: None,
+            authors: None,
+            since: None,
+            until: None,
+            page: 1,
+            per_page: 10,
+            mode: kuzz_search::SearchMode::Prefix,
+        })
+        .await
+        .expect("search ok");
+    assert_eq!(result.hits.len(), 1);
+
+    // The budget is `SET LOCAL`: the pooled connection goes back without it.
+    let timeout: String = sqlx::query_scalar("SHOW statement_timeout")
+        .fetch_one(&single)
+        .await
+        .expect("show statement_timeout");
+    assert_eq!(timeout, "0");
+
+    // A statement cancelled by its budget reads as a timeout, not a failure.
+    let mut tx = single.begin().await.expect("begin");
+    sqlx::query("SET LOCAL statement_timeout = 10")
+        .execute(&mut *tx)
+        .await
+        .expect("set timeout");
+    let err: kuzz_search::SearchError = sqlx::query("SELECT pg_sleep(1)")
+        .execute(&mut *tx)
+        .await
+        .expect_err("statement must be cancelled")
+        .into();
+    assert!(err.is_statement_cancelled());
+    drop(tx);
+
+    single.close().await;
     teardown(pool, &schema).await;
 }

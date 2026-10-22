@@ -7,6 +7,12 @@ import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
 import type { Channel, PresenceStatus } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { useChatPrivateNames } from "@/features/channels/lib/chatPrivateNames";
+import {
+  CHAT_TITLE_NAME_LIMIT,
+  isGroupChat,
+  otherChatPeople,
+} from "@/features/channels/lib/groupChat";
 
 export type ActiveDmHeaderParticipant = {
   pubkey: string;
@@ -48,6 +54,21 @@ export function useActiveChannelHeader(
   const activeDmProfilesQuery = useUsersBatchQuery(activeDmParticipantPubkeys, {
     enabled: activeDmParticipantPubkeys.length > 0,
   });
+  // An ownerless chat's title names its first few other members.
+  const chatTitlePubkeys = React.useMemo(
+    () =>
+      isGroupChat(activeChannel)
+        ? otherChatPeople(
+            activeChannel?.memberPubkeys ?? [],
+            currentPubkey,
+          ).slice(0, CHAT_TITLE_NAME_LIMIT)
+        : [],
+    [activeChannel, currentPubkey],
+  );
+  const chatTitleProfilesQuery = useUsersBatchQuery(chatTitlePubkeys, {
+    enabled: chatTitlePubkeys.length > 0,
+  });
+  const privateNames = useChatPrivateNames();
   const activeChannelEphemeralDisplay =
     useEphemeralChannelDisplay(activeChannel);
   const activeDmPresenceStatus: PresenceStatus | null =
@@ -90,9 +111,12 @@ export function useActiveChannelHeader(
       ? resolveChannelDisplayLabel(
           activeChannel,
           currentPubkey,
-          activeDmProfilesQuery.data?.profiles,
+          isGroupChat(activeChannel)
+            ? chatTitleProfilesQuery.data?.profiles
+            : activeDmProfilesQuery.data?.profiles,
+          privateNames.get(activeChannel.id) ?? null,
         )
-      : "Channels",
+      : "Groups",
     activeDmAvatarUrl,
     activeDmHeaderParticipants,
     activeDmPresenceStatus,

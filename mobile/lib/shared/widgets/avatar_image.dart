@@ -123,18 +123,52 @@ class _AvatarImageContentState extends ConsumerState<AvatarImageContent> {
         bytes: bytes,
         fallback: centeredFallback,
       ),
-      _NetworkAvatarSource(:final url) => MediaImage(
+      _NetworkAvatarSource(:final url) => _networkImage(
         url: url,
-        fit: widget.fit,
-        onBytesLoaded: communityID == null
-            ? null
-            : (bytes) => unawaited(
-                cacheKuzzPushAvatarFromLoadedBytes(communityID, url, bytes),
-              ),
-        errorBuilder: (_, _, _) => centeredFallback,
+        communityID: communityID,
+        fallback: centeredFallback,
       ),
       null => centeredFallback,
     };
+  }
+
+  /// A remote avatar. A relay upload drawn small loads the relay's resized
+  /// copy that fits the circle (see [relayAvatarImageUrls]) instead of the
+  /// full-size upload; each failure falls through to the next larger copy
+  /// and finally the original, as for uploads older than the copies.
+  /// [MediaImage] decodes whichever loads at the laid-out size.
+  Widget _networkImage({
+    required String url,
+    required String? communityID,
+    required Widget fallback,
+  }) {
+    // The push avatar cache is keyed by the profile's own URL, whichever
+    // copy supplied the bytes.
+    final ValueChanged<Uint8List>? cachePushAvatar = communityID == null
+        ? null
+        : (bytes) => unawaited(
+            cacheKuzzPushAvatarFromLoadedBytes(communityID, url, bytes),
+          );
+    Widget load(List<String> urls, int index) => MediaImage(
+      url: urls[index],
+      fit: widget.fit,
+      onBytesLoaded: cachePushAvatar,
+      errorBuilder: (_, _, _) =>
+          index + 1 < urls.length ? load(urls, index + 1) : fallback,
+    );
+    if (relayMediaVariantUrl(url, RelayMediaVariant.thumb) == null) {
+      return load([url], 0);
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) => load(
+        relayAvatarImageUrls(
+          url,
+          logicalSize: constraints.biggest.shortestSide,
+          devicePixelRatio: MediaQuery.maybeDevicePixelRatioOf(context) ?? 1,
+        ),
+        0,
+      ),
+    );
   }
 
   Widget _rasterImage({

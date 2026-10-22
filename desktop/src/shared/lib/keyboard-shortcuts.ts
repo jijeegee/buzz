@@ -33,8 +33,8 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   },
   {
     id: "browse-channels",
-    label: "Browse channels",
-    description: "Open the channel browser",
+    label: "Find groups",
+    description: "Open Find groups",
     keys: "⇧⌘O",
     keysWindows: "Shift+Ctrl+O",
     category: "Navigation",
@@ -49,8 +49,8 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   },
   {
     id: "new-channel",
-    label: "New channel",
-    description: "Open the create channel dialog",
+    label: "New group",
+    description: "Open the create group dialog",
     keys: "⇧⌘N",
     keysWindows: "Shift+Ctrl+N",
     category: "Navigation",
@@ -81,8 +81,8 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   },
   {
     id: "find-in-channel",
-    label: "Find in channel",
-    description: "Search messages in current channel",
+    label: "Find in group",
+    description: "Search messages in current group",
     keys: "⌘F",
     keysWindows: "Ctrl+F",
     category: "Navigation",
@@ -191,7 +191,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     id: "toggle-huddle",
     label: "Start or leave huddle",
     description:
-      "Start or join a huddle in the current channel; leave when connected",
+      "Start or join a huddle in the current group; leave when connected",
     keys: "Ctrl+Shift+Space",
     keysWindows: "Ctrl+Shift+Space",
     category: "Messages",

@@ -21,6 +21,11 @@ import type {
 } from "@/shared/api/tauriObservedUnread";
 import type { UnreadCatchUpChannelResult } from "@/shared/api/tauriUnreadCatchUp";
 import { relayClient } from "@/shared/api/relayClient";
+import {
+  handleMockGroupsRequest,
+  type MockGroupsConfig,
+  mockGroupSeedFromChannel,
+} from "@/testing/e2eGroupsMock";
 import { activateRateLimit } from "@/shared/api/relayRateLimitGate";
 import { resolveAgentParallelism } from "@/features/agents/lib/agentParallelism";
 import { awaitLiveSwitchOutcome } from "@/features/agents/lib/liveSwitchOutcome";
@@ -73,6 +78,7 @@ import {
   KIND_HUDDLE_STARTED,
   KIND_MEMBER_ADDED_NOTIFICATION,
   KIND_MEMBER_REMOVED_NOTIFICATION,
+  KIND_AGENT_TEAM,
   KIND_PERSONA,
   KIND_PROJECT_ANNOUNCEMENT,
   KIND_REPO_ANNOUNCEMENT,
@@ -235,6 +241,8 @@ type E2eConfig = {
       name?: string;
       expiresAt: string;
     } | null;
+    /** Seeds for the relay groups routes (`groups_request`). */
+    groups?: MockGroupsConfig;
     /** Optional policy returned by the native join-policy discovery command. */
     joinPolicy?: {
       terms_markdown?: string;
@@ -536,12 +544,6 @@ type E2eConfig = {
      */
     teamSnapshotConfirmErrors?: (string | null)[];
     /**
-     * When true, `preview_team_snapshot_import` returns a preview with
-     * `hasSourceAllowlist: true` so the allowlist section renders in the
-     * import dialog.
-     */
-    teamSnapshotPreviewHasSourceAllowlist?: boolean;
-    /**
      * When set to a non-empty string, `fetch_snapshot_bytes` throws with this
      * message — lets specs prove malformed/hash/size-mismatch error paths.
      */
@@ -782,6 +784,8 @@ type RawChannel = {
   ttl_deadline: string | null;
   /** Per-room goals switch; absent means on (mirrors kind:39000 parsing). */
   goals_enabled?: boolean;
+  /** Group photo URL; absent/null = none. */
+  picture?: string | null;
 };
 
 type RawChannelWithMembership = RawChannel & {
@@ -958,6 +962,7 @@ type RawRelayAgent = {
 
 type RawManagedAgent = {
   pubkey: string;
+  owner_pubkey?: string | null;
   name: string;
   persona_id: string | null;
   /** Record-level harness/runtime pin (`null` when inheriting from the persona). */
@@ -1833,6 +1838,7 @@ function toRawChannel(
     ttl_seconds: channel.ttl_seconds ?? null,
     ttl_deadline: channel.ttl_deadline ?? null,
     goals_enabled: channel.goals_enabled ?? true,
+    picture: channel.picture ?? null,
     is_member: channel.members.some(
       (member) => member.pubkey.toLowerCase() === currentPubkey,
     ),
@@ -1975,6 +1981,7 @@ function cloneRelayAgent(agent: RawRelayAgent): RawRelayAgent {
 function cloneManagedAgent(agent: MockManagedAgent): RawManagedAgent {
   return {
     pubkey: agent.pubkey,
+    owner_pubkey: agent.owner_pubkey ?? null,
     name: agent.name,
     persona_id: agent.persona_id,
     runtime: agent.runtime ?? null,
@@ -2537,6 +2544,8 @@ function buildSeededManagedAgent(seed: MockManagedAgentSeed): MockManagedAgent {
     pubkey: seed.pubkey,
     name: seed.name,
     persona_id: seed.personaId ?? null,
+    // The signed-in account made it; each account sees only its own agents.
+    owner_pubkey: MOCK_IDENTITY_PUBKEY,
     // Native serde always emits this key (`null` when unpinned) — the bridge
     // must mirror the wire shape, not omit the key.
     runtime: seed.runtime ?? null,
@@ -3361,6 +3370,8 @@ const deferredSendMessageLiveEchoes: Array<{
 const mockUserStatuses: RelayEvent[] = [];
 const mockReminderEvents: RelayEvent[] = [];
 const mockPersonaEvents: RelayEvent[] = [];
+/** Owner-signed teams (kind:30182), newest per `d`. */
+const mockAgentTeamEvents: RelayEvent[] = [];
 const mockTeamCatalogEvents: RelayEvent[] = [];
 let mockRelayMembers: RawRelayMember[] = [];
 const mockSockets = new Map<number, MockSocket>();
@@ -3550,6 +3561,7 @@ function resetMockSaveSubscriptions(config: E2eConfig | undefined) {
 
 function resetMockPersonaCatalogEvents(config: E2eConfig | undefined) {
   mockPersonaEvents.length = 0;
+  mockAgentTeamEvents.length = 0;
   for (const event of config?.mock?.personaCatalogEvents ?? []) {
     mockPersonaEvents.push({
       ...event,
@@ -5735,8 +5747,7 @@ async function handleGetThreadWindows(
       .filter((event) => MOCK_THREAD_WINDOW_KINDS.has(event.kind))
       .sort(
         (left, right) =>
-          right.created_at - left.created_at ||
-          left.id.localeCompare(right.id),
+          right.created_at - left.created_at || left.id.localeCompare(right.id),
       );
     const cursor = thread.cursor ?? null;
     const afterCursor = cursor
@@ -6970,6 +6981,7 @@ async function handleGetChannels(
         ttl_seconds: getTag("ttl") ? Number(getTag("ttl")) : null,
         ttl_deadline: getTag("ttl_deadline") ?? null,
         goals_enabled: getTag("goals") !== "off",
+        picture: getTag("picture") || null,
         is_member: memberSet.has(channelId),
       };
     })
@@ -7677,6 +7689,7 @@ async function handleGetChannelDetails(
     ttl_seconds: getTag("ttl") ? Number(getTag("ttl")) : null,
     ttl_deadline: getTag("ttl_deadline") ?? null,
     goals_enabled: getTag("goals") !== "off",
+    picture: getTag("picture") || null,
     created_at: ev?.created_at
       ? new Date(ev.created_at * 1000).toISOString()
       : new Date().toISOString(),
@@ -7736,6 +7749,7 @@ async function handleUpdateChannel(
     visibility?: "open" | "private";
     ttlSeconds?: number | null;
     goalsEnabled?: boolean;
+    picture?: string;
   },
   config: E2eConfig | undefined,
 ) {
@@ -7766,6 +7780,9 @@ async function handleUpdateChannel(
     if (args.goalsEnabled !== undefined) {
       channel.goals_enabled = args.goalsEnabled;
     }
+    if (args.picture !== undefined) {
+      channel.picture = args.picture || null;
+    }
     touchMockChannel(channel);
     return toRawChannelDetail(channel, config);
   }
@@ -7785,6 +7802,9 @@ async function handleUpdateChannel(
   }
   if (args.goalsEnabled !== undefined) {
     tags.push(["goals", args.goalsEnabled ? "on" : "off"]);
+  }
+  if (args.picture !== undefined) {
+    tags.push(["picture", args.picture]);
   }
   await submitSignedEvent(config, { kind: 9002, content: "", tags });
 
@@ -7815,6 +7835,7 @@ async function handleUpdateChannel(
         ? null
         : new Date(Date.now() + ttlSeconds * 1000).toISOString(),
     goals_enabled: getTag("goals") !== "off",
+    picture: getTag("picture") || null,
     created_at: ev?.created_at
       ? new Date(ev.created_at * 1000).toISOString()
       : new Date().toISOString(),
@@ -11396,6 +11417,16 @@ function sendToMockSocket(args: {
       return;
     }
 
+    if (filter.kinds?.includes(KIND_AGENT_TEAM)) {
+      const authors = filter.authors?.map((author) => author.toLowerCase());
+      for (const event of mockAgentTeamEvents) {
+        if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
+        sendWsText(socket.handler, ["EVENT", subId, event]);
+      }
+      sendWsText(socket.handler, ["EOSE", subId]);
+      return;
+    }
+
     if (filter.kinds?.includes(KIND_PERSONA)) {
       const authors = filter.authors?.map((author) => author.toLowerCase());
       const sourceIds = filter["#d"];
@@ -11603,6 +11634,29 @@ function sendToMockSocket(args: {
         if (idx >= 0) mockReminderEvents.splice(idx, 1);
       }
       mockReminderEvents.push(event);
+      sendWsText(socket.handler, ["OK", event.id, true, ""]);
+      return;
+    }
+
+    if (event.kind === KIND_AGENT_TEAM) {
+      const teamId = event.tags.find((tag) => tag[0] === "d")?.[1];
+      if (!teamId) {
+        sendWsText(socket.handler, [
+          "OK",
+          event.id,
+          false,
+          "invalid: missing d tag",
+        ]);
+        return;
+      }
+      const index = mockAgentTeamEvents.findIndex(
+        (existing) =>
+          existing.pubkey === event.pubkey &&
+          existing.tags.find((tag) => tag[0] === "d")?.[1] === teamId,
+      );
+      if (index >= 0) mockAgentTeamEvents.splice(index, 1);
+      mockAgentTeamEvents.push(event);
+      emitMockGlobalEvent(event);
       sendWsText(socket.handler, ["OK", event.id, true, ""]);
       return;
     }
@@ -13231,6 +13285,27 @@ export function maybeInstallE2eTauriMocks() {
         return;
       case "fetch_join_policy":
         return activeConfig?.mock?.joinPolicy ?? null;
+      case "groups_request": {
+        const groupsConfig = activeConfig?.mock?.groups;
+        const directory = groupsConfig?.groups
+          ? []
+          : ((
+              await handleGetChannels(undefined, activeConfig, "open-directory")
+            ).channels ?? []);
+        return handleMockGroupsRequest(
+          groupsConfig,
+          payload as { method: string; path: string; body: unknown },
+          () =>
+            directory.flatMap((channel) => {
+              const seed = mockGroupSeedFromChannel(channel);
+              return seed ? [seed] : [];
+            }),
+        );
+      }
+      case "take_pending_group_join_deep_link":
+        return null;
+      case "acknowledge_pending_group_join_deep_link":
+        return false;
       case "fetch_link_preview_metadata": {
         if (activeConfig?.mock?.deferLinkPreviewMetadata) {
           await new Promise<void>((resolve) => {
@@ -14318,9 +14393,6 @@ export function maybeInstallE2eTauriMocks() {
           avatarUrl: null,
           memoryLevel: "none",
           memoryEntryCount: 0,
-          hasSourceAllowlist: false,
-          sourceAllowlistCount: 0,
-          sourceAllowlist: [],
           manifestJson: "{}",
           locked: false,
         };
@@ -14358,8 +14430,6 @@ export function maybeInstallE2eTauriMocks() {
       }
       case "preview_team_snapshot_import": {
         // Return a minimal preview — no writes performed.
-        const previewHasAllowlist =
-          activeConfig?.mock?.teamSnapshotPreviewHasSourceAllowlist ?? false;
         return {
           name: "Imported Team",
           description: null,
@@ -14369,11 +14439,8 @@ export function maybeInstallE2eTauriMocks() {
               displayName: "Team Member",
               systemPrompt: null,
               avatarUrl: null,
-              hasSourceAllowlist: previewHasAllowlist,
-              sourceAllowlistCount: previewHasAllowlist ? 3 : 0,
             },
           ],
-          hasSourceAllowlist: previewHasAllowlist,
         };
       }
       case "confirm_team_snapshot_import": {

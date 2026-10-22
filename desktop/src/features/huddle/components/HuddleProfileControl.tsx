@@ -138,7 +138,7 @@ export function HuddleProfileControl({
             In a huddle
           </span>
           <span className="block truncate text-xs text-sidebar-foreground/65">
-            {channelName ? `#${channelName}` : "Huddle"}
+            {channelName ? `${channelName}` : "Huddle"}
           </span>
         </span>
       </Button>

@@ -553,9 +553,9 @@ function ProfileLiveActivityEmbed({
                 <span
                   className="block truncate text-xs font-medium text-muted-foreground/75"
                   data-testid="user-profile-activity-channel-label"
-                  title={`#${activeChannelName}`}
+                  title={`${activeChannelName}`}
                 >
-                  #{activeChannelName}
+                  {activeChannelName}
                 </span>
               ) : null}
             </div>
@@ -589,7 +589,7 @@ function ActivityCarouselDots({
 
   return (
     <div
-      aria-label="Choose active channel feed"
+      aria-label="Choose active group feed"
       className="mt-2 flex items-center justify-center gap-1.5"
       role="tablist"
     >
@@ -599,7 +599,7 @@ function ActivityCarouselDots({
 
         return (
           <button
-            aria-label={`Show #${channelName} activity`}
+            aria-label={`Show ${channelName} activity`}
             aria-selected={isSelected}
             className="group relative flex items-center justify-center before:absolute before:-inset-2 before:content-['']"
             data-testid={`user-profile-activity-dot-${channelId}`}

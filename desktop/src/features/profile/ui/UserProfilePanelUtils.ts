@@ -40,7 +40,7 @@ export const PROFILE_PANEL_VIEW_TITLES: Record<ProfilePanelView, string> = {
   configuration: "Runtime",
   diagnostics: "Harness log",
   memories: "Memories",
-  channels: "Channels",
+  channels: "Groups",
   logs: "Harness log",
 };
 

@@ -178,7 +178,7 @@ export function buildProjectDetailAgentContext({
   const [commit, issue, pullRequest] = workItems;
   const viewLabels: Record<string, string> = {
     activity: "Commits",
-    channels: "Channels",
+    channels: "Groups",
     contributors: "Contributors",
     files: "Files",
     issues: "Tasks",

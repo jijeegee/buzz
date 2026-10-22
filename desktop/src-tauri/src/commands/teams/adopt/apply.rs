@@ -28,7 +28,7 @@ use crate::{
             builtin_catalog_slug, local_member_projection_hash, TeamCatalogContent,
             TeamCatalogMember,
         },
-        teams_store_path, try_regenerate_nest, AgentDefinition, RespondTo, TeamCatalogSource,
+        teams_store_path, try_regenerate_nest, AgentDefinition, TeamCatalogSource,
         TeamMemberCatalogSource, TeamRecord,
     },
     util::now_iso,
@@ -461,27 +461,9 @@ fn member_copy(
             projection_hash: member_version_hash(member),
         }),
         env_vars: Default::default(),
-        // Validated at the boundary rather than copied opaquely: an
-        // unrecognized mode from a foreign publisher must not become a local
-        // definition whose audience differs from what the recipient sees.
-        // `allowlist` is normalized to `owner-only`: allowlist pubkeys are
-        // never published (privacy), so adopting `allowlist` with an empty
-        // allowlist would mint a persona that fails at mint time. The recipient
-        // can widen from `owner-only` in the edit dialog.
-        respond_to: member
-            .respond_to
-            .as_deref()
-            .map(|mode| -> Result<Option<String>, String> {
-                let parsed =
-                    RespondTo::parse_wire(mode).map_err(|e| format!("invalid respond_to: {e}"))?;
-                if parsed == RespondTo::Allowlist {
-                    Ok(Some(RespondTo::OwnerOnly.as_str().to_string()))
-                } else {
-                    Ok(Some(mode.to_string()))
-                }
-            })
-            .transpose()?
-            .flatten(),
+        // A copy never inherits who may command it: it starts owner-only and
+        // the recipient widens it by hand if they want to.
+        respond_to: None,
         respond_to_allowlist: Vec::new(),
         parallelism: member.parallelism,
         session_policy: member.session_policy,

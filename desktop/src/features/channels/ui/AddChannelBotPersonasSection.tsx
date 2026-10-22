@@ -34,6 +34,7 @@ function AgentRow({
       type="button"
     >
       <ProfileAvatar
+        mediaVariant="small"
         avatarUrl={persona.avatarUrl}
         className="h-9 w-9 shrink-0 text-xs"
         iconClassName="h-5 w-5"
@@ -46,7 +47,7 @@ function AgentRow({
       {inChannel ? (
         <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
           <Check className="h-4 w-4" />
-          In channel
+          In group
         </span>
       ) : (
         <span
@@ -151,7 +152,7 @@ export function AddChannelBotPersonasSection({
 
       {!isLoading && available.length === 0 && inChannel.length > 0 ? (
         <p className="px-3 text-sm text-muted-foreground">
-          All of your agents are already in this channel.
+          All of your agents are already in this group.
         </p>
       ) : null}
 
@@ -162,7 +163,7 @@ export function AddChannelBotPersonasSection({
       {!isLoading && inChannel.length > 0 ? (
         <div className="space-y-1 border-t border-border pt-3">
           <div className="px-3 pb-1 text-xs font-medium text-muted-foreground">
-            In this channel
+            In this group
           </div>
           {inChannel.map((persona) => (
             <AgentRow

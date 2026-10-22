@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { agentsOfAccount } from "@/features/accounts/lib/accountLabels";
+import { freeAgentName } from "@/shared/api/agentNameGuard";
 import { useIdentityQuery } from "@/shared/api/hooks";
 
 import {
@@ -26,7 +27,14 @@ import {
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { invalidateChannelMembersRosters } from "@/features/channels/rosterFreshness";
-import type { AgentPersona, Channel, ManagedAgent } from "@/shared/api/types";
+import { type MyTeam, saveMyTeam } from "@/features/agents/lib/myTeams";
+import { resolveTeamPersonas } from "@/features/agents/lib/teamPersonas";
+import type {
+  AgentPersona,
+  AgentTeam,
+  Channel,
+  ManagedAgent,
+} from "@/shared/api/types";
 import { removeChannelMember } from "@/shared/api/tauri";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
@@ -50,6 +58,9 @@ export function useManagedAgentActions() {
   const relayAgentsQuery = useRelayAgentsQuery();
   const managedAgentsQuery = useManagedAgentsQuery();
   const activeAccount = useIdentityQuery().data?.pubkey;
+  const [settingUpTeamId, setSettingUpTeamId] = React.useState<string | null>(
+    null,
+  );
   const [shouldLoadChannels, setShouldLoadChannels] = React.useState(false);
   const channelsQuery = useChannelsQuery({ enabled: shouldLoadChannels });
   const startMutation = useStartManagedAgentMutation();
@@ -237,6 +248,40 @@ export function useManagedAgentActions() {
     setStartingPersonaIds(next);
   }
 
+  /**
+   * Make one new agent on this computer from a preset, named after it
+   * ("Fizz", then "Fizz 2", …). Spawn problems and notices go to the page
+   * feedback; a failed create throws.
+   */
+  async function createAgentFromPreset(persona: AgentPersona) {
+    const runtimes = await availableRuntimesForStart(availableRuntimesQuery);
+    const { runtime, warnings } = resolveStartRuntimeForDefinition(
+      persona,
+      runtimes,
+      globalConfig.preferred_runtime,
+    );
+    const input = await buildInstanceInputForDefinition(persona, runtime);
+    // A preset can make several agents: the next one is "Fizz 2".
+    input.name = await freeAgentName({
+      kind: "agent",
+      name: input.name,
+      personaId: persona.id,
+    });
+
+    const created = await createAgentMutation.mutateAsync(input);
+    const notices = [...warnings];
+    if (created.spawnError && !isRelayRemovedError(created.spawnError)) {
+      setActionErrorMessage(created.spawnError);
+    }
+    if (created.profileSyncError) {
+      notices.push(created.profileSyncError);
+    }
+    if (notices.length > 0) {
+      setActionNoticeMessage(notices.join(" "));
+    }
+    return created.agent;
+  }
+
   async function handleStartPersona(persona: AgentPersona) {
     if (startingPersonaIdsRef.current.has(persona.id)) {
       return;
@@ -244,29 +289,8 @@ export function useManagedAgentActions() {
     setPersonaStartPending(persona.id, true);
     clearFeedback();
     try {
-      const runtimes = await availableRuntimesForStart(availableRuntimesQuery);
-      const { runtime, warnings } = resolveStartRuntimeForDefinition(
-        persona,
-        runtimes,
-        globalConfig.preferred_runtime,
-      );
-      const input = await buildInstanceInputForDefinition(persona, runtime);
-
-      const created = await createAgentMutation.mutateAsync(input);
+      await createAgentFromPreset(persona);
       toast.success("Agent created");
-      const notices = [...warnings];
-
-      if (created.spawnError && !isRelayRemovedError(created.spawnError)) {
-        setActionErrorMessage(created.spawnError);
-      }
-
-      if (created.profileSyncError) {
-        notices.push(created.profileSyncError);
-      }
-      if (notices.length > 0) {
-        setActionNoticeMessage(notices.join(" "));
-      }
-
       void managedAgentsQuery.refetch();
       void relayAgentsQuery.refetch();
     } catch (error) {
@@ -276,6 +300,67 @@ export function useManagedAgentActions() {
       );
     } finally {
       setPersonaStartPending(persona.id, false);
+    }
+  }
+
+  /**
+   * "Set up on… This computer" for a team preset: make one agent here per
+   * preset in it, then a team of those agents named after the preset.
+   * Returns the new team, or `null` when nothing could be made.
+   */
+  async function handleSetUpTeamPreset(
+    team: AgentTeam,
+    personas: AgentPersona[],
+  ): Promise<MyTeam | null> {
+    if (settingUpTeamId) return null;
+    setSettingUpTeamId(team.id);
+    clearFeedback();
+    const made: string[] = [];
+    const failed: string[] = [];
+    try {
+      const { resolvedPersonas } = resolveTeamPersonas(team, personas);
+      for (const persona of resolvedPersonas) {
+        try {
+          const agent = await createAgentFromPreset(persona);
+          made.push(normalizePubkey(agent.pubkey));
+        } catch (error) {
+          if (isRelayRemovedError(error)) continue;
+          failed.push(
+            `${persona.displayName}: ${error instanceof Error ? error.message : "could not be made"}`,
+          );
+        }
+      }
+      if (made.length === 0) {
+        setActionErrorMessage(
+          failed.length > 0
+            ? `Could not set up ${team.name}. ${failed.join(" ")}`
+            : `${team.name} has no presets to set up.`,
+        );
+        return null;
+      }
+      const saved = await saveMyTeam(queryClient, activeAccount ?? "", {
+        name: team.name,
+        description: team.description,
+        agentPubkeys: made,
+      });
+      toast.success(
+        `Set up ${team.name}: ${made.length === 1 ? "1 agent" : `${made.length} agents`} on this computer.`,
+      );
+      if (failed.length > 0) {
+        setActionErrorMessage(`Some agents were not made. ${failed.join(" ")}`);
+      }
+      return saved;
+    } catch (error) {
+      setActionErrorMessage(
+        error instanceof Error
+          ? error.message
+          : `Could not set up ${team.name}.`,
+      );
+      return null;
+    } finally {
+      void managedAgentsQuery.refetch();
+      void relayAgentsQuery.refetch();
+      setSettingUpTeamId(null);
     }
   }
 
@@ -477,6 +562,8 @@ export function useManagedAgentActions() {
     startingAgentPubkey,
     restartingAgentPubkey,
     startingPersonaIds,
+    settingUpTeamId,
+    handleSetUpTeamPreset,
     handleStart,
     handleRestart,
     handleStartPersona,

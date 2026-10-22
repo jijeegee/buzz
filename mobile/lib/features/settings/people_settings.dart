@@ -11,25 +11,33 @@ import '../../shared/kuzz_links.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
+import '../groups/group_add_policy.dart';
 import 'blocked_users_page.dart';
 import '../people/people_errors.dart';
 import 'kuzz_id_page.dart';
 
-/// Settings → "Friends & privacy": my Kuzz ID, whether people can find me
-/// by ID or email, and the people I blocked. Hidden without an account.
+/// Settings → "Friends & privacy": whether people can find me by ID or
+/// email, who can add me to groups, and the people I blocked.
 class PeopleSettings extends HookConsumerWidget {
   const PeopleSettings({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final origin = ref.watch(accountOriginProvider);
-    if (origin == null) return const SizedBox.shrink();
+    if (origin == null) {
+      // Without an account only the relay-side group setting applies.
+      return const AppListCard(
+        key: ValueKey('settings-people'),
+        label: 'Friends & privacy',
+        verticalPadding: Grid.twelve,
+        children: [GroupAddPolicyRow()],
+      );
+    }
     final profile = ref.watch(accountProfileProvider(origin));
     final loaded = profile.value;
     // The switch shows the requested value while the server saves it.
     final pending = useState<bool?>(null);
     final discoverable = pending.value ?? loaded?.discoverable ?? true;
-    final username = loaded?.username;
 
     Future<void> setDiscoverable(bool value) async {
       final messenger = ScaffoldMessenger.maybeOf(context);
@@ -61,6 +69,57 @@ class PeopleSettings extends HookConsumerWidget {
       label: 'Friends & privacy',
       verticalPadding: Grid.twelve,
       children: [
+        MergeSemantics(
+          child: AppListRow(
+            key: const Key('settings-discoverable-row'),
+            icon: LucideIcons.search,
+            title: 'Let people find me by ID or email',
+            subtitle: 'Only someone who types your exact ID or email',
+            trailing: Switch.adaptive(
+              key: const Key('settings-discoverable-switch'),
+              value: discoverable,
+              onChanged: loaded == null || pending.value != null
+                  ? null
+                  : (value) => unawaited(setDiscoverable(value)),
+            ),
+          ),
+        ),
+        const GroupAddPolicyRow(),
+        AppListRow(
+          key: const Key('settings-blocked-row'),
+          icon: LucideIcons.ban,
+          title: 'Blocked users',
+          trailing: Icon(
+            LucideIcons.chevronRight,
+            size: 18,
+            color: context.colors.onSurfaceVariant,
+          ),
+          onTap: () => unawaited(
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const BlockedUsersPage()),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Profile → "Kuzz ID": the ID people use to find and add me. Hidden
+/// without an account.
+class KuzzIdSettings extends ConsumerWidget {
+  const KuzzIdSettings({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final origin = ref.watch(accountOriginProvider);
+    if (origin == null) return const SizedBox.shrink();
+    final loaded = ref.watch(accountProfileProvider(origin)).value;
+    final username = loaded?.username;
+    return AppListCard(
+      key: const ValueKey('profile-kuzz-id'),
+      verticalPadding: Grid.twelve,
+      children: [
         AppListRow(
           key: const Key('settings-kuzz-id-row'),
           icon: LucideIcons.atSign,
@@ -80,36 +139,6 @@ class PeopleSettings extends HookConsumerWidget {
                     ),
                   ),
                 ),
-        ),
-        MergeSemantics(
-          child: AppListRow(
-            key: const Key('settings-discoverable-row'),
-            icon: LucideIcons.search,
-            title: 'Let people find me by ID or email',
-            subtitle: 'Only someone who types your exact ID or email',
-            trailing: Switch.adaptive(
-              key: const Key('settings-discoverable-switch'),
-              value: discoverable,
-              onChanged: loaded == null || pending.value != null
-                  ? null
-                  : (value) => unawaited(setDiscoverable(value)),
-            ),
-          ),
-        ),
-        AppListRow(
-          key: const Key('settings-blocked-row'),
-          icon: LucideIcons.ban,
-          title: 'Blocked users',
-          trailing: Icon(
-            LucideIcons.chevronRight,
-            size: 18,
-            color: context.colors.onSurfaceVariant,
-          ),
-          onTap: () => unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const BlockedUsersPage()),
-            ),
-          ),
         ),
       ],
     );

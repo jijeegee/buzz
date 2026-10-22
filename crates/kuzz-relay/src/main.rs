@@ -1354,6 +1354,11 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
 
         kuzz_relay::identity::spawn_revocation_consumer(Arc::clone(&state));
     }
+    // Device-bound keys: per-surface modes can be switched in Redis without
+    // a restart (`KUZZ_DEVICE_ADMISSION` is the default).
+    if state.identity.sessions_enabled() {
+        kuzz_relay::identity::device::spawn_mode_poller(Arc::clone(&state));
+    }
 
     let router = build_router(Arc::clone(&state));
     let health_router = build_health_router(Arc::clone(&state));
@@ -1481,6 +1486,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
             }
         });
     }
+
+    // Daily cleanup of uploaded files no live message uses (KUZZ_MEDIA_GC).
+    kuzz_relay::media_gc::spawn(Arc::clone(&state));
 
     serve(
         router,

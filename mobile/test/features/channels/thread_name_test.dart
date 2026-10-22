@@ -227,4 +227,75 @@ void main() {
     expect(session.published?.content, '');
     expect(session.published?.createdAt, 2000000002);
   });
+
+  for (final editing in [false, true]) {
+    for (final keyboardDone in [false, true]) {
+      testWidgets(
+        '${editing ? "edit" : "create"} Korean name with active composition via ${keyboardDone ? "Done" : "Save"}',
+        (tester) async {
+          final session = Session()
+            ..history = editing ? [named('기존 이름', 1)] : [];
+          final container = ProviderContainer(
+            overrides: [
+              savedPrefsProvider.overrideWithValue(prefs),
+              relayConfigProvider.overrideWith(Config.new),
+              relaySessionProvider.overrideWith(() => session),
+            ],
+          );
+          addTearDown(container.dispose);
+          await tester.pumpWidget(
+            UncontrolledProviderScope(
+              container: container,
+              child: MaterialApp(
+                home: Builder(
+                  builder: (context) => Scaffold(
+                    body: TextButton(
+                      onPressed: () => showThreadNameEditor(context, target),
+                      child: const Text('Edit'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(find.text('Edit'));
+          await tester.pumpAndSettle();
+          final saveButton = find.byKey(const ValueKey('thread-name-save'));
+          // Real IMEs send composing ranges; enterText alone doesn't.
+          tester.testTextInput.updateEditingValue(
+            TextEditingValue(
+              text: '가' * 21,
+              selection: const TextSelection.collapsed(offset: 21),
+              composing: const TextRange(start: 20, end: 21),
+            ),
+          );
+          await tester.pump();
+          expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+          expect(session.published, isNull);
+          final name = '가' * 19 + '힣';
+          tester.testTextInput.updateEditingValue(
+            TextEditingValue(
+              text: name,
+              selection: const TextSelection.collapsed(offset: 20),
+              composing: const TextRange(start: 19, end: 20),
+            ),
+          );
+          await tester.pump();
+          expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+          if (keyboardDone) {
+            await tester.testTextInput.receiveAction(TextInputAction.done);
+          } else {
+            await tester.tap(saveButton);
+          }
+          await tester.pumpAndSettle();
+          expect(session.published?.content, name);
+          expect(
+            container.read(threadNameStorageProvider).draft(target),
+            isNull,
+          );
+          expect(find.byType(ThreadNameEditor), findsNothing);
+        },
+      );
+    }
+  }
 }

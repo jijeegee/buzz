@@ -195,7 +195,7 @@ function feedHeadline(item: FeedItem, groupItems: readonly FeedItem[] = []) {
         return "Agent update";
       }
 
-      return "Channel update";
+      return "Group update";
   }
 }
 
@@ -357,7 +357,7 @@ export function getInboxTypeLabel(item: InboxItem): InboxTypeLabel {
 export function formatInboxTypeLabel(item: InboxItem) {
   const label = getInboxTypeLabel(item);
   return label.channelLabel
-    ? `${label.text} #${label.channelLabel}`
+    ? `${label.text} ${label.channelLabel}`
     : label.text;
 }
 

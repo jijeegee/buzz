@@ -47,6 +47,7 @@ kuzz messages send-diff --channel <uuid> --diff - --repo https://github.com/org/
 # Channels
 kuzz channels list
 kuzz channels create --name "my-channel" --type stream --visibility open
+kuzz channels create --chat --member <hex|npub> --member <hex|npub>   # group chat; --name optional
 kuzz channels join --channel <uuid>
 kuzz channels topic --channel <uuid> --topic "New topic"
 
@@ -74,8 +75,8 @@ kuzz users set-presence --status online
 kuzz users set-status --text "heads down on the CLI" --emoji "🚀"
 kuzz users set-status --clear                 # remove your status
 
-# DMs
-kuzz dms open --pubkey <hex>
+# DMs (1:1 only; for more people start a group chat with `channels create --chat`)
+kuzz dms open --pubkey <hex>          # the other person, or your own for notes to self
 kuzz dms list
 
 # Workflows
@@ -131,7 +132,7 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `vote` | Vote on a forum post |
 | `channels` | `list` | List channels |
 | | `get` | Get channel details |
-| | `create` | Create a channel |
+| | `create` | Create a channel, or an ownerless private group chat with `--chat` (repeatable `--member`, optional `--name`, up to 100 people) |
 | | `update` | Update channel name/description |
 | | `topic` | Set channel topic |
 | | `purpose` | Set channel purpose |
@@ -151,8 +152,8 @@ The table below mirrors that tree for readers who are not at a terminal.
 | `gifs` | `search` | Search or browse trending GIFs (requires relay kuzz-gif support) |
 | | `share` | Report a selected GIF to the provider's Recents |
 | `dms` | `list` | List DM conversations |
-| | `open` | Open a DM (1–8 pubkeys) |
-| | `add-member` | Add member to DM group |
+| | `open` | Open a 1:1 DM (one pubkey, or your own for notes to self) |
+| | `add-member` | Retired: DMs are 1:1; fails and points to `channels create --chat` |
 | `users` | `get` | Get user profile(s) |
 | | `set-profile` | Update your profile |
 | | `presence` | Get presence status |

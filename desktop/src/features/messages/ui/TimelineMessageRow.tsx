@@ -3,6 +3,7 @@ import * as React from "react";
 import type { MainTimelineEntry } from "@/features/messages/lib/threadPanel";
 import { THREAD_REPLY_ROW_MARGIN_INLINE_REM } from "@/features/messages/lib/threadTreeLayout";
 import type { buildVideoReviewContextForMessage } from "@/features/messages/lib/videoReviewContext";
+import { useIsGroupChatChannel } from "@/features/channels/useIsGroupChatChannel";
 import { canManageMessageForCurrentUser } from "@/features/messages/lib/canManageMessage";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
@@ -20,6 +21,7 @@ type ToggleReaction = (
 ) => Promise<void>;
 
 type SystemRowProps = {
+  channelId?: string | null;
   currentPubkey?: string;
   entries?: MainTimelineEntry[];
   entry?: MainTimelineEntry;
@@ -30,6 +32,7 @@ type SystemRowProps = {
 };
 
 export function SystemRow({
+  channelId,
   currentPubkey,
   entries,
   entry,
@@ -44,11 +47,13 @@ export function SystemRow({
     () => entries?.map((systemEntry) => systemEntry.message),
     [entries],
   );
+  const isChat = useIsGroupChatChannel(channelId ?? null);
   if (!firstEntry) return null;
 
   return (
     <div className="flex flex-col gap-1 pb-2.5">
       <SystemMessageRow
+        roomNoun={isChat ? "chat" : "group"}
         groupedMessages={groupedMessages}
         message={firstEntry.message}
         currentPubkey={currentPubkey}

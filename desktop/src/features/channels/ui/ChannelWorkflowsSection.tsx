@@ -58,7 +58,7 @@ export function ChannelWorkflowsSection({
         </FieldGroup>
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          No workflows in this channel yet.
+          No workflows in this group yet.
         </p>
       )}
 

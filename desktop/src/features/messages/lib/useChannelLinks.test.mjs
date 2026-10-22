@@ -119,3 +119,16 @@ test("mixed list keeps only active, non-DM matches", () => {
     ["s3", "f3"],
   );
 });
+
+test("excludes chats (1:1 and group) from suggestions", () => {
+  const channels = [
+    channel({ id: "d", name: "general-dm", channelType: "dm" }),
+    channel({ id: "g", name: "general-chat", groupChat: true }),
+    channel({ id: "s", name: "general" }),
+  ];
+
+  assert.deepEqual(
+    selectChannelSuggestions(channels, "general").map((item) => item.id),
+    ["s"],
+  );
+});

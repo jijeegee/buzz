@@ -1,20 +1,46 @@
 import type * as React from "react";
-import { Hash, Plus } from "lucide-react";
+import { Link2, MessageSquarePlus, Plus, UsersRound } from "lucide-react";
 
 import type { ChatsViewMode } from "@/features/chats/chatListGroups";
+import { openJoinWithLink } from "@/features/groups/joinWithLinkStore";
+import { deferMenuAction } from "@/features/sidebar/ui/sidebarMenuHelpers";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 
-/** "Chats" with # Channels, + New and the list menu, atop the list column. */
+/**
+ * "Chats" with Find groups, + New (New message / New group / Find groups /
+ * Join with link)
+ * and the list menu, atop the list column.
+ */
 export function ChatsColumnTitle({
   menu,
   onBrowseChannels,
+  onNewGroup,
   onNewMessage,
 }: {
   menu?: React.ReactNode;
   onBrowseChannels?: () => void;
+  onNewGroup?: () => void;
   onNewMessage: () => void;
 }) {
+  const hasNewMenu = Boolean(onNewGroup || onBrowseChannels);
+  const newButton = (
+    <Button
+      className="h-7 gap-1 px-2 text-xs"
+      data-testid="section-actions-chats-quick-create"
+      onClick={hasNewMenu ? undefined : onNewMessage}
+      size="sm"
+    >
+      <Plus className="h-3.5 w-3.5" />
+      New
+    </Button>
+  );
   return (
     <div
       className="flex items-center gap-1.5 px-3 pb-1 pt-1"
@@ -31,19 +57,53 @@ export function ChatsColumnTitle({
           size="sm"
           variant="outline"
         >
-          <Hash className="h-3.5 w-3.5" />
-          Channels
+          <UsersRound className="h-3.5 w-3.5" />
+          Find groups
         </Button>
       ) : null}
-      <Button
-        className="h-7 gap-1 px-2 text-xs"
-        data-testid="section-actions-chats-quick-create"
-        onClick={onNewMessage}
-        size="sm"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        New
-      </Button>
+      {hasNewMenu ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>{newButton}</DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem
+              data-testid="chats-new-menu-message"
+              onSelect={() => deferMenuAction(onNewMessage)}
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+              <span>New message</span>
+            </DropdownMenuItem>
+            {onNewGroup ? (
+              <DropdownMenuItem
+                data-testid="chats-new-menu-group"
+                onSelect={() => deferMenuAction(onNewGroup)}
+              >
+                <Plus className="h-4 w-4" />
+                <span>New group</span>
+              </DropdownMenuItem>
+            ) : null}
+            {onBrowseChannels ? (
+              <DropdownMenuItem
+                data-testid="chats-new-menu-find-groups"
+                onSelect={() => deferMenuAction(onBrowseChannels)}
+              >
+                <UsersRound className="h-4 w-4" />
+                <span>Find groups</span>
+              </DropdownMenuItem>
+            ) : null}
+            {onBrowseChannels ? (
+              <DropdownMenuItem
+                data-testid="chats-new-menu-join-with-link"
+                onSelect={() => deferMenuAction(() => openJoinWithLink())}
+              >
+                <Link2 className="h-4 w-4" />
+                <span>Join with link</span>
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        newButton
+      )}
       {menu}
     </div>
   );
@@ -52,13 +112,13 @@ export function ChatsColumnTitle({
 const VIEWS: { label: string; testId: string; value: ChatsViewMode }[] = [
   { label: "All chats", testId: "chats-toggle-all", value: "all" },
   {
-    label: "By channel",
+    label: "By group",
     testId: "chats-toggle-by-channel",
     value: "by-channel",
   },
 ];
 
-/** All chats / By channel, as two tabs under the search box. */
+/** All chats / By group, as two tabs under the search box. */
 export function ChatsViewToggle({
   onChange,
   value,

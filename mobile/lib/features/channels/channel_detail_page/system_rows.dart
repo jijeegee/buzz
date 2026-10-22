@@ -28,8 +28,17 @@ class _SystemMessageRow extends HookConsumerWidget {
     final userCache = ref.watch(userCacheProvider);
     final sourceMessages = groupedMessages ?? [message];
     final groupedMembership = _membershipDisplayEvent(sourceMessages);
+    // Ownerless chats are never called a "group".
+    final isChat = ref.watch(
+      channelsProvider.select(
+        (channels) =>
+            channels.value?.any((c) => c.id == channelId && c.isGroupChat) ??
+            false,
+      ),
+    );
+    final roomNoun = isChat ? 'chat' : 'group';
     final messageStyleAction = switch (systemEvent.type) {
-      SystemEventType.channelCreated => 'created this channel',
+      SystemEventType.channelCreated => 'created this $roomNoun',
       SystemEventType.huddleStarted => 'started a huddle',
       SystemEventType.huddleEnded => 'ended the huddle',
       _ => null,
@@ -133,6 +142,7 @@ class _SystemMessageRow extends HookConsumerWidget {
                         createdAt: message.createdAt,
                         resolveLabel: resolveLabel,
                         userCache: userCache,
+                        roomNoun: roomNoun,
                       )
                     : messageStyleActor != null &&
                           messageStyleActor.isNotEmpty &&
@@ -156,7 +166,10 @@ class _SystemMessageRow extends HookConsumerWidget {
                           const SizedBox(width: Grid.xxs),
                           Expanded(
                             child: Text(
-                              systemEvent.describe(resolveLabel),
+                              systemEvent.describe(
+                                resolveLabel,
+                                roomNoun: roomNoun,
+                              ),
                               style: systemMessageBodyTextStyle.copyWith(
                                 color: context.colors.onSurfaceVariant,
                               ),
@@ -309,6 +322,7 @@ class _MembershipSystemMessageContent extends StatelessWidget {
   final int createdAt;
   final String Function(String? pubkey) resolveLabel;
   final Map<String, UserProfile> userCache;
+  final String roomNoun;
 
   const _MembershipSystemMessageContent({
     required this.event,
@@ -316,6 +330,7 @@ class _MembershipSystemMessageContent extends StatelessWidget {
     required this.createdAt,
     required this.resolveLabel,
     required this.userCache,
+    this.roomNoun = 'group',
   });
 
   @override
@@ -332,7 +347,7 @@ class _MembershipSystemMessageContent extends StatelessWidget {
     final actionSpans = <InlineSpan>[
       TextSpan(
         text: event.isSelfJoin
-            ? 'joined the channel'
+            ? 'joined the $roomNoun'
             // No "was": the name renders on the line above via
             // MessageAuthorMeta, so this reads as a status line rather than a
             // sentence continuing across the metadata row. Matches desktop's

@@ -421,11 +421,6 @@ export type AgentSnapshotImportPreview = {
   /** "none" | "core" | "everything" */
   memoryLevel: string;
   memoryEntryCount: number;
-  /** True when the snapshot's respond_to_allowlist is non-empty. */
-  hasSourceAllowlist: boolean;
-  sourceAllowlistCount: number;
-  /** Full source pubkeys shown before import, not only their count. */
-  sourceAllowlist: string[];
   /** Validated, pretty-printed manifest for full payload disclosure. */
   manifestJson: string;
   /**
@@ -439,8 +434,6 @@ export type AgentSnapshotImportPreview = {
 /** Confirmation sent to `confirm_agent_snapshot_import`. */
 export type AgentSnapshotImportConfirm = {
   fileBytes: number[];
-  /** When true, copy source allowlist to the new agent. Default: false (Clear). */
-  keepAllowlist: boolean;
 };
 
 /** Structured result from a confirmed import. */

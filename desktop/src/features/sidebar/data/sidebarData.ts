@@ -28,7 +28,7 @@ export const sidebarSections: ChannelSection[] = [
     ],
   },
   {
-    title: "Channels",
+    title: "Groups",
     items: [
       {
         name: "engineering",

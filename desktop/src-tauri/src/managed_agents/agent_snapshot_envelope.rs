@@ -340,8 +340,6 @@ mod tests {
                 model: None,
                 provider: None,
                 parallelism: Some(1),
-                respond_to: None,
-                respond_to_allowlist: Vec::new(),
                 name_pool: Vec::new(),
                 idle_timeout_seconds: None,
                 max_turn_duration_seconds: None,
