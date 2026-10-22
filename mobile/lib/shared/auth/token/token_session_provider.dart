@@ -5,6 +5,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../../community/community_provider.dart';
+import '../../device_key/device_key.dart';
+import '../../device_key/device_proof_client.dart';
 import 'auth_api.dart';
 import 'install_id_store.dart';
 import 'refresh_token_store.dart';
@@ -12,9 +14,10 @@ import 'relay_origin.dart';
 import 'token_session.dart';
 import 'web_auth_launcher.dart';
 
-/// HTTP client for `/auth/*` and NIP-11 detection. Override in tests.
+/// HTTP client for `/auth/*` and NIP-11 detection. Account calls carry this
+/// install's device proof ([DeviceProofClient]). Override in tests.
 final authHttpClientProvider = Provider<http.Client>((ref) {
-  final client = http.Client();
+  final client = DeviceProofClient(http.Client());
   ref.onDispose(client.close);
   return client;
 });
@@ -65,7 +68,11 @@ final tokenSessionControllerProvider =
     Provider.family<TokenSessionController, String>((ref, origin) {
       final controller = TokenSessionController(
         origin: origin,
-        api: AuthApi(origin: origin, client: ref.watch(authHttpClientProvider)),
+        api: AuthApi(
+          origin: origin,
+          client: ref.watch(authHttpClientProvider),
+          deviceKey: DeviceKey.instance,
+        ),
         store: ref.watch(refreshTokenStoreProvider),
         launcher: ref.watch(webAuthLauncherProvider),
         clock: ref.watch(sessionClockProvider),
@@ -81,7 +88,11 @@ final keyBackupSessionControllerProvider =
     Provider.family<TokenSessionController, String>((ref, origin) {
       final controller = TokenSessionController(
         origin: origin,
-        api: AuthApi(origin: origin, client: ref.watch(authHttpClientProvider)),
+        api: AuthApi(
+          origin: origin,
+          client: ref.watch(authHttpClientProvider),
+          deviceKey: DeviceKey.instance,
+        ),
         store: ref.watch(keyBackupRefreshTokenStoreProvider),
         launcher: ref.watch(webAuthLauncherProvider),
         clock: ref.watch(sessionClockProvider),

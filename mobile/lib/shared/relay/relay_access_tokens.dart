@@ -165,9 +165,9 @@ Future<http.Response> sendRelayAuthorized(
   RelayConfig config,
   RelayAccessTokens? tokens,
   Future<http.Response> Function(String authorization) send, {
-  required String Function() nip98,
+  required Future<String> Function() nip98,
 }) async {
-  if (!config.tokenAuth) return send(nip98());
+  if (!config.tokenAuth) return send(await nip98());
   if (tokens == null) throw const RelayTokenUnavailableException();
   return sendWithBearer(tokens, send);
 }
