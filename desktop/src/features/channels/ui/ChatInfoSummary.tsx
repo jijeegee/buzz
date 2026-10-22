@@ -25,6 +25,8 @@ import { Input } from "@/shared/ui/input";
 import { PanelSectionGroup } from "@/shared/ui/PanelSectionGroup";
 import { Switch } from "@/shared/ui/switch";
 
+import { LeaveChannelAlertDialog } from "@/features/sidebar/ui/ChannelSectionDialogs";
+
 import { useChatPrefs } from "../ChatPrefsContext";
 import {
   normalizePrivateChatName,
@@ -124,6 +126,7 @@ export function ChatInfoSummary({
   const prefs = useChatPrefs();
   const privateName = useChatPrivateNames().get(channel.id) ?? null;
   const [isRenameOpen, setIsRenameOpen] = React.useState(false);
+  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = React.useState(false);
   const isMember = members.some(
     (member) =>
       currentPubkey !== undefined &&
@@ -232,11 +235,21 @@ export function ChatInfoSummary({
             disabled={isLeaving}
             icon={DoorClosed}
             label={isLeaving ? "Leaving chat..." : "Leave chat"}
-            onClick={onLeave}
+            onClick={() => setIsLeaveConfirmOpen(true)}
             testId="chat-info-leave"
           />
         </FieldGroup>
       ) : null}
+      <LeaveChannelAlertDialog
+        channelName={title}
+        isChat
+        onConfirm={() => {
+          setIsLeaveConfirmOpen(false);
+          onLeave();
+        }}
+        onOpenChange={setIsLeaveConfirmOpen}
+        open={isLeaveConfirmOpen}
+      />
       {leaveError instanceof Error ? (
         <p className="text-sm text-destructive">{leaveError.message}</p>
       ) : null}
