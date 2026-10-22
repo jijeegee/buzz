@@ -1,4 +1,5 @@
-//! Live rooms across regions (global regions stage S4-4a): the home side.
+//! Live rooms across regions (global regions stages S4-4a, S4-4c): the home
+//! side.
 //!
 //! A region with subscribers in a room that lives elsewhere watches the room
 //! at its home over one WebSocket per region pair
@@ -13,6 +14,13 @@
 //! - `{"op":"watch","room":<uuid>,"readers":[<hex pubkey>…]}` sets the
 //!   readers of a room (sent again whenever they change).
 //! - `{"op":"unwatch","room":<uuid>}`.
+//! - `{"op":"watch_readers","readers":[<hex>…]}` and
+//!   `{"op":"unwatch_readers","readers":[…]}` add and remove readers whose
+//!   own room-less events are streamed (S4-4c): an event without a room is
+//!   sent when it names a watched reader in a `p` tag or was written by one,
+//!   and the gate lets that reader see it ("you were added to a room", read
+//!   mark pings, pairing). Room-less events for everyone (presence) are not
+//!   streamed.
 //!
 //! Home to entry:
 //! - `{"op":"watching","room":<uuid>}` once a watch is live: every event
@@ -22,6 +30,10 @@
 //!   `seq` is null when the event was published without its order number.
 //! - `{"op":"refused","room":<uuid>,"reason":"…"}` when a watch cannot be
 //!   served (unknown room, the room lives elsewhere, limits).
+//! - `{"op":"global_event","event":{…},"to":[<hex>…]}` for a room-less event
+//!   of watched readers.
+//!
+//! A frame of an unknown op is ignored, so either side can be newer.
 //!
 //! The stream carries only what happens while it is open. It is closed
 //! rather than left with a hole: when the entry falls behind, when this
@@ -38,7 +50,7 @@
 //!
 //! Only mounted with the link on (`KUZZ_REGION_LINK`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -105,6 +117,16 @@ pub enum EntryFrame {
         /// The room.
         room: Uuid,
     },
+    /// Stream the room-less events of these readers too.
+    WatchReaders {
+        /// Hex pubkeys with a room-less subscription at the entry.
+        readers: Vec<String>,
+    },
+    /// Stop streaming the room-less events of these readers.
+    UnwatchReaders {
+        /// Hex pubkeys.
+        readers: Vec<String>,
+    },
 }
 
 /// A frame from the home region.
@@ -133,6 +155,13 @@ pub enum HomeFrame {
         room: Uuid,
         /// Why, as a NIP-01 `CLOSED` style reason.
         reason: String,
+    },
+    /// A new room-less event of watched readers, for the readers in `to`.
+    GlobalEvent {
+        /// The event.
+        event: nostr::Event,
+        /// Hex pubkeys of the watched readers allowed to see it.
+        to: Vec<String>,
     },
 }
 
@@ -182,6 +211,8 @@ pub async fn stream(
 struct Watched {
     rooms: HashMap<Uuid, Vec<Vec<u8>>>,
     readers: usize,
+    /// Readers whose room-less events are streamed.
+    global: HashSet<Vec<u8>>,
 }
 
 /// Serve one stream until either side closes it.
@@ -207,7 +238,11 @@ async fn run(state: Arc<AppState>, tenant: TenantContext, entry: String, socket:
                 Some(Ok(Message::Text(text))) => {
                     match serde_json::from_str::<EntryFrame>(text.as_str()) {
                         Ok(frame) => apply(&state, &tenant, &mut watched, frame).await,
-                        Err(_) => break "malformed frame",
+                        // An op this version does not know (a newer entry).
+                        Err(error) => {
+                            tracing::warn!(from = %entry, %error, "Ignoring an unknown region stream frame");
+                            None
+                        }
                     }
                 }
                 Some(Ok(Message::Pong(_))) => {
@@ -247,6 +282,12 @@ async fn run(state: Arc<AppState>, tenant: TenantContext, entry: String, socket:
         state
             .pubsub
             .release_topic(&tenant, EventTopic::Channel(*room))
+            .await;
+    }
+    if !watched.global.is_empty() {
+        state
+            .pubsub
+            .release_topic(&tenant, EventTopic::Global)
             .await;
     }
     metrics::gauge!("kuzz_region_streams_open", "from" => entry.clone()).decrement(1.0);
@@ -328,6 +369,35 @@ async fn apply(
             unwatch(state, tenant, watched, room).await;
             None
         }
+        EntryFrame::WatchReaders { readers } => {
+            let readers = decode_readers(&readers).filter(|r| r.len() <= MAX_READERS);
+            let Some(readers) = readers else {
+                tracing::warn!("Refused a malformed or oversized reader watch");
+                return None;
+            };
+            let first = watched.global.is_empty();
+            for reader in readers {
+                if watched.global.len() >= MAX_READERS_TOTAL {
+                    metrics::counter!("kuzz_region_stream_readers_refused_total").increment(1);
+                    break;
+                }
+                watched.global.insert(reader);
+            }
+            if first && !watched.global.is_empty() {
+                state.pubsub.retain_topic(tenant, EventTopic::Global).await;
+            }
+            None
+        }
+        EntryFrame::UnwatchReaders { readers } => {
+            let had = !watched.global.is_empty();
+            for reader in decode_readers(&readers).unwrap_or_default() {
+                watched.global.remove(&reader);
+            }
+            if had && watched.global.is_empty() {
+                state.pubsub.release_topic(tenant, EventTopic::Global).await;
+            }
+            None
+        }
     }
 }
 
@@ -353,7 +423,7 @@ async fn deliver(
         return None;
     }
     let EventTopic::Channel(room) = published.topic else {
-        return None;
+        return deliver_global(state, community, watched, published).await;
     };
     let readers = watched.rooms.get(&room)?;
     let mut stored = StoredEvent::new(published.event, Some(room));
@@ -373,6 +443,54 @@ async fn deliver(
         event: stored.event,
         to: allowed.iter().map(hex::encode).collect(),
     })
+}
+
+/// The frame for a published room-less event naming or written by watched
+/// readers, or `None`.
+async fn deliver_global(
+    state: &AppState,
+    community: kuzz_core::CommunityId,
+    watched: &Watched,
+    published: kuzz_pubsub::ChannelEvent,
+) -> Option<Message> {
+    if watched.global.is_empty() {
+        return None;
+    }
+    let candidates = global_candidates(&published.event, &watched.global);
+    if candidates.is_empty() {
+        return None;
+    }
+    let stored = StoredEvent::new(published.event, None);
+    let recipients = candidates
+        .into_iter()
+        .map(|reader| (reader.clone(), Some(reader)))
+        .collect();
+    let allowed = filter_recipients_by_access(state, community, &stored, recipients, None).await;
+    if allowed.is_empty() {
+        return None;
+    }
+    metrics::counter!("kuzz_region_stream_global_events_sent_total").increment(1);
+    encode(&HomeFrame::GlobalEvent {
+        event: stored.event,
+        to: allowed.iter().map(hex::encode).collect(),
+    })
+}
+
+/// Watched readers an event names in a `p` tag or was written by.
+fn global_candidates(event: &nostr::Event, watched: &HashSet<Vec<u8>>) -> Vec<Vec<u8>> {
+    let mut candidates: Vec<Vec<u8>> = event
+        .tags
+        .iter()
+        .filter_map(|tag| match tag.as_slice() {
+            [name, value, ..] if name == "p" => hex::decode(value).ok(),
+            _ => None,
+        })
+        .chain(std::iter::once(event.pubkey.to_bytes().to_vec()))
+        .filter(|reader| watched.contains(reader))
+        .collect();
+    candidates.sort_unstable();
+    candidates.dedup();
+    candidates
 }
 
 fn encode(frame: &HomeFrame) -> Option<Message> {
@@ -402,7 +520,34 @@ mod tests {
         let unwatch: EntryFrame =
             serde_json::from_value(serde_json::json!({"op": "unwatch", "room": room})).unwrap();
         assert_eq!(unwatch, EntryFrame::Unwatch { room });
+        let readers: EntryFrame = serde_json::from_value(
+            serde_json::json!({"op": "watch_readers", "readers": ["ab".repeat(32)]}),
+        )
+        .unwrap();
+        assert_eq!(
+            readers,
+            EntryFrame::WatchReaders {
+                readers: vec!["ab".repeat(32)]
+            }
+        );
         assert!(serde_json::from_value::<EntryFrame>(serde_json::json!({"op": "drop"})).is_err());
+    }
+
+    #[test]
+    fn global_events_go_to_watched_readers_named_or_writing() {
+        let author = nostr::Keys::generate();
+        let named = nostr::Keys::generate();
+        let other = nostr::Keys::generate();
+        let event = nostr::EventBuilder::new(nostr::Kind::Custom(24210), "")
+            .tags([nostr::Tag::parse(["p", &named.public_key().to_hex()]).unwrap()])
+            .sign_with_keys(&author)
+            .unwrap();
+        let key = |keys: &nostr::Keys| keys.public_key().to_bytes().to_vec();
+        let watched = HashSet::from([key(&author), key(&named), key(&other)]);
+        let mut expected = vec![key(&author), key(&named)];
+        expected.sort_unstable();
+        assert_eq!(global_candidates(&event, &watched), expected);
+        assert!(global_candidates(&event, &HashSet::from([key(&other)])).is_empty());
     }
 
     #[test]

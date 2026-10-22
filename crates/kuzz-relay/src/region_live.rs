@@ -1,4 +1,5 @@
-//! Live rooms across regions (global regions stage S4-4b): the entry side.
+//! Live rooms across regions (global regions stages S4-4b, S4-4c): the
+//! entry side.
 //!
 //! A REQ that names rooms of another region registers for them here like
 //! for local rooms, then asks [`RegionLive::ensure`] to watch them at their
@@ -17,6 +18,12 @@
 //!   subscription registry: readers who no longer subscribe are dropped,
 //!   and a room nobody subscribes to is unwatched. With no room left the
 //!   stream is closed.
+//! - **Room-less events (S4-4c).** A room-less live REQ asks every other
+//!   region's link to stream the reader's own room-less events
+//!   ([`RegionLive::watch_reader`]): "you were added to a room", read mark
+//!   pings, pairing. Reconcile keeps the set to readers that still have a
+//!   room-less subscription. These events have no order number, so a drop
+//!   can lose some; apps catch up on their next full refresh.
 //!
 //! Only used with the link on (`KUZZ_REGION_LINK`).
 
@@ -61,11 +68,16 @@ const RESYNC_REASON: &str = "region_link";
 /// Spread of the delayed closes of sockets that cannot be told to resync.
 const RESYNC_LEGACY_JITTER_MS: u64 = 5_000;
 
+/// Readers per reader watch frame (the home's per-frame limit).
+const READER_CHUNK: usize = 5_000;
+
 /// A request to a link task.
 #[derive(Debug)]
 struct Ensure {
     rooms: Vec<Uuid>,
     reader: Vec<u8>,
+    /// Also stream the reader's room-less events.
+    global: bool,
     done: oneshot::Sender<()>,
 }
 
@@ -95,6 +107,7 @@ impl RegionLive {
         let request = Ensure {
             rooms,
             reader,
+            global: false,
             done,
         };
         let _ = tokio::time::timeout(ENSURE_WAIT, async move {
@@ -103,6 +116,35 @@ impl RegionLive {
             }
         })
         .await;
+    }
+
+    /// Stream `reader`'s room-less events from every other region (a pubkey
+    /// whose room-less subscription is already registered). Does not wait.
+    pub async fn watch_reader(
+        &self,
+        state: &Arc<AppState>,
+        tenant: &TenantContext,
+        reader: Vec<u8>,
+    ) {
+        let regions = match state.room_router.other_regions(&state.db).await {
+            Ok(regions) => regions,
+            Err(error) => {
+                tracing::warn!(%error, "Region list unavailable; room-less events stay local");
+                return;
+            }
+        };
+        for region in regions {
+            let (done, _) = oneshot::channel();
+            let request = Ensure {
+                rooms: Vec::new(),
+                reader: reader.clone(),
+                global: true,
+                done,
+            };
+            if self.link(state, tenant, &region).try_send(request).is_err() {
+                metrics::counter!("kuzz_region_live_reader_watch_dropped_total").increment(1);
+            }
+        }
     }
 
     fn link(
@@ -144,6 +186,8 @@ struct Rooms {
     retry: HashSet<Uuid>,
     /// Callers waiting for a room to be live.
     waiters: HashMap<Uuid, Vec<Arc<Waiter>>>,
+    /// Readers whose room-less events are streamed, as last sent.
+    global: BTreeSet<Vec<u8>>,
 }
 
 /// One `ensure` call, done once each of its rooms is live or refused.
@@ -190,7 +234,33 @@ fn temporary(reason: &str) -> bool {
     reason.starts_with("error:")
 }
 
+/// Reader watch frames for `readers`, in chunks the home accepts.
+fn reader_frames<'a>(readers: impl Iterator<Item = &'a Vec<u8>>, watch: bool) -> Vec<EntryFrame> {
+    let readers: Vec<String> = readers.map(hex::encode).collect();
+    readers
+        .chunks(READER_CHUNK)
+        .map(|chunk| {
+            let readers = chunk.to_vec();
+            if watch {
+                EntryFrame::WatchReaders { readers }
+            } else {
+                EntryFrame::UnwatchReaders { readers }
+            }
+        })
+        .collect()
+}
+
 impl Rooms {
+    /// Nothing to watch: no room and no reader.
+    fn idle(&self) -> bool {
+        self.readers.is_empty() && self.global.is_empty()
+    }
+
+    /// Frames that watch every reader's room-less events (a new stream).
+    fn watch_all_readers(&self) -> Vec<EntryFrame> {
+        reader_frames(self.global.iter(), true)
+    }
+
     /// The watch frame for `room` with its current readers, counted as sent.
     fn watch(&mut self, room: Uuid) -> Option<EntryFrame> {
         let readers = self.readers.get(&room)?;
@@ -215,6 +285,10 @@ impl Rooms {
 
     /// Add a reader; returns the watch frames to send when `connected`.
     fn add(&mut self, request: Ensure, connected: bool) -> Vec<EntryFrame> {
+        let mut frames = Vec::new();
+        if request.global && self.global.insert(request.reader.clone()) && connected {
+            frames.extend(reader_frames(std::iter::once(&request.reader), true));
+        }
         // A caller that already gave up reads history without the watch.
         let unwatched = !connected || request.done.is_closed();
         let mut changed = Vec::new();
@@ -247,10 +321,8 @@ impl Rooms {
         if !connected {
             return Vec::new();
         }
-        changed
-            .into_iter()
-            .filter_map(|room| self.watch(room))
-            .collect()
+        frames.extend(changed.into_iter().filter_map(|room| self.watch(room)));
+        frames
     }
 
     /// The home answered `watching` for `room`. Returns whether its
@@ -322,9 +394,16 @@ impl Rooms {
     fn reconcile(
         &mut self,
         subscribers: HashMap<Uuid, BTreeSet<Vec<u8>>>,
+        global: &BTreeSet<Vec<u8>>,
         connected: bool,
     ) -> Vec<EntryFrame> {
-        let mut frames = Vec::new();
+        // Room-less readers follow the registry both ways: those gone are
+        // unwatched, and any a dropped request missed are watched.
+        let gone: Vec<Vec<u8>> = self.global.difference(global).cloned().collect();
+        let new: Vec<Vec<u8>> = global.difference(&self.global).cloned().collect();
+        let mut frames = reader_frames(gone.iter(), false);
+        frames.extend(reader_frames(new.iter(), true));
+        self.global = global.clone();
         let rooms: Vec<Uuid> = self.readers.keys().copied().collect();
         for room in rooms {
             if self.waiters.contains_key(&room) {
@@ -415,6 +494,16 @@ async fn connect(
     Ok(socket)
 }
 
+/// Readers with a room-less subscription here now.
+fn global_subscribers(state: &AppState, community: CommunityId) -> BTreeSet<Vec<u8>> {
+    state
+        .sub_registry
+        .global_subscriber_conns(community)
+        .into_iter()
+        .filter_map(|conn| state.conn_manager.pubkey_for_conn(conn))
+        .collect()
+}
+
 /// Readers subscribed now to each of `rooms`.
 fn subscribers(
     state: &AppState,
@@ -453,6 +542,30 @@ async fn resync_room(state: Arc<AppState>, community: CommunityId, room: Uuid) {
         .await;
     metrics::counter!("kuzz_region_live_resyncs_total").increment(1);
     tracing::info!(%room, signalled, closed, "Region room live again; subscribers resynced");
+}
+
+/// Deliver a room-less event the home sent to the local subscribers of the
+/// readers it allowed.
+fn deliver_global(state: &AppState, community: CommunityId, event: nostr::Event, to: &[String]) {
+    let allowed: HashSet<Vec<u8>> = to.iter().filter_map(|hex| hex::decode(hex).ok()).collect();
+    let stored = StoredEvent::new(event, None);
+    let matches: Vec<_> = state
+        .sub_registry
+        .fan_out_scoped(community, &stored)
+        .into_iter()
+        .filter(|(conn, _)| {
+            state.conn_manager.community_for_conn(*conn) == Some(community)
+                && state
+                    .conn_manager
+                    .pubkey_for_conn(*conn)
+                    .is_some_and(|pk| allowed.contains(&pk))
+        })
+        .collect();
+    metrics::counter!("kuzz_region_live_global_events_total").increment(1);
+    let dropped = crate::handlers::event::send_to_matches(state, &matches, &stored);
+    if dropped > 0 {
+        tracing::warn!(dropped, "region live fan-out: connection(s) dropped");
+    }
 }
 
 /// Deliver an event the home sent to the local subscribers of the readers
@@ -498,7 +611,7 @@ async fn run_link(
     let mut rooms = Rooms::default();
     let mut backoff = BACKOFF_MIN;
     loop {
-        if rooms.readers.is_empty() {
+        if rooms.idle() {
             let Some(request) = requests.recv().await else {
                 return;
             };
@@ -528,7 +641,7 @@ async fn run_link(
                 backoff = (backoff * 2).min(BACKOFF_MAX);
                 let watched: HashSet<Uuid> = rooms.readers.keys().copied().collect();
                 let now = subscribers(&state, community, &watched);
-                rooms.reconcile(now, false);
+                rooms.reconcile(now, &global_subscribers(&state, community), false);
                 continue;
             }
         };
@@ -543,7 +656,7 @@ async fn run_link(
         if end == "requests closed" {
             return;
         }
-        if rooms.readers.is_empty() {
+        if rooms.idle() {
             // Nothing is left to resync.
             rooms.resync.clear();
         }
@@ -576,6 +689,14 @@ where
     let watched: Vec<Uuid> = rooms.readers.keys().copied().collect();
     for room in watched {
         let Some(frame) = rooms.watch(room).as_ref().and_then(text) else {
+            continue;
+        };
+        if socket.send(frame).await.is_err() {
+            return "send error";
+        }
+    }
+    for frame in rooms.watch_all_readers() {
+        let Some(frame) = text(&frame) else {
             continue;
         };
         if socket.send(frame).await.is_err() {
@@ -625,6 +746,10 @@ where
                         tracing::warn!(%room, %reason, "Home refused a room watch");
                         rooms.refused(room, &reason)
                     }
+                    Ok(HomeFrame::GlobalEvent { event, to }) => {
+                        deliver_global(state, community, event, &to);
+                        Vec::new()
+                    }
                     // A frame this version does not know (a newer home).
                     Err(error) => {
                         tracing::warn!(%error, "Ignoring an unknown region stream frame");
@@ -637,8 +762,12 @@ where
                     return "home silent";
                 }
                 let watched: HashSet<Uuid> = rooms.readers.keys().copied().collect();
-                let frames = rooms.reconcile(subscribers(state, community, &watched), true);
-                if rooms.readers.is_empty() {
+                let frames = rooms.reconcile(
+                    subscribers(state, community, &watched),
+                    &global_subscribers(state, community),
+                    true,
+                );
+                if rooms.idle() {
                     for frame in &frames {
                         if let Some(message) = text(frame) {
                             let _ = socket.send(message).await;
@@ -671,6 +800,7 @@ mod tests {
             Ensure {
                 rooms: rooms.to_vec(),
                 reader: vec![reader; 32],
+                global: false,
                 done,
             },
             wait,
@@ -740,7 +870,7 @@ mod tests {
             rooms.add(request, false);
         }
         let now = HashMap::from([(a, BTreeSet::from([vec![1u8; 32]]))]);
-        let frames = rooms.reconcile(now, true);
+        let frames = rooms.reconcile(now, &BTreeSet::new(), true);
         assert_eq!(frames.len(), 2);
         assert!(frames.contains(&EntryFrame::Unwatch { room: b }));
         assert!(frames.contains(&EntryFrame::Watch {
@@ -750,7 +880,7 @@ mod tests {
         assert_eq!(rooms.readers.len(), 1);
         // Nothing changed: nothing is sent.
         let now = HashMap::from([(a, BTreeSet::from([vec![1u8; 32]]))]);
-        assert!(rooms.reconcile(now, true).is_empty());
+        assert!(rooms.reconcile(now, &BTreeSet::new(), true).is_empty());
     }
 
     #[test]
@@ -759,7 +889,9 @@ mod tests {
         let mut rooms = Rooms::default();
         let (request, _wait) = ensure(&[room], 1);
         rooms.add(request, true);
-        assert!(rooms.reconcile(HashMap::new(), true).is_empty());
+        assert!(rooms
+            .reconcile(HashMap::new(), &BTreeSet::new(), true)
+            .is_empty());
         assert!(rooms.readers.contains_key(&room));
     }
 
@@ -818,7 +950,7 @@ mod tests {
 
         // The next reconcile watches `a` again; live, it resyncs.
         let now = HashMap::from([(a, BTreeSet::from([vec![1u8; 32]]))]);
-        assert_eq!(rooms.reconcile(now, true).len(), 1);
+        assert_eq!(rooms.reconcile(now, &BTreeSet::new(), true).len(), 1);
         assert!(rooms.answered(a));
     }
 
@@ -832,5 +964,57 @@ mod tests {
         rooms.inflight.clear();
         let (request, _) = ensure(&[room], 1);
         assert_eq!(rooms.add(request, true).len(), 1);
+    }
+
+    #[test]
+    fn room_less_readers_are_watched_and_dropped_when_gone() {
+        let mut rooms = Rooms::default();
+        let (done, _) = oneshot::channel();
+        let request = Ensure {
+            rooms: Vec::new(),
+            reader: vec![1; 32],
+            global: true,
+            done,
+        };
+        assert_eq!(
+            rooms.add(request, true),
+            vec![EntryFrame::WatchReaders {
+                readers: vec!["01".repeat(32)]
+            }]
+        );
+        assert!(!rooms.idle());
+        assert_eq!(rooms.watch_all_readers().len(), 1);
+        // Still subscribed: nothing changes.
+        let still = BTreeSet::from([vec![1u8; 32]]);
+        assert!(rooms.reconcile(HashMap::new(), &still, true).is_empty());
+        // A reader whose request was dropped is watched at reconcile.
+        let more = BTreeSet::from([vec![1u8; 32], vec![2u8; 32]]);
+        assert_eq!(
+            rooms.reconcile(HashMap::new(), &more, true),
+            vec![EntryFrame::WatchReaders {
+                readers: vec!["02".repeat(32)]
+            }]
+        );
+        assert!(rooms.reconcile(HashMap::new(), &still, true).len() == 1);
+        // Gone: unwatched, and the link is idle.
+        assert_eq!(
+            rooms.reconcile(HashMap::new(), &BTreeSet::new(), true),
+            vec![EntryFrame::UnwatchReaders {
+                readers: vec!["01".repeat(32)]
+            }]
+        );
+        assert!(rooms.idle());
+    }
+
+    #[test]
+    fn reader_frames_are_chunked() {
+        let readers: Vec<Vec<u8>> = (0..READER_CHUNK + 1)
+            .map(|i| {
+                let mut key = vec![0u8; 32];
+                key[..8].copy_from_slice(&(i as u64).to_be_bytes());
+                key
+            })
+            .collect();
+        assert_eq!(reader_frames(readers.iter(), true).len(), 2);
     }
 }

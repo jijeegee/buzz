@@ -397,6 +397,25 @@ impl SubscriptionRegistry {
         conns
     }
 
+    /// Connections with a room-less (global) subscription in `community_id`.
+    pub fn global_subscriber_conns(&self, community_id: CommunityId) -> HashSet<ConnId> {
+        let mut conns = HashSet::new();
+        for entry in self.global_kind_index.iter() {
+            if entry.key().0 == community_id {
+                conns.extend(entry.value().iter().map(|(conn_id, _)| *conn_id));
+            }
+        }
+        for entry in self.global_p_kind_index.iter() {
+            if entry.key().community_id == community_id {
+                conns.extend(entry.value().iter().map(|(conn_id, _)| *conn_id));
+            }
+        }
+        if let Some(entry) = self.global_wildcard_index.get(&community_id) {
+            conns.extend(entry.value().iter().map(|(conn_id, _)| *conn_id));
+        }
+        conns
+    }
+
     /// Test-only convenience wrapper preserving the original single-tenant test API.
     #[cfg(test)]
     pub fn channel_subscriber_conns(&self, channel_id: Uuid) -> Vec<ConnId> {
