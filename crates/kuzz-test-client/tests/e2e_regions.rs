@@ -461,6 +461,61 @@ async fn rooms_are_served_only_by_their_home_region() {
     assert_eq!(texts, ["jp's own room"]);
 }
 
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_reader_in_jp_is_told_live_when_added_to_a_kr_room() {
+    // A private kr room; its owner adds someone who is connected to jp.
+    let owner = Keys::generate();
+    let invitee = Keys::generate();
+    let room = uuid::Uuid::new_v4().to_string();
+    let private_room = EventBuilder::new(Kind::Custom(9007), "")
+        .tags([
+            Tag::parse(["h", &room]).unwrap(),
+            Tag::parse(["name", &format!("regions-{room}")]).unwrap(),
+            Tag::parse(["channel_type", "stream"]).unwrap(),
+            Tag::parse(["visibility", "private"]).unwrap(),
+        ])
+        .sign_with_keys(&owner)
+        .unwrap();
+    let (status, body) = post(&kr_url(), &owner, &private_room).await;
+    assert_eq!(status, 200, "{body}");
+
+    // The invitee's app listens for its own room-less notifications at jp.
+    let mut jp = KuzzTestClient::connect(&jp_url(), &invitee)
+        .await
+        .expect("jp connect");
+    let mine = Filter::new()
+        .kind(Kind::Custom(44100))
+        .pubkey(invitee.public_key())
+        .limit(0);
+    jp.subscribe("mine", vec![mine]).await.expect("req");
+    jp.collect_until_eose("mine", Duration::from_secs(5))
+        .await
+        .expect("eose");
+    // Reader watches are not acknowledged; give the link a moment to open.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let add = EventBuilder::new(Kind::Custom(9000), "")
+        .tags([
+            Tag::parse(["h", &room]).unwrap(),
+            Tag::parse(["p", &invitee.public_key().to_hex()]).unwrap(),
+        ])
+        .sign_with_keys(&owner)
+        .unwrap();
+    let (status, body) = post(&kr_url(), &owner, &add).await;
+    assert_eq!(status, 200, "{body}");
+
+    let notice = live_event(&mut jp, "mine").await;
+    assert_eq!(notice.kind, Kind::Custom(44100));
+    assert!(
+        notice
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice() == ["h".to_string(), room.clone()]),
+        "{notice:?}"
+    );
+}
+
 /// A region link call from jp to kr: signed with jp's link key, for kr's
 /// community, this exact path and body. Built here independently of the
 /// relay's own signer, so the wire format is pinned.

@@ -682,6 +682,14 @@ pub async fn handle_req_paged(
     else {
         return;
     };
+    // Global regions (S4-4c): a room-less live REQ also gets the reader's
+    // own room-less events written in other regions.
+    if live_channels.is_none() && state.config.region_link {
+        state
+            .region_live
+            .watch_reader(&state, &conn.tenant, pubkey_bytes.clone())
+            .await;
+    }
     if live_channels.is_some() {
         futures_util::future::join_all(remote_rooms.into_iter().map(|(region, rooms)| {
             let state = &state;
