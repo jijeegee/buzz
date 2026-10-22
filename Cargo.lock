@@ -4790,6 +4790,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "p256",
  "postcard",
  "pulldown-cmark",
  "rand 0.10.1",
