@@ -50,14 +50,17 @@ const MODES_POLL: Duration = Duration::from_secs(10);
 pub(crate) enum Surface {
     /// Login, refresh and every other `/auth/*` call.
     Auth,
+    /// NIP-42 AUTH on the WebSocket (key admission).
+    Ws,
 }
 
 impl Surface {
-    const ALL: [Self; 1] = [Self::Auth];
+    const ALL: [Self; 2] = [Self::Auth, Self::Ws];
 
     fn as_str(self) -> &'static str {
         match self {
             Self::Auth => "auth",
+            Self::Ws => "ws",
         }
     }
 }
@@ -228,30 +231,42 @@ fn judge(
         return Ok(());
     };
     let enforced = mode(state, surface) == DeviceAdmissionMode::Enforce;
-    metrics::counter!(
-        "kuzz_device_proof_refusals_total",
-        "surface" => surface.as_str(),
-        "reason" => refusal.as_str(),
-        "enforced" => if enforced { "true" } else { "false" },
-    )
-    .increment(1);
-    if state.identity.devices.first_report(format!(
-        "{}:{}:{subject}",
-        surface.as_str(),
-        refusal.as_str()
-    )) {
-        tracing::info!(
-            surface = surface.as_str(),
-            reason = refusal.as_str(),
-            subject,
-            enforced,
-            "device.would_refuse"
-        );
-    }
+    report(state, surface, subject, refusal.as_str(), enforced);
     if enforced {
         Err(refusal)
     } else {
         Ok(())
+    }
+}
+
+/// Count a refusal (or, unless `enforced`, a "would refuse") and log it once
+/// an hour per subject and reason.
+pub(crate) fn report(
+    state: &AppState,
+    surface: Surface,
+    subject: &str,
+    reason: &'static str,
+    enforced: bool,
+) {
+    metrics::counter!(
+        "kuzz_device_proof_refusals_total",
+        "surface" => surface.as_str(),
+        "reason" => reason,
+        "enforced" => if enforced { "true" } else { "false" },
+    )
+    .increment(1);
+    if state
+        .identity
+        .devices
+        .first_report(format!("{}:{reason}:{subject}", surface.as_str()))
+    {
+        tracing::info!(
+            surface = surface.as_str(),
+            reason,
+            subject,
+            enforced,
+            "device.would_refuse"
+        );
     }
 }
 
@@ -574,11 +589,16 @@ mod tests {
         let fields: HashMap<String, String> = [
             ("auth".to_owned(), "Enforce".to_owned()),
             ("ws".to_owned(), "log".to_owned()),
+            ("git".to_owned(), "enforce".to_owned()),
         ]
         .into();
         assert_eq!(
             parse_overrides(&fields),
-            [(Surface::Auth, DeviceAdmissionMode::Enforce)].into()
+            [
+                (Surface::Auth, DeviceAdmissionMode::Enforce),
+                (Surface::Ws, DeviceAdmissionMode::Log),
+            ]
+            .into()
         );
         let bad: HashMap<String, String> = [("auth".to_owned(), "on".to_owned())].into();
         assert!(parse_overrides(&bad).is_empty());
