@@ -2664,6 +2664,23 @@ fn idle_pool_sleep_due(
         && inactivity_expired(last_activity, now, bound, turn_in_flight)
 }
 
+/// How often the main loop handles output idle workers wrote between turns.
+const AGENT_OUTPUT_DRAIN_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Handle the output idle workers wrote since their last turn (see
+/// [`AcpClient::drain_between_turns`]). A worker working on its own counts
+/// as activity, so the pool does not sleep under it. A failure is kept for
+/// the worker's next turn, which recovers through the turn error path.
+async fn drain_idle_agent_output(pool: &mut AgentPool, last_activity: &mut tokio::time::Instant) {
+    let mut working = false;
+    for agent in pool.agents_mut().iter_mut().flatten() {
+        working |= agent.acp.drain_between_turns().await;
+    }
+    if working {
+        *last_activity = tokio::time::Instant::now();
+    }
+}
+
 /// Idle checks of one round before the pool sleeps. `busy` is set when any
 /// answered that background work is still running; `asked` holds the scopes
 /// already asked, since one worker answers for its scopes one at a time.
@@ -3569,6 +3586,10 @@ async fn run_harness(
     } else {
         Duration::ZERO
     };
+    // Workers keep writing after a turn ends (work they continue on their
+    // own); their output is handled on this tick.
+    let mut agent_output_drain = tokio::time::interval(AGENT_OUTPUT_DRAIN_INTERVAL);
+    agent_output_drain.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Before the pool sleeps, every scope that ran a channel turn since its
     // last idle check is asked whether background work is still running.
     let mut idle_check_scopes: HashSet<scope::SessionScope> = HashSet::new();
@@ -4344,6 +4365,14 @@ async fn run_harness(
                         );
                         let _ = shutdown_tx.send(());
                     }
+                    None
+                }
+                _ = agent_output_drain.tick() => {
+                    let _ = result_rx; // end split borrow before touching pool
+                    // An agent working on its own keeps the pool awake like
+                    // a turn: the sleep and exit bounds count from its last
+                    // output.
+                    drain_idle_agent_output(&mut pool, &mut last_activity).await;
                     None
                 }
                 _ = async {
@@ -12048,6 +12077,53 @@ mod error_outcome_emission_tests {
             // non-systemPrompt path, the simplest valid value.
             protocol_version: 1,
         }
+    }
+
+    /// An idle worker writing on its own between turns counts as working;
+    /// bookkeeping output does not.
+    #[tokio::test]
+    async fn idle_worker_output_between_turns_is_handled_and_counts_as_work() {
+        const CHUNK: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"still going"}}}}"#;
+        const USAGE: &str = r#"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"usage_update","used":1,"size":2}}}"#;
+        async fn pool_writing(line: &str) -> AgentPool {
+            let mut agent = dummy_agent(0).await;
+            agent.acp = AcpClient::spawn(
+                "bash",
+                &["-c".into(), format!("echo '{line}'; sleep 30")],
+                &[],
+                false,
+            )
+            .await
+            .expect("spawn writer");
+            AgentPool::from_slots(vec![Some(agent), None])
+        }
+        /// Whether one drain moved the last activity forward.
+        async fn counts_as_work(pool: &mut AgentPool) -> bool {
+            let stale = tokio::time::Instant::now() - Duration::from_secs(60);
+            let mut last_activity = stale;
+            drain_idle_agent_output(pool, &mut last_activity).await;
+            last_activity != stale
+        }
+        async fn drained(pool: &mut AgentPool) -> bool {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            loop {
+                if counts_as_work(pool).await {
+                    return true;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return false;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+
+        let mut pool = pool_writing(CHUNK).await;
+        assert!(drained(&mut pool).await, "a reply chunk is work");
+        assert!(!counts_as_work(&mut pool).await, "handled once");
+
+        let mut pool = pool_writing(USAGE).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(!counts_as_work(&mut pool).await, "usage is not work");
     }
 
     #[tokio::test]
