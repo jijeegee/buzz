@@ -120,3 +120,6 @@ mod chat_stored_state_postgres_tests;
 
 #[cfg(test)]
 mod inbox_summary_postgres_tests;
+
+#[cfg(test)]
+mod group_chat_postgres_tests;

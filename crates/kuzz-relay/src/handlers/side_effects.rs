@@ -469,7 +469,7 @@ pub const INVITATIONS_RATE_LIMITED: &str = "rate-limited: too many invitations, 
 
 /// Whether `actor` is in `target`'s latest contact list (kind:3): the target
 /// added the actor as a friend.
-async fn is_friend_of(
+pub(crate) async fn is_friend_of(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     target: &[u8],
@@ -604,6 +604,9 @@ pub async fn validate_admin_event(
     }
 
     match kind {
+        9000 if channel.channel_type == "dm" => Err(anyhow::anyhow!(
+            "direct messages are 1:1; start a group chat to add people"
+        )),
         9000 => {
             // An absent role tag means "no role change requested": for an existing
             // member that preserves the role they already hold, and only defaults
@@ -625,6 +628,21 @@ pub async fn validate_admin_event(
                 .and_then(|m| m.role.parse().ok());
             let target_pubkey =
                 extract_p_tag(event).ok_or_else(|| anyhow::anyhow!("missing p tag"))?;
+
+            // Group chats: people are members and agents bots — nobody may
+            // grant owner/admin/guest — and the chat holds at most
+            // GROUP_CHAT_MAX_MEMBERS (re-checked under the lock in add_member).
+            if channel.group_chat {
+                let target_is_agent =
+                    super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?;
+                channel_authz::decide_group_chat_role(requested_role, target_is_agent)?;
+                let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
+                if !already_member
+                    && members.len() as i64 >= kuzz_db::channel::GROUP_CHAT_MAX_MEMBERS
+                {
+                    return Err(anyhow::anyhow!(kuzz_db::channel::GROUP_CHAT_FULL));
+                }
+            }
 
             // Authorization policy — visibility gate, elevated-grant gate,
             // active-member role-change gate, and last-owner demotion — lives in
@@ -693,7 +711,13 @@ pub async fn validate_admin_event(
                 channel_authz::decide_self_departure(&members, &actor_bytes)?;
                 Ok(())
             } else {
-                match channel_authz::classify_remove_other(&members, &actor_bytes) {
+                let mut decision = channel_authz::classify_remove_other(&members, &actor_bytes);
+                // Nobody runs a group chat: a member may remove only their
+                // own agent, whatever role a row claims.
+                if channel.group_chat && decision == RemoveOtherDecision::Allow {
+                    decision = RemoveOtherDecision::CheckAgentOwner;
+                }
+                match decision {
                     RemoveOtherDecision::Allow => Ok(()),
                     RemoveOtherDecision::CheckAgentOwner => {
                         if state
@@ -733,6 +757,19 @@ pub async fn validate_admin_event(
             if !has_recognized {
                 return Err(anyhow::anyhow!(
                     "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, goals, picture)"
+                ));
+            }
+
+            // Group chats have no shared settings to edit except goals: the
+            // shared name is set only at creation (members rename privately).
+            if channel.group_chat
+                && event.tags.iter().any(|t| {
+                    let k = t.kind().to_string();
+                    k != "goals" && RECOGNIZED_TAGS.contains(&k.as_str())
+                })
+            {
+                return Err(anyhow::anyhow!(
+                    "chats have no shared name, photo or settings to change; only goals can be switched"
                 ));
             }
 
@@ -853,7 +890,8 @@ pub async fn validate_admin_event(
             // name/about/archived/visibility/ttl/picture require owner/admin;
             // topic/purpose allow any member. goals is owner/admin in a
             // channel, but a DM has no owner, so any participant may switch it.
-            let is_dm = channel.channel_type == "dm";
+            // Ownerless rooms (DMs and group chats): any member switches goals.
+            let is_dm = channel.channel_type == "dm" || channel.group_chat;
             let has_privileged_tag = event.tags.iter().any(|t| {
                 let k = t.kind().to_string();
                 k == "name"
@@ -992,6 +1030,9 @@ pub async fn validate_admin_event(
                 }
             }
         }
+        9008 if channel.group_chat => Err(anyhow::anyhow!(
+            "chats cannot be deleted; leave the chat instead"
+        )),
         9008 => {
             // DELETE_GROUP: owner only, or the owning human of the channel's agent-owner.
             let members = state.db.get_members(tenant.community(), channel_id).await?;
@@ -1430,6 +1471,11 @@ pub async fn emit_group_discovery_events(
                 tags.push(Tag::parse(["p", &pubkey_hex])?);
             }
         }
+        // Ownerless group chat marker (clients: no owner controls, title
+        // and photo drawn from members).
+        if channel.group_chat {
+            tags.push(Tag::parse([super::group_chat::GROUP_CHAT_TAG])?);
+        }
         // Kuzz channels always require explicit membership
         tags.push(Tag::parse(["closed"])?);
         // Channel type tag so clients can distinguish stream/forum/dm without inference
@@ -1650,10 +1696,26 @@ async fn handle_put_user(
     // No role tag = no role change: preserve an existing member's current role and
     // fall back to Member only for a new member. Unconditionally defaulting to
     // Member let a bare PUT_USER silently demote an existing owner/admin.
-    let role: MemberRole = match extract_tag_value(event, "role") {
-        Some(role_str) => role_str
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid role: {role_str}"))?,
+    let requested: Option<MemberRole> = match extract_tag_value(event, "role") {
+        Some(role_str) => Some(
+            role_str
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid role: {role_str}"))?,
+        ),
+        None => None,
+    };
+    let group_chat = state
+        .db
+        .get_channel_for_event_write(tenant.community(), channel_id)
+        .await?
+        .group_chat;
+    let role: MemberRole = match requested {
+        // Group chats: people are members, agents bots.
+        _ if group_chat => channel_authz::decide_group_chat_role(
+            requested,
+            super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?,
+        )?,
+        Some(role) => role,
         None => state
             .db
             .get_members_for_event_write(tenant.community(), channel_id)
@@ -1704,6 +1766,34 @@ pub(crate) async fn add_channel_member(
         .db
         .add_member(tenant.community(), channel_id, target, role, invited_by)
         .await?;
+    publish_member_added(tenant, state, channel_id, target, actor).await
+}
+
+/// Accept `target`'s invitation to a group chat from `inviter`, who may have
+/// left since: valid while the chat has any active member. Publishes like
+/// [`add_channel_member`].
+pub(crate) async fn add_group_chat_member_by_invitation(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    target: &[u8],
+    inviter: &[u8],
+) -> anyhow::Result<()> {
+    state
+        .db
+        .add_member_via_group_chat_invitation(tenant.community(), channel_id, target, inviter)
+        .await?;
+    publish_member_added(tenant, state, channel_id, target, inviter).await
+}
+
+/// Everything a committed membership add publishes; see [`add_channel_member`].
+async fn publish_member_added(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    target: &[u8],
+    actor: &[u8],
+) -> anyhow::Result<()> {
     state.invalidate_membership(tenant, channel_id, target);
 
     emit_system_message(
@@ -2240,6 +2330,9 @@ async fn handle_create_group(
     event: &Event,
     state: &Arc<AppState>,
 ) -> anyhow::Result<()> {
+    if super::group_chat::has_group_chat_tag(event) {
+        return handle_create_group_chat(tenant, event, state).await;
+    }
     let name =
         extract_tag_value(event, "name").ok_or_else(|| anyhow::anyhow!("missing name tag"))?;
     let visibility_str =
@@ -2360,6 +2453,67 @@ async fn handle_create_group(
     }
 
     info!(channel_id = %channel.id, name = %name, "NIP-29 CREATE_GROUP processed");
+    Ok(())
+}
+
+/// Side effects of a group chat creation. Ingest already wrote the chat, its
+/// initial members and invitations in one transaction; this publishes it
+/// once: the `channel_created` system message (with the initial members), one
+/// rebuild of the discovery events (39000/39001/39002), and a member-added
+/// notification to everyone in it so their clients and agents subscribe.
+async fn handle_create_group_chat(
+    tenant: &TenantContext,
+    event: &Event,
+    state: &Arc<AppState>,
+) -> anyhow::Result<()> {
+    let channel_id =
+        extract_h_tag_channel(event).ok_or_else(|| anyhow::anyhow!("missing h tag"))?;
+    let actor_bytes = event.pubkey.to_bytes().to_vec();
+    let members = state
+        .db
+        .get_members_for_event_write(tenant.community(), channel_id)
+        .await?;
+    for member in &members {
+        state.invalidate_membership(tenant, channel_id, &member.pubkey);
+    }
+
+    emit_system_message(
+        tenant,
+        state,
+        channel_id,
+        serde_json::json!({
+            "type": "channel_created",
+            "actor": hex::encode(&actor_bytes),
+            "members": members
+                .iter()
+                .filter(|m| m.pubkey != actor_bytes)
+                .map(|m| hex::encode(&m.pubkey))
+                .collect::<Vec<_>>(),
+        }),
+        chrono::Utc::now(),
+    )
+    .await?;
+
+    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
+        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
+    }
+
+    for member in &members {
+        if let Err(e) = emit_membership_notification(
+            tenant,
+            state,
+            channel_id,
+            &member.pubkey,
+            &actor_bytes,
+            KIND_MEMBER_ADDED_NOTIFICATION,
+        )
+        .await
+        {
+            warn!(channel = %channel_id, error = %e, "membership notification emission failed");
+        }
+    }
+
+    info!(channel_id = %channel_id, members = members.len(), "group chat created");
     Ok(())
 }
 

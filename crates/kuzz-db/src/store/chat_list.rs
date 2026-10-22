@@ -89,8 +89,13 @@ pub struct ChatListRow {
     pub channel_name: String,
     /// Whether the room is archived.
     pub archived: bool,
-    /// For DM rooms: the other current members (raw 32-byte pubkeys, at most
-    /// [`MAX_DM_MEMBERS`]). Empty otherwise.
+    /// Ownerless group chat.
+    pub group_chat: bool,
+    /// Group chats only: active members, the reader included.
+    pub member_count: Option<i64>,
+    /// For DM rooms and every group chat row: the other current members (raw
+    /// 32-byte pubkeys, oldest first, at most [`MAX_DM_MEMBERS`]). Empty
+    /// otherwise.
     pub dm_members: Vec<Vec<u8>>,
     /// Thread root id for thread rows.
     pub root_id: Option<Vec<u8>>,
@@ -210,7 +215,7 @@ WITH blk AS MATERIALIZED (
 ),
 my AS MATERIALIZED (
     SELECT cm.channel_id, c.channel_type::text AS channel_type, c.name AS channel_name,
-           c.archived_at, cm.joined_at, cm.hidden_at, cm.read_seq, cm.unread_mark,
+           c.group_chat, c.archived_at, cm.joined_at, cm.hidden_at, cm.read_seq, cm.unread_mark,
            c.main_last_seq, c.main_last_at, c.main_last_event_id,
            cm.unread_count, cm.unread_mentions,
            -- A 1:1 DM with someone the reader blocks or once blocked: its
@@ -323,8 +328,13 @@ page AS (
 )
 SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_seq,
     p.unread_mark, p.follow_state, p.closed,
-    m.channel_type, m.channel_name, m.archived_at IS NOT NULL AS archived,
-    CASE WHEN p.row_kind = 'room' AND m.channel_type = 'dm' THEN ARRAY(
+    m.channel_type, m.channel_name, m.archived_at IS NOT NULL AS archived, m.group_chat,
+    -- Group chats: room and thread rows (titles are drawn from members).
+    CASE WHEN m.group_chat THEN (
+        SELECT count(*) FROM channel_members o
+        WHERE o.community_id = $1 AND o.channel_id = p.channel_id AND o.removed_at IS NULL
+    ) END AS member_count,
+    CASE WHEN (p.row_kind = 'room' AND m.channel_type = 'dm') OR m.group_chat THEN ARRAY(
         SELECT o.pubkey FROM channel_members o
         WHERE o.community_id = $1 AND o.channel_id = p.channel_id
           AND o.removed_at IS NULL AND o.pubkey <> $2
@@ -464,6 +474,8 @@ impl Db {
                     channel_type: row.try_get("channel_type")?,
                     channel_name: row.try_get("channel_name")?,
                     archived: row.try_get("archived")?,
+                    group_chat: row.try_get("group_chat")?,
+                    member_count: row.try_get("member_count")?,
                     dm_members: row.try_get("dm_members")?,
                     root_id: row.try_get("root_id")?,
                     thread_name: row.try_get("thread_name")?,
