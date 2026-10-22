@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
@@ -17,6 +18,7 @@ export function SimpleImageLightbox({
   open: boolean;
   src: string;
 }) {
+  const t = useT();
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -35,11 +37,10 @@ export function SimpleImageLightbox({
             {alt}
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Full-size image preview. Press Escape or click outside the image to
-            close.
+            {t("ui.simpleLightbox.description")}
           </DialogPrimitive.Description>
           <DialogPrimitive.Close
-            aria-label="Close lightbox"
+            aria-label={t("ui.simpleLightbox.close")}
             className="absolute inset-0 cursor-default"
           />
           {children ?? (

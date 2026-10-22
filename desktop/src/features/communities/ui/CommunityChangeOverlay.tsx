@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { useT } from "@/shared/i18n";
+
 import { useCommunities } from "../useCommunities";
 import { CommunityEditForm } from "./CommunityEditForm";
 
@@ -15,6 +17,7 @@ export function CommunityChangeOverlay({
   onUpdated,
   showUrlField,
 }: CommunityChangeOverlayProps) {
+  const t = useT();
   const { activeCommunity, updateCommunity } = useCommunities();
   const [error, setError] = React.useState<string | null>(null);
   const overlayRef = React.useRef<HTMLDivElement>(null);
@@ -54,14 +57,14 @@ export function CommunityChangeOverlay({
           // If requiresReinit, the tree remounts — overlay unmounts naturally.
           break;
         case "duplicate-relay":
-          setError("You've already added this community.");
+          setError(t("communities.changeOverlay.duplicate"));
           break;
         case "not-found":
-          setError("Community not found.");
+          setError(t("communities.changeOverlay.notFound"));
           break;
       }
     },
-    [activeCommunity, onClose, onUpdated, updateCommunity],
+    [activeCommunity, onClose, onUpdated, updateCommunity, t],
   );
 
   if (!activeCommunity) return null;
@@ -79,12 +82,12 @@ export function CommunityChangeOverlay({
       <div aria-hidden="true" className="absolute inset-0" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-background p-8 shadow-2xl">
         <h2 className="text-xl font-semibold tracking-tight">
-          Change community
+          {t("communities.changeOverlay.title")}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           {showUrlField
-            ? "Update your community name or address."
-            : "Update your community name."}
+            ? t("communities.changeOverlay.descriptionWithAddress")
+            : t("communities.changeOverlay.description")}
         </p>
         <div className="mt-6">
           <CommunityEditForm
@@ -93,7 +96,7 @@ export function CommunityChangeOverlay({
             onCancel={onClose}
             onSubmit={handleSubmit}
             showUrlField={showUrlField}
-            submitLabel="Save changes"
+            submitLabel={t("communities.changeOverlay.save")}
           />
         </div>
         {error ? (

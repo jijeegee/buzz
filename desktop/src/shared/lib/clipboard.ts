@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { toast } from "sonner";
 
 import { copyTextToSystemClipboard } from "@/shared/api/tauriMedia";
@@ -19,14 +20,14 @@ export async function writeTextToClipboard(
 /** Copy text and show standard success/error feedback. */
 export function copyTextToClipboard(
   text: string,
-  successMessage = "Copied to clipboard",
+  successMessage?: string,
   html?: string,
 ) {
   void writeTextToClipboard(text, html)
     .then(() => {
-      toast.success(successMessage);
+      toast.success(successMessage ?? t("ui.clipboard.copied"));
     })
     .catch(() => {
-      toast.error("Failed to copy to clipboard");
+      toast.error(t("ui.clipboard.copyFailed"));
     });
 }

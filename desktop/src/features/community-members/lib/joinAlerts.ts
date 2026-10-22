@@ -23,6 +23,7 @@
  * events at or after `lastSeenCreatedAt - skew` and can repeat a seen delta.
  */
 
+import { t } from "@/shared/i18n";
 import { setLocalStorageItemWithRecovery } from "@/shared/lib/localStorageQuota";
 
 const JOIN_ALERT_STORAGE_PREFIX = "kuzz-community-join-seen.v1";
@@ -204,12 +205,12 @@ export function reconcileJoinAlertLedger({
 export function joinAlertTitle(communityName: string | null | undefined) {
   const trimmed = communityName?.trim();
   return trimmed && trimmed.length > 0
-    ? `New member in ${trimmed}`
-    : "New member joined";
+    ? t("communityMembers.joinAlert.titleIn", { community: trimmed })
+    : t("communityMembers.joinAlert.title");
 }
 
 export function joinAlertBody(displayName: string) {
-  return `${displayName} joined`;
+  return t("communityMembers.joinAlert.body", { name: displayName });
 }
 
 /**
@@ -226,5 +227,5 @@ export function joinAlertBody(displayName: string) {
 export const JOIN_ALERT_MAX_INDIVIDUAL = 3;
 
 export function joinAlertSummaryBody(count: number) {
-  return `${count} new members joined`;
+  return t("communityMembers.joinAlert.summaryBody", { count });
 }

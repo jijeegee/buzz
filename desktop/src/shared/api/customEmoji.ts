@@ -16,6 +16,7 @@
  * Replaces the earlier relay-owned single-set + kind:9037 command model.
  */
 
+import { t } from "@/shared/i18n";
 import { relayClient } from "@/shared/api/relayClient";
 import { signRelayEvent } from "@/shared/api/tauri";
 import { getIdentity } from "@/shared/api/tauriIdentity";
@@ -195,17 +196,15 @@ export async function setCustomEmoji(
 ): Promise<string> {
   const normalized = normalizeShortcode(shortcode);
   if (!normalized) {
-    throw new Error(
-      "Invalid emoji name. Use letters, numbers, hyphen, or underscore.",
-    );
+    throw new Error(t("ui.customEmoji.invalidName"));
   }
   const own = await fetchOwnEmoji();
   const next = own.filter((e) => e.shortcode !== normalized);
   next.push({ shortcode: normalized, url });
   await publishOwnSet(
     next,
-    "Timed out while adding emoji.",
-    "Failed to add emoji.",
+    t("ui.customEmoji.addTimedOut"),
+    t("ui.customEmoji.addFailed"),
   );
   return normalized;
 }
@@ -219,7 +218,7 @@ export async function removeCustomEmoji(shortcode: string): Promise<void> {
   if (next.length === own.length) return; // not present — nothing to republish
   await publishOwnSet(
     next,
-    "Timed out while removing emoji.",
-    "Failed to remove emoji.",
+    t("ui.customEmoji.removeTimedOut"),
+    t("ui.customEmoji.removeFailed"),
   );
 }

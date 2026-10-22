@@ -16,6 +16,7 @@ import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import { PubKey } from "@/shared/ui/PubKey";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
+import { type Translate, useT } from "@/shared/i18n";
 import type { UserProfileSummary } from "@/shared/api/types";
 import {
   getAdminReport,
@@ -55,14 +56,19 @@ function reportedPersonPubkey(report: AdminReportDto): string | null {
 }
 
 function formatReportTarget(
+  t: Translate,
   report: AdminReportDto,
   profiles?: Record<string, UserProfileSummary | null | undefined>,
 ): string {
   const person = reportedPersonPubkey(report);
   if (report.targetKind.toLowerCase() === "event") {
     return person
-      ? `message by ${formatDisplayName(person, profiles?.[person])}`
-      : `message ${truncatePubkey(report.target)}`;
+      ? t("adminConsole.reports.targetMessageBy", {
+          name: formatDisplayName(person, profiles?.[person]),
+        })
+      : t("adminConsole.reports.targetMessageId", {
+          id: truncatePubkey(report.target),
+        });
   }
   return person
     ? formatDisplayName(person, profiles?.[person])
@@ -133,20 +139,20 @@ function allowedActionsForTargetKind(targetKind: string): AdminReportAction[] {
 }
 
 /** Label for each action. */
-function actionLabel(action: AdminReportAction): string {
+function actionLabel(t: Translate, action: AdminReportAction): string {
   switch (action) {
     case "delete":
-      return "Delete";
+      return t("adminConsole.reports.actionDelete");
     case "kick":
-      return "Kick";
+      return t("adminConsole.reports.actionKick");
     case "ban":
-      return "Ban";
+      return t("adminConsole.reports.actionBan");
     case "timeout":
-      return "Timeout";
+      return t("adminConsole.reports.actionTimeout");
     case "dismiss":
-      return "Dismiss";
+      return t("adminConsole.reports.actionDismiss");
     case "escalate":
-      return "Escalate";
+      return t("adminConsole.reports.actionEscalate");
   }
 }
 
@@ -175,9 +181,9 @@ function actionVariant(
  * are informative but use implementation vocabulary. Map the known kick
  * AlreadyGone message to a clear operator-facing action recommendation.
  */
-function friendlyEnforcementError(message: string): string {
+function friendlyEnforcementError(t: Translate, message: string): string {
   if (message.includes("kick target was already absent")) {
-    return "No group membership to remove — use Timeout or Ban for open groups.";
+    return t("adminConsole.reports.kickAlreadyAbsent");
   }
   return message;
 }
@@ -215,17 +221,18 @@ function EnforcementStateBlock({
   reportId: string;
   onActionComplete: () => void;
 }) {
+  const t = useT();
   const [isWorking, setIsWorking] = useState(false);
 
   const actionStatus = activeAction.status;
 
   // User-facing copy for each action state.
   const stateLabel: Record<string, string> = {
-    pending: "Enforcement pending…",
-    enforcing: "Enforcing…",
-    succeeded: "Enforcement succeeded",
-    failed: "Enforcement failed",
-    cancelled: "Enforcement cancelled",
+    pending: t("adminConsole.reports.enforcementPending"),
+    enforcing: t("adminConsole.reports.enforcementEnforcing"),
+    succeeded: t("adminConsole.reports.enforcementSucceeded"),
+    failed: t("adminConsole.reports.enforcementFailed"),
+    cancelled: t("adminConsole.reports.enforcementCancelled"),
   };
 
   const handleCancel = async () => {
@@ -237,13 +244,17 @@ function EnforcementStateBlock({
       await cancelAdminReport(origin, reportId, {
         actionId: activeAction.id,
       });
-      toast.success("Enforcement cancelled — report reopened");
+      toast.success(t("adminConsole.reports.cancelSuccessToast"));
       onActionComplete();
     } catch (e) {
       // A 409 means the action is no longer cancellable (already cancelled,
       // superseded, or past the mutation point). Reload detail rather than
       // retry — the toast is informational, the reload shows current state.
-      toast.error(`Cancel rejected: ${adminErrorMessage(e)}`);
+      toast.error(
+        t("adminConsole.reports.cancelRejectedToast", {
+          error: adminErrorMessage(e),
+        }),
+      );
       onActionComplete();
     } finally {
       setIsWorking(false);
@@ -268,7 +279,7 @@ function EnforcementStateBlock({
       </div>
       {activeAction.errorMessage && (
         <p className="text-xs text-muted-foreground break-words">
-          {friendlyEnforcementError(activeAction.errorMessage)}
+          {friendlyEnforcementError(t, activeAction.errorMessage)}
         </p>
       )}
       {actionStatus === "failed" && canMutate && (
@@ -283,7 +294,7 @@ function EnforcementStateBlock({
           {isWorking ? (
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            "Cancel & reopen"
+            t("adminConsole.reports.cancelAndReopen")
           )}
         </Button>
       )}
@@ -303,17 +314,20 @@ function EnforcementStateBlock({
  *
  * Source: relay_admin_actions.rs and admin_outbox_worker.rs notice paths.
  */
-export function reasonAudienceCopy(action: AdminReportAction): string {
+export function reasonAudienceCopy(
+  t: Translate,
+  action: AdminReportAction,
+): string {
   switch (action) {
     case "delete":
-      return "Sent verbatim to the affected user and posted publicly in the room.";
+      return t("adminConsole.reasonAudience.deletePublic");
     case "kick":
     case "ban":
     case "timeout":
-      return "Sent verbatim to the affected user.";
+      return t("adminConsole.reasonAudience.affectedUser");
     case "dismiss":
     case "escalate":
-      return "Sent verbatim to the reporter.";
+      return t("adminConsole.reasonAudience.reporter");
   }
 }
 
@@ -324,15 +338,18 @@ export function reasonAudienceCopy(action: AdminReportAction): string {
  * decision-only resolutions (dismiss/escalate), `activeAction` is null;
  * the terminal `status` encodes the outcome. Never falls back to form state.
  */
-function resolutionLabel(resolution: AdminReportResolution): string {
+function resolutionLabel(
+  t: Translate,
+  resolution: AdminReportResolution,
+): string {
   if (resolution.activeAction?.action) {
-    return actionLabel(resolution.activeAction.action);
+    return actionLabel(t, resolution.activeAction.action);
   }
   switch (resolution.status) {
     case "dismissed":
-      return actionLabel("dismiss");
+      return actionLabel(t, "dismiss");
     case "escalated":
-      return actionLabel("escalate");
+      return actionLabel(t, "escalate");
     default:
       return resolution.status;
   }
@@ -368,6 +385,7 @@ function ResolveReportForm({
   origin: string;
   onResolved: () => void;
 }) {
+  const t = useT();
   const [selectedAction, setSelectedAction] =
     useState<AdminReportAction | null>(null);
   const [reason, setReason] = useState("");
@@ -415,7 +433,11 @@ function ResolveReportForm({
       });
       // Derive toast from the authoritative relay response, not mutable form
       // state — relay idempotency executes the first command even on retry.
-      toast.success(`Report resolved: ${resolutionLabel(resolution)}`);
+      toast.success(
+        t("adminConsole.reports.resolvedToast", {
+          action: resolutionLabel(t, resolution),
+        }),
+      );
       onResolved();
     } catch (e) {
       // Preserve the frozen payload whenever the outcome is ambiguous (409,
@@ -438,7 +460,7 @@ function ResolveReportForm({
       data-testid="resolve-report-form"
     >
       <p className="text-xs font-medium text-muted-foreground">
-        Resolve report
+        {t("adminConsole.reports.resolveTitle")}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {allowedActions.map((action) => (
@@ -457,7 +479,7 @@ function ResolveReportForm({
             type="button"
             variant={actionVariant(action)}
           >
-            {actionLabel(action)}
+            {actionLabel(t, action)}
           </Button>
         ))}
       </div>
@@ -468,7 +490,7 @@ function ResolveReportForm({
             className="text-xs text-muted-foreground shrink-0"
             htmlFor="timeout-duration-input"
           >
-            Duration (seconds)
+            {t("adminConsole.reports.durationLabel")}
           </label>
           <input
             className="flex-1 rounded-md border border-border/60 bg-background px-2 py-1 text-xs font-mono"
@@ -477,7 +499,7 @@ function ResolveReportForm({
             id="timeout-duration-input"
             min="1"
             onChange={(e) => setExpirationSecs(e.target.value)}
-            placeholder="e.g. 3600"
+            placeholder={t("adminConsole.reports.durationPlaceholder")}
             type="number"
             value={expirationSecs}
           />
@@ -490,7 +512,7 @@ function ResolveReportForm({
           data-testid="resolve-reason-input"
           disabled={isLocked || isSubmitting}
           onChange={(e) => setReason(e.target.value)}
-          placeholder="Reason (optional)"
+          placeholder={t("adminConsole.reasonOptionalPlaceholder")}
           type="text"
           value={reason}
         />
@@ -499,7 +521,7 @@ function ResolveReportForm({
             className="mt-1 text-xs text-muted-foreground"
             data-testid="resolve-reason-audience"
           >
-            {reasonAudienceCopy(selectedAction)}
+            {reasonAudienceCopy(t, selectedAction)}
           </p>
         )}
       </div>
@@ -520,7 +542,12 @@ function ResolveReportForm({
           {isSubmitting ? (
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            `Confirm: ${actionLabel(frozenRef.current?.action ?? selectedAction)}`
+            t("adminConsole.reports.confirmAction", {
+              action: actionLabel(
+                t,
+                frozenRef.current?.action ?? selectedAction,
+              ),
+            })
           )}
         </Button>
       )}
@@ -552,6 +579,7 @@ function ReopenReportForm({
   origin: string;
   onReopened: () => void;
 }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Stable requestId per attempt; reused on retry after a lost response.
@@ -572,7 +600,7 @@ function ReopenReportForm({
         requestId: requestIdRef.current,
         reason: reason.trim() || undefined,
       });
-      toast.success("Report reopened");
+      toast.success(t("adminConsole.reports.reopenedToast"));
       onReopened();
     } catch (e) {
       // Preserve the requestId on an ambiguous outcome (409, 5xx, lost
@@ -595,13 +623,12 @@ function ReopenReportForm({
     >
       <div className="space-y-1">
         <p className="text-xs font-medium text-muted-foreground">
-          Reopen report
+          {t("adminConsole.reports.reopenTitle")}
         </p>
         <p className="text-xs text-muted-foreground">
-          Moves this report back to the open queue for re-triage.{" "}
           {wasEnforced
-            ? "The enforcement action already taken is not reversed — reopening does not un-ban, un-timeout, or restore a deleted message."
-            : "Reopening does not reverse any enforcement action."}
+            ? t("adminConsole.reports.reopenHelpEnforced")
+            : t("adminConsole.reports.reopenHelp")}
         </p>
       </div>
 
@@ -609,7 +636,7 @@ function ReopenReportForm({
         className="w-full rounded-md border border-border/60 bg-background px-2 py-1 text-xs"
         data-testid="reopen-reason-input"
         onChange={(e) => setReason(e.target.value)}
-        placeholder="Reason (optional)"
+        placeholder={t("adminConsole.reasonOptionalPlaceholder")}
         type="text"
         value={reason}
       />
@@ -625,7 +652,7 @@ function ReopenReportForm({
         {isSubmitting ? (
           <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
         ) : (
-          "Reopen report"
+          t("adminConsole.reports.reopenSubmit")
         )}
       </Button>
     </div>
@@ -645,6 +672,7 @@ export function ReportsTab({
   pubkey: string;
   generation: number;
 }) {
+  const t = useT();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // List refresh fence: bumped whenever a mutation completes in the detail
   // view, so returning to the list shows fresh status without a tab switch.
@@ -703,7 +731,11 @@ export function ReportsTab({
 
   const reports = listState.data;
   if (!Array.isArray(reports) || reports.length === 0) {
-    return <p className="text-sm text-muted-foreground">No reports found.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("adminConsole.reports.empty")}
+      </p>
+    );
   }
 
   return (
@@ -711,16 +743,28 @@ export function ReportsTab({
       items={reports}
       renderItem={(report: AdminReportDto) => {
         const id = report.id;
-        const summary = report.reportType || "Report";
+        const summary =
+          report.reportType || t("adminConsole.reports.fallbackType");
         const status = report.status;
         const isProcessing = status === "processing";
         // Show a brief reporter → target snippet so rows are distinguishable.
         const snippet = [
           report.reporterPubkey
-            ? `reporter: ${formatDisplayName(report.reporterPubkey, profilesQuery.data?.profiles[report.reporterPubkey])}`
+            ? t("adminConsole.reports.snippetReporter", {
+                name: formatDisplayName(
+                  report.reporterPubkey,
+                  profilesQuery.data?.profiles[report.reporterPubkey],
+                ),
+              })
             : null,
           report.target
-            ? `target: ${formatReportTarget(report, profilesQuery.data?.profiles)}`
+            ? t("adminConsole.reports.snippetTarget", {
+                target: formatReportTarget(
+                  t,
+                  report,
+                  profilesQuery.data?.profiles,
+                ),
+              })
             : null,
         ]
           .filter(Boolean)
@@ -745,7 +789,7 @@ export function ReportsTab({
               )}
               {status && (
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {status}
+                  {t("adminConsole.reports.status", { status })}
                   {isProcessing && (
                     <LoaderCircle className="h-3 w-3 animate-spin" />
                   )}
@@ -760,6 +804,7 @@ export function ReportsTab({
 }
 
 function ReportFields({ data }: { data: AdminReportDetailDto }) {
+  const t = useT();
   const status = data.status ?? "";
   // Valid 64-char hex pubkeys get the PubKey widget (compact npub + hover
   // popover). Shorter/invalid strings (test fixtures, placeholder values)
@@ -773,17 +818,34 @@ function ReportFields({ data }: { data: AdminReportDetailDto }) {
       data-testid="report-detail-fields"
     >
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        {status && <Badge variant={statusVariant(status)}>{status}</Badge>}
+        {status && (
+          <Badge variant={statusVariant(status)}>
+            {t("adminConsole.reports.status", { status })}
+          </Badge>
+        )}
         {data.reportType && <Badge variant="outline">{data.reportType}</Badge>}
       </div>
-      <DetailRow label="ID" value={data.id} mono />
-      <DetailRow label="Community" value={data.communityId} mono />
-      <DetailRow label="Host" value={data.communityHost} />
-      <DetailRow label="Event ID" value={data.reportEventId} mono />
+      <DetailRow label={t("adminConsole.field.id")} value={data.id} mono />
+      <DetailRow
+        label={t("adminConsole.field.community")}
+        value={data.communityId}
+        mono
+      />
+      <DetailRow
+        label={t("adminConsole.field.host")}
+        value={data.communityHost}
+      />
+      <DetailRow
+        label={t("adminConsole.field.eventId")}
+        value={data.reportEventId}
+        mono
+      />
       {/* Reporter uses PubKey widget for valid keys; falls back to mono text. */}
       {isHex64(data.reporterPubkey) ? (
         <div className="flex gap-2 text-xs">
-          <span className="w-28 shrink-0 text-muted-foreground">Reporter</span>
+          <span className="w-28 shrink-0 text-muted-foreground">
+            {t("adminConsole.reports.fieldReporter")}
+          </span>
           <PubKey
             className="min-w-0"
             interactive
@@ -793,14 +855,23 @@ function ReportFields({ data }: { data: AdminReportDetailDto }) {
           />
         </div>
       ) : (
-        <DetailRow label="Reporter" value={data.reporterPubkey} mono />
+        <DetailRow
+          label={t("adminConsole.reports.fieldReporter")}
+          value={data.reporterPubkey}
+          mono
+        />
       )}
-      <DetailRow label="Target kind" value={data.targetKind} />
+      <DetailRow
+        label={t("adminConsole.reports.fieldTargetKind")}
+        value={data.targetKind}
+      />
       {/* Pubkey targets get the PubKey widget; event IDs are not keys, so they
           render as raw hex with a copy control. */}
       {isHex64(data.target) && data.targetKind?.toLowerCase() === "pubkey" ? (
         <div className="flex gap-2 text-xs">
-          <span className="w-28 shrink-0 text-muted-foreground">Target</span>
+          <span className="w-28 shrink-0 text-muted-foreground">
+            {t("adminConsole.reports.fieldTarget")}
+          </span>
           <PubKey
             className="min-w-0"
             interactive
@@ -811,7 +882,9 @@ function ReportFields({ data }: { data: AdminReportDetailDto }) {
         </div>
       ) : data.targetKind?.toLowerCase() === "event" ? (
         <div className="flex items-center gap-2 text-xs">
-          <span className="w-28 shrink-0 text-muted-foreground">Target</span>
+          <span className="w-28 shrink-0 text-muted-foreground">
+            {t("adminConsole.reports.fieldTarget")}
+          </span>
           <span
             className="min-w-0 break-all font-mono"
             data-testid="report-target-event-id"
@@ -819,7 +892,7 @@ function ReportFields({ data }: { data: AdminReportDetailDto }) {
             {data.target}
           </span>
           <button
-            aria-label="Copy event ID"
+            aria-label={t("adminConsole.reports.copyEventId")}
             className="shrink-0 text-muted-foreground hover:text-foreground"
             data-testid="report-target-event-copy"
             onClick={() => copyTextToClipboard(data.target)}
@@ -829,26 +902,53 @@ function ReportFields({ data }: { data: AdminReportDetailDto }) {
           </button>
         </div>
       ) : (
-        <DetailRow label="Target" value={data.target} mono />
+        <DetailRow
+          label={t("adminConsole.reports.fieldTarget")}
+          value={data.target}
+          mono
+        />
       )}
-      <DetailRow label="Group" value={data.channelId ?? null} mono />
-      <DetailRow label="Note" value={data.note ?? null} />
-      <DetailRow label="Resolved by" value={data.resolvedBy ?? null} mono />
-      <DetailRow label="Resolved at" value={formatTimestamp(data.resolvedAt)} />
-      <DetailRow label="Action ID" value={data.actionId ?? null} mono />
-      <DetailRow label="Created" value={formatTimestamp(data.createdAt)} />
+      <DetailRow
+        label={t("adminConsole.reports.fieldGroup")}
+        value={data.channelId ?? null}
+        mono
+      />
+      <DetailRow
+        label={t("adminConsole.reports.fieldNote")}
+        value={data.note ?? null}
+      />
+      <DetailRow
+        label={t("adminConsole.reports.fieldResolvedBy")}
+        value={data.resolvedBy ?? null}
+        mono
+      />
+      <DetailRow
+        label={t("adminConsole.reports.fieldResolvedAt")}
+        value={formatTimestamp(data.resolvedAt)}
+      />
+      <DetailRow
+        label={t("adminConsole.reports.fieldActionId")}
+        value={data.actionId ?? null}
+        mono
+      />
+      <DetailRow
+        label={t("adminConsole.reports.fieldCreated")}
+        value={formatTimestamp(data.createdAt)}
+      />
       {data.message != null && (
         <div className="mt-3 space-y-1.5 rounded-md border border-border/40 px-3 py-2.5">
           <p className="mb-1 text-xs font-semibold text-muted-foreground">
-            Reported message
+            {t("adminConsole.reports.reportedMessage")}
             {data.message.deletedAt != null && (
-              <span className="ml-1.5 text-destructive">(deleted)</span>
+              <span className="ml-1.5 text-destructive">
+                {t("adminConsole.reports.messageDeleted")}
+              </span>
             )}
           </p>
           {isHex64(data.message.authorPubkey) ? (
             <div className="flex gap-2 text-xs">
               <span className="w-28 shrink-0 text-muted-foreground">
-                Author
+                {t("adminConsole.reports.fieldAuthor")}
               </span>
               <PubKey
                 className="min-w-0"
@@ -859,11 +959,18 @@ function ReportFields({ data }: { data: AdminReportDetailDto }) {
               />
             </div>
           ) : (
-            <DetailRow label="Author" value={data.message.authorPubkey} mono />
+            <DetailRow
+              label={t("adminConsole.reports.fieldAuthor")}
+              value={data.message.authorPubkey}
+              mono
+            />
           )}
-          <DetailRow label="Content" value={data.message.content} />
           <DetailRow
-            label="Msg created"
+            label={t("adminConsole.reports.fieldContent")}
+            value={data.message.content}
+          />
+          <DetailRow
+            label={t("adminConsole.reports.fieldMessageCreated")}
             value={formatTimestamp(data.message.createdAt)}
           />
         </div>
@@ -890,6 +997,7 @@ function ReportDetail({
   /** Called after any mutation completes so the parent list can refetch. */
   onMutated: () => void;
 }) {
+  const t = useT();
   // Resolution generation: bump to reload detail after an action completes.
   const [resolveGen, setResolveGen] = useState(0);
 
@@ -922,7 +1030,7 @@ function ReportDetail({
         type="button"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
-        Back to reports
+        {t("adminConsole.reports.back")}
       </button>
       {detailState.status === "loading" && <LoadingSpinner />}
       {detailState.status === "error" && (

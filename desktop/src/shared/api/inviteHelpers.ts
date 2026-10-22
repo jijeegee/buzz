@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 export const INVITE_EXPIRED_ERROR = "invite_expired";
 export const INVITE_EXHAUSTED_ERROR = "invite_exhausted";
 
@@ -80,7 +81,7 @@ export function parseInviteInput(input: string): ParsedInvite | null {
 export function relayHttpFromWs(wsUrl: string): string {
   if (wsUrl.startsWith("wss://")) return `https://${wsUrl.slice(6)}`;
   if (wsUrl.startsWith("ws://")) return `http://${wsUrl.slice(5)}`;
-  throw new Error("This invite link isn't valid.");
+  throw new Error(t("ui.invite.invalidLink"));
 }
 
 export function inviteErrorMessage(error: unknown): string {

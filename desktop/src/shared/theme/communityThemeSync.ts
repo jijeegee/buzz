@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { relayClient } from "@/shared/api/relayClient";
 import {
   nip44DecryptFromSelf,
@@ -230,8 +231,8 @@ export class CommunityThemeSyncManager {
       if (this.destroyed) return;
       await relayClient.publishEvent(
         event,
-        "Timed out publishing community theme.",
-        "Failed to publish community theme.",
+        t("ui.communityTheme.publishTimedOut"),
+        t("ui.communityTheme.publishFailed"),
       );
       await this.waitForDeliveredRemotes();
       if (this.destroyed) return;

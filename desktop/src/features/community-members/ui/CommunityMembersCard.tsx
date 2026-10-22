@@ -22,23 +22,34 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { AddMemberDialog } from "./AddMemberDialog";
 import { ConfirmRemoveDialog } from "./ConfirmRemoveDialog";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, type MessageKey, t, useT } from "@/shared/i18n";
 
 function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffMins < 1) return t("time.justNow");
+  if (diffMins < 60)
+    return t("communityMembers.card.minutesAgo", { count: diffMins });
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 24)
+    return t("communityMembers.card.hoursAgo", { count: diffHours });
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
+  if (diffDays < 30)
+    return t("communityMembers.card.daysAgo", { count: diffDays });
   return date.toLocaleDateString(formatLocale());
 }
 
+/** Lowercase role names for the badge. */
+const ROLE_BADGE_KEYS: Record<RelayMemberRole, MessageKey> = {
+  owner: "communityMembers.card.roleBadge.owner",
+  admin: "communityMembers.card.roleBadge.admin",
+  member: "communityMembers.card.roleBadge.member",
+};
+
 function RoleBadge({ role }: { role: RelayMemberRole }) {
+  const t = useT();
   return (
     <span
       className={cn(
@@ -48,7 +59,7 @@ function RoleBadge({ role }: { role: RelayMemberRole }) {
         role === "member" && "bg-muted text-muted-foreground",
       )}
     >
-      {role}
+      {ROLE_BADGE_KEYS[role] ? t(ROLE_BADGE_KEYS[role]) : role}
     </span>
   );
 }
@@ -79,6 +90,7 @@ function MemberRow({
   onRemove: (member: RelayMember) => void;
   onChangeRole: (pubkey: string, newRole: string) => void;
 }) {
+  const t = useT();
   const isSelf = currentPubkey?.toLowerCase() === member.pubkey.toLowerCase();
   const isOwner = viewerRole === "owner";
   const isAdmin = viewerRole === "admin";
@@ -106,12 +118,18 @@ function MemberRow({
             </span>
             <RoleBadge role={member.role} />
             {isSelf ? (
-              <span className="text-xs text-muted-foreground">(you)</span>
+              <span className="text-xs text-muted-foreground">
+                {t("communityMembers.card.you")}
+              </span>
             ) : null}
           </div>
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <PubKey className="text-xs" pubkey={member.pubkey} />
-            <span>Joined {formatRelativeDate(member.createdAt)}</span>
+            <span>
+              {t("communityMembers.card.joined", {
+                when: formatRelativeDate(member.createdAt),
+              })}
+            </span>
           </p>
         </div>
       </div>
@@ -125,7 +143,9 @@ function MemberRow({
               variant="ghost"
             >
               <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">
+                {t("communityMembers.card.actions")}
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -135,14 +155,14 @@ function MemberRow({
                   <DropdownMenuItem
                     onClick={() => onChangeRole(member.pubkey, "admin")}
                   >
-                    Make Admin
+                    {t("communityMembers.card.makeAdmin")}
                   </DropdownMenuItem>
                 ) : null}
                 {member.role === "admin" ? (
                   <DropdownMenuItem
                     onClick={() => onChangeRole(member.pubkey, "member")}
                   >
-                    Make Member
+                    {t("communityMembers.card.makeMember")}
                   </DropdownMenuItem>
                 ) : null}
               </>
@@ -153,7 +173,7 @@ function MemberRow({
                 className="text-destructive focus:text-destructive"
                 onClick={() => onRemove(member)}
               >
-                Remove
+                {t("common.remove")}
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>
@@ -170,6 +190,7 @@ export function CommunityMembersCard({
 }: {
   currentPubkey?: string;
 }) {
+  const t = useT();
   const membersQuery = useRelayMembersQuery();
   const myMembershipQuery = useMyRelayMembershipQuery();
   const changeRoleMutation = useChangeRelayMemberRoleMutation();
@@ -202,11 +223,15 @@ export function CommunityMembersCard({
       { pubkey, newRole },
       {
         onSuccess: () => {
-          toast.success(`Role changed to ${newRole}`);
+          toast.success(
+            t("communityMembers.card.roleChanged", { role: newRole }),
+          );
         },
         onError: (error) => {
           toast.error(
-            error instanceof Error ? error.message : "Failed to change role",
+            error instanceof Error
+              ? error.message
+              : t("communityMembers.card.roleChangeFailed"),
           );
         },
       },
@@ -220,11 +245,11 @@ export function CommunityMembersCard({
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold tracking-tight">
-              Community Members
+              {t("communityMembers.card.title")}
             </h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage who has access to this relay.
+            {t("communityMembers.card.description")}
           </p>
         </div>
 
@@ -235,7 +260,7 @@ export function CommunityMembersCard({
             size="sm"
           >
             <Plus className="h-4 w-4" />
-            Add Member
+            {t("communityMembers.card.addMember")}
           </Button>
         ) : null}
       </div>
@@ -247,7 +272,9 @@ export function CommunityMembersCard({
       ) : null}
 
       {membersQuery.isLoading ? (
-        <p className="mt-4 text-sm text-muted-foreground">Loading members...</p>
+        <p className="mt-4 text-sm text-muted-foreground">
+          {t("communityMembers.card.loading")}
+        </p>
       ) : members.length > 0 ? (
         <div className="mt-4 space-y-2">
           {members.map((member) => (
@@ -265,7 +292,9 @@ export function CommunityMembersCard({
           ))}
         </div>
       ) : membersQuery.isSuccess ? (
-        <p className="mt-4 text-sm text-muted-foreground">No members yet.</p>
+        <p className="mt-4 text-sm text-muted-foreground">
+          {t("communityMembers.card.empty")}
+        </p>
       ) : null}
 
       <AddMemberDialog

@@ -1,4 +1,5 @@
 import type { CustomEmoji } from "@/shared/lib/remarkCustomEmoji";
+import { t } from "@/shared/i18n";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 
 /**
@@ -12,7 +13,7 @@ export function buildCustomEmojiCategory(customEmoji: CustomEmoji[]) {
   return [
     {
       id: "kuzz-custom",
-      name: "Custom",
+      name: t("customEmoji.picker.categoryName"),
       emojis: customEmoji.map((e) => ({
         id: e.shortcode,
         name: `:${e.shortcode}:`,

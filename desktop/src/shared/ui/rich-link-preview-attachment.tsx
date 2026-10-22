@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { ChevronDown, ChevronUp, ImageOff } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { useState } from "react";
@@ -67,7 +68,8 @@ function LinkPreviewImage({
   const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
   const imageFailed = Boolean(imageSrc && failedImageSrc === imageSrc);
   const showFallback = preview.imageState === "fallback" || imageFailed;
-  const alt = `Preview from ${preview.imageDomain}`;
+  const t = useT();
+  const alt = t("ui.linkPreview.imageAlt", { domain: preview.imageDomain });
 
   if (!imageSrc || imageFailed) {
     return (
@@ -165,6 +167,7 @@ function TweetPreview({
   showExpandControl: boolean;
 }) {
   const [contentExpanded, setContentExpanded] = useState(true);
+  const t = useT();
   const reserveImage = preview.imageState !== "none";
   const hasExpandableContent = Boolean(preview.description) || reserveImage;
   const hostname = getHostname(preview);
@@ -222,7 +225,9 @@ function TweetPreview({
           ) : (
             <ChevronDown aria-hidden="true" className="size-3" />
           )}
-          {contentExpanded ? "Show less" : "Show more"}
+          {contentExpanded
+            ? t("ui.linkPreview.showLess")
+            : t("ui.linkPreview.showMore")}
         </button>
       ) : null}
       {showControls ? (
@@ -250,6 +255,7 @@ export function RichLinkPreviewAttachment({
   showExpandControl?: boolean;
 }) {
   const [contentExpanded, setContentExpanded] = useState(true);
+  const t = useT();
 
   if (isTweetPreview(preview)) {
     return (
@@ -301,7 +307,11 @@ export function RichLinkPreviewAttachment({
           <span className="truncate">{hostname}</span>
         </a>
         <a
-          aria-label={`Open ${preview.provider} ${preview.typeLabel}: ${preview.title}`}
+          aria-label={t("ui.linkPreview.openLabel", {
+            provider: preview.provider,
+            type: preview.typeLabel,
+            title: preview.title,
+          })}
           className="mt-0.5 block text-sm font-semibold leading-5 text-foreground hover:underline"
           href={preview.href}
           onClick={
@@ -344,7 +354,9 @@ export function RichLinkPreviewAttachment({
           ) : (
             <ChevronDown aria-hidden="true" className="size-3" />
           )}
-          {contentExpanded ? "Show less" : "Show more"}
+          {contentExpanded
+            ? t("ui.linkPreview.showLess")
+            : t("ui.linkPreview.showMore")}
         </button>
       ) : null}
       {showControls ? (

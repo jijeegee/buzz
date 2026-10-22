@@ -67,7 +67,7 @@ pub enum ModerationNotice {
         /// text is public.
         public_reason: String,
         /// For `timeout`: when the restriction lifts. `None` for `ban`
-        /// (indefinite) — rendered as "until <RFC3339>" in the timeout body.
+        /// (indefinite) — rendered as "until 2026-09-01 12:00 UTC" in the timeout body.
         timeout_until: Option<chrono::DateTime<chrono::Utc>>,
     },
 }
@@ -165,9 +165,18 @@ pub async fn send_moderation_notice(
         Tag::parse([MODERATION_SOURCE_TAG, &source_id.to_string()])?,
     ];
     let ts = nostr::Timestamp::from(idempotency_ts.timestamp() as u64);
+    // Written in the recipient's app language (English when unset).
+    let locale = match state.db.locale_for_pubkey(recipient_pubkey).await {
+        Ok(locale) => locale,
+        Err(e) => {
+            warn!(error = %e, "recipient locale lookup failed (using English)");
+            None
+        }
+    };
+    let lang = crate::i18n::pick(locale.as_deref());
     let event = EventBuilder::new(
         Kind::Custom(KIND_STREAM_MESSAGE as u16),
-        notice.body(tenant),
+        notice.body(tenant, lang),
     )
     .tags(tags)
     .custom_created_at(ts)
@@ -251,25 +260,39 @@ impl ModerationNotice {
     /// operator-authored public reason (documented public at the resolve API),
     /// not report-private context: these bodies never carry reporter
     /// identities, other reporters, or raw report notes.
-    fn body(&self, tenant: &TenantContext) -> String {
-        let community = tenant.host();
+    fn body(&self, tenant: &TenantContext, lang: &str) -> String {
+        use crate::i18n::{tr, Arg};
+        let community = Arg::Str(tenant.host());
+        let reason_line =
+            |reason: &str| tr(lang, "moderation.reason", &[("reason", Arg::Str(reason))]);
         match self {
             ModerationNotice::ReportResolved {
                 status, summary, ..
             } => {
-                let outcome = match status.as_str() {
-                    "resolved" => "was reviewed and acted on",
-                    "dismissed" => "was reviewed; no action was taken",
-                    "escalated" => "was escalated for further review",
-                    other => other,
+                let key = match status.as_str() {
+                    "resolved" => "moderation.reportResolved.resolved",
+                    "dismissed" => "moderation.reportResolved.dismissed",
+                    "escalated" => "moderation.reportResolved.escalated",
+                    _ => "moderation.reportResolved.other",
                 };
+                let head = tr(lang, key, &[("community", community)]);
                 format!(
-                    "Thanks for your report to {community}. Your report {outcome}.\n\n{summary}"
+                    "{head}
+
+{summary}"
                 )
             }
             ModerationNotice::ContentActioned { public_reason, .. } => {
+                let head = tr(
+                    lang,
+                    "moderation.contentActioned",
+                    &[("community", community)],
+                );
                 format!(
-                    "A moderator in {community} took action on your content.\n\nReason: {public_reason}"
+                    "{head}
+
+{}",
+                    reason_line(public_reason)
                 )
             }
             ModerationNotice::Restriction {
@@ -278,19 +301,30 @@ impl ModerationNotice {
                 timeout_until,
                 ..
             } => {
-                let action = match kind.as_str() {
-                    "ban" => "You have been banned from",
-                    "timeout" => "You have been timed out in",
-                    other => other,
-                };
                 // A timeout tells the user when it lifts; a ban is indefinite.
-                let terms = match (kind.as_str(), timeout_until) {
+                let head = match (kind.as_str(), timeout_until) {
+                    ("ban", _) => tr(lang, "moderation.banned", &[("community", community)]),
                     ("timeout", Some(until)) => {
-                        format!(" until {}", until.to_rfc3339())
+                        let until = until.format("%Y-%m-%d %H:%M UTC").to_string();
+                        tr(
+                            lang,
+                            "moderation.timedOut",
+                            &[("community", community), ("until", Arg::Str(&until))],
+                        )
                     }
-                    _ => String::new(),
+                    ("timeout", None) => tr(
+                        lang,
+                        "moderation.timedOutNoEnd",
+                        &[("community", community)],
+                    ),
+                    (other, _) => format!("{other} {}.", tenant.host()),
                 };
-                format!("{action} {community}{terms}.\n\nReason: {public_reason}")
+                format!(
+                    "{head}
+
+{}",
+                    reason_line(public_reason)
+                )
             }
         }
     }
@@ -348,7 +382,7 @@ mod tests {
             status: "dismissed".into(),
             summary: "The message did not violate community rules.".into(),
         }
-        .body(&t);
+        .body(&t, "en");
         assert!(body.contains("example.org"));
         assert!(body.contains("no action was taken"));
         assert!(body.contains("did not violate"));
@@ -363,7 +397,7 @@ mod tests {
             public_reason: "Repeated spam.".into(),
             timeout_until: None,
         }
-        .body(&t);
+        .body(&t, "en");
         assert!(ban.contains("banned from example.org"));
         assert!(ban.contains("Repeated spam."));
         // A ban is indefinite: no "until" clause.
@@ -378,11 +412,11 @@ mod tests {
             public_reason: "Cool off.".into(),
             timeout_until: Some(until),
         }
-        .body(&t);
+        .body(&t, "en");
         assert!(timeout.contains("timed out in example.org"));
         // The timeout notice must tell the user for how long (VISION_MODERATION).
         assert!(
-            timeout.contains("until 2026-09-01T12:00:00+00:00"),
+            timeout.contains("until 2026-09-01 12:00 UTC"),
             "timeout body must carry the expiry term; got: {timeout}"
         );
     }
@@ -394,7 +428,7 @@ mod tests {
             action_id: Uuid::new_v4(),
             public_reason: "Off-topic.".into(),
         }
-        .body(&t);
+        .body(&t, "en");
         assert!(body.contains("took action on your content"));
         assert!(body.contains("Off-topic."));
     }

@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type * as React from "react";
 
 import { cn } from "@/shared/lib/cn";
@@ -12,11 +13,12 @@ export function Spinner({
   className,
   size,
   role = "status",
-  "aria-label": ariaLabel = "Loading",
+  "aria-label": ariaLabel,
   "aria-hidden": ariaHidden,
   style,
   ...rest
 }: SpinnerProps) {
+  const t = useT();
   const isDecorative = ariaHidden === true || ariaHidden === "true";
 
   return (
@@ -34,7 +36,9 @@ export function Spinner({
       {...rest}
     >
       {children}
-      {isDecorative ? null : <span className="sr-only">{ariaLabel}</span>}
+      {isDecorative ? null : (
+        <span className="sr-only">{ariaLabel ?? t("ui.loading.label")}</span>
+      )}
     </span>
   );
 }

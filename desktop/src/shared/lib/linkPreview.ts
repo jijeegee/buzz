@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import {
   buildIssueLink,
   buildProjectLink,
@@ -478,7 +479,7 @@ function parseGoogleDriveLink(parsed: URL): SupportedLinkPreview | null {
       parsed,
       "Google Drive",
       "folder",
-      "Drive folder",
+      t("ui.linkPreview.driveFolder"),
     );
   }
 
@@ -491,7 +492,7 @@ function parseGoogleDriveLink(parsed: URL): SupportedLinkPreview | null {
       parsed,
       "Google Drive",
       "file",
-      "Drive file",
+      t("ui.linkPreview.driveFile"),
     );
   }
 
@@ -513,7 +514,7 @@ function parseGoogleDocsLink(parsed: URL): SupportedLinkPreview | null {
       parsed,
       "Google Docs",
       "document",
-      "Document",
+      t("ui.linkPreview.document"),
     );
   }
 
@@ -523,7 +524,7 @@ function parseGoogleDocsLink(parsed: URL): SupportedLinkPreview | null {
       parsed,
       "Google Sheets",
       "spreadsheet",
-      "Spreadsheet",
+      t("ui.linkPreview.spreadsheet"),
     );
   }
 
@@ -533,7 +534,7 @@ function parseGoogleDocsLink(parsed: URL): SupportedLinkPreview | null {
       parsed,
       "Google Slides",
       "presentation",
-      "Presentation",
+      t("ui.linkPreview.presentation"),
     );
   }
 
