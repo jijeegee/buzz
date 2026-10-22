@@ -25,6 +25,8 @@ import { recoverLocalStorageQuotaOnStartup } from "@/shared/lib/localStorageQuot
 import { startLocalStorageSweep } from "@/shared/lib/localStorageSweep";
 import { initializeConversationDensityPreference } from "@/shared/lib/conversationDensityPreference";
 import { initializeFontSizePreference } from "@/shared/lib/fontSizePreference";
+import { I18nProvider } from "@/shared/i18n";
+import { initializeLocale } from "@/shared/i18n/localeRuntime";
 
 type E2eWindow = Window & {
   __KUZZ_E2E__?: unknown;
@@ -87,30 +89,32 @@ function renderApp() {
       {/* block/kuzz#5078 — catch any uncaught render error so a WebKit
           SecurityError from localStorage can't blank the whole window. */}
       <RootErrorBoundary>
-        <AvatarClipPaths />
-        <CommunitiesProvider>
-          <CommunityOnboardingProvider
-            enabled={huddleWindowChannelId() === null}
-          >
-            <ThemeProvider defaultTheme="kuzz">
-              <TooltipProvider>
-                <EmojiBurstProvider>
-                  <PoofBurstProvider>
-                    <UpdaterProvider>
-                      <App />
-                      {/* The bind flow finishes on the upstream Kuzz website,
+        <I18nProvider>
+          <AvatarClipPaths />
+          <CommunitiesProvider>
+            <CommunityOnboardingProvider
+              enabled={huddleWindowChannelId() === null}
+            >
+              <ThemeProvider defaultTheme="kuzz">
+                <TooltipProvider>
+                  <EmojiBurstProvider>
+                    <PoofBurstProvider>
+                      <UpdaterProvider>
+                        <App />
+                        {/* The bind flow finishes on the upstream Kuzz website,
                           which Kuzz users never use; e2e still covers it. */}
-                      {signingKeyUiTestSeam() ? (
-                        <NostrBindConsentDialog />
-                      ) : null}
-                    </UpdaterProvider>
-                    <Toaster />
-                  </PoofBurstProvider>
-                </EmojiBurstProvider>
-              </TooltipProvider>
-            </ThemeProvider>
-          </CommunityOnboardingProvider>
-        </CommunitiesProvider>
+                        {signingKeyUiTestSeam() ? (
+                          <NostrBindConsentDialog />
+                        ) : null}
+                      </UpdaterProvider>
+                      <Toaster />
+                    </PoofBurstProvider>
+                  </EmojiBurstProvider>
+                </TooltipProvider>
+              </ThemeProvider>
+            </CommunityOnboardingProvider>
+          </CommunitiesProvider>
+        </I18nProvider>
       </RootErrorBoundary>
     </React.StrictMode>,
   );
@@ -140,6 +144,7 @@ async function bootstrap() {
   startLocalStorageSweep();
   await installE2eBridgeIfConfigured();
   await migrateLegacyCommunityStorageBeforeRender();
+  await initializeLocale();
   renderApp();
 }
 

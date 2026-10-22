@@ -1,0 +1,30 @@
+{
+  "nav.chats": "Chats",
+  "@nav.chats": {
+    "description": "Main navigation rail, tab with an icon above. Short."
+  },
+  "nav.friends": "Friends",
+  "@nav.friends": {
+    "description": "Main navigation rail, tab with an icon above. Short."
+  },
+  "nav.agents": "Agents",
+  "@nav.agents": {
+    "description": "Main navigation rail, tab with an icon above. AI agents. Short."
+  },
+  "nav.more": "More",
+  "@nav.more": {
+    "description": "Main navigation rail, tab that opens a menu of other screens. Short."
+  },
+  "nav.projects": "Projects",
+  "@nav.projects": {
+    "description": "Menu item under More in the main navigation rail. Short."
+  },
+  "nav.workflows": "Workflows",
+  "@nav.workflows": {
+    "description": "Menu item under More in the main navigation rail. Automations. Short."
+  },
+  "nav.label": "Main",
+  "@nav.label": {
+    "description": "Screen-reader name of the main navigation rail. Short."
+  }
+}

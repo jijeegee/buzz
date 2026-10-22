@@ -10,6 +10,7 @@ import {
 
 import type { SidebarListTab } from "@/features/sidebar/lib/sidebarListTab";
 import { useFeatureEnabled } from "@/shared/features";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   DropdownMenu,
@@ -59,30 +60,31 @@ export function AppNavRail({
 }: AppNavRailProps) {
   // The workflows screen has no list; its More item stays lit while open.
   const onWorkflows = selectedView === "workflows";
+  const t = useT();
   return (
     <nav
-      aria-label="Main"
+      aria-label={t("nav.label")}
       className="relative z-20 flex w-16 shrink-0 select-none flex-col items-center gap-1 overflow-y-auto bg-sidebar px-1.5 pb-5 pt-[calc(var(--kuzz-top-chrome-height,40px)+4px)]"
       data-testid="sidebar-primary-menu"
     >
       <RailButton
         active={!onWorkflows && listTab === "chats"}
         icon={<MessagesSquare className="h-5 w-5" />}
-        label="Chats"
+        label={t("nav.chats")}
         onClick={onSelectChats}
         testId="open-chats-view"
       />
       <RailButton
         active={!onWorkflows && listTab === "people"}
         icon={<Users className="h-5 w-5" />}
-        label="Friends"
+        label={t("nav.friends")}
         onClick={onSelectPeople}
         testId="open-people-view"
       />
       <RailButton
         active={!onWorkflows && listTab === "agents"}
         icon={<Bot className="h-5 w-5" />}
-        label="Agents"
+        label={t("nav.agents")}
         onClick={onSelectAgents}
         testId="open-agents-view"
       />
@@ -149,6 +151,7 @@ function RailMoreMenu({
 }) {
   const projectsEnabled = useFeatureEnabled("projects");
   const workflowsEnabled = useFeatureEnabled("workflows");
+  const t = useT();
   if (!projectsEnabled && !workflowsEnabled) {
     return null;
   }
@@ -158,7 +161,7 @@ function RailMoreMenu({
         <RailButton
           active={active}
           icon={<Ellipsis className="h-5 w-5" />}
-          label="More"
+          label={t("nav.more")}
           testId="open-more-menu"
         />
       </DropdownMenuTrigger>
@@ -169,7 +172,7 @@ function RailMoreMenu({
             onSelect={onSelectProjects}
           >
             <Folders className="h-4 w-4" />
-            <span>Projects</span>
+            <span>{t("nav.projects")}</span>
           </DropdownMenuItem>
         ) : null}
         {workflowsEnabled ? (
@@ -178,7 +181,7 @@ function RailMoreMenu({
             onSelect={onSelectWorkflows}
           >
             <Zap className="h-4 w-4" />
-            <span>Workflows</span>
+            <span>{t("nav.workflows")}</span>
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>

@@ -27,7 +27,8 @@ Each app's English file holds the text plus a note on where it appears:
 "@room.members": { "description": "Room header, small grey text after the name" }
 ```
 
-- Name keys by screen: `settings.notifications.title`.
+- Name keys by screen: `settings.notifications.title` (desktop, web, relay); mobile `.arb` keys must be Dart names, so `settingsNotificationsTitle`.
+- In code: desktop `const t = useT(); t("nav.chats")` (or `t()` from `@/shared/i18n` outside React); mobile `context.l10n.navChats` (or `appL10n` without a context).
 - The note says where (screen, place) and what (button, title, error, notification). Add "Short." when space is tight.
 - Use ICU plurals instead of `n === 1 ? ... : ...`, and whole sentences with `{placeholders}` instead of joining pieces.
 - Do not use literal `{` `}` in text. Apostrophes are plain text.
