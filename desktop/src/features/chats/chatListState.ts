@@ -2,6 +2,7 @@ import {
   getThreadReference,
   isBroadcastReply,
 } from "@/features/messages/lib/threading";
+import { t } from "@/shared/i18n";
 import type { RelayEvent } from "@/shared/api/types";
 import {
   KIND_FORUM_COMMENT,
@@ -496,6 +497,6 @@ export function threadRootTitle(content: string | undefined): string {
     ?.split("\n")
     .map((line) => line.trim())
     .find((line) => line.length > 0);
-  if (!firstLine) return "Thread";
+  if (!firstLine) return t("chats.threadTitle.untitled");
   return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine;
 }

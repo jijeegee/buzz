@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { AlertCircle, Clock } from "lucide-react";
 
 import {
@@ -7,16 +8,17 @@ import {
 
 /** Send state of an own message, shown where its time goes once sent. */
 export function MessageSendState({ failed }: { failed: boolean }) {
+  const t = useT();
   return failed ? (
     <AlertCircle
-      aria-label="Not sent"
+      aria-label={t("messages.send.notSent")}
       className="h-3.5 w-3.5 text-destructive"
       data-testid="message-send-failed"
       role="img"
     />
   ) : (
     <Clock
-      aria-label="Sending"
+      aria-label={t("messages.send.sending")}
       className="h-3 w-3 text-muted-foreground/70"
       data-testid="message-send-pending"
       role="img"
@@ -26,25 +28,26 @@ export function MessageSendState({ failed }: { failed: boolean }) {
 
 /** Retry / Delete under an own message the relay did not accept. */
 export function FailedSendActions({ localKey }: { localKey: string }) {
+  const t = useT();
   return (
     <span
       className="flex items-baseline gap-1.5 text-destructive"
       data-testid="message-send-status"
     >
-      Not sent
+      {t("messages.send.notSent")}
       <button
         className="font-medium underline-offset-2 hover:underline"
         onClick={() => retryFailedSend(localKey)}
         type="button"
       >
-        Retry
+        {t("common.retry")}
       </button>
       <button
         className="font-medium underline-offset-2 hover:underline"
         onClick={() => discardFailedSend(localKey)}
         type="button"
       >
-        Delete
+        {t("common.delete")}
       </button>
     </span>
   );

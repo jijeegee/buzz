@@ -16,6 +16,7 @@ import {
 } from "@/features/profile/lib/identity";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
+import { getIntl, type MessageKey, t as translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
@@ -92,7 +93,7 @@ function resolveLabel(
   profiles: UserProfileLookup | undefined,
 ): string {
   if (!pubkey) {
-    return "Someone";
+    return translate("messages.system.someone");
   }
   return resolveUserLabel({ pubkey, currentPubkey, profiles });
 }
@@ -277,78 +278,90 @@ function MemberNamesInlineList({
     />
   );
 
-  return (
-    <>
-      {visibleTargets.map((pubkey, index) => {
-        const isLast = index === visibleTargets.length - 1;
-        const separator =
-          index === 0
-            ? null
-            : isLast && hiddenTargets.length === 0
-              ? visibleTargets.length === 2
-                ? " and "
-                : ", and "
-              : ", ";
-        return (
-          <React.Fragment key={pubkey}>
-            {separator}
-            {renderName(pubkey)}
-          </React.Fragment>
-        );
-      })}
-      {hiddenTargets.length > 0 ? (
-        <>
-          , and{" "}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="cursor-help rounded-xs hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-                type="button"
-              >
-                {hiddenTargets.length} others
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-72 p-2 text-left" side="top">
-              <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
-                {hiddenTargets.map((pubkey) => (
-                  <div className="flex items-center gap-2" key={pubkey}>
-                    <UserAvatar
-                      accent={isKnownAgentPubkey(
-                        pubkey,
-                        profiles,
-                        personaLookup,
-                        agentPubkeys,
-                      )}
-                      avatarUrl={resolveAvatarUrl(pubkey, profiles)}
-                      className="!h-5 !w-5 shrink-0 text-3xs"
-                      displayName={resolveDisplayLabel(
-                        pubkey,
-                        currentPubkey,
-                        profiles,
-                      )}
-                      shape={
-                        isKnownAgentPubkey(
-                          pubkey,
-                          profiles,
-                          personaLookup,
-                          agentPubkeys,
-                        )
-                          ? "squircle"
-                          : "circle"
-                      }
-                    />
-                    <span className="min-w-0 truncate">
-                      {resolveDisplayLabel(pubkey, currentPubkey, profiles)}
-                    </span>
-                  </div>
-                ))}
+  const items: React.ReactNode[] = visibleTargets.map((pubkey) => (
+    <React.Fragment key={pubkey}>{renderName(pubkey)}</React.Fragment>
+  ));
+  if (hiddenTargets.length > 0) {
+    items.push(
+      <Tooltip key="hidden-targets">
+        <TooltipTrigger asChild>
+          <button
+            className="cursor-help rounded-xs hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+            type="button"
+          >
+            {translate("messages.system.othersCount", {
+              count: hiddenTargets.length,
+            })}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-72 p-2 text-left" side="top">
+          <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+            {hiddenTargets.map((pubkey) => (
+              <div className="flex items-center gap-2" key={pubkey}>
+                <UserAvatar
+                  accent={isKnownAgentPubkey(
+                    pubkey,
+                    profiles,
+                    personaLookup,
+                    agentPubkeys,
+                  )}
+                  avatarUrl={resolveAvatarUrl(pubkey, profiles)}
+                  className="!h-5 !w-5 shrink-0 text-3xs"
+                  displayName={resolveDisplayLabel(
+                    pubkey,
+                    currentPubkey,
+                    profiles,
+                  )}
+                  shape={
+                    isKnownAgentPubkey(
+                      pubkey,
+                      profiles,
+                      personaLookup,
+                      agentPubkeys,
+                    )
+                      ? "squircle"
+                      : "circle"
+                  }
+                />
+                <span className="min-w-0 truncate">
+                  {resolveDisplayLabel(pubkey, currentPubkey, profiles)}
+                </span>
               </div>
-            </TooltipContent>
-          </Tooltip>
-        </>
-      ) : null}
-    </>
-  );
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>,
+    );
+  }
+
+  return <>{joinNameList(items)}</>;
+}
+
+/** Translates a sentence whose placeholders are React nodes (names, links). */
+function richT(
+  key: MessageKey,
+  values: Record<string, React.ReactNode>,
+): React.ReactNode {
+  return getIntl().formatMessage({ id: key }, values);
+}
+
+/** "A", "A and B", "A, B, and C": whole-list wording from the language file. */
+function joinNameList(items: React.ReactNode[]): React.ReactNode {
+  if (items.length <= 1) return items[0] ?? null;
+  if (items.length === 2) {
+    return richT("messages.list.two", {
+      first: items[0],
+      second: items[1],
+    });
+  }
+  let list: React.ReactNode = items[0];
+  for (const next of items.slice(1, -1)) {
+    list = richT("messages.list.more", { list, next });
+  }
+  return richT("messages.list.last", {
+    list,
+    last: items[items.length - 1],
+  });
 }
 
 function describeGroupedArrivals({
@@ -382,6 +395,15 @@ function describeGroupedArrivals({
   const isAllAdditionGroup = hasAdditions && !hasSelfJoins;
   const isAllSelfJoinGroup = hasSelfJoins && !hasAdditions;
   const additionalTargets = payload.targets.slice(1);
+  const othersList = (
+    <MemberNamesInlineList
+      agentPubkeys={agentPubkeys}
+      currentPubkey={currentPubkey}
+      personaLookup={personaLookup}
+      profiles={profiles}
+      targets={additionalTargets}
+    />
+  );
 
   if (payload.targets.length === 1) {
     if (isSameAdderGroup) {
@@ -408,34 +430,31 @@ function describeGroupedArrivals({
     if (isAllSelfJoinGroup) {
       return {
         title: membershipTitle,
-        action: "joined",
+        action: translate("messages.system.joined"),
       };
     }
 
     return {
       title: membershipTitle,
-      action: "arrived",
+      action: translate("messages.system.arrived"),
     };
   }
 
   if (isSameAdderGroup) {
     return {
       title: membershipTitle,
-      action: (
-        <>
-          {addedByActionPrefix(isTargetCurrentUser)}{" "}
-          <ProfileName pubkey={sharedActor} underlineOnHover>
-            {resolveInlineDisplayLabel(sharedActor, currentPubkey, profiles)}
-          </ProfileName>
-          , along with{" "}
-          <MemberNamesInlineList
-            agentPubkeys={agentPubkeys}
-            currentPubkey={currentPubkey}
-            personaLookup={personaLookup}
-            profiles={profiles}
-            targets={additionalTargets}
-          />
-        </>
+      action: richT(
+        isTargetCurrentUser
+          ? "messages.system.youWereAddedByAlongWith"
+          : "messages.system.addedByAlongWith",
+        {
+          actor: (
+            <ProfileName pubkey={sharedActor} underlineOnHover>
+              {resolveInlineDisplayLabel(sharedActor, currentPubkey, profiles)}
+            </ProfileName>
+          ),
+          others: othersList,
+        },
       ),
     };
   }
@@ -443,17 +462,11 @@ function describeGroupedArrivals({
   if (isAllAdditionGroup) {
     return {
       title: membershipTitle,
-      action: (
-        <>
-          {addedActionPrefix(isTargetCurrentUser)} along with{" "}
-          <MemberNamesInlineList
-            agentPubkeys={agentPubkeys}
-            currentPubkey={currentPubkey}
-            personaLookup={personaLookup}
-            profiles={profiles}
-            targets={additionalTargets}
-          />
-        </>
+      action: richT(
+        isTargetCurrentUser
+          ? "messages.system.youWereAddedAlongWith"
+          : "messages.system.wasAddedAlongWith",
+        { others: othersList },
       ),
     };
   }
@@ -461,35 +474,13 @@ function describeGroupedArrivals({
   if (isAllSelfJoinGroup) {
     return {
       title: membershipTitle,
-      action: (
-        <>
-          joined along with{" "}
-          <MemberNamesInlineList
-            agentPubkeys={agentPubkeys}
-            currentPubkey={currentPubkey}
-            personaLookup={personaLookup}
-            profiles={profiles}
-            targets={additionalTargets}
-          />
-        </>
-      ),
+      action: richT("messages.system.joinedAlongWith", { others: othersList }),
     };
   }
 
   return {
     title: membershipTitle,
-    action: (
-      <>
-        arrived along with{" "}
-        <MemberNamesInlineList
-          agentPubkeys={agentPubkeys}
-          currentPubkey={currentPubkey}
-          personaLookup={personaLookup}
-          profiles={profiles}
-          targets={additionalTargets}
-        />
-      </>
-    ),
+    action: richT("messages.system.arrivedAlongWith", { others: othersList }),
   };
 }
 
@@ -562,14 +553,14 @@ function describeSystemEvent(
       if (!payload.target) return null;
       return {
         title: membershipTitle,
-        action: `joined, then left the ${roomNoun}`,
+        action: translate("messages.system.joinedThenLeft", { room: roomNoun }),
       };
     case "member_joined": {
       if (!payload.actor || !payload.target) return null;
       if (normalizePubkey(payload.actor) === normalizePubkey(payload.target)) {
         return {
           title: membershipTitle,
-          action: `joined the ${roomNoun}`,
+          action: translate("messages.system.joinedRoom", { room: roomNoun }),
         };
       }
       return {
@@ -591,16 +582,15 @@ function describeSystemEvent(
     case "member_left":
       return {
         title: actorName,
-        action: `left the ${roomNoun}`,
+        action: translate("messages.system.leftRoom", { room: roomNoun }),
       };
     case "member_removed":
       return {
         title: actorName,
-        action: (
-          <>
-            removed {targetName} from the {roomNoun}
-          </>
-        ),
+        action: richT("messages.system.removedMember", {
+          room: roomNoun,
+          target: targetName,
+        }),
       };
     case "topic_changed":
       return {
@@ -621,23 +611,23 @@ function describeSystemEvent(
       return {
         title: actorName,
         action: payload.picture?.trim()
-          ? `changed the ${roomNoun} photo`
-          : `removed the ${roomNoun} photo`,
+          ? translate("messages.system.changedPhoto", { room: roomNoun })
+          : translate("messages.system.removedPhoto", { room: roomNoun }),
       };
     case "channel_created":
       return {
         title: actorName,
-        action: `created this ${roomNoun}`,
+        action: translate("messages.system.createdRoom", { room: roomNoun }),
       };
     case "channel_archived":
       return {
         title: actorName,
-        action: `archived this ${roomNoun}`,
+        action: translate("messages.system.archivedRoom", { room: roomNoun }),
       };
     case "channel_unarchived":
       return {
         title: actorName,
-        action: `unarchived this ${roomNoun}`,
+        action: translate("messages.system.unarchivedRoom", { room: roomNoun }),
       };
     case "message_deleted": {
       // Room-facing tombstone. When a moderator removed the message, the relay
@@ -645,13 +635,13 @@ function describeSystemEvent(
       // content and the reporter are never disclosed here.
       if (payload.public_reason) {
         return {
-          title: "Removed by community moderators",
+          title: translate("messages.system.removedByModerators"),
           action: payload.public_reason,
         };
       }
       return {
         title: actorName,
-        action: "removed a message",
+        action: translate("messages.system.removedAMessage"),
       };
     }
     default:
@@ -685,6 +675,8 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
   ) => Promise<void>;
   roomNoun?: RoomNoun;
 }) {
+  // Subscribes the row to language changes; the caption helpers read the same translator.
+  const t = useT();
   const sourceMessages = React.useMemo(
     () => groupedMessages ?? [message],
     [groupedMessages, message],
@@ -843,7 +835,7 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
                 <Button
-                  aria-label="Open reactions"
+                  aria-label={t("messages.actions.openReactions")}
                   className={SYSTEM_ACTION_BUTTON_CLASS}
                   size="sm"
                   type="button"
@@ -853,7 +845,7 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
                 </Button>
               </PopoverTrigger>
             </TooltipTrigger>
-            <TooltipContent>React</TooltipContent>
+            <TooltipContent>{t("messages.actions.react")}</TooltipContent>
           </Tooltip>
           <PopoverContent
             align="end"

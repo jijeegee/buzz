@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { useState, type ComponentProps } from "react";
 import { MessageThreadPanelHeader } from "./MessageThreadPanelSkeleton";
 import { Pencil } from "lucide-react";
@@ -25,6 +26,7 @@ export function ThreadNameEditor({
   disabled?: boolean;
   headerProps: ComponentProps<typeof MessageThreadPanelHeader>;
 }) {
+  const t = useT();
   const { name, error, retry, save } = useThreadName(channelId, threadId);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -42,7 +44,11 @@ export function ThreadNameEditor({
               className="shrink-0 text-muted-foreground hover:text-foreground"
               size="icon-xs"
               variant="ghost"
-              aria-label={name ? "Rename thread" : "Set thread name"}
+              aria-label={
+                name
+                  ? t("messages.threadName.rename")
+                  : t("messages.threadName.set")
+              }
               disabled={disabled}
               onClick={() => {
                 setDraft(name);
@@ -54,7 +60,7 @@ export function ThreadNameEditor({
             </Button>
             {error ? (
               <Button size="sm" variant="ghost" onClick={retry}>
-                Retry name
+                {t("messages.threadName.retry")}
               </Button>
             ) : null}
           </>
@@ -80,7 +86,7 @@ export function ThreadNameEditor({
                 setSaveError(
                   cause instanceof Error
                     ? cause.message
-                    : "Could not save thread name",
+                    : t("messages.threadName.saveFailed"),
                 );
               } finally {
                 setSaving(false);
@@ -88,15 +94,14 @@ export function ThreadNameEditor({
             }}
           >
             <DialogHeader>
-              <DialogTitle>Thread name</DialogTitle>
+              <DialogTitle>{t("messages.threadName.title")}</DialogTitle>
               <DialogDescription>
-                Visible to everyone in this group. Up to 40 English or 20 Korean
-                characters. Leave empty to remove the name.
+                {t("messages.threadName.description")}
               </DialogDescription>
             </DialogHeader>
             <Input
               className="mt-4"
-              aria-label="Thread name"
+              aria-label={t("messages.threadName.title")}
               aria-describedby="thread-name-count"
               aria-invalid={!isValidThreadName(normalized)}
               value={draft}
@@ -114,7 +119,9 @@ export function ThreadNameEditor({
               id="thread-name-count"
               className="mt-2 text-xs text-muted-foreground"
             >
-              {threadNameWeight(normalized)} / 40 · English 1, Korean 2
+              {t("messages.threadName.count", {
+                count: threadNameWeight(normalized),
+              })}
             </p>
             {saveError ? (
               <p role="alert" className="mt-2 text-sm text-destructive">
@@ -128,13 +135,13 @@ export function ThreadNameEditor({
                 disabled={saving}
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 type="submit"
                 disabled={saving || !isValidThreadName(normalized)}
               >
-                {saving ? "Saving…" : "Save"}
+                {saving ? t("messages.threadName.saving") : t("common.save")}
               </Button>
             </DialogFooter>
           </form>

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import type { MentionRevalidationOptions } from "@/features/messages/lib/agentMentionRevalidation";
 import type { ManagedAgent, RelayEvent } from "@/shared/api/types";
 import {
@@ -164,7 +165,9 @@ export function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function formatMessageSendError(error: unknown) {
-  return `Message failed to send: ${getErrorMessage(error, "Unknown error")}`;
+  return t("messages.send.failed", {
+    error: getErrorMessage(error, t("messages.errors.unknown")),
+  });
 }
 
 export function uniqueNormalizedPubkeys(pubkeys: Iterable<string>) {

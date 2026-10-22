@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 import {
   isDelete,
   isInsert,
@@ -33,13 +34,18 @@ export function parseUnifiedDiff(content: string): ParsedDiffResult {
   }
 }
 
-export const DIFF_TYPE_LABELS: Record<DiffType, string> = {
-  add: "New file",
-  copy: "Copied",
-  delete: "Deleted",
-  modify: "Modified",
-  rename: "Renamed",
+const DIFF_TYPE_LABEL_KEYS: Record<DiffType, MessageKey> = {
+  add: "messages.diff.typeAdd",
+  copy: "messages.diff.typeCopy",
+  delete: "messages.diff.typeDelete",
+  modify: "messages.diff.typeModify",
+  rename: "messages.diff.typeRename",
 };
+
+/** Change-type badge for a diff file ("New file", "Deleted", …). */
+export function diffTypeLabel(type: DiffType): string {
+  return t(DIFF_TYPE_LABEL_KEYS[type]);
+}
 
 export function getDiffFileLabel(
   file: FileData,
@@ -85,7 +91,7 @@ export function getDiffTitleBadge(
   }
 
   const diffType = normalizeDiffType(file.type);
-  return diffType === "modify" ? undefined : DIFF_TYPE_LABELS[diffType];
+  return diffType === "modify" ? undefined : diffTypeLabel(diffType);
 }
 
 export function countDiffFileChanges(file: FileData) {

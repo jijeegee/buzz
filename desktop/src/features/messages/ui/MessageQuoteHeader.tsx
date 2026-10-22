@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { Quote } from "lucide-react";
 
@@ -31,6 +32,7 @@ export function MessageQuoteHeader({
   profiles?: UserProfileLookup;
   tags?: string[][];
 }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const { goChannel } = useAppNavigation();
   const reference = getQuoteReference(tags);
@@ -84,8 +86,8 @@ export function MessageQuoteHeader({
         <Quote aria-hidden className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">
           {preview.kind === "loading"
-            ? "Loading quoted message…"
-            : "Original message unavailable"}
+            ? t("messages.quote.loading")
+            : t("messages.quote.unavailable")}
         </span>
       </div>
     );
@@ -98,7 +100,7 @@ export function MessageQuoteHeader({
       : null;
   return (
     <button
-      aria-label={`Jump to quoted message from ${preview.author}`}
+      aria-label={t("messages.quote.jumpTo", { author: preview.author })}
       className={cn(
         QUOTE_HEADER_CLASS,
         "transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",

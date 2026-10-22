@@ -1,3 +1,4 @@
+import { t as translate, useT } from "@/shared/i18n";
 import { SmilePlus } from "lucide-react";
 import * as React from "react";
 
@@ -104,19 +105,46 @@ function EmojiGlyph({
   );
 }
 
+function formatNameList(names: string[]): string {
+  if (names.length === 1) return names[0];
+  if (names.length === 2) {
+    return translate("messages.list.two", {
+      first: names[0],
+      second: names[1],
+    });
+  }
+  let list = names[0];
+  for (const next of names.slice(1, -1)) {
+    list = translate("messages.list.more", { list, next });
+  }
+  return translate("messages.list.last", {
+    list,
+    last: names[names.length - 1],
+  });
+}
+
 function formatReactionUsers(reaction: TimelineReaction): string {
   const names = reaction.users.map((user) => user.displayName).filter(Boolean);
   if (reaction.reactedByCurrentUser) {
-    const others = names.filter((name) => name !== "You");
-    names.splice(0, names.length, "You (click to remove)", ...others);
+    const you = translate("common.you");
+    const others = names.filter((name) => name !== you);
+    names.splice(
+      0,
+      names.length,
+      translate("messages.reactions.youClickToRemove"),
+      ...others,
+    );
   }
-  if (names.length === 0) return `${reaction.count} people`;
-  if (names.length === 1) return names[0];
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+  if (names.length === 0) {
+    return translate("messages.reactions.peopleCount", {
+      count: reaction.count,
+    });
+  }
+  return formatNameList(names);
 }
 
 function ReactionPopoverContent({ reaction }: { reaction: TimelineReaction }) {
+  const t = useT();
   const displayName = emojiDisplayName(reaction.emoji);
   const userText = formatReactionUsers(reaction);
 
@@ -129,7 +157,12 @@ function ReactionPopoverContent({ reaction }: { reaction: TimelineReaction }) {
         />
       </div>
       <div className="max-w-[14rem] text-balance text-sm font-semibold leading-snug text-popover-foreground">
-        {userText} <span className="text-muted-foreground">reacted with</span>
+        {t("messages.reactions.reactedWith", {
+          users: userText,
+          muted: (chunks) => (
+            <span className="text-muted-foreground">{chunks}</span>
+          ),
+        })}
       </div>
       <div
         className="mt-0.5 break-all text-sm font-semibold leading-snug text-muted-foreground"
@@ -295,6 +328,7 @@ function InlineReactionPicker({
   reactions: TimelineReaction[];
   requestBadgeBurst: (emoji: string) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const wouldAddReaction = (emoji: string) =>
     !reactions.some(
@@ -307,7 +341,7 @@ function InlineReactionPicker({
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <button
-              aria-label="Add reaction"
+              aria-label={t("messages.reactions.add")}
               className={cn(
                 REACTION_PILL_BASE_CLASSES,
                 "pointer-events-none w-10 min-w-10 justify-center p-0 text-muted-foreground opacity-0",
@@ -328,7 +362,7 @@ function InlineReactionPicker({
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent>React</TooltipContent>
+        <TooltipContent>{t("messages.actions.react")}</TooltipContent>
       </Tooltip>
       <PopoverContent
         align="start"
@@ -365,6 +399,7 @@ function ReactionPill({
   registerPill: (emoji: string, element: HTMLButtonElement | null) => void;
   onSelect: (emoji: string) => void;
 }) {
+  const t = useT();
   const { burstEmoji } = useEmojiBurst();
   const [open, setOpen] = React.useState(false);
   const openTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -442,7 +477,7 @@ function ReactionPill({
   if (reaction.users.length === 0) {
     return (
       <button
-        aria-label={`Toggle ${reaction.emoji} reaction`}
+        aria-label={t("messages.reactions.toggle", { emoji: reaction.emoji })}
         aria-pressed={reaction.reactedByCurrentUser}
         title={displayName}
         className={pillClasses}
@@ -483,7 +518,9 @@ function ReactionPill({
           onBlur={scheduleClose}
         >
           <button
-            aria-label={`Toggle ${reaction.emoji} reaction`}
+            aria-label={t("messages.reactions.toggle", {
+              emoji: reaction.emoji,
+            })}
             aria-pressed={reaction.reactedByCurrentUser}
             title={displayName}
             className={pillClasses}

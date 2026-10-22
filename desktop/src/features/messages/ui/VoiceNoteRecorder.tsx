@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { useReducedMotion } from "motion/react";
 import { X } from "lucide-react";
@@ -32,6 +33,7 @@ export function VoiceNoteRecorder({
   processing: boolean;
   requesting: boolean;
 }) {
+  const t = useT();
   const waveformRef = React.useRef<HTMLDivElement | null>(null);
   const trackRef = React.useRef<HTMLDivElement | null>(null);
   const previousFrameRef = React.useRef({ barCount: 0, levelCount: 0 });
@@ -103,15 +105,15 @@ export function VoiceNoteRecorder({
     >
       <legend className="sr-only">
         {requesting
-          ? "Waiting for microphone access"
+          ? t("messages.voiceRecorder.waitingAccess")
           : processing
-            ? "Preparing voice note"
-            : "Recording voice note"}
+            ? t("messages.voiceRecorder.preparing")
+            : t("messages.voiceRecorder.recording")}
       </legend>
       <Tooltip disableHoverableContent>
         <TooltipTrigger asChild>
           <Button
-            aria-label="Discard voice note"
+            aria-label={t("messages.voiceRecorder.discard")}
             className="shrink-0"
             onClick={onCancel}
             size="icon"
@@ -121,12 +123,14 @@ export function VoiceNoteRecorder({
             <X />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Discard voice note</TooltipContent>
+        <TooltipContent>{t("messages.voiceRecorder.discard")}</TooltipContent>
       </Tooltip>
       <div className="mx-1 h-5 w-px shrink-0 bg-border/60" />
       {requesting || processing ? (
         <span className="shrink-0 whitespace-nowrap text-xs font-medium text-muted-foreground">
-          {requesting ? "Waiting for microphone…" : "Preparing voice note…"}
+          {requesting
+            ? t("messages.voiceRecorder.waitingShort")
+            : t("messages.voiceRecorder.preparingShort")}
         </span>
       ) : (
         <span className="shrink-0 whitespace-nowrap text-xs font-medium tabular-nums text-foreground">

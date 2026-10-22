@@ -1,3 +1,4 @@
+import { t as translate, useT } from "@/shared/i18n";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -43,6 +44,7 @@ function preparedKey(pubkeys: readonly string[], name: string) {
  * recipient discovery lives in an attached popover.
  */
 export function NewMessageScreen() {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const currentPubkey = identityQuery.data?.pubkey;
   const openDmMutation = useOpenDmMutation();
@@ -221,7 +223,9 @@ export function NewMessageScreen() {
       }
       if (requestedPubkeys.length > MAX_NEW_CHAT_PEOPLE) {
         setSubmitErrorMessage(
-          `A new chat can start with up to ${MAX_NEW_CHAT_PEOPLE} people.`,
+          translate("messages.newMessage.limit", {
+            count: MAX_NEW_CHAT_PEOPLE,
+          }),
         );
         return null;
       }
@@ -251,7 +255,9 @@ export function NewMessageScreen() {
         return conversation;
       } catch (error) {
         setSubmitErrorMessage(
-          error instanceof Error ? error.message : "Could not start the chat.",
+          error instanceof Error
+            ? error.message
+            : translate("messages.newMessage.startFailed"),
         );
         return null;
       }
@@ -323,7 +329,9 @@ export function NewMessageScreen() {
         // a second one; a 1:1 reopen is idempotent.
         if (!directMessage.groupChat) preparedDirectMessageRef.current = null;
         const message =
-          error instanceof Error ? error.message : "Failed to send message.";
+          error instanceof Error
+            ? error.message
+            : translate("messages.newMessage.sendFailed");
         if (isMountedRef.current) setSubmitErrorMessage(message);
         throw error;
       }
@@ -352,10 +360,14 @@ export function NewMessageScreen() {
 
   const composerPlaceholder =
     selectedUsers.length === 0
-      ? "Choose a recipient to start a message"
+      ? t("messages.newMessage.chooseRecipient")
       : selectedUsers.length === 1
-        ? `Message ${formatRecipientName(selectedUsers[0])}`
-        : `Message ${selectedUsers.length} people`;
+        ? t("messages.composer.messagePlaceholder", {
+            channel: formatRecipientName(selectedUsers[0]),
+          })
+        : t("messages.newMessage.messagePeople", {
+            count: selectedUsers.length,
+          });
 
   return (
     <div
@@ -404,7 +416,7 @@ export function NewMessageScreen() {
                 ref={toFieldRef}
               >
                 <span className="shrink-0 text-base font-semibold tracking-tight">
-                  To:
+                  {t("messages.newMessage.toLabel")}
                 </span>
                 {(showAllRecipients
                   ? selectedUsers
@@ -453,7 +465,7 @@ export function NewMessageScreen() {
                   }
                   aria-controls="new-dm-results"
                   aria-expanded={showRecipientPicker}
-                  aria-label="To"
+                  aria-label={t("messages.newMessage.toAria")}
                   autoComplete="off"
                   autoCorrect="off"
                   className="h-7 min-w-32 flex-1 bg-transparent text-base outline-hidden placeholder:text-muted-foreground"
@@ -617,7 +629,7 @@ export function NewMessageScreen() {
                 ) : isDirectoryLoading || isSearchTransitionPending ? (
                   <div
                     aria-busy="true"
-                    aria-label="Loading people and agents"
+                    aria-label={t("messages.newMessage.loadingDirectory")}
                     className="space-y-3 px-4 py-3"
                     data-testid="new-dm-loading"
                     role="status"
@@ -638,8 +650,8 @@ export function NewMessageScreen() {
                     data-testid="new-dm-empty"
                   >
                     {deferredSearchQuery.length === 0
-                      ? "No people or agents available to message."
-                      : "No matching users."}
+                      ? t("messages.newMessage.directoryEmpty")
+                      : t("messages.newMessage.noMatches")}
                   </p>
                 )}
               </div>
@@ -651,7 +663,7 @@ export function NewMessageScreen() {
               className="shrink-0 pl-2 text-sm text-muted-foreground"
               data-testid="new-dm-opening"
             >
-              Opening…
+              {t("messages.newMessage.opening")}
             </span>
           ) : null}
         </div>
@@ -665,7 +677,7 @@ export function NewMessageScreen() {
       {selectedUsers.length > 1 ? (
         <div className="px-5 pb-2" data-testid="new-chat-name-row">
           <input
-            aria-label="Chat name"
+            aria-label={t("messages.newMessage.chatNameAria")}
             className="h-9 w-full rounded-lg border border-border/60 bg-transparent px-3 text-sm outline-hidden placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
             data-testid="new-chat-name"
             disabled={isPending}
@@ -675,7 +687,7 @@ export function NewMessageScreen() {
               preparedKeyRef.current = null;
               setChatName(event.target.value);
             }}
-            placeholder="Chat name (optional)"
+            placeholder={t("messages.newMessage.chatNamePlaceholder")}
             type="text"
             value={chatName}
           />
@@ -686,7 +698,7 @@ export function NewMessageScreen() {
           className="px-5 pb-2 text-sm text-muted-foreground"
           data-testid="new-dm-limit"
         >
-          A new chat can start with up to {MAX_NEW_CHAT_PEOPLE} people.
+          {t("messages.newMessage.limit", { count: MAX_NEW_CHAT_PEOPLE })}
         </p>
       ) : null}
       {searchError ? (
@@ -701,7 +713,7 @@ export function NewMessageScreen() {
       ) : null}
 
       <MessageComposer
-        channelName="new message"
+        channelName={t("messages.newMessage.channelName")}
         channelType="dm"
         containerClassName="px-5"
         disabled={isPending || selectedUsers.length === 0}

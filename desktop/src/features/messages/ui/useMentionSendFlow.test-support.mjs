@@ -8,6 +8,7 @@ import ts from "typescript";
 import * as helpers from "./useMentionSendFlow.helpers.ts";
 import * as draftStore from "../lib/useDrafts.ts";
 import * as groupAddOutcome from "../../../shared/api/groupAddOutcome.ts";
+import { t as i18nT } from "../../../shared/i18n/intl.ts";
 
 // Execute the product hooks with real React effects/renders; only external
 // query/mutation/media dependencies are mocked. Deferred promises isolate the
@@ -92,6 +93,7 @@ export async function setup({ lifecycle = false } = {}) {
     react: React,
     "@/features/messages/lib/useDrafts": draftStore,
     "@/shared/api/groupAddOutcome": groupAddOutcome,
+    "@/shared/i18n": { t: i18nT },
     sonner: { toast: { error: (error) => calls.push(["error", error]) } },
     "@/features/agents/hooks": new Proxy(
       {},

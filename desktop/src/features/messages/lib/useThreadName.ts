@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { relayClient } from "@/shared/api/relayClient";
@@ -136,9 +137,7 @@ export function useThreadName(
       };
       const name = input.normalize("NFC").trim();
       if (!isValidThreadName(name))
-        throw new Error(
-          "Use up to 40 English or 20 Korean characters on one line.",
-        );
+        throw new Error(t("messages.threadName.invalid"));
       const latest = await query.refetch();
       if (latest.error) throw latest.error;
       assertCurrent();
@@ -157,8 +156,8 @@ export function useThreadName(
       assertCurrent();
       await relayClient.publishEvent(
         event,
-        "Thread name save timed out",
-        "Could not save thread name",
+        t("messages.threadName.saveTimedOut"),
+        t("messages.threadName.saveFailed"),
         isCurrent,
       );
       assertCurrent();

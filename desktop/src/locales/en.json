@@ -15774,5 +15774,1757 @@
   "channels.workflows.new": "New workflow",
   "@channels.workflows.new": {
     "description": "Button that creates a workflow. Short."
+  },
+  "messages.blocked.label": "Message from a blocked user",
+  "@messages.blocked.label": {
+    "description": "Stands in for the text of a message whose author the user blocked: in the chat timeline and as the Chats list preview line."
+  },
+  "messages.blocked.showLabel": "Message from a blocked user. Show it",
+  "@messages.blocked.showLabel": {
+    "description": "Chat timeline, screen-reader label of the notice that hides a blocked user's message; clicking it shows the message."
+  },
+  "messages.blocked.show": "Show",
+  "@messages.blocked.show": {
+    "description": "Chat timeline, link-style word after 'Message from a blocked user' that reveals the message. Short."
+  },
+  "messages.linkPreview.noText": "No message text",
+  "@messages.linkPreview.noText": {
+    "description": "Preview of a linked or quoted message (and Chats list preview) when the message has no text."
+  },
+  "chats.rowPreview.photo": "Photo",
+  "@chats.rowPreview.photo": {
+    "description": "Chats list, preview line of a row whose latest message has only an attachment. Short."
+  },
+  "chats.threadTitle.untitled": "Thread",
+  "@chats.threadTitle.untitled": {
+    "description": "Chats list and thread header, title of a thread whose first message has no text. Short."
+  },
+  "search.everything": "Search everything",
+  "@search.everything": {
+    "description": "Search: sidebar search button text, tooltip and screen-reader label; also the search dialog's hidden title and input label when no group is chosen."
+  },
+  "search.prompt.prefix": "Search for",
+  "@search.prompt.prefix": {
+    "description": "Search dialog, empty input: animated hint before a rotating word (everything, a group, a message, a thread, an agent). The word follows after a space."
+  },
+  "search.prompt.searchFor": "Search for {word}",
+  "@search.prompt.searchFor": {
+    "description": "Search dialog, empty input hint when animations are off; {word} is one of the rotating words (everything, a group, …)."
+  },
+  "search.prompt.everything": "everything",
+  "@search.prompt.everything": {
+    "description": "Search dialog hint, rotating word after 'Search for'. Lowercase. Short."
+  },
+  "search.prompt.aGroup": "a group",
+  "@search.prompt.aGroup": {
+    "description": "Search dialog hint, rotating word after 'Search for'. Lowercase. Short."
+  },
+  "search.prompt.aMessage": "a message",
+  "@search.prompt.aMessage": {
+    "description": "Search dialog hint, rotating word after 'Search for'. Lowercase. Short."
+  },
+  "search.prompt.aThread": "a thread",
+  "@search.prompt.aThread": {
+    "description": "Search dialog hint, rotating word after 'Search for'. Lowercase. Short."
+  },
+  "search.prompt.anAgent": "an agent",
+  "@search.prompt.anAgent": {
+    "description": "Search dialog hint, rotating word after 'Search for'. AI agent. Lowercase. Short."
+  },
+  "search.scope.remove": "Remove {scope} search scope",
+  "@search.scope.remove": {
+    "description": "Search dialog, screen-reader label and tooltip of the chip that limits search to one group or chat; {scope} is its name."
+  },
+  "search.scope.placeholder": "Search messages",
+  "@search.scope.placeholder": {
+    "description": "Search dialog, input hint when search is limited to one group or chat. Short."
+  },
+  "search.scope.searchIn": "Search in {scope}",
+  "@search.scope.searchIn": {
+    "description": "Search dialog, input label and hidden title when search is limited to one group or chat; {scope} is its name."
+  },
+  "search.currentScope.searchIn": "Search in <b>{name}</b>",
+  "@search.currentScope.searchIn": {
+    "description": "Search dialog, option that limits search to the open group; {name} is the group name, shown bold."
+  },
+  "search.currentScope.conversationWith": "Search conversation with <b>{name}</b>",
+  "@search.currentScope.conversationWith": {
+    "description": "Search dialog, option that limits search to the open direct chat; {name} is the other person, shown bold."
+  },
+  "search.currentScope.hintGroup": "Search messages in this group",
+  "@search.currentScope.hintGroup": {
+    "description": "Search dialog, small grey hint on the right of the 'Search in' option for a group."
+  },
+  "search.currentScope.hintConversation": "Search messages in this conversation.",
+  "@search.currentScope.hintConversation": {
+    "description": "Search dialog, small grey hint on the right of the 'Search conversation with' option for a direct chat."
+  },
+  "search.recent.title": "Recent activity",
+  "@search.recent.title": {
+    "description": "Search dialog, section title and screen-reader list name of recent chats shown before typing. Short."
+  },
+  "search.recent.empty": "No recent activity yet.",
+  "@search.recent.empty": {
+    "description": "Search dialog, shown before typing when there are no recent chats."
+  },
+  "search.section.groups": "Groups",
+  "@search.section.groups": {
+    "description": "Search dialog, section title over group results. Short."
+  },
+  "search.section.chats": "Chats",
+  "@search.section.chats": {
+    "description": "Search dialog, section title over direct-chat results. Short."
+  },
+  "search.section.people": "People",
+  "@search.section.people": {
+    "description": "Search dialog, section title over people results. Short."
+  },
+  "search.section.agents": "Agents",
+  "@search.section.agents": {
+    "description": "Search dialog, section title over AI agent results. Short."
+  },
+  "search.section.messages": "Messages",
+  "@search.section.messages": {
+    "description": "Search dialog, section title over message results. Short."
+  },
+  "search.section.actions": "Actions",
+  "@search.section.actions": {
+    "description": "Search dialog, section title over action rows (Find groups, New group, …). Short."
+  },
+  "search.action.findGroups": "Find groups",
+  "@search.action.findGroups": {
+    "description": "Search dialog, action row that opens the group browser. Short."
+  },
+  "search.action.newGroup": "New group",
+  "@search.action.newGroup": {
+    "description": "Search dialog, action row that creates a group. Short."
+  },
+  "search.action.createAgent": "Create a new agent",
+  "@search.action.createAgent": {
+    "description": "Search dialog, action row that creates an AI agent. Short."
+  },
+  "search.noResults.matches": "No matches for <b>{query}</b>.",
+  "@search.noResults.matches": {
+    "description": "Search dialog, shown when nothing matches; {query} is what the user typed, shown bold."
+  },
+  "search.noResults.matchesIn": "No matches for <b>{query}</b> in <b>{scope}</b>.",
+  "@search.noResults.matchesIn": {
+    "description": "Search dialog, shown when nothing matches; {query} is what the user typed, {scope} the group or chat name, both bold."
+  },
+  "search.noResults.messages": "No messages for <b>{query}</b>.",
+  "@search.noResults.messages": {
+    "description": "Search dialog limited to one group or chat, shown when no message matches; {query} is what the user typed, shown bold."
+  },
+  "search.noResults.messagesIn": "No messages for <b>{query}</b> in <b>{scope}</b>.",
+  "@search.noResults.messagesIn": {
+    "description": "Search dialog limited to one group or chat, shown when no message matches; {query} is what the user typed, {scope} the group or chat name, both bold."
+  },
+  "search.result.directMessage": "Direct message",
+  "@search.result.directMessage": {
+    "description": "Search dialog, title of a message result from a direct chat whose name is unknown. Short."
+  },
+  "search.result.threadSeparator": "thread",
+  "@search.result.threadSeparator": {
+    "description": "Search dialog, screen-reader word between a group name and a thread name in a result row (shown as ›). Lowercase. Short."
+  },
+  "search.result.group": "Group",
+  "@search.result.group": {
+    "description": "Search result card, small grey label saying the result is a group. Short."
+  },
+  "search.result.kindNote": "Note",
+  "@search.result.kindNote": {
+    "description": "Search result card, badge for the kind of result: a note post. Short."
+  },
+  "search.result.kindForumPost": "Forum post",
+  "@search.result.kindForumPost": {
+    "description": "Search result card, badge for the kind of result. Short."
+  },
+  "search.result.kindForumReply": "Forum reply",
+  "@search.result.kindForumReply": {
+    "description": "Search result card, badge for the kind of result. Short."
+  },
+  "search.result.kindAgentJob": "Agent job",
+  "@search.result.kindAgentJob": {
+    "description": "Search result card, badge for the kind of result: a task given to an AI agent. Short."
+  },
+  "search.result.kindAgentUpdate": "Agent update",
+  "@search.result.kindAgentUpdate": {
+    "description": "Search result card, badge for the kind of result: a progress update from an AI agent. Short."
+  },
+  "search.result.kindApprovalRequest": "Approval request",
+  "@search.result.kindApprovalRequest": {
+    "description": "Search result card, badge for the kind of result. Short."
+  },
+  "search.result.kindMessage": "Message",
+  "@search.result.kindMessage": {
+    "description": "Search results, badge or fallback title for a plain chat message. Short."
+  },
+  "search.result.noBody": "No message body.",
+  "@search.result.noBody": {
+    "description": "Search results, preview of a message that has no text."
+  },
+  "search.result.justNow": "just now",
+  "@search.result.justNow": {
+    "description": "Search results, time of a result less than a minute old. Lowercase. Short."
+  },
+  "search.result.minutesAgo": "{minutes}m ago",
+  "@search.result.minutesAgo": {
+    "description": "Search results, time of a result; {minutes} is a number, m = minutes. Short."
+  },
+  "search.result.hoursAgo": "{hours}h ago",
+  "@search.result.hoursAgo": {
+    "description": "Search results, time of a result; {hours} is a number, h = hours. Short."
+  },
+  "search.result.daysAgo": "{days}d ago",
+  "@search.result.daysAgo": {
+    "description": "Search results, time of a recent chat; {days} is a number, d = days. Short."
+  },
+  "chats.header.copyName": "Copy name",
+  "@chats.header.copyName": {
+    "description": "Chat header, tooltip on the copy button next to a direct-message title. Short."
+  },
+  "chats.header.copyGroupName": "Copy group name",
+  "@chats.header.copyGroupName": {
+    "description": "Chat header, tooltip on the copy button next to a group title. Short."
+  },
+  "chats.header.copyNameLabel": "Copy name: {title}",
+  "@chats.header.copyNameLabel": {
+    "description": "Chat header, screen-reader label of the copy button next to a direct-message title; {title} is the chat name."
+  },
+  "chats.header.copyGroupNameLabel": "Copy group name: {title}",
+  "@chats.header.copyGroupNameLabel": {
+    "description": "Chat header, screen-reader label of the copy button next to a group title; {title} is the group name."
+  },
+  "chats.header.nameCopied": "Name copied",
+  "@chats.header.nameCopied": {
+    "description": "Chat header, toast after copying a direct-message title. Short."
+  },
+  "chats.header.groupNameCopied": "Group name copied",
+  "@chats.header.groupNameCopied": {
+    "description": "Chat header, toast after copying a group title. Short."
+  },
+  "chats.header.copyNameFailed": "Failed to copy name",
+  "@chats.header.copyNameFailed": {
+    "description": "Chat header, error toast when copying a direct-message title fails."
+  },
+  "chats.header.copyGroupNameFailed": "Failed to copy group name",
+  "@chats.header.copyGroupNameFailed": {
+    "description": "Chat header, error toast when copying a group title fails."
+  },
+  "messages.system.someone": "Someone",
+  "@messages.system.someone": {
+    "description": "Chat timeline system line (join, leave, topic change…), name used when the person is unknown."
+  },
+  "messages.system.inlineYou": "you",
+  "@messages.system.inlineYou": {
+    "description": "Chat timeline system line, the reader's own name in the middle of a sentence, as in 'added by you'. Lowercase."
+  },
+  "messages.system.addedBy": "added by",
+  "@messages.system.addedBy": {
+    "description": "Chat timeline system line after a member's name, followed by the name of who added them: 'Alice added by Bob'. The two names are separate elements."
+  },
+  "messages.system.youWereAddedBy": "were added by",
+  "@messages.system.youWereAddedBy": {
+    "description": "Chat timeline system line after 'You', followed by the name of who added you: 'You were added by Bob'. The names are separate elements."
+  },
+  "messages.system.wasAdded": "was added",
+  "@messages.system.wasAdded": {
+    "description": "Chat timeline system line after a member's name: 'Alice was added'."
+  },
+  "messages.system.youWereAdded": "were added",
+  "@messages.system.youWereAdded": {
+    "description": "Chat timeline system line after 'You': 'You were added'."
+  },
+  "messages.system.addedByAlongWith": "added by {actor}, along with {others}",
+  "@messages.system.addedByAlongWith": {
+    "description": "Chat timeline system line after a member's name: several people added by one person. {actor} is who added them, {others} the list of the other added people (e.g. 'Ann, Bo, and 2 others')."
+  },
+  "messages.system.youWereAddedByAlongWith": "were added by {actor}, along with {others}",
+  "@messages.system.youWereAddedByAlongWith": {
+    "description": "Chat timeline system line after 'You': several people added by one person. {actor} is who added them, {others} the list of the other added people."
+  },
+  "messages.system.wasAddedAlongWith": "was added along with {others}",
+  "@messages.system.wasAddedAlongWith": {
+    "description": "Chat timeline system line after a member's name; {others} is the list of the other added people (e.g. 'Ann, Bo, and 2 others')."
+  },
+  "messages.system.youWereAddedAlongWith": "were added along with {others}",
+  "@messages.system.youWereAddedAlongWith": {
+    "description": "Chat timeline system line after 'You'; {others} is the list of the other added people."
+  },
+  "messages.system.joined": "joined",
+  "@messages.system.joined": {
+    "description": "Chat timeline system line after a member's name: they joined. Short."
+  },
+  "messages.system.arrived": "arrived",
+  "@messages.system.arrived": {
+    "description": "Chat timeline system line after a member's name: they joined or were added (mixed group). Short."
+  },
+  "messages.system.joinedAlongWith": "joined along with {others}",
+  "@messages.system.joinedAlongWith": {
+    "description": "Chat timeline system line after a member's name; {others} is the list of the other people who joined."
+  },
+  "messages.system.arrivedAlongWith": "arrived along with {others}",
+  "@messages.system.arrivedAlongWith": {
+    "description": "Chat timeline system line after a member's name; {others} is the list of the other people who joined or were added."
+  },
+  "messages.system.othersCount": "{count, plural, one {# other} other {# others}}",
+  "@messages.system.othersCount": {
+    "description": "Chat timeline system line, end of a list of names, e.g. 'Ann, Bo, Cy, and 3 others'. Hovering shows the names. Short."
+  },
+  "messages.list.two": "{first} and {second}",
+  "@messages.list.two": {
+    "description": "A list of two names, e.g. in timeline lines ('Ann and Bo joined') and reaction popups."
+  },
+  "messages.list.more": "{list}, {next}",
+  "@messages.list.more": {
+    "description": "Adds one more name to a list of three or more names (timeline lines, reaction popups)."
+  },
+  "messages.list.last": "{list}, and {last}",
+  "@messages.list.last": {
+    "description": "Adds the last name (or 'N others') to a list of three or more names (timeline lines, reaction popups)."
+  },
+  "messages.system.joinedThenLeft": "{room, select, chat {joined, then left the chat} other {joined, then left the group}}",
+  "@messages.system.joinedThenLeft": {
+    "description": "Chat timeline system line after a member's name."
+  },
+  "messages.system.joinedRoom": "{room, select, chat {joined the chat} other {joined the group}}",
+  "@messages.system.joinedRoom": {
+    "description": "Chat timeline system line after a member's name."
+  },
+  "messages.system.leftRoom": "{room, select, chat {left the chat} other {left the group}}",
+  "@messages.system.leftRoom": {
+    "description": "Chat timeline system line after a member's name."
+  },
+  "messages.system.removedMember": "{room, select, chat {removed {target} from the chat} other {removed {target} from the group}}",
+  "@messages.system.removedMember": {
+    "description": "Chat timeline system line after the name of who removed someone; {target} is the removed person's name."
+  },
+  "messages.system.clearedField": "{field, select, purpose {cleared the purpose} other {cleared the topic}}",
+  "@messages.system.clearedField": {
+    "description": "Chat timeline system line after a person's name: they cleared the group's topic or purpose text."
+  },
+  "messages.system.changedField": "{field, select, purpose {changed the purpose to “{value}”} other {changed the topic to “{value}”}}",
+  "@messages.system.changedField": {
+    "description": "Chat timeline system line after a person's name; {value} is the new topic or purpose text, in curly quotes."
+  },
+  "messages.system.goalsOn": "turned goals on",
+  "@messages.system.goalsOn": {
+    "description": "Chat timeline system line after a person's name: they switched on the group's goals feature."
+  },
+  "messages.system.goalsOff": "turned goals off",
+  "@messages.system.goalsOff": {
+    "description": "Chat timeline system line after a person's name: they switched off the group's goals feature."
+  },
+  "messages.system.changedPhoto": "{room, select, chat {changed the chat photo} other {changed the group photo}}",
+  "@messages.system.changedPhoto": {
+    "description": "Chat timeline system line after a person's name."
+  },
+  "messages.system.removedPhoto": "{room, select, chat {removed the chat photo} other {removed the group photo}}",
+  "@messages.system.removedPhoto": {
+    "description": "Chat timeline system line after a person's name."
+  },
+  "messages.system.createdRoom": "{room, select, chat {created this chat} other {created this group}}",
+  "@messages.system.createdRoom": {
+    "description": "Chat timeline system line after a person's name."
+  },
+  "messages.system.archivedRoom": "{room, select, chat {archived this chat} other {archived this group}}",
+  "@messages.system.archivedRoom": {
+    "description": "Chat timeline system line after a person's name."
+  },
+  "messages.system.unarchivedRoom": "{room, select, chat {unarchived this chat} other {unarchived this group}}",
+  "@messages.system.unarchivedRoom": {
+    "description": "Chat timeline system line after a person's name."
+  },
+  "messages.system.removedByModerators": "Removed by community moderators",
+  "@messages.system.removedByModerators": {
+    "description": "Chat timeline, shown in place of a message moderators removed; the reason follows."
+  },
+  "messages.system.removedAMessage": "removed a message",
+  "@messages.system.removedAMessage": {
+    "description": "Chat timeline system line after a person's name: they deleted their message."
+  },
+  "messages.actions.openReactions": "Open reactions",
+  "@messages.actions.openReactions": {
+    "description": "Chat timeline, screen-reader label of the smiley button that opens the reaction picker on a message."
+  },
+  "messages.actions.react": "React",
+  "@messages.actions.react": {
+    "description": "Chat timeline, tooltip on the smiley button that adds an emoji reaction to a message. Short."
+  },
+  "messages.mentions.agentAuthorizationFailed": "Could not authorize a mentioned agent. Check its access and group membership, then retry or remove the mention.",
+  "@messages.mentions.agentAuthorizationFailed": {
+    "description": "Message composer, error shown when sending a message that mentions an AI agent the user may not address."
+  },
+  "messages.mentions.dmThreadAgentNotMember": "Agents must already be in a DM to be mentioned in its threads. Start a new conversation that includes the agent.",
+  "@messages.mentions.dmThreadAgentNotMember": {
+    "description": "Message composer in a thread of a direct chat, error when mentioning an AI agent that is not in the chat."
+  },
+  "messages.mentions.dmMembersLoading": "Checking conversation members. Try again in a moment.",
+  "@messages.mentions.dmMembersLoading": {
+    "description": "Message composer in a thread of a direct chat, error while the member list is still loading."
+  },
+  "messages.mentions.ambiguous": "The mention @{name} is ambiguous. Choose a recipient from the mention picker.",
+  "@messages.mentions.ambiguous": {
+    "description": "Message composer, error when an @mention matches several people; {name} is the typed name."
+  },
+  "messages.upload.phasePreparing": "Preparing",
+  "@messages.upload.phasePreparing": {
+    "description": "Message composer, upload progress pill: files are being prepared. Short."
+  },
+  "messages.upload.phaseProcessing": "Processing",
+  "@messages.upload.phaseProcessing": {
+    "description": "Message composer, upload progress pill: a video or several files are being processed. Short."
+  },
+  "messages.upload.phaseConverting": "Converting",
+  "@messages.upload.phaseConverting": {
+    "description": "Message composer, upload progress pill: an image is being converted. Short."
+  },
+  "messages.upload.phaseUploading": "Uploading",
+  "@messages.upload.phaseUploading": {
+    "description": "Message composer, upload progress pill. Short."
+  },
+  "messages.upload.phaseFinishing": "Finishing",
+  "@messages.upload.phaseFinishing": {
+    "description": "Message composer, upload progress pill: upload almost done. Short."
+  },
+  "messages.link.openGroup": "Open group {name}",
+  "@messages.link.openGroup": {
+    "description": "Message composer, screen-reader label of a link chip pointing to a group; {name} is the group name."
+  },
+  "messages.link.kuzzLink": "Kuzz link",
+  "@messages.link.kuzzLink": {
+    "description": "Message composer, text and screen-reader label of a link chip to an app item that could not be recognised. Short."
+  },
+  "messages.link.openRepository": "Open repository {repo}",
+  "@messages.link.openRepository": {
+    "description": "Message composer, screen-reader label of a link chip pointing to a code repository; {repo} is its name."
+  },
+  "messages.link.openProject": "Open project {project}",
+  "@messages.link.openProject": {
+    "description": "Message composer, screen-reader label of a link chip pointing to a project; {project} is its name."
+  },
+  "messages.link.openPullRequest": "Open pull request {id} in repository {repo}",
+  "@messages.link.openPullRequest": {
+    "description": "Message composer, screen-reader label of a link chip pointing to a pull request; {id} is a short code, {repo} the repository name."
+  },
+  "messages.link.openIssue": "Open issue {id} in repository {repo}",
+  "@messages.link.openIssue": {
+    "description": "Message composer, screen-reader label of a link chip pointing to an issue; {id} is a short code, {repo} the repository name."
+  },
+  "messages.link.threadIn": "Thread in {channel}",
+  "@messages.link.threadIn": {
+    "description": "Message text, label of a link to a thread; {channel} is the group or chat name. An excerpt of the thread may follow after a dash."
+  },
+  "messages.wave.someoneWaved": "Someone waved at you.",
+  "@messages.wave.someoneWaved": {
+    "description": "Chat timeline, text of a 'wave' greeting message when the sender's text is missing."
+  },
+  "messages.linkEditor.editLink": "Edit link",
+  "@messages.linkEditor.editLink": {
+    "description": "Message composer link editor: title of the link dialog for an existing link, and screen-reader label of the pencil button on a link."
+  },
+  "messages.linkEditor.addLink": "Add link",
+  "@messages.linkEditor.addLink": {
+    "description": "Message composer link editor, dialog title when adding a new link."
+  },
+  "messages.linkEditor.unlink": "Unlink",
+  "@messages.linkEditor.unlink": {
+    "description": "Message composer, screen-reader label of the button that removes a link but keeps its text. Short."
+  },
+  "messages.linkEditor.displayText": "Display text",
+  "@messages.linkEditor.displayText": {
+    "description": "Message composer link dialog, label of the field for the link's visible text. Short."
+  },
+  "messages.linkEditor.displayTextPlaceholder": "Text to display",
+  "@messages.linkEditor.displayTextPlaceholder": {
+    "description": "Message composer link dialog, placeholder of the link text field."
+  },
+  "messages.linkEditor.url": "URL",
+  "@messages.linkEditor.url": {
+    "description": "Message composer link dialog, label of the web address field. Short."
+  },
+  "messages.delete.failed": "Failed to delete message: {error}",
+  "@messages.delete.failed": {
+    "description": "Error toast when deleting a message fails; {error} is the technical reason."
+  },
+  "messages.composer.placeholder": "Write a message…",
+  "@messages.composer.placeholder": {
+    "description": "Message composer, placeholder in the empty text box."
+  },
+  "messages.threadName.invalid": "Use up to 40 English or 20 Korean characters on one line.",
+  "@messages.threadName.invalid": {
+    "description": "Thread name dialog, error when the name is too long or has line breaks."
+  },
+  "messages.threadName.saveTimedOut": "Thread name save timed out",
+  "@messages.threadName.saveTimedOut": {
+    "description": "Thread name dialog, error when saving takes too long."
+  },
+  "messages.threadName.saveFailed": "Could not save thread name",
+  "@messages.threadName.saveFailed": {
+    "description": "Thread name dialog, error when saving the thread name fails."
+  },
+  "messages.voiceNote.notAvailable": "Voice recording is not available in this environment.",
+  "@messages.voiceNote.notAvailable": {
+    "description": "Message composer, error when the device cannot record voice notes."
+  },
+  "messages.voiceNote.prepareFailed": "Kuzz could not prepare this voice note for upload.",
+  "@messages.voiceNote.prepareFailed": {
+    "description": "Message composer, error after recording a voice note that could not be processed."
+  },
+  "messages.voiceNote.interrupted": "The voice recording was interrupted.",
+  "@messages.voiceNote.interrupted": {
+    "description": "Message composer, error when voice-note recording stopped unexpectedly."
+  },
+  "messages.voiceNote.allowMicrophone": "Allow Kuzz to access your microphone to record a voice note.",
+  "@messages.voiceNote.allowMicrophone": {
+    "description": "Message composer, error when microphone permission is denied."
+  },
+  "messages.voiceNote.startFailed": "Kuzz could not start the voice recorder.",
+  "@messages.voiceNote.startFailed": {
+    "description": "Message composer, error when voice-note recording could not start."
+  },
+  "messages.diff.typeAdd": "New file",
+  "@messages.diff.typeAdd": {
+    "description": "Code change (diff) card, badge on a file that was added. Short."
+  },
+  "messages.diff.typeCopy": "Copied",
+  "@messages.diff.typeCopy": {
+    "description": "Code change (diff) card, badge on a file that was copied. Short."
+  },
+  "messages.diff.typeDelete": "Deleted",
+  "@messages.diff.typeDelete": {
+    "description": "Code change (diff) card, badge on a file that was deleted. Short."
+  },
+  "messages.diff.typeModify": "Modified",
+  "@messages.diff.typeModify": {
+    "description": "Code change (diff) card, badge on a file that was changed. Short."
+  },
+  "messages.diff.typeRename": "Renamed",
+  "@messages.diff.typeRename": {
+    "description": "Code change (diff) card, badge on a file that was renamed. Short."
+  },
+  "messages.diff.empty": "No diff content",
+  "@messages.diff.empty": {
+    "description": "Code change (diff) card, shown when the change has no content."
+  },
+  "messages.diff.noTextChanges": "No textual hunks in this diff.",
+  "@messages.diff.noTextChanges": {
+    "description": "Code change (diff) card, shown under a file whose change has no text lines (e.g. a binary file)."
+  },
+  "messages.diff.viewerTitle": "Diff Viewer",
+  "@messages.diff.viewerTitle": {
+    "description": "Expanded code change (diff) dialog, title when the file name is unknown. Short."
+  },
+  "messages.diff.unified": "Unified",
+  "@messages.diff.unified": {
+    "description": "Expanded code change (diff) dialog, button that shows old and new lines in one column. Short."
+  },
+  "messages.diff.split": "Split",
+  "@messages.diff.split": {
+    "description": "Expanded code change (diff) dialog, button that shows old and new lines side by side. Short."
+  },
+  "messages.diff.expand": "Expand diff",
+  "@messages.diff.expand": {
+    "description": "Code change (diff) card, tooltip and screen-reader label of the button that opens the change in a large dialog."
+  },
+  "messages.diff.truncated": "Diff truncated.",
+  "@messages.diff.truncated": {
+    "description": "Code change (diff) card, warning at the bottom when only part of the change is shown. A link to the full change follows."
+  },
+  "messages.diff.viewFullOn": "View full diff on {host}",
+  "@messages.diff.viewFullOn": {
+    "description": "Code change (diff) card, link after 'Diff truncated.'; {host} is a website name such as github.com."
+  },
+  "messages.diff.viewFullAtSource": "View the full diff at the source repository.",
+  "@messages.diff.viewFullAtSource": {
+    "description": "Code change (diff) card, text after 'Diff truncated.' when no link is available."
+  },
+  "messages.threadName.rename": "Rename thread",
+  "@messages.threadName.rename": {
+    "description": "Thread panel header, screen-reader label of the pencil button when the thread has a name."
+  },
+  "messages.threadName.set": "Set thread name",
+  "@messages.threadName.set": {
+    "description": "Thread panel header, screen-reader label of the pencil button when the thread has no name yet."
+  },
+  "messages.threadName.retry": "Retry name",
+  "@messages.threadName.retry": {
+    "description": "Thread panel header, button shown when the thread name failed to load. Short."
+  },
+  "messages.threadName.title": "Thread name",
+  "@messages.threadName.title": {
+    "description": "Thread name dialog, title and screen-reader label of the name field. Short."
+  },
+  "messages.threadName.description": "Visible to everyone in this group. Up to 40 English or 20 Korean characters. Leave empty to remove the name.",
+  "@messages.threadName.description": {
+    "description": "Thread name dialog, explanation under the title."
+  },
+  "messages.threadName.count": "{count} / 40 · English 1, Korean 2",
+  "@messages.threadName.count": {
+    "description": "Thread name dialog, small counter under the name field; {count} is the used length. Korean letters count double."
+  },
+  "messages.threadName.saving": "Saving…",
+  "@messages.threadName.saving": {
+    "description": "Thread name dialog, save button while saving. Short."
+  },
+  "messages.send.notSent": "Not sent",
+  "@messages.send.notSent": {
+    "description": "Chat timeline, under or beside your own message the server did not accept (also screen-reader label of the warning icon). Short."
+  },
+  "messages.send.sending": "Sending",
+  "@messages.send.sending": {
+    "description": "Chat timeline, screen-reader label of the clock icon on your own message while it is being sent. Short."
+  },
+  "messages.unread.dividerLabel": "New messages",
+  "@messages.unread.dividerLabel": {
+    "description": "Chat timeline, screen-reader label of the line above the first unread message."
+  },
+  "messages.unread.divider": "New",
+  "@messages.unread.divider": {
+    "description": "Chat timeline, small uppercase label on the line above the first unread message. Short."
+  },
+  "messages.threadClosed.taskClosed": "Task closed",
+  "@messages.threadClosed.taskClosed": {
+    "description": "Project task thread, screen-reader label of the banner shown when the task is closed. Short."
+  },
+  "messages.threadClosed.taskBanner": "Task closed. The result was reported in the group. Start new work there; replying here reopens this thread.",
+  "@messages.threadClosed.taskBanner": {
+    "description": "Project task thread, banner under the last reply when the task is closed."
+  },
+  "messages.threadClosed.closed": "Thread closed",
+  "@messages.threadClosed.closed": {
+    "description": "Thread panel, line under the last reply of a closed thread (also its screen-reader label). Short."
+  },
+  "messages.threadClosed.closedBy": "{name} closed this thread",
+  "@messages.threadClosed.closedBy": {
+    "description": "Thread panel, line under the last reply of a closed thread; {name} is who closed it. A 'Reopen' button may follow."
+  },
+  "messages.threadClosed.reopen": "Reopen",
+  "@messages.threadClosed.reopen": {
+    "description": "Thread panel, button after 'closed this thread' that reopens the thread. Short."
+  },
+  "messages.timeline.loadFailedTitle": "Couldn't load messages",
+  "@messages.timeline.loadFailedTitle": {
+    "description": "Chat timeline, title of the error card when the message history failed to load."
+  },
+  "messages.timeline.loadFailedBody": "The group history didn't load. Check your connection and try again.",
+  "@messages.timeline.loadFailedBody": {
+    "description": "Chat timeline, text of the error card when the message history failed to load. A Retry button follows."
+  },
+  "messages.intro.beginningOf": "This is the beginning of the <b>{kind}</b>.",
+  "@messages.intro.beginningOf": {
+    "description": "Empty chat or group, line under its name at the top of the timeline; {kind} is a word like 'group' or 'chat', shown bold."
+  },
+  "messages.voiceNote.retry": "Retry voice note",
+  "@messages.voiceNote.retry": {
+    "description": "Voice note player, screen-reader label of the play button after playback failed."
+  },
+  "messages.voiceNote.loading": "Loading voice note",
+  "@messages.voiceNote.loading": {
+    "description": "Voice note player, screen-reader label of the play button while the audio loads."
+  },
+  "messages.voiceNote.pause": "Pause voice note",
+  "@messages.voiceNote.pause": {
+    "description": "Voice note player, screen-reader label of the pause button."
+  },
+  "messages.voiceNote.play": "Play voice note",
+  "@messages.voiceNote.play": {
+    "description": "Voice note player, screen-reader label of the play button."
+  },
+  "messages.voiceNote.unavailable": "Audio unavailable. Retry playback.",
+  "@messages.voiceNote.unavailable": {
+    "description": "Voice note player, error shown in place of the waveform when the audio cannot be played."
+  },
+  "messages.voiceNote.waveformUnavailable": "Waveform preview unavailable. Playback may still work.",
+  "@messages.voiceNote.waveformUnavailable": {
+    "description": "Voice note player, screen-reader notice when the waveform picture could not be drawn."
+  },
+  "messages.voiceNote.position": "Voice note playback position",
+  "@messages.voiceNote.position": {
+    "description": "Voice note player, screen-reader label of the seek slider."
+  },
+  "messages.voiceNote.speed": "Playback speed {speed}; next {next}",
+  "@messages.voiceNote.speed": {
+    "description": "Voice note player, screen-reader label of the speed button; {speed} and {next} are speeds like 1× or 1.5×."
+  },
+  "messages.voiceNote.remove": "Remove voice note",
+  "@messages.voiceNote.remove": {
+    "description": "Message composer, screen-reader label of the button that removes an attached voice note."
+  },
+  "messages.voiceNote.finish": "Finish voice note",
+  "@messages.voiceNote.finish": {
+    "description": "Message composer, screen-reader label of the stop button that ends a voice-note recording."
+  },
+  "messages.voiceNote.defaultName": "Voice note",
+  "@messages.voiceNote.defaultName": {
+    "description": "Message composer, name of an attached voice note when it has no file name. Short."
+  },
+  "messages.attachment.download": "Download {name}",
+  "@messages.attachment.download": {
+    "description": "Chat timeline, screen-reader label of the download button on an attachment; {name} is the file name."
+  },
+  "messages.attachment.downloadShort": "Download",
+  "@messages.attachment.downloadShort": {
+    "description": "Chat timeline, tooltip of the download button on an attachment. Short."
+  },
+  "messages.attachment.downloadFailed": "Download failed",
+  "@messages.attachment.downloadFailed": {
+    "description": "Error toast when downloading an attachment fails."
+  },
+  "messages.address.moreAgents": "{count, plural, one {# more addressed agent} other {# more addressed agents}}",
+  "@messages.address.moreAgents": {
+    "description": "Message composer, screen-reader label of the '+N' badge after the avatars of AI agents the message will be addressed to."
+  },
+  "messages.address.manageMentions": "Manage mentions",
+  "@messages.address.manageMentions": {
+    "description": "Message composer, tooltip and screen-reader label of the @ button when agents are already addressed."
+  },
+  "messages.address.mentionSomeone": "Mention someone",
+  "@messages.address.mentionSomeone": {
+    "description": "Message composer, tooltip and screen-reader label of the @ button."
+  },
+  "messages.address.stopAutoMention": "Don't automatically mention {name} here",
+  "@messages.address.stopAutoMention": {
+    "description": "Message composer, tooltip and screen-reader label of an addressed AI agent's avatar; clicking stops mentioning that agent in this chat."
+  },
+  "messages.address.turnOff": "Turn off",
+  "@messages.address.turnOff": {
+    "description": "Message composer, button in the small popup saying an agent will be mentioned automatically; turns that off. Short."
+  },
+  "messages.send.sendMessage": "Send message",
+  "@messages.send.sendMessage": {
+    "description": "Message composer, screen-reader label of the send button."
+  },
+  "messages.attachment.dropToUpload": "Drop files to upload",
+  "@messages.attachment.dropToUpload": {
+    "description": "Message composer, label shown while dragging files over it."
+  },
+  "messages.attachment.teamSnapshot": "Team",
+  "@messages.attachment.teamSnapshot": {
+    "description": "Message composer, name of an attached team card when it has no name. Short."
+  },
+  "messages.attachment.agentSnapshot": "Agent",
+  "@messages.attachment.agentSnapshot": {
+    "description": "Message composer, name of an attached AI agent card when it has no name. Short."
+  },
+  "messages.attachment.removeNamed": "Remove {name}",
+  "@messages.attachment.removeNamed": {
+    "description": "Message composer, screen-reader label of the remove button on an attachment; {name} is its name."
+  },
+  "messages.attachment.withHash": "Attachment {hash}",
+  "@messages.attachment.withHash": {
+    "description": "Message composer, name of an attached image; {hash} is a short code identifying it."
+  },
+  "messages.attachment.videoWithHash": "Video attachment {hash}",
+  "@messages.attachment.videoWithHash": {
+    "description": "Message composer, name of an attached video; {hash} is a short code identifying it."
+  },
+  "messages.attachment.previewTitle": "{name} preview",
+  "@messages.attachment.previewTitle": {
+    "description": "Message composer, hidden title of the full-size attachment preview; {name} is the attachment name."
+  },
+  "messages.attachment.previewDescription": "Full-size attachment preview. Press Escape or click outside to close.",
+  "@messages.attachment.previewDescription": {
+    "description": "Message composer, screen-reader description of the full-size attachment preview."
+  },
+  "messages.attachment.closePreview": "Close lightbox",
+  "@messages.attachment.closePreview": {
+    "description": "Message composer, screen-reader label of the backdrop that closes the full-size attachment preview."
+  },
+  "messages.attachment.revert": "Revert",
+  "@messages.attachment.revert": {
+    "description": "Full-size attachment preview, button that removes your drawing from an image. Short."
+  },
+  "messages.attachment.revertToOriginal": "Revert to original",
+  "@messages.attachment.revertToOriginal": {
+    "description": "Full-size attachment preview, tooltip of the Revert button."
+  },
+  "messages.attachment.removeSpoiler": "Remove spoiler",
+  "@messages.attachment.removeSpoiler": {
+    "description": "Message composer, tooltip and screen-reader label of the button that un-hides an attachment marked as spoiler."
+  },
+  "messages.attachment.markSpoiler": "Mark as spoiler",
+  "@messages.attachment.markSpoiler": {
+    "description": "Message composer, tooltip and screen-reader label of the button that hides an attachment behind a blur until clicked."
+  },
+  "messages.attachment.drawOnImage": "Draw on image",
+  "@messages.attachment.drawOnImage": {
+    "description": "Message composer, tooltip and screen-reader label of the button that opens the drawing tool on an attached image."
+  },
+  "messages.attachment.remove": "Remove attachment",
+  "@messages.attachment.remove": {
+    "description": "Message composer, tooltip and screen-reader label of the remove button on an attachment."
+  },
+  "messages.attachment.queued": "Queued attachment",
+  "@messages.attachment.queued": {
+    "description": "Message composer, image description of an attachment waiting to upload."
+  },
+  "messages.attachment.generic": "Attachment",
+  "@messages.attachment.generic": {
+    "description": "Message composer, name of a file waiting to upload when it has no file name. Short."
+  },
+  "messages.attachment.uploadingNamed": "Uploading {name}",
+  "@messages.attachment.uploadingNamed": {
+    "description": "Message composer, screen-reader label of an attachment being uploaded; {name} is the file name."
+  },
+  "messages.attachment.uploadingVideo": "Uploading video",
+  "@messages.attachment.uploadingVideo": {
+    "description": "Message composer, image description of a video being uploaded when its file name is unknown."
+  },
+  "messages.attachment.uploadingAttachment": "Uploading attachment",
+  "@messages.attachment.uploadingAttachment": {
+    "description": "Message composer, screen-reader label of an attachment being uploaded when its file name is unknown."
+  },
+  "messages.attachment.cancelUpload": "Cancel upload",
+  "@messages.attachment.cancelUpload": {
+    "description": "Message composer, tooltip and screen-reader label of the button that stops an upload."
+  },
+  "messages.emojiPicker.insertEmojiOrGif": "Insert emoji or GIF",
+  "@messages.emojiPicker.insertEmojiOrGif": {
+    "description": "Message composer, screen-reader label of the smiley button when GIFs are available."
+  },
+  "messages.emojiPicker.insertEmoji": "Insert emoji",
+  "@messages.emojiPicker.insertEmoji": {
+    "description": "Message composer, screen-reader label of the smiley button."
+  },
+  "messages.emojiPicker.emojiAndGifs": "Emoji and GIFs",
+  "@messages.emojiPicker.emojiAndGifs": {
+    "description": "Message composer, tooltip of the smiley button when GIFs are available. Short."
+  },
+  "messages.emojiPicker.emojiTab": "Emoji",
+  "@messages.emojiPicker.emojiTab": {
+    "description": "Message composer: tooltip of the smiley button, and tab name in the emoji/GIF picker. Short."
+  },
+  "messages.emojiPicker.gifsTab": "GIFs",
+  "@messages.emojiPicker.gifsTab": {
+    "description": "Message composer emoji picker, tab with animated GIF images. Short."
+  },
+  "messages.imageEditor.penRed": "Red pen",
+  "@messages.imageEditor.penRed": {
+    "description": "Image drawing tool, screen-reader label of the red color button. Short."
+  },
+  "messages.imageEditor.penYellow": "Yellow pen",
+  "@messages.imageEditor.penYellow": {
+    "description": "Image drawing tool, screen-reader label of the yellow color button. Short."
+  },
+  "messages.imageEditor.penGreen": "Green pen",
+  "@messages.imageEditor.penGreen": {
+    "description": "Image drawing tool, screen-reader label of the green color button. Short."
+  },
+  "messages.imageEditor.penBlue": "Blue pen",
+  "@messages.imageEditor.penBlue": {
+    "description": "Image drawing tool, screen-reader label of the blue color button. Short."
+  },
+  "messages.imageEditor.penWhite": "White pen",
+  "@messages.imageEditor.penWhite": {
+    "description": "Image drawing tool, screen-reader label of the white color button. Short."
+  },
+  "messages.imageEditor.penBlack": "Black pen",
+  "@messages.imageEditor.penBlack": {
+    "description": "Image drawing tool, screen-reader label of the black color button. Short."
+  },
+  "messages.imageEditor.saveFailed": "Could not save the drawing. Please try again.",
+  "@messages.imageEditor.saveFailed": {
+    "description": "Image drawing tool, error when saving the drawn image fails."
+  },
+  "messages.imageEditor.canvas": "Drawing canvas",
+  "@messages.imageEditor.canvas": {
+    "description": "Image drawing tool, screen-reader label of the area you draw on."
+  },
+  "messages.imageEditor.strokeWidth": "Stroke width",
+  "@messages.imageEditor.strokeWidth": {
+    "description": "Image drawing tool, screen-reader label of the pen thickness slider."
+  },
+  "messages.imageEditor.undo": "Undo last stroke",
+  "@messages.imageEditor.undo": {
+    "description": "Image drawing tool, screen-reader label of the undo button."
+  },
+  "messages.imageEditor.undoTooltip": "Undo (⌘Z)",
+  "@messages.imageEditor.undoTooltip": {
+    "description": "Image drawing tool, tooltip of the undo button with its keyboard shortcut. Short."
+  },
+  "messages.imageEditor.redo": "Redo stroke",
+  "@messages.imageEditor.redo": {
+    "description": "Image drawing tool, screen-reader label of the redo button."
+  },
+  "messages.imageEditor.redoTooltip": "Redo (⇧⌘Z)",
+  "@messages.imageEditor.redoTooltip": {
+    "description": "Image drawing tool, tooltip of the redo button with its keyboard shortcut. Short."
+  },
+  "messages.composerBanner.quoting": "Quoting {name}",
+  "@messages.composerBanner.quoting": {
+    "description": "Message composer, banner above the input when the next message quotes another; {name} is the quoted message's author."
+  },
+  "messages.composerBanner.cancelQuote": "Cancel quote",
+  "@messages.composerBanner.cancelQuote": {
+    "description": "Message composer, screen-reader label of the X button on the quoting banner."
+  },
+  "messages.composerBanner.editing": "Editing message",
+  "@messages.composerBanner.editing": {
+    "description": "Message composer, banner above the input while editing a sent message."
+  },
+  "messages.composerBanner.cancelEdit": "Cancel edit",
+  "@messages.composerBanner.cancelEdit": {
+    "description": "Message composer, screen-reader label of the X button on the editing banner."
+  },
+  "messages.composerBanner.replyingTo": "Replying to {name}",
+  "@messages.composerBanner.replyingTo": {
+    "description": "Message composer, banner above the input when replying; {name} is the author of the message being replied to."
+  },
+  "messages.composerBanner.cancelReply": "Cancel reply",
+  "@messages.composerBanner.cancelReply": {
+    "description": "Message composer, screen-reader label of the X button on the replying banner."
+  },
+  "messages.upload.skip": "Skip",
+  "@messages.upload.skip": {
+    "description": "Message composer, upload progress pill: button that skips preparing link previews. Short."
+  },
+  "messages.upload.preparingLinkPreview": "Preparing link preview",
+  "@messages.upload.preparingLinkPreview": {
+    "description": "Message composer, upload progress pill while previews for links in the message are prepared."
+  },
+  "messages.deleteDialog.title": "Delete message?",
+  "@messages.deleteDialog.title": {
+    "description": "Confirmation dialog title before deleting a message."
+  },
+  "messages.deleteDialog.description": "This will permanently delete this message and cannot be undone.",
+  "@messages.deleteDialog.description": {
+    "description": "Confirmation dialog text before deleting a message."
+  },
+  "messages.intro.openProfile": "Open profile for {name}",
+  "@messages.intro.openProfile": {
+    "description": "Start of a direct chat, screen-reader label of a participant's avatar; {name} is their name."
+  },
+  "messages.drafts.title": "Drafts",
+  "@messages.drafts.title": {
+    "description": "Drafts panel, small uppercase heading over the list of unsent drafts. Short."
+  },
+  "messages.drafts.none": "No drafts",
+  "@messages.drafts.none": {
+    "description": "Drafts panel, empty state when there are no drafts."
+  },
+  "messages.drafts.unknownGroup": "Unknown group",
+  "@messages.drafts.unknownGroup": {
+    "description": "Drafts panel, place name of a draft whose group can no longer be found. Short."
+  },
+  "messages.drafts.unknownTime": "Unknown time",
+  "@messages.drafts.unknownTime": {
+    "description": "Drafts panel, time of a draft whose creation time is missing. Short."
+  },
+  "messages.drafts.attachmentCount": "{count, plural, one {# attachment} other {# attachments}}",
+  "@messages.drafts.attachmentCount": {
+    "description": "Drafts panel, preview of a draft's attachments (shown instead of text, or under the text)."
+  },
+  "messages.drafts.empty": "Empty draft",
+  "@messages.drafts.empty": {
+    "description": "Drafts panel, preview of a draft with no text and no attachments. Short."
+  },
+  "messages.drafts.sendTitle": "Send message",
+  "@messages.drafts.sendTitle": {
+    "description": "Drafts: title of the send confirmation dialog, and tooltip of the send button on a draft. Short."
+  },
+  "messages.drafts.sendConfirm": "Are you sure you want to send this message to {destination}?",
+  "@messages.drafts.sendConfirm": {
+    "description": "Drafts, send confirmation dialog text; {destination} is a group or person name."
+  },
+  "messages.drafts.viewIn": "View draft in {name}",
+  "@messages.drafts.viewIn": {
+    "description": "Drafts panel, screen-reader label of a draft row; {name} is the group or chat it belongs to."
+  },
+  "messages.drafts.threadDeletedBadge": "thread deleted",
+  "@messages.drafts.threadDeletedBadge": {
+    "description": "Drafts panel, small red badge on a draft whose thread was deleted. Lowercase. Short."
+  },
+  "messages.drafts.open": "Open draft",
+  "@messages.drafts.open": {
+    "description": "Drafts, tooltip of the pencil button that opens the draft in its chat. Short."
+  },
+  "messages.drafts.threadDeleted": "Thread deleted",
+  "@messages.drafts.threadDeleted": {
+    "description": "Drafts, tooltip of a disabled button on a draft whose thread was deleted. Short."
+  },
+  "messages.drafts.noGroupLink": "No group link",
+  "@messages.drafts.noGroupLink": {
+    "description": "Drafts, tooltip of a disabled button on a draft whose group can no longer be found. Short."
+  },
+  "messages.drafts.delete": "Delete draft",
+  "@messages.drafts.delete": {
+    "description": "Drafts panel, tooltip of the trash button on a draft. Short."
+  },
+  "messages.drafts.selectTitle": "Select a draft",
+  "@messages.drafts.selectTitle": {
+    "description": "Draft detail pane, empty state title when no draft is selected."
+  },
+  "messages.drafts.selectDescription": "Pick a draft to preview it and choose what to do next.",
+  "@messages.drafts.selectDescription": {
+    "description": "Draft detail pane, empty state text when no draft is selected."
+  },
+  "messages.drafts.backToList": "Back to drafts list",
+  "@messages.drafts.backToList": {
+    "description": "Draft detail pane, screen-reader label of the back arrow."
+  },
+  "messages.drafts.orphanedNotice": "The original thread was deleted. This draft can no longer be opened or sent.",
+  "@messages.drafts.orphanedNotice": {
+    "description": "Draft detail pane, red notice on a draft whose thread was deleted."
+  },
+  "messages.drafts.draftLabel": "Draft",
+  "@messages.drafts.draftLabel": {
+    "description": "Draft detail pane, grey label after your name above the draft text. Short."
+  },
+  "messages.formatting.bold": "Bold",
+  "@messages.formatting.bold": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the bold button. Short."
+  },
+  "messages.formatting.italic": "Italic",
+  "@messages.formatting.italic": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the italic button. Short."
+  },
+  "messages.formatting.strikethrough": "Strikethrough",
+  "@messages.formatting.strikethrough": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the strike-through button. Short."
+  },
+  "messages.formatting.code": "Code",
+  "@messages.formatting.code": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the inline code button. Short."
+  },
+  "messages.formatting.codeBlock": "Code block",
+  "@messages.formatting.codeBlock": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the code block button. Short."
+  },
+  "messages.formatting.link": "Link",
+  "@messages.formatting.link": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the link button. Short."
+  },
+  "messages.formatting.bulletList": "Bullet list",
+  "@messages.formatting.bulletList": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the bulleted list button. Short."
+  },
+  "messages.formatting.orderedList": "Ordered list",
+  "@messages.formatting.orderedList": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the numbered list button. Short."
+  },
+  "messages.formatting.quote": "Quote",
+  "@messages.formatting.quote": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the block quote button. Short."
+  },
+  "messages.formatting.spoiler": "Spoiler",
+  "@messages.formatting.spoiler": {
+    "description": "Message formatting toolbar, tooltip and screen-reader label of the button that hides text until clicked. Short."
+  },
+  "messages.formatting.withShortcut": "{label} ({shortcut})",
+  "@messages.formatting.withShortcut": {
+    "description": "Message formatting toolbar, tooltip of a button with its keyboard shortcut, e.g. 'Bold (⌘B)'."
+  },
+  "messages.formatting.enterUrl": "Enter URL:",
+  "@messages.formatting.enterUrl": {
+    "description": "Browser prompt asking for a link address (fallback when the link dialog is unavailable)."
+  },
+  "messages.formatting.linkText": "Link text:",
+  "@messages.formatting.linkText": {
+    "description": "Browser prompt asking for a link's visible text (fallback when the link dialog is unavailable)."
+  },
+  "messages.mentionPicker.autoMentionAgents": "Automatically mention agents",
+  "@messages.mentionPicker.autoMentionAgents": {
+    "description": "Mention picker above the composer, title of the switch (and its screen-reader label) that keeps AI agents mentioned in later replies."
+  },
+  "messages.mentionPicker.autoMentionAgentsHint": "Address selected agents in group and thread replies",
+  "@messages.mentionPicker.autoMentionAgentsHint": {
+    "description": "Mention picker, small text under 'Automatically mention agents'."
+  },
+  "messages.mentionPicker.mention": "Mention {name}",
+  "@messages.mentionPicker.mention": {
+    "description": "Mention picker, screen-reader label of a suggestion row; {name} is a person or AI agent."
+  },
+  "messages.mentionPicker.teamAgents": "team · {count, plural, one {# agent} other {# agents}}",
+  "@messages.mentionPicker.teamAgents": {
+    "description": "Mention picker, small grey line under a team of AI agents. Short."
+  },
+  "messages.mentionPicker.agent": "agent",
+  "@messages.mentionPicker.agent": {
+    "description": "Mention picker, small grey word under an AI agent's name. Lowercase. Short."
+  },
+  "messages.mentionPicker.managedBy": "managed by {owner}",
+  "@messages.mentionPicker.managedBy": {
+    "description": "Mention picker, small grey line under an AI agent; {owner} is the person who runs it (may be 'you')."
+  },
+  "messages.mentionPicker.managedByNotInGroup": "managed by {owner} · not in group",
+  "@messages.mentionPicker.managedByNotInGroup": {
+    "description": "Mention picker, small grey line under an AI agent that is not in this group; {owner} is the person who runs it."
+  },
+  "messages.mentionPicker.notInGroup": "not in group",
+  "@messages.mentionPicker.notInGroup": {
+    "description": "Mention picker, small grey line under a person who is not in this group. Short."
+  },
+  "messages.mentionPicker.autoMentionName": "Automatically mention {name}",
+  "@messages.mentionPicker.autoMentionName": {
+    "description": "Mention picker, screen-reader label of the pin button that keeps an AI agent mentioned; {name} is the agent."
+  },
+  "messages.mentionPicker.stopAutoMentionHere": "Don't automatically mention here",
+  "@messages.mentionPicker.stopAutoMentionHere": {
+    "description": "Mention picker, tooltip of the pin button when the AI agent is already mentioned automatically."
+  },
+  "messages.mentionPicker.autoMention": "Automatically mention",
+  "@messages.mentionPicker.autoMention": {
+    "description": "Mention picker, tooltip of the pin button that keeps an AI agent mentioned. Short."
+  },
+  "messages.actions.linkCopied": "Link copied to clipboard",
+  "@messages.actions.linkCopied": {
+    "description": "Toast after copying a link to a message or thread."
+  },
+  "messages.actions.more": "More actions",
+  "@messages.actions.more": {
+    "description": "Message hover bar, tooltip and screen-reader label of the ⋮ button that opens the message menu. Short."
+  },
+  "messages.actions.edit": "Edit message",
+  "@messages.actions.edit": {
+    "description": "Message menu item. Short."
+  },
+  "messages.actions.markRead": "Mark read",
+  "@messages.actions.markRead": {
+    "description": "Message menu item. Short."
+  },
+  "messages.actions.markUnread": "Mark unread",
+  "@messages.actions.markUnread": {
+    "description": "Message menu item. Short."
+  },
+  "messages.actions.followThread": "Follow thread",
+  "@messages.actions.followThread": {
+    "description": "Message menu item: get notified about replies in this thread. Short."
+  },
+  "messages.actions.unfollowThread": "Unfollow thread",
+  "@messages.actions.unfollowThread": {
+    "description": "Message menu item: stop notifications about replies in this thread. Short."
+  },
+  "messages.actions.messageCopied": "Message copied to clipboard",
+  "@messages.actions.messageCopied": {
+    "description": "Toast after copying a message's text."
+  },
+  "messages.actions.copyMessage": "Copy message",
+  "@messages.actions.copyMessage": {
+    "description": "Message menu item: copy the message text. Short."
+  },
+  "messages.actions.remindLater": "Remind me later",
+  "@messages.actions.remindLater": {
+    "description": "Message menu item. Short."
+  },
+  "messages.actions.sendToGroup": "Send to group",
+  "@messages.actions.sendToGroup": {
+    "description": "Message menu item in a thread: also post this reply in the group. Short."
+  },
+  "messages.actions.sentToGroup": "Sent to group",
+  "@messages.actions.sentToGroup": {
+    "description": "Toast after posting a thread reply in the group."
+  },
+  "messages.actions.sendToGroupFailed": "Couldn't send to group",
+  "@messages.actions.sendToGroupFailed": {
+    "description": "Error toast when posting a thread reply in the group fails."
+  },
+  "messages.actions.copyLink": "Copy link",
+  "@messages.actions.copyLink": {
+    "description": "Message hover bar and menu: copy a link to this message. Short."
+  },
+  "messages.actions.report": "Report message",
+  "@messages.actions.report": {
+    "description": "Message menu item: report the message to moderators. Short."
+  },
+  "messages.actions.delete": "Delete message",
+  "@messages.actions.delete": {
+    "description": "Message menu item. Short."
+  },
+  "messages.actions.reactWith": "React with {emoji}",
+  "@messages.actions.reactWith": {
+    "description": "Message hover bar, screen-reader label of a quick reaction button; {emoji} is the emoji's name."
+  },
+  "messages.actions.replyInThread": "Reply in thread",
+  "@messages.actions.replyInThread": {
+    "description": "Message hover bar, tooltip and screen-reader label of the reply button. Short."
+  },
+  "messages.actions.quote": "Quote",
+  "@messages.actions.quote": {
+    "description": "Message hover bar, tooltip and screen-reader label of the quote button. Short."
+  },
+  "messages.agentOwner.srManagedBy": "Agent managed by",
+  "@messages.agentOwner.srManagedBy": {
+    "description": "Next to an AI agent's name in the chat timeline, hidden text for screen readers, followed by the owner's name."
+  },
+  "messages.agentOwner.srOwnerUnavailable": "Agent; owner unavailable",
+  "@messages.agentOwner.srOwnerUnavailable": {
+    "description": "Next to an AI agent's name in the chat timeline, hidden text for screen readers when the owner is unknown."
+  },
+  "messages.agentOwner.managedBy": "managed by",
+  "@messages.agentOwner.managedBy": {
+    "description": "Next to an AI agent's name in the chat timeline, small grey words before the owner's name (a separate clickable element). Lowercase. Short."
+  },
+  "messages.agentOwner.ownerUnavailable": "owner unavailable",
+  "@messages.agentOwner.ownerUnavailable": {
+    "description": "Next to an AI agent's name in the chat timeline, small grey text when the owner is unknown. Lowercase. Short."
+  },
+  "messages.autoRoute.routing": "Routing…",
+  "@messages.autoRoute.routing": {
+    "description": "Under a sent message, while the app picks which AI agent should answer. Short."
+  },
+  "messages.autoRoute.notDelivered": "Not delivered",
+  "@messages.autoRoute.notDelivered": {
+    "description": "Under a sent message, when no AI agent could be picked to answer. Short."
+  },
+  "messages.autoRoute.deliveredTo": "Delivered to",
+  "@messages.autoRoute.deliveredTo": {
+    "description": "Under a sent message, before the names of the AI agents it was passed to (names follow as separate links, comma separated). Short."
+  },
+  "messages.composer.editPlaceholder": "Edit your message",
+  "@messages.composer.editPlaceholder": {
+    "description": "Message composer, placeholder while editing a sent message."
+  },
+  "messages.composer.replyPlaceholder": "Reply to {author} in {channel}",
+  "@messages.composer.replyPlaceholder": {
+    "description": "Message composer, placeholder when replying; {author} is the person replied to, {channel} the group or chat."
+  },
+  "messages.composer.messagePlaceholder": "Message {channel}",
+  "@messages.composer.messagePlaceholder": {
+    "description": "Message composer, placeholder; {channel} is the group or chat name."
+  },
+  "messages.composer.uploadFailed": "Upload failed: {error}",
+  "@messages.composer.uploadFailed": {
+    "description": "Message composer, red notice when an attachment upload failed; {error} is the reason."
+  },
+  "messages.composer.dismiss": "Dismiss",
+  "@messages.composer.dismiss": {
+    "description": "Message composer, link that hides the upload error notice. Short."
+  },
+  "messages.composerToolbar.toggleFormatting": "Toggle formatting",
+  "@messages.composerToolbar.toggleFormatting": {
+    "description": "Message composer, screen-reader label of the button that shows or hides the formatting toolbar."
+  },
+  "messages.composerToolbar.formatting": "Formatting",
+  "@messages.composerToolbar.formatting": {
+    "description": "Message composer, tooltip of the button that shows the formatting toolbar. Short."
+  },
+  "messages.composerToolbar.closeFormatting": "Close formatting",
+  "@messages.composerToolbar.closeFormatting": {
+    "description": "Message composer, tooltip and screen-reader label of the button that hides the formatting toolbar."
+  },
+  "messages.composerToolbar.attachFile": "Attach file",
+  "@messages.composerToolbar.attachFile": {
+    "description": "Message composer, tooltip and screen-reader label of the paperclip button. Short."
+  },
+  "messages.composerToolbar.recordVoiceNote": "Record voice note",
+  "@messages.composerToolbar.recordVoiceNote": {
+    "description": "Message composer, tooltip and screen-reader label of the microphone button."
+  },
+  "messages.quote.loading": "Loading quoted message…",
+  "@messages.quote.loading": {
+    "description": "Chat timeline, header of a quoting message while the quoted message loads."
+  },
+  "messages.quote.unavailable": "Original message unavailable",
+  "@messages.quote.unavailable": {
+    "description": "Chat timeline, header of a quoting message when the quoted message is deleted or cannot be loaded."
+  },
+  "messages.quote.jumpTo": "Jump to quoted message from {author}",
+  "@messages.quote.jumpTo": {
+    "description": "Chat timeline, screen-reader label of the quote header that jumps to the quoted message; {author} wrote it."
+  },
+  "messages.reactions.updateFailed": "Failed to update the reaction.",
+  "@messages.reactions.updateFailed": {
+    "description": "Chat timeline, error under a message when adding or removing a reaction fails."
+  },
+  "messages.reactions.youClickToRemove": "You (click to remove)",
+  "@messages.reactions.youClickToRemove": {
+    "description": "Reaction popup, first name in the list of people who reacted when you reacted too."
+  },
+  "messages.reactions.peopleCount": "{count, plural, one {# person} other {# people}}",
+  "@messages.reactions.peopleCount": {
+    "description": "Reaction popup, who reacted when their names are unknown."
+  },
+  "messages.reactions.reactedWith": "{users} <muted>reacted with</muted>",
+  "@messages.reactions.reactedWith": {
+    "description": "Reaction popup over a reaction: {users} is the list of people; the emoji name is shown on the next line."
+  },
+  "messages.reactions.add": "Add reaction",
+  "@messages.reactions.add": {
+    "description": "Chat timeline, screen-reader label of the smiley button after a message's reactions."
+  },
+  "messages.reactions.toggle": "Toggle {emoji} reaction",
+  "@messages.reactions.toggle": {
+    "description": "Chat timeline, screen-reader label of a reaction pill under a message; clicking adds or removes your reaction."
+  },
+  "messages.row.removePreviewsFailed": "Failed to remove previews: {error}",
+  "@messages.row.removePreviewsFailed": {
+    "description": "Error toast shown when removing link previews from a message fails. {error} is the error detail."
+  },
+  "messages.row.loadingDiff": "Loading diff…",
+  "@messages.row.loadingDiff": {
+    "description": "Placeholder shown in a message while its code diff is loading. Short."
+  },
+  "messages.row.agentOpenToAnyone": "Anyone can send instructions to this agent",
+  "@messages.row.agentOpenToAnyone": {
+    "description": "Tooltip on an agent message badge when anyone may instruct the agent."
+  },
+  "messages.row.agentOpenToSelected": "Selected people can send instructions to this agent",
+  "@messages.row.agentOpenToSelected": {
+    "description": "Tooltip on an agent message badge when only selected people may instruct the agent."
+  },
+  "messages.row.edited": "(edited)",
+  "@messages.row.edited": {
+    "description": "Small marker after a message's text when it was edited. Short."
+  },
+  "messages.row.editedTooltip": "This message has been edited",
+  "@messages.row.editedTooltip": {
+    "description": "Tooltip on the (edited) marker of a message."
+  },
+  "messages.row.loadingDiffViewer": "Loading diff viewer…",
+  "@messages.row.loadingDiffViewer": {
+    "description": "Placeholder shown while the code diff viewer component loads. Short."
+  },
+  "messages.row.collapseRepliesToMessage": "Collapse replies to this message",
+  "@messages.row.collapseRepliesToMessage": {
+    "description": "Label of the guide line button that collapses the replies under a message in a thread."
+  },
+  "messages.thread.collapseThread": "Collapse thread",
+  "@messages.thread.collapseThread": {
+    "description": "Label of the thread guide line button that collapses the whole thread. Short."
+  },
+  "messages.thread.collapseReplies": "Collapse replies",
+  "@messages.thread.collapseReplies": {
+    "description": "Label of the thread guide line button that collapses replies under a reply. Short."
+  },
+  "messages.thread.showInGroup": "Show in group",
+  "@messages.thread.showInGroup": {
+    "description": "Thread panel header icon button (label and tooltip) that jumps to the thread's message in the group. Short."
+  },
+  "messages.thread.loadingEarlierReplies": "Loading earlier replies…",
+  "@messages.thread.loadingEarlierReplies": {
+    "description": "Thread panel link text while older replies are loading. Short."
+  },
+  "messages.thread.showEarlierReplies": "Show earlier replies",
+  "@messages.thread.showEarlierReplies": {
+    "description": "Thread panel link that loads older replies. Short."
+  },
+  "messages.scroll.newMessages": "{count, plural, one {# new message} other {# new messages}}",
+  "@messages.scroll.newMessages": {
+    "description": "Floating pill above the composer when new messages arrived while scrolled up. Short."
+  },
+  "messages.scroll.jumpToLatest": "Jump to latest",
+  "@messages.scroll.jumpToLatest": {
+    "description": "Floating pill above the composer that scrolls to the newest message. Short."
+  },
+  "messages.thread.huddlePlaceholder": "Message the huddle",
+  "@messages.thread.huddlePlaceholder": {
+    "description": "Placeholder text in the composer of a huddle transcript thread."
+  },
+  "messages.thread.reopenPlaceholder": "Sending will reopen this thread",
+  "@messages.thread.reopenPlaceholder": {
+    "description": "Placeholder text in the composer of a closed task thread the user can reopen."
+  },
+  "messages.thread.taskClosedPlaceholder": "Task closed. Start new work in the group, or reply to reopen",
+  "@messages.thread.taskClosedPlaceholder": {
+    "description": "Placeholder text in the composer of a closed task thread."
+  },
+  "messages.thread.replyPlaceholder": "Reply in thread to {author}",
+  "@messages.thread.replyPlaceholder": {
+    "description": "Placeholder text in the thread composer. {author} is the name of the thread's first message author."
+  },
+  "messages.thread.title": "Thread",
+  "@messages.thread.title": {
+    "description": "Default title of the thread side panel header. Short."
+  },
+  "messages.thread.openTitle": "Open {title}",
+  "@messages.thread.openTitle": {
+    "description": "Accessible label and tooltip of the thread panel header title button that opens the group. {title} is the panel title."
+  },
+  "messages.thread.backToConversation": "Back to conversation",
+  "@messages.thread.backToConversation": {
+    "description": "Accessible label of the back button in the thread panel header."
+  },
+  "messages.thread.repliesLoadFailedTitle": "Couldn't load replies",
+  "@messages.thread.repliesLoadFailedTitle": {
+    "description": "Title of the error card shown when a thread's replies fail to load."
+  },
+  "messages.thread.repliesLoadFailedBody": "The thread history didn't load. Check your connection and try again.",
+  "@messages.thread.repliesLoadFailedBody": {
+    "description": "Body of the error card shown when a thread's replies fail to load."
+  },
+  "messages.thread.emptyBranchTitle": "No replies in this branch yet",
+  "@messages.thread.emptyBranchTitle": {
+    "description": "Title of the empty state in a thread branch with no replies."
+  },
+  "messages.thread.emptyBranchBody": "Reply in the thread to continue this branch.",
+  "@messages.thread.emptyBranchBody": {
+    "description": "Body of the empty state in a thread branch with no replies."
+  },
+  "messages.threadSummary.replyCount": "{count, plural, one {# reply} other {# replies}}",
+  "@messages.threadSummary.replyCount": {
+    "description": "Reply count on the thread summary row under a message. Short."
+  },
+  "messages.threadSummary.aria": "{count, plural, one {View thread with # reply} other {View thread with # replies}}",
+  "@messages.threadSummary.aria": {
+    "description": "Accessible label of the thread summary row button under a message."
+  },
+  "messages.threadSummary.ariaWithLastReply": "{count, plural, one {View thread with # reply, last reply {time}} other {View thread with # replies, last reply {time}}}",
+  "@messages.threadSummary.ariaWithLastReply": {
+    "description": "Accessible label of the thread summary row button under a message. {time} is the relative time of the last reply."
+  },
+  "messages.threadSummary.unread": "({count} new)",
+  "@messages.threadSummary.unread": {
+    "description": "Unread reply count after the reply count on a thread summary row. Short."
+  },
+  "messages.threadSummary.lastReply": "last reply {time}",
+  "@messages.threadSummary.lastReply": {
+    "description": "Time of the last reply on a thread summary row. {time} is a relative time such as '5m ago'. Short."
+  },
+  "messages.threadSummary.viewThread": "View thread",
+  "@messages.threadSummary.viewThread": {
+    "description": "Hover text on a thread summary row that opens the thread. Short."
+  },
+  "messages.timeline.emptyTitle": "No messages yet",
+  "@messages.timeline.emptyTitle": {
+    "description": "Title of the empty state in a timeline with no messages."
+  },
+  "messages.timeline.emptyDescription": "Send the first message to start the thread.",
+  "@messages.timeline.emptyDescription": {
+    "description": "Description of the empty state in a timeline with no messages."
+  },
+  "messages.intro.directMessageBeginning": "This is the beginning of your direct message with <b>{name}</b>.",
+  "@messages.intro.directMessageBeginning": {
+    "description": "Top of an empty direct message timeline, under the other person's name. {name} is their display name, shown bold."
+  },
+  "messages.newMessage.alreadyAdded": "Already added {name}",
+  "@messages.newMessage.alreadyAdded": {
+    "description": "Accessible label of a person or agent row in the new message picker when they are already a recipient. {name} is their name."
+  },
+  "messages.newMessage.addRecipient": "Add {name}",
+  "@messages.newMessage.addRecipient": {
+    "description": "Accessible label of a person or agent row in the new message picker. {name} is their name."
+  },
+  "messages.newMessage.limit": "{count, plural, one {A new chat can start with up to # person.} other {A new chat can start with up to # people.}}",
+  "@messages.newMessage.limit": {
+    "description": "New message screen, note and error when the recipient limit is reached."
+  },
+  "messages.newMessage.startFailed": "Could not start the chat.",
+  "@messages.newMessage.startFailed": {
+    "description": "New message screen, error when the chat could not be opened or created."
+  },
+  "messages.newMessage.sendFailed": "Failed to send message.",
+  "@messages.newMessage.sendFailed": {
+    "description": "New message screen, error when the first message failed to send."
+  },
+  "messages.newMessage.chooseRecipient": "Choose a recipient to start a message",
+  "@messages.newMessage.chooseRecipient": {
+    "description": "New message screen, composer placeholder before any recipient is picked."
+  },
+  "messages.newMessage.messagePeople": "{count, plural, one {Message # person} other {Message # people}}",
+  "@messages.newMessage.messagePeople": {
+    "description": "New message screen, composer placeholder when several recipients are picked."
+  },
+  "messages.newMessage.toLabel": "To:",
+  "@messages.newMessage.toLabel": {
+    "description": "New message screen, label in front of the recipient field. Short."
+  },
+  "messages.newMessage.toAria": "To",
+  "@messages.newMessage.toAria": {
+    "description": "New message screen, accessible label of the recipient search input. Short."
+  },
+  "messages.newMessage.loadingDirectory": "Loading people and agents",
+  "@messages.newMessage.loadingDirectory": {
+    "description": "New message screen, accessible label of the loading list of people and agents."
+  },
+  "messages.newMessage.directoryEmpty": "No people or agents available to message.",
+  "@messages.newMessage.directoryEmpty": {
+    "description": "New message screen, empty recipient list with no search text."
+  },
+  "messages.newMessage.noMatches": "No matching users.",
+  "@messages.newMessage.noMatches": {
+    "description": "New message screen, empty recipient list for a search."
+  },
+  "messages.newMessage.opening": "Opening…",
+  "@messages.newMessage.opening": {
+    "description": "New message screen, status next to the recipient field while the chat opens. Short."
+  },
+  "messages.newMessage.chatNameAria": "Chat name",
+  "@messages.newMessage.chatNameAria": {
+    "description": "New message screen, accessible label of the optional chat name field."
+  },
+  "messages.newMessage.chatNamePlaceholder": "Chat name (optional)",
+  "@messages.newMessage.chatNamePlaceholder": {
+    "description": "New message screen, placeholder of the optional chat name field shown when several recipients are picked."
+  },
+  "messages.newMessage.channelName": "new message",
+  "@messages.newMessage.channelName": {
+    "description": "New message screen, name used for the draft conversation in composer texts such as 'Message {channel}'. Lowercase."
+  },
+  "messages.nonMember.chatTitle": "Add {names} to this chat?",
+  "@messages.nonMember.chatTitle": {
+    "description": "Dialog title when a message mentions people who are not in the chat. {names} is a comma-separated list of names."
+  },
+  "messages.nonMember.groupTitle": "Mention people outside this group?",
+  "@messages.nonMember.groupTitle": {
+    "description": "Dialog title when a message mentions people who are not in the group."
+  },
+  "messages.nonMember.chatBody": "{count, plural, one {{names} isn't in this chat.} other {{names} aren't in this chat.}}",
+  "@messages.nonMember.chatBody": {
+    "description": "Mention-outside-chat dialog text. {names} is a comma-separated list of names; count is how many."
+  },
+  "messages.nonMember.chatSendHint": "You can also send without adding them.",
+  "@messages.nonMember.chatSendHint": {
+    "description": "Mention-outside-chat dialog, sentence after the not-in-chat line when sending without adding is allowed."
+  },
+  "messages.nonMember.groupBody": "{count, plural, one {{names} is not in this group.} other {{names} are not in this group.}}",
+  "@messages.nonMember.groupBody": {
+    "description": "Mention-outside-group dialog text. {names} is a comma-separated list of names; count is how many."
+  },
+  "messages.nonMember.inviteOrSend": "Add them to the group, or send without inviting them.",
+  "@messages.nonMember.inviteOrSend": {
+    "description": "Mention-outside-group dialog, second sentence when the user can invite and may also send without inviting."
+  },
+  "messages.nonMember.canStillSend": "You can still send without inviting them.",
+  "@messages.nonMember.canStillSend": {
+    "description": "Mention-outside-group dialog, sentence after the 'can't add to private group' notice."
+  },
+  "messages.nonMember.inviteOrCancel": "Add them to the group, or cancel to keep your draft.",
+  "@messages.nonMember.inviteOrCancel": {
+    "description": "Mention-outside-group dialog, second sentence when inviting is required to send."
+  },
+  "messages.nonMember.sendWithoutAdding": "Send without adding",
+  "@messages.nonMember.sendWithoutAdding": {
+    "description": "Mention-outside-chat dialog button that sends without adding the people. Short."
+  },
+  "messages.nonMember.doNothing": "Do nothing",
+  "@messages.nonMember.doNothing": {
+    "description": "Mention-outside-group dialog button that sends without inviting the people. Short."
+  },
+  "messages.nonMember.sendAnyway": "Send anyway",
+  "@messages.nonMember.sendAnyway": {
+    "description": "Mention-outside-group dialog button that sends when inviting is not allowed. Short."
+  },
+  "messages.nonMember.adding": "Adding...",
+  "@messages.nonMember.adding": {
+    "description": "Mention-outside-chat dialog, Add button while adding. Short."
+  },
+  "messages.nonMember.inviting": "Inviting...",
+  "@messages.nonMember.inviting": {
+    "description": "Mention-outside-group dialog, Invite button while inviting. Short."
+  },
+  "messages.nonMember.invite": "Invite",
+  "@messages.nonMember.invite": {
+    "description": "Mention-outside-group dialog button that invites the mentioned people. Short."
+  },
+  "messages.system.memberCount": "{count, plural, one {# group member} other {# group members}}",
+  "@messages.system.memberCount": {
+    "description": "Accessible label of the avatar stack on a membership system message (people added or removed)."
+  },
+  "messages.formatting.selectionTray": "Selection formatting",
+  "@messages.formatting.selectionTray": {
+    "description": "Accessible label of the floating formatting toolbar shown over selected composer text."
+  },
+  "messages.sentFromThread": "Sent from thread:",
+  "@messages.sentFromThread": {
+    "description": "Label above a message that was also sent to the group from a thread, followed by a link to that thread. Short."
+  },
+  "messages.thread.follow": "Follow thread",
+  "@messages.thread.follow": {
+    "description": "Thread panel header icon button (tooltip and label) to get notified about new replies. Short."
+  },
+  "messages.thread.unfollow": "Unfollow thread",
+  "@messages.thread.unfollow": {
+    "description": "Thread panel header icon button (tooltip and label) to stop notifications for a followed thread. Short."
+  },
+  "messages.thread.close": "Close thread",
+  "@messages.thread.close": {
+    "description": "Thread panel header icon button that marks a task thread closed. Short."
+  },
+  "messages.thread.reopen": "Reopen thread",
+  "@messages.thread.reopen": {
+    "description": "Thread panel header icon button that reopens a closed task thread. Short."
+  },
+  "messages.thread.moreActions": "More thread actions",
+  "@messages.thread.moreActions": {
+    "description": "Accessible label of the thread panel header '…' menu button."
+  },
+  "messages.thread.markUnread": "Mark as unread",
+  "@messages.thread.markUnread": {
+    "description": "Thread panel header '…' menu item that marks the thread unread. Short."
+  },
+  "messages.threadMarker.youClosed": "You closed this thread",
+  "@messages.threadMarker.youClosed": {
+    "description": "System line in a thread where the current user closed it."
+  },
+  "messages.threadMarker.youReopened": "You reopened this thread",
+  "@messages.threadMarker.youReopened": {
+    "description": "System line in a thread where the current user reopened it."
+  },
+  "messages.threadMarker.closed": "{name} closed this thread",
+  "@messages.threadMarker.closed": {
+    "description": "System line in a thread where someone closed it. {name} is their name."
+  },
+  "messages.threadMarker.reopened": "{name} reopened this thread",
+  "@messages.threadMarker.reopened": {
+    "description": "System line in a thread where someone reopened it. {name} is their name."
+  },
+  "messages.typing.one": "{name} is typing...",
+  "@messages.typing.one": {
+    "description": "Typing indicator under the timeline when one person is typing. {name} is their name."
+  },
+  "messages.typing.two": "{first} and {second} are typing...",
+  "@messages.typing.two": {
+    "description": "Typing indicator under the timeline when two people are typing."
+  },
+  "messages.typing.three": "{first}, {second}, and {third} are typing...",
+  "@messages.typing.three": {
+    "description": "Typing indicator under the timeline when three people are typing."
+  },
+  "messages.typing.many": "{first}, {second}, and {count, plural, one {# other} other {# others}} are typing...",
+  "@messages.typing.many": {
+    "description": "Typing indicator under the timeline when four or more people are typing; count is how many beyond the first two."
+  },
+  "messages.addressLock.stopped": "Stopped automatically mentioning {name}",
+  "@messages.addressLock.stopped": {
+    "description": "Screen-reader announcement in the composer when an agent is no longer auto-mentioned. {name} is the agent's name."
+  },
+  "messages.addressLock.started": "Automatically mentioning {name}",
+  "@messages.addressLock.started": {
+    "description": "Screen-reader announcement in the composer when an agent will be auto-mentioned on every message. {name} is the agent's name."
+  },
+  "messages.autoPin.named": "{name} will be mentioned automatically",
+  "@messages.autoPin.named": {
+    "description": "Confirmation popup above the composer after an agent is set to be mentioned automatically. {name} is the agent's name."
+  },
+  "messages.autoPin.count": "{count, plural, one {Agent will be mentioned automatically} other {# agents will be mentioned automatically}}",
+  "@messages.autoPin.count": {
+    "description": "Confirmation popup above the composer after agents are set to be mentioned automatically."
+  },
+  "messages.linkPreview.loading": "Loading link preview",
+  "@messages.linkPreview.loading": {
+    "description": "Accessible label of the progress bar on a link preview card in the composer."
+  },
+  "messages.linkPreview.loadingDetails": "Loading link preview details",
+  "@messages.linkPreview.loadingDetails": {
+    "description": "Accessible label of the placeholder text lines on a loading link preview card in the composer."
+  },
+  "messages.linkPreview.open": "Open {title}",
+  "@messages.linkPreview.open": {
+    "description": "Accessible label of a link preview card in the composer that opens the link. {title} is the page title."
+  },
+  "messages.linkPreview.sendWithout": "Send without link previews",
+  "@messages.linkPreview.sendWithout": {
+    "description": "Tooltip and label of the small X button on a composer link preview card."
+  },
+  "messages.voiceNote.onlyAttachment": "A voice note must be the only attachment.",
+  "@messages.voiceNote.onlyAttachment": {
+    "description": "Error toast when recording or adding a voice note while other files are attached."
+  },
+  "messages.voiceNote.finishBeforeAttaching": "Finish or discard the voice note before attaching a file.",
+  "@messages.voiceNote.finishBeforeAttaching": {
+    "description": "Error toast when attaching a file while a voice note is being recorded."
+  },
+  "messages.agentStart.failed": "Could not start agent.",
+  "@messages.agentStart.failed": {
+    "description": "Fallback error detail when a mentioned agent could not be started."
+  },
+  "messages.agentStart.scopeChanged": "You switched community or identity before it could start.",
+  "@messages.agentStart.scopeChanged": {
+    "description": "Error detail when a mentioned agent was not started because the user switched community or account."
+  },
+  "messages.agentStart.mayNotRespond": "Could not start {name} — your message was sent, but the agent may not respond. {detail}",
+  "@messages.agentStart.mayNotRespond": {
+    "description": "Error toast after sending a message that mentions an agent which failed to start. {name} is the agent name, {detail} is a short reason sentence."
+  },
+  "messages.agentStart.stillConnecting": "Kuzz is still connecting to this community — mention the agent again in a moment.",
+  "@messages.agentStart.stillConnecting": {
+    "description": "Reason sentence in the agent-start error toast when the app is still connecting. Kuzz is the app name."
+  },
+  "messages.agentPrepare.failed": "Could not prepare agent.",
+  "@messages.agentPrepare.failed": {
+    "description": "Fallback error after an agent's name when a mentioned agent could not be prepared before sending."
+  },
+  "messages.errors.unknown": "Unknown error",
+  "@messages.errors.unknown": {
+    "description": "Fallback error detail when no reason is known. Short."
+  },
+  "messages.send.failed": "Message failed to send: {error}",
+  "@messages.send.failed": {
+    "description": "Error shown when a message fails to send. {error} is the error detail."
+  },
+  "messages.agentPrepare.noRuntime": "No agent runtime available.",
+  "@messages.agentPrepare.noRuntime": {
+    "description": "Error after an agent's name when a mentioned agent cannot be created because no runtime is installed."
+  },
+  "messages.agentPrepare.createFailed": "Could not create agent.",
+  "@messages.agentPrepare.createFailed": {
+    "description": "Fallback error after an agent's name when a mentioned agent could not be created."
+  },
+  "messages.send.huddleAddFailed": "Could not add mentioned agent to the Huddle: {error}",
+  "@messages.send.huddleAddFailed": {
+    "description": "Error in the mention dialog when a mentioned agent could not join the active huddle. {error} is the error detail."
+  },
+  "messages.send.huddleFallback": "Huddle enrollment failed.",
+  "@messages.send.huddleFallback": {
+    "description": "Fallback error detail when an agent could not join a huddle."
+  },
+  "messages.send.uploadFailed": "Upload failed: {error}",
+  "@messages.send.uploadFailed": {
+    "description": "Error toast when a file upload for a message fails. {error} is the error detail."
+  },
+  "messages.send.retryFailed": "Could not send message. Please retry.",
+  "@messages.send.retryFailed": {
+    "description": "Fallback error toast when a message could not be sent."
+  },
+  "messages.send.agentMentionFailed": "Could not create agent mention: {error}",
+  "@messages.send.agentMentionFailed": {
+    "description": "Error in the mention dialog when one agent mention could not be created. {error} is the detail."
+  },
+  "messages.send.agentMentionsFailed": "Could not create agent mentions: {errors}",
+  "@messages.send.agentMentionsFailed": {
+    "description": "Error in the mention dialog when several agent mentions could not be created. {errors} is a semicolon-separated list of details."
+  },
+  "messages.send.prepareMentionsFailed": "Could not prepare mentions. Please retry.",
+  "@messages.send.prepareMentionsFailed": {
+    "description": "Fallback error toast when mentions could not be prepared before sending."
+  },
+  "messages.nonMember.inviteFailed": "Could not invite members.",
+  "@messages.nonMember.inviteFailed": {
+    "description": "Fallback error in the mention dialog when inviting the mentioned people failed."
+  },
+  "messages.voiceRecorder.waitingAccess": "Waiting for microphone access",
+  "@messages.voiceRecorder.waitingAccess": {
+    "description": "Screen-reader name of the voice note recorder while waiting for microphone permission."
+  },
+  "messages.voiceRecorder.preparing": "Preparing voice note",
+  "@messages.voiceRecorder.preparing": {
+    "description": "Screen-reader name of the voice note recorder while the recording is processed."
+  },
+  "messages.voiceRecorder.recording": "Recording voice note",
+  "@messages.voiceRecorder.recording": {
+    "description": "Screen-reader name of the voice note recorder while recording."
+  },
+  "messages.voiceRecorder.discard": "Discard voice note",
+  "@messages.voiceRecorder.discard": {
+    "description": "Tooltip and label of the X button in the voice note recorder."
+  },
+  "messages.voiceRecorder.waitingShort": "Waiting for microphone…",
+  "@messages.voiceRecorder.waitingShort": {
+    "description": "Status text in the voice note recorder while waiting for microphone permission. Short."
+  },
+  "messages.voiceRecorder.preparingShort": "Preparing voice note…",
+  "@messages.voiceRecorder.preparingShort": {
+    "description": "Status text in the voice note recorder while the recording is processed. Short."
+  },
+  "messages.wave.startHuddleHint": "Start a huddle to talk to them.",
+  "@messages.wave.startHuddleHint": {
+    "description": "Hint under a wave message card ('X waved at you')."
+  },
+  "messages.wave.startHuddle": "Start huddle",
+  "@messages.wave.startHuddle": {
+    "description": "Button on a wave message card that starts a huddle. Short."
+  },
+  "messages.thread.closedToast": "Thread closed",
+  "@messages.thread.closedToast": {
+    "description": "Toast after the user closes a thread. Short."
+  },
+  "messages.thread.undo": "Undo",
+  "@messages.thread.undo": {
+    "description": "Action in the 'Thread closed' toast that reopens the thread. Short."
+  },
+  "messages.thread.updateFailed": "Could not update the thread",
+  "@messages.thread.updateFailed": {
+    "description": "Error toast when closing or reopening a thread fails."
   }
 }

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 
 import { encodeVoiceNoteWav } from "./voiceNoteWav";
@@ -69,7 +70,7 @@ export function useVoiceNoteRecorder() {
     if (status !== "idle" || sessionRef.current) return;
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setError("Voice recording is not available in this environment.");
+      setError(t("messages.voiceNote.notAvailable"));
       return;
     }
 
@@ -156,7 +157,7 @@ export function useVoiceNoteRecorder() {
                 mountedRef.current &&
                 sessionRef.current === session
               ) {
-                setError("Kuzz could not prepare this voice note for upload.");
+                setError(t("messages.voiceNote.prepareFailed"));
               }
             }
           }
@@ -174,7 +175,7 @@ export function useVoiceNoteRecorder() {
       });
       recorder.addEventListener("error", () => {
         if (mountedRef.current && sessionRef.current === session) {
-          setError("The voice recording was interrupted.");
+          setError(t("messages.voiceNote.interrupted"));
         }
       });
       recorder.start(250);
@@ -218,8 +219,8 @@ export function useVoiceNoteRecorder() {
         (cause.name === "NotAllowedError" || cause.name === "SecurityError");
       setError(
         denied
-          ? "Allow Kuzz to access your microphone to record a voice note."
-          : "Kuzz could not start the voice recorder.",
+          ? t("messages.voiceNote.allowMicrophone")
+          : t("messages.voiceNote.startFailed"),
       );
     }
   }, [status]);
