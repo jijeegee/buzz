@@ -16,6 +16,7 @@ import '../chats/chat_state_writer.dart';
 import '../chats/chats_page.dart';
 import '../groups/group_invitations.dart';
 import '../people/people_page.dart';
+import '../../shared/l10n/l10n.dart';
 
 class HomePage extends HookConsumerWidget {
   const HomePage({
@@ -60,27 +61,27 @@ class HomePage extends HookConsumerWidget {
     _HomeDestination(
       icon: LucideIcons.messageCircle300,
       selectedIcon: LucideIcons.messageCircle500,
-      label: 'Chats',
+      id: 'chats',
     ),
     _HomeDestination(
       icon: LucideIcons.users300,
       selectedIcon: LucideIcons.users500,
-      label: 'Friends',
+      id: 'friends',
     ),
     _HomeDestination(
       icon: LucideIcons.bot300,
       selectedIcon: LucideIcons.bot500,
-      label: 'Agents',
+      id: 'agents',
     ),
     _HomeDestination(
       icon: LucideIcons.circleUserRound300,
       selectedIcon: LucideIcons.circleUserRound500,
-      label: 'Profile',
+      id: 'profile',
     ),
     _HomeDestination(
       icon: LucideIcons.settings300,
       selectedIcon: LucideIcons.settings500,
-      label: 'Settings',
+      id: 'settings',
     ),
   ];
 
@@ -315,13 +316,23 @@ MediaQueryData _mediaQueryWithFloatingTabBarClearance(
 class _HomeDestination {
   final IconData icon;
   final IconData selectedIcon;
-  final String label;
+
+  /// Stable English id for widget keys; the shown label is translated.
+  final String id;
 
   const _HomeDestination({
     required this.icon,
     required this.selectedIcon,
-    required this.label,
+    required this.id,
   });
+
+  String label(AppLocalizations l10n) => switch (id) {
+    'chats' => l10n.navChats,
+    'friends' => l10n.navFriends,
+    'agents' => l10n.navAgents,
+    'profile' => l10n.navProfile,
+    _ => l10n.navSettings,
+  };
 }
 
 class _FloatingTabBar extends StatelessWidget {
@@ -480,15 +491,14 @@ class _FloatingTabDestination extends StatelessWidget {
         : (isDark ? colorScheme.surfaceContainerHighest : colorScheme.surface);
 
     final showVisibleUnreadBadge = showUnreadBadge && !selected;
+    final label = destination.label(context.l10n);
 
     return Semantics(
       button: true,
       selected: selected,
-      label: showVisibleUnreadBadge
-          ? '${destination.label}, unread'
-          : destination.label,
+      label: showVisibleUnreadBadge ? context.l10n.navUnread(label) : label,
       child: Tooltip(
-        message: destination.label,
+        message: label,
         excludeFromSemantics: true,
         child: Material(
           color: Colors.transparent,
@@ -518,7 +528,7 @@ class _FloatingTabDestination extends StatelessWidget {
                             FadeTransition(opacity: animation, child: child),
                         child: Icon(
                           icon,
-                          key: ValueKey('${destination.label}-$icon'),
+                          key: ValueKey('${destination.id}-$icon'),
                           color: foregroundColor,
                           size: HomePage._tabIconSize,
                         ),
@@ -530,7 +540,7 @@ class _FloatingTabDestination extends StatelessWidget {
                         right: 0,
                         child: AnimatedScale(
                           key: ValueKey(
-                            '${destination.label.toLowerCase()}-tab-unread-dot-scale',
+                            '${destination.id}-tab-unread-dot-scale',
                           ),
                           scale: selected ? 0 : 1,
                           alignment: const Alignment(-0.5, 0.5),
@@ -539,9 +549,7 @@ class _FloatingTabDestination extends StatelessWidget {
                               : HomePage._tabUnreadBadgeDuration,
                           curve: Curves.easeOutCubic,
                           child: Container(
-                            key: ValueKey(
-                              '${destination.label.toLowerCase()}-tab-unread-dot',
-                            ),
+                            key: ValueKey('${destination.id}-tab-unread-dot'),
                             width: 12,
                             height: 12,
                             padding: const EdgeInsets.all(2),

@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
   # Grapheme-cluster segmentation, for deciding whether a message body is
   # nothing but emoji. Already present transitively via the Flutter SDK;
@@ -68,6 +70,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
   shaders:
     - shaders/onboarding_wordmark.frag
   assets:

@@ -40,6 +40,7 @@ import 'shared/relay/relay.dart';
 import 'shared/read_state/read_state_provider.dart';
 import 'shared/theme/theme.dart';
 import 'shared/widgets/kuzz_loading_indicator.dart';
+import 'shared/l10n/l10n.dart';
 
 /// App-level bridge from invite joining to the channels feature.
 ///
@@ -205,6 +206,9 @@ class App extends HookConsumerWidget {
       navigatorKey: _mobileRootNavigatorKey,
       navigatorObservers: [voiceNoteRouteObserver, readAloudRouteObserver],
       title: 'Kuzz',
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localeListResolutionCallback: (locales, _) => resolveAppLocale(locales),
       theme: AppTheme.light(
         colorScheme: lightScheme,
         topSectionGradient: kuzzLightGradient,
@@ -217,15 +221,17 @@ class App extends HookConsumerWidget {
       routes: {addCommunityRouteName: (_) => const TokenSignInPage()},
       // Above the navigator, so an age restriction cannot be bypassed by a
       // route that was pushed while the store signal request was in flight.
-      builder: (context, child) => switch (ageSignalState) {
-        AgeSignalState.restricted => const AgeRestrictionPage(),
-        _ => AppMarkdownTheme(
-          child: MobileHuddleShell(
-            navigatorKey: _mobileRootNavigatorKey,
-            child: EmojiBurstOverlay(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => AppL10nScope(
+        child: switch (ageSignalState) {
+          AgeSignalState.restricted => const AgeRestrictionPage(),
+          _ => AppMarkdownTheme(
+            child: MobileHuddleShell(
+              navigatorKey: _mobileRootNavigatorKey,
+              child: EmojiBurstOverlay(child: child ?? const SizedBox.shrink()),
+            ),
           ),
-        ),
-      },
+        },
+      ),
       home: authState.when(
         loading: () => const _SplashScreen(),
         error: (_, _) => const TokenSignInPage(),
