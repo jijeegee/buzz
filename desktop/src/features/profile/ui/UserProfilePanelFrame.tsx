@@ -5,6 +5,7 @@ import {
   AuxiliaryPanel,
   AuxiliaryPanelHeader,
 } from "@/shared/layout/AuxiliaryPanel";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 
 type UserProfilePanelFrameProps = {
@@ -50,6 +51,7 @@ export function UserProfilePanelFrame({
   widthPx,
   transparentChrome = false,
 }: UserProfilePanelFrameProps) {
+  const t = useT();
   return (
     <AuxiliaryPanel
       canResetWidth={canResetWidth}
@@ -59,7 +61,7 @@ export function UserProfilePanelFrame({
       onClose={onClose}
       onResetWidth={onResetWidth}
       onResizeStart={onResizeStart}
-      resizeHandleAriaLabel="Resize profile panel"
+      resizeHandleAriaLabel={t("profile.panel.resizeHandle")}
       resizeHandleTestId="user-profile-resize-handle"
       siblings={
         <>

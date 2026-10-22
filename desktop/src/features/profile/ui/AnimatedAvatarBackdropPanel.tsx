@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 
 import {
@@ -27,6 +28,7 @@ export function AnimatedAvatarBackdropPanel({
   onSelectColor,
   testIdPrefix,
 }: AnimatedAvatarBackdropPanelProps) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -46,8 +48,8 @@ export function AnimatedAvatarBackdropPanel({
           <button
             aria-label={
               isCustomSwatch
-                ? "Choose custom backdrop color"
-                : `Use ${swatch} backdrop`
+                ? t("profile.animatedAvatar.customBackdrop")
+                : t("profile.animatedAvatar.useBackdrop", { color: swatch })
             }
             aria-pressed={isSelected}
             className={cn(

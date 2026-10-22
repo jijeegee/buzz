@@ -4026,5 +4026,2609 @@
   "ui.relayMembers.updateFailed": "Couldn't update access. Try again.",
   "@ui.relayMembers.updateFailed": {
     "description": "Error when changing a community member's access role fails."
+  },
+  "onboarding.recovery.relaunch": "Relaunch Kuzz",
+  "@onboarding.recovery.relaunch": {
+    "description": "Recovery screens (restart required, sign-out failed), main button that restarts the app. Short."
+  },
+  "onboarding.relaunchRequired.title": "Restart Kuzz to finish recovery",
+  "@onboarding.relaunchRequired.title": {
+    "description": "Full-screen notice after the account was recovered, big title."
+  },
+  "onboarding.relaunchRequired.body": "Your identity was updated. Kuzz needs to restart so syncing and agents run under it.",
+  "@onboarding.relaunchRequired.body": {
+    "description": "Full-screen notice after the account was recovered, text under the title."
+  },
+  "onboarding.resetFailed.title": "Sign out could not complete",
+  "@onboarding.resetFailed.title": {
+    "description": "Full-screen notice when signing out failed to clear local data, big title."
+  },
+  "onboarding.resetFailed.body": "Kuzz was unable to fully clear your local data. Try relaunching — the reset will resume automatically. If this persists, contact support.",
+  "@onboarding.resetFailed.body": {
+    "description": "Full-screen notice when signing out failed to clear local data, text under the title."
+  },
+  "onboarding.keyringLocked.title": "Unlock your computer's password storage",
+  "@onboarding.keyringLocked.title": {
+    "description": "Full-screen notice when the system password storage is locked at startup, big title."
+  },
+  "onboarding.keyringLocked.body": "Your account is safe on this computer, but Kuzz can't open its password storage right now. Unlock it or sign in to your computer again, then relaunch Kuzz.",
+  "@onboarding.keyringLocked.body": {
+    "description": "Full-screen notice when the system password storage is locked, text under the title."
+  },
+  "onboarding.keyringLocked.relaunch": "Relaunch Kuzz",
+  "@onboarding.keyringLocked.relaunch": {
+    "description": "Locked password storage screen, main button that restarts the app. Short."
+  },
+  "onboarding.keyringLocked.reimport": "Re-import your key instead",
+  "@onboarding.keyringLocked.reimport": {
+    "description": "Locked password storage screen, secondary button (test builds only) to import a key instead. Short."
+  },
+  "onboarding.keyringLocked.reimportConfirm": "Importing a different nsec replaces the identity currently locked in the keyring for this install. The previous identity will no longer be accessible. Continue?",
+  "@onboarding.keyringLocked.reimportConfirm": {
+    "description": "Locked password storage screen, confirmation dialog before importing a different key (test builds only). Keep 'nsec' as is."
+  },
+  "onboarding.connectionMethod.title": "Connect your AI provider",
+  "@onboarding.connectionMethod.title": {
+    "description": "Onboarding, choose how agents access AI, page title."
+  },
+  "onboarding.connectionMethod.description": "Choose how your agents will access AI. You can change this later.",
+  "@onboarding.connectionMethod.description": {
+    "description": "Onboarding, choose how agents access AI, text under the title."
+  },
+  "onboarding.connectionMethod.subscription": "Log in with a subscription",
+  "@onboarding.connectionMethod.subscription": {
+    "description": "Onboarding, choose how agents access AI, option button: use an existing AI subscription (e.g. Claude, ChatGPT). Short."
+  },
+  "onboarding.connectionMethod.apiKey": "Use an API key",
+  "@onboarding.connectionMethod.apiKey": {
+    "description": "Onboarding, choose how agents access AI, option button: use an AI provider API key. Short."
+  },
+  "onboarding.runtime.adapterOutdated": "{runtime} needs an ACP adapter update.",
+  "@onboarding.runtime.adapterOutdated": {
+    "description": "Onboarding, harness setup guide card, small text when the harness adapter is too old. {runtime} is a tool name like Claude Code. Keep 'ACP' as is."
+  },
+  "onboarding.runtime.notDetected": "{runtime} is not detected on this computer.",
+  "@onboarding.runtime.notDetected": {
+    "description": "Onboarding, harness setup guide card, small text when the harness is not installed. {runtime} is a tool name like Claude Code."
+  },
+  "onboarding.runtimeError.ariaLabel": "{label}. {detail}",
+  "@onboarding.runtimeError.ariaLabel": {
+    "description": "Onboarding, harness card error badge, screen-reader label joining the short error label and its detail sentence."
+  },
+  "onboarding.setup.subscriptionName.amp": "Amp subscription",
+  "@onboarding.setup.subscriptionName.amp": {
+    "description": "Onboarding, connect harness page, card title for the Amp subscription. Short."
+  },
+  "onboarding.setup.subscriptionName.claude": "Claude subscription",
+  "@onboarding.setup.subscriptionName.claude": {
+    "description": "Onboarding, connect harness page, card title for the Claude subscription. Short."
+  },
+  "onboarding.setup.subscriptionName.codex": "ChatGPT subscription",
+  "@onboarding.setup.subscriptionName.codex": {
+    "description": "Onboarding, connect harness page, card title for the ChatGPT subscription. Short."
+  },
+  "onboarding.setup.subscriptionName.cursor": "Cursor subscription",
+  "@onboarding.setup.subscriptionName.cursor": {
+    "description": "Onboarding, connect harness page, card title for the Cursor subscription. Short."
+  },
+  "onboarding.setup.subscriptionName.devin": "Devin account",
+  "@onboarding.setup.subscriptionName.devin": {
+    "description": "Onboarding, connect harness page, card title for a Devin account. Short."
+  },
+  "onboarding.setup.signInRequired": "Sign in required",
+  "@onboarding.setup.signInRequired": {
+    "description": "Onboarding, harness list row, small badge when the harness needs sign-in. Short."
+  },
+  "onboarding.setup.signInTo": "Sign in to {runtime}",
+  "@onboarding.setup.signInTo": {
+    "description": "Onboarding, harness card, screen-reader label of the Sign in button. {runtime} is a tool name."
+  },
+  "onboarding.setup.signIn": "Sign in",
+  "@onboarding.setup.signIn": {
+    "description": "Onboarding, harness card, button that starts sign-in. Short."
+  },
+  "onboarding.setup.checking": "Checking…",
+  "@onboarding.setup.checking": {
+    "description": "Onboarding, harness card, button text while checking sign-in or status. Short."
+  },
+  "onboarding.setup.checkAgain": "Check again",
+  "@onboarding.setup.checkAgain": {
+    "description": "Onboarding, harness card or setup page footer, button to re-check the harness. Short."
+  },
+  "onboarding.setup.checkRuntimeAgain": "Check {runtime} again",
+  "@onboarding.setup.checkRuntimeAgain": {
+    "description": "Onboarding, harness card, screen-reader label of the Check again button. {runtime} is a tool name."
+  },
+  "onboarding.setup.signInOptionsError": "Couldn’t load sign-in options.",
+  "@onboarding.setup.signInOptionsError": {
+    "description": "Onboarding, harness card, error tooltip detail when sign-in options failed to load."
+  },
+  "onboarding.setup.signInUnavailable": "Sign-in unavailable",
+  "@onboarding.setup.signInUnavailable": {
+    "description": "Onboarding, harness card, short red error label (tooltip shows details). Short."
+  },
+  "onboarding.setup.signInStartError": "Couldn’t start sign-in. Try again.",
+  "@onboarding.setup.signInStartError": {
+    "description": "Onboarding, harness card, error tooltip detail when sign-in could not start."
+  },
+  "onboarding.setup.signInFailed": "Sign-in failed",
+  "@onboarding.setup.signInFailed": {
+    "description": "Onboarding, harness card, short red error label (tooltip shows details). Short."
+  },
+  "onboarding.setup.installingRuntime": "Installing {runtime}",
+  "@onboarding.setup.installingRuntime": {
+    "description": "Onboarding, harness card, screen-reader label of the installing indicator. {runtime} is a tool name."
+  },
+  "onboarding.setup.installing": "Installing",
+  "@onboarding.setup.installing": {
+    "description": "Onboarding, harness card, small status badge while installing. Short."
+  },
+  "onboarding.setup.install": "Install",
+  "@onboarding.setup.install": {
+    "description": "Onboarding, harness card, button to install the harness. Short."
+  },
+  "onboarding.setup.retryInstall": "Retry install",
+  "@onboarding.setup.retryInstall": {
+    "description": "Onboarding, harness card, button to retry a failed install. Short."
+  },
+  "onboarding.setup.installRuntime": "Install {runtime}",
+  "@onboarding.setup.installRuntime": {
+    "description": "Onboarding, harness card, screen-reader label of the Install button. {runtime} is a tool name."
+  },
+  "onboarding.setup.retryInstallingRuntime": "Retry installing {runtime}",
+  "@onboarding.setup.retryInstallingRuntime": {
+    "description": "Onboarding, harness card, screen-reader label of the Retry install button. {runtime} is a tool name."
+  },
+  "onboarding.setup.viewInstallInstructions": "View {runtime} install instructions",
+  "@onboarding.setup.viewInstallInstructions": {
+    "description": "Onboarding, harness card, screen-reader label of the Install button that opens a web guide. {runtime} is a tool name."
+  },
+  "onboarding.setup.adapterMissing": "CLI detected; ACP adapter missing.",
+  "@onboarding.setup.adapterMissing": {
+    "description": "Onboarding, harness card, small detail text. Keep 'CLI' and 'ACP' as is."
+  },
+  "onboarding.setup.adapterOutdated": "ACP adapter detected but outdated — reinstall required.",
+  "@onboarding.setup.adapterOutdated": {
+    "description": "Onboarding, harness card, small detail text. Keep 'ACP' as is."
+  },
+  "onboarding.setup.cliMissing": "CLI not detected.",
+  "@onboarding.setup.cliMissing": {
+    "description": "Onboarding, harness card, small detail text when the command-line tool is missing. Keep 'CLI' as is."
+  },
+  "onboarding.setup.configInvalid": "Configuration invalid",
+  "@onboarding.setup.configInvalid": {
+    "description": "Onboarding, harness card, short red error label (tooltip shows details). Short."
+  },
+  "onboarding.setup.configInvalidDetail": "Check this runtime’s configuration and try again.",
+  "@onboarding.setup.configInvalidDetail": {
+    "description": "Onboarding, harness card, error tooltip detail for an invalid configuration."
+  },
+  "onboarding.setup.statusUnavailable": "Status unavailable",
+  "@onboarding.setup.statusUnavailable": {
+    "description": "Onboarding, harness card, short red error label when sign-in status is unknown. Short."
+  },
+  "onboarding.setup.authUnknownDetail": "Couldn’t verify authentication.",
+  "@onboarding.setup.authUnknownDetail": {
+    "description": "Onboarding, harness card, error tooltip detail when sign-in status is unknown."
+  },
+  "onboarding.setup.installFailedFallback": "Install failed.",
+  "@onboarding.setup.installFailedFallback": {
+    "description": "Onboarding, harness card, error tooltip detail when install failed without a specific reason."
+  },
+  "onboarding.setup.installationFailed": "Installation failed",
+  "@onboarding.setup.installationFailed": {
+    "description": "Onboarding, harness card, short red error label after a failed install (tooltip shows details). Short."
+  },
+  "onboarding.setup.openRuntimeSetup": "Open {runtime} setup",
+  "@onboarding.setup.openRuntimeSetup": {
+    "description": "Onboarding, harness list row, screen-reader label of the row button. {runtime} is a tool name."
+  },
+  "onboarding.setup.recommended": "Recommended",
+  "@onboarding.setup.recommended": {
+    "description": "Onboarding, harness list row, small badge on the recommended harness. Short."
+  },
+  "onboarding.setup.loadingProviders": "Loading providers…",
+  "@onboarding.setup.loadingProviders": {
+    "description": "Onboarding, harness list, loading text."
+  },
+  "onboarding.setup.subscriptionTitle": "Continue with an AI subscription",
+  "@onboarding.setup.subscriptionTitle": {
+    "description": "Onboarding, harness list page (subscription path), page title."
+  },
+  "onboarding.setup.harnessTitle": "Choose a harness",
+  "@onboarding.setup.harnessTitle": {
+    "description": "Onboarding, harness list page (API key path), page title. A harness is the AI tool that runs agents."
+  },
+  "onboarding.setup.subscriptionDescription": "Subscriptions connect through a compatible harness, like Claude Code or Codex. Choose yours to sign in.",
+  "@onboarding.setup.subscriptionDescription": {
+    "description": "Onboarding, harness list page (subscription path), text under the title."
+  },
+  "onboarding.setup.harnessDescription": "Choose how your agents will connect to AI providers. You can change this at any time.",
+  "@onboarding.setup.harnessDescription": {
+    "description": "Onboarding, harness list page (API key path), text under the title."
+  },
+  "onboarding.setup.notInstalled": "Not installed",
+  "@onboarding.setup.notInstalled": {
+    "description": "Onboarding, harness list, small section heading above harnesses that are not installed. Short."
+  },
+  "onboarding.setup.noHarnesses": "No supported harnesses are available for this connection method.",
+  "@onboarding.setup.noHarnesses": {
+    "description": "Onboarding, harness list, empty state."
+  },
+  "onboarding.setup.signInWindow": "Kuzz will open a sign-in window for {runtime}.",
+  "@onboarding.setup.signInWindow": {
+    "description": "Onboarding, connect harness page (subscription path), small text on the card. {runtime} is a tool name."
+  },
+  "onboarding.setup.setUpRuntime": "Set up {runtime}",
+  "@onboarding.setup.setUpRuntime": {
+    "description": "Onboarding, harness setup guide page (not installed), page title. {runtime} is a tool name."
+  },
+  "onboarding.setup.setUpRuntimeDescription": "Follow the setup guide to install {runtime}. When you’re done, come back and check again.",
+  "@onboarding.setup.setUpRuntimeDescription": {
+    "description": "Onboarding, harness setup guide page (not installed), text under the title. {runtime} is a tool name."
+  },
+  "onboarding.setup.openGuide": "Open guide",
+  "@onboarding.setup.openGuide": {
+    "description": "Onboarding, harness setup guide card, button that opens the install guide in the browser. Short."
+  },
+  "onboarding.setup.connectRuntime": "Connect {runtime}",
+  "@onboarding.setup.connectRuntime": {
+    "description": "Onboarding, connect harness page, page title. {runtime} is a tool name."
+  },
+  "onboarding.setup.connectRuntimeDescription": "Sign in to connect {runtime}. You can change this anytime.",
+  "@onboarding.setup.connectRuntimeDescription": {
+    "description": "Onboarding, connect harness page, text under the title. {runtime} is a tool name."
+  },
+  "onboarding.setup.setUpLater": "Set up later",
+  "@onboarding.setup.setUpLater": {
+    "description": "Onboarding, harness pages, footer button to skip agent setup. Short."
+  },
+  "onboarding.machine.loadIdentityFailed": "Failed to load identity",
+  "@onboarding.machine.loadIdentityFailed": {
+    "description": "Onboarding welcome screen, red error when the account could not be loaded."
+  },
+  "onboarding.machine.saveIdentityFailed": "Failed to save identity",
+  "@onboarding.machine.saveIdentityFailed": {
+    "description": "Onboarding key import screen, red error when a new account could not be saved."
+  },
+  "onboarding.machine.replaceIdentityConfirm": "This will create a new identity and abandon your previous key. This cannot be undone. Continue?",
+  "@onboarding.machine.replaceIdentityConfirm": {
+    "description": "Onboarding key import screen, confirmation dialog before starting a new identity (test builds only)."
+  },
+  "onboarding.machine.returnToOnboarding": "Return to onboarding",
+  "@onboarding.machine.returnToOnboarding": {
+    "description": "Onboarding backup screen, back button label returning from the password backup. Short."
+  },
+  "onboarding.machine.tagline": "Your people, your agents, your projects —<line>all in one place.</line>",
+  "@onboarding.machine.tagline": {
+    "description": "Onboarding welcome screen, tagline under the logo. <line> starts a new line; keep the tags."
+  },
+  "onboarding.machine.loadingIdentity": "Loading identity…",
+  "@onboarding.machine.loadingIdentity": {
+    "description": "Onboarding welcome screen (test builds), main button while loading. Short."
+  },
+  "onboarding.machine.continueSetup": "Continue setup",
+  "@onboarding.machine.continueSetup": {
+    "description": "Onboarding welcome screen (test builds), main button to resume setup. Short."
+  },
+  "onboarding.machine.createIdentityKey": "Create a new identity key",
+  "@onboarding.machine.createIdentityKey": {
+    "description": "Onboarding welcome screen (test builds), main button to create a new key. Short."
+  },
+  "onboarding.machine.useDifferentKey": "Use a different key instead",
+  "@onboarding.machine.useDifferentKey": {
+    "description": "Onboarding welcome screen (test builds), secondary button. Short."
+  },
+  "onboarding.machine.useExistingKey": "Use an existing key",
+  "@onboarding.machine.useExistingKey": {
+    "description": "Onboarding welcome screen (test builds), secondary button. Short."
+  },
+  "onboarding.machine.restoreWithGoogle": "Sign in with Google to restore your account.",
+  "@onboarding.machine.restoreWithGoogle": {
+    "description": "Onboarding welcome screen, note above the Google button when the local account was lost."
+  },
+  "onboarding.machine.signInUnreachable": "We couldn’t reach Kuzz sign-in. Check your internet connection and try again.",
+  "@onboarding.machine.signInUnreachable": {
+    "description": "Onboarding welcome screen, message when the sign-in server can't be reached."
+  },
+  "onboarding.machine.loadingSignIn": "Loading sign-in",
+  "@onboarding.machine.loadingSignIn": {
+    "description": "Onboarding welcome screen, screen-reader label of the loading spinner."
+  },
+  "onboarding.machine.backupRestoreTitle": "Restore from a backup file",
+  "@onboarding.machine.backupRestoreTitle": {
+    "description": "Onboarding key import (test builds), backup file page title."
+  },
+  "onboarding.machine.backupRestoreDescription": "Choose the encrypted backup file you saved from Kuzz.",
+  "@onboarding.machine.backupRestoreDescription": {
+    "description": "Onboarding key import (test builds), backup file page, text under the title."
+  },
+  "onboarding.machine.phoneRecoverTitle": "Recover from your phone",
+  "@onboarding.machine.phoneRecoverTitle": {
+    "description": "Onboarding, phone recovery page title when the local account was lost."
+  },
+  "onboarding.machine.phoneScanTitle": "Scan to sign in",
+  "@onboarding.machine.phoneScanTitle": {
+    "description": "Onboarding, phone sign-in page title."
+  },
+  "onboarding.machine.phoneScanDescription": "Scan this code with a device where you’re currently signed in to Kuzz.",
+  "@onboarding.machine.phoneScanDescription": {
+    "description": "Onboarding, phone sign-in page, text under the title while the QR code shows."
+  },
+  "onboarding.machine.phoneConfirmDescription": "Confirm the code before sharing your identity.",
+  "@onboarding.machine.phoneConfirmDescription": {
+    "description": "Onboarding, phone sign-in page, text under the title while confirming the code."
+  },
+  "onboarding.machine.unlockAccountTitle": "Unlock your account",
+  "@onboarding.machine.unlockAccountTitle": {
+    "description": "Onboarding key import (test builds), backup password page title."
+  },
+  "onboarding.machine.unlockAccountDescription": "Enter your backup password to restore your identity.",
+  "@onboarding.machine.unlockAccountDescription": {
+    "description": "Onboarding key import (test builds), backup password page, text under the title."
+  },
+  "onboarding.machine.enterPrivateKeyTitle": "Enter your private key",
+  "@onboarding.machine.enterPrivateKeyTitle": {
+    "description": "Onboarding key import (test builds), page title."
+  },
+  "onboarding.machine.enterPrivateKeyDescription": "Paste your private key to sign in to Kuzz. You can also use a <backup>backup file</backup>, or <phone>recover from your phone</phone>.",
+  "@onboarding.machine.enterPrivateKeyDescription": {
+    "description": "Onboarding key import (test builds), text under the title. <backup> and <phone> are link buttons; keep the tags."
+  },
+  "onboarding.machine.startNewIdentity": "Start new identity",
+  "@onboarding.machine.startNewIdentity": {
+    "description": "Onboarding key import (test builds), secondary button when the old account was lost. Short."
+  },
+  "onboarding.backupCreator.separatorSpaces": "Spaces",
+  "@onboarding.backupCreator.separatorSpaces": {
+    "description": "Backup password generator popover, separator dropdown option. Short."
+  },
+  "onboarding.backupCreator.separatorHyphens": "Hyphens",
+  "@onboarding.backupCreator.separatorHyphens": {
+    "description": "Backup password generator popover, separator dropdown option. Short."
+  },
+  "onboarding.backupCreator.separatorPeriods": "Periods",
+  "@onboarding.backupCreator.separatorPeriods": {
+    "description": "Backup password generator popover, separator dropdown option. Short."
+  },
+  "onboarding.backupCreator.separatorCommas": "Commas",
+  "@onboarding.backupCreator.separatorCommas": {
+    "description": "Backup password generator popover, separator dropdown option. Short."
+  },
+  "onboarding.backupCreator.generateFailed": "Failed to generate a password.",
+  "@onboarding.backupCreator.generateFailed": {
+    "description": "Backup password generator popover, error text."
+  },
+  "onboarding.backupCreator.generatePassword": "Generate a password",
+  "@onboarding.backupCreator.generatePassword": {
+    "description": "Backup password field, screen-reader label of the generate icon button."
+  },
+  "onboarding.backupCreator.words": "Words",
+  "@onboarding.backupCreator.words": {
+    "description": "Backup password generator popover, label of the word count slider. Short."
+  },
+  "onboarding.backupCreator.separator": "Separator",
+  "@onboarding.backupCreator.separator": {
+    "description": "Backup password generator popover, label of the separator dropdown. Short."
+  },
+  "onboarding.backupCreator.encryptFailed": "Failed to encrypt your key.",
+  "@onboarding.backupCreator.encryptFailed": {
+    "description": "Backup password screen, red error when encrypting the backup failed."
+  },
+  "onboarding.backupCreator.saveFailed": "Failed to save your key.",
+  "@onboarding.backupCreator.saveFailed": {
+    "description": "Backup password screen, red error when saving the backup file failed."
+  },
+  "onboarding.backupCreator.passwordLabel": "Password",
+  "@onboarding.backupCreator.passwordLabel": {
+    "description": "Backup password screen, label above the password field. Short."
+  },
+  "onboarding.backupCreator.passwordAriaLabel": "Encryption password",
+  "@onboarding.backupCreator.passwordAriaLabel": {
+    "description": "Backup password screen, screen-reader label of the password field."
+  },
+  "onboarding.backupCreator.passwordPlaceholder": "Password (min {min} characters)",
+  "@onboarding.backupCreator.passwordPlaceholder": {
+    "description": "Backup password screen, placeholder in the password field. {min} is a number."
+  },
+  "onboarding.backupCreator.savedPasswordHidden": "Backup password saved; hidden for security.",
+  "@onboarding.backupCreator.savedPasswordHidden": {
+    "description": "Backup password screen, screen-reader text for the masked saved password."
+  },
+  "onboarding.backupCreator.changeSavedPassword": "Change saved backup password",
+  "@onboarding.backupCreator.changeSavedPassword": {
+    "description": "Backup password field, screen-reader label of the icon button once a password was saved."
+  },
+  "onboarding.backupCreator.hidePassword": "Hide password",
+  "@onboarding.backupCreator.hidePassword": {
+    "description": "Backup password field, screen-reader label of the eye icon button."
+  },
+  "onboarding.backupCreator.revealPassword": "Reveal password",
+  "@onboarding.backupCreator.revealPassword": {
+    "description": "Backup password field, screen-reader label of the eye icon button."
+  },
+  "onboarding.backupCreator.savedTo": "Backup saved to {path}",
+  "@onboarding.backupCreator.savedTo": {
+    "description": "Backup password screen, small text after saving. {path} is a file path."
+  },
+  "onboarding.backupCreator.passwordNotKept": "Your password isn't kept — download another copy anytime, or start over to choose a new password.",
+  "@onboarding.backupCreator.passwordNotKept": {
+    "description": "Backup password screen, small text after saving."
+  },
+  "onboarding.backupCreator.encrypting": "Encrypting your key",
+  "@onboarding.backupCreator.encrypting": {
+    "description": "Backup password screen, screen-reader label of the save button while encrypting."
+  },
+  "onboarding.backupCreator.downloadAgain": "Download backup again",
+  "@onboarding.backupCreator.downloadAgain": {
+    "description": "Backup password screen, main button after a backup was saved. Short."
+  },
+  "onboarding.backupCreator.saveBackup": "Save backup",
+  "@onboarding.backupCreator.saveBackup": {
+    "description": "Backup password screen, main button that saves the backup file. Short."
+  },
+  "onboarding.backupCreator.newPasswordTitle": "Create a new backup password?",
+  "@onboarding.backupCreator.newPasswordTitle": {
+    "description": "Backup password screen, confirmation dialog title before starting over."
+  },
+  "onboarding.backupCreator.newPasswordDescription": "Starting over lets you pick a new password and download a fresh backup file. Backups you saved earlier will still work — just use the password you created them with.",
+  "@onboarding.backupCreator.newPasswordDescription": {
+    "description": "Backup password screen, confirmation dialog text before starting over."
+  },
+  "onboarding.backupCreator.keepCurrent": "Keep current backup",
+  "@onboarding.backupCreator.keepCurrent": {
+    "description": "Backup password screen, confirmation dialog cancel button. Short."
+  },
+  "onboarding.backupCreator.startNewPassword": "Start with a new password",
+  "@onboarding.backupCreator.startNewPassword": {
+    "description": "Backup password screen, confirmation dialog confirm button. Short."
+  },
+  "onboarding.keyImport.fileTooLarge": "That file is too large to be a key backup or private key. Choose another file.",
+  "@onboarding.keyImport.fileTooLarge": {
+    "description": "Key import form (test builds and locked-storage screen), red error after picking a file."
+  },
+  "onboarding.keyImport.fileReadFailed": "Couldn't read that file.",
+  "@onboarding.keyImport.fileReadFailed": {
+    "description": "Key import form, red error when the chosen file can't be read."
+  },
+  "onboarding.keyImport.passwordRequired": "Enter the password for this key backup.",
+  "@onboarding.keyImport.passwordRequired": {
+    "description": "Key import form, backup password step, red error when the password is missing."
+  },
+  "onboarding.keyImport.incompleteBackup": "That doesn't look like a complete ncryptsec backup.",
+  "@onboarding.keyImport.incompleteBackup": {
+    "description": "Key import form, red error for an incomplete encrypted backup. Keep 'ncryptsec' as is."
+  },
+  "onboarding.keyImport.invalidKey": "That doesn't look like a valid nsec. Paste an nsec1 key.",
+  "@onboarding.keyImport.invalidKey": {
+    "description": "Key import form, red error for an invalid private key. Keep 'nsec' and 'nsec1' as is."
+  },
+  "onboarding.keyImport.importFailed": "Couldn't import this key.",
+  "@onboarding.keyImport.importFailed": {
+    "description": "Key import form, red error when importing failed."
+  },
+  "onboarding.keyImport.privateKeyLabel": "Private key",
+  "@onboarding.keyImport.privateKeyLabel": {
+    "description": "Key import form, label of the private key field. Short."
+  },
+  "onboarding.keyImport.keyPlaceholder": "Enter your key here",
+  "@onboarding.keyImport.keyPlaceholder": {
+    "description": "Key import form, placeholder in the private key field."
+  },
+  "onboarding.keyImport.hideKey": "Hide private key",
+  "@onboarding.keyImport.hideKey": {
+    "description": "Key import form, screen-reader label of the eye icon button."
+  },
+  "onboarding.keyImport.revealKey": "Reveal private key",
+  "@onboarding.keyImport.revealKey": {
+    "description": "Key import form, screen-reader label of the eye icon button."
+  },
+  "onboarding.keyImport.chooseBackupFile": "Choose a backup file",
+  "@onboarding.keyImport.chooseBackupFile": {
+    "description": "Key import form, backup file mode, button that opens the file picker. Short."
+  },
+  "onboarding.keyImport.dropBackupFile": "Drop your backup file here",
+  "@onboarding.keyImport.dropBackupFile": {
+    "description": "Key import form, overlay text while dragging a file over the window."
+  },
+  "onboarding.keyImport.dropKey": "Drop a key here",
+  "@onboarding.keyImport.dropKey": {
+    "description": "Key import form, drop zone text."
+  },
+  "onboarding.keyImport.backupPassword": "Backup password",
+  "@onboarding.keyImport.backupPassword": {
+    "description": "Key import form, backup password step, field label and placeholder."
+  },
+  "onboarding.keyImport.hidePassword": "Hide password",
+  "@onboarding.keyImport.hidePassword": {
+    "description": "Key import form, backup password field, screen-reader label of the eye icon button."
+  },
+  "onboarding.keyImport.revealPassword": "Reveal password",
+  "@onboarding.keyImport.revealPassword": {
+    "description": "Key import form, backup password field, screen-reader label of the eye icon button."
+  },
+  "onboarding.keyImport.identityFound": "Nostr identity found",
+  "@onboarding.keyImport.identityFound": {
+    "description": "Key import form, confirmation line above the account id preview. Keep 'Nostr' as is."
+  },
+  "onboarding.keyImport.willUseIdentity": "This will use this Nostr identity:",
+  "@onboarding.keyImport.willUseIdentity": {
+    "description": "Key import form, text above the account id preview. Keep 'Nostr' as is."
+  },
+  "onboarding.keyImport.waitingForBackup": "Waiting for a complete ncryptsec backup",
+  "@onboarding.keyImport.waitingForBackup": {
+    "description": "Key import form, grey hint while the pasted backup is incomplete. Keep 'ncryptsec' as is."
+  },
+  "onboarding.keyImport.waitingForKey": "Waiting for a valid nsec1 key",
+  "@onboarding.keyImport.waitingForKey": {
+    "description": "Key import form, grey hint while the pasted key is invalid. Keep 'nsec1' as is."
+  },
+  "onboarding.keyImport.importing": "Importing key",
+  "@onboarding.keyImport.importing": {
+    "description": "Key import form, screen-reader label of the spinner in the submit button."
+  },
+  "onboarding.keyImport.continueWithKey": "Continue with this key",
+  "@onboarding.keyImport.continueWithKey": {
+    "description": "Key import form (locked-storage screen), submit button. Short."
+  },
+  "onboarding.backupTest.fileReadFailed": "Could not read that file.",
+  "@onboarding.backupTest.fileReadFailed": {
+    "description": "Backup test, red error when the chosen file can't be read."
+  },
+  "onboarding.backupTest.notYourBackup": "That doesn't look like your key backup. Choose the file you just downloaded.",
+  "@onboarding.backupTest.notYourBackup": {
+    "description": "Onboarding backup test, red error when the chosen file is not a backup."
+  },
+  "onboarding.backupTest.notABackup": "That doesn't look like a key backup file.",
+  "@onboarding.backupTest.notABackup": {
+    "description": "Backup test, red error when the chosen file is not a backup."
+  },
+  "onboarding.backupTest.wrongBackup": "That's a key backup, but not the one you just downloaded.",
+  "@onboarding.backupTest.wrongBackup": {
+    "description": "Onboarding backup test, red error when a different backup file was chosen."
+  },
+  "onboarding.backupTest.verifyFailed": "Could not verify this backup.",
+  "@onboarding.backupTest.verifyFailed": {
+    "description": "Backup test, red error when checking the password failed."
+  },
+  "onboarding.backupTest.retrieveKeyFailed": "Could not retrieve your key.",
+  "@onboarding.backupTest.retrieveKeyFailed": {
+    "description": "Backup test success, red error when the private key can't be shown."
+  },
+  "onboarding.backupTest.ceremonySuccessTitle": "Your backup works!",
+  "@onboarding.backupTest.ceremonySuccessTitle": {
+    "description": "Onboarding backup test, success title."
+  },
+  "onboarding.backupTest.ceremonySuccessBody": "File and password verified. Keep them both somewhere safe — that's all you need to restore your identity.",
+  "@onboarding.backupTest.ceremonySuccessBody": {
+    "description": "Onboarding backup test, success text under the title."
+  },
+  "onboarding.backupTest.hideUnlockedKey": "Hide unlocked private key",
+  "@onboarding.backupTest.hideUnlockedKey": {
+    "description": "Backup test success, screen-reader label of the eye icon button."
+  },
+  "onboarding.backupTest.revealUnlockedKey": "Reveal unlocked private key",
+  "@onboarding.backupTest.revealUnlockedKey": {
+    "description": "Backup test success, screen-reader label of the eye icon button."
+  },
+  "onboarding.backupTest.successTitle": "This backup works",
+  "@onboarding.backupTest.successTitle": {
+    "description": "Settings backup test, success title."
+  },
+  "onboarding.backupTest.matchesCurrent": "It restores your current Kuzz identity.",
+  "@onboarding.backupTest.matchesCurrent": {
+    "description": "Settings backup test, success text when the backup is for the signed-in account."
+  },
+  "onboarding.backupTest.matchesOther": "It restores a different identity than the one signed in here.",
+  "@onboarding.backupTest.matchesOther": {
+    "description": "Settings backup test, success text when the backup is for another account."
+  },
+  "onboarding.backupTest.testAnother": "Test another backup",
+  "@onboarding.backupTest.testAnother": {
+    "description": "Settings backup test, button after success. Short."
+  },
+  "onboarding.backupTest.testYourBackup": "Test your backup",
+  "@onboarding.backupTest.testYourBackup": {
+    "description": "Onboarding backup test, list row button that opens the file picker. Short."
+  },
+  "onboarding.backupTest.downloadAgain": "Download backup again",
+  "@onboarding.backupTest.downloadAgain": {
+    "description": "Onboarding backup test, list row button to save another copy. Short."
+  },
+  "onboarding.backupTest.selectFile": "Select your backup file",
+  "@onboarding.backupTest.selectFile": {
+    "description": "Backup test, button that opens the file picker. Short."
+  },
+  "onboarding.backupTest.dropFile": "Drop your backup file here",
+  "@onboarding.backupTest.dropFile": {
+    "description": "Backup test, overlay text while dragging a file over the window."
+  },
+  "onboarding.backupTest.redownload": "Re-download backup",
+  "@onboarding.backupTest.redownload": {
+    "description": "Backup test, secondary button to save another copy. Short."
+  },
+  "onboarding.backupTest.passwordAriaLabel": "Backup password",
+  "@onboarding.backupTest.passwordAriaLabel": {
+    "description": "Backup test, screen-reader label of the password field."
+  },
+  "onboarding.backupTest.passwordPlaceholder": "Your backup password",
+  "@onboarding.backupTest.passwordPlaceholder": {
+    "description": "Backup test, placeholder in the password field."
+  },
+  "onboarding.backupTest.hidePassword": "Hide password",
+  "@onboarding.backupTest.hidePassword": {
+    "description": "Backup test password field, screen-reader label of the eye icon button."
+  },
+  "onboarding.backupTest.revealPassword": "Reveal password",
+  "@onboarding.backupTest.revealPassword": {
+    "description": "Backup test password field, screen-reader label of the eye icon button."
+  },
+  "onboarding.backupTest.enterPassword": "Enter the password to prove you can unlock this backup.",
+  "@onboarding.backupTest.enterPassword": {
+    "description": "Settings backup test, text above the password field."
+  },
+  "onboarding.backupTest.checking": "Checking…",
+  "@onboarding.backupTest.checking": {
+    "description": "Backup test, verify button text while checking. Short."
+  },
+  "onboarding.backupTest.verify": "Verify backup",
+  "@onboarding.backupTest.verify": {
+    "description": "Backup test, button that checks the password. Short."
+  },
+  "onboarding.backupStep.retrieveKeyFailed": "Failed to retrieve private key.",
+  "@onboarding.backupStep.retrieveKeyFailed": {
+    "description": "Onboarding key step, error detail when the private key can't be read (shown inside the copy error sentence)."
+  },
+  "onboarding.backupStep.storageKeyringTitle": "Protected by your system keychain",
+  "@onboarding.backupStep.storageKeyringTitle": {
+    "description": "Onboarding backup options, card title when the key is in the system keychain."
+  },
+  "onboarding.backupStep.storageFileTitle": "Stored in private device storage",
+  "@onboarding.backupStep.storageFileTitle": {
+    "description": "Onboarding backup options, card title when the key is in a private file."
+  },
+  "onboarding.backupStep.storageDefaultTitle": "Protected in private device storage",
+  "@onboarding.backupStep.storageDefaultTitle": {
+    "description": "Onboarding backup options, card title for device storage."
+  },
+  "onboarding.backupStep.storageKeyringDescription": "Kuzz keeps your identity key in your system keychain. Your computer may ask for your password when Kuzz needs to read the key.",
+  "@onboarding.backupStep.storageKeyringDescription": {
+    "description": "Onboarding backup options, card text when the key is in the system keychain."
+  },
+  "onboarding.backupStep.storageFileDescription": "Your system keychain wasn’t available, so Kuzz keeps your identity key in a private file on this device.",
+  "@onboarding.backupStep.storageFileDescription": {
+    "description": "Onboarding backup options, card text when the key is in a private file."
+  },
+  "onboarding.backupStep.storageDefaultDescription": "Kuzz keeps your identity key protected on this device. Make a separate backup in case you lose access.",
+  "@onboarding.backupStep.storageDefaultDescription": {
+    "description": "Onboarding backup options, card text for device storage."
+  },
+  "onboarding.backupStep.optionsTitle": "Backup options",
+  "@onboarding.backupStep.optionsTitle": {
+    "description": "Onboarding backup options page title."
+  },
+  "onboarding.backupStep.optionsDescription": "Your identity key works like a password for your Kuzz account. Keep a copy somewhere safe. You can create a backup file and lock it with a password you can remember.",
+  "@onboarding.backupStep.optionsDescription": {
+    "description": "Onboarding backup options page, text under the title."
+  },
+  "onboarding.backupStep.passwordManagerTitle": "Saved in your password manager",
+  "@onboarding.backupStep.passwordManagerTitle": {
+    "description": "Onboarding backup options, card title."
+  },
+  "onboarding.backupStep.passwordManagerDescription": "Copy your identity key, then save it in a password manager like 1Password.",
+  "@onboarding.backupStep.passwordManagerDescription": {
+    "description": "Onboarding backup options, card text."
+  },
+  "onboarding.backupStep.copying": "Copying…",
+  "@onboarding.backupStep.copying": {
+    "description": "Onboarding key step, copy button while copying. Short."
+  },
+  "onboarding.backupStep.copied": "Copied to clipboard",
+  "@onboarding.backupStep.copied": {
+    "description": "Onboarding key step, copy button after copying. Short."
+  },
+  "onboarding.backupStep.copy": "Copy to clipboard",
+  "@onboarding.backupStep.copy": {
+    "description": "Onboarding key step, button that copies the private key. Short."
+  },
+  "onboarding.backupStep.lockedFileTitle": "Locked in a backup file",
+  "@onboarding.backupStep.lockedFileTitle": {
+    "description": "Onboarding backup options, card title."
+  },
+  "onboarding.backupStep.lockedFileDescription": "Create a backup file and choose a password you can remember. You’ll need both to restore your account.",
+  "@onboarding.backupStep.lockedFileDescription": {
+    "description": "Onboarding backup options, card text."
+  },
+  "onboarding.backupStep.createLockedBackup": "Create locked backup",
+  "@onboarding.backupStep.createLockedBackup": {
+    "description": "Onboarding key step, button that opens the password backup flow. Short."
+  },
+  "onboarding.backupStep.copyError": "Could not retrieve your private key: {error}. You can continue and find it later in Settings > Profile > Identity.",
+  "@onboarding.backupStep.copyError": {
+    "description": "Onboarding key step, red error under the key. {error} is a technical reason. 'Settings > Profile > Identity' is the menu path."
+  },
+  "onboarding.backupStep.keyTitle": "Your private identity key",
+  "@onboarding.backupStep.keyTitle": {
+    "description": "Onboarding key step, page title once the key is shown."
+  },
+  "onboarding.backupStep.creatingKey": "Creating your identity key",
+  "@onboarding.backupStep.creatingKey": {
+    "description": "Onboarding key step, page title and loading logo label while the key is being made."
+  },
+  "onboarding.backupStep.keyWarning": "Don’t share this key. Anyone who has it can access your account.",
+  "@onboarding.backupStep.keyWarning": {
+    "description": "Onboarding key step, text under the title."
+  },
+  "onboarding.downloadKey.verifiedTitle": "Your backup is verified",
+  "@onboarding.downloadKey.verifiedTitle": {
+    "description": "Onboarding password backup page, title after the backup test passed."
+  },
+  "onboarding.downloadKey.verifyTitle": "Verify your backup",
+  "@onboarding.downloadKey.verifyTitle": {
+    "description": "Onboarding password backup page, title while testing the backup password."
+  },
+  "onboarding.downloadKey.readyTitle": "Your backup is ready",
+  "@onboarding.downloadKey.readyTitle": {
+    "description": "Onboarding password backup page, title after the backup file was saved."
+  },
+  "onboarding.downloadKey.createTitle": "Create a secure backup file",
+  "@onboarding.downloadKey.createTitle": {
+    "description": "Onboarding password backup page, title before saving."
+  },
+  "onboarding.downloadKey.verifiedDescription": "Your file and password can restore your identity.",
+  "@onboarding.downloadKey.verifiedDescription": {
+    "description": "Onboarding password backup page, text under the title after the test passed."
+  },
+  "onboarding.downloadKey.verifyDescription": "Enter your password to make sure you can unlock this file.",
+  "@onboarding.downloadKey.verifyDescription": {
+    "description": "Onboarding password backup page, text under the title while testing."
+  },
+  "onboarding.downloadKey.readyDescription": "Test your backup to make sure it works, or continue without testing.",
+  "@onboarding.downloadKey.readyDescription": {
+    "description": "Onboarding password backup page, text under the title after saving."
+  },
+  "onboarding.downloadKey.createDescription": "This creates a password-protected file with your private key. Remember, Kuzz can’t recover your key if you lose it.",
+  "@onboarding.downloadKey.createDescription": {
+    "description": "Onboarding password backup page, text under the title before saving."
+  },
+  "onboarding.downloadKey.skip": "Skip for now",
+  "@onboarding.downloadKey.skip": {
+    "description": "Onboarding password backup page, footer button to skip the backup test. Short."
+  },
+  "onboarding.nsecDisplay.hideKey": "Hide private key",
+  "@onboarding.nsecDisplay.hideKey": {
+    "description": "Masked private key display, screen-reader label of the eye icon button."
+  },
+  "onboarding.nsecDisplay.revealKey": "Reveal private key",
+  "@onboarding.nsecDisplay.revealKey": {
+    "description": "Masked private key display, screen-reader label of the eye icon button."
+  },
+  "onboarding.nsecDisplay.actions": "Private key actions",
+  "@onboarding.nsecDisplay.actions": {
+    "description": "Masked private key display, screen-reader label of the more-actions menu button."
+  },
+  "onboarding.nsecDisplay.copyKey": "Copy private key",
+  "@onboarding.nsecDisplay.copyKey": {
+    "description": "Masked private key display, screen-reader label of the copy icon button."
+  },
+  "onboarding.identityKeyHelp.title": "What’s an identity key?",
+  "@onboarding.identityKeyHelp.title": {
+    "description": "Onboarding identity key help, link text and dialog/page title."
+  },
+  "onboarding.identityKeyHelp.learnHow": "Learn how identity keys work",
+  "@onboarding.identityKeyHelp.learnHow": {
+    "description": "Onboarding create-key page, inline link that opens the identity key help. Short."
+  },
+  "onboarding.identityKeyHelp.body1": "Kuzz will create a Nostr identity with two parts: a private key that signs you in and a public key you can safely share. You can find your public identity anytime in Kuzz settings.",
+  "@onboarding.identityKeyHelp.body1": {
+    "description": "Onboarding identity key help, first paragraph. Keep 'Nostr' as is."
+  },
+  "onboarding.identityKeyHelp.body2": "This identity belongs to you, not Kuzz, and can move with you to another device or compatible Nostr app. Because only you control the private key, Kuzz can’t reset or recover it. Keep a backup somewhere safe, and never share it.",
+  "@onboarding.identityKeyHelp.body2": {
+    "description": "Onboarding identity key help, second paragraph. Keep 'Nostr' as is."
+  },
+  "onboarding.identityKeyIntro.title": "Create a private identity key",
+  "@onboarding.identityKeyIntro.title": {
+    "description": "Onboarding create-key page title (test builds)."
+  },
+  "onboarding.identityKeyIntro.description": "This key will be how you log into Kuzz. You can use it across Kuzz communities and other platforms.",
+  "@onboarding.identityKeyIntro.description": {
+    "description": "Onboarding create-key page, text under the title."
+  },
+  "onboarding.identityKeyIntro.storedSecurely": "Stored securely on this device",
+  "@onboarding.identityKeyIntro.storedSecurely": {
+    "description": "Onboarding create-key page, first guidance line next to a shield icon."
+  },
+  "onboarding.identityKeyIntro.neverShare": "Never share it—anyone with this key can sign in as you",
+  "@onboarding.identityKeyIntro.neverShare": {
+    "description": "Onboarding create-key page, second guidance line."
+  },
+  "onboarding.identityKeyIntro.useBackup": "Use a secure backup to recover your account",
+  "@onboarding.identityKeyIntro.useBackup": {
+    "description": "Onboarding create-key page, third guidance line."
+  },
+  "onboarding.identityKeyIntro.creating": "Creating key…",
+  "@onboarding.identityKeyIntro.creating": {
+    "description": "Onboarding create-key page, main button while creating. Short."
+  },
+  "onboarding.identityKeyIntro.create": "Create my private key",
+  "@onboarding.identityKeyIntro.create": {
+    "description": "Onboarding create-key page, main button. Short."
+  },
+  "presence.status.online": "Online",
+  "@presence.status.online": {
+    "description": "Presence status of a person or agent, shown on badges, tooltips and screen-reader labels next to an avatar dot. Short."
+  },
+  "presence.status.away": "Away",
+  "@presence.status.away": {
+    "description": "Presence status of a person or agent (idle), shown on badges, tooltips and screen-reader labels next to an avatar dot. Short."
+  },
+  "presence.status.offline": "Offline",
+  "@presence.status.offline": {
+    "description": "Presence status of a person or agent, shown on badges, tooltips and screen-reader labels next to an avatar dot. Short."
+  },
+  "userStatus.dialog.title": "Set a status",
+  "@userStatus.dialog.title": {
+    "description": "Set status dialog, title."
+  },
+  "userStatus.dialog.subtitle": "Let others know what you're up to.",
+  "@userStatus.dialog.subtitle": {
+    "description": "Set status dialog, subtitle under the title."
+  },
+  "userStatus.dialog.chooseEmoji": "Choose a status emoji",
+  "@userStatus.dialog.chooseEmoji": {
+    "description": "Set status dialog, screen-reader label of the emoji button left of the status text field."
+  },
+  "userStatus.dialog.placeholder": "What’s your status?",
+  "@userStatus.dialog.placeholder": {
+    "description": "Set status dialog, placeholder of the status text field."
+  },
+  "userStatus.dialog.duration": "Duration",
+  "@userStatus.dialog.duration": {
+    "description": "Set status dialog, section heading and row label for how long the status stays. Short."
+  },
+  "userStatus.dialog.until": "Until",
+  "@userStatus.dialog.until": {
+    "description": "Set status dialog, custom duration row, label before the end date and time pickers. Short."
+  },
+  "userStatus.dialog.expirationDate": "Status expiration date",
+  "@userStatus.dialog.expirationDate": {
+    "description": "Set status dialog, screen-reader label of the custom end-date picker button."
+  },
+  "userStatus.dialog.expirationTime": "Status expiration time",
+  "@userStatus.dialog.expirationTime": {
+    "description": "Set status dialog, screen-reader label of the custom end-time picker button."
+  },
+  "userStatus.dialog.futureDurationError": "Choose a duration in the future.",
+  "@userStatus.dialog.futureDurationError": {
+    "description": "Set status dialog, error under the duration when the chosen end time has already passed."
+  },
+  "userStatus.dialog.quickStatuses": "Quick statuses",
+  "@userStatus.dialog.quickStatuses": {
+    "description": "Set status dialog, heading above a list of preset statuses. Short."
+  },
+  "userStatus.dialog.clear": "Clear status",
+  "@userStatus.dialog.clear": {
+    "description": "Set status dialog, footer button that removes the current status. Short."
+  },
+  "userStatus.dialog.save": "Save status",
+  "@userStatus.dialog.save": {
+    "description": "Set status dialog, footer button that saves the status. Short."
+  },
+  "userStatus.duration.oneHour": "1 hour",
+  "@userStatus.duration.oneHour": {
+    "description": "Set status dialog, duration menu item: status clears after one hour. Short."
+  },
+  "userStatus.duration.eightHours": "8 hours",
+  "@userStatus.duration.eightHours": {
+    "description": "Set status dialog, duration menu item: status clears after eight hours. Short."
+  },
+  "userStatus.duration.today": "Today",
+  "@userStatus.duration.today": {
+    "description": "Set status dialog, duration menu item: status clears at the end of today. Short."
+  },
+  "userStatus.duration.thisWeek": "This week",
+  "@userStatus.duration.thisWeek": {
+    "description": "Set status dialog, duration menu item: status clears at the end of this week. Short."
+  },
+  "userStatus.duration.custom": "Custom",
+  "@userStatus.duration.custom": {
+    "description": "Set status dialog, duration menu item: pick your own end date and time. Short."
+  },
+  "userStatus.preset.inAMeeting": "In a meeting",
+  "@userStatus.preset.inAMeeting": {
+    "description": "Set status dialog, quick status preset; becomes the status text when picked. Short."
+  },
+  "userStatus.preset.commuting": "Commuting",
+  "@userStatus.preset.commuting": {
+    "description": "Set status dialog, quick status preset; becomes the status text when picked. Short."
+  },
+  "userStatus.preset.outSick": "Out sick",
+  "@userStatus.preset.outSick": {
+    "description": "Set status dialog, quick status preset; becomes the status text when picked. Short."
+  },
+  "userStatus.preset.vacationing": "Vacationing",
+  "@userStatus.preset.vacationing": {
+    "description": "Set status dialog, quick status preset; becomes the status text when picked. Short."
+  },
+  "userStatus.preset.workingRemotely": "Working remotely",
+  "@userStatus.preset.workingRemotely": {
+    "description": "Set status dialog, quick status preset; becomes the status text when picked. Short."
+  },
+  "userStatus.indicator.inHuddle": "In a huddle",
+  "@userStatus.indicator.inHuddle": {
+    "description": "Tooltip and screen-reader label of the headphones icon next to a user's name while they are in a voice huddle. Short."
+  },
+  "userStatus.indicator.statusLabel": "User status",
+  "@userStatus.indicator.statusLabel": {
+    "description": "Screen-reader label of the status emoji next to a user's name when the status has no text. Short."
+  },
+  "userStatus.indicator.statusSet": "Status set",
+  "@userStatus.indicator.statusSet": {
+    "description": "Tooltip of the status emoji next to a user's name when the status has no text. Short."
+  },
+  "profile.avatar.alt": "{name} avatar",
+  "@profile.avatar.alt": {
+    "description": "Alt text of a profile picture; {name} is the person's or agent's name."
+  },
+  "profile.avatar.uploadPending": "Avatar upload pending",
+  "@profile.avatar.uploadPending": {
+    "description": "Screen-reader label of the spinner over a profile picture that is still uploading."
+  },
+  "profile.avatarToast.uploadFailed": "Avatar couldn’t finish uploading",
+  "@profile.avatarToast.uploadFailed": {
+    "description": "Error notification title when a new profile picture failed to upload; has a Retry button."
+  },
+  "profile.avatarToast.uploadFailedDescription": "Your default avatar is showing instead.",
+  "@profile.avatarToast.uploadFailedDescription": {
+    "description": "Error notification text under 'Avatar couldn’t finish uploading'."
+  },
+  "profile.avatarUpload.wrongType": "Choose a PNG, JPG, GIF, or WebP image.",
+  "@profile.avatarUpload.wrongType": {
+    "description": "Error under the avatar picker when the chosen file is not a supported image."
+  },
+  "profile.avatarUpload.failed": "Could not upload that avatar.",
+  "@profile.avatarUpload.failed": {
+    "description": "Error under the avatar picker when uploading the image failed."
+  },
+  "profile.avatarUpload.addPhoto": "Add a profile photo",
+  "@profile.avatarUpload.addPhoto": {
+    "description": "Avatar upload field, heading above the picture and drop area."
+  },
+  "profile.avatarUpload.removePhoto": "Remove photo",
+  "@profile.avatarUpload.removePhoto": {
+    "description": "Avatar upload field, tooltip of the small X button on the picture. Short."
+  },
+  "profile.avatarUpload.uploading": "Uploading...",
+  "@profile.avatarUpload.uploading": {
+    "description": "Avatar picker drop area, text while the image uploads. Short."
+  },
+  "profile.avatarUpload.dropOrBrowse": "Drop an image or <link>browse</link>",
+  "@profile.avatarUpload.dropOrBrowse": {
+    "description": "Avatar upload field, text in the drop area; <link> marks the underlined word that opens the file picker. Short."
+  },
+  "profile.avatarUpload.urlLabel": "Avatar URL",
+  "@profile.avatarUpload.urlLabel": {
+    "description": "Avatar upload field, label of the image web address field. Short."
+  },
+  "profile.avatarUpload.urlHint": "Or paste a direct image URL.",
+  "@profile.avatarUpload.urlHint": {
+    "description": "Avatar upload field, hint under the image web address field."
+  },
+  "profile.avatarEditor.imagePicker": "Avatar image picker",
+  "@profile.avatarEditor.imagePicker": {
+    "description": "Avatar editor, screen-reader name of the image upload area."
+  },
+  "profile.avatarEditor.dropImageHere": "Drop image here",
+  "@profile.avatarEditor.dropImageHere": {
+    "description": "Avatar editor, image tab, drop area text while a file is dragged over it. Short."
+  },
+  "profile.avatarEditor.dragOrBrowse": "Drag or browse",
+  "@profile.avatarEditor.dragOrBrowse": {
+    "description": "Avatar editor during onboarding, image tab, drop area text. Short."
+  },
+  "profile.avatarEditor.dropOrBrowse": "Drop or <link>browse</link>",
+  "@profile.avatarEditor.dropOrBrowse": {
+    "description": "Avatar editor, image tab, drop area text; <link> marks the underlined word that opens the file picker. Short."
+  },
+  "profile.avatarEditor.pasteUrl": "Paste a URL",
+  "@profile.avatarEditor.pasteUrl": {
+    "description": "Avatar editor during onboarding, placeholder of the image web address field. Short."
+  },
+  "profile.avatarEditor.pasteUrlLong": "Paste a URL (Slack profile, etc.)",
+  "@profile.avatarEditor.pasteUrlLong": {
+    "description": "Avatar editor, placeholder of the image web address field."
+  },
+  "profile.avatarEditor.customColor": "Choose custom avatar color",
+  "@profile.avatarEditor.customColor": {
+    "description": "Avatar editor, emoji tab, screen-reader label of the rainbow swatch that opens a color picker."
+  },
+  "profile.avatarEditor.customColorNeedsEmoji": "Choose an emoji before custom avatar color",
+  "@profile.avatarEditor.customColorNeedsEmoji": {
+    "description": "Avatar editor, emoji tab, screen-reader label of the custom color swatch while no emoji is picked yet."
+  },
+  "profile.avatarEditor.useBackground": "Use {color} background",
+  "@profile.avatarEditor.useBackground": {
+    "description": "Avatar editor, emoji tab, screen-reader label of a color swatch; {color} is a hex code like #F2C94C."
+  },
+  "profile.avatarEditor.saving": "Saving avatar",
+  "@profile.avatarEditor.saving": {
+    "description": "Avatar editor, screen-reader label of the spinner on the Done button while saving."
+  },
+  "profile.avatarEditor.savingShort": "Saving",
+  "@profile.avatarEditor.savingShort": {
+    "description": "Avatar editor, Done button text while the avatar saves. Short."
+  },
+  "profile.avatarMode.label": "Avatar type",
+  "@profile.avatarMode.label": {
+    "description": "Avatar editor, screen-reader name of the Image / Emoji / Animated tabs. Short."
+  },
+  "profile.avatarMode.image": "Image",
+  "@profile.avatarMode.image": {
+    "description": "Avatar editor, tab for a picture avatar. Short."
+  },
+  "profile.avatarMode.emoji": "Emoji",
+  "@profile.avatarMode.emoji": {
+    "description": "Avatar editor, tab for an emoji avatar. Short."
+  },
+  "profile.avatarMode.animated": "Animated",
+  "@profile.avatarMode.animated": {
+    "description": "Avatar editor, tab for a short recorded video avatar. Short."
+  },
+  "profile.avatarSlider.size": "Avatar size",
+  "@profile.avatarSlider.size": {
+    "description": "Avatar editor, screen-reader label of the size slider. Short."
+  },
+  "profile.avatarSlider.reset": "Reset avatar size",
+  "@profile.avatarSlider.reset": {
+    "description": "Avatar editor, tooltip and screen-reader label of the reset button next to the size slider."
+  },
+  "profile.customColor.hueLabel": "Choose custom avatar color hue",
+  "@profile.customColor.hueLabel": {
+    "description": "Avatar custom color picker, screen-reader label of the rainbow hue slider."
+  },
+  "profile.customColor.useColor": "Use color",
+  "@profile.customColor.useColor": {
+    "description": "Avatar custom color picker, button that applies the picked color. Short."
+  },
+  "profile.animatedAvatar.noIphoneCamera": "Could not find an iPhone camera. Make sure Continuity Camera is available, then try again.",
+  "@profile.animatedAvatar.noIphoneCamera": {
+    "description": "Animated avatar recorder, error when the iPhone camera option is chosen but no iPhone camera is found. Continuity Camera is an Apple feature name."
+  },
+  "profile.animatedAvatar.cameraAccessFailed": "Could not access the camera. Check Kuzz's camera permission and try again.",
+  "@profile.animatedAvatar.cameraAccessFailed": {
+    "description": "Animated avatar recorder, error when the camera cannot be opened. Kuzz is the app name."
+  },
+  "profile.animatedAvatar.recordingFailed": "Recording failed. Try again.",
+  "@profile.animatedAvatar.recordingFailed": {
+    "description": "Animated avatar recorder, error when recording the short video failed."
+  },
+  "profile.animatedAvatar.noFrames": "No frames were recorded.",
+  "@profile.animatedAvatar.noFrames": {
+    "description": "Animated avatar recorder, error when saving a recording that has no frames."
+  },
+  "profile.animatedAvatar.saveFailed": "Couldn't save the recording. Try again.",
+  "@profile.animatedAvatar.saveFailed": {
+    "description": "Animated avatar recorder, error when the uploaded recording was not accepted as an image."
+  },
+  "profile.animatedAvatar.uploadFailed": "Could not upload the animated avatar.",
+  "@profile.animatedAvatar.uploadFailed": {
+    "description": "Animated avatar recorder, error when uploading the finished animation failed."
+  },
+  "profile.animatedAvatar.noRecordingContext": "Could not create a drawing context for recording.",
+  "@profile.animatedAvatar.noRecordingContext": {
+    "description": "Animated avatar recorder, technical error when the browser cannot prepare a canvas to record."
+  },
+  "profile.animatedAvatar.noDrawingContext": "Could not create a drawing context.",
+  "@profile.animatedAvatar.noDrawingContext": {
+    "description": "Animated avatar recorder, technical error when the browser cannot prepare a canvas to draw the avatar."
+  },
+  "profile.animatedAvatar.posterFailed": "Could not render the poster frame.",
+  "@profile.animatedAvatar.posterFailed": {
+    "description": "Animated avatar recorder, error when the still picture shown before playback could not be made."
+  },
+  "profile.animatedAvatar.backgroundKeptWarning": "Background removal model couldn't be loaded, so the background was kept. Retake while online to remove it.",
+  "@profile.animatedAvatar.backgroundKeptWarning": {
+    "description": "Animated avatar recorder, review step, notice when the background could not be cut out."
+  },
+  "profile.animatedAvatar.lineUpShot": "Line up your shot.",
+  "@profile.animatedAvatar.lineUpShot": {
+    "description": "Animated avatar recorder, hint while the live camera preview shows. Short."
+  },
+  "profile.animatedAvatar.recordingHint": "Recording... hold still-ish.",
+  "@profile.animatedAvatar.recordingHint": {
+    "description": "Animated avatar recorder, playful hint while recording. Short."
+  },
+  "profile.animatedAvatar.processingHint": "Cutting you out of the background...",
+  "@profile.animatedAvatar.processingHint": {
+    "description": "Animated avatar recorder, hint while the background is being removed."
+  },
+  "profile.animatedAvatar.hoverToPlay": "Hover to play",
+  "@profile.animatedAvatar.hoverToPlay": {
+    "description": "Animated avatar recorder, caption under the preview in the review step. Short."
+  },
+  "profile.animatedAvatar.previewLabel": "Avatar preview — drag or use arrow keys to position",
+  "@profile.animatedAvatar.previewLabel": {
+    "description": "Animated avatar recorder, screen-reader label of the round preview you can drag to reposition."
+  },
+  "profile.animatedAvatar.startingCamera": "Starting camera",
+  "@profile.animatedAvatar.startingCamera": {
+    "description": "Animated avatar recorder, text and screen-reader label of the spinner while the camera turns on. Short."
+  },
+  "profile.animatedAvatar.processingRecording": "Processing recording",
+  "@profile.animatedAvatar.processingRecording": {
+    "description": "Animated avatar recorder, screen-reader label of the spinner after recording."
+  },
+  "profile.animatedAvatar.personSizeTip": "Scale just past the color circle for a pop-out look.",
+  "@profile.animatedAvatar.personSizeTip": {
+    "description": "Animated avatar recorder, review step, tip next to the size slider for your cut-out figure."
+  },
+  "profile.animatedAvatar.posterHelp": "Pick the still shown before hover.",
+  "@profile.animatedAvatar.posterHelp": {
+    "description": "Animated avatar recorder, Frame section, help text above the strip of frames."
+  },
+  "profile.animatedAvatar.uploading": "Uploading animated avatar",
+  "@profile.animatedAvatar.uploading": {
+    "description": "Animated avatar recorder, screen-reader label of the spinner on the Use as avatar button."
+  },
+  "profile.animatedAvatar.useAsAvatar": "Use as avatar",
+  "@profile.animatedAvatar.useAsAvatar": {
+    "description": "Animated avatar recorder, button that saves the recording as your avatar. Short."
+  },
+  "profile.animatedAvatar.customBackdrop": "Choose custom backdrop color",
+  "@profile.animatedAvatar.customBackdrop": {
+    "description": "Animated avatar recorder, Background section, screen-reader label of the swatch that opens a color picker."
+  },
+  "profile.animatedAvatar.useBackdrop": "Use {color} backdrop",
+  "@profile.animatedAvatar.useBackdrop": {
+    "description": "Animated avatar recorder, Background section, screen-reader label of a color swatch; {color} is a hex code like #F2C94C."
+  },
+  "profile.animatedAvatar.tryCameraAgain": "Try camera again",
+  "@profile.animatedAvatar.tryCameraAgain": {
+    "description": "Animated avatar recorder, button after the camera failed to start. Short."
+  },
+  "profile.animatedAvatar.captureVideo": "Capture {seconds} sec video",
+  "@profile.animatedAvatar.captureVideo": {
+    "description": "Animated avatar recorder, record button; {seconds} is the clip length, e.g. 3. Short."
+  },
+  "profile.animatedAvatar.useIphone": "Use iPhone",
+  "@profile.animatedAvatar.useIphone": {
+    "description": "Animated avatar recorder, camera choice card: record with an iPhone camera. Short."
+  },
+  "profile.animatedAvatar.useComputer": "Use this computer",
+  "@profile.animatedAvatar.useComputer": {
+    "description": "Animated avatar recorder, camera choice card: record with this computer's camera. Short."
+  },
+  "profile.animatedAvatar.outlineTurnOff": "Turn outline off",
+  "@profile.animatedAvatar.outlineTurnOff": {
+    "description": "Animated avatar recorder, screen-reader label of the outline toggle button while the outline is on."
+  },
+  "profile.animatedAvatar.outlineTurnOn": "Turn outline on",
+  "@profile.animatedAvatar.outlineTurnOn": {
+    "description": "Animated avatar recorder, screen-reader label of the outline toggle button while the outline is off."
+  },
+  "profile.animatedAvatar.outlineOn": "Outline on",
+  "@profile.animatedAvatar.outlineOn": {
+    "description": "Animated avatar recorder, tooltip of the outline toggle while the white outline around you is shown. Short."
+  },
+  "profile.animatedAvatar.outlineOff": "Outline off",
+  "@profile.animatedAvatar.outlineOff": {
+    "description": "Animated avatar recorder, tooltip of the outline toggle while the outline is hidden. Short."
+  },
+  "profile.animatedAvatar.chooseStill": "Choose still frame",
+  "@profile.animatedAvatar.chooseStill": {
+    "description": "Animated avatar recorder, screen-reader label of the frame strip slider that picks the still picture."
+  },
+  "profile.animatedAvatar.generatingThumbnails": "Generating frame thumbnails",
+  "@profile.animatedAvatar.generatingThumbnails": {
+    "description": "Animated avatar recorder, screen-reader label of the spinner while the frame strip loads."
+  },
+  "profile.reviewNav.personCaption": "You",
+  "@profile.reviewNav.personCaption": {
+    "description": "Animated avatar recorder, review step, caption under the section button for positioning yourself. Short."
+  },
+  "profile.reviewNav.personLabel": "Position yourself",
+  "@profile.reviewNav.personLabel": {
+    "description": "Animated avatar recorder, review step, tooltip of the 'You' section button. Short."
+  },
+  "profile.reviewNav.shapeCaption": "Circle",
+  "@profile.reviewNav.shapeCaption": {
+    "description": "Animated avatar recorder, review step, caption under the section button for the background circle. Short."
+  },
+  "profile.reviewNav.shapeLabel": "Adjust the circle",
+  "@profile.reviewNav.shapeLabel": {
+    "description": "Animated avatar recorder, review step, tooltip of the 'Circle' section button. Short."
+  },
+  "profile.reviewNav.colorCaption": "Background",
+  "@profile.reviewNav.colorCaption": {
+    "description": "Animated avatar recorder, review step, caption under the background color section button. Short."
+  },
+  "profile.reviewNav.colorLabel": "Background",
+  "@profile.reviewNav.colorLabel": {
+    "description": "Animated avatar recorder, review step, tooltip of the background color section button. Short."
+  },
+  "profile.reviewNav.posterCaption": "Frame",
+  "@profile.reviewNav.posterCaption": {
+    "description": "Animated avatar recorder, review step, caption under the section button for picking the still frame. Short."
+  },
+  "profile.reviewNav.posterLabel": "Still frame",
+  "@profile.reviewNav.posterLabel": {
+    "description": "Animated avatar recorder, review step, tooltip of the 'Frame' section button. Short."
+  },
+  "profile.reviewNav.retakeLabel": "Retake the recording",
+  "@profile.reviewNav.retakeLabel": {
+    "description": "Animated avatar recorder, review step, tooltip and screen-reader label of the Retake button."
+  },
+  "profile.reviewNav.retake": "Retake",
+  "@profile.reviewNav.retake": {
+    "description": "Animated avatar recorder, review step, caption under the camera button that records again. Short."
+  },
+  "profile.activityAgent.fallbackName": "Agent",
+  "@profile.activityAgent.fallbackName": {
+    "description": "Profile activity, name shown for an AI agent that has no name yet. Short."
+  },
+  "profile.bindCallback.tooLarge": "Signed response is too large to return to the browser.",
+  "@profile.bindCallback.tooLarge": {
+    "description": "Error in the web sign-in consent dialog when the signed answer is too big to send back to the website."
+  },
+  "onboarding.community.changeAvatar": "Change your avatar",
+  "@onboarding.community.changeAvatar": {
+    "description": "Onboarding, profile step, avatar circle button when an avatar is set. Screen-reader label."
+  },
+  "onboarding.community.addAvatar": "Add an avatar",
+  "@onboarding.community.addAvatar": {
+    "description": "Onboarding, profile step, empty avatar circle button. Screen-reader label."
+  },
+  "onboarding.community.settingUp": "Setting things up",
+  "@onboarding.community.settingUp": {
+    "description": "Onboarding, connecting screen title while the app joins the built-in server."
+  },
+  "onboarding.community.joining": "Joining {name}",
+  "@onboarding.community.joining": {
+    "description": "Onboarding, connecting screen title while joining a community. {name} is the community name."
+  },
+  "onboarding.community.acceptingInvite": "Accepting your invite…",
+  "@onboarding.community.acceptingInvite": {
+    "description": "Onboarding, connecting screen status text while an invite is being claimed."
+  },
+  "onboarding.community.connecting": "Connecting securely…",
+  "@onboarding.community.connecting": {
+    "description": "Onboarding, connecting screen status text while connecting to the server."
+  },
+  "onboarding.community.advancedSetup": "Advanced setup",
+  "@onboarding.community.advancedSetup": {
+    "description": "Onboarding, connecting screen, secondary button that leaves the default setup. Short."
+  },
+  "onboarding.community.profileTitle": "Build your profile",
+  "@onboarding.community.profileTitle": {
+    "description": "Onboarding, profile step, page title."
+  },
+  "onboarding.community.profileBody": "Add a name and avatar. They’ll show up on your messages, reactions, and agent handoffs.",
+  "@onboarding.community.profileBody": {
+    "description": "Onboarding, profile step, text under the title."
+  },
+  "onboarding.community.profileFallbackName": "Your profile",
+  "@onboarding.community.profileFallbackName": {
+    "description": "Onboarding, profile step, name used for the avatar preview before the user typed a name. Short."
+  },
+  "onboarding.community.avatarAria": "{name} avatar",
+  "@onboarding.community.avatarAria": {
+    "description": "Onboarding, avatar editor dialog, emoji avatar preview. Screen-reader label. {name} is the typed username or 'Your profile'."
+  },
+  "onboarding.community.usernameLabel": "Your username",
+  "@onboarding.community.usernameLabel": {
+    "description": "Onboarding, profile step, label above the username field. Short."
+  },
+  "onboarding.community.usernameAria": "Community username",
+  "@onboarding.community.usernameAria": {
+    "description": "Onboarding, profile step, username field. Screen-reader label."
+  },
+  "onboarding.community.usernamePlaceholder": "Enter your username here",
+  "@onboarding.community.usernamePlaceholder": {
+    "description": "Onboarding, profile step, username field placeholder."
+  },
+  "onboarding.community.editAvatarTitle": "Edit your avatar",
+  "@onboarding.community.editAvatarTitle": {
+    "description": "Onboarding, profile step, avatar editor dialog title (screen readers only)."
+  },
+  "onboarding.community.teamTitle": "Meet your starter team",
+  "@onboarding.community.teamTitle": {
+    "description": "Onboarding, starter team step, page title."
+  },
+  "onboarding.community.teamBody": "Kuzz lets you bring multiple agents into the same workspace. Your team will help you get started using Kuzz.",
+  "@onboarding.community.teamBody": {
+    "description": "Onboarding, starter team step, text under the title. Kuzz is the app name."
+  },
+  "onboarding.community.personaAnimationAlt": "{name} animated character",
+  "@onboarding.community.personaAnimationAlt": {
+    "description": "Onboarding, starter team step, image of a starter agent. Image alt text. {name} is the agent name."
+  },
+  "onboarding.community.tryAgain": "Try again.",
+  "@onboarding.community.tryAgain": {
+    "description": "Onboarding, starter team step, added after the error message on the first failure."
+  },
+  "onboarding.community.preparingWelcome": "Preparing Welcome",
+  "@onboarding.community.preparingWelcome": {
+    "description": "Onboarding, starter team step, loading dots on the enter button. Screen-reader label. Welcome is the name of the first channel."
+  },
+  "onboarding.community.enter": "Take me to Kuzz",
+  "@onboarding.community.enter": {
+    "description": "Onboarding, starter team step, main button that opens the app. Short."
+  },
+  "onboarding.community.skip": "Skip for now",
+  "@onboarding.community.skip": {
+    "description": "Onboarding, starter team step, button shown after repeated failures to skip channel setup. Short."
+  },
+  "onboarding.recoveryPairing.expired": "This pairing code expired or lost its connection. Create a new code and try again.",
+  "@onboarding.recoveryPairing.expired": {
+    "description": "Onboarding, recover identity from phone, error when the pairing code expired or the connection dropped."
+  },
+  "onboarding.recoveryPairing.startFailed": "Could not start recovery.",
+  "@onboarding.recoveryPairing.startFailed": {
+    "description": "Onboarding, recover identity from phone, error when pairing could not start."
+  },
+  "onboarding.recoveryPairing.stopped": "Recovery stopped: {reason}",
+  "@onboarding.recoveryPairing.stopped": {
+    "description": "Onboarding, recover identity from phone, error when the phone aborted pairing. {reason} is a technical reason from the other device."
+  },
+  "onboarding.recoveryPairing.copyFailed": "Could not copy the pairing code. Try again.",
+  "@onboarding.recoveryPairing.copyFailed": {
+    "description": "Onboarding, recover identity from phone, error when copying the pairing code failed."
+  },
+  "onboarding.recoveryPairing.codesMismatch": "The codes didn't match. Pairing was canceled.",
+  "@onboarding.recoveryPairing.codesMismatch": {
+    "description": "Onboarding, recover identity from phone, message after the user said the security codes did not match."
+  },
+  "onboarding.recoveryPairing.confirmFailed": "Could not confirm recovery.",
+  "@onboarding.recoveryPairing.confirmFailed": {
+    "description": "Onboarding, recover identity from phone, error when confirming the security code failed."
+  },
+  "onboarding.recoveryPairing.qrTitle": "Desktop identity recovery QR code",
+  "@onboarding.recoveryPairing.qrTitle": {
+    "description": "Onboarding, recover identity from phone, QR code image title. Screen-reader label."
+  },
+  "onboarding.recoveryPairing.sasQuestion": "Does this code match your phone?",
+  "@onboarding.recoveryPairing.sasQuestion": {
+    "description": "Onboarding, recover identity from phone, question above the security code to compare with the phone."
+  },
+  "onboarding.recoveryPairing.sasWarning": "This gives this desktop permanent access to your Kuzz identity. Only continue if you trust it.",
+  "@onboarding.recoveryPairing.sasWarning": {
+    "description": "Onboarding, recover identity from phone, warning under the security code. Kuzz is the app name."
+  },
+  "onboarding.recoveryPairing.codesMatch": "Codes match",
+  "@onboarding.recoveryPairing.codesMatch": {
+    "description": "Onboarding, recover identity from phone, button confirming the security codes are the same. Short."
+  },
+  "onboarding.recoveryPairing.received": "Identity received securely",
+  "@onboarding.recoveryPairing.received": {
+    "description": "Onboarding, recover identity from phone, success message."
+  },
+  "onboarding.recoveryPairing.tryAgain": "Try again",
+  "@onboarding.recoveryPairing.tryAgain": {
+    "description": "Onboarding, recover identity from phone, button that creates a new pairing code after an error. Short."
+  },
+  "onboarding.recoveryPairing.receiving": "Receiving identity from mobile device...",
+  "@onboarding.recoveryPairing.receiving": {
+    "description": "Onboarding, recover identity from phone, status while the identity is transferred."
+  },
+  "onboarding.recoveryPairing.starting": "Starting pairing...",
+  "@onboarding.recoveryPairing.starting": {
+    "description": "Onboarding, recover identity from phone, status while the pairing starts."
+  },
+  "onboarding.recoveryPairing.generating": "Generating pairing code...",
+  "@onboarding.recoveryPairing.generating": {
+    "description": "Onboarding, recover identity from phone, copy button text while the code is created. Short."
+  },
+  "onboarding.recoveryPairing.copyCode": "Copy pairing code",
+  "@onboarding.recoveryPairing.copyCode": {
+    "description": "Onboarding, recover identity from phone, button that copies the pairing code. Short."
+  },
+  "onboarding.inviteRedeem.confirmAge": "Confirm that you are at least 18 years old.",
+  "@onboarding.inviteRedeem.confirmAge": {
+    "description": "Invite form, error when the age checkbox is not ticked."
+  },
+  "onboarding.inviteRedeem.agreeTerms": "Agree to the Terms of Service and Privacy Policy.",
+  "@onboarding.inviteRedeem.agreeTerms": {
+    "description": "Invite form, error when the terms checkbox is not ticked."
+  },
+  "onboarding.inviteRedeem.redeemingAria": "Redeeming invite",
+  "@onboarding.inviteRedeem.redeemingAria": {
+    "description": "Invite form, spinner on the submit button while the invite is used. Screen-reader label."
+  },
+  "onboarding.inviteRedeem.loadingPolicyAria": "Loading policy",
+  "@onboarding.inviteRedeem.loadingPolicyAria": {
+    "description": "Invite form, spinner on the submit button while the community's join rules load. Screen-reader label."
+  },
+  "onboarding.inviteRedeem.acceptAndJoin": "Accept and join",
+  "@onboarding.inviteRedeem.acceptAndJoin": {
+    "description": "Add community form, submit button after the join rules are shown. Short."
+  },
+  "onboarding.inviteRedeem.joinCommunity": "Join community",
+  "@onboarding.inviteRedeem.joinCommunity": {
+    "description": "Add community form, submit button. Short."
+  },
+  "onboarding.inviteRedeem.acceptAndRedeem": "Accept and redeem invite",
+  "@onboarding.inviteRedeem.acceptAndRedeem": {
+    "description": "Invite form, submit button after the join rules are shown. Short."
+  },
+  "onboarding.inviteRedeem.redeem": "Redeem invite",
+  "@onboarding.inviteRedeem.redeem": {
+    "description": "Invite form, submit button. Short."
+  },
+  "onboarding.inviteRedeem.inviteLabel": "Invite link or code",
+  "@onboarding.inviteRedeem.inviteLabel": {
+    "description": "Invite form, label of the invite field. Short."
+  },
+  "onboarding.inviteRedeem.communityUrlLabel": "Community URL or invite link",
+  "@onboarding.inviteRedeem.communityUrlLabel": {
+    "description": "Add community form, label of the address field. Short."
+  },
+  "onboarding.inviteRedeem.communityUrlPlaceholder": "https://community.example.com or paste an invite link",
+  "@onboarding.inviteRedeem.communityUrlPlaceholder": {
+    "description": "Add community form, address field placeholder. Keep the example URL as is."
+  },
+  "onboarding.inviteRedeem.invitePlaceholder": "https://community.example.com/invite/abc123 or paste a code",
+  "@onboarding.inviteRedeem.invitePlaceholder": {
+    "description": "Invite form, invite field placeholder. Keep the example URL as is."
+  },
+  "onboarding.inviteRedeem.invalidInvite": "Please enter a valid invite link or community URL",
+  "@onboarding.inviteRedeem.invalidInvite": {
+    "description": "Onboarding invite step, tip under the field when the text is not a valid invite."
+  },
+  "onboarding.profileStep.reconnectFailed": "Couldn't reconnect. Try again.",
+  "@onboarding.profileStep.reconnectFailed": {
+    "description": "Onboarding, name step, error toast when reconnecting to the server failed."
+  },
+  "onboarding.profileStep.title": "What should we call you?",
+  "@onboarding.profileStep.title": {
+    "description": "Onboarding, name step, page title."
+  },
+  "onboarding.profileStep.body": "Pick the name people and agents will see in Kuzz. You can change it anytime.",
+  "@onboarding.profileStep.body": {
+    "description": "Onboarding, name step, text under the title. Kuzz is the app name."
+  },
+  "onboarding.profileStep.nameLabel": "Name",
+  "@onboarding.profileStep.nameLabel": {
+    "description": "Onboarding, name step, label of the name field (also screen-reader label). Short."
+  },
+  "onboarding.profileStep.namePlaceholder": "Enter your name",
+  "@onboarding.profileStep.namePlaceholder": {
+    "description": "Onboarding, name step, name field placeholder."
+  },
+  "onboarding.profileStep.savingAria": "Saving profile",
+  "@onboarding.profileStep.savingAria": {
+    "description": "Onboarding, name step, spinner on the main button while saving. Screen-reader label."
+  },
+  "onboarding.profileStep.createKey": "Create an identity key",
+  "@onboarding.profileStep.createKey": {
+    "description": "Onboarding, name step, main button that creates a new identity key. Short."
+  },
+  "onboarding.profileStep.haveKey": "I already have a key",
+  "@onboarding.profileStep.haveKey": {
+    "description": "Onboarding, name step, button to import an existing identity key. Short."
+  },
+  "onboarding.profileStep.setUpLater": "Set up later and start",
+  "@onboarding.profileStep.setUpLater": {
+    "description": "Onboarding, name step, button that skips setup and opens the app. Short."
+  },
+  "onboarding.profileStep.skip": "Skip for now",
+  "@onboarding.profileStep.skip": {
+    "description": "Onboarding, name step, button that skips saving the name. Short."
+  },
+  "onboarding.profileStep.continueWithoutSaving": "Continue without saving",
+  "@onboarding.profileStep.continueWithoutSaving": {
+    "description": "Onboarding, name step, button shown after saving failed. Short."
+  },
+  "onboarding.googleSignIn.failed": "Google sign-in failed.",
+  "@onboarding.googleSignIn.failed": {
+    "description": "Google sign-in button, error toast when sign-in failed without details."
+  },
+  "onboarding.googleSignIn.note": "Sign in with your Google account to get started.",
+  "@onboarding.googleSignIn.note": {
+    "description": "Google sign-in button, default text above the button."
+  },
+  "onboarding.googleSignIn.signingIn": "Signing in…",
+  "@onboarding.googleSignIn.signingIn": {
+    "description": "Google sign-in button text while signing in. Short."
+  },
+  "onboarding.googleSignIn.button": "Sign in with Google",
+  "@onboarding.googleSignIn.button": {
+    "description": "Google sign-in button. Short."
+  },
+  "onboarding.googleSignIn.olderAccount": "Sign in to an older Kuzz account",
+  "@onboarding.googleSignIn.olderAccount": {
+    "description": "Onboarding, button for accounts made with an earlier Kuzz version. Short."
+  },
+  "onboarding.googleSignIn.olderAccountTitle": "Use this only if your Kuzz account was created with an earlier version of Kuzz.",
+  "@onboarding.googleSignIn.olderAccountTitle": {
+    "description": "Onboarding, tooltip on the older account sign-in button."
+  },
+  "onboarding.defaultConfig.selectHarness": "Select a harness",
+  "@onboarding.defaultConfig.selectHarness": {
+    "description": "Onboarding, model settings step, placeholder of the harness (agent runtime) dropdown. Short."
+  },
+  "onboarding.defaultConfig.loadFailed": "Couldn't load harness settings. Go back and try again.",
+  "@onboarding.defaultConfig.loadFailed": {
+    "description": "Onboarding, model settings step, error when the harness list could not load."
+  },
+  "onboarding.defaultConfig.defaultHarness": "Default harness",
+  "@onboarding.defaultConfig.defaultHarness": {
+    "description": "Onboarding, model settings step, label of the harness (agent runtime) dropdown. Short."
+  },
+  "onboarding.defaultConfig.useDifferentHarness": "<or>or</or> <link>Use a different harness</link>",
+  "@onboarding.defaultConfig.useDifferentHarness": {
+    "description": "Onboarding, API key step, line under the fields; <link> is a link button back to the harness choice. Keep both tags."
+  },
+  "onboarding.defaultConfig.saveFailedShort": "Couldn’t save model settings.",
+  "@onboarding.defaultConfig.saveFailedShort": {
+    "description": "Onboarding, model settings step, error detail used when saving failed without a reason."
+  },
+  "onboarding.defaultConfig.saveFailed": "Couldn’t save model settings. {error} Try again.",
+  "@onboarding.defaultConfig.saveFailed": {
+    "description": "Onboarding, model settings step, error under the buttons. {error} is the technical reason."
+  },
+  "onboarding.defaultConfig.apiKeyTitle": "Connect with an API key",
+  "@onboarding.defaultConfig.apiKeyTitle": {
+    "description": "Onboarding, API key step, page title."
+  },
+  "onboarding.defaultConfig.title": "Choose your model settings",
+  "@onboarding.defaultConfig.title": {
+    "description": "Onboarding, model settings step, page title."
+  },
+  "onboarding.defaultConfig.apiKeyBody": "Choose your provider and enter an API key to connect to the Kuzz harness.",
+  "@onboarding.defaultConfig.apiKeyBody": {
+    "description": "Onboarding, API key step, text under the title. Kuzz is the app name."
+  },
+  "onboarding.defaultConfig.body": "Select the model and effort level your agents will use by default.",
+  "@onboarding.defaultConfig.body": {
+    "description": "Onboarding, model settings step, text under the title."
+  },
+  "onboarding.defaultConfig.skip": "Skip for now",
+  "@onboarding.defaultConfig.skip": {
+    "description": "Onboarding, model settings step, button that skips the step. Short."
+  },
+  "onboarding.defaultConfig.saving": "Saving…",
+  "@onboarding.defaultConfig.saving": {
+    "description": "Onboarding, model settings step, Next button text while saving. Short."
+  },
+  "onboarding.flow.membershipCheckFailed": "Something went wrong. Please try again.",
+  "@onboarding.flow.membershipCheckFailed": {
+    "description": "Onboarding, name and avatar steps, error box title when the membership check failed."
+  },
+  "onboarding.flow.confirmNewIdentity": "This will create a new identity and abandon your previous key. This cannot be undone. Continue?",
+  "@onboarding.flow.confirmNewIdentity": {
+    "description": "Onboarding, re-import key screen, confirmation dialog before starting a new identity."
+  },
+  "onboarding.flow.newIdentityFailed": "Failed to create a new identity. Please try again.",
+  "@onboarding.flow.newIdentityFailed": {
+    "description": "Onboarding, re-import key screen, error when creating a new identity failed."
+  },
+  "onboarding.flow.skipSetup": "Skip setup",
+  "@onboarding.flow.skipSetup": {
+    "description": "Onboarding, name step, top back/skip button. Short."
+  },
+  "onboarding.flow.startNewIdentity": "Start new identity",
+  "@onboarding.flow.startNewIdentity": {
+    "description": "Onboarding, re-import key screen, top button that abandons the old key. Short."
+  },
+  "onboarding.flow.connectFailedTitle": "Couldn't connect",
+  "@onboarding.flow.connectFailedTitle": {
+    "description": "Onboarding, name and avatar steps, error box title when the server is unreachable."
+  },
+  "onboarding.flow.connectFailedBody": "Check your internet connection and try again.",
+  "@onboarding.flow.connectFailedBody": {
+    "description": "Onboarding, name and avatar steps, error box text when the server is unreachable."
+  },
+  "onboarding.flow.tryAgain": "Try again",
+  "@onboarding.flow.tryAgain": {
+    "description": "Onboarding, name and avatar steps, retry button in the connection error box. Short."
+  },
+  "onboarding.flow.pleaseTryAgain": "Please try again.",
+  "@onboarding.flow.pleaseTryAgain": {
+    "description": "Onboarding, name and avatar steps, error box text under the error title."
+  },
+  "onboarding.flow.reimportTitle": "Re-import your key",
+  "@onboarding.flow.reimportTitle": {
+    "description": "Onboarding, re-import key screen (identity lost), page title."
+  },
+  "onboarding.flow.reimportBody": "Your identity is no longer in the system keyring. Re-import your nsec to restore it — Kuzz will restart to finish recovery. Or go back to start a new identity with a fresh key.",
+  "@onboarding.flow.reimportBody": {
+    "description": "Onboarding, re-import key screen (identity lost), text under the title. nsec is a private key format, keep as is. Kuzz is the app name."
+  },
+  "onboarding.flow.importTitle": "Use your existing key",
+  "@onboarding.flow.importTitle": {
+    "description": "Onboarding, import key screen, page title."
+  },
+  "onboarding.flow.importBody": "Import your Nostr private key to use that identity with Kuzz. If this key already has a profile on the relay, your name and avatar are restored automatically.",
+  "@onboarding.flow.importBody": {
+    "description": "Onboarding, import key screen, text under the title. Nostr is a protocol name, keep as is."
+  },
+  "onboarding.membershipDenied.signOutFailed": "Couldn't sign out. Try again.",
+  "@onboarding.membershipDenied.signOutFailed": {
+    "description": "Not-a-member screen, error when signing out to switch Google account failed."
+  },
+  "onboarding.membershipDenied.invalidNsec": "That doesn't look like a valid nsec. Paste an nsec1 key.",
+  "@onboarding.membershipDenied.invalidNsec": {
+    "description": "Not-a-member screen, key import form, error for an invalid private key. nsec and nsec1 are key formats, keep as is."
+  },
+  "onboarding.membershipDenied.importFailed": "Failed to import key.",
+  "@onboarding.membershipDenied.importFailed": {
+    "description": "Not-a-member screen, key import form, error when importing failed."
+  },
+  "onboarding.membershipDenied.badge": "Membership required",
+  "@onboarding.membershipDenied.badge": {
+    "description": "Not-a-member screen, warning badge above the title. Short."
+  },
+  "onboarding.membershipDenied.title": "Not a member yet",
+  "@onboarding.membershipDenied.title": {
+    "description": "Not-a-member screen, title."
+  },
+  "onboarding.membershipDenied.body": "This community is invite-only. Ask an admin for an invite link, then use it below.",
+  "@onboarding.membershipDenied.body": {
+    "description": "Not-a-member screen, text under the title."
+  },
+  "onboarding.membershipDenied.privateKey": "Private key",
+  "@onboarding.membershipDenied.privateKey": {
+    "description": "Not-a-member screen, key import form, field label. Short."
+  },
+  "onboarding.membershipDenied.npubPreview": "This will use this Nostr identity:",
+  "@onboarding.membershipDenied.npubPreview": {
+    "description": "Not-a-member screen, key import form, text above the public key preview. Nostr is a protocol name."
+  },
+  "onboarding.membershipDenied.importingAria": "Importing key",
+  "@onboarding.membershipDenied.importingAria": {
+    "description": "Not-a-member screen, spinner on the import button. Screen-reader label."
+  },
+  "onboarding.membershipDenied.importKey": "Import key",
+  "@onboarding.membershipDenied.importKey": {
+    "description": "Not-a-member screen, key import form, submit button. Short."
+  },
+  "onboarding.membershipDenied.tryAgain": "Try again",
+  "@onboarding.membershipDenied.tryAgain": {
+    "description": "Not-a-member screen, main button that checks membership again. Short."
+  },
+  "onboarding.membershipDenied.changeCommunity": "Change community",
+  "@onboarding.membershipDenied.changeCommunity": {
+    "description": "Not-a-member screen, button that opens the community picker. Short."
+  },
+  "onboarding.membershipDenied.haveInvite": "Have an invite?",
+  "@onboarding.membershipDenied.haveInvite": {
+    "description": "Not-a-member screen, small link that opens the invite form. Short."
+  },
+  "onboarding.membershipDenied.differentGoogleAccount": "Use a different Google account",
+  "@onboarding.membershipDenied.differentGoogleAccount": {
+    "description": "Not-a-member screen, small link that signs out to pick another Google account. Short."
+  },
+  "onboarding.membershipDenied.differentKey": "Use a different key",
+  "@onboarding.membershipDenied.differentKey": {
+    "description": "Not-a-member screen, small link that opens the key import form (test builds only). Short."
+  },
+  "onboarding.defaultCommunity.noResponseOffline": "The default community did not respond. Check your internet connection and try again.",
+  "@onboarding.defaultCommunity.noResponseOffline": {
+    "description": "Onboarding, connecting to community screen, error after a timeout (built-in server)."
+  },
+  "onboarding.defaultCommunity.noResponseAdvanced": "The default community did not respond. Try again or use advanced setup.",
+  "@onboarding.defaultCommunity.noResponseAdvanced": {
+    "description": "Onboarding, connecting to community screen, error after a timeout (advanced setup available)."
+  },
+  "onboarding.defaultCommunity.prepareFailedOffline": "Could not prepare the default community. Check your internet connection and try again.",
+  "@onboarding.defaultCommunity.prepareFailedOffline": {
+    "description": "Onboarding, connecting to community screen, error when setup failed (built-in server)."
+  },
+  "onboarding.defaultCommunity.prepareFailedAdvanced": "Could not prepare the default community. Try again or use advanced setup.",
+  "@onboarding.defaultCommunity.prepareFailedAdvanced": {
+    "description": "Onboarding, connecting to community screen, error when setup failed (advanced setup available)."
+  },
+  "onboarding.defaultCommunity.title": "Connecting to your community",
+  "@onboarding.defaultCommunity.title": {
+    "description": "Onboarding, connecting to community screen, title."
+  },
+  "onboarding.defaultCommunity.preparing": "Preparing your default community…",
+  "@onboarding.defaultCommunity.preparing": {
+    "description": "Onboarding, connecting to community screen, status text."
+  },
+  "onboarding.defaultCommunity.advancedSetup": "Advanced setup",
+  "@onboarding.defaultCommunity.advancedSetup": {
+    "description": "Onboarding, connecting to community screen, button for manual server setup. Short."
+  },
+  "onboarding.avatarStep.previewAria": "{name} avatar",
+  "@onboarding.avatarStep.previewAria": {
+    "description": "Onboarding, avatar step, emoji avatar preview. Screen-reader label. {name} is the user's name or 'Your avatar'."
+  },
+  "onboarding.avatarStep.addImageAria": "Add a display image",
+  "@onboarding.avatarStep.addImageAria": {
+    "description": "Onboarding, avatar step, empty avatar preview. Screen-reader label."
+  },
+  "onboarding.avatarStep.skip": "Skip for now",
+  "@onboarding.avatarStep.skip": {
+    "description": "Onboarding, avatar step, button that skips choosing an avatar. Short."
+  },
+  "onboarding.avatarStep.continueWithoutSaving": "Continue without saving",
+  "@onboarding.avatarStep.continueWithoutSaving": {
+    "description": "Onboarding, avatar step, button shown after saving failed. Short."
+  },
+  "onboarding.avatarStep.savingAria": "Saving profile",
+  "@onboarding.avatarStep.savingAria": {
+    "description": "Onboarding, avatar step, spinner on Next while saving. Screen-reader label."
+  },
+  "onboarding.avatarStep.uploadingAria": "Uploading avatar",
+  "@onboarding.avatarStep.uploadingAria": {
+    "description": "Onboarding, avatar step, spinner on Next while the image uploads. Screen-reader label."
+  },
+  "onboarding.avatarStep.fallbackName": "Your avatar",
+  "@onboarding.avatarStep.fallbackName": {
+    "description": "Onboarding, avatar step, name used for the preview when no name is set. Short."
+  },
+  "onboarding.avatarStep.title": "Next, add a display image",
+  "@onboarding.avatarStep.title": {
+    "description": "Onboarding, avatar step, page title."
+  },
+  "onboarding.avatarStep.body": "Choose an image or emoji as your avatar",
+  "@onboarding.avatarStep.body": {
+    "description": "Onboarding, avatar step, text under the title."
+  },
+  "onboarding.joinPolicy.age": "I am 18 years of age or older.",
+  "@onboarding.joinPolicy.age": {
+    "description": "Join rules box (invite and onboarding), age checkbox label."
+  },
+  "onboarding.joinPolicy.agreeBoth": "I agree to the Kuzz <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>.",
+  "@onboarding.joinPolicy.agreeBoth": {
+    "description": "Join rules box, agreement checkbox label; <terms> and <privacy> are links that open the documents. Keep the tags. Kuzz is the app name."
+  },
+  "onboarding.joinPolicy.agreeTerms": "I agree to the Kuzz <terms>Terms of Service</terms>.",
+  "@onboarding.joinPolicy.agreeTerms": {
+    "description": "Join rules box, agreement checkbox label when only terms exist; <terms> is a link. Keep the tag."
+  },
+  "onboarding.joinPolicy.agreePrivacy": "I agree to the Kuzz <privacy>Privacy Policy</privacy>.",
+  "@onboarding.joinPolicy.agreePrivacy": {
+    "description": "Join rules box, agreement checkbox label when only a privacy policy exists; <privacy> is a link. Keep the tag."
+  },
+  "onboarding.pendingInvite.titleInvite": "Opening invite",
+  "@onboarding.pendingInvite.titleInvite": {
+    "description": "Invite link opened before setup finished, screen title."
+  },
+  "onboarding.pendingInvite.titleCommunity": "Opening community link",
+  "@onboarding.pendingInvite.titleCommunity": {
+    "description": "Community link opened before setup finished, screen title."
+  },
+  "onboarding.pendingInvite.bodyInvite": "You’ll join after you sign in.",
+  "@onboarding.pendingInvite.bodyInvite": {
+    "description": "Invite link opened before setup finished, text under the title."
+  },
+  "onboarding.pendingInvite.bodyCommunity": "You’ll connect to {name} once setup is finished.",
+  "@onboarding.pendingInvite.bodyCommunity": {
+    "description": "Community link opened before setup finished, text under the title. {name} is the community name."
+  },
+  "onboarding.pendingInvite.continue": "Continue setup",
+  "@onboarding.pendingInvite.continue": {
+    "description": "Invite link opened before setup finished, main button. Short."
+  },
+  "onboarding.signedOut.title": "You're signed out",
+  "@onboarding.signedOut.title": {
+    "description": "Signed-out screen, title."
+  },
+  "onboarding.signedOut.body": "Sign in with Google to get back to your conversations. Nothing was deleted.",
+  "@onboarding.signedOut.body": {
+    "description": "Signed-out screen, text under the title."
+  },
+  "onboarding.signedOut.note": "Use the Google account you signed in with before.",
+  "@onboarding.signedOut.note": {
+    "description": "Signed-out screen, text above the Google sign-in button."
+  },
+  "onboarding.signedOut.unavailable": "Google sign-in isn't available right now.",
+  "@onboarding.signedOut.unavailable": {
+    "description": "Signed-out screen, message when the server does not offer Google sign-in."
+  },
+  "onboarding.signedOut.tryAgain": "Try again",
+  "@onboarding.signedOut.tryAgain": {
+    "description": "Signed-out screen, button that reloads the app. Short."
+  },
+  "onboarding.termsLine.text": "By continuing you agree to the <terms>Terms of Service</terms>",
+  "@onboarding.termsLine.text": {
+    "description": "Small line under the Google sign-in button; <terms> is a link that opens the terms. Keep the tag. No period in English."
+  },
+  "onboarding.starterChannels.setupFailedReason": "Failed to set up starter groups",
+  "@onboarding.starterChannels.setupFailedReason": {
+    "description": "Onboarding, starter team step, error text when the first groups could not be created and no reason is known."
+  },
+  "onboarding.starterChannels.setupFailed": "Couldn't set up starter groups",
+  "@onboarding.starterChannels.setupFailed": {
+    "description": "Error toast title when the first groups (channels) could not be created; has a Retry button."
+  },
+  "onboarding.claimInvite.expired": "This invite code has expired — ask for a new one.",
+  "@onboarding.claimInvite.expired": {
+    "description": "Onboarding, joining community screen, error when the invite code expired."
+  },
+  "onboarding.claimInvite.exhausted": "This invite has reached its use limit. Ask for a new invite.",
+  "@onboarding.claimInvite.exhausted": {
+    "description": "Onboarding, joining community screen, error when the invite was used too many times."
+  },
+  "onboarding.encryptedBackup.passphraseTooShort": "Use at least {count} characters.",
+  "@onboarding.encryptedBackup.passphraseTooShort": {
+    "description": "Backup password field, hint when the password is too short. {count} is the minimum length (12)."
+  },
+  "onboarding.welcomeKickoff.leadStartFailed": "Couldn't start {name} for the Welcome kickoff.",
+  "@onboarding.welcomeKickoff.leadStartFailed": {
+    "description": "Error toast in the Welcome group when the lead starter agent could not start. {name} is the agent name. Welcome is the group name."
+  },
+  "onboarding.welcomeKickoff.startFailed": "Couldn't start the Welcome team kickoff.",
+  "@onboarding.welcomeKickoff.startFailed": {
+    "description": "Error toast in the Welcome group when the starter team introduction could not start."
+  },
+  "onboarding.welcomeKickoff.finishFailed": "Couldn't finish the Welcome team kickoff.",
+  "@onboarding.welcomeKickoff.finishFailed": {
+    "description": "Error toast in the Welcome group when the starter team introduction could not finish."
+  },
+  "profile.agentBadge.ownedBy": "Agent owned by {name}",
+  "@profile.agentBadge.ownedBy": {
+    "description": "Hover tooltip on the small owner avatar shown next to another person's AI agent. {name} is the owner's display name."
+  },
+  "profile.agentBadge.runningOnThisDeviceNamed": "Running on this device ({name})",
+  "@profile.agentBadge.runningOnThisDeviceNamed": {
+    "description": "Tooltip and screen-reader label on an agent's robot badge when the agent runs on this computer. {name} is the device name."
+  },
+  "profile.agentBadge.runningOnThisDevice": "Running on this device",
+  "@profile.agentBadge.runningOnThisDevice": {
+    "description": "Tooltip and screen-reader label on an agent's robot badge when the agent runs on this computer (device has no name)."
+  },
+  "profile.agentBadge.runningOnNamed": "Running on {name}",
+  "@profile.agentBadge.runningOnNamed": {
+    "description": "Tooltip and screen-reader label on an agent's robot badge when the agent runs on another of the user's computers. {name} is the device name."
+  },
+  "profile.agentBadge.runningOnAnotherDevice": "Running on another device",
+  "@profile.agentBadge.runningOnAnotherDevice": {
+    "description": "Tooltip and screen-reader label on an agent's robot badge when the agent runs on another, unnamed computer."
+  },
+  "profile.recipientChip.remove": "Remove {name}",
+  "@profile.recipientChip.remove": {
+    "description": "Screen-reader label on the avatar button of a selected recipient chip (new message / invite pickers); removes that person. {name} is the person's name."
+  },
+  "profile.recipientChip.verifyKey": "Verify {name} public key",
+  "@profile.recipientChip.verifyKey": {
+    "description": "Screen-reader label on a selected recipient's name; opens a popover showing their public key."
+  },
+  "profile.recipientChip.verifyTitle": "Verify {name}",
+  "@profile.recipientChip.verifyTitle": {
+    "description": "Title of the popover that shows a selected recipient's public key. {name} is the person's name."
+  },
+  "profile.recipientChip.agentLabel": "agent",
+  "@profile.recipientChip.agentLabel": {
+    "description": "Screen-reader label (lowercase) for the robot icon next to a selected recipient who is an AI agent. Short."
+  },
+  "profile.field.publicKey": "Public key",
+  "@profile.field.publicKey": {
+    "description": "Profile panel, row label for the person's or agent's public identity key."
+  },
+  "profile.field.nip05": "NIP-05",
+  "@profile.field.nip05": {
+    "description": "Profile panel, row label for the NIP-05 identifier (a Nostr handle). Usually kept as is."
+  },
+  "profile.field.agentType": "Agent type",
+  "@profile.field.agentType": {
+    "description": "Profile panel, row label for which AI tool runs the agent (Claude Code, Codex, ...)."
+  },
+  "profile.field.status": "Status",
+  "@profile.field.status": {
+    "description": "Profile panel, row label for the agent's running state."
+  },
+  "profile.field.capabilities": "Capabilities",
+  "@profile.field.capabilities": {
+    "description": "Profile panel, row label listing what the agent can do."
+  },
+  "profile.field.managedBy": "Managed by",
+  "@profile.field.managedBy": {
+    "description": "Profile panel, row label for the person who owns the agent; the owner's name follows."
+  },
+  "profile.field.runtime": "Runtime",
+  "@profile.field.runtime": {
+    "description": "Profile panel, row label for the AI tool the agent runs on."
+  },
+  "profile.field.agentProfile": "Agent profile",
+  "@profile.field.agentProfile": {
+    "description": "Profile panel, row label shown when the agent's declared owner was checked."
+  },
+  "profile.field.acpCommand": "ACP command",
+  "@profile.field.acpCommand": {
+    "description": "Profile panel, row label for the command that starts the agent (ACP = Agent Client Protocol). Keep ACP."
+  },
+  "profile.field.mcpCommand": "MCP command",
+  "@profile.field.mcpCommand": {
+    "description": "Profile panel, row label for the tools-server command (MCP = Model Context Protocol). Keep MCP."
+  },
+  "profile.field.backend": "Backend",
+  "@profile.field.backend": {
+    "description": "Profile panel, row label for the hosting provider that runs the agent."
+  },
+  "profile.field.startOnLaunch": "Start on launch",
+  "@profile.field.startOnLaunch": {
+    "description": "Profile panel, row label: whether the agent starts when the app opens. Value is Yes or No."
+  },
+  "profile.field.respondTo": "Who can send instructions",
+  "@profile.field.respondTo": {
+    "description": "Profile panel, row label for who the agent will take instructions from."
+  },
+  "profile.field.lastError": "Last error",
+  "@profile.field.lastError": {
+    "description": "Profile panel, row label for the agent's most recent error message."
+  },
+  "profile.field.visibility": "Visibility",
+  "@profile.field.visibility": {
+    "description": "Profile panel, row label for whether an agent is visible to others."
+  },
+  "profile.field.notDeployed": "Not deployed",
+  "@profile.field.notDeployed": {
+    "description": "Profile panel, Status row value for an agent definition that has no running copy yet."
+  },
+  "profile.field.respondToOwnerNamed": "Only {name} (owner)",
+  "@profile.field.respondToOwnerNamed": {
+    "description": "Profile panel, value of the 'Who can send instructions' row. {name} is the owner's display name."
+  },
+  "profile.field.respondToOwner": "Only the owner",
+  "@profile.field.respondToOwner": {
+    "description": "Profile panel, value of the 'Who can send instructions' row when the owner's name is unknown."
+  },
+  "profile.field.respondToAllowlist": "Selected people",
+  "@profile.field.respondToAllowlist": {
+    "description": "Profile panel, value of the 'Who can send instructions' row: only a chosen list of people."
+  },
+  "profile.field.respondToAnyone": "Anyone",
+  "@profile.field.respondToAnyone": {
+    "description": "Profile panel, value of the 'Who can send instructions' row: everyone."
+  },
+  "profile.field.ownerVerified": "Declared owner verified",
+  "@profile.field.ownerVerified": {
+    "description": "Profile panel, value of the 'Agent profile' row: the agent's stated owner was confirmed."
+  },
+  "profile.field.open": "Open {label}",
+  "@profile.field.open": {
+    "description": "Profile panel, tooltip and screen-reader label on a clickable row. {label} is the row's label, e.g. 'Managed by'."
+  },
+  "profile.field.copy": "Copy {label}",
+  "@profile.field.copy": {
+    "description": "Profile panel, tooltip and screen-reader label on a row that copies its value. {label} is the row's label, e.g. 'Public key'."
+  },
+  "profile.agentDetails.instructions": "Agent instructions",
+  "@profile.agentDetails.instructions": {
+    "description": "Agent profile panel, label of the row showing the agent's instructions (its system prompt)."
+  },
+  "profile.agentDetails.noInstruction": "No instruction set.",
+  "@profile.agentDetails.noInstruction": {
+    "description": "Agent profile panel, placeholder when the agent has no instructions."
+  },
+  "profile.instances.title": "Instances",
+  "@profile.instances.title": {
+    "description": "Agent definition profile panel, section title listing running copies of this agent."
+  },
+  "profile.instances.count": "{count, plural, one {# instance} other {# instances}}",
+  "@profile.instances.count": {
+    "description": "Agent definition profile panel, row that expands the list of running copies."
+  },
+  "profile.instances.archived": "Archived",
+  "@profile.instances.archived": {
+    "description": "Agent definition profile panel: status of an archived copy, and sub-heading above archived copies. Short."
+  },
+  "profile.instances.current": "Current",
+  "@profile.instances.current": {
+    "description": "Agent definition profile panel, status of the copy being viewed now. Short."
+  },
+  "profile.instances.statusRunning": "running",
+  "@profile.instances.statusRunning": {
+    "description": "Agent definition profile panel, status of a running copy (shown capitalized by styling). Short."
+  },
+  "profile.instances.statusStopped": "stopped",
+  "@profile.instances.statusStopped": {
+    "description": "Agent definition profile panel, status of a stopped copy (shown capitalized by styling). Short."
+  },
+  "profile.instances.statusDeployed": "deployed",
+  "@profile.instances.statusDeployed": {
+    "description": "Agent definition profile panel, status of a copy deployed to a hosting provider (shown capitalized by styling). Short."
+  },
+  "profile.instances.statusNotDeployed": "not deployed",
+  "@profile.instances.statusNotDeployed": {
+    "description": "Agent definition profile panel, status of a copy that is not deployed (shown capitalized by styling). Short."
+  },
+  "profile.panelView.summary": "Profile",
+  "@profile.panelView.summary": {
+    "description": "Profile side panel, header title on the main profile view. Short."
+  },
+  "profile.panelView.instructions": "Agent instructions",
+  "@profile.panelView.instructions": {
+    "description": "Profile side panel, header title of the view showing an agent's full instructions. Short."
+  },
+  "profile.panelView.info": "Agent info",
+  "@profile.panelView.info": {
+    "description": "Profile side panel, header title of the agent details view. Short."
+  },
+  "profile.panelView.configuration": "Runtime",
+  "@profile.panelView.configuration": {
+    "description": "Profile side panel, header title of the agent's runtime settings view. Short."
+  },
+  "profile.panelView.harnessLog": "Harness log",
+  "@profile.panelView.harnessLog": {
+    "description": "Profile side panel, header title of the agent's technical log view (the harness runs the AI tool). Short."
+  },
+  "profile.panelView.memories": "Memories",
+  "@profile.panelView.memories": {
+    "description": "Profile side panel, header title of the agent's saved memories view. Short."
+  },
+  "profile.panelView.channels": "Groups",
+  "@profile.panelView.channels": {
+    "description": "Profile side panel, header title of the list of groups the agent is in. Short."
+  },
+  "profile.panel.agentFallbackName": "Agent",
+  "@profile.panel.agentFallbackName": {
+    "description": "Fallback name/title for an AI agent whose name is not known yet (profile panel header, agent dialog title)."
+  },
+  "profile.panel.resizeHandle": "Resize profile panel",
+  "@profile.panel.resizeHandle": {
+    "description": "Screen-reader label on the drag handle at the edge of the profile side panel."
+  },
+  "profile.panelHeader.backToProfile": "Back to profile",
+  "@profile.panelHeader.backToProfile": {
+    "description": "Screen-reader label on the back arrow in the profile side panel header."
+  },
+  "profile.panelHeader.editAgent": "Edit agent",
+  "@profile.panelHeader.editAgent": {
+    "description": "Screen-reader label on the Edit button in an agent's profile panel header."
+  },
+  "profile.panelHeader.copyLog": "Copy log",
+  "@profile.panelHeader.copyLog": {
+    "description": "Icon button label/tooltip in the harness log header that copies the log text."
+  },
+  "profile.summary.errorBadge": "Error",
+  "@profile.summary.errorBadge": {
+    "description": "Agent profile panel, small red badge on the diagnostics row when the agent has an error. Short."
+  },
+  "profile.tabs.info": "Info",
+  "@profile.tabs.info": {
+    "description": "Profile panel tab: general details. Short."
+  },
+  "profile.tabs.runtime": "Runtime",
+  "@profile.tabs.runtime": {
+    "description": "Profile panel tab: the AI tool and settings the agent runs with. Short."
+  },
+  "profile.tabs.groups": "Groups",
+  "@profile.tabs.groups": {
+    "description": "Profile panel tab: groups the person or agent is in. Short."
+  },
+  "profile.tabs.memories": "Memories",
+  "@profile.tabs.memories": {
+    "description": "Profile panel tab: things the agent has saved to remember. Short."
+  },
+  "profile.summary.editName": "Edit {name}",
+  "@profile.summary.editName": {
+    "description": "Screen-reader label on an agent's name in its profile panel; opens the edit dialog. {name} is the agent's name."
+  },
+  "profile.summary.showMore": "more",
+  "@profile.summary.showMore": {
+    "description": "Profile panel, small lowercase link under a clipped bio that shows the full text. Short."
+  },
+  "profile.summary.showLess": "less",
+  "@profile.summary.showLess": {
+    "description": "Profile panel, small lowercase link under an expanded bio that collapses it. Short."
+  },
+  "profile.popover.acpCommand": "ACP: {command}",
+  "@profile.popover.acpCommand": {
+    "description": "Profile hover card for an agent, small badge with the command that starts it. {command} is a command line. Keep ACP. Short."
+  },
+  "profile.popover.viewActivityLog": "View activity log",
+  "@profile.popover.viewActivityLog": {
+    "description": "Profile hover card for an agent the user owns, button that opens the agent's activity log."
+  },
+  "profile.popover.workingIn": "Working in {name} · {elapsed}",
+  "@profile.popover.workingIn": {
+    "description": "Profile hover card for an agent, pulsing badge while it works. {name} is a group name, {elapsed} a duration like '1m 5s'. Short."
+  },
+  "profile.actions.wave": "Wave",
+  "@profile.actions.wave": {
+    "description": "Profile hover card and profile panel, screen-reader label on the wave (👋) button that sends a friendly hello. Short."
+  },
+  "profile.actions.message": "Message",
+  "@profile.actions.message": {
+    "description": "Profile hover card and profile panel, button that opens a direct message with this person. Short."
+  },
+  "profile.actions.huddle": "Huddle",
+  "@profile.actions.huddle": {
+    "description": "Profile hover card and profile panel, button that starts a voice call (huddle) with this person. Short."
+  },
+  "profile.actions.followFailed": "Follow failed: {error}",
+  "@profile.actions.followFailed": {
+    "description": "Error toast when following a person fails. {error} is a technical reason."
+  },
+  "profile.actions.unfollowFailed": "Unfollow failed: {error}",
+  "@profile.actions.unfollowFailed": {
+    "description": "Error toast when unfollowing a person fails. {error} is a technical reason."
+  },
+  "profile.actions.restartAgent": "Restart agent",
+  "@profile.actions.restartAgent": {
+    "description": "Profile panel, action tile under an agent's name. Short."
+  },
+  "profile.actions.favorite": "Favorite",
+  "@profile.actions.favorite": {
+    "description": "Profile panel, action tile that adds the person to favorites. Short."
+  },
+  "profile.actions.unfavorite": "Unfavorite",
+  "@profile.actions.unfavorite": {
+    "description": "Profile panel, action tile that removes the person from favorites. Short."
+  },
+  "profile.actions.follow": "Follow",
+  "@profile.actions.follow": {
+    "description": "Profile panel, action tile to follow the person. Short."
+  },
+  "profile.actions.unfollow": "Unfollow",
+  "@profile.actions.unfollow": {
+    "description": "Profile panel, action tile to stop following the person. Short."
+  },
+  "profile.actions.startAgent": "Start agent",
+  "@profile.actions.startAgent": {
+    "description": "Profile panel for an agent definition with no running copy, action tile that starts one. Short."
+  },
+  "profile.menu.label": "Profile menu",
+  "@profile.menu.label": {
+    "description": "Screen-reader label for the menu that opens from the user's own avatar (bottom-left)."
+  },
+  "profile.menu.presenceStatus": "Presence status",
+  "@profile.menu.presenceStatus": {
+    "description": "Screen-reader label for the small menu to choose Online / Away / Offline in the user's own profile menu."
+  },
+  "profile.menu.updateStatus": "Update your status",
+  "@profile.menu.updateStatus": {
+    "description": "Own profile menu, placeholder-style button that opens the Set a status dialog."
+  },
+  "profile.menu.invitePeople": "Invite people",
+  "@profile.menu.invitePeople": {
+    "description": "Own profile menu item that opens the invite dialog. Short."
+  },
+  "profile.menu.sendFeedback": "Send feedback",
+  "@profile.menu.sendFeedback": {
+    "description": "Own profile menu item that opens the feedback form. Short."
+  },
+  "profile.menu.profile": "Profile",
+  "@profile.menu.profile": {
+    "description": "Own profile menu item that opens profile settings (how others see you). Short."
+  },
+  "profile.archiveDialog.titleAgent": "Archive this agent?",
+  "@profile.archiveDialog.titleAgent": {
+    "description": "Archive confirmation dialog title, for an AI agent."
+  },
+  "profile.archiveDialog.titleIdentity": "Archive this identity?",
+  "@profile.archiveDialog.titleIdentity": {
+    "description": "Archive confirmation dialog title, for a person."
+  },
+  "profile.archiveDialog.hidesAgent": "Archiving hides this agent from the space.",
+  "@profile.archiveDialog.hidesAgent": {
+    "description": "Archive confirmation dialog, first line of the description, for an AI agent. A space is the user's community."
+  },
+  "profile.archiveDialog.hidesPerson": "Archiving hides this person from the space.",
+  "@profile.archiveDialog.hidesPerson": {
+    "description": "Archive confirmation dialog, first line of the description, for a person. A space is the user's community."
+  },
+  "profile.archiveDialog.notInSearch": "They won't appear in search, autocomplete, or when adding members",
+  "@profile.archiveDialog.notInSearch": {
+    "description": "Archive confirmation dialog, bullet point (no final period)."
+  },
+  "profile.archiveDialog.onlyThisSpace": "This only affects <b>this space</b> — not their account anywhere else",
+  "@profile.archiveDialog.onlyThisSpace": {
+    "description": "Archive confirmation dialog, bullet point (no final period). <b> marks emphasized words."
+  },
+  "profile.archiveDialog.canUnarchive": "You can unarchive them at any time to restore them",
+  "@profile.archiveDialog.canUnarchive": {
+    "description": "Archive confirmation dialog, bullet point (no final period)."
+  },
+  "profile.archiveDialog.deleteInstead": "You can also delete this agent from the profile settings menu if you want to remove the agent instead of hiding it.",
+  "@profile.archiveDialog.deleteInstead": {
+    "description": "Archive confirmation dialog for an AI agent, note under the bullet points."
+  },
+  "profile.archiveDialog.confirm": "Archive",
+  "@profile.archiveDialog.confirm": {
+    "description": "Archive confirmation dialog, confirm button. Short."
+  },
+  "profile.archive.archiving": "Archiving…",
+  "@profile.archive.archiving": {
+    "description": "Shown on the Archive button and menu item while archiving is in progress. Short."
+  },
+  "profile.archive.unarchiving": "Unarchiving…",
+  "@profile.archive.unarchiving": {
+    "description": "Shown on the Unarchive menu item while unarchiving is in progress. Short."
+  },
+  "profile.archive.archiveAgent": "Archive agent",
+  "@profile.archive.archiveAgent": {
+    "description": "Profile panel settings menu item that hides an AI agent from the space. Short."
+  },
+  "profile.archive.archiveIdentity": "Archive identity",
+  "@profile.archive.archiveIdentity": {
+    "description": "Profile panel settings menu item that hides a person from the space. Short."
+  },
+  "profile.archive.unarchiveAgent": "Unarchive agent",
+  "@profile.archive.unarchiveAgent": {
+    "description": "Profile panel settings menu item that restores an archived AI agent. Short."
+  },
+  "profile.archive.unarchiveIdentity": "Unarchive identity",
+  "@profile.archive.unarchiveIdentity": {
+    "description": "Profile panel settings menu item that restores an archived person. Short."
+  },
+  "profile.settingsMenu.open": "Open profile settings",
+  "@profile.settingsMenu.open": {
+    "description": "Screen-reader label on the gear button in the profile panel header."
+  },
+  "profile.settingsMenu.duplicate": "Duplicate",
+  "@profile.settingsMenu.duplicate": {
+    "description": "Profile panel settings menu item that makes a copy of the agent definition. Short."
+  },
+  "profile.settingsMenu.export": "Export",
+  "@profile.settingsMenu.export": {
+    "description": "Profile panel settings menu item that saves the agent definition to a file. Short."
+  },
+  "profile.snapshotExport.exported": "Exported {name}.",
+  "@profile.snapshotExport.exported": {
+    "description": "Success toast after an agent was saved to a file. {name} is the agent's name."
+  },
+  "profile.snapshotExport.failed": "Failed to export agent snapshot.",
+  "@profile.snapshotExport.failed": {
+    "description": "Error toast when saving an agent to a file fails."
+  },
+  "profile.actions.waveFailed": "Couldn't send the wave.",
+  "@profile.actions.waveFailed": {
+    "description": "Error toast when sending a wave (👋 hello) to someone fails."
+  },
+  "profile.actions.openDmFailed": "Couldn't open the direct message.",
+  "@profile.actions.openDmFailed": {
+    "description": "Error toast when opening a direct message with someone fails."
+  },
+  "profile.actions.noIdentity": "No identity is available to send messages.",
+  "@profile.actions.noIdentity": {
+    "description": "Error toast when the user's own account is not loaded yet, so a wave cannot be sent."
+  },
+  "profile.agentLifecycle.stopped": "Stopped {name}.",
+  "@profile.agentLifecycle.stopped": {
+    "description": "Success toast after stopping an AI agent from its profile. {name} is the agent's name."
+  },
+  "profile.agentLifecycle.deploying": "Deploying {name}.",
+  "@profile.agentLifecycle.deploying": {
+    "description": "Toast after starting an AI agent that runs at a hosting provider. {name} is the agent's name."
+  },
+  "profile.agentLifecycle.started": "Started {name}.",
+  "@profile.agentLifecycle.started": {
+    "description": "Success toast after starting an AI agent from its profile. {name} is the agent's name."
+  },
+  "profile.agentLifecycle.actionFailed": "Agent action failed.",
+  "@profile.agentLifecycle.actionFailed": {
+    "description": "Error toast when starting or stopping an AI agent fails without a reason."
+  },
+  "profile.agentLifecycle.restarted": "Restarted {name}.",
+  "@profile.agentLifecycle.restarted": {
+    "description": "Success toast after restarting an AI agent from its profile. {name} is the agent's name."
+  },
+  "profile.agentLifecycle.restartFailed": "Agent restart failed.",
+  "@profile.agentLifecycle.restartFailed": {
+    "description": "Error toast when restarting an AI agent fails without a reason."
+  },
+  "profile.personaSubmit.runtimeUnavailable": "{runtime} is not available. Install it before saving this linked agent.",
+  "@profile.personaSubmit.runtimeUnavailable": {
+    "description": "Error toast when saving an agent with an AI tool that is not installed. {runtime} is the tool name, e.g. 'Claude Code'."
+  },
+  "profile.personaSubmit.providerUnavailable": "This provider is not available. Install it before saving this linked agent.",
+  "@profile.personaSubmit.providerUnavailable": {
+    "description": "Error toast when saving an agent with an AI tool that is not installed and has no known name."
+  },
+  "profile.personaSubmit.updatedSyncFailed": "{name} was updated, but profile sync failed: {error}",
+  "@profile.personaSubmit.updatedSyncFailed": {
+    "description": "Warning toast after saving an agent when its public profile could not be updated. {error} is a technical reason."
+  },
+  "profile.personaSubmit.updated": "Updated {name}.",
+  "@profile.personaSubmit.updated": {
+    "description": "Success toast after saving changes to an agent. {name} is the agent's name."
+  },
+  "profile.personaSubmit.createdNotStarted": "{name} was created, but it did not start: {error}",
+  "@profile.personaSubmit.createdNotStarted": {
+    "description": "Error toast after creating an agent that then failed to start. {error} is a technical reason."
+  },
+  "profile.personaSubmit.createdAndStarted": "Created and started {name}.",
+  "@profile.personaSubmit.createdAndStarted": {
+    "description": "Success toast after creating and starting a new agent. {name} is the agent's name."
+  },
+  "profile.personaSubmit.createdSyncFailed": "{name} was created, but profile sync failed: {error}",
+  "@profile.personaSubmit.createdSyncFailed": {
+    "description": "Warning toast after creating an agent when its public profile could not be published. {error} is a technical reason."
+  },
+  "profile.personaSubmit.instanceFailedDetail": "{name} was created, but the agent instance could not be created: {error}",
+  "@profile.personaSubmit.instanceFailedDetail": {
+    "description": "Error toast: the agent definition was saved but a running copy could not be made. {error} is a technical reason."
+  },
+  "profile.personaSubmit.instanceFailed": "{name} was created, but the agent instance could not be created.",
+  "@profile.personaSubmit.instanceFailed": {
+    "description": "Error toast: the agent definition was saved but a running copy could not be made."
+  },
+  "profile.personaSubmit.saveFailed": "Failed to save agent.",
+  "@profile.personaSubmit.saveFailed": {
+    "description": "Error toast when saving an agent fails without a reason."
+  },
+  "profile.agentManagement.duplicate": "Duplicate agent",
+  "@profile.agentManagement.duplicate": {
+    "description": "Agent profile panel, action row that makes a copy of the agent. Short."
+  },
+  "profile.agentManagement.export": "Export agent",
+  "@profile.agentManagement.export": {
+    "description": "Agent profile panel, action row that saves the agent to a file. Short."
+  },
+  "profile.agentManagement.createCard": "Create trading card",
+  "@profile.agentManagement.createCard": {
+    "description": "Agent profile panel, action row that makes a collectible picture card of the agent. Short."
+  },
+  "profile.agentManagement.delete": "Delete agent",
+  "@profile.agentManagement.delete": {
+    "description": "Agent profile panel, red action row, and the confirm button of the delete dialog. Short."
+  },
+  "profile.agentDeleteDialog.title": "Delete this agent?",
+  "@profile.agentDeleteDialog.title": {
+    "description": "Delete agent confirmation dialog title."
+  },
+  "profile.agentDeleteDialog.descriptionProvider": "Deleting removes this agent’s local management record, not its remote deployment.",
+  "@profile.agentDeleteDialog.descriptionProvider": {
+    "description": "Delete agent dialog description, for an agent that runs at a hosting provider."
+  },
+  "profile.agentDeleteDialog.descriptionLocal": "Deleting this agent stops and removes the agent from this community.",
+  "@profile.agentDeleteDialog.descriptionLocal": {
+    "description": "Delete agent dialog description, for an agent that runs on this computer."
+  },
+  "profile.agentDeleteDialog.removesFromDevice": "Removes this agent from this device",
+  "@profile.agentDeleteDialog.removesFromDevice": {
+    "description": "Delete agent dialog, bullet point (no final period)."
+  },
+  "profile.agentDeleteDialog.removesFromGroups": "Removes the agent from every group it belongs to",
+  "@profile.agentDeleteDialog.removesFromGroups": {
+    "description": "Delete agent dialog, bullet point (no final period)."
+  },
+  "profile.agentDeleteDialog.archivesIdentity": "Archives the agent's identity on the relay so it no longer appears in member lists or mention suggestions",
+  "@profile.agentDeleteDialog.archivesIdentity": {
+    "description": "Delete agent dialog, bullet point (no final period). The relay is the chat server."
+  },
+  "profile.agentDeleteDialog.providerShutdown": "Unless the agent is known to be Offline, Kuzz first requests shutdown through a group when available. A failed request cancels deletion. The remote process may still be running even after a successful request.",
+  "@profile.agentDeleteDialog.providerShutdown": {
+    "description": "Delete agent dialog, bullet point for an agent at a hosting provider."
+  },
+  "profile.agentDeleteDialog.stopsLocalProcess": "Stops any local agent process before deleting the record",
+  "@profile.agentDeleteDialog.stopsLocalProcess": {
+    "description": "Delete agent dialog, bullet point for an agent on this computer (no final period)."
+  },
+  "profile.agentDeleteDialog.archiveInstead": "Archive this agent if you want to hide it instead of removing it.",
+  "@profile.agentDeleteDialog.archiveInstead": {
+    "description": "Delete agent dialog, note under the bullet points."
+  },
+  "profile.agentDeleteDialog.deleting": "Deleting…",
+  "@profile.agentDeleteDialog.deleting": {
+    "description": "Delete agent dialog, confirm button while deleting. Short."
+  },
+  "profile.channels.addToGroup": "Add to group",
+  "@profile.channels.addToGroup": {
+    "description": "Agent profile panel, Groups tab: row that adds the agent to a group. Short."
+  },
+  "profile.channels.working": "Working…",
+  "@profile.channels.working": {
+    "description": "Agent profile panel, Groups tab: shown at the end of the 'Add to group' row while busy. Short."
+  },
+  "profile.channels.loading": "Loading groups…",
+  "@profile.channels.loading": {
+    "description": "Profile panel, Groups tab while the list loads."
+  },
+  "profile.channels.emptyAddTitle": "Add this agent to a group",
+  "@profile.channels.emptyAddTitle": {
+    "description": "Agent profile panel, Groups tab empty state title (the user can add the agent)."
+  },
+  "profile.channels.emptyTitle": "Groups appear here",
+  "@profile.channels.emptyTitle": {
+    "description": "Profile panel, Groups tab empty state title."
+  },
+  "profile.channels.emptyAddBody": "Choose a group above so it can join the conversation.",
+  "@profile.channels.emptyAddBody": {
+    "description": "Agent profile panel, Groups tab empty state text under the title."
+  },
+  "profile.channels.emptyBody": "Visible memberships appear as this agent joins groups.",
+  "@profile.channels.emptyBody": {
+    "description": "Agent profile panel, Groups tab empty state text under the title."
+  },
+  "profile.channels.openGroup": "Open {name}",
+  "@profile.channels.openGroup": {
+    "description": "Screen-reader label on a group row in the profile panel's Groups tab. {name} is the group name."
+  },
+  "profile.tabs.label": "Profile sections",
+  "@profile.tabs.label": {
+    "description": "Screen-reader label for the tab bar in the profile panel (Info, Runtime, Groups, Memories)."
+  },
+  "profile.info.activityLog": "Activity log",
+  "@profile.info.activityLog": {
+    "description": "Agent profile panel, Info tab: row that opens the agent's activity log. Short."
+  },
+  "profile.info.view": "View",
+  "@profile.info.view": {
+    "description": "Agent profile panel, grey text at the end of the 'Activity log' row. Short."
+  },
+  "profile.liveActivity.empty": "Live activity will appear here.",
+  "@profile.liveActivity.empty": {
+    "description": "Agent profile panel, live activity preview card when there is nothing to show yet."
+  },
+  "profile.liveActivity.openFeed": "Open activity feed. Last live {lastLive}.",
+  "@profile.liveActivity.openFeed": {
+    "description": "Screen-reader label on the agent's live activity preview card. {lastLive} is e.g. '5m ago', 'Just now' or 'No activity yet'."
+  },
+  "profile.liveActivity.latest": "Latest Activity",
+  "@profile.liveActivity.latest": {
+    "description": "Agent profile panel, caption at the bottom of the live activity preview card. Short."
+  },
+  "profile.liveActivity.chooseFeed": "Choose active group feed",
+  "@profile.liveActivity.chooseFeed": {
+    "description": "Screen-reader label for the dots under the live activity card that switch between groups."
+  },
+  "profile.liveActivity.showGroup": "Show {name} activity",
+  "@profile.liveActivity.showGroup": {
+    "description": "Screen-reader label on one dot under the live activity card. {name} is a group name."
+  },
+  "profile.liveActivity.openFull": "Open full activity. Last live {lastLive}.",
+  "@profile.liveActivity.openFull": {
+    "description": "Screen-reader label on the small time button in the corner of the live activity card. {lastLive} is e.g. '5m ago'."
+  },
+  "profile.liveActivity.lastLive": "Last live {lastLive}",
+  "@profile.liveActivity.lastLive": {
+    "description": "Tooltip on the small time button in the corner of the live activity card. {lastLive} is e.g. '5m ago' or 'Just now'."
+  },
+  "profile.liveActivity.noActivity": "No activity yet",
+  "@profile.liveActivity.noActivity": {
+    "description": "Small button in the corner of the agent's live activity card when the agent has never been active. Short."
+  },
+  "profile.liveActivity.justNow": "Just now",
+  "@profile.liveActivity.justNow": {
+    "description": "Small button in the corner of the agent's live activity card: last active under a minute ago. Short."
+  },
+  "profile.liveActivity.minutesAgo": "{count}m ago",
+  "@profile.liveActivity.minutesAgo": {
+    "description": "Small button in the corner of the agent's live activity card: last active this many minutes ago. Very short."
+  },
+  "profile.liveActivity.hoursAgo": "{count}h ago",
+  "@profile.liveActivity.hoursAgo": {
+    "description": "Small button in the corner of the agent's live activity card: last active this many hours ago. Very short."
+  },
+  "profile.liveActivity.daysAgo": "{count}d ago",
+  "@profile.liveActivity.daysAgo": {
+    "description": "Small button in the corner of the agent's live activity card: last active this many days ago. Very short."
+  },
+  "profile.liveActivity.weeksAgo": "{count}w ago",
+  "@profile.liveActivity.weeksAgo": {
+    "description": "Small button in the corner of the agent's live activity card: last active this many weeks ago. Very short."
+  },
+  "profile.archiveTooltip.label": "What archived means",
+  "@profile.archiveTooltip.label": {
+    "description": "Screen-reader label on the info icon next to 'Archived' in an agent's profile panel."
+  },
+  "profile.archiveTooltip.body": "Archived agents do not appear in search, autocomplete, or member-add flows in this space. You can unarchive them at any time.",
+  "@profile.archiveTooltip.body": {
+    "description": "Tooltip on the info icon next to 'Archived' in an agent's profile panel."
+  },
+  "profile.runtime.restartRequired": "Restart required",
+  "@profile.runtime.restartRequired": {
+    "description": "Agent profile panel, Runtime tab: banner title when settings changed and the agent must restart."
+  },
+  "profile.runtime.activity": "Activity",
+  "@profile.runtime.activity": {
+    "description": "Agent profile panel, Runtime tab: section title above status and log rows. Short."
+  },
+  "profile.runtime.configuration": "Agent configuration",
+  "@profile.runtime.configuration": {
+    "description": "Agent profile panel, Runtime tab: section title above the agent's settings rows."
+  },
+  "profile.panel.startFailed": "Failed to start agent.",
+  "@profile.panel.startFailed": {
+    "description": "Error toast when starting an agent from its profile panel fails without a reason."
+  },
+  "profile.panel.deleted": "Deleted {name}.",
+  "@profile.panel.deleted": {
+    "description": "Success toast after deleting an agent from its profile panel. {name} is the agent's name."
+  },
+  "profile.panel.deleteFailed": "Failed to delete agent.",
+  "@profile.panel.deleteFailed": {
+    "description": "Error toast when deleting an agent fails without a reason."
+  },
+  "profile.panel.removedFromMyAgents": "Removed {name} from My Agents.",
+  "@profile.panel.removedFromMyAgents": {
+    "description": "Success toast after removing a built-in agent from the user's list. 'My Agents' is the name of that list."
+  },
+  "profile.panel.managedByTeam": "This agent is managed by a team.",
+  "@profile.panel.managedByTeam": {
+    "description": "Error toast when the user tries to delete an agent that a team controls."
+  },
+  "profile.panel.addedToGroup": "Added {name} to {group}.",
+  "@profile.panel.addedToGroup": {
+    "description": "Success toast after adding an agent to a group. {name} is the agent, {group} the group name."
+  },
+  "profile.panel.alreadyInGroup": "{name} is already in {group}.",
+  "@profile.panel.alreadyInGroup": {
+    "description": "Toast when the agent was already a member of the chosen group. {name} is the agent, {group} the group name."
+  },
+  "profile.nostrBind.copySuccess": "Signed response copied. Paste it into the Kuzz admin console.",
+  "@profile.nostrBind.copySuccess": {
+    "description": "Success toast on the identity verification screen after copying the signed response."
+  },
+  "profile.nostrBind.previewCopySuccess": "Preview response copied.",
+  "@profile.nostrBind.previewCopySuccess": {
+    "description": "Success toast on the identity verification screen in developer preview mode."
+  },
+  "profile.nostrBind.copyFailure": "Kuzz couldn't access the clipboard. Try again.",
+  "@profile.nostrBind.copyFailure": {
+    "description": "Error on the identity verification screen when copying to the clipboard fails (inline and toast)."
+  },
+  "profile.nostrBind.expired": "This binding link has expired. Request a new one from the requesting app.",
+  "@profile.nostrBind.expired": {
+    "description": "Error on the identity verification screen when the verification link is too old."
+  },
+  "profile.nostrBind.codeMismatch": "That code doesn't match. Check the code and try again.",
+  "@profile.nostrBind.codeMismatch": {
+    "description": "Error under the six code boxes on the identity verification screen."
+  },
+  "profile.nostrBind.browserOpenFailed": "Could not open the browser. Copy the response below to finish manually.",
+  "@profile.nostrBind.browserOpenFailed": {
+    "description": "Error on the identity verification screen when the browser could not be opened."
+  },
+  "profile.nostrBind.copyResponse": "Copy response",
+  "@profile.nostrBind.copyResponse": {
+    "description": "Identity verification screen, button that copies the signed response. Short."
+  },
+  "profile.nostrBind.signing": "Signing…",
+  "@profile.nostrBind.signing": {
+    "description": "Identity verification screen, main button while the response is being signed. Short."
+  },
+  "profile.nostrBind.identityLoadFailed": "Could not load the current Kuzz identity.",
+  "@profile.nostrBind.identityLoadFailed": {
+    "description": "Error on the identity verification screen when the user's account could not be read."
+  },
+  "profile.nostrBind.signFailed": "Failed to sign binding response.",
+  "@profile.nostrBind.signFailed": {
+    "description": "Error on the identity verification screen when signing fails without a reason."
+  },
+  "profile.nostrBind.continueInBrowser": "Continue in your browser",
+  "@profile.nostrBind.continueInBrowser": {
+    "description": "Identity verification screen, big title after signing when the browser was opened."
+  },
+  "profile.nostrBind.finishOnWebsite": "Finish on the Kuzz website",
+  "@profile.nostrBind.finishOnWebsite": {
+    "description": "Identity verification screen, big title after signing when the user must paste the response on the website."
+  },
+  "profile.nostrBind.browserOpened": "Kuzz opened your browser to finish verification.",
+  "@profile.nostrBind.browserOpened": {
+    "description": "Identity verification screen, text under the title after the browser was opened."
+  },
+  "profile.nostrBind.copyAndPaste": "Copy the response below, then paste it into the Kuzz website to finish verification.",
+  "@profile.nostrBind.copyAndPaste": {
+    "description": "Identity verification screen, text under the title when the user must copy and paste the response."
+  },
+  "profile.nostrBind.notFinished": "Pairing didn’t finish automatically?",
+  "@profile.nostrBind.notFinished": {
+    "description": "Identity verification screen, header of a collapsible section with manual steps."
+  },
+  "profile.nostrBind.copyToPairingPage": "Copy this response and paste it into the pairing page.",
+  "@profile.nostrBind.copyToPairingPage": {
+    "description": "Identity verification screen, text inside the collapsible manual steps section."
+  },
+  "profile.nostrBind.enterCodeTitle": "Enter verification code",
+  "@profile.nostrBind.enterCodeTitle": {
+    "description": "Identity verification screen, big title above six code boxes."
+  },
+  "profile.nostrBind.enterCodeBody": "Enter the six-digit code shown in your browser",
+  "@profile.nostrBind.enterCodeBody": {
+    "description": "Identity verification screen, text under the title (no final period)."
+  },
+  "profile.nostrBind.codeLegend": "Verification code",
+  "@profile.nostrBind.codeLegend": {
+    "description": "Screen-reader label for the group of six code boxes on the identity verification screen."
+  },
+  "profile.nostrBind.codeDigit": "Verification code digit {index} of {total}",
+  "@profile.nostrBind.codeDigit": {
+    "description": "Screen-reader label for one code box on the identity verification screen. {index} and {total} are numbers, e.g. 'digit 2 of 6'."
+  },
+  "profile.popover.managedBy": "managed by {owner}",
+  "@profile.popover.managedBy": {
+    "description": "Profile hover card for an AI agent, small grey line under the name (lowercase). {owner} is the owner's name, or 'you'."
+  },
+  "profile.ownerLabel.you": "you",
+  "@profile.ownerLabel.you": {
+    "description": "Lowercase word for the current user as an agent's owner, used inside 'managed by {owner}' lines in member lists, mentions and hover cards. Short."
   }
 }

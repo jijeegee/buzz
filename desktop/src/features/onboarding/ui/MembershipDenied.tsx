@@ -7,6 +7,7 @@ import {
 } from "@/features/accounts/lib/signOutActiveAccount";
 import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
+import { useT } from "@/shared/i18n";
 import { nsecToNpub } from "@/shared/lib/nostrUtils";
 import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import { Badge } from "@/shared/ui/badge";
@@ -33,6 +34,7 @@ export function MembershipDenied({
   onImportKey,
   onRetry,
 }: MembershipDeniedProps) {
+  const t = useT();
   const [importError, setImportError] = React.useState<string | null>(null);
   const [isImportFormOpen, setIsImportFormOpen] = React.useState(false);
   const [isImportingKey, setIsImportingKey] = React.useState(false);
@@ -60,17 +62,15 @@ export function MembershipDenied({
       setSignOutError(
         error instanceof Error
           ? error.message
-          : "Couldn't sign out. Try again.",
+          : t("onboarding.membershipDenied.signOutFailed"),
       );
       setIsSigningOut(false);
     }
-  }, []);
+  }, [t]);
 
   const handleImportKey = React.useCallback(async () => {
     if (!previewNpub) {
-      setImportError(
-        "That doesn't look like a valid nsec. Paste an nsec1 key.",
-      );
+      setImportError(t("onboarding.membershipDenied.invalidNsec"));
       return;
     }
 
@@ -81,12 +81,14 @@ export function MembershipDenied({
       await onImportKey(trimmedNsec);
     } catch (error) {
       setImportError(
-        error instanceof Error ? error.message : "Failed to import key.",
+        error instanceof Error
+          ? error.message
+          : t("onboarding.membershipDenied.importFailed"),
       );
     } finally {
       setIsImportingKey(false);
     }
-  }, [onImportKey, previewNpub, trimmedNsec]);
+  }, [onImportKey, previewNpub, t, trimmedNsec]);
 
   const handleInviteRedeem = React.useCallback(
     (relayWsUrl: string, code: string, policyReceipt?: string) => {
@@ -108,18 +110,19 @@ export function MembershipDenied({
       <StartupWindowDragRegion />
       <div className="w-full max-w-md rounded-[28px] border border-border/70 bg-background/92 p-8 shadow-2xl backdrop-blur-sm">
         <div className="space-y-3">
-          <Badge variant="warning">Membership required</Badge>
+          <Badge variant="warning">
+            {t("onboarding.membershipDenied.badge")}
+          </Badge>
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10">
               <ShieldX className="h-4 w-4 text-destructive" />
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Not a member yet
+              {t("onboarding.membershipDenied.title")}
             </h1>
           </div>
           <p className="text-sm leading-6 text-muted-foreground">
-            This community is invite-only. Ask an admin for an invite link, then
-            use it below.
+            {t("onboarding.membershipDenied.body")}
           </p>
         </div>
 
@@ -145,7 +148,7 @@ export function MembershipDenied({
                   className="text-sm font-medium text-foreground"
                   htmlFor="membership-denied-nsec"
                 >
-                  Private key
+                  {t("onboarding.membershipDenied.privateKey")}
                 </label>
                 <Input
                   autoComplete="off"
@@ -172,7 +175,7 @@ export function MembershipDenied({
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <div className="min-w-0 space-y-0.5">
                     <p className="font-medium text-foreground">
-                      This will use this Nostr identity:
+                      {t("onboarding.membershipDenied.npubPreview")}
                     </p>
                     <p className="break-all font-mono text-2xs text-muted-foreground">
                       {previewNpub}
@@ -195,11 +198,11 @@ export function MembershipDenied({
               >
                 {isImportingKey ? (
                   <Spinner
-                    aria-label="Importing key"
+                    aria-label={t("onboarding.membershipDenied.importingAria")}
                     className="h-4 w-4 border-2"
                   />
                 ) : (
-                  "Import key"
+                  t("onboarding.membershipDenied.importKey")
                 )}
               </Button>
               <Button
@@ -213,13 +216,13 @@ export function MembershipDenied({
                 type="button"
                 variant="ghost"
               >
-                Back
+                {t("common.back")}
               </Button>
             </form>
           ) : (
             <>
               <Button className="w-full" onClick={onRetry} type="button">
-                Try again
+                {t("onboarding.membershipDenied.tryAgain")}
               </Button>
               <div className="flex gap-2">
                 <Button
@@ -228,7 +231,7 @@ export function MembershipDenied({
                   type="button"
                   variant="ghost"
                 >
-                  Back
+                  {t("common.back")}
                 </Button>
                 {onChangeCommunity ? (
                   <Button
@@ -237,7 +240,7 @@ export function MembershipDenied({
                     type="button"
                     variant="ghost"
                   >
-                    Change community
+                    {t("onboarding.membershipDenied.changeCommunity")}
                   </Button>
                 ) : null}
               </div>
@@ -248,7 +251,7 @@ export function MembershipDenied({
                 type="button"
               >
                 <Ticket className="h-4 w-4" />
-                Have an invite?
+                {t("onboarding.membershipDenied.haveInvite")}
               </button>
               {singleServer && signedIn ? (
                 <button
@@ -259,7 +262,7 @@ export function MembershipDenied({
                   type="button"
                 >
                   <UserRound className="h-4 w-4" />
-                  Use a different Google account
+                  {t("onboarding.membershipDenied.differentGoogleAccount")}
                 </button>
               ) : null}
               {signOutError ? (
@@ -283,7 +286,7 @@ export function MembershipDenied({
                   type="button"
                 >
                   <KeyRound className="h-4 w-4" />
-                  Use a different key
+                  {t("onboarding.membershipDenied.differentKey")}
                 </button>
               ) : null}
             </>

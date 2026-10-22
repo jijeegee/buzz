@@ -7,6 +7,7 @@ import {
   relayAgentsQueryKey,
 } from "@/features/agents/hooks";
 import { channelsQueryKey } from "@/features/channels/hooks";
+import { t } from "@/shared/i18n";
 import {
   ensureWelcomeChannel,
   hasEnsuredWelcomeChannel,
@@ -138,7 +139,7 @@ export async function initializeStarterChannels(
       reason:
         error instanceof Error
           ? error.message
-          : "Failed to set up starter groups",
+          : t("onboarding.starterChannels.setupFailedReason"),
     };
   }
 }
@@ -571,10 +572,10 @@ export function useAppOnboardingState(isSharedIdentity: boolean) {
 
   const showStarterRetryToast = React.useCallback(
     (reason: string) => {
-      toast.error("Couldn't set up starter groups", {
+      toast.error(t("onboarding.starterChannels.setupFailed"), {
         id: STARTER_CHANNEL_SETUP_TOAST_ID,
         action: {
-          label: "Retry",
+          label: t("common.retry"),
           onClick: (event) => {
             event.preventDefault();
             void requestStarterChannels(true).then((result) => {

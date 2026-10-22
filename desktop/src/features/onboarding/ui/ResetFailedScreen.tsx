@@ -1,11 +1,13 @@
+import { useT } from "@/shared/i18n";
 import { RecoveryScreen } from "./RecoveryScreen";
 
 export function ResetFailedScreen() {
+  const t = useT();
   return (
     <RecoveryScreen
       testId="reset-failed"
-      title="Sign out could not complete"
-      body="Kuzz was unable to fully clear your local data. Try relaunching — the reset will resume automatically. If this persists, contact support."
+      title={t("onboarding.resetFailed.title")}
+      body={t("onboarding.resetFailed.body")}
     />
   );
 }

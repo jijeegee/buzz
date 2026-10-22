@@ -5,6 +5,7 @@ import {
   buildAnimatedAvatarUrl,
   parseAnimatedAvatarUrl,
 } from "@/shared/lib/animatedAvatar";
+import { t } from "@/shared/i18n";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 
 export type AvatarPresentationState = "failed" | "pending" | "ready";
@@ -148,12 +149,12 @@ async function verifyPresentation(
     state: "failed",
   };
   emitChange();
-  toast.error("Avatar couldn’t finish uploading", {
+  toast.error(t("profile.avatarToast.uploadFailed"), {
     action: {
-      label: "Retry",
+      label: t("common.retry"),
       onClick: () => retryAvatarPresentation(entry.remoteUrl),
     },
-    description: "Your default avatar is showing instead.",
+    description: t("profile.avatarToast.uploadFailedDescription"),
     id: toastId(entry.remoteUrl),
   });
 }

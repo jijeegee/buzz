@@ -19,6 +19,7 @@ import type {
 } from "@/features/profile/hooks";
 import { usePeopleFavorites } from "@/features/people/PeopleFavoritesContext";
 import { useFeatureEnabled } from "@/shared/features";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Spinner } from "@/shared/ui/spinner";
 
@@ -68,6 +69,7 @@ export function ProfilePrimaryActions({
   unfollowMutation: ReturnType<typeof useUnfollowMutation>;
   wavePending?: boolean;
 }) {
+  const t = useT();
   const showFollowAction = useFeatureEnabled("pulse");
   const favorites = usePeopleFavorites();
   const showFavoriteAction = favorites !== null && !favoriteHidden;
@@ -78,7 +80,9 @@ export function ProfilePrimaryActions({
     followToggleMutation.mutate(pubkey, {
       onError: (error) =>
         toast.error(
-          `${isFollowing ? "Unfollow" : "Follow"} failed: ${error.message}`,
+          isFollowing
+            ? t("profile.actions.unfollowFailed", { error: error.message })
+            : t("profile.actions.followFailed", { error: error.message }),
         ),
     });
   };
@@ -117,7 +121,7 @@ export function ProfilePrimaryActions({
         <ProfileActionTile
           disabled={agentActionDisabled}
           icon={RefreshCw}
-          label="Restart agent"
+          label={t("profile.actions.restartAgent")}
           onClick={onAgentRestart}
           testId="user-profile-agent-restart"
         />
@@ -127,7 +131,7 @@ export function ProfilePrimaryActions({
           disabled={messagePending}
           icon={MessageSquare}
           isLoading={messagePending}
-          label="Message"
+          label={t("profile.actions.message")}
           onClick={onMessage}
           testId="user-profile-message"
         />
@@ -137,7 +141,7 @@ export function ProfilePrimaryActions({
           disabled={huddlePending}
           icon={Headphones}
           isLoading={huddlePending}
-          label="Huddle"
+          label={t("profile.actions.huddle")}
           onClick={onHuddle}
           testId="user-profile-huddle"
         />
@@ -147,7 +151,7 @@ export function ProfilePrimaryActions({
           disabled={wavePending}
           icon={Hand}
           isLoading={wavePending}
-          label="Wave"
+          label={t("profile.actions.wave")}
           onClick={onWave}
           testId="user-profile-wave"
         />
@@ -156,7 +160,11 @@ export function ProfilePrimaryActions({
         <ProfileActionTile
           active={isFavorite}
           icon={Star}
-          label={isFavorite ? "Unfavorite" : "Favorite"}
+          label={
+            isFavorite
+              ? t("profile.actions.unfavorite")
+              : t("profile.actions.favorite")
+          }
           onClick={() =>
             isFavorite
               ? favorites?.removeFavorite(pubkey)
@@ -170,7 +178,11 @@ export function ProfilePrimaryActions({
           active={isFollowing}
           disabled={followToggleMutation.isPending}
           icon={isFollowing ? UserMinus : UserPlus}
-          label={isFollowing ? "Unfollow" : "Follow"}
+          label={
+            isFollowing
+              ? t("profile.actions.unfollow")
+              : t("profile.actions.follow")
+          }
           onClick={handleFollowClick}
         />
       ) : null}
@@ -191,6 +203,7 @@ export function ProfilePersonaPrimaryActions({
   disabled: boolean;
   onStartAgent: () => void;
 }) {
+  const t = useT();
   return (
     <ProfileActionGroup
       className={className}
@@ -201,7 +214,7 @@ export function ProfilePersonaPrimaryActions({
         active
         disabled={disabled}
         icon={Play}
-        label="Start agent"
+        label={t("profile.actions.startAgent")}
         onClick={onStartAgent}
         testId="user-profile-start-agent"
       />
