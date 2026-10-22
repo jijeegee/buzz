@@ -75,3 +75,24 @@ export function refreshOnSystemMessage(
   }
   return true;
 }
+
+/**
+ * Follow-up timers owned by one open room: `clear()` drops the pending ones
+ * when the room closes, so a closed room is not refreshed later.
+ */
+export function createSettleTimers() {
+  const pending = new Set<ReturnType<typeof setTimeout>>();
+  return {
+    setTimer(callback: () => void, delayMs: number) {
+      const handle = setTimeout(() => {
+        pending.delete(handle);
+        callback();
+      }, delayMs);
+      pending.add(handle);
+    },
+    clear() {
+      for (const handle of pending) clearTimeout(handle);
+      pending.clear();
+    },
+  };
+}

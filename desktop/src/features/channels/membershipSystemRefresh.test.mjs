@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createSettleTimers,
   MEMBERSHIP_SETTLE_DELAYS_MS,
   refreshOnSystemMessage,
 } from "./membershipSystemRefresh.ts";
@@ -70,4 +71,15 @@ test("other and malformed system messages refresh nothing", () => {
   assert.deepEqual(invalidations, []);
   assert.deepEqual(notes, []);
   assert.deepEqual(timers, []);
+});
+
+test("closing the room drops its pending follow-up refreshes", async () => {
+  const timers = createSettleTimers();
+  const fired = [];
+  timers.setTimer(() => fired.push("kept"), 0);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  timers.setTimer(() => fired.push("dropped"), 0);
+  timers.clear();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(fired, ["kept"]);
 });

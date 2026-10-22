@@ -1,5 +1,5 @@
 import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import {
   type QueryClient,
   useMutation,
@@ -60,7 +60,10 @@ import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 // Same .mjs the renderer uses, so the cache-update projection can't drift
 // from the on-render overlay.
-import { refreshOnSystemMessage } from "@/features/channels/membershipSystemRefresh";
+import {
+  createSettleTimers,
+  refreshOnSystemMessage,
+} from "@/features/channels/membershipSystemRefresh";
 import { applyEditTagOverlay } from "@/features/messages/lib/applyEditTagOverlay.mjs";
 import { cancelAutoRoute } from "@/features/messages/lib/autoRouteStatus";
 import {
@@ -326,6 +329,9 @@ export function useChannelSubscription(channel: Channel | null) {
   const queryClient = useQueryClient();
   const channelId = channel?.id ?? null;
   const channelType = channel?.channelType ?? null;
+  const [settleTimers] = useState(createSettleTimers);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: drop the closed room's follow-up refreshes
+  useEffect(() => settleTimers.clear, [channelId, settleTimers]);
   const refreshNewestWindow = useEffectEvent(async () => {
     if (!channelId) return;
     await refreshChannelWindowMessages(queryClient, channelId);
@@ -379,7 +385,10 @@ export function useChannelSubscription(channel: Channel | null) {
     }
 
     if (event.kind === KIND_SYSTEM_MESSAGE) {
-      refreshOnSystemMessage(channelId, event.content, { queryClient });
+      refreshOnSystemMessage(channelId, event.content, {
+        queryClient,
+        setTimer: settleTimers.setTimer,
+      });
     }
   });
 
