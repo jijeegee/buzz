@@ -156,6 +156,19 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
     }
 
+    final localSends = splitLocalSendsBySigner(
+      ref.read(pendingLocalMessagesProvider(channelId)),
+      ref.watch(myPubkeyProvider),
+    );
+    if (localSends.foreignIds.isNotEmpty) {
+      bool own(NostrEvent event) => !localSends.foreignIds.contains(event.id);
+      _lastKnownMessages = _lastKnownMessages?.where(own).toList();
+      _windowStore = _windowStore.copyWith(
+        liveOverlay: _windowStore.liveOverlay.where(own).toList(),
+        heldLive: _windowStore.heldLive.where(own).toList(),
+      );
+    }
+
     if (sessionState.status != SessionStatus.connected) {
       _initVersion++;
       _initInFlight = false;
@@ -177,6 +190,17 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             event.kind == EventKind.deletion ||
             event.kind == EventKind.nip29DeleteEvent) {
           _mergeWindowEventIntoStore(event);
+        }
+      }
+      // Unconfirmed own sends (in flight or failed) are in no relay page yet.
+      for (final event in localSends.own) {
+        if (event.threadReference.parentId == null &&
+            EventKind.channelTimelineContentKinds.contains(event.kind)) {
+          _windowStore = mergeLiveChannelWindowEvent(
+            _windowStore,
+            event,
+            isTimelineRow: true,
+          );
         }
       }
       _usingChannelWindow = false;
@@ -229,7 +253,16 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final historyVersion = ++_threadQuerySerial;
       final history = await _fetchNewestHistory(session);
       if (!_isCurrentInit(initVersion)) return;
-      _confirmLocalMessages(history.map((event) => event.id));
+      // Only relay rows confirm a send; the window's live overlay also holds
+      // the unconfirmed local rows themselves.
+      _confirmLocalMessages(
+        _usingChannelWindow
+            ? [
+                for (final page in _windowStore.allPages)
+                  for (final row in page.rows) row.event.id,
+              ]
+            : history.map((event) => event.id),
+      );
 
       // The relay page is authoritative: drop cached rows it no longer has
       // (e.g. deleted while the app was closed), keeping live arrivals.

@@ -616,38 +616,14 @@ class ComposeBar extends HookConsumerWidget {
         messenger?.showSnackBar(SnackBar(content: Text(error.message)));
         return;
       }
-      final outgoing = _OutgoingMentions(selectedMentions);
-      final scan = await _scanNonMemberMentions(
-        ref,
-        channelId: channelId,
-        selectedMentions: selectedMentions,
-        currentPubkey: currentPubkey,
-      );
-
-      // Mentioning humans outside the channel prompts "Invite" / "Do
-      // nothing" (send without inviting) — mirrors desktop's
-      // NonMemberMentionDialog. Agents keep the existing silent auto-add.
-      if (scan.humans.isNotEmpty) {
-        if (!context.mounted) return;
-        final choice = await _promptNonMemberMention(
-          context,
-          names: [for (final candidate in scan.humans) candidate.label],
-          canInvite: scan.canAddMembers,
-        );
-        if (choice == null) return; // Dismissed — keep the draft, send nothing.
-        outgoing.resolveHumanChoice(choice, scan.humans);
-      }
+      // Mentions go out as written. Kuzz never adds anyone to a room on send,
+      // so nothing here waits on membership: a mention of someone outside the
+      // room simply doesn't reach them.
+      final mentionPubkeys = LinkedHashSet<String>.from(
+        selectedMentions.map((candidate) => candidate.pubkey.toLowerCase()),
+      ).toList();
 
       final queuedAttachments = List<_PendingAttachment>.of(attachments.value);
-      final channelActions = ref.read(channelActionsProvider);
-
-      // An add that was refused doesn't block the message: it is reported and
-      // the un-added mentions are demoted to reference tags so the send lands.
-      Future<void> addMentionedNonMembers() => outgoing.addNonMembers(
-        channelActions,
-        scan: scan,
-        messenger: messenger,
-      );
 
       isSending.value = true;
       try {
@@ -661,13 +637,12 @@ class ComposeBar extends HookConsumerWidget {
             submittedDraftRevision: submittedDraftRevision,
             focusNode: focusNode,
             clearComposer: clearComposer,
-            addMentionedNonMembers: addMentionedNonMembers,
             payload: _ComposeDraftPayload.fromDraft(
               text: text,
               attachments: const [],
               customEmoji: customEmoji,
             ),
-            outgoing: outgoing,
+            mentionPubkeys: mentionPubkeys,
             onSend: onSend,
             messenger: messenger,
           );
@@ -718,12 +693,10 @@ class ComposeBar extends HookConsumerWidget {
               customEmoji: customEmoji,
             );
             if (queueGeneration != uploadGeneration.value) return;
-            await addMentionedNonMembers();
-            if (queueGeneration != uploadGeneration.value) return;
             await delivery(
               payload.content,
-              outgoing.pubkeys,
-              mediaTags: [...payload.mediaTags, ...outgoing.referenceTags],
+              mentionPubkeys,
+              mediaTags: payload.mediaTags,
             );
           } catch (error) {
             if (cancellation.isCancelled) return;

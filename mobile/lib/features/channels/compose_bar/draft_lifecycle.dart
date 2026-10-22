@@ -8,9 +8,8 @@ Future<void> _sendTextOnlyDraft({
   required int submittedDraftRevision,
   required FocusNode focusNode,
   required VoidCallback clearComposer,
-  required Future<void> Function() addMentionedNonMembers,
   required _ComposeDraftPayload payload,
-  required _OutgoingMentions outgoing,
+  required List<String> mentionPubkeys,
   required ComposeBarOnSend onSend,
   required ScaffoldMessengerState? messenger,
 }) async {
@@ -34,27 +33,23 @@ Future<void> _sendTextOnlyDraft({
   }
 
   try {
-    await addMentionedNonMembers();
     // Clear before optimistic insertion so the outgoing row and draft never
-    // appear simultaneously during the send transition. If the user edited
-    // while membership changes were pending, preserve that newer draft.
+    // appear simultaneously during the send transition.
     if (context.mounted && draftRevision.value == submittedDraftRevision) {
       clearedDraftText = controller.value;
       clearedDraftMentions = Map<String, MentionCandidate>.of(mentionMap.value);
       clearComposer();
       clearedDraftRevision = draftRevision.value;
     }
-    await onSend(
-      payload.content,
-      outgoing.pubkeys,
-      mediaTags: [...payload.mediaTags, ...outgoing.referenceTags],
-    );
+    // A publish that fails after the row is shown marks that row failed and
+    // returns normally, so only failures before it is shown land below.
+    await onSend(payload.content, mentionPubkeys, mediaTags: payload.mediaTags);
   } on StateError {
     restoreClearedDraft();
     _reportSendCancelledByCommunitySwitch(messenger);
   } catch (error) {
-    // The caller runs unawaited, so surface publish failures and restore the
-    // sent draft unless the user has already started a new one.
+    // The caller runs unawaited, so surface failures before the row was
+    // shown and restore the draft unless the user has already started anew.
     restoreClearedDraft();
     messenger?.showSnackBar(
       SnackBar(content: Text(_composeSendErrorMessage(error))),

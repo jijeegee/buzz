@@ -45,7 +45,9 @@ class _MessageBubble extends HookConsumerWidget {
       ).select(
         (replies) => replies.any((reply) {
           final thread = reply.threadReference;
-          return thread.parentId == message.id || thread.rootId == message.id;
+          return (currentPubkey == null ||
+                  reply.pubkey.toLowerCase() == currentPubkey!.toLowerCase()) &&
+              (thread.parentId == message.id || thread.rootId == message.id);
         }),
       ),
     );
@@ -65,6 +67,17 @@ class _MessageBubble extends HookConsumerWidget {
         currentPubkey?.toLowerCase() == pk ||
         (profile?.ownerPubkey != null &&
             profile?.ownerPubkey == currentPubkey?.toLowerCase());
+    // An own send the relay doesn't have yet has no real event to act on:
+    // no thread, reactions or menu; a failed one offers retry or delete.
+    final sendStatus = watchLocalSendStatus(ref, currentChannelId, message.id);
+    final unsent = isOwnMessage && sendStatus != LocalSendStatus.sent;
+    final failed = unsent && sendStatus == LocalSendStatus.failed;
+    void openFailedSheet() => showFailedLocalMessageSheet(
+      context: context,
+      ref: ref,
+      channelId: currentChannelId,
+      eventId: message.id,
+    );
 
     // Watch only profiles referenced by this message. A batched profile fetch
     // should not rebuild every visible message just because an unrelated user
@@ -153,13 +166,21 @@ class _MessageBubble extends HookConsumerWidget {
         clipBehavior: Clip.none,
         child: MessageLongPressInkWell(
           key: ValueKey('message-row-${message.id}'),
-          onLongPressDetails: openMessageActions,
+          onLongPressDetails: unsent
+              ? (_) {
+                  if (failed) openFailedSheet();
+                }
+              : openMessageActions,
           borderRadius: BorderRadius.circular(Radii.md),
           highlightColor: context.colors.primary.withValues(alpha: 0.1),
           snapshotKey: messageSnapshotKey,
           // Tap opens existing threads; long-press can start a new one.
           // MessageContent handles mention, channel-link, and media taps.
-          onTap: (!hasReplies && !hasLocalReplies) || allMessages == null
+          onTap: failed
+              ? openFailedSheet
+              : unsent ||
+                    (!hasReplies && !hasLocalReplies) ||
+                    allMessages == null
               ? null
               : () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -188,6 +209,13 @@ class _MessageBubble extends HookConsumerWidget {
                     edited: message.edited,
                     bubbleKey: ValueKey('message-bubble-${message.id}'),
                     timestampKey: ValueKey('message-timestamp-${message.id}'),
+                    status: unsent
+                        ? LocalSendStatusMark(
+                            status: sendStatus,
+                            channelId: currentChannelId,
+                            eventId: message.id,
+                          )
+                        : null,
                     ownLeading: readAloud?.button,
                     leading: showAuthor
                         ? GestureDetector(
@@ -269,7 +297,8 @@ class _MessageBubble extends HookConsumerWidget {
                             ),
                             scaleEmojiOnly: true,
                             onMediaReply:
-                                allMessages == null ||
+                                unsent ||
+                                    allMessages == null ||
                                     !canReplyInThread(
                                       threadDepthOf(message, allMessages!),
                                     )
@@ -296,7 +325,7 @@ class _MessageBubble extends HookConsumerWidget {
                                   message: message,
                                   channelId: currentChannelId,
                                   imageUrl: imageUrl,
-                                  canManageMessage: canManageMessage,
+                                  canManageMessage: canManageMessage && !unsent,
                                   onDeleted: () {
                                     if (viewerContext.mounted) {
                                       Navigator.of(viewerContext).maybePop();

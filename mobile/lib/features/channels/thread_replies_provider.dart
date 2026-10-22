@@ -557,7 +557,12 @@ final threadLocalRepliesProvider = NotifierProvider.autoDispose
 final threadRepliesWithLocalProvider = Provider.autoDispose
     .family<AsyncValue<List<NostrEvent>>, ThreadRepliesArgs>((ref, args) {
       final queryReplies = ref.watch(threadRepliesProvider(args));
-      final localReplies = ref.watch(threadLocalRepliesProvider(args));
+      // Only the signed-in account's own unconfirmed replies show here.
+      final signer = ref.watch(myPubkeyProvider)?.toLowerCase();
+      final localReplies = [
+        for (final reply in ref.watch(threadLocalRepliesProvider(args)))
+          if (signer == null || reply.pubkey.toLowerCase() == signer) reply,
+      ];
       // Older pages fold into the window after the query resolved; show them
       // without refetching the query.
       final windowEvents = ref.watch(threadWindowProvider(args))?.events;

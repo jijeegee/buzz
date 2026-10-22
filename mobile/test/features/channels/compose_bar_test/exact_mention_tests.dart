@@ -197,14 +197,9 @@ void exactMentionTests() {
       }
       await tester.tap(find.byIcon(LucideIcons.arrowUp));
       await tester.pumpAndSettle();
-      if (scenario == 'non-member human') {
-        expect(
-          find.textContaining('Renamed is not in this group'),
-          findsOneWidget,
-        );
-        await tester.tap(find.text('Do nothing'));
-        await tester.pumpAndSettle();
-      }
+      // Kuzz never asks to invite or adds anyone on send: a mention of a
+      // non-member goes out as written.
+      expect(find.textContaining('is not in this group'), findsNothing);
       final messages = events.where(
         (e) => e['kind'] == EventKind.streamMessage,
       );
@@ -219,21 +214,17 @@ void exactMentionTests() {
         final event = messages.single;
         expect(event['content'], expectedText.trim());
         expect((event['tags'] as List).where((t) => t[0] == 'p').toList(), [
-          if (scenario != 'non-member human' && scenario != 'map plain')
+          if (scenario != 'map plain')
             [
               'p',
               ['legacy', 'map reselected'].contains(scenario) ? second : first,
             ],
         ]);
-        if (scenario == 'non-member human') {
-          expect(
-            (event['tags'] as List).where((t) => t[0] == 'mention').toList(),
-            [
-              ['mention', first],
-            ],
-          );
-          expect(events.where((e) => e['kind'] == 9000), isEmpty);
-        }
+        expect(
+          (event['tags'] as List).where((t) => t[0] == 'mention'),
+          isEmpty,
+        );
+        expect(events.where((e) => e['kind'] == 9000), isEmpty);
         expect(event['pubkey'], signer.public);
         expect(event['sig'], matches(RegExp(r'^[0-9a-f]{128}$')));
         expect(nostr.Event.fromMap(event).id, event['id']);
