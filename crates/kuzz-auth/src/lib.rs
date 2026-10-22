@@ -123,6 +123,9 @@ pub struct TokenBinding {
     pub bot_owner: Option<kuzz_core::principal::PrincipalId>,
     /// Whether the principal holds the `operator` role in the DB roster.
     pub is_operator: bool,
+    /// SEC1 compressed device key of a user token's device (`None`:
+    /// keyless device, bot). Parsed only when a proof is checked.
+    pub device_pubkey: Option<[u8; 33]>,
 }
 
 /// The result of a successful authentication, bound to a connection.

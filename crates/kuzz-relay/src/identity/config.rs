@@ -59,6 +59,40 @@ impl std::fmt::Debug for InviteSigningSecret {
     }
 }
 
+/// What a device check does when it fails (`KUZZ_DEVICE_ADMISSION`): a
+/// message key or account token must be used from its own device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DeviceAdmissionMode {
+    /// No device checks at all.
+    #[default]
+    Off,
+    /// Checks run; a failing one is logged ("would refuse") and let through.
+    Log,
+    /// A failing check is refused.
+    Enforce,
+}
+
+impl DeviceAdmissionMode {
+    /// Parse `off`, `log` or `enforce` (case-insensitive).
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "off" => Some(Self::Off),
+            "log" => Some(Self::Log),
+            "enforce" => Some(Self::Enforce),
+            _ => None,
+        }
+    }
+
+    /// Stable name for logs and metrics.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Log => "log",
+            Self::Enforce => "enforce",
+        }
+    }
+}
+
 /// Account-session configuration. Token messaging and custodial backup are
 /// independently enabled; both are inert by default.
 #[derive(Debug, Clone)]
@@ -96,6 +130,14 @@ pub struct AuthTokenConfig {
     /// `INVITE_SIGNING_SECRET` — required when `enabled` (startup fails
     /// without it); keys invite codes instead of the relay signing key.
     pub invite_signing_secret: Option<InviteSigningSecret>,
+    /// `KUZZ_DEVICE_ADMISSION` — `off` (default), `log` or `enforce` for
+    /// every device-check surface; a surface can be switched at runtime in
+    /// Redis (see `identity::device`).
+    pub device_admission: DeviceAdmissionMode,
+    /// `KUZZ_DEVICE_PROOF_ORIGINS` — comma-separated extra HTTP(S) origins a
+    /// device proof may be bound to besides [`Self::public_url`] (an older
+    /// relay address clients still use).
+    pub device_proof_origins: Vec<String>,
 }
 
 impl AuthTokenConfig {
@@ -115,6 +157,8 @@ impl AuthTokenConfig {
             operator_bootstrap_email: None,
             trusted_proxies: super::client_ip::TrustedProxies::default(),
             invite_signing_secret: None,
+            device_admission: DeviceAdmissionMode::Off,
+            device_proof_origins: Vec::new(),
         }
     }
 
@@ -210,6 +254,29 @@ impl AuthTokenConfig {
                         "INVITE_SIGNING_SECRET must be 64 hex characters (32 bytes)".into(),
                     )
                 })?);
+        }
+        if let Some(raw) = non_empty(&lookup, "KUZZ_DEVICE_ADMISSION") {
+            config.device_admission = DeviceAdmissionMode::parse(&raw).ok_or_else(|| {
+                ConfigError::InvalidValue(
+                    "KUZZ_DEVICE_ADMISSION must be off, log or enforce".into(),
+                )
+            })?;
+        }
+        if let Some(raw) = non_empty(&lookup, "KUZZ_DEVICE_PROOF_ORIGINS") {
+            config.device_proof_origins = raw
+                .split(',')
+                .map(|origin| origin.trim().trim_end_matches('/').to_owned())
+                .filter(|origin| !origin.is_empty())
+                .collect();
+            if config
+                .device_proof_origins
+                .iter()
+                .any(|origin| !(origin.starts_with("http://") || origin.starts_with("https://")))
+            {
+                return Err(ConfigError::InvalidValue(
+                    "KUZZ_DEVICE_PROOF_ORIGINS must be http(s) origins".into(),
+                ));
+            }
         }
         if config.enabled && config.invite_signing_secret.is_none() {
             return Err(ConfigError::InvalidValue(
@@ -497,5 +564,37 @@ mod tests {
             .unwrap()
             .trusted_proxies
             .is_empty());
+    }
+
+    #[test]
+    fn parses_device_admission_and_proof_origins() {
+        let config = AuthTokenConfig::from_lookup("ws://h", lookup(&[])).unwrap();
+        assert_eq!(config.device_admission, DeviceAdmissionMode::Off);
+        assert!(config.device_proof_origins.is_empty());
+        let config = AuthTokenConfig::from_lookup(
+            "ws://h",
+            lookup(&[
+                ("KUZZ_DEVICE_ADMISSION", " LOG "),
+                (
+                    "KUZZ_DEVICE_PROOF_ORIGINS",
+                    "https://old.example/, https://older.example",
+                ),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(config.device_admission, DeviceAdmissionMode::Log);
+        assert_eq!(
+            config.device_proof_origins,
+            ["https://old.example", "https://older.example"]
+        );
+        assert!(
+            AuthTokenConfig::from_lookup("ws://h", lookup(&[("KUZZ_DEVICE_ADMISSION", "on")]))
+                .is_err()
+        );
+        assert!(AuthTokenConfig::from_lookup(
+            "ws://h",
+            lookup(&[("KUZZ_DEVICE_PROOF_ORIGINS", "old.example")])
+        )
+        .is_err());
     }
 }

@@ -39,7 +39,7 @@ pub use principal::{
     LoginPrincipal, PrincipalRecord, ProfileCommunity, ProfileEventState, ProfilePublishLock,
     ProfilePublishSnapshot, ProfileUpdate, MAX_PROFILE_COMMUNITIES,
 };
-pub use session::{DeviceRecord, LoginSession, RefreshOutcome};
+pub use session::{DeviceKey, DeviceRecord, LoginSession, RefreshOutcome};
 
 /// Maximum live (non-revoked) devices per principal.
 pub const MAX_DEVICES_PER_PRINCIPAL: i64 = 50;
