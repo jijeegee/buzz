@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import type { GroupInvitation } from "./groupsApi";
 
 export type InvitationsViewState =
@@ -25,19 +26,20 @@ export function invitationsRowLabel(
   invitations: GroupInvitation[] | undefined,
 ): string | null {
   const count = invitations?.length ?? 0;
-  return count > 0 ? `Invitations · ${count}` : null;
+  return count > 0 ? t("groups.invitations.rowLabel", { count }) : null;
 }
 
 export function memberCountLabel(count: number): string {
-  return `${count} ${count === 1 ? "member" : "members"}`;
+  return t("groups.invitations.memberCount", { count });
 }
 
 export function invitedYouText(name: string): string {
-  return `${name} invited you`;
+  return t("groups.invitations.invitedYou", { name });
 }
 
-export const INVITATION_NO_LONGER_VALID_TEXT =
-  "This invitation is no longer valid.";
+export function invitationNoLongerValidText(): string {
+  return t("groups.invitations.noLongerValid");
+}
 
 /** The list after one invitation was joined, declined or found invalid. */
 export function withoutInvitation(

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 /**
  * Optimistic-concurrency conflict detection for the channel canvas.
  *
@@ -35,12 +36,6 @@ const CANVAS_CONFLICT_MARKERS = [
   "conflict: canvas changed since it was loaded",
   "conflict: canvas revision does not exist",
 ] as const;
-
-export const CANVAS_CONFLICT_MESSAGE =
-  "This canvas changed since you loaded it — reload to see the latest, then reapply your edit.";
-
-export const CANVAS_SUPERSEDED_MESSAGE =
-  "A concurrent edit is now current. Your save was preserved in History — reload, then restore it if needed.";
 
 /**
  * Literal `expected-revision` value asserting "I expect no canvas exists yet".
@@ -94,10 +89,10 @@ export function isCanvasSupersededError(error: unknown): boolean {
  */
 export function canvasConflictMessage(error: unknown): string | null {
   if (isCanvasSupersededError(error)) {
-    return CANVAS_SUPERSEDED_MESSAGE;
+    return t("channels.canvas.supersededError");
   }
   if (isCanvasConflictError(error)) {
-    return CANVAS_CONFLICT_MESSAGE;
+    return t("channels.canvas.conflictError");
   }
   return null;
 }

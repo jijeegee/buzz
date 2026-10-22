@@ -18,6 +18,7 @@ import {
   canvasConflictMessage,
 } from "@/features/channels/canvasConflict";
 import { CanvasHistoryPanel } from "./CanvasHistoryPanel";
+import { useT } from "@/shared/i18n";
 
 type ChannelCanvasProps = {
   channelId: string | null;
@@ -30,6 +31,7 @@ export function ChannelCanvas({
   canEdit,
   isArchived,
 }: ChannelCanvasProps) {
+  const t = useT();
   const canvasQuery = useCanvasQuery(channelId, channelId !== null);
   const setCanvasMutation = useSetCanvasMutation(channelId);
   const { channels } = useChannelNavigation();
@@ -116,7 +118,7 @@ export function ChannelCanvas({
   if (canvasQuery.isLoading) {
     return (
       <p className="text-sm text-muted-foreground" role="status">
-        Loading canvas...
+        {t("channels.canvas.loading")}
       </p>
     );
   }
@@ -142,12 +144,12 @@ export function ChannelCanvas({
     return (
       <div className="space-y-3">
         <Textarea
-          aria-label="Canvas content"
+          aria-label={t("channels.canvas.contentLabel")}
           className="min-h-48 font-mono text-sm"
           data-testid="channel-canvas-editor"
           disabled={setCanvasMutation.isPending}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Write your canvas content in Markdown..."
+          placeholder={t("channels.canvas.placeholder")}
           value={draft}
         />
         <div className="flex gap-2">
@@ -163,7 +165,9 @@ export function ChannelCanvas({
             type="button"
           >
             <Save className="h-4 w-4" />
-            {setCanvasMutation.isPending ? "Saving..." : "Save canvas"}
+            {setCanvasMutation.isPending
+              ? t("channels.canvas.saving")
+              : t("channels.canvas.save")}
           </Button>
           <Button
             data-testid="channel-canvas-cancel"
@@ -174,7 +178,7 @@ export function ChannelCanvas({
             variant="outline"
           >
             <X className="h-4 w-4" />
-            Cancel
+            {t("common.cancel")}
           </Button>
         </div>
         {setCanvasMutation.error instanceof Error ? (
@@ -198,7 +202,7 @@ export function ChannelCanvas({
         >
           {isRelayUnreachableError(canvasQuery.error)
             ? RELAY_UNREACHABLE_SHORT
-            : "Couldn't refresh canvas — showing last known content."}
+            : t("channels.canvas.refreshFailed")}
         </p>
       ) : null}
       {unverifiedSaveNotice ? (
@@ -210,8 +214,7 @@ export function ChannelCanvas({
           ref={noticeRef}
           tabIndex={-1}
         >
-          Saved. We couldn't verify against the latest revision just now — check
-          History if a concurrent edit appears.
+          {t("channels.canvas.savedUnverified")}
         </p>
       ) : null}
       {canvasExists ? (
@@ -226,7 +229,7 @@ export function ChannelCanvas({
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No canvas set for this group.
+          {t("channels.canvas.empty")}
         </p>
       )}
       {canEdit && !isArchived ? (
@@ -239,7 +242,9 @@ export function ChannelCanvas({
           variant="outline"
         >
           <Pencil className="h-4 w-4" />
-          {canvasExists ? "Edit canvas" : "Create canvas"}
+          {canvasExists
+            ? t("channels.canvas.edit")
+            : t("channels.canvas.create")}
         </Button>
       ) : null}
       {canvasExists ? (
@@ -253,7 +258,9 @@ export function ChannelCanvas({
             variant="ghost"
           >
             <History className="h-4 w-4" />
-            {showHistory ? "Hide history" : "History"}
+            {showHistory
+              ? t("channels.canvas.hideHistory")
+              : t("channels.canvas.history")}
           </Button>
           {showHistory && channelId ? (
             <CanvasHistoryPanel

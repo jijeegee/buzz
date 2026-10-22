@@ -1,6 +1,7 @@
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { BotActivityAgent } from "@/features/channels/ui/BotActivityBar";
 import type { ChannelAgentSessionAgent } from "@/features/channels/ui/useChannelAgentSessions";
+import { t } from "@/shared/i18n";
 
 export function resolveSelectedAgentSession({
   agentSessionAgents,
@@ -35,7 +36,8 @@ export function resolveSelectedAgentSession({
   const profile = profiles?.[openAgentSessionPubkey.toLowerCase()];
   return {
     pubkey: openAgentSessionPubkey,
-    name: profile?.displayName?.trim() || "Agent",
+    name:
+      profile?.displayName?.trim() || t("channels.agentSession.fallbackName"),
     status: "deployed",
     agentSource: "relay",
     canInterruptTurn: false,

@@ -4,6 +4,7 @@ import { PRIVATE_CHANNEL_ADD_DENIED_MESSAGE } from "@/features/channels/lib/chan
 import { useCanAddChannelMembers } from "@/features/channels/useCanAddChannelMembers";
 import type { UseMentionsResult } from "@/features/messages/lib/useMentions";
 import type { ChannelType } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 
 type PendingInvite = {
@@ -158,7 +159,7 @@ export function useForumMentionPreparation(
         setError(
           failure instanceof Error
             ? failure.message
-            : "Could not invite members.",
+            : t("forum.mentions.inviteFailed"),
         );
     } finally {
       if (invitingRef.current === draft) {

@@ -10,13 +10,14 @@ import type {
   CanvasHistoryCursor,
   CanvasHistoryResponse,
 } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 export function useCanvasQuery(channelId: string | null, enabled = true) {
   return useQuery({
     queryKey: ["channel-canvas", channelId],
     queryFn: () => {
       if (!channelId) {
-        return Promise.reject(new Error("No group selected"));
+        return Promise.reject(new Error(t("channels.canvas.noGroupSelected")));
       }
       return getCanvas(channelId);
     },
@@ -32,7 +33,7 @@ export function useCanvasHistoryQuery(
     queryKey: ["channel-canvas-history", channelId],
     queryFn: ({ pageParam }) => {
       if (!channelId) {
-        return Promise.reject(new Error("No group selected"));
+        return Promise.reject(new Error(t("channels.canvas.noGroupSelected")));
       }
       return getCanvasHistory(channelId, {
         cursor: (pageParam as CanvasHistoryCursor | null) ?? null,
@@ -53,7 +54,7 @@ export function useSetCanvasMutation(channelId: string | null) {
       expectedRevision?: string | null;
     }) => {
       if (!channelId) {
-        return Promise.reject(new Error("No group selected"));
+        return Promise.reject(new Error(t("channels.canvas.noGroupSelected")));
       }
       return setCanvas({
         channelId,

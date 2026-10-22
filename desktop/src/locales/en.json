@@ -13414,5 +13414,2365 @@
   "accounts.watch.notificationTitle": "{account} · {title}",
   "@accounts.watch.notificationTitle": {
     "description": "Desktop notification title for a message in another signed-in account (not the open one). {account} is the account name; {title} is the usual notification title, e.g. a sender name."
+  },
+  "channelTemplates.apply.agentsFailed": "{count, plural, one {# agent from the template could not be created} other {# agents from the template could not be created}}",
+  "@channelTemplates.apply.agentsFailed": {
+    "description": "Warning toast after creating a group from a template when some of the template's agents could not be created."
+  },
+  "forum.noGroupSelected": "No group selected.",
+  "@forum.noGroupSelected": {
+    "description": "Error shown when posting or deleting in a forum while no forum is open."
+  },
+  "forum.time.minutesAgo": "{minutes}m ago",
+  "@forum.time.minutesAgo": {
+    "description": "Forum post card, how long ago the last reply was, after the word 'last'; abbreviated minutes. Short."
+  },
+  "forum.time.hoursAgo": "{hours}h ago",
+  "@forum.time.hoursAgo": {
+    "description": "Forum post card, how long ago the last reply was, after the word 'last'; abbreviated hours. Short."
+  },
+  "forum.time.daysAgo": "{days}d ago",
+  "@forum.time.daysAgo": {
+    "description": "Forum post card, how long ago the last reply was, after the word 'last'; abbreviated days. Short."
+  },
+  "forum.delete.postAction": "Delete post",
+  "@forum.delete.postAction": {
+    "description": "Forum post menu item and confirm button that deletes a post. Short."
+  },
+  "forum.delete.replyAction": "Delete reply",
+  "@forum.delete.replyAction": {
+    "description": "Forum reply menu item and confirm button that deletes a reply. Short."
+  },
+  "forum.delete.postTitle": "Delete post?",
+  "@forum.delete.postTitle": {
+    "description": "Title of the dialog confirming deletion of a forum post."
+  },
+  "forum.delete.replyTitle": "Delete reply?",
+  "@forum.delete.replyTitle": {
+    "description": "Title of the dialog confirming deletion of a forum reply."
+  },
+  "forum.delete.postBody": "This will permanently delete this post and cannot be undone.",
+  "@forum.delete.postBody": {
+    "description": "Body of the dialog confirming deletion of a forum post."
+  },
+  "forum.delete.replyBody": "This will permanently delete this reply and cannot be undone.",
+  "@forum.delete.replyBody": {
+    "description": "Body of the dialog confirming deletion of a forum reply."
+  },
+  "forum.composer.comment": "Comment",
+  "@forum.composer.comment": {
+    "description": "Forum reply composer, send button and its menu option that posts a comment. Short."
+  },
+  "forum.composer.sending": "Sending",
+  "@forum.composer.sending": {
+    "description": "Screen-reader label of the forum composer send button while sending. Short."
+  },
+  "forum.composer.send": "Send message",
+  "@forum.composer.send": {
+    "description": "Screen-reader label of the forum composer send button. Short."
+  },
+  "forum.composer.uploadFailed": "Upload failed: {message}",
+  "@forum.composer.uploadFailed": {
+    "description": "Error above the forum composer when an attachment upload fails; {message} is the error detail."
+  },
+  "forum.composer.dismiss": "Dismiss",
+  "@forum.composer.dismiss": {
+    "description": "Button that hides the upload error above the forum composer. Short."
+  },
+  "forum.postCard.replyCount": "{count, plural, one {# reply} other {# replies}}",
+  "@forum.postCard.replyCount": {
+    "description": "Forum post card footer, number of replies. Short."
+  },
+  "forum.postCard.lastReply": "last {time}",
+  "@forum.postCard.lastReply": {
+    "description": "Forum post card footer, when the last reply was; {time} is like '5m ago' or 'just now'. Lowercase. Short."
+  },
+  "forum.thread.backToPosts": "Back to posts",
+  "@forum.thread.backToPosts": {
+    "description": "Button at the top of a forum post's thread that returns to the post list. Short."
+  },
+  "forum.thread.replyCount": "{count, plural, one {# reply} other {# replies}}",
+  "@forum.thread.replyCount": {
+    "description": "Forum thread, header above the replies list. Short."
+  },
+  "forum.thread.noReplies": "No replies yet. Be the first to respond.",
+  "@forum.thread.noReplies": {
+    "description": "Forum thread, empty state when a post has no replies."
+  },
+  "forum.thread.replyPlaceholder": "Reply to this post...",
+  "@forum.thread.replyPlaceholder": {
+    "description": "Placeholder of the reply composer in a forum thread."
+  },
+  "forum.view.postPlaceholder": "Write your post...",
+  "@forum.view.postPlaceholder": {
+    "description": "Placeholder of the new post composer at the top of a forum."
+  },
+  "forum.view.archived": "This forum is archived.",
+  "@forum.view.archived": {
+    "description": "Forum, shown in place of the new post button when the forum is archived."
+  },
+  "forum.view.joinToPost": "Join this forum to create posts.",
+  "@forum.view.joinToPost": {
+    "description": "Forum, shown in place of the new post button when you are not a member."
+  },
+  "forum.view.startPost": "Start a new post...",
+  "@forum.view.startPost": {
+    "description": "Forum, button at the top that opens the new post composer."
+  },
+  "forum.view.emptyTitle": "No posts yet",
+  "@forum.view.emptyTitle": {
+    "description": "Forum, empty state title when there are no posts."
+  },
+  "forum.view.emptyBody": "Start a discussion by creating the first post.",
+  "@forum.view.emptyBody": {
+    "description": "Forum, empty state text under the title."
+  },
+  "forum.mentions.inviteFailed": "Could not invite members.",
+  "@forum.mentions.inviteFailed": {
+    "description": "Forum composer, error when adding mentioned people to the forum fails."
+  },
+  "groups.genericError": "Something went wrong. Try again.",
+  "@groups.genericError": {
+    "description": "Error toast or message when joining a group or answering an invitation fails for an unknown reason."
+  },
+  "groups.publicAddress.taken": "This address is taken.",
+  "@groups.publicAddress.taken": {
+    "description": "Group settings, Sharing, error under the public address field when another group uses it."
+  },
+  "groups.publicAddress.invalid": "Use 3-32 characters: a-z, 0-9 and _.",
+  "@groups.publicAddress.invalid": {
+    "description": "Group settings, Sharing, error under the public address field when it has invalid characters or length."
+  },
+  "groups.publicAddress.reserved": "This address is reserved.",
+  "@groups.publicAddress.reserved": {
+    "description": "Group settings, Sharing, error under the public address field when the address is reserved."
+  },
+  "groups.invitations.rowLabel": "Invitations · {count}",
+  "@groups.invitations.rowLabel": {
+    "description": "Chats list row that opens pending group invitations; {count} is how many. Short."
+  },
+  "groups.invitations.memberCount": "{count, plural, one {# member} other {# members}}",
+  "@groups.invitations.memberCount": {
+    "description": "Group invitation row or group preview card, number of members. Short."
+  },
+  "groups.invitations.invitedYou": "{name} invited you",
+  "@groups.invitations.invitedYou": {
+    "description": "Group invitation row, who sent the invitation. Short."
+  },
+  "groups.invitations.rowSubtitle": "{name} invited you · {members}",
+  "@groups.invitations.rowSubtitle": {
+    "description": "Invitations dialog, small text under a group name; {members} is like '5 members' or '5 people'. Short."
+  },
+  "groups.invitations.noLongerValid": "This invitation is no longer valid.",
+  "@groups.invitations.noLongerValid": {
+    "description": "Toast when you answer a group invitation that was withdrawn or expired."
+  },
+  "groups.invitations.title": "Invitations",
+  "@groups.invitations.title": {
+    "description": "Title of the dialog listing pending group invitations. Short."
+  },
+  "groups.invitations.loading": "Loading...",
+  "@groups.invitations.loading": {
+    "description": "Invitations dialog, shown while invitations load. Short."
+  },
+  "groups.invitations.loadFailed": "Couldn't load invitations.",
+  "@groups.invitations.loadFailed": {
+    "description": "Invitations dialog, error when the list fails to load."
+  },
+  "groups.invitations.tryAgain": "Try again",
+  "@groups.invitations.tryAgain": {
+    "description": "Invitations dialog, button that reloads the list after an error. Short."
+  },
+  "groups.invitations.empty": "No invitations",
+  "@groups.invitations.empty": {
+    "description": "Invitations dialog, empty state. Short."
+  },
+  "groups.invitations.decline": "Decline",
+  "@groups.invitations.decline": {
+    "description": "Invitations dialog, button that declines an invitation. Short."
+  },
+  "groups.invitations.join": "Join",
+  "@groups.invitations.join": {
+    "description": "Invitations dialog, button that accepts an invitation and joins the group. Short."
+  },
+  "groups.invitations.joining": "Joining...",
+  "@groups.invitations.joining": {
+    "description": "Invitations dialog, join button while joining. Short."
+  },
+  "groups.addPolicy.sectionTitle": "Groups",
+  "@groups.addPolicy.sectionTitle": {
+    "description": "Settings, Privacy, section title for group settings. Short."
+  },
+  "groups.addPolicy.label": "Who can add me to groups",
+  "@groups.addPolicy.label": {
+    "description": "Settings, Privacy, label of the choice of who may add you to groups directly."
+  },
+  "groups.addPolicy.friends": "Friends",
+  "@groups.addPolicy.friends": {
+    "description": "Settings, Privacy, option: only friends can add you to groups. Short."
+  },
+  "groups.addPolicy.everyone": "Everyone",
+  "@groups.addPolicy.everyone": {
+    "description": "Settings, Privacy, option: anyone can add you to groups. Short."
+  },
+  "groups.addPolicy.saveFailed": "Couldn't change this setting",
+  "@groups.addPolicy.saveFailed": {
+    "description": "Error toast when saving who can add you to groups fails."
+  },
+  "groups.addPolicy.loadFailed": "Couldn't load this setting.",
+  "@groups.addPolicy.loadFailed": {
+    "description": "Settings, Privacy, error when who can add you to groups fails to load."
+  },
+  "groups.preview.open": "Open",
+  "@groups.preview.open": {
+    "description": "Group preview card (join with link), button that opens a group you are already in. Short."
+  },
+  "groups.preview.join": "Join group",
+  "@groups.preview.join": {
+    "description": "Group preview card (join with link), button that joins the group. Short."
+  },
+  "groups.preview.joining": "Joining...",
+  "@groups.preview.joining": {
+    "description": "Group preview card, join button while joining. Short."
+  },
+  "groups.sharing.title": "Sharing",
+  "@groups.sharing.title": {
+    "description": "Group settings, section title for public address and invite link. Short."
+  },
+  "groups.sharing.publicAddress": "Public address",
+  "@groups.sharing.publicAddress": {
+    "description": "Group settings, Sharing, label of the public address field. Short."
+  },
+  "groups.sharing.addressSaved": "Public address saved",
+  "@groups.sharing.addressSaved": {
+    "description": "Toast after saving a group's public address."
+  },
+  "groups.sharing.addressRemoved": "Public address removed",
+  "@groups.sharing.addressRemoved": {
+    "description": "Toast after clearing a group's public address."
+  },
+  "groups.sharing.addressSaveFailed": "Couldn't save the address.",
+  "@groups.sharing.addressSaveFailed": {
+    "description": "Group settings, Sharing, error when saving the public address fails."
+  },
+  "groups.sharing.saving": "Saving...",
+  "@groups.sharing.saving": {
+    "description": "Group settings, Sharing, save button while saving. Short."
+  },
+  "groups.sharing.inviteLink": "Invite link",
+  "@groups.sharing.inviteLink": {
+    "description": "Group settings, Sharing, label above the group's invite link. Short."
+  },
+  "groups.sharing.loading": "Loading...",
+  "@groups.sharing.loading": {
+    "description": "Group settings, Sharing, shown while the invite link loads. Short."
+  },
+  "groups.sharing.linkLoadFailed": "Couldn't load the link.",
+  "@groups.sharing.linkLoadFailed": {
+    "description": "Group settings, Sharing, error when the invite link fails to load."
+  },
+  "groups.sharing.copyLink": "Copy link",
+  "@groups.sharing.copyLink": {
+    "description": "Group settings, Sharing, button that copies the invite link. Short."
+  },
+  "groups.sharing.linkCopied": "Link copied",
+  "@groups.sharing.linkCopied": {
+    "description": "Toast after copying a group invite link. Short."
+  },
+  "groups.sharing.resetLink": "Reset link",
+  "@groups.sharing.resetLink": {
+    "description": "Group settings, Sharing, button and confirm button that replaces the invite link with a new one. Short."
+  },
+  "groups.sharing.resetTitle": "Reset link?",
+  "@groups.sharing.resetTitle": {
+    "description": "Title of the dialog confirming an invite link reset."
+  },
+  "groups.sharing.resetBody": "The old link will stop working.",
+  "@groups.sharing.resetBody": {
+    "description": "Body of the dialog confirming an invite link reset."
+  },
+  "groups.sharing.resetFailed": "Couldn't reset the link.",
+  "@groups.sharing.resetFailed": {
+    "description": "Error toast when resetting a group invite link fails."
+  },
+  "groups.sharing.whoCanInvite": "Who can invite",
+  "@groups.sharing.whoCanInvite": {
+    "description": "Group settings, Sharing, label of the choice of who may invite people. Short."
+  },
+  "groups.sharing.allMembers": "All members",
+  "@groups.sharing.allMembers": {
+    "description": "Group settings, Sharing, option: all members can invite. Short."
+  },
+  "groups.sharing.adminsOnly": "Admins only",
+  "@groups.sharing.adminsOnly": {
+    "description": "Group settings, Sharing, option: only admins can invite. Short."
+  },
+  "groups.sharing.policySaveFailed": "Couldn't change this setting.",
+  "@groups.sharing.policySaveFailed": {
+    "description": "Error toast when saving who can invite to a group fails."
+  },
+  "groups.visibilityConfirm.publicTitle": "Make this group public?",
+  "@groups.visibilityConfirm.publicTitle": {
+    "description": "Title of the dialog confirming a switch of a group to public."
+  },
+  "groups.visibilityConfirm.privateTitle": "Make this group private?",
+  "@groups.visibilityConfirm.privateTitle": {
+    "description": "Title of the dialog confirming a switch of a group to private."
+  },
+  "groups.visibilityConfirm.publicBody": "Anyone on Kuzz will be able to find this group and read its past messages.",
+  "@groups.visibilityConfirm.publicBody": {
+    "description": "Body of the dialog confirming a switch of a group to public."
+  },
+  "groups.visibilityConfirm.privateBody": "The public address will be removed and the group will disappear from search. Members stay.",
+  "@groups.visibilityConfirm.privateBody": {
+    "description": "Body of the dialog confirming a switch of a group to private."
+  },
+  "groups.visibilityConfirm.makePublic": "Make public",
+  "@groups.visibilityConfirm.makePublic": {
+    "description": "Confirm button in the dialog switching a group to public. Short."
+  },
+  "groups.visibilityConfirm.makePrivate": "Make private",
+  "@groups.visibilityConfirm.makePrivate": {
+    "description": "Confirm button in the dialog switching a group to private. Short."
+  },
+  "groups.joinWithLink.title": "Join with link",
+  "@groups.joinWithLink.title": {
+    "description": "Title of the dialog for joining a group from an invite link or @address. Short."
+  },
+  "groups.joinWithLink.placeholder": "Paste an invite link or @address",
+  "@groups.joinWithLink.placeholder": {
+    "description": "Placeholder of the link field in the Join with link dialog."
+  },
+  "groups.joinWithLink.looking": "Looking...",
+  "@groups.joinWithLink.looking": {
+    "description": "Join with link dialog, Continue button while looking up the group. Short."
+  },
+  "groups.joinWithLink.invalid": "This doesn't look like a group link.",
+  "@groups.joinWithLink.invalid": {
+    "description": "Join with link dialog, error when the pasted text is not a group link."
+  },
+  "groups.joinWithLink.notFound": "No group found for this link.",
+  "@groups.joinWithLink.notFound": {
+    "description": "Join with link dialog, error when no group matches the link."
+  },
+  "groups.joinWithLink.forbidden": "You can't join this group.",
+  "@groups.joinWithLink.forbidden": {
+    "description": "Join with link dialog, error when joining is not allowed."
+  },
+  "huddle.leave": "Leave",
+  "@huddle.leave": {
+    "description": "Huddle bar and sidebar huddle card, button that leaves the huddle. Short."
+  },
+  "huddle.leaveLabel": "Leave huddle",
+  "@huddle.leaveLabel": {
+    "description": "Screen-reader label of the Leave button in a huddle. Short."
+  },
+  "huddle.openWindow": "Open huddle window",
+  "@huddle.openWindow": {
+    "description": "Tooltip or screen-reader label of the button that opens the huddle in its own window. Short."
+  },
+  "huddle.starting": "Starting huddle",
+  "@huddle.starting": {
+    "description": "Screen-reader text while a huddle is being started. Short."
+  },
+  "huddle.removeAgentNamed": "Remove {name} from huddle",
+  "@huddle.removeAgentNamed": {
+    "description": "Screen-reader label of the button that removes an agent from the huddle; {name} is the agent's name."
+  },
+  "huddle.removeAgentConfirm": "Remove this agent from the huddle?",
+  "@huddle.removeAgentConfirm": {
+    "description": "Confirmation prompt before removing an agent from a huddle."
+  },
+  "huddle.addAgent.title": "Add agents",
+  "@huddle.addAgent.title": {
+    "description": "Title of the dialog for adding agents to a huddle. Short."
+  },
+  "huddle.addAgent.subtitle": "Choose an agent to join this huddle.",
+  "@huddle.addAgent.subtitle": {
+    "description": "Subtitle of the Add agents dialog in a huddle."
+  },
+  "huddle.addAgent.loading": "Loading agents…",
+  "@huddle.addAgent.loading": {
+    "description": "Add agents dialog in a huddle, shown while the list loads. Short."
+  },
+  "huddle.addAgent.allAdded": "All available agents are already in this huddle.",
+  "@huddle.addAgent.allAdded": {
+    "description": "Add agents dialog in a huddle, empty state when every agent has joined."
+  },
+  "huddle.addAgent.adding": "Adding {name}",
+  "@huddle.addAgent.adding": {
+    "description": "Screen-reader label of the spinner next to an agent being added to a huddle."
+  },
+  "huddle.addAgent.loadFailed": "Could not load agents.",
+  "@huddle.addAgent.loadFailed": {
+    "description": "Add agents dialog in a huddle, error when the agent list fails to load."
+  },
+  "huddle.addAgent.startFailed": "Added to huddle, but could not start agent: {message}",
+  "@huddle.addAgent.startFailed": {
+    "description": "Add agents dialog in a huddle, warning; {message} is the error detail."
+  },
+  "huddle.addAgent.parentFailed": "Added to huddle, but parent group failed: {message}",
+  "@huddle.addAgent.parentFailed": {
+    "description": "Add agents dialog in a huddle, warning when the agent could not be added to the group the huddle belongs to; {message} is the error detail."
+  },
+  "huddle.addAgent.addFailed": "Failed to add agent: {message}",
+  "@huddle.addAgent.addFailed": {
+    "description": "Huddle, error when adding an agent fails; {message} is the error detail."
+  },
+  "huddle.agentVoice.settingsFor": "Voice settings for {name}",
+  "@huddle.agentVoice.settingsFor": {
+    "description": "Screen-reader label of the button that opens an agent's voice settings in a huddle."
+  },
+  "huddle.agentVoice.tts": "Agent text-to-speech",
+  "@huddle.agentVoice.tts": {
+    "description": "Agent voice settings in a huddle, label of the switch that turns the agent's speech on or off."
+  },
+  "huddle.agentVoice.voice": "Agent voice",
+  "@huddle.agentVoice.voice": {
+    "description": "Agent voice settings in a huddle, label next to the voice picker. Short."
+  },
+  "huddle.agentVoice.choose": "Choose agent voice",
+  "@huddle.agentVoice.choose": {
+    "description": "Screen-reader label of the agent voice picker in a huddle. Short."
+  },
+  "huddle.agentVoice.unavailable": "Unavailable",
+  "@huddle.agentVoice.unavailable": {
+    "description": "Agent voice picker in a huddle, shown when no voice is available. Short."
+  },
+  "huddle.agentVoice.remove": "Remove from huddle",
+  "@huddle.agentVoice.remove": {
+    "description": "Agent voice settings in a huddle, button that removes the agent. Short."
+  },
+  "huddle.agentVoice.updateFailed": "Agent voice could not be updated.",
+  "@huddle.agentVoice.updateFailed": {
+    "description": "Agent voice settings in a huddle, error when saving fails."
+  },
+  "huddle.attachment.title": "Huddle",
+  "@huddle.attachment.title": {
+    "description": "Huddle card in a chat, title before the status (Huddle · In progress). Short."
+  },
+  "huddle.attachment.inProgress": "In progress",
+  "@huddle.attachment.inProgress": {
+    "description": "Huddle card in a chat, status after the title. Short."
+  },
+  "huddle.attachment.ended": "Ended",
+  "@huddle.attachment.ended": {
+    "description": "Huddle card in a chat, status after the title. Short."
+  },
+  "huddle.attachment.participants": "{count, plural, one {# participant} other {# participants}}",
+  "@huddle.attachment.participants": {
+    "description": "Huddle card in a chat or huddle participant list, number of participants. Short."
+  },
+  "huddle.attachment.unavailable": "Huddle unavailable",
+  "@huddle.attachment.unavailable": {
+    "description": "Huddle card in a chat, title when the card is broken. Short."
+  },
+  "huddle.attachment.missingDetails": "This huddle card is missing session details.",
+  "@huddle.attachment.missingDetails": {
+    "description": "Huddle card in a chat, text when the card is broken."
+  },
+  "huddle.attachment.join": "Join",
+  "@huddle.attachment.join": {
+    "description": "Huddle card in a chat, button that joins the huddle. Short."
+  },
+  "huddle.attachment.joining": "Joining",
+  "@huddle.attachment.joining": {
+    "description": "Huddle card in a chat, join button while joining. Short."
+  },
+  "huddle.attachment.view": "View",
+  "@huddle.attachment.view": {
+    "description": "Huddle card in a chat, button that shows the huddle. Short."
+  },
+  "huddle.attachment.viewLabel": "View huddle",
+  "@huddle.attachment.viewLabel": {
+    "description": "Screen-reader label of the View button on a huddle card. Short."
+  },
+  "huddle.bar.someone": "Someone",
+  "@huddle.bar.someone": {
+    "description": "Name shown for the sender of a huddle emoji reaction when their name is unknown. Short."
+  },
+  "huddle.bar.reactionFailed": "Reaction failed",
+  "@huddle.bar.reactionFailed": {
+    "description": "Huddle bar, error when sending an emoji reaction fails. Short."
+  },
+  "huddle.bar.transcriptFailed": "Transcript failed: {message}",
+  "@huddle.bar.transcriptFailed": {
+    "description": "Huddle bar, error when turning the transcript on or off fails; {message} is the error detail."
+  },
+  "huddle.bar.dismissError": "Dismiss error",
+  "@huddle.bar.dismissError": {
+    "description": "Screen-reader label of the button that hides a huddle error. Short."
+  },
+  "huddle.bar.voiceModels": "Voice models: STT {stt}, TTS {tts}",
+  "@huddle.bar.voiceModels": {
+    "description": "Huddle bar, download progress of the speech-to-text (STT) and text-to-speech (TTS) models; {stt} and {tts} are status words from the app."
+  },
+  "huddle.bar.sttModel": "STT model: {status}",
+  "@huddle.bar.sttModel": {
+    "description": "Huddle bar, download progress of the speech-to-text model; {status} is a status word from the app."
+  },
+  "huddle.bar.ttsModel": "TTS model: {status}",
+  "@huddle.bar.ttsModel": {
+    "description": "Huddle bar, download progress of the text-to-speech model; {status} is a status word from the app."
+  },
+  "huddle.bar.reactions": "Emoji reactions",
+  "@huddle.bar.reactions": {
+    "description": "Huddle bar, tooltip and screen-reader label of the emoji reactions button. Short."
+  },
+  "huddle.bar.startTranscript": "Start transcript",
+  "@huddle.bar.startTranscript": {
+    "description": "Huddle bar, tooltip and screen-reader label of the transcript button. Short."
+  },
+  "huddle.bar.stopTranscript": "Stop transcript",
+  "@huddle.bar.stopTranscript": {
+    "description": "Huddle bar, tooltip and screen-reader label of the transcript button while on. Short."
+  },
+  "huddle.bar.addAgent": "Add agent",
+  "@huddle.bar.addAgent": {
+    "description": "Huddle bar, tooltip of the button that adds an agent. Short."
+  },
+  "huddle.bar.addAgentLabel": "Add agent to huddle",
+  "@huddle.bar.addAgentLabel": {
+    "description": "Screen-reader label of the huddle bar button that adds an agent. Short."
+  },
+  "huddle.bar.openWindowLabel": "Open huddle in a new window",
+  "@huddle.bar.openWindowLabel": {
+    "description": "Screen-reader label of the huddle bar button that opens the huddle window. Short."
+  },
+  "huddle.bar.returnToDrawer": "Return huddle to drawer",
+  "@huddle.bar.returnToDrawer": {
+    "description": "Huddle window, tooltip and screen-reader label of the button that moves the huddle back into the main window. Short."
+  },
+  "huddle.bar.srStatus": "In huddle, {mic, select, yes {microphone connected} other {no microphone}}, voice input: {ptt, select, yes {push to talk, press Ctrl+Space to transmit} other {voice activity detection}}",
+  "@huddle.bar.srStatus": {
+    "description": "Screen-reader announcement of the huddle state. Keep 'Ctrl+Space' as is."
+  },
+  "huddle.bar.srSttModel": ", STT model {status}",
+  "@huddle.bar.srSttModel": {
+    "description": "Screen-reader announcement appended to the huddle state, starting with a comma; speech-to-text model download status from the app."
+  },
+  "huddle.bar.srTtsModel": ", TTS model {status}",
+  "@huddle.bar.srTtsModel": {
+    "description": "Screen-reader announcement appended to the huddle state, starting with a comma; text-to-speech model download status from the app."
+  },
+  "huddle.indicator.start": "Start huddle",
+  "@huddle.indicator.start": {
+    "description": "Group header, button or menu item that starts a voice huddle. Short."
+  },
+  "huddle.indicator.tooltip": "Huddle",
+  "@huddle.indicator.tooltip": {
+    "description": "Group header, tooltip of the start huddle button. Short."
+  },
+  "huddle.indicator.join": "Join huddle",
+  "@huddle.indicator.join": {
+    "description": "Group header menu item that joins the active huddle. Short."
+  },
+  "huddle.indicator.joinActive": "Join active huddle ({count, plural, one {# participant} other {# participants}})",
+  "@huddle.indicator.joinActive": {
+    "description": "Screen-reader label of the group header button that joins the active huddle."
+  },
+  "huddle.indicator.active": "Huddle active — {count, plural, one {# participant} other {# participants}}",
+  "@huddle.indicator.active": {
+    "description": "Tooltip of the group header button when a huddle is running."
+  },
+  "huddle.error.audioUnavailable": "Huddle audio isn’t available on this server. Ask an administrator to turn it on.",
+  "@huddle.error.audioUnavailable": {
+    "description": "Error when starting or joining a huddle on a server without huddle audio."
+  },
+  "huddle.error.joinFailed": "Couldn’t join the huddle.",
+  "@huddle.error.joinFailed": {
+    "description": "Error toast when joining a huddle fails."
+  },
+  "huddle.error.startFailed": "Couldn’t start the huddle.",
+  "@huddle.error.startFailed": {
+    "description": "Error when starting a huddle fails."
+  },
+  "huddle.profile.inHuddle": "In a huddle",
+  "@huddle.profile.inHuddle": {
+    "description": "Sidebar card while you are in a huddle, title. Short."
+  },
+  "huddle.profile.fallbackName": "Huddle",
+  "@huddle.profile.fallbackName": {
+    "description": "Sidebar card while you are in a huddle, shown when the group name is unknown. Short."
+  },
+  "huddle.transcriptIntro.title": "Huddle chat",
+  "@huddle.transcriptIntro.title": {
+    "description": "Huddle window, title at the top of the chat. Short."
+  },
+  "huddle.transcriptIntro.body": "Chat with huddle participants and agents. The transcript appears here too.",
+  "@huddle.transcriptIntro.body": {
+    "description": "Huddle window, text at the top of the chat."
+  },
+  "huddle.mic.unavailable": "Microphone unavailable",
+  "@huddle.mic.unavailable": {
+    "description": "Huddle microphone button label, or title in audio settings, when no microphone works. Short."
+  },
+  "huddle.mic.unavailableTooltip": "Microphone unavailable. Check app permissions or input device.",
+  "@huddle.mic.unavailableTooltip": {
+    "description": "Huddle microphone button tooltip when no microphone works."
+  },
+  "huddle.mic.unavailableBody": "Check app microphone permission or select another input device.",
+  "@huddle.mic.unavailableBody": {
+    "description": "Huddle audio settings, advice under Microphone unavailable."
+  },
+  "huddle.mic.mute": "Mute microphone",
+  "@huddle.mic.mute": {
+    "description": "Huddle microphone button, tooltip and screen-reader label. Short."
+  },
+  "huddle.mic.unmute": "Unmute microphone",
+  "@huddle.mic.unmute": {
+    "description": "Huddle microphone button while muted, tooltip and screen-reader label. Short."
+  },
+  "huddle.mic.pttHint": "Click to unmute or hold",
+  "@huddle.mic.pttHint": {
+    "description": "Huddle microphone tooltip in push-to-talk mode, followed by the key shortcut (Ctrl+Space)."
+  },
+  "huddle.mic.audioSettings": "Audio settings",
+  "@huddle.mic.audioSettings": {
+    "description": "Screen-reader label of the huddle button that opens microphone settings. Short."
+  },
+  "huddle.mic.inputMode": "Input Mode",
+  "@huddle.mic.inputMode": {
+    "description": "Huddle audio settings, heading above the push-to-talk option. Title case. Short."
+  },
+  "huddle.mic.ptt": "Push to Talk",
+  "@huddle.mic.ptt": {
+    "description": "Huddle audio settings, option: microphone only sends while a key is held. Title case. Short."
+  },
+  "huddle.mic.pttOn": "Turn on Push to Talk",
+  "@huddle.mic.pttOn": {
+    "description": "Screen-reader label of the Push to Talk option. Short."
+  },
+  "huddle.mic.pttOff": "Turn off Push to Talk",
+  "@huddle.mic.pttOff": {
+    "description": "Screen-reader label of the Push to Talk option while on. Short."
+  },
+  "huddle.mic.pttEnabled": "Push to Talk is enabled.",
+  "@huddle.mic.pttEnabled": {
+    "description": "Screen-reader announcement after turning on Push to Talk."
+  },
+  "huddle.mic.continuous": "Microphone is continuous.",
+  "@huddle.mic.continuous": {
+    "description": "Screen-reader announcement after turning off Push to Talk."
+  },
+  "huddle.mic.microphone": "Microphone",
+  "@huddle.mic.microphone": {
+    "description": "Huddle audio settings, heading of the microphone list. Short."
+  },
+  "huddle.mic.deviceFallback": "Mic {id}",
+  "@huddle.mic.deviceFallback": {
+    "description": "Huddle audio settings, name of a microphone without a name; {id} is part of its device ID. Short."
+  },
+  "huddle.mic.inputVolume": "Input Volume",
+  "@huddle.mic.inputVolume": {
+    "description": "Huddle audio settings, label of the microphone volume slider. Title case. Short."
+  },
+  "huddle.mic.openSettings": "Open Settings",
+  "@huddle.mic.openSettings": {
+    "description": "Huddle audio settings, button that opens the system microphone privacy settings (macOS). Short."
+  },
+  "huddle.headphones.label": "Headphones recommended",
+  "@huddle.headphones.label": {
+    "description": "Screen-reader label of the tip suggesting headphones in a huddle. Short."
+  },
+  "huddle.headphones.title": "Headphones help prevent echo",
+  "@huddle.headphones.title": {
+    "description": "Huddle tip suggesting headphones, title."
+  },
+  "huddle.headphones.body": "If people are nearby, speakers can feed back into your mic. Headphones keep huddles clearer.",
+  "@huddle.headphones.body": {
+    "description": "Huddle tip suggesting headphones, text."
+  },
+  "huddle.headphones.gotIt": "Got it",
+  "@huddle.headphones.gotIt": {
+    "description": "Huddle tip suggesting headphones, button that closes it. Short."
+  },
+  "huddle.speaker.muteAgents": "Mute agent speech",
+  "@huddle.speaker.muteAgents": {
+    "description": "Screen-reader label of the huddle speaker button. Short."
+  },
+  "huddle.speaker.unmuteAgents": "Unmute agent speech",
+  "@huddle.speaker.unmuteAgents": {
+    "description": "Screen-reader label of the huddle speaker button while agent speech is muted. Short."
+  },
+  "huddle.speaker.settings": "Speaker settings",
+  "@huddle.speaker.settings": {
+    "description": "Screen-reader label of the huddle button that opens speaker settings. Short."
+  },
+  "huddle.speaker.label": "Speaker",
+  "@huddle.speaker.label": {
+    "description": "Huddle speaker settings, heading of the speaker list. Short."
+  },
+  "huddle.devices.systemDefault": "System default",
+  "@huddle.devices.systemDefault": {
+    "description": "Huddle audio settings, device list option that uses the system's device. Short."
+  },
+  "huddle.devices.changeHint": "Change takes effect on next huddle",
+  "@huddle.devices.changeHint": {
+    "description": "Huddle audio settings, note under the device list."
+  },
+  "huddle.participants.title": "Participants",
+  "@huddle.participants.title": {
+    "description": "Huddle participant list, title. Short."
+  },
+  "huddle.participants.openProfile": "Open profile for {name}",
+  "@huddle.participants.openProfile": {
+    "description": "Screen-reader label of a participant's avatar in the huddle participant list."
+  },
+  "huddle.participants.speaking": "Speaking",
+  "@huddle.participants.speaking": {
+    "description": "Huddle participant list, status under a name. Short."
+  },
+  "huddle.participants.agent": "Agent",
+  "@huddle.participants.agent": {
+    "description": "Huddle participant list, status under an AI agent's name, or its name when unknown. Short."
+  },
+  "huddle.participants.inHuddle": "In huddle",
+  "@huddle.participants.inHuddle": {
+    "description": "Huddle participant list, status under a person's name. Short."
+  },
+  "huddle.participants.stop": "Stop",
+  "@huddle.participants.stop": {
+    "description": "Huddle participant tile, button that stops an agent speaking. Short."
+  },
+  "huddle.participants.stopSpeaking": "Stop {name} speaking",
+  "@huddle.participants.stopSpeaking": {
+    "description": "Screen-reader label of the Stop button on an agent's huddle tile."
+  },
+  "huddle.participants.showAll": "Show all huddle participants ({count})",
+  "@huddle.participants.showAll": {
+    "description": "Screen-reader label of the +N button that shows every huddle participant."
+  },
+  "channels.noGroupSelected": "No group selected.",
+  "@channels.noGroupSelected": {
+    "description": "Error shown when a group action runs while no group is open."
+  },
+  "channels.canvas.noGroupSelected": "No group selected",
+  "@channels.canvas.noGroupSelected": {
+    "description": "Error shown when the group canvas loads or saves while no group is open."
+  },
+  "channels.canvas.conflictError": "This canvas changed since you loaded it — reload to see the latest, then reapply your edit.",
+  "@channels.canvas.conflictError": {
+    "description": "Group canvas, error when saving over someone else's newer edit."
+  },
+  "channels.canvas.supersededError": "A concurrent edit is now current. Your save was preserved in History — reload, then restore it if needed.",
+  "@channels.canvas.supersededError": {
+    "description": "Group canvas, error when someone else's edit replaced yours right after saving. 'History' is the canvas history panel."
+  },
+  "channels.dm.reopenFailed": "Couldn't reopen this conversation.",
+  "@channels.dm.reopenFailed": {
+    "description": "Error when a hidden chat could not be shown again."
+  },
+  "channels.dm.moreParticipants": "+{count} more",
+  "@channels.dm.moreParticipants": {
+    "description": "End of a list of chat participants' names, how many more people there are. Short."
+  },
+  "channels.description.disconnected": "Connect to find groups and read messages.",
+  "@channels.description.disconnected": {
+    "description": "Group header tooltip when the app is not connected."
+  },
+  "channels.description.archived": "Archived.",
+  "@channels.description.archived": {
+    "description": "Group header tooltip, first sentence when the group is archived. Short."
+  },
+  "channels.description.readOnlyUntilJoin": "Read-only until you join this open group.",
+  "@channels.description.readOnlyUntilJoin": {
+    "description": "Group header tooltip when you are viewing an open group you have not joined."
+  },
+  "channels.description.fallback": "Group details and activity.",
+  "@channels.description.fallback": {
+    "description": "Group header tooltip when the group has no description."
+  },
+  "channels.type.project": "Project",
+  "@channels.type.project": {
+    "description": "Group type: a project's home group. Label or option. Short."
+  },
+  "channels.type.ongoing": "Ongoing",
+  "@channels.type.ongoing": {
+    "description": "Group type: a group that stays until deleted. Label or option. Short."
+  },
+  "channels.type.temporary": "Temporary",
+  "@channels.type.temporary": {
+    "description": "Group type: a group that is cleaned up after inactivity. Label or option. Short."
+  },
+  "channels.type.temporaryWithTtl": "Temporary · {ttl}",
+  "@channels.type.temporaryWithTtl": {
+    "description": "Group type label for a temporary group; {ttl} is a compact duration like 7d or 1d12h. Short."
+  },
+  "channels.ephemeral.cleanupDue": "Cleanup due",
+  "@channels.ephemeral.cleanupDue": {
+    "description": "Sidebar badge on a temporary group whose cleanup time has passed. Short."
+  },
+  "channels.ephemeral.minutesLeft": "{count}m left",
+  "@channels.ephemeral.minutesLeft": {
+    "description": "Sidebar badge on a temporary group, minutes until cleanup; abbreviated. Short."
+  },
+  "channels.ephemeral.hoursLeft": "{count}h left",
+  "@channels.ephemeral.hoursLeft": {
+    "description": "Sidebar badge on a temporary group, hours until cleanup; abbreviated. Short."
+  },
+  "channels.ephemeral.daysLeft": "{count}d left",
+  "@channels.ephemeral.daysLeft": {
+    "description": "Sidebar badge on a temporary group, days until cleanup; abbreviated. Short."
+  },
+  "channels.ephemeral.secondsTtl": "{count}s TTL",
+  "@channels.ephemeral.secondsTtl": {
+    "description": "Sidebar badge on a temporary group, cleanup time after inactivity in seconds; TTL = time to live. Short."
+  },
+  "channels.ephemeral.minutesTtl": "{count}m TTL",
+  "@channels.ephemeral.minutesTtl": {
+    "description": "Sidebar badge on a temporary group, cleanup time after inactivity in minutes; TTL = time to live. Short."
+  },
+  "channels.ephemeral.hoursTtl": "{count}h TTL",
+  "@channels.ephemeral.hoursTtl": {
+    "description": "Sidebar badge on a temporary group, cleanup time after inactivity in hours; TTL = time to live. Short."
+  },
+  "channels.ephemeral.daysTtl": "{count}d TTL",
+  "@channels.ephemeral.daysTtl": {
+    "description": "Sidebar badge on a temporary group, cleanup time after inactivity in days; TTL = time to live. Short."
+  },
+  "channels.ephemeral.seconds": "{count, plural, one {# second} other {# seconds}}",
+  "@channels.ephemeral.seconds": {
+    "description": "Duration inside the temporary group tooltip (Cleans up after ... of inactivity)."
+  },
+  "channels.ephemeral.minutes": "{count, plural, one {# minute} other {# minutes}}",
+  "@channels.ephemeral.minutes": {
+    "description": "Duration inside the temporary group tooltip (Cleans up after ... of inactivity)."
+  },
+  "channels.ephemeral.hours": "{count, plural, one {# hour} other {# hours}}",
+  "@channels.ephemeral.hours": {
+    "description": "Duration inside the temporary group tooltip (Cleans up after ... of inactivity)."
+  },
+  "channels.ephemeral.days": "{count, plural, one {# day} other {# days}}",
+  "@channels.ephemeral.days": {
+    "description": "Duration inside the temporary group tooltip (Cleans up after ... of inactivity)."
+  },
+  "channels.ephemeral.tooltipNoTtl": "Ephemeral group. Cleans up automatically after inactivity.",
+  "@channels.ephemeral.tooltipNoTtl": {
+    "description": "Tooltip on a temporary group's badge."
+  },
+  "channels.ephemeral.tooltipTtl": "Ephemeral group. Cleans up after {duration} of inactivity.",
+  "@channels.ephemeral.tooltipTtl": {
+    "description": "Tooltip on a temporary group's badge; {duration} is like '7 days'."
+  },
+  "channels.ephemeral.tooltipDue": "Ephemeral group. Cleanup is due now.",
+  "@channels.ephemeral.tooltipDue": {
+    "description": "Tooltip on a temporary group's badge when cleanup time has passed."
+  },
+  "channels.ephemeral.tooltipScheduled": "Ephemeral group. Cleans up {remaining}. Scheduled for {deadline}.",
+  "@channels.ephemeral.tooltipScheduled": {
+    "description": "Tooltip on a temporary group's badge; {remaining} is a relative time like 'in 3 days', {deadline} a date and time."
+  },
+  "channels.ephemeral.tooltipRemaining": "Ephemeral group. Cleans up {remaining}.",
+  "@channels.ephemeral.tooltipRemaining": {
+    "description": "Tooltip on a temporary group's badge; {remaining} is a relative time like 'in 3 days'."
+  },
+  "channels.chat.emptyTitle": "Empty chat",
+  "@channels.chat.emptyTitle": {
+    "description": "Title of a chat with nobody else in it. Short."
+  },
+  "channels.chat.peopleCount": "{count, plural, one {# person} other {# people}}",
+  "@channels.chat.peopleCount": {
+    "description": "Number of people in a chat. Short."
+  },
+  "channels.chat.invitationsSent": "Invitations sent",
+  "@channels.chat.invitationsSent": {
+    "description": "Toast after the people you picked were sent invitations instead of being added. Short."
+  },
+  "channels.chat.invitationSentTo": "Invitation sent to {count, plural, one {# person} other {# people}}",
+  "@channels.chat.invitationSentTo": {
+    "description": "Toast after some of the people you picked were sent invitations instead of being added."
+  },
+  "channels.addBot.title": "Add agents",
+  "@channels.addBot.title": {
+    "description": "Title of the dialog that adds agents to a group."
+  },
+  "channels.addBot.description": "Choose from your agents, or create a new one.",
+  "@channels.addBot.description": {
+    "description": "Subtitle of the add-agents dialog."
+  },
+  "channels.addBot.noRuntime": "Install an agent runtime before adding an agent to this group.",
+  "@channels.addBot.noRuntime": {
+    "description": "Warning in the add-agents dialog when no agent runtime is installed."
+  },
+  "channels.addBot.addFailed": "Failed to add {name}: {error}",
+  "@channels.addBot.addFailed": {
+    "description": "Error line in the add-agents dialog when one agent could not be added. {error} is the technical reason."
+  },
+  "channels.addBot.added": "Added {count, plural, one {# agent} other {# agents}}.",
+  "@channels.addBot.added": {
+    "description": "Toast after agents were added to a group."
+  },
+  "channels.addBot.addingCount": "Adding {count}…",
+  "@channels.addBot.addingCount": {
+    "description": "Add-agents dialog button label while several agents are being added. Short."
+  },
+  "channels.addBot.adding": "Adding…",
+  "@channels.addBot.adding": {
+    "description": "Add-agents dialog button label while one agent is being added. Short."
+  },
+  "channels.addBot.addCount": "Add {count} agents",
+  "@channels.addBot.addCount": {
+    "description": "Add-agents dialog button when more than one agent is selected. Short."
+  },
+  "channels.addBot.addOne": "Add agent",
+  "@channels.addBot.addOne": {
+    "description": "Button that adds one agent (add-agents dialog and group intro action). Short."
+  },
+  "channels.addBot.generic.title": "Generic agent",
+  "@channels.addBot.generic.title": {
+    "description": "Section heading in the add-agents dialog for a custom agent."
+  },
+  "channels.addBot.generic.body": "Add one custom agent alongside any selected agents.",
+  "@channels.addBot.generic.body": {
+    "description": "Description of the generic agent section in the add-agents dialog."
+  },
+  "channels.addBot.generic.name": "Name",
+  "@channels.addBot.generic.name": {
+    "description": "Field label for the generic agent's name. Short."
+  },
+  "channels.addBot.generic.nameHint": "Defaults to the selected runtime name.",
+  "@channels.addBot.generic.nameHint": {
+    "description": "Hint under the generic agent name field."
+  },
+  "channels.addBot.generic.prompt": "Prompt",
+  "@channels.addBot.generic.prompt": {
+    "description": "Field label for the generic agent's instructions. Short."
+  },
+  "channels.addBot.generic.promptPlaceholder": "What should this agent help with in the group?",
+  "@channels.addBot.generic.promptPlaceholder": {
+    "description": "Placeholder in the generic agent prompt field."
+  },
+  "channels.addBot.generic.promptHint": "Saved as the generic agent's system prompt override.",
+  "@channels.addBot.generic.promptHint": {
+    "description": "Hint under the generic agent prompt field."
+  },
+  "channels.addBot.inGroup": "In group",
+  "@channels.addBot.inGroup": {
+    "description": "Badge on an agent that is already in the group. Short."
+  },
+  "channels.addBot.createAgent": "Create a new agent",
+  "@channels.addBot.createAgent": {
+    "description": "Option in the add-agents dialog to make a new agent."
+  },
+  "channels.addBot.createAgentBody": "Give it a name, purpose, and instructions.",
+  "@channels.addBot.createAgentBody": {
+    "description": "Description under the create-a-new-agent option."
+  },
+  "channels.addBot.loading": "Loading your agents…",
+  "@channels.addBot.loading": {
+    "description": "Loading text in the add-agents dialog."
+  },
+  "channels.addBot.yourAgents": "Your agents",
+  "@channels.addBot.yourAgents": {
+    "description": "Section heading listing the user's agents in the add-agents dialog. Short."
+  },
+  "channels.addBot.allInGroup": "All of your agents are already in this group.",
+  "@channels.addBot.allInGroup": {
+    "description": "Empty state in the add-agents dialog."
+  },
+  "channels.addBot.inThisGroup": "In this group",
+  "@channels.addBot.inThisGroup": {
+    "description": "Section heading for agents already in the group. Short."
+  },
+  "channels.addBot.reuse.label": "Agent instance",
+  "@channels.addBot.reuse.label": {
+    "description": "Label of the choice between reusing an existing agent or creating a new one. Short."
+  },
+  "channels.addBot.reuse.reuse": "Reuse existing agent",
+  "@channels.addBot.reuse.reuse": {
+    "description": "Option to reuse an existing agent instance."
+  },
+  "channels.addBot.reuse.new": "Create new instance",
+  "@channels.addBot.reuse.new": {
+    "description": "Option to create a new agent instance."
+  },
+  "channels.addBot.reuse.body": "<b>{name}</b> is already {status, select, running {running} other {stopped}}. Reusing adds it to this group without creating a duplicate keypair.",
+  "@channels.addBot.reuse.body": {
+    "description": "Explanation under the reuse-or-new choice. <b> marks the agent name."
+  },
+  "channels.addBot.teams.title": "Teams",
+  "@channels.addBot.teams.title": {
+    "description": "Section heading for agent teams in the add-agents dialog. Short."
+  },
+  "channels.addBot.teams.body": "Select a team to toggle all its agents at once.",
+  "@channels.addBot.teams.body": {
+    "description": "Description of the teams section in the add-agents dialog."
+  },
+  "channels.addBot.teams.allInGroup": "All in group",
+  "@channels.addBot.teams.allInGroup": {
+    "description": "Badge on a team whose agents are all in the group. Short."
+  },
+  "channels.addBot.teams.someInGroup": "{count} in group",
+  "@channels.addBot.teams.someInGroup": {
+    "description": "Badge on a team showing how many of its agents are in the group. Short."
+  },
+  "channels.addMembers.select": "Select {name}",
+  "@channels.addMembers.select": {
+    "description": "Accessible label for a search result row that adds a person or agent."
+  },
+  "channels.addMembers.agentBadge": "agent",
+  "@channels.addMembers.agentBadge": {
+    "description": "Small lowercase tag next to an agent's name in member lists. Short."
+  },
+  "channels.addMembers.managedBy": "managed by {name}",
+  "@channels.addMembers.managedBy": {
+    "description": "Small text showing who runs an agent in a search result. Short."
+  },
+  "channels.addPeople.title": "Add people",
+  "@channels.addPeople.title": {
+    "description": "Title of the dialog that adds people to a 1:1 chat."
+  },
+  "channels.addPeople.body": "This starts a new chat with everyone. This conversation stays as it is.",
+  "@channels.addPeople.body": {
+    "description": "Explanation in the add-people dialog for a 1:1 chat."
+  },
+  "channels.addPeople.searchPlaceholder": "Search people and agents",
+  "@channels.addPeople.searchPlaceholder": {
+    "description": "Placeholder of the search field in the add-people dialog."
+  },
+  "channels.addPeople.loading": "Loading...",
+  "@channels.addPeople.loading": {
+    "description": "Loading text in the add-people dialog search results. Short."
+  },
+  "channels.addPeople.noMatches": "No matching people.",
+  "@channels.addPeople.noMatches": {
+    "description": "Empty search result in the add-people dialog."
+  },
+  "channels.addPeople.tooMany": "A new chat can start with up to {max} people.",
+  "@channels.addPeople.tooMany": {
+    "description": "Warning when too many people are selected for a new chat."
+  },
+  "channels.addPeople.starting": "Starting...",
+  "@channels.addPeople.starting": {
+    "description": "Start chat button label while the chat is being created. Short."
+  },
+  "channels.addPeople.start": "Start chat",
+  "@channels.addPeople.start": {
+    "description": "Button that starts a new chat. Short."
+  },
+  "channels.dm.startFailed": "Could not start the chat.",
+  "@channels.dm.startFailed": {
+    "description": "Error when a new chat could not be created."
+  },
+  "channels.agentActions.stoppedHere": "Stopped {name} in this community.",
+  "@channels.agentActions.stoppedHere": {
+    "description": "Notice after an agent was stopped in this community."
+  },
+  "channels.agentActions.restartedHere": "Restarted {name} in this community.",
+  "@channels.agentActions.restartedHere": {
+    "description": "Notice after an agent was restarted in this community."
+  },
+  "channels.agentActions.startedHere": "Started {name} in this community.",
+  "@channels.agentActions.startedHere": {
+    "description": "Notice after an agent was started in this community."
+  },
+  "channels.agentActions.shutdownSent": "Shutdown command sent to {name}.",
+  "@channels.agentActions.shutdownSent": {
+    "description": "Notice after a shutdown was requested for a provider-hosted agent."
+  },
+  "channels.agentActions.stopped": "Stopped {name}.",
+  "@channels.agentActions.stopped": {
+    "description": "Notice after a local agent was stopped."
+  },
+  "channels.agentActions.controlFailed": "Failed to control agent.",
+  "@channels.agentActions.controlFailed": {
+    "description": "Fallback error when starting or stopping an agent failed."
+  },
+  "channels.agentActions.respawnFailed": "Failed to respawn agent.",
+  "@channels.agentActions.respawnFailed": {
+    "description": "Fallback error when respawning an agent failed."
+  },
+  "channels.agentActions.respawnedAll": "Spawned or respawned {count, plural, one {# agent} other {# agents}}.",
+  "@channels.agentActions.respawnedAll": {
+    "description": "Notice after the bulk spawn/respawn action in the members list."
+  },
+  "channels.agentActions.stopFailed": "Failed to stop agent.",
+  "@channels.agentActions.stopFailed": {
+    "description": "Fallback error when stopping an agent failed."
+  },
+  "channels.agentActions.stoppedAll": "Stopped or requested shutdown for {count, plural, one {# agent} other {# agents}}.",
+  "@channels.agentActions.stoppedAll": {
+    "description": "Notice after the bulk stop action in the members list."
+  },
+  "channels.agentActions.removeFailed": "Failed to remove bot from group.",
+  "@channels.agentActions.removeFailed": {
+    "description": "Fallback error when removing an agent from a group failed."
+  },
+  "channels.agentActions.removedAll": "Removed {count, plural, one {# managed bot} other {# managed bots}} from this group.",
+  "@channels.agentActions.removedAll": {
+    "description": "Notice after the bulk remove action in the members list."
+  },
+  "channels.agentActions.deployed": "Deployed {name}.",
+  "@channels.agentActions.deployed": {
+    "description": "Notice after a provider-hosted agent was deployed."
+  },
+  "channels.agentActions.respawned": "Respawned {name}.",
+  "@channels.agentActions.respawned": {
+    "description": "Notice after a stopped agent was started again."
+  },
+  "channels.agentActions.spawned": "Spawned {name}.",
+  "@channels.agentActions.spawned": {
+    "description": "Notice after an agent was started."
+  },
+  "channels.agentSession.fallbackName": "Agent",
+  "@channels.agentSession.fallbackName": {
+    "description": "Name shown for an agent with no display name. Short."
+  },
+  "channels.agentSession.lastUpdated": "Last updated {time}",
+  "@channels.agentSession.lastUpdated": {
+    "description": "Status line in the agent activity panel. {time} is a date or a relative time like 5m ago."
+  },
+  "channels.agentSession.oneGroup": "1 group",
+  "@channels.agentSession.oneGroup": {
+    "description": "Scope label in the agent activity panel when one group is shown. Short."
+  },
+  "channels.agentSession.allGroups": "All groups",
+  "@channels.agentSession.allGroups": {
+    "description": "Scope label in the agent activity panel when all groups are shown. Short."
+  },
+  "channels.agentSession.rawActivity": "Raw ACP activity",
+  "@channels.agentSession.rawActivity": {
+    "description": "Title of the agent activity panel in raw mode. ACP is a protocol name; keep it. Short."
+  },
+  "channels.agentSession.activity": "Activity",
+  "@channels.agentSession.activity": {
+    "description": "Title of the agent activity panel. Short."
+  },
+  "channels.agentSession.ambiguousTarget": "This group has multiple agent sessions. Stopping a specific thread isn't available here yet.",
+  "@channels.agentSession.ambiguousTarget": {
+    "description": "Notice when the stop action cannot pick one agent session."
+  },
+  "channels.agentSession.noActiveTurn": "No active turn to stop.",
+  "@channels.agentSession.noActiveTurn": {
+    "description": "Notice when stop was pressed but the agent is idle."
+  },
+  "channels.agentSession.stopUnconfirmed": "Stop requested, but the agent hasn't confirmed it.",
+  "@channels.agentSession.stopUnconfirmed": {
+    "description": "Notice when the agent did not confirm a stop request."
+  },
+  "channels.agentSession.stopSent": "Stop signal sent to {name}. It may take a moment to respond.",
+  "@channels.agentSession.stopSent": {
+    "description": "Notice after a stop request was sent to an agent."
+  },
+  "channels.agentSession.stopFailed": "Failed to stop {name}'s current turn.",
+  "@channels.agentSession.stopFailed": {
+    "description": "Fallback error when stopping an agent's turn failed."
+  },
+  "channels.agentSession.openSettings": "Open activity settings",
+  "@channels.agentSession.openSettings": {
+    "description": "Accessible label of the agent activity settings button."
+  },
+  "channels.agentSession.settings": "Activity settings",
+  "@channels.agentSession.settings": {
+    "description": "Tooltip of the agent activity settings button. Short."
+  },
+  "channels.agentSession.rawHide": "Hide raw JSON-RPC payloads.",
+  "@channels.agentSession.rawHide": {
+    "description": "Tooltip of the raw toggle when raw mode is on."
+  },
+  "channels.agentSession.rawShowGroup": "Show raw JSON-RPC payloads for this group.",
+  "@channels.agentSession.rawShowGroup": {
+    "description": "Tooltip of the raw toggle in a group."
+  },
+  "channels.agentSession.rawShowAgent": "Show raw JSON-RPC payloads for this agent.",
+  "@channels.agentSession.rawShowAgent": {
+    "description": "Tooltip of the raw toggle for one agent."
+  },
+  "channels.agentSession.raw": "Raw",
+  "@channels.agentSession.raw": {
+    "description": "Menu item that toggles raw activity mode. Short."
+  },
+  "channels.agentSession.rawBody": "Show raw JSON-RPC activity.",
+  "@channels.agentSession.rawBody": {
+    "description": "Description of the raw activity menu item."
+  },
+  "channels.agentSession.animateRaw": "Raw activity rows don't animate in.",
+  "@channels.agentSession.animateRaw": {
+    "description": "Tooltip of the animations toggle in raw mode."
+  },
+  "channels.agentSession.animateOff": "Stop animating new activity rows.",
+  "@channels.agentSession.animateOff": {
+    "description": "Tooltip of the animations toggle when it is on."
+  },
+  "channels.agentSession.animateOn": "Animate new activity rows as they arrive.",
+  "@channels.agentSession.animateOn": {
+    "description": "Tooltip of the animations toggle when it is off."
+  },
+  "channels.agentSession.showAnimations": "Show Animations",
+  "@channels.agentSession.showAnimations": {
+    "description": "Menu item that toggles activity animations. Short."
+  },
+  "channels.agentSession.timestampsOff": "Hide per-row activity timestamps.",
+  "@channels.agentSession.timestampsOff": {
+    "description": "Tooltip of the timestamps toggle when it is on."
+  },
+  "channels.agentSession.timestampsOn": "Show a timestamp under each activity row.",
+  "@channels.agentSession.timestampsOn": {
+    "description": "Tooltip of the timestamps toggle when it is off."
+  },
+  "channels.agentSession.showTimestamps": "Show Timestamps",
+  "@channels.agentSession.showTimestamps": {
+    "description": "Menu item that toggles activity timestamps. Short."
+  },
+  "channels.agentSession.stopTurnHint": "Interrupt the current ACP turn without stopping the agent process.",
+  "@channels.agentSession.stopTurnHint": {
+    "description": "Tooltip of the stop-current-turn item. ACP is a protocol name; keep it."
+  },
+  "channels.agentSession.stopNeedsGroup": "Open activity for a group to stop its current turn.",
+  "@channels.agentSession.stopNeedsGroup": {
+    "description": "Why stop-current-turn is unavailable outside a group."
+  },
+  "channels.agentSession.stopLocalOnlyLong": "Only locally managed agents can be interrupted from this community.",
+  "@channels.agentSession.stopLocalOnlyLong": {
+    "description": "Tooltip when stop-current-turn is unavailable for a remote agent."
+  },
+  "channels.agentSession.stopWhileWorking": "Available while the agent is working.",
+  "@channels.agentSession.stopWhileWorking": {
+    "description": "Why stop-current-turn is unavailable while the agent is idle."
+  },
+  "channels.agentSession.stopTurn": "Stop current turn",
+  "@channels.agentSession.stopTurn": {
+    "description": "Menu item that interrupts the agent's current turn. Short."
+  },
+  "channels.agentSession.stopLocalOnly": "Only available for locally managed agents.",
+  "@channels.agentSession.stopLocalOnly": {
+    "description": "Short note under the stop-current-turn item for a remote agent."
+  },
+  "channels.agentSession.back": "Back from activity",
+  "@channels.agentSession.back": {
+    "description": "Accessible label of the back button in the agent activity panel."
+  },
+  "channels.agentSession.emptyGroup": "Mention {name} in the group to see its work here.",
+  "@channels.agentSession.emptyGroup": {
+    "description": "Empty state of the agent activity panel inside a group."
+  },
+  "channels.agentSession.emptyAny": "Mention {name} in any group to see its work here.",
+  "@channels.agentSession.emptyAny": {
+    "description": "Empty state of the agent activity panel outside a group."
+  },
+  "channels.agentSession.noUpdates": "No updates yet",
+  "@channels.agentSession.noUpdates": {
+    "description": "Status line in the agent activity panel before any activity."
+  },
+  "channels.agentSession.minutesAgo": "{count}m ago",
+  "@channels.agentSession.minutesAgo": {
+    "description": "Compact relative time in the agent activity panel. Short."
+  },
+  "channels.agentSession.hoursAgo": "{count}h ago",
+  "@channels.agentSession.hoursAgo": {
+    "description": "Compact relative time in the agent activity panel. Short."
+  },
+  "channels.agentSession.daysAgo": "{count}d ago",
+  "@channels.agentSession.daysAgo": {
+    "description": "Compact relative time in the agent activity panel. Short."
+  },
+  "channels.agentSession.weeksAgo": "{count}w ago",
+  "@channels.agentSession.weeksAgo": {
+    "description": "Compact relative time in the agent activity panel. Short."
+  },
+  "channels.archive.restoring": "Restoring group",
+  "@channels.archive.restoring": {
+    "description": "Accessible label of the unarchive button while it is working. Short."
+  },
+  "channels.archive.unarchive": "Unarchive group",
+  "@channels.archive.unarchive": {
+    "description": "Button or menu item that restores an archived group. Short."
+  },
+  "channels.archive.archiving": "Archiving group",
+  "@channels.archive.archiving": {
+    "description": "Accessible label of the archive button while it is working. Short."
+  },
+  "channels.archive.archive": "Archive group",
+  "@channels.archive.archive": {
+    "description": "Button or menu item that archives a group. Short."
+  },
+  "channels.blockedBanner.named": "You blocked {name}.",
+  "@channels.blockedBanner.named": {
+    "description": "Banner above the composer in a chat with a blocked person."
+  },
+  "channels.blockedBanner.unnamed": "You blocked this user.",
+  "@channels.blockedBanner.unnamed": {
+    "description": "Banner above the composer in a chat with a blocked person whose name is unknown."
+  },
+  "channels.blockedBanner.unblockFailed": "Couldn't unblock. Try again.",
+  "@channels.blockedBanner.unblockFailed": {
+    "description": "Error toast when unblocking failed."
+  },
+  "channels.blockedBanner.unblock": "Unblock",
+  "@channels.blockedBanner.unblock": {
+    "description": "Button in the blocked-person banner. Short."
+  },
+  "channels.botActivity.fallbackName": "Agent",
+  "@channels.botActivity.fallbackName": {
+    "description": "Name shown for a working agent with no display name. Short."
+  },
+  "channels.botActivity.triggerOne": "{name} is working. View activity.",
+  "@channels.botActivity.triggerOne": {
+    "description": "Accessible label of the working-agents bar when one agent is working."
+  },
+  "channels.botActivity.triggerMany": "{count} agents working. View activity.",
+  "@channels.botActivity.triggerMany": {
+    "description": "Accessible label of the working-agents bar when several agents are working."
+  },
+  "channels.botActivity.working": "Working",
+  "@channels.botActivity.working": {
+    "description": "Fallback status for a working agent with no headline. Short."
+  },
+  "channels.botActivity.workingSr": "working",
+  "@channels.botActivity.workingSr": {
+    "description": "Screen-reader word after the agent count in the working-agents bar. Short."
+  },
+  "channels.botActivity.title": "Agents working",
+  "@channels.botActivity.title": {
+    "description": "Title of the working-agents popover. Short."
+  },
+  "channels.botActivity.viewActivity": "View activity",
+  "@channels.botActivity.viewActivity": {
+    "description": "Button or menu item that opens an agent's activity panel. Short."
+  },
+  "channels.browser.sortAlpha": "Alphabetical",
+  "@channels.browser.sortAlpha": {
+    "description": "Sort option in the group browser. Short."
+  },
+  "channels.browser.sortRecent": "Recent",
+  "@channels.browser.sortRecent": {
+    "description": "Sort option in the group browser. Short."
+  },
+  "channels.browser.sortMembers": "Most members",
+  "@channels.browser.sortMembers": {
+    "description": "Sort option in the group browser. Short."
+  },
+  "channels.browser.addForum": "Add a forum",
+  "@channels.browser.addForum": {
+    "description": "Title of the forum browser dialog."
+  },
+  "channels.browser.findGroups": "Find groups",
+  "@channels.browser.findGroups": {
+    "description": "Title of the group browser dialog, and a welcome intro action. Short."
+  },
+  "channels.browser.searchOrCreateForum": "Search or create a forum",
+  "@channels.browser.searchOrCreateForum": {
+    "description": "Search placeholder in the forum browser when the user can create forums."
+  },
+  "channels.browser.searchOrCreateGroup": "Search or create a group",
+  "@channels.browser.searchOrCreateGroup": {
+    "description": "Search placeholder in the group browser when the user can create groups."
+  },
+  "channels.browser.searchForums": "Search forums by name or description",
+  "@channels.browser.searchForums": {
+    "description": "Search placeholder in the forum browser."
+  },
+  "channels.browser.searchGroups": "Search groups by name or description",
+  "@channels.browser.searchGroups": {
+    "description": "Search placeholder in the group browser."
+  },
+  "channels.browser.allForums": "All forums",
+  "@channels.browser.allForums": {
+    "description": "Tab in the forum browser. Short."
+  },
+  "channels.browser.allGroups": "All groups",
+  "@channels.browser.allGroups": {
+    "description": "Tab in the group browser. Short."
+  },
+  "channels.browser.emptySearchTitle": "No {kind, select, forum {forums} other {groups}} match your search",
+  "@channels.browser.emptySearchTitle": {
+    "description": "Empty-state title in the group/forum browser when a search finds nothing."
+  },
+  "channels.browser.emptyArchivedTitle": "No archived {kind, select, forum {forums} other {groups}}",
+  "@channels.browser.emptyArchivedTitle": {
+    "description": "Empty-state title of the Archived tab."
+  },
+  "channels.browser.emptyJoinedForumsTitle": "No joined forums",
+  "@channels.browser.emptyJoinedForumsTitle": {
+    "description": "Empty-state title of the Joined tab in the forum browser."
+  },
+  "channels.browser.emptyGroupsTitle": "No groups yet",
+  "@channels.browser.emptyGroupsTitle": {
+    "description": "Empty-state title of the My groups tab."
+  },
+  "channels.browser.emptyBrowseTitle": "No {kind, select, forum {forums} other {groups}} to browse",
+  "@channels.browser.emptyBrowseTitle": {
+    "description": "Empty-state title when there is nothing to browse."
+  },
+  "channels.browser.emptySearchCreate": "No {kind, select, forum {forum} other {group}} by that name yet — create it to get started.",
+  "@channels.browser.emptySearchCreate": {
+    "description": "Empty-state text when a search finds nothing and the user can create one."
+  },
+  "channels.browser.emptySearchBody": "Try a different name or keyword.",
+  "@channels.browser.emptySearchBody": {
+    "description": "Empty-state text when a search finds nothing."
+  },
+  "channels.browser.emptyArchivedBody": "Archived {kind, select, forum {forums} other {groups}} you have joined will appear here.",
+  "@channels.browser.emptyArchivedBody": {
+    "description": "Empty-state text of the Archived tab."
+  },
+  "channels.browser.emptyJoinedForumsBody": "Forums you join will appear here.",
+  "@channels.browser.emptyJoinedForumsBody": {
+    "description": "Empty-state text of the Joined tab in the forum browser."
+  },
+  "channels.browser.minQueryHint": "Type {count} or more letters to find public groups.",
+  "@channels.browser.minQueryHint": {
+    "description": "Hint shown until the search text is long enough to search public groups."
+  },
+  "channels.browser.emptyBrowseBody": "All open {kind, select, forum {forums} other {groups}} are available in the sidebar. Create a new {kind, select, forum {forum} other {group}} to get started.",
+  "@channels.browser.emptyBrowseBody": {
+    "description": "Empty-state text when there is nothing to browse."
+  },
+  "channels.browser.sortLabel": "Sort {kind, select, forum {forums} other {groups}}: {sort}",
+  "@channels.browser.sortLabel": {
+    "description": "Accessible label of the sort button. {sort} is the current sort option."
+  },
+  "channels.browser.sortBy": "Sort by",
+  "@channels.browser.sortBy": {
+    "description": "Heading of the sort menu. Short."
+  },
+  "channels.browser.joinedTab": "Joined",
+  "@channels.browser.joinedTab": {
+    "description": "Tab in the forum browser. Short."
+  },
+  "channels.browser.myGroupsTab": "My groups",
+  "@channels.browser.myGroupsTab": {
+    "description": "Tab in the group browser. Short."
+  },
+  "channels.browser.archivedTab": "Archived",
+  "@channels.browser.archivedTab": {
+    "description": "Tab in the group browser, and heading of archived members. Short."
+  },
+  "channels.browser.searching": "Searching...",
+  "@channels.browser.searching": {
+    "description": "Loading text while a search runs. Short."
+  },
+  "channels.browser.publicGroups": "Public groups",
+  "@channels.browser.publicGroups": {
+    "description": "Section heading for public search results. Short."
+  },
+  "channels.browser.searchFailed": "Couldn't search public groups. Try again.",
+  "@channels.browser.searchFailed": {
+    "description": "Error when the public group search failed."
+  },
+  "channels.browser.createNamed": "<a>{kind, select, forum {Create forum} other {New group}}</a> <b>“{query}”</b>",
+  "@channels.browser.createNamed": {
+    "description": "Row that creates a group or forum with the typed name. <a> is the action, <b> the quoted name."
+  },
+  "channels.browser.createNew": "{kind, select, forum {Create a new forum} other {New group}}",
+  "@channels.browser.createNew": {
+    "description": "Row that creates a new group or forum. Short."
+  },
+  "channels.browser.backToSearch": "Back to search",
+  "@channels.browser.backToSearch": {
+    "description": "Accessible label of the back button in the create step."
+  },
+  "channels.browser.newTitle": "New {kind, select, forum {forum} other {group}}",
+  "@channels.browser.newTitle": {
+    "description": "Title of the create step in the group browser. Short."
+  },
+  "channels.browser.memberCount": "{count, plural, one {# member} other {# members}}",
+  "@channels.browser.memberCount": {
+    "description": "Member count of a group. Short."
+  },
+  "channels.browser.archivedBadge": "archived",
+  "@channels.browser.archivedBadge": {
+    "description": "Small badge on an archived group. Short."
+  },
+  "channels.browser.joining": "Joining...",
+  "@channels.browser.joining": {
+    "description": "Join button label while joining. Short."
+  },
+  "channels.browser.join": "Join",
+  "@channels.browser.join": {
+    "description": "Button that joins a group. Short."
+  },
+  "channels.browser.open": "Open",
+  "@channels.browser.open": {
+    "description": "Button that opens a joined group. Short."
+  },
+  "channels.canvas.loading": "Loading canvas...",
+  "@channels.canvas.loading": {
+    "description": "Loading text of the group canvas."
+  },
+  "channels.canvas.contentLabel": "Canvas content",
+  "@channels.canvas.contentLabel": {
+    "description": "Accessible label of the canvas editor."
+  },
+  "channels.canvas.placeholder": "Write your canvas content in Markdown...",
+  "@channels.canvas.placeholder": {
+    "description": "Placeholder of the canvas editor."
+  },
+  "channels.canvas.saving": "Saving...",
+  "@channels.canvas.saving": {
+    "description": "Save canvas button label while saving. Short."
+  },
+  "channels.canvas.save": "Save canvas",
+  "@channels.canvas.save": {
+    "description": "Button that saves the canvas. Short."
+  },
+  "channels.canvas.refreshFailed": "Couldn't refresh canvas — showing last known content.",
+  "@channels.canvas.refreshFailed": {
+    "description": "Warning when the canvas could not be refreshed."
+  },
+  "channels.canvas.savedUnverified": "Saved. We couldn't verify against the latest revision just now — check History if a concurrent edit appears.",
+  "@channels.canvas.savedUnverified": {
+    "description": "Notice after saving when the latest revision could not be checked."
+  },
+  "channels.canvas.empty": "No canvas set for this group.",
+  "@channels.canvas.empty": {
+    "description": "Empty state of the group canvas."
+  },
+  "channels.canvas.edit": "Edit canvas",
+  "@channels.canvas.edit": {
+    "description": "Button that edits the canvas. Short."
+  },
+  "channels.canvas.create": "Create canvas",
+  "@channels.canvas.create": {
+    "description": "Button that creates a canvas. Short."
+  },
+  "channels.canvas.hideHistory": "Hide history",
+  "@channels.canvas.hideHistory": {
+    "description": "Button that hides canvas history. Short."
+  },
+  "channels.canvas.history": "History",
+  "@channels.canvas.history": {
+    "description": "Button that shows canvas history. Short."
+  },
+  "channels.canvasHistory.loading": "Loading history...",
+  "@channels.canvasHistory.loading": {
+    "description": "Loading text of the canvas history."
+  },
+  "channels.canvasHistory.empty": "No revisions yet.",
+  "@channels.canvasHistory.empty": {
+    "description": "Empty state of the canvas history."
+  },
+  "channels.canvasHistory.refreshFailed": "Couldn't refresh history — showing last known revisions.",
+  "@channels.canvasHistory.refreshFailed": {
+    "description": "Warning when canvas history could not be refreshed."
+  },
+  "channels.canvasHistory.restoredUnverified": "Restored. We couldn't verify against the latest revision just now — check the canvas if a concurrent edit appears.",
+  "@channels.canvasHistory.restoredUnverified": {
+    "description": "Notice after restoring when the latest revision could not be checked."
+  },
+  "channels.canvasHistory.current": "Current",
+  "@channels.canvasHistory.current": {
+    "description": "Badge on the current canvas revision. Short."
+  },
+  "channels.canvasHistory.restoring": "Restoring...",
+  "@channels.canvasHistory.restoring": {
+    "description": "Restore button label while restoring. Short."
+  },
+  "channels.canvasHistory.restoreRevision": "Restore this revision",
+  "@channels.canvasHistory.restoreRevision": {
+    "description": "Button that restores an older canvas revision. Short."
+  },
+  "channels.canvasHistory.loadingOlder": "Loading...",
+  "@channels.canvasHistory.loadingOlder": {
+    "description": "Load-older button label while loading. Short."
+  },
+  "channels.canvasHistory.loadOlder": "Load older",
+  "@channels.canvasHistory.loadOlder": {
+    "description": "Button that loads older canvas revisions. Short."
+  },
+  "channels.canvasHistory.confirmTitle": "Restore this revision?",
+  "@channels.canvasHistory.confirmTitle": {
+    "description": "Title of the restore confirmation."
+  },
+  "channels.canvasHistory.confirmBodyNamed": "This publishes {author}'s revision from {time} as the current canvas for everyone in this group. History is preserved.",
+  "@channels.canvasHistory.confirmBodyNamed": {
+    "description": "Body of the restore confirmation. {time} is a date and time."
+  },
+  "channels.canvasHistory.confirmBody": "This publishes the selected revision as the current canvas for everyone in this group. History is preserved.",
+  "@channels.canvasHistory.confirmBody": {
+    "description": "Body of the restore confirmation when no revision details are known."
+  },
+  "channels.canvasHistory.restore": "Restore",
+  "@channels.canvasHistory.restore": {
+    "description": "Confirm button of the restore confirmation. Short."
+  },
+  "channels.canvasHistory.identical": "Identical to the current canvas.",
+  "@channels.canvasHistory.identical": {
+    "description": "Shown instead of a diff when a revision matches the current canvas."
+  },
+  "channels.chatInfo.mute": "Mute notifications",
+  "@channels.chatInfo.mute": {
+    "description": "Switch label in group and chat settings. Short."
+  },
+  "channels.chatInfo.muteHint": "You'll still hear about mentions of you.",
+  "@channels.chatInfo.muteHint": {
+    "description": "Hint under the mute switch."
+  },
+  "channels.chatInfo.privateNameHint": "Only you see \"{name}\"",
+  "@channels.chatInfo.privateNameHint": {
+    "description": "Hint under Rename for me showing the private name."
+  },
+  "channels.chatInfo.rename": "Rename for me",
+  "@channels.chatInfo.rename": {
+    "description": "Action and dialog title that sets a private chat name only you see. Short."
+  },
+  "channels.chatInfo.restoreName": "Restore name",
+  "@channels.chatInfo.restoreName": {
+    "description": "Action that removes the private chat name. Short."
+  },
+  "channels.chatInfo.restoreFailed": "Could not restore the name.",
+  "@channels.chatInfo.restoreFailed": {
+    "description": "Error when the private chat name could not be removed."
+  },
+  "channels.chatInfo.leaving": "Leaving chat...",
+  "@channels.chatInfo.leaving": {
+    "description": "Leave chat action label while leaving. Short."
+  },
+  "channels.chatInfo.leave": "Leave chat",
+  "@channels.chatInfo.leave": {
+    "description": "Action that leaves a chat. Short."
+  },
+  "channels.chatInfo.noMatches": "No one matches.",
+  "@channels.chatInfo.noMatches": {
+    "description": "Empty search result in the chat people list."
+  },
+  "channels.chatInfo.seeAll": "See all {count, plural, one {# person} other {# people}}",
+  "@channels.chatInfo.seeAll": {
+    "description": "Button that opens the full people list of a chat."
+  },
+  "channels.chatInfo.saveFailed": "Could not save the name.",
+  "@channels.chatInfo.saveFailed": {
+    "description": "Fallback error in the Rename for me dialog."
+  },
+  "channels.chatInfo.renameHint": "Only you see this name.",
+  "@channels.chatInfo.renameHint": {
+    "description": "Text in the Rename for me dialog."
+  },
+  "channels.chatInfo.nameLabel": "Chat name",
+  "@channels.chatInfo.nameLabel": {
+    "description": "Accessible label of the private chat name field."
+  },
+  "channels.chatInfo.notSignedIn": "Not signed in.",
+  "@channels.chatInfo.notSignedIn": {
+    "description": "Error when saving a private chat name without an account."
+  },
+  "channels.chatInfo.saveTimedOut": "Timed out saving the chat name.",
+  "@channels.chatInfo.saveTimedOut": {
+    "description": "Error when saving a private chat name took too long."
+  },
+  "channels.chatInfo.saveNameFailed": "Could not save the chat name.",
+  "@channels.chatInfo.saveNameFailed": {
+    "description": "Error when saving a private chat name failed."
+  },
+  "channels.composer.timedOut": "You're timed out by community moderators.",
+  "@channels.composer.timedOut": {
+    "description": "Composer placeholder while the user is timed out."
+  },
+  "channels.composer.blocked": "You can't send messages to someone you blocked.",
+  "@channels.composer.blocked": {
+    "description": "Composer placeholder in a chat with a blocked person."
+  },
+  "channels.composer.readOnly": "This group is read-only.",
+  "@channels.composer.readOnly": {
+    "description": "Composer placeholder in a read-only group."
+  },
+  "channels.composer.archived": "Archived groups are read-only.",
+  "@channels.composer.archived": {
+    "description": "Composer placeholder in an archived group."
+  },
+  "channels.composer.forum": "Forum posting is not wired in this pass.",
+  "@channels.composer.forum": {
+    "description": "Composer placeholder in a forum group."
+  },
+  "channels.composer.message": "Message {name}",
+  "@channels.composer.message": {
+    "description": "Composer placeholder. {name} is the group or person name."
+  },
+  "channels.composer.selectGroup": "Select a group",
+  "@channels.composer.selectGroup": {
+    "description": "Composer placeholder when no group is open. Short."
+  },
+  "channels.delete.title": "Delete group?",
+  "@channels.delete.title": {
+    "description": "Title of the delete group confirmation."
+  },
+  "channels.delete.body": "Delete {name} from the community list. This action cannot be undone.",
+  "@channels.delete.body": {
+    "description": "Body of the delete group confirmation."
+  },
+  "channels.delete.deleting": "Deleting...",
+  "@channels.delete.deleting": {
+    "description": "Delete button label while deleting. Short."
+  },
+  "channels.delete.action": "Delete group",
+  "@channels.delete.action": {
+    "description": "Button and menu item that deletes a group. Short."
+  },
+  "channels.edit.title": "Edit {visibility, select, private {private} other {public}} group",
+  "@channels.edit.title": {
+    "description": "Title of the edit group dialog."
+  },
+  "channels.edit.name": "Name",
+  "@channels.edit.name": {
+    "description": "Field label for the group name. Short."
+  },
+  "channels.edit.description": "Description",
+  "@channels.edit.description": {
+    "description": "Field label for the group description. Short."
+  },
+  "channels.edit.saving": "Saving...",
+  "@channels.edit.saving": {
+    "description": "Save button label while saving. Short."
+  },
+  "channels.edit.save": "Save changes",
+  "@channels.edit.save": {
+    "description": "Button that saves group edits. Short."
+  },
+  "channels.edit.finishFirst": "Finish or cancel your edit first.",
+  "@channels.edit.finishFirst": {
+    "description": "Notice when the user tries to edit another message while editing."
+  },
+  "channels.edit.finishBeforeLeaving": "Finish or cancel your edit before leaving the thread.",
+  "@channels.edit.finishBeforeLeaving": {
+    "description": "Notice when the user tries to close a thread while editing."
+  },
+  "channels.emptyState": "Select a conversation to view messages.",
+  "@channels.emptyState": {
+    "description": "Shown in the main area when no conversation is open."
+  },
+  "channels.forumPosts": "Forum posts",
+  "@channels.forumPosts": {
+    "description": "Accessible label of the forum post list."
+  },
+  "channels.goals.label": "Goals",
+  "@channels.goals.label": {
+    "description": "Label of the goals switch and goals panel title. Short."
+  },
+  "channels.goals.hint": "Track goals for this conversation. Agents get goal guidance only when on.",
+  "@channels.goals.hint": {
+    "description": "Hint under the goals switch."
+  },
+  "channels.goals.hintReadOnly": "Track goals for this conversation. Agents get goal guidance only when on. Only owners and admins can change this.",
+  "@channels.goals.hintReadOnly": {
+    "description": "Hint under the goals switch when the user cannot change it."
+  },
+  "channels.header.openTerm": "Open Kuzz Term",
+  "@channels.header.openTerm": {
+    "description": "Accessible label of the terminal button in the group header. Kuzz Term is a product name."
+  },
+  "channels.header.hideTerm": "Hide Kuzz Term",
+  "@channels.header.hideTerm": {
+    "description": "Accessible label of the terminal button when the terminal is open. Kuzz Term is a product name."
+  },
+  "channels.header.joining": "Joining…",
+  "@channels.header.joining": {
+    "description": "Join button label in the group header while joining. Short."
+  },
+  "channels.header.openProfile": "Open profile for {name}",
+  "@channels.header.openProfile": {
+    "description": "Accessible label of a person's avatar or row that opens their profile."
+  },
+  "channels.header.groupsFallback": "Groups",
+  "@channels.header.groupsFallback": {
+    "description": "Header title when no group is open. Short."
+  },
+  "channels.intro.kindChat": "chat",
+  "@channels.intro.kindChat": {
+    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+  },
+  "channels.intro.kindWelcome": "private welcome group",
+  "@channels.intro.kindWelcome": {
+    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+  },
+  "channels.intro.kindProject": "project group",
+  "@channels.intro.kindProject": {
+    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+  },
+  "channels.intro.kindPrivateEphemeral": "private ephemeral group",
+  "@channels.intro.kindPrivateEphemeral": {
+    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+  },
+  "channels.intro.kindPrivate": "private group",
+  "@channels.intro.kindPrivate": {
+    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+  },
+  "channels.intro.kindEphemeral": "ephemeral group",
+  "@channels.intro.kindEphemeral": {
+    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+  },
+  "channels.intro.kindRegular": "regular group",
+  "@channels.intro.kindRegular": {
+    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+  },
+  "channels.intro.newGroup": "New group",
+  "@channels.intro.newGroup": {
+    "description": "Welcome intro action that creates a group. Short."
+  },
+  "channels.intro.createAgent": "Create an agent",
+  "@channels.intro.createAgent": {
+    "description": "Welcome intro action and dialog title for creating an agent. Short."
+  },
+  "channels.intro.addFiles": "Add files",
+  "@channels.intro.addFiles": {
+    "description": "Group intro action. Short."
+  },
+  "channels.intro.addFilesHint": "Add a repo.",
+  "@channels.intro.addFilesHint": {
+    "description": "Description under the Add files intro action. Short."
+  },
+  "channels.intro.addAgentHint": "Add an agent here.",
+  "@channels.intro.addAgentHint": {
+    "description": "Description under the Add agent intro action. Short."
+  },
+  "channels.intro.addPeopleHint": "Invite members.",
+  "@channels.intro.addPeopleHint": {
+    "description": "Description under the Add people intro action. Short."
+  },
+  "channels.invite.title": "Add members",
+  "@channels.invite.title": {
+    "description": "Heading and submit button of the add members form. Short."
+  },
+  "channels.invite.selected": "{count} selected",
+  "@channels.invite.selected": {
+    "description": "Count of selected people in the add members form. Short."
+  },
+  "channels.invite.searchLabel": "Search people",
+  "@channels.invite.searchLabel": {
+    "description": "Label and placeholder of a people search field. Short."
+  },
+  "channels.invite.searchPlaceholder": "Search people, or paste a public key",
+  "@channels.invite.searchPlaceholder": {
+    "description": "Placeholder of the add members search field."
+  },
+  "channels.invite.remove": "Remove {name}",
+  "@channels.invite.remove": {
+    "description": "Accessible label of the button that unselects a person."
+  },
+  "channels.invite.searching": "Searching…",
+  "@channels.invite.searching": {
+    "description": "Loading text while searching people. Short."
+  },
+  "channels.invite.byPublicKey": "by public key",
+  "@channels.invite.byPublicKey": {
+    "description": "Small note on a result added by pasted public key. Short."
+  },
+  "channels.invite.noMatches": "No matching users.",
+  "@channels.invite.noMatches": {
+    "description": "Empty search result in the add members form."
+  },
+  "channels.invite.role": "Role",
+  "@channels.invite.role": {
+    "description": "Label of the role picker in the add members form. Short."
+  },
+  "channels.invite.adding": "Adding...",
+  "@channels.invite.adding": {
+    "description": "Add members button label while adding. Short."
+  },
+  "channels.members.addAgentFailed": "Failed to add agent.",
+  "@channels.members.addAgentFailed": {
+    "description": "Fallback error when adding an agent to a group failed."
+  },
+  "channels.members.addPlaceholder": "Add people and agents",
+  "@channels.members.addPlaceholder": {
+    "description": "Placeholder of the members dialog search when the user can add members."
+  },
+  "channels.members.searchPlaceholder": "Search people and agents",
+  "@channels.members.searchPlaceholder": {
+    "description": "Placeholder of the members dialog search."
+  },
+  "channels.members.sectionCount": "Members · {count}",
+  "@channels.members.sectionCount": {
+    "description": "Section heading in the members dialog with the member count. Short."
+  },
+  "channels.members.notInChat": "Not in this chat",
+  "@channels.members.notInChat": {
+    "description": "Section heading for search results outside the chat. Short."
+  },
+  "channels.members.notInGroup": "Not in this group",
+  "@channels.members.notInGroup": {
+    "description": "Section heading for search results outside the group. Short."
+  },
+  "channels.members.noMatches": "No matching people or agents.",
+  "@channels.members.noMatches": {
+    "description": "Empty search result in the members dialog."
+  },
+  "channels.members.loading": "Loading members...",
+  "@channels.members.loading": {
+    "description": "Loading text in the members dialog."
+  },
+  "channels.members.noSearchMatches": "No members match your search.",
+  "@channels.members.noSearchMatches": {
+    "description": "Empty search result among current members."
+  },
+  "channels.members.none": "No members found.",
+  "@channels.members.none": {
+    "description": "Empty state of the members dialog."
+  },
+  "channels.members.noArchivedMatches": "No archived members match your search.",
+  "@channels.members.noArchivedMatches": {
+    "description": "Empty search result among archived members."
+  },
+  "channels.members.respawnAll": "Spawn or respawn all",
+  "@channels.members.respawnAll": {
+    "description": "Bulk agent menu item in the members dialog. Short."
+  },
+  "channels.members.stopAll": "Stop all",
+  "@channels.members.stopAll": {
+    "description": "Bulk agent menu item in the members dialog. Short."
+  },
+  "channels.members.removeAll": "Remove all from group",
+  "@channels.members.removeAll": {
+    "description": "Bulk agent menu item in the members dialog. Short."
+  },
+  "channels.members.running": "Running",
+  "@channels.members.running": {
+    "description": "Status badge of a running agent. Short."
+  },
+  "channels.members.stopped": "Stopped",
+  "@channels.members.stopped": {
+    "description": "Status badge of a stopped agent. Short."
+  },
+  "channels.members.manageAccess": "Manage agent access...",
+  "@channels.members.manageAccess": {
+    "description": "Member menu item that opens agent access settings. Short."
+  },
+  "channels.members.changeRole": "Change role",
+  "@channels.members.changeRole": {
+    "description": "Member menu item. Short."
+  },
+  "channels.members.remove": "Remove from group",
+  "@channels.members.remove": {
+    "description": "Member menu item. Short."
+  },
+  "channels.members.removeFailed": "Failed to remove member.",
+  "@channels.members.removeFailed": {
+    "description": "Fallback error when removing a member failed."
+  },
+  "channels.members.liftTimeout": "Lift timeout",
+  "@channels.members.liftTimeout": {
+    "description": "Member menu item that ends a timeout. Short."
+  },
+  "channels.members.timeOut": "Time out",
+  "@channels.members.timeOut": {
+    "description": "Member menu item that opens timeout durations. Short."
+  },
+  "channels.members.liftBan": "Lift ban",
+  "@channels.members.liftBan": {
+    "description": "Member menu item that ends a ban. Short."
+  },
+  "channels.members.ban": "Ban from community",
+  "@channels.members.ban": {
+    "description": "Member menu item that bans a person. Short."
+  },
+  "channels.membersBar.chatActions": "Chat actions",
+  "@channels.membersBar.chatActions": {
+    "description": "Accessible label of the chat actions menu button. Short."
+  },
+  "channels.membersBar.groupActions": "Group actions",
+  "@channels.membersBar.groupActions": {
+    "description": "Accessible label of the group actions menu button. Short."
+  },
+  "channels.membersBar.addPeople": "Add people",
+  "@channels.membersBar.addPeople": {
+    "description": "Button, menu item, or action that adds people. Short."
+  },
+  "channels.membersBar.manageGroup": "Manage group",
+  "@channels.membersBar.manageGroup": {
+    "description": "Button and menu item that opens group settings. Short."
+  },
+  "channels.membersBar.viewPeople": "View people ({count})",
+  "@channels.membersBar.viewPeople": {
+    "description": "Accessible label of the people button in a chat header."
+  },
+  "channels.membersBar.viewMembers": "View group members ({count})",
+  "@channels.membersBar.viewMembers": {
+    "description": "Accessible label of the members button in a group header."
+  },
+  "channels.membersBar.people": "People",
+  "@channels.membersBar.people": {
+    "description": "Tooltip, dialog title, or section title for a chat's people. Short."
+  },
+  "channels.membersBar.groupMembers": "Group members",
+  "@channels.membersBar.groupMembers": {
+    "description": "Tooltip or dialog title for a group's members. Short."
+  },
+  "channels.moderation.failed": "Moderation action failed",
+  "@channels.moderation.failed": {
+    "description": "Fallback error toast for ban or timeout actions."
+  },
+  "channels.moderation.banned": "Member banned",
+  "@channels.moderation.banned": {
+    "description": "Toast after a member was banned. Short."
+  },
+  "channels.moderation.unbanned": "Ban lifted",
+  "@channels.moderation.unbanned": {
+    "description": "Toast after a ban was lifted. Short."
+  },
+  "channels.moderation.timedOut": "Member timed out",
+  "@channels.moderation.timedOut": {
+    "description": "Toast after a member was timed out. Short."
+  },
+  "channels.moderation.timeoutLifted": "Timeout lifted",
+  "@channels.moderation.timeoutLifted": {
+    "description": "Toast after a timeout was lifted. Short."
+  },
+  "channels.pane.groupFallback": "group",
+  "@channels.pane.groupFallback": {
+    "description": "Fallback group name in \"Back to …\" labels when the name is unknown. Lowercase. Short."
+  },
+  "channels.pane.panelFallback": "Panel",
+  "@channels.pane.panelFallback": {
+    "description": "Fallback accessible label of a side panel drawer. Short."
+  },
+  "channels.pane.messagesLabel": "Group messages and composer",
+  "@channels.pane.messagesLabel": {
+    "description": "Accessible label of the main message area."
+  },
+  "channels.pane.forumEmptyBody": "Select a stream or DM to load real message history in this first integration pass.",
+  "@channels.pane.forumEmptyBody": {
+    "description": "Empty-state text in a forum group's message list."
+  },
+  "channels.pane.emptyBody": "Messages and replies will appear here.",
+  "@channels.pane.emptyBody": {
+    "description": "Empty-state text of a message list."
+  },
+  "channels.pane.forumEmptyTitle": "Forum groups are next",
+  "@channels.pane.forumEmptyTitle": {
+    "description": "Empty-state title in a forum group's message list."
+  },
+  "channels.pane.emptyTitle": "No messages yet",
+  "@channels.pane.emptyTitle": {
+    "description": "Empty-state title of a message list."
+  },
+  "channels.photo.uploadFailed": "Could not upload that photo.",
+  "@channels.photo.uploadFailed": {
+    "description": "Fallback error when a group photo upload failed."
+  },
+  "channels.photo.view": "View group photo",
+  "@channels.photo.view": {
+    "description": "Accessible label of the group photo button."
+  },
+  "channels.photo.uploading": "Uploading photo",
+  "@channels.photo.uploading": {
+    "description": "Accessible status while a group photo uploads."
+  },
+  "channels.photo.change": "Change photo",
+  "@channels.photo.change": {
+    "description": "Button that picks a new group photo. Short."
+  },
+  "channels.photo.remove": "Remove photo",
+  "@channels.photo.remove": {
+    "description": "Button that removes the group photo. Short."
+  },
+  "channels.photo.altNamed": "{name} group photo",
+  "@channels.photo.altNamed": {
+    "description": "Image description of a group photo."
+  },
+  "channels.photo.alt": "Group photo",
+  "@channels.photo.alt": {
+    "description": "Image description of a group photo with no name. Short."
+  },
+  "channels.quickBots.label": "Quick add bots",
+  "@channels.quickBots.label": {
+    "description": "Accessible label of the quick add agents toolbar."
+  },
+  "channels.quickBots.add": "Add {name}",
+  "@channels.quickBots.add": {
+    "description": "Accessible label of a quick add agent button."
+  },
+  "channels.quickBots.noRuntime": "No agent runtime available.",
+  "@channels.quickBots.noRuntime": {
+    "description": "Error when quick-adding an agent with no runtime installed."
+  },
+  "channels.quickBots.createFailed": "Failed to create agent.",
+  "@channels.quickBots.createFailed": {
+    "description": "Fallback error when quick-adding an agent failed."
+  },
+  "channels.resizePanel": "Resize panel",
+  "@channels.resizePanel": {
+    "description": "Accessible label of a side panel resize handle. Short."
+  },
+  "channels.resizeHint": "Drag to resize.",
+  "@channels.resizeHint": {
+    "description": "Tooltip of a side panel resize handle."
+  },
+  "channels.resizeHintReset": "Drag to resize. Double-click to reset width.",
+  "@channels.resizeHintReset": {
+    "description": "Tooltip of a side panel resize handle that can reset its width."
+  },
+  "channels.respondTo.title": "Manage agent access",
+  "@channels.respondTo.title": {
+    "description": "Title of the agent access dialog."
+  },
+  "channels.respondTo.bodyNamed": "Choose who can send instructions to {name}.",
+  "@channels.respondTo.bodyNamed": {
+    "description": "Subtitle of the agent access dialog."
+  },
+  "channels.respondTo.body": "Choose who can send instructions to this agent.",
+  "@channels.respondTo.body": {
+    "description": "Subtitle of the agent access dialog when the agent has no name."
+  },
+  "channels.respondTo.save": "Save access",
+  "@channels.respondTo.save": {
+    "description": "Button that saves agent access. Short."
+  },
+  "channels.respondTo.anyone": "Anyone",
+  "@channels.respondTo.anyone": {
+    "description": "Badge: anyone can instruct this agent. Short."
+  },
+  "channels.respondTo.selected": "Selected people ({count})",
+  "@channels.respondTo.selected": {
+    "description": "Badge: only selected people can instruct this agent. Short."
+  },
+  "channels.respondTo.onlyMe": "Only me",
+  "@channels.respondTo.onlyMe": {
+    "description": "Badge: only the owner can instruct this agent. Short."
+  },
+  "channels.role.badge": "{role, select, owner {owner} admin {admin} other {{role}}}",
+  "@channels.role.badge": {
+    "description": "Small lowercase role tag next to a member's name. Short."
+  },
+  "channels.role.option": "{role, select, admin {Admin} member {Member} guest {Guest} other {{role}}}{current, select, yes { (current)} other {}}",
+  "@channels.role.option": {
+    "description": "Role option in the change role menu, marked when it is the member's current role. Short."
+  },
+  "channels.settings.backToChat": "Back to chat",
+  "@channels.settings.backToChat": {
+    "description": "Accessible label of the back button in chat info."
+  },
+  "channels.settings.backToGroup": "Back to group",
+  "@channels.settings.backToGroup": {
+    "description": "Accessible label of the back button in group settings."
+  },
+  "channels.settings.canvas": "Canvas",
+  "@channels.settings.canvas": {
+    "description": "Group settings row and panel title for the shared canvas. Short."
+  },
+  "channels.settings.workflows": "Workflows",
+  "@channels.settings.workflows": {
+    "description": "Group settings row and panel title for workflows. Short."
+  },
+  "channels.settings.chatInfo": "Chat info",
+  "@channels.settings.chatInfo": {
+    "description": "Title, button, or menu item for chat details. Short."
+  },
+  "channels.settings.title": "Group settings",
+  "@channels.settings.title": {
+    "description": "Title or tooltip for group settings. Short."
+  },
+  "channels.settings.details": "Details",
+  "@channels.settings.details": {
+    "description": "Section title in group settings. Short."
+  },
+  "channels.settings.visibility": "Visibility",
+  "@channels.settings.visibility": {
+    "description": "Label for group visibility. Short."
+  },
+  "channels.settings.visibilityLabel": "Visibility: {visibility}",
+  "@channels.settings.visibilityLabel": {
+    "description": "Accessible label of the visibility picker. Short."
+  },
+  "channels.settings.private": "Private",
+  "@channels.settings.private": {
+    "description": "Group visibility option. Short."
+  },
+  "channels.settings.public": "Public",
+  "@channels.settings.public": {
+    "description": "Group visibility option. Short."
+  },
+  "channels.settings.members": "Members",
+  "@channels.settings.members": {
+    "description": "Row label or menu item for group members. Short."
+  },
+  "channels.settings.groupId": "Group ID",
+  "@channels.settings.groupId": {
+    "description": "Row label for the group's identifier. Short."
+  },
+  "channels.settings.goalsHelp": "One top goal for this conversation, split into smaller goals. Agents here see it every turn.",
+  "@channels.settings.goalsHelp": {
+    "description": "Help tooltip on the Goals row."
+  },
+  "channels.settings.canvasHelp": "Use the canvas as a shared space for notes, plans, and other group information.",
+  "@channels.settings.canvasHelp": {
+    "description": "Help tooltip on the Canvas row."
+  },
+  "channels.settings.loading": "Loading...",
+  "@channels.settings.loading": {
+    "description": "Trailing loading text on a settings row. Short."
+  },
+  "channels.settings.workflowCount": "{count, plural, one {# workflow} other {# workflows}}",
+  "@channels.settings.workflowCount": {
+    "description": "Workflow count on the Workflows row. Short."
+  },
+  "channels.settings.joinHint": "Add this group to your sidebar",
+  "@channels.settings.joinHint": {
+    "description": "Description under the Join group action."
+  },
+  "channels.settings.joining": "Joining group...",
+  "@channels.settings.joining": {
+    "description": "Join group action label while joining. Short."
+  },
+  "channels.settings.join": "Join group",
+  "@channels.settings.join": {
+    "description": "Action that joins a group. Short."
+  },
+  "channels.settings.leaving": "Leaving group...",
+  "@channels.settings.leaving": {
+    "description": "Leave group action label while leaving. Short."
+  },
+  "channels.settings.leave": "Leave group",
+  "@channels.settings.leave": {
+    "description": "Action that leaves a group. Short."
+  },
+  "channels.settings.restoring": "Restoring group...",
+  "@channels.settings.restoring": {
+    "description": "Unarchive action label while restoring. Short."
+  },
+  "channels.settings.archiving": "Archiving group...",
+  "@channels.settings.archiving": {
+    "description": "Archive action label while archiving. Short."
+  },
+  "channels.settings.addDescription": "Add a description",
+  "@channels.settings.addDescription": {
+    "description": "Placeholder under a group name when it has no description. Short."
+  },
+  "channels.settings.editGroup": "Edit group",
+  "@channels.settings.editGroup": {
+    "description": "Accessible label of the group name button that opens editing."
+  },
+  "channels.settings.copiedToast": "Copied {label}",
+  "@channels.settings.copiedToast": {
+    "description": "Toast after copying a value. {label} is the lowercased field name, like group id."
+  },
+  "channels.settings.copiedLabel": "{label} copied",
+  "@channels.settings.copiedLabel": {
+    "description": "Accessible label of a copy button right after copying."
+  },
+  "channels.settings.copyLabel": "Copy {label}",
+  "@channels.settings.copyLabel": {
+    "description": "Accessible label and tooltip of a copy button."
+  },
+  "channels.settings.editLabel": "Edit {label}",
+  "@channels.settings.editLabel": {
+    "description": "Accessible label of a settings row edit button. {label} is the lowercased field name."
+  },
+  "channels.settings.openLabel": "Open {label}",
+  "@channels.settings.openLabel": {
+    "description": "Accessible label of a settings row that opens a panel. {label} is the lowercased row name."
+  },
+  "channels.settings.aboutLabel": "About {label}",
+  "@channels.settings.aboutLabel": {
+    "description": "Accessible label of a settings row help button. {label} is the lowercased row name."
+  },
+  "channels.settings.groupType": "Group type",
+  "@channels.settings.groupType": {
+    "description": "Label for the group type setting. Short."
+  },
+  "channels.settings.currentTtl": "Current ({duration})",
+  "@channels.settings.currentTtl": {
+    "description": "Expiry option showing a custom current value. Short."
+  },
+  "channels.settings.expiresAfter": "Expires after",
+  "@channels.settings.expiresAfter": {
+    "description": "Label of the temporary group expiry picker. Short."
+  },
+  "channels.settings.moreMembers": "{count} more members",
+  "@channels.settings.moreMembers": {
+    "description": "Tooltip on the +N bubble of a member avatar stack. Short."
+  },
+  "channels.startChat.nameList": "{names} and {last}",
+  "@channels.startChat.nameList": {
+    "description": "Joins up to three names, like Ann, Bob and Cy. {names} is the comma-separated list. Short."
+  },
+  "channels.startChat.title": "Start a new chat with {who}?",
+  "@channels.startChat.title": {
+    "description": "Title of the confirmation before a mention starts a new chat."
+  },
+  "channels.startChat.body": "{count, plural, one {{who} isn't in this chat. Your message will go to a new chat that includes them.} other {{who} aren't in this chat. Your message will go to a new chat that includes everyone.}}",
+  "@channels.startChat.body": {
+    "description": "Body of the confirmation before a mention starts a new chat."
+  },
+  "channels.startChat.confirm": "Start chat",
+  "@channels.startChat.confirm": {
+    "description": "Confirm button of the start-chat confirmation. Short."
+  },
+  "channels.thread.label": "Thread",
+  "@channels.thread.label": {
+    "description": "Accessible label of the thread drawer. Short."
+  },
+  "channels.thread.backTo": "Back to {name}",
+  "@channels.thread.backTo": {
+    "description": "Accessible label of the button that closes the thread drawer."
+  },
+  "channels.thread.showBeside": "Show thread beside group",
+  "@channels.thread.showBeside": {
+    "description": "Tooltip of the thread layout toggle."
+  },
+  "channels.thread.expand": "Expand thread",
+  "@channels.thread.expand": {
+    "description": "Tooltip of the thread layout toggle. Short."
+  },
+  "channels.type.pickerLabel": "Group type: {type}",
+  "@channels.type.pickerLabel": {
+    "description": "Accessible label of the group type picker. Short."
+  },
+  "channels.type.projectGroup": "Project group",
+  "@channels.type.projectGroup": {
+    "description": "Accessible label of the project group type option. Short."
+  },
+  "channels.type.ongoingGroup": "Ongoing group",
+  "@channels.type.ongoingGroup": {
+    "description": "Accessible label of the ongoing group type option. Short."
+  },
+  "channels.type.temporaryGroup": "Temporary group",
+  "@channels.type.temporaryGroup": {
+    "description": "Accessible label of the temporary group type option. Short."
+  },
+  "channels.welcomeAgent.body": "Start with a conversation, or set everything up yourself.",
+  "@channels.welcomeAgent.body": {
+    "description": "Subtitle of the welcome create-an-agent dialog."
+  },
+  "channels.welcomeAgent.withGuide": "Create with {name}",
+  "@channels.welcomeAgent.withGuide": {
+    "description": "Option title: create an agent by chatting with the guide agent. Short."
+  },
+  "channels.welcomeAgent.withGuideBody": "Talk through what you need. {name} will prepare a draft you can review and edit.",
+  "@channels.welcomeAgent.withGuideBody": {
+    "description": "Description of the create-with-guide option."
+  },
+  "channels.welcomeAgent.manual": "Create manually",
+  "@channels.welcomeAgent.manual": {
+    "description": "Option title: create an agent with the form. Short."
+  },
+  "channels.welcomeAgent.manualBody": "Fill in the agent’s name, instructions, and settings yourself.",
+  "@channels.welcomeAgent.manualBody": {
+    "description": "Description of the create-manually option."
+  },
+  "channels.welcomeAgent.guideUnavailable": "The welcome guide is unavailable. Create the agent manually instead.",
+  "@channels.welcomeAgent.guideUnavailable": {
+    "description": "Error when the guide agent is missing."
+  },
+  "channels.welcomeAgent.startFailed": "Could not start the conversation.",
+  "@channels.welcomeAgent.startFailed": {
+    "description": "Fallback error when the guide conversation could not start."
+  },
+  "channels.welcomeBanner.done": "Nice work.",
+  "@channels.welcomeBanner.done": {
+    "description": "Success text in the welcome composer hint. Short."
+  },
+  "channels.welcomeBanner.settingUp": "Setting up your welcome team…",
+  "@channels.welcomeBanner.settingUp": {
+    "description": "Status text in the welcome composer hint while agents are set up."
+  },
+  "channels.welcomeBanner.prompt": "Mention <mention></mention> or another teammate whenever you want their help.",
+  "@channels.welcomeBanner.prompt": {
+    "description": "Welcome composer hint. <mention></mention> becomes an animated @-mention of the guide agent."
+  },
+  "channels.welcomeBanner.dismiss": "Dismiss hint",
+  "@channels.welcomeBanner.dismiss": {
+    "description": "Accessible label of the close button on the welcome hint. Short."
+  },
+  "channels.workflows.loading": "Loading workflows...",
+  "@channels.workflows.loading": {
+    "description": "Loading text of the group workflows panel."
+  },
+  "channels.workflows.empty": "No workflows in this group yet.",
+  "@channels.workflows.empty": {
+    "description": "Empty state of the group workflows panel."
+  },
+  "channels.workflows.new": "New workflow",
+  "@channels.workflows.new": {
+    "description": "Button that creates a workflow. Short."
   }
 }

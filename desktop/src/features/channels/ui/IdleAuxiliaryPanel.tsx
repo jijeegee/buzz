@@ -8,6 +8,7 @@ import {
   AuxiliaryPanelHeaderGroup,
   AuxiliaryPanelTitle,
 } from "@/shared/layout/AuxiliaryPanel";
+import { useT } from "@/shared/i18n";
 
 export type IdleAuxiliaryHeaderControls = {
   actions?: React.ReactNode;
@@ -40,6 +41,7 @@ export function IdleAuxiliaryPanel({
   useSplitAuxiliaryPane: boolean;
   widthPx: number;
 }) {
+  const t = useT();
   const split = useSplitAuxiliaryPane && !isFocusDrawer;
   return (
     <AuxiliaryPanel
@@ -52,7 +54,7 @@ export function IdleAuxiliaryPanel({
       onClose={onClose}
       onResetWidth={onResetWidth}
       onResizeStart={onResizeStart}
-      resizeHandleAriaLabel="Resize panel"
+      resizeHandleAriaLabel={t("channels.resizePanel")}
       resizeHandleTestId="idle-auxiliary-resize-handle"
       testId="idle-auxiliary-panel"
       transparentChrome={split}
