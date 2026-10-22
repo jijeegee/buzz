@@ -343,6 +343,9 @@ class ChannelData {
   /// Group photo URL from `["picture", url]`; null when unset or empty.
   final String? picture;
 
+  /// `["group_chat"]`: an ownerless chat of people (a private stream).
+  final bool groupChat;
+
   const ChannelData({
     required this.id,
     required this.name,
@@ -356,6 +359,7 @@ class ChannelData {
     this.isArchived = false,
     this.goalsEnabled = true,
     this.picture,
+    this.groupChat = false,
   });
 
   factory ChannelData.fromEvent(NostrEvent event) {
@@ -400,6 +404,9 @@ class ChannelData {
     final picture = pictureRaw == null || pictureRaw.isEmpty
         ? null
         : pictureRaw;
+    final groupChat = event.tags.any(
+      (t) => t.isNotEmpty && t[0] == 'group_chat',
+    );
     return ChannelData(
       id: id,
       name: name,
@@ -413,6 +420,7 @@ class ChannelData {
       isArchived: isArchived,
       goalsEnabled: goalsEnabled,
       picture: picture,
+      groupChat: groupChat && channelType != 'dm',
     );
   }
 }

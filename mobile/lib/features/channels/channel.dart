@@ -40,6 +40,10 @@ class Channel {
   /// Group photo URL (kind 39000 `["picture", url]`); null shows the letter.
   final String? picture;
 
+  /// An ownerless room of people (kind 39000 `["group_chat"]`). The UI calls
+  /// it a chat, like a 1:1; its members are [participantPubkeys].
+  final bool groupChat;
+
   const Channel({
     required this.id,
     required this.name,
@@ -60,6 +64,7 @@ class Channel {
     this.ttlDeadline,
     this.goalsEnabled = true,
     this.picture,
+    this.groupChat = false,
   });
 
   factory Channel.fromJson(Map<String, dynamic> json) => Channel(
@@ -90,6 +95,7 @@ class Channel {
         ? DateTime.parse(json['ttl_deadline'] as String)
         : null,
     picture: _nonEmpty(json['picture']),
+    groupChat: json['group_chat'] == true,
   );
 
   bool get isEphemeral => ttlSeconds != null || ttlDeadline != null;
@@ -97,6 +103,13 @@ class Channel {
   bool get isStream => channelType == 'stream';
   bool get isForum => channelType == 'forum';
   bool get isDm => channelType == 'dm';
+
+  /// A multi-person chat with no owner (stream + `group_chat` marker).
+  bool get isGroupChat => groupChat && !isDm;
+
+  /// A room of people rather than a managed group: a 1:1 or a group chat.
+  /// These notify, count unread and list in Inbox on every message.
+  bool get isPersonChat => isDm || isGroupChat;
   bool get isPrivate => visibility == 'private';
   bool get canJoin => visibility == 'open' && !isArchived && !isMember && !isDm;
 
@@ -157,6 +170,7 @@ class Channel {
     ttlDeadline: details.ttlDeadline,
     goalsEnabled: details.goalsEnabled,
     picture: details.picture,
+    groupChat: groupChat || details.groupChat,
   );
 
   Channel copyWith({
@@ -168,6 +182,7 @@ class Channel {
     bool? isMember,
     bool? goalsEnabled,
     Object? picture = _sentinel,
+    List<String>? participantPubkeys,
   }) => Channel(
     id: id,
     name: name ?? this.name,
@@ -186,12 +201,13 @@ class Channel {
         ? this.archivedAt
         : archivedAt as DateTime?,
     participants: participants,
-    participantPubkeys: participantPubkeys,
+    participantPubkeys: participantPubkeys ?? this.participantPubkeys,
     isMember: isMember ?? this.isMember,
     ttlSeconds: ttlSeconds,
     ttlDeadline: ttlDeadline,
     goalsEnabled: goalsEnabled ?? this.goalsEnabled,
     picture: identical(picture, _sentinel) ? this.picture : picture as String?,
+    groupChat: groupChat,
   );
 }
 
@@ -218,6 +234,9 @@ class ChannelDetails {
   /// Group photo URL (kind 39000 `["picture", url]`); null when unset.
   final String? picture;
 
+  /// Kind 39000 `["group_chat"]`: an ownerless chat of people.
+  final bool groupChat;
+
   const ChannelDetails({
     required this.id,
     required this.name,
@@ -234,6 +253,7 @@ class ChannelDetails {
     this.ttlDeadline,
     this.goalsEnabled = true,
     this.picture,
+    this.groupChat = false,
   });
 
   factory ChannelDetails.fromJson(Map<String, dynamic> json) => ChannelDetails(
@@ -255,6 +275,7 @@ class ChannelDetails {
         ? DateTime.parse(json['ttl_deadline'] as String)
         : null,
     picture: _nonEmpty(json['picture']),
+    groupChat: json['group_chat'] == true,
   );
 
   factory ChannelDetails.fromChannel(Channel channel) => ChannelDetails(
@@ -273,5 +294,6 @@ class ChannelDetails {
     ttlDeadline: channel.ttlDeadline,
     goalsEnabled: channel.goalsEnabled,
     picture: channel.picture,
+    groupChat: channel.groupChat,
   );
 }

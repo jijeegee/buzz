@@ -2119,13 +2119,20 @@ void main() {
     }
 
     expect(find.byKey(const Key('new-dm-recipient-wrap')), findsOneWidget);
+    // Past six people the chips fold into "+N"; more people start a chat,
+    // which may be named.
+    expect(
+      find.bySemanticsLabel(RegExp(r'^Remove Long recipient')),
+      findsNWidgets(5),
+    );
+    expect(find.text('+3'), findsOneWidget);
+    expect(find.byKey(const Key('new-chat-name')), findsOneWidget);
+    expect(find.text('Chat name'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('new-dm-selected-more')));
+    await tester.pumpAndSettle();
     expect(
       find.bySemanticsLabel(RegExp(r'^Remove Long recipient')),
       findsNWidgets(8),
-    );
-    expect(
-      find.text('DMs support up to nine people, including you.'),
-      findsOneWidget,
     );
     expect(tester.takeException(), isNull);
   });

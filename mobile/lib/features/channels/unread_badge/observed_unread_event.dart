@@ -25,8 +25,12 @@ ObservedUnreadEvent makeObservedUnreadEvent({
   required bool highPriority,
   required String? channelType,
   required bool isThreadedReply,
+
+  /// A 1:1 or group chat: every message counts, as in a DM. Defaults to
+  /// whether [channelType] is `dm`.
+  bool? isPersonChat,
 }) {
-  final isDm = channelType == 'dm';
+  final isDm = isPersonChat ?? channelType == 'dm';
   return ObservedUnreadEvent(
     id: id,
     createdAt: createdAt,

@@ -1155,7 +1155,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                 ),
                 if (resolvedChannel.canJoin)
                   GroupJoinBar(channel: resolvedChannel)
-                else if (!resolvedChannel.isDm)
+                else if (!resolvedChannel.isPersonChat)
                   _ReadOnlyNotice(channel: resolvedChannel),
               ],
             ],
@@ -1193,7 +1193,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                         focusNode: composerFocusNode,
                         onFocusRestorerChanged: (restoreFocus) =>
                             restoreComposerFocus.value = restoreFocus,
-                        channelName: resolvedChannel.isDm
+                        channelName: resolvedChannel.isPersonChat
                             ? ''
                             : resolvedChannel.name,
                         onSend:

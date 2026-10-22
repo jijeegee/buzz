@@ -235,7 +235,9 @@ List<Channel> filterChannels(List<Channel> channels, String? query) {
   if (query == null) return const [];
   final q = query.toLowerCase();
   return channels
-      .where((c) => c.channelType != 'dm')
+      // `#name` links name groups only: chats of people have no shared name
+      // to link to.
+      .where((c) => !c.isPersonChat)
       .where((c) {
         if (q.isEmpty) return true;
         return c.name.toLowerCase().contains(q);

@@ -47,18 +47,36 @@ class _ChannelAppBarTitle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final membersAsync = ref.watch(channelMembersProvider(channel.id));
     final memberCount = membersAsync.value?.length ?? channel.memberCount;
-    final memberLabel =
-        '$memberCount ${memberCount == 1 ? 'member' : 'members'}';
+    // A chat of people shows its resolved title, "N people", its members'
+    // photo, and opens Chat info.
+    final isChat = channel.isGroupChat;
+    final members = membersAsync.value;
+    final shown = isChat && members != null
+        ? channel.copyWith(
+            participantPubkeys: [for (final m in members) m.pubkey],
+          )
+        : channel;
+    final title = isChat ? watchChannelTitle(ref, shown) : channel.name;
+    final memberLabel = isChat
+        ? chatPeopleLabel(memberCount)
+        : '$memberCount ${memberCount == 1 ? 'member' : 'members'}';
+
+    Future<void> openChatInfo() async {
+      final left = await showChatInfoSheet(context: context, channel: shown);
+      if (left == true && context.mounted) Navigator.of(context).pop();
+    }
 
     return Semantics(
       button: true,
-      label: 'Open settings for ${channel.name}, $memberLabel',
+      label: isChat
+          ? 'Open chat info for $title, $memberLabel'
+          : 'Open settings for ${channel.name}, $memberLabel',
       child: Tooltip(
-        message: 'Open group settings',
+        message: isChat ? 'Chat info' : 'Open group settings',
         child: InkWell(
           key: const ValueKey('channel-header-settings-trigger'),
           borderRadius: BorderRadius.circular(Radii.md),
-          onTap: onTap,
+          onTap: isChat ? openChatInfo : onTap,
           child: Row(
             children: [
               Container(
@@ -84,7 +102,7 @@ class _ChannelAppBarTitle extends ConsumerWidget {
                         iconColor: context.colors.primary,
                       )
                     : GroupAvatar(
-                        channel: channel,
+                        channel: shown,
                         size: _channelHeaderAvatarSize,
                       ),
               ),
@@ -105,7 +123,7 @@ class _ChannelAppBarTitle extends ConsumerWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              channel.name,
+                              title,
                               key: const ValueKey('channel-header-name'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

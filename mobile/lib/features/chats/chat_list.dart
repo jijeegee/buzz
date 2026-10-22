@@ -76,6 +76,8 @@ class ChatListRow {
     required this.channelName,
     this.archived = false,
     this.dmMembers = const [],
+    this.groupChat = false,
+    this.memberCount,
     this.rootId,
     this.threadName,
     this.closed = false,
@@ -98,7 +100,14 @@ class ChatListRow {
   final String channelType;
   final String channelName;
   final bool archived;
+  /// A DM's people, or up to 16 other active members of a group chat.
   final List<String> dmMembers;
+
+  /// An ownerless chat of people (relay `group_chat`).
+  final bool groupChat;
+
+  /// A group chat's active members (relay `member_count`).
+  final int? memberCount;
   final String? rootId;
   final String? threadName;
   final bool closed;
@@ -111,6 +120,12 @@ class ChatListRow {
   final NostrEvent? root;
 
   bool get isDm => channelType == 'dm';
+
+  /// A group chat: titled and drawn from its members, like a DM.
+  bool get isGroupChat => groupChat && !isDm;
+
+  /// A 1:1 or a group chat: a room of people rather than a managed group.
+  bool get isPersonChat => isDm || isGroupChat;
 
   static ChatListRow? fromJson(Object? json) {
     if (json is! Map<String, dynamic>) return null;
@@ -145,6 +160,10 @@ class ChatListRow {
       dmMembers: members is List
           ? [for (final member in members) ?(member is String ? member : null)]
           : const [],
+      groupChat: flag('group_chat'),
+      memberCount: json['member_count'] is int
+          ? json['member_count'] as int
+          : null,
       rootId: json['root_id'] is String ? json['root_id'] as String : null,
       threadName: json['thread_name'] is String
           ? json['thread_name'] as String
@@ -170,6 +189,8 @@ class ChatListRow {
     'channel_name': channelName,
     'archived': archived,
     'dm_members': dmMembers,
+    'group_chat': groupChat,
+    'member_count': memberCount,
     'root_id': rootId,
     'thread_name': threadName,
     'closed': closed,
@@ -201,6 +222,8 @@ class ChatListRow {
     channelName: channelName,
     archived: archived,
     dmMembers: dmMembers,
+    groupChat: groupChat,
+    memberCount: memberCount,
     rootId: rootId,
     threadName: threadName,
     closed: closed,

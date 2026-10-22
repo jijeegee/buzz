@@ -530,6 +530,7 @@ ChannelDetails channelDetailsFromEvent(NostrEvent event) {
     ttlDeadline: data.ttlDeadline,
     goalsEnabled: data.goalsEnabled,
     picture: data.picture,
+    groupChat: data.groupChat,
   );
 }
 

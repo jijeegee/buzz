@@ -334,6 +334,16 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       if (count != null) {
         channels[i] = channels[i].copyWith(memberCount: count);
       }
+      // A group chat's 39000 lists no people; its members (39002 order)
+      // draw its title and photo, as a DM's participants do.
+      if (channels[i].isGroupChat) {
+        channels[i] = channels[i].copyWith(
+          participantPubkeys: [
+            for (final member in cachedMembersForChannel(channels[i].id))
+              member.pubkey.toLowerCase(),
+          ],
+        );
+      }
     }
 
     // Step 3: fetch the most recent message per channel to populate lastMessageAt.
@@ -581,6 +591,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       ttlDeadline: data.ttlDeadline,
       goalsEnabled: data.goalsEnabled,
       picture: data.picture,
+      groupChat: data.groupChat,
     );
   }
 
@@ -746,7 +757,10 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     final channelId = event.channelId;
     if (channelId == null) return;
 
-    if (_changesChannelMetadata(event)) _scheduleMetadataRefresh();
+    if (_changesChannelMetadata(event) ||
+        _changesGroupChatMembers(event, channelId)) {
+      _scheduleMetadataRefresh();
+    }
 
     final myPk = ref.read(myPubkeyProvider);
     final mutedChannelIds = _mutedChannelIds();
@@ -799,6 +813,21 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       SystemEventType.pictureChanged ||
       SystemEventType.topicChanged ||
       SystemEventType.purposeChanged => true,
+      _ => false,
+    };
+  }
+
+  /// Whether [event] announces a member change in a group chat, whose
+  /// members draw its title and photo.
+  bool _changesGroupChatMembers(NostrEvent event, String channelId) {
+    if (event.kind != EventKind.systemMessage) return false;
+    final isGroupChat =
+        state.value?.any((c) => c.id == channelId && c.isGroupChat) ?? false;
+    if (!isGroupChat) return false;
+    return switch (SystemEvent.fromContent(event.content)?.type) {
+      SystemEventType.memberJoined ||
+      SystemEventType.memberLeft ||
+      SystemEventType.memberRemoved => true,
       _ => false,
     };
   }

@@ -21,6 +21,8 @@ class GroupSummary {
     this.visibility,
     this.invitePolicy,
     this.picture,
+    this.groupChat = false,
+    this.memberPubkeys = const [],
   });
 
   final String id;
@@ -42,20 +44,32 @@ class GroupSummary {
   /// Group photo URL, or null when the group has none.
   final String? picture;
 
+  /// An ownerless chat of people rather than a managed group.
+  final bool groupChat;
+
+  /// A few of a group chat's members (invitations list up to 4).
+  final List<String> memberPubkeys;
+
   bool get isPrivate => visibility == 'private';
 
   factory GroupSummary.fromJson(
     Map<String, dynamic> json, {
     String? defaultVisibility,
+    Map<String, dynamic> extra = const {},
   }) {
     final handle = json['handle'];
     final picture = json['picture'];
+    // Group-chat fields may sit on the group or beside it, in either case.
+    Object? field(String snake, String camel) =>
+        json[snake] ?? json[camel] ?? extra[snake] ?? extra[camel];
+    final members = field('member_pubkeys', 'memberPubkeys');
+    final count = field('member_count', 'memberCount');
     return GroupSummary(
       id: json['id'] as String,
       name: (json['name'] as String?) ?? '',
       description: (json['description'] as String?) ?? '',
       channelType: (json['channelType'] as String?) ?? 'stream',
-      memberCount: (json['memberCount'] as num?)?.toInt() ?? 0,
+      memberCount: (count as num?)?.toInt() ?? 0,
       isMember: json['isMember'] as bool? ?? false,
       handle: handle is String && handle.isNotEmpty ? handle : null,
       visibility: (json['visibility'] as String?) ?? defaultVisibility,
@@ -63,6 +77,13 @@ class GroupSummary {
       picture: picture is String && picture.trim().isNotEmpty
           ? picture.trim()
           : null,
+      groupChat: field('group_chat', 'groupChat') == true,
+      memberPubkeys: members is List
+          ? [
+              for (final member in members)
+                if (member is String) member.toLowerCase(),
+            ]
+          : const [],
     );
   }
 
@@ -78,7 +99,9 @@ class GroupSummary {
     createdAt: DateTime.fromMillisecondsSinceEpoch(0),
     memberCount: memberCount,
     isMember: isMember,
+    participantPubkeys: memberPubkeys,
     picture: picture,
+    groupChat: groupChat,
   );
 }
 
@@ -105,6 +128,7 @@ class GroupInvitation {
         group: GroupSummary.fromJson(
           json['channel'] as Map<String, dynamic>,
           defaultVisibility: 'private',
+          extra: json,
         ),
         inviter: ((json['inviter'] as String?) ?? '').toLowerCase(),
         createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),

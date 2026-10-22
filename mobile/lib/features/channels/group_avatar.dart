@@ -3,11 +3,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/widgets/conversation_row_parts.dart';
 import 'channel.dart';
+import 'group_chat/chat_grid_avatar.dart';
 
 /// A group's picture at any size: its photo when set, else its first letter
 /// on the colour fixed by its id (the Chats row avatar), with a lock badge
 /// when private. Forums keep
-/// their forum icon and DMs their conversation icon.
+/// their forum icon and DMs their conversation icon. A group chat shows its
+/// members' pictures ([ChatGridAvatar]), never a lock.
 class GroupAvatar extends StatelessWidget {
   const GroupAvatar({
     super.key,
@@ -26,6 +28,9 @@ class GroupAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (channel.isGroupChat) {
+      return ChatGridAvatar(memberPubkeys: channel.participantPubkeys, size: size);
+    }
     if (channel.isDm || channel.isForum) {
       return Icon(
         channel.isDm

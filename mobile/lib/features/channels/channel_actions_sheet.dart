@@ -25,6 +25,8 @@ import '../groups/group_settings_section.dart';
 import 'channel.dart';
 import 'group_avatar.dart';
 import 'group_photo_viewer.dart';
+import 'group_chat/chat_info_sheet.dart';
+import 'group_chat/start_chat_from_dm.dart';
 import 'add_members_sheet.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_management_provider.dart';
@@ -38,6 +40,10 @@ import 'room_goals_switch.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
+
+export 'group_chat/chat_info_sheet.dart'
+    show chatPeopleLabel, showChatInfoSheet;
+export 'group_chat/chat_title.dart' show watchChannelTitle;
 
 part 'channel_details_page.dart';
 
@@ -97,10 +103,10 @@ class ChannelActionsSheet extends HookConsumerWidget {
         true;
     final stars = ref.watch(channelStarsProvider);
     final isStarred = stars.store.channels[channel.id]?.starred == true;
-    final membersAsync = channel.isDm
+    final membersAsync = channel.isPersonChat
         ? const AsyncValue<List<ChannelMember>>.data([])
         : ref.watch(channelMembersProvider(channel.id));
-    final agentOwnersAsync = channel.isDm
+    final agentOwnersAsync = channel.isPersonChat
         ? const AsyncValue<Map<String, String>>.data({})
         : ref.watch(agentOwnersProvider);
     final currentPubkey = ref.watch(currentPubkeyProvider)?.toLowerCase();
@@ -129,6 +135,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
         membersAsync.isLoading || agentOwnersAsync.isLoading;
     final lifecycleCapabilitiesUnavailable =
         membersAsync.hasError || agentOwnersAsync.hasError;
+    final dmOther = dmOtherPerson(currentChannel, currentPubkey: currentPubkey);
     // Any DM participant may change the DM's goals switch.
     final isDmParticipant =
         currentChannel.isMember ||
@@ -224,8 +231,8 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 leading: Icon(isMuted ? LucideIcons.bell : LucideIcons.bellOff),
                 title: Text(
                   isMuted
-                      ? 'Unmute ${channel.isDm ? 'chat' : 'group'}'
-                      : 'Mute ${channel.isDm ? 'chat' : 'group'}',
+                      ? 'Unmute ${channel.isPersonChat ? 'chat' : 'group'}'
+                      : 'Mute ${channel.isPersonChat ? 'chat' : 'group'}',
                 ),
                 onTap: () {
                   close();
@@ -235,7 +242,44 @@ class ChannelActionsSheet extends HookConsumerWidget {
                       : notifier.muteChannel(channel.id);
                 },
               ),
-              if (channel.isDm)
+              if (dmOther != null)
+                ListTile(
+                  key: const ValueKey('dm-add-people'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(LucideIcons.userPlus),
+                  title: const Text('Add people'),
+                  onTap: () {
+                    final pageContext = Navigator.of(
+                      context,
+                      rootNavigator: true,
+                    ).context;
+                    final actions = ref.read(channelActionsProvider);
+                    close();
+                    showAddPeopleToDm(
+                      context: pageContext,
+                      actions: actions,
+                      otherPubkey: dmOther,
+                      dm: currentChannel,
+                    ).ignore();
+                  },
+                ),
+              if (channel.isGroupChat)
+                ListTile(
+                  key: const ValueKey('chat-info-open'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(LucideIcons.info),
+                  title: const Text('Chat info'),
+                  onTap: () async {
+                    final left = await showChatInfoSheet(
+                      context: context,
+                      channel: currentChannel,
+                    );
+                    if (left == true && context.mounted) {
+                      Navigator.of(context).pop(true);
+                    }
+                  },
+                ),
+              if (channel.isPersonChat)
                 RoomGoalsSwitch(
                   channel: currentChannel,
                   canEdit: isDmParticipant && !currentChannel.isArchived,
@@ -243,7 +287,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   onSaved: (enabled) => displayedChannel.value =
                       displayedChannel.value.copyWith(goalsEnabled: enabled),
                 ),
-              if (!channel.isDm)
+              if (!channel.isPersonChat)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.settings),
@@ -271,35 +315,58 @@ class ChannelActionsSheet extends HookConsumerWidget {
                     }
                   },
                 ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(LucideIcons.copy),
-                title: Text('Copy ${channel.isDm ? 'chat' : 'group'} name'),
-                onTap: () {
-                  close();
-                  copyToClipboard(
-                    context,
-                    currentChannel.name,
-                    message:
-                        '${channel.isDm ? 'Chat' : 'Group'} name copied to clipboard',
-                  );
-                },
-              ),
+              if (!channel.isGroupChat)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(LucideIcons.copy),
+                  title: Text('Copy ${channel.isDm ? 'chat' : 'group'} name'),
+                  onTap: () {
+                    close();
+                    copyToClipboard(
+                      context,
+                      currentChannel.name,
+                      message:
+                          '${channel.isDm ? 'Chat' : 'Group'} name copied to clipboard',
+                    );
+                  },
+                ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.fingerprint),
-                title: Text('Copy ${channel.isDm ? 'chat' : 'group'} ID'),
+                title: Text(
+                  'Copy ${channel.isPersonChat ? 'chat' : 'group'} ID',
+                ),
                 onTap: () {
                   close();
                   copyToClipboard(
                     context,
                     channel.id,
                     message:
-                        '${channel.isDm ? 'Chat' : 'Group'} ID copied to clipboard',
+                        '${channel.isPersonChat ? 'Chat' : 'Group'} ID copied '
+                        'to clipboard',
                   );
                 },
               ),
-              if (!channel.isDm) ...[
+              if (channel.isGroupChat && channel.isMember) ...[
+                const SheetDivider(),
+                _ActionTile(
+                  icon: LucideIcons.logOut,
+                  label: 'Leave chat',
+                  destructive: true,
+                  onTap: () => _confirmAndRun(
+                    context,
+                    ref,
+                    title: 'Leave this chat?',
+                    body: 'You’ll stop receiving messages from it.',
+                    confirmLabel: 'Leave',
+                    noun: 'chat',
+                    action: () => ref
+                        .read(channelActionsProvider)
+                        .leaveChannel(channel.id),
+                  ),
+                ),
+              ],
+              if (!channel.isPersonChat) ...[
                 const SheetDivider(),
                 if (channel.isMember && !channel.isArchived)
                   _ActionTile(
@@ -510,6 +577,7 @@ Future<void> _confirmAndRun(
   required String body,
   required String confirmLabel,
   required Future<void> Function() action,
+  String noun = 'group',
 }) async {
   final pageContext = Navigator.of(sheetContext, rootNavigator: true).context;
   final confirmed = await showKuzzDialog<bool>(
@@ -538,7 +606,7 @@ Future<void> _confirmAndRun(
     ScaffoldMessenger.of(pageContext).showSnackBar(
       SnackBar(
         content: Text(
-          'Couldn’t ${confirmLabel.toLowerCase()} group. Try again.',
+          'Couldn’t ${confirmLabel.toLowerCase()} $noun. Try again.',
         ),
       ),
     );

@@ -217,7 +217,7 @@ Future<void> showBrowseChannelsSheet(BuildContext context) async {
   }
 }
 
-/// Opens New message and returns the DM it opened, if any.
+/// Opens New message and returns the DM or chat it opened, if any.
 Future<Channel?> showNewMessageSheet(
   BuildContext context, {
   required String? currentPubkey,

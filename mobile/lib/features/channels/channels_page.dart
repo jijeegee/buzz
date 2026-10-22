@@ -42,6 +42,7 @@ import 'channel_management_provider.dart';
 import 'dm_channel_labels.dart';
 import 'ephemeral_channel_display.dart';
 import 'channel_mutes/channel_mutes_provider.dart';
+import 'channel_names/channel_names_storage.dart' show channelNameMaxLength;
 import 'channel_stars/channel_stars_provider.dart';
 import 'channels_provider.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
