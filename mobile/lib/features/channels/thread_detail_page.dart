@@ -44,7 +44,9 @@ import 'ime_metrics_settle_observer.dart';
 import 'laid_out_viewport.dart';
 import 'jump_to_latest_button.dart';
 import 'jump_to_latest_switcher.dart';
+import 'failed_local_messages_provider.dart';
 import 'local_message_send_animation_provider.dart';
+import 'local_send_status_mark.dart';
 import 'local_message_send_transition.dart';
 import 'channel_management_provider.dart';
 import '../people/blocked_dm_bar.dart';
@@ -1530,6 +1532,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                                   rootEventId: effectiveRootId,
                                   mediaTags: mediaTags,
                                   quote: pendingQuote,
+                                  keepFailedMessage: true,
                                 );
                                 if (pendingQuote != null && context.mounted) {
                                   ref

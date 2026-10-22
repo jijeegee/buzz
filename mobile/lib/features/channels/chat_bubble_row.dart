@@ -78,7 +78,8 @@ class ChatBubbleColors {
 /// group's [header] above the first bubble. The time sits beside the bubble
 /// on its outer side, level with its bottom edge, and only when [showTime] is
 /// set (the last message of a group). [ownLeading] (the speaker control) sits in the free space left
-/// of an own bubble so it never narrows the bubble.
+/// of an own bubble so it never narrows the bubble. [status] (an own send's
+/// pending or failed mark) leads the meta and shows even without the time.
 class ChatBubbleRow extends StatelessWidget {
   final bool isOwn;
   final Widget leading;
@@ -90,6 +91,7 @@ class ChatBubbleRow extends StatelessWidget {
   final bool edited;
   final Key? bubbleKey;
   final Key? timestampKey;
+  final Widget? status;
 
   const ChatBubbleRow({
     super.key,
@@ -103,6 +105,7 @@ class ChatBubbleRow extends StatelessWidget {
     this.edited = false,
     this.bubbleKey,
     this.timestampKey,
+    this.status,
   });
 
   @override
@@ -131,10 +134,14 @@ class ChatBubbleRow extends StatelessWidget {
       ),
     );
 
-    final meta = showTime || edited
+    final meta = showTime || edited || status != null
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (status != null) ...[
+                status!,
+                if (edited || showTime) const SizedBox(width: Grid.half),
+              ],
               if (edited)
                 Text(
                   '(edited)',

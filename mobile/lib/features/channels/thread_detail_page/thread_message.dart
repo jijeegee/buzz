@@ -56,6 +56,17 @@ class _ThreadMessage extends HookConsumerWidget {
         currentPubkey?.toLowerCase() == pk ||
         (profile?.ownerPubkey != null &&
             profile?.ownerPubkey == currentPubkey?.toLowerCase());
+    // An own send the relay doesn't have yet has no real event to act on:
+    // no thread, reactions or menu; a failed one offers retry or delete.
+    final sendStatus = watchLocalSendStatus(ref, channelId, message.id);
+    final unsent = isOwnMessage && sendStatus != LocalSendStatus.sent;
+    final failed = unsent && sendStatus == LocalSendStatus.failed;
+    void openFailedSheet() => showFailedLocalMessageSheet(
+      context: context,
+      ref: ref,
+      channelId: channelId,
+      eventId: message.id,
+    );
 
     final userCache = ref.watch(userCacheProvider);
     final knownAgentPubkeys = agentPubkeysWithProfileOwners(
@@ -164,7 +175,12 @@ class _ThreadMessage extends HookConsumerWidget {
           clipBehavior: Clip.none,
           child: MessageLongPressInkWell(
             key: ValueKey('thread-message-row-${message.id}'),
-            onLongPressDetails: openMessageActions,
+            onLongPressDetails: unsent
+                ? (_) {
+                    if (failed) openFailedSheet();
+                  }
+                : openMessageActions,
+            onTap: failed ? openFailedSheet : null,
             borderRadius: BorderRadius.circular(Radii.md),
             highlightColor: context.colors.primary.withValues(alpha: 0.1),
             snapshotKey: messageSnapshotKey,
@@ -187,6 +203,13 @@ class _ThreadMessage extends HookConsumerWidget {
                       timestampKey: ValueKey(
                         'thread-message-timestamp-${message.id}',
                       ),
+                      status: unsent
+                          ? LocalSendStatusMark(
+                              status: sendStatus,
+                              channelId: channelId,
+                              eventId: message.id,
+                            )
+                          : null,
                       ownLeading: readAloud?.button,
                       leading: showAuthor
                           ? GestureDetector(
@@ -266,7 +289,8 @@ class _ThreadMessage extends HookConsumerWidget {
                               ),
                               scaleEmojiOnly: true,
                               onMediaReply:
-                                  allMessages == null ||
+                                  unsent ||
+                                      allMessages == null ||
                                       !canReplyInThread(
                                         threadDepthOf(message, allMessages!),
                                       )
@@ -293,7 +317,8 @@ class _ThreadMessage extends HookConsumerWidget {
                                     message: message,
                                     channelId: channelId,
                                     imageUrl: imageUrl,
-                                    canManageMessage: canManageMessage,
+                                    canManageMessage:
+                                        canManageMessage && !unsent,
                                     onDeleted: () {
                                       if (viewerContext.mounted) {
                                         Navigator.of(viewerContext).maybePop();

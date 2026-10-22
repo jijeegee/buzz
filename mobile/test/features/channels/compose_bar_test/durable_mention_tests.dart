@@ -188,21 +188,17 @@ void durableMentionTests() {
       await tester.pumpAndSettle();
       expect(events.where((e) => e['kind'] == 9000), isEmpty);
       if (fallback == 'human') {
-        expect(
-          find.textContaining('Former Helper is not in this group'),
-          findsOneWidget,
-        );
-        await tester.tap(find.text('Do nothing'));
-        await tester.pumpAndSettle();
+        // No invite prompt and no add: the mention goes out as written.
+        expect(find.textContaining('is not in this group'), findsNothing);
         final message = events.singleWhere(
           (e) => e['kind'] == EventKind.streamMessage,
         );
-        expect((message['tags'] as List).where((t) => t[0] == 'p'), isEmpty);
+        expect((message['tags'] as List).where((t) => t[0] == 'p').toList(), [
+          ['p', agent],
+        ]);
         expect(
-          (message['tags'] as List).where((t) => t[0] == 'mention').toList(),
-          [
-            ['mention', agent],
-          ],
+          (message['tags'] as List).where((t) => t[0] == 'mention'),
+          isEmpty,
         );
         expect(message['sig'], matches(RegExp(r'^[0-9a-f]{128}$')));
       } else {

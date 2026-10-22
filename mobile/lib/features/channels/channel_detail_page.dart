@@ -70,7 +70,9 @@ import 'emoji_picker.dart';
 import 'ime_metrics_settle_observer.dart';
 import 'jump_to_latest_button.dart';
 import 'jump_to_latest_switcher.dart';
+import 'failed_local_messages_provider.dart';
 import 'local_message_send_animation_provider.dart';
+import 'local_send_status_mark.dart';
 import 'local_message_send_transition.dart';
 import 'mobile_huddle_controller.dart';
 import 'members_sheet.dart';
@@ -1233,6 +1235,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                                   channel: resolvedChannel,
                                   mediaTags: mediaTags,
                                   quote: pendingQuote,
+                                  keepFailedMessage: true,
                                 );
                                 if (pendingQuote != null && context.mounted) {
                                   ref

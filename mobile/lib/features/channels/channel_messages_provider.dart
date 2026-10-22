@@ -179,6 +179,19 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
           _mergeWindowEventIntoStore(event);
         }
       }
+      // Unconfirmed own sends (in flight or failed) are not in any relay
+      // page yet: keep them as live rows so the reset can't drop them.
+      for (final event
+          in ref.read(pendingLocalMessagesProvider(channelId)).values) {
+        if (event.threadReference.parentId == null &&
+            EventKind.channelTimelineContentKinds.contains(event.kind)) {
+          _windowStore = mergeLiveChannelWindowEvent(
+            _windowStore,
+            event,
+            isTimelineRow: true,
+          );
+        }
+      }
       _usingChannelWindow = false;
     }
     _initialWindowQueryInFlight = false;
@@ -229,7 +242,16 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final historyVersion = ++_threadQuerySerial;
       final history = await _fetchNewestHistory(session);
       if (!_isCurrentInit(initVersion)) return;
-      _confirmLocalMessages(history.map((event) => event.id));
+      // Only relay rows confirm a send; the window's live overlay also holds
+      // the unconfirmed local rows themselves.
+      _confirmLocalMessages(
+        _usingChannelWindow
+            ? [
+                for (final page in _windowStore.allPages)
+                  for (final row in page.rows) row.event.id,
+              ]
+            : history.map((event) => event.id),
+      );
 
       // The relay page is authoritative: drop cached rows it no longer has
       // (e.g. deleted while the app was closed), keeping live arrivals.

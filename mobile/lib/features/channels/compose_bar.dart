@@ -29,7 +29,6 @@ import '../../shared/widgets/concentric_sheet_surface.dart';
 import '../../shared/widgets/keyboard_dismiss_on_drag.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/mobile_tab_footer_backdrop.dart';
-import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
