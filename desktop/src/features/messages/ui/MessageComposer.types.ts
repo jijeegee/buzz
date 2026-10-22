@@ -4,6 +4,7 @@ import type { DraftMentionRef } from "@/features/messages/lib/useDrafts";
 import type { ImetaMedia } from "@/features/messages/lib/imetaMediaMarkdown";
 import type { MediaUploadController } from "@/features/messages/lib/useMediaUpload";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
+import type { SendPreview } from "@/features/messages/hooks";
 import type { ChannelType, RelayEvent } from "@/shared/api/types";
 
 /**
@@ -110,7 +111,11 @@ export type MessageComposerProps = {
     } | null,
     /** Route through the REST publisher even when best-effort enrichment settled empty. */
     forceRest?: boolean,
+    /** The row `onPreviewSend` drew for this send. */
+    optimisticLocalKey?: string,
   ) => Promise<SentMessage>;
+  /** Draw the own message immediately, before preparation and the relay. */
+  onPreviewSend?: SendPreview;
   placeholder?: string;
   profiles?: UserProfileLookup;
   /** Explicit mention pubkeys from the loaded channel window, newest first. */

@@ -204,6 +204,8 @@ export type RelayEvent = {
   content: string;
   sig: string;
   pending?: boolean;
+  /** Own optimistic send the relay did not accept; stays `pending` too. */
+  failed?: boolean;
 };
 
 export type SendChannelMessageResult = {

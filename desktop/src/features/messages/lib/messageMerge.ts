@@ -13,6 +13,8 @@ function getLocalRenderKey(message: RelayEvent) {
 function isMatchingPendingMessage(pending: RelayEvent, incoming: RelayEvent) {
   if (
     !pending.pending ||
+    // A failed row was never published, so no relay echo belongs to it.
+    pending.failed ||
     incoming.pending ||
     pending.content !== incoming.content ||
     pending.kind !== incoming.kind ||

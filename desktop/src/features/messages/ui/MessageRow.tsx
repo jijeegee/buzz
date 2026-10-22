@@ -56,6 +56,7 @@ import {
   MessageMetaSegments,
 } from "./MessageHeader";
 import { MessageTimestamp } from "./MessageTimestamp";
+import { FailedSendActions, MessageSendState } from "./MessageSendState";
 import { SentFromThreadLine } from "./SentFromThreadLine";
 import { MessageQuoteHeader } from "./MessageQuoteHeader";
 import { getQuoteReference } from "@/features/messages/lib/messageQuote";
@@ -168,9 +169,9 @@ export const MessageRow = React.memo(
     videoReviewCommentRootId?: string;
     videoReviewContext?: VideoReviewContext;
   }) {
-    // Keep the transient send state with its timestamp rather than collapsing
-    // it into a grouped message row with no header.
-    const isDisplayedAsContinuation = isContinuation && !message.pending;
+    // A pending own message is drawn exactly as it will look once sent, so
+    // the acknowledgement never moves it.
+    const isDisplayedAsContinuation = isContinuation;
     const [expandedDiffId, setExpandedDiffId] = React.useState<string | null>(
       null,
     );
@@ -616,15 +617,10 @@ export const MessageRow = React.memo(
     );
 
     const statusMetadataNode =
-      message.pending || message.edited ? (
+      message.failed || message.edited ? (
         <>
-          {message.pending ? (
-            <p
-              className="font-normal text-muted-foreground/70"
-              data-testid="message-send-status"
-            >
-              Sending…
-            </p>
+          {message.failed ? (
+            <FailedSendActions localKey={message.renderKey ?? message.id} />
           ) : null}
           {message.edited ? (
             <Tooltip>
@@ -649,18 +645,24 @@ export const MessageRow = React.memo(
     // The time sits beside the bubble on its outer side, level with the
     // bubble's bottom edge, on the last message of a group only (mobile
     // follows the same rule).
-    const bubbleTimeNode = showTimestamp ? (
-      <div
-        className="shrink-0 whitespace-nowrap text-2xs"
-        data-testid="message-bubble-time"
-      >
-        <MessageTimestamp
-          className="text-2xs"
-          clockOnly
-          createdAt={message.createdAt}
-        />
-      </div>
-    ) : null;
+    // An unsent own message shows its send state where the time goes.
+    const bubbleTimeNode =
+      showTimestamp || message.pending ? (
+        <div
+          className="shrink-0 whitespace-nowrap text-2xs"
+          data-testid="message-bubble-time"
+        >
+          {message.pending ? (
+            <MessageSendState failed={message.failed === true} />
+          ) : (
+            <MessageTimestamp
+              className="text-2xs"
+              clockOnly
+              createdAt={message.createdAt}
+            />
+          )}
+        </div>
+      ) : null;
 
     const personaNode =
       message.personaDisplayName &&
@@ -998,6 +1000,7 @@ export const MessageRow = React.memo(
     prev.message.rootId === next.message.rootId &&
     prev.message.kind === next.message.kind &&
     prev.message.pending === next.message.pending &&
+    prev.message.failed === next.message.failed &&
     prev.message.edited === next.message.edited &&
     // Value comparisons, not identity: these arrays are rebuilt with fresh
     // identities on every ingest/refetch even when unchanged — identity
