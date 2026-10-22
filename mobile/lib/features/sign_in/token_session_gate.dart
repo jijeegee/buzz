@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/token/token.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
@@ -78,7 +79,7 @@ class TokenSessionGate extends HookConsumerWidget {
     return switch (session.status) {
       TokenSessionStatus.signedIn when staleIdentity =>
         failure.value == null
-            ? const _GateSplash(semanticLabel: 'Updating your account')
+            ? _GateSplash(semanticLabel: context.l10n.signInUpdatingAccount)
             : _IdentityFailureView(
                 error: failure.value!,
                 onRetry: () {
@@ -87,8 +88,8 @@ class TokenSessionGate extends HookConsumerWidget {
                 },
               ),
       TokenSessionStatus.signedIn => _SessionShell(child: child),
-      TokenSessionStatus.restoring => const _GateSplash(
-        semanticLabel: 'Signing in',
+      TokenSessionStatus.restoring => _GateSplash(
+        semanticLabel: context.l10n.signInSigningIn,
       ),
       TokenSessionStatus.signedOut ||
       TokenSessionStatus.signingIn => TokenSignInPage(lockedOrigin: origin),
@@ -132,15 +133,14 @@ class _IdentityFailureView extends StatelessWidget {
           children: [
             const SizedBox(height: Grid.lg),
             Text(
-              'Couldn’t switch accounts',
+              context.l10n.signInSwitchAccountFailedTitle,
               style: context.textTheme.headlineSmall,
             ),
             const SizedBox(height: Grid.xxs),
             Semantics(
               liveRegion: true,
               child: Text(
-                'You signed in with a different account, but this device '
-                'could not save it: $error',
+                context.l10n.signInSwitchAccountFailedBody('$error'),
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -150,7 +150,7 @@ class _IdentityFailureView extends StatelessWidget {
             FilledButton(
               key: const Key('token-identity-retry'),
               onPressed: onRetry,
-              child: const Text('Try again'),
+              child: Text(context.l10n.commonTryAgain),
             ),
           ],
         ),
@@ -215,8 +215,8 @@ class _SessionRecoveryBanner extends ConsumerWidget {
                   liveRegion: true,
                   child: Text(
                     retrying
-                        ? 'Reconnecting to your relay…'
-                        : 'Can’t reach your relay. Your sign-in is saved.',
+                        ? context.l10n.signInReconnectingBanner
+                        : context.l10n.signInUnreachableBanner,
                     style: context.textTheme.bodySmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -226,12 +226,12 @@ class _SessionRecoveryBanner extends ConsumerWidget {
               TextButton(
                 key: const Key('token-session-retry'),
                 onPressed: () => unawaited(controller.retryNow()),
-                child: const Text('Retry now'),
+                child: Text(context.l10n.signInRetryNow),
               ),
               TextButton(
                 key: const Key('token-session-sign-in-again'),
                 onPressed: () => unawaited(controller.signIn()),
-                child: const Text('Sign in again'),
+                child: Text(context.l10n.signInSignInAgain),
               ),
             ],
           ),
@@ -260,16 +260,16 @@ class _SessionRecoveryView extends ConsumerWidget {
           children: [
             const SizedBox(height: Grid.lg),
             Text(
-              retrying ? 'Reconnecting…' : 'Can’t reach your relay',
+              retrying
+                  ? context.l10n.signInReconnecting
+                  : context.l10n.signInUnreachableTitle,
               style: context.textTheme.headlineSmall,
             ),
             const SizedBox(height: Grid.xxs),
             Semantics(
               liveRegion: true,
               child: Text(
-                session.errorMessage ??
-                    'Your sign-in is saved. Kuzz will keep it until you '
-                        'retry or sign in again.',
+                session.errorMessage ?? context.l10n.signInUnreachableBody,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -279,13 +279,13 @@ class _SessionRecoveryView extends ConsumerWidget {
             FilledButton(
               key: const Key('token-session-retry'),
               onPressed: () => unawaited(controller.retryNow()),
-              child: const Text('Retry now'),
+              child: Text(context.l10n.signInRetryNow),
             ),
             const SizedBox(height: Grid.xxs),
             TextButton(
               key: const Key('token-session-sign-in-again'),
               onPressed: () => unawaited(controller.signIn()),
-              child: const Text('Sign in again'),
+              child: Text(context.l10n.signInSignInAgain),
             ),
             const SizedBox(height: Grid.md),
             const CommunityRecoveryActions(),

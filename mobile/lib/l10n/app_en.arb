@@ -1275,5 +1275,238 @@
   "profileAnimatedRecordingFailed": "Recording failed. Try again.",
   "@profileAnimatedRecordingFailed": {
     "description": "Animated avatar camera, error when recording failed."
+  },
+  "signInTitle": "Sign in",
+  "@signInTitle": {
+    "description": "Sign-in page, title in the top bar. Short."
+  },
+  "signInGoogleAccountTitle": "Google account",
+  "@signInGoogleAccountTitle": {
+    "description": "Page that connects an older account to Google, title in the top bar. Short."
+  },
+  "signInSignInAgain": "Sign in again",
+  "@signInSignInAgain": {
+    "description": "Sign-in page heading after being signed out; also a button when the server session could not be restored. Short."
+  },
+  "signInWelcome": "Welcome to Kuzz",
+  "@signInWelcome": {
+    "description": "Sign-in page, big heading for a new user. 'Kuzz' is the app name."
+  },
+  "signInExistingAccountTitle": "Existing account sign-in",
+  "@signInExistingAccountTitle": {
+    "description": "Sign-in page, heading when signing in to an older account."
+  },
+  "signInToRelayTitle": "Sign in to a relay",
+  "@signInToRelayTitle": {
+    "description": "Sign-in page, heading when the user types a server address. A relay is a chat server."
+  },
+  "signInSignedOutTitle": "Signed out",
+  "@signInSignedOutTitle": {
+    "description": "Sign-in page, heading when the session for a server ended. Short."
+  },
+  "signInResumeBody": "Your messages are still on this device. Sign in to pick up where you left off.",
+  "@signInResumeBody": {
+    "description": "Sign-in page, text under 'Sign in again'."
+  },
+  "signInResumeBodyCommunities": "Your communities and messages are still on this device. Sign in to pick up where you left off.",
+  "@signInResumeBodyCommunities": {
+    "description": "Sign-in page, text under 'Sign in again' when the user has communities."
+  },
+  "signInConnectGoogleBody": "Sign in with Google so you can use this account on your other devices. Your profile and conversations stay the same. Kuzz keeps a protected copy of your account for this.",
+  "@signInConnectGoogleBody": {
+    "description": "Connect Google page, explanation under 'Protect your account'. 'Kuzz' is the app name."
+  },
+  "signInWelcomeBody": "Sign in with Google to get started. Kuzz keeps a protected copy of your account so the same Google account signs you in on your other devices.",
+  "@signInWelcomeBody": {
+    "description": "Sign-in page, text under 'Welcome to Kuzz'. 'Kuzz' is the app name."
+  },
+  "signInExistingAccountBody": "Return to an account created before key recovery was added. Its existing identity and history are kept. New accounts use Google key recovery.",
+  "@signInExistingAccountBody": {
+    "description": "Sign-in page, text under 'Existing account sign-in'."
+  },
+  "signInToRelayBody": "Relays with Kuzz accounts let you sign in with Google.",
+  "@signInToRelayBody": {
+    "description": "Sign-in page, text under 'Sign in to a relay'. A relay is a chat server; 'Kuzz' is the app name."
+  },
+  "signInSessionEndedBody": "Your session ended. Sign in again to continue.",
+  "@signInSessionEndedBody": {
+    "description": "Sign-in page, text under 'Signed out'."
+  },
+  "signInSessionEndedOnRelayBody": "Your session on {server} ended. Sign in again to continue.",
+  "@signInSessionEndedOnRelayBody": {
+    "description": "Sign-in page, text under 'Signed out'; {server} is the server address.",
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "signInRelayAddressLabel": "Relay address",
+  "@signInRelayAddressLabel": {
+    "description": "Sign-in page, label of the server address field. A relay is a chat server. Short."
+  },
+  "signInRelayAddressInvalid": "Enter a relay address, like relay.example.com.",
+  "@signInRelayAddressInvalid": {
+    "description": "Sign-in page, error when the server address is not valid. Keep relay.example.com as is."
+  },
+  "signInRelayNoGoogleSupport": "This relay does not support Google sign-in. Join it with an invite link from a member instead.",
+  "@signInRelayNoGoogleSupport": {
+    "description": "Sign-in page, error when the server has no Google sign-in."
+  },
+  "signInRelayNoGoogleConfigured": "This relay has no Google sign-in configured.",
+  "@signInRelayNoGoogleConfigured": {
+    "description": "Sign-in page, error when the server has Google sign-in turned off."
+  },
+  "signInExistingIdentityConflict": "This device has a signing identity on this relay. An existing token account cannot replace it. Use Google key recovery.",
+  "@signInExistingIdentityConflict": {
+    "description": "Sign-in page, error when choosing an older account on a server this device already uses another way."
+  },
+  "signInIdentityCheckFailed": "Could not check the saved identity. Try again.",
+  "@signInIdentityCheckFailed": {
+    "description": "Sign-in page, error when the saved accounts on this device could not be read."
+  },
+  "signInFinishFailed": "Couldn’t finish signing in. Nothing was changed; try again.",
+  "@signInFinishFailed": {
+    "description": "Sign-in page, error when the last step of signing in failed."
+  },
+  "signInContinue": "Continue",
+  "@signInContinue": {
+    "description": "Sign-in page, button that checks the server address. Short."
+  },
+  "signInContinueSaved": "Continue with saved sign-in",
+  "@signInContinueSaved": {
+    "description": "Sign-in page, button that reuses a sign-in already stored on this device."
+  },
+  "signInUseDifferentGoogle": "Use a different Google account",
+  "@signInUseDifferentGoogle": {
+    "description": "Sign-in page, button shown after signing in with the wrong Google account."
+  },
+  "signInWithGoogle": "Sign in with Google",
+  "@signInWithGoogle": {
+    "description": "Sign-in page, main Google sign-in button. Short."
+  },
+  "signInUseExistingTokenAccount": "Use an existing token account",
+  "@signInUseExistingTokenAccount": {
+    "description": "Sign-in page, link button to sign in to an older account instead."
+  },
+  "signInUseGoogleKeyRecovery": "Use Google key recovery",
+  "@signInUseGoogleKeyRecovery": {
+    "description": "Sign-in page, link button to go back to the normal Google sign-in."
+  },
+  "signInSigningIn": "Signing in",
+  "@signInSigningIn": {
+    "description": "Screen-reader label of the spinner while signing in."
+  },
+  "signInTermsAgreement": "By continuing you agree to the {terms}",
+  "@signInTermsAgreement": {
+    "description": "Sign-in page, small text under the Google button; {terms} is the underlined 'Terms of Service' link.",
+    "placeholders": {
+      "terms": {
+        "type": "String"
+      }
+    }
+  },
+  "signInTermsOfService": "Terms of Service",
+  "@signInTermsOfService": {
+    "description": "Sign-in page, the underlined link text inside 'By continuing you agree to the …'."
+  },
+  "signInUpdatingAccount": "Updating your account",
+  "@signInUpdatingAccount": {
+    "description": "Screen-reader label of the full-screen spinner while the app switches to another signed-in account."
+  },
+  "signInSwitchAccountFailedTitle": "Couldn’t switch accounts",
+  "@signInSwitchAccountFailedTitle": {
+    "description": "Full-screen error heading when the app could not switch to the account just signed in."
+  },
+  "signInSwitchAccountFailedBody": "You signed in with a different account, but this device could not save it: {error}",
+  "@signInSwitchAccountFailedBody": {
+    "description": "Full-screen error text under 'Couldn’t switch accounts'; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "signInReconnectingBanner": "Reconnecting to your relay…",
+  "@signInReconnectingBanner": {
+    "description": "Banner at the top of the app while reconnecting to the chat server."
+  },
+  "signInUnreachableBanner": "Can’t reach your relay. Your sign-in is saved.",
+  "@signInUnreachableBanner": {
+    "description": "Banner at the top of the app when the chat server cannot be reached."
+  },
+  "signInRetryNow": "Retry now",
+  "@signInRetryNow": {
+    "description": "Button that retries connecting to the chat server right away. Short."
+  },
+  "signInReconnecting": "Reconnecting…",
+  "@signInReconnecting": {
+    "description": "Full-screen heading while reconnecting to the chat server. Short."
+  },
+  "signInUnreachableTitle": "Can’t reach your relay",
+  "@signInUnreachableTitle": {
+    "description": "Full-screen heading when the chat server cannot be reached."
+  },
+  "signInUnreachableBody": "Your sign-in is saved. Kuzz will keep it until you retry or sign in again.",
+  "@signInUnreachableBody": {
+    "description": "Full-screen text under 'Can’t reach your relay'. 'Kuzz' is the app name."
+  },
+  "signInRecoveryRemoveTitle": "Remove {community}?",
+  "@signInRecoveryRemoveTitle": {
+    "description": "Dialog title when removing a community from this device; {community} is its name.",
+    "placeholders": {
+      "community": {
+        "type": "String"
+      }
+    }
+  },
+  "signInRecoveryRemoveBody": "This community and its sign-in are removed from this device.",
+  "@signInRecoveryRemoveBody": {
+    "description": "Dialog body when removing a community from this device."
+  },
+  "signInRecoveryRemove": "Remove",
+  "@signInRecoveryRemove": {
+    "description": "Confirm button of the remove community dialog. Short."
+  },
+  "signInRecoverySwitchCommunity": "Switch community",
+  "@signInRecoverySwitchCommunity": {
+    "description": "Recovery options on a sign-in problem screen, heading above the list of other communities. Short."
+  },
+  "signInRecoveryRemoveThis": "Remove this community",
+  "@signInRecoveryRemoveThis": {
+    "description": "Recovery options on a sign-in problem screen, red button that removes the community from this device."
+  },
+  "signInRecoveryFailed": "Could not complete that: {error}",
+  "@signInRecoveryFailed": {
+    "description": "Recovery options on a sign-in problem screen, error after switching or removing failed; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "signInRecoverySignOutFailed": "Couldn’t sign out on this device. Try again.",
+  "@signInRecoverySignOutFailed": {
+    "description": "Recovery options on a sign-in problem screen, error when signing out failed."
+  },
+  "signInSwitchCommunityFailed": "Couldn’t switch communities. Try again.",
+  "@signInSwitchCommunityFailed": {
+    "description": "Signed-out page, error when switching to another community failed."
+  },
+  "signInFinishSignOutFailed": "Couldn’t finish signing out. Try again.",
+  "@signInFinishSignOutFailed": {
+    "description": "Signed-out page, error when finishing the sign-out failed."
+  },
+  "signInFinishingSignOut": "Finishing sign-out",
+  "@signInFinishingSignOut": {
+    "description": "Signed-out page, heading when the sign-out did not fully finish."
+  },
+  "ageGateTitle": "Kuzz is for people 18 and older",
+  "@ageGateTitle": {
+    "description": "Age restriction screen, big heading. 'Kuzz' is the app name."
+  },
+  "ageGateBody": "You must be 18 or older to use Kuzz under Kuzz's Terms.",
+  "@ageGateBody": {
+    "description": "Age restriction screen, text under the heading. 'Kuzz' is the app name."
   }
 }

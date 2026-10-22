@@ -8,6 +8,7 @@ import '../../shared/auth/auth_provider.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/community/community.dart';
 import '../../shared/community/community_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import 'token_sign_in_page.dart';
 
@@ -27,6 +28,7 @@ class SignedOutPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final busy = useState(false);
     final error = useState<String?>(null);
     final communities = ref.watch(communityListProvider).value ?? [];
@@ -42,7 +44,7 @@ class SignedOutPage extends HookConsumerWidget {
         await ref.read(communityListProvider.notifier).switchCommunity(id);
       } catch (_) {
         if (context.mounted) {
-          error.value = 'Couldn’t switch communities. Try again.';
+          error.value = l10n.signInSwitchCommunityFailed;
         }
       } finally {
         if (context.mounted) busy.value = false;
@@ -95,7 +97,7 @@ class SignedOutPage extends HookConsumerWidget {
         await ref.read(authProvider.notifier).signOut();
       } catch (_) {
         if (context.mounted) {
-          error.value = 'Couldn’t finish signing out. Try again.';
+          error.value = l10n.signInFinishSignOutFailed;
         }
       } finally {
         if (context.mounted) busy.value = false;
@@ -107,14 +109,17 @@ class SignedOutPage extends HookConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.all(Grid.sm),
           children: [
-            Text('Finishing sign-out', style: context.textTheme.headlineSmall),
+            Text(
+              l10n.signInFinishingSignOut,
+              style: context.textTheme.headlineSmall,
+            ),
             const SizedBox(height: Grid.sm),
             Text(cleanupError!),
             const SizedBox(height: Grid.sm),
             FilledButton(
               key: const Key('signed-out-continue'),
               onPressed: busy.value ? null : () => unawaited(finishSignOut()),
-              child: const Text('Finish signing out'),
+              child: Text(l10n.settingsDevicesFinishSignOut),
             ),
             if (error.value != null)
               Semantics(liveRegion: true, child: Text(error.value!)),
