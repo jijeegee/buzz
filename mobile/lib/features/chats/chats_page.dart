@@ -34,6 +34,7 @@ import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
 import 'chat_list_provider.dart';
+import 'chat_thread_row_menu.dart';
 import 'chat_working.dart';
 import 'thread_pins_provider.dart';
 
@@ -278,6 +279,25 @@ class ChatsPage extends HookConsumerWidget {
       await refreshChatList(ref);
     }
 
+    VoidCallback? threadMenu(ChatListRow row, {required bool pinned}) =>
+        row.isThread
+        ? () {
+            unawaited(HapticFeedback.mediumImpact());
+            unawaited(
+              showChatThreadRowMenu(
+                context,
+                ref,
+                row,
+                pinned: pinned,
+                hasUnread: chatRowUnread(
+                  row,
+                  readState.effectiveTimestamp(chatRowContextId(row)),
+                ).isUnread,
+              ),
+            );
+          }
+        : null;
+
     int unreadOf(ChatListRow row) {
       final unread = chatRowUnread(
         row,
@@ -366,6 +386,7 @@ class ChatsPage extends HookConsumerWidget {
                       ),
                       working: working.of(row),
                       onTap: () => unawaited(openRow(row)),
+                      onLongPress: threadMenu(row, pinned: pinnedRow(row)),
                     ),
                     ChatGroupRoom(:final channelId, :final row) =>
                       row == null
@@ -391,6 +412,10 @@ class ChatsPage extends HookConsumerWidget {
                               ),
                               working: working.of(row),
                               onTap: () => unawaited(openRow(row)),
+                              onLongPress: threadMenu(
+                                row,
+                                pinned: pinnedRow(row),
+                              ),
                             ),
                     ChatGroupThread(:final row) => _ChatRow(
                       key: ValueKey('chat-row-${row.key}'),
@@ -404,6 +429,7 @@ class ChatsPage extends HookConsumerWidget {
                       threadUnread: false,
                       working: working.of(row),
                       onTap: () => unawaited(openRow(row)),
+                      onLongPress: threadMenu(row, pinned: pinnedRow(row)),
                     ),
                     ChatGroupMore() => _MoreThreadsRow(
                       key: ValueKey('chat-more-${entry.channelId}'),

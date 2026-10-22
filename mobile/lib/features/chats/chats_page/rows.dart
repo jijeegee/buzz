@@ -28,6 +28,7 @@ class _ChatRow extends HookConsumerWidget {
     required this.threadUnread,
     this.working,
     required this.onTap,
+    this.onLongPress,
   });
 
   final ChatListRow row;
@@ -49,6 +50,9 @@ class _ChatRow extends HookConsumerWidget {
   /// Agents working in this chat now (left of the time).
   final ChatWorkingSummary? working;
   final VoidCallback onTap;
+
+  /// A thread row's menu (pin, read, unfollow, close).
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -239,6 +243,7 @@ class _ChatRow extends HookConsumerWidget {
         child: InkWell(
           key: ValueKey('chat-row-tap-${row.key}'),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: content,
         ),
       ),

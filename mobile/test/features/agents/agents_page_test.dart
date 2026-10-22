@@ -425,6 +425,7 @@ class _RecordingSend implements SendMessage {
     Channel? channel,
     List<List<String>> mediaTags = const [],
     dynamic quote,
+    List<List<String>> extraTags = const [],
   }) async {
     calls.add((channelId, content, (mentionPubkeys ?? const []).join(',')));
     await gate?.future;
