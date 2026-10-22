@@ -284,6 +284,7 @@ mod tests {
         all.extend(tags.into_iter().map(|t| Tag::parse(t).unwrap()));
         EventBuilder::new(Kind::Custom(9007), "")
             .tags(all)
+            .allow_self_tagging()
             .sign_with_keys(keys)
             .unwrap()
     }
@@ -418,3 +419,7 @@ mod tests {
         assert_eq!(plan.ok_message(), "invite-sent:2 rate-limited:1");
     }
 }
+
+#[cfg(test)]
+#[path = "group_chat_postgres_tests.rs"]
+mod postgres_tests;
