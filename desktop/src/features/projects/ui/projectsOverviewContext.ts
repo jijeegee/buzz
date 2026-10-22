@@ -7,6 +7,7 @@ import type {
 import { projectContributorActivityCounts } from "@/features/projects/lib/projectContributorMatching";
 import { uniqueProjectRelatedChannelCount } from "@/features/projects/lib/projectRelatedChannels";
 import type { ProjectsFilter } from "@/features/projects/lib/projectsViewHelpers";
+import { t } from "@/shared/i18n";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 import {
@@ -112,7 +113,7 @@ function resolvedReviewActivity(
 function createProjectAction(): OverviewContextAction {
   return {
     kind: "project",
-    label: "Create project",
+    label: t("projects.overviewContext.createProject"),
     testId: "projects-overview-create-project",
   };
 }
@@ -240,32 +241,32 @@ export function projectsOverviewContext(
     return {
       action: {
         kind: "repository",
-        label: "Add repository",
+        label: t("projects.overviewContext.addRepository"),
         testId: "projects-overview-add-repository",
       },
-      detailsTitle: "Repository activity",
+      detailsTitle: t("projects.overviewContext.repositoryActivity"),
       people,
       stats: [
         {
           count: repositories,
           icon: "repositories",
-          label: "Repositories",
+          label: t("projects.sectionTitle.repositories"),
           section: "repositories",
         },
         {
           count: tasks.active,
           icon: "tasks",
-          label: "Active tasks",
+          label: t("projects.overviewContext.activeTasks"),
           section: "issues",
         },
         {
           count: reviews.open,
           icon: "reviews",
-          label: "Open reviews",
+          label: t("projects.overviewContext.openReviews"),
           section: "prs",
         },
       ],
-      title: "Repositories",
+      title: t("projects.sectionTitle.repositories"),
     };
   }
 
@@ -273,32 +274,32 @@ export function projectsOverviewContext(
     return {
       action: {
         kind: "channel",
-        label: "Add group",
+        label: t("projects.channelManagement.add"),
         testId: "projects-overview-add-channel",
       },
-      detailsTitle: "Details",
+      detailsTitle: t("projects.overviewContext.details"),
       people,
       stats: [
         {
           count: channelCount,
           icon: "channels",
-          label: "Groups",
+          label: t("projects.sectionTitle.groups"),
           section: "channels",
         },
         {
           count: projects.length,
           icon: "projects",
-          label: "Projects",
+          label: t("projects.sectionTitle.projects"),
           section: "projects",
         },
         {
           count: repositories,
           icon: "repositories",
-          label: "Repositories",
+          label: t("projects.sectionTitle.repositories"),
           section: "repositories",
         },
       ],
-      title: "Groups",
+      title: t("projects.sectionTitle.groups"),
     };
   }
 
@@ -306,32 +307,32 @@ export function projectsOverviewContext(
     return {
       action: {
         kind: "issue",
-        label: "Create task",
+        label: t("projects.createWorkItem.createTask"),
         testId: "projects-overview-create-issue",
       },
-      detailsTitle: "Details",
+      detailsTitle: t("projects.overviewContext.details"),
       people,
       stats: [
         {
           count: tasks.total,
           icon: "tasks",
-          label: "Tasks",
+          label: t("projects.sectionTitle.tasks"),
           section: "issues",
         },
         {
           count: tasks.active,
           icon: "tasks",
-          label: "Active",
+          label: t("projects.overviewContext.active"),
           section: "issues",
         },
         {
           count: tasks.completed,
           icon: "completed",
-          label: "Completed",
+          label: t("projects.overviewContext.completed"),
           section: "issues",
         },
       ],
-      title: "Tasks",
+      title: t("projects.sectionTitle.tasks"),
     };
   }
 
@@ -339,97 +340,97 @@ export function projectsOverviewContext(
     return {
       action: {
         kind: "pullRequest",
-        label: "Create review",
+        label: t("projects.createWorkItem.createReview"),
         testId: "projects-overview-create-pull-request",
       },
-      detailsTitle: "Review activity",
+      detailsTitle: t("projects.overviewContext.reviewActivity"),
       people,
       stats: [
         {
           count: reviews.total,
           icon: "reviews",
-          label: "Reviews",
+          label: t("projects.sectionTitle.reviews"),
           section: "prs",
         },
         {
           count: reviews.open,
           icon: "reviews",
-          label: "Open",
+          label: t("projects.overviewContext.open"),
           section: "prs",
         },
         {
           count: reviews.merged,
           icon: "merged",
-          label: "Merged",
+          label: t("projects.overviewContext.merged"),
           section: "prs",
         },
       ],
-      title: "Reviews",
+      title: t("projects.sectionTitle.reviews"),
     };
   }
 
   if (filter === "all") {
     return {
       action: null,
-      detailsTitle: "Details",
+      detailsTitle: t("projects.overviewContext.details"),
       people,
       stats: [
         {
           count: projects.length,
           icon: "projects",
-          label: "Projects",
+          label: t("projects.sectionTitle.projects"),
           section: "projects",
         },
         {
           count: repositories,
           icon: "repositories",
-          label: "Repositories",
+          label: t("projects.sectionTitle.repositories"),
           section: "repositories",
         },
         {
           count: channelCount,
           icon: "channels",
-          label: "Groups",
+          label: t("projects.sectionTitle.groups"),
           section: "channels",
         },
         {
           count: tasks.total,
           icon: "tasks",
-          label: "Tasks",
+          label: t("projects.sectionTitle.tasks"),
           section: "issues",
         },
         {
           count: reviews.total,
           icon: "reviews",
-          label: "Reviews",
+          label: t("projects.sectionTitle.reviews"),
           section: "prs",
         },
       ],
-      title: "Activity",
+      title: t("projects.sectionTitle.activity"),
     };
   }
 
   return {
     action: createProjectAction(),
-    detailsTitle: "Details",
+    detailsTitle: t("projects.overviewContext.details"),
     people,
     stats: [
       {
         count: projects.length,
         icon: "projects",
-        label: "Projects",
+        label: t("projects.sectionTitle.projects"),
         section: "projects",
       },
       {
         count: repositories,
         icon: "repositories",
-        label: "Repositories",
+        label: t("projects.sectionTitle.repositories"),
         section: "repositories",
       },
       {
         count: channelCount,
         icon: "channels",
-        label: "Groups",
+        label: t("projects.sectionTitle.groups"),
         section: "channels",
       },
     ],

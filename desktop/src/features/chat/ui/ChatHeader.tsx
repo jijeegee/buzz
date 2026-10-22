@@ -19,6 +19,7 @@ import { cn } from "@/shared/lib/cn";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { Button } from "@/shared/ui/button";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { useT } from "@/shared/i18n";
 
 type ChatHeaderProps = {
   actions?: React.ReactNode;
@@ -101,9 +102,9 @@ export function ChatHeader({
   titleAdornment,
   transparentChrome = false,
 }: ChatHeaderProps) {
+  const t = useT();
   const trimmedDescription = description?.trim() ?? "";
-  const nameNoun = channelType === "dm" ? "name" : "group name";
-  const NameNoun = channelType === "dm" ? "Name" : "Group name";
+  const isDm = channelType === "dm";
 
   async function handleCopyTitle() {
     const value = title.trim();
@@ -111,9 +112,15 @@ export function ChatHeader({
 
     try {
       await writeTextToClipboard(value);
-      toast.success(`${NameNoun} copied`);
+      toast.success(
+        isDm ? t("chats.header.nameCopied") : t("chats.header.groupNameCopied"),
+      );
     } catch {
-      toast.error(`Failed to copy ${nameNoun}`);
+      toast.error(
+        isDm
+          ? t("chats.header.copyNameFailed")
+          : t("chats.header.copyGroupNameFailed"),
+      );
     }
   }
 
@@ -150,11 +157,19 @@ export function ChatHeader({
             </h1>
             {titleAdornment}
             <Button
-              aria-label={`Copy ${nameNoun}: ${title}`}
+              aria-label={
+                isDm
+                  ? t("chats.header.copyNameLabel", { title })
+                  : t("chats.header.copyGroupNameLabel", { title })
+              }
               className="h-6 w-6 shrink-0 opacity-0 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/title:opacity-100"
               onClick={() => void handleCopyTitle()}
               size="icon-xs"
-              title={`Copy ${nameNoun}`}
+              title={
+                isDm
+                  ? t("chats.header.copyName")
+                  : t("chats.header.copyGroupName")
+              }
               type="button"
               variant="ghost"
             >

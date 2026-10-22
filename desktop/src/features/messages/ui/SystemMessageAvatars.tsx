@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import {
   resolveUserLabel,
   type UserProfileLookup,
@@ -47,6 +48,7 @@ export function SystemMessageAvatar({
   profiles: UserProfileLookup | undefined;
   targetPubkey: string | undefined;
 }) {
+  const t = useT();
   const hasActorAndTarget =
     actorPubkey && targetPubkey && actorPubkey !== targetPubkey;
   const actorLabel = actorPubkey
@@ -56,7 +58,7 @@ export function SystemMessageAvatar({
         profiles,
         preferResolvedSelfLabel: true,
       })
-    : "Someone";
+    : t("messages.system.someone");
   const singlePubkey = actorPubkey ?? targetPubkey;
 
   if (!hasActorAndTarget) {
@@ -170,11 +172,14 @@ export function MembershipAvatarStack({
   profiles: UserProfileLookup | undefined;
   pubkeys: readonly string[];
 }) {
+  const t = useT();
   const visiblePubkeys = pubkeys.slice(0, MAX_MEMBERSHIP_AVATARS);
   if (visiblePubkeys.length === 0) return null;
   return (
     <div
-      aria-label={`${visiblePubkeys.length} group member${visiblePubkeys.length === 1 ? "" : "s"}`}
+      aria-label={t("messages.system.memberCount", {
+        count: visiblePubkeys.length,
+      })}
       className="relative z-10 flex shrink-0 items-center justify-center"
       data-testid="system-message-avatar-stack"
       role="img"

@@ -34,6 +34,7 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { ProjectDetailMetaRow } from "./ProjectDetailMeta";
 import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
+import { useT } from "@/shared/i18n";
 
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
@@ -56,7 +57,7 @@ function reviewerSearchLabel(user: UserSearchResult) {
 
 /** Reviewer status avatars and the reviewer request picker for a pull request. */
 export function PullRequestReviewersRow({
-  actionLabel = "Add Reviewer",
+  actionLabel,
   canRequest,
   contextActions = false,
   profiles,
@@ -78,6 +79,7 @@ export function PullRequestReviewersRow({
   showSummary?: boolean;
   summaryTestId?: string;
 }) {
+  const t = useT();
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [reviewerQuery, setReviewerQuery] = React.useState("");
   const requestInFlightRef = React.useRef(false);
@@ -154,23 +156,26 @@ export function PullRequestReviewersRow({
   );
   const hasHistoricalDecision = staleDecisionActors.size > 0;
   const reviewSummary = !pullRequest.commit
-    ? "No commit reported"
+    ? t("projects.reviewers.noCommit")
     : changesRequestedBy.size > 0
-      ? "Changes requested"
+      ? t("projects.activity.changesRequested")
       : pullRequest.reviewers.length > 0 &&
           requestedApprovalCount === pullRequest.reviewers.length
-        ? "Approved"
+        ? t("projects.activity.approved")
         : pullRequest.reviewers.length === 0 && approvedBy.size > 0
-          ? "Approved"
+          ? t("projects.activity.approved")
           : hasHistoricalDecision &&
               approvedBy.size === 0 &&
               changesRequestedBy.size === 0
-            ? "Re-review needed"
+            ? t("projects.reviewers.rereviewNeeded")
             : requestedApprovalCount > 0
-              ? `${requestedApprovalCount} of ${pullRequest.reviewers.length} approved`
+              ? t("projects.reviewers.approvedCount", {
+                  approved: requestedApprovalCount,
+                  total: pullRequest.reviewers.length,
+                })
               : pullRequest.reviewers.length > 0
-                ? "Awaiting review"
-                : "No reviewers";
+                ? t("projects.reviewers.awaiting")
+                : t("projects.reviewers.none");
 
   const handleRequest = React.useCallback(
     async (pubkey: string, reviewerLabel: string) => {
@@ -185,16 +190,18 @@ export function PullRequestReviewersRow({
         });
         setPickerOpen(false);
         setReviewerQuery("");
-        toast.success("Review requested.");
+        toast.success(t("projects.reviewers.requested"));
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to request review.",
+          error instanceof Error
+            ? error.message
+            : t("projects.reviewers.requestFailed"),
         );
       } finally {
         requestInFlightRef.current = false;
       }
     },
-    [pullRequest, requestReviewMutation, signAsManagedOwner],
+    [pullRequest, requestReviewMutation, signAsManagedOwner, t],
   );
 
   React.useEffect(() => {
@@ -215,14 +222,14 @@ export function PullRequestReviewersRow({
           variant="ghost"
         >
           {contextActions ? <UserPlus /> : null}
-          {actionLabel}
+          {actionLabel ?? t("projects.reviewers.addReviewer")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border/60 px-6 py-5 pr-14">
-          <DialogTitle>Add reviewer</DialogTitle>
+          <DialogTitle>{t("projects.reviewers.dialogTitle")}</DialogTitle>
           <DialogDescription>
-            Choose a person or agent to review these changes.
+            {t("projects.reviewers.dialogDescription")}
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 border-b border-border/60 px-6 py-3">
@@ -232,14 +239,14 @@ export function PullRequestReviewersRow({
             className="h-8 border-0 px-0 text-sm shadow-none focus-visible:ring-0"
             data-testid="project-reviewer-search"
             onChange={(event) => setReviewerQuery(event.target.value)}
-            placeholder="Search people and agents"
+            placeholder={t("projects.reviewers.searchPlaceholder")}
             value={reviewerQuery}
           />
         </div>
         <div className="max-h-72 min-h-28 overflow-y-auto p-2">
           {userSearchQuery.isLoading ? (
             <p className="px-3 py-4 text-sm text-muted-foreground">
-              Searching…
+              {t("projects.reviewers.searching")}
             </p>
           ) : candidates.length > 0 ? (
             candidates.map((candidate) => {
@@ -268,7 +275,7 @@ export function PullRequestReviewersRow({
                     </span>
                     {candidate.isAgent ? (
                       <span className="block truncate text-xs text-muted-foreground">
-                        Agent
+                        {t("projects.assignees.agent")}
                       </span>
                     ) : null}
                   </span>
@@ -277,7 +284,7 @@ export function PullRequestReviewersRow({
             })
           ) : (
             <p className="px-3 py-4 text-sm text-muted-foreground">
-              No matching people or agents.
+              {t("projects.reviewers.noMatches")}
             </p>
           )}
         </div>
@@ -288,7 +295,7 @@ export function PullRequestReviewersRow({
   if (contextActions) return requestAction;
 
   return (
-    <ProjectDetailMetaRow icon={Users} label="Reviewers">
+    <ProjectDetailMetaRow icon={Users} label={t("projects.reviewers.label")}>
       <div
         className="flex min-w-0 items-center gap-2"
         data-testid="project-reviewers-content"
@@ -312,12 +319,12 @@ export function PullRequestReviewersRow({
                   ? History
                   : null;
             const decisionLabel = hasApproved
-              ? `Approved by ${label}`
+              ? t("projects.reviewers.approvedBy", { name: label })
               : hasRequestedChanges
-                ? `Changes requested by ${label}`
+                ? t("projects.reviewers.changesRequestedBy", { name: label })
                 : needsRereview
-                  ? `Re-review needed from ${label}`
-                  : `Awaiting review from ${label}`;
+                  ? t("projects.reviewers.rereviewFrom", { name: label })
+                  : t("projects.reviewers.awaitingFrom", { name: label });
             return (
               <React.Fragment key={pubkey}>
                 {index > 0 ? (
@@ -361,7 +368,7 @@ export function PullRequestReviewersRow({
           {hasHistoricalDecision ? (
             <span className="flex min-w-0 items-center gap-1 truncate text-xs text-amber-600 dark:text-amber-400">
               <History className="h-3.5 w-3.5 shrink-0" />
-              Earlier decision applies to another commit
+              {t("projects.reviewers.earlierDecision")}
             </span>
           ) : null}
         </div>

@@ -2029,7 +2029,9 @@ CREATE TABLE principals (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     disabled_at   TIMESTAMPTZ,
     purge_after   TIMESTAMPTZ,
-    discoverable  BOOLEAN NOT NULL DEFAULT true
+    discoverable  BOOLEAN NOT NULL DEFAULT true,
+    -- Language the user picked in the app (migration 0087); NULL = English.
+    locale        TEXT CONSTRAINT principals_locale CHECK (locale ~ '^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$')
 );
 CREATE UNIQUE INDEX principals_username_lower
     ON principals (lower(username)) WHERE username IS NOT NULL;

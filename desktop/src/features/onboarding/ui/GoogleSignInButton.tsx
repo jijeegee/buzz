@@ -7,6 +7,7 @@ import {
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
+import { useT } from "@/shared/i18n";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
@@ -29,7 +30,7 @@ export const OLDER_ACCOUNT_SIGN_IN_TITLE =
 export function GoogleSignInButton({
   disabled,
   allowRestore = false,
-  note = "Sign in with your Google account to get started.",
+  note,
   onComplete,
   showWhenSignedIn = false,
   unavailable = null,
@@ -43,6 +44,7 @@ export function GoogleSignInButton({
   /** Shown instead of nothing once the relay turns out not to offer Google. */
   unavailable?: React.ReactNode;
 }) {
+  const t = useT();
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
   const [pending, setPending] = React.useState(false);
   const login = useGoogleLogin();
@@ -79,7 +81,7 @@ export function GoogleSignInButton({
             ? error.message
             : typeof error === "string"
               ? error
-              : "Google sign-in failed.",
+              : t("onboarding.googleSignIn.failed"),
         );
       })
       .finally(() => setPending(false));
@@ -87,7 +89,9 @@ export function GoogleSignInButton({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">{note}</p>
+      <p className="text-sm text-muted-foreground">
+        {note ?? t("onboarding.googleSignIn.note")}
+      </p>
       <Button
         className="h-10 w-full"
         data-testid="onboarding-google-sign-in"
@@ -97,7 +101,9 @@ export function GoogleSignInButton({
         variant="outline"
       >
         {pending ? <Spinner aria-hidden className="h-4 w-4 border-2" /> : null}
-        {pending ? "Signing in…" : "Sign in with Google"}
+        {pending
+          ? t("onboarding.googleSignIn.signingIn")
+          : t("onboarding.googleSignIn.button")}
       </Button>
       <GoogleLoginProgress login={login} />
       <TermsAgreementLine />
@@ -112,9 +118,9 @@ export function GoogleSignInButton({
           onClick={() => signIn(true)}
           type="button"
           variant="outline"
-          title={OLDER_ACCOUNT_SIGN_IN_TITLE}
+          title={t("onboarding.googleSignIn.olderAccountTitle")}
         >
-          {OLDER_ACCOUNT_SIGN_IN_LABEL}
+          {t("onboarding.googleSignIn.olderAccount")}
         </Button>
       ) : null}
     </div>

@@ -22,7 +22,7 @@ import {
 import type { Channel, SearchHit, UserSearchResult } from "@/shared/api/types";
 import { Badge } from "@/shared/ui/badge";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import { localeDateTimeFormat } from "@/shared/i18n";
+import { localeDateTimeFormat, t } from "@/shared/i18n";
 
 export type SearchResult =
   | {
@@ -162,7 +162,7 @@ export function ChannelResultBody({ channel }: { channel: Channel }) {
         <p className="text-sm font-semibold tracking-tight">{channel.name}</p>
         <Badge variant="secondary">{channel.channelType}</Badge>
         <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
-          Group
+          {t("search.result.group")}
         </p>
       </div>
       {channel.description ? (
@@ -177,26 +177,26 @@ export function ChannelResultBody({ channel }: { channel: Channel }) {
 function describeSearchHit(hit: SearchHit) {
   switch (hit.kind) {
     case 1:
-      return "Note";
+      return t("search.result.kindNote");
     case 45001:
-      return "Forum post";
+      return t("search.result.kindForumPost");
     case 45003:
-      return "Forum reply";
+      return t("search.result.kindForumReply");
     case 43001:
-      return "Agent job";
+      return t("search.result.kindAgentJob");
     case 43003:
-      return "Agent update";
+      return t("search.result.kindAgentUpdate");
     case 46010:
-      return "Approval request";
+      return t("search.result.kindApprovalRequest");
     default:
-      return "Message";
+      return t("search.result.kindMessage");
   }
 }
 
 function truncateContent(content: string) {
   const trimmed = content.trim();
   if (trimmed.length === 0) {
-    return "No message body.";
+    return t("search.result.noBody");
   }
 
   if (trimmed.length <= 180) {
@@ -210,15 +210,19 @@ function formatRelativeTime(unixSeconds: number) {
   const diff = Math.floor(Date.now() / 1_000) - unixSeconds;
 
   if (diff < 60) {
-    return "just now";
+    return t("search.result.justNow");
   }
 
   if (diff < 60 * 60) {
-    return `${Math.floor(diff / 60)}m ago`;
+    return t("search.result.minutesAgo", {
+      minutes: String(Math.floor(diff / 60)),
+    });
   }
 
   if (diff < 60 * 60 * 24) {
-    return `${Math.floor(diff / (60 * 60))}h ago`;
+    return t("search.result.hoursAgo", {
+      hours: String(Math.floor(diff / (60 * 60))),
+    });
   }
 
   return localeDateTimeFormat({

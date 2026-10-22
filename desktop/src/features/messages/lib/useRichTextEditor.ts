@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 
 import { Markdown as TiptapMarkdown } from "tiptap-markdown";
@@ -341,7 +342,8 @@ export function useRichTextEditor({
         customEmojiWiring.extension,
         messageLinkWiring.extension,
         Placeholder.configure({
-          placeholder: () => placeholderRef.current ?? "Write a message…",
+          placeholder: () =>
+            placeholderRef.current ?? t("messages.composer.placeholder"),
         }),
         Link.extend({
           inclusive() {

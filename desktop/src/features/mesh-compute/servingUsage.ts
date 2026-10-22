@@ -1,4 +1,5 @@
 import type { MeshServingUsage } from "@/shared/api/tauriMesh";
+import { t } from "@/shared/i18n";
 
 /**
  * Pure projection of host-side serving usage into a small, politely-worded
@@ -28,10 +29,6 @@ export type MeshServingIndicator = {
   detail: string | null;
 };
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return n === 1 ? one : many;
-}
-
 /**
  * @param usage  latest snapshot from `meshServingUsage`, or null if not fetched
  * @param isSharing  whether this machine is currently in serve mode (card owns
@@ -60,13 +57,14 @@ export function deriveServingIndicator(
   // Remote consumer present (or seen) — the headline case the user asked for.
   if (hasRemoteConsumers) {
     const remote = usage.remoteAttempts + usage.endpointAttempts;
+    const rate = Math.round(usage.tokensPerSecond);
     const label = active
-      ? `In use now by another member · ${usage.inflight} live`
-      : `Used by another member · ${remote} ${plural(remote, "request")}`;
+      ? t("meshCompute.usage.inUseByMember", { count: usage.inflight })
+      : t("meshCompute.usage.usedByMember", { count: remote });
     const detail =
       usage.peers > 0
-        ? `${usage.peers} ${plural(usage.peers, "peer")} on the mesh · ${Math.round(usage.tokensPerSecond)} tok/s`
-        : `${Math.round(usage.tokensPerSecond)} tok/s`;
+        ? t("meshCompute.usage.peersAndRate", { peers: usage.peers, rate })
+        : t("meshCompute.usage.rate", { rate });
     return { show: true, active, hasRemoteConsumers: true, label, detail };
   }
 
@@ -76,8 +74,12 @@ export function deriveServingIndicator(
       show: true,
       active: true,
       hasRemoteConsumers: false,
-      label: `Serving your agent · ${usage.inflight} live`,
-      detail: `${Math.round(usage.tokensPerSecond)} tok/s`,
+      label: t("meshCompute.usage.servingYourAgent", {
+        count: usage.inflight,
+      }),
+      detail: t("meshCompute.usage.rate", {
+        rate: Math.round(usage.tokensPerSecond),
+      }),
     };
   }
   if (usage.requestsServed > 0) {
@@ -85,8 +87,10 @@ export function deriveServingIndicator(
       show: true,
       active: false,
       hasRemoteConsumers: false,
-      label: "Idle · no one using it right now",
-      detail: `${usage.requestsServed} ${plural(usage.requestsServed, "request")} served this session`,
+      label: t("meshCompute.usage.idleNow"),
+      detail: t("meshCompute.usage.servedThisSession", {
+        count: usage.requestsServed,
+      }),
     };
   }
 
@@ -95,7 +99,7 @@ export function deriveServingIndicator(
     show: true,
     active: false,
     hasRemoteConsumers: false,
-    label: "Idle · no one using it yet",
+    label: t("meshCompute.usage.idleYet"),
     detail: null,
   };
 }

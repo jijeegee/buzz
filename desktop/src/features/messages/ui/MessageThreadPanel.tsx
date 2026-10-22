@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { ArrowDown, LocateFixed } from "lucide-react";
 import { ThreadNameEditor } from "./ThreadNameEditor";
@@ -254,6 +255,7 @@ export function MessageThreadPanel({
   autoSendDraftKey = null,
   onAutoSubmitComplete,
 }: MessageThreadPanelProps) {
+  const t = useT();
   const threadBodyRef = React.useRef<HTMLDivElement>(null);
   const threadContentRef = React.useRef<HTMLDivElement>(null);
   const olderRepliesSentinelRef = React.useRef<HTMLDivElement>(null);
@@ -512,8 +514,8 @@ export function MessageThreadPanel({
               depth: ancestor.message.depth,
               label:
                 ancestor.message.id === threadHead.id
-                  ? "Collapse thread"
-                  : "Collapse replies",
+                  ? t("messages.thread.collapseThread")
+                  : t("messages.thread.collapseReplies"),
               message: ancestor.message,
             }))
           : undefined;
@@ -552,6 +554,7 @@ export function MessageThreadPanel({
     firstUnreadReplyId,
     hoveredCollapseBranchId,
     isHuddleTranscript,
+    t,
     threadHead,
   ]);
 
@@ -607,7 +610,7 @@ export function MessageThreadPanel({
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          aria-label="Show in group"
+          aria-label={t("messages.thread.showInGroup")}
           className="text-muted-foreground hover:text-foreground"
           data-testid="message-thread-show-in-channel"
           onClick={onShowInChannel}
@@ -618,7 +621,7 @@ export function MessageThreadPanel({
           <LocateFixed />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Show in group</TooltipContent>
+      <TooltipContent>{t("messages.thread.showInGroup")}</TooltipContent>
     </Tooltip>
   ) : null;
   const goalHeaderChip = renderHeaderActions(goalChip, showInChannelButton);
@@ -741,8 +744,8 @@ export function MessageThreadPanel({
                 type="button"
               >
                 {isFetchingOlderReplies
-                  ? "Loading earlier replies…"
-                  : "Show earlier replies"}
+                  ? t("messages.thread.loadingEarlierReplies")
+                  : t("messages.thread.showEarlierReplies")}
               </button>
             </div>
           ) : null}
@@ -830,7 +833,9 @@ export function MessageThreadPanel({
                           channelId={channelId}
                           currentPubkey={currentPubkey}
                           collapseDepthGuideActions={collapseDepthGuideActions}
-                          collapseDescendantsLabel="Collapse replies"
+                          collapseDescendantsLabel={t(
+                            "messages.thread.collapseReplies",
+                          )}
                           connectDescendants={
                             shouldShowThreadBranchGuides &&
                             connectsToVisibleChild
@@ -973,8 +978,8 @@ export function MessageThreadPanel({
           >
             <ArrowDown aria-hidden />
             {newMessageCount > 0
-              ? `${newMessageCount} new message${newMessageCount === 1 ? "" : "s"}`
-              : "Jump to latest"}
+              ? t("messages.scroll.newMessages", { count: newMessageCount })
+              : t("messages.scroll.jumpToLatest")}
           </Button>
         </div>
       ) : null}
@@ -1026,12 +1031,14 @@ export function MessageThreadPanel({
               onPreviewSend={onPreviewSend}
               placeholder={
                 isHuddleTranscript
-                  ? "Message the huddle"
+                  ? t("messages.thread.huddlePlaceholder")
                   : isClosedTaskThread
                     ? threadHeaderActions
-                      ? "Sending will reopen this thread"
-                      : "Task closed. Start new work in the group, or reply to reopen"
-                    : `Reply in thread to ${threadHead.author}`
+                      ? t("messages.thread.reopenPlaceholder")
+                      : t("messages.thread.taskClosedPlaceholder")
+                    : t("messages.thread.replyPlaceholder", {
+                        author: threadHead.author,
+                      })
               }
               profiles={profiles}
               recentMentionPubkeys={recentMentionPubkeys}

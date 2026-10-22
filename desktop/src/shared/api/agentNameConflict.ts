@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { agentNameKey } from "@/shared/api/remoteOwnedAgents";
 
 /**
@@ -95,5 +96,5 @@ export function nextFreeAgentName(
 }
 
 export function agentNameTakenMessage(name: string): string {
-  return `You already have an agent named "${name.trim()}". Choose a different name.`;
+  return t("ui.agentName.taken", { name: name.trim() });
 }

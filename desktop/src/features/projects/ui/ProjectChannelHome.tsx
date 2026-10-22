@@ -36,6 +36,7 @@ import {
   type ProjectHomeWorkspaceDetail,
 } from "./ProjectHomeWorkspaceSheet";
 import { ProjectRepositoryManagement } from "./ProjectRepositoryManagement";
+import { useT } from "@/shared/i18n";
 
 const EMPTY_TARGET_MESSAGE_EVENTS: RelayEvent[] = [];
 const PROJECT_HOME_SUMMARY_WIDTH_KEY =
@@ -62,11 +63,16 @@ function ProjectHomeHeaderToggle({
   open: boolean;
   testId: string;
 }) {
+  const t = useT();
   return (
     <Tooltip disableHoverableContent>
       <TooltipTrigger asChild>
         <Button
-          aria-label={open ? `Hide ${label}` : `Show ${label}`}
+          aria-label={
+            open
+              ? t("projects.channelHome.hidePanel", { name: label })
+              : t("projects.channelHome.showPanel", { name: label })
+          }
           aria-pressed={open}
           className="h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent"
           data-testid={testId}
@@ -99,6 +105,7 @@ export function ProjectChannelHome({
   targetMessageEvents?: RelayEvent[];
   targetMessageId?: string | null;
 }) {
+  const t = useT();
   const { goChannel, goProject, goProjects } = useAppNavigation();
   const sidebar = useOptionalSidebar();
   const identityQuery = useIdentityQuery();
@@ -227,8 +234,10 @@ export function ProjectChannelHome({
     workspaceSheetTab,
   ]);
   const expandLabel = workspaceSheetTab
-    ? `Open ${projectHomeWorkspaceSheetTitle(workspaceSheetTab)} in repository`
-    : "Open in repository";
+    ? t("projects.channelHome.openSectionInRepository", {
+        section: projectHomeWorkspaceSheetTitle(workspaceSheetTab),
+      })
+    : t("projects.channelHome.openInRepository");
   const workspaceSheet =
     workspaceSheetOpen && workspaceSheetTab && workspaceRepository ? (
       <ProjectHomeWorkspaceSheet
@@ -272,7 +281,7 @@ export function ProjectChannelHome({
           <ProjectDetailChrome
             actions={
               <ProjectHomeHeaderToggle
-                label="Overview"
+                label={t("projects.channelHome.overview")}
                 onClick={() => {
                   if (workspaceSheetOpen) {
                     closeWorkspaceSheet();
@@ -388,7 +397,7 @@ export function ProjectChannelHome({
           ) : (
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
               <p className="text-sm text-muted-foreground">
-                This project's group could not be found.
+                {t("projects.channelHome.groupNotFound")}
               </p>
             </div>
           )}

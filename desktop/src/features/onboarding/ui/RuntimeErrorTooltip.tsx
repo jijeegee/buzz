@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 
+import { useT } from "@/shared/i18n";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 type RuntimeErrorTooltipProps = {
@@ -17,11 +18,12 @@ export function RuntimeErrorTooltip({
   showIcon = false,
   testId,
 }: RuntimeErrorTooltipProps) {
+  const t = useT();
   return (
     <Tooltip disableHoverableContent={false}>
       <TooltipTrigger asChild>
         <span
-          aria-label={`${label}. ${detail}`}
+          aria-label={t("onboarding.runtimeError.ariaLabel", { label, detail })}
           className={className}
           data-testid={testId}
           role="status"

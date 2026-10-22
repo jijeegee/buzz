@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 export const WAVE_MESSAGE_MARKER = "<!-- kuzz:wave:v1 -->";
 
 export type WaveMessageContent = {
@@ -21,6 +22,6 @@ export function parseWaveMessageContent(
   const fallbackText = trimmedContent.slice(WAVE_MESSAGE_MARKER.length).trim();
 
   return {
-    fallbackText: fallbackText || "Someone waved at you.",
+    fallbackText: fallbackText || t("messages.wave.someoneWaved"),
   };
 }

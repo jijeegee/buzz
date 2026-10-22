@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 
 import { resizeAvatarImage } from "@/features/profile/lib/resizeAvatarImage";
 import { uploadMediaBytes } from "@/shared/api/tauri";
+import { useT } from "@/shared/i18n";
 
 const AVATAR_IMAGE_TYPES = [
   "image/gif",
@@ -30,12 +31,13 @@ type UseAvatarUploadReturn = {
 };
 
 export function useAvatarUpload({
-  fallbackErrorMessage = "Could not upload that avatar.",
+  fallbackErrorMessage,
   onUploadStart,
   onUploadSettled,
   onUploadSuccess,
   processImage,
 }: UseAvatarUploadOptions): UseAvatarUploadReturn {
+  const t = useT();
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
@@ -51,7 +53,7 @@ export function useAvatarUpload({
   const uploadFile = React.useCallback(
     async (file: File) => {
       if (!AVATAR_IMAGE_TYPES.includes(file.type)) {
-        setErrorMessage("Choose a PNG, JPG, GIF, or WebP image.");
+        setErrorMessage(t("profile.avatarUpload.wrongType"));
         return;
       }
 
@@ -74,14 +76,16 @@ export function useAvatarUpload({
           // backstop. Verify the server-detected MIME is actually an image before
           // accepting it as an avatar — defends against spoofed/blank picker MIME.
           if (!uploaded.type.startsWith("image/")) {
-            setErrorMessage("Choose a PNG, JPG, GIF, or WebP image.");
+            setErrorMessage(t("profile.avatarUpload.wrongType"));
             return;
           }
           onUploadSuccess(uploaded.url);
         }
       } catch (error) {
         setErrorMessage(
-          error instanceof Error ? error.message : fallbackErrorMessage,
+          error instanceof Error
+            ? error.message
+            : (fallbackErrorMessage ?? t("profile.avatarUpload.failed")),
         );
       } finally {
         setIsUploading(false);
@@ -94,6 +98,7 @@ export function useAvatarUpload({
       onUploadStart,
       onUploadSuccess,
       processImage,
+      t,
     ],
   );
 

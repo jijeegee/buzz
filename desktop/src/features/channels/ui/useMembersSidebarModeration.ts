@@ -17,6 +17,7 @@ import type { ChannelMember } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 import type { MemberModerationState } from "./MembersSidebarMemberCard";
+import { t } from "@/shared/i18n";
 
 /**
  * Owns community ban/timeout wiring for the members sidebar. Gated by relay
@@ -75,7 +76,9 @@ export function useMembersSidebarModeration(open: boolean) {
         toast.success(success);
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Moderation action failed",
+          error instanceof Error
+            ? error.message
+            : t("channels.moderation.failed"),
         );
       }
     },
@@ -86,7 +89,7 @@ export function useMembersSidebarModeration(open: boolean) {
     (member: ChannelMember) =>
       void runModerationAction(
         () => banMutation.mutateAsync({ pubkey: member.pubkey }),
-        "Member banned",
+        t("channels.moderation.banned"),
       ),
     [banMutation, runModerationAction],
   );
@@ -95,7 +98,7 @@ export function useMembersSidebarModeration(open: boolean) {
     (member: ChannelMember) =>
       void runModerationAction(
         () => unbanMutation.mutateAsync(member.pubkey),
-        "Ban lifted",
+        t("channels.moderation.unbanned"),
       ),
     [unbanMutation, runModerationAction],
   );
@@ -108,7 +111,7 @@ export function useMembersSidebarModeration(open: boolean) {
             pubkey: member.pubkey,
             expiresAt: expiresAtSecs,
           }),
-        "Member timed out",
+        t("channels.moderation.timedOut"),
       ),
     [timeoutMutation, runModerationAction],
   );
@@ -117,7 +120,7 @@ export function useMembersSidebarModeration(open: boolean) {
     (member: ChannelMember) =>
       void runModerationAction(
         () => untimeoutMutation.mutateAsync(member.pubkey),
-        "Timeout lifted",
+        t("channels.moderation.timeoutLifted"),
       ),
     [untimeoutMutation, runModerationAction],
   );

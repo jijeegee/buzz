@@ -22,7 +22,12 @@ import { Button } from "@/shared/ui/button";
 import { Markdown } from "@/shared/ui/markdown";
 import { hasLinkPreviewSuppression } from "@/features/messages/lib/formatTimelineMessages";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import { localeDateTimeFormat, localeRelativeTimeFormat } from "@/shared/i18n";
+import {
+  localeDateTimeFormat,
+  localeRelativeTimeFormat,
+  t,
+  useT,
+} from "@/shared/i18n";
 
 const relativeTimeFormatter = localeRelativeTimeFormat({
   numeric: "auto",
@@ -63,35 +68,35 @@ function formatRelativeTime(unixSeconds: number) {
 function feedHeadline(item: FeedItem) {
   switch (item.kind) {
     case KIND_REMINDER:
-      return "Reminder";
+      return t("home.itemKind.reminder");
     case KIND_JOB_REQUEST:
-      return "Job requested";
+      return t("home.itemKind.jobRequested");
     case KIND_JOB_ACCEPTED:
-      return "Job accepted";
+      return t("home.itemKind.jobAccepted");
     case KIND_JOB_PROGRESS:
-      return "Progress update";
+      return t("home.itemKind.progressUpdate");
     case KIND_JOB_RESULT:
-      return "Job result";
+      return t("home.itemKind.jobResult");
     case KIND_JOB_CANCEL:
-      return "Job cancelled";
+      return t("home.itemKind.jobCancelled");
     case KIND_JOB_ERROR:
-      return "Job failed";
+      return t("home.itemKind.jobFailed");
     case KIND_FORUM_POST:
-      return "Forum post";
+      return t("home.itemKind.forumPost");
     case KIND_FORUM_COMMENT:
-      return "Forum reply";
+      return t("home.itemKind.forumReply");
     case KIND_APPROVAL_REQUEST:
-      return "Approval requested";
+      return t("home.itemKind.approvalRequested");
     default:
       if (item.category === "mention") {
-        return "Mention";
+        return t("home.itemKind.mention");
       }
 
       if (item.category === "agent_activity") {
-        return "Agent update";
+        return t("home.itemKind.agentUpdate");
       }
 
-      return "Group update";
+      return t("home.itemKind.groupUpdate");
   }
 }
 
@@ -102,14 +107,14 @@ function feedContent(item: FeedItem) {
   }
 
   if (item.kind === KIND_APPROVAL_REQUEST) {
-    return "A workflow is waiting for approval.";
+    return t("home.itemPreview.approvalWaiting");
   }
 
   if (item.kind === KIND_REMINDER) {
-    return "A reminder is waiting for you.";
+    return t("home.itemPreview.reminderWaiting");
   }
 
-  return "No additional details were attached to this event.";
+  return t("home.itemPreview.noDetails");
 }
 
 type FeedSectionProps = {
@@ -143,6 +148,7 @@ export function FeedSection({
   onMarkDone,
   onUndoDone,
 }: FeedSectionProps) {
+  const tr = useT();
   return (
     <section>
       <div className="flex items-center gap-2 pb-2">
@@ -182,7 +188,13 @@ export function FeedSection({
               >
                 {canOpenChannel ? (
                   <button
-                    aria-label={`Open ${item.channelName || "group"}`}
+                    aria-label={
+                      item.channelName
+                        ? tr("home.feed.openNamedGroup", {
+                            name: item.channelName,
+                          })
+                        : tr("home.feed.openGroup")
+                    }
                     className="absolute inset-0"
                     data-testid={`home-feed-open-${item.id}`}
                     onClick={() => {
@@ -248,7 +260,11 @@ export function FeedSection({
 
                 {showDoneAction ? (
                   <Button
-                    aria-label={isDone ? "Undo done" : "Mark done"}
+                    aria-label={
+                      isDone
+                        ? tr("home.feed.undoDone")
+                        : tr("home.feed.markDone")
+                    }
                     onClick={() => {
                       if (isDone) {
                         onUndoDone(item.id);

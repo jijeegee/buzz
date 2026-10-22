@@ -10,12 +10,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { type MessageKey, useT } from "@/shared/i18n";
 
 type SelectionItem = NonNullable<
   ProjectDetailAgentContext["selection"]
 >[number];
 
 const MAX_VISIBLE_ITEMS = 4;
+
+const KIND_KEYS: Partial<Record<string, MessageKey>> = {
+  channel: "projects.selectionKind.channel",
+  commit: "projects.selectionKind.commit",
+  project: "projects.selectionKind.project",
+  repository: "projects.selectionKind.repository",
+  review: "projects.selectionKind.review",
+  task: "projects.selectionKind.task",
+};
 
 function SelectionItemRow({
   item,
@@ -24,6 +34,8 @@ function SelectionItemRow({
   item: SelectionItem;
   overflow?: boolean;
 }) {
+  const t = useT();
+  const kindKey = KIND_KEYS[item.kind];
   return (
     <div
       className="flex min-w-0 items-baseline gap-2 text-xs"
@@ -34,7 +46,7 @@ function SelectionItemRow({
       }
     >
       <span className="shrink-0 capitalize text-muted-foreground">
-        {item.kind}
+        {kindKey ? t(kindKey) : item.kind}
       </span>
       <span className="min-w-0 truncate text-foreground" title={item.title}>
         {item.title}
@@ -48,12 +60,13 @@ export function ProjectAgentSelectionComposerBanner({
 }: {
   items: NonNullable<ProjectDetailAgentContext["selection"]>;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = React.useState(true);
   const visibleItems = items.slice(0, MAX_VISIBLE_ITEMS);
   const overflowItems = items.slice(MAX_VISIBLE_ITEMS);
-  const summary = `${items.length} ${
-    items.length === 1 ? "element" : "elements"
-  } selected`;
+  const summary = t("projects.agentSelection.summary", {
+    count: items.length,
+  });
 
   return (
     <div className="px-3" data-testid="projects-agent-selection-context">
@@ -88,7 +101,9 @@ export function ProjectAgentSelectionComposerBanner({
                     type="button"
                     variant="ghost"
                   >
-                    {overflowItems.length} more
+                    {t("projects.agentSelection.more", {
+                      count: overflowItems.length,
+                    })}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent

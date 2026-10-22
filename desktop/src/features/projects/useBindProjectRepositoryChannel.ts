@@ -12,6 +12,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import { signRelayEvent } from "@/shared/api/tauri";
 import { getIdentity } from "@/shared/api/tauriIdentity";
 import { getCachedRelayOrigin } from "@/shared/lib/mediaUrl";
+import { t } from "@/shared/i18n";
 
 type BindProjectRepositoryChannelInput = {
   channelId: string;
@@ -37,13 +38,13 @@ async function bindProjectRepositoryChannel({
   });
   await relayClient.publishEvent(
     event,
-    "Timed out repairing repository access.",
-    "Failed to repair repository access.",
+    t("projects.useBindProjectRepositoryChannel.timedOut"),
+    t("projects.useBindProjectRepositoryChannel.failed"),
   );
 
   const updated = eventToRepository(event, getCachedRelayOrigin());
   if (!updated) {
-    throw new Error("Repository access was repaired but could not be read.");
+    throw new Error(t("projects.useBindProjectRepositoryChannel.readFailed"));
   }
   return updated;
 }

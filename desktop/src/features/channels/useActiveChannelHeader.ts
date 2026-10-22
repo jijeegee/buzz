@@ -13,6 +13,7 @@ import {
   isGroupChat,
   otherChatPeople,
 } from "@/features/channels/lib/groupChat";
+import { t } from "@/shared/i18n";
 
 export type ActiveDmHeaderParticipant = {
   pubkey: string;
@@ -116,7 +117,7 @@ export function useActiveChannelHeader(
             : activeDmProfilesQuery.data?.profiles,
           privateNames.get(activeChannel.id) ?? null,
         )
-      : "Groups",
+      : t("channels.header.groupsFallback"),
     activeDmAvatarUrl,
     activeDmHeaderParticipants,
     activeDmPresenceStatus,

@@ -9,42 +9,45 @@
  * here. Research: ~/.kuzz/RESEARCH/BYOH_CATALOG_IA.md.
  */
 
-const HARNESS_DESCRIPTIONS: Record<string, string> = {
+import { type MessageKey, t } from "@/shared/i18n";
+
+/** Message keys; translated in `harnessDescription`. */
+const HARNESS_DESCRIPTIONS: Record<string, MessageKey> = {
   // Built-in runtimes.
-  "kuzz-agent": "Kuzz's built-in agent runtime, bundled with the app.",
+  "kuzz-agent": "settings.harnessCatalog.description.kuzzAgent",
   // Source: https://code.claude.com/docs/en/overview — "Claude Code is an
   // agentic coding tool" that lives in the terminal.
-  claude: "Anthropic's agentic coding tool that runs in the terminal.",
+  claude: "settings.harnessCatalog.description.claude",
   // Source: https://developers.openai.com/codex — "Codex is OpenAI's coding
   // agent".
-  codex: "OpenAI's coding agent, connected through the codex-acp adapter.",
+  codex: "settings.harnessCatalog.description.codex",
   // Source: https://block.github.io/goose/ — "an open source, extensible AI
   // agent".
-  goose: "Open-source, extensible AI agent.",
+  goose: "settings.harnessCatalog.description.goose",
 
   // Bundled presets — sources per RESEARCH/BYOH_CATALOG_IA.md.
   // Source: https://cursor.com/docs/cli/acp
-  cursor: "Cursor's coding agent, connected to Kuzz through its ACP server.",
+  cursor: "settings.harnessCatalog.description.cursor",
   // Source: https://github.com/can1357/oh-my-pi
-  omp: "A terminal coding agent with integrated development tools.",
+  omp: "settings.harnessCatalog.description.omp",
   // Sources: https://pi.dev/docs/latest, https://github.com/salman1993/pi-acp
-  pi: "A minimal terminal coding harness, connected through the buzz-pi-acp adapter.",
+  pi: "settings.harnessCatalog.description.pi",
   // Source: https://build.x.ai (docs unavailable during research; kept
   // deliberately conservative).
-  grok: "xAI's coding agent, connected to Kuzz through its ACP entrypoint.",
+  grok: "settings.harnessCatalog.description.grok",
   // Source: https://github.com/anomalyco/opencode
-  opencode: "An open-source coding agent.",
+  opencode: "settings.harnessCatalog.description.opencode",
   // Sources: https://github.com/MoonshotAI/kimi-cli,
   // https://moonshotai.github.io/kimi-cli/en/
-  kimi: "A terminal coding agent for software development and command-line tasks.",
+  kimi: "settings.harnessCatalog.description.kimi",
   // Sources: https://ampcode.com, https://ampcode.com/manual
-  amp: "The coding agent and development environment that runs anywhere and everywhere.",
+  amp: "settings.harnessCatalog.description.amp",
   // Sources: https://github.com/NousResearch/hermes-agent,
   // https://hermes-agent.nousresearch.com/docs/
-  hermes: "A general-purpose AI agent from Nous Research.",
+  hermes: "settings.harnessCatalog.description.hermes",
   // Sources: https://github.com/openclaw/openclaw,
   // https://docs.openclaw.ai/start/getting-started
-  openclaw: "A personal AI assistant that runs on your own devices.",
+  openclaw: "settings.harnessCatalog.description.openclaw",
 };
 
 /**
@@ -53,5 +56,6 @@ const HARNESS_DESCRIPTIONS: Record<string, string> = {
  * invent copy.
  */
 export function harnessDescription(id: string): string | null {
-  return HARNESS_DESCRIPTIONS[id.trim().toLowerCase()] ?? null;
+  const key = HARNESS_DESCRIPTIONS[id.trim().toLowerCase()];
+  return key ? t(key) : null;
 }

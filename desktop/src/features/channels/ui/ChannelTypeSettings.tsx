@@ -23,23 +23,44 @@ import {
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { EditableInfoFieldRow } from "./ChannelManagementSheetRows";
 import { ChannelTypePicker } from "./ChannelTypePicker";
+import { type MessageKey, useT } from "@/shared/i18n";
 
 const CHANNEL_TYPE_OPTIONS = [
-  { value: "temporary", label: "Temporary", Icon: ClockFading },
-  { value: "ongoing", label: "Ongoing", Icon: Users },
+  {
+    value: "temporary",
+    labelKey: "channels.type.temporary",
+    Icon: ClockFading,
+  },
+  { value: "ongoing", labelKey: "channels.type.ongoing", Icon: Users },
 ] as const;
 
-const EPHEMERAL_TIMEOUT_OPTIONS = [
-  { label: "30 minutes", seconds: 30 * 60 },
-  { label: "1 hour", seconds: 60 * 60 },
-  { label: "6 hours", seconds: 6 * 60 * 60 },
-  { label: "12 hours", seconds: 12 * 60 * 60 },
-  { label: "1 day", seconds: 24 * 60 * 60 },
-  { label: "3 days", seconds: 3 * 24 * 60 * 60 },
-  { label: "7 days", seconds: DEFAULT_EPHEMERAL_TTL_SECONDS },
-  { label: "14 days", seconds: 14 * 24 * 60 * 60 },
-  { label: "30 days", seconds: 30 * 24 * 60 * 60 },
-] as const;
+const EPHEMERAL_TIMEOUT_OPTIONS: {
+  count: number;
+  labelKey: MessageKey;
+  seconds: number;
+}[] = [
+  { count: 30, labelKey: "channels.ephemeral.minutes", seconds: 30 * 60 },
+  { count: 1, labelKey: "channels.ephemeral.hours", seconds: 60 * 60 },
+  { count: 6, labelKey: "channels.ephemeral.hours", seconds: 6 * 60 * 60 },
+  { count: 12, labelKey: "channels.ephemeral.hours", seconds: 12 * 60 * 60 },
+  { count: 1, labelKey: "channels.ephemeral.days", seconds: 24 * 60 * 60 },
+  { count: 3, labelKey: "channels.ephemeral.days", seconds: 3 * 24 * 60 * 60 },
+  {
+    count: 7,
+    labelKey: "channels.ephemeral.days",
+    seconds: DEFAULT_EPHEMERAL_TTL_SECONDS,
+  },
+  {
+    count: 14,
+    labelKey: "channels.ephemeral.days",
+    seconds: 14 * 24 * 60 * 60,
+  },
+  {
+    count: 30,
+    labelKey: "channels.ephemeral.days",
+    seconds: 30 * 24 * 60 * 60,
+  },
+];
 
 const CHANNEL_TYPE_RESIZE_TRANSITION = {
   duration: 0.22,
@@ -55,6 +76,7 @@ export function ChannelTypeDetailRow({
   channel: Channel;
   onEdit?: () => void;
 }) {
+  const t = useT();
   const projectHome = useIsProjectHomeChannel(channel.id);
   const lifecycle = channelLifecycle({
     projectHome,
@@ -64,7 +86,7 @@ export function ChannelTypeDetailRow({
   return (
     <EditableInfoFieldRow
       editTestId="channel-management-edit-channel-type"
-      label="Group type"
+      label={t("channels.settings.groupType")}
       onEdit={canEdit ? onEdit : undefined}
       testId="channel-management-type"
       value={channelLifecycleLabel(lifecycle, channel.ttlSeconds)}
@@ -75,7 +97,7 @@ export function ChannelTypeDetailRow({
 export function ChannelTypeSettings({
   channelId,
   disabled,
-  label = "Group type",
+  label: labelProp,
   onOpenChange,
   onTemporaryChange,
   onTtlSecondsChange,
@@ -97,23 +119,35 @@ export function ChannelTypeSettings({
   ttlSeconds: number;
   variant?: "dropdown" | "segmented";
 }) {
+  const t = useT();
+  const label = labelProp ?? t("channels.settings.groupType");
   const projectHome = useIsProjectHomeChannel(channelId);
   const lifecycle = channelLifecycle({ projectHome, temporary });
+  const channelTypeOptions = CHANNEL_TYPE_OPTIONS.map(
+    ({ labelKey, ...option }) => ({ ...option, label: t(labelKey) }),
+  );
+  const ephemeralTimeoutOptions = EPHEMERAL_TIMEOUT_OPTIONS.map((option) => ({
+    label: t(option.labelKey, { count: option.count }),
+    seconds: option.seconds,
+  }));
+  const currentTimeoutLabel = t("channels.settings.currentTtl", {
+    duration: formatTtlDuration(ttlSeconds),
+  });
   const shouldReduceMotion = useReducedMotion();
   const channelTypeResizeTransition = shouldReduceMotion
     ? { duration: 0 }
     : CHANNEL_TYPE_RESIZE_TRANSITION;
-  const selectedTimeoutOption = EPHEMERAL_TIMEOUT_OPTIONS.find(
+  const selectedTimeoutOption = ephemeralTimeoutOptions.find(
     (option) => option.seconds === ttlSeconds,
   );
   const timeoutOptions = selectedTimeoutOption
-    ? EPHEMERAL_TIMEOUT_OPTIONS
+    ? ephemeralTimeoutOptions
     : [
         {
-          label: `Current (${formatTtlDuration(ttlSeconds)})`,
+          label: currentTimeoutLabel,
           seconds: ttlSeconds,
         },
-        ...EPHEMERAL_TIMEOUT_OPTIONS,
+        ...ephemeralTimeoutOptions,
       ];
 
   return (
@@ -136,10 +170,10 @@ export function ChannelTypeSettings({
         {variant === "segmented" ? (
           <SegmentedControl
             disabled={disabled}
-            legend="Group type"
+            legend={t("channels.settings.groupType")}
             onValueChange={(value) => onTemporaryChange(value === "temporary")}
             optionTestIdPrefix={`${testIdPrefix}-channel-type-option`}
-            options={CHANNEL_TYPE_OPTIONS}
+            options={channelTypeOptions}
             testId={`${testIdPrefix}-channel-type`}
             value={temporary ? "temporary" : "ongoing"}
           />
@@ -180,12 +214,12 @@ export function ChannelTypeSettings({
                 )}
                 htmlFor={`${testIdPrefix}-ttl`}
               >
-                Expires after
+                {t("channels.settings.expiresAfter")}
               </label>
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    aria-label="Expires after"
+                    aria-label={t("channels.settings.expiresAfter")}
                     className="-mr-2.5 ml-auto h-9 w-fit justify-end px-2.5 text-right text-sm font-medium text-foreground hover:bg-muted/50"
                     data-testid={`${testIdPrefix}-ttl`}
                     disabled={disabled}
@@ -194,8 +228,7 @@ export function ChannelTypeSettings({
                     variant="ghost"
                   >
                     <span className="text-right">
-                      {selectedTimeoutOption?.label ??
-                        `Current (${formatTtlDuration(ttlSeconds)})`}
+                      {selectedTimeoutOption?.label ?? currentTimeoutLabel}
                     </span>
                     <ChevronDown className="size-4 shrink-0 text-muted-foreground/70" />
                   </Button>

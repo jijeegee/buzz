@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 
 /** Retryable terminal failure for a channel history load with no cached rows. */
@@ -6,6 +7,7 @@ export function MessageTimelineErrorCard({
 }: {
   onRetry?: () => void;
 }) {
+  const t = useT();
   return (
     <div
       className="mt-auto rounded-2xl border border-dashed border-destructive/50 bg-destructive/5 px-6 py-10 text-center shadow-xs"
@@ -13,10 +15,10 @@ export function MessageTimelineErrorCard({
       role="alert"
     >
       <p className="text-base font-semibold tracking-tight">
-        Couldn&apos;t load messages
+        {t("messages.timeline.loadFailedTitle")}
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
-        The group history didn&apos;t load. Check your connection and try again.
+        {t("messages.timeline.loadFailedBody")}
       </p>
       {onRetry ? (
         <Button
@@ -27,7 +29,7 @@ export function MessageTimelineErrorCard({
           type="button"
           variant="outline"
         >
-          Retry
+          {t("common.retry")}
         </Button>
       ) : null}
     </div>

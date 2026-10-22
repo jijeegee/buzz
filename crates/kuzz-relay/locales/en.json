@@ -1,0 +1,78 @@
+{
+  "moderation.reportResolved.resolved": "Thanks for your report to {community}. Your report was reviewed and acted on.",
+  "@moderation.reportResolved.resolved": {
+    "description": "Automatic chat message to someone who reported a message, after moderators acted on it. {community} is the community's web address."
+  },
+  "moderation.reportResolved.dismissed": "Thanks for your report to {community}. Your report was reviewed; no action was taken.",
+  "@moderation.reportResolved.dismissed": {
+    "description": "Automatic chat message to someone who reported a message, after moderators decided no action was needed. {community} is the community's web address."
+  },
+  "moderation.reportResolved.escalated": "Thanks for your report to {community}. Your report was escalated for further review.",
+  "@moderation.reportResolved.escalated": {
+    "description": "Automatic chat message to someone who reported a message, after moderators passed it on for more review. {community} is the community's web address."
+  },
+  "moderation.reportResolved.other": "Thanks for your report to {community}. Your report was reviewed.",
+  "@moderation.reportResolved.other": {
+    "description": "Automatic chat message to someone who reported a message, after review with an unusual outcome. {community} is the community's web address."
+  },
+  "moderation.contentActioned": "A moderator in {community} took action on your content.",
+  "@moderation.contentActioned": {
+    "description": "Automatic chat message to someone whose message moderators removed or hid. {community} is the community's web address. A line with the reason follows."
+  },
+  "moderation.banned": "You have been banned from {community}.",
+  "@moderation.banned": {
+    "description": "Automatic chat message to someone moderators banned. {community} is the community's web address. A line with the reason follows."
+  },
+  "moderation.timedOut": "You have been timed out in {community} until {until}.",
+  "@moderation.timedOut": {
+    "description": "Automatic chat message to someone moderators blocked from posting for a while. {until} is a date and time like 2026-09-01 12:00 UTC. A line with the reason follows."
+  },
+  "moderation.timedOutNoEnd": "You have been timed out in {community}.",
+  "@moderation.timedOutNoEnd": {
+    "description": "Automatic chat message to someone moderators blocked from posting for a while, end time unknown. A line with the reason follows."
+  },
+  "moderation.reason": "Reason: {reason}",
+  "@moderation.reason": {
+    "description": "Line under a moderation message; {reason} is the moderators' own text, not translated."
+  },
+  "groups.landing.title": "{name} on Kuzz",
+  "@groups.landing.title": {
+    "description": "Browser tab title of the web page a shared group link opens. {name} is the group name."
+  },
+  "groups.landing.members": "{count, plural, one {# member} other {# members}}",
+  "@groups.landing.members": {
+    "description": "Web page for a shared group link: member count under the group name. Short."
+  },
+  "groups.landing.open": "Open in Kuzz",
+  "@groups.landing.open": {
+    "description": "Web page for a shared group link: big button that opens the group in the app. Short."
+  },
+  "groups.landing.noApp": "Don't have Kuzz yet? Ask the person who shared this link.",
+  "@groups.landing.noApp": {
+    "description": "Web page for a shared group link: small grey hint under the button."
+  },
+  "groups.landing.notFoundTitle": "Link not found",
+  "@groups.landing.notFoundTitle": {
+    "description": "Browser tab title when a shared group link no longer works. Short."
+  },
+  "groups.landing.notFoundHeading": "This link doesn't work",
+  "@groups.landing.notFoundHeading": {
+    "description": "Web page heading when a shared group link no longer works."
+  },
+  "groups.landing.notFoundHint": "It may have been reset or the group may no longer exist. Ask the person who shared it for a new link.",
+  "@groups.landing.notFoundHint": {
+    "description": "Web page hint under 'This link doesn't work'."
+  },
+  "groups.landing.rateLimitedTitle": "Try again soon",
+  "@groups.landing.rateLimitedTitle": {
+    "description": "Browser tab title when someone opened group links too many times in a short time. Short."
+  },
+  "groups.landing.rateLimitedHeading": "Too many requests",
+  "@groups.landing.rateLimitedHeading": {
+    "description": "Web page heading when someone opened group links too many times in a short time. Short."
+  },
+  "groups.landing.rateLimitedHint": "Try again in a minute.",
+  "@groups.landing.rateLimitedHint": {
+    "description": "Web page hint under 'Too many requests'. Short."
+  }
+}

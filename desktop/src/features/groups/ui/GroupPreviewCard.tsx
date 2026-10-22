@@ -1,4 +1,5 @@
 import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { memberCountLabel } from "../invitationsState";
 
@@ -27,6 +28,7 @@ export function GroupPreviewCard({
   onJoin: () => void;
   onOpen: () => void;
 }) {
+  const t = useT();
   const description = group.isPrivate ? null : group.description?.trim();
   return (
     <div
@@ -64,7 +66,7 @@ export function GroupPreviewCard({
           onClick={onOpen}
           type="button"
         >
-          Open
+          {t("groups.preview.open")}
         </Button>
       ) : (
         <Button
@@ -74,7 +76,7 @@ export function GroupPreviewCard({
           onClick={onJoin}
           type="button"
         >
-          {isJoining ? "Joining..." : "Join group"}
+          {isJoining ? t("groups.preview.joining") : t("groups.preview.join")}
         </Button>
       )}
       {error ? (

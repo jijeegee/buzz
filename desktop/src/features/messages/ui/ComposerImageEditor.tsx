@@ -1,3 +1,4 @@
+import { type MessageKey, useT } from "@/shared/i18n";
 import * as React from "react";
 import { Loader2, Redo2, Undo2 } from "lucide-react";
 
@@ -16,14 +17,34 @@ type EditorStroke = {
   width: number;
 };
 
-const PEN_COLORS = [
-  { label: "Red", value: "#ef4444" },
-  { label: "Yellow", value: "#f59e0b" },
-  { label: "Green", value: "#22c55e" },
-  { label: "Blue", value: "#3b82f6" },
-  { label: "White", value: "#ffffff" },
-  { label: "Black", value: "#111111" },
-] as const;
+const PEN_COLORS: readonly {
+  label: string;
+  labelKey: MessageKey;
+  value: string;
+}[] = [
+  { label: "Red", labelKey: "messages.imageEditor.penRed", value: "#ef4444" },
+  {
+    label: "Yellow",
+    labelKey: "messages.imageEditor.penYellow",
+    value: "#f59e0b",
+  },
+  {
+    label: "Green",
+    labelKey: "messages.imageEditor.penGreen",
+    value: "#22c55e",
+  },
+  { label: "Blue", labelKey: "messages.imageEditor.penBlue", value: "#3b82f6" },
+  {
+    label: "White",
+    labelKey: "messages.imageEditor.penWhite",
+    value: "#ffffff",
+  },
+  {
+    label: "Black",
+    labelKey: "messages.imageEditor.penBlack",
+    value: "#111111",
+  },
+];
 
 /** Pen stroke width range, in CSS pixels: five whole-pixel slider stops. */
 const PEN_WIDTH_MIN_CSS = 4;
@@ -140,6 +161,7 @@ export function ComposerImageEditor({
   onSave,
   onSavingChange,
 }: ComposerImageEditorProps) {
+  const t = useT();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const activeStrokeRef = React.useRef<EditorStroke | null>(null);
   // Committed strokes plus the undone strokes available for redo. Kept in
@@ -302,10 +324,10 @@ export function ComposerImageEditor({
       await onSave(bytes);
       // On success the parent closes the lightbox and unmounts this component.
     } catch {
-      setSaveError("Could not save the drawing. Please try again.");
+      setSaveError(t("messages.imageEditor.saveFailed"));
       setSavingState(false);
     }
-  }, [onSave, saving, setSavingState, sourceType, sourceUrl, strokes]);
+  }, [onSave, saving, setSavingState, sourceType, sourceUrl, strokes, t]);
 
   const hasStrokes = strokes.length > 0;
 
@@ -344,7 +366,7 @@ export function ComposerImageEditor({
         {naturalSize ? (
           <>
             <canvas
-              aria-label="Drawing canvas"
+              aria-label={t("messages.imageEditor.canvas")}
               className="absolute inset-0 h-full w-full cursor-none touch-none rounded-lg"
               data-testid="composer-image-editor-canvas"
               height={naturalSize.height}
@@ -380,7 +402,7 @@ export function ComposerImageEditor({
           data-testid="composer-image-editor-toolbar"
         >
           <input
-            aria-label="Stroke width"
+            aria-label={t("messages.imageEditor.strokeWidth")}
             className="h-1 w-12 cursor-pointer appearance-none rounded-full bg-white/25 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
             max={PEN_WIDTH_MAX_CSS}
             min={PEN_WIDTH_MIN_CSS}
@@ -393,7 +415,7 @@ export function ComposerImageEditor({
           <div className="flex items-center gap-1.5">
             {PEN_COLORS.map((color) => (
               <button
-                aria-label={`${color.label} pen`}
+                aria-label={t(color.labelKey)}
                 aria-pressed={activeColor === color.value}
                 className={cn(
                   "flex h-5 w-5 items-center justify-center rounded-full transition-transform",
@@ -421,7 +443,7 @@ export function ComposerImageEditor({
           <Tooltip disableHoverableContent>
             <TooltipTrigger asChild>
               <button
-                aria-label="Undo last stroke"
+                aria-label={t("messages.imageEditor.undo")}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-colors hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent"
                 disabled={!hasStrokes}
                 onClick={undo}
@@ -430,12 +452,14 @@ export function ComposerImageEditor({
                 <Undo2 className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Undo (⌘Z)</TooltipContent>
+            <TooltipContent>
+              {t("messages.imageEditor.undoTooltip")}
+            </TooltipContent>
           </Tooltip>
           <Tooltip disableHoverableContent>
             <TooltipTrigger asChild>
               <button
-                aria-label="Redo stroke"
+                aria-label={t("messages.imageEditor.redo")}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-white transition-colors hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent"
                 disabled={history.undone.length === 0}
                 onClick={redo}
@@ -444,7 +468,9 @@ export function ComposerImageEditor({
                 <Redo2 className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Redo (⇧⌘Z)</TooltipContent>
+            <TooltipContent>
+              {t("messages.imageEditor.redoTooltip")}
+            </TooltipContent>
           </Tooltip>
         </div>
 
@@ -456,7 +482,7 @@ export function ComposerImageEditor({
           type="button"
           variant="ghost"
         >
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button
           data-testid="composer-image-editor-save"
@@ -466,7 +492,7 @@ export function ComposerImageEditor({
           type="button"
         >
           {saving ? <Loader2 className="animate-spin" /> : null}
-          Save
+          {t("common.save")}
         </Button>
       </div>
 

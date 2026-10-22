@@ -1,5 +1,6 @@
 import { relaunch } from "@tauri-apps/plugin-process";
 
+import { useT } from "@/shared/i18n";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
@@ -13,6 +14,7 @@ export function RecoveryScreen({
   title: string;
   body: string;
 }) {
+  const t = useT();
   const systemColorScheme = useSystemColorScheme();
 
   return (
@@ -33,7 +35,7 @@ export function RecoveryScreen({
           }}
           type="button"
         >
-          Relaunch Kuzz
+          {t("onboarding.recovery.relaunch")}
         </Button>
       </div>
     </div>

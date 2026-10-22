@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { Bot, Download, Loader2, Users } from "lucide-react";
 
@@ -67,6 +68,7 @@ export function AgentSnapshotCard({
   thumb,
   onImport,
 }: AgentSnapshotCardProps) {
+  const t = useT();
   const [importState, setImportState] = React.useState<ImportState>({
     phase: "idle",
   });
@@ -92,7 +94,9 @@ export function AgentSnapshotCard({
         message:
           err instanceof Error
             ? err.message
-            : `Couldn’t load this ${snapshotKind}. Try again.`,
+            : snapshotKind === "team"
+              ? t("ui.agentSnapshot.loadTeamFailed")
+              : t("ui.agentSnapshot.loadAgentFailed"),
       });
     } finally {
       inFlightRef.current = false;
@@ -116,7 +120,10 @@ export function AgentSnapshotCard({
         : size < 1024 * 1024
           ? `${(size / 1024).toFixed(1)} KB`
           : `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  const metadata = [sharedBy ? `Shared by ${sharedBy}` : null, formattedSize]
+  const metadata = [
+    sharedBy ? t("ui.agentSnapshot.sharedBy", { name: sharedBy }) : null,
+    formattedSize,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -177,16 +184,18 @@ export function AgentSnapshotCard({
         ) : null}
       </AttachmentContent>
       <AttachmentActions
-        aria-label={`Actions for ${displayName}`}
+        aria-label={t("ui.agentSnapshot.actionsLabel", { name: displayName })}
         className="ml-4 gap-2"
         role="group"
       >
         <AttachmentAction
-          aria-label={`Download ${displayName}`}
+          aria-label={t("ui.agentSnapshot.downloadLabel", {
+            name: displayName,
+          })}
           data-testid="agent-snapshot-card-download"
           onClick={handleDownload}
           size="icon"
-          title="Download"
+          title={t("ui.agentSnapshot.download")}
           type="button"
           variant="ghost"
         >
@@ -203,10 +212,10 @@ export function AgentSnapshotCard({
         >
           {isFetching ? <Loader2 className="animate-spin" /> : <SnapshotIcon />}
           {isFetching
-            ? "Loading…"
+            ? t("common.loading")
             : snapshotKind === "team"
-              ? "Add team"
-              : "Add agent"}
+              ? t("ui.agentSnapshot.addTeam")
+              : t("ui.agentSnapshot.addAgent")}
         </AttachmentAction>
       </AttachmentActions>
     </Attachment>

@@ -27,6 +27,7 @@ import { Button } from "@/shared/ui/button";
 import { ProjectChannelManagement } from "./ProjectChannelManagement";
 import { ProjectRepositoryManagement } from "./ProjectRepositoryManagement";
 import { SECTION_ACTION_VISIBILITY_CLASS } from "@/features/sidebar/ui/sidebarSectionStyles";
+import { useT } from "@/shared/i18n";
 
 const PROJECT_HOME_SIDEBAR_ROW_CLASS =
   "h-8 w-full justify-start gap-2 rounded-md px-2 py-1.5 text-left text-sm font-normal text-sidebar-foreground/80 transition-[background-color,color] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50";
@@ -202,10 +203,11 @@ export function ProjectHomeContextPanel({
   project: Project;
   projects: Project[];
 }) {
+  const t = useT();
   const firstRepository = project.repositories[0] ?? null;
   const addRepositoryTitle = firstRepository
     ? undefined
-    : "Add a repository to this project";
+    : t("projects.homeContext.addRepositoryHint");
   const openWorkspace = (tab: EntityLinkTab) => {
     if (firstRepository) {
       onOpenWorkspace(firstRepository.id, tab);
@@ -270,7 +272,7 @@ export function ProjectHomeContextPanel({
           testId="project-home-context-tasks"
           title={addRepositoryTitle}
         >
-          Tasks
+          {t("projects.sectionTitle.tasks")}
         </ContextNavButton>
         <ContextNavButton
           count={presentContextCount(activity?.prCount)}
@@ -281,7 +283,7 @@ export function ProjectHomeContextPanel({
           testId="project-home-context-reviews"
           title={addRepositoryTitle}
         >
-          Reviews
+          {t("projects.sectionTitle.reviews")}
         </ContextNavButton>
         <ContextNavButton
           count={presentContextCount(activity?.commitCount)}
@@ -292,7 +294,7 @@ export function ProjectHomeContextPanel({
           testId="project-home-context-commits"
           title={addRepositoryTitle}
         >
-          Commits
+          {t("projects.homeContext.commits")}
         </ContextNavButton>
         <ContextNavButton
           count={presentContextCount(snapshotQuery.data?.files.length)}
@@ -303,7 +305,7 @@ export function ProjectHomeContextPanel({
           testId="project-home-context-files"
           title={addRepositoryTitle}
         >
-          Files
+          {t("projects.homeContext.files")}
         </ContextNavButton>
         <ContextNavButton
           count={presentContextCount(peopleCount)}
@@ -317,7 +319,7 @@ export function ProjectHomeContextPanel({
           testId="project-home-context-people"
           title={addRepositoryTitle}
         >
-          People
+          {t("projects.homeContext.people")}
         </ContextNavButton>
       </ContextSection>
       <ContextSection
@@ -329,7 +331,7 @@ export function ProjectHomeContextPanel({
           />
         }
         testId="project-home-context-channel"
-        title="Groups"
+        title={t("projects.sectionTitle.groups")}
       >
         {listedChannels.length > 0 ? (
           listedChannels.map((binding) => {
@@ -356,7 +358,9 @@ export function ProjectHomeContextPanel({
           <p
             className={`${PROJECT_HOME_SIDEBAR_ROW_CLASS} pointer-events-none flex items-center`}
           >
-            <ContextRowContent icon={<Users />}>Unavailable</ContextRowContent>
+            <ContextRowContent icon={<Users />}>
+              {t("projects.homeContext.unavailable")}
+            </ContextRowContent>
           </p>
         )}
       </ContextSection>
@@ -372,7 +376,7 @@ export function ProjectHomeContextPanel({
           />
         }
         testId="project-home-context-codebase"
-        title="Codebase"
+        title={t("projects.homeContext.codebase")}
       >
         {project.repositories.length > 0 ? (
           project.repositories.map((repository) => (
@@ -387,7 +391,7 @@ export function ProjectHomeContextPanel({
           ))
         ) : (
           <p className="px-2 py-1 text-sm text-sidebar-foreground/60">
-            None yet
+            {t("projects.homeContext.noneYet")}
           </p>
         )}
       </ContextSection>

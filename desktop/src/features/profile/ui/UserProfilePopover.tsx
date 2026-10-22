@@ -29,6 +29,7 @@ import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import { ProfileAvatarWithStatus } from "@/features/profile/ui/ProfileAvatarWithStatus";
 import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -269,6 +270,7 @@ function UserProfilePopoverBody({
   role?: string;
   setOpen: (open: boolean) => void;
 }) {
+  const t = useT();
   const profileQuery = useUserProfileQuery(pubkey);
   const usersBatchQuery = useUsersBatchQuery([pubkey]);
   const relayAgentsQuery = useRelayAgentsQuery();
@@ -430,7 +432,7 @@ function UserProfilePopoverBody({
             className="mt-0.5 truncate text-xs leading-4 text-muted-foreground"
             data-testid={`user-profile-popover-owner-${pubkey}`}
           >
-            managed by {ownerLabel}
+            {t("profile.popover.managedBy", { owner: ownerLabel })}
           </p>
         ) : null}
         {profileSubheader ? (
@@ -492,7 +494,11 @@ function UserProfilePopoverBody({
               </InfoBadge>
             ) : null}
             {managedAgent?.acpCommand ? (
-              <InfoBadge>ACP: {managedAgent.acpCommand}</InfoBadge>
+              <InfoBadge>
+                {t("profile.popover.acpCommand", {
+                  command: managedAgent.acpCommand,
+                })}
+              </InfoBadge>
             ) : null}
           </div>
         ) : null}
@@ -520,7 +526,7 @@ function UserProfilePopoverBody({
             type="button"
           >
             <Activity className="h-4 w-4 text-muted-foreground" />
-            View activity log
+            {t("profile.popover.viewActivityLog")}
           </button>
         ) : null}
 
@@ -547,7 +553,7 @@ function UserProfilePopoverBody({
               <div className="flex gap-2">
                 {showHumanProfileActions ? (
                   <Button
-                    aria-label="Wave"
+                    aria-label={t("profile.actions.wave")}
                     className="kuzz-wave-hover-trigger shrink-0 px-3 transition-transform duration-100 ease-out motion-reduce:transition-none motion-safe:active:scale-[0.97]"
                     data-testid={`user-profile-popover-wave-${pubkey}`}
                     disabled={pendingAction !== null || isOpeningDm}
@@ -593,7 +599,7 @@ function UserProfilePopoverBody({
                     ) : (
                       <MessageSquare />
                     )}
-                    Message
+                    {t("profile.actions.message")}
                   </Button>
                 ) : null}
                 {showHuddleAction ? (
@@ -618,7 +624,7 @@ function UserProfilePopoverBody({
                     ) : (
                       <Headphones />
                     )}
-                    Huddle
+                    {t("profile.actions.huddle")}
                   </Button>
                 ) : null}
               </div>
@@ -637,11 +643,15 @@ function PopoverWorkingBadge({
   name: string;
   anchorAt: number;
 }) {
+  const t = useT();
   const now = useNow(1000);
 
   return (
     <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary motion-safe:animate-pulse">
-      Working in {name} · {formatElapsed(now - anchorAt)}
+      {t("profile.popover.workingIn", {
+        name,
+        elapsed: formatElapsed(now - anchorAt),
+      })}
     </span>
   );
 }

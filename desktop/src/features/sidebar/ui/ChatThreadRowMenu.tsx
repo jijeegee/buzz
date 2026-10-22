@@ -18,6 +18,7 @@ import {
   ContextMenuIconSlot,
   deferMenuAction,
 } from "@/features/sidebar/ui/sidebarMenuHelpers";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { ContextMenuItem } from "@/shared/ui/context-menu";
 
 /** What a thread row's menu does; the same actions as the thread header. */
@@ -31,16 +32,18 @@ export type ChatThreadRowActions = {
   setClosed: (channelId: string, rootId: string, closed: boolean) => void;
 };
 
-const ITEMS: Record<ThreadRowMenuAction, { icon: LucideIcon; label: string }> =
-  {
-    pin: { icon: Pin, label: "Pin" },
-    unpin: { icon: PinOff, label: "Unpin" },
-    "mark-read": { icon: CheckCircle2, label: "Mark as read" },
-    "mark-unread": { icon: CircleDot, label: "Mark as unread" },
-    unfollow: { icon: BellOff, label: "Unfollow thread" },
-    close: { icon: CircleCheck, label: "Close thread" },
-    reopen: { icon: RotateCcw, label: "Reopen thread" },
-  };
+const ITEMS: Record<
+  ThreadRowMenuAction,
+  { icon: LucideIcon; label: MessageKey }
+> = {
+  pin: { icon: Pin, label: "sidebar.menu.pin" },
+  unpin: { icon: PinOff, label: "sidebar.menu.unpin" },
+  "mark-read": { icon: CheckCircle2, label: "sidebar.menu.markRead" },
+  "mark-unread": { icon: CircleDot, label: "sidebar.menu.markUnread" },
+  unfollow: { icon: BellOff, label: "sidebar.threadMenu.unfollow" },
+  close: { icon: CircleCheck, label: "sidebar.threadMenu.close" },
+  reopen: { icon: RotateCcw, label: "sidebar.threadMenu.reopen" },
+};
 
 function runAction(
   action: ThreadRowMenuAction,
@@ -79,6 +82,7 @@ export function ChatThreadRowMenuItems({
   row: ChatListRow;
   rootId: string;
 }) {
+  const t = useT();
   return threadRowMenuActions({
     hasUnread,
     isClosed: row.closed,
@@ -96,7 +100,7 @@ export function ChatThreadRowMenuItems({
         <ContextMenuIconSlot>
           <Icon aria-hidden="true" className="h-4 w-4" />
         </ContextMenuIconSlot>
-        <span>{label}</span>
+        <span>{t(label)}</span>
       </ContextMenuItem>
     );
   });

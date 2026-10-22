@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
 import { ArrowUp, AtSign, Square, X } from "lucide-react";
 import {
@@ -79,9 +80,10 @@ function AddressedAgentAvatar({
 }
 
 function RemainingAgentCount({ count }: { count: number }) {
+  const t = useT();
   return count > 0 ? (
     <span
-      aria-label={`${count} more addressed ${count === 1 ? "agent" : "agents"}`}
+      aria-label={t("messages.address.moreAgents", { count })}
       className="flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-3xs font-semibold text-muted-foreground ring-1 ring-border/70"
       role="img"
     >
@@ -150,6 +152,7 @@ export function ComposerMentionButton({
   onRemove: (pubkey: string) => void;
   showAgents: boolean;
 }) {
+  const t = useT();
   const visibleAgents = showAgents ? agents.slice(0, VISIBLE_AGENT_LIMIT) : [];
   const hiddenCount = showAgents ? agents.length - visibleAgents.length : 0;
   const hasAgents = visibleAgents.length > 0;
@@ -181,7 +184,11 @@ export function ComposerMentionButton({
           <Tooltip disableHoverableContent>
             <TooltipTrigger asChild>
               <button
-                aria-label={hasAgents ? "Manage mentions" : "Mention someone"}
+                aria-label={
+                  hasAgents
+                    ? t("messages.address.manageMentions")
+                    : t("messages.address.mentionSomeone")
+                }
                 className={cn(
                   "flex h-8 items-center justify-center rounded-lg focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
                   showActiveChrome
@@ -202,7 +209,9 @@ export function ComposerMentionButton({
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              {hasAgents ? "Manage mentions" : "Mention someone"}
+              {hasAgents
+                ? t("messages.address.manageMentions")
+                : t("messages.address.mentionSomeone")}
             </TooltipContent>
           </Tooltip>
           <AnimatePresence
@@ -229,7 +238,9 @@ export function ComposerMentionButton({
                     <Tooltip disableHoverableContent key={agent.pubkey}>
                       <TooltipTrigger asChild>
                         <motion.button
-                          aria-label={`Don't automatically mention ${agent.displayName} here`}
+                          aria-label={t("messages.address.stopAutoMention", {
+                            name: agent.displayName,
+                          })}
                           animate={{ opacity: 1, scale: 1 }}
                           className="group/address relative rounded-full focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                           data-testid={`composer-address-lock-remove-${agent.pubkey}`}
@@ -270,7 +281,9 @@ export function ComposerMentionButton({
                         </motion.button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        Don't automatically mention {agent.displayName} here{" "}
+                        {t("messages.address.stopAutoMention", {
+                          name: agent.displayName,
+                        })}{" "}
                         <AgentManagementMarker pubkey={agent.pubkey} />
                       </TooltipContent>
                     </Tooltip>
@@ -304,7 +317,7 @@ export function ComposerMentionButton({
             onMouseDown={(event) => event.preventDefault()}
             type="button"
           >
-            Turn off
+            {t("messages.address.turnOff")}
           </button>
         </PopoverContent>
       ) : null}
@@ -321,15 +334,16 @@ export function ComposerSendButton({
   onFinishVoiceNote?: () => void;
   sendDisabled: boolean;
 }) {
+  const t = useT();
   const isFinishingVoiceNote = onFinishVoiceNote != null;
   return (
     <button
       aria-label={
         isFinishingVoiceNote
-          ? "Finish voice note"
+          ? t("messages.voiceNote.finish")
           : isSending
-            ? "Sending"
-            : "Send message"
+            ? t("messages.send.sending")
+            : t("messages.send.sendMessage")
       }
       className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
       data-testid={isFinishingVoiceNote ? "finish-voice-note" : "send-message"}

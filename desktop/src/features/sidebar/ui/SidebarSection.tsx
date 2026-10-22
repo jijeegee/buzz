@@ -22,6 +22,7 @@ import {
   scaleProfileAvatarStatusGeometry,
 } from "@/features/profile/ui/ProfileAvatarWithStatus";
 import type { Channel, PresenceStatus } from "@/shared/api/types";
+import { t as translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { useNow } from "@/shared/lib/useNow";
 import {
@@ -77,6 +78,7 @@ function UnreadCountBadge({
   className?: string;
   count: number;
 }) {
+  const t = useT();
   return (
     <span
       className={cn(
@@ -88,7 +90,7 @@ function UnreadCountBadge({
       {formatUnreadCount(count)}
       <span className="sr-only">
         {" "}
-        unread notification{count === 1 ? "" : "s"}
+        {t("sidebar.section.unreadNotificationsSr", { count })}
       </span>
     </span>
   );
@@ -101,18 +103,15 @@ function UnreadDotBadge({
   channelName: string;
   className?: string;
 }) {
+  const t = useT();
   return (
     <span
       className={cn("h-2 w-2 shrink-0 rounded-full bg-primary", className)}
       data-testid={`channel-unread-dot-${channelName}`}
     >
-      <span className="sr-only">unread</span>
+      <span className="sr-only">{t("sidebar.unreadSr")}</span>
     </span>
   );
-}
-
-function formatAgentCount(count: number) {
-  return `${count} ${count === 1 ? "agent" : "agents"}`;
 }
 
 export function formatWorkingTooltip(
@@ -121,15 +120,18 @@ export function formatWorkingTooltip(
   const leadName = summary.agentNames?.[0];
 
   if (!leadName) {
-    return `${formatAgentCount(summary.agentCount)} working`;
+    return translate("sidebar.working.agents", { count: summary.agentCount });
   }
 
   const remainingAgentCount = summary.agentCount - 1;
   if (remainingAgentCount <= 0) {
-    return `${leadName} working`;
+    return translate("sidebar.working.lead", { name: leadName });
   }
 
-  return `${leadName} and ${formatAgentCount(remainingAgentCount)} working`;
+  return translate("sidebar.working.leadAndOthers", {
+    count: remainingAgentCount,
+    name: leadName,
+  });
 }
 
 export function ChannelWorkingBadge({
@@ -331,6 +333,7 @@ export function ChannelMenuButton({
   unreadCount?: number;
   onSelectChannel: (channelId: string) => void;
 }) {
+  const t = useT();
   const resolvedLabel = label ?? channel.name;
   const ephemeralDisplay = getEphemeralChannelDisplay(channel);
   const { hasSidebarUnreadProjections, unreadThreadChannelIds } = useAppShell();
@@ -408,12 +411,12 @@ export function ChannelMenuButton({
               data-testid={`chat-pinned-${channel.id}`}
             >
               <Pin aria-hidden="true" className="h-3 w-3" />
-              <span className="sr-only">Pinned for you</span>
+              <span className="sr-only">{t("sidebar.pinnedForYouSr")}</span>
             </span>
           ) : null}
           {isMuted ? (
             <BellOff
-              aria-label="Muted"
+              aria-label={t("sidebar.section.mutedAria")}
               className="h-3 w-3 shrink-0 text-sidebar-foreground/40"
             />
           ) : null}
@@ -457,7 +460,7 @@ export function ChannelMenuButton({
       {isPinned ? (
         <span className="shrink-0" data-testid={`chat-pinned-${channel.id}`}>
           <Pin aria-hidden="true" className="h-3 w-3" />
-          <span className="sr-only">Pinned for you</span>
+          <span className="sr-only">{t("sidebar.pinnedForYouSr")}</span>
         </span>
       ) : null}
       <span
@@ -602,6 +605,7 @@ export function SidebarSection({
   onDeleteChannel?: (channel: Channel) => void;
   onLeaveChannel?: (channel: Channel) => void;
 }) {
+  const t = useT();
   const sectionRows = rows ?? items.map(channelRow);
   if (sectionRows.length === 0 && !action && !emptyState) {
     return null;
@@ -697,7 +701,7 @@ export function SidebarSection({
                     channel.channelType === "dm" &&
                     onHideDm ? (
                       <button
-                        aria-label="Close direct message"
+                        aria-label={t("sidebar.section.closeDm")}
                         className={cn(
                           "absolute right-1 top-1/2 z-10 -translate-y-1/2 after:absolute after:-inset-2 after:md:hidden group-data-[collapsible=icon]:hidden",
                           SIDEBAR_ROW_ICON_ACTION_CLASS,

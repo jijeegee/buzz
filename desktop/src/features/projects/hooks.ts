@@ -73,6 +73,7 @@ import {
   PROJECT_QUERY_STRUCTURAL_SHARING,
 } from "./projectSnapshot";
 import { projectMatchesRouteId } from "./projectRoutes";
+import { t } from "@/shared/i18n";
 
 export { fetchProjects } from "./projectFetch";
 export { projectsQueryKey };
@@ -306,16 +307,16 @@ async function createProjectPullRequestComment({
 }): Promise<void> {
   const body = content.trim();
   if (!body) {
-    throw new Error("Comment cannot be empty.");
+    throw new Error(t("projects.hooks.commentEmpty"));
   }
   const normalizedAnchor = anchor
     ? normalizeProjectPullRequestCommentAnchor(anchor)
     : null;
   if (anchor && !normalizedAnchor) {
-    throw new Error("Comment location is invalid.");
+    throw new Error(t("projects.hooks.commentLocationInvalid"));
   }
   if ((normalizedAnchor || decision) && !pullRequest.commit) {
-    throw new Error("A review commit is required for review comments.");
+    throw new Error(t("projects.hooks.reviewCommitRequired"));
   }
 
   const recipients = new Set([
@@ -362,8 +363,8 @@ async function createProjectPullRequestComment({
 
   await relayClient.publishEvent(
     event,
-    "Timed out posting review comment.",
-    "Failed to post review comment.",
+    t("projects.hooks.reviewCommentTimedOut"),
+    t("projects.hooks.reviewCommentFailed"),
   );
 }
 
@@ -382,7 +383,7 @@ async function createProjectIssueComment({
 }): Promise<void> {
   const body = content.trim();
   if (!body) {
-    throw new Error("Comment cannot be empty.");
+    throw new Error(t("projects.hooks.commentEmpty"));
   }
 
   const recipients = new Set([
@@ -412,8 +413,8 @@ async function createProjectIssueComment({
 
   await relayClient.publishEvent(
     event,
-    "Timed out posting task comment.",
-    "Failed to post task comment.",
+    t("projects.hooks.taskCommentTimedOut"),
+    t("projects.hooks.taskCommentFailed"),
   );
 }
 
@@ -665,7 +666,7 @@ export function useRepoStateQuery(project: Repository | null | undefined) {
     enabled: Boolean(project),
     queryKey: ["project", project?.id ?? "none", "repo-state"],
     queryFn: () => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return fetchRepoState(project);
     },
     staleTime: 30_000,
@@ -694,7 +695,7 @@ export function useProjectRepoSnapshotQuery(
       tag?.commit ?? "no-tag-commit",
     ],
     queryFn: () => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return fetchProjectRepoSnapshot(
         project,
         selectedBranch,
@@ -726,7 +727,7 @@ export function useProjectRepoDiffQuery(
       pullRequest?.commit ?? "none",
     ],
     queryFn: () => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return fetchProjectRepoDiff(project, selectedBranch, pullRequest);
     },
     staleTime: 30_000,
@@ -755,7 +756,7 @@ export function useProjectLocalRepoDiffQuery(
       pullRequest?.commit ?? "none",
     ],
     queryFn: () => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return fetchProjectLocalRepoDiff(
         project,
         reposDir,
@@ -785,7 +786,7 @@ export function useProjectLocalRepoSnapshotQuery(
       selectedBranch ?? "default",
     ],
     queryFn: () => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return fetchProjectLocalRepoSnapshot(project, reposDir, selectedBranch);
     },
     staleTime: 10_000,
@@ -808,7 +809,7 @@ export function useProjectIssuesQuery(project: Repository | null | undefined) {
     enabled: Boolean(project),
     queryKey: ["project", project?.id ?? "none", "issues"],
     queryFn: () => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return fetchProjectIssues(project);
     },
     staleTime: 30_000,
@@ -822,7 +823,7 @@ export function useProjectPullRequestsQuery(
     enabled: Boolean(project),
     queryKey: ["project", project?.id ?? "none", "pull-requests"],
     queryFn: () => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return fetchProjectPullRequests(project);
     },
     staleTime: 30_000,
@@ -869,7 +870,7 @@ export function useCreateProjectIssueCommentMutation(
       mentionPubkeys?: string[];
       issue: ProjectIssue;
     }) => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return createProjectIssueComment({
         content,
         mediaTags,
@@ -913,7 +914,7 @@ export function useCreateProjectPullRequestCommentMutation(
       mentionPubkeys?: string[];
       pullRequest: ProjectPullRequest;
     }) => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return createProjectPullRequestComment({
         anchor,
         content,

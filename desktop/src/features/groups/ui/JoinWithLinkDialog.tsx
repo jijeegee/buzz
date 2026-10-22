@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { channelsQueryKey } from "@/features/channels/hooks";
 import { joinChannel } from "@/shared/api/tauri";
+import { t as translate, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -20,10 +21,6 @@ import {
 } from "../groupsApi";
 import { closeJoinWithLink, useJoinWithLinkState } from "../joinWithLinkStore";
 import { GroupPreviewCard } from "./GroupPreviewCard";
-
-export const JOIN_LINK_INVALID_TEXT = "This doesn't look like a group link.";
-export const JOIN_LINK_NOT_FOUND_TEXT = "No group found for this link.";
-const GENERIC_ERROR_TEXT = "Something went wrong. Try again.";
 
 type FoundGroup = {
   target: GroupLinkTarget;
@@ -47,15 +44,15 @@ async function lookUp(target: GroupLinkTarget): Promise<FoundGroup> {
 
 function lookupErrorText(error: unknown): string {
   return groupsErrorStatus(error) === 404
-    ? JOIN_LINK_NOT_FOUND_TEXT
-    : GENERIC_ERROR_TEXT;
+    ? translate("groups.joinWithLink.notFound")
+    : translate("groups.genericError");
 }
 
 function joinErrorText(error: unknown): string {
   const status = groupsErrorStatus(error);
-  if (status === 404) return JOIN_LINK_NOT_FOUND_TEXT;
-  if (status === 403) return "You can't join this group.";
-  return GENERIC_ERROR_TEXT;
+  if (status === 404) return translate("groups.joinWithLink.notFound");
+  if (status === 403) return translate("groups.joinWithLink.forbidden");
+  return translate("groups.genericError");
 }
 
 /**
@@ -68,6 +65,7 @@ export function JoinWithLinkDialog({
 }: {
   onOpenGroup: (channelId: string) => void;
 }) {
+  const t = useT();
   const { open, initialLink, requestId } = useJoinWithLinkState();
   const queryClient = useQueryClient();
   const [link, setLink] = React.useState("");
@@ -84,7 +82,7 @@ export function JoinWithLinkDialog({
     setJoinError(null);
     const target = parseGroupLink(text);
     if (!target) {
-      setError(JOIN_LINK_INVALID_TEXT);
+      setError(translate("groups.joinWithLink.invalid"));
       return;
     }
     setError(null);
@@ -152,7 +150,7 @@ export function JoinWithLinkDialog({
         data-testid="join-with-link-dialog"
       >
         <DialogHeader>
-          <DialogTitle>Join with link</DialogTitle>
+          <DialogTitle>{t("groups.joinWithLink.title")}</DialogTitle>
         </DialogHeader>
         <form
           className="flex items-center gap-2"
@@ -172,7 +170,7 @@ export function JoinWithLinkDialog({
               setLink(event.target.value);
               setError(null);
             }}
-            placeholder="Paste an invite link or @address"
+            placeholder={t("groups.joinWithLink.placeholder")}
             spellCheck={false}
             value={link}
           />
@@ -181,7 +179,9 @@ export function JoinWithLinkDialog({
             disabled={isLooking || link.trim().length === 0}
             type="submit"
           >
-            {isLooking ? "Looking..." : "Continue"}
+            {isLooking
+              ? t("groups.joinWithLink.looking")
+              : t("common.continue")}
           </Button>
         </form>
         {error ? (

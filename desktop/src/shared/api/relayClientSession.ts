@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { buildRelayAuthFrame } from "@/shared/api/relayAuthFrame";
 import { getRelayWsUrl, signRelayEvent } from "@/shared/api/tauri";
@@ -288,8 +289,8 @@ export class RelayClient {
 
     return this.publishEvent(
       event,
-      "Timed out while sending the message.",
-      "Failed to send the message.",
+      t("ui.message.sendTimedOut"),
+      t("ui.message.sendFailed"),
     );
   }
 
@@ -304,8 +305,8 @@ export class RelayClient {
 
     return this.publishEvent(
       event,
-      "Timed out while updating presence.",
-      "Failed to update presence.",
+      t("ui.presence.updateTimedOut"),
+      t("ui.presence.updateFailed"),
     );
   }
 
@@ -403,8 +404,8 @@ export class RelayClient {
     });
     return this.publishEvent(
       event,
-      "Timed out publishing user status",
-      "Failed to publish user status",
+      t("ui.userStatus.publishTimedOut"),
+      t("ui.userStatus.publishFailed"),
     );
   }
 

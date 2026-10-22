@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type * as React from "react";
 import type { ThreadPanelLayoutProps } from "@/features/channels/lib/threadPanelLayout";
 import {
@@ -22,7 +23,7 @@ import { Skeleton } from "@/shared/ui/skeleton";
 export function MessageThreadPanelHeader({
   headerLeading,
   headerActions,
-  headerTitle = "Thread",
+  headerTitle: headerTitleProp,
   headerTitleAccessory,
   headerTitleAriaLabel,
   isFocusMode,
@@ -43,13 +44,16 @@ export function MessageThreadPanelHeader({
   onHeaderTitleClick?: () => void;
   showBackButton?: boolean;
 }) {
+  const t = useT();
+  const headerTitle = headerTitleProp ?? t("messages.thread.title");
+  const openLabel = t("messages.thread.openTitle", { title: headerTitle });
   const title = onHeaderTitleClick ? (
     <button
-      aria-label={headerTitleAriaLabel ?? `Open ${headerTitle}`}
+      aria-label={headerTitleAriaLabel ?? openLabel}
       className="min-w-0 max-w-full truncate text-left hover:underline"
       data-testid="message-thread-open-channel"
       onClick={onHeaderTitleClick}
-      title={headerTitleAriaLabel ?? `Open ${headerTitle}`}
+      title={headerTitleAriaLabel ?? openLabel}
       type="button"
     >
       {headerTitle}
@@ -61,7 +65,7 @@ export function MessageThreadPanelHeader({
   return (
     <AuxiliaryPanelHeader backdrop>
       <AuxiliaryPanelHeaderGroup
-        backButtonAriaLabel="Back to conversation"
+        backButtonAriaLabel={t("messages.thread.backToConversation")}
         backButtonTestId="message-thread-back"
         leading={headerLeading}
         // Focus drawers fill width via isSinglePanelView but use the scrim to go

@@ -1,7 +1,9 @@
+import { t } from "@/shared/i18n";
+
 export const CRON_FIELD_DEFINITIONS = [
-  { label: "Minute", max: 59, min: 0 },
-  { label: "Hour", max: 23, min: 0 },
-  { label: "Day", max: 31, min: 1 },
+  { id: "minute", labelKey: "workflows.cron.minute", max: 59, min: 0 },
+  { id: "hour", labelKey: "workflows.cron.hour", max: 23, min: 0 },
+  { id: "day", labelKey: "workflows.cron.day", max: 31, min: 1 },
   {
     aliases: [
       "JAN",
@@ -17,13 +19,15 @@ export const CRON_FIELD_DEFINITIONS = [
       "NOV",
       "DEC",
     ],
-    label: "Month",
+    id: "month",
+    labelKey: "workflows.cron.month",
     max: 12,
     min: 1,
   },
   {
     aliases: ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"],
-    label: "Weekday",
+    id: "weekday",
+    labelKey: "workflows.cron.weekday",
     max: 7,
     min: 0,
   },
@@ -56,7 +60,7 @@ export function cronFieldsFromPaste(
   const values = pastedValue.trim().split(/\s+/);
   if (values.length !== CRON_FIELD_DEFINITIONS.length) {
     return {
-      error: `Paste a 5-field cron expression. Found ${values.length} field${values.length === 1 ? "" : "s"}.`,
+      error: t("workflows.cron.pasteFieldCount", { count: values.length }),
       ok: false,
     };
   }
@@ -64,6 +68,10 @@ export function cronFieldsFromPaste(
 }
 
 type CronFieldDefinition = (typeof CRON_FIELD_DEFINITIONS)[number];
+
+function fieldLabel(definition: CronFieldDefinition): string {
+  return t(definition.labelKey);
+}
 
 function atomError(
   atom: string,
@@ -77,12 +85,19 @@ function atomError(
     return null;
   }
   if (!/^\d+$/.test(atom)) {
-    return `${definition.label} contains “${atom}”, which is not a supported value.`;
+    return t("workflows.cron.unsupportedValue", {
+      field: fieldLabel(definition),
+      value: atom,
+    });
   }
 
   const value = Number(atom);
   if (value < definition.min || value > definition.max) {
-    return `${definition.label} must be between ${definition.min} and ${definition.max}.`;
+    return t("workflows.cron.outOfRange", {
+      field: fieldLabel(definition),
+      min: String(definition.min),
+      max: String(definition.max),
+    });
   }
   return null;
 }
@@ -93,13 +108,15 @@ function segmentError(
 ): string | null {
   const stepParts = segment.split("/");
   if (stepParts.length > 2 || stepParts.some((part) => !part)) {
-    return `${definition.label} has an invalid step.`;
+    return t("workflows.cron.invalidStep", { field: fieldLabel(definition) });
   }
 
   const [base, step] = stepParts;
   if (step !== undefined) {
     if (!/^\d+$/.test(step) || Number(step) < 1) {
-      return `${definition.label} step must be a positive whole number.`;
+      return t("workflows.cron.stepNotPositive", {
+        field: fieldLabel(definition),
+      });
     }
   }
 
@@ -107,7 +124,7 @@ function segmentError(
 
   const rangeParts = base.split("-");
   if (rangeParts.length > 2 || rangeParts.some((part) => !part)) {
-    return `${definition.label} has an invalid range.`;
+    return t("workflows.cron.invalidRange", { field: fieldLabel(definition) });
   }
 
   const startError = atomError(rangeParts[0], definition);
@@ -120,7 +137,7 @@ function segmentError(
   const start = Number(rangeParts[0]);
   const end = Number(rangeParts[1]);
   if (Number.isFinite(start) && Number.isFinite(end) && start > end) {
-    return `${definition.label} range must go from lower to higher.`;
+    return t("workflows.cron.rangeOrder", { field: fieldLabel(definition) });
   }
   return null;
 }
@@ -129,11 +146,13 @@ export function validateCronField(
   value: string,
   definition: CronFieldDefinition,
 ): string | null {
-  if (!value) return `${definition.label} is required.`;
+  if (!value) {
+    return t("workflows.cron.required", { field: fieldLabel(definition) });
+  }
 
   const segments = value.split(",");
   if (segments.some((segment) => !segment)) {
-    return `${definition.label} has an empty list item.`;
+    return t("workflows.cron.emptyListItem", { field: fieldLabel(definition) });
   }
 
   for (const segment of segments) {

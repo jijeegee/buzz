@@ -1,4 +1,5 @@
 import type { Channel } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /** The authored channel detail shown consistently across channel surfaces. */
 export function getChannelDetail(channel: Channel): string | null {
@@ -11,12 +12,12 @@ export function getChannelDetail(channel: Channel): string | null {
 
 export function getChannelDescription(channel: Channel | null): string {
   if (!channel) {
-    return "Connect to find groups and read messages.";
+    return t("channels.description.disconnected");
   }
 
   const prefixes = [
-    channel.archivedAt ? "Archived." : null,
-    !channel.isMember ? "Read-only until you join this open group." : null,
+    channel.archivedAt ? t("channels.description.archived") : null,
+    !channel.isMember ? t("channels.description.readOnlyUntilJoin") : null,
   ].filter((value) => value && value.trim().length > 0);
 
   // Show only the first non-empty field to avoid duplication when
@@ -29,5 +30,7 @@ export function getChannelDescription(channel: Channel | null): string {
   const prefixText = prefixes.join(" ");
   const parts = [prefixText || null, detail ?? null].filter(Boolean);
 
-  return parts.length > 0 ? parts.join("\n") : "Group details and activity.";
+  return parts.length > 0
+    ? parts.join("\n")
+    : t("channels.description.fallback");
 }

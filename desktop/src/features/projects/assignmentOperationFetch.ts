@@ -5,6 +5,7 @@ import {
   ISSUE_ASSIGNMENT_LABEL,
   ISSUE_UNASSIGNMENT_LABEL,
 } from "./projectIssues.mjs";
+import { t } from "@/shared/i18n";
 
 type FetchEventsInput = Parameters<(typeof relayClient)["fetchEvents"]>[0];
 
@@ -127,7 +128,7 @@ async function fetchIssueCommentsExhaustively(
       limit = RELAY_MAX_PAGE_LIMIT;
       continue;
     }
-    throw new Error("Couldn't load the full assignment history.");
+    throw new Error(t("projects.assignmentHistory.loadFailed"));
   }
   return [...seen.values()];
 }

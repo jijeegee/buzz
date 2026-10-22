@@ -4,6 +4,8 @@
  * Extracted so they can be tested independently from the React layer.
  */
 
+import { t } from "@/shared/i18n";
+
 /**
  * Derive a valid harness ID from a human-readable display name.
  *
@@ -154,5 +156,5 @@ export function definitionFromFormValues(
 export function commaArgError(args: ReadonlyArray<string>): string | null {
   const offender = args.find((a) => a.includes(","));
   if (offender === undefined) return null;
-  return `Argument "${offender}" contains a comma — arguments are passed via a comma-delimited transport and would be split at spawn time. Use separate argument entries instead.`;
+  return t("settings.harnessForm.argCommaError", { arg: offender });
 }

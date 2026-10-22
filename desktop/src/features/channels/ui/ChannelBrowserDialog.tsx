@@ -54,6 +54,7 @@ import {
   CreateChannelFormFields,
   CreateChannelFormFooter,
 } from "@/features/sidebar/ui/CreateChannelFormFields";
+import { type MessageKey, useT } from "@/shared/i18n";
 
 type BrowserTab = "all" | "joined" | "archived";
 
@@ -83,10 +84,10 @@ function searchResultRow(group: GroupSummary): BrowseRow {
 export const FIND_GROUPS_MIN_QUERY_LENGTH = 2;
 type ChannelSort = ChannelSortMode | "members";
 
-const CHANNEL_SORT_OPTIONS: { label: string; value: ChannelSort }[] = [
-  { label: "Alphabetical", value: "alpha" },
-  { label: "Recent", value: "recent" },
-  { label: "Most members", value: "members" },
+const CHANNEL_SORT_OPTIONS: { labelKey: MessageKey; value: ChannelSort }[] = [
+  { labelKey: "channels.browser.sortAlpha", value: "alpha" },
+  { labelKey: "channels.browser.sortRecent", value: "recent" },
+  { labelKey: "channels.browser.sortMembers", value: "members" },
 ];
 
 function BrowseState({
@@ -137,6 +138,7 @@ export function ChannelBrowserDialog({
   onCreateChannel,
   isCreatingChannel = false,
 }: ChannelBrowserDialogProps) {
+  const t = useT();
   const [query, setQuery] = React.useState("");
   const isForumMode = channelTypeFilter === "forum";
   const defaultTab: BrowserTab = isForumMode ? "all" : "joined";
@@ -171,14 +173,16 @@ export function ChannelBrowserDialog({
 
   const canCreate = Boolean(onCreateChannel);
   const createKind = isForumMode ? "forum" : "stream";
-  const browseTitle = isForumMode ? "Add a forum" : "Find groups";
+  const browseTitle = isForumMode
+    ? t("channels.browser.addForum")
+    : t("channels.browser.findGroups");
   const searchPlaceholder = canCreate
     ? isForumMode
-      ? "Search or create a forum"
-      : "Search or create a group"
+      ? t("channels.browser.searchOrCreateForum")
+      : t("channels.browser.searchOrCreateGroup")
     : isForumMode
-      ? "Search forums by name or description"
-      : "Search groups by name or description";
+      ? t("channels.browser.searchForums")
+      : t("channels.browser.searchGroups");
   const entityLabel = isForumMode ? "forum" : "group";
   // Groups: public groups you are not in need a 2+ character search.
   const canSeePublicGroups =
@@ -309,11 +313,14 @@ export function ChannelBrowserDialog({
     [orderedPublicMatches, orderedVisibleChannels],
   );
 
-  const selectedSortLabel =
-    CHANNEL_SORT_OPTIONS.find((option) => option.value === sort)?.label ??
-    "Alphabetical";
+  const selectedSortLabel = t(
+    CHANNEL_SORT_OPTIONS.find((option) => option.value === sort)?.labelKey ??
+      "channels.browser.sortAlpha",
+  );
 
-  const allTabLabel = isForumMode ? "All forums" : "All groups";
+  const allTabLabel = isForumMode
+    ? t("channels.browser.allForums")
+    : t("channels.browser.allGroups");
 
   // Whether an exact name match already exists — if so we don't offer to
   // create a duplicate, mirroring how you'd never make two "general"s.
@@ -470,26 +477,28 @@ export function ChannelBrowserDialog({
     !isForumMode && activeTab === "joined" && !canSeePublicGroups;
   const emptyTitle =
     deferredQuery.length > 0
-      ? `No ${entityLabel}s match your search`
+      ? t("channels.browser.emptySearchTitle", { kind: entityLabel })
       : activeTab === "archived"
-        ? `No archived ${entityLabel}s`
+        ? t("channels.browser.emptyArchivedTitle", { kind: entityLabel })
         : activeTab === "joined"
           ? isForumMode
-            ? `No joined ${entityLabel}s`
-            : "No groups yet"
-          : `No ${entityLabel}s to browse`;
+            ? t("channels.browser.emptyJoinedForumsTitle")
+            : t("channels.browser.emptyGroupsTitle")
+          : t("channels.browser.emptyBrowseTitle", { kind: entityLabel });
   const emptyDescription =
     deferredQuery.length > 0 && !needsLongerQuery
       ? canCreate
-        ? `No ${entityLabel} by that name yet — create it to get started.`
-        : "Try a different name or keyword."
+        ? t("channels.browser.emptySearchCreate", { kind: entityLabel })
+        : t("channels.browser.emptySearchBody")
       : activeTab === "archived"
-        ? `Archived ${entityLabel}s you have joined will appear here.`
+        ? t("channels.browser.emptyArchivedBody", { kind: entityLabel })
         : activeTab === "joined"
           ? isForumMode
-            ? `${entityLabel[0].toUpperCase()}${entityLabel.slice(1)}s you join will appear here.`
-            : `Type ${FIND_GROUPS_MIN_QUERY_LENGTH} or more letters to find public groups.`
-          : `All open ${entityLabel}s are available in the sidebar. Create a new ${entityLabel} to get started.`;
+            ? t("channels.browser.emptyJoinedForumsBody")
+            : t("channels.browser.minQueryHint", {
+                count: FIND_GROUPS_MIN_QUERY_LENGTH,
+              })
+          : t("channels.browser.emptyBrowseBody", { kind: entityLabel });
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -521,7 +530,7 @@ export function ChannelBrowserDialog({
                 <DialogTitle>{browseTitle}</DialogTitle>
                 <DialogClose className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus:ring-1 focus:ring-ring">
                   <X className="h-4 w-4" />
-                  <span className="sr-only">Close</span>
+                  <span className="sr-only">{t("common.close")}</span>
                 </DialogClose>
               </div>
               <div className={MODAL_SEARCH_SHELL_CLASS}>
@@ -594,7 +603,10 @@ export function ChannelBrowserDialog({
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      aria-label={`Sort ${entityLabel}s: ${selectedSortLabel}`}
+                      aria-label={t("channels.browser.sortLabel", {
+                        kind: entityLabel,
+                        sort: selectedSortLabel,
+                      })}
                       data-testid="channel-browser-sort"
                       size="icon-xs"
                       type="button"
@@ -604,7 +616,9 @@ export function ChannelBrowserDialog({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                    <DropdownMenuLabel>
+                      {t("channels.browser.sortBy")}
+                    </DropdownMenuLabel>
                     <DropdownMenuRadioGroup
                       onValueChange={(value) => {
                         setSort(value as ChannelSort);
@@ -618,7 +632,7 @@ export function ChannelBrowserDialog({
                           key={option.value}
                           value={option.value}
                         >
-                          {option.label}
+                          {t(option.labelKey)}
                         </DropdownMenuRadioItem>
                       ))}
                     </DropdownMenuRadioGroup>
@@ -669,7 +683,9 @@ export function ChannelBrowserDialog({
                       }}
                       value="joined"
                     >
-                      {isForumMode ? "Joined" : "My groups"}
+                      {isForumMode
+                        ? t("channels.browser.joinedTab")
+                        : t("channels.browser.myGroupsTab")}
                     </TabsTrigger>
                     <TabsTrigger
                       className="rounded-none border-b-2 border-transparent bg-transparent px-0 py-2 text-sm font-medium shadow-none transition-colors duration-150 ease-out data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
@@ -678,7 +694,7 @@ export function ChannelBrowserDialog({
                       }}
                       value="archived"
                     >
-                      Archived
+                      {t("channels.browser.archivedTab")}
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -700,7 +716,7 @@ export function ChannelBrowserDialog({
                       className="px-1 py-6 text-center text-sm text-muted-foreground"
                       data-testid="channel-browser-searching"
                     >
-                      Searching...
+                      {t("channels.browser.searching")}
                     </p>
                   ) : listedChannels.length === 0 ? (
                     <BrowseState
@@ -719,7 +735,7 @@ export function ChannelBrowserDialog({
                         },
                         {
                           key: "public",
-                          label: "Public groups",
+                          label: t("channels.browser.publicGroups"),
                           offset: orderedVisibleChannels.length,
                           rows: orderedPublicMatches,
                         },
@@ -767,7 +783,7 @@ export function ChannelBrowserDialog({
                           className="mt-3 px-1 text-xs text-muted-foreground"
                           data-testid="channel-browser-search-error"
                         >
-                          Couldn't search public groups. Try again.
+                          {t("channels.browser.searchFailed")}
                         </p>
                       ) : null}
                       {needsLongerQuery && orderedVisibleChannels.length > 0 ? (
@@ -775,7 +791,9 @@ export function ChannelBrowserDialog({
                           className="mt-3 px-1 text-xs text-muted-foreground"
                           data-testid="channel-browser-search-hint"
                         >
-                          {`Type ${FIND_GROUPS_MIN_QUERY_LENGTH} or more letters to find public groups.`}
+                          {t("channels.browser.minQueryHint", {
+                            count: FIND_GROUPS_MIN_QUERY_LENGTH,
+                          })}
                         </p>
                       ) : null}
                     </>
@@ -801,6 +819,7 @@ function CreateChannelRow({
   onClick: () => void;
   query: string;
 }) {
+  const t = useT();
   const hasQuery = query.length > 0;
   return (
     <button
@@ -819,14 +838,20 @@ function CreateChannelRow({
       </span>
       {hasQuery ? (
         <span className="min-w-0 text-sm">
-          <span className="font-medium text-foreground">
-            {entityLabel === "forum" ? "Create forum" : "New group"}{" "}
-          </span>
-          <span className="font-semibold text-foreground">“{query}”</span>
+          {t("channels.browser.createNamed", {
+            kind: entityLabel,
+            query,
+            a: (chunks) => (
+              <span className="font-medium text-foreground">{chunks}</span>
+            ),
+            b: (chunks) => (
+              <span className="font-semibold text-foreground">{chunks}</span>
+            ),
+          })}
         </span>
       ) : (
         <span className="min-w-0 text-sm font-medium text-foreground">
-          {entityLabel === "forum" ? "Create a new forum" : "New group"}
+          {t("channels.browser.createNew", { kind: entityLabel })}
         </span>
       )}
     </button>
@@ -844,13 +869,14 @@ function ChannelCreateView({
   onBack: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <div className="flex h-[min(72vh,38rem)] flex-col">
       <DialogHeader className="space-y-0 pb-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
             <button
-              aria-label="Back to search"
+              aria-label={t("channels.browser.backToSearch")}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
               data-testid="channel-browser-create-back"
               onClick={onBack}
@@ -859,17 +885,17 @@ function ChannelCreateView({
               <ArrowLeft className="h-4 w-4" />
             </button>
             <DialogTitle className="truncate">
-              {`New ${entityLabel}`}
+              {t("channels.browser.newTitle", { kind: entityLabel })}
             </DialogTitle>
           </div>
           <button
-            aria-label="Close"
+            aria-label={t("common.close")}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
             onClick={onClose}
             type="button"
           >
             <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t("common.close")}</span>
           </button>
         </div>
       </DialogHeader>
@@ -906,9 +932,10 @@ function ChannelCard({
   onJoin?: () => void;
   onSelect: () => void;
 }) {
-  const memberLabel = `${channel.memberCount} ${
-    channel.memberCount === 1 ? "member" : "members"
-  }`;
+  const t = useT();
+  const memberLabel = t("channels.browser.memberCount", {
+    count: channel.memberCount,
+  });
 
   return (
     <div
@@ -941,7 +968,7 @@ function ChannelCard({
             </p>
             {channel.archivedAt ? (
               <Badge className="ml-1 shrink-0" variant="warning">
-                archived
+                {t("channels.browser.archivedBadge")}
               </Badge>
             ) : null}
           </div>
@@ -973,7 +1000,9 @@ function ChannelCard({
           type="button"
           variant="default"
         >
-          {isJoining ? "Joining..." : "Join"}
+          {isJoining
+            ? t("channels.browser.joining")
+            : t("channels.browser.join")}
         </Button>
       ) : joinAlwaysVisible ? (
         <Button
@@ -986,7 +1015,7 @@ function ChannelCard({
           type="button"
           variant="outline"
         >
-          Open
+          {t("channels.browser.open")}
         </Button>
       ) : null}
     </div>

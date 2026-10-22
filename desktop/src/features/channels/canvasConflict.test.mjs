@@ -3,8 +3,6 @@ import test from "node:test";
 
 import {
   CANVAS_EXPECTED_REVISION_NONE,
-  CANVAS_CONFLICT_MESSAGE,
-  CANVAS_SUPERSEDED_MESSAGE,
   canvasConflictMessage,
   isCanvasConflictError,
   isCanvasSupersededError,
@@ -53,17 +51,17 @@ test("supersession marker is a post-write conflict, not a pre-write one", () => 
 test("canvasConflictMessage maps each marker to its distinct copy", () => {
   assert.equal(
     canvasConflictMessage("conflict: canvas changed since it was loaded"),
-    CANVAS_CONFLICT_MESSAGE,
+    "This canvas changed since you loaded it — reload to see the latest, then reapply your edit.",
   );
   assert.equal(
     canvasConflictMessage("conflict: canvas revision does not exist"),
-    CANVAS_CONFLICT_MESSAGE,
+    "This canvas changed since you loaded it — reload to see the latest, then reapply your edit.",
   );
   assert.equal(
     canvasConflictMessage(
       "conflict: canvas save was superseded by a concurrent write",
     ),
-    CANVAS_SUPERSEDED_MESSAGE,
+    "A concurrent edit is now current. Your save was preserved in History — reload, then restore it if needed.",
   );
   // Non-conflict errors fall through to null so callers show the raw message.
   assert.equal(canvasConflictMessage(new Error("relay unreachable")), null);

@@ -12,11 +12,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { type MessageKey, useT } from "@/shared/i18n";
 
-const LIFECYCLE_LABEL: Record<ChannelLifecycle, string> = {
-  ongoing: "Ongoing",
-  project: "Project",
-  temporary: "Temporary",
+const LIFECYCLE_LABEL: Record<ChannelLifecycle, MessageKey> = {
+  ongoing: "channels.type.ongoing",
+  project: "channels.type.project",
+  temporary: "channels.type.temporary",
 };
 
 const LIFECYCLE_ICON = {
@@ -34,7 +35,7 @@ export function ChannelTypePicker({
   onLifecycleChange,
   onOpenChange,
   open,
-  temporaryOptionAriaLabel = "Temporary group",
+  temporaryOptionAriaLabel,
   testId,
 }: {
   align?: React.ComponentProps<typeof DropdownMenuContent>["align"];
@@ -49,10 +50,11 @@ export function ChannelTypePicker({
   temporaryOptionAriaLabel?: string;
   testId?: string;
 }) {
+  const t = useT();
   const [internalOpen, setInternalOpen] = React.useState(false);
   const pickerOpen = open ?? internalOpen;
   const setPickerOpen = onOpenChange ?? setInternalOpen;
-  const label = LIFECYCLE_LABEL[lifecycle];
+  const label = t(LIFECYCLE_LABEL[lifecycle]);
   const Icon = lifecycle === "project" ? null : LIFECYCLE_ICON[lifecycle];
   const projectLocked = lifecycle === "project";
 
@@ -71,7 +73,9 @@ export function ChannelTypePicker({
     <DropdownMenu modal={false} onOpenChange={setPickerOpen} open={pickerOpen}>
       <DropdownMenuTrigger asChild>
         <Button
-          aria-label={ariaLabel ?? `Group type: ${label}`}
+          aria-label={
+            ariaLabel ?? t("channels.type.pickerLabel", { type: label })
+          }
           className={cn(
             "h-9 w-fit px-2.5 text-sm font-medium text-foreground hover:bg-muted/50",
             className,
@@ -99,23 +103,28 @@ export function ChannelTypePicker({
       >
         <DropdownMenuRadioGroup onValueChange={selectType} value={lifecycle}>
           {allowProject ? (
-            <DropdownMenuRadioItem aria-label="Project group" value="project">
-              Project
+            <DropdownMenuRadioItem
+              aria-label={t("channels.type.projectGroup")}
+              value="project"
+            >
+              {t("channels.type.project")}
             </DropdownMenuRadioItem>
           ) : null}
           <DropdownMenuRadioItem
-            aria-label="Ongoing group"
+            aria-label={t("channels.type.ongoingGroup")}
             disabled={projectLocked}
             value="ongoing"
           >
-            Ongoing
+            {t("channels.type.ongoing")}
           </DropdownMenuRadioItem>
           <DropdownMenuRadioItem
-            aria-label={temporaryOptionAriaLabel}
+            aria-label={
+              temporaryOptionAriaLabel ?? t("channels.type.temporaryGroup")
+            }
             disabled={projectLocked}
             value="temporary"
           >
-            Temporary
+            {t("channels.type.temporary")}
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>

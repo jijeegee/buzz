@@ -30,7 +30,6 @@ import {
   formatFileSize,
   formatLastChangedAt,
   nextRepositoryEntryLimit,
-  pluralize,
   relativeTime,
   REPOSITORY_ENTRY_PAGE_SIZE,
 } from "@/features/projects/lib/projectsViewHelpers";
@@ -59,6 +58,7 @@ import {
   type RepositoryFilesContext,
   useRepositoryFilesNavigation,
 } from "./useRepositoryFilesNavigation";
+import { useT } from "@/shared/i18n";
 
 function normalizeAuthorLookupValue(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? "";
@@ -545,6 +545,7 @@ function FileContentPanel({
   fileContentSource?: RepositoryFileContentSource;
   onOpenPath: (path: string) => void;
 }) {
+  const t = useT();
   const fileContent = useRepositoryFileContent(file, fileContentSource);
   const language = languageForPath(file.path);
   const pathSegments = file.path.split("/").filter(Boolean);
@@ -555,7 +556,7 @@ function FileContentPanel({
     <div className={PROJECT_DETAIL_PANEL_CLASS} data-project-detail-panel>
       <div className="flex min-h-14 items-center gap-1 border-border/50 border-b bg-muted/20 px-4 py-3">
         <BreadcrumbButton onClick={() => onOpenPath("")}>
-          Files
+          {t("projects.homeContext.files")}
         </BreadcrumbButton>
         {directorySegments.map((segment, index) => {
           const nextPath = directorySegments.slice(0, index + 1).join("/");
@@ -574,7 +575,11 @@ function FileContentPanel({
           {fileName}
         </span>
         <div className="hidden shrink-0 items-center gap-3 text-2xs text-muted-foreground sm:flex">
-          <span>Last changed {formatLastChangedAt(file.lastChangedAt)}</span>
+          <span>
+            {t("projects.readme.lastChanged", {
+              time: formatLastChangedAt(file.lastChangedAt),
+            })}
+          </span>
           <span>{formatFileSize(file.size)}</span>
         </div>
         <span className="shrink-0 text-2xs text-muted-foreground sm:hidden">
@@ -582,10 +587,12 @@ function FileContentPanel({
         </span>
       </div>
       <div className="border-border/50 border-b bg-muted/10 px-4 py-2 text-2xs text-muted-foreground sm:hidden">
-        Last changed {formatLastChangedAt(file.lastChangedAt)}
+        {t("projects.readme.lastChanged", {
+          time: formatLastChangedAt(file.lastChangedAt),
+        })}
       </div>
       {fileContent.isLoading ? (
-        <KuzzLoadingState label="Loading file" />
+        <KuzzLoadingState label={t("projects.repoFiles.loadingFile")} />
       ) : fileContent.content ? (
         <pre className="overflow-x-auto bg-background/60 p-4">
           {language ? (
@@ -603,8 +610,8 @@ function FileContentPanel({
       ) : (
         <div className="p-6 text-sm text-muted-foreground">
           {fileContent.error
-            ? "Could not load this file. Try again after refreshing the repository."
-            : "Preview unavailable for this file. Large and binary files only show metadata."}
+            ? t("projects.repoFiles.fileLoadFailed")
+            : t("projects.repoFiles.previewUnavailable")}
         </div>
       )}
     </div>
@@ -639,6 +646,7 @@ export function RepositoryFilesPanel({
   sourceControls?: RepoSourceHeaderControls;
   unavailableMessage?: string;
 }) {
+  const t = useT();
   const {
     currentPath,
     openPath,
@@ -698,7 +706,7 @@ export function RepositoryFilesPanel({
   // remote/local toggle must stay reachable when one source fails to load.
   if (isLoading) {
     if (!sourceControls) {
-      return <KuzzLoadingState label="Loading repository files" />;
+      return <KuzzLoadingState label={t("projects.repoFiles.loading")} />;
     }
     return (
       <div className={PROJECT_DETAIL_PANEL_CLASS} data-project-detail-panel>
@@ -722,24 +730,24 @@ export function RepositoryFilesPanel({
             <RepoSyncActionButton controls={sourceControls} />
           </div>
         </div>
-        <KuzzLoadingState label="Loading repository files" />
+        <KuzzLoadingState label={t("projects.repoFiles.loading")} />
       </div>
     );
   }
   const stateMessage = unavailableMessage
     ? unavailableMessage
     : error
-      ? "Could not load the repository file tree."
+      ? t("projects.repoFiles.treeFailed")
       : files.length === 0
-        ? "No files have been pushed yet."
+        ? t("projects.repoFiles.empty")
         : null;
   if (stateMessage) {
     const state = (
       <ProjectPanelState
         description={
           error || unavailableMessage
-            ? "Refresh the repository or check its access settings."
-            : "Files pushed to this repository will appear here."
+            ? t("projects.repoFiles.errorDescription")
+            : t("projects.repoFiles.emptyDescription")
         }
         error={Boolean(error || unavailableMessage)}
         panel={!sourceControls}
@@ -810,14 +818,14 @@ export function RepositoryFilesPanel({
             </>
           ) : (
             <BreadcrumbButton onClick={() => openPath("")}>
-              Files
+              {t("projects.homeContext.files")}
             </BreadcrumbButton>
           )}
           {sourceControls && pathSegments.length > 0 ? (
             <>
               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
               <BreadcrumbButton onClick={() => openPath("")}>
-                Files
+                {t("projects.homeContext.files")}
               </BreadcrumbButton>
             </>
           ) : null}
@@ -868,17 +876,23 @@ export function RepositoryFilesPanel({
                         size="sm"
                       />
                       <p className="min-w-0 flex-1 truncate text-foreground">
-                        <span className="font-semibold">
-                          {latestCommitAuthorLabel}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {" "}
-                          committed
-                        </span>
-                        <span className="font-medium">
-                          {" "}
-                          {latestCommit.subject}
-                        </span>
+                        {t("projects.repoFiles.latestCommit", {
+                          author: () => (
+                            <span className="font-semibold">
+                              {latestCommitAuthorLabel}
+                            </span>
+                          ),
+                          muted: (chunks: React.ReactNode) => (
+                            <span className="text-muted-foreground">
+                              {chunks}
+                            </span>
+                          ),
+                          subject: () => (
+                            <span className="font-medium">
+                              {latestCommit.subject}
+                            </span>
+                          ),
+                        })}
                         <code
                           className="mx-1.5 rounded-md bg-background/60 px-1.5 py-0.5 text-2xs text-muted-foreground"
                           title={latestCommit.hash}
@@ -886,7 +900,10 @@ export function RepositoryFilesPanel({
                           {latestCommit.shortHash}
                         </code>
                         <span className="text-muted-foreground">
-                          · {pluralize(files.length, "file")}
+                          ·{" "}
+                          {t("projects.repoFiles.fileCount", {
+                            count: files.length,
+                          })}
                         </span>
                       </p>
                     </div>
@@ -901,7 +918,9 @@ export function RepositoryFilesPanel({
                   </div>
                 ) : (
                   <p className="truncate text-sm font-medium text-foreground">
-                    Repository files · {files.length} tracked files
+                    {t("projects.repoFiles.trackedFiles", {
+                      count: files.length,
+                    })}
                   </p>
                 )}
               </th>
@@ -915,7 +934,10 @@ export function RepositoryFilesPanel({
 
               return (
                 <tr
-                  aria-label={`Open ${entry.type} ${entry.name}`}
+                  aria-label={t("projects.repoFiles.openEntry", {
+                    type: entry.type,
+                    name: entry.name,
+                  })}
                   className="group/repository-entry cursor-pointer text-xs focus-visible:outline-hidden"
                   data-testid="project-repository-entry-row"
                   key={`${entry.type}:${entry.path}`}
@@ -961,10 +983,17 @@ export function RepositoryFilesPanel({
       {entries.length > visibleEntries.length ? (
         <div className="flex items-center justify-between gap-3 border-border/50 border-t px-4 py-3 text-2xs text-muted-foreground">
           <span aria-live="polite">
-            Showing {visibleEntries.length} of {entries.length} entries.
+            {t("projects.repoFiles.showing", {
+              shown: visibleEntries.length,
+              total: entries.length,
+            })}
           </span>
           <button
-            aria-label={`Show next ${nextEntryCount} entries, ${nextVisibleEntryCount} of ${entries.length} total`}
+            aria-label={t("projects.repoFiles.showNextLabel", {
+              count: nextEntryCount,
+              shown: nextVisibleEntryCount,
+              total: entries.length,
+            })}
             className="shrink-0 font-medium text-foreground hover:underline"
             onClick={() =>
               setVisibleEntryCount((current) =>
@@ -973,7 +1002,7 @@ export function RepositoryFilesPanel({
             }
             type="button"
           >
-            Show next {nextEntryCount}
+            {t("projects.repoFiles.showNext", { count: nextEntryCount })}
           </button>
         </div>
       ) : null}

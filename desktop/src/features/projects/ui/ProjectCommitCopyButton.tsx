@@ -3,6 +3,7 @@ import * as React from "react";
 
 import { cn } from "@/shared/lib/cn";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
+import { useT } from "@/shared/i18n";
 
 /** Icon button that copies arbitrary text with a brief check feedback. */
 export function CopyTextButton({
@@ -54,9 +55,10 @@ export function CopyCommitHashButton({
   className?: string;
   hash: string;
 }) {
+  const t = useT();
   return (
     <CopyTextButton
-      ariaLabel="Copy commit hash"
+      ariaLabel={t("projects.commitCopy.hash")}
       className={className}
       text={hash}
     />

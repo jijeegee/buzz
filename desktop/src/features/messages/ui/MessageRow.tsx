@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { AlertTriangle } from "lucide-react";
 import {
@@ -169,6 +170,7 @@ export const MessageRow = React.memo(
     videoReviewCommentRootId?: string;
     videoReviewContext?: VideoReviewContext;
   }) {
+    const t = useT();
     // A pending own message is drawn exactly as it will look once sent, so
     // the acknowledgement never moves it.
     const isDisplayedAsContinuation = isContinuation;
@@ -193,7 +195,9 @@ export const MessageRow = React.memo(
               );
             } catch (error) {
               toast.error(
-                `Failed to remove previews: ${error instanceof Error ? error.message : String(error)}`,
+                t("messages.row.removePreviewsFailed", {
+                  error: error instanceof Error ? error.message : String(error),
+                }),
               );
               throw error;
             }
@@ -382,7 +386,7 @@ export const MessageRow = React.memo(
             <React.Suspense
               fallback={
                 <div className="p-3 text-sm text-muted-foreground">
-                  Loading diff…
+                  {t("messages.row.loadingDiff")}
                 </div>
               }
             >
@@ -492,13 +496,13 @@ export const MessageRow = React.memo(
             role="img"
             aria-label={
               message.respondTo === "anyone"
-                ? "Anyone can send instructions to this agent"
-                : "Selected people can send instructions to this agent"
+                ? t("messages.row.agentOpenToAnyone")
+                : t("messages.row.agentOpenToSelected")
             }
             title={
               message.respondTo === "anyone"
-                ? "Anyone can send instructions to this agent"
-                : "Selected people can send instructions to this agent"
+                ? t("messages.row.agentOpenToAnyone")
+                : t("messages.row.agentOpenToSelected")
             }
           >
             {message.respondTo === "anyone" ? (
@@ -625,9 +629,11 @@ export const MessageRow = React.memo(
           {message.edited ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <p className="text-muted-foreground/70">(edited)</p>
+                <p className="text-muted-foreground/70">
+                  {t("messages.row.edited")}
+                </p>
               </TooltipTrigger>
-              <TooltipContent>This message has been edited</TooltipContent>
+              <TooltipContent>{t("messages.row.editedTooltip")}</TooltipContent>
             </Tooltip>
           ) : null}
         </>
@@ -763,7 +769,7 @@ export const MessageRow = React.memo(
           <React.Suspense
             fallback={
               <div className="p-3 text-sm text-muted-foreground">
-                Loading diff viewer…
+                {t("messages.row.loadingDiffViewer")}
               </div>
             }
           >
@@ -901,7 +907,8 @@ export const MessageRow = React.memo(
             {onCollapseDescendants ? (
               <button
                 aria-label={
-                  collapseDescendantsLabel ?? "Collapse replies to this message"
+                  collapseDescendantsLabel ??
+                  t("messages.row.collapseRepliesToMessage")
                 }
                 className="absolute bottom-0 z-20 w-5 -translate-x-1/2 cursor-pointer rounded-full p-0 focus-visible:outline-hidden"
                 data-thread-head-id={message.id}

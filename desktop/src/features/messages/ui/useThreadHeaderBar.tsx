@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import { useAppShell } from "@/app/AppShellContext";
@@ -51,6 +52,7 @@ export function useThreadHeaderBar({
   ) => React.ReactNode;
   isClosed: boolean;
 } {
+  const t = useT();
   const { markThreadUnread } = useAppShell();
   const { pending, setThreadClosed } = useThreadCloseToggle();
   const closeState = React.useMemo(
@@ -82,7 +84,7 @@ export function useThreadHeaderBar({
     closeState.closedBy &&
     currentPubkey &&
     closeState.closedBy.toLowerCase() === currentPubkey.toLowerCase()
-      ? "You"
+      ? t("common.you")
       : (closeState.marker?.author ?? null);
 
   const renderHeaderActions = (

@@ -11,6 +11,7 @@ import {
   MODAL_SEARCH_SHELL_CLASS,
 } from "@/shared/ui/modalSearchStyles";
 import { CreateProjectFormContent } from "./CreateProjectFormContent";
+import { useT } from "@/shared/i18n";
 
 function projectSearchText(project: Project) {
   return [
@@ -43,6 +44,7 @@ export function ProjectBrowserDialog({
   projects: readonly Project[];
   selectedProjectAddresses: ReadonlySet<string>;
 }) {
+  const t = useT();
   const [mode, setMode] = React.useState<"browse" | "create">("browse");
   const [query, setQuery] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -97,15 +99,15 @@ export function ProjectBrowserDialog({
           data-testid="project-browser-dialog"
           headerClassName="pb-2"
           scrollAreaClassName="px-3"
-          title="Add a project"
+          title={t("projects.browser.title")}
         >
           <div className={MODAL_SEARCH_SHELL_CLASS}>
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input
-              aria-label="Search projects"
+              aria-label={t("projects.sectionSearch.placeholderProjects")}
               className={MODAL_SEARCH_INPUT_CLASS}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search or create a project"
+              placeholder={t("projects.browser.searchPlaceholder")}
               ref={inputRef}
               type="search"
               value={query}
@@ -126,11 +128,11 @@ export function ProjectBrowserDialog({
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-foreground">
                   {query.trim()
-                    ? `Create “${query.trim()}”`
-                    : "Create a new project"}
+                    ? t("projects.browser.createNamed", { name: query.trim() })
+                    : t("projects.createForm.title")}
                 </span>
                 <span className="block text-xs font-normal text-muted-foreground">
-                  Configure its repository and access options
+                  {t("projects.browser.createHint")}
                 </span>
               </span>
             </Button>
@@ -158,17 +160,15 @@ export function ProjectBrowserDialog({
                       </span>
                       <span className="block truncate text-xs font-normal text-muted-foreground">
                         {project.description ||
-                          `${project.repositories.length} ${
-                            project.repositories.length === 1
-                              ? "repository"
-                              : "repositories"
-                          }`}
+                          t("projects.browser.repositoryCount", {
+                            count: project.repositories.length,
+                          })}
                       </span>
                     </span>
                     {selectedProjectAddresses.has(project.projectAddress) ? (
                       <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                         <Check className="h-3.5 w-3.5" />
-                        Added
+                        {t("projects.browser.added")}
                       </span>
                     ) : null}
                   </Button>
@@ -177,10 +177,10 @@ export function ProjectBrowserDialog({
             ) : (
               <div className="px-4 py-10 text-center">
                 <p className="text-sm font-medium text-foreground">
-                  No projects found
+                  {t("projects.browser.noResults")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Try another search or create a new project.
+                  {t("projects.browser.noResultsHint")}
                 </p>
               </div>
             )}

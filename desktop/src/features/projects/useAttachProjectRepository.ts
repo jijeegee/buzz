@@ -12,6 +12,7 @@ import { markProjectDataAuthoritative } from "@/features/projects/projectSnapsho
 import { publishProjectOwnerAnnouncement } from "@/shared/api/projectGit";
 import { relayClient } from "@/shared/api/relayClient";
 import { KIND_PROJECT_ANNOUNCEMENT } from "@/shared/constants/kinds";
+import { t } from "@/shared/i18n";
 
 export type AttachProjectRepositoryInput = {
   ownerControlAgentPubkey?: string;
@@ -35,14 +36,12 @@ async function attachProjectRepository({
   });
   const liveHead = liveHeads[0];
   if (!liveHead) {
-    throw new Error("Couldn't find this project. Refresh and try again.");
+    throw new Error(t("projects.errors.projectNotFound"));
   }
 
   // Dominated-write guard.
   if (liveHead.created_at > project.createdAt) {
-    throw new Error(
-      "This project was updated by another session while you were working. Refresh and try again.",
-    );
+    throw new Error(t("projects.errors.updatedElsewhere"));
   }
 
   const liveAddresses = liveHead.tags
@@ -50,7 +49,7 @@ async function attachProjectRepository({
     .map((tag) => tag[1] as string);
 
   if (liveAddresses.includes(repository.repoAddress)) {
-    throw new Error("This repository is already part of the project.");
+    throw new Error(t("projects.useAttachProjectRepository.alreadyAttached"));
   }
   const template = buildProjectPatchTemplate({
     liveHead,
@@ -67,9 +66,7 @@ async function attachProjectRepository({
       [{ ...template, createdAt }],
     );
     if (!projectEvent || projectEvent.kind !== KIND_PROJECT_ANNOUNCEMENT) {
-      throw new Error(
-        "The owner agent updated the project but its response was incomplete. Refresh and try again.",
-      );
+      throw new Error(t("projects.errors.ownerAgentIncomplete"));
     }
     return {
       previousProjectId: project.id,

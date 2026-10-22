@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import {
@@ -74,6 +75,7 @@ function MessageLinkMetadataTooltip({
   footer: string;
   metadata: ReturnType<typeof useMessageLinkMetadata>;
 }) {
+  const t = useT();
   const { contentRef, onPointerMove } = useInlineTooltipPosition();
   if (
     metadata.state.kind === "deleted" ||
@@ -81,8 +83,8 @@ function MessageLinkMetadataTooltip({
   ) {
     const message =
       metadata.state.kind === "deleted"
-        ? "Message deleted"
-        : "Message unavailable";
+        ? t("ui.messageLink.deleted")
+        : t("ui.messageLink.unavailable");
     return (
       <TooltipProvider delayDuration={500} skipDelayDuration={0}>
         <Tooltip>
@@ -162,6 +164,7 @@ function MessageLinkPillContents({
   channelLabel?: string;
   openable?: boolean;
 }) {
+  const t = useT();
   const [isHovered, setIsHovered] = React.useState(false);
   const channelLabel = resolvedChannelLabel ?? link.channelId.slice(0, 8);
   const isSentFromThread = variant === "sent-from-thread";
@@ -171,11 +174,11 @@ function MessageLinkPillContents({
   const destination =
     channel?.channelType === "dm" ? channelLabel : `${channelLabel}`;
   const tooltipFooter = link.threadRootId
-    ? `Thread in ${destination}`
+    ? t("ui.messageLink.threadIn", { name: destination })
     : channel?.channelType === "dm"
-      ? `Direct message with ${destination}`
+      ? t("ui.messageLink.dmWith", { name: destination })
       : channel?.channelType === "forum"
-        ? `Forum post in ${destination}`
+        ? t("ui.messageLink.forumPostIn", { name: destination })
         : destination;
   const label = getMessageLinkLabel({
     channelName: channelLabel,
@@ -196,12 +199,12 @@ function MessageLinkPillContents({
         icon="message"
         aria-label={
           !openable
-            ? `Message in group ${channelLabel}`
+            ? t("ui.messageLink.inGroup", { name: channelLabel })
             : isDeleted
               ? link.threadRootId
-                ? `Open thread in group ${channelLabel}; linked message was deleted`
-                : `Open group ${channelLabel}; linked message was deleted`
-              : `Open message in group ${channelLabel}`
+                ? t("ui.messageLink.openThreadDeleted", { name: channelLabel })
+                : t("ui.messageLink.openGroupDeleted", { name: channelLabel })
+              : t("ui.messageLink.openInGroup", { name: channelLabel })
         }
         className={cn(
           metadata.state.kind === "unavailable" && "kuzz-link-unavailable",
@@ -251,7 +254,7 @@ function MessageLinkPillContents({
       type="button"
       data-message-link=""
       data-hovered={isHovered ? "" : undefined}
-      aria-label={`Open thread in ${channelLabel}`}
+      aria-label={t("ui.messageLink.openThreadIn", { name: channelLabel })}
       title={label}
       className={cn(
         "max-w-80 cursor-pointer truncate",

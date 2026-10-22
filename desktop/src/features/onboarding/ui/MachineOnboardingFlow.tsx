@@ -13,6 +13,7 @@ import {
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
 import type { IdentityStorage } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import {
   onboardingLandingMode,
   signingKeyUiTestSeam,
@@ -83,6 +84,7 @@ export function MachineOnboardingFlow({
   initialPage?: MachineOnboardingPage;
   queryClient: QueryClient;
 }) {
+  const t = useT();
   // Users only ever sign in with Google; the key screens are an E2E seam.
   const keyUiSeam = signingKeyUiTestSeam();
   const [page, setPage] = React.useState<MachineOnboardingPage>(
@@ -203,12 +205,14 @@ export function MachineOnboardingFlow({
       setPage("backup");
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Failed to load identity",
+        cause instanceof Error
+          ? cause.message
+          : t("onboarding.machine.loadIdentityFailed"),
       );
     } finally {
       setIsPending(false);
     }
-  }, [queryClient]);
+  }, [queryClient, t]);
 
   const loadRecoveredIdentity = React.useCallback(async () => {
     setIsPending(true);
@@ -224,16 +228,18 @@ export function MachineOnboardingFlow({
       setPage("setup");
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Failed to load identity",
+        cause instanceof Error
+          ? cause.message
+          : t("onboarding.machine.loadIdentityFailed"),
       );
     } finally {
       setIsPending(false);
     }
-  }, [continueWithRecoveredIdentity, queryClient]);
+  }, [continueWithRecoveredIdentity, queryClient, t]);
 
   const replaceLostIdentity = React.useCallback(async () => {
     const confirmed = window.confirm(
-      "This will create a new identity and abandon your previous key. This cannot be undone. Continue?",
+      t("onboarding.machine.replaceIdentityConfirm"),
     );
     if (!confirmed) return;
 
@@ -251,12 +257,14 @@ export function MachineOnboardingFlow({
       setPage("backup");
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Failed to save identity",
+        cause instanceof Error
+          ? cause.message
+          : t("onboarding.machine.saveIdentityFailed"),
       );
     } finally {
       setIsPending(false);
     }
-  }, [queryClient]);
+  }, [queryClient, t]);
 
   const importExistingIdentity = React.useCallback(
     async (nsec: string, password?: string) => {
@@ -356,7 +364,7 @@ export function MachineOnboardingFlow({
           ? { disabled: isKeyImporting, onClick: backFromKeyImport }
           : page === "backup" && backupSubview !== "created"
             ? {
-                label: "Return to onboarding",
+                label: t("onboarding.machine.returnToOnboarding"),
                 onClick: returnToCreatedKey,
                 testId: "backup-return-to-onboarding",
               }
@@ -392,8 +400,14 @@ export function MachineOnboardingFlow({
             >
               <KuzzWordmark className="mb-6 w-full max-w-[420px]" />
               <p className="mt-2 max-w-[560px] text-center text-2xl font-normal leading-none text-foreground">
-                Your people, your agents, your projects —<br />
-                all in one place.
+                {t("onboarding.machine.tagline", {
+                  line: (chunks) => (
+                    <>
+                      <br />
+                      {chunks}
+                    </>
+                  ),
+                })}
               </p>
               {error ? (
                 <p className="mt-4 text-sm text-destructive">{error}</p>
@@ -420,10 +434,10 @@ export function MachineOnboardingFlow({
                       type="button"
                     >
                       {isPending
-                        ? "Loading identity…"
+                        ? t("onboarding.machine.loadingIdentity")
                         : selectedPubkey
-                          ? "Continue setup"
-                          : "Create a new identity key"}
+                          ? t("onboarding.machine.continueSetup")
+                          : t("onboarding.machine.createIdentityKey")}
                     </Button>
                     <Button
                       className={`${ONBOARDING_SECONDARY_CTA_CLASS} px-5`}
@@ -438,8 +452,8 @@ export function MachineOnboardingFlow({
                       variant="ghost"
                     >
                       {selectedPubkey
-                        ? "Use a different key instead"
-                        : "Use an existing key"}
+                        ? t("onboarding.machine.useDifferentKey")
+                        : t("onboarding.machine.useExistingKey")}
                     </Button>
                   </div>
                   <IdentityKeyHelpDialog
@@ -461,7 +475,7 @@ export function MachineOnboardingFlow({
                       disabled={isPending}
                       note={
                         identityLost
-                          ? "Sign in with Google to restore your account."
+                          ? t("onboarding.machine.restoreWithGoogle")
                           : undefined
                       }
                       onComplete={loadRecoveredIdentity}
@@ -475,7 +489,7 @@ export function MachineOnboardingFlow({
                       onClick={() => void loadRecoveredIdentity()}
                       type="button"
                     >
-                      {isPending ? "Loading…" : "Continue"}
+                      {isPending ? t("common.loading") : t("common.continue")}
                     </Button>
                   ) : landingMode === "unavailable" ? (
                     <>
@@ -483,8 +497,7 @@ export function MachineOnboardingFlow({
                         className="max-w-[420px] text-sm text-muted-foreground"
                         role="alert"
                       >
-                        We couldn’t reach Kuzz sign-in. Check your internet
-                        connection and try again.
+                        {t("onboarding.machine.signInUnreachable")}
                       </p>
                       <Button
                         className={ONBOARDING_LANDING_CTA_CLASS}
@@ -495,11 +508,14 @@ export function MachineOnboardingFlow({
                         }}
                         type="button"
                       >
-                        Retry
+                        {t("common.retry")}
                       </Button>
                     </>
                   ) : (
-                    <Spinner aria-label="Loading sign-in" className="h-5 w-5" />
+                    <Spinner
+                      aria-label={t("onboarding.machine.loadingSignIn")}
+                      className="h-5 w-5"
+                    />
                   )}
                 </div>
               )}
@@ -547,10 +563,10 @@ export function MachineOnboardingFlow({
           {keyImportDialog === "backup" ? (
             <div className="w-full" data-testid="backup-recovery-dialog">
               <h1 className="text-title font-normal text-foreground">
-                Restore from a backup file
+                {t("onboarding.machine.backupRestoreTitle")}
               </h1>
               <p className="mt-2 w-full text-base leading-6 text-foreground/80">
-                Choose the encrypted backup file you saved from Kuzz.
+                {t("onboarding.machine.backupRestoreDescription")}
               </p>
               <NostrKeyImportForm
                 key={keyImportFormKey}
@@ -570,12 +586,14 @@ export function MachineOnboardingFlow({
               data-testid="phone-recovery-dialog"
             >
               <h1 className="text-title font-normal text-foreground">
-                {identityLost ? "Recover from your phone" : "Scan to sign in"}
+                {identityLost
+                  ? t("onboarding.machine.phoneRecoverTitle")
+                  : t("onboarding.machine.phoneScanTitle")}
               </h1>
               <p className="mt-2 w-full text-base leading-6 text-foreground/80">
                 {phoneRecoveryStep === "loading" || phoneRecoveryStep === "qr"
-                  ? "Scan this code with a device where you’re currently signed in to Kuzz."
-                  : "Confirm the code before sharing your identity."}
+                  ? t("onboarding.machine.phoneScanDescription")
+                  : t("onboarding.machine.phoneConfirmDescription")}
               </p>
               <div
                 className="flex min-h-0 flex-1 items-center justify-center"
@@ -601,42 +619,44 @@ export function MachineOnboardingFlow({
               >
                 <h1 className="text-title font-normal text-foreground">
                   {keyImportStage === "backup-password"
-                    ? "Unlock your account"
-                    : "Enter your private key"}
+                    ? t("onboarding.machine.unlockAccountTitle")
+                    : t("onboarding.machine.enterPrivateKeyTitle")}
                 </h1>
                 <div className="mt-2 w-full text-base leading-6 text-foreground/80">
                   {keyImportStage === "backup-password" ? (
-                    "Enter your backup password to restore your identity."
+                    t("onboarding.machine.unlockAccountDescription")
                   ) : (
                     <p>
-                      Paste your private key to sign in to Kuzz. You can also
-                      use a{" "}
-                      <button
-                        className="rounded-sm font-medium underline decoration-foreground/40 underline-offset-4 transition-colors hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
-                        data-testid="nostr-import-file-button"
-                        disabled={isPending || isKeyImporting}
-                        onClick={() => {
-                          setKeyImportStage("key-entry");
-                          setKeyImportDialog("backup");
-                        }}
-                        type="button"
-                      >
-                        backup file
-                      </button>
-                      , or{" "}
-                      <button
-                        className="rounded-sm font-medium underline decoration-foreground/40 underline-offset-4 transition-colors hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
-                        data-testid="nostr-import-phone-link"
-                        disabled={isPending || isKeyImporting}
-                        onClick={() => {
-                          setPhoneRecoveryStep("loading");
-                          setKeyImportDialog("phone");
-                        }}
-                        type="button"
-                      >
-                        recover from your phone
-                      </button>
-                      .
+                      {t("onboarding.machine.enterPrivateKeyDescription", {
+                        backup: (chunks) => (
+                          <button
+                            className="rounded-sm font-medium underline decoration-foreground/40 underline-offset-4 transition-colors hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+                            data-testid="nostr-import-file-button"
+                            disabled={isPending || isKeyImporting}
+                            onClick={() => {
+                              setKeyImportStage("key-entry");
+                              setKeyImportDialog("backup");
+                            }}
+                            type="button"
+                          >
+                            {chunks}
+                          </button>
+                        ),
+                        phone: (chunks) => (
+                          <button
+                            className="rounded-sm font-medium underline decoration-foreground/40 underline-offset-4 transition-colors hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60"
+                            data-testid="nostr-import-phone-link"
+                            disabled={isPending || isKeyImporting}
+                            onClick={() => {
+                              setPhoneRecoveryStep("loading");
+                              setKeyImportDialog("phone");
+                            }}
+                            type="button"
+                          >
+                            {chunks}
+                          </button>
+                        ),
+                      })}
                     </p>
                   )}
                 </div>
@@ -666,7 +686,7 @@ export function MachineOnboardingFlow({
                       type="button"
                       variant="ghost"
                     >
-                      Start new identity
+                      {t("onboarding.machine.startNewIdentity")}
                     </Button>
                   ) : null}
                 </div>

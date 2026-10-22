@@ -53,6 +53,7 @@ import { CopyShareLinkMenuItem } from "./CopyShareLinkMenuItem";
 import { ProjectEntityListRow } from "./ProjectEntityListRow";
 import { PROJECT_GRID_CARD_BODY_CLASS } from "./projectGridCardStyles";
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
+import { type MessageKey, useT } from "@/shared/i18n";
 
 export function ProjectPeopleStack({
   pubkeys,
@@ -66,6 +67,7 @@ export function ProjectPeopleStack({
   const visible = pubkeys.slice(0, 5);
   const remaining = pubkeys.length - visible.length;
 
+  const t = useT();
   if (visible.length === 0) {
     return null;
   }
@@ -84,7 +86,9 @@ export function ProjectPeopleStack({
           >
             <UserProfilePopover pubkey={pubkey} triggerElement="span">
               <button
-                aria-label={`View ${label}'s profile`}
+                aria-label={t("projects.entityRow.viewProfile", {
+                  name: label,
+                })}
                 className={cn(
                   "inline-flex focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                   profile?.isAgent ? "rounded-[30%]" : "rounded-full",
@@ -122,7 +126,8 @@ const PROJECT_STAT_ITEMS = [
     iconClass: "text-primary/60",
     barClass: "bg-primary/60",
     columnClass: "w-24",
-    label: (count: number) => (count === 1 ? "commit" : "commits"),
+    countKey: "projects.stats.commits",
+    richKey: "projects.stats.commitsRich",
   },
   {
     key: "prCount",
@@ -130,7 +135,8 @@ const PROJECT_STAT_ITEMS = [
     iconClass: "text-primary",
     barClass: "bg-primary",
     columnClass: "w-16",
-    label: (count: number) => (count === 1 ? "review" : "reviews"),
+    countKey: "projects.stats.reviews",
+    richKey: "projects.stats.reviewsRich",
   },
   {
     key: "issueCount",
@@ -138,7 +144,8 @@ const PROJECT_STAT_ITEMS = [
     iconClass: "text-orange-500",
     barClass: "bg-orange-500",
     columnClass: "w-20",
-    label: (count: number) => (count === 1 ? "task" : "tasks"),
+    countKey: "projects.stats.tasks",
+    richKey: "projects.stats.tasksRich",
   },
 ] as const;
 
@@ -153,6 +160,7 @@ export function ProjectStatsRow({
   /** Give each stat a fixed width so stats align vertically across list rows. */
   fixedColumns?: boolean;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -162,7 +170,7 @@ export function ProjectStatsRow({
       )}
     >
       {PROJECT_STAT_ITEMS.map(
-        ({ key, icon: Icon, iconClass, label, columnClass }) => {
+        ({ key, icon: Icon, iconClass, richKey, columnClass }) => {
           const count = summary?.[key] ?? 0;
           return (
             <span
@@ -173,8 +181,12 @@ export function ProjectStatsRow({
               key={key}
             >
               <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClass)} />
-              <span className="font-medium text-foreground">{count}</span>
-              {label(count)}
+              {t(richKey, {
+                count,
+                n: (chunks: React.ReactNode) => (
+                  <span className="font-medium text-foreground">{chunks}</span>
+                ),
+              })}
             </span>
           );
         },
@@ -190,9 +202,10 @@ export function ProjectActivityBar({
 }: {
   summary: ProjectActivitySummary | undefined;
 }) {
-  const items = PROJECT_STAT_ITEMS.map(({ key, barClass, label }) => {
+  const t = useT();
+  const items = PROJECT_STAT_ITEMS.map(({ key, barClass, countKey }) => {
     const count = summary?.[key] ?? 0;
-    return { barClass, count, text: label(count) };
+    return { barClass, count, text: t(countKey, { count }) };
   });
   const total = items.reduce((sum, item) => sum + item.count, 0);
 
@@ -212,7 +225,7 @@ export function ProjectActivityBar({
                 <Tooltip key={item.barClass}>
                   <TooltipTrigger asChild>
                     <div
-                      aria-label={`${item.count} ${item.text}`}
+                      aria-label={item.text}
                       className={cn("h-full", item.barClass)}
                       data-testid="project-activity-segment"
                       role="img"
@@ -224,7 +237,7 @@ export function ProjectActivityBar({
                       <span
                         className={cn("h-2 w-2 rounded-full", item.barClass)}
                       />
-                      {item.count} {item.text}
+                      {item.text}
                     </span>
                   </TooltipContent>
                 </Tooltip>
@@ -236,13 +249,14 @@ export function ProjectActivityBar({
 }
 
 function StatusPill({ status }: { status: string }) {
+  const t = useT();
   if (status === "active") {
     return null;
   }
 
   return (
     <span className="shrink-0 rounded-full border border-border/60 bg-muted/40 px-2 pb-[3px] pt-[5px] text-2xs font-semibold uppercase leading-none tracking-[0.18em] text-muted-foreground">
-      {status}
+      {t("projects.cards.status", { status })}
     </span>
   );
 }
@@ -252,49 +266,51 @@ function RepositoryUnavailableIndicator({
 }: {
   reason: ProjectRepoUnavailableReason | undefined;
 }) {
+  const t = useT();
   if (!reason) return null;
   const status = {
     authentication: {
-      description: "Kuzz could not authenticate with this repository.",
-      label: "Access failed",
+      description: "projects.cards.authDescription",
+      label: "projects.cards.authLabel",
     },
     missing: {
-      description: "No repository was found.",
-      label: "Uninitialized",
+      description: "projects.cards.missingDescription",
+      label: "projects.cards.missingLabel",
     },
     access: {
-      description:
-        "You’re not a member of the group that grants access to this repository.",
-      label: "No access",
+      description: "projects.cards.accessDescription",
+      label: "projects.cards.accessLabel",
     },
     unbound: {
-      description:
-        "This repository isn't linked to a group yet, so no one can open it.",
-      label: "No access group",
+      description: "projects.cards.unboundDescription",
+      label: "projects.cards.unboundLabel",
     },
     network: {
-      description: "The Kuzz git service could not be reached.",
-      label: "Unreachable",
+      description: "projects.cards.networkDescription",
+      label: "projects.cards.networkLabel",
     },
     ref: {
-      description: "The advertised branch is missing from the git remote.",
-      label: "Branch missing",
+      description: "projects.cards.refDescription",
+      label: "projects.cards.refLabel",
     },
     unknown: {
-      description: "Kuzz could not load this repository.",
-      label: "Unavailable",
+      description: "projects.cards.unknownDescription",
+      label: "projects.cards.unknownLabel",
     },
   } satisfies Record<
     ProjectRepoUnavailableReason,
-    { description: string; label: string }
+    { description: MessageKey; label: MessageKey }
   >;
-  const { description, label } = status[reason];
+  const label = t(status[reason].label);
+  const description = t(status[reason].description);
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          aria-label={`Repository ${label.toLowerCase()}`}
+          aria-label={t("projects.cards.unavailableLabel", {
+            label: label.toLocaleLowerCase(),
+          })}
           className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-amber-600 hover:bg-amber-500/10 dark:text-amber-300"
           role="img"
         >
@@ -314,33 +330,37 @@ export function EmptyState({
 }: {
   onCreateProject: () => void;
 }) {
+  const t = useT();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-16 text-center">
       <Folders className="h-10 w-10 text-muted-foreground/40" />
       <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">No projects yet</p>
+        <p className="text-sm font-medium text-foreground">
+          {t("projects.cards.emptyTitle")}
+        </p>
         <p className="text-sm text-muted-foreground">
-          Projects in this community will appear here.
+          {t("projects.cards.emptyDescription")}
         </p>
       </div>
       <Button onClick={onCreateProject} size="sm" type="button">
         <Plus className="h-4 w-4" />
-        Create project
+        {t("projects.createForm.submit")}
       </Button>
     </div>
   );
 }
 
 export function EmptyFilteredState() {
+  const t = useT();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 border border-dashed border-border/60 px-4 py-12 text-center">
       <Folders className="h-9 w-9 text-muted-foreground/40" />
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">
-          No matching projects
+          {t("projects.cards.noMatches")}
         </p>
         <p className="text-sm text-muted-foreground">
-          Try another owner filter or sort mode.
+          {t("projects.cards.noMatchesHint")}
         </p>
       </div>
     </div>
@@ -354,13 +374,16 @@ function ProjectCardButton({
   project: Project;
   onOpen: (project: Project) => void;
 }) {
+  const t = useT();
   return (
     <button
       className="absolute inset-0 z-0 cursor-pointer"
       onClick={() => onOpen(project)}
       type="button"
     >
-      <span className="sr-only">View {project.name}</span>
+      <span className="sr-only">
+        {t("projects.cards.view", { name: project.name })}
+      </span>
     </button>
   );
 }
@@ -380,11 +403,14 @@ function ProjectActionsMenu({
   onDelete: (project: Project) => Promise<void> | void;
   onOpenTerminal: (project: Project) => Promise<void> | void;
 }) {
+  const t = useT();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   return (
     <AlertDialog onOpenChange={setConfirmOpen} open={confirmOpen}>
-      <ProjectListRowMenu label={`More options for ${project.name}`}>
+      <ProjectListRowMenu
+        label={t("projects.cards.moreOptions", { name: project.name })}
+      >
         <CopyShareLinkMenuItem
           link={projectShareLink(project)}
           testId={`project-copy-link-${project.dtag}`}
@@ -411,23 +437,22 @@ function ProjectActionsMenu({
           }}
         >
           <Trash2 className="h-4 w-4" />
-          Delete project
+          {t("projects.cards.deleteProject")}
         </DropdownMenuItem>
       </ProjectListRowMenu>
       <AlertDialogContent
         data-testid={`project-delete-confirm-${project.dtag}`}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete project?</AlertDialogTitle>
+          <AlertDialogTitle>{t("projects.cards.deleteTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
-            Delete {project.name} from Projects for everyone. This can only be
-            done for projects you own and cannot be undone.
+            {t("projects.cards.deleteDescription", { name: project.name })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button disabled={disabled} type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -443,7 +468,9 @@ function ProjectActionsMenu({
               type="button"
               variant="destructive"
             >
-              {disabled ? "Deleting..." : "Delete project"}
+              {disabled
+                ? t("projects.cards.deleting")
+                : t("projects.cards.deleteProject")}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -482,6 +509,7 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
   onOpen,
   onOpenTerminal,
 }: ProjectItemProps) {
+  const t = useT();
   return (
     <Card
       className="group relative flex h-full min-h-40 flex-col overflow-hidden border-border/60 bg-transparent shadow-none transition-colors duration-150 hover:bg-muted/20"
@@ -539,7 +567,7 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
           )}
           data-testid="projects-grid-card-body"
         >
-          {project.description || "A shared space for internal git work."}
+          {project.description || t("projects.cards.defaultDescription")}
         </p>
 
         <div className="relative z-10 flex items-center px-4 pb-1">
@@ -572,6 +600,7 @@ export const ProjectListRow = React.memo(function ProjectListRow({
   onOpen,
   onOpenTerminal,
 }: ProjectItemProps) {
+  const t = useT();
   const repositoryCount = project.repositoryAddresses.length;
   const selectionItem = selectionItemFromProject({
     channelId: project.projectChannelId,
@@ -590,9 +619,9 @@ export const ProjectListRow = React.memo(function ProjectListRow({
       }
       affiliationClassName="w-auto"
       affiliationTestId="projects-row-context"
-      affiliationTitle={`${repositoryCount} ${
-        repositoryCount === 1 ? "repository" : "repositories"
-      }`}
+      affiliationTitle={t("projects.browser.repositoryCount", {
+        count: repositoryCount,
+      })}
       dateSeconds={getProjectUpdatedAt(project, summary)}
       dateTestId="projects-row-date"
       icon={<Folders className="h-3.5 w-3.5 text-muted-foreground/70" />}

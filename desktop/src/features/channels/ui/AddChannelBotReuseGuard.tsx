@@ -1,4 +1,5 @@
 import type { ManagedAgent } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 
 type AddChannelBotReuseGuardProps = {
   reusableAgent: ManagedAgent;
@@ -13,6 +14,7 @@ export function AddChannelBotReuseGuard({
   onForceNewChange,
   disabled,
 }: AddChannelBotReuseGuardProps) {
+  const t = useT();
   const statusLabel =
     reusableAgent.status === "running" || reusableAgent.status === "deployed"
       ? "running"
@@ -21,7 +23,7 @@ export function AddChannelBotReuseGuard({
   return (
     <div className="space-y-2" data-testid="agent-instance-mode">
       <label className="text-sm font-medium" htmlFor="agent-instance-mode">
-        Agent instance
+        {t("channels.addBot.reuse.label")}
       </label>
       <select
         className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs"
@@ -30,15 +32,17 @@ export function AddChannelBotReuseGuard({
         onChange={(e) => onForceNewChange(e.target.value === "new")}
         value={forceNew ? "new" : "reuse"}
       >
-        <option value="reuse">Reuse existing agent</option>
-        <option value="new">Create new instance</option>
+        <option value="reuse">{t("channels.addBot.reuse.reuse")}</option>
+        <option value="new">{t("channels.addBot.reuse.new")}</option>
       </select>
       <p className="text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">
-          {reusableAgent.name}
-        </span>{" "}
-        is already {statusLabel}. Reusing adds it to this group without creating
-        a duplicate keypair.
+        {t("channels.addBot.reuse.body", {
+          name: reusableAgent.name,
+          status: statusLabel,
+          b: (chunks) => (
+            <span className="font-medium text-foreground">{chunks}</span>
+          ),
+        })}
       </p>
     </div>
   );

@@ -11,6 +11,8 @@
  * the Option-A (reactive) ruling.
  */
 
+import { type MessageKey, t } from "@/shared/i18n";
+
 const TIMEOUT_PREFIX = "restricted: you are timed out until";
 
 /**
@@ -19,12 +21,12 @@ const TIMEOUT_PREFIX = "restricted: you are timed out until";
  * Kept here as the single source of truth so the two surfaces can never drift.
  */
 export const TIMEOUT_PRESETS: ReadonlyArray<{
-  label: string;
+  labelKey: MessageKey;
   seconds: number;
 }> = [
-  { label: "1 hour", seconds: 60 * 60 },
-  { label: "24 hours", seconds: 24 * 60 * 60 },
-  { label: "7 days", seconds: 7 * 24 * 60 * 60 },
+  { labelKey: "moderation.timeout.oneHour", seconds: 60 * 60 },
+  { labelKey: "moderation.timeout.twentyFourHours", seconds: 24 * 60 * 60 },
+  { labelKey: "moderation.timeout.sevenDays", seconds: 7 * 24 * 60 * 60 },
 ];
 
 /**
@@ -111,10 +113,10 @@ export function formatTimeoutRemaining(
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return t("moderation.timeout.remainingHours", { hours, minutes });
   }
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
+    return t("moderation.timeout.remainingMinutes", { minutes, seconds });
   }
-  return `${seconds}s`;
+  return t("moderation.timeout.remainingSeconds", { seconds });
 }

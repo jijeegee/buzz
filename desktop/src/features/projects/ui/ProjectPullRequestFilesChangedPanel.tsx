@@ -42,6 +42,7 @@ import type { ProjectRepoDiff, ProjectRepoDiffFile } from "@/shared/api/types";
 import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import { PROJECT_DETAIL_PANEL_CLASS } from "./projectPanelStyles";
 import { ProjectPullRequestInlineCommentThread } from "./ProjectPullRequestInlineComments";
+import { useT } from "@/shared/i18n";
 
 function fileName(path: string) {
   return path.split("/").pop() || path;
@@ -453,6 +454,7 @@ function DiffPreview({
   focusedAnchor?: ProjectPullRequestCommentAnchor | null;
   inlineComments?: InlineCommentControls;
 }) {
+  const t = useT();
   const rows = diffRows(file);
   const focusedRowRef = React.useRef<HTMLDivElement | null>(null);
   const [highlightedAnchor, setHighlightedAnchor] =
@@ -493,7 +495,7 @@ function DiffPreview({
   if (rows.length === 0) {
     return (
       <div className="bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
-        No textual diff is available for this file.
+        {t("projects.diff.noTextDiff")}
       </div>
     );
   }
@@ -502,8 +504,7 @@ function DiffPreview({
     <div className="overflow-x-auto bg-background/70 font-mono text-xs leading-5">
       {file.truncated ? (
         <div className="border-border/40 border-b bg-amber-500/10 px-4 py-2 text-amber-600 dark:text-amber-400">
-          Large diff truncated — showing the first {rows.length} lines. Use a
-          local checkout to review the full change.
+          {t("projects.diff.truncated", { count: rows.length })}
         </div>
       ) : null}
       {rows.map((row) => {
@@ -550,14 +551,18 @@ function DiffPreview({
               <span className="flex select-none items-center justify-center">
                 {anchor && inlineComments ? (
                   <button
-                    aria-label={`Comment on ${anchor.path} ${anchor.side} line ${anchor.line}`}
+                    aria-label={t("projects.diff.commentOnLine", {
+                      path: anchor.path,
+                      side: anchor.side,
+                      line: anchor.line,
+                    })}
                     className={cn(
                       "flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-primary hover:text-primary-foreground focus-visible:opacity-100 focus-visible:outline-hidden group-hover:opacity-100",
                       (comments.length > 0 || isActive) && "opacity-100",
                     )}
                     data-testid="project-diff-add-comment"
                     onClick={() => inlineComments.onStart(anchor)}
-                    title="Add line comment"
+                    title={t("projects.diff.addLineComment")}
                     type="button"
                   >
                     <MessageSquarePlus className="h-3.5 w-3.5" />
@@ -670,6 +675,7 @@ export function ProjectPullRequestFilesChangedPanel({
   project: Project;
   pullRequest: ProjectPullRequest | null;
 }) {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const [activeAnchor, setActiveAnchor] =
     React.useState<ProjectPullRequestCommentAnchor | null>(null);
@@ -691,7 +697,7 @@ export function ProjectPullRequestFilesChangedPanel({
       mediaTags?: string[][],
       decision?: "request-changes",
     ) => {
-      if (!pullRequest) throw new Error("No review selected.");
+      if (!pullRequest) throw new Error(t("projects.diff.noReview"));
       try {
         await postComment({
           anchor,
@@ -704,19 +710,19 @@ export function ProjectPullRequestFilesChangedPanel({
         setActiveAnchor(null);
         toast.success(
           decision === "request-changes"
-            ? "Changes requested."
-            : "Line comment posted.",
+            ? t("projects.reviewDetail.changesRequested")
+            : t("projects.diff.lineCommentPosted"),
         );
       } catch (error) {
         toast.error(
           error instanceof Error
             ? error.message
-            : "Failed to post line comment.",
+            : t("projects.diff.lineCommentFailed"),
         );
         throw error;
       }
     },
-    [postComment, pullRequest],
+    [postComment, pullRequest, t],
   );
 
   return (
@@ -727,7 +733,7 @@ export function ProjectPullRequestFilesChangedPanel({
       focusedAnchor={focusedAnchor}
       headerLabel={
         pullRequest
-          ? `${pullRequest.title} · ${pullRequest.commit?.slice(0, 7) ?? "Review"}`
+          ? `${pullRequest.title} · ${pullRequest.commit?.slice(0, 7) ?? t("projects.diff.reviewFallback")}`
           : ""
       }
       inlineComments={
@@ -778,8 +784,10 @@ export function ProjectDiffFilesPanel({
   focusedAnchor?: ProjectPullRequestCommentAnchor | null;
   headerLabel: string;
   inlineComments?: InlineCommentControls;
-  subjectLabel: string;
+  /** Which kind of item the diff belongs to, for empty and error text. */
+  subjectLabel: "commit" | "review";
 }) {
+  const t = useT();
   const outerBorderClass = embedded ? "" : PROJECT_DETAIL_PANEL_CLASS;
   const [query, setQuery] = React.useState("");
   const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
@@ -821,7 +829,7 @@ export function ProjectDiffFilesPanel({
   }, [filteredFiles, selectedPath]);
 
   if (isLoading && !diff) {
-    return <KuzzLoadingState label="Loading changed files" />;
+    return <KuzzLoadingState label={t("projects.diff.loading")} />;
   }
 
   if (error && !diff) {
@@ -834,7 +842,7 @@ export function ProjectDiffFilesPanel({
         )}
         data-project-detail-panel={embedded ? undefined : true}
       >
-        <p>Could not load changed files for this {subjectLabel}.</p>
+        <p>{t("projects.diff.loadFailed", { subject: subjectLabel })}</p>
         {message ? (
           <p className="font-mono text-xs text-muted-foreground/80">
             {message}
@@ -853,7 +861,7 @@ export function ProjectDiffFilesPanel({
         )}
         data-project-detail-panel={embedded ? undefined : true}
       >
-        No changed files are available for this {subjectLabel} yet.
+        {t("projects.diff.empty", { subject: subjectLabel })}
       </div>
     );
   }
@@ -871,14 +879,16 @@ export function ProjectDiffFilesPanel({
         <div className="space-y-3 p-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Files className="h-3.5 w-3.5" />
-            <span>{files.length} changed files</span>
+            <span>
+              {t("projects.diff.changedFiles", { count: files.length })}
+            </span>
           </div>
           <label className="flex h-8 items-center gap-2 border border-border/60 bg-background/70 px-2 text-xs text-muted-foreground">
             <Search className="h-3.5 w-3.5" />
             <input
               className="min-w-0 flex-1 bg-transparent text-foreground outline-hidden placeholder:text-muted-foreground"
               onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Filter files…"
+              placeholder={t("projects.diff.filterPlaceholder")}
               value={query}
             />
           </label>
@@ -904,7 +914,9 @@ export function ProjectDiffFilesPanel({
             <span className="truncate">{headerLabel}</span>
           </div>
           <div className="flex items-center gap-3">
-            <span>{files.length} files changed</span>
+            <span>
+              {t("projects.diff.filesChanged", { count: files.length })}
+            </span>
             <span className="text-green-500">+{stats.additions}</span>
             <span className="text-destructive">-{stats.deletions}</span>
           </div>
@@ -946,7 +958,7 @@ export function ProjectDiffFilesPanel({
             </article>
           ) : (
             <div className="border border-border/60 bg-background/45 p-4 text-sm text-muted-foreground">
-              No files match this filter.
+              {t("projects.diff.noMatches")}
             </div>
           )}
         </div>

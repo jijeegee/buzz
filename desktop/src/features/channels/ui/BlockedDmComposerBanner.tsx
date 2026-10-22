@@ -8,10 +8,13 @@ import {
 } from "@/features/profile/lib/identity";
 import type { Channel } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
+import { t as translate, useT } from "@/shared/i18n";
 
 /** The banner's line: the person's name when known, never their key. */
 export function blockedDmBannerText(name: string | null): string {
-  return name ? `You blocked ${name}.` : "You blocked this user.";
+  return name
+    ? translate("channels.blockedBanner.named", { name })
+    : translate("channels.blockedBanner.unnamed");
 }
 
 /**
@@ -30,6 +33,7 @@ export function BlockedDmComposerBanner({
   peer: string;
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const unblock = useUnblockPersonMutation(currentPubkey);
   const index = channel.participantPubkeys.findIndex(
     (pubkey) => pubkey.toLowerCase() === peer,
@@ -54,14 +58,15 @@ export function BlockedDmComposerBanner({
         disabled={unblock.isPending}
         onClick={() =>
           unblock.mutate(peer, {
-            onError: () => toast.error("Couldn't unblock. Try again."),
+            onError: () =>
+              toast.error(t("channels.blockedBanner.unblockFailed")),
           })
         }
         size="sm"
         type="button"
         variant="outline"
       >
-        Unblock
+        {t("channels.blockedBanner.unblock")}
       </Button>
     </div>
   );

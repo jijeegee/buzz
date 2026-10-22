@@ -26,6 +26,7 @@ import {
   KIND_REPO_ANNOUNCEMENT,
 } from "@/shared/constants/kinds";
 import { getCachedRelayOrigin } from "@/shared/lib/mediaUrl";
+import { t } from "@/shared/i18n";
 
 export type CreateProjectInput = {
   name: string;
@@ -55,23 +56,28 @@ function formatAgentFailures(
 ) {
   if (failures.length === 1) {
     const [failure] = failures;
-    return `The project was created, but adding ${failure.name} failed: ${failure.error}`;
+    return t("projects.createProject.agentFailed", {
+      name: failure.name,
+      error: failure.error,
+    });
   }
-  return `The project was created, but adding agents failed: ${failures
-    .map((failure) => `${failure.name}: ${failure.error}`)
-    .join("; ")}`;
+  return t("projects.createProject.agentsFailed", {
+    failures: failures
+      .map((failure) => `${failure.name}: ${failure.error}`)
+      .join("; "),
+  });
 }
 
 async function publishProjectEvent(event: RelayEvent) {
   try {
     await relayClient.publishEvent(
       event,
-      "Timed out creating project.",
-      "Failed to create project.",
+      t("projects.createProject.timedOut"),
+      t("projects.createProject.failed"),
     );
   } catch (error) {
     if (isUnsupportedProjectKindError(error)) {
-      throw new Error("Projects aren't available in this community yet.");
+      throw new Error(t("projects.errors.unsupported"));
     }
     throw error;
   }
@@ -80,8 +86,8 @@ async function publishProjectEvent(event: RelayEvent) {
 async function publishRepositoryEvent(event: RelayEvent) {
   await relayClient.publishEvent(
     event,
-    "Timed out creating the project repository.",
-    "Failed to create the project repository.",
+    t("projects.createProject.repositoryTimedOut"),
+    t("projects.createProject.repositoryFailed"),
   );
 }
 
@@ -95,7 +101,7 @@ function readCreatedProject(
     relayOrigin: getCachedRelayOrigin(),
   });
   if (!project) {
-    throw new Error("The project was created but could not be read.");
+    throw new Error(t("projects.createProject.readFailed"));
   }
   return project;
 }
@@ -169,7 +175,7 @@ async function ensureDefaultRepository({
         project.dtag,
       )) ?? null;
     if (!liveProject) {
-      throw new Error("The project was created but could not be read.");
+      throw new Error(t("projects.createProject.readFailed"));
     }
     return readCreatedProject(liveProject, repositoryEvent);
   }
@@ -180,7 +186,7 @@ async function ensureDefaultRepository({
     project.dtag,
   );
   if (!liveHead) {
-    throw new Error("Couldn't find this project. Refresh and try again.");
+    throw new Error(t("projects.errors.projectNotFound"));
   }
   const patched = buildProjectPatchTemplate({
     liveHead,
@@ -221,7 +227,7 @@ export async function createProject(
   const identity = await getIdentity();
   const dtagPreview = projectDtagFromName(input.name);
   if (!dtagPreview) {
-    throw new Error("Project name must include letters or numbers.");
+    throw new Error(t("projects.creation.nameNeedsLetters"));
   }
   const existing = await fetchProjects();
   const ownerPubkey = identity.pubkey.toLowerCase();
@@ -233,7 +239,9 @@ export async function createProject(
   const projectId = `${ownerPubkey}:${dtagPreview}`;
   const canResume = resume.projectIds.has(projectId);
   if (existingProject && !canResume) {
-    throw new Error(`You already have a project named "${dtagPreview}".`);
+    throw new Error(
+      t("projects.createProject.alreadyYours", { name: dtagPreview }),
+    );
   }
   if (existingProject && !existingProject.legacy) {
     const cachedChannel = resume.channels.get(projectId) ?? null;
@@ -256,7 +264,7 @@ export async function createProject(
   });
   if (conflict) {
     throw new Error(
-      `A project named "${conflict.name}" already exists. Open that one instead of creating another.`,
+      t("projects.createProject.nameTaken", { name: conflict.name }),
     );
   }
 

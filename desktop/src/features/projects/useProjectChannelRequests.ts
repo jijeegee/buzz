@@ -18,6 +18,7 @@ import {
 import { useAddProjectChannelMutation } from "@/features/projects/useAddProjectChannel";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 export function useProjectChannelRequests() {
   const projectsQuery = useProjectsQuery();
@@ -124,21 +125,21 @@ export function useProjectChannelRequests() {
 
   async function approve() {
     if (!request || !sourceAgentPubkey || !project) {
-      setError(
-        "The project home could not be resolved. Refresh and try again.",
-      );
+      setError(t("projects.useProjectChannelRequests.homeUnresolved"));
       return;
     }
     const identity = identityQuery.data?.pubkey;
     const owner = normalizePubkey(project.owner);
     const agent = normalizePubkey(sourceAgentPubkey);
     if ((!identity || normalizePubkey(identity) !== owner) && agent !== owner) {
-      setError("Only the project owner can approve this group.");
+      setError(t("projects.useProjectChannelRequests.ownerOnly"));
       return;
     }
     if (request.request.templateName && !template) {
       setError(
-        `Group template "${request.request.templateName}" is not available on this device.`,
+        t("projects.useProjectChannelRequests.templateMissing", {
+          name: request.request.templateName,
+        }),
       );
       return;
     }
@@ -154,13 +155,17 @@ export function useProjectChannelRequests() {
         ttlSeconds: request.request.ttlSeconds,
         visibility: request.request.visibility,
       });
-      toast.success(`Group "${request.request.name}" created.`);
+      toast.success(
+        t("projects.useProjectChannelRequests.created", {
+          name: request.request.name,
+        }),
+      );
       advanceRequestQueue();
     } catch (nextError) {
       setError(
         nextError instanceof Error
           ? nextError.message
-          : "Failed to create the project group.",
+          : t("projects.useProjectChannelRequests.createFailed"),
       );
     }
   }

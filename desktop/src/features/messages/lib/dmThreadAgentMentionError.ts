@@ -1,10 +1,6 @@
+import { t } from "@/shared/i18n";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import type { ChannelType } from "@/shared/api/types";
-
-export const DM_THREAD_AGENT_MENTION_ERROR =
-  "Agents must already be in a DM to be mentioned in its threads. Start a new conversation that includes the agent.";
-export const DM_THREAD_MEMBERS_LOADING_ERROR =
-  "Checking conversation members. Try again in a moment.";
 
 /**
  * Why a DM thread reply may not mention an agent, or null when it may.
@@ -37,7 +33,7 @@ export function dmThreadAgentMentionError({
   }
 
   if (extractMentionPersonas(trimmed).length > 0) {
-    return DM_THREAD_AGENT_MENTION_ERROR;
+    return t("messages.mentions.dmThreadAgentNotMember");
   }
 
   const agentPubkeys = extractMentionPubkeys(trimmed).filter(isAgentPubkey);
@@ -46,12 +42,12 @@ export function dmThreadAgentMentionError({
   }
 
   if (!hasResolvedMembers) {
-    return DM_THREAD_MEMBERS_LOADING_ERROR;
+    return t("messages.mentions.dmMembersLoading");
   }
 
   return agentPubkeys.some(
     (pubkey) => !memberPubkeys.has(normalizePubkey(pubkey)),
   )
-    ? DM_THREAD_AGENT_MENTION_ERROR
+    ? t("messages.mentions.dmThreadAgentNotMember")
     : null;
 }

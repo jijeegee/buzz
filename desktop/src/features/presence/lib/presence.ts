@@ -1,4 +1,5 @@
 import type { PresenceLookup, PresenceStatus } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 // Live kind:20001 events are self-signed by their author; the subject is
 // always the event author. A p tag is NOT trusted here — a client could forge
@@ -74,11 +75,11 @@ export function resolveAutomaticPresenceStatus(
 export function getPresenceLabel(status: PresenceStatus) {
   switch (status) {
     case "online":
-      return "Online";
+      return t("presence.status.online");
     case "away":
-      return "Away";
+      return t("presence.status.away");
     case "offline":
-      return "Offline";
+      return t("presence.status.offline");
   }
 }
 

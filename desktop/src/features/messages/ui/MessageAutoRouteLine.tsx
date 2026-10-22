@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
@@ -25,6 +26,7 @@ export function MessageAutoRouteLine({
   profiles?: UserProfileLookup;
   tags?: string[][];
 }) {
+  const t = useT();
   const routing = useAutoRouteStatus(messageId);
   const taggedPubkeys = React.useMemo(
     () => getAutoRouteMentionPubkeys(tags),
@@ -42,7 +44,9 @@ export function MessageAutoRouteLine({
           data-testid="message-auto-route-status"
           role="status"
         >
-          {routing.status === "routing" ? "Routing…" : "Not delivered"}
+          {routing.status === "routing"
+            ? t("messages.autoRoute.routing")
+            : t("messages.autoRoute.notDelivered")}
         </div>
       );
     }
@@ -54,7 +58,7 @@ export function MessageAutoRouteLine({
       data-testid="message-auto-route"
     >
       <span aria-hidden="true">→</span>
-      <span>Delivered to</span>
+      <span>{t("messages.autoRoute.deliveredTo")}</span>
       {pubkeys.map((pubkey, index) => {
         const profile = profiles?.[pubkey];
         const label =

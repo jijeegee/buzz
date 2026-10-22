@@ -12,6 +12,7 @@ import {
 
 import { cancelPairing, confirmPairingSas } from "@/shared/api/tauri";
 import { startIdentityRecoveryPairing } from "@/shared/api/tauriPairing";
+import { t as translate, useT } from "@/shared/i18n";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
 import { StyledQrCode } from "@/shared/ui/styled-qr-code";
@@ -31,7 +32,7 @@ function recoveryErrorMessage(message: string): string {
     normalized.includes("expired") ||
     normalized.includes("timed out")
   ) {
-    return "This pairing code expired or lost its connection. Create a new code and try again.";
+    return translate("onboarding.recoveryPairing.expired");
   }
   return message;
 }
@@ -43,6 +44,7 @@ export function IdentityRecoveryPairing({
   onRecovered: () => Promise<void>;
   onStepChange?: (step: Step) => void;
 }) {
+  const t = useT();
   const [step, setStep] = React.useState<Step>("loading");
   const [qrUri, setQrUri] = React.useState<string | null>(null);
   const [sas, setSas] = React.useState<string | null>(null);
@@ -67,7 +69,9 @@ export function IdentityRecoveryPairing({
       setStep("qr");
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not start recovery.",
+        cause instanceof Error
+          ? cause.message
+          : translate("onboarding.recoveryPairing.startFailed"),
       );
       setStep("error");
     }
@@ -100,7 +104,11 @@ export function IdentityRecoveryPairing({
     listen<{ reason: string }>("pairing-aborted", ({ payload }) => {
       if (!disposed && active.current) {
         active.current = false;
-        setError(`Recovery stopped: ${payload.reason}`);
+        setError(
+          translate("onboarding.recoveryPairing.stopped", {
+            reason: payload.reason,
+          }),
+        );
         setStep("error");
       }
     }).then((unlisten) => (disposed ? unlisten() : unlisteners.push(unlisten)));
@@ -127,14 +135,14 @@ export function IdentityRecoveryPairing({
       if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
       copyTimer.current = window.setTimeout(() => setCopied(false), 2_000);
     } catch {
-      setError("Could not copy the pairing code. Try again.");
+      setError(t("onboarding.recoveryPairing.copyFailed"));
     }
   }
 
   async function deny() {
     active.current = false;
     await cancelPairing().catch(() => {});
-    setError("The codes didn't match. Pairing was canceled.");
+    setError(t("onboarding.recoveryPairing.codesMismatch"));
     setStep("error");
   }
 
@@ -148,7 +156,7 @@ export function IdentityRecoveryPairing({
         recoveryErrorMessage(
           cause instanceof Error
             ? cause.message
-            : "Could not confirm recovery.",
+            : t("onboarding.recoveryPairing.confirmFailed"),
         ),
       );
       setStep("error");
@@ -170,14 +178,14 @@ export function IdentityRecoveryPairing({
             centerImageSrc="/app-icon@2x.png"
             data-testid="identity-recovery-qr"
             size={240}
-            title="Desktop identity recovery QR code"
+            title={t("onboarding.recoveryPairing.qrTitle")}
             value={qrUri}
           />
         ) : step === "sas" && sas ? (
           <div className="flex max-w-60 flex-col items-center gap-3 py-2 text-center text-foreground">
             <ShieldCheck className="h-10 w-10 text-primary" />
             <p className="text-sm font-medium">
-              Does this code match your phone?
+              {t("onboarding.recoveryPairing.sasQuestion")}
             </p>
             <div className="rounded-xl border-2 border-primary/30 bg-primary/5 px-5 py-3">
               <p
@@ -188,8 +196,7 @@ export function IdentityRecoveryPairing({
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              This gives this desktop permanent access to your Kuzz identity.
-              Only continue if you trust it.
+              {t("onboarding.recoveryPairing.sasWarning")}
             </p>
             <div className="flex w-full flex-col gap-2">
               <Button
@@ -198,7 +205,7 @@ export function IdentityRecoveryPairing({
                 onClick={() => void confirm()}
               >
                 <Check className="mr-1.5 h-4 w-4" />
-                Codes match
+                {t("onboarding.recoveryPairing.codesMatch")}
               </Button>
               <Button
                 className="flex-1"
@@ -207,7 +214,7 @@ export function IdentityRecoveryPairing({
                 variant="outline"
               >
                 <X className="mr-1.5 h-4 w-4" />
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
           </div>
@@ -216,7 +223,9 @@ export function IdentityRecoveryPairing({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
               <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
             </div>
-            <p className="text-sm font-medium">Identity received securely</p>
+            <p className="text-sm font-medium">
+              {t("onboarding.recoveryPairing.received")}
+            </p>
           </div>
         ) : step === "error" ? (
           <div className="flex max-w-52 flex-col items-center gap-3 text-center text-foreground">
@@ -224,7 +233,7 @@ export function IdentityRecoveryPairing({
             <p className="text-sm text-destructive">{error}</p>
             <Button onClick={() => void start()} size="sm" variant="outline">
               <RefreshCw className="mr-1.5 h-4 w-4" />
-              Try again
+              {t("onboarding.recoveryPairing.tryAgain")}
             </Button>
           </div>
         ) : (
@@ -232,8 +241,8 @@ export function IdentityRecoveryPairing({
             <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               {step === "receiving"
-                ? "Receiving identity from mobile device..."
-                : "Starting pairing..."}
+                ? t("onboarding.recoveryPairing.receiving")
+                : t("onboarding.recoveryPairing.starting")}
             </p>
           </div>
         )}
@@ -256,10 +265,10 @@ export function IdentityRecoveryPairing({
             <Copy className="mr-1.5 h-4 w-4" />
           )}
           {step === "loading"
-            ? "Generating pairing code..."
+            ? t("onboarding.recoveryPairing.generating")
             : copied
-              ? "Copied"
-              : "Copy pairing code"}
+              ? t("common.copied")
+              : t("onboarding.recoveryPairing.copyCode")}
         </Button>
       ) : null}
       {step === "qr" && error ? (

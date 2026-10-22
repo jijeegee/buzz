@@ -8,6 +8,7 @@ import {
   logoutTokenSession,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
+import { t } from "@/shared/i18n";
 
 /**
  * Sign the active account out here. The backend stops its agents and, when
@@ -82,7 +83,9 @@ async function signOutWith(
   const accounts = await listAccounts().catch(() => []);
   const to = accounts.find((account) => account.pubkey === switchedTo);
   action.reload(
-    to ? `Switching to ${accountLabel(to)}…` : "Switching accounts…",
+    to
+      ? t("accounts.switch.switchingTo", { name: accountLabel(to) })
+      : t("accounts.switch.switching"),
     notice,
   );
 }
@@ -90,6 +93,5 @@ async function signOutWith(
 /** Said after a sign-out whose agents did not all confirm they stopped. */
 function agentsNotStoppedNotice(count: number): string | null {
   if (count <= 0) return null;
-  const agents = count === 1 ? "1 agent" : `${count} agents`;
-  return `Signed out. ${agents} from that account did not stop in time; restart Kuzz if they keep replying.`;
+  return t("accounts.signOut.agentsNotStopped", { count });
 }

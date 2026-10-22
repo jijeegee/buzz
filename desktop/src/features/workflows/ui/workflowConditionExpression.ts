@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 import type { TriggerType } from "./workflowFormTypes";
 
 export const CONDITION_OPERATORS = [
@@ -19,6 +20,7 @@ const EXACT_MATCH_OPERATORS = [
 const HEX_ID_PATTERN = /^[0-9a-fA-F]{64}$/;
 
 export type ConditionField = { label: string; value: string };
+type ConditionFieldDefinition = { labelKey: MessageKey; value: string };
 export type ParsedConditionExpression = {
   field: string;
   operator: ConditionOperator;
@@ -26,20 +28,29 @@ export type ParsedConditionExpression = {
   webhookField: string;
 };
 
-const AUTHOR_FIELD: ConditionField = {
-  label: "Author",
+const AUTHOR_FIELD: ConditionFieldDefinition = {
+  labelKey: "workflows.conditionField.author",
   value: "trigger_author",
 };
-const FIELDS_BY_TRIGGER: Record<TriggerType, ConditionField[]> = {
+const FIELDS_BY_TRIGGER: Record<TriggerType, ConditionFieldDefinition[]> = {
   message_posted: [
-    { label: "Message text", value: "trigger_text" },
+    { labelKey: "workflows.conditionField.messageText", value: "trigger_text" },
     AUTHOR_FIELD,
   ],
-  diff_posted: [{ label: "Diff text", value: "trigger_text" }, AUTHOR_FIELD],
-  reaction_added: [
-    { label: "Reaction emoji", value: "trigger_emoji" },
+  diff_posted: [
+    { labelKey: "workflows.conditionField.diffText", value: "trigger_text" },
     AUTHOR_FIELD,
-    { label: "Message", value: "trigger_message_id" },
+  ],
+  reaction_added: [
+    {
+      labelKey: "workflows.conditionField.reactionEmoji",
+      value: "trigger_emoji",
+    },
+    AUTHOR_FIELD,
+    {
+      labelKey: "workflows.conditionField.message",
+      value: "trigger_message_id",
+    },
   ],
   webhook: [],
   schedule: [],
@@ -48,7 +59,10 @@ const FIELDS_BY_TRIGGER: Record<TriggerType, ConditionField[]> = {
 export function conditionFieldsForTrigger(
   triggerType: TriggerType,
 ): ConditionField[] {
-  return FIELDS_BY_TRIGGER[triggerType];
+  return FIELDS_BY_TRIGGER[triggerType].map(({ labelKey, value }) => ({
+    label: t(labelKey),
+    value,
+  }));
 }
 
 export function conditionOperatorsForField(
@@ -80,10 +94,10 @@ export function conditionValueError(
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (field === "trigger_author" && !HEX_ID_PATTERN.test(trimmed)) {
-    return "Choose a valid author.";
+    return t("workflows.conditionField.invalidAuthor");
   }
   if (field.endsWith("_id") && !HEX_ID_PATTERN.test(trimmed)) {
-    return "Choose a valid message.";
+    return t("workflows.conditionField.invalidMessage");
   }
   return null;
 }

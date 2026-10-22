@@ -6,6 +6,7 @@ import {
 } from "@/shared/api/projectGit";
 import type { ProjectRepoDiff } from "@/shared/api/types";
 import type { Repository as Project } from "./hooks";
+import { t } from "@/shared/i18n";
 
 async function fetchProjectCommitDiff(
   project: Project,
@@ -27,7 +28,7 @@ async function fetchProjectCommitDiff(
 
   const cloneUrl = project.cloneUrls[0];
   if (!cloneUrl) {
-    throw new Error("This project has no clone URL to load the commit from.");
+    throw new Error(t("projects.useProjectCommitDiff.noCloneUrl"));
   }
   return getProjectRepoDiff({
     cloneUrl,
@@ -58,7 +59,9 @@ export function useProjectCommitDiffQuery(
     ],
     queryFn: () => {
       if (!project || !commitHash) {
-        return Promise.reject(new Error("No commit selected."));
+        return Promise.reject(
+          new Error(t("projects.useProjectCommitDiff.noCommit")),
+        );
       }
       return fetchProjectCommitDiff(project, commitHash, repoSource, reposDir);
     },

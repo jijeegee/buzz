@@ -6,6 +6,7 @@ import {
   TIME_PRESETS,
   todayDateString,
 } from "@/features/reminders/lib/timePresets";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -30,6 +31,7 @@ export function SnoozeMenu({
   disabled?: boolean;
   onSnooze: (notBefore: number) => void;
 }) {
+  const t = useT();
   const [customOpen, setCustomOpen] = React.useState(false);
   const [customDate, setCustomDate] = React.useState(todayDateString);
   const [customTime, setCustomTime] = React.useState("09:00");
@@ -43,7 +45,7 @@ export function SnoozeMenu({
           className="h-7 w-7 p-0"
           disabled={disabled}
           size="sm"
-          title="Snooze"
+          title={t("reminders.snooze.button")}
           type="button"
           variant="ghost"
         >
@@ -53,10 +55,10 @@ export function SnoozeMenu({
       <DropdownMenuContent align="end" className="min-w-44">
         {TIME_PRESETS.map((preset) => (
           <DropdownMenuItem
-            key={preset.label}
+            key={preset.labelKey}
             onSelect={() => onSnooze(preset.getTimestamp())}
           >
-            {preset.label}
+            {t(preset.labelKey)}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -69,14 +71,14 @@ export function SnoozeMenu({
                 setCustomOpen(true);
               }}
             >
-              Custom…
+              {t("reminders.snooze.custom")}
             </DropdownMenuItem>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-auto space-y-3">
-            <p className="text-sm font-medium">Snooze until</p>
+            <p className="text-sm font-medium">{t("reminders.snooze.until")}</p>
             <div className="flex gap-2">
               <Input
-                aria-label="Snooze date"
+                aria-label={t("reminders.snooze.dateLabel")}
                 className="flex-1"
                 min={todayDateString()}
                 onChange={(event) => setCustomDate(event.target.value)}
@@ -84,7 +86,7 @@ export function SnoozeMenu({
                 value={customDate}
               />
               <Input
-                aria-label="Snooze time"
+                aria-label={t("reminders.snooze.timeLabel")}
                 className="w-[120px]"
                 onChange={(event) => setCustomTime(event.target.value)}
                 type="time"
@@ -101,7 +103,7 @@ export function SnoozeMenu({
               }}
               type="button"
             >
-              Snooze
+              {t("reminders.snooze.submit")}
             </Button>
           </PopoverContent>
         </Popover>

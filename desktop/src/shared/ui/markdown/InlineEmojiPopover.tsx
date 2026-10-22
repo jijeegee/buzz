@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import {
@@ -14,10 +15,11 @@ export function InlineEmojiPopover({
   alt: string | undefined;
   resolvedSrc: string;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const openTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const label = alt?.trim() || "Custom emoji";
+  const label = alt?.trim() || t("ui.inlineEmoji.fallbackLabel");
 
   const clearTimers = React.useCallback(() => {
     if (openTimeout.current) {

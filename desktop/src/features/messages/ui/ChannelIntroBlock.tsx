@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type * as React from "react";
 
 import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
@@ -41,6 +42,7 @@ export function ChannelIntroBlock({
   className?: string;
   intro: ChannelIntro;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -83,11 +85,12 @@ export function ChannelIntroBlock({
       </p>
       {intro.hideBeginning ? null : (
         <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-          This is the beginning of the{" "}
-          <span className="font-medium text-foreground">
-            {intro.channelKindLabel}
-          </span>
-          .
+          {t("messages.intro.beginningOf", {
+            kind: intro.channelKindLabel,
+            b: (chunks) => (
+              <span className="font-medium text-foreground">{chunks}</span>
+            ),
+          })}
         </p>
       )}
       {intro.description ? (

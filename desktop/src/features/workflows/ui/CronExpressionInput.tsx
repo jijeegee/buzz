@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   CRON_FIELD_DEFINITIONS,
@@ -20,6 +21,7 @@ export function CronExpressionInput({
   onChange: (value: string) => void;
   value: string;
 }) {
+  const t = useT();
   const [fields, setFields] = React.useState<CronFields>(() =>
     cronFieldsFromExpression(value),
   );
@@ -55,7 +57,7 @@ export function CronExpressionInput({
   return (
     <fieldset className="space-y-1.5">
       <legend className="text-xs font-medium text-muted-foreground">
-        Cron expression
+        {t("workflows.cron.legend")}
       </legend>
       <div aria-describedby={messageId} className="space-y-1">
         <div className="grid grid-cols-5 gap-px px-px">
@@ -65,10 +67,10 @@ export function CronExpressionInput({
                 "min-w-0 truncate px-1 text-center text-2xs text-muted-foreground",
                 validationErrors[index] && "text-destructive",
               )}
-              htmlFor={`wf-trigger-cron-${definition.label.toLowerCase()}`}
-              key={definition.label}
+              htmlFor={`wf-trigger-cron-${definition.id}`}
+              key={definition.id}
             >
-              {definition.label}
+              {t(definition.labelKey)}
             </label>
           ))}
         </div>
@@ -83,7 +85,7 @@ export function CronExpressionInput({
             <input
               aria-describedby={messageId}
               aria-invalid={Boolean(validationErrors[index])}
-              aria-label={definition.label}
+              aria-label={t(definition.labelKey)}
               autoCapitalize="characters"
               autoCorrect="off"
               className={cn(
@@ -94,8 +96,8 @@ export function CronExpressionInput({
                   "bg-destructive/5 text-destructive focus:bg-destructive/10",
               )}
               disabled={disabled}
-              id={`wf-trigger-cron-${definition.label.toLowerCase()}`}
-              key={definition.label}
+              id={`wf-trigger-cron-${definition.id}`}
+              key={definition.id}
               onChange={(event) => {
                 const nextFields = [...fields] as CronFields;
                 nextFields[index] = event.target.value.replace(/\s/g, "");
@@ -161,8 +163,7 @@ export function CronExpressionInput({
         id={messageId}
         role={firstError ? "alert" : undefined}
       >
-        {firstError ??
-          "UTC · Paste all 5 fields, or use wildcards, lists, ranges, and steps."}
+        {firstError ?? t("workflows.cron.hint")}
       </p>
     </fieldset>
   );

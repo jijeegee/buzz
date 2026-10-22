@@ -9,6 +9,7 @@ import {
   useUsersBatchQuery,
 } from "@/features/profile/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 
 import { Input } from "@/shared/ui/input";
@@ -39,6 +40,7 @@ export function WorkflowAuthorPicker({
   onEscape?: () => void;
   value: string;
 }) {
+  const t = useT();
   const pickerRef = React.useRef<HTMLDivElement>(null);
   const optionRefs = React.useRef(new Map<string, HTMLButtonElement>());
   const [query, setQuery] = React.useState("");
@@ -153,7 +155,7 @@ export function WorkflowAuthorPicker({
               : undefined
           }
           aria-controls={listId}
-          aria-label="Search authors"
+          aria-label={t("workflows.authorPicker.search")}
           aria-expanded="true"
           autoCapitalize="none"
           autoComplete="off"
@@ -202,7 +204,7 @@ export function WorkflowAuthorPicker({
               }
             }
           }}
-          placeholder="Search authors…"
+          placeholder={t("workflows.authorPicker.searchPlaceholder")}
           role="combobox"
           spellCheck={false}
           value={query}
@@ -210,7 +212,7 @@ export function WorkflowAuthorPicker({
       </div>
 
       <div
-        aria-label="Authors"
+        aria-label={t("workflows.authorPicker.listLabel")}
         className={cn(
           "grid min-h-0 flex-1 gap-2 overflow-y-auto overscroll-contain p-2",
           columnCount === 3 ? "grid-cols-3" : "grid-cols-2",
@@ -254,11 +256,14 @@ export function WorkflowAuthorPicker({
             className="col-span-full flex items-center justify-center gap-2 px-3 py-8 text-sm text-muted-foreground"
             role="status"
           >
-            <LoaderCircle className="h-4 w-4 animate-spin" /> Loading authors…
+            <LoaderCircle className="h-4 w-4 animate-spin" />{" "}
+            {t("workflows.authorPicker.loading")}
           </p>
         ) : visibleCandidates.length === 0 ? (
           <p className="col-span-full px-3 py-8 text-center text-sm text-muted-foreground">
-            {failed ? "Couldn’t load authors." : "No authors found."}
+            {failed
+              ? t("workflows.authorPicker.loadFailed")
+              : t("workflows.authorPicker.noResults")}
           </p>
         ) : null}
         {failed ? (
@@ -271,7 +276,7 @@ export function WorkflowAuthorPicker({
             }}
             type="button"
           >
-            Couldn’t load all authors. Retry
+            {t("workflows.authorPicker.partialFailedRetry")}
           </button>
         ) : null}
         {directoryQuery.hasNextPage ? (
@@ -282,8 +287,8 @@ export function WorkflowAuthorPicker({
             type="button"
           >
             {directoryQuery.isFetchingNextPage
-              ? "Loading more…"
-              : "Load more authors"}
+              ? t("workflows.authorPicker.loadingMore")
+              : t("workflows.authorPicker.loadMore")}
           </button>
         ) : null}
       </div>

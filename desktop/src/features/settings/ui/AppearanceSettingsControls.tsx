@@ -16,6 +16,7 @@ import {
   useLinkPreviewStyle,
   type LinkPreviewStyle,
 } from "@/shared/lib/linkPreviewStylePreference";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { isLinuxPlatform } from "@/shared/lib/platform";
 import type { ResolvedLinkPreview } from "@/shared/lib/useResolvedLinkPreviews";
 import { LinkPreviewAttachmentPresentation } from "@/shared/ui/link-preview-attachment";
@@ -47,6 +48,7 @@ import { SegmentedControl } from "@/shared/ui/segmented-control";
 
 /** Kuzz navigation can use either its production tint or a stronger tab. */
 export function ProminentActiveTabSetting() {
+  const t = useT();
   const { prominentActiveTab, setProminentActiveTab } = useTheme();
 
   return (
@@ -56,13 +58,13 @@ export function ProminentActiveTabSetting() {
           className="text-sm font-medium"
           htmlFor="prominent-active-tab-switch"
         >
-          Prominent active tab
+          {t("settings.appearance.prominentActiveTab")}
         </label>
         <p
           className="text-sm font-normal text-muted-foreground/70"
           data-settings-subcopy
         >
-          Give the selected navigation item a higher-contrast background.
+          {t("settings.appearance.prominentActiveTabHint")}
         </p>
       </div>
       <Switch
@@ -77,54 +79,54 @@ export function ProminentActiveTabSetting() {
 
 const LINK_PREVIEW_STYLE_OPTIONS: {
   value: LinkPreviewStyle;
-  label: string;
-  description: string;
+  label: MessageKey;
+  description: MessageKey;
 }[] = [
   {
     value: "compact",
-    label: "Compact",
-    description: "Small cards with a thumbnail",
+    label: "settings.appearance.linkPreviewCompact",
+    description: "settings.appearance.linkPreviewCompactHint",
   },
   {
     value: "rich",
-    label: "Rich",
-    description: "Large previews with images and descriptions",
+    label: "settings.appearance.linkPreviewRich",
+    description: "settings.appearance.linkPreviewRichHint",
   },
 ];
 
 const CONVERSATION_DENSITY_OPTIONS: readonly {
   value: ConversationDensity;
-  label: string;
+  label: MessageKey;
 }[] = [
   {
     value: "compact",
-    label: "Compact",
+    label: "settings.appearance.densityCompact",
   },
   {
     value: "comfortable",
-    label: "Comfy",
+    label: "settings.appearance.densityComfortable",
   },
   {
     value: "spacious",
-    label: "Spacious",
+    label: "settings.appearance.densitySpacious",
   },
 ];
 
 const FONT_SIZE_OPTIONS: readonly {
   value: FontSize;
-  label: string;
+  label: MessageKey;
 }[] = [
   {
     value: "smaller",
-    label: "Smaller",
+    label: "settings.appearance.fontSizeSmaller",
   },
   {
     value: "default",
-    label: "Default",
+    label: "settings.appearance.fontSizeDefault",
   },
   {
     value: "larger",
-    label: "Larger",
+    label: "settings.appearance.fontSizeLarger",
   },
 ];
 
@@ -162,6 +164,7 @@ function ConversationDensityPreviewMessage({
 }
 
 function ConversationPreview() {
+  const t = useT();
   return (
     <div className="px-4 py-3" data-testid="conversation-preview">
       <div
@@ -171,7 +174,7 @@ function ConversationPreview() {
       >
         <span className="absolute right-3.5 top-3 inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground/55">
           <Eye aria-hidden="true" className="size-3" />
-          Preview
+          {t("settings.appearance.preview")}
         </span>
         <div className="p-4" data-testid="conversation-preview-content">
           <ConversationDensityPreviewMessage
@@ -179,19 +182,16 @@ function ConversationPreview() {
             author="Maya"
             timestamp="9:41"
           >
-            The revised conversation layout is ready to review.
+            {t("settings.appearance.sampleMessage1")}
           </ConversationDensityPreviewMessage>
           <ConversationDensityPreviewMessage
             avatar="T"
             author="Theo"
             timestamp="9:43"
           >
-            <p>
-              I added a longer message so you can compare line height and text
-              spacing.
-            </p>
+            <p>{t("settings.appearance.sampleMessage2")}</p>
             <p className="mt-conversation-paragraph">
-              The same rhythm carries through groups, threads, DMs, and Inbox.
+              {t("settings.appearance.sampleMessage3")}
             </p>
           </ConversationDensityPreviewMessage>
         </div>
@@ -202,49 +202,70 @@ function ConversationPreview() {
 
 /** App-wide type sizing and conversation-specific spacing controls. */
 export function ConversationDisplaySettings() {
+  const t = useT();
   const density = useConversationDensity();
   const fontSize = useFontSize();
+  const fontSizeOptions = React.useMemo(
+    () =>
+      FONT_SIZE_OPTIONS.map((option) => ({
+        ...option,
+        label: t(option.label),
+      })),
+    [t],
+  );
+  const densityOptions = React.useMemo(
+    () =>
+      CONVERSATION_DENSITY_OPTIONS.map((option) => ({
+        ...option,
+        label: t(option.label),
+      })),
+    [t],
+  );
 
   return (
     <div data-testid="conversation-display-group">
       <SettingsOptionRow data-testid="font-size-row">
         <div className="min-w-0">
-          <p className="text-sm font-medium">Font size</p>
+          <p className="text-sm font-medium">
+            {t("settings.appearance.fontSize")}
+          </p>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            Applies across conversations and interface text
+            {t("settings.appearance.fontSizeHint")}
           </p>
         </div>
         <SegmentedControl
           size="wide"
-          legend="Font size"
+          legend={t("settings.appearance.fontSize")}
           onPreviewChange={previewFontSize}
           onValueChange={setFontSize}
           optionTestIdPrefix="font-size"
-          options={FONT_SIZE_OPTIONS}
+          options={fontSizeOptions}
           testId="font-size-control"
           value={fontSize}
         />
       </SettingsOptionRow>
       <SettingsOptionRow data-testid="conversation-density-row">
         <div className="min-w-0">
-          <p className="text-sm font-medium">Conversation density</p>
+          <p className="text-sm font-medium">
+            {t("settings.appearance.density")}
+          </p>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            Spacing in conversations and Markdown content across Kuzz
+            {t("settings.appearance.densityHint")}
           </p>
         </div>
         <SegmentedControl
           size="wide"
-          legend="Conversation density"
+          legend={t("settings.appearance.density")}
           onPreviewChange={previewConversationDensity}
           onValueChange={setConversationDensity}
           optionTestIdPrefix="conversation-density"
-          options={CONVERSATION_DENSITY_OPTIONS}
+          options={densityOptions}
           testId="conversation-density-control"
           value={density}
         />
@@ -258,14 +279,14 @@ export function ConversationDisplaySettings() {
  * Static sample used by the settings preview card. The thumbnail is an inline
  * SVG data URL so the preview needs no network fetch or native image pipeline.
  */
-const LINK_PREVIEW_SAMPLE_BASE: Omit<ResolvedLinkPreview, "imageDataUrl"> = {
+const LINK_PREVIEW_SAMPLE_BASE: Omit<
+  ResolvedLinkPreview,
+  "imageDataUrl" | "title" | "description"
+> = {
   kind: "generic-link",
   href: "https://example.com/product-updates",
   provider: "example.com",
-  title: "Product updates — a fresh look at conversations",
   typeLabel: "link",
-  description:
-    "Highlights from this release: refreshed conversation layout, quicker link handling, and readability improvements.",
   imageState: "image",
   imageDomain: "example.com",
 };
@@ -305,13 +326,16 @@ function SampleImageLightbox({
 }
 
 function LinkPreviewSample({ style }: { style: LinkPreviewStyle }) {
+  const t = useT();
   const { isDark } = useTheme();
   const preview = React.useMemo<ResolvedLinkPreview>(
     () => ({
       ...LINK_PREVIEW_SAMPLE_BASE,
+      title: t("settings.appearance.sampleLinkTitle"),
+      description: t("settings.appearance.sampleLinkDescription"),
       imageDataUrl: kuzzGradientSampleImage(isDark),
     }),
-    [isDark],
+    [isDark, t],
   );
   return (
     <div className="px-4 py-3" data-testid="link-preview-sample">
@@ -323,7 +347,7 @@ function LinkPreviewSample({ style }: { style: LinkPreviewStyle }) {
       >
         <span className="absolute right-3.5 top-3 inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground/55">
           <Eye aria-hidden="true" className="size-3" />
-          Preview
+          {t("settings.appearance.preview")}
         </span>
         <div className="p-4 pr-24">
           <LinkPreviewAttachmentPresentation
@@ -339,6 +363,7 @@ function LinkPreviewSample({ style }: { style: LinkPreviewStyle }) {
 }
 
 export function LinkPreviewStyleSetting() {
+  const t = useT();
   const style = useLinkPreviewStyle();
   const [previewStyle, setPreviewStyle] =
     React.useState<LinkPreviewStyle | null>(null);
@@ -347,26 +372,36 @@ export function LinkPreviewStyleSetting() {
     LINK_PREVIEW_STYLE_OPTIONS.find(
       (option) => option.value === displayedStyle,
     ) ?? LINK_PREVIEW_STYLE_OPTIONS[0];
+  const options = React.useMemo(
+    () =>
+      LINK_PREVIEW_STYLE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.label),
+      })),
+    [t],
+  );
 
   return (
     <div data-testid="link-preview-style-group">
       <SettingsOptionRow>
         <div className="min-w-0">
-          <p className="text-sm font-medium">Link previews</p>
+          <p className="text-sm font-medium">
+            {t("settings.appearance.linkPreviews")}
+          </p>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            {activeOption.description}
+            {t(activeOption.description)}
           </p>
         </div>
         <SegmentedControl
           size="compact"
-          legend="Link previews"
+          legend={t("settings.appearance.linkPreviews")}
           onPreviewChange={setPreviewStyle}
           onValueChange={setLinkPreviewStyle}
           optionTestIdPrefix="link-preview-style"
-          options={LINK_PREVIEW_STYLE_OPTIONS}
+          options={options}
           testId="link-preview-style-control"
           value={style}
         />
@@ -378,18 +413,18 @@ export function LinkPreviewStyleSetting() {
 
 const THREAD_VIEW_MODE_OPTIONS: {
   value: ThreadViewMode;
-  label: string;
-  description: string;
+  label: MessageKey;
+  description: MessageKey;
 }[] = [
   {
     value: "focus",
-    label: "Focus",
-    description: "Threads open over the group",
+    label: "settings.appearance.threadFocus",
+    description: "settings.appearance.threadFocusHint",
   },
   {
     value: "split",
-    label: "Split",
-    description: "Threads open in a side panel next to the group",
+    label: "settings.appearance.threadSplit",
+    description: "settings.appearance.threadSplitHint",
   },
 ];
 
@@ -402,6 +437,7 @@ export function GlassBackgroundSetting() {
     setGlassBackground,
     setGlassOpacity,
   } = useTheme();
+  const t = useT();
   const shouldReduceMotion = useReducedMotion();
 
   if (isLinuxPlatform()) return null;
@@ -410,27 +446,31 @@ export function GlassBackgroundSetting() {
   const opacityRow = (
     <SettingsOptionRow data-testid="glass-opacity-row">
       <div className="min-w-0">
-        <p className="text-sm font-medium">Glass opacity</p>
+        <p className="text-sm font-medium">
+          {t("settings.appearance.glassOpacity")}
+        </p>
         <p
           className="text-sm font-normal text-muted-foreground/70"
           data-settings-subcopy
           id="glass-opacity-description"
         >
-          Lower values reveal more of the desktop blur.
+          {t("settings.appearance.glassOpacityHint")}
         </p>
       </div>
       <div className="flex w-64 shrink-0 items-center">
         <AvatarFramingSlider
           ariaDescribedBy="glass-opacity-description"
-          ariaLabel="Glass opacity"
-          ariaValueText={`${glassOpacity}% opacity`}
+          ariaLabel={t("settings.appearance.glassOpacity")}
+          ariaValueText={t("settings.appearance.glassOpacityValue", {
+            value: glassOpacity,
+          })}
           compact
           handleAlwaysVisible
           max={GLASS_OPACITY_MAX}
           min={GLASS_OPACITY_MIN}
           onChange={setGlassOpacity}
           onReset={() => setGlassOpacity(DEFAULT_GLASS_OPACITY)}
-          resetLabel="Reset glass opacity"
+          resetLabel={t("settings.appearance.resetGlassOpacity")}
           resetTestId="glass-opacity-reset"
           resetValue={DEFAULT_GLASS_OPACITY}
           testId="glass-opacity-slider"
@@ -448,15 +488,15 @@ export function GlassBackgroundSetting() {
             className="text-sm font-medium"
             htmlFor="glass-background-switch"
           >
-            Glass background
+            {t("settings.appearance.glassBackground")}
           </label>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
             {glassBackgroundSupported
-              ? "Blur the desktop behind navigation while keeping content solid."
-              : "Available in the macOS desktop app."}
+              ? t("settings.appearance.glassBackgroundHint")
+              : t("settings.appearance.glassBackgroundUnavailable")}
           </p>
         </div>
         <Switch
@@ -584,6 +624,7 @@ function ThreadLayoutDiagram({ mode }: { mode: ThreadViewMode }) {
 }
 
 function ThreadLayoutPreview({ mode }: { mode: ThreadViewMode }) {
+  const t = useT();
   return (
     <div className="px-4 py-3" data-testid="thread-layout-preview">
       <div
@@ -593,7 +634,7 @@ function ThreadLayoutPreview({ mode }: { mode: ThreadViewMode }) {
       >
         <span className="absolute right-3.5 top-3 inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground/55">
           <Eye aria-hidden="true" className="size-3" />
-          Preview
+          {t("settings.appearance.preview")}
         </span>
         <div className="p-4 pr-24">
           <ThreadLayoutDiagram mode={mode} />
@@ -604,6 +645,7 @@ function ThreadLayoutPreview({ mode }: { mode: ThreadViewMode }) {
 }
 
 export function ThreadLayoutSetting() {
+  const t = useT();
   const threadViewMode = useThreadViewMode();
   const [previewMode, setPreviewMode] = React.useState<ThreadViewMode | null>(
     null,
@@ -615,17 +657,25 @@ export function ThreadLayoutSetting() {
   const activeOption =
     THREAD_VIEW_MODE_OPTIONS.find((option) => option.value === displayedMode) ??
     THREAD_VIEW_MODE_OPTIONS[0];
+  const options = React.useMemo(
+    () =>
+      THREAD_VIEW_MODE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.label),
+      })),
+    [t],
+  );
 
   return (
     <div data-testid="thread-layout-group">
       <SettingsOptionRow>
         <div className="min-w-0">
           <p className="text-sm font-medium">
-            Thread layout
+            {t("settings.appearance.threadLayout")}
             {showCommunityScope ? (
               <span className="font-normal text-muted-foreground">
                 {" "}
-                (all communities)
+                {t("settings.appearance.allCommunities")}
               </span>
             ) : null}
           </p>
@@ -633,16 +683,16 @@ export function ThreadLayoutSetting() {
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            {activeOption.description}
+            {t(activeOption.description)}
           </p>
         </div>
         <SegmentedControl
           size="compact"
-          legend="Thread layout"
+          legend={t("settings.appearance.threadLayout")}
           onPreviewChange={setPreviewMode}
           onValueChange={setThreadViewMode}
           optionTestIdPrefix="thread-layout"
-          options={THREAD_VIEW_MODE_OPTIONS}
+          options={options}
           testId="thread-layout-control"
           value={threadViewMode}
         />
@@ -662,15 +712,18 @@ export function AccentPickerContent({
   isDark: boolean;
   setAccentColor: (value: string) => void;
 }) {
+  const t = useT();
   return (
     <SettingsOptionRow className="items-start">
       <div className="min-w-0">
-        <p className="text-sm font-medium">Accent color</p>
+        <p className="text-sm font-medium">
+          {t("settings.appearance.accentColor")}
+        </p>
         <p
           className="text-sm font-normal text-muted-foreground/70"
           data-settings-subcopy
         >
-          Choose the highlight color used throughout Kuzz.
+          {t("settings.appearance.accentColorHint")}
         </p>
       </div>
       <div
@@ -692,7 +745,9 @@ export function AccentPickerContent({
 
             return (
               <button
-                aria-label={`Use ${color.name} accent`}
+                aria-label={t("settings.appearance.useAccent", {
+                  name: color.name,
+                })}
                 aria-pressed={isSelected}
                 className="relative h-9 w-9 shrink-0 rounded-full border border-border transition-transform duration-200 ease-out hover:scale-[1.15] focus-visible:scale-[1.15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none"
                 data-testid={`accent-color-${color.name.toLowerCase()}`}

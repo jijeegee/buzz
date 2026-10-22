@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { applyReusableAgentAccessPolicy } from "@/features/agents/channelAgents";
 import type { AgentPersona, ManagedAgent } from "@/shared/api/types";
@@ -142,7 +143,7 @@ export function useEnsureAgentMentionsReady({
           pubkeys.push(pubkey);
         } catch (error) {
           errors.push(
-            `${agent.name}: ${getErrorMessage(error, "Could not prepare agent.")}`,
+            `${agent.name}: ${getErrorMessage(error, t("messages.agentPrepare.failed"))}`,
           );
         }
       }

@@ -5,6 +5,7 @@ import {
   UNAVAILABLE_KEY_LABEL,
   UNKNOWN_USER_LABEL,
 } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 export const roleOrder: Record<ChannelMember["role"], number> = {
   owner: 0,
@@ -19,7 +20,7 @@ export function formatMemberName(
   currentPubkey?: string,
 ) {
   if (currentPubkey && member.pubkey === currentPubkey) {
-    return "You";
+    return t("common.you");
   }
 
   return member.displayName ?? UNKNOWN_USER_LABEL;

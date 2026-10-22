@@ -8,6 +8,7 @@ import {
   type Layer0Goal,
   setLayer0Goal,
 } from "@/shared/api/tauriLayer0";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Switch } from "@/shared/ui/switch";
 import { Textarea } from "@/shared/ui/textarea";
@@ -28,6 +29,7 @@ export function Layer0GoalCard({
 }: {
   agentPubkey: string | null;
 }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const goalQuery = useQuery({
     queryKey: layer0Key(agentPubkey),
@@ -60,7 +62,7 @@ export function Layer0GoalCard({
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">
-            {isAgent ? "Agent goal" : "My goal"}
+            {isAgent ? t("goals.layer0.agentTitle") : t("goals.layer0.myTitle")}
           </h3>
         </div>
         <p
@@ -68,8 +70,8 @@ export function Layer0GoalCard({
           data-testid="layer0-goal-description"
         >
           {isAgent
-            ? "Not shown to others. This agent reads it and steers all of its work toward it."
-            : "Not shown to others. Your agents read it and steer all of their work toward it."}
+            ? t("goals.layer0.agentDescription")
+            : t("goals.layer0.myDescription")}
         </p>
       </div>
       <div className="space-y-1">
@@ -77,10 +79,9 @@ export function Layer0GoalCard({
           className="text-xs font-medium text-muted-foreground"
           htmlFor={privateId}
         >
-          Private —{" "}
           {isAgent
-            ? "only this agent sees it"
-            : "only you and your own agents see it"}
+            ? t("goals.layer0.agentPrivateLabel")
+            : t("goals.layer0.myPrivateLabel")}
         </label>
         <Textarea
           className="min-h-20"
@@ -92,7 +93,7 @@ export function Layer0GoalCard({
       </div>
       <div className="flex items-center justify-between gap-3">
         <label className="text-sm" htmlFor={`${publicId}-switch`}>
-          Share part of it publicly
+          {t("goals.layer0.sharePublicly")}
         </label>
         <Switch
           checked={goal.publicEnabled}
@@ -107,7 +108,9 @@ export function Layer0GoalCard({
             className="text-xs font-medium text-muted-foreground"
             htmlFor={publicId}
           >
-            Public — shown on {isAgent ? "this agent's" : "your"} profile
+            {isAgent
+              ? t("goals.layer0.agentPublicLabel")
+              : t("goals.layer0.myPublicLabel")}
           </label>
           <Textarea
             className="min-h-16"
@@ -123,7 +126,7 @@ export function Layer0GoalCard({
       ) : null}
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Running agents use a changed goal from their next message.
+          {t("goals.layer0.appliesNextMessage")}
         </p>
         <Button
           data-testid="layer0-save"
@@ -132,7 +135,7 @@ export function Layer0GoalCard({
           size="sm"
           type="button"
         >
-          {saveMutation.isPending ? "Saving…" : "Save"}
+          {saveMutation.isPending ? t("goals.editor.saving") : t("common.save")}
         </Button>
       </div>
     </section>

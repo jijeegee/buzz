@@ -9,7 +9,6 @@ import {
   withPrivateName,
 } from "./chatPrivateNames.ts";
 import {
-  EMPTY_CHAT_TITLE,
   formatChatMemberTitle,
   groupChatTitleWithNames,
   invitationChatPeople,
@@ -99,7 +98,7 @@ test("title: nobody else is an empty chat", () => {
       currentPubkey: ME,
       nameOf: () => "x",
     }),
-    EMPTY_CHAT_TITLE,
+    "Empty chat",
   );
   assert.equal(formatChatMemberTitle([]), "Empty chat");
 });

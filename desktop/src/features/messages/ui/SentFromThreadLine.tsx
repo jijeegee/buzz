@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -14,6 +15,7 @@ export function SentFromThreadLine({
   channelId?: string | null;
   tags?: string[][];
 }) {
+  const t = useT();
   const { channels } = useChannelNavigation();
   const { goChannel } = useAppNavigation();
   const reference = getSentFromThreadReference(tags);
@@ -39,7 +41,7 @@ export function SentFromThreadLine({
       className={`${MESSAGE_MARKDOWN_CLASS} mb-1 flex min-h-[var(--inline-chip-min-height)] min-w-0 items-center gap-1.5 pt-0.5 text-sm font-normal leading-4 text-muted-foreground/70`}
       data-testid="sent-from-thread"
     >
-      <span className="shrink-0">Sent from thread:</span>
+      <span className="shrink-0">{t("messages.sentFromThread")}</span>
       <MessageLinkPill
         channels={channels}
         interactive

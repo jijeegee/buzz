@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type { LucideIcon } from "lucide-react";
 import {
   BellOff,
@@ -87,13 +88,18 @@ export function ThreadHeaderActions({
   rootId: string;
   showInChannelButton?: React.ReactNode;
 }) {
+  const t = useT();
   const canFollow = isFollowing ? Boolean(onUnfollow) : Boolean(onFollow);
   return (
     <>
       {canFollow ? (
         <HeaderIconButton
           icon={isFollowing ? BellOff : BellRing}
-          label={isFollowing ? "Unfollow thread" : "Follow thread"}
+          label={
+            isFollowing
+              ? t("messages.thread.unfollow")
+              : t("messages.thread.follow")
+          }
           onClick={() => (isFollowing ? onUnfollow?.() : onFollow?.())}
           testId="message-thread-follow-toggle"
         />
@@ -101,11 +107,11 @@ export function ThreadHeaderActions({
       {channelId ? (
         <HeaderIconButton
           icon={Link}
-          label="Copy link"
+          label={t("messages.actions.copyLink")}
           onClick={() =>
             copyTextToClipboard(
               buildMessageLink({ channelId, messageId: rootId }),
-              "Link copied to clipboard",
+              t("messages.actions.linkCopied"),
             )
           }
           testId="message-thread-copy-link"
@@ -115,7 +121,9 @@ export function ThreadHeaderActions({
         <HeaderIconButton
           disabled={closePending}
           icon={isClosed ? RotateCcw : CircleCheck}
-          label={isClosed ? "Reopen thread" : "Close thread"}
+          label={
+            isClosed ? t("messages.thread.reopen") : t("messages.thread.close")
+          }
           onClick={onToggleClosed}
           pressed={isClosed}
           testId="message-thread-close-toggle"
@@ -127,7 +135,7 @@ export function ThreadHeaderActions({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label="More thread actions"
+              aria-label={t("messages.thread.moreActions")}
               className="text-muted-foreground hover:text-foreground"
               data-testid="message-thread-more"
               size="icon-xs"
@@ -140,7 +148,7 @@ export function ThreadHeaderActions({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={onMarkUnread}>
               <CircleDot className="h-4 w-4" />
-              Mark as unread
+              {t("messages.thread.markUnread")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

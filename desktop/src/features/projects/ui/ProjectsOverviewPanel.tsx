@@ -34,6 +34,7 @@ import {
   type ProjectsOverviewSection,
   projectsOverviewContext,
 } from "./projectsOverviewContext";
+import { useT } from "@/shared/i18n";
 
 export type { ProjectsOverviewSection };
 
@@ -163,6 +164,7 @@ export function ProjectsActivityIntro({
 }: {
   digest: ProjectsActivityDigest;
 }) {
+  const t = useT();
   return (
     <section
       className="pb-6 pt-8 text-left"
@@ -172,7 +174,7 @@ export function ProjectsActivityIntro({
         className="text-xl font-semibold tracking-tight text-foreground"
         data-testid="projects-page-header"
       >
-        Projects Activity
+        {t("projects.overviewPanel.title")}
       </h2>
       <p
         className="mt-2 max-w-2xl text-sm text-muted-foreground"
@@ -183,8 +185,8 @@ export function ProjectsActivityIntro({
           <span key={highlight}>
             {index > 0
               ? index === digest.highlights.length - 1
-                ? ", and "
-                : ", "
+                ? t("projects.activityDigest.lastSeparator")
+                : t("projects.activityDigest.separator")
               : null}
             <strong className="font-medium text-foreground/90">
               {highlight}

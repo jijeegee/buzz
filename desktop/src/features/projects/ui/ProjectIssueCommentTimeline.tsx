@@ -4,7 +4,6 @@ import * as React from "react";
 import type { ProjectIssue } from "@/features/projects/hooks";
 import {
   formatExactTimestamp,
-  pluralize,
   relativeTime,
 } from "@/features/projects/lib/projectsViewHelpers";
 import {
@@ -15,6 +14,7 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ProfileAuthorName } from "./ProjectProfileIdentity";
 import { ProjectRichContent } from "./ProjectRichContent";
+import { useT } from "@/shared/i18n";
 
 const COLLAPSED_COMMENT_COUNT = 3;
 
@@ -25,6 +25,7 @@ export function ProjectIssueCommentTimeline({
   comments: ProjectIssue["comments"];
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
   const orderedComments = React.useMemo(
@@ -68,8 +69,10 @@ export function ProjectIssueCommentTimeline({
         </span>
         <span className="flex min-h-5 min-w-0 flex-1 items-center text-left">
           {isCollapsed
-            ? `Show ${pluralize(orderedComments.length, "earlier comment")}`
-            : "Collapse comment history"}
+            ? t("projects.commentTimeline.showEarlier", {
+                count: orderedComments.length,
+              })
+            : t("projects.commentTimeline.collapse")}
         </span>
         {isCollapsed ? (
           <ChevronDown className="mt-0.5 h-3.5 w-3.5" />
@@ -92,7 +95,9 @@ export function ProjectIssueCommentTimeline({
             </span>
           </span>
           <span className="min-w-0 flex-1 text-left">
-            Show {pluralize(earlierCommentCount, "earlier comment")}
+            {t("projects.commentTimeline.showEarlier", {
+              count: earlierCommentCount,
+            })}
           </span>
         </button>
       ) : null}

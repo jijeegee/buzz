@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import {
   AlertDialog,
@@ -39,6 +40,8 @@ export function NonMemberMentionDialog({
   open,
   onRestoreFocus,
 }: NonMemberMentionDialogProps) {
+  const t = useT();
+  const nameList = names.join(", ");
   const safeActionRef = React.useRef<HTMLButtonElement>(null);
   const restoreFocusRef = React.useRef(onRestoreFocus);
   return (
@@ -67,28 +70,31 @@ export function NonMemberMentionDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>
             {isChat
-              ? `Add ${names.join(", ")} to this chat?`
-              : "Mention people outside this group?"}
+              ? t("messages.nonMember.chatTitle", { names: nameList })
+              : t("messages.nonMember.groupTitle")}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {isChat ? (
-              `${names.join(", ")} ${names.length === 1 ? "isn't" : "aren't"} in this chat.${
-                onDoNothing ? " You can also send without adding them." : ""
-              }`
+              `${t("messages.nonMember.chatBody", {
+                count: names.length,
+                names: nameList,
+              })}${onDoNothing ? ` ${t("messages.nonMember.chatSendHint")}` : ""}`
             ) : (
               <>
-                {names.join(", ")} {names.length === 1 ? "is" : "are"} not in
-                this group.{" "}
+                {t("messages.nonMember.groupBody", {
+                  count: names.length,
+                  names: nameList,
+                })}{" "}
               </>
             )}
             {isChat
               ? null
               : onDoNothing
                 ? canInvite
-                  ? "Add them to the group, or send without inviting them."
-                  : `${PRIVATE_CHANNEL_ADD_DENIED_MESSAGE} You can still send without inviting them.`
+                  ? t("messages.nonMember.inviteOrSend")
+                  : `${PRIVATE_CHANNEL_ADD_DENIED_MESSAGE} ${t("messages.nonMember.canStillSend")}`
                 : canInvite
-                  ? "Add them to the group, or cancel to keep your draft."
+                  ? t("messages.nonMember.inviteOrCancel")
                   : PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -112,10 +118,10 @@ export function NonMemberMentionDialog({
             {onDoNothing
               ? canInvite
                 ? isChat
-                  ? "Send without adding"
-                  : "Do nothing"
-                : "Send anyway"
-              : "Cancel"}
+                  ? t("messages.nonMember.sendWithoutAdding")
+                  : t("messages.nonMember.doNothing")
+                : t("messages.nonMember.sendAnyway")
+              : t("common.cancel")}
           </Button>
           {canInvite ? (
             <Button
@@ -126,11 +132,11 @@ export function NonMemberMentionDialog({
             >
               {isChat
                 ? isInvitePending
-                  ? "Adding..."
-                  : "Add"
+                  ? t("messages.nonMember.adding")
+                  : t("common.add")
                 : isInvitePending
-                  ? "Inviting..."
-                  : "Invite"}
+                  ? t("messages.nonMember.inviting")
+                  : t("messages.nonMember.invite")}
             </Button>
           ) : null}
         </AlertDialogFooter>

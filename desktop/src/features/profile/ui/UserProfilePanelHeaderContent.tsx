@@ -12,6 +12,7 @@ import {
   AuxiliaryPanelHeaderGroup,
   AuxiliaryPanelHeaderTitleBlock,
 } from "@/shared/layout/AuxiliaryPanel";
+import { t } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 
 export function getUserProfilePanelHeaderContent({
@@ -35,13 +36,13 @@ export function getUserProfilePanelHeaderContent({
   view: ProfilePanelView;
   viewerIsOwner: boolean;
 }) {
-  const title = PROFILE_PANEL_VIEW_TITLES[view];
+  const title = t(PROFILE_PANEL_VIEW_TITLES[view]);
   const shouldShowLogDetails =
     (view === "diagnostics" || view === "logs") && Boolean(logSubtitle);
   const headerLeftContent = (
     <AuxiliaryPanelHeaderGroup
       align={shouldShowLogDetails ? "start" : "center"}
-      backButtonAriaLabel="Back to profile"
+      backButtonAriaLabel={t("profile.panelHeader.backToProfile")}
       backButtonTestId="user-profile-panel-back"
       onBack={view !== "summary" ? onBack : undefined}
     >
@@ -71,7 +72,7 @@ export function getUserProfilePanelHeaderContent({
       {view === "summary" ? agentSettingsMenu : null}
       {view === "summary" && onEditAgent ? (
         <Button
-          aria-label="Edit agent"
+          aria-label={t("profile.panelHeader.editAgent")}
           className="text-sm"
           data-testid="user-profile-header-edit-agent"
           onClick={onEditAgent}
@@ -79,14 +80,14 @@ export function getUserProfilePanelHeaderContent({
           type="button"
           variant="ghost"
         >
-          Edit
+          {t("common.edit")}
         </Button>
       ) : null}
       {shouldShowLogDetails ? (
         <CopyButton
           className="text-muted-foreground hover:text-foreground"
           iconOnly
-          label="Copy log"
+          label={t("profile.panelHeader.copyLog")}
           size="icon"
           value={logCopyValue ?? ""}
           variant="ghost"

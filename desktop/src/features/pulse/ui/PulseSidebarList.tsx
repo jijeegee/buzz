@@ -8,6 +8,7 @@ import {
   parsePulseTab,
 } from "@/features/pulse/ui/PulseView";
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 
 const TAB_KEYS = ["tab"] as const;
@@ -22,6 +23,7 @@ const ICONS: Record<PulseTab, React.ComponentType<{ className?: string }>> = {
 
 /** The Pulse tab's list, in the left column: one row per feed. */
 export function PulseSidebarList() {
+  const t = useT();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { values } = useHistorySearchState(TAB_KEYS);
@@ -29,7 +31,7 @@ export function PulseSidebarList() {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="pulse-list">
       <h2 className="px-3 pb-2 pt-1 text-base font-semibold text-sidebar-foreground">
-        Pulse
+        {t("pulse.sidebar.title")}
       </h2>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-1 pb-4">
         {(Object.keys(PULSE_TAB_LABELS) as PulseTab[]).map((tab) => {
@@ -52,7 +54,7 @@ export function PulseSidebarList() {
               type="button"
             >
               <Icon className="h-4 w-4 shrink-0 text-sidebar-foreground/60" />
-              <span className="truncate">{PULSE_TAB_LABELS[tab]}</span>
+              <span className="truncate">{t(PULSE_TAB_LABELS[tab])}</span>
             </button>
           );
         })}

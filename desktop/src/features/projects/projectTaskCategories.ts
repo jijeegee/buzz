@@ -1,8 +1,14 @@
+import { type MessageKey, t } from "@/shared/i18n";
+
+/** `labelKey` is translated where shown (never at module load). */
 export const PROJECT_TASK_CATEGORIES = [
-  { label: "Issue", value: "issue" },
-  { label: "Change request", value: "change-request" },
-  { label: "Improvement", value: "improvement" },
-] as const;
+  { labelKey: "projects.taskCategories.issue", value: "issue" },
+  {
+    labelKey: "projects.taskCategories.changeRequest",
+    value: "change-request",
+  },
+  { labelKey: "projects.taskCategories.improvement", value: "improvement" },
+] as const satisfies ReadonlyArray<{ labelKey: MessageKey; value: string }>;
 
 export type ProjectTaskCategory =
   (typeof PROJECT_TASK_CATEGORIES)[number]["value"];
@@ -28,9 +34,9 @@ export function projectTaskCategoryFromLabels(
 }
 
 export function projectTaskCategoryLabel(category: ProjectTaskCategory) {
-  return (
+  return t(
     PROJECT_TASK_CATEGORIES.find((option) => option.value === category)
-      ?.label ?? "Issue"
+      ?.labelKey ?? "projects.taskCategories.issue",
   );
 }
 

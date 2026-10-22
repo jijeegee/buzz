@@ -11,6 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/ui/tooltip";
+import { useT } from "@/shared/i18n";
 
 type SelectionChipButtonProps = {
   disabled: boolean;
@@ -65,6 +66,7 @@ export function AddChannelBotTeamsSection({
   selectedPersonaIds,
   teams,
 }: AddChannelBotTeamsSectionProps) {
+  const t = useT();
   if (isLoading || teams.length === 0) {
     return null;
   }
@@ -72,9 +74,11 @@ export function AddChannelBotTeamsSection({
   return (
     <div className="space-y-3">
       <div>
-        <div className="text-sm font-medium">Teams</div>
+        <div className="text-sm font-medium">
+          {t("channels.addBot.teams.title")}
+        </div>
         <p className="text-xs text-muted-foreground">
-          Select a team to toggle all its agents at once.
+          {t("channels.addBot.teams.body")}
         </p>
       </div>
 
@@ -132,8 +136,10 @@ export function AddChannelBotTeamsSection({
                         >
                           <Check className="h-4 w-4" />
                           {allInChannel
-                            ? "All in group"
-                            : `${inChannelCount} in group`}
+                            ? t("channels.addBot.teams.allInGroup")
+                            : t("channels.addBot.teams.someInGroup", {
+                                count: inChannelCount,
+                              })}
                         </span>
                       ) : null}
                     </SelectionChipButton>

@@ -1,7 +1,5 @@
+import { t } from "@/shared/i18n";
 export type HuddleAction = "join" | "start";
-
-const HUDDLE_AUDIO_UNAVAILABLE_MESSAGE =
-  "Huddle audio isn’t available on this server. Ask an administrator to turn it on.";
 
 function rawErrorMessage(error: unknown): string | null {
   if (error instanceof Error) {
@@ -24,7 +22,7 @@ export function formatHuddleActionError(
     normalized?.includes("huddle_audio_unavailable") ||
     normalized?.includes("huddle audio unavailable in this deployment")
   ) {
-    return HUDDLE_AUDIO_UNAVAILABLE_MESSAGE;
+    return t("huddle.error.audioUnavailable");
   }
 
   if (message) {
@@ -32,6 +30,6 @@ export function formatHuddleActionError(
   }
 
   return action === "join"
-    ? "Couldn’t join the huddle."
-    : "Couldn’t start the huddle.";
+    ? t("huddle.error.joinFailed")
+    : t("huddle.error.startFailed");
 }
