@@ -32,6 +32,10 @@ Each app's English file holds the text plus a note on where it appears:
 - The note says where (screen, place) and what (button, title, error, notification). Add "Short." when space is tight.
 - Use ICU plurals instead of `n === 1 ? ... : ...`, and whole sentences with `{placeholders}` instead of joining pieces.
 - Do not use literal `{` `}` in text. Apostrophes are plain text.
+- Reuse `common.*` (Cancel, Save, Delete, Close, …) for plain buttons; give a screen its own key when the word needs a different note.
+- Never call `t()` / `appL10n` at module load (top-level constants): it would freeze English. Translate inside the function or component, or keep keys in the constant and translate where shown.
+- Leave out what users never read as UI text: logs, internal errors, test ids, protocol values, and the name Kuzz inside other words' keys.
+- Links or bold inside a sentence: desktop `t("x", { b: (s) => <b>{s}</b> })` with `"<b>bold</b>"` in the text; keep the whole sentence in one string.
 
 `node i18n/scripts/i18n.mjs check` (part of `just check`) fails on invalid ICU, a missing note, or a translation that breaks its placeholders.
 
