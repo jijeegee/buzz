@@ -32,38 +32,38 @@ class _NotificationsSection extends ConsumerWidget {
             (permissionDenied || permissionUnavailable));
     final canToggle = hasCapability || community.pushNotificationsEnabled;
     final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
+    final l10n = context.l10n;
     final subtitle = optOutPending
-        ? 'Waiting for relay confirmation; notifications may continue'
+        ? l10n.settingsPushOptOutPending
         : !community.pushNotificationsEnabled
         ? hasBuiltInServer
-              ? 'Off'
-              : 'Off for this community'
+              ? l10n.settingsPushOff
+              : l10n.settingsPushOffCommunity
         : !hasCapability
-        ? 'Push support unavailable; you can still turn notifications off'
+        ? l10n.settingsPushUnsupported
         : switch (status) {
             KuzzPushAuthorizationStatus.notDetermined =>
-              'Waiting for iOS notification permission',
-            KuzzPushAuthorizationStatus.denied =>
-              'Enabled in Kuzz, but disabled in iOS Settings',
+              l10n.settingsPushWaitingPermission,
+            KuzzPushAuthorizationStatus.denied => l10n.settingsPushDeniedInIos,
             KuzzPushAuthorizationStatus.authorized ||
             KuzzPushAuthorizationStatus.provisional ||
             KuzzPushAuthorizationStatus.ephemeral =>
               hasBuiltInServer
-                  ? 'Receive message notifications'
-                  : 'Receive message notifications from this community',
+                  ? l10n.settingsPushOn
+                  : l10n.settingsPushOnCommunity,
             null when authorization.isLoading =>
-              'Checking iOS notification permission',
-            null => 'Enabled in Kuzz; iOS permission status unavailable',
+              l10n.settingsPushCheckingPermission,
+            null => l10n.settingsPushPermissionUnknown,
           };
 
     return AppListCard(
-      label: 'Notifications',
+      label: l10n.settingsNotificationsSection,
       verticalPadding: Grid.twelve,
       children: [
         AppListRow(
           key: const ValueKey('push-notifications-enabled'),
           icon: LucideIcons.bell,
-          title: 'Push notifications',
+          title: l10n.settingsPushNotifications,
           subtitle: subtitle,
           subtitleStyle: showSettingsRecovery
               ? context.textTheme.bodySmall?.copyWith(
@@ -95,7 +95,7 @@ class _NotificationsSection extends ConsumerWidget {
           AppListRow(
             key: const ValueKey('push-notifications-open-settings'),
             icon: LucideIcons.settings,
-            title: 'Open iOS Notification Settings',
+            title: l10n.settingsPushOpenIosSettings,
             onTap: () => unawaited(
               ref.read(kuzzPushNotificationSettingsOpenerProvider)(),
             ),

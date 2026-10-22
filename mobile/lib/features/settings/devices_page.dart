@@ -10,6 +10,7 @@ import '../../shared/auth/auth.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -80,9 +81,9 @@ class DevicesPage extends HookConsumerWidget {
     Future<void> signOutDevice(AccountDevice device) async {
       final ok = await _confirm(
         context,
-        title: 'Sign out ${device.name}?',
-        body: 'That device will need to sign in again.',
-        action: 'Sign out',
+        title: context.l10n.settingsDevicesSignOutDeviceTitle(device.name),
+        body: context.l10n.settingsDevicesSignOutDeviceBody,
+        action: context.l10n.settingsDevicesSignOut,
       );
       if (!ok) return;
       await run((api) => api.revokeDevice(device.id));
@@ -114,7 +115,9 @@ class DevicesPage extends HookConsumerWidget {
             .read(ownDeviceEventsProvider.notifier)
             .publishDeviceRobot(device.id, chosen);
       } catch (failure) {
-        if (context.mounted) error.value = 'Couldn’t save the robot: $failure';
+        if (context.mounted) {
+          error.value = context.l10n.settingsDevicesRobotSaveFailed('$failure');
+        }
       } finally {
         if (context.mounted) busy.value = false;
       }
@@ -123,27 +126,26 @@ class DevicesPage extends HookConsumerWidget {
     Future<void> signOutOthers() async {
       final ok = await _confirm(
         context,
-        title: 'Sign out all other devices?',
-        body:
-            'Every device except this one will need to sign in again. '
-            'Bots keep working.',
-        action: 'Sign out others',
+        title: context.l10n.settingsDevicesSignOutOthersTitle,
+        body: context.l10n.settingsDevicesSignOutOthersBody,
+        action: context.l10n.settingsDevicesSignOutOthersAction,
       );
       if (!ok) return;
       await run((api) => api.revokeOtherSessions());
     }
 
     Future<void> revokeBots() async {
+      final doneMessage = context.l10n.settingsDevicesRevokeBotsDone;
       final ok = await _confirm(
         context,
-        title: 'Revoke all bot tokens?',
-        body: 'Every bot you own stops working until it gets a new token.',
-        action: 'Revoke',
+        title: context.l10n.settingsDevicesRevokeBotsTitle,
+        body: context.l10n.settingsDevicesRevokeBotsBody,
+        action: context.l10n.settingsDevicesRevokeBotsAction,
       );
       if (!ok) return;
       await run(
         (api) => api.revokeAllBotTokens(),
-        done: 'All bot tokens revoked',
+        done: doneMessage,
         refresh: false,
       );
     }
@@ -172,12 +174,9 @@ class DevicesPage extends HookConsumerWidget {
     Future<void> deleteAccount() async {
       final ok = await _confirm(
         context,
-        title: 'Delete your account?',
-        body:
-            'Your account is disabled now and permanently deleted after 30 '
-            'days. Signing in again before then restores it. Every device, '
-            'including this one, is signed out.',
-        action: 'Delete account',
+        title: context.l10n.settingsDevicesDeleteAccountTitle,
+        body: context.l10n.settingsDevicesDeleteAccountBody,
+        action: context.l10n.settingsDevicesDeleteAccount,
       );
       if (!ok) return;
       final deleted = await run((api) => api.deleteAccount(), refresh: false);
@@ -189,7 +188,13 @@ class DevicesPage extends HookConsumerWidget {
     final list = devices.value;
     final showDevices = part == DevicesPagePart.devices;
     return Scaffold(
-      appBar: AppBar(title: Text(showDevices ? 'Devices' : 'Security')),
+      appBar: AppBar(
+        title: Text(
+          showDevices
+              ? context.l10n.settingsDevicesTitle
+              : context.l10n.settingsSecurityTitle,
+        ),
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: Grid.xs),
@@ -206,8 +211,9 @@ class DevicesPage extends HookConsumerWidget {
                     Semantics(
                       liveRegion: true,
                       child: Text(
-                        'Your account was deleted, but this device couldn’t '
-                        'finish signing out: ${cleanupError.value}',
+                        context.l10n.settingsDevicesLocalCleanupFailed(
+                          cleanupError.value!,
+                        ),
                         key: const Key('devices-local-cleanup-error'),
                         style: context.textTheme.bodySmall?.copyWith(
                           color: context.colors.error,
@@ -220,7 +226,7 @@ class DevicesPage extends HookConsumerWidget {
                       onPressed: busy.value
                           ? null
                           : () => unawaited(finishLocalCleanup()),
-                      child: const Text('Finish signing out'),
+                      child: Text(context.l10n.settingsDevicesFinishSignOut),
                     ),
                   ],
                 ),
@@ -245,7 +251,7 @@ class DevicesPage extends HookConsumerWidget {
             if (showDevices) ...[
               if (list != null)
                 AppListCard(
-                  label: 'Signed-in devices',
+                  label: context.l10n.settingsDevicesSignedIn,
                   children: [
                     for (final device in list)
                       _DeviceRow(
@@ -270,7 +276,9 @@ class DevicesPage extends HookConsumerWidget {
                       Semantics(
                         liveRegion: true,
                         child: Text(
-                          'Couldn’t load devices: ${devices.error}',
+                          context.l10n.settingsDevicesLoadFailed(
+                            '${devices.error}',
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -279,18 +287,18 @@ class DevicesPage extends HookConsumerWidget {
                         key: const Key('devices-load-retry'),
                         onPressed: () =>
                             ref.invalidate(accountDevicesProvider(origin)),
-                        child: const Text('Try again'),
+                        child: Text(context.l10n.commonTryAgain),
                       ),
                     ],
                   ),
                 )
               else
-                const Padding(
-                  padding: EdgeInsets.all(Grid.sm),
+                Padding(
+                  padding: const EdgeInsets.all(Grid.sm),
                   child: Center(
                     child: KuzzLoadingIndicator(
                       size: 32,
-                      semanticLabel: 'Loading devices',
+                      semanticLabel: context.l10n.settingsDevicesLoading,
                     ),
                   ),
                 ),
@@ -299,7 +307,7 @@ class DevicesPage extends HookConsumerWidget {
                   AppListRow(
                     key: const Key('devices-sign-out-others'),
                     icon: LucideIcons.monitorSmartphone,
-                    title: 'Sign out all other devices',
+                    title: context.l10n.settingsDevicesSignOutOthers,
                     onTap: busy.value ? null : () => unawaited(signOutOthers()),
                   ),
                 ],
@@ -311,7 +319,7 @@ class DevicesPage extends HookConsumerWidget {
                   AppListRow(
                     key: const Key('devices-revoke-bots'),
                     icon: LucideIcons.bot,
-                    title: 'Revoke all bot tokens',
+                    title: context.l10n.settingsDevicesRevokeBots,
                     onTap: busy.value ? null : () => unawaited(revokeBots()),
                   ),
                 ],
@@ -321,12 +329,12 @@ class DevicesPage extends HookConsumerWidget {
                 children: [
                   ExpansionTile(
                     key: const Key('devices-account-deletion'),
-                    title: const Text('Account deletion'),
+                    title: Text(context.l10n.settingsDevicesAccountDeletion),
                     children: [
                       AppListRow(
                         key: const Key('devices-delete-account'),
                         icon: LucideIcons.trash2,
-                        title: 'Delete account',
+                        title: context.l10n.settingsDevicesDeleteAccount,
                         titleColor: context.colors.error,
                         onTap: busy.value
                             ? null
@@ -364,10 +372,13 @@ class _DeviceRow extends ConsumerWidget {
       ),
     );
     final details = [
-      if (device.current) 'This device',
-      if (device.platform.isNotEmpty) _platformLabel(device.platform),
+      if (device.current) context.l10n.settingsDevicesThisDevice,
+      if (device.platform.isNotEmpty)
+        _platformLabel(context.l10n, device.platform),
       if (!device.current && device.lastSeenAt != null)
-        'Last active ${_date(device.lastSeenAt!.toLocal())}',
+        context.l10n.settingsDevicesLastActive(
+          _date(device.lastSeenAt!.toLocal()),
+        ),
     ].join(' · ');
     // The device's robot: agents running on this device show the same one
     // to their owner, so the owner can match an agent to its computer.
@@ -378,7 +389,7 @@ class _DeviceRow extends ConsumerWidget {
       leading: IconButton(
         key: Key('device-robot-${device.id}'),
         onPressed: onChooseRobot,
-        tooltip: 'Change robot for ${device.name}',
+        tooltip: context.l10n.settingsDevicesChangeRobot(device.name),
         icon: DeviceRobotIcon(
           variant: resolveDeviceRobot(device.id, override: robotOverride),
           size: 24,
@@ -400,7 +411,7 @@ class _DeviceRow extends ConsumerWidget {
           IconButton(
             key: Key('device-rename-${device.id}'),
             onPressed: onRename,
-            tooltip: 'Rename ${device.name}',
+            tooltip: context.l10n.settingsDevicesRenameTooltip(device.name),
             icon: const Icon(LucideIcons.pencil, size: 18),
           ),
           if (!device.current)
@@ -408,9 +419,9 @@ class _DeviceRow extends ConsumerWidget {
               key: Key('device-sign-out-${device.id}'),
               onPressed: onSignOut,
               child: Semantics(
-                label: 'Sign out ${device.name}',
+                label: context.l10n.settingsDevicesSignOutLabel(device.name),
                 excludeSemantics: true,
-                child: const Text('Sign out'),
+                child: Text(context.l10n.settingsDevicesSignOut),
               ),
             ),
         ],
@@ -418,13 +429,14 @@ class _DeviceRow extends ConsumerWidget {
     );
   }
 
-  static String _platformLabel(String platform) => switch (platform) {
-    'mobile' => 'Mobile',
-    'desktop' => 'Desktop',
-    'web' => 'Web',
-    'cli' => 'CLI',
-    _ => platform,
-  };
+  static String _platformLabel(AppLocalizations l10n, String platform) =>
+      switch (platform) {
+        'mobile' => l10n.settingsDevicesPlatformMobile,
+        'desktop' => l10n.settingsDevicesPlatformDesktop,
+        'web' => l10n.settingsDevicesPlatformWeb,
+        'cli' => 'CLI',
+        _ => platform,
+      };
 
   static String _date(DateTime at) =>
       '${at.year}-${at.month.toString().padLeft(2, '0')}-'
@@ -509,7 +521,7 @@ class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
       color: context.colors.onSurfaceVariant,
     );
     return AlertDialog(
-      title: Text('Robot for ${widget.deviceName}'),
+      title: Text(context.l10n.settingsDevicesRobotTitle(widget.deviceName)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -520,11 +532,11 @@ class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
                 key: const Key('device-robot-preview'),
                 variant: _robot(_color, _shape),
                 size: 56,
-                semanticLabel: 'Selected robot',
+                semanticLabel: context.l10n.settingsDevicesRobotSelected,
               ),
             ),
             const SizedBox(height: Grid.xs),
-            Text('Shape', style: sectionStyle),
+            Text(context.l10n.settingsDevicesRobotShape, style: sectionStyle),
             const SizedBox(height: Grid.half),
             Wrap(
               spacing: Grid.half,
@@ -533,7 +545,9 @@ class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
                 for (var shape = 0; shape < deviceRobotShapes.length; shape++)
                   _option(
                     key: Key('device-robot-shape-${deviceRobotShapes[shape]}'),
-                    label: 'Shape ${deviceRobotShapes[shape]}',
+                    label: context.l10n.settingsDevicesRobotShapeOption(
+                      deviceRobotShapes[shape],
+                    ),
                     selected: shape == _shape,
                     robot: _robot(_color, shape),
                     onTap: () => setState(() => _shape = shape),
@@ -541,7 +555,7 @@ class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
               ],
             ),
             const SizedBox(height: Grid.xs),
-            Text('Colour', style: sectionStyle),
+            Text(context.l10n.settingsDevicesRobotColour, style: sectionStyle),
             const SizedBox(height: Grid.half),
             Wrap(
               spacing: Grid.half,
@@ -550,7 +564,9 @@ class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
                 for (var color = 0; color < deviceRobotColors.length; color++)
                   _option(
                     key: Key('device-robot-color-$color'),
-                    label: 'Colour ${color + 1}',
+                    label: context.l10n.settingsDevicesRobotColourOption(
+                      color + 1,
+                    ),
                     selected: color == _color,
                     robot: _robot(color, _shape),
                     onTap: () => setState(() => _color = color),
@@ -563,12 +579,12 @@ class _DeviceRobotPickerDialogState extends State<DeviceRobotPickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           key: const Key('device-robot-save'),
           onPressed: () => Navigator.of(context).pop(_robot(_color, _shape)),
-          child: const Text('Save'),
+          child: Text(context.l10n.commonSave),
         ),
       ],
     );
@@ -608,25 +624,27 @@ class _DeviceNameDialogState extends State<_DeviceNameDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Rename device'),
+      title: Text(context.l10n.settingsDevicesRenameTitle),
       content: TextField(
         key: const Key('device-rename-field'),
         controller: _controller,
         autofocus: true,
         maxLength: 64,
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(labelText: 'Device name'),
+        decoration: InputDecoration(
+          labelText: context.l10n.settingsDevicesNameLabel,
+        ),
         onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           key: const Key('device-rename-save'),
           onPressed: _submit,
-          child: const Text('Save'),
+          child: Text(context.l10n.commonSave),
         ),
       ],
     );
@@ -647,7 +665,7 @@ Future<bool> _confirm(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           key: const Key('devices-confirm'),

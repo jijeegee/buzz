@@ -130,5 +130,704 @@
         "type": "int"
       }
     }
+  },
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Plain Cancel button in a dialog or sheet. Short."
+  },
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Plain Save button in a form or dialog. Short."
+  },
+  "commonSaving": "Saving",
+  "@commonSaving": {
+    "description": "Screen-reader label of the spinner shown on a Save button while saving. Short."
+  },
+  "commonTryAgain": "Try again",
+  "@commonTryAgain": {
+    "description": "Retry button shown after something failed to load or save. Short."
+  },
+  "settingsAccentColorTitle": "Accent Color",
+  "@settingsAccentColorTitle": {
+    "description": "Accent color picker page, title in the top bar. Short."
+  },
+  "settingsAccountTitle": "Account",
+  "@settingsAccountTitle": {
+    "description": "Account page (name, username, photo shared by a server), title in the top bar. Short."
+  },
+  "settingsAccountLoading": "Loading account",
+  "@settingsAccountLoading": {
+    "description": "Account page, screen-reader label of the loading spinner."
+  },
+  "settingsAccountLoadFailed": "Couldn’t load your account: {error}",
+  "@settingsAccountLoadFailed": {
+    "description": "Account page, error when the account failed to load; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccountPhotoUploadFailed": "Couldn’t upload the photo: {error}",
+  "@settingsAccountPhotoUploadFailed": {
+    "description": "Account page, error under the form when the profile photo upload failed; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccountDisplayNameInvalid": "Display name must be 1–64 characters.",
+  "@settingsAccountDisplayNameInvalid": {
+    "description": "Account page, error when the display name is empty or too long."
+  },
+  "settingsAccountUsernameInvalid": "Username must be 3–32 lowercase letters, digits or underscores.",
+  "@settingsAccountUsernameInvalid": {
+    "description": "Account page, error when the username has the wrong length or characters."
+  },
+  "settingsAccountUsernameTaken": "That username is already taken.",
+  "@settingsAccountUsernameTaken": {
+    "description": "Account page, error when someone else already uses the username."
+  },
+  "settingsAccountSaveFailed": "Couldn’t save your profile: {error}",
+  "@settingsAccountSaveFailed": {
+    "description": "Account page, error when saving failed; {error} is a message from the server.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccountProfileSaved": "Profile saved",
+  "@settingsAccountProfileSaved": {
+    "description": "Account page, snackbar after the profile was saved. Short."
+  },
+  "settingsAccountNoPhoto": "No profile photo",
+  "@settingsAccountNoPhoto": {
+    "description": "Account page, screen-reader label of the avatar when there is no photo."
+  },
+  "settingsAccountPhoto": "Profile photo",
+  "@settingsAccountPhoto": {
+    "description": "Account page, screen-reader label of the avatar photo."
+  },
+  "settingsAccountChangePhoto": "Change photo",
+  "@settingsAccountChangePhoto": {
+    "description": "Account page, button under the avatar to pick a new photo. Short."
+  },
+  "settingsAccountRemovePhoto": "Remove photo",
+  "@settingsAccountRemovePhoto": {
+    "description": "Account page, button under the avatar to remove the photo. Short."
+  },
+  "settingsAccountDisplayNameLabel": "Display name",
+  "@settingsAccountDisplayNameLabel": {
+    "description": "Account page, label of the display name text field. Short."
+  },
+  "settingsAccountUsernameLabel": "Username",
+  "@settingsAccountUsernameLabel": {
+    "description": "Account page, label of the username text field. Short."
+  },
+  "settingsAccountUsernameHelper": "Optional. Lowercase letters, digits and _",
+  "@settingsAccountUsernameHelper": {
+    "description": "Account page, hint under the username field. Keep the _ character."
+  },
+  "settingsAccountSharedNote": "Your name, username and photo are shared by every community on this relay.",
+  "@settingsAccountSharedNote": {
+    "description": "Account page, small grey note at the bottom of the form."
+  },
+  "settingsAgentsSection": "Agents",
+  "@settingsAgentsSection": {
+    "description": "Settings page, heading of the AI agents section. Short."
+  },
+  "settingsAgentsAutoMention": "Automatically mention agents",
+  "@settingsAgentsAutoMention": {
+    "description": "Settings page, Agents section, title of an on/off switch row."
+  },
+  "settingsAgentsAutoMentionSubtitle": "Address selected agents in group and thread replies",
+  "@settingsAgentsAutoMentionSubtitle": {
+    "description": "Settings page, Agents section, grey text under 'Automatically mention agents'."
+  },
+  "settingsBlockedTitle": "Blocked users",
+  "@settingsBlockedTitle": {
+    "description": "Blocked users page, title in the top bar; also the row in Friends & privacy settings that opens it. Short."
+  },
+  "settingsBlockedLoading": "Loading blocked users",
+  "@settingsBlockedLoading": {
+    "description": "Blocked users page, screen-reader label of the loading spinner."
+  },
+  "settingsBlockedLoadFailed": "Couldn’t load blocked users",
+  "@settingsBlockedLoadFailed": {
+    "description": "Blocked users page, error when the list failed to load."
+  },
+  "settingsBlockedEmpty": "You haven’t blocked anyone",
+  "@settingsBlockedEmpty": {
+    "description": "Blocked users page, empty state text."
+  },
+  "settingsBlockedUnblock": "Unblock",
+  "@settingsBlockedUnblock": {
+    "description": "Blocked users page, button on each person's row. Short."
+  },
+  "settingsBlockedUnblockLabel": "Unblock {name}",
+  "@settingsBlockedUnblockLabel": {
+    "description": "Blocked users page, screen-reader label of the Unblock button; {name} is the person's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesTitle": "Devices",
+  "@settingsDevicesTitle": {
+    "description": "Devices page (signed-in devices), title in the top bar; also its settings section heading. Short."
+  },
+  "settingsSecurityTitle": "Security",
+  "@settingsSecurityTitle": {
+    "description": "Account security page, title in the top bar; also the Settings row that opens it. Short."
+  },
+  "settingsDevicesSignOutDeviceTitle": "Sign out {device}?",
+  "@settingsDevicesSignOutDeviceTitle": {
+    "description": "Devices page, title of the confirmation dialog for signing out one device; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesSignOutDeviceBody": "That device will need to sign in again.",
+  "@settingsDevicesSignOutDeviceBody": {
+    "description": "Devices page, body of the confirmation dialog for signing out one device."
+  },
+  "settingsDevicesSignOut": "Sign out",
+  "@settingsDevicesSignOut": {
+    "description": "Devices page, button on a device row and in its confirmation dialog that signs that device out. Short."
+  },
+  "settingsDevicesSignOutLabel": "Sign out {device}",
+  "@settingsDevicesSignOutLabel": {
+    "description": "Devices page, screen-reader label of the Sign out button on a device row; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotSaveFailed": "Couldn’t save the robot: {error}",
+  "@settingsDevicesRobotSaveFailed": {
+    "description": "Devices page, error when the device's robot icon could not be saved; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesSignOutOthers": "Sign out all other devices",
+  "@settingsDevicesSignOutOthers": {
+    "description": "Devices page, row that signs out every device except this one."
+  },
+  "settingsDevicesSignOutOthersTitle": "Sign out all other devices?",
+  "@settingsDevicesSignOutOthersTitle": {
+    "description": "Devices page, title of the confirmation dialog for signing out all other devices."
+  },
+  "settingsDevicesSignOutOthersBody": "Every device except this one will need to sign in again. Bots keep working.",
+  "@settingsDevicesSignOutOthersBody": {
+    "description": "Devices page, body of the confirmation dialog for signing out all other devices."
+  },
+  "settingsDevicesSignOutOthersAction": "Sign out others",
+  "@settingsDevicesSignOutOthersAction": {
+    "description": "Devices page, confirm button of the 'sign out all other devices' dialog. Short."
+  },
+  "settingsDevicesRevokeBots": "Revoke all bot tokens",
+  "@settingsDevicesRevokeBots": {
+    "description": "Security page, row that invalidates the access tokens of every bot the user owns."
+  },
+  "settingsDevicesRevokeBotsTitle": "Revoke all bot tokens?",
+  "@settingsDevicesRevokeBotsTitle": {
+    "description": "Security page, title of the confirmation dialog for revoking all bot tokens."
+  },
+  "settingsDevicesRevokeBotsBody": "Every bot you own stops working until it gets a new token.",
+  "@settingsDevicesRevokeBotsBody": {
+    "description": "Security page, body of the confirmation dialog for revoking all bot tokens."
+  },
+  "settingsDevicesRevokeBotsAction": "Revoke",
+  "@settingsDevicesRevokeBotsAction": {
+    "description": "Security page, confirm button of the 'revoke all bot tokens' dialog. Short."
+  },
+  "settingsDevicesRevokeBotsDone": "All bot tokens revoked",
+  "@settingsDevicesRevokeBotsDone": {
+    "description": "Security page, snackbar after all bot tokens were revoked. Short."
+  },
+  "settingsDevicesAccountDeletion": "Account deletion",
+  "@settingsDevicesAccountDeletion": {
+    "description": "Security page, title of the expandable section that holds Delete account. Short."
+  },
+  "settingsDevicesDeleteAccount": "Delete account",
+  "@settingsDevicesDeleteAccount": {
+    "description": "Security page, red row that deletes the account, and the confirm button of its dialog. Short."
+  },
+  "settingsDevicesDeleteAccountTitle": "Delete your account?",
+  "@settingsDevicesDeleteAccountTitle": {
+    "description": "Security page, title of the account deletion confirmation dialog."
+  },
+  "settingsDevicesDeleteAccountBody": "Your account is disabled now and permanently deleted after 30 days. Signing in again before then restores it. Every device, including this one, is signed out.",
+  "@settingsDevicesDeleteAccountBody": {
+    "description": "Security page, body of the account deletion confirmation dialog."
+  },
+  "settingsDevicesLocalCleanupFailed": "Your account was deleted, but this device couldn’t finish signing out: {error}",
+  "@settingsDevicesLocalCleanupFailed": {
+    "description": "Security page, error after deleting the account when this device failed to sign out locally; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesFinishSignOut": "Finish signing out",
+  "@settingsDevicesFinishSignOut": {
+    "description": "Security page, retry button shown after the local sign-out failed following account deletion. Short."
+  },
+  "settingsDevicesSignedIn": "Signed-in devices",
+  "@settingsDevicesSignedIn": {
+    "description": "Devices page, heading of the list of devices signed in to the account; also the Settings row that opens the page. Short."
+  },
+  "settingsDevicesLoadFailed": "Couldn’t load devices: {error}",
+  "@settingsDevicesLoadFailed": {
+    "description": "Devices page, error when the device list failed to load; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesLoading": "Loading devices",
+  "@settingsDevicesLoading": {
+    "description": "Devices page, screen-reader label of the loading spinner."
+  },
+  "settingsDevicesThisDevice": "This device",
+  "@settingsDevicesThisDevice": {
+    "description": "Devices page, grey detail on the row of the device the user is holding. Short."
+  },
+  "settingsDevicesLastActive": "Last active {date}",
+  "@settingsDevicesLastActive": {
+    "description": "Devices page, grey detail on a device row; {date} is a date like 2026-05-19. Short.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesPlatformMobile": "Mobile",
+  "@settingsDevicesPlatformMobile": {
+    "description": "Devices page, grey detail on a device row: the device is a phone app. Short."
+  },
+  "settingsDevicesPlatformDesktop": "Desktop",
+  "@settingsDevicesPlatformDesktop": {
+    "description": "Devices page, grey detail on a device row: the device is a desktop app. Short."
+  },
+  "settingsDevicesPlatformWeb": "Web",
+  "@settingsDevicesPlatformWeb": {
+    "description": "Devices page, grey detail on a device row: the device is a web browser. Short."
+  },
+  "settingsDevicesChangeRobot": "Change robot for {device}",
+  "@settingsDevicesChangeRobot": {
+    "description": "Devices page, tooltip of the robot icon on a device row; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRenameTooltip": "Rename {device}",
+  "@settingsDevicesRenameTooltip": {
+    "description": "Devices page, tooltip of the pencil button on a device row; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotTitle": "Robot for {device}",
+  "@settingsDevicesRobotTitle": {
+    "description": "Robot picker dialog, title; {device} is the device name. The robot is the small icon that marks the device.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotSelected": "Selected robot",
+  "@settingsDevicesRobotSelected": {
+    "description": "Robot picker dialog, screen-reader label of the big preview of the chosen robot icon."
+  },
+  "settingsDevicesRobotShape": "Shape",
+  "@settingsDevicesRobotShape": {
+    "description": "Robot picker dialog, small heading above the robot shape options. Short."
+  },
+  "settingsDevicesRobotShapeOption": "Shape {shape}",
+  "@settingsDevicesRobotShapeOption": {
+    "description": "Robot picker dialog, screen-reader label of one shape option; {shape} is the shape's code name.",
+    "placeholders": {
+      "shape": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotColour": "Colour",
+  "@settingsDevicesRobotColour": {
+    "description": "Robot picker dialog, small heading above the robot colour options. Short."
+  },
+  "settingsDevicesRobotColourOption": "Colour {number}",
+  "@settingsDevicesRobotColourOption": {
+    "description": "Robot picker dialog, screen-reader label of one colour option; {number} is its position (1, 2, …).",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsDevicesRenameTitle": "Rename device",
+  "@settingsDevicesRenameTitle": {
+    "description": "Rename device dialog, title."
+  },
+  "settingsDevicesNameLabel": "Device name",
+  "@settingsDevicesNameLabel": {
+    "description": "Rename device dialog, label of the name text field. Short."
+  },
+  "settingsExperimentsTitle": "Experiments",
+  "@settingsExperimentsTitle": {
+    "description": "Settings row that opens the Experiments page, and that page's title in the top bar. Short."
+  },
+  "settingsExperimentsDescription": "Features that are still being refined. They may change or be removed.",
+  "@settingsExperimentsDescription": {
+    "description": "Experiments page, grey note under the list of experimental features."
+  },
+  "settingsKuzzIdTitle": "Kuzz ID",
+  "@settingsKuzzIdTitle": {
+    "description": "The user's ID that friends type to find them: Kuzz ID page title, its text field label, and the profile row. 'Kuzz' is the app name. Short."
+  },
+  "settingsKuzzIdLengthError": "Use 3 to 32 characters.",
+  "@settingsKuzzIdLengthError": {
+    "description": "Kuzz ID page, error under the field when the ID is too short or too long."
+  },
+  "settingsKuzzIdCharactersError": "Use only lowercase letters, digits and _.",
+  "@settingsKuzzIdCharactersError": {
+    "description": "Kuzz ID page, error under the field when the ID has other characters. Keep the _ character."
+  },
+  "settingsKuzzIdSaveFailed": "Couldn’t save your ID. Try again.",
+  "@settingsKuzzIdSaveFailed": {
+    "description": "Kuzz ID page, error under the field when saving failed."
+  },
+  "settingsKuzzIdSaved": "Kuzz ID saved",
+  "@settingsKuzzIdSaved": {
+    "description": "Kuzz ID page, snackbar after the ID was saved. Short."
+  },
+  "settingsKuzzIdExplanation": "Friends can add you by typing your Kuzz ID exactly.",
+  "@settingsKuzzIdExplanation": {
+    "description": "Kuzz ID page, grey explanation above the field."
+  },
+  "settingsKuzzIdHelper": "Lowercase letters, digits and _",
+  "@settingsKuzzIdHelper": {
+    "description": "Kuzz ID page, hint under the field. Keep the _ character."
+  },
+  "settingsMessagesSection": "Messages",
+  "@settingsMessagesSection": {
+    "description": "Settings page, heading of the section about how messages show. Short."
+  },
+  "settingsPeopleSection": "Friends & privacy",
+  "@settingsPeopleSection": {
+    "description": "Settings page, heading of the section about who can find and add you. Short."
+  },
+  "settingsPeopleChangeFailed": "Couldn’t change this setting. Try again.",
+  "@settingsPeopleChangeFailed": {
+    "description": "Settings page, Friends & privacy section, snackbar when saving a switch failed."
+  },
+  "settingsPeopleDiscoverable": "Let people find me by ID or email",
+  "@settingsPeopleDiscoverable": {
+    "description": "Settings page, Friends & privacy section, title of an on/off switch row."
+  },
+  "settingsPeopleDiscoverableSubtitle": "Only someone who types your exact ID or email",
+  "@settingsPeopleDiscoverableSubtitle": {
+    "description": "Settings page, grey text under 'Let people find me by ID or email'."
+  },
+  "settingsKuzzIdNotSet": "Not set",
+  "@settingsKuzzIdNotSet": {
+    "description": "Profile page, value shown on the Kuzz ID row when the user has no ID yet. Short."
+  },
+  "settingsHelpSection": "Help",
+  "@settingsHelpSection": {
+    "description": "Settings page, heading of the help/contact section. Short."
+  },
+  "settingsHelpContactUs": "Contact us",
+  "@settingsHelpContactUs": {
+    "description": "Settings page, Help section, row that opens an email to the Kuzz team. Short."
+  },
+  "settingsHelpNoEmailApp": "No email app found. Write to {email}",
+  "@settingsHelpNoEmailApp": {
+    "description": "Settings page, snackbar when no email app could open; {email} is the support email address.",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReadAloud": "Read aloud",
+  "@settingsReadAloud": {
+    "description": "Settings page, Messages section, title of the on/off switch for reading messages out loud. Short."
+  },
+  "settingsReadAloudSubtitle": "Show a play button on messages · uses this phone's built-in voice",
+  "@settingsReadAloudSubtitle": {
+    "description": "Settings page, grey text under the Read aloud switch."
+  },
+  "settingsSaveFailed": "Couldn't save. Try again.",
+  "@settingsSaveFailed": {
+    "description": "Settings page, snackbar when saving a setting failed."
+  },
+  "settingsSignedInWithGoogle": "Signed in with Google",
+  "@settingsSignedInWithGoogle": {
+    "description": "Settings page, Account section: label of the account row before the name or email loads; also a snackbar after connecting Google."
+  },
+  "settingsAppearanceSection": "Appearance",
+  "@settingsAppearanceSection": {
+    "description": "Settings page, heading of the section with the theme row. Short."
+  },
+  "settingsCommunitySection": "Community",
+  "@settingsCommunitySection": {
+    "description": "Settings page, heading of the community section (invite, theme). Short."
+  },
+  "settingsInvitePeople": "Invite people",
+  "@settingsInvitePeople": {
+    "description": "Settings page, row that opens the invite page. Short."
+  },
+  "settingsInviteToCommunity": "Invite to community",
+  "@settingsInviteToCommunity": {
+    "description": "Settings page, row that opens the invite page for the current community. Short."
+  },
+  "settingsTheme": "Theme",
+  "@settingsTheme": {
+    "description": "Settings page, row that opens the theme picker; also the theme picker page title. Short."
+  },
+  "settingsProtectAccountSection": "Protect your account",
+  "@settingsProtectAccountSection": {
+    "description": "Settings page, heading of the section asking an older account to connect Google. Short."
+  },
+  "settingsContinueWithGoogle": "Continue with Google",
+  "@settingsContinueWithGoogle": {
+    "description": "Settings page, Protect your account section, row that connects the account to Google. Short."
+  },
+  "settingsContinueWithGoogleSubtitle": "Sign in on your other devices, and get your account back if this phone is lost",
+  "@settingsContinueWithGoogleSubtitle": {
+    "description": "Settings page, grey text under 'Continue with Google'."
+  },
+  "settingsSignOutFailed": "Couldn’t sign out. Check your connection and try again.",
+  "@settingsSignOutFailed": {
+    "description": "Settings page, error under the Sign out row when signing out failed."
+  },
+  "settingsSigningOut": "Signing out…",
+  "@settingsSigningOut": {
+    "description": "Settings page, Sign out row title while signing out. Short."
+  },
+  "settingsSignOut": "Sign out",
+  "@settingsSignOut": {
+    "description": "Settings page, Sign out row and the confirm button of its dialog. Short."
+  },
+  "settingsSignOutSubtitle": "Your communities stay on this device",
+  "@settingsSignOutSubtitle": {
+    "description": "Settings page, grey text under the Sign out row."
+  },
+  "settingsSignOutTitle": "Sign out?",
+  "@settingsSignOutTitle": {
+    "description": "Sign out confirmation dialog, title. Short."
+  },
+  "settingsSignOutBody": "You’ll be signed out on this device. Sign in with Google to come back — your messages stay here.",
+  "@settingsSignOutBody": {
+    "description": "Sign out confirmation dialog, body."
+  },
+  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Sign in with Google to come back — your communities and messages stay here.",
+  "@settingsSignOutBodyCommunities": {
+    "description": "Sign out confirmation dialog, body when the user has several communities."
+  },
+  "settingsRemoveCommunity": "Remove community",
+  "@settingsRemoveCommunity": {
+    "description": "Settings page, title of the expandable section that removes the community from this device. Short."
+  },
+  "settingsRemoveFromDevice": "Remove from this device",
+  "@settingsRemoveFromDevice": {
+    "description": "Settings page, Remove community section, red row that removes the community. Short."
+  },
+  "settingsRemoveFromDeviceSubtitle": "Also removes its sign-in from this device",
+  "@settingsRemoveFromDeviceSubtitle": {
+    "description": "Settings page, grey text under 'Remove from this device'."
+  },
+  "settingsRemoveCommunityTitle": "Remove community from this device?",
+  "@settingsRemoveCommunityTitle": {
+    "description": "Remove community confirmation dialog, title."
+  },
+  "settingsRemoveCommunityBody": "This removes the community and its sign-in from this device. Your account and memberships on the server aren’t deleted.",
+  "@settingsRemoveCommunityBody": {
+    "description": "Remove community confirmation dialog, body."
+  },
+  "settingsRemoveCommunityNoGoogleWarning": "If this community isn’t connected to a Google account, you won’t be able to sign back in to it.",
+  "@settingsRemoveCommunityNoGoogleWarning": {
+    "description": "Remove community confirmation dialog, extra paragraph after the body for accounts not linked to Google."
+  },
+  "settingsRemoveCommunityFailed": "Couldn’t remove the community. Try again.",
+  "@settingsRemoveCommunityFailed": {
+    "description": "Settings page, snackbar when removing the community failed."
+  },
+  "settingsRemove": "Remove",
+  "@settingsRemove": {
+    "description": "Remove community confirmation dialog, confirm button. Short."
+  },
+  "settingsNotificationsSection": "Notifications",
+  "@settingsNotificationsSection": {
+    "description": "Settings page, heading of the notifications section. Short."
+  },
+  "settingsPushNotifications": "Push notifications",
+  "@settingsPushNotifications": {
+    "description": "Settings page, Notifications section, title of the on/off switch row. Short."
+  },
+  "settingsPushOptOutPending": "Waiting for relay confirmation; notifications may continue",
+  "@settingsPushOptOutPending": {
+    "description": "Settings page, grey text under Push notifications while turning off is not yet confirmed by the server."
+  },
+  "settingsPushOff": "Off",
+  "@settingsPushOff": {
+    "description": "Settings page, grey text under Push notifications when they are off. Short."
+  },
+  "settingsPushOffCommunity": "Off for this community",
+  "@settingsPushOffCommunity": {
+    "description": "Settings page, grey text under Push notifications when they are off for the current community. Short."
+  },
+  "settingsPushUnsupported": "Push support unavailable; you can still turn notifications off",
+  "@settingsPushUnsupported": {
+    "description": "Settings page, grey text under Push notifications when the server has no push support."
+  },
+  "settingsPushWaitingPermission": "Waiting for iOS notification permission",
+  "@settingsPushWaitingPermission": {
+    "description": "Settings page, grey text under Push notifications while iOS has not yet asked the user."
+  },
+  "settingsPushDeniedInIos": "Enabled in Kuzz, but disabled in iOS Settings",
+  "@settingsPushDeniedInIos": {
+    "description": "Settings page, red text under Push notifications when iOS blocks them. 'Kuzz' is the app name."
+  },
+  "settingsPushOn": "Receive message notifications",
+  "@settingsPushOn": {
+    "description": "Settings page, grey text under Push notifications when they are on."
+  },
+  "settingsPushOnCommunity": "Receive message notifications from this community",
+  "@settingsPushOnCommunity": {
+    "description": "Settings page, grey text under Push notifications when they are on for the current community."
+  },
+  "settingsPushCheckingPermission": "Checking iOS notification permission",
+  "@settingsPushCheckingPermission": {
+    "description": "Settings page, grey text under Push notifications while checking iOS permission."
+  },
+  "settingsPushPermissionUnknown": "Enabled in Kuzz; iOS permission status unavailable",
+  "@settingsPushPermissionUnknown": {
+    "description": "Settings page, red text under Push notifications when the iOS permission could not be read. 'Kuzz' is the app name."
+  },
+  "settingsPushOpenIosSettings": "Open iOS Notification Settings",
+  "@settingsPushOpenIosSettings": {
+    "description": "Settings page, row that opens the iOS notification settings for the app."
+  },
+  "settingsCloseProfile": "Close profile",
+  "@settingsCloseProfile": {
+    "description": "Profile screen, tooltip and screen-reader label of the close (X) button in the top bar."
+  },
+  "settingsCloseSettings": "Close settings",
+  "@settingsCloseSettings": {
+    "description": "Settings screen, tooltip and screen-reader label of the close (X) button in the top bar."
+  },
+  "settingsEditProfileAction": "Edit",
+  "@settingsEditProfileAction": {
+    "description": "Profile screen, button in the top bar that opens the profile editor. Short."
+  },
+  "settingsEditProfileTitle": "Edit profile",
+  "@settingsEditProfileTitle": {
+    "description": "Profile screen, title of the sheet listing what to edit. Short."
+  },
+  "settingsEditProfileDisplayName": "Display name",
+  "@settingsEditProfileDisplayName": {
+    "description": "Edit profile sheet, row that edits the display name. Short."
+  },
+  "settingsEditProfileDescription": "Profile description",
+  "@settingsEditProfileDescription": {
+    "description": "Edit profile sheet, row that edits the profile description (about text). Short."
+  },
+  "settingsEditProfilePhoto": "Photo",
+  "@settingsEditProfilePhoto": {
+    "description": "Edit profile sheet, row that edits the profile photo. Short."
+  },
+  "settingsAppearanceLight": "Light",
+  "@settingsAppearanceLight": {
+    "description": "Theme picker, appearance option: always light colors. Short."
+  },
+  "settingsAppearanceDark": "Dark",
+  "@settingsAppearanceDark": {
+    "description": "Theme picker, appearance option: always dark colors. Short."
+  },
+  "settingsAppearanceSystem": "System",
+  "@settingsAppearanceSystem": {
+    "description": "Theme picker, appearance option: follow the phone's light/dark setting. Short."
+  },
+  "settingsAppearanceOption": "{mode} appearance",
+  "@settingsAppearanceOption": {
+    "description": "Appearance sheet, screen-reader label of an option; {mode} is Light, Dark or System.",
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAppearanceChangeLabel": "{mode} appearance. Double tap to change.",
+  "@settingsAppearanceChangeLabel": {
+    "description": "Theme picker, screen-reader label of the appearance button; {mode} is Light, Dark or System.",
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccentColor": "Accent color",
+  "@settingsAccentColor": {
+    "description": "Theme picker, title of the accent color sheet and screen-reader label of the accent color button. Short."
+  },
+  "settingsAccentColorOption": "{color} accent color",
+  "@settingsAccentColorOption": {
+    "description": "Accent color sheet, screen-reader label of one color; {color} is the color's name (Green, Blue, …).",
+    "placeholders": {
+      "color": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsThemeHomePreview": "Home preview",
+  "@settingsThemeHomePreview": {
+    "description": "Theme picker, screen-reader label of the small picture of the home screen in the chosen theme."
+  },
+  "settingsThemeChatPreview": "Chat preview",
+  "@settingsThemeChatPreview": {
+    "description": "Theme picker, screen-reader label of the small picture of a chat in the chosen theme."
+  },
+  "settingsThemePreviewCommunity": "Community",
+  "@settingsThemePreviewCommunity": {
+    "description": "Theme picker, placeholder community name in the home screen preview when the community has no name. Short."
+  },
+  "settingsThemeClosePreview": "Close preview",
+  "@settingsThemeClosePreview": {
+    "description": "Theme picker, tooltip and screen-reader label of the close button that leaves without applying."
+  },
+  "settingsThemeSet": "Set",
+  "@settingsThemeSet": {
+    "description": "Theme picker, top bar button that applies the chosen theme. Very short."
+  },
+  "settingsThemePosition": "Theme {position} of {count}",
+  "@settingsThemePosition": {
+    "description": "Theme picker, screen-reader label of the slider that scrolls through themes.",
+    "placeholders": {
+      "position": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

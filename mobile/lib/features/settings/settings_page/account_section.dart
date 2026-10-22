@@ -31,7 +31,7 @@ class _AccountSection extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         AppListCard(
-          label: 'Account',
+          label: context.l10n.settingsAccountTitle,
           verticalPadding: Grid.twelve,
           children: [
             if (googleKey)
@@ -40,18 +40,22 @@ class _AccountSection extends ConsumerWidget {
                 icon: LucideIcons.user,
                 // Name over email, like desktop; the email alone when the
                 // account has no name, and a plain label before either loads.
-                title: hasName ? name : email ?? 'Signed in with Google',
+                title: hasName
+                    ? name
+                    : email ?? context.l10n.settingsSignedInWithGoogle,
                 subtitle: hasName
-                    ? email ?? 'Signed in with Google'
+                    ? email ?? context.l10n.settingsSignedInWithGoogle
                     : email == null
                     ? null
-                    : 'Signed in with Google',
+                    : context.l10n.settingsSignedInWithGoogle,
               )
             else
               AppListRow(
                 key: const Key('settings-account-row'),
                 icon: LucideIcons.user,
-                title: name == null || name.isEmpty ? 'Profile' : name,
+                title: name == null || name.isEmpty
+                    ? context.l10n.navProfile
+                    : name,
                 subtitle: username == null ? null : '@$username',
                 trailing: const _RowChevron(),
                 onTap: () => unawaited(_openAccountPage(context, origin)),
@@ -59,19 +63,19 @@ class _AccountSection extends ConsumerWidget {
             AppListRow(
               key: const Key('settings-security-row'),
               icon: LucideIcons.shield,
-              title: 'Security',
+              title: context.l10n.settingsSecurityTitle,
               trailing: const _RowChevron(),
               onTap: () => openPage(DevicesPagePart.account),
             ),
           ],
         ),
         AppListCard(
-          label: 'Devices',
+          label: context.l10n.settingsDevicesTitle,
           children: [
             AppListRow(
               key: const Key('settings-devices-row'),
               icon: LucideIcons.monitorSmartphone,
-              title: 'Signed-in devices',
+              title: context.l10n.settingsDevicesSignedIn,
               trailing: const _RowChevron(),
               onTap: () => openPage(DevicesPagePart.devices),
             ),
