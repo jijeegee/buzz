@@ -1,3 +1,5 @@
+import { t } from "@/shared/i18n";
+
 /**
  * Copy for channel system events (the "joined", "added by", "changed the
  * topic" captions in the message timeline).
@@ -8,10 +10,6 @@
  * JSX in the component.
  */
 
-/** Curly quotes, so the caption matches the typography used elsewhere in chat. */
-const OPEN_QUOTE = "“";
-const CLOSE_QUOTE = "”";
-
 export type ChannelTextField = "topic" | "purpose";
 
 /**
@@ -20,7 +18,9 @@ export type ChannelTextField = "topic" | "purpose";
  * rather than the ungrammatical "You added by".
  */
 export function addedByActionPrefix(isCurrentUser: boolean): string {
-  return isCurrentUser ? "were added by" : "added by";
+  return isCurrentUser
+    ? t("messages.system.youWereAddedBy")
+    : t("messages.system.addedBy");
 }
 
 /**
@@ -28,7 +28,9 @@ export function addedByActionPrefix(isCurrentUser: boolean): string {
  * without attributing the action to a single actor.
  */
 export function addedActionPrefix(isCurrentUser: boolean): string {
-  return isCurrentUser ? "were added" : "was added";
+  return isCurrentUser
+    ? t("messages.system.youWereAdded")
+    : t("messages.system.wasAdded");
 }
 
 /**
@@ -51,9 +53,9 @@ export function describeChannelTextFieldChange(
 ): string {
   const trimmed = value?.trim();
   if (!trimmed) {
-    return `cleared the ${field}`;
+    return t("messages.system.clearedField", { field });
   }
-  return `changed the ${field} to ${OPEN_QUOTE}${trimmed}${CLOSE_QUOTE}`;
+  return t("messages.system.changedField", { field, value: trimmed });
 }
 
 /**
@@ -63,8 +65,8 @@ export function describeChannelTextFieldChange(
 export function describeGoalsChange(
   value: string | null | undefined,
 ): string | null {
-  if (value === "on") return "turned goals on";
-  if (value === "off") return "turned goals off";
+  if (value === "on") return t("messages.system.goalsOn");
+  if (value === "off") return t("messages.system.goalsOff");
   return null;
 }
 
@@ -84,5 +86,5 @@ export function describeGoalsChange(
  * untouched.
  */
 export function toInlineName(label: string, isSelf: boolean): string {
-  return isSelf ? "you" : label;
+  return isSelf ? t("messages.system.inlineYou") : label;
 }

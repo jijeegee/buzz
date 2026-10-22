@@ -41,11 +41,13 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Markdown } from "@/shared/ui/markdown";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
-import { localeDateTimeFormat } from "@/shared/i18n";
+import { localeDateTimeFormat, t as translate, useT } from "@/shared/i18n";
 
 const SENT_DRAFT_PREFIX = "sent:";
 const THREAD_DRAFT_PREFIX = "thread:";
-const UNKNOWN_CHANNEL_LABEL = "Unknown group";
+function unknownChannelLabel(): string {
+  return translate("messages.drafts.unknownGroup");
+}
 
 export type DraftListEntry = {
   draft: DraftState;
@@ -63,10 +65,9 @@ export type DraftViewItem = {
   source: DraftSource;
 };
 
-const UNKNOWN_DRAFT_SOURCE: DraftSource = {
-  channel: null,
-  label: UNKNOWN_CHANNEL_LABEL,
-};
+function unknownDraftSource(): DraftSource {
+  return { channel: null, label: unknownChannelLabel() };
+}
 
 const draftTimeFormatter = localeDateTimeFormat({
   month: "short",
@@ -84,7 +85,7 @@ function parseDraftTime(value: string): number {
 export function formatDraftCreatedAt(draft: DraftState): string {
   const time = parseDraftTime(draft.createdAt);
   return time === 0
-    ? "Unknown time"
+    ? translate("messages.drafts.unknownTime")
     : draftTimeFormatter.format(new Date(time));
 }
 
@@ -123,13 +124,12 @@ export function getDraftPreview(draft: DraftState): string {
   }
 
   const attachmentCount = draft.pendingImeta.length;
-  if (attachmentCount === 1) {
-    return "1 attachment";
+  if (attachmentCount > 0) {
+    return translate("messages.drafts.attachmentCount", {
+      count: attachmentCount,
+    });
   }
-  if (attachmentCount > 1) {
-    return `${attachmentCount} attachments`;
-  }
-  return "Empty draft";
+  return translate("messages.drafts.empty");
 }
 
 function resolveDraftSources({
@@ -154,7 +154,7 @@ function resolveDraftSources({
       channel: channel ?? null,
       label: channel
         ? resolveChannelDisplayLabel(channel, currentPubkey, profiles)
-        : UNKNOWN_CHANNEL_LABEL,
+        : unknownChannelLabel(),
     });
   }
 
@@ -304,6 +304,7 @@ export function SendConfirmDialog({
   onConfirm,
   open,
 }: SendConfirmDialogProps) {
+  const t = useT();
   const destination = isDm ? channelLabel : `${channelLabel}`;
   return (
     <AlertDialog
@@ -316,17 +317,17 @@ export function SendConfirmDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Send message</AlertDialogTitle>
+          <AlertDialogTitle>{t("messages.drafts.sendTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to send this message to {destination}?
+            {t("messages.drafts.sendConfirm", { destination })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <Button onClick={onCancel} size="sm" type="button" variant="outline">
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={onConfirm} size="sm" type="button">
-            Send
+            {t("common.send")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -355,6 +356,7 @@ function DraftRow({
   selected: boolean;
   source: DraftSource;
 }) {
+  const t = useT();
   const isSent = entry.draft.status === "sent";
   const isOrphaned = rootStatus === "deleted";
   const canOpen = canOpenDraft(entry.draft, source) && !isOrphaned;
@@ -365,7 +367,7 @@ function DraftRow({
     ? isDm
       ? source.label
       : `${source.label}`
-    : UNKNOWN_CHANNEL_LABEL;
+    : unknownChannelLabel();
 
   return (
     <div
@@ -377,7 +379,7 @@ function DraftRow({
       data-testid={`home-draft-item-${entry.key}`}
     >
       <button
-        aria-label={`View draft in ${channelLabel}`}
+        aria-label={t("messages.drafts.viewIn", { name: channelLabel })}
         className="block w-full min-w-0 px-3 py-3 text-left disabled:cursor-default"
         onClick={onSelect}
         type="button"
@@ -402,7 +404,7 @@ function DraftRow({
                 className="shrink-0 rounded px-1 py-0.5 text-2xs font-medium text-destructive/70 ring-1 ring-destructive/30"
                 data-testid={`home-draft-orphaned-label-${entry.key}`}
               >
-                thread deleted
+                {t("messages.drafts.threadDeletedBadge")}
               </span>
             ) : null}
           </div>
@@ -424,10 +426,10 @@ function DraftRow({
               disabled={!canOpen}
               label={
                 canOpen
-                  ? "Open draft"
+                  ? t("messages.drafts.open")
                   : isOrphaned
-                    ? "Thread deleted"
-                    : "No group link"
+                    ? t("messages.drafts.threadDeleted")
+                    : t("messages.drafts.noGroupLink")
               }
               onClick={() => onOpen(entry)}
             >
@@ -437,10 +439,10 @@ function DraftRow({
               disabled={!canSend}
               label={
                 canSend
-                  ? "Send message"
+                  ? t("messages.drafts.sendTitle")
                   : isOrphaned
-                    ? "Thread deleted"
-                    : "No group link"
+                    ? t("messages.drafts.threadDeleted")
+                    : t("messages.drafts.noGroupLink")
               }
               onClick={() => onSend(entry)}
             >
@@ -449,7 +451,7 @@ function DraftRow({
           </>
         )}
         <DraftRowActionButton
-          label="Delete draft"
+          label={t("messages.drafts.delete")}
           onClick={() => onDelete(entry.key)}
         >
           <Trash2 className="h-4 w-4" />
@@ -574,7 +576,7 @@ export function useDraftViewItems(enabled: boolean): DraftViewItem[] {
         threadRootId !== null
           ? (rootStatusMap.get(threadRootId) ?? "checking")
           : "available",
-      source: sources.get(entry.key) ?? UNKNOWN_DRAFT_SOURCE,
+      source: sources.get(entry.key) ?? unknownDraftSource(),
     };
   });
 }
@@ -594,6 +596,7 @@ export function DraftsPanel({
   onSelectDraft,
   selectedDraftKey,
 }: DraftsPanelProps) {
+  const t = useT();
   const { goChannel } = useAppNavigation();
 
   // Send confirmation dialog state.
@@ -632,17 +635,19 @@ export function DraftsPanel({
 
   const sendDialogSource =
     items.find((item) => item.entry.key === sendTarget?.key)?.source ??
-    UNKNOWN_DRAFT_SOURCE;
+    unknownDraftSource();
   const sendDialogIsDm = sendDialogSource.channel?.channelType === "dm";
   const sendDialogChannelLabel = sendDialogSource.channel
     ? sendDialogSource.label
-    : UNKNOWN_CHANNEL_LABEL;
+    : unknownChannelLabel();
 
   if (items.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
         <FileText className="h-8 w-8 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">No drafts</p>
+        <p className="text-sm text-muted-foreground">
+          {t("messages.drafts.none")}
+        </p>
       </div>
     );
   }
@@ -654,7 +659,7 @@ export function DraftsPanel({
         data-testid="home-inbox-drafts-list"
       >
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Drafts
+          {t("messages.drafts.title")}
         </h3>
         {items.map(({ entry, rootStatus, source }) => (
           <DraftRow

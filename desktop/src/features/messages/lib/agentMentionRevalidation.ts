@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import {
   getAgentMentionAdmission,
   getMentionableAgentPubkeys,
@@ -15,9 +16,7 @@ export type MentionRevalidationOptions = {
 
 export class AgentMentionAuthorizationError extends Error {
   constructor() {
-    super(
-      "Could not authorize a mentioned agent. Check its access and group membership, then retry or remove the mention.",
-    );
+    super(t("messages.mentions.agentAuthorizationFailed"));
     this.name = "AgentMentionAuthorizationError";
   }
 }

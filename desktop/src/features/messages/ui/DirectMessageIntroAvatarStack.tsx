@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { getDmParticipantPreview } from "@/features/channels/lib/dmParticipantDisplay";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -14,6 +15,7 @@ export function DirectMessageIntroAvatarStack({
 }: {
   participants: DirectMessageIntroParticipant[];
 }) {
+  const t = useT();
   const { hiddenCount, visibleParticipants } =
     getDmParticipantPreview(participants);
   const stackItemCount = visibleParticipants.length + (hiddenCount > 0 ? 1 : 0);
@@ -27,7 +29,9 @@ export function DirectMessageIntroAvatarStack({
         <UserProfilePopover
           key={participant.pubkey}
           pubkey={participant.pubkey}
-          triggerAriaLabel={`Open profile for ${participant.displayName}`}
+          triggerAriaLabel={t("messages.intro.openProfile", {
+            name: participant.displayName,
+          })}
           triggerElement="span"
           role={participant.isAgent ? "bot" : undefined}
         >

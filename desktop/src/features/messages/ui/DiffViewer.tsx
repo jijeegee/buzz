@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { Diff, Hunk, type ViewType } from "react-diff-view";
 import "react-diff-view/style/index.css";
 import { useMemo } from "react";
@@ -6,7 +7,7 @@ import { buildSearchResultPreview } from "@/features/search/lib/searchMatch";
 import { HighlightedSearchText } from "@/features/search/ui/HighlightedSearchText";
 import {
   countDiffFileChanges,
-  DIFF_TYPE_LABELS,
+  diffTypeLabel,
   getDiffFileLabel,
   normalizeDiffType,
   parseUnifiedDiff,
@@ -51,6 +52,7 @@ export function DiffViewer({
   className,
   searchQuery,
 }: DiffViewerProps) {
+  const t = useT();
   const { files, parseError } = useMemo(
     () => parseUnifiedDiff(content),
     [content],
@@ -70,7 +72,7 @@ export function DiffViewer({
   if (!files.length) {
     return (
       <div className="p-3 text-xs italic text-muted-foreground">
-        No diff content
+        {t("messages.diff.empty")}
       </div>
     );
   }
@@ -116,7 +118,7 @@ export function DiffViewer({
                     {label}
                   </span>
                   <span className="rounded-md border border-border/60 px-1.5 py-0.5 text-2xs uppercase tracking-[0.14em] text-muted-foreground">
-                    {DIFF_TYPE_LABELS[diffType]}
+                    {diffTypeLabel(diffType)}
                   </span>
                   <div className="ml-auto flex items-center gap-1.5">
                     {additions > 0 ? (
@@ -159,7 +161,7 @@ export function DiffViewer({
                 </Diff>
               ) : (
                 <div className="px-3 py-3 text-xs text-muted-foreground">
-                  No textual hunks in this diff.
+                  {t("messages.diff.noTextChanges")}
                 </div>
               )}
             </section>

@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { CornerUpLeft, Pencil, Quote, X } from "lucide-react";
 
 import type { QuoteTarget } from "@/features/messages/lib/messageQuote";
@@ -18,18 +19,19 @@ function QuoteTargetRow({
   onCancel?: () => void;
   target: QuoteTarget;
 }) {
+  const t = useT();
   return (
     <div className="flex items-start gap-2" data-testid="quote-target">
       <Quote aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-foreground">
-          Quoting {target.author}
+          {t("messages.composerBanner.quoting", { name: target.author })}
         </p>
         <p className="truncate text-muted-foreground/80">{target.excerpt}</p>
       </div>
       {onCancel ? (
         <Button
-          aria-label="Cancel quote"
+          aria-label={t("messages.composerBanner.cancelQuote")}
           className={CANCEL_BUTTON_CLASS}
           onClick={onCancel}
           size="icon"
@@ -67,6 +69,7 @@ export function ComposerReplyEditBanner({
   onCancelQuote?: () => void;
   onCancelReply?: () => void;
 }) {
+  const t = useT();
   if (isEditing) {
     return (
       <div
@@ -76,12 +79,12 @@ export function ComposerReplyEditBanner({
         <Pencil aria-hidden className="h-4 w-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-foreground">
-            Editing message
+            {t("messages.composerBanner.editing")}
           </p>
         </div>
         {onCancelEdit ? (
           <Button
-            aria-label="Cancel edit"
+            aria-label={t("messages.composerBanner.cancelEdit")}
             className="-mr-1 h-7 w-7 shrink-0 px-0 text-muted-foreground hover:text-foreground"
             disabled={isEditCancelDisabled}
             onClick={onCancelEdit}
@@ -102,11 +105,13 @@ export function ComposerReplyEditBanner({
         <div className="flex items-start gap-2" data-testid="reply-target">
           <CornerUpLeft aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
           <p className="min-w-0 flex-1 truncate font-medium text-foreground">
-            Replying to {replyTarget.author}
+            {t("messages.composerBanner.replyingTo", {
+              name: replyTarget.author,
+            })}
           </p>
           {onCancelReply ? (
             <Button
-              aria-label="Cancel reply"
+              aria-label={t("messages.composerBanner.cancelReply")}
               className={CANCEL_BUTTON_CLASS}
               onClick={onCancelReply}
               size="icon"
@@ -141,7 +146,9 @@ export function ComposerReplyEditBanner({
         <CornerUpLeft aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-foreground">
-            Replying to {replyTarget.author}
+            {t("messages.composerBanner.replyingTo", {
+              name: replyTarget.author,
+            })}
           </p>
           {replyTarget.body ? (
             <p className="truncate text-muted-foreground/80">
@@ -151,7 +158,7 @@ export function ComposerReplyEditBanner({
         </div>
         {onCancelReply ? (
           <Button
-            aria-label="Cancel reply"
+            aria-label={t("messages.composerBanner.cancelReply")}
             className="-mr-1 h-7 w-7 shrink-0 px-0 text-muted-foreground hover:text-foreground"
             onClick={onCancelReply}
             size="icon"

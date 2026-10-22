@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import {
   cancelBackgroundMediaUploads,
   useBackgroundMediaUpload,
@@ -9,6 +10,7 @@ import {
 import { ComposerUploadProgressPill } from "@/features/messages/ui/ComposerUploadProgressPill";
 
 export function ComposerUploadProgressOverlay() {
+  const t = useT();
   const backgroundUpload = useBackgroundMediaUpload();
   const linkPreviews = useBackgroundLinkPreviewPreparation();
 
@@ -16,12 +18,12 @@ export function ComposerUploadProgressOverlay() {
     <div className="pointer-events-auto">
       {linkPreviews.isPreparing ? (
         <ComposerUploadProgressPill
-          actionLabel="Skip"
+          actionLabel={t("messages.upload.skip")}
           canCancel={linkPreviews.canSkip}
           isUploading
           onCancel={skipBackgroundLinkPreviews}
           phase="preparing"
-          phaseLabel="Preparing link preview"
+          phaseLabel={t("messages.upload.preparingLinkPreview")}
           percentage={0}
         />
       ) : (

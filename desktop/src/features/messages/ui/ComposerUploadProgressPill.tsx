@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import {
@@ -8,7 +9,7 @@ import { cn } from "@/shared/lib/cn";
 import { Spinner } from "@/shared/ui/spinner";
 
 export function ComposerUploadProgressPill({
-  actionLabel = "Cancel",
+  actionLabel: actionLabelOverride,
   canCancel,
   isUploading,
   onCancel,
@@ -24,6 +25,8 @@ export function ComposerUploadProgressPill({
   phaseLabel?: string;
   percentage: number;
 }) {
+  const t = useT();
+  const actionLabel = actionLabelOverride ?? t("common.cancel");
   const reducedMotion = useReducedMotion();
   const phaseLabel =
     phaseLabelOverride ?? backgroundMediaUploadPhaseLabel(phase);

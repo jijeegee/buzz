@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 export type BackgroundMediaUploadPhase =
   | "preparing"
   | "processing-video"
@@ -45,16 +46,16 @@ export function backgroundMediaUploadPhaseLabel(
 ): string {
   switch (phase) {
     case "processing-video":
-      return "Processing";
+      return t("messages.upload.phaseProcessing");
     case "converting-image":
-      return "Converting";
+      return t("messages.upload.phaseConverting");
     case "processing-files":
-      return "Processing";
+      return t("messages.upload.phaseProcessing");
     case "uploading":
-      return "Uploading";
+      return t("messages.upload.phaseUploading");
     case "finishing":
-      return "Finishing";
+      return t("messages.upload.phaseFinishing");
     default:
-      return "Preparing";
+      return t("messages.upload.phasePreparing");
   }
 }

@@ -1,3 +1,4 @@
+import { t as translate, useT } from "@/shared/i18n";
 import {
   BellOff,
   BellRing,
@@ -79,7 +80,7 @@ function copyMessageLink(channelId: string, message: TimelineMessage) {
     messageId: message.id,
     threadRootId: rootId,
   });
-  copyTextToClipboard(link, "Link copied to clipboard");
+  copyTextToClipboard(link, translate("messages.actions.linkCopied"));
 }
 
 /** Gate shared by every copy-link surface: pending sends have no delivered
@@ -132,6 +133,7 @@ function MoreActionsMenu({
   isFollowingThread?: boolean;
   isUnread?: boolean;
 }) {
+  const t = useT();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = React.useState(false);
   const [isGoalPickerOpen, setIsGoalPickerOpen] = React.useState(false);
@@ -167,7 +169,7 @@ function MoreActionsMenu({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Button
-                aria-label="More actions"
+                aria-label={t("messages.actions.more")}
                 className={ACTION_BUTTON_CLASS}
                 data-testid={`more-actions-${message.id}`}
                 size="sm"
@@ -178,7 +180,7 @@ function MoreActionsMenu({
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <TooltipContent>More actions</TooltipContent>
+          <TooltipContent>{t("messages.actions.more")}</TooltipContent>
         </Tooltip>
         <DropdownMenuContent
           align="end"
@@ -201,7 +203,7 @@ function MoreActionsMenu({
               }}
             >
               <Pencil className="h-4 w-4" />
-              Edit message
+              {t("messages.actions.edit")}
             </DropdownMenuItem>
           ) : null}
 
@@ -221,7 +223,9 @@ function MoreActionsMenu({
               ) : (
                 <MailOpen className="h-4 w-4" />
               )}
-              {isUnread ? "Mark read" : "Mark unread"}
+              {isUnread
+                ? t("messages.actions.markRead")
+                : t("messages.actions.markUnread")}
             </DropdownMenuItem>
           ) : null}
 
@@ -240,7 +244,9 @@ function MoreActionsMenu({
               ) : (
                 <BellRing className="h-4 w-4" />
               )}
-              {isFollowingThread ? "Unfollow thread" : "Follow thread"}
+              {isFollowingThread
+                ? t("messages.actions.unfollowThread")
+                : t("messages.actions.followThread")}
             </DropdownMenuItem>
           ) : null}
 
@@ -249,7 +255,7 @@ function MoreActionsMenu({
               onClick={() => {
                 copyTextToClipboard(
                   message.body,
-                  "Message copied to clipboard",
+                  t("messages.actions.messageCopied"),
                   buildMentionClipboardHtml({
                     identities: mentionIdentities,
                     text: message.body,
@@ -258,7 +264,7 @@ function MoreActionsMenu({
               }}
             >
               <Copy className="h-4 w-4" />
-              Copy message
+              {t("messages.actions.copyMessage")}
             </DropdownMenuItem>
           ) : null}
 
@@ -269,23 +275,23 @@ function MoreActionsMenu({
               }}
             >
               <Clock className="h-4 w-4" />
-              Remind me later
+              {t("messages.actions.remindLater")}
             </DropdownMenuItem>
           ) : null}
 
           {onSendToChannel ? (
             <DropdownMenuItem
-              aria-label="Send to group"
+              aria-label={t("messages.actions.sendToGroup")}
               data-testid={`send-to-channel-${message.id}`}
               onClick={() => {
                 void onSendToChannel(message)
-                  .then(() => toast.success("Sent to group"))
+                  .then(() => toast.success(t("messages.actions.sentToGroup")))
                   .catch((error) => {
                     console.error(
                       "Failed to send thread message to channel",
                       error,
                     );
-                    toast.error("Couldn't send to group");
+                    toast.error(t("messages.actions.sendToGroupFailed"));
                   });
               }}
             >
@@ -294,7 +300,7 @@ function MoreActionsMenu({
                 className="h-4 w-4"
                 data-testid="send-to-channel-icon"
               />
-              Send to group
+              {t("messages.actions.sendToGroup")}
             </DropdownMenuItem>
           ) : null}
 
@@ -306,7 +312,7 @@ function MoreActionsMenu({
               }}
             >
               <Link2 className="h-4 w-4" />
-              Copy link
+              {t("messages.actions.copyLink")}
             </DropdownMenuItem>
           ) : null}
 
@@ -328,7 +334,7 @@ function MoreActionsMenu({
               }}
             >
               <Flag className="h-4 w-4" />
-              Report message
+              {t("messages.actions.report")}
             </DropdownMenuItem>
           ) : null}
 
@@ -341,7 +347,7 @@ function MoreActionsMenu({
               }}
             >
               <Trash2 className="h-4 w-4" />
-              Delete message
+              {t("messages.actions.delete")}
             </DropdownMenuItem>
           ) : null}
 
@@ -391,6 +397,7 @@ function QuickReactionButton({
   emoji: string;
   onSelect: (emoji: string) => void;
 }) {
+  const t = useT();
   const displayName = emojiDisplayName(emoji);
   const mediaUrl = customEmojiUrl ? rewriteRelayUrl(customEmojiUrl) : null;
 
@@ -398,7 +405,7 @@ function QuickReactionButton({
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          aria-label={`React with ${displayName}`}
+          aria-label={t("messages.actions.reactWith", { emoji: displayName })}
           className="flex h-8 w-8 items-center justify-center rounded-full text-base leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
           onClick={() => onSelect(emoji)}
           title={displayName}
@@ -475,6 +482,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
   /** Resolves the mention identities carried by "Copy message". */
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const [isReactionPickerOpen, setIsReactionPickerOpen] = React.useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
   const customEmoji = useCustomEmoji();
@@ -587,7 +595,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
                 <TooltipTrigger asChild>
                   <PopoverTrigger asChild>
                     <Button
-                      aria-label="Open reactions"
+                      aria-label={t("messages.actions.openReactions")}
                       className={ACTION_BUTTON_CLASS}
                       data-testid={`react-message-${message.id}`}
                       size="sm"
@@ -598,7 +606,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
-                <TooltipContent>React</TooltipContent>
+                <TooltipContent>{t("messages.actions.react")}</TooltipContent>
               </Tooltip>
               <PopoverContent
                 align="end"
@@ -639,7 +647,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Reply in thread"
+                  aria-label={t("messages.actions.replyInThread")}
                   className={ACTION_BUTTON_CLASS}
                   data-testid={`reply-message-${message.id}`}
                   onClick={() => {
@@ -652,7 +660,9 @@ export const MessageActionBar = React.memo(function MessageActionBar({
                   <CornerUpLeft className={ACTION_ICON_CLASS} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Reply in thread</TooltipContent>
+              <TooltipContent>
+                {t("messages.actions.replyInThread")}
+              </TooltipContent>
             </Tooltip>
           ) : null}
 
@@ -660,7 +670,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Quote"
+                  aria-label={t("messages.actions.quote")}
                   className={ACTION_BUTTON_CLASS}
                   data-testid={`quote-message-${message.id}`}
                   onClick={() => {
@@ -673,7 +683,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
                   <Quote className={ACTION_ICON_CLASS} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Quote</TooltipContent>
+              <TooltipContent>{t("messages.actions.quote")}</TooltipContent>
             </Tooltip>
           ) : null}
 
@@ -681,7 +691,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Copy link"
+                  aria-label={t("messages.actions.copyLink")}
                   className={ACTION_BUTTON_CLASS}
                   data-testid={`copy-link-message-${message.id}`}
                   onClick={() => {
@@ -694,7 +704,7 @@ export const MessageActionBar = React.memo(function MessageActionBar({
                   <Link2 className={ACTION_ICON_CLASS} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Copy link</TooltipContent>
+              <TooltipContent>{t("messages.actions.copyLink")}</TooltipContent>
             </Tooltip>
           ) : null}
 

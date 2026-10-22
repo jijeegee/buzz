@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Mark, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Selection, TextSelection } from "@tiptap/pm/state";
@@ -372,7 +373,7 @@ function composerLinkPresentation(
       channelName ||
       channel.value.channelId.slice(0, 8);
     return {
-      ariaLabel: `Open group ${resolvedChannelName}`,
+      ariaLabel: t("messages.link.openGroup", { name: resolvedChannelName }),
       channelName: resolvedChannelName,
       dataAttributes: { "data-channel-deep-link": "" },
       icon: "channel",
@@ -383,11 +384,11 @@ function composerLinkPresentation(
   const entity = parseEntityLink(href);
   if (!entity.ok) {
     return {
-      ariaLabel: "Kuzz link",
+      ariaLabel: t("messages.link.kuzzLink"),
       channelName: "",
       dataAttributes: {},
       icon: "message",
-      label: "Kuzz link",
+      label: t("messages.link.kuzzLink"),
     };
   }
 
@@ -398,10 +399,18 @@ function composerLinkPresentation(
   return {
     ariaLabel:
       entity.value.type === "repo"
-        ? `Open repository ${entity.value.dtag}`
+        ? t("messages.link.openRepository", { repo: entity.value.dtag })
         : entity.value.type === "project"
-          ? `Open project ${entity.value.dtag}`
-          : `Open ${entity.value.type === "pr" ? "pull request" : "issue"} ${shortId} in repository ${entity.value.dtag}`,
+          ? t("messages.link.openProject", { project: entity.value.dtag })
+          : entity.value.type === "pr"
+            ? t("messages.link.openPullRequest", {
+                id: shortId,
+                repo: entity.value.dtag,
+              })
+            : t("messages.link.openIssue", {
+                id: shortId,
+                repo: entity.value.dtag,
+              }),
     channelName: "",
     dataAttributes: { "data-kuzz-link-kind": entity.value.type },
     icon: entity.value.type,

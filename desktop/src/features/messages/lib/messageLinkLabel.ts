@@ -1,5 +1,7 @@
+import { t } from "@/shared/i18n";
 export type MessageLinkLabelVariant = "default" | "sent-from-thread";
 
+/** English wording of the link label; the shown text comes from `messages.link.threadIn`. */
 export const MESSAGE_LINK_PREFIX = "Thread in";
 
 export function getMessageLinkChannelLabel(channelName: string): string {
@@ -16,7 +18,9 @@ export function getMessageLinkLabel({
   variant?: MessageLinkLabelVariant;
 }): string {
   const normalizedExcerpt = threadExcerpt?.trim();
-  const baseLabel = `${MESSAGE_LINK_PREFIX} ${getMessageLinkChannelLabel(channelName)}`;
+  const baseLabel = t("messages.link.threadIn", {
+    channel: getMessageLinkChannelLabel(channelName),
+  });
   if (variant === "sent-from-thread") {
     return normalizedExcerpt ?? baseLabel;
   }
