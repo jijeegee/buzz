@@ -323,6 +323,14 @@ test("Escape closes the search opened over a thread before the thread", async ({
   await expect(search).toHaveCount(0);
   await expect(drawer).toBeVisible();
 
+  // A popover menu above the thread closes first too.
+  const profileCard = page.getByTestId("sidebar-profile-card");
+  await profileCard.click({ position: { x: 8, y: 8 } });
+  await expect(page.getByTestId("profile-popover")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("profile-popover")).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("focus-thread-drawer-overlay")).toHaveCount(0);
 });
