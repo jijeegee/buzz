@@ -5,6 +5,7 @@
  */
 
 import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /**
  * Returns true iff the given catalog entry is editable by the user.
@@ -44,9 +45,13 @@ export function deleteHarnessConfirmMessage(
   label: string,
   referencingAgents: number,
 ): string {
-  if (referencingAgents === 0) return `Delete ${label}?`;
-  const noun = referencingAgents === 1 ? "agent uses" : "agents use";
-  return `${referencingAgents} ${noun} this harness and will stop launching. Delete ${label}?`;
+  if (referencingAgents === 0) {
+    return t("settings.harnesses.deleteConfirm", { label });
+  }
+  return t("settings.harnesses.deleteConfirmInUse", {
+    count: referencingAgents,
+    label,
+  });
 }
 
 /** Minimal query-state shape consumed by `deleteConfirmState` — matches the
@@ -88,13 +93,13 @@ export function deleteConfirmState(
   if (agents.isPending || personas.isPending) {
     return {
       canConfirm: false,
-      message: "Checking which agents use this harness…",
+      message: t("settings.harnesses.deleteChecking"),
     };
   }
   if (agents.isError || personas.isError) {
     return {
       canConfirm: true,
-      message: `Couldn't check which agents use this harness — some agents may stop launching. Delete ${label}?`,
+      message: t("settings.harnesses.deleteCheckFailed", { label }),
     };
   }
   const count = countAgentsReferencingHarness(

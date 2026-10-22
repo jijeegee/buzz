@@ -32,6 +32,7 @@ import {
   useSidebar,
 } from "@/shared/ui/sidebar";
 import { SidebarMenuLabel } from "@/shared/ui/sidebar-menu-label";
+import { type MessageKey, useT } from "@/shared/i18n";
 import {
   renderSettingsSection,
   settingsSections,
@@ -69,16 +70,20 @@ export const FORK_HIDDEN_SETTINGS_SECTIONS: ReadonlySet<SettingsSection> =
   ]);
 
 export const settingsNavGroups: Array<{
+  /** English id of the group (stable; shown text comes from `labelKey`). */
   label: string;
+  labelKey: MessageKey;
   sections: SettingsSection[];
 }> = [
   // Profile is how others see me; everything below is how my app works.
   {
     label: "Me",
+    labelKey: "settings.nav.groupMe",
     sections: ["profile"],
   },
   {
     label: "Settings",
+    labelKey: "settings.nav.groupSettings",
     sections: [
       "account",
       "devices",
@@ -94,10 +99,12 @@ export const settingsNavGroups: Array<{
   },
   {
     label: "Members",
+    labelKey: "settings.nav.groupMembers",
     sections: ["hosted-communities", "community-members", "relay-admin"],
   },
   {
     label: "App",
+    labelKey: "settings.nav.groupApp",
     sections: [
       "models",
       "agents",
@@ -119,7 +126,9 @@ function SettingsSectionButton({
   onSelect: (section: SettingsSection) => void;
   section: (typeof settingsSections)[number];
 }) {
+  const t = useT();
   const Icon = section.icon;
+  const label = t(section.labelKey);
 
   return (
     <SidebarMenuItem>
@@ -128,7 +137,7 @@ function SettingsSectionButton({
         data-testid={`settings-nav-${section.value}`}
         isActive={active}
         onClick={() => onSelect(section.value)}
-        tooltip={section.label}
+        tooltip={label}
         type="button"
       >
         <Icon
@@ -139,7 +148,7 @@ function SettingsSectionButton({
               : "text-sidebar-foreground/70",
           )}
         />
-        <SidebarMenuLabel>{section.label}</SidebarMenuLabel>
+        <SidebarMenuLabel>{label}</SidebarMenuLabel>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -162,6 +171,7 @@ export function SettingsView({
   onSetSoundForSlot,
   section,
 }: SettingsViewProps) {
+  const t = useT();
   const { isMobile, open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
   const myMembershipQuery = useMyRelayMembershipLookupQuery();
   const adminAccessQuery = useAdminConsoleAccessQuery();
@@ -290,11 +300,11 @@ export function SettingsView({
               <SidebarMenuButton
                 data-testid="settings-back-to-app"
                 onClick={onClose}
-                tooltip="Back to app"
+                tooltip={t("settings.nav.backToApp")}
                 type="button"
               >
                 <ArrowLeft className="h-4 w-4" />
-                <span>Back to app</span>
+                <span>{t("settings.nav.backToApp")}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -307,7 +317,7 @@ export function SettingsView({
               data-testid="community-access-loading"
             >
               <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-              Checking invite permissions…
+              {t("settings.view.checkingInvites")}
             </div>
           ) : null}
           {myMembershipQuery.isError ? (
@@ -317,7 +327,7 @@ export function SettingsView({
             >
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-3.5 w-3.5 text-destructive" />
-                Invite settings could not be checked.
+                {t("settings.view.invitesCheckFailed")}
               </div>
               <button
                 className="flex items-center gap-1.5 font-medium text-sidebar-foreground underline-offset-2 hover:underline"
@@ -325,7 +335,7 @@ export function SettingsView({
                 type="button"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Try again
+                {t("settings.view.tryAgain")}
               </button>
             </div>
           ) : null}
@@ -335,14 +345,18 @@ export function SettingsView({
               data-testid="community-access-snapshot-missing"
             >
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-              Invite settings are unavailable right now. Try again shortly.
+              {t("settings.view.invitesUnavailable")}
             </div>
           ) : null}
           {visibleNavGroups.map((group) => (
             <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupLabel>{t(group.labelKey)}</SidebarGroupLabel>
               <SidebarGroupContent>
-                <SidebarMenu aria-label={`${group.label} settings sections`}>
+                <SidebarMenu
+                  aria-label={t("settings.nav.groupAria", {
+                    group: t(group.labelKey),
+                  })}
+                >
                   {group.sections.map((entry) => (
                     <SettingsSectionButton
                       active={entry.value === section}
@@ -406,7 +420,7 @@ export function SettingsView({
                   data-testid="settings-admin-access-pending"
                 >
                   <LoaderCircle
-                    aria-label="Loading"
+                    aria-label={t("settings.view.loading")}
                     className="h-5 w-5 animate-spin text-muted-foreground"
                   />
                 </div>

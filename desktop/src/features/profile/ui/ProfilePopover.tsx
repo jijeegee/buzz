@@ -19,6 +19,7 @@ import {
 } from "@/features/user-status/ui/StatusEmoji";
 import type { UserStatusInput } from "@/features/user-status/types";
 import type { PresenceStatus } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { isMacPlatform } from "@/shared/lib/platform";
 
@@ -82,6 +83,7 @@ export function ProfilePopover({
   onInvitePeople,
   accountsSlot,
 }: ProfilePopoverProps) {
+  const t = useT();
   const [statusDialogOpen, setStatusDialogOpen] = React.useState(false);
   const [presenceMenuOpen, setPresenceMenuOpen] = React.useState(false);
   const hasUserStatus = Boolean(userStatusText || userStatusEmoji);
@@ -125,7 +127,7 @@ export function ProfilePopover({
             }
           }}
         >
-          <div aria-label="Profile menu" role="menu">
+          <div aria-label={t("profile.menu.label")} role="menu">
             {/* ── Identity block ─────────────────────────────────── */}
             <div className="flex items-center gap-2 px-3 pt-2 pb-2">
               <MaskedAvatarBadgeFrame
@@ -188,7 +190,10 @@ export function ProfilePopover({
                     side="bottom"
                     sideOffset={4}
                   >
-                    <div aria-label="Presence status" role="menu">
+                    <div
+                      aria-label={t("profile.menu.presenceStatus")}
+                      role="menu"
+                    >
                       {ALL_STATUSES.map((status) => (
                         <button
                           className={MENU_ITEM_CLASS}
@@ -244,7 +249,7 @@ export function ProfilePopover({
                   </span>
                 ) : (
                   <span className="flex-1 truncate text-muted-foreground">
-                    Update your status
+                    {t("profile.menu.updateStatus")}
                   </span>
                 )}
               </button>
@@ -290,7 +295,9 @@ export function ProfilePopover({
                     aria-hidden="true"
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
-                  <span className="flex-1">Invite people</span>
+                  <span className="flex-1">
+                    {t("profile.menu.invitePeople")}
+                  </span>
                 </button>
                 <hr className="my-1 h-px border-0 bg-border/60" />
               </>
@@ -309,7 +316,7 @@ export function ProfilePopover({
                 role="menuitem"
                 type="button"
               >
-                <span className="flex-1">Send feedback</span>
+                <span className="flex-1">{t("profile.menu.sendFeedback")}</span>
               </button>
             ) : null}
 
@@ -326,7 +333,7 @@ export function ProfilePopover({
               role="menuitem"
               type="button"
             >
-              <span className="flex-1">Profile</span>
+              <span className="flex-1">{t("profile.menu.profile")}</span>
             </button>
 
             {/* ── Settings: how my app works ─────────────────────── */}
@@ -342,7 +349,7 @@ export function ProfilePopover({
               role="menuitem"
               type="button"
             >
-              <span className="flex-1">Settings</span>
+              <span className="flex-1">{t("common.settings")}</span>
               <kbd className="text-xs text-muted-foreground">
                 {settingsShortcutLabel}
               </kbd>

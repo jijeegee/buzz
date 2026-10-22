@@ -90,6 +90,7 @@ import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { VoiceSettingsCard } from "./VoiceSettingsCard";
 import { Layer0GoalCard } from "@/features/goals/ui/Layer0GoalCard";
+import { type MessageKey, useT } from "@/shared/i18n";
 
 export type SettingsSection =
   | "profile"
@@ -147,7 +148,7 @@ export function isSettingsSection(value: unknown): value is SettingsSection {
 
 export type SettingsSectionDescriptor = {
   value: SettingsSection;
-  label: string;
+  labelKey: MessageKey;
   icon: LucideIcon;
   /** If set, this section is only visible when the feature is enabled */
   featureGate?: string;
@@ -171,106 +172,106 @@ export type SettingsPanelProps = {
 export const settingsSections: SettingsSectionDescriptor[] = [
   {
     value: "appearance",
-    label: "Appearance",
+    labelKey: "settings.nav.appearance",
     icon: MonitorCog,
   },
   {
     value: "profile",
-    label: "Profile",
+    labelKey: "settings.nav.profile",
     icon: UserRound,
   },
   {
     value: "account",
-    label: "Account",
+    labelKey: "settings.nav.account",
     icon: KeyRound,
   },
   {
     value: "devices",
-    label: "Devices",
+    labelKey: "settings.nav.devices",
     icon: MonitorSmartphone,
   },
   {
     value: "privacy",
-    label: "Friends & privacy",
+    labelKey: "settings.nav.privacy",
     icon: ShieldCheck,
   },
   {
     value: "notifications",
-    label: "Notifications",
+    labelKey: "settings.nav.notifications",
     icon: BellRing,
   },
   {
     value: "voice",
-    label: "Voice",
+    labelKey: "settings.nav.voice",
     icon: Volume2,
   },
   {
     value: "experimental",
-    label: "Experiments",
+    labelKey: "settings.nav.experimental",
     icon: FlaskConical,
   },
   {
     value: "models",
-    label: "Models",
+    labelKey: "settings.nav.models",
     icon: BrainCircuit,
     featureGate: "managed-agents",
   },
   {
     value: "agents",
-    label: "Agents",
+    labelKey: "settings.nav.agents",
     icon: Bot,
     featureGate: "managed-agents",
   },
   {
     value: "channel-templates",
-    label: "Group templates",
+    labelKey: "settings.nav.channelTemplates",
     icon: LayoutTemplate,
     featureGate: "channel-templates",
   },
   {
     value: "compute",
-    label: "Compute",
+    labelKey: "settings.nav.compute",
     icon: Cpu,
   },
   {
     value: "shortcuts",
-    label: "Shortcuts",
+    labelKey: "settings.nav.shortcuts",
     icon: Keyboard,
   },
   {
     value: "hosted-communities",
-    label: "Hosted communities",
+    labelKey: "settings.nav.hostedCommunities",
     icon: MessagesSquare,
   },
   {
     value: "community-members",
-    label: "Invites",
+    labelKey: "settings.nav.communityMembers",
     icon: Ticket,
   },
   {
     value: "relay-admin",
-    label: "Admin",
+    labelKey: "settings.nav.relayAdmin",
     icon: ServerCog,
   },
   {
     value: "custom-emoji",
-    label: "Custom emoji",
+    labelKey: "settings.nav.customEmoji",
     icon: Smile,
     featureGate: "custom-emoji",
   },
   {
     value: "local-archive",
-    label: "Local archive",
+    labelKey: "settings.nav.localArchive",
     icon: Archive,
   },
   {
     value: "mobile",
-    label: "Mobile",
+    labelKey: "settings.nav.mobile",
     icon: Smartphone,
   },
   {
     value: "updates",
-    label: "Updates",
+    labelKey: "settings.nav.updates",
     icon: Download,
   },
 ];
@@ -442,9 +443,21 @@ function SingleThemeTile({
 type AppearanceMode = "system" | "light" | "dark";
 
 const APPEARANCE_MODE_OPTIONS = [
-  { mode: "system" as const, label: "System", Icon: SunMoon },
-  { mode: "light" as const, label: "Light", Icon: Sun },
-  { mode: "dark" as const, label: "Dark", Icon: Moon },
+  {
+    mode: "system" as const,
+    labelKey: "settings.appearanceTheme.modeSystem" as const,
+    Icon: SunMoon,
+  },
+  {
+    mode: "light" as const,
+    labelKey: "settings.appearanceTheme.modeLight" as const,
+    Icon: Sun,
+  },
+  {
+    mode: "dark" as const,
+    labelKey: "settings.appearanceTheme.modeDark" as const,
+    Icon: Moon,
+  },
 ] as const;
 
 // Reveal/hide motion for the accent picker: a small translate + opacity fade.
@@ -460,6 +473,7 @@ const ACCENT_PICKER_TRANSITION = {
 };
 
 function ThemeSettingsCard() {
+  const t = useT();
   const {
     setTheme,
     selectedThemeName,
@@ -680,8 +694,8 @@ function ThemeSettingsCard() {
       data-testid="settings-theme"
     >
       <SettingsSectionHeader
-        title="Appearance"
-        description="Choose how Kuzz looks and feels."
+        title={t("settings.appearanceTheme.title")}
+        description={t("settings.appearanceTheme.description")}
       />
 
       <SettingsOptionGroupList>
@@ -700,10 +714,10 @@ function ThemeSettingsCard() {
           }
           title={
             <>
-              Theme
+              {t("settings.appearanceTheme.theme")}
               {showCommunityScope ? (
                 <span className="ml-1 font-normal text-muted-foreground">
-                  (per community)
+                  {t("settings.appearanceTheme.perCommunity")}
                 </span>
               ) : null}
             </>
@@ -711,24 +725,28 @@ function ThemeSettingsCard() {
         >
           <SettingsOptionRow data-testid="appearance-color-mode-row">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Color mode</p>
+              <p className="text-sm font-medium">
+                {t("settings.appearanceTheme.colorMode")}
+              </p>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Follow your system or choose a light or dark appearance.
+                {t("settings.appearanceTheme.colorModeDescription")}
               </p>
             </div>
             <SegmentedControl
               indicatorTestId="appearance-color-mode-indicator"
-              legend="Color mode"
+              legend={t("settings.appearanceTheme.colorMode")}
               onValueChange={handleModeSelect}
               optionTestIdPrefix="appearance-mode"
-              options={APPEARANCE_MODE_OPTIONS.map(({ mode, label, Icon }) => ({
-                value: mode,
-                label,
-                Icon,
-              }))}
+              options={APPEARANCE_MODE_OPTIONS.map(
+                ({ mode, labelKey, Icon }) => ({
+                  value: mode,
+                  label: t(labelKey),
+                  Icon,
+                }),
+              )}
               testId="appearance-color-mode-control"
               value={selectedMode}
             />
@@ -736,16 +754,20 @@ function ThemeSettingsCard() {
 
           <SettingsOptionRow data-testid="theme-style-row">
             <div className="min-w-0">
-              <p className="text-sm font-medium">Theme style</p>
+              <p className="text-sm font-medium">
+                {t("settings.appearanceTheme.themeStyle")}
+              </p>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Choose the colors used throughout Kuzz.
+                {t("settings.appearanceTheme.themeStyleDescription")}
               </p>
             </div>
             <button
-              aria-label={`Theme style, ${selectedThemeLabel}`}
+              aria-label={t("settings.appearanceTheme.themeStyleAria", {
+                theme: selectedThemeLabel,
+              })}
               aria-controls="theme-style-options"
               aria-expanded={themeStyleExpanded}
               className="flex h-auto min-w-0 items-center gap-2 rounded-md bg-transparent p-0 text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -831,7 +853,7 @@ function ThemeSettingsCard() {
 
         <SettingsOptionGroup
           data-testid="appearance-preferences-card"
-          title="Preferences"
+          title={t("settings.appearanceTheme.preferences")}
         >
           <ConversationDisplaySettings />
           <LinkPreviewStyleSetting />

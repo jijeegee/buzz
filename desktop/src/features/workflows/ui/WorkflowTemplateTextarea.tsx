@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Popover, PopoverAnchor, PopoverContent } from "@/shared/ui/popover";
 import { Textarea } from "@/shared/ui/textarea";
@@ -28,6 +29,7 @@ export function WorkflowTemplateTextarea({
   triggerType: TriggerType;
   value: string;
 }) {
+  const t = useT();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const generatedId = React.useId();
   const textareaId = props.id ?? `workflow-template-${generatedId}`;
@@ -143,7 +145,9 @@ export function WorkflowTemplateTextarea({
                 <React.Fragment key={variable.value}>
                   {variable.group !== previousGroup ? (
                     <p className="px-2 pb-1 pt-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {variable.group}
+                      {variable.group === "Trigger"
+                        ? t("workflows.templateVariable.groupTrigger")
+                        : t("workflows.templateVariable.groupPreviousSteps")}
                     </p>
                   ) : null}
                   <button
@@ -173,13 +177,15 @@ export function WorkflowTemplateTextarea({
             })
           ) : (
             <p className="px-2 py-2 text-xs text-muted-foreground">
-              No matching variables
+              {t("workflows.templateVariable.noMatches")}
             </p>
           )}
         </div>
         {triggerType === "webhook" ? (
           <p className="border-t border-border/50 px-2 pb-1 pt-2 text-2xs text-muted-foreground">
-            JSON fields are available as {"{{trigger.field_name}}"}.
+            {t("workflows.templateVariable.webhookJsonHint", {
+              variable: "{{trigger.field_name}}",
+            })}
           </p>
         ) : null}
       </PopoverContent>

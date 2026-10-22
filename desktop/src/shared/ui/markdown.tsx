@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import type { Components } from "react-markdown";
@@ -167,6 +168,7 @@ function ImageZoomOverlay({
   sourceScope?: Element | null;
   src: string | undefined;
 }) {
+  const t = useT();
   const shouldReduceMotion = useReducedMotion();
   const prefersReducedMotion = shouldReduceMotion === true;
   const fallbackGalleryItems = React.useMemo<ImageGalleryItem[]>(
@@ -681,7 +683,8 @@ function ImageZoomOverlay({
     : isFading
       ? IMAGE_LIGHTBOX_FADE_EXIT_MS
       : IMAGE_LIGHTBOX_FADE_ENTER_MS;
-  const label = currentItem.alt?.trim() || "Image preview";
+  const label =
+    currentItem.alt?.trim() || t("ui.imageLightbox.previewFallback");
   const handleImageClick = React.useCallback(
     (event: React.MouseEvent<HTMLImageElement>) => {
       event.preventDefault();
@@ -874,7 +877,7 @@ function ImageZoomOverlay({
       </div>
       {hasPreviousImage ? (
         <button
-          aria-label="Previous image"
+          aria-label={t("ui.imageLightbox.previous")}
           className={cn(
             "absolute left-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-muted text-muted-foreground shadow-sm backdrop-blur-xl backdrop-saturate-150 transition-[background-color,color,opacity] duration-150 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/70 sm:left-6",
             isOpen ? "opacity-100" : "pointer-events-none opacity-0",
@@ -891,7 +894,7 @@ function ImageZoomOverlay({
       ) : null}
       {hasNextImage ? (
         <button
-          aria-label="Next image"
+          aria-label={t("ui.imageLightbox.next")}
           className={cn(
             "absolute right-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-muted text-muted-foreground shadow-sm backdrop-blur-xl backdrop-saturate-150 transition-[background-color,color,opacity] duration-150 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/70 sm:right-6",
             isOpen ? "opacity-100" : "pointer-events-none opacity-0",
@@ -917,7 +920,7 @@ function ImageZoomOverlay({
         }}
       >
         <div
-          aria-label="Image controls"
+          aria-label={t("ui.imageLightbox.controls")}
           className="relative isolate flex min-h-11 max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl px-2 py-1.5 text-muted-foreground"
           data-image-lightbox-controls=""
           role="toolbar"
@@ -927,7 +930,7 @@ function ImageZoomOverlay({
             className="pointer-events-none absolute inset-0 -z-10 rounded-[inherit] bg-muted shadow-sm backdrop-blur-xl backdrop-saturate-150"
           />
           <button
-            aria-label="Download image"
+            aria-label={t("ui.imageMenu.download")}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-muted-foreground/10 hover:text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring/70 disabled:pointer-events-none disabled:opacity-45"
             disabled={!canActOnCurrentImage}
             type="button"
@@ -959,8 +962,8 @@ function ImageZoomOverlay({
             "data-image-lightbox-controls",
           ]}
           items={[
-            { label: "Copy image", onSelect: handleMenuCopy },
-            { label: "Download image", onSelect: handleMenuDownload },
+            { label: t("ui.imageMenu.copy"), onSelect: handleMenuCopy },
+            { label: t("ui.imageMenu.download"), onSelect: handleMenuDownload },
           ]}
           portalContainer={dialogRef.current ?? undefined}
           position={menu}
@@ -984,6 +987,7 @@ export const LinkPreviewImageLightbox =
  * React state avoids that repaint.
  */
 function ImageBlock({ alt, dim, resolvedSrc, src, thumbSrc }: ImageBlockProps) {
+  const t = useT();
   const [lightboxState, setLightboxState] = React.useState<{
     galleryIndex: number;
     galleryItems?: ImageGalleryItem[];
@@ -1151,7 +1155,11 @@ function ImageBlock({ alt, dim, resolvedSrc, src, thumbSrc }: ImageBlockProps) {
     <>
       <button
         aria-hidden={isHiddenInSpoiler ? true : undefined}
-        aria-label={alt?.trim() ? `Zoom image: ${alt}` : "Zoom image"}
+        aria-label={
+          alt?.trim()
+            ? t("ui.imageLightbox.zoomImageNamed", { alt })
+            : t("ui.imageLightbox.zoomImage")
+        }
         className={cn(
           "mt-1 inline-block min-w-0 max-w-full cursor-zoom-in overflow-hidden rounded-2xl border-0 bg-transparent p-0 text-left align-top focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/50",
           lightboxState && "opacity-0",
@@ -1186,8 +1194,14 @@ function ImageBlock({ alt, dim, resolvedSrc, src, thumbSrc }: ImageBlockProps) {
         <MediaContextMenu
           dataAttributes={["data-image-context-menu"]}
           items={[
-            { label: "Copy image", onSelect: () => handleCopyImage(src) },
-            { label: "Download image", onSelect: () => handleDownload(src) },
+            {
+              label: t("ui.imageMenu.copy"),
+              onSelect: () => handleCopyImage(src),
+            },
+            {
+              label: t("ui.imageMenu.download"),
+              onSelect: () => handleDownload(src),
+            },
           ]}
           position={menu}
         />
@@ -1472,11 +1486,14 @@ export function createMarkdownComponents(
     ),
     hr: () => <hr className="border-border/80" />,
     img: function MarkdownImage({ alt, src }) {
+      const t = useT();
       const { imetaByUrl } = useMarkdownRuntime();
       const entry = src ? imetaByUrl?.get(src) : undefined;
       const isVideo = src ? isVideoMedia(src, entry?.m) : false;
       if (!interactive) {
-        const fallbackLabel = isVideo ? "Video attachment" : "Image attachment";
+        const fallbackLabel = isVideo
+          ? t("ui.markdown.videoAttachment")
+          : t("ui.markdown.imageAttachment");
         return <span>{alt?.trim() || fallbackLabel}</span>;
       }
 

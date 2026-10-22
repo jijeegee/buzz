@@ -1,3 +1,5 @@
+import { useT } from "@/shared/i18n";
+
 import { TASK_MODEL_TASKS } from "../../lib/taskModels";
 import { useTaskModelsQuery } from "../../taskModelsHooks";
 import {
@@ -18,6 +20,7 @@ export function TaskModelsSettingsTab({
 }: {
   onOpenProviders: () => void;
 }) {
+  const t = useT();
   const query = useTaskModelsQuery();
   const statuses = query.data ?? [];
 
@@ -25,12 +28,12 @@ export function TaskModelsSettingsTab({
     <div data-testid="settings-models-tasks">
       <SettingsOptionGroupList>
         <SettingsOptionGroup
-          description="Each task Kuzz runs on its own behalf picks its provider and model here, independently of your agents. Changing one never restarts an agent."
-          title="App tasks"
+          description={t("settings.taskModels.description")}
+          title={t("settings.taskModels.title")}
         >
           {query.isError ? (
             <p className="px-4 py-3 text-sm text-destructive" role="alert">
-              Couldn't load task models.
+              {t("settings.taskModels.loadFailed")}
             </p>
           ) : null}
           {TASK_MODEL_TASKS.map((task) => {

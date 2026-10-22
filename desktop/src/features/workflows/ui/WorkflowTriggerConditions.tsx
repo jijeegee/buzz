@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import * as React from "react";
 
+import { type MessageKey, t, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Input } from "@/shared/ui/input";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -22,15 +23,15 @@ import {
 } from "./workflowConditionExpression";
 import type { TriggerType } from "./workflowFormTypes";
 
-const OPERATOR_LABELS: Record<ConditionOperator, string> = {
-  contains: "contains",
-  not_contains: "does not contain",
-  starts_with: "starts with",
-  ends_with: "ends with",
-  equals: "is",
-  not_equals: "is not",
-  is_not_empty: "is not empty",
-  is_empty: "is empty",
+const OPERATOR_LABEL_KEYS: Record<ConditionOperator, MessageKey> = {
+  contains: "workflows.condition.operator.contains",
+  not_contains: "workflows.condition.operator.notContains",
+  starts_with: "workflows.condition.operator.startsWith",
+  ends_with: "workflows.condition.operator.endsWith",
+  equals: "workflows.condition.operator.equals",
+  not_equals: "workflows.condition.operator.notEquals",
+  is_not_empty: "workflows.condition.operator.isNotEmpty",
+  is_empty: "workflows.condition.operator.isEmpty",
 };
 
 function emptyCondition(field: string): ParsedConditionExpression {
@@ -55,7 +56,7 @@ function fieldUsesFullHeightPicker(field: string): boolean {
 
 function fieldPlaceholder(field: string): string {
   if (fieldUsesFullHeightPicker(field)) return "";
-  return "e.g. deploy";
+  return t("workflows.textCondition.valuePlaceholder");
 }
 
 function ExclusionStrike() {
@@ -84,6 +85,7 @@ function AuthorConditionSummary({
   isAgent?: boolean;
   label: string;
 }) {
+  const t = useT();
   return (
     <span className="flex shrink-0 items-center">
       <span className="relative shrink-0">
@@ -98,8 +100,9 @@ function AuthorConditionSummary({
         {excluded ? <ExclusionStrike /> : null}
       </span>
       <span className="sr-only">
-        {excluded ? "Excluded author: " : "Selected author: "}
-        {label}
+        {excluded
+          ? t("workflows.condition.excludedAuthor", { name: label })
+          : t("workflows.condition.selectedAuthor", { name: label })}
       </span>
     </span>
   );
@@ -112,6 +115,7 @@ function EmojiConditionSummary({
   emoji: string;
   excluded: boolean;
 }) {
+  const t = useT();
   return (
     <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
       <span aria-hidden="true" className="text-2xl leading-none">
@@ -119,8 +123,9 @@ function EmojiConditionSummary({
       </span>
       {excluded ? <ExclusionStrike /> : null}
       <span className="sr-only">
-        {excluded ? "Excluded reaction emoji: " : "Selected reaction emoji: "}
-        {emoji}
+        {excluded
+          ? t("workflows.condition.excludedEmoji", { emoji })
+          : t("workflows.condition.selectedEmoji", { emoji })}
       </span>
     </span>
   );
@@ -146,6 +151,7 @@ export function WorkflowTriggerConditions({
   value: string;
   workflowChannelId?: string | null;
 }) {
+  const t = useT();
   const parsedValue = React.useMemo(
     () => parseConditionExpressions(value, triggerType),
     [triggerType, value],
@@ -214,21 +220,21 @@ export function WorkflowTriggerConditions({
       value={mode}
     >
       <TabsList
-        aria-label="Condition editor mode"
+        aria-label={t("workflows.textCondition.editorMode")}
         className="grid h-9 w-full grid-cols-2 p-0.5"
       >
         <TabsTrigger className="h-8" disabled={disabled} value="basic">
-          Basic
+          {t("workflows.textCondition.basic")}
         </TabsTrigger>
         <TabsTrigger className="h-8" disabled={disabled} value="advanced">
-          Advanced
+          {t("workflows.textCondition.advanced")}
         </TabsTrigger>
       </TabsList>
 
       {mode === "advanced" ? (
         <div className="space-y-2">
           <Input
-            aria-label="Advanced expression"
+            aria-label={t("workflows.textCondition.advancedExpression")}
             autoCapitalize="off"
             autoCorrect="off"
             disabled={disabled}
@@ -237,19 +243,19 @@ export function WorkflowTriggerConditions({
               localValue.current = event.target.value;
               onChange(event.target.value.trim());
             }}
-            placeholder='e.g. trigger_author == "…"'
+            placeholder={t("workflows.textCondition.advancedPlaceholder", {
+              example: 'trigger_author == "…"',
+            })}
             value={value}
           />
           <p className="text-xs text-muted-foreground">
-            Use an evalexpr expression. Existing custom expressions stay
-            unchanged.
+            {t("workflows.condition.advancedHint")}
           </p>
         </div>
       ) : parsedValue === null && value.trim() ? (
         <div className="space-y-3 rounded-md border border-border/70 p-3">
           <p className="text-xs text-muted-foreground">
-            An advanced expression is active. Replacing it with basic filters
-            cannot be undone.
+            {t("workflows.condition.advancedActive")}
           </p>
           <button
             className="text-sm font-medium text-destructive hover:underline"
@@ -261,7 +267,7 @@ export function WorkflowTriggerConditions({
             }}
             type="button"
           >
-            Replace with basic filters
+            {t("workflows.condition.replaceWithBasic")}
           </button>
         </div>
       ) : (
@@ -278,9 +284,15 @@ export function WorkflowTriggerConditions({
             const condition = existing ?? emptyCondition(field.value);
             const expanded = expandedField === field.value;
             const error = conditionValueError(field.value, condition.value);
+            const operatorLabel = t(OPERATOR_LABEL_KEYS[condition.operator]);
             const summary = existing
-              ? `${OPERATOR_LABELS[condition.operator]}${condition.value ? ` ${compact(condition.value)}` : ""}`
-              : "Any";
+              ? condition.value
+                ? t("workflows.condition.summaryWithValue", {
+                    operator: operatorLabel,
+                    value: compact(condition.value),
+                  })
+                : operatorLabel
+              : t("workflows.textCondition.any");
             const authorSummary =
               existing &&
               field.value === "trigger_author" &&
@@ -368,7 +380,9 @@ export function WorkflowTriggerConditions({
                     )}
                   >
                     <fieldset>
-                      <legend className="sr-only">Match</legend>
+                      <legend className="sr-only">
+                        {t("workflows.textCondition.match")}
+                      </legend>
                       <div className="grid grid-cols-2 gap-2.5">
                         {conditionOperatorsForField(field.value).map(
                           (operator) => {
@@ -396,7 +410,7 @@ export function WorkflowTriggerConditions({
                                 }}
                                 type="button"
                               >
-                                {OPERATOR_LABELS[operator]}
+                                {t(OPERATOR_LABEL_KEYS[operator])}
                               </button>
                             );
                           },
@@ -406,8 +420,8 @@ export function WorkflowTriggerConditions({
                     {conditionOperatorNeedsValue(condition.operator) ? (
                       field.value === "trigger_emoji" ? (
                         <WorkflowEmojiField
-                          ariaLabel="Choose trigger emoji"
-                          clearAriaLabel="Clear trigger emoji"
+                          ariaLabel={t("workflows.condition.chooseEmoji")}
+                          clearAriaLabel={t("workflows.condition.clearEmoji")}
                           disabled={disabled}
                           id="wf-trigger-emoji"
                           onChange={(emoji) =>
@@ -519,7 +533,7 @@ export function WorkflowTriggerConditions({
                         }
                         type="button"
                       >
-                        Clear filter
+                        {t("workflows.condition.clearFilter")}
                       </button>
                     ) : null}
                   </div>

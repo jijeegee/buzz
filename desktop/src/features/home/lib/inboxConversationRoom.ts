@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import {
   getInboxThreadRootId,
   type InboxItem,
@@ -97,6 +98,6 @@ export function formatInboxConversationRoomTitle(
     case "channel":
       return `${room.channelLabel}`;
     case "thread":
-      return `${room.channelLabel} › ${threadName || "Thread"}`;
+      return `${room.channelLabel} › ${threadName || t("home.untitledThread")}`;
   }
 }

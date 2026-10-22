@@ -17,6 +17,7 @@ import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { useRemindLater } from "@/features/reminders/ui/RemindMeLaterProvider";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { Channel, FeedItem, HomeFeedResponse } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useNow } from "@/shared/lib/useNow";
 import { Markdown } from "@/shared/ui/markdown";
@@ -94,13 +95,16 @@ function ThreadPreviewRow({
   onOpen: () => void;
   onRemindLater: () => void;
 }) {
+  const t = useT();
   return (
     <div
       className="group/activity-row relative border-t border-border/50 first:border-t-0"
       data-testid={`channel-activity-item-${item.conversationId}`}
     >
       <button
-        aria-label={`Open thread from ${item.senderLabel}`}
+        aria-label={t("sidebar.activity.openThread", {
+          name: item.senderLabel,
+        })}
         className="absolute inset-0 z-0 w-full text-left"
         onClick={onOpen}
         type="button"
@@ -123,7 +127,7 @@ function ThreadPreviewRow({
             </span>
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
-            <span>Thread</span>
+            <span>{t("sidebar.activity.thread")}</span>
             {item.item.channelId ? (
               <ThreadNameLabel
                 channelId={item.item.channelId}
@@ -133,7 +137,11 @@ function ThreadPreviewRow({
             {item.unreadCount > 1 ? (
               <>
                 <span aria-hidden="true">·</span>
-                <span>{item.unreadCount} unread</span>
+                <span>
+                  {t("sidebar.activity.unreadCount", {
+                    count: item.unreadCount,
+                  })}
+                </span>
               </>
             ) : null}
           </div>
@@ -146,10 +154,16 @@ function ThreadPreviewRow({
         </div>
       </div>
       <div className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-0.5 rounded-full bg-muted/95 p-0.5 opacity-0 shadow-xs transition-opacity group-hover/activity-row:pointer-events-auto group-hover/activity-row:opacity-100 group-focus-within/activity-row:pointer-events-auto group-focus-within/activity-row:opacity-100">
-        <RowActionButton label="Mark as read" onClick={onMarkRead}>
+        <RowActionButton
+          label={t("sidebar.menu.markRead")}
+          onClick={onMarkRead}
+        >
           <MailOpen />
         </RowActionButton>
-        <RowActionButton label="Remind me later" onClick={onRemindLater}>
+        <RowActionButton
+          label={t("sidebar.activity.remindLater")}
+          onClick={onRemindLater}
+        >
           <Clock />
         </RowActionButton>
       </div>
@@ -177,6 +191,7 @@ function WorkingAgentRow({
   pubkey: string;
   threadRootEventId: string | null;
 }) {
+  const t = useT();
   return (
     <button
       className="flex w-full min-w-0 items-start gap-2.5 border-t border-border/50 px-3 py-3 text-left transition-colors first:border-t-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-hidden"
@@ -204,11 +219,11 @@ function WorkingAgentRow({
         </div>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs leading-4 text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary/70" />
-          <span className="shrink-0">Working</span>
+          <span className="shrink-0">{t("sidebar.activity.working")}</span>
           {threadRootEventId ? (
             <>
               <span aria-hidden="true">·</span>
-              <span className="shrink-0">Thread</span>
+              <span className="shrink-0">{t("sidebar.activity.thread")}</span>
               <span className="min-w-0 truncate">
                 <ThreadNameLabel
                   channelId={channelId}
@@ -242,6 +257,7 @@ export function WorkingAgentRows({
   ) => void;
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const now = useNow(1000);
   const alignedAgentNames =
     activeWorking.agentNames?.length === activeWorking.agentPubkeys.length
@@ -257,7 +273,7 @@ export function WorkingAgentRows({
     const profile = profiles?.[normalizePubkey(pubkey)];
     const authoredName =
       profile?.displayName?.trim() || alignedAgentNames?.[index];
-    const name = authoredName || "Agent";
+    const name = authoredName || t("sidebar.activity.agentFallback");
     // One row per thread the agent is working in; typing-only agents carry no
     // observer turns and keep a single channel-anchored row.
     const rows = turnsByAgent.get(normalizePubkey(pubkey)) ?? [
@@ -292,6 +308,7 @@ export function ChannelActivityPopover({
   channel: Channel;
   children: React.ReactNode;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -455,14 +472,14 @@ export function ChannelActivityPopover({
         style={ACTIVITY_POPOVER_MOTION_STYLE}
       >
         <section
-          aria-label="Group activity"
+          aria-label={t("sidebar.activity.title")}
           className="flex max-h-96 min-h-0 flex-col overflow-hidden"
         >
           <h3
             className="relative z-20 shrink-0 border-b border-border/70 bg-background/95 px-3 py-2 text-sm font-semibold text-foreground backdrop-blur-md supports-[backdrop-filter]:bg-background/90"
             data-testid="channel-activity-header"
           >
-            Group activity
+            {t("sidebar.activity.title")}
           </h3>
           <div
             className="kuzz-channel-activity-scrollbar min-h-0 overflow-y-auto overscroll-contain"

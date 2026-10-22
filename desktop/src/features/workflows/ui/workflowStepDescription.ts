@@ -1,8 +1,9 @@
+import { t } from "@/shared/i18n";
 import {
   formatDurationSecondsVerbose,
   parseDurationSeconds,
 } from "./workflowDuration";
-import { ACTION_LABELS } from "./workflowFormTypes";
+import { actionTypeLabel } from "./workflowFormTypes";
 import type { StepFormState } from "./workflowFormTypes";
 
 const MAX_DETAIL_LENGTH = 42;
@@ -27,7 +28,9 @@ const KEY_REFERENCE = /^(?:[0-9a-f]{64}|npub1[0-9a-z]+)$/i;
 function destination(value: string | undefined): string | null {
   const normalized = value?.trim();
   if (!normalized) return null;
-  return KEY_REFERENCE.test(normalized) ? "someone" : compact(normalized);
+  return KEY_REFERENCE.test(normalized)
+    ? t("workflows.stepDescription.someone")
+    : compact(normalized);
 }
 
 function configuredStepDetail(
@@ -46,13 +49,20 @@ function configuredStepDetail(
     case "send_message": {
       const text = quoted(step.text);
       const channel = channelLabel ? `${channelLabel}` : null;
-      if (text && channel) return `${text} in ${channel}`;
+      if (text && channel) {
+        return t("workflows.stepDescription.textInChannel", { text, channel });
+      }
       return text ?? channel;
     }
     case "send_dm": {
       const text = quoted(step.text);
       const recipient = destination(step.to);
-      if (text && recipient) return `${text} to ${recipient}`;
+      if (text && recipient) {
+        return t("workflows.stepDescription.textToRecipient", {
+          text,
+          recipient,
+        });
+      }
       return text ?? recipient;
     }
     case "call_webhook": {
@@ -63,7 +73,12 @@ function configuredStepDetail(
     case "request_approval": {
       const message = quoted(step.message);
       const approver = destination(step.from);
-      if (message && approver) return `${message} from ${approver}`;
+      if (message && approver) {
+        return t("workflows.stepDescription.messageFromApprover", {
+          message,
+          approver,
+        });
+      }
       return message ?? approver;
     }
     case "add_reaction":
@@ -81,5 +96,5 @@ export function workflowStepDescription(
   const name = options.includeName === false ? undefined : step.name?.trim();
   const detail = configuredStepDetail(step, options.channelLabel);
   if (name && detail) return `${name} · ${detail}`;
-  return name || detail || ACTION_LABELS[step.action];
+  return name || detail || actionTypeLabel(step.action);
 }

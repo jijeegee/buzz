@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
@@ -58,6 +59,12 @@ type DialogContentProps = React.ComponentPropsWithoutRef<
    */
   surface?: "default" | "none" | "textured";
 };
+
+/** Screen-reader text of the close (X) button. */
+function CloseLabel() {
+  const t = useT();
+  return <span className="sr-only">{t("common.close")}</span>;
+}
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
@@ -126,7 +133,7 @@ const DialogContent = React.forwardRef<
               )}
             >
               <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
+              <CloseLabel />
             </DialogPrimitive.Close>
           ) : null}
         </DialogPrimitive.Content>

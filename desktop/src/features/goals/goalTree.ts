@@ -1,4 +1,5 @@
 import type { GoalNode, GoalTree } from "@/shared/api/tauriGoals";
+import { type MessageKey, t } from "@/shared/i18n";
 
 export type OutlineRow = { layer: number; node: GoalNode };
 
@@ -88,21 +89,22 @@ export function goalSubtreeIds(tree: GoalTree, id: string): Set<string> {
   return ids;
 }
 
-export const GOAL_STATUS_LABEL: Record<GoalNode["status"], string> = {
-  open: "To do",
-  in_progress: "In progress",
-  done: "Done",
-  dropped: "Dropped",
+/** Message keys of the status names; translate where shown. */
+export const GOAL_STATUS_LABEL: Record<GoalNode["status"], MessageKey> = {
+  open: "goals.status.open",
+  in_progress: "goals.status.inProgress",
+  done: "goals.status.done",
+  dropped: "goals.status.dropped",
 };
 
 export const GOAL_TITLE_MAX_CHARS = 200;
 
 /** Client-side mirror of the relay's title rule (single line, ≤200 chars). */
 export function goalTitleError(title: string): string | null {
-  if (title.trim().length === 0) return "Write the goal in one sentence.";
-  if (/[\r\n]/.test(title)) return "Keep the goal on one line.";
+  if (title.trim().length === 0) return t("goals.titleError.empty");
+  if (/[\r\n]/.test(title)) return t("goals.titleError.oneLine");
   if ([...title].length > GOAL_TITLE_MAX_CHARS)
-    return `Keep the goal under ${GOAL_TITLE_MAX_CHARS} characters.`;
+    return t("goals.titleError.tooLong", { max: GOAL_TITLE_MAX_CHARS });
   return null;
 }
 

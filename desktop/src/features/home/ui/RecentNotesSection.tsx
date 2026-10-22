@@ -3,6 +3,7 @@ import { Activity } from "lucide-react";
 import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 
 import type { UserNote } from "@/shared/api/socialTypes";
+import { type Translate, useT } from "@/shared/i18n";
 import type { UserProfileSummary } from "@/shared/api/types";
 import { Markdown } from "@/shared/ui/markdown";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -15,14 +16,20 @@ type RecentNotesSectionProps = {
   onOpenPulse: () => void;
 };
 
-function formatRelativeTime(unixSeconds: number): string {
+function formatRelativeTime(t: Translate, unixSeconds: number): string {
   const now = Date.now() / 1_000;
   const diff = now - unixSeconds;
 
-  if (diff < 60) return "just now";
-  if (diff < 3_600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86_400) return `${Math.floor(diff / 3_600)}h`;
-  return `${Math.floor(diff / 86_400)}d`;
+  if (diff < 60) return t("time.justNow");
+  if (diff < 3_600) {
+    return t("home.recentNotes.minutesAgo", { count: Math.floor(diff / 60) });
+  }
+  if (diff < 86_400) {
+    return t("home.recentNotes.hoursAgo", {
+      count: Math.floor(diff / 3_600),
+    });
+  }
+  return t("home.recentNotes.daysAgo", { count: Math.floor(diff / 86_400) });
 }
 
 export function RecentNotesSection({
@@ -31,6 +38,7 @@ export function RecentNotesSection({
   agentPubkeys,
   onOpenPulse,
 }: RecentNotesSectionProps) {
+  const t = useT();
   if (notes.length === 0) return null;
 
   return (
@@ -39,7 +47,7 @@ export function RecentNotesSection({
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold text-foreground">
-            Recent Notes
+            {t("home.recentNotes.title")}
           </h3>
         </div>
         <button
@@ -47,7 +55,7 @@ export function RecentNotesSection({
           onClick={onOpenPulse}
           type="button"
         >
-          View all in Pulse
+          {t("home.recentNotes.viewAll")}
         </button>
       </div>
 
@@ -85,11 +93,11 @@ export function RecentNotesSection({
                   </span>
                   {isAgent ? (
                     <span className="inline-flex h-3.5 items-center rounded bg-muted px-1 text-2xs font-medium text-muted-foreground">
-                      bot
+                      {t("home.recentNotes.botBadge")}
                     </span>
                   ) : null}
                   <span className="shrink-0 text-2xs text-muted-foreground">
-                    {formatRelativeTime(note.createdAt)}
+                    {formatRelativeTime(t, note.createdAt)}
                   </span>
                 </div>
                 <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">

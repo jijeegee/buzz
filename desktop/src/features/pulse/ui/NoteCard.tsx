@@ -19,7 +19,7 @@ import { Markdown } from "@/shared/ui/markdown";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, type Translate, useT } from "@/shared/i18n";
 
 export type NoteCardActions = {
   reply?: (
@@ -56,6 +56,7 @@ function ReplyParentContext({
   parentId: string;
   profiles: Record<string, UserProfileSummary>;
 }) {
+  const t = useT();
   const parentNoteQuery = useNoteByIdQuery(parentId);
   const parentNote = parentNoteQuery.data ?? null;
   const cachedProfile = parentNote
@@ -93,7 +94,9 @@ function ReplyParentContext({
               <UserAvatar
                 avatarUrl={parentAvatarUrl}
                 className="!h-4 !w-4 shrink-0"
-                displayName={parentDisplayName ?? "Parent note author"}
+                displayName={
+                  parentDisplayName ?? t("pulse.noteCard.parentAuthorFallback")
+                }
                 shape={parentIsAgent ? "squircle" : "circle"}
               />
             </button>
@@ -118,26 +121,29 @@ function ReplyParentContext({
                 )}
               </button>
             </UserProfilePopover>
-            : {parentSnippet || "No text"}
+            : {parentSnippet || t("pulse.noteCard.parentNoText")}
           </span>
         </div>
       ) : parentNoteQuery.isLoading ? (
-        "Loading reply context…"
+        t("pulse.noteCard.parentLoading")
       ) : (
-        "Replying to an unavailable note"
+        t("pulse.noteCard.parentUnavailable")
       )}
     </div>
   );
 }
 
-function formatRelativeTime(unixSeconds: number): string {
+function formatRelativeTime(t: Translate, unixSeconds: number): string {
   const now = Date.now() / 1_000;
   const diff = now - unixSeconds;
 
-  if (diff < 60) return "just now";
-  if (diff < 3_600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86_400) return `${Math.floor(diff / 3_600)}h`;
-  if (diff < 604_800) return `${Math.floor(diff / 86_400)}d`;
+  if (diff < 60) return t("time.justNow");
+  if (diff < 3_600)
+    return t("pulse.noteCard.minutesShort", { count: Math.floor(diff / 60) });
+  if (diff < 86_400)
+    return t("pulse.noteCard.hoursShort", { count: Math.floor(diff / 3_600) });
+  if (diff < 604_800)
+    return t("pulse.noteCard.daysShort", { count: Math.floor(diff / 86_400) });
 
   return new Date(unixSeconds * 1_000).toLocaleDateString(formatLocale(), {
     month: "short",
@@ -148,7 +154,7 @@ function formatRelativeTime(unixSeconds: number): string {
 export function NoteCard({
   note,
   profile,
-  currentUserDisplayName = "You",
+  currentUserDisplayName,
   currentUserProfile,
   composerProfiles = {},
   isAgent,
@@ -160,6 +166,8 @@ export function NoteCard({
   members = [],
   actions,
 }: NoteCardProps) {
+  const t = useT();
+  const replyAuthorName = currentUserDisplayName ?? t("common.you");
   const displayName = profile?.displayName ?? UNKNOWN_USER_LABEL;
   const avatarUrl = profile?.avatarUrl ?? null;
   const [isReplyComposerOpen, setIsReplyComposerOpen] = React.useState(false);
@@ -216,7 +224,7 @@ export function NoteCard({
           </UserProfilePopover>
           {isAgent ? (
             <span className="inline-flex h-4 items-center rounded bg-muted px-1 text-2xs font-medium text-muted-foreground">
-              bot
+              {t("pulse.noteCard.botBadge")}
             </span>
           ) : null}
           {profile?.nip05Handle ? (
@@ -225,7 +233,7 @@ export function NoteCard({
             </span>
           ) : null}
           <span className="shrink-0 text-xs text-muted-foreground/70">
-            {formatRelativeTime(note.createdAt)}
+            {formatRelativeTime(t, note.createdAt)}
           </span>
         </div>
 
@@ -245,7 +253,11 @@ export function NoteCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  aria-label={isUpvoted ? "Unlike" : "Like"}
+                  aria-label={
+                    isUpvoted
+                      ? t("pulse.noteCard.unlike")
+                      : t("pulse.noteCard.like")
+                  }
                   aria-pressed={isUpvoted}
                   className={`${actionButtonClass} ${isUpvoted ? activeActionClass : ""} disabled:opacity-45`}
                   disabled={isUpvotePending}
@@ -262,12 +274,16 @@ export function NoteCard({
                   {reactionCountLabel}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{isUpvoted ? "Unlike" : "Like"}</TooltipContent>
+              <TooltipContent>
+                {isUpvoted
+                  ? t("pulse.noteCard.unlike")
+                  : t("pulse.noteCard.like")}
+              </TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  aria-label="Reply"
+                  aria-label={t("pulse.noteCard.reply")}
                   aria-expanded={isReplyComposerOpen}
                   className={actionButtonClass}
                   onClick={() => setIsReplyComposerOpen((current) => !current)}
@@ -277,12 +293,12 @@ export function NoteCard({
                   {countPlaceholder}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>Reply</TooltipContent>
+              <TooltipContent>{t("pulse.noteCard.reply")}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  aria-label="Share"
+                  aria-label={t("pulse.noteCard.share")}
                   className={actionButtonClass}
                   onClick={() => actions?.share?.(note)}
                   type="button"
@@ -291,13 +307,13 @@ export function NoteCard({
                   {countPlaceholder}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>Share</TooltipContent>
+              <TooltipContent>{t("pulse.noteCard.share")}</TooltipContent>
             </Tooltip>
             {!isOwnNote ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    aria-label="Start direct message"
+                    aria-label={t("pulse.noteCard.startDm")}
                     className={actionButtonClass}
                     onClick={() => actions?.startDm?.(note.pubkey)}
                     type="button"
@@ -305,7 +321,7 @@ export function NoteCard({
                     <PenSquare className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Start direct message</TooltipContent>
+                <TooltipContent>{t("pulse.noteCard.startDm")}</TooltipContent>
               </Tooltip>
             ) : null}
           </div>
@@ -321,11 +337,11 @@ export function NoteCard({
                   <UserAvatar
                     avatarUrl={currentUserAvatarUrl}
                     className="!h-8 !w-8 shrink-0"
-                    displayName={currentUserDisplayName}
+                    displayName={replyAuthorName}
                     shape={currentUserProfile?.isAgent ? "squircle" : "circle"}
                   />
                   <span className="max-w-32 truncate text-sm font-medium text-foreground">
-                    {currentUserDisplayName}
+                    {replyAuthorName}
                   </span>
                 </div>
               }
@@ -339,7 +355,7 @@ export function NoteCard({
                     setIsReplyComposerOpen(false);
                   })
               }
-              placeholder="Post your reply"
+              placeholder={t("pulse.noteCard.replyPlaceholder")}
               profiles={composerProfiles}
             />
           </div>

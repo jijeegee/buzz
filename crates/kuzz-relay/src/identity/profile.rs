@@ -307,6 +307,7 @@ mod tests {
             disabled_at: None,
             purge_after: None,
             discoverable: true,
+            locale: None,
         }
     }
 

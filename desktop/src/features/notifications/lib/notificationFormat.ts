@@ -1,3 +1,5 @@
+import { type MessageKey, t } from "@/shared/i18n";
+
 const NOTIFICATION_BODY_MAX_LENGTH = 140;
 
 /**
@@ -44,7 +46,10 @@ export function formatNotificationTitle(opts: {
   channelLabel: string | null;
 }): string {
   return opts.channelLabel
-    ? `${opts.prefix} in ${opts.channelLabel}`
+    ? t("notifications.titleInChannel", {
+        prefix: opts.prefix,
+        channel: opts.channelLabel,
+      })
     : opts.prefix;
 }
 
@@ -56,13 +61,13 @@ export type MessageNotificationSource =
   | "chat"
   | "thread_reply";
 
-const MESSAGE_BODY_FALLBACKS: Record<MessageNotificationSource, string> = {
-  mention: "Something in Kuzz needs your attention.",
-  approval: "A workflow is waiting for your approval.",
-  needs_action: "Something in Kuzz needs your attention.",
-  dm: "New message",
-  chat: "New message",
-  thread_reply: "New reply",
+const MESSAGE_BODY_FALLBACKS: Record<MessageNotificationSource, MessageKey> = {
+  mention: "notifications.body.needsAttention",
+  approval: "notifications.body.approvalWaiting",
+  needs_action: "notifications.body.needsAttention",
+  dm: "notifications.body.newMessage",
+  chat: "notifications.body.newMessage",
+  thread_reply: "notifications.body.newReply",
 };
 
 /**
@@ -87,33 +92,66 @@ export function formatMessageNotification(opts: {
   const channelName = opts.channelName?.trim() || null;
   const body = truncateNotificationBody(
     content,
-    MESSAGE_BODY_FALLBACKS[source],
+    t(MESSAGE_BODY_FALLBACKS[source]),
   );
 
   if (source === "dm") {
-    return { title: senderName ?? channelName ?? "Direct message", body };
+    return {
+      title:
+        senderName ?? channelName ?? t("notifications.title.directMessage"),
+      body,
+    };
   }
   // Ownerless chat: who said it, and in which chat.
   if (source === "chat") {
-    const chat = channelName ?? "Chat";
-    return { title: senderName ? `${senderName} in ${chat}` : chat, body };
+    const chat = channelName ?? t("notifications.title.chat");
+    return {
+      title: senderName
+        ? t("notifications.title.senderInChat", { name: senderName, chat })
+        : chat,
+      body,
+    };
   }
 
-  const channelLabel = channelName ? `${channelName}` : null;
-  const prefix =
-    source === "mention"
-      ? senderName
-        ? `${senderName} mentioned you`
-        : "@Mention"
-      : source === "approval"
-        ? senderName
-          ? `${senderName} requested approval`
-          : "Approval Requested"
-        : source === "thread_reply"
-          ? senderName
-            ? `${senderName} replied`
-            : "Reply"
-          : (senderName ?? "Needs Action");
+  return { title: messageTitle(source, senderName, channelName), body };
+}
 
-  return { title: formatNotificationTitle({ prefix, channelLabel }), body };
+/** Whole-sentence titles: who did what, and where when the channel is known. */
+function messageTitle(
+  source: Exclude<MessageNotificationSource, "dm" | "chat">,
+  name: string | null,
+  channel: string | null,
+): string {
+  if (source === "mention") {
+    if (name) {
+      return channel
+        ? t("notifications.title.mentionedYouIn", { name, channel })
+        : t("notifications.title.mentionedYou", { name });
+    }
+    return channel
+      ? t("notifications.title.mentionIn", { channel })
+      : t("notifications.title.mention");
+  }
+  if (source === "approval") {
+    if (name) {
+      return channel
+        ? t("notifications.title.requestedApprovalIn", { name, channel })
+        : t("notifications.title.requestedApproval", { name });
+    }
+    return channel
+      ? t("notifications.title.approvalRequestedIn", { channel })
+      : t("notifications.title.approvalRequested");
+  }
+  if (source === "thread_reply") {
+    if (name) {
+      return channel
+        ? t("notifications.title.repliedIn", { name, channel })
+        : t("notifications.title.replied", { name });
+    }
+    return channel
+      ? t("notifications.title.replyIn", { channel })
+      : t("notifications.title.reply");
+  }
+  const prefix = name ?? t("notifications.title.needsAction");
+  return formatNotificationTitle({ prefix, channelLabel: channel });
 }

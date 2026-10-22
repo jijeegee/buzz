@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import KuzzLogoAnimation from "@/shared/ui/kuzz-logo/KuzzLogoAnimation";
 
@@ -5,12 +6,13 @@ import KuzzLogoAnimation from "@/shared/ui/kuzz-logo/KuzzLogoAnimation";
 export function KuzzLoadingState({
   className,
   fill = false,
-  label = "Loading",
+  label,
 }: {
   className?: string;
   fill?: boolean;
   label?: string;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -22,7 +24,7 @@ export function KuzzLoadingState({
       role="status"
     >
       <KuzzLogoAnimation
-        ariaLabel={label}
+        ariaLabel={label ?? t("ui.loading.label")}
         className="kuzz-logo--scale-pulse"
         fullScreen={false}
         showBackground={false}

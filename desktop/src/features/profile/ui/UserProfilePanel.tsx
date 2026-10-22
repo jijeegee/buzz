@@ -87,6 +87,7 @@ import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { useEscapeKey } from "@/shared/hooks/useEscapeKey";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { AuxiliaryPanelBody } from "@/shared/layout/AuxiliaryPanel";
+import { t } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
@@ -469,14 +470,16 @@ export function UserProfilePanel({
       } else if (created.spawnError) {
         toast.error(created.spawnError);
       } else {
-        toast.success(`Started ${created.agent.name}.`);
+        toast.success(
+          t("profile.agentLifecycle.started", { name: created.agent.name }),
+        );
       }
       if (created.profileSyncError) {
         toast.warning(created.profileSyncError);
       }
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to start agent.",
+        error instanceof Error ? error.message : t("profile.panel.startFailed"),
       );
     }
   }, [createManagedAgentForPersona, resolvedPersona]);
@@ -488,11 +491,13 @@ export function UserProfilePanel({
       const result = await deleteManagedAgentRecord(managedAgent);
       if (result.cancelled) return;
 
-      toast.success(`Deleted ${managedAgent.name}.`);
+      toast.success(t("profile.panel.deleted", { name: managedAgent.name }));
       onClose();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to delete agent.",
+        error instanceof Error
+          ? error.message
+          : t("profile.panel.deleteFailed"),
       );
     }
   }, [deleteManagedAgentRecord, managedAgent, onClose]);
@@ -562,18 +567,24 @@ export function UserProfilePanel({
           id: resolvedPersona.id,
           active: false,
         });
-        toast.success(`Removed ${resolvedPersona.displayName} from My Agents.`);
+        toast.success(
+          t("profile.panel.removedFromMyAgents", {
+            name: resolvedPersona.displayName,
+          }),
+        );
         onClose();
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to delete agent.",
+          error instanceof Error
+            ? error.message
+            : t("profile.panel.deleteFailed"),
         );
       }
       return;
     }
 
     if (resolvedPersona.sourceTeam) {
-      toast.error("This agent is managed by a team.");
+      toast.error(t("profile.panel.managedByTeam"));
       return;
     }
 
@@ -588,19 +599,23 @@ export function UserProfilePanel({
   const handleConfirmDeletePersona = React.useCallback(
     async (personaToConfirm: AgentPersona) => {
       if (personaToConfirm.sourceTeam) {
-        toast.error("This agent is managed by a team.");
+        toast.error(t("profile.panel.managedByTeam"));
         setPersonaToDelete(null);
         return;
       }
 
       try {
         await deletePersonaMutation.mutateAsync(personaToConfirm.id);
-        toast.success(`Deleted ${personaToConfirm.displayName}.`);
+        toast.success(
+          t("profile.panel.deleted", { name: personaToConfirm.displayName }),
+        );
         setPersonaToDelete(null);
         onClose();
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to delete agent.",
+          error instanceof Error
+            ? error.message
+            : t("profile.panel.deleteFailed"),
         );
       }
     },
@@ -622,11 +637,26 @@ export function UserProfilePanel({
   const handleAddedToChannel = React.useCallback(
     (channel: Channel, result: AttachManagedAgentToChannelResult) => {
       if (result.started) {
-        toast.success(`Added ${result.agent.name} to ${channel.name}.`);
+        toast.success(
+          t("profile.panel.addedToGroup", {
+            name: result.agent.name,
+            group: channel.name,
+          }),
+        );
       } else if (result.membershipAdded) {
-        toast.success(`Added ${result.agent.name} to ${channel.name}.`);
+        toast.success(
+          t("profile.panel.addedToGroup", {
+            name: result.agent.name,
+            group: channel.name,
+          }),
+        );
       } else {
-        toast.success(`${result.agent.name} is already in ${channel.name}.`);
+        toast.success(
+          t("profile.panel.alreadyInGroup", {
+            name: result.agent.name,
+            group: channel.name,
+          }),
+        );
       }
       void managedAgentsQuery.refetch();
       void relayAgentsQuery.refetch();

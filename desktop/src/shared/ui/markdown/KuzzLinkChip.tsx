@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
@@ -26,6 +27,7 @@ function useKuzzLinkContextMenu({
   interactive: boolean;
   onOpenLink: () => void;
 }) {
+  const t = useT();
   const [position, setPosition] =
     React.useState<MediaContextMenuPosition | null>(null);
   const closeMenu = React.useCallback(() => setPosition(null), []);
@@ -46,17 +48,17 @@ function useKuzzLinkContextMenu({
         dataAttributes={["data-kuzz-link-context-menu"]}
         items={[
           {
-            label: "Open link",
+            label: t("ui.linkMenu.open"),
             onSelect: () => {
               closeMenu();
               onOpenLink();
             },
           },
           {
-            label: "Copy link",
+            label: t("ui.linkMenu.copy"),
             onSelect: () => {
               closeMenu();
-              copyTextToClipboard(href, "Link copied to clipboard");
+              copyTextToClipboard(href, t("ui.linkMenu.copied"));
             },
           },
         ]}

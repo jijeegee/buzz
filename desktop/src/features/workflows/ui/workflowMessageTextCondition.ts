@@ -1,3 +1,5 @@
+import type { MessageKey } from "@/shared/i18n";
+
 export const MESSAGE_TEXT_CONDITION_OPERATORS = [
   "contains",
   "not_contains",
@@ -17,18 +19,19 @@ export type MessageTextCondition = {
   value: string;
 };
 
-export const MESSAGE_TEXT_CONDITION_LABELS: Record<
+/** Language-file keys of the operator names; translate where shown. */
+export const MESSAGE_TEXT_CONDITION_LABEL_KEYS: Record<
   MessageTextConditionOperator,
-  string
+  MessageKey
 > = {
-  contains: "Contains",
-  not_contains: "Does not contain",
-  starts_with: "Starts with",
-  ends_with: "Ends with",
-  equals: "Equals",
-  not_equals: "Does not equal",
-  is_not_empty: "Has text",
-  is_empty: "Has no text",
+  contains: "workflows.textCondition.contains",
+  not_contains: "workflows.textCondition.notContains",
+  starts_with: "workflows.textCondition.startsWith",
+  ends_with: "workflows.textCondition.endsWith",
+  equals: "workflows.textCondition.equals",
+  not_equals: "workflows.textCondition.notEquals",
+  is_not_empty: "workflows.textCondition.isNotEmpty",
+  is_empty: "workflows.textCondition.isEmpty",
 };
 
 export function messageTextConditionNeedsValue(

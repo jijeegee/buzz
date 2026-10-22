@@ -1,4 +1,5 @@
 import * as React from "react";
+import { type MessageKey, t } from "@/shared/i18n";
 import type {
   AcpRuntimeCatalogEntry,
   AgentPersona,
@@ -33,15 +34,15 @@ export type ProfilePanelView =
 
 export type ProfilePanelTab = "info" | "runtime" | "channels" | "memories";
 
-export const PROFILE_PANEL_VIEW_TITLES: Record<ProfilePanelView, string> = {
-  summary: "Profile",
-  instructions: "Agent instructions",
-  info: "Agent info",
-  configuration: "Runtime",
-  diagnostics: "Harness log",
-  memories: "Memories",
-  channels: "Groups",
-  logs: "Harness log",
+export const PROFILE_PANEL_VIEW_TITLES: Record<ProfilePanelView, MessageKey> = {
+  summary: "profile.panelView.summary",
+  instructions: "profile.panelView.instructions",
+  info: "profile.panelView.info",
+  configuration: "profile.panelView.configuration",
+  diagnostics: "profile.panelView.harnessLog",
+  memories: "profile.panelView.memories",
+  channels: "profile.panelView.channels",
+  logs: "profile.panelView.harnessLog",
 };
 
 const PROFILE_PANEL_VIEWS = new Set<ProfilePanelView>(
@@ -241,7 +242,7 @@ export function resolveProfileDisplayName({
   return (
     profile?.displayName ??
     persona?.displayName ??
-    (pubkey ? UNKNOWN_USER_LABEL : "Agent")
+    (pubkey ? UNKNOWN_USER_LABEL : t("profile.panel.agentFallbackName"))
   );
 }
 

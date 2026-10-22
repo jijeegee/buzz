@@ -1,4 +1,5 @@
 import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 export type HarnessConnectionMethod = "subscription" | "api";
 
@@ -34,8 +35,8 @@ export function runtimeUnavailableDescription(
   runtime: AcpRuntimeCatalogEntry,
 ): string {
   return runtime.availability === "adapter_outdated"
-    ? `${runtime.label} needs an ACP adapter update.`
-    : `${runtime.label} is not detected on this computer.`;
+    ? t("onboarding.runtime.adapterOutdated", { runtime: runtime.label })
+    : t("onboarding.runtime.notDetected", { runtime: runtime.label });
 }
 
 export function getRuntimesForConnectionMethod(

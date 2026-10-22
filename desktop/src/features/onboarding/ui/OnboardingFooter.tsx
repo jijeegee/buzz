@@ -2,6 +2,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft } from "lucide-react";
 
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { ONBOARDING_CARD_SECONDARY_CTA_CLASS } from "./onboardingCardStyles";
@@ -48,6 +49,7 @@ export function OnboardingFooterProvider({
   contentClassName?: string;
   placement?: OnboardingFooterPlacement;
 }) {
+  const t = useT();
   const [target, setTarget] = React.useState<HTMLElement | null>(null);
 
   if (placement === "card") {
@@ -65,7 +67,7 @@ export function OnboardingFooterProvider({
           <div className="flex min-w-0 flex-1 justify-start">
             {backAction ? (
               <Button
-                aria-label={backAction.label ?? "Back"}
+                aria-label={backAction.label ?? t("common.back")}
                 className={cn(
                   "size-[3.25rem] rounded-full p-0 [&_svg]:size-6",
                   ONBOARDING_CARD_SECONDARY_CTA_CLASS,
@@ -113,7 +115,7 @@ export function OnboardingFooterProvider({
             type="button"
             variant="ghost"
           >
-            {backAction.label ?? "Back"}
+            {backAction.label ?? t("common.back")}
           </Button>
         </div>
       ) : null}

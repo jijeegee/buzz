@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ComponentType } from "react";
 import { ExternalLink, RefreshCcw, RotateCw } from "lucide-react";
 
+import { type MessageKey, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
@@ -22,36 +23,36 @@ const variants: Record<
   {
     Icon: IndicatorIcon;
     iconClassName?: string;
-    label: string;
+    /** Message key; translated where shown. */
+    label: MessageKey;
     badgeColor: string;
   }
 > = {
   available: {
     Icon: RefreshCcw,
-    label: "Update available",
+    label: "settings.updateIndicator.available",
     badgeColor: "bg-primary",
   },
   downloading: {
     Icon: Spinner,
     iconClassName: "h-4 w-4 border-2",
-    label: "Downloading update\u2026",
+    label: "settings.updateIndicator.downloading",
     badgeColor: "bg-primary",
   },
   installing: {
     Icon: Spinner,
     iconClassName: "h-4 w-4 border-2",
-    label: "Installing update\u2026",
+    label: "settings.updateIndicator.installing",
     badgeColor: "bg-primary",
   },
   "manual-required": {
     Icon: ExternalLink,
-    label:
-      "Update available — download from GitHub (use AppImage for auto-updates)",
+    label: "settings.updateIndicator.manual",
     badgeColor: "bg-primary",
   },
   ready: {
     Icon: RotateCw,
-    label: "Update now",
+    label: "settings.updateIndicator.ready",
     badgeColor: "bg-emerald-500",
   },
 };
@@ -70,6 +71,7 @@ function getVariant(state: UpdateStatus["state"]) {
 }
 
 export function UpdateIndicator({ className }: { className?: string }) {
+  const t = useT();
   const { status, installAndRelaunch } = useUpdaterContext();
   const variant = getVariant(status.state);
 
@@ -77,7 +79,8 @@ export function UpdateIndicator({ className }: { className?: string }) {
     return null;
   }
 
-  const { Icon, iconClassName = "h-4 w-4", label, badgeColor } = variant;
+  const { Icon, iconClassName = "h-4 w-4", badgeColor } = variant;
+  const label = t(variant.label);
   const isActionable =
     status.state === "ready" || status.state === "manual-required";
   const handleClick =

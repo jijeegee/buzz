@@ -15,6 +15,7 @@ import {
 import { ProfileIngressRow } from "@/features/profile/ui/UserProfilePanelTabs";
 import type { ProfileChannelLink } from "@/features/profile/ui/UserProfilePanelUtils";
 import type { ManagedAgent } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert";
 
@@ -67,6 +68,7 @@ export function ChannelsFocusedView({
   sessionAgent?: { pubkey: string; name: string } | null;
   variant?: "embedded" | "focused";
 }) {
+  const t = useT();
   const contextGaugeEnabled = useContextGaugeEnabled();
   const sessionGroups = useAgentChannelSessionGroups(sessionAgent?.pubkey);
   return (
@@ -77,15 +79,17 @@ export function ChannelsFocusedView({
             disabled={isActionPending}
             grouped
             icon={UserPlus}
-            label="Add to group"
+            label={t("profile.channels.addToGroup")}
             onClick={onAddToChannel}
             testId="user-profile-agent-add-channel"
-            trailing={isActionPending ? "Working…" : undefined}
+            trailing={
+              isActionPending ? t("profile.channels.working") : undefined
+            }
           />
         ) : null}
         {isLoading ? (
           <p className="px-4 py-3 text-sm leading-6 text-muted-foreground">
-            Loading groups…
+            {t("profile.channels.loading")}
           </p>
         ) : channels.length === 0 ? (
           <div
@@ -98,13 +102,13 @@ export function ChannelsFocusedView({
             <UserPlus className="mx-auto h-4 w-4 text-muted-foreground" />
             <p className="mt-3 text-sm font-medium">
               {canAddToChannel
-                ? "Add this agent to a group"
-                : "Groups appear here"}
+                ? t("profile.channels.emptyAddTitle")
+                : t("profile.channels.emptyTitle")}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {canAddToChannel
-                ? "Choose a group above so it can join the conversation."
-                : "Visible memberships appear as this agent joins groups."}
+                ? t("profile.channels.emptyAddBody")
+                : t("profile.channels.emptyBody")}
             </p>
           </div>
         ) : (
@@ -123,7 +127,9 @@ export function ChannelsFocusedView({
                   />
                 ) : (
                   <button
-                    aria-label={`Open ${channel.name}`}
+                    aria-label={t("profile.channels.openGroup", {
+                      name: channel.name,
+                    })}
                     className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
                     data-testid={`user-profile-channel-link-${channel.name}`}
                     onClick={() => onOpenChannel(channel.id)}
@@ -152,13 +158,17 @@ export function AgentInfoFocusedView({
 }: {
   metadataFields: ProfileField[];
 }) {
+  const t = useT();
   if (metadataFields.length === 0) {
     return null;
   }
 
   return (
     <div className="pt-4">
-      <ProfileFieldGroup fields={metadataFields} title="Info" />
+      <ProfileFieldGroup
+        fields={metadataFields}
+        title={t("profile.tabs.info")}
+      />
     </div>
   );
 }
@@ -178,6 +188,7 @@ export function DiagnosticsFocusedView({
   logLoading: boolean;
   managedAgent: ManagedAgent | undefined;
 }) {
+  const t = useT();
   const hasLog = canOpenAgentLogs && managedAgent !== undefined;
   const lastErrorField = fields.find((field) => field.label === "Last error");
   const detailFields = fields.filter(
@@ -198,7 +209,7 @@ export function DiagnosticsFocusedView({
         >
           <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <div className="min-w-0">
-            <AlertTitle>Last error</AlertTitle>
+            <AlertTitle>{t("profile.field.lastError")}</AlertTitle>
             <AlertDescription className="wrap-break-word">
               {lastErrorField.displayValue}
             </AlertDescription>

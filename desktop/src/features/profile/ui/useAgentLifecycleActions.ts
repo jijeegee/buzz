@@ -11,6 +11,7 @@ import { agentPresenceStartBlockReason } from "@/features/agents/lib/useAgentAva
 import { clearActiveTurnsForAgentOnStop } from "@/features/agents/managedAgentRuntimeHooks";
 import { isRelayRemovedError } from "@/features/agents/managedAgentRelayCleanup";
 import { useCommunities } from "@/features/communities/useCommunities";
+import { t } from "@/shared/i18n";
 import type {
   Channel,
   ManagedAgent,
@@ -48,7 +49,10 @@ export function useAgentLifecycleActions({
         if (managedAgent.backend.type === "local") {
           clearActiveTurnsForAgentOnStop(managedAgent.pubkey);
         }
-        toast.success(result.noticeMessage ?? `Stopped ${managedAgent.name}.`);
+        toast.success(
+          result.noticeMessage ??
+            t("profile.agentLifecycle.stopped", { name: managedAgent.name }),
+        );
         return;
       }
 
@@ -60,12 +64,14 @@ export function useAgentLifecycleActions({
       });
       toast.success(
         managedAgent.backend.type === "provider"
-          ? `Deploying ${managedAgent.name}.`
-          : `Started ${managedAgent.name}.`,
+          ? t("profile.agentLifecycle.deploying", { name: managedAgent.name })
+          : t("profile.agentLifecycle.started", { name: managedAgent.name }),
       );
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Agent action failed.",
+        error instanceof Error
+          ? error.message
+          : t("profile.agentLifecycle.actionFailed"),
       );
     }
   }, [
@@ -93,11 +99,15 @@ export function useAgentLifecycleActions({
         stopManagedAgent,
         onStopped: () => clearActiveTurnsForAgentOnStop(managedAgent.pubkey),
       });
-      toast.success(`Restarted ${managedAgent.name}.`);
+      toast.success(
+        t("profile.agentLifecycle.restarted", { name: managedAgent.name }),
+      );
     } catch (error) {
       if (isRelayRemovedError(error)) return;
       toast.error(
-        error instanceof Error ? error.message : "Agent restart failed.",
+        error instanceof Error
+          ? error.message
+          : t("profile.agentLifecycle.restartFailed"),
       );
     }
   }, [

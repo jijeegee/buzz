@@ -8,6 +8,7 @@ import type { SendFeedbackInput } from "@/features/settings/ui/SendFeedbackDialo
 import { relayClient } from "@/shared/api/relayClient";
 import { signRelayEvent, uploadMediaBytes } from "@/shared/api/tauri";
 import { pickAndUploadImage } from "@/shared/api/tauriMedia";
+import { t } from "@/shared/i18n";
 import { KIND_PRODUCT_FEEDBACK } from "@/shared/constants/kinds";
 
 async function collectDiagnostics(): Promise<string> {
@@ -122,8 +123,8 @@ export function useSendFeedback() {
       });
       await relayClient.publishEvent(
         event,
-        "Timed out while sending feedback.",
-        "Failed to send feedback.",
+        t("settings.feedback.timedOut"),
+        t("settings.feedback.sendFailed"),
       );
     },
     onSuccess: reset,
