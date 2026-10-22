@@ -274,6 +274,7 @@ class _ThreadMessage extends HookConsumerWidget {
                             channelId: channelId,
                             tags: message.tags,
                             loadedMessages: allMessages,
+                            quotingMessageId: message.id,
                           ),
                           ReadAloudBody(
                             slots: readAloud,

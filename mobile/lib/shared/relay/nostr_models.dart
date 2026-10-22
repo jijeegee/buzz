@@ -55,6 +55,9 @@ abstract final class EventKind {
   static const streamMessageV2 = 40002;
   static const channelThreadSummary = 39005;
   static const channelWindowBounds = 39006;
+
+  /// Relay-signed excerpt of a quoted message sent before the reader joined.
+  static const quotePreview = 39008;
   static const streamMessageEdit = 40003;
   static const streamMessageDiff = 40008;
   static const threadName = 40009;
@@ -346,6 +349,10 @@ class ChannelData {
   /// `["group_chat"]`: an ownerless chat of people (a private stream).
   final bool groupChat;
 
+  /// `["history","all"]`: new members see messages from before they joined.
+  /// Absent or `since_join` hides them (DMs and group chats always do).
+  final bool historyAll;
+
   const ChannelData({
     required this.id,
     required this.name,
@@ -360,6 +367,7 @@ class ChannelData {
     this.goalsEnabled = true,
     this.picture,
     this.groupChat = false,
+    this.historyAll = false,
   });
 
   factory ChannelData.fromEvent(NostrEvent event) {
@@ -421,6 +429,7 @@ class ChannelData {
       goalsEnabled: goalsEnabled,
       picture: picture,
       groupChat: groupChat && channelType != 'dm',
+      historyAll: event.getTagValue('history') == 'all',
     );
   }
 }

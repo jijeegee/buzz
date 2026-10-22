@@ -7,6 +7,7 @@ import 'package:kuzz/features/channels/composer_quote_chip.dart';
 import 'package:kuzz/features/channels/composer_quote_provider.dart';
 import 'package:kuzz/features/channels/message_quote.dart';
 import 'package:kuzz/features/channels/message_quote_header.dart';
+import 'package:kuzz/features/channels/quote_preview_provider.dart';
 import 'package:kuzz/features/channels/quoted_message_provider.dart';
 import 'package:kuzz/features/channels/timeline_message.dart';
 import 'package:kuzz/shared/deeplink/deep_link.dart';
@@ -263,8 +264,11 @@ void main() {
       await uriLinks.close();
     });
 
+    late List<QuotePreviewKey> previewRequests;
+
     List<Override> overrides({
       QuotedMessage? fetched,
+      QuotePreview? preview,
       Set<String> blocked = const {},
       bool? foldsBlocked,
     }) => [
@@ -282,6 +286,10 @@ void main() {
         ).scope([_alice, _bob]),
       ),
       quotedMessageProvider.overrideWith((ref, _) async => fetched),
+      quotePreviewProvider.overrideWith((ref, key) async {
+        previewRequests.add(key);
+        return preview;
+      }),
     ];
 
     Future<ProviderContainer> pumpHeader(
@@ -292,7 +300,10 @@ void main() {
       QuoteJumpScope Function(Widget child)? wrap,
       Set<String> blocked = const {},
       bool? foldsBlocked,
+      QuotePreview? preview,
+      String? quotingMessageId,
     }) async {
+      previewRequests = [];
       final header = MessageQuoteHeader(
         channelId: _channelId,
         tags:
@@ -302,11 +313,13 @@ void main() {
               ['q', _quotedId, '', _alice],
             ],
         loadedMessages: loadedMessages,
+        quotingMessageId: quotingMessageId,
       );
       await tester.pumpWidget(
         WidgetHelpers.testable(
           overrides: overrides(
             fetched: fetched,
+            preview: preview,
             blocked: blocked,
             foldsBlocked: foldsBlocked,
           ),
@@ -503,6 +516,52 @@ void main() {
       );
 
       expect(find.text('Original message unavailable'), findsOneWidget);
+      expect(previewRequests, isEmpty);
+    });
+
+    testWidgets('shows the relay preview of a message sent before I joined', (
+      tester,
+    ) async {
+      final container = await pumpHeader(
+        tester,
+        quotingMessageId: _quotingId,
+        preview: QuotePreview(authorPubkey: _alice, excerpt: 'Old **news**'),
+      );
+
+      expect(previewRequests, [
+        (channelId: _channelId, quotedId: _quotedId, quotingId: _quotingId),
+      ]);
+      final box = find.byKey(ValueKey('message-quote-preview-$_quotedId'));
+      expect(box, findsOneWidget);
+      expect(find.textContaining('Alice'), findsOneWidget);
+      expect(find.textContaining('Old news'), findsOneWidget);
+      expect(find.text('Sent before you joined'), findsOneWidget);
+      // Not a link: the original stays hidden.
+      expect(find.byType(InkWell), findsNothing);
+      await tester.tap(box);
+      await tester.pump();
+      expect(container.read(pendingDeepLinkProvider), isNull);
+    });
+
+    testWidgets('keeps the fallback when the relay has no preview', (
+      tester,
+    ) async {
+      await pumpHeader(tester, quotingMessageId: _quotingId);
+
+      expect(previewRequests, hasLength(1));
+      expect(find.text('Original message unavailable'), findsOneWidget);
+      expect(find.text('Sent before you joined'), findsNothing);
+    });
+
+    testWidgets('folds a preview of a blocked author', (tester) async {
+      await pumpHeader(
+        tester,
+        quotingMessageId: _quotingId,
+        blocked: {_alice},
+        preview: QuotePreview(authorPubkey: _alice, excerpt: 'Secret'),
+      );
+      expect(find.text('Message from a blocked user'), findsOneWidget);
+      expect(find.textContaining('Secret'), findsNothing);
     });
   });
 }

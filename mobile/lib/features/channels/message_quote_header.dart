@@ -9,6 +9,7 @@ import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import 'channel_identity_names_provider.dart';
 import 'message_quote.dart';
+import 'quote_preview_provider.dart';
 import 'quoted_message_provider.dart';
 import 'timeline_message.dart';
 import '../people/blocked_message_gate.dart';
@@ -21,16 +22,24 @@ import '../people/blocked_users_provider.dart';
 /// enclosing [QuoteJumpScope] already shows it; otherwise it opens the original
 /// through the same `kuzz://message` deep-link navigation used by message
 /// links. Renders nothing when [tags] has no well-formed quote.
+///
+/// When the original was sent before I joined (the lookup finds nothing),
+/// the relay may still show a short excerpt of it for [quotingMessageId]'s
+/// quote box; that preview cannot be opened.
 class MessageQuoteHeader extends ConsumerWidget {
   final String channelId;
   final List<List<String>> tags;
   final List<TimelineMessage>? loadedMessages;
+
+  /// Id of the message carrying [tags]; enables the relay's quote preview.
+  final String? quotingMessageId;
 
   const MessageQuoteHeader({
     super.key,
     required this.channelId,
     required this.tags,
     this.loadedMessages,
+    this.quotingMessageId,
   });
 
   @override
@@ -52,6 +61,18 @@ class MessageQuoteHeader extends ConsumerWidget {
         return _QuoteHeaderPlaceholder(text: context.l10n.messageQuoteLoading);
       }
       final fetched = lookup.value;
+      if (fetched == null && !lookup.hasError) {
+        final quotingId = quotingMessageId?.toLowerCase();
+        if (quotingId != null && _hex64.hasMatch(quotingId)) {
+          return _QuotePreviewHeader(
+            previewKey: (
+              channelId: channelId,
+              quotedId: reference.eventId,
+              quotingId: quotingId,
+            ),
+          );
+        }
+      }
       if (fetched == null || fetched.message.isSystem) {
         return _QuoteHeaderPlaceholder(
           text: context.l10n.messageQuoteUnavailable,
@@ -149,6 +170,93 @@ class MessageQuoteHeader extends ConsumerWidget {
   }
 }
 
+final _hex64 = RegExp(r'^[0-9a-f]{64}$');
+
+/// The relay's excerpt of a quoted message sent before I joined: author and
+/// up to two lines, marked as such. Not tappable: the original stays hidden.
+class _QuotePreviewHeader extends ConsumerWidget {
+  final QuotePreviewKey previewKey;
+
+  const _QuotePreviewHeader({required this.previewKey});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lookup = ref.watch(quotePreviewProvider(previewKey));
+    if (lookup.isLoading && !lookup.hasValue) {
+      return _QuoteHeaderPlaceholder(text: context.l10n.messageQuoteLoading);
+    }
+    final preview = lookup.value;
+    if (preview == null) {
+      return _QuoteHeaderPlaceholder(
+        text: context.l10n.messageQuoteUnavailable,
+      );
+    }
+    final channelId = previewKey.channelId;
+    final authorPubkey = preview.authorPubkey;
+    if (ref.watch(
+          blockedPubkeysProvider.select((ids) => ids.contains(authorPubkey)),
+        ) &&
+        ref.watch(foldsBlockedAuthorsProvider(channelId))) {
+      return _QuoteHeaderPlaceholder(text: context.l10n.messageQuoteBlocked);
+    }
+    if (ref.watch(userCacheProvider.select((cache) => cache[authorPubkey])) ==
+        null) {
+      ref.read(userCacheProvider.notifier).get(authorPubkey);
+    }
+    final author = watchChannelIdentityLabel(ref, channelId, authorPubkey);
+    final excerpt = quoteExcerpt(preview.excerpt);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Grid.half),
+      child: Semantics(
+        label: context.l10n.messageQuoteBeforeJoinLabel(author, excerpt),
+        excludeSemantics: true,
+        child: _QuoteHeaderFrame(
+          key: ValueKey('message-quote-preview-${previewKey.quotedId}'),
+          children: [
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: author,
+                          style: TextStyle(
+                            color: context.colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextSpan(text: '  $excerpt'),
+                      ],
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: replyPreviewTextStyle.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    context.l10n.messageQuoteBeforeJoin,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: replyPreviewTextStyle.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Lets a message list scroll to a quoted message it already shows.
 ///
 /// [jumpToMessage] returns `true` when the message is one of the list's
@@ -203,7 +311,7 @@ class _QuoteHeaderPlaceholder extends StatelessWidget {
 class _QuoteHeaderFrame extends StatelessWidget {
   final List<Widget> children;
 
-  const _QuoteHeaderFrame({required this.children});
+  const _QuoteHeaderFrame({super.key, required this.children});
 
   @override
   Widget build(BuildContext context) {
