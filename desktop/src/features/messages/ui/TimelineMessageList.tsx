@@ -237,6 +237,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
         case "system":
           return (
             <SystemRow
+              channelId={channelId}
               currentPubkey={currentPubkey}
               entry={item.entry}
               footer={messageFooters?.[item.entry.message.id] ?? null}
@@ -248,6 +249,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
         case "system-group":
           return (
             <SystemRow
+              channelId={channelId}
               currentPubkey={currentPubkey}
               entries={item.entries}
               footer={item.entries.map(

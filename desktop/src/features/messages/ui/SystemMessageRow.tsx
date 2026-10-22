@@ -493,12 +493,16 @@ function describeGroupedArrivals({
   };
 }
 
+/** What system rows call the room: ownerless chats are never a "group". */
+export type RoomNoun = "group" | "chat";
+
 function describeSystemEvent(
   payload: SystemMessagePayload,
   currentPubkey: string | undefined,
   profiles: UserProfileLookup | undefined,
   personaLookup?: Map<string, string>,
   agentPubkeys?: ReadonlySet<string>,
+  roomNoun: RoomNoun = "group",
 ): SystemMessageDescription | null {
   const isTargetCurrentUser =
     currentPubkey !== undefined &&
@@ -558,14 +562,14 @@ function describeSystemEvent(
       if (!payload.target) return null;
       return {
         title: membershipTitle,
-        action: "joined, then left the group",
+        action: `joined, then left the ${roomNoun}`,
       };
     case "member_joined": {
       if (!payload.actor || !payload.target) return null;
       if (normalizePubkey(payload.actor) === normalizePubkey(payload.target)) {
         return {
           title: membershipTitle,
-          action: "joined the group",
+          action: `joined the ${roomNoun}`,
         };
       }
       return {
@@ -587,12 +591,16 @@ function describeSystemEvent(
     case "member_left":
       return {
         title: actorName,
-        action: "left the group",
+        action: `left the ${roomNoun}`,
       };
     case "member_removed":
       return {
         title: actorName,
-        action: <>removed {targetName} from the group</>,
+        action: (
+          <>
+            removed {targetName} from the {roomNoun}
+          </>
+        ),
       };
     case "topic_changed":
       return {
@@ -613,23 +621,23 @@ function describeSystemEvent(
       return {
         title: actorName,
         action: payload.picture?.trim()
-          ? "changed the group photo"
-          : "removed the group photo",
+          ? `changed the ${roomNoun} photo`
+          : `removed the ${roomNoun} photo`,
       };
     case "channel_created":
       return {
         title: actorName,
-        action: "created this group",
+        action: `created this ${roomNoun}`,
       };
     case "channel_archived":
       return {
         title: actorName,
-        action: "archived this group",
+        action: `archived this ${roomNoun}`,
       };
     case "channel_unarchived":
       return {
         title: actorName,
-        action: "unarchived this group",
+        action: `unarchived this ${roomNoun}`,
       };
     case "message_deleted": {
       // Room-facing tombstone. When a moderator removed the message, the relay
@@ -660,6 +668,7 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
   ownerProfiles,
   personaLookup,
   onToggleReaction,
+  roomNoun = "group",
 }: {
   message: TimelineMessage;
   groupedMessages?: TimelineMessage[];
@@ -674,6 +683,7 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
     emoji: string,
     remove: boolean,
   ) => Promise<void>;
+  roomNoun?: RoomNoun;
 }) {
   const sourceMessages = React.useMemo(
     () => groupedMessages ?? [message],
@@ -740,6 +750,7 @@ export const SystemMessageRow = React.memo(function SystemMessageRow({
     profiles,
     personaLookup,
     agentPubkeys,
+    roomNoun,
   );
   if (!description) {
     return null;
