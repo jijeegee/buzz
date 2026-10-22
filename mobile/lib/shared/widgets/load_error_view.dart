@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../theme/theme.dart';
+import '../l10n/l10n.dart';
 
 /// Settled load failure with an explicit Retry. After a relay deadline,
 /// Riverpod does not auto-retry, so this is the user's way to re-send.
@@ -38,7 +39,7 @@ class LoadErrorView extends StatelessWidget {
             key: const ValueKey('load-error-retry'),
             onPressed: onRetry,
             icon: const Icon(LucideIcons.refreshCcw, size: 16),
-            label: const Text('Retry'),
+            label: Text(context.l10n.loadErrorRetry),
           ),
         ],
       ),

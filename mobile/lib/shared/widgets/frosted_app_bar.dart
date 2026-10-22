@@ -8,6 +8,7 @@ import 'kuzz_navigation_metrics.dart';
 import 'directional_transition_scope.dart';
 import 'frosted_scroll_under_scope.dart';
 import 'ios_glass_navigation_button.dart';
+import '../l10n/l10n.dart';
 
 /// Minimum height of the frosted app bar content area below the safe area.
 const _kBarContentMinHeight = kuzzNavigationRowHeight;
@@ -195,7 +196,7 @@ class FrostedAppBar extends StatelessWidget {
             ? usesAutomaticIosGlassBackButton
                   ? IosGlassNavigationButton(
                       icon: IosGlassNavigationIcon.back,
-                      semanticLabel: 'Back',
+                      semanticLabel: context.l10n.appBarBack,
                       onPressed: () => Navigator.of(context).maybePop(),
                       width: iosGlassChannelHeaderLeadingWidth,
                       buttonCenterX: iosGlassChannelHeaderButtonCenterX,
@@ -208,7 +209,7 @@ class FrostedAppBar extends StatelessWidget {
                         onPressed: () => Navigator.of(context).pop(),
                         color: effectiveIconColor,
                         icon: const Icon(LucideIcons.chevronLeft),
-                        tooltip: 'Back',
+                        tooltip: context.l10n.appBarBack,
                       ),
                     )
             : null);

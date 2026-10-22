@@ -130,5 +130,523 @@
         "type": "int"
       }
     }
+  },
+  "appStartingLabel": "Starting Kuzz",
+  "@appStartingLabel": {
+    "description": "Screen-reader label of the loading spinner on the splash screen while the app starts."
+  },
+  "appBarBack": "Back",
+  "@appBarBack": {
+    "description": "Tooltip and screen-reader label of the back arrow in a screen's top bar. Short."
+  },
+  "sheetCloseLabel": "Close sheet",
+  "@sheetCloseLabel": {
+    "description": "Tooltip and screen-reader label of the close button in the header of a bottom sheet. Short."
+  },
+  "refreshPullLabel": "Pull to refresh",
+  "@refreshPullLabel": {
+    "description": "Screen-reader label of the pull-to-refresh control at the top of a list."
+  },
+  "loadingLabel": "Loading",
+  "@loadingLabel": {
+    "description": "Screen-reader announcement of the loading spinner while a screen or list is loading. Short."
+  },
+  "loadErrorRetry": "Retry",
+  "@loadErrorRetry": {
+    "description": "Button under an error message when a list or screen failed to load; loads it again. Short."
+  },
+  "beeLabel": "Kuzz bee",
+  "@beeLabel": {
+    "description": "Screen-reader label of the animated bee mascot picture (empty states, splash). 'Kuzz' is the app name."
+  },
+  "beeHint": "Tap to make its wings flutter",
+  "@beeHint": {
+    "description": "Screen-reader hint on the animated bee mascot: what tapping it does."
+  },
+  "clipboardCopied": "Copied to clipboard",
+  "@clipboardCopied": {
+    "description": "Short pop-up message at the bottom of the screen after text was copied."
+  },
+  "identityUnknown": "Unknown identity",
+  "@identityUnknown": {
+    "description": "Shown in place of a person's name or ID when their account ID cannot be read."
+  },
+  "accentNeutral": "Neutral",
+  "@accentNeutral": {
+    "description": "Name of an accent color in Settings > Appearance (black/grey). Short."
+  },
+  "accentBlue": "Blue",
+  "@accentBlue": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentCyan": "Cyan",
+  "@accentCyan": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentGreen": "Green",
+  "@accentGreen": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentOrange": "Orange",
+  "@accentOrange": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentRed": "Red",
+  "@accentRed": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentPink": "Pink",
+  "@accentPink": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentLilac": "Lilac",
+  "@accentLilac": {
+    "description": "Name of an accent color in Settings > Appearance (light purple). Short."
+  },
+  "accentPurple": "Purple",
+  "@accentPurple": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentIndigo": "Indigo",
+  "@accentIndigo": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "emojiCategoryPeople": "Smileys & People",
+  "@emojiCategoryPeople": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryNature": "Animals & Nature",
+  "@emojiCategoryNature": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryFoods": "Food & Drink",
+  "@emojiCategoryFoods": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryActivity": "Activity",
+  "@emojiCategoryActivity": {
+    "description": "Emoji picker, category name in the category bar (sports, games). Short."
+  },
+  "emojiCategoryPlaces": "Travel & Places",
+  "@emojiCategoryPlaces": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryObjects": "Objects",
+  "@emojiCategoryObjects": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategorySymbols": "Symbols",
+  "@emojiCategorySymbols": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryFlags": "Flags",
+  "@emojiCategoryFlags": {
+    "description": "Emoji picker, category name in the category bar (country flags). Short."
+  },
+  "reminderSheetTitle": "Remind me about this message",
+  "@reminderSheetTitle": {
+    "description": "Title of the bottom sheet opened from a message's 'Remind me later' action."
+  },
+  "reminderPresetIn30Minutes": "In 30 minutes",
+  "@reminderPresetIn30Minutes": {
+    "description": "Option in the 'Remind me about this message' sheet. Short."
+  },
+  "reminderPresetIn1Hour": "In 1 hour",
+  "@reminderPresetIn1Hour": {
+    "description": "Option in the 'Remind me about this message' sheet. Short."
+  },
+  "reminderPresetIn3Hours": "In 3 hours",
+  "@reminderPresetIn3Hours": {
+    "description": "Option in the 'Remind me about this message' sheet. Short."
+  },
+  "reminderPresetTomorrow": "Tomorrow at 9am",
+  "@reminderPresetTomorrow": {
+    "description": "Option in the 'Remind me about this message' sheet: tomorrow at 9 in the morning. Short."
+  },
+  "reminderPresetNextMonday": "Next Monday at 9am",
+  "@reminderPresetNextMonday": {
+    "description": "Option in the 'Remind me about this message' sheet: next Monday at 9 in the morning. Short."
+  },
+  "reminderPickDateTime": "Pick a date & time",
+  "@reminderPickDateTime": {
+    "description": "Last option in the 'Remind me about this message' sheet; opens date and time pickers. Short."
+  },
+  "reminderSignInRequired": "Sign in to set reminders",
+  "@reminderSignInRequired": {
+    "description": "Short pop-up message when the user tries to set a reminder while signed out."
+  },
+  "reminderSet": "Reminder set",
+  "@reminderSet": {
+    "description": "Short pop-up message after a message reminder was saved."
+  },
+  "reminderSetFailed": "Couldn’t set reminder. Try again.",
+  "@reminderSetFailed": {
+    "description": "Short pop-up message when saving a message reminder failed."
+  },
+  "reminderPickFutureTime": "Pick a time in the future",
+  "@reminderPickFutureTime": {
+    "description": "Short pop-up message when the picked reminder date and time has already passed."
+  },
+  "communityRemovalSignOutFailedTitle": "Couldn’t sign out on the relay",
+  "@communityRemovalSignOutFailedTitle": {
+    "description": "Title of the dialog shown when removing a community could not sign this device out on the server. 'Relay' means the server."
+  },
+  "communityRemovalSignOutFailedBody": "{message}\n\nRemoving it from this device only forgets the sign-in here. This device stays listed on your account until you sign it out from another device.",
+  "@communityRemovalSignOutFailedBody": {
+    "description": "Body of the dialog shown when removing a community could not sign this device out on the server; {message} is the error, shown first.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "communityRemovalKeep": "Keep",
+  "@communityRemovalKeep": {
+    "description": "Dialog button: cancel removing the community and keep it. Short."
+  },
+  "communityRemovalDeviceOnly": "Remove from this device only",
+  "@communityRemovalDeviceOnly": {
+    "description": "Dialog button: remove the community from this phone without signing out on the server. Destructive, red."
+  },
+  "communityRemovalTryAgain": "Try again",
+  "@communityRemovalTryAgain": {
+    "description": "Dialog button: retry signing this device out on the server, then remove the community. Short."
+  },
+  "authSignOutFinishing": "Finishing sign-out…",
+  "@authSignOutFinishing": {
+    "description": "Status text on the signed-out screen while sign-out is still being completed."
+  },
+  "authNotificationsOffFailed": "Couldn’t finish turning off notifications. Try again.",
+  "@authNotificationsOffFailed": {
+    "description": "Error on the signed-out screen when notifications could not be turned off during sign-out."
+  },
+  "authDifferentServer": "This app only connects to its own service.",
+  "@authDifferentServer": {
+    "description": "Error when the user tries to add, open or sign in to a different server than the app's own."
+  },
+  "authCommunitySignInFailed": "Couldn’t sign in to this community. Check your connection or that you’re still a member, then try again.",
+  "@authCommunitySignInFailed": {
+    "description": "Sign-in error when the server refused this account."
+  },
+  "authCommunityConnectFailed": "Couldn’t connect to this community. Check your connection, then try again.",
+  "@authCommunityConnectFailed": {
+    "description": "Sign-in error when the server could not be reached."
+  },
+  "googleBackupConnectFailed": "Couldn’t connect your Google account. Try again.",
+  "@googleBackupConnectFailed": {
+    "description": "Google sign-in error, general failure."
+  },
+  "googleBackupAccountLinkedElsewhere": "This Google account is linked to a different Kuzz account. Try a different Google account.",
+  "@googleBackupAccountLinkedElsewhere": {
+    "description": "Google sign-in error when the chosen Google account belongs to another Kuzz account."
+  },
+  "googleBackupReadSignInFailed": "Couldn’t read your sign-in on this device. Try again.",
+  "@googleBackupReadSignInFailed": {
+    "description": "Google sign-in error when the saved sign-in on the phone could not be read."
+  },
+  "googleBackupDifferentSignIn": "This community already has a different sign-in on this device. Nothing was changed.",
+  "@googleBackupDifferentSignIn": {
+    "description": "Google sign-in error when another kind of sign-in already exists for this community on the phone."
+  },
+  "googleBackupSignInChanged": "Sign-in changed or was cancelled. Try again.",
+  "@googleBackupSignInChanged": {
+    "description": "Google sign-in error when the sign-in was interrupted."
+  },
+  "googleBackupSignInWithGoogleFirst": "Sign in with Google first.",
+  "@googleBackupSignInWithGoogleFirst": {
+    "description": "Google sign-in error when the account was not signed in with Google."
+  },
+  "googleBackupSignInAgain": "Sign in again.",
+  "@googleBackupSignInAgain": {
+    "description": "Google sign-in error when the session is missing its account. Short."
+  },
+  "googleBackupCommunitySignInFailed": "Couldn’t sign in to this community on this device. Nothing was changed.",
+  "@googleBackupCommunitySignInFailed": {
+    "description": "Google sign-in error when the account on the phone does not match the account on the server."
+  },
+  "googleBackupRestoreFailed": "Couldn’t restore this account. Try again later.",
+  "@googleBackupRestoreFailed": {
+    "description": "Google sign-in error when the account could not be restored from the server."
+  },
+  "googleBackupAccountNotConnected": "This Google account isn’t connected to this community. Try a different Google account.",
+  "@googleBackupAccountNotConnected": {
+    "description": "Google sign-in error when the chosen Google account has no account in this community."
+  },
+  "googleBackupAccountChanged": "The Google account changed. Sign in again.",
+  "@googleBackupAccountChanged": {
+    "description": "Google sign-in error when the Google account changed during sign-in."
+  },
+  "googleBackupCommunityChanged": "This community changed during sign-in. Try again.",
+  "@googleBackupCommunityChanged": {
+    "description": "Google sign-in error when the community data changed while signing in."
+  },
+  "googleBackupSignInWithGoogleAgain": "Sign in with Google again.",
+  "@googleBackupSignInWithGoogleAgain": {
+    "description": "Google sign-in error when the Google sign-in expired."
+  },
+  "googleBackupCommunityLinkedElsewhere": "This community is linked to a different Google account. Try a different Google account.",
+  "@googleBackupCommunityLinkedElsewhere": {
+    "description": "Google sign-in error when this community account uses another Google account."
+  },
+  "googleBackupAccountModeConflict": "This Google account can’t be used with this community. Try a different Google account.",
+  "@googleBackupAccountModeConflict": {
+    "description": "Google sign-in error when the Google account uses a different kind of account."
+  },
+  "googleBackupSecureConnectionRequired": "Signing in with Google needs a secure connection to this community.",
+  "@googleBackupSecureConnectionRequired": {
+    "description": "Google sign-in error when the server address is not secure (not https)."
+  },
+  "tokenSessionSignOutUnreachable": "Could not reach the relay to sign out. Try again.",
+  "@tokenSessionSignOutUnreachable": {
+    "description": "Error when signing out failed because the server could not be reached. 'Relay' means the server."
+  },
+  "tokenSessionIdentityModeMismatch": "This Google account uses a different identity mode. Existing account data has been preserved.",
+  "@tokenSessionIdentityModeMismatch": {
+    "description": "Sign-in error when the Google account uses a different kind of account than this community."
+  },
+  "tokenSessionReadFailed": "Could not read the saved sign-in. Try again.",
+  "@tokenSessionReadFailed": {
+    "description": "Error when the saved sign-in on the phone could not be read."
+  },
+  "tokenSessionSaveFailed": "Could not save the sign-in on this device. Sign in again.",
+  "@tokenSessionSaveFailed": {
+    "description": "Error when the sign-in could not be saved on the phone."
+  },
+  "tokenSessionRelayUnreachableDetails": "Could not reach the relay. {details}",
+  "@tokenSessionRelayUnreachableDetails": {
+    "description": "Error when the server could not be reached after several tries; {details} is the technical reason. 'Relay' means the server.",
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "tokenSessionAccountDisabled": "This account has been disabled.",
+  "@tokenSessionAccountDisabled": {
+    "description": "Error when the server says the account was disabled."
+  },
+  "tokenSessionEnded": "Your session has ended. Sign in again.",
+  "@tokenSessionEnded": {
+    "description": "Error when the sign-in expired or was revoked."
+  },
+  "tokenSessionSignInExpired": "The sign-in expired. Try again.",
+  "@tokenSessionSignInExpired": {
+    "description": "Sign-in error when the sign-in attempt took too long."
+  },
+  "tokenSessionDeviceLimit": "Too many devices are signed in. Remove one first.",
+  "@tokenSessionDeviceLimit": {
+    "description": "Sign-in error when the account has reached its device limit."
+  },
+  "tokenSessionSignInRejected": "Sign-in was rejected ({reason}).",
+  "@tokenSessionSignInRejected": {
+    "description": "Sign-in error when the server refused; {reason} is the server's technical reason.",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "tokenSessionRelayUnreachable": "Could not reach the relay. Try again.",
+  "@tokenSessionRelayUnreachable": {
+    "description": "Sign-in error when the server could not be reached. 'Relay' means the server."
+  },
+  "accountUnnamedDevice": "Unnamed device",
+  "@accountUnnamedDevice": {
+    "description": "Settings > Devices, name shown for a signed-in device that has no name."
+  },
+  "accountRelayUnreachable": "Could not reach the relay: {error}",
+  "@accountRelayUnreachable": {
+    "description": "Error when an account request could not reach the server; {error} is the technical reason. 'Relay' means the server.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSignedOut": "You are signed out of this relay.",
+  "@accountSignedOut": {
+    "description": "Error when an account action needs sign-in but the user is signed out. 'Relay' means the server."
+  },
+  "agentOwnerLabel": "Agent owner",
+  "@agentOwnerLabel": {
+    "description": "Screen-reader label of the small owner picture on an AI agent's avatar when the owner's name is unknown."
+  },
+  "agentOwnedBy": "Agent owned by {name}",
+  "@agentOwnedBy": {
+    "description": "Screen-reader label of the small owner picture on an AI agent's avatar; {name} is the owner.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentHostThisDevice": "Running on this device",
+  "@agentHostThisDevice": {
+    "description": "Long-press text on an AI agent: the agent runs on the phone in the user's hand."
+  },
+  "agentHostThisDeviceNamed": "Running on this device ({name})",
+  "@agentHostThisDeviceNamed": {
+    "description": "Long-press text on an AI agent: the agent runs on this phone; {name} is the device name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentHostOtherDevice": "Running on another device",
+  "@agentHostOtherDevice": {
+    "description": "Long-press text on an AI agent: the agent runs on one of the user's other devices."
+  },
+  "agentHostNamedDevice": "Running on {name}",
+  "@agentHostNamedDevice": {
+    "description": "Long-press text on an AI agent; {name} is the name of the device it runs on.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "huddleLeaveCurrentFirst": "Leave the current Huddle before joining another one.",
+  "@huddleLeaveCurrentFirst": {
+    "description": "Huddle (voice call) error when the user is already in another call."
+  },
+  "huddleAudioFailed": "Native Huddle audio failed.",
+  "@huddleAudioFailed": {
+    "description": "Huddle (voice call) error when the phone's audio failed."
+  },
+  "huddleAudioUnavailableHere": "Full-duplex mobile Huddle audio is unavailable here.",
+  "@huddleAudioUnavailableHere": {
+    "description": "Huddle (voice call) error when this phone does not support two-way call audio."
+  },
+  "huddleMicrophoneRequired": "Microphone permission is required to join a Huddle.",
+  "@huddleMicrophoneRequired": {
+    "description": "Huddle (voice call) error when microphone access was denied."
+  },
+  "huddleConnectionFailed": "Huddle connection failed.",
+  "@huddleConnectionFailed": {
+    "description": "Huddle (voice call) error when the call connection failed."
+  },
+  "huddleConnectionNotRestored": "Huddle connection could not be restored.",
+  "@huddleConnectionNotRestored": {
+    "description": "Huddle (voice call) error after reconnecting failed several times."
+  },
+  "huddleJoinFailed": "Unable to join the Huddle.",
+  "@huddleJoinFailed": {
+    "description": "Huddle (voice call) error, general join failure."
+  },
+  "huddleSignInRequired": "Sign in to this community to join the Huddle.",
+  "@huddleSignInRequired": {
+    "description": "Huddle (voice call) error when the user is not signed in to the community."
+  },
+  "huddleAdmissionTimedOut": "Timed out waiting for Huddle room admission.",
+  "@huddleAdmissionTimedOut": {
+    "description": "Huddle (voice call) error when the server did not let the user in quickly enough."
+  },
+  "huddleRelayConnectFailed": "Unable to connect to the Huddle audio relay.",
+  "@huddleRelayConnectFailed": {
+    "description": "Huddle (voice call) error when the call audio server could not be reached."
+  },
+  "huddleSendAudioFailed": "Unable to send Huddle audio.",
+  "@huddleSendAudioFailed": {
+    "description": "Huddle (voice call) error when the user's audio could not be sent."
+  },
+  "huddleConnectionClosed": "Huddle connection was closed.",
+  "@huddleConnectionClosed": {
+    "description": "Huddle (voice call) error when the call connection was closed."
+  },
+  "huddleAuthSignFailed": "Unable to sign Huddle authentication.",
+  "@huddleAuthSignFailed": {
+    "description": "Huddle (voice call) error when the app could not prove the user's identity to the call server."
+  },
+  "huddleSignedOut": "Signed out of this community.",
+  "@huddleSignedOut": {
+    "description": "Huddle (voice call) error when the user signed out during the call."
+  },
+  "huddleSocketFailed": "Huddle audio socket failed.",
+  "@huddleSocketFailed": {
+    "description": "Huddle (voice call) error when the audio connection broke."
+  },
+  "huddleSocketClosed": "Huddle audio socket closed unexpectedly.",
+  "@huddleSocketClosed": {
+    "description": "Huddle (voice call) error when the audio connection closed unexpectedly."
+  },
+  "mediaUploadPrepareFailed": "We couldn't prepare this image for upload.",
+  "@mediaUploadPrepareFailed": {
+    "description": "Error when a picked or pasted image could not be converted for sending."
+  },
+  "mediaUploadPastedImageUnreadable": "Unable to read pasted image",
+  "@mediaUploadPastedImageUnreadable": {
+    "description": "Error in the message box when a pasted image could not be read."
+  },
+  "mediaUploadVideoTooLarge": "Video is too large ({size}MB). Maximum is 100MB.",
+  "@mediaUploadVideoTooLarge": {
+    "description": "Error in the message box when a picked video is over the size limit; {size} is its size in megabytes.",
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaUploadTranscodedVideoTooLarge": "Transcoded video is too large ({size}MB). Maximum is 100MB.",
+  "@mediaUploadTranscodedVideoTooLarge": {
+    "description": "Error in the message box when a video is still over the size limit after converting it; {size} is its size in megabytes.",
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaUploadVideoConvertFailed": "Failed to convert video to MP4.",
+  "@mediaUploadVideoConvertFailed": {
+    "description": "Error in the message box when a video could not be converted for sending."
+  },
+  "mediaUploadVoiceNoteEmpty": "Voice note is empty.",
+  "@mediaUploadVoiceNoteEmpty": {
+    "description": "Error in the message box when a recorded voice message has no audio."
+  },
+  "mediaUploadVoiceNoteTooLarge": "Voice note is too large. Maximum is 100MB.",
+  "@mediaUploadVoiceNoteTooLarge": {
+    "description": "Error in the message box when a recorded voice message is over the size limit."
+  },
+  "mediaUploadVoiceNotePrepareFailed": "Failed to prepare voice note for upload.",
+  "@mediaUploadVoiceNotePrepareFailed": {
+    "description": "Error in the message box when a recorded voice message could not be prepared for sending."
+  },
+  "mediaUploadFilesUnavailable": "File attachments aren't available on this device.",
+  "@mediaUploadFilesUnavailable": {
+    "description": "Error in the message box when this phone cannot attach files."
+  },
+  "mediaUploadFileEmpty": "File is empty.",
+  "@mediaUploadFileEmpty": {
+    "description": "Error in the message box when a picked file has no content."
+  },
+  "mediaUploadFileTooLarge": "File is too large ({size}MB). Maximum is 100MB.",
+  "@mediaUploadFileTooLarge": {
+    "description": "Error in the message box when a picked file is over the size limit; {size} is its size in megabytes.",
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricConfirmIdentityTransfer": "Confirm sending your Kuzz identity to desktop",
+  "@biometricConfirmIdentityTransfer": {
+    "description": "System Face ID / fingerprint prompt reason when sending the account to the desktop app."
+  },
+  "biometricEnableReason": "Enable biometrics for secure actions",
+  "@biometricEnableReason": {
+    "description": "System Face ID / fingerprint prompt reason when turning on biometric protection in Settings."
+  },
+  "biometricUseFaceId": "Use Face ID",
+  "@biometricUseFaceId": {
+    "description": "Settings switch label for biometric protection on iPhones with Face ID. Short."
+  },
+  "biometricUseTouchId": "Use Touch ID",
+  "@biometricUseTouchId": {
+    "description": "Settings switch label for biometric protection on iPhones with Touch ID. Short."
+  },
+  "biometricUseBiometrics": "Use biometrics",
+  "@biometricUseBiometrics": {
+    "description": "Settings switch label for biometric protection (fingerprint or face). Short."
   }
 }
