@@ -4,11 +4,20 @@
 /// same "always strictly in the future" guarantee.
 library;
 
+import '../l10n/l10n.dart';
+
 class ReminderTimePreset {
-  final String label;
+  /// The option's text in the given language.
+  final String Function(AppLocalizations l10n) labelFor;
   final int Function() getTimestamp;
 
-  const ReminderTimePreset({required this.label, required this.getTimestamp});
+  const ReminderTimePreset({
+    required this.labelFor,
+    required this.getTimestamp,
+  });
+
+  /// The option's text in the app language.
+  String get label => labelFor(appL10n);
 }
 
 int _nowSeconds() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -38,23 +47,23 @@ int daysUntilNextMonday(DateTime now) {
 
 final List<ReminderTimePreset> reminderTimePresets = [
   ReminderTimePreset(
-    label: 'In 30 minutes',
+    labelFor: (l10n) => l10n.reminderPresetIn30Minutes,
     getTimestamp: () => _nowSeconds() + 30 * 60,
   ),
   ReminderTimePreset(
-    label: 'In 1 hour',
+    labelFor: (l10n) => l10n.reminderPresetIn1Hour,
     getTimestamp: () => _nowSeconds() + 60 * 60,
   ),
   ReminderTimePreset(
-    label: 'In 3 hours',
+    labelFor: (l10n) => l10n.reminderPresetIn3Hours,
     getTimestamp: () => _nowSeconds() + 3 * 60 * 60,
   ),
   ReminderTimePreset(
-    label: 'Tomorrow at 9am',
+    labelFor: (l10n) => l10n.reminderPresetTomorrow,
     getTimestamp: () => nextDayAt9am(1),
   ),
   ReminderTimePreset(
-    label: 'Next Monday at 9am',
+    labelFor: (l10n) => l10n.reminderPresetNextMonday,
     getTimestamp: () => nextDayAt9am(daysUntilNextMonday(DateTime.now())),
   ),
 ];

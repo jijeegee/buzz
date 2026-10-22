@@ -7,6 +7,7 @@ import 'install_id_store.dart';
 import 'oidc_login.dart';
 import 'refresh_token_store.dart';
 import 'web_auth_launcher.dart';
+import '../../l10n/l10n.dart';
 
 /// Wall clock, injectable for tests.
 typedef SessionClock = DateTime Function();
@@ -306,7 +307,7 @@ class TokenSessionController {
     for (var attempt = 0; ; attempt++) {
       if (generation != _generation) return;
       if (token == null) {
-        throw _keepSession('Could not reach the relay to sign out. Try again.');
+        throw _keepSession(appL10n.tokenSessionSignOutUnreachable);
       }
       try {
         await _api.logout(token);
@@ -314,9 +315,7 @@ class TokenSessionController {
       } on AuthApiException catch (error) {
         if (generation != _generation) return;
         if (!error.isTerminal) {
-          throw _keepSession(
-            'Could not reach the relay to sign out. Try again.',
-          );
+          throw _keepSession(appL10n.tokenSessionSignOutUnreachable);
         }
         if (error.code == 'token_expired' && attempt == 0) {
           token = await refreshAfterTokenExpired(token);
@@ -402,9 +401,9 @@ class TokenSessionController {
       if (!_isCurrent(generation)) return;
       debugPrint('Token session read failed for $origin: $error');
       _emit(
-        const TokenSessionState(
+        TokenSessionState(
           status: TokenSessionStatus.stalled,
-          errorMessage: 'Could not read the saved sign-in. Try again.',
+          errorMessage: appL10n.tokenSessionReadFailed,
         ),
       );
       return;
@@ -534,12 +533,7 @@ class TokenSessionController {
     if (grant.identityMode != identityMode) {
       await _revokeUnsaved(grant.accessToken);
       if (!_isCurrent(startGeneration)) return false;
-      _emit(
-        _settledState(
-          'This Google account uses a different identity mode. '
-          'Existing account data has been preserved.',
-        ),
-      );
+      _emit(_settledState(appL10n.tokenSessionIdentityModeMismatch));
       return false;
     }
     // A new session replaces whatever was here; fence everything older.
@@ -595,7 +589,9 @@ class TokenSessionController {
         TokenSessionState(
           status: TokenSessionStatus.stalled,
           principalId: _principalId,
-          errorMessage: 'Could not reach the relay. ${error.message}',
+          errorMessage: appL10n.tokenSessionRelayUnreachableDetails(
+            error.message,
+          ),
         ),
       );
       return;
@@ -728,22 +724,21 @@ class TokenSessionController {
     }
   }
 
-  static const _unsavedMessage =
-      'Could not save the sign-in on this device. Sign in again.';
+  static String get _unsavedMessage => appL10n.tokenSessionSaveFailed;
 
   static String _sessionEndedMessage(AuthApiException error) =>
       switch (error.code) {
-        'principal_disabled' => 'This account has been disabled.',
-        _ => 'Your session has ended. Sign in again.',
+        'principal_disabled' => appL10n.tokenSessionAccountDisabled,
+        _ => appL10n.tokenSessionEnded,
       };
 
   static String _loginFailureMessage(AuthApiException error) =>
       switch (error.code) {
-        'invalid_grant' => 'The sign-in expired. Try again.',
-        'limit_reached' => 'Too many devices are signed in. Remove one first.',
+        'invalid_grant' => appL10n.tokenSessionSignInExpired,
+        'limit_reached' => appL10n.tokenSessionDeviceLimit,
         _ =>
           error.isTerminal
-              ? 'Sign-in was rejected (${error.message}).'
-              : 'Could not reach the relay. Try again.',
+              ? appL10n.tokenSessionSignInRejected(error.message)
+              : appL10n.tokenSessionRelayUnreachable,
       };
 }

@@ -9,6 +9,7 @@ import '../widgets/avatar_image.dart';
 import 'agent_host_devices.dart';
 import 'device_robot.dart';
 import 'device_robot_icon.dart';
+import '../l10n/l10n.dart';
 
 /// [agentBadge] for [agentPubkey], with the host device from the viewer's
 /// own kind:30180 map and its robot from their kind:30181 choices. Watches
@@ -200,7 +201,9 @@ class OwnerAvatarMark extends ConsumerWidget {
     );
     final name = owner?.displayName;
     return Semantics(
-      label: name == null ? 'Agent owner' : 'Agent owned by $name',
+      label: name == null
+          ? context.l10n.agentOwnerLabel
+          : context.l10n.agentOwnedBy(name),
       image: true,
       child: ExcludeSemantics(child: mark),
     );

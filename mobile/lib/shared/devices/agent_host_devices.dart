@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../auth/account/account_api.dart';
 import '../relay/relay.dart';
 import 'device_robot.dart';
+import '../l10n/l10n.dart';
 
 /// Owner-authored map of one relay device to the agents it runs.
 ///
@@ -416,8 +417,10 @@ String agentHostDeviceLabel(String? deviceName, {bool current = false}) {
   final name = deviceName?.trim() ?? '';
   if (current) {
     return name.isEmpty
-        ? 'Running on this device'
-        : 'Running on this device ($name)';
+        ? appL10n.agentHostThisDevice
+        : appL10n.agentHostThisDeviceNamed(name);
   }
-  return name.isEmpty ? 'Running on another device' : 'Running on $name';
+  return name.isEmpty
+      ? appL10n.agentHostOtherDevice
+      : appL10n.agentHostNamedDevice(name);
 }

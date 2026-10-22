@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme/theme.dart';
 import 'kuzz_navigation_metrics.dart';
 import 'ios_glass_navigation_button.dart';
+import '../l10n/l10n.dart';
 
 /// A titled sheet header with balanced actions and an exactly centered title.
 class KuzzSheetHeader extends StatelessWidget {
@@ -86,7 +87,7 @@ class _SheetCloseButton extends StatelessWidget {
       return IosGlassNavigationButton(
         key: const ValueKey('kuzz-sheet-ios-glass-close'),
         icon: IosGlassNavigationIcon.close,
-        semanticLabel: 'Close sheet',
+        semanticLabel: context.l10n.sheetCloseLabel,
         onPressed: closeSheet,
         width: kuzzNavigationActionSize,
         height: kuzzNavigationActionSize,
@@ -97,7 +98,7 @@ class _SheetCloseButton extends StatelessWidget {
     return SizedBox.square(
       dimension: kuzzNavigationActionSize,
       child: IconButton(
-        tooltip: 'Close sheet',
+        tooltip: context.l10n.sheetCloseLabel,
         onPressed: closeSheet,
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,

@@ -6,6 +6,7 @@ import '../relay/relay_provider.dart';
 import '../relay/relay_socket.dart';
 import 'google_key_backup.dart';
 import 'token/relay_origin.dart';
+import '../l10n/l10n.dart';
 
 /// Build-time environment, chosen with `--dart-define=KUZZ_ENV=prod|dev`.
 enum KuzzEnvironment { prod, dev }
@@ -68,7 +69,7 @@ const _kuzzRelayUrl = _KuzzRelayUrlDefine(
 const differentServiceInviteMessage = 'This invite is for a different service.';
 
 /// Error for any attempt to add, select or sign in to another server.
-const differentServerMessage = 'This app only connects to its own service.';
+String get differentServerMessage => appL10n.authDifferentServer;
 
 /// Test-harness seam, same pattern as
 /// `PendingDeepLinkNotifier.debugUriStreamOverride`. Only
@@ -194,18 +195,12 @@ final signedCommunityAdmissionProvider =
         try {
           await socket.connect().timeout(const Duration(seconds: 15));
           if (socket.state != SocketState.connected) {
-            throw const KeyBackupException(
-              'Couldn’t sign in to this community. Check your connection '
-              'or that you’re still a member, then try again.',
-            );
+            throw KeyBackupException(appL10n.authCommunitySignInFailed);
           }
         } on KeyBackupException {
           rethrow;
         } catch (_) {
-          throw const KeyBackupException(
-            'Couldn’t connect to this community. Check your connection, '
-            'then try again.',
-          );
+          throw KeyBackupException(appL10n.authCommunityConnectFailed);
         } finally {
           socket.dispose();
         }

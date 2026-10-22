@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:local_auth/local_auth.dart';
+import '../l10n/l10n.dart';
 
 /// Coarse outcomes safe to use for control flow without retaining OS details.
 enum DeviceAuthResult { success, cancelled, unavailable, lockedOut, failed }
@@ -25,7 +26,7 @@ class LocalSensitiveActionAuthorizer implements SensitiveActionAuthorizer {
   Future<DeviceAuthResult> authorizeIdentityAction({
     required bool biometricOnly,
   }) => _authorize(
-    localizedReason: 'Confirm sending your Kuzz identity to desktop',
+    localizedReason: appL10n.biometricConfirmIdentityTransfer,
     biometricOnly: biometricOnly,
   );
 
@@ -45,7 +46,7 @@ class LocalSensitiveActionAuthorizer implements SensitiveActionAuthorizer {
           .getAvailableBiometrics();
       if (availableBiometrics.isEmpty) return DeviceAuthResult.unavailable;
       return _authorize(
-        localizedReason: 'Enable biometrics for secure actions',
+        localizedReason: appL10n.biometricEnableReason,
         biometricOnly: true,
       );
     } on LocalAuthException catch (error) {
@@ -110,12 +111,14 @@ String biometricProtectionLabel(
   Iterable<BiometricType> enrolledBiometrics,
 ) {
   if (platform == TargetPlatform.iOS) {
-    if (enrolledBiometrics.contains(BiometricType.face)) return 'Use Face ID';
+    if (enrolledBiometrics.contains(BiometricType.face)) {
+      return appL10n.biometricUseFaceId;
+    }
     if (enrolledBiometrics.contains(BiometricType.fingerprint)) {
-      return 'Use Touch ID';
+      return appL10n.biometricUseTouchId;
     }
   }
-  return 'Use biometrics';
+  return appL10n.biometricUseBiometrics;
 }
 
 class SensitiveActionAuthorizationSession {
