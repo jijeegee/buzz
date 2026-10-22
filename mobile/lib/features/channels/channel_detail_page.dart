@@ -875,6 +875,7 @@ class ChannelDetailPage extends HookConsumerWidget {
               isMember: resolvedChannel.isMember,
               isArchived: resolvedChannel.isArchived,
               initialMessageId: initialMessageId,
+              channelBelow: false,
             ),
           ),
         );
