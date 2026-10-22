@@ -59,7 +59,7 @@ class _ChatsSection extends StatelessWidget {
               result: result,
               onResultSelected: onResultSelected,
             )
-          else if (result.channel == null || result.channel!.isDm)
+          else if (result.channel == null || result.channel!.isPersonChat)
             _DmResultTile(
               result: result,
               currentPubkey: currentPubkey,
@@ -254,7 +254,12 @@ class _DmResultTile extends ConsumerWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
       leading: SizedBox.square(
         dimension: 28,
-        child: partners.length == 1
+        child: channel != null && channel.isGroupChat
+            ? ChatGridAvatar(
+                memberPubkeys: channel.participantPubkeys,
+                size: 28,
+              )
+            : partners.length == 1
             ? SmallAvatar(
                 pubkey: partners.single,
                 userCache: ref.watch(userCacheProvider),
@@ -438,11 +443,15 @@ class _MessageTile extends ConsumerWidget {
     final hasChannelName = channelName != null && channelName.isNotEmpty;
     final isDm = channel?.isDm ?? false;
     final thread = this.thread;
+    // A chat of people is named by its title, not the hit's stored name.
+    final chatTitle = channel?.isGroupChat == true
+        ? watchChannelTitle(ref, channel!)
+        : null;
     final threadTitle = thread == null
         ? null
         : searchHitThreadTitle(thread, chatRows);
     // The chat on top, as its Chats row reads: "group › thread" in a
-    // thread, the group, or the DM's name.
+    // thread, the group, the chat's title, or the DM's name.
     final dmName = isDm && channel != null
         ? resolveDmChannelDisplayLabel(
             channel!,
@@ -450,10 +459,11 @@ class _MessageTile extends ConsumerWidget {
             names: ref.watch(identityNameSourcesProvider),
           )
         : null;
+    final roomName = chatTitle ?? dmName;
     final place = threadTitle == null
-        ? (dmName ?? (hasChannelName ? channelName : null))
+        ? (roomName ?? (hasChannelName ? channelName : null))
         : [
-            if (dmName != null) dmName else if (hasChannelName) channelName,
+            if (roomName != null) roomName else if (hasChannelName) channelName,
             threadTitle,
           ].join(' › ');
     final profileMentionNames = {

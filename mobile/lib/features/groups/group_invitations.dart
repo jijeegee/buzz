@@ -12,6 +12,8 @@ import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/group_avatar.dart';
+import '../channels/group_chat/chat_info_sheet.dart' show chatPeopleLabel;
+import '../channels/group_chat/chat_title.dart';
 import 'group_preview.dart';
 import 'groups_api.dart';
 
@@ -236,6 +238,14 @@ class GroupInvitationTile extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final busy = useState(false);
     final group = invitation.group;
+    // A chat of people: its resolved title, its members' photo, "N people".
+    final isChat = group.groupChat;
+    final title = isChat
+        ? watchChannelTitle(ref, group.toChannel())
+        : group.name;
+    final joinFailed = isChat
+        ? 'Couldn’t join the chat. Try again.'
+        : 'Couldn’t join group. Try again.';
 
     void say(String message) => ScaffoldMessenger.maybeOf(
       context,
@@ -257,13 +267,15 @@ class GroupInvitationTile extends HookConsumerWidget {
           ),
         );
       } on GroupsApiException catch (error) {
-        if (error.isConflict || error.isNotFound) {
+        if (error.message.contains('chat is full')) {
+          say('This chat is full.');
+        } else if (error.isConflict || error.isNotFound) {
           say(invitationNoLongerValidMessage);
         } else {
-          say('Couldn’t join group. Try again.');
+          say(joinFailed);
         }
       } catch (_) {
-        say('Couldn’t join group. Try again.');
+        say(joinFailed);
       } finally {
         if (context.mounted) busy.value = false;
       }
@@ -297,7 +309,7 @@ class GroupInvitationTile extends HookConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  group.name,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: context.textTheme.bodyLarge?.copyWith(
@@ -305,7 +317,8 @@ class GroupInvitationTile extends HookConsumerWidget {
                   ),
                 ),
                 Text(
-                  '$who invited you · ${memberCountLabel(group.memberCount)}',
+                  '$who invited you · '
+                  '${isChat ? chatPeopleLabel(group.memberCount) : memberCountLabel(group.memberCount)}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: context.textTheme.bodySmall?.copyWith(

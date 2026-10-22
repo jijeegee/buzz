@@ -65,15 +65,17 @@ class _ChannelTile extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    ref.watch(
-                      identityNameSourcesProvider.select(
-                        (names) => resolveDmChannelDisplayLabel(
-                          channel,
-                          currentPubkey: currentPubkey,
-                          names: names,
-                        ),
-                      ),
-                    ),
+                    channel.isGroupChat
+                        ? watchChannelTitle(ref, channel)
+                        : ref.watch(
+                            identityNameSourcesProvider.select(
+                              (names) => resolveDmChannelDisplayLabel(
+                                channel,
+                                currentPubkey: currentPubkey,
+                                names: names,
+                              ),
+                            ),
+                          ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: contentListTitleTextStyle.copyWith(

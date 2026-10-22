@@ -40,7 +40,7 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
     final myGroups = [
       for (final channel in all ?? const <Channel>[])
         if (channel.isMember &&
-            !channel.isDm &&
+            !channel.isPersonChat &&
             !channel.isArchived &&
             matches(channel))
           channel,

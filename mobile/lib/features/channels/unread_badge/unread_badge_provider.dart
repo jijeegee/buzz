@@ -58,7 +58,8 @@ final unreadBadgeProvider = Provider<UnreadBadgeState>((ref) {
         );
         if (unreadCount == 0) continue;
 
-        if (channel.isDm ||
+        // A 1:1 or group chat counts every message, as a DM always did.
+        if (channel.isPersonChat ||
             countUnreadHighPriorityObservedEvents(
                   observedEvents,
                   readAtForObservedEvent,

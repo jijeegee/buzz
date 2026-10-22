@@ -3371,7 +3371,7 @@ void main() {
                 .having(
                   (e) => e.message,
                   'message',
-                  'Too many invitations. Try again later.',
+                  'Too many invitations today',
                 ),
           ),
         );

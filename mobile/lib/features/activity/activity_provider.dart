@@ -130,7 +130,7 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
           ref.read(channelsProvider).asData?.value ?? const <Channel>[];
       final dmChannelIds = [
         for (final channel in channels)
-          if (channel.isDm && channel.isMember) channel.id,
+          if (channel.isPersonChat && channel.isMember) channel.id,
       ];
       // The relay rejects a REQ whose explicit `#h` values exceed
       // [kMaxExplicitChannelValues]. A single over-cap visible-DM REQ would be
@@ -440,7 +440,7 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     if (value == null) return null;
     final ids = [
       for (final channel in value)
-        if (channel.isDm && channel.isMember) channel.id,
+        if (channel.isPersonChat && channel.isMember) channel.id,
     ]..sort();
     return ids.join(',');
   }
@@ -464,7 +464,7 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     final dmChannelIds = [
       for (final channel
           in ref.read(channelsProvider).asData?.value ?? const <Channel>[])
-        if (channel.isDm && channel.isMember) channel.id,
+        if (channel.isPersonChat && channel.isMember) channel.id,
     ];
 
     final filters = <NostrFilter>[
@@ -665,7 +665,7 @@ final inboxItemsProvider = Provider<List<InboxItem>>((ref) {
   final dmChannelIds = {
     for (final channel
         in ref.watch(channelsProvider).asData?.value ?? const <Channel>[])
-      if (channel.isDm) channel.id,
+      if (channel.isPersonChat) channel.id,
   };
   final blocked = ref.watch(blockedPubkeysProvider);
   return buildInboxItems(
@@ -820,7 +820,7 @@ final conversationInboxItemsProvider = Provider.autoDispose<List<InboxItem>>((
   };
   final dmChannelIds = {
     for (final channel in channels)
-      if (channel.isDm) channel.id,
+      if (channel.isPersonChat) channel.id,
   };
   final rows = collapseChannelMainRows(
     buildInboxItems(

@@ -185,7 +185,8 @@ class MessageContent extends HookConsumerWidget {
         : <String, String>{
             for (final channel
                 in ref.watch(channelsProvider).asData?.value ?? const [])
-              channel.name.toLowerCase(): channel.id,
+              // `#name` resolves to groups only, never a chat of people.
+              if (!channel.isPersonChat) channel.name.toLowerCase(): channel.id,
           };
     final channelHandler = useRef(onChannelTap)..value = onChannelTap;
     final resolvedChannelTap = useMemoized(

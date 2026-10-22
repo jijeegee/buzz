@@ -54,6 +54,9 @@ ConversationRoom resolveConversationRoom(
   required String? currentPubkey,
   required String senderLabel,
   IdentityNameSources? names,
+
+  /// A chat of people's resolved title, which names its room.
+  String? chatTitle,
 }) {
   final senderPubkey = item.item.pubkey.toLowerCase();
   if (channel?.isDm ?? false) {
@@ -73,7 +76,7 @@ ConversationRoom resolveConversationRoom(
   }
 
   final channelId = channel?.id ?? item.item.channelId ?? '';
-  final loadedName = channel?.name.trim() ?? '';
+  final loadedName = chatTitle ?? channel?.name.trim() ?? '';
   final feedName = item.item.channelName.trim();
   final channelName = loadedName.isNotEmpty
       ? loadedName

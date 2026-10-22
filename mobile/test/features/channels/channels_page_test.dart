@@ -2119,15 +2119,80 @@ void main() {
     }
 
     expect(find.byKey(const Key('new-dm-recipient-wrap')), findsOneWidget);
+    // Past six people the chips fold into "+N"; more people start a chat,
+    // which may be named.
+    expect(
+      find.bySemanticsLabel(RegExp(r'^Remove Long recipient')),
+      findsNWidgets(5),
+    );
+    expect(find.text('+3'), findsOneWidget);
+    expect(find.byKey(const Key('new-chat-name')), findsOneWidget);
+    expect(find.text('Chat name'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('new-dm-selected-more')));
+    await tester.pumpAndSettle();
     expect(
       find.bySemanticsLabel(RegExp(r'^Remove Long recipient')),
       findsNWidgets(8),
     );
-    expect(
-      find.text('DMs support up to nine people, including you.'),
-      findsOneWidget,
-    );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('two or more people start a named chat in one step', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final directoryUsers = [
+      for (final name in ['ann', 'bob'])
+        DirectoryUser(pubkey: 'person-$name', displayName: name),
+    ];
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    late _RecordingChannelActions actions;
+    await tester.pumpWidget(
+      buildTestable(
+        disableAnimations: true,
+        overrides: [
+          savedPrefsProvider.overrideWithValue(prefs),
+          channelsProvider.overrideWith(() => _FakeNotifier(testChannels)),
+          friendIdsProvider.overrideWithValue(
+            AsyncValue.data({for (final user in directoryUsers) user.pubkey}),
+          ),
+          relayDirectoryUsersProvider.overrideWith(
+            (ref) async => directoryUsers,
+          ),
+          channelActionsProvider.overrideWith(
+            (ref) => actions = _RecordingChannelActions(ref),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Create or start conversation'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New message'));
+    await tester.pumpAndSettle();
+
+    // One person: no name field (that is a 1:1).
+    await tester.tap(find.byKey(const Key('new-dm-person-person-ann')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('new-chat-name')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('new-dm-person-person-bob')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('new-chat-name')), 'Trip');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(actions.openedDms, isEmpty);
+    expect(actions.createdChats, hasLength(1));
+    expect(actions.createdChats.single.$1, ['person-ann', 'person-bob']);
+    expect(actions.createdChats.single.$2, 'Trip');
+    expect(find.text('Invitation sent to 1'), findsOneWidget);
   });
 
   testWidgets('shows local preview people when the relay is offline', (
@@ -2539,6 +2604,19 @@ String _activeDirectoryScope(Ref ref) => channelDirectoryScope(
   ref.read(myPubkeyProvider),
 );
 
+final _createdChat = Channel(
+  id: 'created-chat',
+  name: '',
+  channelType: 'stream',
+  visibility: 'private',
+  description: '',
+  createdBy: '',
+  createdAt: DateTime(2026),
+  memberCount: 2,
+  isMember: true,
+  groupChat: true,
+);
+
 class _RecordingChannelActions extends ChannelActions {
   _RecordingChannelActions(Ref ref)
     : super(
@@ -2552,10 +2630,31 @@ class _RecordingChannelActions extends ChannelActions {
       );
 
   final List<String> joinedChannelIds = [];
+  final List<List<String>> openedDms = [];
+  final List<(List<String>, String?)> createdChats = [];
 
   @override
   Future<void> joinChannel(String channelId) async {
     joinedChannelIds.add(channelId);
+  }
+
+  @override
+  Future<Channel> openDm({required List<String> pubkeys}) async {
+    openedDms.add(pubkeys);
+    return _createdChat;
+  }
+
+  @override
+  Future<CreateGroupChatResult> createGroupChat({
+    required List<String> pubkeys,
+    String? name,
+  }) async {
+    createdChats.add((pubkeys, name));
+    return CreateGroupChatResult(
+      channel: _createdChat,
+      invitedCount: 1,
+      pickedCount: pubkeys.length,
+    );
   }
 }
 

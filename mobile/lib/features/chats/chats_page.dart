@@ -29,6 +29,8 @@ import '../channels/channel_stars/channel_stars_provider.dart';
 import '../channels/channels_page.dart';
 import '../channels/channels_provider.dart';
 import '../channels/dm_channel_labels.dart';
+import '../channels/group_chat/chat_grid_avatar.dart';
+import '../channels/group_chat/chat_title.dart';
 import '../groups/group_invitations.dart';
 import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
@@ -117,6 +119,8 @@ ChatListRow localChatRow(Channel channel) {
     channelType: channel.channelType,
     channelName: channel.name,
     dmMembers: channel.participantPubkeys,
+    groupChat: channel.isGroupChat,
+    memberCount: channel.isGroupChat ? channel.memberCount : null,
   );
 }
 

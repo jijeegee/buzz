@@ -25,7 +25,7 @@ String _relayErrorMessage(Object error) =>
     error.toString().replaceFirst('Exception: ', '');
 
 /// Shown when the relay refuses an add because of the invitation cap.
-const tooManyInvitationsMessage = 'Too many invitations. Try again later.';
+const tooManyInvitationsMessage = 'Too many invitations today';
 
 /// How the relay answered one kind:9000 add that was not applied.
 enum AddMemberReply {
@@ -530,6 +530,7 @@ ChannelDetails channelDetailsFromEvent(NostrEvent event) {
     ttlDeadline: data.ttlDeadline,
     goalsEnabled: data.goalsEnabled,
     picture: data.picture,
+    groupChat: data.groupChat,
   );
 }
 
