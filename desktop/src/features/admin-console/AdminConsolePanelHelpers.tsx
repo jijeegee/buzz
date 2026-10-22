@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { formatRelativeTime } from "../forum/lib/time";
+import { formatLocale } from "@/shared/i18n";
 
 // ── Generic async state ───────────────────────────────────────────────────
 
@@ -215,7 +216,7 @@ export function formatTimestamp(raw: string | null | undefined): string {
   if (!raw) return "—";
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
-  const absolute = date.toLocaleString(undefined, {
+  const absolute = date.toLocaleString(formatLocale(), {
     month: "short",
     day: "numeric",
     year: "numeric",

@@ -22,6 +22,7 @@ import {
 import type { Channel, SearchHit, UserSearchResult } from "@/shared/api/types";
 import { Badge } from "@/shared/ui/badge";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { localeDateTimeFormat } from "@/shared/i18n";
 
 export type SearchResult =
   | {
@@ -220,7 +221,7 @@ function formatRelativeTime(unixSeconds: number) {
     return `${Math.floor(diff / (60 * 60))}h ago`;
   }
 
-  return new Intl.DateTimeFormat("en-US", {
+  return localeDateTimeFormat({
     month: "short",
     day: "numeric",
     hour: "2-digit",

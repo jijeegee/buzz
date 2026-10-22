@@ -36,3 +36,26 @@ test("t() shows English for strings a language lacks", () => {
     setIntl(previous);
   }
 });
+
+test("dates and numbers follow the app language, not the system", async () => {
+  const { localeDateTimeFormat, localeNumberFormat, localeRelativeTimeFormat } =
+    await import("./format.ts");
+  const month = localeDateTimeFormat({ month: "long" });
+  const count = localeNumberFormat();
+  const ago = localeRelativeTimeFormat({ numeric: "always" });
+  const date = new Date(2026, 9, 23);
+  const previous = getIntl();
+  try {
+    setIntl(buildIntl("en", {}));
+    assert.equal(month.format(date), "October");
+    assert.equal(count.format(1234.5), "1,234.5");
+    assert.equal(ago.format(-3, "hour"), "3 hours ago");
+    setIntl(buildIntl("de", {}));
+    assert.equal(month.format(date), "Oktober");
+    assert.equal(count.format(1234.5), "1.234,5");
+    setIntl(buildIntl("ko", {}));
+    assert.equal(ago.format(-3, "hour"), "3시간 전");
+  } finally {
+    setIntl(previous);
+  }
+});

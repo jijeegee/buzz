@@ -17,6 +17,7 @@ import {
   getWorkflowDisplayStatus,
   getWorkflowTriggerSummary,
 } from "./workflowDefinition";
+import { formatLocale } from "@/shared/i18n";
 
 type WorkflowDetailPanelProps = {
   workflowId: string;
@@ -262,7 +263,7 @@ export function WorkflowDetailPanel({
                                 <span>
                                   {new Date(
                                     run.createdAt * 1000,
-                                  ).toLocaleString()}
+                                  ).toLocaleString(formatLocale())}
                                 </span>
                                 <span>
                                   {run.executionTrace.length}{" "}

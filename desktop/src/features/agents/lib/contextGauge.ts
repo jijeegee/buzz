@@ -6,6 +6,8 @@
  * threshold, yellow from the warning threshold, red from the critical one.
  */
 
+import { localeNumberFormat } from "@/shared/i18n";
+
 export type ContextGaugeStage = "normal" | "warning" | "critical";
 
 /** Fractions of the window (0..1) at which the gauge changes stage. */
@@ -76,7 +78,7 @@ export function contextGaugeWedge(
   };
 }
 
-const tokenFormatter = new Intl.NumberFormat("en-US");
+const tokenFormatter = localeNumberFormat();
 
 /** "50,000 / 200,000 tokens (25%)". */
 export function formatContextUsageLabel(used: number, size: number): string {

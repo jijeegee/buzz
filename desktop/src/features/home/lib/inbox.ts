@@ -23,6 +23,7 @@ import {
   formatItemTimestamp,
 } from "@/shared/lib/datetime";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
+import { localeDateTimeFormat } from "@/shared/i18n";
 
 export type InboxFilter =
   | "all"
@@ -129,7 +130,7 @@ export type InboxGroup = {
 
 type InboxChannel = Pick<Channel, "channelType" | "id" | "name">;
 
-const fullTimeFormatter = new Intl.DateTimeFormat("en-US", {
+const fullTimeFormatter = localeDateTimeFormat({
   month: "short",
   day: "numeric",
   year: "numeric",

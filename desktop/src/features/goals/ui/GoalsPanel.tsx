@@ -20,6 +20,7 @@ import {
   useRestoreGoalTreeMutation,
 } from "../hooks";
 import { AddGoalInline, type Apply, GoalEditor, GoalRow } from "./GoalRows";
+import { formatLocale } from "@/shared/i18n";
 
 type GoalsPanelProps = {
   channelId: string;
@@ -225,7 +226,8 @@ function GoalHistory({ channelId }: { channelId: string }) {
           key={revision.revision}
         >
           <span className="flex-1 text-muted-foreground">
-            {new Date(revision.createdAt * 1000).toLocaleString()} ·{" "}
+            {new Date(revision.createdAt * 1000).toLocaleString(formatLocale())}{" "}
+            ·{" "}
             {usersQuery.data?.profiles[revision.author]?.displayName ??
               "Unknown member"}{" "}
             · {revision.goals ?? "?"} goals

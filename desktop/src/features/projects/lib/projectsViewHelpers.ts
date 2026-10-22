@@ -8,6 +8,7 @@ import { projectRepoHostForRepository } from "@/features/projects/lib/projectRep
 import { selectProjectRepository } from "@/features/projects/projectModels";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { formatLocale, localeRelativeTimeFormat, t } from "@/shared/i18n";
 
 export type ProjectsViewMode = "grid" | "list";
 export type ProjectsRepositoryScope =
@@ -35,7 +36,7 @@ export const REPOSITORY_ENTRY_PAGE_SIZE = 200;
 
 export function formatLastChangedAt(timestamp: number | null) {
   if (!timestamp) return "—";
-  return new Date(timestamp * 1_000).toLocaleString(undefined, {
+  return new Date(timestamp * 1_000).toLocaleString(formatLocale(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -258,18 +259,20 @@ export function listRowDescription(
 }
 
 export function formatCreatedDate(createdAt: number) {
-  return new Date(createdAt * 1_000).toLocaleDateString(undefined, {
+  return new Date(createdAt * 1_000).toLocaleDateString(formatLocale(), {
     month: "short",
     day: "numeric",
   });
 }
+
+const AGO_FORMATTER = localeRelativeTimeFormat({ numeric: "always" });
 
 export function relativeTime(
   createdAt: number,
   nowSeconds = Math.floor(Date.now() / 1_000),
 ) {
   const elapsedSeconds = Math.max(1, Math.floor(nowSeconds - createdAt));
-  const units = [
+  const units: { label: Intl.RelativeTimeFormatUnit; seconds: number }[] = [
     { label: "day", seconds: 24 * 60 * 60 },
     { label: "hour", seconds: 60 * 60 },
     { label: "minute", seconds: 60 },
@@ -279,7 +282,7 @@ export function relativeTime(
   if (elapsedSeconds >= 7 * 24 * 60 * 60) {
     const createdDate = new Date(createdAt * 1_000);
     const nowDate = new Date(nowSeconds * 1_000);
-    return createdDate.toLocaleDateString(undefined, {
+    return createdDate.toLocaleDateString(formatLocale(), {
       month: "short",
       day: "numeric",
       ...(createdDate.getFullYear() === nowDate.getFullYear()
@@ -291,15 +294,15 @@ export function relativeTime(
   for (const unit of units) {
     const value = Math.floor(elapsedSeconds / unit.seconds);
     if (value >= 1) {
-      return `${value} ${unit.label}${value === 1 ? "" : "s"} ago`;
+      return AGO_FORMATTER.format(-value, unit.label);
     }
   }
 
-  return "just now";
+  return t("time.justNow");
 }
 
 export function formatExactTimestamp(createdAt: number) {
-  return new Date(createdAt * 1_000).toLocaleString(undefined, {
+  return new Date(createdAt * 1_000).toLocaleString(formatLocale(), {
     year: "numeric",
     month: "short",
     day: "numeric",

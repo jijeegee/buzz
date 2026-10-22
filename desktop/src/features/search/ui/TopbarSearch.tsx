@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/shared/ui/dialog";
 import { useDeferredModalOpen } from "@/shared/ui/deferredModalOpen";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { localeDateTimeFormat } from "@/shared/i18n";
 type TopbarSearchProps = {
   channelLabels?: Record<string, string>;
   channels: Channel[];
@@ -85,7 +86,7 @@ function formatRelativeTime(unixSeconds: number) {
     return `${Math.floor(diff / (60 * 60 * 24))}d ago`;
   }
 
-  return new Intl.DateTimeFormat("en-US", {
+  return localeDateTimeFormat({
     month: "short",
     day: "numeric",
   }).format(new Date(unixSeconds * 1_000));

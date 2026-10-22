@@ -1,9 +1,10 @@
 import type { Channel } from "@/shared/api/types";
+import { localeDateTimeFormat, localeRelativeTimeFormat } from "@/shared/i18n";
 
-const relativeTimeFormatter = new Intl.RelativeTimeFormat("en-US", {
+const relativeTimeFormatter = localeRelativeTimeFormat({
   numeric: "auto",
 });
-const absoluteTimeFormatter = new Intl.DateTimeFormat("en-US", {
+const absoluteTimeFormatter = localeDateTimeFormat({
   month: "short",
   day: "numeric",
   hour: "2-digit",

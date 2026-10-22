@@ -65,6 +65,7 @@ import { useLoadArchivedObserverEvents } from "@/features/agents/ui/useObserverE
 import { useLoadOlderOnScroll } from "@/features/messages/ui/useLoadOlderOnScroll";
 import type { ChannelAgentSessionAgent } from "./useChannelAgentSessions";
 import { useChannelReference } from "@/features/channels/openChannelDirectory";
+import { formatLocale } from "@/shared/i18n";
 
 type AgentSessionThreadPanelProps = {
   agent: ChannelAgentSessionAgent;
@@ -141,7 +142,7 @@ export function AgentSessionThreadPanel({
   const lastUpdatedTitle =
     latestActivityAt === null
       ? undefined
-      : `Last updated ${new Date(latestActivityAt).toLocaleString()}`;
+      : `Last updated ${new Date(latestActivityAt).toLocaleString(formatLocale())}`;
 
   const { fetchOlderArchived, hasOlderArchived } =
     useLoadArchivedObserverEvents(

@@ -8,6 +8,7 @@ import type { UserProfileSummary } from "@/shared/api/types";
 import { Markdown } from "@/shared/ui/markdown";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { formatLocale } from "@/shared/i18n";
 
 type AgentActivityCardProps = {
   group: AgentNoteGroup;
@@ -24,7 +25,7 @@ function formatRelativeTime(unixSeconds: number): string {
   if (diff < 86_400) return `${Math.floor(diff / 3_600)}h ago`;
   if (diff < 604_800) return `${Math.floor(diff / 86_400)}d ago`;
 
-  return new Date(unixSeconds * 1_000).toLocaleDateString(undefined, {
+  return new Date(unixSeconds * 1_000).toLocaleDateString(formatLocale(), {
     month: "short",
     day: "numeric",
   });

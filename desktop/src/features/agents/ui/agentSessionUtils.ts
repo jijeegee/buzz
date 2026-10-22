@@ -1,4 +1,5 @@
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
+import { localeDateTimeFormat } from "@/shared/i18n";
 
 export function getToolString(
   record: Record<string, unknown>,
@@ -236,13 +237,13 @@ export function shortenMiddle(value: string, maxLength: number) {
   return `${value.slice(0, edgeLength)}...${value.slice(-edgeLength)}`;
 }
 
-const transcriptTimeFormat = new Intl.DateTimeFormat("en-US", {
+const transcriptTimeFormat = localeDateTimeFormat({
   hour: "2-digit",
   hourCycle: "h23",
   minute: "2-digit",
 });
 
-const transcriptTitleTimeFormat = new Intl.DateTimeFormat(undefined, {
+const transcriptTitleTimeFormat = localeDateTimeFormat({
   weekday: "long",
   year: "numeric",
   month: "long",

@@ -60,6 +60,7 @@ import { shouldShowTranscriptRowTimestamp } from "./agentSessionTranscriptPresen
 import { formatTranscriptTimestampTitle } from "./agentSessionUtils";
 import { hasFileEditLineDiff } from "./FileEditDiffView";
 import { UserMessageBubble } from "./activityRenderClasses/UserMessageBubble";
+import { formatLocale } from "@/shared/i18n";
 
 const TRANSCRIPT_ACP_SOURCE_STORAGE_KEY = "kuzz:show-transcript-acp-source";
 
@@ -952,7 +953,9 @@ function SessionBoundaryDivider({
       : labelState === "most-recent"
         ? "Most recent observed session"
         : "Earlier observed session";
-  const formattedDate = new Date(sessionStartTimestamp).toLocaleString();
+  const formattedDate = new Date(sessionStartTimestamp).toLocaleString(
+    formatLocale(),
+  );
   return (
     <div
       className="flex items-center gap-2 px-3 py-2"

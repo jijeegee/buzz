@@ -11,38 +11,37 @@
  * deliberate deviation noted on `formatDayGroupLabel`.
  */
 
-const WEEKDAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+import { localeDateTimeFormat, t } from "@/shared/i18n";
+
+const WEEKDAY_FORMATTER = localeDateTimeFormat({
   weekday: "long",
 });
 
-const WEEKDAY_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+const WEEKDAY_MONTH_DAY_FORMATTER = localeDateTimeFormat({
   weekday: "long",
   month: "long",
   day: "numeric",
 });
 
-const MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+const MONTH_DAY_YEAR_FORMATTER = localeDateTimeFormat({
   month: "long",
   day: "numeric",
   year: "numeric",
 });
 
-const SHORT_WEEKDAY_SHORT_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat(
-  "en-US",
-  {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  },
-);
+const SHORT_WEEKDAY_SHORT_MONTH_DAY_FORMATTER = localeDateTimeFormat({
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+});
 
-const SHORT_MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+const SHORT_MONTH_DAY_YEAR_FORMATTER = localeDateTimeFormat({
   month: "short",
   day: "numeric",
   year: "numeric",
 });
 
-const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+const TIME_FORMATTER = localeDateTimeFormat({
   hour: "2-digit",
   hourCycle: "h23",
   minute: "2-digit",
@@ -88,8 +87,8 @@ export function formatDayGroupLabel(
   const now = new Date(nowSeconds * 1_000);
   const dayDiff = calendarDaysBetween(now, date);
 
-  if (dayDiff === 0) return "Today";
-  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff === 0) return t("time.today");
+  if (dayDiff === 1) return t("time.yesterday");
   // Bounded below as well as above: a timestamp in the future (clock skew, or a
   // relay ahead of this machine) must not be labelled with a weekday that reads
   // as the recent past.
@@ -146,7 +145,7 @@ export function formatItemTimestamp(
 
   let dayLabel: string;
   if (dayDiff === 1) {
-    dayLabel = "Yesterday";
+    dayLabel = t("time.yesterday");
   } else if (dayDiff > 1 && dayDiff < WEEKDAY_BAND_DAYS) {
     dayLabel = WEEKDAY_FORMATTER.format(date);
   } else {
@@ -156,7 +155,7 @@ export function formatItemTimestamp(
         : SHORT_MONTH_DAY_YEAR_FORMATTER.format(date);
   }
 
-  return withTime ? `${dayLabel} at ${time}` : dayLabel;
+  return withTime ? t("time.dayAtTime", { day: dayLabel, time }) : dayLabel;
 }
 
 /** Local midnight of the calendar day containing `date`. */

@@ -31,6 +31,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 import { CommunityInviteDialog } from "./CommunityInviteDialog";
+import { formatLocale } from "@/shared/i18n";
 
 function formatDisplayName(member: RelayMember, displayName?: string | null) {
   const trimmedDisplayName = displayName?.trim();
@@ -52,7 +53,7 @@ function npubFromPubkey(pubkey: string): string | null {
 }
 
 function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString(undefined, {
+  return new Date(dateString).toLocaleDateString(formatLocale(), {
     month: "short",
     day: "numeric",
     year: "numeric",

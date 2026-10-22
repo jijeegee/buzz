@@ -193,7 +193,7 @@ test("relativeTime switches to an absolute date at seven days", () => {
   assert.equal(relativeTime(now - 7 * DAY_SECONDS + 1, now), "6 days ago");
 
   const createdAt = now - 7 * DAY_SECONDS;
-  const expected = new Date(createdAt * 1_000).toLocaleDateString(undefined, {
+  const expected = new Date(createdAt * 1_000).toLocaleDateString("en", {
     month: "short",
     day: "numeric",
   });
@@ -203,7 +203,7 @@ test("relativeTime switches to an absolute date at seven days", () => {
 test("relativeTime includes the year only across a year boundary", () => {
   const sameYearNow = localSeconds(2025, 5, 15);
   const sameYearCreatedAt = sameYearNow - 7 * DAY_SECONDS;
-  const sameYearExpected = new Intl.DateTimeFormat(undefined, {
+  const sameYearExpected = new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
   }).format(new Date(sameYearCreatedAt * 1_000));
@@ -211,7 +211,7 @@ test("relativeTime includes the year only across a year boundary", () => {
 
   const crossYearNow = localSeconds(2025, 0, 8);
   const crossYearCreatedAt = localSeconds(2024, 11, 31);
-  const crossYearExpected = new Intl.DateTimeFormat(undefined, {
+  const crossYearExpected = new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
     year: "numeric",

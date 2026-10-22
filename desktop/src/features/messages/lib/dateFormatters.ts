@@ -17,7 +17,13 @@
  * scrolls away while the messages under it stay on screen.
  */
 
-const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+import {
+  localeDateTimeFormat,
+  localeRelativeTimeFormat,
+  t,
+} from "@/shared/i18n";
+
+const TIME_FORMATTER = localeDateTimeFormat({
   hour: "2-digit",
   hourCycle: "h23",
   minute: "2-digit",
@@ -25,7 +31,7 @@ const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
 
 const DAY_PERIOD_SUFFIX_RE = /[\s\u00a0\u202f]*(?:AM|PM)$/i;
 
-const FULL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+const FULL_DATE_TIME_FORMATTER = localeDateTimeFormat({
   weekday: "long",
   year: "numeric",
   month: "long",
@@ -35,7 +41,7 @@ const FULL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-const SHORT_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+const SHORT_MONTH_DAY_FORMATTER = localeDateTimeFormat({
   month: "short",
   day: "numeric",
 });
@@ -87,12 +93,12 @@ export function formatThreadSummaryLastReplyTime(
 ): string {
   const diff = Math.max(0, nowSeconds - unixSeconds);
 
-  if (diff < 60) return "just now";
+  if (diff < 60) return t("time.justNow");
   if (diff < 3_600) return formatAgo(Math.floor(diff / 60), "minute");
   if (diff < 86_400) return formatAgo(Math.floor(diff / 3_600), "hour");
   if (diff < 604_800) return formatAgo(Math.floor(diff / 86_400), "day");
 
-  return `on ${formatShortMonthDay(unixSeconds)}`;
+  return t("time.onDate", { date: formatShortMonthDay(unixSeconds) });
 }
 
 function isSameDayDate(a: Date, b: Date): boolean {
@@ -103,6 +109,9 @@ function isSameDayDate(a: Date, b: Date): boolean {
   );
 }
 
-function formatAgo(value: number, unit: string): string {
-  return `${value} ${unit}${value === 1 ? "" : "s"} ago`;
+const AGO_FORMATTER = localeRelativeTimeFormat({ numeric: "always" });
+
+/** "3 hours ago", in the app language. */
+function formatAgo(value: number, unit: "minute" | "hour" | "day"): string {
+  return AGO_FORMATTER.format(-value, unit);
 }
