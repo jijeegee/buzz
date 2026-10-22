@@ -12,6 +12,7 @@ import { useWatchedUnread } from "@/features/accounts/inactiveAccountWatch/useWa
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
 import { useAccountMenu } from "@/features/accounts/useAccountMenu";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { type MessageKey, t as translate, useT } from "@/shared/i18n";
 import { CreateAccountDialog } from "@/shared/ui/CreateAccountDialog";
 import {
   type AuthDevice,
@@ -68,21 +69,18 @@ function reloadIntoNewIdentity() {
   identityReload.reload();
 }
 
-export const SIGN_OUT_DESCRIPTION =
-  "You'll be signed out on this computer. Sign in with Google to get back to your conversations. Nothing is deleted.";
-
-/** The sign-out text when another account here takes over. */
+/** The sign-out text, naming the account that takes over if there is one. */
 export function signOutDescription(nextAccount: string | null): string {
   return nextAccount
-    ? `You'll be signed out on this computer and switched to ${nextAccount}. Nothing is deleted.`
-    : SIGN_OUT_DESCRIPTION;
+    ? translate("settings.account.signOutDescriptionSwitch", {
+        account: nextAccount,
+      })
+    : translate("settings.account.signOutDescription");
 }
 
 /** "1 agent of this account will stop." / "N agents …". */
 export function agentsWillStopLabel(count: number): string {
-  return count === 1
-    ? "1 agent of this account will stop."
-    : `${count} agents of this account will stop.`;
+  return translate("settings.account.agentsWillStop", { count });
 }
 
 /**
@@ -97,9 +95,10 @@ export function AccountSettingsCard({
 }: {
   onStatusChange?: (status: TokenAuthStatus | null) => void;
 } = {}) {
+  const t = useT();
   const login = useGoogleLogin();
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
-  const [busy, setBusy] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState<MessageKey | null>(null);
 
   React.useEffect(() => {
     // Only settled statuses: the Profile panel may remount this card to move
@@ -127,9 +126,9 @@ export function AccountSettingsCard({
       .then((agents) => {
         if (agents.length > 0) {
           toast.info(
-            agents.length === 1
-              ? "An agent got a new identity on this community. Its earlier messages stay under its old identity."
-              : `${agents.length} agents got new identities on this community. Their earlier messages stay under their old identities.`,
+            translate("settings.account.agentsNewIdentity", {
+              count: agents.length,
+            }),
           );
         }
       })
@@ -140,12 +139,13 @@ export function AccountSettingsCard({
     };
   }, [refresh]);
 
-  async function run(label: string, action: () => Promise<unknown>) {
+  /** `label` marks the running action and is the message if it fails. */
+  async function run(label: MessageKey, action: () => Promise<unknown>) {
     setBusy(label);
     try {
       await action();
     } catch (error) {
-      toast.error(errorText(error, `${label} failed.`));
+      toast.error(errorText(error, translate(label)));
     } finally {
       setBusy(null);
     }
@@ -154,7 +154,7 @@ export function AccountSettingsCard({
   if (!status?.supported) return null;
 
   const signIn = (existingTokenAccount = false) =>
-    run("Sign in", async () => {
+    run("settings.account.signInFailed", async () => {
       // A local-only account links its own key; otherwise the chosen Google
       // account decides which account opens.
       const connect = !existingTokenAccount && needsGoogleProtection(status);
@@ -169,7 +169,10 @@ export function AccountSettingsCard({
         reloadIntoNewIdentity();
     });
 
-  const signOut = () => run("Sign out", () => signOutActiveAccount(setStatus));
+  const signOut = () =>
+    run("settings.account.signOutFailed", () =>
+      signOutActiveAccount(setStatus),
+    );
 
   // Not yet held by Google: invite the user to protect the account with it.
   const protect = needsGoogleProtection(status);
@@ -179,10 +182,14 @@ export function AccountSettingsCard({
       <SettingsOptionGroup
         description={
           protect
-            ? "Continue with Google so you can sign in to Kuzz on other computers and get back into your account if this one is lost. Your Kuzz server keeps a protected copy for this."
-            : "You sign in to Kuzz with your Google account."
+            ? t("settings.account.protectDescription")
+            : t("settings.account.description")
         }
-        title={protect ? "Protect your account" : "Account"}
+        title={
+          protect
+            ? t("settings.account.protectTitle")
+            : t("settings.account.title")
+        }
       >
         {status.state === "active" ? (
           <ActiveAccount
@@ -196,21 +203,21 @@ export function AccountSettingsCard({
             <div className="min-w-0" aria-live="polite">
               <p className="font-medium">
                 {status.state === "restoring"
-                  ? "Restoring your sign-in…"
+                  ? t("settings.account.restoring")
                   : status.state === "needs_login"
-                    ? "Your sign-in has ended"
+                    ? t("settings.account.needsLogin")
                     : protect
-                      ? "Not connected to Google yet"
-                      : "Not signed in"}
+                      ? t("settings.account.notConnected")
+                      : t("settings.account.notSignedIn")}
               </p>
               <p className="text-sm text-muted-foreground/70">
                 {status.state === "needs_login"
                   ? status.keyBackup
-                    ? "Sign in with Google again to manage your account. Kuzz and your agents keep working."
-                    : "Sign in with Google again to keep using this community and its agents."
+                    ? t("settings.account.needsLoginHintKept")
+                    : t("settings.account.needsLoginHint")
                   : protect
-                    ? "Your browser opens to finish. Your profile, communities and agents stay the same."
-                    : "Sign in with Google to use your account on this community. Your browser opens to finish signing in."}
+                    ? t("settings.account.protectHint")
+                    : t("settings.account.signInHint")}
               </p>
             </div>
             <Button
@@ -219,16 +226,16 @@ export function AccountSettingsCard({
               onClick={() => void signIn()}
               type="button"
             >
-              {busy === "Sign in" ? (
+              {busy === "settings.account.signInFailed" ? (
                 <Spinner aria-hidden className="h-4 w-4 border-2" />
               ) : null}
-              {busy === "Sign in"
-                ? "Signing in…"
+              {busy === "settings.account.signInFailed"
+                ? t("settings.account.signingIn")
                 : status.state === "needs_login"
-                  ? "Sign in again"
+                  ? t("settings.account.signInAgain")
                   : protect
-                    ? "Continue with Google"
-                    : "Sign in with Google"}
+                    ? t("settings.account.continueWithGoogle")
+                    : t("settings.account.signInWithGoogle")}
             </Button>
             {status.keyBackupSupported &&
             !status.keyBackup &&
@@ -255,7 +262,7 @@ export function AccountSettingsCard({
                 type="button"
                 variant="outline"
               >
-                Sign out
+                {t("settings.account.signOut")}
               </Button>
             ) : null}
           </SettingsOptionRow>
@@ -271,13 +278,16 @@ export function AccountSettingsCard({
  * "Add account" (same list, same actions). Signing out stays on the row above.
  */
 function AccountsOnThisComputer({ disabled }: { disabled: boolean }) {
+  const t = useT();
   const accountMenu = useAccountMenu({ open: true });
   const activePubkey = useIdentityQuery().data?.pubkey ?? null;
   const unread = useWatchedUnread();
   return (
     <SettingsOptionRow className="items-start">
       <div className="min-w-0 flex-1" data-testid="settings-accounts">
-        <p className="px-3 pb-1 font-medium">Accounts on this computer</p>
+        <p className="px-3 pb-1 font-medium">
+          {t("settings.account.accountsOnThisComputer")}
+        </p>
         <AccountSwitcherSection
           accounts={accountMenu.accounts}
           busy={accountMenu.busy || disabled}
@@ -298,10 +308,11 @@ function ActiveAccount({
   onStatus,
 }: {
   status: TokenAuthStatus;
-  busy: string | null;
-  run: (label: string, action: () => Promise<unknown>) => Promise<void>;
+  busy: MessageKey | null;
+  run: (label: MessageKey, action: () => Promise<unknown>) => Promise<void>;
   onStatus: (status: TokenAuthStatus) => void;
 }) {
+  const t = useT();
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [confirming, setConfirming] = React.useState<
     "sign-out" | "disconnect-agents" | null
@@ -334,11 +345,11 @@ function ActiveAccount({
       <SettingsOptionRow>
         <div className="min-w-0">
           <p className="truncate font-medium" data-testid="account-name">
-            {name ?? "Signed in with Google"}
+            {name ?? t("settings.account.signedInWithGoogle")}
           </p>
           {name ? (
             <p className="truncate text-sm text-muted-foreground/70">
-              {email ?? "Signed in with Google"}
+              {email ?? t("settings.account.signedInWithGoogle")}
             </p>
           ) : null}
         </div>
@@ -349,20 +360,26 @@ function ActiveAccount({
           type="button"
           variant="outline"
         >
-          Sign out
+          {t("settings.account.signOut")}
         </Button>
       </SettingsOptionRow>
       <AccountsOnThisComputer disabled={disabled} />
       <SettingsConfirmDialog
-        confirmLabel="Sign out"
+        confirmLabel={t("settings.account.signOut")}
         description={signOutDescription(next ? accountLabel(next) : null)}
         onConfirm={() =>
-          void run("Sign out", () => signOutActiveAccount(onStatus))
+          void run("settings.account.signOutFailed", () =>
+            signOutActiveAccount(onStatus),
+          )
         }
         onOpenChange={closeConfirm}
         open={confirming === "sign-out"}
         testId="account-sign-out-dialog"
-        title={name ? `Sign out of ${name}?` : "Sign out of Kuzz?"}
+        title={
+          name
+            ? t("settings.account.signOutTitleNamed", { name })
+            : t("settings.account.signOutTitle")
+        }
       >
         {runningCount > 0 ? (
           <p
@@ -377,8 +394,7 @@ function ActiveAccount({
         <>
           <SettingsOptionRow>
             <p className="min-w-0 text-sm text-muted-foreground/70">
-              Disconnect every agent right away. Agents on this computer
-              reconnect the next time they start.
+              {t("settings.account.disconnectHint")}
             </p>
             <Button
               data-testid="account-disconnect-agents"
@@ -387,32 +403,31 @@ function ActiveAccount({
               type="button"
               variant="outline"
             >
-              Disconnect all agents
+              {t("settings.account.disconnectAll")}
             </Button>
           </SettingsOptionRow>
           <SettingsConfirmDialog
-            confirmLabel="Disconnect agents"
-            description="All of your agents are disconnected from this community right away. Agents on this computer reconnect on their own the next time they start."
+            confirmLabel={t("settings.account.disconnectConfirm")}
+            description={t("settings.account.disconnectDescription")}
             destructive
             onConfirm={() =>
-              void run("Disconnect agents", async () => {
+              void run("settings.account.disconnectFailed", async () => {
                 await revokeAllBotTokens();
-                toast.success("All agents were disconnected.");
+                toast.success(t("settings.account.disconnected"));
               })
             }
             onOpenChange={closeConfirm}
             open={confirming === "disconnect-agents"}
             testId="account-disconnect-agents-dialog"
-            title="Disconnect all agents?"
+            title={t("settings.account.disconnectTitle")}
           />
           <details className="px-4 py-3">
             <summary className="cursor-pointer text-sm text-muted-foreground">
-              Account deletion
+              {t("settings.account.deletionSummary")}
             </summary>
             <SettingsOptionRow>
               <p className="min-w-0 text-sm text-muted-foreground/70">
-                Delete your account on this community. Signing in again within
-                30 days restores it.
+                {t("settings.account.deleteHint")}
               </p>
               <Button
                 disabled={disabled}
@@ -420,28 +435,28 @@ function ActiveAccount({
                 type="button"
                 variant="destructive"
               >
-                Delete account
+                {t("settings.account.deleteAccount")}
               </Button>
             </SettingsOptionRow>
           </details>
           <AlertDialog onOpenChange={setConfirmDelete} open={confirmDelete}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {t("settings.account.deleteTitle")}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  Every device and agent is signed out now. The account is
-                  removed after 30 days unless you sign in with Google again
-                  before then.
+                  {t("settings.account.deleteDescription")}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={disabled}>
-                  Cancel
+                  {t("common.cancel")}
                 </AlertDialogCancel>
                 <Button
                   disabled={disabled}
                   onClick={() =>
-                    void run("Delete account", async () => {
+                    void run("settings.account.deleteFailed", async () => {
                       await deleteTokenAccount();
                       identityReload.reload();
                     })
@@ -449,7 +464,7 @@ function ActiveAccount({
                   type="button"
                   variant="destructive"
                 >
-                  Delete account
+                  {t("settings.account.deleteAccount")}
                 </Button>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -466,8 +481,9 @@ function ActiveAccount({
  * other device. Renders nothing on a relay without token sign-in.
  */
 export function DevicesSettingsCard() {
+  const t = useT();
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
-  const [busy, setBusy] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState<MessageKey | null>(null);
 
   React.useEffect(() => {
     const refresh = () =>
@@ -489,12 +505,13 @@ export function DevicesSettingsCard() {
     };
   }, []);
 
-  async function run(label: string, action: () => Promise<unknown>) {
+  /** `label` marks the running action and is the message if it fails. */
+  async function run(label: MessageKey, action: () => Promise<unknown>) {
     setBusy(label);
     try {
       await action();
     } catch (error) {
-      toast.error(errorText(error, `${label} failed.`));
+      toast.error(errorText(error, translate(label)));
     } finally {
       setBusy(null);
     }
@@ -505,15 +522,15 @@ export function DevicesSettingsCard() {
   return (
     <div data-testid="settings-devices">
       <SettingsOptionGroup
-        description="Computers and phones signed in to your account."
-        title="Devices"
+        description={t("settings.device.description")}
+        title={t("settings.device.title")}
       >
         {status.state === "active" ? (
           <SignedInDevices busy={busy} run={run} />
         ) : (
           <SettingsOptionRow>
             <p className="min-w-0 text-sm text-muted-foreground/70">
-              Sign in with Google under Account to see your devices.
+              {t("settings.device.signInHint")}
             </p>
           </SettingsOptionRow>
         )}
@@ -526,9 +543,10 @@ function SignedInDevices({
   busy,
   run,
 }: {
-  busy: string | null;
-  run: (label: string, action: () => Promise<unknown>) => Promise<void>;
+  busy: MessageKey | null;
+  run: (label: MessageKey, action: () => Promise<unknown>) => Promise<void>;
 }) {
+  const t = useT();
   const [devices, setDevices] = React.useState<AuthDevice[] | null>(null);
   const [confirming, setConfirming] = React.useState<"sign-out-others" | null>(
     null,
@@ -540,7 +558,7 @@ function SignedInDevices({
     try {
       setDevices(await listAuthDevices());
     } catch (error) {
-      toast.error(errorText(error, "Could not load devices."));
+      toast.error(errorText(error, translate("settings.device.loadFailed")));
     }
   }, []);
 
@@ -555,10 +573,12 @@ function SignedInDevices({
       <SettingsOptionRow className="items-start">
         <div className="min-w-0 flex-1">
           <p className="font-medium" id="account-devices-heading">
-            Devices
+            {t("settings.device.title")}
           </p>
           {devices === null ? (
-            <p className="text-sm text-muted-foreground/70">Loading…</p>
+            <p className="text-sm text-muted-foreground/70">
+              {t("common.loading")}
+            </p>
           ) : (
             <ul
               aria-labelledby="account-devices-heading"
@@ -571,10 +591,13 @@ function SignedInDevices({
                   key={device.id}
                   onChanged={loadDevices}
                   onSignOut={() =>
-                    void run("Sign out device", async () => {
-                      await revokeAuthDevice(device.id);
-                      await loadDevices();
-                    })
+                    void run(
+                      "settings.device.signOutDeviceFailed",
+                      async () => {
+                        await revokeAuthDevice(device.id);
+                        await loadDevices();
+                      },
+                    )
                   }
                   run={run}
                 />
@@ -585,7 +608,7 @@ function SignedInDevices({
       </SettingsOptionRow>
       <SettingsOptionRow>
         <p className="min-w-0 text-sm text-muted-foreground/70">
-          Sign out every other device. Your agents keep running.
+          {t("settings.device.signOutOthersHint")}
         </p>
         <Button
           data-testid="account-sign-out-others"
@@ -594,23 +617,23 @@ function SignedInDevices({
           type="button"
           variant="outline"
         >
-          Sign out other devices
+          {t("settings.device.signOutOthers")}
         </Button>
       </SettingsOptionRow>
       <SettingsConfirmDialog
-        confirmLabel="Sign out other devices"
-        description="Every other computer and phone using your account is signed out and will need to sign in with Google again. This computer stays signed in, and your agents keep running."
+        confirmLabel={t("settings.device.signOutOthers")}
+        description={t("settings.device.signOutOthersDescription")}
         onConfirm={() =>
-          void run("Sign out other devices", async () => {
+          void run("settings.device.signOutOthersFailed", async () => {
             await revokeOtherSessions();
             await loadDevices();
-            toast.success("Signed out of all other devices.");
+            toast.success(t("settings.device.signedOutOthers"));
           })
         }
         onOpenChange={closeConfirm}
         open={confirming === "sign-out-others"}
         testId="account-sign-out-others-dialog"
-        title="Sign out other devices?"
+        title={t("settings.device.signOutOthersTitle")}
       />
     </>
   );

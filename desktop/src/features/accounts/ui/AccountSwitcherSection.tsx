@@ -4,6 +4,7 @@ import type { WatchedUnread } from "@/features/accounts/inactiveAccountWatch/sto
 import { watchKey } from "@/features/accounts/inactiveAccountWatch/store";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import type { AccountSummary } from "@/shared/api/tokenAuth";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   accountEmailDetail,
@@ -36,9 +37,10 @@ export function AccountSwitcherSection({
   /** Watched accounts' unread state, keyed `origin|pubkey`. */
   unread?: ReadonlyMap<string, WatchedUnread>;
 }) {
+  const t = useT();
   return (
     <fieldset
-      aria-label="Accounts"
+      aria-label={t("accounts.switcher.label")}
       className="m-0 min-w-0 border-0 p-0"
       data-testid="account-switcher"
     >
@@ -46,7 +48,7 @@ export function AccountSwitcherSection({
         const label = accountLabel(account);
         const needsSignIn = account.state === "needs_login";
         const detail = needsSignIn
-          ? "Sign in again"
+          ? t("accounts.switcher.signInAgain")
           : accountEmailDetail(account);
         const watched = account.active
           ? undefined
@@ -91,7 +93,9 @@ export function AccountSwitcherSection({
             </span>
             {mentions > 0 ? (
               <span
-                aria-label={`${mentions} mention${mentions === 1 ? "" : "s"}`}
+                aria-label={t("accounts.switcher.mentions", {
+                  count: mentions,
+                })}
                 className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold text-primary-foreground"
                 data-testid={`account-row-mentions-${account.pubkey}`}
                 role="img"
@@ -100,7 +104,7 @@ export function AccountSwitcherSection({
               </span>
             ) : watched?.hasUnread ? (
               <span
-                aria-label="Unread"
+                aria-label={t("accounts.switcher.unread")}
                 className="h-2 w-2 shrink-0 rounded-full bg-primary"
                 data-testid={`account-row-unread-${account.pubkey}`}
                 role="img"
@@ -108,7 +112,7 @@ export function AccountSwitcherSection({
             ) : null}
             {account.active ? (
               <Check
-                aria-label="Current account"
+                aria-label={t("accounts.switcher.current")}
                 className="h-4 w-4 shrink-0 text-primary"
                 role="img"
               />
@@ -127,7 +131,7 @@ export function AccountSwitcherSection({
         <span className="flex h-6 w-6 shrink-0 items-center justify-center">
           <Plus aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
         </span>
-        <span className="flex-1">Add account</span>
+        <span className="flex-1">{t("accounts.switcher.add")}</span>
       </button>
     </fieldset>
   );

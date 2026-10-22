@@ -10,6 +10,7 @@
  * `AcpRuntimeCatalogEntry.subscriptionProvider`, never a runtime-id check.
  */
 import { getDefaultPersonaRuntime } from "@/features/agents/lib/resolvePersonaRuntime";
+import { t } from "@/shared/i18n";
 import {
   getProviderApiKeyEnvVar,
   getProviderApiKeyLabel,
@@ -210,26 +211,45 @@ export function defaultOptions(rows: readonly ProviderRow[]): DefaultOption[] {
         id: `${row.providerId}:subscription`,
         providerId: row.providerId,
         path: "subscription",
-        label: `${row.label} · ${row.providerId === "openai" ? "ChatGPT subscription" : "Subscription"}`,
+        label:
+          row.providerId === "openai"
+            ? t("settings.providers.optionChatgptSubscription", {
+                provider: row.label,
+              })
+            : t("settings.providers.optionSubscription", {
+                provider: row.label,
+              }),
         detail: available
           ? row.providerId === "openai" && runtime.supportsChatgptSubscription
-            ? `${runtime.label} with ChatGPT subscription`
-            : `${runtime.label} sign-in`
-          : `${runtime.label} sign-in — not installed`,
+            ? t("settings.providers.detailChatgptSubscription", {
+                runtime: runtime.label,
+              })
+            : t("settings.providers.detailSignIn", { runtime: runtime.label })
+          : t("settings.providers.detailSignInNotInstalled", {
+              runtime: runtime.label,
+            }),
         runtime,
         available,
         selected: row.defaultPath === "subscription",
       });
     }
-    const credential = row.apiKeyEnvVar ?? "workspace sign-in";
     options.push({
       id: `${row.providerId}:api-key`,
       providerId: row.providerId,
       path: "api-key",
-      label: `${row.label} · ${row.apiKeyEnvVar ? "API key" : "Workspace"}`,
+      label: row.apiKeyEnvVar
+        ? t("settings.providers.optionApiKey", { provider: row.label })
+        : t("settings.providers.optionWorkspace", { provider: row.label }),
       detail: row.apiKeyRuntime
-        ? `${row.apiKeyRuntime.label} with ${credential}`
-        : "Needs an installed runtime that takes a provider",
+        ? row.apiKeyEnvVar
+          ? t("settings.providers.detailWithKey", {
+              runtime: row.apiKeyRuntime.label,
+              envVar: row.apiKeyEnvVar,
+            })
+          : t("settings.providers.detailWithWorkspace", {
+              runtime: row.apiKeyRuntime.label,
+            })
+        : t("settings.providers.detailNeedsRuntime"),
       runtime: row.apiKeyRuntime,
       available: row.apiKeyRuntime !== null,
       selected: row.defaultPath === "api-key",
@@ -303,10 +323,10 @@ export function saveNoticeText(result: GlobalAgentConfigSaveResult): string {
   const failed = result.failed_restart_count;
   const failedSuffix =
     failed > 0
-      ? ` ${failed} agent${failed === 1 ? "" : "s"} couldn't restart — check the Agents page.`
+      ? ` ${t("settings.providers.restartFailed", { count: failed })}`
       : "";
   if (restarted > 0) {
-    return `Saved. Restarted ${restarted} agent${restarted === 1 ? "" : "s"}.${failedSuffix}`;
+    return `${t("settings.providers.savedRestarted", { count: restarted })}${failedSuffix}`;
   }
-  return failed > 0 ? `Saved.${failedSuffix}` : "Saved.";
+  return `${t("settings.providers.saved")}${failedSuffix}`;
 }

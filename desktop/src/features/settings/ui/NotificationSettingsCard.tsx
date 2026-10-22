@@ -14,6 +14,7 @@ import {
   type SoundName,
   type SoundSlot,
 } from "@/features/notifications/lib/sound";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Switch } from "@/shared/ui/switch";
@@ -48,6 +49,7 @@ export function NotificationSettingsCard({
   onSetNotifyWhileViewing: (enabled: boolean) => void;
   onSetSoundForSlot: (slot: SoundSlot, name: SoundName) => void;
 }) {
+  const t = useT();
   const permissionBlocked =
     notificationPermission === "denied" ||
     notificationPermission === "unsupported";
@@ -66,22 +68,22 @@ export function NotificationSettingsCard({
   return (
     <section className="min-w-0" data-testid="settings-notifications">
       <SettingsSectionHeader
-        title="Notifications"
-        description="Desktop alerts are on by default. Fine-tune what gets through below."
+        title={t("settings.notifications.title")}
+        description={t("settings.notifications.description")}
       />
 
       <span className="sr-only" data-testid="notifications-desktop-state">
         {notificationPermission === "unsupported"
-          ? "Unavailable"
+          ? t("settings.notifications.stateUnavailable")
           : notificationPermission === "denied"
-            ? "Blocked"
+            ? t("settings.notifications.stateBlocked")
             : notificationSettings.desktopEnabled
-              ? "On"
-              : "Off"}
+              ? t("settings.notifications.stateOn")
+              : t("settings.notifications.stateOff")}
       </span>
 
       <SettingsOptionGroupList>
-        <SettingsOptionGroup title="Desktop">
+        <SettingsOptionGroup title={t("settings.notifications.desktopGroup")}>
           <SettingsOptionRow>
             <div className="min-w-0">
               <label
@@ -89,16 +91,16 @@ export function NotificationSettingsCard({
                 htmlFor="desktop-alerts-switch"
               >
                 {isUpdatingDesktopNotifications
-                  ? "Requesting..."
-                  : "Desktop alerts"}
+                  ? t("settings.notifications.requesting")
+                  : t("settings.notifications.desktopAlerts")}
               </label>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
                 {notificationSettings.desktopEnabled
-                  ? "Native desktop alerts are enabled for the categories you have armed below."
-                  : "Request OS permission and surface new mentions or needs-action items outside the app."}
+                  ? t("settings.notifications.desktopAlertsOnHint")
+                  : t("settings.notifications.desktopAlertsOffHint")}
               </p>
             </div>
             <Switch
@@ -118,14 +120,13 @@ export function NotificationSettingsCard({
                 className="text-sm font-medium"
                 htmlFor="notify-while-viewing-switch"
               >
-                Notify while viewing
+                {t("settings.notifications.notifyWhileViewing")}
               </label>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Also alert for direct messages in the conversation you have
-                open.
+                {t("settings.notifications.notifyWhileViewingHint")}
               </p>
             </div>
             <Switch
@@ -145,20 +146,20 @@ export function NotificationSettingsCard({
 
         {notificationSettings.desktopEnabled ? (
           <>
-            <SettingsOptionGroup title="Sound">
+            <SettingsOptionGroup title={t("settings.notifications.soundGroup")}>
               <SettingsOptionRow>
                 <div className="min-w-0">
                   <label
                     className="text-sm font-medium"
                     htmlFor="notification-sound-switch"
                   >
-                    Sound
+                    {t("settings.notifications.sound")}
                   </label>
                   <p
                     className="text-sm font-normal text-muted-foreground/70"
                     data-settings-subcopy
                   >
-                    Alert with a sound for the events below.
+                    {t("settings.notifications.soundHint")}
                   </p>
                 </div>
                 <Switch
@@ -174,7 +175,9 @@ export function NotificationSettingsCard({
 
             {anyAlertsOn ? (
               <div className="space-y-4">
-                <SettingsOptionGroup title="Alert sounds">
+                <SettingsOptionGroup
+                  title={t("settings.notifications.alertSounds")}
+                >
                   {visibleSlots.map((slot) => {
                     const comingSoon = COMING_SOON_SLOTS.has(slot);
                     const alertsOn =
@@ -189,10 +192,10 @@ export function NotificationSettingsCard({
                       >
                         <div className="min-w-0">
                           <span className="flex items-center gap-2 text-sm font-medium">
-                            {SLOT_LABELS[slot]}
+                            {t(SLOT_LABELS[slot])}
                             {comingSoon ? (
                               <span className="rounded-full bg-muted/70 px-2 py-0.5 text-2xs font-normal uppercase tracking-wide text-muted-foreground">
-                                Coming soon
+                                {t("settings.notifications.comingSoon")}
                               </span>
                             ) : null}
                           </span>
@@ -200,7 +203,7 @@ export function NotificationSettingsCard({
                             className="text-sm font-normal text-muted-foreground/70"
                             data-settings-subcopy
                           >
-                            {SLOT_DESCRIPTIONS[slot]}
+                            {t(SLOT_DESCRIPTIONS[slot])}
                           </p>
                         </div>
                         <span className="flex items-center gap-3">
@@ -243,12 +246,12 @@ export function NotificationSettingsCard({
                     {showComingSoon ? (
                       <>
                         <ChevronUp className="h-4 w-4" />
-                        Show less
+                        {t("settings.notifications.showLess")}
                       </>
                     ) : (
                       <>
                         <ChevronDown className="h-4 w-4" />
-                        View all
+                        {t("settings.notifications.viewAll")}
                       </>
                     )}
                   </Button>
@@ -258,21 +261,20 @@ export function NotificationSettingsCard({
           </>
         ) : null}
 
-        <SettingsOptionGroup title="Badges">
+        <SettingsOptionGroup title={t("settings.notifications.badgesGroup")}>
           <SettingsOptionRow>
             <div className="min-w-0">
               <label
                 className="text-sm font-medium"
                 htmlFor="home-badge-switch"
               >
-                Home badge
+                {t("settings.notifications.homeBadge")}
               </label>
               <p
                 className="text-sm font-normal text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Show a Home badge for mentions and needs-action items in the
-                sidebar.
+                {t("settings.notifications.homeBadgeHint")}
               </p>
             </div>
             <Switch
@@ -290,8 +292,8 @@ export function NotificationSettingsCard({
       {permissionBlocked && (
         <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {notificationPermission === "unsupported"
-            ? "Desktop notifications are not supported in this environment."
-            : "Desktop notifications are blocked. Enable them in your system settings."}
+            ? t("settings.notifications.unsupportedNotice")
+            : t("settings.notifications.blockedNotice")}
         </p>
       )}
 

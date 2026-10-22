@@ -2,6 +2,7 @@ import * as React from "react";
 import { ChevronDown, Play, Trash2, Upload, Volume2 } from "lucide-react";
 
 import { invokeTauri } from "@/shared/api/tauri";
+import { t as translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import {
@@ -47,6 +48,7 @@ type TtsVoiceMutation = {
 };
 
 export function VoiceSettingsCard() {
+  const t = useT();
   const [settings, setSettings] = React.useState<TtsSettings | null>(null);
   const [registry, setRegistry] = React.useState<VoiceRegistryEntry[]>([]);
   const [busy, setBusy] = React.useState(false);
@@ -72,7 +74,7 @@ export function VoiceSettingsCard() {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Voice settings could not be loaded.",
+              : translate("settings.voice.loadFailed"),
           );
         }
       });
@@ -106,7 +108,7 @@ export function VoiceSettingsCard() {
       setError(
         saveError instanceof Error
           ? saveError.message
-          : "Voice settings could not be saved.",
+          : translate("settings.voice.saveFailed"),
       );
     } finally {
       setBusy(false);
@@ -125,7 +127,7 @@ export function VoiceSettingsCard() {
       setError(
         saveError instanceof Error
           ? saveError.message
-          : "Voice settings could not be saved.",
+          : translate("settings.voice.saveFailed"),
       );
     } finally {
       setBusy(false);
@@ -147,7 +149,7 @@ export function VoiceSettingsCard() {
       setError(
         importError instanceof Error
           ? importError.message
-          : "Voice could not be imported.",
+          : translate("settings.voice.importFailed"),
       );
     } finally {
       setBusy(false);
@@ -169,7 +171,7 @@ export function VoiceSettingsCard() {
       setError(
         deleteError instanceof Error
           ? deleteError.message
-          : "Voice could not be deleted.",
+          : translate("settings.voice.deleteFailed"),
       );
     } finally {
       setBusy(false);
@@ -187,25 +189,25 @@ export function VoiceSettingsCard() {
   return (
     <section className="min-w-0" data-testid="settings-voice">
       <SettingsSectionHeader
-        title="Voice"
-        description="Choose whether Kuzz reads new agent responses aloud during an active huddle."
+        title={t("settings.voice.title")}
+        description={t("settings.voice.description")}
       />
 
       <SettingsOptionGroupList>
-        <SettingsOptionGroup title="Playback">
+        <SettingsOptionGroup title={t("settings.voice.playbackGroup")}>
           <SettingsOptionRow>
             <div className="min-w-0">
               <label
                 className="text-sm font-medium"
                 htmlFor="agent-text-to-speech-switch"
               >
-                Agent text to speech
+                {t("settings.voice.agentTts")}
               </label>
               <p
                 className="text-sm text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Read new agent messages aloud in the order they arrive.
+                {t("settings.voice.agentTtsHint")}
               </p>
             </div>
             <Switch
@@ -228,15 +230,17 @@ export function VoiceSettingsCard() {
           )}
           data-testid="pocket-voice-controls"
         >
-          <SettingsOptionGroup title="Voice">
+          <SettingsOptionGroup title={t("settings.voice.voiceGroup")}>
             <SettingsOptionRow>
               <div className="min-w-0">
-                <p className="text-sm font-medium">Pocket TTS voice</p>
+                <p className="text-sm font-medium">
+                  {t("settings.voice.pocketVoice")}
+                </p>
                 <p
                   className="text-sm text-muted-foreground/70"
                   data-settings-subcopy
                 >
-                  Voice files stay private on this device.
+                  {t("settings.voice.pocketVoiceHint")}
                 </p>
               </div>
 
@@ -244,7 +248,9 @@ export function VoiceSettingsCard() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      aria-label={`Pocket TTS voice: ${selectedVoice?.displayName ?? "Mary"}`}
+                      aria-label={t("settings.voice.selectorLabel", {
+                        name: selectedVoice?.displayName ?? "Mary",
+                      })}
                       className="min-w-32 justify-between"
                       data-testid="pocket-voice-selector"
                       disabled={controlsDisabled}
@@ -278,7 +284,9 @@ export function VoiceSettingsCard() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Button
-                  aria-label={`Preview ${selectedVoice?.displayName ?? "Mary"}`}
+                  aria-label={t("settings.voice.previewLabel", {
+                    name: selectedVoice?.displayName ?? "Mary",
+                  })}
                   data-testid="pocket-voice-preview"
                   disabled={controlsDisabled || previewing || !selectedVoice}
                   onClick={() => {
@@ -292,7 +300,7 @@ export function VoiceSettingsCard() {
                         setError(
                           previewError instanceof Error
                             ? previewError.message
-                            : "Voice preview could not be played.",
+                            : t("settings.voice.previewFailed"),
                         );
                       })
                       .finally(() => setPreviewing(false));
@@ -305,7 +313,7 @@ export function VoiceSettingsCard() {
                   ) : (
                     <Play className="h-4 w-4" />
                   )}
-                  Preview
+                  {t("settings.voice.preview")}
                 </Button>
                 <Button
                   data-testid="pocket-voice-import"
@@ -315,11 +323,13 @@ export function VoiceSettingsCard() {
                   variant="outline"
                 >
                   <Upload className="h-4 w-4" />
-                  Add voice
+                  {t("settings.voice.addVoice")}
                 </Button>
                 {selectedVoice?.key.startsWith("pocket:imported:") && (
                   <Button
-                    aria-label={`Delete ${selectedVoice.displayName}`}
+                    aria-label={t("settings.voice.deleteLabel", {
+                      name: selectedVoice.displayName,
+                    })}
                     data-testid="pocket-voice-delete"
                     disabled={controlsDisabled}
                     onClick={() => setDeleteCandidate(selectedVoice)}
@@ -351,17 +361,23 @@ export function VoiceSettingsCard() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete imported voice?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("settings.voice.deleteDialogTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {deleteCandidate
-                ? `${deleteCandidate.displayName} and its local audio file will be removed.`
-                : "This imported voice and its local audio file will be removed."}
+                ? t("settings.voice.deleteDialogBody", {
+                    name: deleteCandidate.displayName,
+                  })
+                : t("settings.voice.deleteDialogBodyGeneric")}
               {selectedVoice?.key === deleteCandidate?.key &&
-                " Mary will be selected instead."}
+                ` ${t("settings.voice.deleteDialogFallback")}`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="confirm-pocket-voice-delete"
@@ -373,7 +389,7 @@ export function VoiceSettingsCard() {
                 }
               }}
             >
-              Delete voice
+              {t("settings.voice.deleteVoice")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -10,6 +10,7 @@ import {
   selectContextHistoryBudget,
   selectContextHistoryMode,
 } from "@/features/settings/lib/contextHistorySetting";
+import { useT } from "@/shared/i18n";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
 
@@ -20,6 +21,7 @@ import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
  * recent messages. Running agents apply a change to their next new session.
  */
 export function ContextHistoryExperimentGroup() {
+  const t = useT();
   const query = useContextHistoryQuery();
   const setting = query.data ?? DEFAULT_CONTEXT_HISTORY_SETTING;
   const save = useSetContextHistoryMutation();
@@ -29,34 +31,41 @@ export function ContextHistoryExperimentGroup() {
   return (
     <SettingsOptionGroup
       data-testid="settings-context-history"
-      description="What an agent reads when it starts a new session for a group or thread, for example when its previous session could not be resumed. Resumed sessions and group hosts keep the recent messages. Applies to the next new session, without a restart."
-      title="New session history"
+      description={t("settings.contextHistory.description")}
+      title={t("settings.contextHistory.title")}
     >
       <SettingsOptionRow>
         <div className="min-w-0">
-          <p className="font-medium text-foreground">Reads</p>
+          <p className="font-medium text-foreground">
+            {t("settings.contextHistory.reads")}
+          </p>
           <p
             className="mt-0.5 text-sm text-muted-foreground/70"
             data-settings-subcopy
           >
-            Recent 12 reads only the latest messages
+            {t("settings.contextHistory.readsHint")}
           </p>
         </div>
         <SegmentedControl
           disabled={locked}
-          legend="New session history"
+          legend={t("settings.contextHistory.title")}
           onValueChange={(mode) =>
             save.mutate(selectContextHistoryMode(setting, mode))
           }
           optionTestIdPrefix="context-history-mode"
-          options={CONTEXT_HISTORY_MODE_OPTIONS}
+          options={CONTEXT_HISTORY_MODE_OPTIONS.map((option) => ({
+            value: option.value,
+            label: t(option.label),
+          }))}
           testId="context-history-mode"
           value={setting.mode}
         />
       </SettingsOptionRow>
       <SettingsOptionRow>
         <div className="min-w-0">
-          <p className="font-medium text-foreground">Size budget</p>
+          <p className="font-medium text-foreground">
+            {t("settings.contextHistory.sizeBudget")}
+          </p>
           <p
             className="mt-0.5 text-sm text-muted-foreground/70"
             data-settings-subcopy
@@ -66,12 +75,15 @@ export function ContextHistoryExperimentGroup() {
         </div>
         <SegmentedControl
           disabled={locked}
-          legend="History size budget"
+          legend={t("settings.contextHistory.sizeBudgetLegend")}
           onValueChange={(budget) =>
             save.mutate(selectContextHistoryBudget(budget))
           }
           optionTestIdPrefix="context-history-budget"
-          options={CONTEXT_HISTORY_BUDGET_OPTIONS}
+          options={CONTEXT_HISTORY_BUDGET_OPTIONS.map((option) => ({
+            value: option.value,
+            label: t(option.label),
+          }))}
           testId="context-history-budget"
           value={setting.budget}
         />
@@ -80,7 +92,7 @@ export function ContextHistoryExperimentGroup() {
         <p className="px-4 py-3 text-sm text-destructive" role="alert">
           {save.error instanceof Error
             ? save.error.message
-            : "Couldn't save the new session history setting."}
+            : t("settings.contextHistory.saveFailed")}
         </p>
       ) : null}
     </SettingsOptionGroup>

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ChevronRight, Maximize2, Minimize2, Plus, X } from "lucide-react";
 
+import { useT } from "@/shared/i18n";
 import { useTheme } from "@/shared/theme/ThemeProvider";
 import { cn } from "@/shared/lib/cn";
 import { isMacPlatform } from "@/shared/lib/platform";
@@ -101,6 +102,7 @@ export function TerminalSubstrate({
   onCloseSession,
   onNewSession,
 }: TerminalSubstrateProps) {
+  const t = useT();
   const { terminalPalette } = useTheme();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const bannerCanvasRef = React.useRef<HTMLCanvasElement>(null);
@@ -505,7 +507,7 @@ export function TerminalSubstrate({
     >
       {mode === "docked" ? (
         <hr
-          aria-label="Resize Kuzz Term"
+          aria-label={t("terminal.resize")}
           aria-orientation="horizontal"
           aria-valuemax={Math.round(window.innerHeight * 0.7)}
           aria-valuemin={180}
@@ -612,7 +614,7 @@ export function TerminalSubstrate({
               role="presentation"
             >
               <button
-                aria-label={`Close ${session.title}`}
+                aria-label={t("terminal.closeTab", { title: session.title })}
                 className="kuzz-terminal-close"
                 disabled={session.closing}
                 onClick={() => runTabAction(() => onCloseSession(session.id))}
@@ -621,7 +623,16 @@ export function TerminalSubstrate({
                 <X />
               </button>
               <button
-                aria-label={`Terminal ${index + 1}${session.closing ? ", closing" : session.title !== "SHELL" ? `, ${session.title}` : ""}`}
+                aria-label={
+                  session.closing
+                    ? t("terminal.tabClosing", { number: index + 1 })
+                    : session.title !== "SHELL"
+                      ? t("terminal.tabWithTitle", {
+                          number: index + 1,
+                          title: session.title,
+                        })
+                      : t("terminal.tab", { number: index + 1 })
+                }
                 aria-selected={session.active}
                 className="kuzz-terminal-tab-select"
                 disabled={session.closing}
@@ -640,13 +651,15 @@ export function TerminalSubstrate({
                   )}
                 </span>
                 {session.closing ? (
-                  <span className="kuzz-terminal-tab-title">Closing…</span>
+                  <span className="kuzz-terminal-tab-title">
+                    {t("terminal.closing")}
+                  </span>
                 ) : null}
               </button>
             </div>
           ))}
           <button
-            aria-label="New Kuzz Term tab"
+            aria-label={t("terminal.newTab")}
             className="kuzz-terminal-new-tab"
             onClick={() => runTabAction(onNewSession)}
             type="button"
@@ -657,7 +670,9 @@ export function TerminalSubstrate({
         <div className="kuzz-terminal-readout">
           <button
             aria-label={
-              mode === "maximized" ? "Restore Kuzz Term" : "Maximize Kuzz Term"
+              mode === "maximized"
+                ? t("terminal.restore")
+                : t("terminal.maximize")
             }
             className="kuzz-terminal-window-action"
             onClick={() =>
@@ -668,7 +683,7 @@ export function TerminalSubstrate({
             {mode === "maximized" ? <Minimize2 /> : <Maximize2 />}
           </button>
           <button
-            aria-label="Hide Kuzz Term"
+            aria-label={t("terminal.hide")}
             className="kuzz-terminal-window-action"
             onClick={onHide}
             type="button"
@@ -759,7 +774,7 @@ export function TerminalSubstrate({
           <canvas className="kuzz-terminal-welcome" ref={bannerCanvasRef} />
         ) : null}
         <textarea
-          aria-label="Terminal input"
+          aria-label={t("terminal.input")}
           autoCapitalize="off"
           autoComplete="off"
           className="kuzz-terminal-input"
@@ -806,7 +821,9 @@ export function TerminalSubstrate({
         />
       </div>
       <div aria-live="polite" className="sr-only">
-        {owner === "terminal" ? "Kuzz Term mode" : "Kuzz mode"}
+        {owner === "terminal"
+          ? t("terminal.ownerTerminal")
+          : t("terminal.ownerApp")}
       </div>
     </section>
   );

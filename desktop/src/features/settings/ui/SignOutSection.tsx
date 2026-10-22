@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { NsecMaskedDisplay } from "@/features/onboarding/ui/NsecMaskedDisplay";
 import { getNsec, signOut } from "@/shared/api/tauriIdentity";
+import { t as translate, useT } from "@/shared/i18n";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -50,6 +51,7 @@ export function SignOutSection({
 }: {
   showKeyBackupGate?: boolean;
 } = {}) {
+  const t = useT();
   const [isOpen, setIsOpen] = React.useState(false);
   const [isPending, setIsPending] = React.useState(false);
 
@@ -102,7 +104,7 @@ export function SignOutSection({
         setNsecError(
           err instanceof Error
             ? err.message
-            : "Failed to retrieve private key.",
+            : translate("settings.signOut.keyLoadFailed"),
         );
     } finally {
       if (!fetchCancelledRef.current) setIsNsecLoading(false);
@@ -130,7 +132,9 @@ export function SignOutSection({
         setIsOpen(false);
         resetDialogState();
         toast.error(
-          err instanceof Error ? err.message : "Could not delete local data.",
+          err instanceof Error
+            ? err.message
+            : translate("settings.signOut.deleteFailed"),
         );
       });
   }
@@ -139,9 +143,9 @@ export function SignOutSection({
     <div className="mt-12 pb-6" data-testid="settings-signout">
       <details>
         <summary className="cursor-pointer text-sm text-muted-foreground">
-          Local data deletion
+          {t("settings.signOut.deletionSummary")}
         </summary>
-        <SettingsOptionGroup title="Delete local data">
+        <SettingsOptionGroup title={t("settings.signOut.title")}>
           <SettingsOptionRow>
             <div className="min-w-0">
               <p
@@ -149,8 +153,8 @@ export function SignOutSection({
                 data-settings-subcopy
               >
                 {showKeyBackupGate
-                  ? "Removes your identity key and all local app data from this device. This is not regular sign-out or account deletion. Create and test a password-protected key backup above — this cannot be undone."
-                  : "Removes all Kuzz data from this computer. Your account is not deleted — sign in with Google again to get back in."}
+                  ? t("settings.signOut.hintKeyBackup")
+                  : t("settings.signOut.hint")}
               </p>
             </div>
             <Button
@@ -162,11 +166,13 @@ export function SignOutSection({
             >
               {isPending ? (
                 <Spinner
-                  aria-label="Deleting local data"
+                  aria-label={t("settings.signOut.deleting")}
                   className="h-4 w-4 border-2"
                 />
               ) : null}
-              {isPending ? "Deleting local data…" : "Delete my data"}
+              {isPending
+                ? t("settings.signOut.deletingProgress")
+                : t("settings.signOut.deleteMyData")}
             </Button>
           </SettingsOptionRow>
         </SettingsOptionGroup>
@@ -182,21 +188,25 @@ export function SignOutSection({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete all local data?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("settings.signOut.dialogTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {showKeyBackupGate
-                ? "This will delete your identity key, all agent settings, and cached data from this device, then relaunch Kuzz into first-run setup. This cannot be undone."
-                : "This deletes all agent settings and saved data from this computer, then restarts Kuzz. Your account is not deleted — sign in with Google again to get back in."}
+                ? t("settings.signOut.dialogDescriptionKeyBackup")
+                : t("settings.signOut.dialogDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           {showKeyBackupGate ? (
             <div className="space-y-3">
               <p className="text-sm font-medium">
-                1. Confirm you can restore your identity
+                {t("settings.signOut.confirmRestoreStep")}
               </p>
               {isNsecLoading ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
+                <p className="text-sm text-muted-foreground">
+                  {t("common.loading")}
+                </p>
               ) : nsecError ? (
                 <p
                   className="text-sm text-destructive"
@@ -222,10 +232,7 @@ export function SignOutSection({
                     setHasConfirmedBackup(checked === true)
                   }
                 />
-                <span>
-                  I have tested a key backup or saved this private key somewhere
-                  safe.
-                </span>
+                <span>{t("settings.signOut.confirmBackup")}</span>
               </label>
             </div>
           ) : null}
@@ -235,9 +242,17 @@ export function SignOutSection({
               className="text-sm font-medium"
               htmlFor="signout-confirm-phrase"
             >
-              {showKeyBackupGate ? "2. " : ""}Type{" "}
-              <span className="font-semibold">"{SIGNOUT_CONFIRM_PHRASE}"</span>{" "}
-              to confirm
+              {t(
+                showKeyBackupGate
+                  ? "settings.signOut.typeToConfirmStep"
+                  : "settings.signOut.typeToConfirm",
+                {
+                  phrase: SIGNOUT_CONFIRM_PHRASE,
+                  b: (chunks) => (
+                    <span className="font-semibold">{chunks}</span>
+                  ),
+                },
+              )}
             </label>
             <Input
               autoComplete="off"
@@ -252,7 +267,9 @@ export function SignOutSection({
           </div>
 
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isPending}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             {/* A plain Button, not AlertDialogAction: Radix's Action closes
                 the dialog on click, which would drop the pending state while
                 the wipe + restart is still in flight. */}
@@ -265,11 +282,13 @@ export function SignOutSection({
             >
               {isPending ? (
                 <Spinner
-                  aria-label="Deleting local data"
+                  aria-label={t("settings.signOut.deleting")}
                   className="h-4 w-4 border-2"
                 />
               ) : null}
-              {isPending ? "Deleting local data…" : "Delete my data"}
+              {isPending
+                ? t("settings.signOut.deletingProgress")
+                : t("settings.signOut.deleteMyData")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -19,6 +19,7 @@ import {
   setDiscoverable,
   setKuzzId,
 } from "@/shared/api/people";
+import { useT } from "@/shared/i18n";
 import { CONTACT_EMAIL, CONTACT_MAILTO } from "@/shared/lib/kuzzLinks";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -40,6 +41,7 @@ function errorText(error: unknown, fallback: string): string {
  * the people I blocked, and how to reach us.
  */
 export function PeoplePrivacySettingsCard() {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const pubkey = identityQuery.data?.pubkey;
   return (
@@ -47,22 +49,30 @@ export function PeoplePrivacySettingsCard() {
       <FindingYouGroup pubkey={pubkey} />
       <GroupAddPolicySetting />
       <BlockedUsersGroup pubkey={pubkey} />
-      <SettingsOptionGroup title="Help">
+      <SettingsOptionGroup title={t("settings.peoplePrivacy.help")}>
         <SettingsOptionRow>
           <div className="min-w-0">
-            <p className="text-sm font-medium">Contact us</p>
+            <p className="text-sm font-medium">
+              {t("settings.peoplePrivacy.contactUs")}
+            </p>
             <p
               className="text-sm font-normal text-muted-foreground/70"
               data-settings-subcopy
             >
-              Questions, problems or reports: {CONTACT_EMAIL}
+              {t("settings.peoplePrivacy.contactHint", {
+                email: CONTACT_EMAIL,
+              })}
             </p>
           </div>
           <Button
             data-testid="settings-contact-us"
             onClick={() =>
               void openUrl(CONTACT_MAILTO).catch(() =>
-                toast.error(`Write to us at ${CONTACT_EMAIL}`),
+                toast.error(
+                  t("settings.peoplePrivacy.writeToUs", {
+                    email: CONTACT_EMAIL,
+                  }),
+                ),
               )
             }
             size="sm"
@@ -70,7 +80,7 @@ export function PeoplePrivacySettingsCard() {
             variant="outline"
           >
             <Mail className="h-4 w-4" />
-            Email us
+            {t("settings.peoplePrivacy.emailUs")}
           </Button>
         </SettingsOptionRow>
       </SettingsOptionGroup>
@@ -79,6 +89,7 @@ export function PeoplePrivacySettingsCard() {
 }
 
 function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const queryKey = peopleSettingsQueryKey(pubkey ?? "");
   const settingsQuery = useQuery<PeopleSettings>({
@@ -102,10 +113,16 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
         current ? { ...current, kuzzId: saved } : current,
       );
       setDraft(saved ?? "");
-      toast.success(saved ? "Kuzz ID saved" : "Kuzz ID removed");
+      toast.success(
+        saved
+          ? t("settings.peoplePrivacy.kuzzIdSaved")
+          : t("settings.peoplePrivacy.kuzzIdRemoved"),
+      );
     },
     onError: (error) =>
-      setIdError(errorText(error, "Couldn't save your Kuzz ID")),
+      setIdError(
+        errorText(error, t("settings.peoplePrivacy.kuzzIdSaveFailed")),
+      ),
   });
   const saveDiscoverable = useMutation({
     mutationFn: (next: boolean) => setDiscoverable(next),
@@ -118,7 +135,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
     },
     onError: (error, _next, context) => {
       queryClient.setQueryData(queryKey, context?.previous);
-      toast.error(errorText(error, "Couldn't change this setting"));
+      toast.error(errorText(error, t("settings.peoplePrivacy.changeFailed")));
     },
   });
 
@@ -136,13 +153,13 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
 
   return (
     <SettingsOptionGroup
-      description="Friends can add you by your Kuzz ID or email address."
-      title="Finding you"
+      description={t("settings.peoplePrivacy.findingYouDescription")}
+      title={t("settings.peoplePrivacy.findingYouTitle")}
     >
       <SettingsOptionRow>
         <form className="w-full space-y-2" onSubmit={submit}>
           <label className="text-sm font-medium" htmlFor="settings-kuzz-id">
-            Kuzz ID
+            {t("settings.peoplePrivacy.kuzzId")}
           </label>
           <div className="flex items-center gap-2">
             <span aria-hidden className="text-sm text-muted-foreground">
@@ -162,7 +179,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
                 setDraft(event.target.value);
                 setIdError(null);
               }}
-              placeholder="your_id"
+              placeholder={t("settings.peoplePrivacy.kuzzIdPlaceholder")}
               spellCheck={false}
               value={draft}
             />
@@ -176,7 +193,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
               size="sm"
               type="submit"
             >
-              Save
+              {t("common.save")}
             </Button>
           </div>
           <p
@@ -192,10 +209,10 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
           >
             {idError ??
               (notSignedIn
-                ? "Sign in with Google to set your Kuzz ID."
+                ? t("settings.peoplePrivacy.signInForKuzzId")
                 : loadFailed
-                  ? "Couldn't load your Kuzz ID."
-                  : "3 to 32 lowercase letters, numbers or _.")}
+                  ? t("settings.peoplePrivacy.kuzzIdLoadFailed")
+                  : t("settings.peoplePrivacy.kuzzIdRules"))}
           </p>
           {loadFailed ? (
             <Button
@@ -206,7 +223,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
               type="button"
               variant="outline"
             >
-              Try again
+              {t("settings.peoplePrivacy.tryAgain")}
             </Button>
           ) : null}
         </form>
@@ -217,13 +234,13 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
             className="text-sm font-medium"
             htmlFor="settings-discoverable"
           >
-            Let people find me by ID or email
+            {t("settings.peoplePrivacy.discoverable")}
           </label>
           <p
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            When this is off, only people in your groups can find you.
+            {t("settings.peoplePrivacy.discoverableHint")}
           </p>
         </div>
         <Switch
@@ -239,6 +256,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
 }
 
 function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
+  const t = useT();
   const blockedQuery = useBlockedPeopleQuery(pubkey);
   const unblock = useUnblockPersonMutation(pubkey);
   const pubkeys = React.useMemo(
@@ -253,17 +271,17 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
 
   return (
     <SettingsOptionGroup
-      description="Blocked people can't reach you, and their messages in shared groups are hidden."
-      title="Blocked users"
+      description={t("settings.peoplePrivacy.blockedDescription")}
+      title={t("settings.peoplePrivacy.blockedTitle")}
     >
       {blockedQuery.isLoading ? (
         <SettingsOptionRow>
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
         </SettingsOptionRow>
       ) : blockedQuery.isError ? (
         <SettingsOptionRow>
           <p className="text-sm text-muted-foreground" role="status">
-            Couldn't load the people you blocked.
+            {t("settings.peoplePrivacy.blockedLoadFailed")}
           </p>
           <Button
             onClick={() => void blockedQuery.refetch()}
@@ -271,13 +289,13 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
             type="button"
             variant="outline"
           >
-            Try again
+            {t("settings.peoplePrivacy.tryAgain")}
           </Button>
         </SettingsOptionRow>
       ) : pubkeys.length === 0 ? (
         <SettingsOptionRow data-testid="settings-blocked-empty">
           <p className="text-sm text-muted-foreground">
-            You haven't blocked anyone.
+            {t("settings.peoplePrivacy.blockedEmpty")}
           </p>
         </SettingsOptionRow>
       ) : (
@@ -286,7 +304,7 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
           const name =
             profile?.displayName?.trim() ||
             profile?.nip05Handle?.trim() ||
-            "Unknown";
+            t("settings.peoplePrivacy.unknownPerson");
           return (
             <SettingsOptionRow
               data-testid={`settings-blocked-${key}`}
@@ -304,21 +322,29 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
                 <span className="truncate text-sm font-medium">{name}</span>
               </div>
               <Button
-                aria-label={`Unblock ${name}`}
+                aria-label={t("settings.peoplePrivacy.unblockLabel", { name })}
                 data-testid={`settings-unblock-${key}`}
                 disabled={unblock.isPending && unblock.variables === key}
                 onClick={() =>
                   unblock.mutate(key, {
-                    onSuccess: () => toast.success(`${name} is unblocked`),
+                    onSuccess: () =>
+                      toast.success(
+                        t("settings.peoplePrivacy.unblocked", { name }),
+                      ),
                     onError: (error) =>
-                      toast.error(errorText(error, "Couldn't unblock")),
+                      toast.error(
+                        errorText(
+                          error,
+                          t("settings.peoplePrivacy.unblockFailed"),
+                        ),
+                      ),
                   })
                 }
                 size="sm"
                 type="button"
                 variant="outline"
               >
-                Unblock
+                {t("settings.peoplePrivacy.unblock")}
               </Button>
             </SettingsOptionRow>
           );

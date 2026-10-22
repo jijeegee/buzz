@@ -3,24 +3,41 @@ import type {
   ContextHistoryMode,
   ContextHistorySetting,
 } from "@/shared/api/tauriContextHistory";
+import { type MessageKey, t } from "@/shared/i18n";
 
+/** Labels are message keys; translate where shown. */
 export const CONTEXT_HISTORY_MODE_OPTIONS: readonly {
   value: ContextHistoryMode;
-  label: string;
+  label: MessageKey;
 }[] = [
-  { value: "recent", label: "Recent 12" },
-  { value: "budget", label: "Full history" },
+  { value: "recent", label: "settings.contextHistory.modeRecent" },
+  { value: "budget", label: "settings.contextHistory.modeFull" },
 ];
 
-/** Display order and copy for each budget, matching the harness sizes. */
+/**
+ * Display order and copy for each budget, matching the harness sizes.
+ * Labels and descriptions are message keys; translate where shown.
+ */
 export const CONTEXT_HISTORY_BUDGET_OPTIONS: readonly {
   value: ContextHistoryBudget;
-  label: string;
-  description: string;
+  label: MessageKey;
+  description: MessageKey;
 }[] = [
-  { value: "small", label: "Small", description: "About 8k tokens" },
-  { value: "medium", label: "Medium", description: "About 20k tokens" },
-  { value: "large", label: "Large", description: "About 50k tokens" },
+  {
+    value: "small",
+    label: "settings.contextHistory.budgetSmall",
+    description: "settings.contextHistory.budgetSmallDescription",
+  },
+  {
+    value: "medium",
+    label: "settings.contextHistory.budgetMedium",
+    description: "settings.contextHistory.budgetMediumDescription",
+  },
+  {
+    value: "large",
+    label: "settings.contextHistory.budgetLarge",
+    description: "settings.contextHistory.budgetLargeDescription",
+  },
 ];
 
 /** Mirrors Rust's default when no setting has been saved. */
@@ -54,10 +71,12 @@ export function contextHistoryBudgetDescription(
   setting: ContextHistorySetting,
 ): string {
   if (setting.mode === "recent") {
-    return "Pick a size to read as much history as fits";
+    return t("settings.contextHistory.budgetHintRecent");
   }
   const option = CONTEXT_HISTORY_BUDGET_OPTIONS.find(
     (item) => item.value === setting.budget,
   );
-  return `${option?.description ?? "Within the budget"}, oldest messages dropped first`;
+  return t(
+    option?.description ?? "settings.contextHistory.budgetFallbackDescription",
+  );
 }
