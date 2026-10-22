@@ -4,20 +4,36 @@
 //! [`kuzz_auth::device_proof`]).
 //!
 //! - [`DeviceKey::open_or_create`]: Windows TPM (CNG Microsoft Platform
-//!   Crypto Provider, key `Kuzz-Device-<scope>`, non-exportable, per Windows
-//!   user); without a usable TPM, or off Windows, a software key in the OS
-//!   keyring.
+//!   Crypto Provider, key `Kuzz-Device-<scope>`, ECDSA P-256,
+//!   non-exportable, per Windows user), else a software key in the caller's
+//!   [`SoftwareKeyStore`].
 //! - [`DeviceKey::open_or_create_file`]: a software key in a file the caller
 //!   names (headless CLI), mode 0600 on Unix.
 //! - [`DeviceKey::add_event_tag`]: the `["device", <pubkey>, <sig>]` tag of
 //!   NIP-42 / NIP-98 / Blossom auth events, added before the nostr signature.
 //! - [`DeviceKey::header_proof`]: the `X-Kuzz-Device-Proof` header value.
 //!
-//! An existing key is never replaced: a missing key is created, any other
-//! failure to open one is an error.
+//! # When the key is software
 //!
-//! Signing with a TPM key blocks for a TPM round trip; call it from
-//! `spawn_blocking` in async code.
+//! - Off Windows (until Secure Enclave / Keystore backends exist).
+//! - On Windows only when the TPM is truly unavailable: the Platform Crypto
+//!   Provider does not open, there is no TPM, it is disabled, or it cannot
+//!   make P-256 keys (the exact status codes are listed on
+//!   [`DeviceKey::open_or_create`]). Any other TPM failure (busy, not ready,
+//!   access denied, lockout) is an error for the caller to retry later; it
+//!   never quietly produces a software key.
+//! - When the scope already has a software key in the store (made earlier
+//!   on a machine without a usable TPM): an existing key is never replaced.
+//! - [`DeviceKey::open_or_create_file`], always.
+//!
+//! # Cost
+//!
+//! TPM calls block for a TPM round trip: about 7 ms to open, about 13 ms
+//! (median) to sign, about 100 ms to create, measured on a Windows 11 PC
+//! (B0). Call [`DeviceKey::sign`] and the proof helpers from
+//! `spawn_blocking` in async code. The TPM serialises signatures across the
+//! whole machine, about 79 signatures per second in total, however many
+//! processes or handles sign; a software signature costs about 1-2 ms.
 
 #![cfg_attr(not(windows), forbid(unsafe_code))]
 #![cfg_attr(windows, deny(unsafe_code))]
@@ -38,6 +54,7 @@ use kuzz_auth::device_proof::{event_proof_message, proof_message, ProofScope, DE
 pub use kuzz_auth::device_proof::{DevicePubkey, DEVICE_PUBKEY_LEN};
 use nostr::{Tag, UnsignedEvent};
 use sha2::Digest as _;
+pub use software::{FileStore, SoftwareKeyStore, SoftwareSecret, StoreOutcome};
 
 /// Why a device key could not be opened, created or used.
 #[derive(Debug, thiserror::Error)]
@@ -54,9 +71,9 @@ pub enum DeviceKeyError {
         /// Its status code (HRESULT bits).
         code: u32,
     },
-    /// The OS keyring failed.
-    #[error("keyring: {0}")]
-    Keyring(String),
+    /// A [`SoftwareKeyStore`] backend (e.g. an app's OS keyring) failed.
+    #[error("device key store: {0}")]
+    Store(String),
     /// Reading or writing the key file failed.
     #[error("device key file: {0}")]
     Io(#[from] std::io::Error),
@@ -79,7 +96,7 @@ pub type Result<T> = std::result::Result<T, DeviceKeyError>;
 pub enum DeviceKeyKind {
     /// Non-exportable key in the TPM.
     Tpm,
-    /// Software key (OS keyring or file).
+    /// Software key (a [`SoftwareKeyStore`] or a file).
     Software,
 }
 
@@ -141,10 +158,21 @@ impl DeviceKey {
     /// Open the device key of `scope` (ASCII letters, digits, `-`, `_`,
     /// `.`; at most 64 bytes), creating it when there is none.
     ///
-    /// On Windows an existing TPM key wins, then an existing keyring key
-    /// (made earlier without a TPM); otherwise a new TPM key is created, or
-    /// a keyring key when the TPM cannot make one. Elsewhere the keyring key.
-    pub fn open_or_create(scope: &str) -> Result<Self> {
+    /// On Windows, in order: an existing TPM key; an existing key of `scope`
+    /// in `store`; a new TPM key. Only when the TPM is unavailable does a
+    /// software key from `store` (loaded, or created there) take its place.
+    /// Unavailable means `NCryptOpenStorageProvider`,
+    /// `NCryptCreatePersistedKey` or `NCryptFinalizeKey` returned one of:
+    /// `NTE_PROV_DLL_NOT_FOUND` (0x8009001E), `NTE_PROVIDER_DLL_FAIL`
+    /// (0x8009001D), `NTE_BAD_PROVIDER` (0x80090013), `NTE_DEVICE_NOT_FOUND`
+    /// (0x80090035), `TBS_E_TPM_NOT_FOUND` (0x8028400F),
+    /// `TBS_E_SERVICE_DISABLED` (0x80284010), `TPM_E_DISABLED` (0x80280007),
+    /// `TPM_E_DEACTIVATED` (0x80280006), `NTE_NOT_SUPPORTED` (0x80090029),
+    /// `NTE_BAD_ALGID` (0x80090008). Every other failure, including any
+    /// failure to open an existing TPM key, is [`DeviceKeyError::Tpm`].
+    ///
+    /// Elsewhere: the key of `scope` in `store`, created when absent.
+    pub fn open_or_create(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Self> {
         validate_scope(scope)?;
         #[cfg(windows)]
         {
@@ -152,30 +180,34 @@ impl DeviceKey {
             match tpm::open(&name) {
                 Ok(Some(key)) => return Self::from_tpm(key),
                 Ok(None) => {}
-                Err(tpm::OpenError::NoProvider) => {
-                    return Self::software(software::keyring_open_or_create(scope)?)
+                Err(tpm::TpmError::Unavailable(_)) => {
+                    return Self::software(software::open_or_create(store, scope)?)
                 }
-                Err(tpm::OpenError::Failed(error)) => return Err(error),
+                Err(tpm::TpmError::Failed(error)) => return Err(error),
             }
-            if let Some(key) = software::keyring_open(scope)? {
-                return Self::software(key);
+            if let Some(secret) = store.load(scope)? {
+                return Self::software(software::signing_key(&secret)?);
             }
             match tpm::create(&name) {
                 Ok(key) => Self::from_tpm(key),
-                // No key exists yet, so falling back replaces nothing; the
-                // relay sees `software` from `kind()`.
-                Err(_) => Self::software(software::keyring_open_or_create(scope)?),
+                // No key exists yet, so the software key replaces nothing;
+                // the relay sees `software` from `kind()`.
+                Err(tpm::TpmError::Unavailable(_)) => {
+                    Self::software(software::open_or_create(store, scope)?)
+                }
+                Err(tpm::TpmError::Failed(error)) => Err(error),
             }
         }
         #[cfg(not(windows))]
         {
-            Self::software(software::keyring_open_or_create(scope)?)
+            Self::software(software::open_or_create(store, scope)?)
         }
     }
 
     /// Open the software key stored in `path`, creating it (and its parent
     /// directories) when the file does not exist. Unix mode 0600. For
-    /// headless use without a TPM or keyring.
+    /// headless use without a TPM or keyring. Same as a [`FileStore`] key,
+    /// but at a path the caller chooses.
     pub fn open_or_create_file(path: &Path) -> Result<Self> {
         Self::software(software::file_open_or_create(path)?)
     }

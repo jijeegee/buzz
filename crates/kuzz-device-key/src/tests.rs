@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use kuzz_auth::device_proof::{verify_event_device_tag, DeviceProof, DeviceProofError};
 use nostr::{Keys, Kind, Tag, Timestamp};
+use zeroize::Zeroizing;
 
 use super::*;
 
@@ -16,7 +20,8 @@ fn vector_key() -> DeviceKey {
         .as_str()
         .expect("secret")
         .to_owned();
-    DeviceKey::software(software::decode(&secret).expect("decode")).expect("key")
+    let secret = software::decode(&secret).expect("decode");
+    DeviceKey::software(software::signing_key(&secret).expect("secret")).expect("key")
 }
 
 fn hash32(value: &serde_json::Value) -> [u8; 32] {
@@ -227,11 +232,16 @@ fn racing_file_creators_agree_on_one_key() {
 fn scopes_are_validated() {
     for bad in ["", "a b", "a/b", "a\\b", "é", &"x".repeat(65)] {
         assert!(matches!(
-            DeviceKey::open_or_create(bad),
+            DeviceKey::open_or_create(bad, &MemoryStore::default()),
             Err(DeviceKeyError::InvalidScope)
         ));
     }
     assert!(validate_scope("install-0123_abc.v1").is_ok());
+    let dir = tempfile::tempdir().expect("dir");
+    assert!(matches!(
+        FileStore::new(dir.path()).load("../escape"),
+        Err(DeviceKeyError::InvalidScope)
+    ));
 }
 
 #[test]
@@ -248,17 +258,76 @@ fn debug_output_shows_no_secret() {
     assert!(debug.contains(&key.pubkey().to_hex()));
 }
 
-/// Writes to this user's OS keyring; run by hand.
+/// An in-memory store like an app's keyring store: no atomic
+/// create-if-absent, so it writes, reads back and reports a winner.
+#[derive(Default)]
+struct MemoryStore {
+    keys: Mutex<HashMap<String, [u8; 32]>>,
+    /// A racing creator's key, written just before ours would land.
+    race_winner: Option<[u8; 32]>,
+}
+
+impl SoftwareKeyStore for MemoryStore {
+    fn load(&self, scope: &str) -> Result<Option<SoftwareSecret>> {
+        let keys = self.keys.lock().expect("lock");
+        Ok(keys.get(scope).map(|secret| Zeroizing::new(*secret)))
+    }
+
+    fn store_new(&self, scope: &str, secret: &SoftwareSecret) -> Result<StoreOutcome> {
+        let mut keys = self.keys.lock().expect("lock");
+        if let Some(winner) = self.race_winner {
+            keys.insert(scope.to_owned(), winner);
+        }
+        let stored = *keys.entry(scope.to_owned()).or_insert(**secret);
+        Ok(if stored == **secret {
+            StoreOutcome::Stored
+        } else {
+            StoreOutcome::Existing(Zeroizing::new(stored))
+        })
+    }
+}
+
 #[test]
-#[ignore = "touches the OS keyring"]
-fn keyring_keys_are_created_once_and_reopened() {
-    let scope = format!("test-keyring-{}", std::process::id());
-    let first = software::keyring_open_or_create(&scope).expect("create");
-    let second = software::keyring_open(&scope)
-        .expect("open")
-        .expect("present");
-    software::keyring_delete(&scope).expect("delete");
+fn a_store_key_is_created_once_and_reopened() {
+    let store = MemoryStore::default();
+    let first = software::open_or_create(&store, "s").expect("create");
+    let second = software::open_or_create(&store, "s").expect("open");
     assert_eq!(first.verifying_key(), second.verifying_key());
+    assert_eq!(store.keys.lock().expect("lock").len(), 1);
+}
+
+#[test]
+fn a_racing_creator_key_wins_over_ours() {
+    let winner = *software::generate();
+    let store = MemoryStore {
+        race_winner: Some(winner),
+        ..MemoryStore::default()
+    };
+    let key = software::open_or_create(&store, "s").expect("create");
+    let expected = software::signing_key(&Zeroizing::new(winner)).expect("winner");
+    assert_eq!(key.verifying_key(), expected.verifying_key());
+}
+
+#[test]
+fn a_file_store_creates_once_and_returns_the_existing_key() {
+    let dir = tempfile::tempdir().expect("dir");
+    let store = FileStore::new(dir.path().join("keys"));
+    assert!(store.load("install-1").expect("load").is_none());
+    let first = software::generate();
+    assert!(matches!(
+        store.store_new("install-1", &first).expect("store"),
+        StoreOutcome::Stored
+    ));
+    let second = software::generate();
+    match store.store_new("install-1", &second).expect("store") {
+        StoreOutcome::Existing(existing) => assert_eq!(*existing, *first),
+        StoreOutcome::Stored => panic!("an existing key was overwritten"),
+    }
+    assert_eq!(
+        *store.load("install-1").expect("load").expect("key"),
+        *first
+    );
+    assert!(dir.path().join("keys").join("install-1.key").exists());
 }
 
 #[cfg(windows)]
@@ -285,6 +354,45 @@ mod windows_tpm {
         }
     }
 
+    #[test]
+    fn only_no_tpm_codes_allow_a_software_key() {
+        use windows_sys::Win32::Foundation::{
+            E_ACCESSDENIED, NTE_DEVICE_NOT_READY, NTE_PERM, TBS_E_SERVICE_NOT_RUNNING,
+            TPM_E_PCP_DEVICE_NOT_READY,
+        };
+        for transient in [
+            E_ACCESSDENIED,
+            NTE_DEVICE_NOT_READY,
+            NTE_PERM,
+            TBS_E_SERVICE_NOT_RUNNING,
+            TPM_E_PCP_DEVICE_NOT_READY,
+            windows_sys::Win32::Foundation::NTE_BAD_KEYSET,
+        ] {
+            assert!(!tpm::UNAVAILABLE.contains(&transient), "{transient:#x}");
+        }
+        assert!(tpm::UNAVAILABLE.contains(&windows_sys::Win32::Foundation::TBS_E_TPM_NOT_FOUND));
+    }
+
+    /// A software key already in the store wins over making a TPM key (no
+    /// drift for installs that started without a TPM). Only opens the TPM.
+    #[test]
+    fn an_existing_store_key_is_used_before_creating_a_tpm_key() {
+        let (scope, name) = test_name("storewins");
+        let _cleanup = Cleanup(name.clone());
+        let store = MemoryStore::default();
+        let expected = software::open_or_create(&store, &scope).expect("seed");
+        let key = DeviceKey::open_or_create(&scope, &store).expect("open");
+        assert_eq!(key.kind(), DeviceKeyKind::Software);
+        assert_eq!(
+            key.pubkey().as_bytes().as_slice(),
+            expected.verifying_key().to_encoded_point(true).as_bytes()
+        );
+        assert!(matches!(
+            tpm::open(&name),
+            Ok(None) | Err(tpm::TpmError::Unavailable(_))
+        ));
+    }
+
     /// Creates, uses and deletes a `Kuzz-Device-test-*` TPM key; run by hand
     /// on a machine with a TPM.
     #[test]
@@ -292,9 +400,11 @@ mod windows_tpm {
     fn a_tpm_key_signs_proofs_the_server_accepts() {
         let (scope, name) = test_name("roundtrip");
         let _cleanup = Cleanup(name);
-        let key = DeviceKey::open_or_create(&scope).expect("create");
+        let store = MemoryStore::default();
+        let key = DeviceKey::open_or_create(&scope, &store).expect("create");
         assert_eq!(key.kind(), DeviceKeyKind::Tpm);
-        let again = DeviceKey::open_or_create(&scope).expect("open");
+        assert!(store.keys.lock().expect("lock").is_empty());
+        let again = DeviceKey::open_or_create(&scope, &store).expect("open");
         assert_eq!(again.pubkey(), key.pubkey());
 
         let raw = key
@@ -343,7 +453,7 @@ mod windows_tpm {
         let scope = scope_name.as_str();
         let _cleanup = Cleanup(name);
         let start = Instant::now();
-        let key = DeviceKey::open_or_create(scope).expect("create");
+        let key = DeviceKey::open_or_create(scope, &MemoryStore::default()).expect("create");
         let create = start.elapsed();
         assert_eq!(key.kind(), DeviceKeyKind::Tpm);
         drop(key);
@@ -352,7 +462,7 @@ mod windows_tpm {
         let opens: Vec<Duration> = (0..30)
             .map(|_| {
                 let start = Instant::now();
-                let key = DeviceKey::open_or_create(scope).expect("open");
+                let key = DeviceKey::open_or_create(scope, &MemoryStore::default()).expect("open");
                 let elapsed = start.elapsed();
                 assert_eq!(key.kind(), DeviceKeyKind::Tpm);
                 elapsed
@@ -360,7 +470,7 @@ mod windows_tpm {
             .collect();
         stats("tpm open (provider + key + public export)", opens);
 
-        let key = DeviceKey::open_or_create(scope).expect("open");
+        let key = DeviceKey::open_or_create(scope, &MemoryStore::default()).expect("open");
         let message = b"kuzz-device-proof/v1\nauth\nGET https://relay.example/auth/me";
         let signs: Vec<Duration> = (0..50)
             .map(|_| {
@@ -395,7 +505,8 @@ mod windows_tpm {
         std::thread::scope(|scope| {
             for _ in 0..threads {
                 scope.spawn(|| {
-                    let key = DeviceKey::open_or_create(&scope_name).expect("open");
+                    let key = DeviceKey::open_or_create(&scope_name, &MemoryStore::default())
+                        .expect("open");
                     for _ in 0..per_thread {
                         key.sign(message).expect("sign");
                     }

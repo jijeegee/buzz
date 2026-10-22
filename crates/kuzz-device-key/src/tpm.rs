@@ -8,7 +8,11 @@
 #![deny(clippy::undocumented_unsafe_blocks)]
 
 use windows_sys::core::HRESULT;
-use windows_sys::Win32::Foundation::{NTE_BAD_KEYSET, NTE_EXISTS};
+use windows_sys::Win32::Foundation::{
+    NTE_BAD_ALGID, NTE_BAD_KEYSET, NTE_BAD_PROVIDER, NTE_DEVICE_NOT_FOUND, NTE_EXISTS,
+    NTE_NOT_SUPPORTED, NTE_PROVIDER_DLL_FAIL, NTE_PROV_DLL_NOT_FOUND, TBS_E_SERVICE_DISABLED,
+    TBS_E_TPM_NOT_FOUND, TPM_E_DEACTIVATED, TPM_E_DISABLED,
+};
 use windows_sys::Win32::Security::Cryptography::{
     NCryptCreatePersistedKey, NCryptExportKey, NCryptFinalizeKey, NCryptFreeObject, NCryptOpenKey,
     NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash, BCRYPT_ECCPUBLIC_BLOB,
@@ -50,13 +54,51 @@ pub(crate) struct TpmKey {
     name: String,
 }
 
-/// Why [`open`] found no key.
-pub(crate) enum OpenError {
-    /// The platform crypto provider is not available (no usable TPM).
-    NoProvider,
-    /// Opening an existing key failed.
+/// A failed TPM call, split by whether a software key may stand in.
+#[derive(Debug)]
+pub(crate) enum TpmError {
+    /// This machine has no usable TPM for P-256 keys ([`UNAVAILABLE`]).
+    Unavailable(DeviceKeyError),
+    /// Anything else (busy, not ready, access denied, lockout, ...): the
+    /// caller retries later; no software key is made.
     Failed(DeviceKeyError),
 }
+
+impl TpmError {
+    fn into_error(self) -> DeviceKeyError {
+        match self {
+            Self::Unavailable(error) | Self::Failed(error) => error,
+        }
+    }
+}
+
+/// Status codes of `NCryptOpenStorageProvider`, `NCryptCreatePersistedKey`
+/// and `NCryptFinalizeKey` meaning "no usable TPM here", the only ones on
+/// which a software key replaces the TPM:
+///
+/// - `NTE_PROV_DLL_NOT_FOUND`, `NTE_PROVIDER_DLL_FAIL`, `NTE_BAD_PROVIDER`:
+///   the Platform Crypto Provider is not installed or does not load.
+/// - `NTE_DEVICE_NOT_FOUND`, `TBS_E_TPM_NOT_FOUND`: no TPM.
+/// - `TBS_E_SERVICE_DISABLED`: the TPM Base Services are disabled.
+/// - `TPM_E_DISABLED`, `TPM_E_DEACTIVATED`: the TPM is off in firmware.
+/// - `NTE_NOT_SUPPORTED`, `NTE_BAD_ALGID`: the TPM cannot make ECDSA P-256
+///   keys (TPM 1.2).
+///
+/// Not in the list, so an error: for example `NTE_DEVICE_NOT_READY`,
+/// `TBS_E_SERVICE_NOT_RUNNING`, `TPM_E_PCP_DEVICE_NOT_READY`,
+/// `E_ACCESSDENIED`, `NTE_PERM` and TPM lockout codes.
+pub(crate) const UNAVAILABLE: [HRESULT; 10] = [
+    NTE_PROV_DLL_NOT_FOUND,
+    NTE_PROVIDER_DLL_FAIL,
+    NTE_BAD_PROVIDER,
+    NTE_DEVICE_NOT_FOUND,
+    TBS_E_TPM_NOT_FOUND,
+    TBS_E_SERVICE_DISABLED,
+    TPM_E_DISABLED,
+    TPM_E_DEACTIVATED,
+    NTE_NOT_SUPPORTED,
+    NTE_BAD_ALGID,
+];
 
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
@@ -73,21 +115,32 @@ fn check(op: &'static str, status: HRESULT) -> Result<()> {
     }
 }
 
-fn provider() -> Result<Handle> {
+/// [`check`], classifying a failure by [`UNAVAILABLE`].
+fn classify(op: &'static str, status: HRESULT) -> std::result::Result<(), TpmError> {
+    check(op, status).map_err(|error| {
+        if UNAVAILABLE.contains(&status) {
+            TpmError::Unavailable(error)
+        } else {
+            TpmError::Failed(error)
+        }
+    })
+}
+
+fn provider() -> std::result::Result<Handle, TpmError> {
     let mut handle = 0;
     // SAFETY: `handle` is a valid out-pointer for the call's duration and the
     // provider name is a static NUL-terminated UTF-16 string.
     let status = unsafe { NCryptOpenStorageProvider(&mut handle, MS_PLATFORM_CRYPTO_PROVIDER, 0) };
     // Wrap first so a handle is freed even on an unexpected error status.
     let handle = Handle(handle);
-    check("NCryptOpenStorageProvider", status)?;
+    classify("NCryptOpenStorageProvider", status)?;
     Ok(handle)
 }
 
 /// Open the TPM key `name` of this Windows user; `Ok(None)` when it does not
-/// exist.
-pub(crate) fn open(name_text: &str) -> std::result::Result<Option<TpmKey>, OpenError> {
-    let provider = provider().map_err(|_| OpenError::NoProvider)?;
+/// exist. A failure to open an existing key is always [`TpmError::Failed`].
+pub(crate) fn open(name_text: &str) -> std::result::Result<Option<TpmKey>, TpmError> {
+    let provider = provider()?;
     let name = wide(name_text);
     let mut key = 0;
     // SAFETY: `provider.0` is a live provider handle, `key` a valid
@@ -99,7 +152,7 @@ pub(crate) fn open(name_text: &str) -> std::result::Result<Option<TpmKey>, OpenE
     if status == NTE_BAD_KEYSET {
         return Ok(None);
     }
-    check("NCryptOpenKey", status).map_err(OpenError::Failed)?;
+    check("NCryptOpenKey", status).map_err(TpmError::Failed)?;
     Ok(Some(TpmKey {
         key,
         _provider: provider,
@@ -110,7 +163,7 @@ pub(crate) fn open(name_text: &str) -> std::result::Result<Option<TpmKey>, OpenE
 
 /// Create the TPM key `name` (non-exportable, per Windows user). When
 /// another process created it first, open that one.
-pub(crate) fn create(name: &str) -> Result<TpmKey> {
+pub(crate) fn create(name: &str) -> std::result::Result<TpmKey, TpmError> {
     let provider = provider()?;
     let wide_name = wide(name);
     let mut key = 0;
@@ -129,11 +182,12 @@ pub(crate) fn create(name: &str) -> Result<TpmKey> {
         )
     };
     let key = Handle(key);
-    check("NCryptCreatePersistedKey", status)?;
-    let policy: u32 = 0; // no export of any kind
-                         // SAFETY: `key.0` is a live, not yet finalized key handle; the property
-                         // name is a static NUL-terminated UTF-16 string; the input pointer and
-                         // length describe `policy`, which outlives the call.
+    classify("NCryptCreatePersistedKey", status)?;
+    // No export of any kind.
+    let policy: u32 = 0;
+    // SAFETY: `key.0` is a live, not yet finalized key handle; the property
+    // name is a static NUL-terminated UTF-16 string; the input pointer and
+    // length describe `policy`, which outlives the call.
     let status = unsafe {
         NCryptSetProperty(
             key.0,
@@ -143,7 +197,7 @@ pub(crate) fn create(name: &str) -> Result<TpmKey> {
             NCRYPT_SILENT_FLAG,
         )
     };
-    check("NCryptSetProperty(Export Policy)", status)?;
+    check("NCryptSetProperty(Export Policy)", status).map_err(TpmError::Failed)?;
     // SAFETY: `key.0` is a live, not yet finalized key handle.
     let status = unsafe { NCryptFinalizeKey(key.0, NCRYPT_SILENT_FLAG) };
     if status == NTE_EXISTS {
@@ -151,14 +205,14 @@ pub(crate) fn create(name: &str) -> Result<TpmKey> {
         drop(provider);
         return match open(name) {
             Ok(Some(existing)) => Ok(existing),
-            Ok(None) | Err(OpenError::NoProvider) => Err(DeviceKeyError::Tpm {
+            Ok(None) => Err(TpmError::Failed(DeviceKeyError::Tpm {
                 op: "NCryptFinalizeKey",
                 code: NTE_EXISTS as u32,
-            }),
-            Err(OpenError::Failed(error)) => Err(error),
+            })),
+            Err(error) => Err(TpmError::Failed(error.into_error())),
         };
     }
-    check("NCryptFinalizeKey", status)?;
+    classify("NCryptFinalizeKey", status)?;
     Ok(TpmKey {
         key,
         _provider: provider,
