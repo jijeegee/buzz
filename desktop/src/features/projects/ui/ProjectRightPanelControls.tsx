@@ -8,6 +8,7 @@ import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { DrawerPanelIcon } from "@/shared/ui/DrawerPanelIcon";
 import { TerminalPanelIcon } from "@/shared/ui/TerminalPanelIcon";
+import { useT } from "@/shared/i18n";
 
 export type ProjectRightPanelMode = "chat" | "repository";
 
@@ -24,10 +25,15 @@ export function ProjectChatPanelControl({
   onExpand: () => void;
   onModeChange: (mode: ProjectRightPanelMode) => void;
 }) {
+  const t = useT();
   const chatOpen = !collapsed && mode === "chat";
   return (
     <Button
-      aria-label={chatOpen ? "Hide project chat" : "Show project chat"}
+      aria-label={
+        chatOpen
+          ? t("projects.rightPanel.hideChat")
+          : t("projects.rightPanel.showChat")
+      }
       aria-pressed={chatOpen}
       className="h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent"
       data-testid="project-right-panel-chat-tab"
@@ -40,7 +46,7 @@ export function ProjectChatPanelControl({
         onExpand();
       }}
       size="icon"
-      title="Project chat"
+      title={t("projects.rightPanel.chat")}
       type="button"
       variant="ghost"
     >
@@ -69,6 +75,7 @@ export function ProjectRightPanelControls({
   onModeChange: (mode: ProjectRightPanelMode) => void;
   terminalAvailable: boolean;
 }) {
+  const t = useT();
   const terminalPanel = useTerminalPanel();
   const terminalOpen = terminalPanel.mode !== "closed";
   const repositoryOpen = !collapsed && mode === "repository";
@@ -76,7 +83,11 @@ export function ProjectRightPanelControls({
   return (
     <div className="flex items-center gap-0.5">
       <Button
-        aria-label={terminalOpen ? "Hide Kuzz Term" : "Open Kuzz Term"}
+        aria-label={
+          terminalOpen
+            ? t("projects.rightPanel.hideTerminal")
+            : t("projects.rightPanel.openTerminal")
+        }
         aria-pressed={terminalOpen}
         className={cn(
           "h-7 w-7 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -105,7 +116,9 @@ export function ProjectRightPanelControls({
       />
       <Button
         aria-label={
-          repositoryOpen ? "Hide project context" : "Show project context"
+          repositoryOpen
+            ? t("projects.overviewContext.hide")
+            : t("projects.overviewContext.show")
         }
         aria-pressed={repositoryOpen}
         className="h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent"
@@ -119,7 +132,7 @@ export function ProjectRightPanelControls({
           onExpand();
         }}
         size="icon"
-        title="Project context"
+        title={t("projects.overviewContext.sheetTitle")}
         type="button"
         variant="ghost"
       >

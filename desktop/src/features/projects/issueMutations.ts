@@ -6,6 +6,7 @@ import { KIND_GIT_ISSUE } from "@/shared/constants/kinds";
 import type { Repository as Project } from "./hooks";
 import { buildGitIssueTags } from "./projectIssues.mjs";
 import type { ProjectTaskCategory } from "./projectTaskCategories";
+import { t } from "@/shared/i18n";
 
 type CreateProjectIssueInput = {
   title: string;
@@ -29,8 +30,8 @@ export async function publishProjectIssue(
   });
   await relayClient.publishEvent(
     event,
-    "Timed out creating task.",
-    "Failed to create task.",
+    t("projects.issueMutations.createTimedOut"),
+    t("projects.issueMutations.createFailed"),
   );
   return event.id;
 }
@@ -41,7 +42,7 @@ export function useCreateProjectIssueMutation(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateProjectIssueInput) => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return publishProjectIssue(project, input);
     },
     onSuccess: async () => {

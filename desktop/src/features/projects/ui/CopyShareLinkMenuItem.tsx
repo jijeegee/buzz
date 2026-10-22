@@ -2,6 +2,7 @@ import { Link2 } from "lucide-react";
 
 import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import { DropdownMenuItem } from "@/shared/ui/dropdown-menu";
+import { useT } from "@/shared/i18n";
 
 /**
  * "Copy link" row for the Projects action menus. Renders nothing when the
@@ -9,9 +10,9 @@ import { DropdownMenuItem } from "@/shared/ui/dropdown-menu";
  * offer a link that would fail to parse for the recipient.
  */
 export function CopyShareLinkMenuItem({
-  label = "Copy link",
+  label,
   link,
-  successMessage = "Link copied to clipboard",
+  successMessage,
   testId,
 }: {
   label?: string;
@@ -19,6 +20,7 @@ export function CopyShareLinkMenuItem({
   successMessage?: string;
   testId?: string;
 }) {
+  const t = useT();
   if (!link) return null;
 
   return (
@@ -27,11 +29,14 @@ export function CopyShareLinkMenuItem({
       onSelect={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        copyTextToClipboard(link, successMessage);
+        copyTextToClipboard(
+          link,
+          successMessage ?? t("projects.shareLink.copiedToClipboard"),
+        );
       }}
     >
       <Link2 className="h-4 w-4" />
-      {label}
+      {label ?? t("projects.shareLink.copyLink")}
     </DropdownMenuItem>
   );
 }

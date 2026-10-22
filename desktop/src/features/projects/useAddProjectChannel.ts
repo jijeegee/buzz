@@ -19,6 +19,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import { deleteChannel as deleteChannelApi } from "@/shared/api/tauriChannels";
 import type { Channel, ChannelVisibility } from "@/shared/api/types";
 import { KIND_PROJECT_ANNOUNCEMENT } from "@/shared/constants/kinds";
+import { t } from "@/shared/i18n";
 
 export type AddProjectChannelInput = {
   addDefaultAi?: boolean;
@@ -75,12 +76,10 @@ export async function addProjectChannel(
     )[0];
   const liveHead = await fetchLiveHead();
   if (!liveHead) {
-    throw new Error("Couldn't find this project. Refresh and try again.");
+    throw new Error(t("projects.errors.projectNotFound"));
   }
   if (liveHead.created_at > input.project.createdAt) {
-    throw new Error(
-      "This project was updated by another session while you were working. Refresh and try again.",
-    );
+    throw new Error(t("projects.errors.updatedElsewhere"));
   }
 
   const channel = await createChannel({
@@ -97,7 +96,7 @@ export async function addProjectChannel(
     } catch (cleanupError) {
       throw new AggregateError(
         [error, cleanupError],
-        "Kuzz could not verify the project after creating the group, and could not remove the unlinked group. Delete it manually, then refresh and try again.",
+        t("projects.useAddProjectChannel.cleanupFailed"),
       );
     }
     throw error;
@@ -107,14 +106,12 @@ export async function addProjectChannel(
     removeCreatedChannelAndThrow(
       error instanceof Error
         ? error
-        : new Error("Could not verify the project after creating the group."),
+        : new Error(t("projects.useAddProjectChannel.verifyFailed")),
     ),
   );
   if (!confirmedLiveHead || confirmedLiveHead.id !== liveHead.id) {
     await removeCreatedChannelAndThrow(
-      new Error(
-        "This project was updated by another session while the group was being created. Refresh and try again.",
-      ),
+      new Error(t("projects.useAddProjectChannel.updatedDuringCreate")),
     );
   }
 
@@ -152,10 +149,10 @@ export async function addProjectChannel(
     } catch (error) {
       await removeCreatedChannelAndThrow(
         isUnsupportedProjectKindError(error)
-          ? new Error("Projects aren't available in this community yet.")
+          ? new Error(t("projects.errors.unsupported"))
           : error instanceof Error
             ? error
-            : new Error("Could not link the group to this project."),
+            : new Error(t("projects.useAddProjectChannel.linkFailed")),
       );
     }
   }

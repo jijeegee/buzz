@@ -7,9 +7,13 @@ import type {
   ProjectsSort,
 } from "@/features/projects/lib/projectsViewHelpers";
 import { ProjectsSortSelect } from "@/features/projects/ui/ProjectsListHeaderBar";
-import { projectsSectionTitle } from "@/features/projects/ui/projectsSectionMeta";
+import {
+  projectsSectionSearchPlaceholder,
+  projectsSectionTitle,
+} from "@/features/projects/ui/projectsSectionMeta";
 import { ProjectsToolbar } from "@/features/projects/ui/ProjectsToolbar";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 export function ProjectsSectionSearch({
   filter,
@@ -24,8 +28,12 @@ export function ProjectsSectionSearch({
   onSortChange: (sort: ProjectsSort) => void;
   sort: ProjectsSort;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const searchLabel = t("projects.sectionSearch.search", {
+    section: projectsSectionTitle(filter),
+  });
   const deferredQuery = React.useDeferredValue(query);
   const focusFrameRef = React.useRef<number | null>(null);
   const reduceMotion = useReducedMotion();
@@ -61,18 +69,14 @@ export function ProjectsSectionSearch({
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1.5">
       <Button
-        aria-label={
-          open
-            ? "Close project search"
-            : `Search ${projectsSectionTitle(filter)}`
-        }
+        aria-label={open ? t("projects.sectionSearch.closeLabel") : searchLabel}
         className="group/projects-search relative h-7 w-7 shrink-0 rounded-full border border-border/55 bg-transparent px-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/25 hover:text-foreground focus-visible:border-border"
         data-testid={
           open ? "projects-section-search-close" : "projects-activity-search"
         }
         onClick={open ? close : () => setOpen(true)}
         size="icon"
-        title={open ? "Close search" : `Search ${projectsSectionTitle(filter)}`}
+        title={open ? t("projects.sectionSearch.close") : searchLabel}
         type="button"
         variant="ghost"
       >
@@ -102,7 +106,7 @@ export function ProjectsSectionSearch({
               transition={transition}
             >
               <input
-                aria-label={`Search ${projectsSectionTitle(filter)}`}
+                aria-label={searchLabel}
                 className="min-w-0 flex-1 bg-transparent px-2 pr-36 text-sm text-foreground outline-none placeholder:text-muted-foreground/55"
                 data-testid="projects-section-search-input"
                 onChange={(event) => setQuery(event.target.value)}
@@ -111,7 +115,7 @@ export function ProjectsSectionSearch({
                   event.preventDefault();
                   close();
                 }}
-                placeholder={`Search ${projectsSectionTitle(filter).toLocaleLowerCase()}`}
+                placeholder={projectsSectionSearchPlaceholder(filter)}
                 ref={focusSearchInput}
                 type="search"
                 value={query}

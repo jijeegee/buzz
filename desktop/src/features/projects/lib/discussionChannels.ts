@@ -16,6 +16,7 @@
  */
 
 import type { SearchHit } from "@/shared/api/searchTypes";
+import { t } from "@/shared/i18n";
 
 export type DiscussionChannel = {
   id: string;
@@ -176,7 +177,7 @@ export function discussionSnippet(content: string): string {
     .replace(/\s+/g, " ")
     .trim();
   if (cleaned.length === 0) {
-    return "Shared a link to this.";
+    return t("projects.discussions.sharedLink");
   }
   if (cleaned.length <= SNIPPET_MAX_CHARS) {
     return cleaned;

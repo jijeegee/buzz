@@ -10,6 +10,7 @@ import { ChooserDialogContent } from "@/shared/ui/chooser-dialog-content";
 import { Dialog } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
+import { useT } from "@/shared/i18n";
 
 const FIELD_SHELL_CLASS =
   "rounded-xl border border-input bg-muted/40 transition-colors hover:border-muted-foreground/40 focus-within:border-muted-foreground/50";
@@ -47,6 +48,7 @@ export function CreateProjectWorkItemDialog({
   title: string;
   titlePlaceholder: string;
 }) {
+  const t = useT();
   const [workItemTitle, setWorkItemTitle] = React.useState("");
   const [body, setBody] = React.useState("");
   const [category, setCategory] = React.useState<ProjectTaskCategory>("issue");
@@ -54,7 +56,6 @@ export function CreateProjectWorkItemDialog({
   const titleInputRef = React.useRef<HTMLInputElement>(null);
   const submitInFlightRef = React.useRef(false);
   const testIdPrefix = `create-${itemName}`;
-  const itemLabel = itemName === "issue" ? "task" : "review";
 
   React.useEffect(() => {
     if (!open) return;
@@ -87,7 +88,9 @@ export function CreateProjectWorkItemDialog({
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : `Failed to create ${itemLabel}.`,
+          : itemName === "issue"
+            ? t("projects.createWorkItem.taskFailed")
+            : t("projects.createWorkItem.reviewFailed"),
       );
     } finally {
       submitInFlightRef.current = false;
@@ -119,7 +122,11 @@ export function CreateProjectWorkItemDialog({
               form={`${testIdPrefix}-form`}
               type="submit"
             >
-              {isCreating ? "Creating…" : `Create ${itemLabel}`}
+              {isCreating
+                ? t("projects.createWorkItem.creating")
+                : itemName === "issue"
+                  ? t("projects.createWorkItem.createTask")
+                  : t("projects.createWorkItem.createReview")}
             </Button>
           </div>
         }
@@ -139,7 +146,7 @@ export function CreateProjectWorkItemDialog({
                 className="text-sm font-medium text-foreground"
                 htmlFor={`${testIdPrefix}-category`}
               >
-                Category
+                {t("projects.createWorkItem.category")}
               </label>
               <div className={FIELD_SHELL_CLASS}>
                 <select
@@ -157,7 +164,7 @@ export function CreateProjectWorkItemDialog({
                 >
                   {PROJECT_TASK_CATEGORIES.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {t(option.labelKey)}
                     </option>
                   ))}
                 </select>
@@ -169,7 +176,7 @@ export function CreateProjectWorkItemDialog({
               className="text-sm font-medium text-foreground"
               htmlFor={`${testIdPrefix}-title`}
             >
-              Title
+              {t("projects.createWorkItem.titleLabel")}
             </label>
             <div
               className={cn(
@@ -198,9 +205,9 @@ export function CreateProjectWorkItemDialog({
               className="text-sm font-medium text-foreground"
               htmlFor={`${testIdPrefix}-body`}
             >
-              Description
+              {t("projects.createWorkItem.descriptionLabel")}
               <span className="ml-1 text-xs font-normal text-muted-foreground/50">
-                Optional
+                {t("projects.createWorkItem.optional")}
               </span>
             </label>
             <div className={FIELD_SHELL_CLASS}>

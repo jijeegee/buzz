@@ -4,6 +4,7 @@ import type {
 } from "@/features/projects/hooks";
 import type { EntityLinkTab } from "@/shared/lib/entityLink";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { type MessageKey, t } from "@/shared/i18n";
 
 export const PROJECT_REPOSITORY_SEARCH_KEYS = [
   "repositoryId",
@@ -13,13 +14,14 @@ export const PROJECT_REPOSITORY_SEARCH_KEYS = [
   "filePath",
 ] as const;
 
-export const PROJECT_TAB_CRUMB_LABELS: Record<string, string> = {
-  files: "Files",
-  activity: "Commits",
-  issues: "Tasks",
-  prs: "Review",
-  contributors: "Contributors",
-  channels: "Groups",
+/** Message keys; translate where shown. */
+export const PROJECT_TAB_CRUMB_LABELS: Record<string, MessageKey> = {
+  files: "projects.crumbs.files",
+  activity: "projects.crumbs.commits",
+  issues: "projects.crumbs.tasks",
+  prs: "projects.crumbs.review",
+  contributors: "projects.crumbs.contributors",
+  channels: "projects.crumbs.groups",
 };
 
 export type ProjectDetailScreenProps = {
@@ -40,8 +42,15 @@ export function pushPullTitle(
   count: number | undefined,
   side: "local" | "remote",
 ) {
-  if (!count) return `${verb} ${side} commits`;
-  return `${verb} ${count} ${side} ${count === 1 ? "commit" : "commits"}`;
+  const key: MessageKey =
+    verb === "Push"
+      ? side === "local"
+        ? "projects.sync.pushLocal"
+        : "projects.sync.pushRemote"
+      : side === "local"
+        ? "projects.sync.pullLocal"
+        : "projects.sync.pullRemote";
+  return t(key, { count: count ?? 0 });
 }
 
 /** Returns the normalized owner and contributor pubkeys for a project. */

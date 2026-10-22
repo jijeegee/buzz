@@ -24,6 +24,7 @@ import { ProjectIssuesPanel } from "./ProjectIssuesPanel";
 import { PullRequestsPanel } from "./ProjectPullRequestsPanel";
 import { PROJECT_DETAIL_PANEL_CLASS } from "./projectPanelStyles";
 import { useProjectDetailPeople } from "./useProjectDetailPeople";
+import { useT } from "@/shared/i18n";
 
 export type ProjectHomeWorkspaceCreateAction = {
   disabled?: boolean;
@@ -69,6 +70,7 @@ export function ProjectHomeWorkspaceSheet({
   repository: Project["repositories"][number];
   tab: ProjectHomeWorkspaceSheetTab;
 }) {
+  const t = useT();
   const { goProject } = useAppNavigation();
   const { activeCommunity } = useCommunities();
   const [selectedIssueId, setSelectedIssueId] = React.useState<string | null>(
@@ -215,7 +217,7 @@ export function ProjectHomeWorkspaceSheet({
   const detail = React.useMemo<ProjectHomeWorkspaceDetail | null>(() => {
     if (tab === "issues" && selectedIssueId) {
       return {
-        backLabel: "Back to Tasks",
+        backLabel: t("projects.workspaceSheet.backToTasks"),
         navigation: {
           issueId: selectedIssueId,
           repositoryId: selectedIssueItem?.project.id,
@@ -225,14 +227,14 @@ export function ProjectHomeWorkspaceSheet({
     }
     if (tab === "prs" && selectedPullRequestId) {
       return {
-        backLabel: "Back to Reviews",
+        backLabel: t("projects.workspaceSheet.backToReviews"),
         navigation: { pullRequestId: selectedPullRequestId },
         onBack: () => setSelectedPullRequestId(null),
       };
     }
     if (tab === "commits" && selectedCommitHash) {
       return {
-        backLabel: "Back to Commits",
+        backLabel: t("projects.workspaceSheet.backToCommits"),
         navigation: {
           commitHash: selectedCommitHash,
           repositoryId: selectedCommitRepository.id,
@@ -245,7 +247,7 @@ export function ProjectHomeWorkspaceSheet({
     }
     if (tab === "files" && filesContext?.onBack) {
       return {
-        backLabel: "Back to Files",
+        backLabel: t("projects.workspaceSheet.backToFiles"),
         navigation: { filePath: filesContext.path },
         onBack: filesContext.onBack,
       };
@@ -258,6 +260,7 @@ export function ProjectHomeWorkspaceSheet({
     selectedIssueId,
     selectedIssueItem?.project.id,
     selectedPullRequestId,
+    t,
     tab,
   ]);
   React.useEffect(() => {
@@ -273,7 +276,7 @@ export function ProjectHomeWorkspaceSheet({
     if (tab === "issues" && !selectedIssueId) {
       onCreateActionChange?.({
         disabled: project.repositories.length === 0,
-        label: "Create task",
+        label: t("projects.createWorkItem.createTask"),
         onClick: () => setCreateIssueOpen(true),
       });
       return;
@@ -281,9 +284,9 @@ export function ProjectHomeWorkspaceSheet({
     if (tab === "prs" && !selectedPullRequestId) {
       onCreateActionChange?.({
         disabled: projects.length === 0,
-        label: "Create review",
+        label: t("projects.createWorkItem.createReview"),
         onClick: () => setCreatePullRequestOpen(true),
-        title: "Create review — choose a repository and branches to compare",
+        title: t("projects.workspaceSheet.createReviewHint"),
       });
       return;
     }
@@ -294,6 +297,7 @@ export function ProjectHomeWorkspaceSheet({
     projects.length,
     selectedIssueId,
     selectedPullRequestId,
+    t,
     tab,
   ]);
   React.useEffect(

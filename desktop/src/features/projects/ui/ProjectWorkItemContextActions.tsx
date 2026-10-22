@@ -9,6 +9,7 @@ import { useIdentityQuery } from "@/shared/api/hooks";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { IssueAssigneesRow } from "./IssueAssigneesRow";
 import { PullRequestReviewersRow } from "./PullRequestReviewersRow";
+import { useT } from "@/shared/i18n";
 
 export function ProjectWorkItemContextActions({
   issue,
@@ -21,6 +22,7 @@ export function ProjectWorkItemContextActions({
   pullRequest?: ProjectPullRequest | null;
   repository: Repository;
 }) {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const viewerPubkey = identityQuery.data?.pubkey;
   const viewer = viewerPubkey ? normalizePubkey(viewerPubkey) : null;
@@ -60,7 +62,7 @@ export function ProjectWorkItemContextActions({
     return (
       <div data-testid="project-context-reviewers">
         <PullRequestReviewersRow
-          actionLabel="Add Reviewer"
+          actionLabel={t("projects.contextActions.addReviewer")}
           canRequest={canRequestReview}
           contextActions
           profiles={profiles}

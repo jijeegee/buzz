@@ -11,6 +11,7 @@ import type { ProjectRepoCommit } from "@/shared/api/types";
 import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { ActivityPanel } from "./ProjectDetailFeedPanels";
+import { useT } from "@/shared/i18n";
 
 export function ProjectHomeCommitsPanel({
   onSelectCommit,
@@ -27,6 +28,7 @@ export function ProjectHomeCommitsPanel({
   results: ProjectRepositorySnapshotResult[];
   viewerGitIdentity?: ViewerGitIdentity | null;
 }) {
+  const t = useT();
   const loaded = results.filter(
     (result) => (result.snapshot?.commits.length ?? 0) > 0,
   );
@@ -50,22 +52,22 @@ export function ProjectHomeCommitsPanel({
       )
     : null;
   if (results.some((result) => result.isLoading) && loaded.length === 0) {
-    return <KuzzLoadingState label="Loading commits" />;
+    return <KuzzLoadingState label={t("projects.homeCommits.loading")} />;
   }
   if (loaded.length === 0) {
     return (
       <ProjectPanelState
         description={
           failure
-            ? `${firstFailure.repository.name}: ${failure.description}${
-                failed.length > 1
-                  ? ` ${failed.length - 1} other repositories also failed.`
-                  : ""
-              }`
-            : "Commits pushed to this project's repositories will appear here."
+            ? t("projects.homeCommits.failed", {
+                description: failure.description,
+                others: failed.length - 1,
+                repository: firstFailure.repository.name,
+              })
+            : t("projects.homeCommits.emptyDescription")
         }
         error={failed.length > 0}
-        title={failure?.title ?? "No commits yet"}
+        title={failure?.title ?? t("projects.homeCommits.emptyTitle")}
       />
     );
   }
@@ -82,10 +84,11 @@ export function ProjectHomeCommitsPanel({
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p>
-            Showing commits from {loaded.length} of {results.length}{" "}
-            repositories. {failed.length}{" "}
-            {failed.length === 1 ? "repository could" : "repositories could"}{" "}
-            not be loaded.
+            {t("projects.homeCommits.partial", {
+              failed: failed.length,
+              loaded: loaded.length,
+              total: results.length,
+            })}
           </p>
         </div>
       ) : null}

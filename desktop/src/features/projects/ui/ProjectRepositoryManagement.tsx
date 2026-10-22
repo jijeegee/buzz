@@ -20,6 +20,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { AddProjectRepositoryDialog } from "./AddProjectRepositoryDialog";
 import { AttachProjectRepositoryDialog } from "./AttachProjectRepositoryDialog";
+import { useT } from "@/shared/i18n";
 
 export function ProjectRepositoryManagement({
   compact = false,
@@ -42,6 +43,7 @@ export function ProjectRepositoryManagement({
   projects: Project[];
   repository?: Repository | null;
 }) {
+  const t = useT();
   const [uncontrolledCreateOpen, setUncontrolledCreateOpen] =
     React.useState(false);
   const createOpen = createOpenProp ?? uncontrolledCreateOpen;
@@ -121,7 +123,9 @@ export function ProjectRepositoryManagement({
             ownerControlAgentPubkey,
           });
           onChange(result.repository.id);
-          toast.success(`Repository "${result.repository.name}" created.`);
+          toast.success(
+            t("projects.repository.created", { name: result.repository.name }),
+          );
         }}
         onOpenChange={setCreateOpen}
         open={createOpen}
@@ -136,7 +140,9 @@ export function ProjectRepositoryManagement({
             repository: candidate,
           });
           onChange(result.repository.id);
-          toast.success(`Repository "${result.repository.name}" added.`);
+          toast.success(
+            t("projects.repository.added", { name: result.repository.name }),
+          );
         }}
         onOpenChange={setAttachOpen}
         open={attachOpen}
@@ -147,7 +153,7 @@ export function ProjectRepositoryManagement({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label="Add repository"
+              aria-label={t("projects.addRepository.title")}
               className={
                 compact
                   ? "h-6 w-6 shrink-0 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -158,14 +164,14 @@ export function ProjectRepositoryManagement({
               size={compact ? "icon" : "sm"}
               title={
                 canEdit
-                  ? "Add repository"
-                  : "Only the project owner can add repositories"
+                  ? t("projects.addRepository.title")
+                  : t("projects.repository.ownerOnly")
               }
               type="button"
               variant={compact ? "ghost" : "outline"}
             >
               <Plus className={compact ? "h-4 w-4" : "h-3.5 w-3.5"} />
-              {compact ? null : "Add"}
+              {compact ? null : t("projects.repository.add")}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -174,14 +180,14 @@ export function ProjectRepositoryManagement({
               onSelect={() => setCreateOpen(true)}
             >
               <FolderPlus className="h-4 w-4" />
-              Create new repository
+              {t("projects.repository.createNew")}
             </DropdownMenuItem>
             <DropdownMenuItem
               data-testid="attach-project-repository"
               onSelect={() => setAttachOpen(true)}
             >
               <Link className="h-4 w-4" />
-              Select existing repository
+              {t("projects.repository.selectExisting")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -190,7 +196,7 @@ export function ProjectRepositoryManagement({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label="Manage repository access"
+              aria-label={t("projects.repository.manageAccess")}
               className={
                 compact
                   ? "h-6 w-6 shrink-0 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -205,12 +211,14 @@ export function ProjectRepositoryManagement({
               {compact
                 ? null
                 : repairMutation.isPending
-                  ? "Updating…"
-                  : "Access"}
+                  ? t("projects.repository.updating")
+                  : t("projects.repository.access")}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-56">
-            <DropdownMenuLabel>Repository access group</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              {t("projects.repository.accessGroup")}
+            </DropdownMenuLabel>
             {accessChannels.map((channel) => (
               <DropdownMenuItem
                 className="justify-between gap-4"
@@ -225,14 +233,16 @@ export function ProjectRepositoryManagement({
                     })
                     .then(() => {
                       toast.success(
-                        `Repository access set to ${channel.name}.`,
+                        t("projects.repository.accessSet", {
+                          name: channel.name,
+                        }),
                       );
                     })
                     .catch((error: unknown) => {
                       toast.error(
                         error instanceof Error
                           ? error.message
-                          : "Failed to update repository access.",
+                          : t("projects.repository.accessFailed"),
                       );
                     });
                 }}

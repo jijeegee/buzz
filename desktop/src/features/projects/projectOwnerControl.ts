@@ -5,6 +5,7 @@ import {
   KIND_PROJECT_ANNOUNCEMENT,
   KIND_REPO_ANNOUNCEMENT,
 } from "@/shared/constants/kinds";
+import { t } from "@/shared/i18n";
 
 const OWNER_CONTROL_TIMEOUT_MS = 20_000;
 
@@ -90,7 +91,7 @@ export function publishOwnedAgentProjectAnnouncements(
         finish({ events: projectFrame.events });
       } else {
         const message =
-          projectFrame.error || "The agent could not update this project.";
+          projectFrame.error || t("projects.ownerControl.updateFailed");
         // The ACP side publishes announcements sequentially and reports the
         // ones that were already live when a later one failed. Preserve that
         // partial-success metadata instead of discarding it, so callers can
@@ -106,9 +107,7 @@ export function publishOwnedAgentProjectAnnouncements(
     });
     const timeout = window.setTimeout(() => {
       finish({
-        error: new Error(
-          "The project owner agent did not respond. Make sure it is running and try again.",
-        ),
+        error: new Error(t("projects.ownerControl.noResponse")),
       });
     }, OWNER_CONTROL_TIMEOUT_MS);
 
@@ -121,7 +120,7 @@ export function publishOwnedAgentProjectAnnouncements(
         error:
           error instanceof Error
             ? error
-            : new Error("Failed to contact the project owner agent."),
+            : new Error(t("projects.ownerControl.contactFailed")),
       });
     });
   });

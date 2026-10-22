@@ -8,14 +8,28 @@ import {
 } from "lucide-react";
 
 import type { ProjectsFilter } from "@/features/projects/lib/projectsViewHelpers";
+import { t } from "@/shared/i18n";
 
 export function projectsSectionTitle(filter: ProjectsFilter) {
-  if (filter === "all") return "Activity";
-  if (filter === "prs") return "Reviews";
-  if (filter === "issues") return "Tasks";
-  if (filter === "repositories") return "Repositories";
-  if (filter === "channels") return "Groups";
-  return "Projects";
+  if (filter === "all") return t("projects.sectionTitle.activity");
+  if (filter === "prs") return t("projects.sectionTitle.reviews");
+  if (filter === "issues") return t("projects.sectionTitle.tasks");
+  if (filter === "repositories") return t("projects.sectionTitle.repositories");
+  if (filter === "channels") return t("projects.sectionTitle.groups");
+  return t("projects.sectionTitle.projects");
+}
+
+/** Placeholder of the Projects section search field, e.g. "Search tasks". */
+export function projectsSectionSearchPlaceholder(filter: ProjectsFilter) {
+  if (filter === "all") return t("projects.sectionSearch.placeholderActivity");
+  if (filter === "prs") return t("projects.sectionSearch.placeholderReviews");
+  if (filter === "issues") return t("projects.sectionSearch.placeholderTasks");
+  if (filter === "repositories") {
+    return t("projects.sectionSearch.placeholderRepositories");
+  }
+  if (filter === "channels")
+    return t("projects.sectionSearch.placeholderGroups");
+  return t("projects.sectionSearch.placeholderProjects");
 }
 
 export function projectsSectionIcon(filter: ProjectsFilter): LucideIcon {

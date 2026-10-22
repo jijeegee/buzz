@@ -42,6 +42,7 @@ import { GitHubMark } from "./GitHubMark";
 import { ProjectListRowMenu } from "./ProjectListRowMenu";
 import { PROJECT_GRID_CARD_BODY_CLASS } from "./projectGridCardStyles";
 import { projectTerminalLabel } from "./useOpenProjectTerminal";
+import { useT } from "@/shared/i18n";
 
 export type RepositoryListItem = {
   project: Project;
@@ -64,13 +65,14 @@ function RepositoryHostIcon({
   compact?: boolean;
   repository: Repository;
 }) {
+  const t = useT();
   const host = projectRepoHostForRepository(repository, useRelayOrigin());
   const label =
     host.kind === "kuzz"
-      ? "Kuzz-hosted repository"
+      ? t("projects.repositoryCards.kuzzHosted")
       : host.kind === "external"
-        ? `Git data hosted on ${host.host}`
-        : "Repository host";
+        ? t("projects.repositoryCards.externalHost", { host: host.host })
+        : t("projects.repositoryCards.host");
   const mark =
     host.kind === "kuzz" ? (
       <KuzzMark className={compact ? "h-3.5 w-4" : "h-4.5 w-5"} />
@@ -108,13 +110,16 @@ function RepositoryOpenButton({
   project,
   repository,
 }: Pick<RepositoryItemProps, "onOpen" | "project" | "repository">) {
+  const t = useT();
   return (
     <button
       className="absolute inset-0 z-0 cursor-pointer"
       onClick={() => onOpen(project, repository)}
       type="button"
     >
-      <span className="sr-only">View {repository.name}</span>
+      <span className="sr-only">
+        {t("projects.repositoryCards.view", { name: repository.name })}
+      </span>
     </button>
   );
 }
@@ -173,8 +178,11 @@ function RepositoryActionsMenu({
   onOpenTerminal,
   repository,
 }: Pick<RepositoryItemProps, "hasLocal" | "onOpenTerminal" | "repository">) {
+  const t = useT();
   return (
-    <ProjectListRowMenu label={`More options for ${repository.name}`}>
+    <ProjectListRowMenu
+      label={t("projects.cards.moreOptions", { name: repository.name })}
+    >
       <CopyShareLinkMenuItem
         link={repositoryShareLink(repository)}
         testId={`repository-copy-link-${repository.dtag}`}
@@ -207,6 +215,7 @@ export const RepositoryGridCard = React.memo(function RepositoryGridCard(
     repository,
     summary,
   } = props;
+  const t = useT();
   return (
     <Card
       className="group relative flex h-full min-h-40 flex-col overflow-hidden border-border/60 bg-transparent shadow-none transition-colors duration-150 hover:bg-muted/20"
@@ -240,7 +249,8 @@ export const RepositoryGridCard = React.memo(function RepositoryGridCard(
           )}
           data-testid="projects-grid-card-body"
         >
-          {repository.description || "A repository in this project."}
+          {repository.description ||
+            t("projects.repositoryCards.defaultDescription")}
         </p>
         <div className="pointer-events-auto mt-auto">
           <ProjectPeopleStack

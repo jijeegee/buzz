@@ -28,6 +28,7 @@ import type {
   ChannelTemplate,
   ChannelVisibility,
 } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /** Expand the selected team and persona into deduplicated channel agents. */
 export function buildCreateProjectAgents(input: {
@@ -50,8 +51,7 @@ export function buildCreateProjectAgents(input: {
     );
     if (!resolved.runtime) {
       throw new Error(
-        resolved.warnings[0] ??
-          "No agent runtimes are available. Install a runtime to add agents.",
+        resolved.warnings[0] ?? t("projects.createForm.noRuntimes"),
       );
     }
     seenPersonaIds.add(persona.id);
@@ -70,7 +70,7 @@ export function buildCreateProjectAgents(input: {
   };
   if (input.teamId) {
     const team = input.teams.find((entry) => entry.id === input.teamId);
-    if (!team) throw new Error("Choose a team that still exists.");
+    if (!team) throw new Error(t("projects.createForm.teamMissing"));
     const resolution = resolveTeamPersonas(team, input.personas);
     for (const persona of resolution.resolvedPersonas) {
       addPersona(persona, team.id);
@@ -80,7 +80,7 @@ export function buildCreateProjectAgents(input: {
     const persona = input.personas.find(
       (entry) => entry.id === input.agentPersonaId,
     );
-    if (!persona) throw new Error("Choose an agent that still exists.");
+    if (!persona) throw new Error(t("projects.createForm.agentMissing"));
     addPersona(persona);
   }
   return agents;

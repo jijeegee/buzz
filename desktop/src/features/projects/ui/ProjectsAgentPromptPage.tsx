@@ -83,6 +83,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { type Translate, useT } from "@/shared/i18n";
 
 export type AgentCandidate = {
   pubkey: string;
@@ -130,28 +131,30 @@ function repoContextBlock(projects: readonly Project[]) {
     .join("\n");
 }
 
-function buildSuggestions(projects: readonly Project[]) {
+// Suggestions are shown to the user and sent as their own message, so they
+// follow the app language.
+function buildSuggestions(projects: readonly Project[], t: Translate) {
   const firstRepo = projects[0]?.name;
   return [
     {
-      label: "Reviews",
-      prompt: "Which reviews need attention today?",
+      label: t("projects.sectionTitle.reviews"),
+      prompt: t("projects.agentPrompt.reviewsPrompt"),
     },
     {
-      label: "Release check",
+      label: t("projects.agentPrompt.releaseLabel"),
       prompt: firstRepo
-        ? `Are we safe to cut a release of ${firstRepo} this week?`
-        : "Are we safe to cut a release this week?",
+        ? t("projects.agentPrompt.releasePromptNamed", { name: firstRepo })
+        : t("projects.agentPrompt.releasePrompt"),
     },
     {
-      label: "Tasks",
-      prompt: "Summarize the open tasks and flag anything urgent.",
+      label: t("projects.sectionTitle.tasks"),
+      prompt: t("projects.agentPrompt.tasksPrompt"),
     },
     {
-      label: "Activity",
+      label: t("projects.sectionTitle.activity"),
       prompt: firstRepo
-        ? `Summarize recent activity in ${firstRepo}.`
-        : "Summarize recent repository activity.",
+        ? t("projects.agentPrompt.activityPromptNamed", { name: firstRepo })
+        : t("projects.agentPrompt.activityPrompt"),
     },
   ];
 }
@@ -233,6 +236,7 @@ export function ConversationThread({
   selfAvatarUrl: string | null;
   opener: ProjectsConversationOpener;
 }) {
+  const t = useT();
   useChannelSubscription(channel);
   const messagesQuery = useChannelMessagesQuery(channel);
   const threadRootIds = React.useMemo(
@@ -269,7 +273,7 @@ export function ConversationThread({
         ? {
             [normalizedCurrent]: {
               avatarUrl: selfAvatarUrl,
-              displayName: "You",
+              displayName: t("common.you"),
               isAgent: false,
               name: null,
               nip05Handle: null,
@@ -284,6 +288,7 @@ export function ConversationThread({
       agentAvatarUrl,
       normalizedCurrent,
       selfAvatarUrl,
+      t,
     ],
   );
   const conversationMessages = React.useMemo(() => {
@@ -399,6 +404,7 @@ export function ProjectsAgentPromptPage({
   onClose: () => void;
   workspaceId: string | null;
 }) {
+  const t = useT();
   const [prompt, setPrompt] = React.useState("");
   const [storedConversation, setStoredConversation] =
     React.useState<StoredProjectsAgentConversation | null>(null);
@@ -490,8 +496,10 @@ export function ProjectsAgentPromptPage({
     onSubmit: () => submitPromptRef.current(),
     onUpdate: ({ text }) => setPrompt(text),
     placeholder: conversation
-      ? `Reply to ${conversation.agent.name}…`
-      : "Are we safe to release this week?",
+      ? t("projects.agentPrompt.replyPlaceholder", {
+          name: conversation.agent.name,
+        })
+      : t("projects.agentPrompt.placeholder"),
   });
   const linkEditor = useLinkEditor(richText);
   onEditLinkRef.current = linkEditor.openFromClick;
@@ -514,8 +522,8 @@ export function ProjectsAgentPromptPage({
   }, [richText.editor, richText.focusPreserve]);
 
   const suggestions = React.useMemo(
-    () => buildSuggestions(projects),
-    [projects],
+    () => buildSuggestions(projects, t),
+    [projects, t],
   );
   // Computed once so the pre-send preview and the appended opener payload
   // are byte-identical: the user inspects exactly what will be signed under
@@ -591,7 +599,7 @@ export function ProjectsAgentPromptPage({
       richText.clearContent();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to reach the agent",
+        error instanceof Error ? error.message : t("projects.agentChat.failed"),
       );
     } finally {
       setIsSending(false);
@@ -608,6 +616,7 @@ export function ProjectsAgentPromptPage({
     selectedAgent,
     startAgentMutation,
     scopedWorkspaceId,
+    t,
   ]);
   submitPromptRef.current = () => {
     void handleSubmit();
@@ -640,13 +649,13 @@ export function ProjectsAgentPromptPage({
         <div className="flex items-center justify-between gap-2 pt-2">
           <div className="flex min-w-0 items-center gap-1">
             <Button
-              aria-label="Toggle formatting"
+              aria-label={t("projects.agentPrompt.toggleFormatting")}
               aria-pressed={isFormattingOpen}
               className="h-7 w-7 shrink-0 px-0"
               disabled={isSending}
               onClick={() => setIsFormattingOpen((open) => !open)}
               size="icon"
-              title="Formatting"
+              title={t("projects.agentPrompt.formatting")}
               type="button"
               variant={isFormattingOpen ? "default" : "ghost"}
             >
@@ -682,7 +691,7 @@ export function ProjectsAgentPromptPage({
                       />
                     ) : null}
                     <span className="min-w-0 truncate">
-                      {selectedAgent?.name ?? "No agents available"}
+                      {selectedAgent?.name ?? t("projects.agentChat.noAgents")}
                     </span>
                     {candidates.length > 0 && conversation === null ? (
                       <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -740,14 +749,14 @@ export function ProjectsAgentPromptPage({
             ) : (
               <SendHorizontal className="h-3.5 w-3.5" />
             )}
-            Ask
+            {t("projects.agentPrompt.ask")}
           </Button>
         </div>
         {conversation ? null : (
           <div className="flex justify-end pt-1">
             <AgentContextPayloadPreview
               payload={repoContextPayload}
-              triggerLabel="Context appended to your first message"
+              triggerLabel={t("projects.agentPrompt.contextAppended")}
             />
           </div>
         )}
@@ -771,7 +780,7 @@ export function ProjectsAgentPromptPage({
                 variant="ghost"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Clear conversation
+                {t("projects.agentChat.clear")}
               </Button>
             </div>
             <ConversationThread
@@ -795,15 +804,14 @@ export function ProjectsAgentPromptPage({
     <div className="flex flex-1 items-center justify-center overflow-y-auto px-4">
       <div className="w-full max-w-xl space-y-6 py-10">
         <h2 className="text-center text-lg font-semibold text-foreground">
-          Ask an agent about your projects
+          {t("projects.agentPrompt.title")}
         </h2>
 
         {promptBox}
 
         {candidates.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground">
-            No agents available yet — create or start one from the Agents view
-            to ask about your repositories.
+            {t("projects.agentPrompt.noAgents")}
           </p>
         ) : (
           <div className="space-y-1.5">

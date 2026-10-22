@@ -8,6 +8,7 @@ import { projectSelectionChannelCandidates } from "@/features/projects/lib/proje
 import { joinChannel } from "@/shared/api/tauri";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 const ACTION_CLASS =
   "-mx-2 h-7 w-[calc(100%+1rem)] justify-start gap-3 rounded-md px-2 text-left text-sm font-normal hover:bg-muted/70 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground";
@@ -21,6 +22,7 @@ export function ProjectSelectionDiscussAction({
   onSelectChannel: (channelId: string) => void;
   testIdPrefix?: string;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = React.useState(false);
   const [browserOpen, setBrowserOpen] = React.useState(false);
   const channels = useChannelsQuery().data ?? [];
@@ -41,7 +43,7 @@ export function ProjectSelectionDiscussAction({
         variant="ghost"
       >
         <MessageSquare className="h-3.5 w-3.5" />
-        Discuss in a group
+        {t("projects.selection.discussInGroup")}
         <ChevronDown
           className={cn(
             "ml-auto h-3.5 w-3.5 transition-transform",
@@ -86,7 +88,7 @@ export function ProjectSelectionDiscussAction({
             variant="ghost"
           >
             <Search className="h-3.5 w-3.5 text-muted-foreground" />
-            Search groups…
+            {t("projects.selectionDiscuss.searchGroups")}
           </Button>
         </div>
       ) : null}

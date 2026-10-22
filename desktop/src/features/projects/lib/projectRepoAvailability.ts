@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 export type ProjectRepoUnavailableReason =
   | "missing"
   | "access"
@@ -15,41 +16,35 @@ export type ProjectRepoUnavailablePresentation = {
 
 const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
   ProjectRepoUnavailableReason,
-  ProjectRepoUnavailablePresentation
+  { description: MessageKey; title: MessageKey }
 > = {
   authentication: {
-    description:
-      "Kuzz could not authenticate with this repository. Check your access and try again.",
-    title: "Repository access failed",
+    description: "projects.repoAvailability.authDescription",
+    title: "projects.repoAvailability.authTitle",
   },
   missing: {
-    description: "This project's repository wasn't found.",
-    title: "Repository not initialized",
+    description: "projects.repoAvailability.missingDescription",
+    title: "projects.repoAvailability.missingTitle",
   },
   access: {
-    description:
-      "Repository access is granted through its group, and you’re not a member. Ask the repository owner for an invite.",
-    title: "Repository access restricted",
+    description: "projects.repoAvailability.accessDescription",
+    title: "projects.repoAvailability.accessTitle",
   },
   unbound: {
-    description:
-      "This repository isn't linked to a group yet, so no one can open it. The repository owner can link a group from the Access menu.",
-    title: "No access group bound",
+    description: "projects.repoAvailability.unboundDescription",
+    title: "projects.repoAvailability.unboundTitle",
   },
   network: {
-    description:
-      "The Kuzz git service could not be reached. Check your connection and try again.",
-    title: "Couldn’t reach repository",
+    description: "projects.repoAvailability.networkDescription",
+    title: "projects.repoAvailability.networkTitle",
   },
   ref: {
-    description:
-      "The selected branch is advertised by the project but is missing from its git remote.",
-    title: "Branch unavailable",
+    description: "projects.repoAvailability.refDescription",
+    title: "projects.repoAvailability.refTitle",
   },
   unknown: {
-    description:
-      "Kuzz could not load this repository. Try again or contact the project owner.",
-    title: "Repository unavailable",
+    description: "projects.repoAvailability.unknownDescription",
+    title: "projects.repoAvailability.unknownTitle",
   },
 };
 
@@ -57,7 +52,8 @@ const PROJECT_REPO_UNAVAILABLE_PRESENTATIONS: Record<
 export function projectRepoUnavailablePresentation(
   reason: ProjectRepoUnavailableReason,
 ): ProjectRepoUnavailablePresentation {
-  return PROJECT_REPO_UNAVAILABLE_PRESENTATIONS[reason];
+  const keys = PROJECT_REPO_UNAVAILABLE_PRESENTATIONS[reason];
+  return { description: t(keys.description), title: t(keys.title) };
 }
 
 export function projectRepoUnavailableReason(

@@ -27,6 +27,7 @@ import { Input } from "@/shared/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
+import { useT } from "@/shared/i18n";
 
 function profileForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return profiles?.[normalizePubkey(pubkey)] ?? null;
@@ -55,6 +56,7 @@ export function IssueAssigneeFacepile({
   assignees: string[];
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   if (assignees.length === 0) return null;
   return (
     <span
@@ -71,7 +73,7 @@ export function IssueAssigneeFacepile({
               profile?.isAgent ? "rounded-squircle" : "rounded-full",
             )}
             key={pubkey}
-            title={`Assigned to ${label}`}
+            title={t("projects.assignees.assignedTo", { name: label })}
           >
             <UserAvatar
               accent={profile?.isAgent === true}
@@ -117,6 +119,7 @@ export function IssueAssigneesRow({
   testIdPrefix?: string;
   viewerPubkey: string | null;
 }) {
+  const t = useT();
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [assigneeQuery, setAssigneeQuery] = React.useState("");
   const assignmentOperationInFlightRef = React.useRef(false);
@@ -165,16 +168,18 @@ export function IssueAssigneesRow({
         });
         setPickerOpen(false);
         setAssigneeQuery("");
-        toast.success("Task assigned.");
+        toast.success(t("projects.assignees.assigned"));
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to assign task.",
+          error instanceof Error
+            ? error.message
+            : t("projects.assignees.assignFailed"),
         );
       } finally {
         assignmentOperationInFlightRef.current = false;
       }
     },
-    [assignMutation, issue, operationSigner],
+    [assignMutation, issue, operationSigner, t],
   );
 
   const handleUnassign = React.useCallback(
@@ -190,16 +195,18 @@ export function IssueAssigneesRow({
           signerPubkey: operationSigner,
           signAsManagedOwner,
         });
-        toast.success("Task unassigned.");
+        toast.success(t("projects.assignees.unassigned"));
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to unassign task.",
+          error instanceof Error
+            ? error.message
+            : t("projects.assignees.unassignFailed"),
         );
       } finally {
         assignmentOperationInFlightRef.current = false;
       }
     },
-    [issue, operationSigner, signAsManagedOwner, unassignMutation],
+    [issue, operationSigner, signAsManagedOwner, t, unassignMutation],
   );
 
   React.useEffect(() => {
@@ -243,7 +250,7 @@ export function IssueAssigneesRow({
             <TooltipTrigger asChild>
               {canUnassign ? (
                 <button
-                  aria-label={`Unassign ${label}`}
+                  aria-label={t("projects.assignees.unassign", { name: label })}
                   className={cn(
                     "group relative inline-flex rounded-full focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
                   )}
@@ -292,7 +299,7 @@ export function IssueAssigneesRow({
           variant="ghost"
         >
           {contextActions ? <UserPlus /> : null}
-          Assign to me
+          {t("projects.assignees.assignToMe")}
         </Button>
       ) : null}
       {showSelfAssignmentState && isSelfAssigned ? (
@@ -307,7 +314,7 @@ export function IssueAssigneesRow({
           variant="ghost"
         >
           <Check className="h-3 w-3" />
-          Assigned to me
+          {t("projects.assignees.assignedToMe")}
         </Button>
       ) : null}
       {canAssignOthers ? (
@@ -325,14 +332,14 @@ export function IssueAssigneesRow({
               variant="ghost"
             >
               {contextActions ? <Users /> : null}
-              Assign
+              {t("projects.assignees.assign")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
             <DialogHeader className="border-b border-border/60 px-6 py-5 pr-14">
-              <DialogTitle>Assign task</DialogTitle>
+              <DialogTitle>{t("projects.assignees.dialogTitle")}</DialogTitle>
               <DialogDescription>
-                Choose a person or agent to work on this task.
+                {t("projects.assignees.dialogDescription")}
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 border-b border-border/60 px-6 py-3">
@@ -342,14 +349,14 @@ export function IssueAssigneesRow({
                 className="h-8 border-0 px-0 text-sm shadow-none focus-visible:ring-0"
                 data-testid="project-assignee-search"
                 onChange={(event) => setAssigneeQuery(event.target.value)}
-                placeholder="Search people and agents"
+                placeholder={t("projects.assignees.searchPlaceholder")}
                 value={assigneeQuery}
               />
             </div>
             <div className="max-h-72 min-h-28 overflow-y-auto p-2">
               {userSearchQuery.isLoading ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">
-                  Searching…
+                  {t("projects.assignees.searching")}
                 </p>
               ) : candidates.length > 0 ? (
                 candidates.map((candidate) => {
@@ -380,7 +387,7 @@ export function IssueAssigneesRow({
                         </span>
                         {candidate.isAgent ? (
                           <span className="block truncate text-xs text-muted-foreground">
-                            Agent
+                            {t("projects.assignees.agent")}
                           </span>
                         ) : null}
                       </span>
@@ -389,7 +396,7 @@ export function IssueAssigneesRow({
                 })
               ) : (
                 <p className="px-3 py-4 text-sm text-muted-foreground">
-                  No matching people or agents.
+                  {t("projects.assignees.noMatches")}
                 </p>
               )}
             </div>

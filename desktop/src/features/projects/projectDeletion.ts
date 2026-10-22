@@ -10,6 +10,7 @@ import {
 } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import type { Project } from "./projectModels";
+import { t } from "@/shared/i18n";
 
 export type DeleteProjectEventTemplate = {
   kind: number;
@@ -90,7 +91,7 @@ export async function deleteProject(
   };
   const [liveHead] = await fetchEvents(filter);
   if (!liveHead) {
-    throw new Error("Couldn't find this project. Refresh and try again.");
+    throw new Error(t("projects.errors.projectNotFound"));
   }
 
   const event = await signEvent(
@@ -98,13 +99,11 @@ export async function deleteProject(
   );
   await publishEvent(
     event,
-    "Could not confirm whether the project was deleted. Projects were refreshed.",
-    "Failed to delete project.",
+    t("projects.deletion.timedOut"),
+    t("projects.deletion.failed"),
   );
 
   if ((await fetchEvents(filter)).length > 0) {
-    throw new Error(
-      "This project was updated while it was being deleted. Refresh and try again.",
-    );
+    throw new Error(t("projects.deletion.updatedDuringDelete"));
   }
 }

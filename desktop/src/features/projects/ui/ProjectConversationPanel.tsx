@@ -25,6 +25,7 @@ import { getEventById } from "@/shared/api/tauri";
 import type { RelayEvent, RespondToMode } from "@/shared/api/types";
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 const EMPTY_PERSONA_LOOKUP = new Map<string, string>();
 const EMPTY_RESPOND_TO_LOOKUP = new Map<string, RespondToMode>();
@@ -162,6 +163,7 @@ export function ProjectConversationPanel({
     identityQuery.data,
   );
   const toggleReactionMutation = useToggleReactionMutation();
+  const t = useT();
   const isOverlay = useIsThreadPanelOverlay();
   const isComposerDisabled =
     !activeChannel?.isMember ||
@@ -195,8 +197,12 @@ export function ProjectConversationPanel({
   const layoutProps = {
     canResetWidth,
     enterMotion: !canShowThread,
-    headerTitle: channelLabel ? `${channelLabel}` : "Thread",
-    headerTitleAriaLabel: channelLabel ? `Open ${channelLabel}` : undefined,
+    headerTitle: channelLabel
+      ? `${channelLabel}`
+      : t("projects.conversation.thread"),
+    headerTitleAriaLabel: channelLabel
+      ? t("projects.conversation.openChannel", { name: channelLabel })
+      : undefined,
     isFocusMode: false,
     isSinglePanelView: !isOverlay,
     layout: "standalone" as const,
@@ -319,10 +325,10 @@ export function ProjectConversationPanel({
   return wrapProjectConversationPane(
     <div className="flex h-full flex-col items-center justify-center gap-3 bg-background p-6 text-center">
       <p className="text-sm text-muted-foreground">
-        This conversation could not be loaded.
+        {t("projects.conversation.loadFailed")}
       </p>
       <Button onClick={onClose} size="sm" variant="outline">
-        Close
+        {t("common.close")}
       </Button>
     </div>,
     {

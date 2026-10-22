@@ -7,6 +7,7 @@ import {
   openProjectRepositoryFolder,
 } from "@/shared/api/projectGit";
 import { useOpenProjectTerminal } from "./useOpenProjectTerminal";
+import { useT } from "@/shared/i18n";
 
 type MergeRecoveryInput = {
   expectedCommit: string;
@@ -28,6 +29,7 @@ export function useProjectRepositoryOpenActions({
   repository: Repository | null | undefined;
   reposDir?: string | null;
 }) {
+  const t = useT();
   const openTerminal = useOpenProjectTerminal(reposDir);
   const handleOpenTerminal = React.useCallback(() => {
     if (!repository) return Promise.resolve();
@@ -40,8 +42,8 @@ export function useProjectRepositoryOpenActions({
   const handleOpenLocalRepository = React.useCallback(async () => {
     const cloneUrl = repository?.cloneUrls[0];
     if (!localRepositoryPath || !repository || !cloneUrl) {
-      toast.error("Couldn’t open repository folder", {
-        description: "Kuzz could not find this repository’s local checkout.",
+      toast.error(t("projects.openFolder.failed"), {
+        description: t("projects.openFolder.notFound"),
       });
       return;
     }
@@ -52,17 +54,17 @@ export function useProjectRepositoryOpenActions({
         reposDir,
       });
     } catch {
-      toast.error("Couldn’t open repository folder", {
-        description: "Kuzz could not open this checkout in your file browser.",
+      toast.error(t("projects.openFolder.failed"), {
+        description: t("projects.openFolder.openFailed"),
       });
     }
-  }, [localRepositoryPath, repository, reposDir]);
+  }, [localRepositoryPath, repository, reposDir, t]);
 
   const handleOpenMergeRecoveryTerminal = React.useCallback(
     async (input: MergeRecoveryInput) => {
       const targetCloneUrl = repository?.cloneUrls[0];
       if (!repository || !targetCloneUrl) {
-        throw new Error("No project selected.");
+        throw new Error(t("projects.errors.noProjectSelected"));
       }
       return openProjectMergeRecoveryTerminal({
         ...input,
@@ -71,7 +73,7 @@ export function useProjectRepositoryOpenActions({
         targetCloneUrl,
       });
     },
-    [repository, reposDir],
+    [repository, reposDir, t],
   );
 
   return {

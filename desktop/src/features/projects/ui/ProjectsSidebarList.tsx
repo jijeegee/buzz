@@ -9,12 +9,14 @@ import { selectedProjectRouteId } from "@/features/sidebar/ui/listSidebarProject
 import { cn } from "@/shared/lib/cn";
 import { Input } from "@/shared/ui/input";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { useT } from "@/shared/i18n";
 
 /**
  * The Projects tab's list, in the left column: an Overview row, then every
  * project by name. Picking one opens it on the right.
  */
 export function ProjectsSidebarList() {
+  const t = useT();
   const { goProject, goProjects } = useAppNavigation();
   const pathname = useLocation({ select: (location) => location.pathname });
   const routeProjectId = selectedProjectRouteId(pathname);
@@ -38,14 +40,14 @@ export function ProjectsSidebarList() {
     <div className="flex min-h-0 flex-1 flex-col" data-testid="projects-list">
       <div className="space-y-2 px-2 pb-2 pt-1">
         <h2 className="px-1 text-base font-semibold text-sidebar-foreground">
-          Projects
+          {t("projects.sidebar.title")}
         </h2>
         <Input
-          aria-label="Find projects by name"
+          aria-label={t("projects.sidebar.filterLabel")}
           className="h-8 bg-background"
           data-testid="projects-filter"
           onChange={(event) => setFilter(event.target.value)}
-          placeholder="Find projects"
+          placeholder={t("projects.sidebar.filterPlaceholder")}
           value={filter}
         />
       </div>
@@ -55,7 +57,7 @@ export function ProjectsSidebarList() {
           isSelected={pathname === "/projects"}
           onClick={() => void goProjects()}
           testId="projects-list-overview"
-          title="Overview"
+          title={t("projects.sidebar.overview")}
         />
         {projectsQuery.isLoading ? (
           <div className="space-y-3 px-2 py-2">
@@ -80,7 +82,9 @@ export function ProjectsSidebarList() {
           ))
         ) : (
           <p className="px-2 py-3 text-xs text-sidebar-foreground/60">
-            {needle ? "No projects match that name." : "No projects yet."}
+            {needle
+              ? t("projects.sidebar.noMatch")
+              : t("projects.sidebar.empty")}
           </p>
         )}
       </div>

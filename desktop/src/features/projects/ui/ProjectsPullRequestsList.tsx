@@ -8,6 +8,7 @@ import type {
   Repository,
 } from "@/features/projects/hooks";
 import { pullRequestShareLink } from "@/features/projects/lib/projectShareLinks";
+import { pullRequestStatusLabel } from "@/features/projects/lib/projectStatusLabels";
 import { selectionItemFromReview } from "@/features/projects/lib/projectSelection";
 import type { ProjectWorkItemSection } from "@/features/projects/projectWorkItems";
 import {
@@ -34,6 +35,7 @@ import { ProjectSelectableGroup } from "./ProjectSelectableGroup";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { ProjectsWorkItemsLoadNotice } from "./ProjectsWorkItemsLoadNotice";
 import { groupProjectWorkItemsByProject } from "./projectWorkItemGroups";
+import { type Translate, useT } from "@/shared/i18n";
 
 type ProjectsPullRequestsListProps = {
   /** Render without container chrome — a parent table container provides border and rounding. */
@@ -54,11 +56,11 @@ type ProjectsPullRequestsListProps = {
   viewMode: "grid" | "list";
 };
 
-function nextStepLabel(status: ProjectPullRequest["status"]) {
-  if (status === "Draft") return "View draft";
-  if (status === "Merged") return "View merge";
-  if (status === "Closed") return "View closed";
-  return "Open review";
+function nextStepLabel(status: ProjectPullRequest["status"], t: Translate) {
+  if (status === "Draft") return t("projects.reviewsList.viewDraft");
+  if (status === "Merged") return t("projects.reviewsList.viewMerge");
+  if (status === "Closed") return t("projects.reviewsList.viewClosed");
+  return t("projects.reviewsList.openReview");
 }
 
 const PullRequestGridCard = React.memo(function PullRequestGridCard({
@@ -76,6 +78,7 @@ const PullRequestGridCard = React.memo(function PullRequestGridCard({
   ) => void;
   repository: Repository;
 }) {
+  const t = useT();
   return (
     <Card
       className="group relative flex min-h-32 flex-col overflow-hidden border-border/60 bg-transparent p-4 shadow-none transition-colors duration-150 hover:bg-muted/20"
@@ -86,7 +89,9 @@ const PullRequestGridCard = React.memo(function PullRequestGridCard({
         onClick={() => onOpen(project, repository, pullRequest)}
         type="button"
       >
-        <span className="sr-only">View review {pullRequest.title}</span>
+        <span className="sr-only">
+          {t("projects.reviewsList.viewItem", { title: pullRequest.title })}
+        </span>
       </button>
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <h3
@@ -99,14 +104,14 @@ const PullRequestGridCard = React.memo(function PullRequestGridCard({
           className={cn(PROJECT_GRID_CARD_BODY_CLASS, "text-muted-foreground")}
           data-testid="projects-grid-card-body"
         >
-          {pullRequest.content || "No description provided."}
+          {pullRequest.content || t("projects.list.noDescription")}
         </p>
         <div
           className="mt-auto flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
           data-testid="projects-grid-card-indicator"
         >
           <ProjectEventTypeIcon className="h-3.5 w-3.5" kind="pull-request" />
-          <span>{pullRequest.status}</span>
+          <span>{pullRequestStatusLabel(pullRequest.status)}</span>
         </div>
       </div>
     </Card>
@@ -149,6 +154,7 @@ const PullRequestListRow = React.memo(function PullRequestListRow({
     pullRequest: ProjectPullRequest,
   ) => void;
 }) {
+  const t = useT();
   const authorLabel = resolveUserLabel({
     profiles,
     pubkey: pullRequest.author,
@@ -177,21 +183,25 @@ const PullRequestListRow = React.memo(function PullRequestListRow({
       }}
       testId={`projects-pr-row-${pullRequest.id}`}
       title={pullRequest.title}
-      titleAttr={`Open review ${pullRequest.title}`}
+      titleAttr={t("projects.reviewsList.openItem", {
+        title: pullRequest.title,
+      })}
       titleIcon={
         <ProjectEventTypeIcon className="h-3.5 w-3.5" kind="pull-request" />
       }
       trailing={
-        <ProjectListRowMenu label={`More options for ${pullRequest.title}`}>
+        <ProjectListRowMenu
+          label={t("projects.cards.moreOptions", { name: pullRequest.title })}
+        >
           <DropdownMenuItem
             onSelect={() => onOpen(project, repository, pullRequest)}
           >
             <GitPullRequest className="h-4 w-4" />
-            {nextStepLabel(pullRequest.status)}
+            {nextStepLabel(pullRequest.status, t)}
           </DropdownMenuItem>
           <CopyShareLinkMenuItem
             link={pullRequestShareLink(pullRequest)}
-            label="Copy review link"
+            label={t("projects.reviewDetail.copyLink")}
             testId={`projects-pull-request-copy-link-${pullRequest.id}`}
           />
         </ProjectListRowMenu>
@@ -202,7 +212,7 @@ const PullRequestListRow = React.memo(function PullRequestListRow({
 
 export function ProjectsPullRequestsList({
   embedded,
-  emptyMessage = "No reviews yet",
+  emptyMessage,
   error,
   failedSections,
   isLoading,
@@ -213,6 +223,7 @@ export function ProjectsPullRequestsList({
   pullRequests,
   viewMode,
 }: ProjectsPullRequestsListProps) {
+  const t = useT();
   // Grouping and per-group selection arrays are identity-stable across
   // re-renders so the memoized rows only re-render when their data changes.
   const allGroups = React.useMemo(
@@ -248,7 +259,7 @@ export function ProjectsPullRequestsList({
   );
 
   if (isLoading) {
-    return <KuzzLoadingState label="Loading reviews" />;
+    return <KuzzLoadingState label={t("projects.reviewsList.loading")} />;
   }
 
   const loadNotice = (
@@ -271,17 +282,17 @@ export function ProjectsPullRequestsList({
             size="sm"
             variant="outline"
           >
-            {isRetrying ? "Retrying..." : "Retry"}
+            {isRetrying ? t("projects.loadNotice.retrying") : t("common.retry")}
           </Button>
         }
         description={
           error instanceof Error
             ? error.message
-            : "Something went wrong. Try again."
+            : t("projects.loadNotice.genericError")
         }
         error
         panel={false}
-        title="Could not load reviews"
+        title={t("projects.reviewsList.errorTitle")}
       />
     );
   }
@@ -293,7 +304,7 @@ export function ProjectsPullRequestsList({
         <ProjectPanelState
           className={cn(!embedded && "border border-dashed border-border/60")}
           panel={false}
-          title={emptyMessage}
+          title={emptyMessage ?? t("projects.reviewsList.empty")}
         />
       </div>
     );

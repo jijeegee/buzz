@@ -3,6 +3,7 @@ import * as React from "react";
 
 import { AddDefaultAiRow } from "@/features/agents/ui/AddDefaultAiRow";
 import { ChannelPermissionsSettings } from "@/features/channels/ui/ChannelPermissionsSettings";
+import { PROJECT_HOME_TEMPLATE_ID } from "@/features/projects/lib/projectHomeTemplate";
 import type { CreateProjectFormSettingsState } from "@/features/projects/ui/useCreateProjectFormSettings";
 import { TemplateFormDialog } from "@/features/settings/ui/ChannelTemplatesSettingsCard";
 import { Button } from "@/shared/ui/button";
@@ -16,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { cn } from "@/shared/lib/cn";
+import { useT } from "@/shared/i18n";
 
 const NONE_AGENT_VALUE = "__none__";
 const NONE_TEAM_VALUE = "__no-team__";
@@ -46,7 +48,14 @@ export function CreateProjectFormSettings({
   templates,
   channelVisibility,
 }: CreateProjectFormSettingsState & { disabled: boolean }) {
+  const t = useT();
   const [isCreateTemplateOpen, setIsCreateTemplateOpen] = React.useState(false);
+  // The built-in template's name is app text; user templates keep their own.
+  const templateName = (template: { id: string; name: string }) =>
+    template.id === PROJECT_HOME_TEMPLATE_ID
+      ? t("projects.createForm.projectHomeTemplate")
+      : template.name;
+  const noneLabel = t("projects.createForm.none");
   const selectedPersona = personas.find(
     (persona) => persona.id === agentPersonaId,
   );
@@ -54,8 +63,15 @@ export function CreateProjectFormSettings({
   const selectedTemplate = templates.find(
     (template) => template.id === templateId,
   );
-  const listingLabel = projectVisibility === "unlisted" ? "Unlisted" : "Listed";
-  const agentLabel = selectedPersona?.displayName ?? "None";
+  const listingLabel =
+    projectVisibility === "unlisted"
+      ? t("projects.createForm.unlisted")
+      : t("projects.createForm.listed");
+  const agentLabel = selectedPersona?.displayName ?? noneLabel;
+  const templateLabel = selectedTemplate
+    ? templateName(selectedTemplate)
+    : noneLabel;
+  const teamLabel = selectedTeam?.name ?? noneLabel;
   const agentDisabled = disabled || (!runtimesAvailable && personas.length > 0);
   const teamDisabled = disabled || (!runtimesAvailable && teams.length > 0);
 
@@ -70,24 +86,24 @@ export function CreateProjectFormSettings({
 
       <div className={cn(SETTINGS_ROW_CLASS, disabled && "opacity-50")}>
         <span className="text-sm font-medium text-foreground">
-          Template
+          {t("projects.createForm.template")}
           <span className="ml-1 text-xs font-normal text-muted-foreground/50">
-            Project home by default
+            {t("projects.createForm.templateHint")}
           </span>
         </span>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={`Template: ${selectedTemplate?.name ?? "None"}`}
+              aria-label={t("projects.createForm.templateValue", {
+                value: templateLabel,
+              })}
               className="-mr-2.5 ml-auto h-9 min-w-0 max-w-[60%] justify-end px-2.5 text-right text-sm font-medium text-foreground hover:bg-muted/50"
               data-testid="create-project-template"
               disabled={disabled}
               type="button"
               variant="ghost"
             >
-              <span className="truncate text-right">
-                {selectedTemplate?.name ?? "None"}
-              </span>
+              <span className="truncate text-right">{templateLabel}</span>
               <ChevronDown className="size-4 shrink-0 text-muted-foreground/70" />
             </Button>
           </DropdownMenuTrigger>
@@ -99,18 +115,18 @@ export function CreateProjectFormSettings({
               value={templateId || NO_TEMPLATE_VALUE}
             >
               <DropdownMenuRadioItem value={NO_TEMPLATE_VALUE}>
-                None
+                {noneLabel}
               </DropdownMenuRadioItem>
               {templates.map((template) => (
                 <DropdownMenuRadioItem key={template.id} value={template.id}>
-                  {template.name}
+                  {templateName(template)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setIsCreateTemplateOpen(true)}>
               <Plus className="size-4" />
-              Create new group template…
+              {t("projects.createForm.newTemplate")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -124,24 +140,24 @@ export function CreateProjectFormSettings({
 
       <div className={cn(SETTINGS_ROW_CLASS, teamDisabled && "opacity-50")}>
         <span className="text-sm font-medium text-foreground">
-          Team
+          {t("projects.createForm.team")}
           <span className="ml-1 text-xs font-normal text-muted-foreground/50">
-            Optional
+            {t("projects.createWorkItem.optional")}
           </span>
         </span>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={`Team: ${selectedTeam?.name ?? "None"}`}
+              aria-label={t("projects.createForm.teamValue", {
+                value: teamLabel,
+              })}
               className="-mr-2.5 ml-auto h-9 min-w-0 max-w-[60%] justify-end px-2.5 text-right text-sm font-medium text-foreground hover:bg-muted/50"
               data-testid="create-project-team"
               disabled={teamDisabled}
               type="button"
               variant="ghost"
             >
-              <span className="truncate text-right">
-                {selectedTeam?.name ?? "None"}
-              </span>
+              <span className="truncate text-right">{teamLabel}</span>
               <ChevronDown className="size-4 shrink-0 text-muted-foreground/70" />
             </Button>
           </DropdownMenuTrigger>
@@ -153,7 +169,7 @@ export function CreateProjectFormSettings({
               value={teamId || NONE_TEAM_VALUE}
             >
               <DropdownMenuRadioItem value={NONE_TEAM_VALUE}>
-                None
+                {noneLabel}
               </DropdownMenuRadioItem>
               {teams.map((team) => (
                 <DropdownMenuRadioItem key={team.id} value={team.id}>
@@ -167,12 +183,14 @@ export function CreateProjectFormSettings({
 
       <div className={cn(SETTINGS_ROW_CLASS, disabled && "opacity-50")}>
         <span className="text-sm font-medium text-foreground">
-          Project list
+          {t("projects.createForm.projectList")}
         </span>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={`Project list: ${listingLabel}`}
+              aria-label={t("projects.createForm.projectListValue", {
+                value: listingLabel,
+              })}
               className="-mr-2.5 ml-auto h-9 w-fit justify-end px-2.5 text-right text-sm font-medium text-foreground hover:bg-muted/50"
               data-testid="create-project-listing"
               disabled={disabled}
@@ -202,13 +220,13 @@ export function CreateProjectFormSettings({
                 data-testid="create-project-listing-option-listed"
                 value="listed"
               >
-                Listed
+                {t("projects.createForm.listed")}
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem
                 data-testid="create-project-listing-option-unlisted"
                 value="unlisted"
               >
-                Unlisted
+                {t("projects.createForm.unlisted")}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
@@ -217,12 +235,14 @@ export function CreateProjectFormSettings({
 
       <div className={cn(SETTINGS_ROW_CLASS, agentDisabled && "opacity-50")}>
         <span className="text-sm font-medium text-foreground">
-          Coding agent
+          {t("projects.createForm.codingAgent")}
         </span>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={`Coding agent: ${agentLabel}`}
+              aria-label={t("projects.createForm.codingAgentValue", {
+                value: agentLabel,
+              })}
               className="-mr-2.5 ml-auto h-9 min-w-0 max-w-[60%] justify-end px-2.5 text-right text-sm font-medium text-foreground hover:bg-muted/50"
               data-testid="create-project-agent"
               disabled={agentDisabled}
@@ -250,7 +270,7 @@ export function CreateProjectFormSettings({
                 data-testid="create-project-agent-option-none"
                 value={NONE_AGENT_VALUE}
               >
-                None
+                {noneLabel}
               </DropdownMenuRadioItem>
               {personas.map((persona) => (
                 <DropdownMenuRadioItem
@@ -272,7 +292,7 @@ export function CreateProjectFormSettings({
           defaultAi={defaultAi}
           disabled={disabled}
           idPrefix="create-project"
-          joinTarget="the project home"
+          joinTarget={t("projects.createForm.joinTarget")}
           onCheckedChange={setAddDefaultAi}
         />
       ) : null}

@@ -15,6 +15,7 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
 import type { ProjectPullRequest, Repository as Project } from "./hooks";
 import { nextProjectPullRequestStatusCreatedAt } from "./projectPullRequests.mjs";
 import { useProjectPullRequestWriteInvalidation } from "./pullRequestReviews";
+import { t } from "@/shared/i18n";
 
 type CreateProjectPullRequestInput = {
   title: string;
@@ -111,15 +112,15 @@ async function publishProjectPullRequest(
   input: CreateProjectPullRequestInput,
 ) {
   const title = input.title.trim();
-  if (!title) throw new Error("Review title cannot be empty.");
+  if (!title) throw new Error(t("projects.pullRequestMutations.titleEmpty"));
   if (title.length > 256) {
-    throw new Error("Review title must be 256 characters or fewer.");
+    throw new Error(t("projects.pullRequestMutations.titleTooLong"));
   }
   if (project.cloneUrls.length === 0) {
-    throw new Error("This project has no clone URL.");
+    throw new Error(t("projects.pullRequestMutations.noCloneUrl"));
   }
   if (input.branch === input.targetBranch) {
-    throw new Error("The base and compare branches must be different.");
+    throw new Error(t("projects.pullRequestMutations.sameBranches"));
   }
 
   const event = await signRelayEvent({
@@ -129,8 +130,8 @@ async function publishProjectPullRequest(
   });
   await relayClient.publishEvent(
     event,
-    "Timed out creating review.",
-    "Failed to create review.",
+    t("projects.pullRequestMutations.createTimedOut"),
+    t("projects.pullRequestMutations.createFailed"),
   );
   return event.id;
 }
@@ -151,9 +152,7 @@ export async function publishProjectPullRequestUpdate({
   if (
     !canPublishProjectPullRequestUpdate(identity.pubkey, project, pullRequest)
   ) {
-    throw new Error(
-      "Only the review author or repository owner can publish its update.",
-    );
+    throw new Error(t("projects.pullRequestMutations.updateNotAllowed"));
   }
   const event = await signRelayEvent({
     kind: KIND_GIT_PR_UPDATE,
@@ -166,8 +165,8 @@ export async function publishProjectPullRequestUpdate({
   });
   await relayClient.publishEvent(
     event,
-    "Timed out updating review.",
-    "The branch was pushed, but the review update could not be published.",
+    t("projects.pullRequestMutations.updateTimedOut"),
+    t("projects.pullRequestMutations.updateFailed"),
   );
   return true;
 }
@@ -188,7 +187,7 @@ export function useCreateProjectPullRequestMutation(
   const invalidate = useProjectPullRequestWriteInvalidation(project);
   return useMutation({
     mutationFn: (input: CreateProjectPullRequestInput) => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return publishProjectPullRequest(project, input);
     },
     onSuccess: invalidate,
@@ -208,8 +207,9 @@ export function useUpdateProjectPullRequestMutation(
       commit: string;
       mergeBase: string | null;
     }) => {
-      if (!project) throw new Error("No project selected.");
-      if (!pullRequest) throw new Error("No open review for this branch.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
+      if (!pullRequest)
+        throw new Error(t("projects.pullRequestMutations.noOpenReview"));
       return publishProjectPullRequestUpdate({
         commit,
         mergeBase,
@@ -231,9 +231,12 @@ export function useMergeProjectPullRequestMutation(
     }: {
       pullRequest: ProjectPullRequest;
     }) => {
-      if (!project?.cloneUrls[0]) throw new Error("No project selected.");
+      if (!project?.cloneUrls[0])
+        throw new Error(t("projects.errors.noProjectSelected"));
       if (!pullRequest.branchName || !pullRequest.commit) {
-        throw new Error("Review branch information is incomplete.");
+        throw new Error(
+          t("projects.pullRequestMutations.branchInfoIncomplete"),
+        );
       }
       const result = await mergeProjectPullRequest({
         targetCloneUrl: project.cloneUrls[0],
@@ -262,7 +265,7 @@ export function usePublishProjectPullRequestMergedMutation(
   const invalidate = useProjectPullRequestWriteInvalidation(project);
   return useMutation({
     mutationFn: ({ statusEvent }: { statusEvent: string }) => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return publishProjectPullRequestMerged(project, statusEvent);
     },
     onSuccess: invalidate,

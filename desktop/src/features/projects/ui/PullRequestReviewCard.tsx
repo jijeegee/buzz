@@ -42,6 +42,7 @@ import {
   MergePullRequestButton,
   type OpenMergeRecoveryTerminal,
 } from "./MergePullRequestButton";
+import { useT } from "@/shared/i18n";
 
 /** Available pull-request actions rendered beside the latest review activity. */
 export function PullRequestReviewCard({
@@ -53,6 +54,7 @@ export function PullRequestReviewCard({
   project: Project;
   pullRequest: ProjectPullRequest;
 }) {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const { isPending: isUpdatingStatus, mutateAsync: updatePullRequestStatus } =
     useUpdateProjectPullRequestStatusMutation(project);
@@ -93,20 +95,22 @@ export function PullRequestReviewCard({
         });
         toast.success(
           status === "draft"
-            ? "Converted to draft."
+            ? t("projects.reviewActions.convertedToDraft")
             : status === "closed"
-              ? "Review closed."
+              ? t("projects.reviewActions.closed")
               : pullRequest.status === "Closed"
-                ? "Review reopened."
-                : "Marked as ready for review.",
+                ? t("projects.reviewActions.reopened")
+                : t("projects.reviewActions.markedReady"),
         );
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to update status.",
+          error instanceof Error
+            ? error.message
+            : t("projects.reviewActions.statusFailed"),
         );
       }
     },
-    [isManagedAgentOwner, isOwner, pullRequest, updatePullRequestStatus],
+    [isManagedAgentOwner, isOwner, pullRequest, updatePullRequestStatus, t],
   );
 
   const runReviewDecision = React.useCallback(
@@ -150,15 +154,15 @@ export function PullRequestReviewCard({
   const handleApprove = React.useCallback(async () => {
     const approved = await runReviewDecision(
       approvePullRequest,
-      "Review approved.",
-      "Failed to approve.",
+      t("projects.reviewActions.approved"),
+      t("projects.reviewActions.approveFailed"),
       approvalSummary,
     );
     if (approved) {
       setApproveDialogOpen(false);
       setApprovalSummary("");
     }
-  }, [approvalSummary, approvePullRequest, runReviewDecision]);
+  }, [approvalSummary, approvePullRequest, runReviewDecision, t]);
 
   const reviewDecisionPending = isApproving;
   const canMarkReady = canChangeStatus && pullRequest.status === "Draft";
@@ -200,7 +204,7 @@ export function PullRequestReviewCard({
               type="button"
             >
               <Check className="h-3.5 w-3.5" />
-              Approve
+              {t("projects.reviewActions.approve")}
             </Button>
           ) : null}
           {canMerge ? (
@@ -222,7 +226,7 @@ export function PullRequestReviewCard({
               variant="secondary"
             >
               <GitPullRequest className="h-3.5 w-3.5" />
-              Ready for review
+              {t("projects.reviewActions.readyForReview")}
             </Button>
           ) : null}
           {canReopen ? (
@@ -237,14 +241,14 @@ export function PullRequestReviewCard({
               variant="secondary"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Reopen review
+              {t("projects.reviewActions.reopen")}
             </Button>
           ) : null}
           {hasOverflowAction ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  aria-label="More review actions"
+                  aria-label={t("projects.reviewActions.more")}
                   className="ml-auto h-8 w-8"
                   disabled={isUpdatingStatus}
                   size="icon-xs"
@@ -262,7 +266,7 @@ export function PullRequestReviewCard({
                     }}
                   >
                     <GitPullRequestDraft className="h-4 w-4" />
-                    Convert to draft
+                    {t("projects.reviewActions.convertToDraft")}
                   </DropdownMenuItem>
                 ) : null}
                 {canClose ? (
@@ -273,7 +277,7 @@ export function PullRequestReviewCard({
                     }}
                   >
                     <X className="h-4 w-4" />
-                    Close review
+                    {t("projects.reviewActions.close")}
                   </DropdownMenuItem>
                 ) : null}
               </DropdownMenuContent>
@@ -291,16 +295,18 @@ export function PullRequestReviewCard({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Approve review</DialogTitle>
+            <DialogTitle>
+              {t("projects.reviewActions.approveTitle")}
+            </DialogTitle>
             <DialogDescription>
-              Add an optional summary for the author and other reviewers.
+              {t("projects.reviewActions.approveDescription")}
             </DialogDescription>
           </DialogHeader>
           <Textarea
-            aria-label="Approval summary"
+            aria-label={t("projects.reviewActions.approvalSummary")}
             disabled={isApproving}
             onChange={(event) => setApprovalSummary(event.target.value)}
-            placeholder="What looks good?"
+            placeholder={t("projects.reviewActions.approvalPlaceholder")}
             value={approvalSummary}
           />
           <DialogFooter>
@@ -310,7 +316,7 @@ export function PullRequestReviewCard({
               type="button"
               variant="ghost"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               className="bg-green-600 text-white hover:bg-green-700"
@@ -321,7 +327,7 @@ export function PullRequestReviewCard({
               type="button"
             >
               <Check className="h-4 w-4" />
-              Approve
+              {t("projects.reviewActions.approve")}
             </Button>
           </DialogFooter>
         </DialogContent>

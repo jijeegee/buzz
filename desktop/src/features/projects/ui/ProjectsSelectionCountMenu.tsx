@@ -23,6 +23,7 @@ import { copyTextToClipboard } from "@/shared/lib/clipboard";
 import { Button } from "@/shared/ui/button";
 import { ProjectSelectionDiscussAction } from "./ProjectSelectionDiscussAction";
 import { useProjectDiscussInChannel } from "./useProjectDiscussInChannel";
+import { useT } from "@/shared/i18n";
 
 function selectionActionIcon(id: ProjectSelectionAction["id"]) {
   if (id === "chat-agent") return Bot;
@@ -52,6 +53,7 @@ export function ProjectsSelectionCountMenu({
   presentation: ProjectSelectionPresentation;
   selectionItems: ProjectSelectionItem[];
 }) {
+  const t = useT();
   const selection = useProjectSelection();
   const openChannelWithDraft = useProjectDiscussInChannel(selectionItems);
   const selectionKind = selectionItems[0]?.kind;
@@ -77,7 +79,9 @@ export function ProjectsSelectionCountMenu({
         if (links.length === 0) return;
         copyTextToClipboard(
           links.join("\n"),
-          links.length === 1 ? "Link copied to clipboard" : "Links copied",
+          links.length === 1
+            ? t("projects.selection.linkCopied")
+            : t("projects.selection.linksCopied"),
         );
         return;
       }
@@ -85,7 +89,7 @@ export function ProjectsSelectionCountMenu({
         onCreatePullRequest?.();
       }
     },
-    [onChatWithAgent, onCreatePullRequest, selection, selectionItems],
+    [onChatWithAgent, onCreatePullRequest, selection, selectionItems, t],
   );
 
   return (
@@ -150,7 +154,7 @@ export function ProjectsSelectionCountMenu({
           variant="ghost"
         >
           <X className="h-3.5 w-3.5" />
-          Clear selection
+          {t("projects.selection.clear")}
         </Button>
       </div>
     </div>

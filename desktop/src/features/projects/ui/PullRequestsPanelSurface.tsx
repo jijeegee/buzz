@@ -2,6 +2,7 @@ import type * as React from "react";
 
 import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import { ProjectPanelState } from "./ProjectPanelState";
+import { useT } from "@/shared/i18n";
 
 /** Which center pane `PullRequestsPanel` should show. A retained selected
  * review wins over an empty list so refetching does not flash "No reviews yet." */
@@ -36,13 +37,14 @@ export function PullRequestsPanelSurface({
   pullRequests: { length: number };
   selectedPullRequest: unknown;
 }) {
+  const t = useT();
   const kind = pullRequestsPanelKind({
     isLoading,
     pullRequests,
     selectedPullRequest,
   });
   if (kind === "loading") {
-    return <KuzzLoadingState label="Loading reviews" />;
+    return <KuzzLoadingState label={t("projects.reviewsPanel.loading")} />;
   }
   if (kind === "detail") {
     return detail;
@@ -52,12 +54,16 @@ export function PullRequestsPanelSurface({
       <ProjectPanelState
         description={
           error
-            ? "Refresh the repository and try again."
-            : "Reviews opened for this repository will appear here."
+            ? t("projects.reviewsPanel.errorDescription")
+            : t("projects.reviewsPanel.emptyDescription")
         }
         error={Boolean(error)}
         testId="project-pull-requests-empty"
-        title={error ? "Could not load reviews" : "No reviews yet"}
+        title={
+          error
+            ? t("projects.reviewsPanel.errorTitle")
+            : t("projects.reviewsPanel.emptyTitle")
+        }
       />
     );
   }

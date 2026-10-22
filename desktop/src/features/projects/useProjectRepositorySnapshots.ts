@@ -7,6 +7,7 @@ import type {
 import { fetchRepoState } from "@/features/projects/hooks";
 import { resolveProjectDefaultBranch } from "@/features/projects/lib/projectBranches";
 import { getProjectRepoSnapshot } from "@/shared/api/projectGit";
+import { t } from "@/shared/i18n";
 
 export type ProjectRepositorySnapshotResult = {
   error: unknown;
@@ -57,7 +58,7 @@ export function useProjectRepositorySnapshots(
     return {
       error:
         enabled && !repository.cloneUrls[0]
-          ? new Error("Repository not found.")
+          ? new Error(t("projects.useProjectRepositorySnapshots.notFound"))
           : query?.error,
       isLoading: query?.isLoading ?? false,
       repository,

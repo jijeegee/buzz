@@ -2,12 +2,31 @@ import { AlertCircle } from "lucide-react";
 
 import type { ProjectWorkItemSection } from "@/features/projects/projectWorkItems";
 import { Button } from "@/shared/ui/button";
+import { type MessageKey, useT } from "@/shared/i18n";
 
-const SECTION_LABELS: Record<ProjectWorkItemSection, string> = {
-  assignments: "assignments",
-  comments: "comments",
-  "pull-request-updates": "review updates",
-  statuses: "statuses",
+const SECTION_LABELS: Record<ProjectWorkItemSection, MessageKey> = {
+  assignments: "projects.loadNotice.sectionAssignments",
+  comments: "projects.loadNotice.sectionComments",
+  "pull-request-updates": "projects.loadNotice.sectionReviewUpdates",
+  statuses: "projects.loadNotice.sectionStatuses",
+};
+
+const LOAD_FAILED_TITLES: Record<
+  ProjectsWorkItemsLoadNoticeProps["subject"],
+  MessageKey
+> = {
+  issues: "projects.loadNotice.tasksFailed",
+  "project activity": "projects.loadNotice.activityFailed",
+  "pull requests": "projects.loadNotice.reviewsFailed",
+};
+
+const PARTIAL_TITLES: Record<
+  ProjectsWorkItemsLoadNoticeProps["subject"],
+  MessageKey
+> = {
+  issues: "projects.loadNotice.tasksPartial",
+  "project activity": "projects.loadNotice.activityPartial",
+  "pull requests": "projects.loadNotice.reviewsPartial",
 };
 
 type ProjectsWorkItemsLoadNoticeProps = {
@@ -26,30 +45,21 @@ export function ProjectsWorkItemsLoadNotice({
   onRetry,
   subject,
 }: ProjectsWorkItemsLoadNoticeProps) {
+  const t = useT();
   if (!error && failedSections.length === 0) return null;
 
-  const displaySubject =
-    subject === "pull requests"
-      ? "reviews"
-      : subject === "issues"
-        ? "tasks"
-        : subject;
-  const detailSubject =
-    subject === "pull requests"
-      ? "review"
-      : subject === "issues"
-        ? "task"
-        : subject;
   const title = error
-    ? `Could not load ${displaySubject}.`
-    : `Some ${detailSubject} details could not be loaded.`;
+    ? t(LOAD_FAILED_TITLES[subject])
+    : t(PARTIAL_TITLES[subject]);
   const description = error
     ? error instanceof Error
       ? error.message
-      : "Something went wrong. Try again."
-    : `Missing ${failedSections
-        .map((section) => SECTION_LABELS[section])
-        .join(", ")}. The available results are shown below.`;
+      : t("projects.loadNotice.genericError")
+    : t("projects.loadNotice.missing", {
+        sections: failedSections
+          .map((section) => t(SECTION_LABELS[section]))
+          .join(", "),
+      });
 
   return (
     <div
@@ -67,7 +77,7 @@ export function ProjectsWorkItemsLoadNotice({
         size="sm"
         variant="outline"
       >
-        {isRetrying ? "Retrying..." : "Retry"}
+        {isRetrying ? t("projects.loadNotice.retrying") : t("common.retry")}
       </Button>
     </div>
   );

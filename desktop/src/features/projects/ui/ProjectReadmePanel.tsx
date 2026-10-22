@@ -28,6 +28,7 @@ import {
 import { GitHubMark } from "./GitHubMark";
 import { ProjectRepositoryUnavailableState } from "./ProjectRepositoryUnavailableState";
 import { ProjectPanelState } from "./ProjectPanelState";
+import { useT } from "@/shared/i18n";
 
 export function findReadmeFile(files: ProjectRepoFile[]) {
   const readmes = files.filter((file) =>
@@ -124,6 +125,7 @@ export function ReadmePanel({
   /** Branch picker + remote/local toggle rendered in the panel header. */
   sourceControls?: RepoSourceHeaderControls;
 }) {
+  const t = useT();
   const fileContent = useRepositoryFileContent(file, fileContentSource);
   const externalOpenUrl = projectExternalRefUrl(
     externalUrl,
@@ -162,7 +164,9 @@ export function ReadmePanel({
         </span>
         {file ? (
           <span className="hidden shrink-0 text-2xs text-muted-foreground sm:block">
-            Last changed {formatLastChangedAt(file.lastChangedAt)}
+            {t("projects.readme.lastChanged", {
+              time: formatLastChangedAt(file.lastChangedAt),
+            })}
           </span>
         ) : null}
       </div>
@@ -173,7 +177,7 @@ export function ReadmePanel({
     return (
       <section className="overflow-hidden">
         {header}
-        <KuzzLoadingState label="Loading repository" />
+        <KuzzLoadingState label={t("projects.readme.loadingRepository")} />
       </section>
     );
   }
@@ -207,11 +211,10 @@ export function ReadmePanel({
             )}
           </div>
           <h3 className="text-base font-semibold text-foreground">
-            Code hosted on {externalHost}
+            {t("projects.readme.hostedOn", { host: externalHost })}
           </h3>
           <p className="mt-1 max-w-lg text-sm text-muted-foreground">
-            Clone this repository locally to explore its files, commits, and
-            contributors in Kuzz.
+            {t("projects.readme.cloneHint")}
           </p>
           {externalOpenUrl ? (
             <a
@@ -235,14 +238,16 @@ export function ReadmePanel({
                 ) : (
                   <DownloadCloud className="h-4 w-4" />
                 )}
-                {sourceControls.clonePending ? "Cloning…" : "Clone locally"}
+                {sourceControls.clonePending
+                  ? t("projects.readme.cloning")
+                  : t("projects.readme.cloneLocally")}
               </Button>
             ) : null}
             {externalOpenUrl ? (
               <Button asChild size="sm" variant="outline">
                 <a href={externalOpenUrl} rel="noreferrer" target="_blank">
                   <ExternalLink className="h-4 w-4" />
-                  Open on {externalHost}
+                  {t("projects.readme.openOn", { host: externalHost })}
                 </a>
               </Button>
             ) : null}
@@ -256,7 +261,7 @@ export function ReadmePanel({
     return (
       <section className="overflow-hidden">
         {header}
-        <KuzzLoadingState label="Loading README" />
+        <KuzzLoadingState label={t("projects.readme.loading")} />
       </section>
     );
   }
@@ -272,25 +277,25 @@ export function ReadmePanel({
             sourceControls?.onAskForAccess ? (
               <Button onClick={sourceControls.onAskForAccess} size="sm">
                 <MessageCircle className="h-4 w-4" />
-                Chat with an agent
+                {t("projects.readme.chatWithAgent")}
               </Button>
             ) : undefined
           }
           description={
             loadError
-              ? "Refresh the repository or ask an agent to investigate."
+              ? t("projects.readme.errorDescription")
               : emptyRepository
-                ? "Ask an agent to create the initial codebase or connect an existing repository."
-                : "Add a README to describe setup, usage, and project context."
+                ? t("projects.readme.emptyRepositoryDescription")
+                : t("projects.readme.noReadmeDescription")
           }
           error={loadError}
           panel={false}
           title={
             loadError
-              ? "Could not load the README"
+              ? t("projects.readme.errorTitle")
               : emptyRepository
-                ? "No files have been pushed yet"
-                : "No README yet"
+                ? t("projects.readme.emptyRepositoryTitle")
+                : t("projects.readme.noReadmeTitle")
           }
         />
       </section>

@@ -35,11 +35,7 @@ import { PROJECT_DETAIL_PANEL_CLASS } from "./projectPanelStyles";
 import { ProfileIdentityButton } from "./ProjectProfileIdentity";
 import { ProjectWorkItemRow } from "./ProjectWorkItemRow";
 import { ProjectPanelState } from "./ProjectPanelState";
-import { formatLocale } from "@/shared/i18n";
-
-function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
+import { formatLocale, useT } from "@/shared/i18n";
 
 function commitSelectionItem(
   commit: ProjectRepoCommit,
@@ -70,6 +66,7 @@ export function ContributorsPanel({
   profiles?: UserProfileLookup;
   repoContributors: ProjectRepoContributor[];
 }) {
+  const t = useT();
   const gitRows = repoContributors.map((contributor) => {
     const signedPubkey = contributorPubkeysByGitIdentity.get(
       contributorKey(contributor),
@@ -82,7 +79,9 @@ export function ContributorsPanel({
     const matchedProfile = signedProfile ?? heuristicProfile?.profile;
     const label = matchedProfile
       ? resolveUserLabel({ pubkey: matchedPubkey ?? "", profiles })
-      : contributor.name || contributor.email || "Unknown contributor";
+      : contributor.name ||
+        contributor.email ||
+        t("projects.contributors.unknown");
     const signedCounts = matchedPubkey
       ? activityCounts[matchedPubkey]
       : undefined;
@@ -97,14 +96,17 @@ export function ContributorsPanel({
       profileLinked: matchedPubkey !== null,
       reviewCount: signedCounts?.reviews ?? null,
       role: signedPubkey
-        ? matchedProfile?.nip05Handle || contributor.email || "Kuzz contributor"
+        ? matchedProfile?.nip05Handle ||
+          contributor.email ||
+          t("projects.contributors.kuzzContributor")
         : heuristicProfile
-          ? `${
-              heuristicProfile.profile.nip05Handle ||
-              contributor.email ||
-              "Git contributor"
-            } · unverified match`
-          : contributor.email || "Git contributor",
+          ? t("projects.contributors.unverifiedMatch", {
+              identity:
+                heuristicProfile.profile.nip05Handle ||
+                contributor.email ||
+                t("projects.contributors.gitContributor"),
+            })
+          : contributor.email || t("projects.contributors.gitContributor"),
       taskCount: signedCounts?.tasks ?? null,
     };
   });
@@ -134,7 +136,9 @@ export function ContributorsPanel({
         reviewCount: signedCounts.reviews,
         role:
           profile?.nip05Handle ||
-          (isAgent ? "Agent contributor" : "Kuzz contributor"),
+          (isAgent
+            ? t("projects.contributors.agentContributor")
+            : t("projects.contributors.kuzzContributor")),
         taskCount: signedCounts.tasks,
       };
     });
@@ -151,8 +155,8 @@ export function ContributorsPanel({
   if (rows.length === 0) {
     return (
       <ProjectPanelState
-        description="Contributors appear after signed project or repository activity."
-        title="No contributors yet"
+        description={t("projects.contributors.emptyDescription")}
+        title={t("projects.contributors.emptyTitle")}
       />
     );
   }
@@ -197,8 +201,8 @@ export function ContributorsPanel({
             data-testid="project-contributor-commit-count"
             title={
               row.commitCount === null
-                ? "No git commits"
-                : pluralize(row.commitCount, "commit")
+                ? t("projects.contributors.noCommits")
+                : t("projects.stats.commits", { count: row.commitCount })
             }
           >
             <GitCommitHorizontal className="h-3.5 w-3.5" />
@@ -209,8 +213,8 @@ export function ContributorsPanel({
             data-testid="project-contributor-review-count"
             title={
               row.reviewCount === null
-                ? "No linked reviews"
-                : pluralize(row.reviewCount, "review")
+                ? t("projects.contributors.noReviews")
+                : t("projects.stats.reviews", { count: row.reviewCount })
             }
           >
             <GitPullRequest className="h-3.5 w-3.5" />
@@ -221,8 +225,8 @@ export function ContributorsPanel({
             data-testid="project-contributor-task-count"
             title={
               row.taskCount === null
-                ? "No linked tasks"
-                : pluralize(row.taskCount, "task")
+                ? t("projects.contributors.noTasks")
+                : t("projects.stats.tasks", { count: row.taskCount })
             }
           >
             <CircleDot className="h-3.5 w-3.5" />
@@ -268,6 +272,7 @@ export function ActivityPanel({
   repoContributors: ProjectRepoContributor[];
   viewerGitIdentity?: ViewerGitIdentity | null;
 }) {
+  const t = useT();
   const items =
     commitItems ??
     (snapshot?.commits ?? []).map((commit) => ({
@@ -300,7 +305,7 @@ export function ActivityPanel({
   });
 
   if (isLoading) {
-    return <KuzzLoadingState label="Loading activity" />;
+    return <KuzzLoadingState label={t("projects.commitsPanel.loading")} />;
   }
 
   if (items.length === 0) {
@@ -308,13 +313,17 @@ export function ActivityPanel({
       <ProjectPanelState
         description={
           error
-            ? "Refresh the repository and try again."
+            ? t("projects.commitsPanel.errorDescription")
             : commitItems
-              ? "Commits pushed to this project's repositories will appear here."
-              : "Commits pushed to this repository will appear here."
+              ? t("projects.commitsPanel.emptyProject")
+              : t("projects.commitsPanel.emptyRepository")
         }
         error={Boolean(error)}
-        title={error ? "Could not load commits" : "No commits yet"}
+        title={
+          error
+            ? t("projects.commitsPanel.errorTitle")
+            : t("projects.commitsPanel.emptyTitle")
+        }
       />
     );
   }
@@ -339,7 +348,7 @@ export function ActivityPanel({
               })
             : item.commit.authorName ||
               item.commit.authorEmail ||
-              "Unknown author";
+              t("projects.commitsPanel.unknownAuthor");
           const matchingContributor = (item.repoContributors ?? []).find(
             (contributor) =>
               contributor.name.trim().toLowerCase() ===
@@ -353,7 +362,9 @@ export function ActivityPanel({
               eventId={item.commit.hash}
               identifier={item.commit.shortHash}
               identifierClassName="font-mono"
-              identifierTitle={`View commit ${item.commit.shortHash}`}
+              identifierTitle={t("projects.commitsPanel.viewCommit", {
+                hash: item.commit.shortHash,
+              })}
               key={`${item.project.repoAddress}:${item.commit.hash}`}
               metadata={
                 showRepositoryName || item.branch ? (
@@ -396,14 +407,16 @@ export function ActivityPanel({
                   <span
                     className="flex h-5 w-5 shrink-0 items-center justify-center"
                     data-testid="project-commit-author"
-                    title={`Committed by ${authorLabel}${
+                    title={
                       matchingContributor?.commitCount
-                        ? ` · ${pluralize(
-                            matchingContributor.commitCount,
-                            "commit",
-                          )}`
-                        : ""
-                    }`}
+                        ? t("projects.commitsPanel.committedByCount", {
+                            name: authorLabel,
+                            count: matchingContributor.commitCount,
+                          })
+                        : t("projects.commitsPanel.committedBy", {
+                            name: authorLabel,
+                          })
+                    }
                   >
                     <ProfileIdentityButton
                       avatarClassName="shrink-0"

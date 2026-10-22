@@ -52,6 +52,7 @@ import {
   projectTaskActivity,
 } from "./projectRightPanelContext";
 import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
+import { useT } from "@/shared/i18n";
 
 type ProjectRepositoryActionsPanelProps = {
   activeTab: string;
@@ -166,6 +167,7 @@ export function ProjectRepositoryActionsPanel({
   terminalTitle,
   widthPx,
 }: ProjectRepositoryActionsPanelProps) {
+  const t = useT();
   const selection = useProjectSelection();
   const selectionPresentation = projectSelectionPresentation(
     selection?.items ?? [],
@@ -320,17 +322,19 @@ export function ProjectRepositoryActionsPanel({
                           ) : (
                             <DownloadCloud className="h-3.5 w-3.5" />
                           )}
-                          {sourceControls.clonePending ? "Cloning…" : "Clone"}
+                          {sourceControls.clonePending
+                            ? t("projects.readme.cloning")
+                            : t("projects.repoActions.clone")}
                         </RepositoryActionButton>
                       ) : null}
                       {sourceControls.remoteUnavailableReason === "access" &&
                       sourceControls.onAskForAccess ? (
                         <RepositoryActionButton
                           onClick={sourceControls.onAskForAccess}
-                          title="Open project chat to ask for repository access"
+                          title={t("projects.repoActions.askForAccessHint")}
                         >
                           <MessageCircle className="h-3.5 w-3.5" />
-                          Ask for access
+                          {t("projects.repoUnavailable.askForAccess")}
                         </RepositoryActionButton>
                       ) : null}
                       {fetchAction ? (
@@ -344,7 +348,7 @@ export function ProjectRepositoryActionsPanel({
                           ) : (
                             <RefreshCw className="h-3.5 w-3.5" />
                           )}
-                          Fetch
+                          {t("projects.repoActions.fetch")}
                         </RepositoryActionButton>
                       ) : null}
                       {pullAction ? (
@@ -358,7 +362,7 @@ export function ProjectRepositoryActionsPanel({
                           ) : (
                             <DownloadCloud className="h-3.5 w-3.5" />
                           )}
-                          Pull
+                          {t("projects.repoActions.pull")}
                           {sourceControls.behindCount
                             ? ` ${sourceControls.behindCount}`
                             : ""}
@@ -375,7 +379,7 @@ export function ProjectRepositoryActionsPanel({
                           ) : (
                             <UploadCloud className="h-3.5 w-3.5" />
                           )}
-                          Push
+                          {t("projects.repoActions.push")}
                           {sourceControls.aheadCount
                             ? ` ${sourceControls.aheadCount}`
                             : ""}
@@ -383,18 +387,21 @@ export function ProjectRepositoryActionsPanel({
                       ) : null}
                       <RepositoryActionButton
                         onClick={onOpenTerminal}
-                        title={terminalTitle ?? "Open terminal"}
+                        title={
+                          terminalTitle ??
+                          t("projects.repoActions.openTerminal")
+                        }
                       >
                         <SquareTerminal className="h-3.5 w-3.5" />
-                        Terminal
+                        {t("projects.repoActions.terminal")}
                       </RepositoryActionButton>
                       {sourceControls.source === "local" ? (
                         <RepositoryActionButton
                           onClick={onOpenLocalRepository}
-                          title="Open local repository folder"
+                          title={t("projects.repoActions.openFolderHint")}
                         >
                           <FolderOpen className="h-3.5 w-3.5" />
-                          Open
+                          {t("projects.repoActions.open")}
                         </RepositoryActionButton>
                       ) : externalOpenUrl ? (
                         <Button
@@ -409,7 +416,7 @@ export function ProjectRepositoryActionsPanel({
                             target="_blank"
                           >
                             <ExternalLink className="h-3.5 w-3.5" />
-                            Open
+                            {t("projects.repoActions.open")}
                           </a>
                         </Button>
                       ) : null}
@@ -422,16 +429,16 @@ export function ProjectRepositoryActionsPanel({
                     onClick={onCreateTask}
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Create task
+                    {t("projects.createWorkItem.createTask")}
                   </RepositoryActionButton>
                 ) : null}
                 {showCreateReview && onCreatePullRequest ? (
                   <RepositoryActionButton
                     onClick={onCreatePullRequest}
-                    title="Create review — choose a repository and branches to compare"
+                    title={t("projects.workspaceSheet.createReviewHint")}
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Create review
+                    {t("projects.createWorkItem.createReview")}
                   </RepositoryActionButton>
                 ) : null}
               </RepositoryPanelSection>
@@ -440,14 +447,14 @@ export function ProjectRepositoryActionsPanel({
             <RepositoryPanelSection
               divided={showActions}
               testId="project-context-details"
-              title="Details"
+              title={t("projects.repoActions.details")}
             >
               {branchScoped ? (
                 <dl className="text-sm [&>div]:h-7 [&_dd]:ml-auto [&_dd]:tabular-nums [&_dt]:gap-3 [&_dt]:text-foreground [&_dt_svg]:h-4 [&_dt_svg]:w-4 [&_dt_svg]:shrink-0 [&_dt_svg]:text-muted-foreground">
                   <div className="flex items-center justify-between gap-3">
                     <dt className="flex items-center gap-3 text-muted-foreground">
                       <GitCommitHorizontal className="h-3.5 w-3.5" />
-                      Latest
+                      {t("projects.repoActions.latest")}
                     </dt>
                     <dd className="font-mono text-xs text-foreground">
                       {latestCommit ? latestCommit.hash.slice(0, 7) : "—"}
@@ -456,7 +463,7 @@ export function ProjectRepositoryActionsPanel({
                   <div className="flex items-center justify-between gap-3">
                     <dt className="flex items-center gap-3 text-muted-foreground">
                       <FileCode2 className="h-3.5 w-3.5" />
-                      Files
+                      {t("projects.homeContext.files")}
                     </dt>
                     <dd
                       className="font-medium text-foreground"
@@ -468,7 +475,7 @@ export function ProjectRepositoryActionsPanel({
                   <div className="flex items-center justify-between gap-3">
                     <dt className="flex items-center gap-3 text-muted-foreground">
                       <Users className="h-3.5 w-3.5" />
-                      Contributors
+                      {t("projects.tabs.contributors")}
                     </dt>
                     <dd className="font-medium text-foreground">
                       {snapshot ? contributors.length : "—"}
@@ -489,7 +496,9 @@ export function ProjectRepositoryActionsPanel({
                       <div className="flex items-center justify-between gap-3">
                         <dt className="flex items-center gap-3 text-muted-foreground">
                           <CircleDot className="h-3.5 w-3.5" />
-                          {activeTab === "issues" ? "Tasks" : "Active tasks"}
+                          {activeTab === "issues"
+                            ? t("projects.sectionTitle.tasks")
+                            : t("projects.repoActions.activeTasks")}
                         </dt>
                         <dd className="font-medium text-foreground">
                           {activeTab === "issues"
@@ -502,7 +511,7 @@ export function ProjectRepositoryActionsPanel({
                           <div className="flex items-center justify-between gap-3">
                             <dt className="flex items-center gap-3 text-muted-foreground">
                               <CircleDot className="h-3.5 w-3.5" />
-                              Active
+                              {t("projects.repoActions.active")}
                             </dt>
                             <dd className="font-medium text-foreground">
                               {taskActivity.active}
@@ -511,7 +520,7 @@ export function ProjectRepositoryActionsPanel({
                           <div className="flex items-center justify-between gap-3">
                             <dt className="flex items-center gap-3 text-muted-foreground">
                               <CheckCircle2 className="h-3.5 w-3.5" />
-                              Completed
+                              {t("projects.repoActions.completed")}
                             </dt>
                             <dd className="font-medium text-foreground">
                               {taskActivity.completed}
@@ -528,7 +537,9 @@ export function ProjectRepositoryActionsPanel({
                       <div className="flex items-center justify-between gap-3">
                         <dt className="flex items-center gap-3 text-muted-foreground">
                           <GitPullRequest className="h-3.5 w-3.5" />
-                          {activeTab === "prs" ? "Reviews" : "Open reviews"}
+                          {activeTab === "prs"
+                            ? t("projects.sectionTitle.reviews")
+                            : t("projects.repoActions.openReviews")}
                         </dt>
                         <dd className="font-medium text-foreground">
                           {activeTab === "prs"
@@ -541,7 +552,7 @@ export function ProjectRepositoryActionsPanel({
                           <div className="flex items-center justify-between gap-3">
                             <dt className="flex items-center gap-3 text-muted-foreground">
                               <GitPullRequest className="h-3.5 w-3.5" />
-                              Open
+                              {t("projects.status.open")}
                             </dt>
                             <dd className="font-medium text-foreground">
                               {reviewActivity.open}
@@ -550,7 +561,7 @@ export function ProjectRepositoryActionsPanel({
                           <div className="flex items-center justify-between gap-3">
                             <dt className="flex items-center gap-3 text-muted-foreground">
                               <GitMerge className="h-3.5 w-3.5" />
-                              Merged
+                              {t("projects.status.merged")}
                             </dt>
                             <dd className="font-medium text-foreground">
                               {reviewActivity.merged}

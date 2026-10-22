@@ -27,6 +27,7 @@ import {
   KIND_REPO_ANNOUNCEMENT,
 } from "@/shared/constants/kinds";
 import { getCachedRelayOrigin } from "@/shared/lib/mediaUrl";
+import { t } from "@/shared/i18n";
 
 export type AddProjectRepositoryInput = {
   accessChannelId?: string;
@@ -79,7 +80,7 @@ export async function addProjectRepository(
   });
   const liveHead = liveHeads[0];
   if (!liveHead) {
-    throw new Error("Couldn't find this project. Refresh and try again.");
+    throw new Error(t("projects.errors.projectNotFound"));
   }
 
   // Partial-publish detection must precede the dominated-write guard below:
@@ -115,7 +116,9 @@ export async function addProjectRepository(
   // inside the template builder before reaching here.)
   if (existingRepoHeads.length > 0) {
     throw new Error(
-      `A repository named "${templates.repositoryDtag}" already exists (as a standalone repository or in another project). Choose a different name to avoid overwriting it.`,
+      t("projects.useAddProjectRepository.nameTaken", {
+        name: templates.repositoryDtag,
+      }),
     );
   }
 
@@ -125,9 +128,7 @@ export async function addProjectRepository(
   // clobbering. Resume mode publishes no project head, so a moved head cannot
   // be clobbered and must not block the heal.
   if (!templates.resume && liveHead.created_at > project.createdAt) {
-    throw new Error(
-      "This project was updated by another session while you were working. Refresh and try again.",
-    );
+    throw new Error(t("projects.errors.updatedElsewhere"));
   }
 
   const projectCreatedAt = Math.max(
@@ -173,9 +174,7 @@ export async function addProjectRepository(
       ? eventToRepository(repositoryEvent, getCachedRelayOrigin())
       : null;
     if (!projectEvent || !repository) {
-      throw new Error(
-        "The owner agent updated the project but its response was incomplete. Refresh and try again.",
-      );
+      throw new Error(t("projects.errors.ownerAgentIncomplete"));
     }
     return {
       previousProjectId: project.id,
@@ -209,7 +208,7 @@ export async function addProjectRepository(
     } catch (error) {
       if (isUnsupportedProjectKindError(error)) {
         throw new Error(
-          "This community doesn't support multiple repositories yet.",
+          t("projects.useAddProjectRepository.multipleUnsupported"),
         );
       }
       throw error;
@@ -246,7 +245,7 @@ export async function addProjectRepository(
     repositoryEvent = await publishRepository();
     repository = eventToRepository(repositoryEvent, getCachedRelayOrigin());
     if (!repository) {
-      throw new Error("The repository was created but could not be read.");
+      throw new Error(t("projects.useAddProjectRepository.readFailed"));
     }
   } catch (_repoError) {
     // Query by event id: if the relay already has this event, the ACK was
@@ -276,16 +275,19 @@ export async function addProjectRepository(
         const message =
           retryError instanceof Error
             ? retryError.message
-            : "Failed to create the repository.";
+            : t("projects.useAddProjectRepository.createFailed");
         // The project already lists the coordinate. Surface a partial-write
         // error with the event id so the user (or a future repair pass) can
         // query the relay directly and re-submit the signed event if needed.
-        const eventLabel = repositoryEvent
-          ? `event ${repositoryEvent.id.slice(0, 8)}…`
-          : "an event that could not be signed";
         throw new Error(
-          `The project was updated but the repository could not be created (${eventLabel}): ${message} ` +
-            `The add-repository operation is idempotent — re-run Add repository with the same name to resume: the recovery query will find the stored event or retry the publish.`,
+          repositoryEvent
+            ? t("projects.useAddProjectRepository.partialWrite", {
+                event: `${repositoryEvent.id.slice(0, 8)}…`,
+                error: message,
+              })
+            : t("projects.useAddProjectRepository.partialWriteUnsigned", {
+                error: message,
+              }),
         );
       }
     }
@@ -293,7 +295,7 @@ export async function addProjectRepository(
       repository = eventToRepository(repositoryEvent, getCachedRelayOrigin());
     }
     if (!repository) {
-      throw new Error("The repository was created but could not be read.");
+      throw new Error(t("projects.useAddProjectRepository.readFailed"));
     }
   }
 

@@ -11,7 +11,7 @@ import { relativeTime } from "@/features/projects/lib/projectsViewHelpers";
 import { useProjectSelection } from "@/features/projects/lib/useProjectSelection";
 import { cn } from "@/shared/lib/cn";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, useT } from "@/shared/i18n";
 
 /** One-line list row: title, optional description column, then trailing metadata. */
 export const PROJECT_ENTITY_LIST_ROW_CLASS =
@@ -28,6 +28,7 @@ export function ProjectEntityFacepile({
   participants: string[];
   profiles: UserProfileLookup | undefined;
 }) {
+  const t = useT();
   const shown = participants.slice(0, 4);
   const overflow = participants.length - shown.length;
   if (shown.length === 0) return null;
@@ -69,7 +70,9 @@ export function ProjectEntityFacepile({
               index > 0 && "-ml-1.5",
             )}
             triggerElement="span"
-            triggerAriaLabel={`View ${label}'s profile`}
+            triggerAriaLabel={t("projects.entityRow.viewProfile", {
+              name: label,
+            })}
           >
             <span className="relative z-10" title={label}>
               {avatar}
@@ -89,7 +92,7 @@ export function ProjectEntityFacepile({
 export function ProjectEntitySelectControl({
   checked,
   indeterminate = false,
-  label = "Select",
+  label,
   onToggle,
   testId = "projects-row-select",
 }: {
@@ -99,6 +102,7 @@ export function ProjectEntitySelectControl({
   onToggle: (event: { shiftKey: boolean }) => void;
   testId?: string;
 }) {
+  const t = useT();
   return (
     <label
       className={cn(
@@ -109,7 +113,7 @@ export function ProjectEntitySelectControl({
       )}
     >
       <input
-        aria-label={label}
+        aria-label={label ?? t("projects.entityRow.select")}
         checked={checked}
         className="absolute inset-0 z-10 cursor-pointer opacity-0"
         data-testid={testId}
@@ -195,6 +199,7 @@ export function ProjectEntityListRow({
   titleSecondaryTestId?: string;
   trailing?: React.ReactNode;
 }) {
+  const t = useT();
   const projectSelection = useProjectSelection();
   const selected = Boolean(
     selection && projectSelection?.isSelected(selection.item.id),
@@ -239,7 +244,9 @@ export function ProjectEntityListRow({
           >
             <ProjectEntitySelectControl
               checked={selected}
-              label={`Select ${selection.item.title}`}
+              label={t("projects.entityRow.selectItem", {
+                title: selection.item.title,
+              })}
               onToggle={({ shiftKey }) =>
                 projectSelection.toggle(selection.item, {
                   rangeItems: selection.rangeItems,
