@@ -100,6 +100,7 @@ class ChatListRow {
   final String channelType;
   final String channelName;
   final bool archived;
+
   /// A DM's people, or up to 16 other active members of a group chat.
   final List<String> dmMembers;
 

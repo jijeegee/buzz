@@ -59,7 +59,7 @@ class _ChatsSection extends StatelessWidget {
               result: result,
               onResultSelected: onResultSelected,
             )
-          else if (result.channel == null || result.channel!.isDm)
+          else if (result.channel == null || result.channel!.isPersonChat)
             _DmResultTile(
               result: result,
               currentPubkey: currentPubkey,
@@ -254,7 +254,12 @@ class _DmResultTile extends ConsumerWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
       leading: SizedBox.square(
         dimension: 28,
-        child: partners.length == 1
+        child: channel != null && channel.isGroupChat
+            ? ChatGridAvatar(
+                memberPubkeys: channel.participantPubkeys,
+                size: 28,
+              )
+            : partners.length == 1
             ? SmallAvatar(
                 pubkey: partners.single,
                 userCache: ref.watch(userCacheProvider),
@@ -438,13 +443,23 @@ class _MessageTile extends ConsumerWidget {
     final hasChannelName = channelName != null && channelName.isNotEmpty;
     final isDm = channel?.isDm ?? false;
     final thread = this.thread;
+    // A chat of people is named by its title, not the hit's stored name.
+    final chatTitle = channel?.isGroupChat == true
+        ? watchChannelTitle(ref, channel!)
+        : null;
     final threadTitle = thread == null
         ? null
         : searchHitThreadTitle(thread, chatRows);
     // In a thread: "group › thread", as its Chats row reads.
     final where = threadTitle == null
-        ? (hasChannelName ? channelName : null)
-        : [if (!isDm && hasChannelName) channelName, threadTitle].join(' › ');
+        ? chatTitle ?? (hasChannelName ? channelName : null)
+        : [
+            if (chatTitle != null)
+              chatTitle
+            else if (!isDm && hasChannelName)
+              channelName,
+            threadTitle,
+          ].join(' › ');
     final profileMentionNames = {
       for (final pubkey in mentionedPubkeysFromTags(hit.tags))
         if (userCache[pubkey]?.displayName?.trim().isNotEmpty == true)

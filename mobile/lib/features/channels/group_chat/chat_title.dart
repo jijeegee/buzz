@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../../shared/identity_names/identity_names.dart';
@@ -15,11 +17,13 @@ const emptyChatTitle = 'Empty chat';
 const chatTitleMemberLimit = 3;
 
 /// "Ann, Bob, Cy +2": the first [chatTitleMemberLimit] names, then how many
-/// more. Empty when there are no names.
-String formatChatMemberNames(List<String> labels) {
+/// more of [total] others (default: all [labels]). Empty when there are no
+/// names.
+String formatChatMemberNames(List<String> labels, {int? total}) {
   final visible = labels.take(chatTitleMemberLimit).join(', ');
-  final hidden = labels.length - chatTitleMemberLimit;
-  return hidden > 0 ? '$visible +$hidden' : visible;
+  final count = total == null || total < labels.length ? labels.length : total;
+  final hidden = count - min(labels.length, chatTitleMemberLimit);
+  return hidden > 0 && visible.isNotEmpty ? '$visible +$hidden' : visible;
 }
 
 /// The one title rule for a room of people: my private name, then the
@@ -28,12 +32,16 @@ String resolveChatTitle({
   String? privateName,
   required String sharedName,
   required List<String> otherMemberLabels,
+  int? otherMemberCount,
 }) {
   final private = privateName?.trim();
   if (private != null && private.isNotEmpty) return private;
   final shared = sharedName.trim();
   if (shared.isNotEmpty) return shared;
-  final members = formatChatMemberNames(otherMemberLabels);
+  final members = formatChatMemberNames(
+    otherMemberLabels,
+    total: otherMemberCount,
+  );
   return members.isEmpty ? emptyChatTitle : members;
 }
 
@@ -74,6 +82,11 @@ String channelTitle(
         for (final pubkey in others)
           scoped?.labelFor(pubkey) ?? shortPubkey(pubkey),
       ],
+      // A partial member list (a chat list row's first 16) still counts
+      // everyone in "+N".
+      otherMemberCount: channel.memberCount > 0
+          ? channel.memberCount - (channel.isMember ? 1 : 0)
+          : null,
     );
   }
   final private = privateName?.trim();

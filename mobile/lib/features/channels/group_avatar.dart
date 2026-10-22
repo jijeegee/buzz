@@ -29,7 +29,10 @@ class GroupAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (channel.isGroupChat) {
-      return ChatGridAvatar(memberPubkeys: channel.participantPubkeys, size: size);
+      return ChatGridAvatar(
+        memberPubkeys: channel.participantPubkeys,
+        size: size,
+      );
     }
     if (channel.isDm || channel.isForum) {
       return Icon(

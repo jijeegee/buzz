@@ -6,7 +6,8 @@ import '../activity/inbox_item.dart';
 import '../channels/channel.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
-import '../channels/dm_channel_labels.dart';
+import '../channels/channel_names/channel_names_provider.dart';
+import '../channels/group_chat/chat_title.dart';
 import '../chats/chat_list.dart';
 import '../chats/chats_page.dart';
 import 'search_provider.dart';
@@ -98,7 +99,8 @@ SearchChatResults buildSearchChatResults({
   final dms = <({SearchChatResult result, int tier, int rank})>[];
 
   for (final channel in channels) {
-    if (channel.isDm) continue;
+    // Chats of people are listed with DMs, by their title.
+    if (channel.isPersonChat) continue;
     final rank =
         searchMatchRank(channel.name, query) ??
         (searchMatchRank(channel.description, query) == null ? null : 4);
@@ -121,7 +123,9 @@ SearchChatResults buildSearchChatResults({
 
   final dmRoomIds = <String>{};
   for (final row in rows) {
-    if (!row.isDm || row.isThread || !dmRoomIds.add(row.channelId)) continue;
+    if (!row.isPersonChat || row.isThread || !dmRoomIds.add(row.channelId)) {
+      continue;
+    }
     final channel = channelById[row.channelId];
     final label = channel == null ? row.channelName : dmLabel(channel);
     final rank = searchMatchRank(label, query);
@@ -147,7 +151,7 @@ SearchChatResults buildSearchChatResults({
     final channel = channelById[row.channelId];
     final channelName = channel == null
         ? row.channelName.trim()
-        : row.isDm
+        : row.isPersonChat
         ? dmLabel(channel)
         : channel.name;
     final result = SearchChatResult(
@@ -155,12 +159,20 @@ SearchChatResults buildSearchChatResults({
       channel: channel,
       thread: row,
       channelName: channelName.isEmpty
-          ? (row.isDm ? 'Direct message' : 'Group')
+          ? (row.isDm
+                ? 'Direct message'
+                : row.isGroupChat
+                ? emptyChatTitle
+                : 'Group')
           : channelName,
       title: title,
       at: row.at,
     );
-    (row.isDm ? dms : groups).add((result: result, tier: 0, rank: rank));
+    (row.isPersonChat ? dms : groups).add((
+      result: result,
+      tier: 0,
+      rank: rank,
+    ));
   }
 
   List<SearchChatResult> sorted(
@@ -186,14 +198,16 @@ final searchChatResultsProvider = Provider<SearchChatResults>((ref) {
   if (query.isEmpty) return const SearchChatResults();
   final currentPubkey = ref.watch(currentPubkeyProvider);
   final names = ref.watch(identityNameSourcesProvider);
+  final privateNames = ref.watch(channelNamesProvider);
   return buildSearchChatResults(
     query: query,
     rows: ref.watch(chatsRowsProvider) ?? const [],
     channels: ref.watch(channelsProvider).value ?? const [],
-    dmLabel: (channel) => resolveDmChannelDisplayLabel(
+    dmLabel: (channel) => channelTitle(
       channel,
       currentPubkey: currentPubkey,
       names: names,
+      privateName: privateNames.nameFor(channel.id),
     ),
   );
 });
