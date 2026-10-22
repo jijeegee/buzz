@@ -20,6 +20,7 @@ class _PersonInviteSection extends HookConsumerWidget {
       ...?membership?.pubkeys.map((pubkey) => pubkey.toLowerCase()),
     };
     final currentPubkey = ref.watch(myPubkeyProvider)?.toLowerCase();
+    final l10n = context.l10n;
 
     useEffect(() {
       void handleFocusChange() {
@@ -34,12 +35,12 @@ class _PersonInviteSection extends HookConsumerWidget {
       final normalized = pubkey.toLowerCase();
       if (normalized == currentPubkey) {
         candidatePubkey.value = null;
-        submitError.value = 'You cannot invite yourself.';
+        submitError.value = l10n.inviteCannotInviteSelf;
         return;
       }
       if (existingMemberPubkeys.contains(normalized)) {
         candidatePubkey.value = null;
-        submitError.value = 'This person is already in the community.';
+        submitError.value = l10n.inviteAlreadyMember;
         return;
       }
       candidatePubkey.value = normalized;
@@ -73,9 +74,9 @@ class _PersonInviteSection extends HookConsumerWidget {
         candidatePubkey.value = null;
         searchController.clear();
         ref.invalidate(communityMembershipProvider);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invited to the community')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.inviteInvitedToCommunity)));
       } catch (error) {
         if (context.mounted) {
           submitError.value = _inviteErrorMessage(error);
@@ -105,7 +106,7 @@ class _PersonInviteSection extends HookConsumerWidget {
               fieldKey: const Key('community-invite-search'),
               controller: searchController,
               focusNode: searchFocusNode,
-              hintText: 'Search npub',
+              hintText: l10n.inviteSearchNpub,
               iconColor: navigationPrimaryForeground(context),
               inputColor: navigationPrimaryForeground(context),
               placeholderColor: navigationSecondaryForeground(context),
@@ -122,7 +123,7 @@ class _PersonInviteSection extends HookConsumerWidget {
               onSubmitted: (value) {
                 final pubkey = parseCommunityInvitePubkey(value);
                 if (pubkey == null && value.trim().isNotEmpty) {
-                  submitError.value = 'Paste a valid npub.';
+                  submitError.value = l10n.invitePasteValidNpub;
                 } else if (pubkey != null) {
                   selectCandidate(pubkey);
                 }
@@ -184,21 +185,22 @@ class _InviteeResolutionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return profileAsync.when(
       loading: () => AppListCard(
         children: [
           AppListRowRaw(
             key: Key('community-invite-resolving-$pubkey'),
-            leading: const SizedBox.square(
+            leading: SizedBox.square(
               dimension: 40,
               child: Center(
                 child: KuzzLoadingIndicator(
                   size: 20,
-                  semanticLabel: 'Resolving profile',
+                  semanticLabel: l10n.inviteResolvingProfile,
                 ),
               ),
             ),
-            title: const Text('Resolving profile'),
+            title: Text(l10n.inviteResolvingProfile),
             subtitle: Text(shortPubkey(pubkey)),
           ),
         ],
@@ -207,11 +209,11 @@ class _InviteeResolutionCard extends StatelessWidget {
         children: [
           AppListRow(
             key: Key('community-invite-resolution-error-$pubkey'),
-            title: 'Could not resolve profile',
+            title: l10n.inviteResolveProfileFailed,
             subtitle: shortPubkey(pubkey),
             trailing: TextButton(
               onPressed: onRetry,
-              child: const Text('Retry'),
+              child: Text(l10n.inviteRetry),
             ),
           ),
         ],
@@ -222,7 +224,7 @@ class _InviteeResolutionCard extends StatelessWidget {
             children: [
               AppListRow(
                 key: Key('community-invite-unresolved-$pubkey'),
-                title: 'Invalid npub',
+                title: l10n.inviteInvalidNpub,
                 subtitle: shortPubkey(pubkey),
               ),
             ],
@@ -239,29 +241,26 @@ class _InviteeResolutionCard extends StatelessWidget {
                 key: const Key('community-invite-submit'),
                 onPressed: isSubmitting ? null : () => onInvite(invitee),
                 child: isSubmitting
-                    ? const KuzzLoadingIndicator(
+                    ? KuzzLoadingIndicator(
                         size: 16,
-                        semanticLabel: 'Inviting person',
+                        semanticLabel: l10n.inviteInvitingPerson,
                       )
-                    : const Text('Invite'),
+                    : Text(l10n.inviteInvite),
               ),
             ),
             if (role == CommunityMemberRole.owner)
               AppListRow(
                 key: const Key('community-invite-role'),
-                title: 'Role',
-                value: switch (selectedRole) {
-                  CommunityMemberRole.member => 'Member',
-                  CommunityMemberRole.admin => 'Admin',
-                  CommunityMemberRole.owner => 'Owner',
-                },
+                title: l10n.inviteRole,
+                value: _roleLabel(l10n, selectedRole),
                 trailing: const _InviteRowChevron(),
                 onTap: isSubmitting
                     ? null
                     : () => _showInviteOptionSheet<CommunityMemberRole>(
                         context: context,
-                        title: 'Role',
+                        title: l10n.inviteRole,
                         value: selectedRole,
+                        labelOf: (role) => _roleLabel(l10n, role),
                         options: const [
                           CommunityInviteOption(
                             label: 'Member',
@@ -281,3 +280,10 @@ class _InviteeResolutionCard extends StatelessWidget {
     );
   }
 }
+
+String _roleLabel(AppLocalizations l10n, CommunityMemberRole role) =>
+    switch (role) {
+      CommunityMemberRole.member => l10n.inviteRoleMember,
+      CommunityMemberRole.admin => l10n.inviteRoleAdmin,
+      CommunityMemberRole.owner => l10n.inviteRoleOwner,
+    };

@@ -1508,5 +1508,319 @@
   "ageGateBody": "You must be 18 or older to use Kuzz under Kuzz's Terms.",
   "@ageGateBody": {
     "description": "Age restriction screen, text under the heading. 'Kuzz' is the app name."
+  },
+  "inviteSignInToUse": "Sign in to use this invite.",
+  "@inviteSignInToUse": {
+    "description": "Invite join sheet, error when the user must sign in before using the invite link."
+  },
+  "inviteSignInToCommunityToUse": "Sign in to {community} to use this invite.",
+  "@inviteSignInToCommunityToUse": {
+    "description": "Invite join sheet, error when the user must sign in to a community before using the invite link; {community} is the community name.",
+    "placeholders": {
+      "community": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteSignInAgainFirst": "Sign in to this community again first.",
+  "@inviteSignInAgainFirst": {
+    "description": "Invite join sheet, error when the saved sign-in for the community is no longer valid."
+  },
+  "inviteRecoverKeyFirst": "Recover your original signing key before joining.",
+  "@inviteRecoverKeyFirst": {
+    "description": "Invite join sheet, error when this device does not have the account's original key."
+  },
+  "inviteCommunityUnavailable": "This community is no longer available. Re-open the invite link to try again.",
+  "@inviteCommunityUnavailable": {
+    "description": "Invite join sheet, error when the invited community is gone."
+  },
+  "inviteRelayUnreachable": "Could not reach the relay. Check your connection and try again.",
+  "@inviteRelayUnreachable": {
+    "description": "Invite join sheet, error when the chat server (relay) cannot be reached."
+  },
+  "inviteExpired": "This invite has expired.",
+  "@inviteExpired": {
+    "description": "Invite join sheet, error when the invite link is too old."
+  },
+  "inviteExhausted": "This invite has reached its use limit. Ask for a new invite.",
+  "@inviteExhausted": {
+    "description": "Invite join sheet, error when the invite link was used too many times."
+  },
+  "inviteInvalid": "This invite is not valid.",
+  "@inviteInvalid": {
+    "description": "Invite join sheet, error when the invite link is wrong."
+  },
+  "inviteApprovalExpired": "This invite approval has expired. Re-open the invite link to try again.",
+  "@inviteApprovalExpired": {
+    "description": "Invite join sheet, error when the join approval timed out."
+  },
+  "inviteJoinFailed": "Could not join this community: {error}",
+  "@inviteJoinFailed": {
+    "description": "Invite join sheet, general join error; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteStarterSetupUnreachable": "Starter groups could not reach the relay. Check your connection and retry setup.",
+  "@inviteStarterSetupUnreachable": {
+    "description": "Invite join sheet, error when the first groups of a new member could not be created because the server was unreachable."
+  },
+  "inviteStarterSetupFailed": "Starter groups could not be set up. Retry setup to try again.",
+  "@inviteStarterSetupFailed": {
+    "description": "Invite join sheet, error when the first groups of a new member could not be created."
+  },
+  "inviteUnknownHost": "unknown host",
+  "@inviteUnknownHost": {
+    "description": "Invite join sheet, shown instead of the server address when it is missing. Lowercase, used inside sentences."
+  },
+  "inviteFinishingSetup": "Finishing setup…",
+  "@inviteFinishingSetup": {
+    "description": "Invite join sheet, main button text while setup finishes. Short."
+  },
+  "inviteJoining": "Joining…",
+  "@inviteJoining": {
+    "description": "Invite join sheet, main button text while joining. Short."
+  },
+  "inviteRetrySetup": "Retry setup",
+  "@inviteRetrySetup": {
+    "description": "Invite join sheet, main button after setup failed. Short."
+  },
+  "inviteFinishSettingUp": "Finish setting up",
+  "@inviteFinishSettingUp": {
+    "description": "Invite join sheet, main button and title when membership exists but setup is not done. Short."
+  },
+  "inviteSignInWithGoogleToJoin": "Sign in with Google to join",
+  "@inviteSignInWithGoogleToJoin": {
+    "description": "Invite join sheet, main button when the user is not signed in."
+  },
+  "inviteJoin": "Join",
+  "@inviteJoin": {
+    "description": "Invite join sheet, main button. Short."
+  },
+  "inviteJoinTitle": "Join?",
+  "@inviteJoinTitle": {
+    "description": "Invite join sheet, title. Short."
+  },
+  "inviteJoinCommunityTitle": "Join this Kuzz community?",
+  "@inviteJoinCommunityTitle": {
+    "description": "Invite join sheet, title when the invite is for another server. 'Kuzz' is the app name."
+  },
+  "inviteCheckHost": "Check the relay host before you join:",
+  "@inviteCheckHost": {
+    "description": "Invite join sheet, text above the server address. A relay is a chat server."
+  },
+  "inviteDisplayName": "Display name: {name}",
+  "@inviteDisplayName": {
+    "description": "Invite join sheet, the name the user will have in the community; {name} is that name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteStarterSetupPending": "Your membership is ready, but starter groups still need to be set up. You can safely retry without claiming the invite again.",
+  "@inviteStarterSetupPending": {
+    "description": "Invite join sheet, text when joining worked but the first groups are not created yet."
+  },
+  "inviteGoogleMembership": "Joining uses your Google sign-in. Your membership belongs to your account, not this phone.",
+  "@inviteGoogleMembership": {
+    "description": "Invite join sheet, explanation of Google sign-in."
+  },
+  "inviteGoogleMembershipCommunity": "This community uses your Google sign-in. Your membership belongs to your account, not this phone.",
+  "@inviteGoogleMembershipCommunity": {
+    "description": "Invite join sheet, explanation of Google sign-in for a community on another server."
+  },
+  "inviteSessionSignedIn": "Signed in",
+  "@inviteSessionSignedIn": {
+    "description": "Invite join sheet, sign-in status. Short."
+  },
+  "inviteSessionSigningIn": "Signing in…",
+  "@inviteSessionSigningIn": {
+    "description": "Invite join sheet, sign-in status. Short."
+  },
+  "inviteSessionChecking": "Checking sign-in…",
+  "@inviteSessionChecking": {
+    "description": "Invite join sheet, sign-in status while the saved sign-in is checked. Short."
+  },
+  "inviteSessionNeedsConnection": "Sign-in needs a connection",
+  "@inviteSessionNeedsConnection": {
+    "description": "Invite join sheet, sign-in status when offline. Short."
+  },
+  "inviteSessionSignedOut": "Not signed in",
+  "@inviteSessionSignedOut": {
+    "description": "Invite join sheet, sign-in status. Short."
+  },
+  "inviteOnlyCopyWarning": "This phone is the only copy of this identity. If you lose it, you’ll lose access as this member.",
+  "@inviteOnlyCopyWarning": {
+    "description": "Invite join sheet and success screen, warning that the account key exists only on this phone."
+  },
+  "inviteFinishingSetupLabel": "Finishing setup",
+  "@inviteFinishingSetupLabel": {
+    "description": "Screen-reader label of the spinner while setup finishes."
+  },
+  "inviteJoiningLabel": "Joining",
+  "@inviteJoiningLabel": {
+    "description": "Screen-reader label of the spinner while joining."
+  },
+  "inviteJoiningCommunityLabel": "Joining community",
+  "@inviteJoiningCommunityLabel": {
+    "description": "Screen-reader label of the spinner while joining a community."
+  },
+  "inviteJoinedTitle": "You’re in",
+  "@inviteJoinedTitle": {
+    "description": "Invite success screen, big heading. Short."
+  },
+  "inviteJoinedCommunity": "You joined {community}",
+  "@inviteJoinedCommunity": {
+    "description": "Invite success screen, big heading; {community} is the community name or server address.",
+    "placeholders": {
+      "community": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteJoinedContinue": "Continue",
+  "@inviteJoinedContinue": {
+    "description": "Invite success screen, button that opens the community. Short."
+  },
+  "inviteJoinedDone": "Done",
+  "@inviteJoinedDone": {
+    "description": "Invite success screen, button that closes the screen. Short."
+  },
+  "inviteCreateTitle": "Invite to community",
+  "@inviteCreateTitle": {
+    "description": "Invite page, title in the top bar."
+  },
+  "inviteCheckingPermissions": "Checking community permissions",
+  "@inviteCheckingPermissions": {
+    "description": "Screen-reader label of the spinner while checking if the user may invite."
+  },
+  "inviteOrUseNpub": "Or use npub",
+  "@inviteOrUseNpub": {
+    "description": "Invite page, divider text between the link and the invite-by-id field. 'npub' is a user id format; keep it. Short."
+  },
+  "invitePermissionCheckFailedTitle": "Could not check permissions",
+  "@invitePermissionCheckFailedTitle": {
+    "description": "Invite page, error heading when the user's role could not be loaded."
+  },
+  "invitePermissionCheckFailedBody": "Reconnect to this community and try again.",
+  "@invitePermissionCheckFailedBody": {
+    "description": "Invite page, error text under 'Could not check permissions'."
+  },
+  "inviteRetry": "Retry",
+  "@inviteRetry": {
+    "description": "Invite page, retry button. Short."
+  },
+  "invitePermissionDeniedTitle": "Invite access required",
+  "@invitePermissionDeniedTitle": {
+    "description": "Invite page, heading when the user may not invite."
+  },
+  "invitePermissionDeniedBody": "Only community owners and admins can invite people.",
+  "@invitePermissionDeniedBody": {
+    "description": "Invite page, text under 'Invite access required'."
+  },
+  "inviteShareFailed": "Could not share invite link",
+  "@inviteShareFailed": {
+    "description": "Invite page, snack bar when sharing the link failed."
+  },
+  "inviteShare": "Share",
+  "@inviteShare": {
+    "description": "Invite page, button that shares the invite link. Short."
+  },
+  "inviteCopy": "Copy",
+  "@inviteCopy": {
+    "description": "Invite page, button that copies the invite link. Short."
+  },
+  "inviteLinkCopied": "Invite link copied",
+  "@inviteLinkCopied": {
+    "description": "Invite page, message after copying the invite link."
+  },
+  "inviteExpiresAfter": "Expires after",
+  "@inviteExpiresAfter": {
+    "description": "Invite page, setting row and sheet title for how long the link works. Short."
+  },
+  "inviteLimitUses": "Limit number of uses",
+  "@inviteLimitUses": {
+    "description": "Invite page, setting row and sheet title for how many people can use the link."
+  },
+  "inviteExpiryDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@inviteExpiryDays": {
+    "description": "Invite page, how long the invite link works; {count} is the number of days. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inviteNoUseLimit": "No limit",
+  "@inviteNoUseLimit": {
+    "description": "Invite page, option meaning the link can be used any number of times. Short."
+  },
+  "inviteUseCount": "{count, plural, =1{1 use} other{{count} uses}}",
+  "@inviteUseCount": {
+    "description": "Invite page, how many times the link can be used; {count} is the number. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inviteCannotInviteSelf": "You cannot invite yourself.",
+  "@inviteCannotInviteSelf": {
+    "description": "Invite page, error when the user enters their own id."
+  },
+  "inviteAlreadyMember": "This person is already in the community.",
+  "@inviteAlreadyMember": {
+    "description": "Invite page, error when the person is already a member."
+  },
+  "inviteInvitedToCommunity": "Invited to the community",
+  "@inviteInvitedToCommunity": {
+    "description": "Invite page, snack bar after inviting a person."
+  },
+  "inviteSearchNpub": "Search npub",
+  "@inviteSearchNpub": {
+    "description": "Invite page, hint in the search field for a user id. 'npub' is a user id format; keep it. Short."
+  },
+  "invitePasteValidNpub": "Paste a valid npub.",
+  "@invitePasteValidNpub": {
+    "description": "Invite page, error when the typed user id is not valid. 'npub' is a user id format; keep it."
+  },
+  "inviteResolvingProfile": "Resolving profile",
+  "@inviteResolvingProfile": {
+    "description": "Invite page, row text and spinner label while looking up the person. Short."
+  },
+  "inviteResolveProfileFailed": "Could not resolve profile",
+  "@inviteResolveProfileFailed": {
+    "description": "Invite page, row text when looking up the person failed."
+  },
+  "inviteInvalidNpub": "Invalid npub",
+  "@inviteInvalidNpub": {
+    "description": "Invite page, row text when the user id is not valid. 'npub' is a user id format; keep it. Short."
+  },
+  "inviteInvitingPerson": "Inviting person",
+  "@inviteInvitingPerson": {
+    "description": "Screen-reader label of the spinner while inviting a person."
+  },
+  "inviteInvite": "Invite",
+  "@inviteInvite": {
+    "description": "Invite page, button that invites the person. Short."
+  },
+  "inviteRole": "Role",
+  "@inviteRole": {
+    "description": "Invite page, row and sheet title for the role the person gets. Short."
+  },
+  "inviteRoleMember": "Member",
+  "@inviteRoleMember": {
+    "description": "Invite page, community role name. Short."
+  },
+  "inviteRoleAdmin": "Admin",
+  "@inviteRoleAdmin": {
+    "description": "Invite page, community role name. Short."
+  },
+  "inviteRoleOwner": "Owner",
+  "@inviteRoleOwner": {
+    "description": "Invite page, community role name. Short."
   }
 }
