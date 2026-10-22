@@ -122,7 +122,16 @@ export function ChatInfoSummary({
   /** Opens the people dialog (search everyone, add people). */
   onOpenPeople?: () => void;
 }) {
-  const title = useChatTitle(channel, channel.name);
+  // The sheet's channel comes from kind:39000, which carries no member list;
+  // name an unnamed chat from the loaded roster instead of "Empty chat".
+  const titledChannel = React.useMemo(
+    () =>
+      members.length > 0
+        ? { ...channel, memberPubkeys: members.map((m) => m.pubkey) }
+        : channel,
+    [channel, members],
+  );
+  const title = useChatTitle(titledChannel, channel.name);
   const prefs = useChatPrefs();
   const privateName = useChatPrivateNames().get(channel.id) ?? null;
   const [isRenameOpen, setIsRenameOpen] = React.useState(false);
