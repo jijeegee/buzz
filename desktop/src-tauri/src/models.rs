@@ -138,6 +138,9 @@ pub struct ChannelInfo {
     /// Group photo URL from kind:39000 `["picture", url]`; `None` when unset.
     #[serde(default)]
     pub picture: Option<String>,
+    /// Ownerless multi-person chat: kind:39000 carries `["group_chat"]`.
+    #[serde(default)]
+    pub group_chat: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -170,6 +173,9 @@ pub struct ChannelDetailInfo {
     /// Group photo URL from kind:39000 `["picture", url]`; `None` when unset.
     #[serde(default)]
     pub picture: Option<String>,
+    /// Ownerless multi-person chat: kind:39000 carries `["group_chat"]`.
+    #[serde(default)]
+    pub group_chat: bool,
 }
 
 #[derive(Serialize, Deserialize)]

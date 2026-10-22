@@ -23,6 +23,8 @@ export type ChannelIntro = {
   isPrivate?: boolean;
   /** Group photo; the letter avatar shows when absent or it fails. */
   picture?: string | null;
+  /** Replaces the letter avatar (an ownerless chat's people picture). */
+  avatar?: React.ReactNode;
 };
 
 /**
@@ -53,6 +55,13 @@ export function ChannelIntroBlock({
           data-testid="message-channel-intro-icon"
         >
           {intro.icon}
+        </div>
+      ) : intro.avatar ? (
+        <div
+          className="flex h-[60px] w-[60px] items-center justify-center"
+          data-testid="message-channel-intro-icon"
+        >
+          {intro.avatar}
         </div>
       ) : (
         <div

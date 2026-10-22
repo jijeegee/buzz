@@ -120,3 +120,25 @@ test("resolves and excludes a DM whose feed item has a name but no type", () => 
 
   assert.equal(items.length, 0);
 });
+
+test("excludes a group chat mention; the live path alerts for chats", () => {
+  const chatItem = feedItem({
+    category: "mention",
+    channelId: "chat-channel",
+    channelType: "stream",
+  });
+  const items = eligibleFeedNotificationItems(
+    feedResponse([chatItem]),
+    allSlots,
+    [
+      {
+        id: "chat-channel",
+        name: "",
+        channelType: "stream",
+        groupChat: true,
+      },
+    ],
+  );
+
+  assert.equal(items.length, 0);
+});

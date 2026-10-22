@@ -59,7 +59,7 @@ type ChannelComboboxProps = {
 export function ChannelCombobox({
   allowEmpty = false,
   ariaLabel = "Group",
-  channels,
+  channels: allChannels,
   defaultOpen = false,
   disabled,
   emptyLabel = "Choose a group",
@@ -73,6 +73,14 @@ export function ChannelCombobox({
   variant = "header",
   value,
 }: ChannelComboboxProps) {
+  // Workflows never run in ownerless chats; keep a saved one visible only.
+  const channels = React.useMemo(
+    () =>
+      allChannels.filter(
+        (channel) => channel.groupChat !== true || channel.id === value,
+      ),
+    [allChannels, value],
+  );
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [highlightedIndex, setHighlightedIndex] = React.useState(0);

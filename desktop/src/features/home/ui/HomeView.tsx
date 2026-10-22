@@ -416,10 +416,15 @@ export function HomeView({
     () => (channels ?? []).filter((channel) => channel.channelType === "dm"),
     [channels],
   );
+  const groupChats = React.useMemo(
+    () => (channels ?? []).filter((channel) => channel.groupChat === true),
+    [channels],
+  );
   const { dmChannelLabels, dmParticipantsByChannelId } = useDmSidebarMetadata({
     currentPubkey,
     directMessages,
     enabled: filter === "conversations",
+    groupChats,
   });
   const communityAgentPubkeys = useKnownAgentPubkeys();
   const inboxAgentPubkeys = React.useMemo(() => {

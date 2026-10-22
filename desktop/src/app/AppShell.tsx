@@ -84,6 +84,8 @@ import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
 import { CommunityRail } from "@/features/sidebar/ui/CommunityRail";
 import { useChannelMutes } from "@/features/sidebar/lib/useChannelMutes";
 import { useChannelStars } from "@/features/sidebar/lib/useChannelStars";
+import { ChatPrefsPublisher } from "@/features/channels/ChatPrefsContext";
+import { useChatPrivateNamesSync } from "@/features/channels/useChatPrivateNamesSync";
 import { isJoinedChat } from "@/features/sidebar/lib/chatList";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useBuiltInServer } from "@/features/communities/builtInServer";
@@ -218,6 +220,14 @@ export function AppShell() {
   const { mutedChannelIds, muteChannel, unmuteChannel } = useChannelMutes(
     identityQuery.data?.pubkey,
     communitiesHook.activeCommunity?.relayUrl,
+  );
+  const setPrivateChatName = useChatPrivateNamesSync(
+    identityQuery.data?.pubkey,
+    communitiesHook.activeCommunity?.relayUrl,
+  );
+  const chatPrefs = React.useMemo(
+    () => ({ mutedChannelIds, muteChannel, unmuteChannel, setPrivateChatName }),
+    [mutedChannelIds, muteChannel, unmuteChannel, setPrivateChatName],
   );
   const { starredChannelIds, starChannel, unstarChannel } = useChannelStars(
     identityQuery.data?.pubkey,
@@ -820,6 +830,7 @@ export function AppShell() {
         />
       ) : null}
       <ChatStateSync {...chatState.syncProps} />
+      <ChatPrefsPublisher value={chatPrefs} />
       <ChannelNavigationProvider channels={channels}>
         <AppShellProvider
           value={{

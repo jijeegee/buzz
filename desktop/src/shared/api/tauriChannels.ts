@@ -37,6 +37,8 @@ export type RawChannel = {
   goals_enabled?: boolean;
   /** Absent from older backends; null = no group photo. */
   picture?: string | null;
+  /** Ownerless multi-person chat marker; absent from older backends. */
+  group_chat?: boolean;
 };
 
 /**
@@ -101,6 +103,7 @@ export function fromRawChannel(channel: RawChannel): Channel {
     ttlDeadline: channel.ttl_deadline,
     goalsEnabled: channel.goals_enabled ?? true,
     picture: channel.picture ?? null,
+    groupChat: channel.group_chat === true,
   };
 }
 
@@ -224,6 +227,33 @@ export async function openDm(input: OpenDmInput): Promise<Channel> {
   );
   record(channel.id);
   return channel;
+}
+
+export type CreateGroupChatInput = {
+  /** Optional shared name; blank = unnamed (titles drawn from members). */
+  name?: string;
+  /** Initial people (not you), up to 100. */
+  pubkeys: string[];
+};
+
+export type CreateGroupChatResult = {
+  channel: Channel;
+  /** Picked people who did not become members (sent an invitation instead). */
+  invited: string[];
+};
+
+/** Create an ownerless chat with its first people in one relay write. */
+export async function createGroupChat(
+  input: CreateGroupChatInput,
+): Promise<CreateGroupChatResult> {
+  const record = beginChannelMembershipWrite();
+  const raw = await invokeTauri<{ channel: RawChannel; invited: string[] }>(
+    "create_group_chat",
+    { name: input.name?.trim() || null, pubkeys: input.pubkeys },
+  );
+  const channel = fromRawChannel(raw.channel);
+  record(channel.id);
+  return { channel, invited: raw.invited ?? [] };
 }
 
 export async function hideDm(channelId: string): Promise<void> {

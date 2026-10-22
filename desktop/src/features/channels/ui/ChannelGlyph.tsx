@@ -5,9 +5,12 @@ import { useIsProjectHomeChannel } from "@/features/projects/lib/projectHomeChan
 import { ProjectChannelIcon } from "@/features/projects/ui/ProjectChannelIcon";
 import type { Channel } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 
 /**
- * Picture for a group: its letter avatar (lock badge when private), the
+ * Picture for a group: its letter avatar (lock badge when private), an
+ * ownerless chat's member grid, the
  * forum icon for forums, or the project mark on project homes. `className`
  * styles the icon variants; `avatarClassName` positions the letter avatar.
  */
@@ -22,6 +25,9 @@ export function ChannelGlyph({
   channel: Pick<Channel, "channelType" | "id" | "visibility"> & {
     name?: string;
     picture?: string | null;
+    groupChat?: boolean;
+    memberPubkeys?: string[];
+    participantPubkeys?: string[];
   };
   className?: string;
 }) {
@@ -33,6 +39,16 @@ export function ChannelGlyph({
   }
   if (channel.channelType === "forum") {
     return <FileText className={iconClass} />;
+  }
+  if (isGroupChat(channel)) {
+    // Ownerless chats draw their people, never a letter or lock.
+    return (
+      <ChannelChatAvatar
+        className={avatarClassName}
+        memberPubkeys={channel.memberPubkeys ?? []}
+        size={avatarSize}
+      />
+    );
   }
   return (
     <GroupLetterAvatar

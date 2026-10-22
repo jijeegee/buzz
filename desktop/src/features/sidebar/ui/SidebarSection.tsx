@@ -37,6 +37,8 @@ import { useAppShell } from "@/app/AppShellContext";
 import { UserNameIndicators } from "@/features/user-status/ui/UserNameIndicators";
 import type { ChatRowPreview } from "@/features/chats/chatRowPreview";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { ChatConversationRow } from "@/features/sidebar/ui/ChatRowLines";
 
 const SECTION_LABEL_BUTTON_CLASS =
@@ -265,6 +267,16 @@ function SidebarChannelIcon({
             ? presenceStatus
             : undefined
         }
+      />
+    );
+  }
+
+  if (isGroupChat(channel)) {
+    return (
+      <ChannelChatAvatar
+        channel={channel}
+        className={large ? "size-9" : "size-6"}
+        testId={`chat-row-avatar-${channel.id}`}
       />
     );
   }
@@ -723,7 +735,7 @@ export function SidebarSection({
                         onStarChannel={onStarChannel}
                         onUnstarChannel={onUnstarChannel}
                         onDeleteChannel={
-                          channel.channelType === "dm"
+                          channel.channelType === "dm" || isGroupChat(channel)
                             ? undefined
                             : onDeleteChannel
                         }

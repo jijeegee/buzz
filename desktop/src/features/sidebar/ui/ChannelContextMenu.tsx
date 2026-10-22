@@ -1,3 +1,4 @@
+import { isGroupChat } from "@/features/channels/lib/groupChat";
 import {
   Archive,
   Bell,
@@ -343,7 +344,9 @@ export function ChannelContextMenuItems({
           <span>
             {channel.channelType === "dm"
               ? "Leave conversation"
-              : "Leave group"}
+              : isGroupChat(channel)
+                ? "Leave chat"
+                : "Leave group"}
           </span>
         </ContextMenuItem>
       ) : null}

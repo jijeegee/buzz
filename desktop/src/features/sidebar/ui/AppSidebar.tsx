@@ -7,6 +7,7 @@ import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { useDeferredLoad } from "@/shared/hooks/useDeferredStartup";
 import { useActiveWorkingChannelsById } from "@/features/sidebar/lib/useActiveWorkingChannelsById";
 import { useDmSidebarMetadata } from "@/features/sidebar/useDmSidebarMetadata";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
 import { sortChannelsForSidebar } from "@/features/sidebar/lib/channelSortPreference";
 import { useChannelSortPreference } from "@/features/sidebar/lib/useChannelSortPreference";
 import { useSidebarScrollLock } from "@/features/sidebar/lib/useSidebarScrollLock";
@@ -256,10 +257,15 @@ export function AppSidebar({
     immediate: isSelectedDirectMessage,
     timeoutMs: 400,
   });
+  const groupChats = React.useMemo(
+    () => streamChannels.filter(isGroupChat),
+    [streamChannels],
+  );
   const { dmChannelLabels, dmParticipantsByChannelId, dmPresenceByChannelId } =
     useDmSidebarMetadata({
       currentPubkey,
       directMessages,
+      groupChats,
       enabled: shouldLoadDmMetadata,
       fallbackDisplayName,
       profileDisplayName: profile?.displayName,

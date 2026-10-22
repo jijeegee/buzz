@@ -123,6 +123,50 @@ pub fn build_create_channel(
     Ok(EventBuilder::new(Kind::Custom(9007), "").tags(tags))
 }
 
+/// Most people one ownerless chat may start with (relay wire contract).
+pub const MAX_GROUP_CHAT_INITIAL_PEOPLE: usize = 100;
+
+/// Kind 9007 — create an ownerless multi-person chat.
+///
+/// Always private, stream-typed and tagged `["group_chat"]`. `name` is
+/// optional: blank means unnamed (each viewer draws a title from members).
+/// `people` become `p` tags (deduplicated, lower-cased, never the creator);
+/// the relay adds them in the same transaction as the create.
+pub fn build_create_group_chat(
+    channel_id: Uuid,
+    name: Option<&str>,
+    people: &[String],
+    creator_pubkey: &str,
+) -> Result<EventBuilder, String> {
+    let creator = creator_pubkey.to_ascii_lowercase();
+    let mut seen = std::collections::HashSet::new();
+    let mut p_tags = Vec::new();
+    for pubkey in people {
+        check_pubkey(pubkey)?;
+        let lower = pubkey.to_ascii_lowercase();
+        if lower == creator || !seen.insert(lower.clone()) {
+            continue;
+        }
+        p_tags.push(tag(vec!["p", &lower])?);
+    }
+    if p_tags.len() > MAX_GROUP_CHAT_INITIAL_PEOPLE {
+        return Err(format!(
+            "a new chat can start with up to {MAX_GROUP_CHAT_INITIAL_PEOPLE} people"
+        ));
+    }
+    let mut tags = vec![
+        tag(vec!["h", &channel_id.to_string()])?,
+        tag(vec!["group_chat"])?,
+        tag(vec!["visibility", "private"])?,
+        tag(vec!["channel_type", "stream"])?,
+    ];
+    if let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) {
+        tags.push(tag(vec!["name", name])?);
+    }
+    tags.extend(p_tags);
+    Ok(EventBuilder::new(Kind::Custom(9007), "").tags(tags))
+}
+
 /// Kind 9021 — join channel.
 pub fn build_join(channel_id: Uuid) -> Result<EventBuilder, String> {
     let tags = vec![tag(vec!["h", &channel_id.to_string()])?];
@@ -922,6 +966,49 @@ mod tests {
         assert!(
             build_update_channel(channel_id, Some("###"), None, None, None, None, None).is_err()
         );
+    }
+
+    fn group_chat_tags(name: Option<&str>, people: &[String], creator: &str) -> Vec<Vec<String>> {
+        let builder = build_create_group_chat(Uuid::nil(), name, people, creator).unwrap();
+        let event = builder.sign_with_keys(&Keys::generate()).unwrap();
+        event.tags.iter().map(|t| t.as_slice().to_vec()).collect()
+    }
+
+    #[test]
+    fn group_chat_create_carries_marker_private_stream_and_people() {
+        let me = "a".repeat(64);
+        let bob = "B".repeat(64);
+        let cy = "c".repeat(64);
+        let tags = group_chat_tags(
+            Some("  Trip  "),
+            &[
+                bob.clone(),
+                me.clone(),
+                bob.to_ascii_lowercase(),
+                cy.clone(),
+            ],
+            &me,
+        );
+        assert!(tags.contains(&vec!["group_chat".to_string()]));
+        assert!(tags.contains(&vec!["visibility".into(), "private".into()]));
+        assert!(tags.contains(&vec!["channel_type".into(), "stream".into()]));
+        assert!(tags.contains(&vec!["name".into(), "Trip".into()]));
+        let people: Vec<&String> = tags.iter().filter(|t| t[0] == "p").map(|t| &t[1]).collect();
+        assert_eq!(people, vec![&bob.to_ascii_lowercase(), &cy]);
+        assert!(!tags.iter().any(|t| t[0] == "about" || t[0] == "ttl"));
+    }
+
+    #[test]
+    fn group_chat_create_omits_blank_name_and_caps_people() {
+        let me = "a".repeat(64);
+        let tags = group_chat_tags(Some("   "), &["b".repeat(64)], &me);
+        assert!(!tags.iter().any(|t| t[0] == "name"));
+        let too_many: Vec<String> = (0..=MAX_GROUP_CHAT_INITIAL_PEOPLE)
+            .map(|i| format!("{i:064x}"))
+            .collect();
+        assert!(build_create_group_chat(Uuid::nil(), None, &too_many, &me).is_err());
+        assert!(build_create_group_chat(Uuid::nil(), None, &too_many[1..], &me).is_ok());
+        assert!(build_create_group_chat(Uuid::nil(), None, &["xyz".into()], &me).is_err());
     }
 
     fn update_channel_tags(goals_enabled: Option<bool>) -> Result<Vec<Vec<String>>, String> {

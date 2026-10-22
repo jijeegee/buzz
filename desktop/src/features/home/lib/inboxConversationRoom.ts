@@ -77,7 +77,9 @@ export function resolveInboxConversationRoom(
     };
   }
 
-  const channelLabel = item.channelLabel?.trim() || "group";
+  // Chats carry their resolved title (private name > name > members).
+  const channelLabel =
+    dmChannelLabels?.[channelId] || item.channelLabel?.trim() || "group";
   const threadId = getInboxThreadRootId(item);
   return threadId
     ? { kind: "thread", channelId, channelLabel, threadId }

@@ -194,6 +194,7 @@ pub fn channel_info_from_event(
         ttl_deadline,
         goals_enabled: goals_enabled_from_event(event),
         picture: picture_from_event(event),
+        group_chat: has_tag(event, "group_chat"),
     })
 }
 
@@ -258,6 +259,7 @@ pub fn channel_detail_from_event(event: &Event) -> Result<ChannelDetailInfo, Str
         ttl_deadline: first_tag_value(event, "ttl_deadline").map(str::to_string),
         goals_enabled: goals_enabled_from_event(event),
         picture: picture_from_event(event),
+        group_chat: has_tag(event, "group_chat"),
     })
 }
 

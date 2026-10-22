@@ -75,7 +75,8 @@ export function ProjectRepositoryManagement({
         (channel) =>
           channel.isMember &&
           !channel.archivedAt &&
-          channel.channelType !== "dm",
+          channel.channelType !== "dm" &&
+          channel.groupChat !== true,
       ),
     [channelsQuery.data],
   );

@@ -186,6 +186,22 @@ fn channel_goals_enabled_by_default_when_tag_absent() {
 }
 
 #[test]
+fn channel_group_chat_marker_parsed_from_tag() {
+    let plain = ev(39000, "", vec![vec!["d", "u"], vec!["name", "n"]]);
+    assert!(
+        !channel_info_from_event(&plain, None, None)
+            .unwrap()
+            .group_chat
+    );
+    assert!(!channel_detail_from_event(&plain).unwrap().group_chat);
+    let chat = ev(39000, "", vec![vec!["d", "u"], vec!["group_chat"]]);
+    let info = channel_info_from_event(&chat, None, None).unwrap();
+    assert!(info.group_chat);
+    assert_eq!(info.name, "");
+    assert!(channel_detail_from_event(&chat).unwrap().group_chat);
+}
+
+#[test]
 fn channel_goals_disabled_by_goals_off_tag() {
     let e = ev(
         39000,

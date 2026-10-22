@@ -33,6 +33,7 @@ import { CHANNEL_MESSAGE_EVENT_KINDS } from "@/shared/constants/kinds";
 import { useStableMap, useStableSet } from "@/shared/hooks/useStableReference";
 import { normalizeRelayUrl } from "@/features/profile/lib/selfProfileStorage";
 import { DM_NOTIFIABLE_EVENT_KINDS } from "./isDmNotifiableKind";
+import { isChatRoom } from "./lib/groupChat";
 import {
   addThreadActivityItems,
   projectActivityForScope,
@@ -432,7 +433,7 @@ export function useUnreadChannels(
         getThreadReference(event.tags).parentId !== null &&
         !isBroadcastReply(event.tags);
       const isHighPriority =
-        channel?.channelType === "dm" ||
+        isChatRoom(channel) ||
         isThreadedReply ||
         (normalizedPubkey !== null &&
           isHighPriorityEventForUser(event, normalizedPubkey));
@@ -846,7 +847,7 @@ export function useUnreadChannels(
           if (!isForcedUnread) continue;
           unread.add(channel.id);
           topLevelUnread.add(channel.id);
-          if (channel.channelType === "dm") counts.set(channel.id, 1);
+          if (isChatRoom(channel)) counts.set(channel.id, 1);
           unreadChannelNotificationCount += 1;
           continue;
         }
@@ -877,10 +878,10 @@ export function useUnreadChannels(
         counts.set(channel.id, unreadCount);
         unreadChannelNotificationCount += appBadgeCount;
 
-        // DM channels: any unread DM is high-priority. Non-DM: high-priority
+        // 1:1s and chats: any unread message is high-priority. Non-DM: high-priority
         // only if at least one mention, broadcast, or relevant thread reply
         // remains unread in its own channel/thread context.
-        if (channel.channelType === "dm" || highPriorityCount > 0) {
+        if (isChatRoom(channel) || highPriorityCount > 0) {
           highPriority.add(channel.id);
         }
       }

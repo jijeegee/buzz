@@ -1,7 +1,17 @@
 import type { Channel, FeedItem, HomeFeedResponse } from "@/shared/api/types";
 import { formatMessageNotification } from "@/features/notifications/lib/notificationFormat";
 
-export type NotificationChannel = Pick<Channel, "id" | "name" | "channelType">;
+export type NotificationChannel = Pick<Channel, "id" | "name" | "channelType"> &
+  Partial<Pick<Channel, "groupChat">>;
+
+function isGroupChatItem(
+  item: FeedItem,
+  channels: readonly NotificationChannel[],
+): boolean {
+  return channels.some(
+    (channel) => channel.id === item.channelId && channel.groupChat === true,
+  );
+}
 
 export function enrichFeedItemChannel(
   item: FeedItem,
@@ -71,7 +81,12 @@ export function eligibleFeedNotificationItems(
     items.push(
       ...feed.feed.mentions
         .map((item) => enrichFeedItemChannel(item, channels))
-        .filter((item) => item.channelType !== "dm"),
+        // Ownerless chats notify like DMs from the live path (mentions
+        // included, even when muted), so the feed must not repeat them.
+        .filter(
+          (item) =>
+            item.channelType !== "dm" && !isGroupChatItem(item, channels),
+        ),
     );
   }
 

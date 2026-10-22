@@ -19,6 +19,9 @@ import {
 import { useIsProjectHomeChannel } from "@/features/projects/lib/projectHomeChannel";
 import { ProjectChannelIcon } from "@/features/projects/ui/ProjectChannelIcon";
 import type { Channel } from "@/shared/api/types";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
+import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
+import { useChatTitle } from "@/features/channels/useChatTitle";
 
 type ChannelIntroAction = {
   description?: string;
@@ -52,10 +55,37 @@ export function useChannelIntro({
   onWelcomeAddAgent?: () => void;
 }) {
   const projectHome = useIsProjectHomeChannel(activeChannel?.id);
+  const chatTitle = useChatTitle(activeChannel, activeChannel?.name ?? "");
 
   return React.useMemo(() => {
     if (!activeChannel || activeChannel.channelType === "dm") {
       return null;
+    }
+
+    if (isGroupChat(activeChannel)) {
+      const actions: ChannelIntroAction[] = [];
+      if (activeChannel.isMember && onOpenMembers) {
+        actions.push({
+          icon: <UserPlus aria-hidden className="h-5 w-5" />,
+          label: "Add people",
+          onClick: onOpenMembers,
+          testId: "channel-intro-action-add-people",
+        });
+      }
+      return {
+        actions,
+        avatar: (
+          <ChannelChatAvatar
+            channel={activeChannel}
+            className="size-[60px]"
+            size="xl"
+          />
+        ),
+        channelId: activeChannel.id,
+        channelKindLabel: "chat",
+        channelName: chatTitle,
+        description: null,
+      };
     }
 
     const actions: ChannelIntroAction[] = [];
@@ -147,6 +177,7 @@ export function useChannelIntro({
     };
   }, [
     activeChannel,
+    chatTitle,
     onAddAgent,
     onAddFiles,
     onBrowseChannels,
