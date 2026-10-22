@@ -595,15 +595,32 @@ mod inbound_author_gate {
                     self.refreshed_generation = Some(kuzz_event.connection_generation);
                 }
             }
-            let channel_type = channel_info
+            let metadata = channel_info
                 .resolve_channel_metadata(kuzz_event.channel_id)
-                .await
-                .map(|info| info.channel_type);
+                .await;
+            let group_chat = metadata.as_ref().is_some_and(|info| info.group_chat);
+            let channel_type = metadata.map(|info| info.channel_type);
             if let (Some(dispatcher), Some(channel_type)) =
                 (self.dispatcher.as_ref(), channel_type.as_deref())
             {
                 if channel_type == "dm" {
                     // DMs stay on the ordinary author policy below.
+                } else if group_chat {
+                    // Group chats never get dispatcher routing: the agent
+                    // answers only when @mentioned, under the ordinary author
+                    // policy. The subscription already requires the mention;
+                    // drop anything that slipped past it (fail closed).
+                    if !crate::event_mentions_agent(&kuzz_event.event, &self.agent_pubkey_hex) {
+                        return InboundAuthorGateDecision {
+                            effective_author: effective_prompt_author(
+                                &kuzz_event.event,
+                                self.relay_self.as_deref(),
+                                &self.agent_pubkey_hex,
+                            ),
+                            allowed: false,
+                            is_dm: false,
+                        };
+                    }
                 } else {
                     let effective_author = effective_prompt_author(
                         &kuzz_event.event,
@@ -8873,6 +8890,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: channel_type.into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9189,6 +9207,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9298,6 +9317,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9363,6 +9383,7 @@ mod author_gate_tests {
                     name: "workflow".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9423,6 +9444,7 @@ mod author_gate_tests {
                         name: "workflow".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 )]),
                 rest_client.clone(),
@@ -9500,6 +9522,7 @@ mod author_gate_tests {
                     name: "test".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             rest_client.clone(),
@@ -9899,6 +9922,7 @@ mod author_gate_tests {
                     name: "dm".into(),
                     channel_type: "dm".into(),
                     description: None,
+                    group_chat: false,
                 },
             ),
             (
@@ -9907,6 +9931,7 @@ mod author_gate_tests {
                     name: "stream".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             ),
         ]);
@@ -9924,6 +9949,7 @@ mod author_gate_tests {
                 name: "unknown".into(),
                 channel_type: "unknown".into(),
                 description: None,
+                group_chat: false,
             },
         )]);
         assert!(
@@ -11501,26 +11527,24 @@ async fn resolve_dynamic_listener_filter(
     rules: &[SubscriptionRule],
     channel_info: &pool::ChannelInfoResolver,
 ) -> Option<config::ChannelFilter> {
-    let channel_type = if config.dispatcher {
-        let channel_type = channel_info
-            .resolve_channel_metadata(channel_id)
-            .await
-            .map(|info| info.channel_type);
-        if channel_type.is_none() {
+    let metadata = if config.dispatcher {
+        let metadata = channel_info.resolve_channel_metadata(channel_id).await;
+        if metadata.is_none() {
             tracing::warn!(
                 channel_id = %channel_id,
                 "dispatcher: channel type unresolved on join — keeping the mention filter; \
                  unmentioned requests in this channel will not be routed until restart"
             );
         }
-        channel_type
+        metadata
     } else {
         None
     };
     config::resolve_dynamic_channel_filter_for_type(
         config,
         channel_id,
-        channel_type.as_deref(),
+        metadata.as_ref().map(|info| info.channel_type.as_str()),
+        metadata.as_ref().is_some_and(|info| info.group_chat),
         rules,
     )
 }
@@ -11720,6 +11744,7 @@ mod dispatcher_admission_tests {
                         name: "general".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 ),
                 (
@@ -11728,6 +11753,7 @@ mod dispatcher_admission_tests {
                         name: "dm".into(),
                         channel_type: "dm".into(),
                         description: None,
+                        group_chat: false,
                     },
                 ),
             ]),
@@ -11878,6 +11904,86 @@ mod dispatcher_admission_tests {
             "control: the ordinary gate admits a sibling on an unresolved channel"
         );
         unresolved_server.abort();
+    }
+
+    /// Group chats never take the dispatcher policy: a mentioned message from
+    /// the agent's owner is admitted under the ordinary author policy (the
+    /// dispatcher policy would drop it, as group chats have no owner/admin
+    /// and the owner is not a configured human), and an unmentioned message
+    /// is dropped even from the owner.
+    #[tokio::test]
+    async fn dispatcher_gate_skips_group_chats_and_requires_a_mention() {
+        let relay_hex = Keys::generate().public_key().to_hex();
+        let agent = Keys::generate().public_key().to_hex();
+        let owner = Keys::generate();
+        let (rest_client, server) =
+            author_gate_tests::nip11_server(serde_json::json!({ "self": relay_hex })).await;
+        let chat_id = Uuid::new_v4();
+        let dispatcher = std::sync::Arc::new(dispatcher::DispatcherGate::new(
+            DispatcherConfig::from_channels(HashMap::from([(
+                chat_id,
+                DispatcherChannelPolicy {
+                    humans: HashSet::new(),
+                    ais: HashSet::new(),
+                },
+            )])),
+            None,
+        ));
+        let mut gate = InboundAuthorGate::connect(&rest_client, &agent, "test")
+            .await
+            .with_dispatcher(Some(dispatcher));
+        let channel_info = pool::ChannelInfoResolver::new(
+            HashMap::from([(
+                chat_id,
+                relay::ChannelInfo {
+                    name: "unknown".into(),
+                    channel_type: "private".into(),
+                    description: None,
+                    group_chat: true,
+                },
+            )]),
+            rest_client.clone(),
+        );
+        let owner_cache = OwnerCache::new(Some(owner.public_key().to_hex()));
+
+        let mentioned = gate
+            .evaluate_listener_event(
+                &relay::KuzzEvent {
+                    connection_generation: 0,
+                    channel_id: chat_id,
+                    event: stream_message(&owner, &[agent.as_str()]),
+                },
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            mentioned.allowed && !mentioned.is_dm,
+            "the owner's @mention in a group chat takes the ordinary policy"
+        );
+
+        let unmentioned = gate
+            .evaluate_listener_event(
+                &relay::KuzzEvent {
+                    connection_generation: 0,
+                    channel_id: chat_id,
+                    event: stream_message(&owner, &[]),
+                },
+                &RespondTo::OwnerOnly,
+                &HashSet::new(),
+                &owner_cache,
+                &channel_info,
+                &rest_client,
+            )
+            .await;
+        assert!(
+            !unmentioned.allowed,
+            "a group chat message without an @mention never reaches the agent"
+        );
+        server.abort();
     }
 }
 

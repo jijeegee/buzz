@@ -701,6 +701,41 @@ pub async fn cmd_create_channel(
     Ok(())
 }
 
+/// Parse `--member` values (hex or npub) into lowercase hex pubkeys.
+fn group_chat_member_pubkeys(values: &[String]) -> Result<Vec<String>, CliError> {
+    values
+        .iter()
+        .map(|value| {
+            nostr::PublicKey::parse(value.trim())
+                .map(|pk| pk.to_hex())
+                .map_err(|_| {
+                    CliError::Usage(format!("invalid --member pubkey {value:?} (hex or npub)"))
+                })
+        })
+        .collect()
+}
+
+/// Create an ownerless private group chat (one kind 9007 carrying
+/// `["group_chat"]` and the initial people as `p` tags). The relay adds the
+/// people in the same step; non-friends receive an invitation instead.
+pub async fn cmd_create_group_chat(
+    client: &KuzzClient,
+    name: Option<&str>,
+    members: &[String],
+) -> Result<(), CliError> {
+    let members = group_chat_member_pubkeys(members)?;
+    let refs: Vec<&str> = members.iter().map(String::as_str).collect();
+    let channel_uuid = Uuid::new_v4();
+    let builder =
+        kuzz_sdk::build_create_group_chat(channel_uuid, name, &refs, &client.pubkey().to_hex())
+            .map_err(|e| CliError::Usage(e.to_string()))?;
+
+    let event = client.sign_event(builder)?;
+    let resp = client.submit_event(event).await?;
+    print_create_response(&resp, "channel_id", &channel_uuid.to_string());
+    Ok(())
+}
+
 /// A resolved live managed-agent instance backing a template persona slug.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct ResolvedAgent {
@@ -1904,7 +1939,19 @@ pub async fn dispatch(
             ttl,
             template,
             templates_file,
+            chat,
+            members,
         } => {
+            if chat {
+                return cmd_create_group_chat(client, name.as_deref(), &members).await;
+            }
+            if !members.is_empty() {
+                return Err(CliError::Usage(
+                    "--member is only valid with --chat (use `channels add-member` for an existing channel)".into(),
+                ));
+            }
+            // required_unless_present = "chat" guarantees a name here.
+            let name = name.ok_or_else(|| CliError::Usage("--name is required".into()))?;
             if let Some(template_name) = template {
                 cmd_create_channel_from_template(
                     client,
@@ -4670,5 +4717,104 @@ mod restore_canvas_already_current_tests {
             json.get("message").and_then(|v| v.as_str()).is_some(),
             "message field must be present: {json}"
         );
+    }
+}
+
+/// `channels create --chat` at the command seam: a local relay captures the
+/// submitted event so the test inspects what would go on the wire.
+#[cfg(test)]
+mod create_group_chat_tests {
+    use std::sync::{Arc, Mutex};
+
+    use axum::body::Bytes;
+    use axum::extract::State;
+    use axum::routing::post;
+    use axum::Router;
+    use nostr::{Keys, ToBech32};
+    use serde_json::Value;
+    use tokio::net::TcpListener;
+
+    use super::cmd_create_group_chat;
+    use crate::client::KuzzClient;
+    use crate::CliError;
+
+    async fn relay() -> (String, Arc<Mutex<Option<Value>>>) {
+        let submitted: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
+        let app = Router::new()
+            .route(
+                "/events",
+                post(
+                    |State(s): State<Arc<Mutex<Option<Value>>>>, body: Bytes| async move {
+                        let event: Value = serde_json::from_slice(&body).expect("event json");
+                        *s.lock().unwrap() = Some(event);
+                        r#"{"event_id":"deadbeef","accepted":true,"message":""}"#.to_string()
+                    },
+                ),
+            )
+            .with_state(submitted.clone());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}"), submitted)
+    }
+
+    fn tags(event: &Value) -> Vec<Vec<String>> {
+        event["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                t.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap().to_string())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn chat_submits_one_group_chat_event_with_members() {
+        let (url, submitted) = relay().await;
+        let client = KuzzClient::new(url, Keys::generate(), None, None).unwrap();
+        let hex = Keys::generate().public_key();
+        let npub_key = Keys::generate().public_key();
+        let members = vec![hex.to_hex(), npub_key.to_bech32().unwrap()];
+
+        cmd_create_group_chat(&client, None, &members)
+            .await
+            .unwrap();
+
+        let event = submitted.lock().unwrap().clone().expect("event submitted");
+        assert_eq!(event["kind"], 9007);
+        let tags = tags(&event);
+        assert!(tags.contains(&vec!["group_chat".to_string()]));
+        assert!(tags.contains(&vec!["visibility".into(), "private".into()]));
+        assert!(tags.contains(&vec!["channel_type".into(), "stream".into()]));
+        assert!(!tags.iter().any(|t| t[0] == "name"), "unnamed chat");
+        let ps: Vec<&str> = tags
+            .iter()
+            .filter(|t| t[0] == "p")
+            .map(|t| t[1].as_str())
+            .collect();
+        assert_eq!(ps, vec![hex.to_hex(), npub_key.to_hex()]);
+    }
+
+    #[tokio::test]
+    async fn chat_rejects_self_and_bad_members_without_sending() {
+        let (url, submitted) = relay().await;
+        let keys = Keys::generate();
+        let me = keys.public_key().to_hex();
+        let client = KuzzClient::new(url, keys, None, None).unwrap();
+
+        let err = cmd_create_group_chat(&client, Some("Trip"), &[me])
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CliError::Usage(_)), "{err}");
+        let err = cmd_create_group_chat(&client, None, &["not-a-key".into()])
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CliError::Usage(_)), "{err}");
+        assert!(submitted.lock().unwrap().is_none(), "nothing is sent");
     }
 }

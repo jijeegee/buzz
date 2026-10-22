@@ -2,7 +2,11 @@ use uuid::Uuid;
 
 use crate::client::{extract_d_tag, normalize_write_response, KuzzClient};
 use crate::error::CliError;
-use crate::validate::{parse_uuid, sdk_err, validate_hex64};
+use crate::validate::{parse_uuid, validate_hex64};
+
+/// Shown when someone tries to put more than one other person in a DM.
+const DM_ONE_TO_ONE_HINT: &str = "Direct messages are 1:1. Start a group chat instead: \
+     kuzz channels create --chat --member <pubkey> ...";
 
 /// List DM conversations by querying kind:41001 (relay-confirmed DMs) filtered by our pubkey.
 pub async fn cmd_list_dms(client: &KuzzClient, limit: Option<u32>) -> Result<(), CliError> {
@@ -47,16 +51,32 @@ pub async fn cmd_list_dms(client: &KuzzClient, limit: Option<u32>) -> Result<(),
     Ok(())
 }
 
-/// Open a DM with one or more users — sign and submit a kind:41010 event with a d-tag.
-pub async fn cmd_open_dm(client: &KuzzClient, pubkeys: &[String]) -> Result<(), CliError> {
-    if pubkeys.is_empty() || pubkeys.len() > 8 {
-        return Err(CliError::Usage("--pubkey: must provide 1-8 pubkeys".into()));
-    }
+/// The single pubkey a 1:1 DM opens with: the other person, or your own for
+/// notes to self. Repeats of the same key collapse; more than one person is
+/// rejected with the group-chat hint.
+fn dm_open_pubkey(pubkeys: &[String]) -> Result<String, CliError> {
+    let mut distinct: Vec<String> = Vec::with_capacity(1);
     for pk in pubkeys {
         validate_hex64(pk)?;
+        let pk = pk.to_ascii_lowercase();
+        if !distinct.contains(&pk) {
+            distinct.push(pk);
+        }
     }
+    match distinct.len() {
+        1 => Ok(distinct.remove(0)),
+        0 => Err(CliError::Usage(
+            "--pubkey: pass the other person's pubkey (or your own for notes to self)".into(),
+        )),
+        _ => Err(CliError::Usage(DM_ONE_TO_ONE_HINT.into())),
+    }
+}
+
+/// Open a 1:1 DM — sign and submit a kind:41010 event with a d-tag.
+pub async fn cmd_open_dm(client: &KuzzClient, pubkeys: &[String]) -> Result<(), CliError> {
+    let pubkey = dm_open_pubkey(pubkeys)?;
     let dm_id = Uuid::new_v4().to_string();
-    let refs: Vec<&str> = pubkeys.iter().map(String::as_str).collect();
+    let refs = [pubkey.as_str()];
 
     // build_dm_open doesn't accept a d-tag, so we build the event manually
     // using the SDK builder and add the d-tag ourselves.
@@ -108,21 +128,10 @@ pub async fn cmd_hide_dm(client: &KuzzClient, channel_id: &str) -> Result<(), Cl
     Ok(())
 }
 
-/// Add a member to a DM group — sign and submit a kind:41011 event.
-pub async fn cmd_add_dm_member(
-    client: &KuzzClient,
-    channel_id: &str,
-    pubkey: &str,
-) -> Result<(), CliError> {
-    let channel_uuid = parse_uuid(channel_id)?;
-    validate_hex64(pubkey)?;
-
-    let builder = kuzz_sdk::build_dm_add_member(channel_uuid, pubkey).map_err(sdk_err)?;
-    let event = client.sign_event(builder)?;
-
-    let resp = client.submit_event(event).await?;
-    println!("{}", normalize_write_response(&resp));
-    Ok(())
+/// `dms add-member` is no longer supported: DMs are 1:1. Fails with the
+/// group-chat hint without sending anything.
+pub fn cmd_add_dm_member() -> Result<(), CliError> {
+    Err(CliError::Usage(DM_ONE_TO_ONE_HINT.into()))
 }
 
 pub async fn dispatch(cmd: crate::DmsCmd, client: &KuzzClient) -> Result<(), CliError> {
@@ -130,7 +139,40 @@ pub async fn dispatch(cmd: crate::DmsCmd, client: &KuzzClient) -> Result<(), Cli
     match cmd {
         DmsCmd::List { limit } => cmd_list_dms(client, limit).await,
         DmsCmd::Open { pubkeys } => cmd_open_dm(client, &pubkeys).await,
-        DmsCmd::AddMember { channel, pubkey } => cmd_add_dm_member(client, &channel, &pubkey).await,
+        DmsCmd::AddMember { .. } => cmd_add_dm_member(),
         DmsCmd::Hide { channel } => cmd_hide_dm(client, &channel).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dm_open_takes_exactly_one_person() {
+        let a = "a".repeat(64);
+        assert_eq!(dm_open_pubkey(std::slice::from_ref(&a)).unwrap(), a);
+        assert_eq!(
+            dm_open_pubkey(&[a.clone(), a.to_ascii_uppercase()]).unwrap(),
+            a,
+            "repeats of one key collapse"
+        );
+        let err = dm_open_pubkey(&[a, "b".repeat(64)]).unwrap_err();
+        assert!(
+            matches!(&err, CliError::Usage(m) if m.contains("kuzz channels create --chat")),
+            "{err}"
+        );
+        assert!(matches!(dm_open_pubkey(&[]), Err(CliError::Usage(_))));
+        assert!(dm_open_pubkey(&["short".into()]).is_err());
+    }
+
+    #[test]
+    fn dm_add_member_explains_group_chats() {
+        let err = cmd_add_dm_member().unwrap_err();
+        assert!(
+            matches!(&err, CliError::Usage(m) if m.starts_with("Direct messages are 1:1.")
+                && m.contains("kuzz channels create --chat --member <pubkey>")),
+            "{err}"
+        );
     }
 }

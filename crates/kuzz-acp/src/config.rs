@@ -1932,18 +1932,25 @@ pub(crate) fn dispatcher_channel_filter(config: &Config) -> ChannelFilter {
 
 /// Whether dispatcher mode replaces the subscription for a channel of this
 /// type. Only confirmed non-DM channels qualify: DMs keep their rules, and
-/// unresolved metadata fails closed to the ordinary mention filter. The
-/// override applies to the default mentions mode only; `all` already drops
-/// the mention filter and `config` mode is operator-owned.
-pub(crate) fn dispatcher_subscribes_channel_type(config: &Config, channel_type: &str) -> bool {
+/// unresolved metadata fails closed to the ordinary mention filter. Group
+/// chats (ownerless rooms) never qualify: agents there hear only @mentions,
+/// even from their owner. The override applies to the default mentions mode
+/// only; `all` already drops the mention filter and `config` mode is
+/// operator-owned.
+pub(crate) fn dispatcher_subscribes_channel_type(
+    config: &Config,
+    channel_type: &str,
+    group_chat: bool,
+) -> bool {
     config.dispatcher
         && config.subscribe_mode == SubscribeMode::Mentions
+        && !group_chat
         && channel_type != "dm"
         && channel_type != "unknown"
 }
 
 /// [`resolve_channel_filters`] over discovered channels, with the dispatcher
-/// override applied to every in-scope non-DM channel.
+/// override applied to every in-scope non-DM channel except group chats.
 pub fn resolve_startup_channel_filters(
     config: &Config,
     channels: &HashMap<Uuid, crate::relay::ChannelInfo>,
@@ -1952,7 +1959,7 @@ pub fn resolve_startup_channel_filters(
     let channel_ids: Vec<Uuid> = channels.keys().copied().collect();
     let mut filters = resolve_channel_filters(config, &channel_ids, rules);
     for (channel_id, info) in channels {
-        if dispatcher_subscribes_channel_type(config, &info.channel_type) {
+        if dispatcher_subscribes_channel_type(config, &info.channel_type, info.group_chat) {
             if let Some(filter) = filters.get_mut(channel_id) {
                 *filter = dispatcher_channel_filter(config);
             }
@@ -1963,14 +1970,17 @@ pub fn resolve_startup_channel_filters(
 
 /// [`resolve_dynamic_channel_filter`] with the dispatcher override for a
 /// channel whose type was resolved (`None` = unresolved, fails closed).
+/// `group_chat` comes from the same metadata; group chats keep the ordinary
+/// filter.
 pub fn resolve_dynamic_channel_filter_for_type(
     config: &Config,
     channel_id: Uuid,
     channel_type: Option<&str>,
+    group_chat: bool,
     rules: &[crate::filter::SubscriptionRule],
 ) -> Option<ChannelFilter> {
     let filter = resolve_dynamic_channel_filter(config, channel_id, rules)?;
-    if dispatcher_subscribes_channel_type(config, channel_type.unwrap_or("unknown")) {
+    if dispatcher_subscribes_channel_type(config, channel_type.unwrap_or("unknown"), group_chat) {
         return Some(dispatcher_channel_filter(config));
     }
     Some(filter)
@@ -3925,10 +3935,51 @@ channels = "ALL"
                         name: "ch".into(),
                         channel_type: channel_type.to_string(),
                         description: None,
+                        group_chat: false,
                     },
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn dispatcher_mode_never_fully_subscribes_group_chats() {
+        let mut config = test_config(SubscribeMode::Mentions);
+        config.dispatcher = true;
+        let stream = Uuid::new_v4();
+        let chat = Uuid::new_v4();
+        let mut channels = channel_map(&[(stream, "stream")]);
+        for channel_type in ["stream", "private"] {
+            channels.insert(
+                chat,
+                crate::relay::ChannelInfo {
+                    name: "unknown".into(),
+                    channel_type: channel_type.into(),
+                    description: None,
+                    group_chat: true,
+                },
+            );
+            let filters = resolve_startup_channel_filters(&config, &channels, &[]);
+            assert!(
+                !filters[&stream].require_mention,
+                "a managed stream still gets the dispatcher subscription"
+            );
+            assert!(
+                filters[&chat].require_mention,
+                "a {channel_type} group chat keeps the mention filter in dispatcher mode"
+            );
+        }
+
+        let ch = Uuid::new_v4();
+        for channel_type in [Some("stream"), Some("private")] {
+            let filter =
+                resolve_dynamic_channel_filter_for_type(&config, ch, channel_type, true, &[])
+                    .unwrap();
+            assert!(
+                filter.require_mention,
+                "a group chat joined at runtime keeps the mention filter ({channel_type:?})"
+            );
+        }
     }
 
     #[test]
@@ -3987,6 +4038,7 @@ channels = "ALL"
             &config,
             out_of_scope,
             Some("stream"),
+            false,
             &[]
         )
         .is_none());
@@ -3998,12 +4050,14 @@ channels = "ALL"
         config.dispatcher = true;
         let ch = Uuid::new_v4();
         let stream =
-            resolve_dynamic_channel_filter_for_type(&config, ch, Some("stream"), &[]).unwrap();
+            resolve_dynamic_channel_filter_for_type(&config, ch, Some("stream"), false, &[])
+                .unwrap();
         assert!(!stream.require_mention);
         assert_eq!(stream.kinds, Some(default_mention_kinds()));
         for channel_type in [Some("dm"), Some("unknown"), None] {
             let filter =
-                resolve_dynamic_channel_filter_for_type(&config, ch, channel_type, &[]).unwrap();
+                resolve_dynamic_channel_filter_for_type(&config, ch, channel_type, false, &[])
+                    .unwrap();
             assert!(
                 filter.require_mention,
                 "{channel_type:?} keeps the mention filter"
@@ -4014,7 +4068,7 @@ channels = "ALL"
         let mut all = test_config(SubscribeMode::All);
         all.dispatcher = true;
         let filter =
-            resolve_dynamic_channel_filter_for_type(&all, ch, Some("stream"), &[]).unwrap();
+            resolve_dynamic_channel_filter_for_type(&all, ch, Some("stream"), false, &[]).unwrap();
         assert!(!filter.require_mention);
         assert!(filter.kinds.is_none());
     }

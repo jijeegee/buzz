@@ -401,9 +401,16 @@ echo "$DM_RESULT" | jq .
 # Expected: {"event_id":"...","accepted":true,"message":"...","dm_id":"<uuid>"}
 DM_ID=$(echo "$DM_RESULT" | jq -r '.dm_id')
 
-# dms add-member (requires messages:write scope — NOT admin:channels)
+# dms add-member is retired (DMs are 1:1): exits 1 with the group-chat hint, sends nothing
 kuzz dms add-member --channel "$DM_ID" \
-  --pubkey "0000000000000000000000000000000000000000000000000000000000000002" | jq .
+  --pubkey "0000000000000000000000000000000000000000000000000000000000000002"
+# Expected: "Direct messages are 1:1. Start a group chat instead: kuzz channels create --chat --member <pubkey> ..."
+
+# Group chat with the DM partner plus one more person
+kuzz channels create --chat \
+  --member "0000000000000000000000000000000000000000000000000000000000000001" \
+  --member "0000000000000000000000000000000000000000000000000000000000000002" | jq .
+# Expected: {"event_id":"...","accepted":true,"message":"...","channel_id":"<uuid>"}
 ```
 
 ### 6.7 Users & Presence
@@ -688,7 +695,7 @@ kuzz channels delete --channel "$FORUM_ID" | jq .
 | 27 | `reactions get` | ☐ | |
 | 28 | `dms list` | ☐ | |
 | 29 | `dms open` | ☐ | |
-| 30 | `dms add-member` | ☐ | Needs messages:write |
+| 30 | `dms add-member` | ☐ | Retired: must fail with the group-chat hint |
 | 31 | `users get` | ☐ | Self, single, batch |
 | 32 | `users set-profile` | ☐ | |
 | 33 | `users presence` | ☐ | |
