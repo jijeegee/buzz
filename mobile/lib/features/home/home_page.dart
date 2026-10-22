@@ -65,7 +65,7 @@ class HomePage extends HookConsumerWidget {
     _HomeDestination(
       icon: LucideIcons.users300,
       selectedIcon: LucideIcons.users500,
-      label: 'People',
+      label: 'Friends',
     ),
     _HomeDestination(
       icon: LucideIcons.bot300,

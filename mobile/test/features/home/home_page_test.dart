@@ -43,7 +43,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    for (final label in ['People', 'Agents', 'Profile', 'Settings']) {
+    for (final label in ['Friends', 'Agents', 'Profile', 'Settings']) {
       expect(find.text(label), findsNothing);
       expect(find.bySemanticsLabel(label), findsOneWidget);
     }
@@ -231,7 +231,7 @@ void main() {
     await tester.pump();
     expect(hapticCalls, hasLength(1));
 
-    await tester.tap(find.byTooltip('People'));
+    await tester.tap(find.byTooltip('Friends'));
     await tester.pump();
     expect(hapticCalls, hasLength(2));
   });
