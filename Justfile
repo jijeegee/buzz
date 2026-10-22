@@ -93,7 +93,7 @@ build-release:
     cargo build --workspace --release
 
 # Run repo lint, formatting, and repository policy checks
-check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check
+check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check i18n-check
 
 # Validate the trusted security-review workflow support and renderer contract.
 security-review-check:
@@ -109,6 +109,11 @@ file-size-check:
     node desktop/scripts/check-file-sizes.mjs
     node web/scripts/check-file-sizes.mjs
     node mobile/scripts/check-file-sizes.mjs
+
+# Validate language packs (i18n/TRANSLATING.md) and their tooling.
+i18n-check:
+    node --test i18n/scripts/i18n.test.mjs
+    node i18n/scripts/i18n.mjs check
 
 # Format all Rust code
 fmt:
