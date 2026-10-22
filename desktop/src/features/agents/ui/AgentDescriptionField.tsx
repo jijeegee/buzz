@@ -10,6 +10,7 @@ import {
   PERSONA_FIELD_SHELL_CLASS,
   PERSONA_LABEL_OPTIONAL_CLASS,
 } from "./agentConfigOptions";
+import { useT } from "@/shared/i18n";
 
 /** Show the live character counter once within this many chars of the cap. */
 const COUNTER_VISIBLE_WITHIN = 40;
@@ -36,7 +37,8 @@ export function AgentIdentityFields({
   onDescriptionChange,
   disabled,
 }: AgentIdentityFieldsProps) {
-  const placeholder = "What this agent does, in a sentence";
+  const t = useT();
+  const placeholder = t("agents.identity.descriptionPlaceholder");
   const descriptionLength = agentDescriptionCharacterCount(description);
   const showCounter =
     descriptionLength >= MAX_AGENT_DESCRIPTION_CHARS - COUNTER_VISIBLE_WITHIN;
@@ -48,7 +50,7 @@ export function AgentIdentityFields({
           className="text-sm font-medium text-foreground"
           htmlFor="persona-display-name"
         >
-          Agent name
+          {t("agents.identity.name")}
         </label>
         <div
           className={cn(
@@ -76,8 +78,10 @@ export function AgentIdentityFields({
           className="text-sm font-medium text-foreground"
           htmlFor="persona-description"
         >
-          Description
-          <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+          {t("agents.identity.description")}
+          <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+            {t("agents.dialog.optional")}
+          </span>
         </label>
         <div
           className={cn(
@@ -101,7 +105,7 @@ export function AgentIdentityFields({
         </div>
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-xs text-muted-foreground">
-            Shown publicly on the agent&apos;s card and profile.
+            {t("agents.identity.descriptionHelp")}
           </p>
           {showCounter ? (
             <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">

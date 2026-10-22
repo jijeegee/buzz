@@ -13,6 +13,7 @@ import {
   ActivityRowContent,
   ActivityRowLabel,
 } from "../activityRenderClasses/ActivityRow";
+import { t, useT } from "@/shared/i18n";
 
 type TodoDisplayItem = {
   checked: boolean;
@@ -28,12 +29,13 @@ export function TodoToolSummary({
   fallbackPreview: string | null;
   item: Extract<TranscriptItem, { type: "tool" }>;
 }) {
+  const t = useT();
   const todos = buildTodoDisplayItems(item.args, item.result, fallbackPreview);
   const variant = useAgentSessionTranscriptVariant();
   const isCompactPreview = variant === "compactPreview";
   const actionLabel = {
-    verb: "Updated",
-    object: fallbackPreview ?? "todos",
+    verb: t("agents.toolActivity.verbUpdated"),
+    object: fallbackPreview ?? t("agents.toolActivity.objectTodos"),
   };
 
   return (
@@ -67,7 +69,7 @@ export function TodoToolSummary({
               isCompactPreview ? "text-xs" : "text-sm",
             )}
           >
-            No todos.
+            {t("agents.transcript.noTodos")}
           </p>
         )}
       </ActivityRowContent>
@@ -120,7 +122,8 @@ function buildTodoDisplayItems(
     return resultTodos;
   }
 
-  return fallbackPreview && fallbackPreview !== "empty list"
+  return fallbackPreview &&
+    fallbackPreview !== t("agents.toolActivity.objectEmptyList")
     ? [{ checked: false, text: fallbackPreview }]
     : [];
 }

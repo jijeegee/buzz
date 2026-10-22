@@ -2,6 +2,7 @@ import { toast } from "sonner";
 
 import { attachManagedAgentToChannel } from "./channelAgents";
 import type { Channel, CreateManagedAgentResponse } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 type TargetChannel = Pick<Channel, "id" | "name">;
 
@@ -23,22 +24,33 @@ function showAttachmentFailure(
   cause: unknown,
   toastId?: string | number,
 ) {
-  const error = cause instanceof Error ? cause.message : "Failed to add agent.";
-  const id = toast.warning("Agent created", {
-    description: `${created.agent.name} couldn’t be added to ${targetChannel.name}. ${error}`,
+  const error =
+    cause instanceof Error ? cause.message : t("agents.addAgent.failed");
+  const id = toast.warning(t("agents.created.title"), {
+    description: t("agents.created.attachFailed", {
+      name: created.agent.name,
+      group: targetChannel.name,
+      error,
+    }),
     id: toastId,
     action: {
-      label: "Try again",
+      label: t("agents.created.tryAgain"),
       onClick: (event) => {
         event.preventDefault();
-        toast.loading("Agent created", {
-          description: `Adding ${created.agent.name} to ${targetChannel.name}…`,
+        toast.loading(t("agents.created.title"), {
+          description: t("agents.created.adding", {
+            name: created.agent.name,
+            group: targetChannel.name,
+          }),
           id,
         });
         void attach(created, targetChannel).then(
           () => {
-            toast.success("Agent created", {
-              description: `Added ${created.agent.name} to ${targetChannel.name}`,
+            toast.success(t("agents.created.title"), {
+              description: t("agents.created.added", {
+                name: created.agent.name,
+                group: targetChannel.name,
+              }),
               id,
             });
           },
@@ -58,13 +70,13 @@ export function useCreatedAgentChannelAttachment() {
     targetChannel?: TargetChannel | null,
   ) {
     if (created.spawnError || !targetChannel) {
-      toast.success("Agent created");
+      toast.success(t("agents.created.title"));
       return;
     }
 
     try {
       await attach(created, targetChannel);
-      toast.success("Agent created");
+      toast.success(t("agents.created.title"));
     } catch (cause) {
       showAttachmentFailure(created, targetChannel, cause);
     }

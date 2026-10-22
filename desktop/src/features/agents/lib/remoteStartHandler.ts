@@ -9,6 +9,7 @@ import {
   RemoteCommandLedger,
   remoteStartTargets,
 } from "./remoteStartCommand";
+import { t } from "@/shared/i18n";
 
 /**
  * How long a `!start` waits before it is acted on, so a later `!shutdown`
@@ -75,7 +76,7 @@ async function startTargets(event: RelayEvent, scope: RemoteStartScope) {
           ? { expectedRelayUrl: scope.relayUrl, expectedSignerPubkey: owner }
           : undefined,
       );
-      toast.success(`${agent.name} started from another device.`);
+      toast.success(t("agents.remoteStart.started", { name: agent.name }));
       started = true;
     } catch (error) {
       console.error("Remote start failed", pubkey, error);

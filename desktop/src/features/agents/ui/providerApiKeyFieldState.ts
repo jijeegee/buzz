@@ -6,6 +6,7 @@ import {
   getProviderApiKeyEnvVar,
   isGloballySatisfiedCredentialKey,
 } from "./agentConfigOptions";
+import { t } from "@/shared/i18n";
 
 export type ProviderApiKeyFieldState = {
   advancedRequiredEnvKeys: readonly string[];
@@ -80,13 +81,13 @@ export function getProviderApiKeyFieldState({
               : null;
   const inheritedLabel =
     source === "persona"
-      ? "Inherited from agent profile"
+      ? t("agents.apiKey.inheritedFromProfile")
       : source === "global"
-        ? "Inherited from global config"
+        ? t("agents.apiKey.inheritedFromGlobal")
         : source === "build"
-          ? "Inherited from build"
+          ? t("agents.apiKey.inheritedFromBuild")
           : source === "file"
-            ? "Set in runtime config"
+            ? t("agents.apiKey.setInRuntimeConfig")
             : "";
 
   return {

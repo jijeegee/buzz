@@ -29,6 +29,7 @@ import type {
   RuntimeConfigSurface,
 } from "@/shared/api/types";
 import { providerDisplayLabel } from "./agentConfigOptions";
+import { useT, type MessageKey } from "@/shared/i18n";
 
 export type AgentConfigPanelSection = "model" | "mcp" | "advanced";
 
@@ -101,14 +102,14 @@ type RowVariant = "compact" | "profile";
 
 // ── Normalized row ────────────────────────────────────────────────────────────
 
-const NORMALIZED_LABELS: Record<keyof NormalizedConfig, string> = {
-  model: "Model",
-  provider: "Provider",
-  mode: "Mode",
-  thinkingEffort: "Thinking effort",
-  maxOutputTokens: "Max output tokens",
-  contextLimit: "Context limit",
-  systemPrompt: "System prompt",
+const NORMALIZED_LABELS: Record<keyof NormalizedConfig, MessageKey> = {
+  model: "agents.aiDefaults.model",
+  provider: "agents.aiDefaults.provider",
+  mode: "agents.config.mode",
+  thinkingEffort: "agents.config.thinkingEffort",
+  maxOutputTokens: "agents.config.maxOutputTokens",
+  contextLimit: "agents.config.contextLimit",
+  systemPrompt: "agents.config.systemPrompt",
 };
 
 const NORMALIZED_ICONS: Record<keyof NormalizedConfig, LucideIcon> = {
@@ -134,6 +135,7 @@ function NormalizedRow({
   onEdit?: () => void;
   variant?: RowVariant;
 }) {
+  const t = useT();
   const Icon = NORMALIZED_ICONS[fieldKey];
   const rawDisplayValue = field.value ?? "—";
   const displayValue =
@@ -175,10 +177,10 @@ function NormalizedRow({
   if (isEditable) {
     return (
       <button
-        aria-label={`Edit ${label}`}
+        aria-label={t("agents.config.editField", { label })}
         className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={onEdit}
-        title={`Edit ${label}`}
+        title={t("agents.config.editField", { label })}
         type="button"
       >
         {content}
@@ -207,6 +209,7 @@ function AdvancedRow({
   field: ConfigField;
   variant?: RowVariant;
 }) {
+  const t = useT();
   const { copied, copy } = useCopyFeedback({
     label: field.label,
     value: field.value ?? "",
@@ -255,10 +258,10 @@ function AdvancedRow({
   if (isCopyable && field.value) {
     return (
       <button
-        aria-label={`Copy ${field.label}`}
+        aria-label={t("agents.config.copyField", { label: field.label })}
         className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={() => void copy()}
-        title={`Copy ${field.label}`}
+        title={t("agents.config.copyField", { label: field.label })}
         type="button"
       >
         {content}
@@ -297,17 +300,13 @@ function ProfileConfigSection({
  * default login.
  */
 function ClaudeConfigDirNotice() {
+  const t = useT();
   return (
     <div className="mt-3 border-t border-border/50 px-4 pt-2">
       <p className="text-xs text-muted-foreground/80">
-        ⚠ Custom <code className="font-mono text-xs">CLAUDE_CONFIG_DIR</code>{" "}
-        active — config is read from that directory. Claude Code keys its login
-        to the config-dir path, so a custom dir creates a new Keychain
-        namespace. The agent will need to re-authenticate unless you also set{" "}
-        <code className="font-mono text-xs">
-          CLAUDE_SECURESTORAGE_CONFIG_DIR
-        </code>{" "}
-        to match your default login.
+        {t("agents.config.claudeConfigDirNotice", {
+          code: (chunks) => <code className="font-mono text-xs">{chunks}</code>,
+        })}
       </p>
     </div>
   );
@@ -319,18 +318,19 @@ export function AgentConfigPanel({
   pubkey,
   sections = ALL_AGENT_CONFIG_SECTIONS,
 }: Props) {
+  const t = useT();
   const { data, isLoading, error } = useAgentConfigSurface(pubkey);
   const flatStateTitle = sections.includes("model")
-    ? "Model settings"
+    ? t("agents.config.modelSettings")
     : sections.includes("mcp")
-      ? "MCP servers"
-      : "Advanced";
+      ? t("agents.config.mcpServers")
+      : t("agents.advanced.toggle");
 
   if (isLoading) {
     const loading = (
       <div className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground">
         <Spinner className="h-3.5 w-3.5" />
-        Loading configuration…
+        {t("agents.config.loading")}
       </div>
     );
     if (advancedMode === "flat") {
@@ -346,9 +346,7 @@ export function AgentConfigPanel({
   if (error || !data) {
     const errorMessage = (
       <p className="px-4 py-3 text-sm text-destructive">
-        {error instanceof Error
-          ? error.message
-          : "Couldn't load agent configuration."}
+        {error instanceof Error ? error.message : t("agents.config.loadFailed")}
       </p>
     );
     if (advancedMode === "flat") {
@@ -377,6 +375,7 @@ export function AgentConfigSurfaceRows({
   onEdit,
   sections = ALL_AGENT_CONFIG_SECTIONS,
 }: AgentConfigSurfaceRowsProps) {
+  const t = useT();
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
 
   const { normalized, advanced, extensions, runtimeId, sources } = data;
@@ -416,7 +415,7 @@ export function AgentConfigSurfaceRows({
         {showModelSection && normalizedEntries.length > 0 ? (
           <ProfileConfigSection
             testId="user-profile-model-settings-section"
-            title="Model settings"
+            title={t("agents.config.modelSettings")}
           >
             <div className="divide-y divide-border/55">
               {normalizedEntries.map(([key, field]) => (
@@ -424,7 +423,7 @@ export function AgentConfigSurfaceRows({
                   field={field}
                   fieldKey={key}
                   key={key}
-                  label={NORMALIZED_LABELS[key]}
+                  label={t(NORMALIZED_LABELS[key])}
                   onEdit={onEdit}
                   variant="profile"
                 />
@@ -436,7 +435,7 @@ export function AgentConfigSurfaceRows({
         {showMcpSection && showMcpServers ? (
           <ProfileConfigSection
             testId="user-profile-mcp-servers-section"
-            title="MCP servers"
+            title={t("agents.config.mcpServers")}
           >
             <McpServersSection
               extensions={extensions}
@@ -450,7 +449,7 @@ export function AgentConfigSurfaceRows({
         {showAdvancedSection && advanced.length > 0 ? (
           <ProfileConfigSection
             testId="user-profile-advanced-section"
-            title="Advanced"
+            title={t("agents.advanced.toggle")}
           >
             {advanced.map((field) => (
               <AdvancedRow field={field} key={field.key} variant="profile" />
@@ -469,13 +468,13 @@ export function AgentConfigSurfaceRows({
       <div className="divide-y divide-border/50">
         {normalizedEntries.length === 0 ? (
           <p className="py-2 text-xs text-muted-foreground">
-            No config fields available.
+            {t("agents.config.noFields")}
           </p>
         ) : (
           normalizedEntries.map(([key, field]) => (
             <NormalizedRow
               fieldKey={key}
-              label={NORMALIZED_LABELS[key]}
+              label={t(NORMALIZED_LABELS[key])}
               field={field}
               key={key}
               variant="compact"
@@ -503,7 +502,7 @@ export function AgentConfigSurfaceRows({
             ) : (
               <ChevronRight className="h-3 w-3" />
             )}
-            Advanced ({advanced.length})
+            {t("agents.config.advancedCount", { count: advanced.length })}
           </button>
 
           {advancedOpen ? (

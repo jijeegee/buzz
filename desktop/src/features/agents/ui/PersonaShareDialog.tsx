@@ -52,6 +52,7 @@ import {
 import { SnapshotOptionMenu } from "./SnapshotOptionMenu";
 import { resolveSnapshotAvatarPng } from "./snapshotAvatarPng";
 import { useSnapshotSendController } from "./useSnapshotSendController";
+import { type Translate, useT } from "@/shared/i18n";
 
 type PersonaShareDialogProps = {
   catalogShareLevel: CatalogPersonaShareLevel;
@@ -116,25 +117,35 @@ type PendingMemoryShare = {
   recipientNames?: string[];
 };
 
-function buildSnapshotShareLevels(itemLabel: "Agent" | "Team") {
+function buildSnapshotShareLevels(kind: "agent" | "team", t: Translate) {
   return [
-    { value: "none" as const, label: `${itemLabel} only` },
+    { value: "none" as const, label: t("agents.share.levelNone", { kind }) },
     {
       value: "core" as const,
-      label: `${itemLabel} + core memory`,
+      label: t("agents.share.levelCore", { kind }),
     },
     {
       value: "everything" as const,
-      label: `${itemLabel} + all memories`,
+      label: t("agents.share.levelAll", { kind }),
     },
   ];
 }
 
-function formatRecipientAudience(names: readonly string[]): string {
-  if (names.length === 0) return "The people you selected";
-  if (names.length === 1) return names[0] ?? "The person you selected";
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+function formatRecipientAudience(
+  names: readonly string[],
+  t: Translate,
+): string {
+  if (names.length === 0) return t("agents.share.audienceNone");
+  if (names.length === 1) return names[0] ?? t("agents.share.audienceOne");
+  if (names.length === 2)
+    return t("agents.share.audienceTwo", {
+      first: names[0] ?? "",
+      second: names[1] ?? "",
+    });
+  return t("agents.share.audienceMany", {
+    list: names.slice(0, -1).join(", "),
+    last: names.at(-1) ?? "",
+  });
 }
 
 function MemoryShareConfirmation({
@@ -150,11 +161,11 @@ function MemoryShareConfirmation({
   onConfirm: (pendingShare: PendingMemoryShare) => void;
   testIdPrefix: string;
 }) {
+  const t = useT();
   const isLinkShare = pendingShare?.action === "copy";
-  const memoryLabel =
-    pendingShare?.memoryLevel === "core" ? "core memory" : "all memories";
   const recipientAudience = formatRecipientAudience(
     pendingShare?.recipientNames ?? [],
+    t,
   );
 
   return (
@@ -166,19 +177,21 @@ function MemoryShareConfirmation({
     >
       <AlertDialogContent data-testid={`${testIdPrefix}-memory-confirmation`}>
         <AlertDialogHeader>
-          <AlertDialogTitle>Share memories?</AlertDialogTitle>
+          <AlertDialogTitle>{t("agents.share.memoriesTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
-            This {itemLabel} includes <strong>plaintext {memoryLabel}</strong>.{" "}
-            {isLinkShare
-              ? "Anyone with the link can view it."
-              : `${recipientAudience}—and anyone with the file link—can view it.`}{" "}
-            Only share with people you trust.
+            {t("agents.share.memoriesDescription", {
+              kind: itemLabel,
+              memory: pendingShare?.memoryLevel === "core" ? "core" : "all",
+              link: isLinkShare ? "yes" : "no",
+              audience: recipientAudience,
+              b: (chunks) => <strong>{chunks}</strong>,
+            })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -189,7 +202,7 @@ function MemoryShareConfirmation({
               }}
               type="button"
             >
-              {isLinkShare ? "Copy link" : "Send"}
+              {isLinkShare ? t("agents.share.copyLink") : t("common.send")}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -238,6 +251,7 @@ export function SnapshotShareDialog({
   snapshotKind,
   testIdPrefix,
 }: SnapshotShareDialogProps) {
+  const t = useT();
   const openDmMutation = useOpenDmMutation();
   const upsertCachedChannel = useUpsertCachedChannel();
   const snapshotSendController = useSnapshotSendController(open);
@@ -260,10 +274,10 @@ export function SnapshotShareDialog({
   const isCopying = copyStatus === "copying";
   const copyStatusLabel =
     copyStatus === "copying"
-      ? "Copying…"
+      ? t("agents.share.copying")
       : copyStatus === "copied"
-        ? "Copied"
-        : "Copy link";
+        ? t("common.copied")
+        : t("agents.share.copyLink");
   const isActionPending = isPending || isCopying || isSending;
   const isInterfacePending = isPending || isSending;
   const hasSelectedRecipients = selectedRecipients.length > 0;
@@ -288,10 +302,9 @@ export function SnapshotShareDialog({
     [snapshotSendController.relaySelfPubkey],
   );
   const itemLabel = snapshotKind === "team" ? "team" : "agent";
-  const itemLabelTitle = snapshotKind === "team" ? "Team" : "Agent";
   const shareLevels = React.useMemo(
-    () => buildSnapshotShareLevels(itemLabelTitle),
-    [itemLabelTitle],
+    () => buildSnapshotShareLevels(itemLabel, t),
+    [itemLabel, t],
   );
   const getEncodedSnapshot = React.useCallback(
     (memoryLevel: SnapshotMemoryLevel) => {
@@ -368,7 +381,7 @@ export function SnapshotShareDialog({
       setCopyStatus("copied");
     } catch {
       setCopyStatus("idle");
-      toast.error("Couldn’t copy link. Try again.");
+      toast.error(t("agents.share.copyFailed"));
     }
   }
 
@@ -393,12 +406,12 @@ export function SnapshotShareDialog({
     }
 
     if (sent) {
-      toast.success(`Sent a copy of ${displayName}`);
+      toast.success(t("agents.share.sent", { name: displayName }));
       onOpenChange(false);
     } else if (sent === false) {
       toast.error(
         snapshotSendController.getCurrentError() ??
-          `Couldn’t send ${itemLabel}. Try again.`,
+          t("agents.share.sendFailed", { kind: itemLabel }),
       );
     }
   }
@@ -456,13 +469,12 @@ export function SnapshotShareDialog({
         >
           <DialogHeader>
             <DialogTitle className="min-w-0 truncate pr-10">
-              Share {displayName}
+              {t("agents.share.title", { name: displayName })}
             </DialogTitle>
             <DialogDescription
               data-testid={`${testIdPrefix}-share-description`}
             >
-              Anyone you share this {itemLabel} with will receive a copy they
-              can add and use. Changes you make later won’t sync.
+              {t("agents.share.description", { kind: itemLabel })}
             </DialogDescription>
           </DialogHeader>
           <DialogClose
@@ -470,7 +482,7 @@ export function SnapshotShareDialog({
             disabled={isActionPending}
           >
             <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t("common.close")}</span>
           </DialogClose>
 
           <div className="space-y-4 pt-4">
@@ -514,7 +526,9 @@ export function SnapshotShareDialog({
                         onClick={() => requestMemoryShare("send", shareLevel)}
                         type="button"
                       >
-                        {isSending ? "Sending…" : "Send"}
+                        {isSending
+                          ? t("agents.share.sending")
+                          : t("common.send")}
                       </Button>
                     </motion.div>
                   ) : null}
@@ -528,17 +542,17 @@ export function SnapshotShareDialog({
                 data-testid={`${testIdPrefix}-link-settings`}
               >
                 <h3 className="text-xs font-medium text-secondary-foreground/75">
-                  Share settings
+                  {t("agents.share.settings")}
                 </h3>
                 <div
                   className="flex items-center gap-3"
                   data-testid={`${testIdPrefix}-share-level-row`}
                 >
                   <h4 className="min-w-0 flex-1 text-sm font-medium">
-                    What’s included
+                    {t("agents.share.included")}
                   </h4>
                   <ShareLevelControl
-                    ariaLabel="What to include"
+                    ariaLabel={t("agents.share.whatToInclude")}
                     disabled={isInterfacePending}
                     onChange={setShareLevel}
                     options={shareLevels}
@@ -648,8 +662,9 @@ export function SnapshotShareDialog({
                   >
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                     <p>
-                      Memory is stored as <strong>plaintext</strong> in the
-                      snapshot. Only share it with people you trust.
+                      {t("agents.export.memoryWarning", {
+                        b: (chunks) => <strong>{chunks}</strong>,
+                      })}
                     </p>
                   </div>
                 </motion.div>
@@ -666,7 +681,9 @@ export function SnapshotShareDialog({
           type="button"
         >
           <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1">Export {itemLabel}</span>
+          <span className="min-w-0 flex-1">
+            {t("agents.share.export", { kind: itemLabel })}
+          </span>
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         </button>
       </DialogContent>
@@ -692,6 +709,7 @@ export function PersonaShareDialog({
   open,
   persona,
 }: PersonaShareDialogProps) {
+  const t = useT();
   const encodeSnapshotMutation = useEncodeAgentSnapshotForSendMutation();
   const encodeSnapshot = React.useCallback(
     async (memoryLevel: SnapshotMemoryLevel) =>
@@ -720,15 +738,15 @@ export function PersonaShareDialog({
           >
             <BookUser className="h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium">Share to catalog</h3>
+              <h3 className="text-sm font-medium">
+                {t("agents.share.toCatalog")}
+              </h3>
               <p className="text-xs text-secondary-foreground/75">
-                Anyone in this community can find and use a copy. Your agent
-                instruction is shared as plaintext. Memories and secrets aren’t
-                included.
+                {t("agents.share.toCatalogDescription")}
               </p>
             </div>
             <Switch
-              aria-label="Share to catalog"
+              aria-label={t("agents.share.toCatalog")}
               checked={catalogShareLevel !== "not-shared"}
               data-testid="persona-share-catalog-access"
               disabled={isPending}

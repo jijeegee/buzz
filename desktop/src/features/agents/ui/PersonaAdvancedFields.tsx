@@ -5,7 +5,7 @@ import { cn } from "@/shared/lib/cn";
 import { EnvVarsEditor, type EnvVarsValue } from "./EnvVarsEditor";
 import {
   CreateAgentRespondToField,
-  OWNER_ONLY_ACCESS_DISABLED_REASON,
+  ownerOnlyAccessDisabledReason,
 } from "./RespondToField";
 import type { PersonaBehaviorDraft } from "./personaBehaviorDraft";
 import {
@@ -13,8 +13,8 @@ import {
   KUZZ_AGENT_THINKING_EFFORT,
 } from "./kuzzAgentConfig";
 import {
-  AGENT_PARALLELISM_HELP,
-  AGENT_PARALLELISM_PLACEHOLDER,
+  agentParallelismHelp,
+  agentParallelismPlaceholder,
   parallelismCapHint,
 } from "../lib/agentParallelism";
 import { NumericTuningFields } from "./kuzzAgentModelTuningFields";
@@ -36,6 +36,7 @@ import {
   structuredEnvKeys,
   type RuntimeCatalogStatus,
 } from "../lib/agentConfigCore";
+import { useT } from "@/shared/i18n";
 
 export function PersonaAdvancedFields({
   behaviorDraft,
@@ -87,6 +88,7 @@ export function PersonaAdvancedFields({
    */
   selectedRuntime?: AcpRuntimeCatalogEntry;
 }) {
+  const t = useT();
   const { data: agentAccessOwnerOnly = false } = useAgentAccessOwnerOnlyQuery();
   const respondToMode = agentAccessOwnerOnly
     ? "owner-only"
@@ -139,7 +141,7 @@ export function PersonaAdvancedFields({
         allowlist={agentAccessOwnerOnly ? [] : behaviorDraft.respondToAllowlist}
         disabled={disabled || agentAccessOwnerOnly}
         disabledReason={
-          agentAccessOwnerOnly ? OWNER_ONLY_ACCESS_DISABLED_REASON : undefined
+          agentAccessOwnerOnly ? ownerOnlyAccessDisabledReason() : undefined
         }
         mode={respondToMode}
         onAllowlistChange={(allowlist) =>
@@ -162,7 +164,7 @@ export function PersonaAdvancedFields({
             className="text-sm font-medium text-foreground"
             htmlFor="persona-session-policy"
           >
-            Conversation context
+            {t("agents.persona.sessionPolicy")}
           </label>
           <PersonaDropdownField
             ariaDescribedBy="persona-session-policy-description"
@@ -175,10 +177,16 @@ export function PersonaAdvancedFields({
               })
             }
             options={[
-              { label: "Entire group", value: "channel" },
-              { label: "Each thread", value: "thread" },
+              {
+                label: t("agents.persona.sessionPolicyChannel"),
+                value: "channel",
+              },
+              {
+                label: t("agents.persona.sessionPolicyThread"),
+                value: "thread",
+              },
             ]}
-            placeholder="Select conversation context"
+            placeholder={t("agents.persona.sessionPolicyPlaceholder")}
             value={behaviorDraft.sessionPolicy}
           />
           <p
@@ -186,8 +194,8 @@ export function PersonaAdvancedFields({
             id="persona-session-policy-description"
           >
             {behaviorDraft.sessionPolicy === "thread"
-              ? "Keeps a separate conversation for each group thread. Direct messages remain shared."
-              : "Shares one conversation across every thread in a group."}
+              ? t("agents.persona.sessionPolicyThreadHelp")
+              : t("agents.persona.sessionPolicyChannelHelp")}
           </p>
         </div>
 
@@ -196,8 +204,10 @@ export function PersonaAdvancedFields({
             className="text-sm font-medium text-foreground"
             htmlFor="persona-parallelism"
           >
-            Parallelism
-            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+            {t("agents.editAdvanced.parallelism")}
+            <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+              {t("agents.dialog.optional")}
+            </span>
           </label>
           <div
             className={cn(
@@ -221,13 +231,13 @@ export function PersonaAdvancedFields({
                   parallelism: event.target.value,
                 })
               }
-              placeholder={AGENT_PARALLELISM_PLACEHOLDER}
+              placeholder={agentParallelismPlaceholder()}
               type="number"
               value={behaviorDraft.parallelism}
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {AGENT_PARALLELISM_HELP}
+            {agentParallelismHelp()}
           </p>
           {personaParallelismHint !== null ? (
             <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -250,8 +260,10 @@ export function PersonaAdvancedFields({
           className="text-sm font-medium text-foreground"
           htmlFor="persona-name-pool"
         >
-          Instance name pool
-          <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+          {t("agents.persona.namePool")}
+          <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+            {t("agents.dialog.optional")}
+          </span>
         </label>
         <div
           className={cn(

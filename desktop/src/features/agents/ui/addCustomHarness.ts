@@ -15,6 +15,7 @@ import {
   NO_RUNTIME_DROPDOWN_VALUE,
   type PersonaDropdownOption,
 } from "./agentConfigOptions";
+import { t } from "@/shared/i18n";
 
 /**
  * Dropdown value for the add-custom-harness entry. NUL-prefixed so it can
@@ -24,7 +25,10 @@ import {
 export const ADD_CUSTOM_HARNESS_VALUE = "\u0000add-custom-harness";
 
 export const ADD_CUSTOM_HARNESS_OPTION: PersonaDropdownOption = {
-  label: "Add custom harness…",
+  // A getter, so the label is translated when shown, not at import.
+  get label() {
+    return t("agents.customHarness.addOption");
+  },
   value: ADD_CUSTOM_HARNESS_VALUE,
 };
 

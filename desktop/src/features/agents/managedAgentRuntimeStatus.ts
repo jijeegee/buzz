@@ -1,4 +1,5 @@
 import type { ManagedAgentRuntimeStatus } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 export type AgentCommunityAvailability =
   | "Here"
@@ -27,11 +28,11 @@ export function agentCommunityAvailability(
 export function agentCommunityStatusDetail(
   runtime: ManagedAgentRuntimeStatus,
 ): string | null {
-  if (!runtime.localSetup)
-    return "Set up this agent on this device to start it.";
-  if (runtime.lifecycle === "stopped") return "Stopped by you";
+  if (!runtime.localSetup) return t("agents.communityStatus.needsSetup");
+  if (runtime.lifecycle === "stopped")
+    return t("agents.communityStatus.stopped");
   if (runtime.lifecycle === "failed")
-    return runtime.error ?? "Could not connect";
+    return runtime.error ?? t("agents.communityStatus.couldNotConnect");
   return null;
 }
 

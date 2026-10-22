@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
+import { t, useT } from "@/shared/i18n";
 
 type PersonaDeleteDialogProps = {
   open: boolean;
@@ -32,16 +33,15 @@ export function personaDeleteDescription(
   instanceCount: number,
 ): string {
   if (!persona) {
-    return "Delete this agent.";
+    return t("agents.personaDelete.unnamed");
   }
   if (instanceCount === 0) {
-    return `Delete ${persona.displayName}.`;
+    return t("agents.personaDelete.named", { name: persona.displayName });
   }
-  const cascade =
-    instanceCount === 1
-      ? "Also deletes 1 agent instance, so it no longer appears in member lists or mention suggestions."
-      : `Also deletes ${instanceCount} agent instances, so they no longer appear in member lists or mention suggestions.`;
-  return `Delete ${persona.displayName}. ${cascade}`;
+  return t("agents.personaDelete.withInstances", {
+    name: persona.displayName,
+    count: instanceCount,
+  });
 }
 
 export function PersonaDeleteDialog({
@@ -51,11 +51,12 @@ export function PersonaDeleteDialog({
   onConfirm,
   onOpenChange,
 }: PersonaDeleteDialogProps) {
+  const t = useT();
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete agent?</AlertDialogTitle>
+          <AlertDialogTitle>{t("agents.personaDelete.title")}</AlertDialogTitle>
           <AlertDialogDescription>
             {personaDeleteDescription(persona, instanceCount)}
           </AlertDialogDescription>
@@ -63,7 +64,7 @@ export function PersonaDeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -76,7 +77,7 @@ export function PersonaDeleteDialog({
               type="button"
               variant="destructive"
             >
-              Delete
+              {t("common.delete")}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>

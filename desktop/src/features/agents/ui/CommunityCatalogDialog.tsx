@@ -29,6 +29,7 @@ import agentOutlineUrl from "../assets/agent-outline.svg";
 import { AgentDefinitionMetadata } from "./AgentDefinitionMetadata";
 import { PersonaAddedBy } from "./PersonaAddedBy";
 import { resolveCatalogOwnerLabel } from "./catalogOwnerLabel";
+import { useT } from "@/shared/i18n";
 
 // ── Type-tagged selection keys ────────────────────────────────────────────────
 
@@ -124,6 +125,7 @@ export function CommunityCatalogDialog({
   hideCatalog = false,
   initialSelection = "create",
 }: CommunityCatalogDialogProps) {
+  const t = useT();
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const dragDepthRef = React.useRef(0);
@@ -299,8 +301,8 @@ export function CommunityCatalogDialog({
           data-testid="community-catalog-dialog"
           description={
             hideCatalog
-              ? "Create an agent, or import a preset."
-              : "Create, discover, and import agents and teams."
+              ? t("agents.catalog.descriptionNoCatalog")
+              : t("agents.catalog.description")
           }
           headerClassName="bg-sidebar pb-3 text-sidebar-foreground"
           headerTestId="community-catalog-dialog-header"
@@ -312,7 +314,7 @@ export function CommunityCatalogDialog({
           scrollAreaClassName="flex min-h-0 overflow-hidden px-0"
           scrollAreaTestId="community-catalog-dialog-body"
           tabIndex={-1}
-          title="Add agent"
+          title={t("agents.page.addAgent")}
           onDragEnter={(event) => {
             if (!isImportSelected || !hasFiles(event)) return;
             event.preventDefault();
@@ -346,7 +348,7 @@ export function CommunityCatalogDialog({
                 data-testid="agent-catalog-drop-overlay"
               >
                 <p className="rounded-full bg-background/90 px-4 py-2 text-sm font-medium text-primary shadow-sm">
-                  Drop .agent.json or .agent.png to import
+                  {t("agents.catalog.dropToImport")}
                 </p>
               </div>
             ) : null}
@@ -361,14 +363,14 @@ export function CommunityCatalogDialog({
                   <CatalogNavigationButton
                     icon={<Plus className="h-4 w-4" />}
                     isCurrent={isCreateSelected}
-                    label="Create agent"
+                    label={t("agents.catalog.createAgent")}
                     onClick={() => requestSelection("create")}
                     testId="agent-catalog-create"
                   />
                   <CatalogNavigationButton
                     icon={<Upload className="h-4 w-4" />}
                     isCurrent={isImportSelected}
-                    label="Import"
+                    label={t("agents.import.import")}
                     onClick={() => requestSelection("import")}
                     testId="agent-catalog-import"
                   />
@@ -385,7 +387,7 @@ export function CommunityCatalogDialog({
                 {!hideCatalog && !personasLoading && personas.length > 0 ? (
                   <div className="mb-1">
                     <p className="px-4 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
-                      Agents
+                      {t("agents.list.title")}
                     </p>
                     <div className="space-y-1">
                       {personas.map((persona) => {
@@ -441,7 +443,7 @@ export function CommunityCatalogDialog({
                 {!hideCatalog && !teamsLoading && teams.length > 0 ? (
                   <div className="mb-1">
                     <p className="px-4 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
-                      Teams
+                      {t("agents.catalog.teams")}
                     </p>
                     <div className="space-y-1">
                       {teams.map((team) => {
@@ -517,8 +519,12 @@ export function CommunityCatalogDialog({
                       <Button
                         aria-label={
                           selectedPersonaIsActive
-                            ? `${selectedPersona.displayName} is already in My Agents`
-                            : `Add ${selectedPersona.displayName} from Community Catalog`
+                            ? t("agents.catalog.agentAlreadyAdded", {
+                                name: selectedPersona.displayName,
+                              })
+                            : t("agents.catalog.addAgentLabel", {
+                                name: selectedPersona.displayName,
+                              })
                         }
                         className="pointer-events-auto"
                         data-testid={`community-catalog-use-agent-${selectedPersona.id}`}
@@ -528,15 +534,19 @@ export function CommunityCatalogDialog({
                         type="button"
                       >
                         {selectedPersonaIsActive
-                          ? "Added to My Agents"
-                          : "Add agent"}
+                          ? t("agents.catalog.addedToMyAgents")
+                          : t("agents.page.addAgent")}
                       </Button>
                     ) : selectedTeam ? (
                       <Button
                         aria-label={
                           selectedTeamIsAdded
-                            ? `${selectedTeam.name} is already in your teams`
-                            : `Add ${selectedTeam.name} from Community Catalog`
+                            ? t("agents.catalog.teamAlreadyAdded", {
+                                name: selectedTeam.name,
+                              })
+                            : t("agents.catalog.addTeamLabel", {
+                                name: selectedTeam.name,
+                              })
                         }
                         className="pointer-events-auto"
                         data-testid="community-catalog-add-team"
@@ -546,10 +556,10 @@ export function CommunityCatalogDialog({
                         type="button"
                       >
                         {selectedTeamIsAdded
-                          ? "Added to my teams"
+                          ? t("agents.catalog.addedToMyTeams")
                           : teamsAdding
-                            ? "Adding…"
-                            : "Add team"}
+                            ? t("agents.catalog.adding")
+                            : t("agents.catalog.addTeam")}
                       </Button>
                     ) : null}
                   </div>
@@ -593,16 +603,20 @@ export function CommunityCatalogDialog({
       >
         <AlertDialogContent data-testid="discard-create-agent-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Discard agent changes?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("agents.catalog.discardTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Your changes to this agent will be lost.
+              {t("agents.catalog.discardDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogCancel>
+              {t("agents.defaults.keepEditing")}
+            </AlertDialogCancel>
             <AlertDialogAction asChild>
               <Button onClick={discardChangesAndNavigate} variant="destructive">
-                Discard changes
+                {t("agents.defaults.discardChanges")}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -649,6 +663,7 @@ function CatalogNavigationButton({
 // ── Import pane ───────────────────────────────────────────────────────────────
 
 function ImportAgentPane({ onImport }: { onImport: () => void }) {
+  const t = useT();
   return (
     <button
       className="m-5 flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/20 px-8 py-12 text-center transition-colors hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -659,13 +674,14 @@ function ImportAgentPane({ onImport }: { onImport: () => void }) {
       <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Upload className="h-6 w-6" />
       </span>
-      <span className="mt-4 text-base font-semibold">Import an agent</span>
+      <span className="mt-4 text-base font-semibold">
+        {t("agents.catalog.importTitle")}
+      </span>
       <span className="mt-2 max-w-sm text-sm text-muted-foreground">
-        Drop an .agent.json or .agent.png file anywhere in this window, or
-        choose a file.
+        {t("agents.catalog.importDescription")}
       </span>
       <span className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-        Choose file
+        {t("agents.catalog.chooseFile")}
       </span>
     </button>
   );
@@ -674,6 +690,7 @@ function ImportAgentPane({ onImport }: { onImport: () => void }) {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function CatalogEmptyState() {
+  const t = useT();
   return (
     <div
       className="flex flex-col items-center px-2 py-6 text-center"
@@ -687,10 +704,10 @@ function CatalogEmptyState() {
         src={agentOutlineUrl}
       />
       <p className="mt-3 text-sm font-semibold text-sidebar-foreground">
-        Nothing shared yet
+        {t("agents.catalog.emptyTitle")}
       </p>
       <p className="mt-1 text-xs text-sidebar-foreground/60">
-        Shared agents and teams will appear here.
+        {t("agents.catalog.emptyDescription")}
       </p>
     </div>
   );
@@ -728,17 +745,19 @@ export function AgentInstructionReview({
 }: {
   instructions: string;
 }) {
+  const t = useT();
   return (
     <pre
       className="mt-3 w-full min-w-0 max-w-full whitespace-pre-wrap break-words font-sans text-sm leading-6 text-muted-foreground"
       data-testid="persona-catalog-exact-instructions"
     >
-      {instructions || "No instructions included."}
+      {instructions || t("agents.catalog.noInstructionsIncluded")}
     </pre>
   );
 }
 
 function PersonaCatalogDetail({ persona }: { persona: AgentPersona }) {
+  const t = useT();
   const description = effectiveAgentDescription(persona);
   const isCommunityEntry =
     isCatalogPersona(persona) && !persona.catalogSource.isOwn;
@@ -751,7 +770,7 @@ function PersonaCatalogDetail({ persona }: { persona: AgentPersona }) {
 
   let addedByLabel: string;
   if (!isCommunityEntry) {
-    addedByLabel = "You";
+    addedByLabel = t("common.you");
   } else {
     const summary = ownerPubkey
       ? ownerBatchQuery.data?.profiles[ownerPubkey.toLowerCase()]
@@ -797,7 +816,7 @@ function PersonaCatalogDetail({ persona }: { persona: AgentPersona }) {
 
       <div className="min-w-0 max-w-full pt-3">
         <p className="text-base font-semibold text-foreground">
-          Agent instructions
+          {t("agents.dialog.instructions")}
         </p>
         <AgentInstructionReview instructions={persona.systemPrompt} />
       </div>
@@ -808,6 +827,7 @@ function PersonaCatalogDetail({ persona }: { persona: AgentPersona }) {
 // ── Team detail ───────────────────────────────────────────────────────────────
 
 function TeamCatalogDetail({ team }: { team: CatalogTeam }) {
+  const t = useT();
   const ownerPubkey = team.isOwn ? undefined : team.ownerPubkey;
   const ownerBatchQuery = useUsersBatchQuery(ownerPubkey ? [ownerPubkey] : [], {
     enabled: !!ownerPubkey,
@@ -815,7 +835,7 @@ function TeamCatalogDetail({ team }: { team: CatalogTeam }) {
 
   let addedByLabel: string;
   if (team.isOwn) {
-    addedByLabel = "You";
+    addedByLabel = t("common.you");
   } else {
     const summary = ownerPubkey
       ? ownerBatchQuery.data?.profiles[ownerPubkey.toLowerCase()]
@@ -843,7 +863,7 @@ function TeamCatalogDetail({ team }: { team: CatalogTeam }) {
       {hasInstructions ? (
         <div className="min-w-0 max-w-full pt-3">
           <p className="text-base font-semibold text-foreground">
-            Team instructions
+            {t("agents.catalog.teamInstructions")}
           </p>
           <AgentInstructionReview instructions={team.instructions ?? ""} />
         </div>
@@ -851,8 +871,7 @@ function TeamCatalogDetail({ team }: { team: CatalogTeam }) {
 
       <div className="min-w-0">
         <p className="text-base font-semibold text-foreground">
-          {team.members.length}{" "}
-          {team.members.length === 1 ? "member" : "members"}
+          {t("agents.catalog.memberCount", { count: team.members.length })}
         </p>
         <ul className="mt-3 space-y-2">
           {team.members.map((member) => (
@@ -869,6 +888,7 @@ type TeamCatalogMemberRowProps = {
 };
 
 function TeamCatalogMemberRow({ member }: TeamCatalogMemberRowProps) {
+  const t = useT();
   const [expanded, setExpanded] = React.useState(false);
 
   return (
@@ -893,7 +913,7 @@ function TeamCatalogMemberRow({ member }: TeamCatalogMemberRowProps) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{member.displayName}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {member.model ?? "Use app default"}
+            {member.model ?? t("agents.metadata.appDefault")}
           </p>
         </div>
         <ChevronDown
@@ -914,13 +934,13 @@ function TeamCatalogMemberRow({ member }: TeamCatalogMemberRowProps) {
           />
           <div className="min-w-0 max-w-full">
             <p className="text-sm font-semibold text-foreground">
-              Agent instructions
+              {t("agents.dialog.instructions")}
             </p>
             {member.systemPrompt.trim().length > 0 ? (
               <AgentInstructionReview instructions={member.systemPrompt} />
             ) : (
               <p className="mt-3 text-sm italic text-muted-foreground/60">
-                No instructions
+                {t("agents.catalog.noInstructions")}
               </p>
             )}
           </div>

@@ -1,4 +1,5 @@
 import type { CardMintKeyLayer } from "@/shared/api/tauriPersonas";
+import { t } from "@/shared/i18n";
 
 /**
  * Pure derivations for the key-setup panel visibility in `AgentCardMintDialog`.
@@ -67,9 +68,9 @@ export function keyPanelTitle(
   keyLayer: CardMintKeyLayer | undefined,
   editingKey: boolean,
 ): string {
-  if (isReadOnlyLayer(keyLayer)) return "OpenAI API key";
-  if (keyLayer === "none") return "One-time setup: OpenAI API key";
+  if (isReadOnlyLayer(keyLayer)) return t("agents.cardMint.keyTitle");
+  if (keyLayer === "none") return t("agents.cardMint.keySetupTitle");
   return editingKey
-    ? "Update OpenAI API key"
-    : "One-time setup: OpenAI API key";
+    ? t("agents.cardMint.keyUpdateTitle")
+    : t("agents.cardMint.keySetupTitle");
 }

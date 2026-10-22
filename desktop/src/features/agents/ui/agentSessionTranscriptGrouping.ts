@@ -1,6 +1,7 @@
 import { buildTranscriptState } from "./agentSessionTranscript";
 import type { ObserverEvent, TranscriptItem } from "./agentSessionTypes";
 import { classifyToolItem } from "./agentSessionToolClassifier";
+import { t } from "@/shared/i18n";
 
 export type TranscriptTurnSegment =
   | { kind: "item"; item: TranscriptItem }
@@ -299,7 +300,7 @@ function groupMixedToolRuns(
         kind: "summary",
         summary: {
           id: `summary:mixed:${items[0].id}`,
-          label: `Ran ${items.length} tool calls`,
+          label: t("agents.toolGroup.ranToolCalls", { count: items.length }),
           count: items.length,
           items,
           renderClass: null,
@@ -363,20 +364,23 @@ function sameKindKey(item: TranscriptItem): string | null {
 }
 
 function sameKindLabel(item: TranscriptItem, count: number): string {
-  if (item.type !== "tool") return `${count} items`;
+  if (item.type !== "tool") return t("agents.toolGroup.items", { count });
   const descriptor = item.descriptor ?? classifyToolItem(item);
   const renderClass = getRenderClass(item);
   const label = descriptor.label;
   if (renderClass === "file-edit") {
-    return `Edited ${count} file${count === 1 ? "" : "s"}`;
+    return t("agents.toolGroup.editedFiles", { count });
   }
-  if (renderClass === "file-read") return `Read ${count} files`;
+  if (renderClass === "file-read")
+    return t("agents.toolGroup.readFiles", { count });
   if (renderClass === "skill-read") {
-    return `Read ${count} skill${count === 1 ? "" : "s"}`;
+    return t("agents.toolGroup.readSkills", { count });
   }
-  if (renderClass === "shell") return `Ran ${count} commands`;
-  if (renderClass === "relay-op") return `Ran ${count} Kuzz relay ops`;
-  return `${label} ×${count}`;
+  if (renderClass === "shell")
+    return t("agents.toolGroup.ranCommands", { count });
+  if (renderClass === "relay-op")
+    return t("agents.toolGroup.ranRelayOps", { count });
+  return t("agents.toolGroup.repeated", { label, count: String(count) });
 }
 
 function minimumSummaryRunLength(item: TranscriptItem): number {

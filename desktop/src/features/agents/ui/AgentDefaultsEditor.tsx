@@ -40,6 +40,7 @@ import {
 } from "@/features/agents/ui/AgentConfigFields";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -73,6 +74,7 @@ export function AgentDefaultsEditor({
   onSavingChange,
   secondaryAction,
 }: AgentDefaultsEditorProps) {
+  const t = useT();
   const flatLayout = layout === "flat";
   const shouldReduceMotion = useReducedMotion();
   const [config, setConfig] =
@@ -240,7 +242,9 @@ export function AgentDefaultsEditor({
       }
     } catch (err) {
       setSaveState("error");
-      setSaveError(typeof err === "string" ? err : "Couldn't save.");
+      setSaveError(
+        typeof err === "string" ? err : t("agents.defaults.saveFailed"),
+      );
     } finally {
       onSavingChange?.(false);
     }
@@ -275,7 +279,7 @@ export function AgentDefaultsEditor({
       {configSurfaceLoading ? (
         <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
           <Loader className="size-4 animate-spin" />
-          Loading…
+          {t("common.loading")}
         </div>
       ) : configSurfaceError ? (
         runtimeCatalogError && !loadError ? (
@@ -285,7 +289,7 @@ export function AgentDefaultsEditor({
         ) : (
           <div className="flex items-center gap-2 py-4 text-sm text-destructive">
             <AlertCircle className="size-4" />
-            Couldn't load agent defaults. Restart the app to try again.
+            {t("agents.defaults.loadFailed")}
           </div>
         )
       ) : (
@@ -295,14 +299,14 @@ export function AgentDefaultsEditor({
               className="text-sm font-medium text-foreground"
               htmlFor="global-agent-default-harness"
             >
-              Default harness
+              {t("agents.defaults.harness")}
             </label>
             <AgentDropdownSelect
               className={flatLayout ? PERSONA_SELECT_TRIGGER_CLASS : undefined}
               id="global-agent-default-harness"
               onValueChange={handleHarnessChange}
               options={harnessOptions}
-              placeholder="Select a harness"
+              placeholder={t("agents.defaults.selectHarness")}
               placeholderClassName={
                 flatLayout ? "text-muted-foreground/55" : undefined
               }
@@ -339,10 +343,19 @@ export function AgentDefaultsEditor({
             <span className="flex min-w-0 items-center gap-1 text-sm text-green-600 dark:text-green-400">
               <Check className="size-3.5 shrink-0" />
               {restartedCount > 0
-                ? `Saved. Restarted ${restartedCount} agent${restartedCount === 1 ? "" : "s"}.${failedRestartCount > 0 ? ` ${failedRestartCount} couldn't restart — check the Agents page.` : ""}`
+                ? failedRestartCount > 0
+                  ? t("agents.defaults.savedRestartedSomeFailed", {
+                      count: restartedCount,
+                      failed: failedRestartCount,
+                    })
+                  : t("agents.defaults.savedRestarted", {
+                      count: restartedCount,
+                    })
                 : failedRestartCount > 0
-                  ? `Saved. ${failedRestartCount} agent${failedRestartCount === 1 ? "" : "s"} couldn't restart — check the Agents page.`
-                  : "Saved."}
+                  ? t("agents.defaults.savedRestartFailed", {
+                      failed: failedRestartCount,
+                    })
+                  : t("agents.defaults.saved")}
             </span>
           )}
           {saveState === "error" && saveError && (
@@ -366,7 +379,7 @@ export function AgentDefaultsEditor({
               {saveState === "saving" ? (
                 <Loader className="mr-1.5 size-3.5 animate-spin" />
               ) : null}
-              Save defaults
+              {t("agents.defaults.save")}
             </Button>
           </div>
         </div>

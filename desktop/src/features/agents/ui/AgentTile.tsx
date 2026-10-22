@@ -4,14 +4,15 @@ import { EllipsisVertical } from "lucide-react";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { cn } from "@/shared/lib/cn";
 import { DropdownMenuTrigger } from "@/shared/ui/dropdown-menu";
+import { useT, type MessageKey } from "@/shared/i18n";
 
 export type AgentTileStatus = "working" | "running" | "stopped" | "error";
 
-const STATUS_LABEL: Record<AgentTileStatus, string> = {
-  working: "Working",
-  running: "Running",
-  stopped: "Stopped",
-  error: "Error",
+const STATUS_LABEL: Record<AgentTileStatus, MessageKey> = {
+  working: "agents.tile.working",
+  running: "agents.tile.running",
+  stopped: "agents.tile.stopped",
+  error: "agents.tile.error",
 };
 
 const STATUS_CLASS: Record<AgentTileStatus, string> = {
@@ -58,6 +59,7 @@ export function AgentTile({
   subtitle?: string | null;
   onOpen: () => void;
 }) {
+  const t = useT();
   return (
     <div
       className="relative flex min-w-0 flex-col gap-3 rounded-xl border border-border/70 bg-background p-3 shadow-xs transition-colors hover:border-border"
@@ -103,7 +105,7 @@ export function AgentTile({
             )}
             data-testid={`${dataTestId}-status`}
           >
-            {STATUS_LABEL[status]}
+            {t(STATUS_LABEL[status])}
           </span>
         ) : badge ? (
           <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground">

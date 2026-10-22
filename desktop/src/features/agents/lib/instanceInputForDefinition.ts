@@ -13,6 +13,7 @@ import {
   resolveManagedAgentAvatarUrl,
   type UploadMediaBytes,
 } from "../ui/managedAgentAvatar";
+import { t } from "@/shared/i18n";
 
 type RuntimesQueryLike = {
   isFetched: boolean;
@@ -55,13 +56,10 @@ export function resolveStartRuntimeForDefinition(
     resolvePersonaRuntime(persona.runtime, runtimes, defaultRuntime);
 
   if (!runtime) {
-    throw new Error("No available runtime found for this agent.");
+    throw new Error(t("agents.start.noRuntime"));
   }
   if (isOverridden) {
-    throw new Error(
-      warnings[0] ??
-        "This agent's configured runtime is not available. Install the runtime or edit the agent before starting it.",
-    );
+    throw new Error(warnings[0] ?? t("agents.start.runtimeUnavailable"));
   }
   return { runtime, warnings };
 }

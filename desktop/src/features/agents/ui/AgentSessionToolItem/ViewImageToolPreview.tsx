@@ -2,6 +2,7 @@ import * as React from "react";
 
 import { SimpleImageLightbox } from "@/shared/ui/SimpleImageLightbox";
 import { resolveToolImageSrc } from "../agentSessionUtils";
+import { useT } from "@/shared/i18n";
 
 export function ViewImageToolPreview({
   src,
@@ -10,10 +11,11 @@ export function ViewImageToolPreview({
   src: string;
   title: string | null;
 }) {
+  const t = useT();
   const [lightboxOpen, setLightboxOpen] = React.useState(false);
   const [imageFailed, setImageFailed] = React.useState(false);
   const resolvedSrc = React.useMemo(() => resolveToolImageSrc(src), [src]);
-  const alt = title ?? "Viewed image";
+  const alt = title ?? t("agents.toolActivity.viewedImage");
 
   if (imageFailed) {
     return null;

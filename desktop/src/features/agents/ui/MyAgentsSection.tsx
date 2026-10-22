@@ -56,6 +56,7 @@ import {
 } from "./MyTeamDialogs";
 import { MyTeamsSection, type TeamAgent } from "./MyTeamsSection";
 import { RemoteAgentCard } from "./RemoteAgentCard";
+import { useT, t } from "@/shared/i18n";
 
 type MyAgentsSectionProps = {
   agents: ManagedAgent[];
@@ -96,7 +97,7 @@ export function DeviceRobot({ deviceId }: { deviceId: string | null }) {
 }
 
 function agentCountLabel(count: number) {
-  return count === 1 ? "1 agent" : `${count} agents`;
+  return t("agents.myAgents.agentCount", { count });
 }
 
 /**
@@ -106,6 +107,7 @@ function agentCountLabel(count: number) {
  * channel.
  */
 export function MyAgentsSection(props: MyAgentsSectionProps) {
+  const t = useT();
   const { agents, agentsError, isAgentsLoading, personas } = props;
   const isArchived = useIsArchivedPredicate();
   const localAgents = React.useMemo(
@@ -145,8 +147,8 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
 
   const teamAgents = React.useMemo((): TeamAgent[] => {
     const here = currentDevice?.name
-      ? `This device · ${currentDevice.name}`
-      : "This device";
+      ? t("agents.myAgents.thisDeviceNamed", { name: currentDevice.name })
+      : t("agents.list.thisDevice");
     return [
       ...localAgents.map((agent) => ({
         pubkey: agent.pubkey.toLowerCase(),
@@ -164,8 +166,8 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
               (agent.localPersonaId
                 ? personaById.get(agent.localPersonaId)?.displayName
                 : undefined) ||
-              "Agent",
-            computer: group.name || "Another device",
+              t("agents.list.agentFallback"),
+            computer: group.name || t("agents.list.anotherDevice"),
             running: availability === "online" || availability === "away",
           };
         }),
@@ -177,6 +179,7 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
     localAgents,
     personaById,
     remoteGroups,
+    t,
   ]);
 
   if (isAgentsLoading) return <TilesSkeleton />;
@@ -189,12 +192,11 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
             .filter(Boolean)
             .join(" · ")}
           robot={<DeviceRobot deviceId={currentDevice?.id ?? null} />}
-          title="This device"
+          title={t("agents.list.thisDevice")}
         />
         {localAgents.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No agents on this computer yet. Use New agent, or Create agent on a
-            preset.
+            {t("agents.myAgents.emptyHere")}
           </p>
         ) : (
           <div className={AGENT_TILE_GRID_CLASS}>
@@ -226,14 +228,14 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
             <DeviceHeading
               detail={agentCountLabel(group.agents.length)}
               robot={<DeviceRobot deviceId={group.deviceId} />}
-              title={group.name || "Another device"}
+              title={group.name || t("agents.list.anotherDevice")}
             />
             <div className={AGENT_TILE_GRID_CLASS}>
               {group.agents.map((agent) => (
                 <RemoteAgentCard
                   agent={agent}
                   getAvailability={getRemoteAvailability}
-                  hostName={group.name || "Another device"}
+                  hostName={group.name || t("agents.list.anotherDevice")}
                   isPending={props.isActionPending}
                   key={agent.pubkey}
                   persona={
@@ -263,6 +265,7 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
 
 /** The Teams part of My agents, with its create/edit and channel dialogs. */
 function MyTeams({ agents }: { agents: readonly TeamAgent[] }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const owner = useIdentityQuery().data?.pubkey ?? "";
   const teamsQuery = useMyTeamsQuery();
@@ -281,7 +284,11 @@ function MyTeams({ agents }: { agents: readonly TeamAgent[] }) {
     try {
       const team = editing && editing !== "new" ? editing : null;
       await saveMyTeam(queryClient, owner, { id: team?.id, ...draft });
-      toast.success(team ? `Saved ${draft.name.trim()}.` : "Team created.");
+      toast.success(
+        team
+          ? t("agents.myAgents.teamSaved", { name: draft.name.trim() })
+          : t("agents.myAgents.teamCreated"),
+      );
     } finally {
       setIsSaving(false);
     }
@@ -290,10 +297,12 @@ function MyTeams({ agents }: { agents: readonly TeamAgent[] }) {
   async function remove(team: MyTeam) {
     try {
       await deleteMyTeam(queryClient, owner, team);
-      toast.success(`Deleted ${team.name}. Its agents stay.`);
+      toast.success(t("agents.myAgents.teamDeleted", { name: team.name }));
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not delete the team.",
+        error instanceof Error
+          ? error.message
+          : t("agents.myAgents.teamDeleteFailed"),
       );
     }
   }
@@ -363,6 +372,7 @@ function LocalAgentTile({
   agent: ManagedAgent;
   persona: AgentPersona | null;
 }) {
+  const t = useT();
   const profile = useUserProfileQuery(agent.pubkey).data;
   const working = useAgentWorking(agent.pubkey).working;
   const isActive = isManagedAgentActive(agent);
@@ -384,9 +394,14 @@ function LocalAgentTile({
     defaultModel,
   });
   const description = agent.personaOrphaned
-    ? "Configuration missing"
+    ? t("agents.row.configMissing")
     : (friendlyError ??
-      [modelLabel, persona ? `from preset ${persona.displayName}` : null]
+      [
+        modelLabel,
+        persona
+          ? t("agents.myAgents.fromPreset", { name: persona.displayName })
+          : null,
+      ]
         .filter(Boolean)
         .join(" · "));
   const isBusy =
@@ -417,7 +432,7 @@ function LocalAgentTile({
               size="xs"
               variant="outline"
             >
-              Stop
+              {t("agents.list.stop")}
             </Button>
           ) : (
             <Button
@@ -430,7 +445,9 @@ function LocalAgentTile({
               }
               size="xs"
             >
-              {startingAgentPubkey === agent.pubkey ? "Starting…" : "Start"}
+              {startingAgentPubkey === agent.pubkey
+                ? t("agents.myAgents.starting")
+                : t("agents.runtimeBadge.start")}
             </Button>
           )}
           {isActive && agent.needsRestart ? (
@@ -440,7 +457,7 @@ function LocalAgentTile({
               size="xs"
               variant="outline"
             >
-              Restart
+              {t("agents.runtimeBadge.restart")}
             </Button>
           ) : null}
           <Button
@@ -451,7 +468,7 @@ function LocalAgentTile({
             size="xs"
             variant="outline"
           >
-            Edit
+            {t("common.edit")}
           </Button>
           <Button
             data-testid={`agent-tile-add-to-channel-${agent.pubkey}`}
@@ -459,7 +476,7 @@ function LocalAgentTile({
             size="xs"
             variant="outline"
           >
-            Add to group
+            {t("agents.myAgents.addToGroup")}
           </Button>
         </>
       }
@@ -467,7 +484,7 @@ function LocalAgentTile({
       description={description}
       label={agent.name}
       labelBadge={<AgentCardRobot pubkey={agent.pubkey} />}
-      openLabel={`${agent.name} agent profile`}
+      openLabel={t("agents.myAgents.openProfile", { name: agent.name })}
       status={status}
       onOpen={() =>
         onOpenAgentProfile(

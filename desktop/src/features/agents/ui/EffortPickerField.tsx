@@ -5,12 +5,11 @@ import type {
 } from "@/shared/api/types";
 import { PERSONA_LABEL_OPTIONAL_CLASS } from "./agentConfigOptions";
 import {
-  EFFORT_DEFAULT_LABEL,
-  EFFORT_FALLBACK_HELPER_TEXT,
   effortPickerState,
   effortSelectionToPersistedValue,
 } from "./effortPicker";
 import { PersonaDropdownField } from "./PersonaDropdownField";
+import { useT } from "@/shared/i18n";
 
 /**
  * Thinking-effort write control, shared by every model-selection surface
@@ -64,6 +63,7 @@ export function EffortPickerField({
   runtime,
   value,
 }: EffortPickerFieldProps) {
+  const t = useT();
   const { visible, options, selectValue, usingFallback } = effortPickerState({
     backend,
     effortConfigId: config?.effortConfigId,
@@ -80,8 +80,10 @@ export function EffortPickerField({
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium text-foreground" htmlFor={id}>
-        Thinking effort
-        <span className={PERSONA_LABEL_OPTIONAL_CLASS}>Optional</span>
+        {t("agents.config.thinkingEffort")}
+        <span className={PERSONA_LABEL_OPTIONAL_CLASS}>
+          {t("agents.dialog.optional")}
+        </span>
       </label>
       <PersonaDropdownField
         disabled={disabled}
@@ -90,12 +92,15 @@ export function EffortPickerField({
           onChange(effortSelectionToPersistedValue(next))
         }
         options={options}
-        placeholder={defaultLabel ?? EFFORT_DEFAULT_LABEL}
+        placeholder={defaultLabel ?? t("agents.effort.adapterDefault")}
         value={selectValue}
       />
       <p className="text-xs text-muted-foreground">
-        Applied at the next session start.
-        {usingFallback ? ` ${EFFORT_FALLBACK_HELPER_TEXT}` : null}
+        {usingFallback
+          ? t("agents.effort.helpWithFallback", {
+              fallback: t("agents.effort.fallbackNote"),
+            })
+          : t("agents.effort.help")}
       </p>
     </div>
   );

@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
+import { useT } from "@/shared/i18n";
 
 export function AgentDefaultsDialog({
   open,
@@ -32,6 +33,7 @@ export function AgentDefaultsDialog({
   onOpenChange: (open: boolean) => void;
   returnFocusRef: React.RefObject<HTMLButtonElement | null>;
 }) {
+  const t = useT();
   const [dirty, setDirty] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [confirmDiscard, setConfirmDiscard] = React.useState(false);
@@ -86,11 +88,9 @@ export function AgentDefaultsDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Agent defaults</DialogTitle>
+            <DialogTitle>{t("agents.defaults.title")}</DialogTitle>
             <DialogDescription>
-              These settings apply to all agents unless you override them.
-              Agent-specific settings always take priority. Changes may restart
-              running agents.
+              {t("agents.defaults.description")}
             </DialogDescription>
           </DialogHeader>
           <AgentDefaultsEditor
@@ -109,7 +109,7 @@ export function AgentDefaultsDialog({
                 type="button"
                 variant="outline"
               >
-                {restartFailures > 0 ? "Done" : "Cancel"}
+                {restartFailures > 0 ? t("common.done") : t("common.cancel")}
               </Button>
             }
           />
@@ -128,10 +128,10 @@ export function AgentDefaultsDialog({
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Discard changes to agent defaults?
+              {t("agents.defaults.discardTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Unsaved changes made to agent defaults will be lost.
+              {t("agents.defaults.discardDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -140,7 +140,7 @@ export function AgentDefaultsDialog({
                 restoreDefaultsFocusRef.current = true;
               }}
             >
-              Keep editing
+              {t("agents.defaults.keepEditing")}
             </AlertDialogCancel>
             <AlertDialogAction asChild>
               <Button
@@ -150,7 +150,7 @@ export function AgentDefaultsDialog({
                 }}
                 variant="destructive"
               >
-                Discard changes
+                {t("agents.defaults.discardChanges")}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>

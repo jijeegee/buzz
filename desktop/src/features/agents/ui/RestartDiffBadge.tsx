@@ -4,6 +4,7 @@ import { Badge } from "@/shared/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import type { RestartDiffEntry, RestartChange } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { useT } from "@/shared/i18n";
 
 // ── Auto-restart copy ─────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ function formatJsonValue(v: unknown): string {
 }
 
 function ChangeDescription({ change }: { change: RestartChange }) {
+  const t = useT();
   switch (change.kind) {
     case "value":
       return (
@@ -65,9 +67,9 @@ function ChangeDescription({ change }: { change: RestartChange }) {
         </span>
       );
     case "added":
-      return <span>added</span>;
+      return <span>{t("agents.restartDiff.added")}</span>;
     case "removed":
-      return <span>removed</span>;
+      return <span>{t("agents.restartDiff.removed")}</span>;
     default:
       // Unknown kind — render nothing, remain type-safe at runtime
       return null;
@@ -93,6 +95,7 @@ function DiffList({
   cap?: number;
   variant?: "tooltip" | "inline";
 }) {
+  const t = useT();
   const visible = cap !== undefined ? entries.slice(0, cap) : entries;
   const overflow =
     cap !== undefined && entries.length > cap ? entries.length - cap : 0;
@@ -117,7 +120,9 @@ function DiffList({
         </li>
       ))}
       {overflow > 0 ? (
-        <li className={overflowClass}>and {overflow} more</li>
+        <li className={overflowClass}>
+          {t("agents.restartDiff.more", { count: overflow })}
+        </li>
       ) : null}
     </ul>
   );
@@ -141,10 +146,11 @@ export function RestartDiffBadge({
   restartDiff: RestartDiffEntry[];
   className?: string;
 }) {
+  const t = useT();
   const badge = (
     <Badge className={cn("cursor-default gap-1", className)} variant="warning">
       <RefreshCw className="h-3 w-3" />
-      Restart required
+      {t("agents.restartDiff.badge")}
     </Badge>
   );
 
@@ -165,14 +171,16 @@ export function RestartDiffBadge({
           data-testid="restart-diff-badge"
         >
           <RefreshCw className="h-3 w-3" />
-          Restart required
+          {t("agents.restartDiff.badge")}
         </Badge>
       </TooltipTrigger>
       <TooltipContent className="max-w-72 text-xs" side="bottom">
-        <p className="mb-1.5 font-semibold">Config changed since last start:</p>
+        <p className="mb-1.5 font-semibold">{t("agents.restartDiff.title")}</p>
         <DiffList cap={TOOLTIP_CAP} entries={restartDiff} />
         <p className="mt-1.5 text-secondary-foreground/70">
-          {autoRestartEnabled ? AUTO_RESTART_ON_BLURB : AUTO_RESTART_OFF_BLURB}
+          {autoRestartEnabled
+            ? t("agents.restartDiff.autoOn")
+            : t("agents.restartDiff.autoOff")}
         </p>
       </TooltipContent>
     </Tooltip>

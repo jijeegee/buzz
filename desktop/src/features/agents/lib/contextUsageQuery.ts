@@ -1,5 +1,6 @@
 import type { AgentContextUsage } from "@/features/agents/agentContextUsageStore";
 import type { ControlResultFrame } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /**
  * One live context reading reported by the harness in a `control_result`
@@ -203,7 +204,7 @@ export function compactDialogView({
       ...base,
       ...liveView(changed),
       freshness: "changed",
-      note: "Context changed since you looked. Re-check the reading above, then compact again.",
+      note: t("agents.contextUsage.note.changed"),
     };
   }
   switch (query.status) {
@@ -213,14 +214,14 @@ export function compactDialogView({
         checking: true,
         noSession: false,
         freshness: "checking",
-        note: "Checking the session's current context…",
+        note: t("agents.contextUsage.note.checking"),
       };
     case "ok":
       return {
         ...base,
         ...liveView(query.reading),
         freshness: "live",
-        note: "Confirmed with the agent just now.",
+        note: t("agents.contextUsage.note.live"),
       };
     case "no_session":
       return {
@@ -228,28 +229,28 @@ export function compactDialogView({
         checking: false,
         noSession: true,
         freshness: "no_session",
-        note: "The agent has no live session here. It may have restarted since this reading.",
+        note: t("agents.contextUsage.note.noSession"),
       };
     case "busy":
       return {
         ...base,
         ...cachedView,
         freshness: "cached",
-        note: "The agent is working in this session, so this is the last reading before the current turn.",
+        note: t("agents.contextUsage.note.busy"),
       };
     case "no_reading":
       return {
         ...base,
         ...cachedView,
         freshness: "cached",
-        note: "The live session hasn't reported its usage yet. Showing the last known reading.",
+        note: t("agents.contextUsage.note.noReading"),
       };
     case "unconfirmed":
       return {
         ...base,
         ...cachedView,
         freshness: "possibly_stale",
-        note: "Couldn't confirm the current context with the agent. This reading may be out of date.",
+        note: t("agents.contextUsage.note.unconfirmed"),
       };
   }
 }
@@ -271,16 +272,16 @@ export function compactUnavailableReason({
   pending: boolean;
 }): string | null {
   if (noSession) {
-    return "There is no live session to compact.";
+    return t("agents.contextUsage.unavailable.noSession");
   }
   if (!compactSupported) {
-    return "This agent's runtime doesn't support compaction.";
+    return t("agents.contextUsage.unavailable.unsupported");
   }
   if (pending) {
-    return "A compaction request for this session is already in progress.";
+    return t("agents.contextUsage.unavailable.pending");
   }
   if (hasActiveTurn) {
-    return "The agent is working in this group. Compact after the turn finishes.";
+    return t("agents.contextUsage.unavailable.busy");
   }
   return null;
 }

@@ -7,6 +7,7 @@ import {
   getToolString,
   parseToolResultValue,
 } from "./agentSessionUtils";
+import { t } from "@/shared/i18n";
 
 type ToolItem = Extract<TranscriptItem, { type: "tool" }>;
 
@@ -50,7 +51,7 @@ export function buildSkillReadContent(
           kind: "context" as const,
           text: line,
         }))
-      : [{ kind: "meta" as const, text: "No skill content returned." }];
+      : [{ kind: "meta" as const, text: t("agents.fileRead.noSkillContent") }];
 
   const footerText = skillRef.includes("/") ? skillRef : `${skillRef}/SKILL.md`;
 
@@ -107,7 +108,7 @@ function parseReadFileOutput(resultText: string, path: string) {
             : ("context" as const),
           text: line,
         }))
-      : [{ kind: "meta" as const, text: "No file content returned." }];
+      : [{ kind: "meta" as const, text: t("agents.fileRead.noFileContent") }];
 
   return {
     footerText: hasRangeHeader ? firstLine : path,

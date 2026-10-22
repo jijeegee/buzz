@@ -3,8 +3,7 @@ import { Cloud } from "lucide-react";
 import { useIsOtherSetupAgent } from "../useKnownAgentPubkeys";
 
 import { cn } from "@/shared/lib/cn";
-
-const OTHER_SETUP_LABEL = "Not managed on this device";
+import { useT } from "@/shared/i18n";
 
 export function OtherSetupAgentMarker({
   className,
@@ -13,13 +12,14 @@ export function OtherSetupAgentMarker({
   className?: string;
   testId?: string;
 }) {
+  const t = useT();
   return (
     <span
-      aria-label={OTHER_SETUP_LABEL}
+      aria-label={t("agents.otherSetup.label")}
       className={cn("inline-flex shrink-0", className)}
       data-testid={testId}
       role="img"
-      title={OTHER_SETUP_LABEL}
+      title={t("agents.otherSetup.label")}
     >
       <Cloud aria-hidden="true" className="h-3 w-3" />
     </span>

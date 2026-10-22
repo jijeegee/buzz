@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 export const teamCatalogCopy = {
   chooseFromCatalog: "Choose from catalog",
   dialogTitle: "Team Catalog",
@@ -7,9 +8,12 @@ export const teamCatalogCopy = {
   addAction: "Add team",
   addedAction: "Added to my teams",
   addingAction: "Adding…",
-  shareTitle: "Share to catalog",
-  shareDescription:
-    "Anyone in this community can find and add a copy of this team. Both the team instructions and every member’s instructions are shared as plaintext. Memories and secrets aren’t included.",
+  get shareTitle() {
+    return t("agents.share.toCatalog");
+  },
+  get shareDescription() {
+    return t("agents.teamShare.toCatalogDescription");
+  },
 } as const;
 
 /**
@@ -25,7 +29,7 @@ export function teamAutoRetractedNotice(
   teamName: string,
   reason: string,
 ): string {
-  return `"${teamName}" has been queued for removal from the community catalog because it can no longer be projected: ${reason}`;
+  return t("agents.teamShare.autoRetracted", { name: teamName, reason });
 }
 
 /**
@@ -42,10 +46,10 @@ export function teamShareNotice(
 ): string {
   if (publicationStatus === "queued") {
     return shared
-      ? `Sharing ${teamName}… It will appear shortly.`
-      : `Removing ${teamName}… It may stay visible for a moment.`;
+      ? t("agents.teamShare.sharingQueued", { name: teamName })
+      : t("agents.teamShare.removingQueued", { name: teamName });
   }
   return shared
-    ? `Published ${teamName} to the community catalog.`
-    : `${teamName} is no longer discoverable in the community catalog.`;
+    ? t("agents.teamShare.published", { name: teamName })
+    : t("agents.teamShare.removed", { name: teamName });
 }

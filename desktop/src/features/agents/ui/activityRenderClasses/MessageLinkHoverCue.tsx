@@ -1,6 +1,7 @@
 import { ArrowUpRight } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
+import { useT } from "@/shared/i18n";
 
 /**
  * Hover affordance for transcript message bubbles that navigate to the
@@ -8,6 +9,7 @@ import { cn } from "@/shared/lib/cn";
  * in on hover or keyboard focus of the bubble.
  */
 export function MessageLinkHoverCue({ className }: { className?: string }) {
+  const t = useT();
   return (
     <span
       aria-hidden="true"
@@ -17,7 +19,7 @@ export function MessageLinkHoverCue({ className }: { className?: string }) {
         className,
       )}
     >
-      Open in chat
+      {t("agents.transcript.openInChat")}
       <ArrowUpRight className="h-3 w-3" />
     </span>
   );

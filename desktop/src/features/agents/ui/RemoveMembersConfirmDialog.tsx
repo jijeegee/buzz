@@ -7,6 +7,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 type RemoveMembersConfirmDialogProps = {
   open: boolean;
@@ -25,19 +26,21 @@ export function RemoveMembersConfirmDialog({
   onKeepAgents,
   onRemoveAgents,
 }: RemoveMembersConfirmDialogProps) {
+  const t = useT();
   const count = memberNames.length;
-  const plural = count !== 1;
 
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Remove {count} member{plural ? "s" : ""}?
+            {t("agents.removeMembers.title", { count })}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {memberNames.join(", ")} will be removed from this team. Do you also
-            want to remove the {plural ? "agents" : "agent"} completely?
+            {t("agents.removeMembers.description", {
+              names: memberNames.join(", "),
+              count,
+            })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -47,7 +50,7 @@ export function RemoveMembersConfirmDialog({
             type="button"
             variant="outline"
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             disabled={isPending}
@@ -56,7 +59,7 @@ export function RemoveMembersConfirmDialog({
             type="button"
             variant="outline"
           >
-            Keep {plural ? "agents" : "agent"}
+            {t("agents.removeMembers.keep", { count })}
           </Button>
           <Button
             disabled={isPending}
@@ -65,7 +68,7 @@ export function RemoveMembersConfirmDialog({
             type="button"
             variant="destructive"
           >
-            Remove {plural ? "agents" : "agent"}
+            {t("agents.removeMembers.remove", { count })}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -50,8 +50,10 @@ import {
   buildInstanceInputForDefinition,
   resolveStartRuntimeForDefinition,
 } from "../lib/instanceInputForDefinition";
+import { useT } from "@/shared/i18n";
 
 export function useManagedAgentActions() {
+  const t = useT();
   const queryClient = useQueryClient();
   const relayUrl = useCommunities().activeCommunity?.relayUrl;
   const { globalConfig } = useGlobalAgentConfig();
@@ -205,7 +207,9 @@ export function useManagedAgentActions() {
     } catch (error) {
       if (isRelayRemovedError(error)) return;
       setActionErrorMessage(
-        error instanceof Error ? error.message : "Failed to start agent.",
+        error instanceof Error
+          ? error.message
+          : t("agents.actions.startFailed"),
       );
     }
   }
@@ -230,7 +234,9 @@ export function useManagedAgentActions() {
     } catch (error) {
       if (isRelayRemovedError(error)) return;
       setActionErrorMessage(
-        error instanceof Error ? error.message : "Failed to restart agent.",
+        error instanceof Error
+          ? error.message
+          : t("agents.actions.restartFailed"),
       );
     } finally {
       setRestartingAgentPubkey(null);
@@ -290,13 +296,15 @@ export function useManagedAgentActions() {
     clearFeedback();
     try {
       await createAgentFromPreset(persona);
-      toast.success("Agent created");
+      toast.success(t("agents.actions.created"));
       void managedAgentsQuery.refetch();
       void relayAgentsQuery.refetch();
     } catch (error) {
       if (isRelayRemovedError(error)) return;
       setActionErrorMessage(
-        error instanceof Error ? error.message : "Failed to start agent.",
+        error instanceof Error
+          ? error.message
+          : t("agents.actions.startFailed"),
       );
     } finally {
       setPersonaStartPending(persona.id, false);
@@ -326,15 +334,22 @@ export function useManagedAgentActions() {
         } catch (error) {
           if (isRelayRemovedError(error)) continue;
           failed.push(
-            `${persona.displayName}: ${error instanceof Error ? error.message : "could not be made"}`,
+            error instanceof Error
+              ? `${persona.displayName}: ${error.message}`
+              : t("agents.actions.couldNotBeMade", {
+                  name: persona.displayName,
+                }),
           );
         }
       }
       if (made.length === 0) {
         setActionErrorMessage(
           failed.length > 0
-            ? `Could not set up ${team.name}. ${failed.join(" ")}`
-            : `${team.name} has no presets to set up.`,
+            ? t("agents.actions.setUpFailedWithDetails", {
+                name: team.name,
+                details: failed.join(" "),
+              })
+            : t("agents.actions.noPresets", { name: team.name }),
         );
         return null;
       }
@@ -344,17 +359,19 @@ export function useManagedAgentActions() {
         agentPubkeys: made,
       });
       toast.success(
-        `Set up ${team.name}: ${made.length === 1 ? "1 agent" : `${made.length} agents`} on this computer.`,
+        t("agents.actions.setUpDone", { name: team.name, count: made.length }),
       );
       if (failed.length > 0) {
-        setActionErrorMessage(`Some agents were not made. ${failed.join(" ")}`);
+        setActionErrorMessage(
+          t("agents.actions.someNotMade", { details: failed.join(" ") }),
+        );
       }
       return saved;
     } catch (error) {
       setActionErrorMessage(
         error instanceof Error
           ? error.message
-          : `Could not set up ${team.name}.`,
+          : t("agents.actions.setUpFailed", { name: team.name }),
       );
       return null;
     } finally {
@@ -393,7 +410,7 @@ export function useManagedAgentActions() {
       }
     } catch (error) {
       setActionErrorMessage(
-        error instanceof Error ? error.message : "Failed to stop agent.",
+        error instanceof Error ? error.message : t("agents.actions.stopFailed"),
       );
     }
   }
@@ -437,7 +454,9 @@ export function useManagedAgentActions() {
       }
     } catch (error) {
       setActionErrorMessage(
-        error instanceof Error ? error.message : "Failed to delete agent.",
+        error instanceof Error
+          ? error.message
+          : t("agents.actions.deleteFailed"),
       );
     }
   }
@@ -454,14 +473,14 @@ export function useManagedAgentActions() {
       });
       setActionNoticeMessage(
         updated.startOnAppLaunch
-          ? `Will start ${updated.name} automatically when the desktop app opens.`
-          : `${updated.name} will stay manual-start only.`,
+          ? t("agents.actions.startOnLaunchOn", { name: updated.name })
+          : t("agents.actions.startOnLaunchOff", { name: updated.name }),
       );
     } catch (error) {
       setActionErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to update startup preference.",
+          : t("agents.actions.startOnLaunchFailed"),
       );
     }
   }
@@ -473,12 +492,21 @@ export function useManagedAgentActions() {
     setActionErrorMessage(null);
     setActionNoticeMessage(() => {
       if (result.started) {
-        return `Added ${result.agent.name} to ${channel.name} and spawned it.`;
+        return t("agents.actions.addedAndStarted", {
+          name: result.agent.name,
+          group: channel.name,
+        });
       }
       if (result.membershipAdded) {
-        return `Added ${result.agent.name} to ${channel.name}.`;
+        return t("agents.actions.addedToGroup", {
+          name: result.agent.name,
+          group: channel.name,
+        });
       }
-      return `${result.agent.name} is already in ${channel.name}.`;
+      return t("agents.actions.alreadyInGroup", {
+        name: result.agent.name,
+        group: channel.name,
+      });
     });
     void managedAgentsQuery.refetch();
     void relayAgentsQuery.refetch();
@@ -486,22 +514,18 @@ export function useManagedAgentActions() {
 
   async function runBulkAction(
     targets: ManagedAgent[],
-    confirmLabel: string,
-    failureNoun: string,
+    confirmMessage: (count: number) => string,
+    failureMessage: (failed: number, total: number) => string,
     action: (agent: ManagedAgent) => Promise<unknown>,
   ): Promise<boolean> {
     if (targets.length === 0) return false;
-    const confirmed = window.confirm(
-      `${confirmLabel} ${targets.length} agent${targets.length === 1 ? "" : "s"}?`,
-    );
+    const confirmed = window.confirm(confirmMessage(targets.length));
     if (!confirmed) return false;
     clearFeedback();
     const results = await Promise.allSettled(targets.map(action));
     const failures = results.filter((r) => r.status === "rejected");
     if (failures.length > 0) {
-      setActionErrorMessage(
-        `${failures.length} of ${targets.length} ${failureNoun}${failures.length === 1 ? "" : "s"} failed.`,
-      );
+      setActionErrorMessage(failureMessage(failures.length, targets.length));
     }
     return true;
   }
@@ -509,8 +533,8 @@ export function useManagedAgentActions() {
   async function handleBulkStopRunning() {
     await runBulkAction(
       managedAgents.filter((a) => isManagedAgentActive(a)),
-      "Stop",
-      "stop",
+      (count) => t("agents.actions.bulkStopConfirm", { count }),
+      (failed, total) => t("agents.actions.bulkStopFailed", { failed, total }),
       async (a) => {
         await stopManagedAgentWithRules({
           agent: a,

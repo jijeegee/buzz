@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 /**
  * Derives the "Added by" label for a catalog entry from a resolved profile
  * summary. Prefers `displayName`, falls back to `name`, then to the default
@@ -10,6 +11,8 @@ export function resolveCatalogOwnerLabel(
     | undefined,
 ): string {
   return (
-    summary?.displayName?.trim() || summary?.name?.trim() || "Community member"
+    summary?.displayName?.trim() ||
+    summary?.name?.trim() ||
+    t("agents.catalog.communityMember")
   );
 }

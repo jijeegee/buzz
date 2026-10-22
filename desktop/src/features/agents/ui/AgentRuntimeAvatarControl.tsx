@@ -16,6 +16,7 @@ import { cn } from "@/shared/lib/cn";
 import { Spinner } from "@/shared/ui/spinner";
 import { agentPresenceStartBlockReason } from "../lib/useAgentAvailability";
 import { IdentityInitialsAvatar } from "./IdentityInitialsAvatar";
+import { useT } from "@/shared/i18n";
 
 type AgentRuntimeAvatarControlProps = {
   activeTestId: string;
@@ -154,21 +155,24 @@ export function AgentRuntimeAvatarControl({
   onOpenError,
   onStart,
 }: AgentRuntimeAvatarControlProps) {
+  const t = useT();
   const shouldReduceMotion = useReducedMotion();
   const trimmedAvatarUrl = avatarUrl?.trim() || null;
   const isRestartAction = requiresRestart || isRestarting;
   const actionLabel = isRestarting
-    ? "Restarting Agent"
+    ? t("agents.runtimeBadge.restarting")
     : isStarting
-      ? "Starting Agent"
+      ? t("agents.runtimeBadge.starting")
       : isRestartAction
-        ? "Restart Agent"
-        : "Start Agent";
-  const actionText = isRestartAction ? "Restart" : "Start";
+        ? t("agents.runtimeBadge.restartAgent")
+        : t("agents.runtimeBadge.startAgent");
+  const actionText = isRestartAction
+    ? t("agents.runtimeBadge.restart")
+    : t("agents.runtimeBadge.start");
   const isPending = isStarting || isRestarting;
   const availabilityLabel = availability
     ? getPresenceLabel(availability)
-    : "Availability unknown";
+    : t("agents.runtimeBadge.availabilityUnknown");
   const startBlockReason =
     hostedElsewhereLabel ??
     agentPresenceStartBlockReason(isActive, availability);
@@ -177,7 +181,7 @@ export function AgentRuntimeAvatarControl({
   const showStatusDot =
     Boolean(startBlockReason) || (isActive && !isRestartAction);
   const hasError = !isActive && !isPending && Boolean(errorLabel);
-  const errorActionLabel = `${label} has a runtime error. Open runtime details.`;
+  const errorActionLabel = t("agents.runtimeBadge.error", { name: label });
   const transition = shouldReduceMotion ? { duration: 0 } : MASK_TRANSITION;
   const actionBadge = isRestartAction
     ? RESTART_ACTION_BADGE
@@ -196,11 +200,20 @@ export function AgentRuntimeAvatarControl({
         <span className="grid h-full w-full place-items-center">
           {showStatusDot ? (
             <span
-              aria-label={`${label}: ${availabilityLabel}`}
+              aria-label={t("agents.runtimeBadge.status", {
+                name: label,
+                status: availabilityLabel,
+              })}
               className="h-full w-full rounded-full"
               data-testid={activeTestId}
               role="img"
-              title={startBlockReason ?? `${label}: ${availabilityLabel}`}
+              title={
+                startBlockReason ??
+                t("agents.runtimeBadge.status", {
+                  name: label,
+                  status: availabilityLabel,
+                })
+              }
             />
           ) : (
             <button

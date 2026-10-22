@@ -11,6 +11,7 @@ import { signRelayEvent } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import { KIND_AGENT_TEAM, KIND_DELETION } from "@/shared/constants/kinds";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 /**
  * A team: a group of the owner's real agents, which may run on different
@@ -225,8 +226,8 @@ const defaultWriteDeps: MyTeamsWriteDeps = {
   publish: (event) =>
     relayClient.publishEvent(
       event,
-      "Timed out saving the team.",
-      "Could not save the team.",
+      t("agents.myTeams.saveTimedOut"),
+      t("agents.myTeams.saveFailed"),
     ),
   now: () => Date.now(),
   newId: () => crypto.randomUUID(),
@@ -243,10 +244,10 @@ export async function saveMyTeam(
   deps: MyTeamsWriteDeps = defaultWriteDeps,
 ): Promise<MyTeam> {
   const name = input.name.trim();
-  if (!name) throw new Error("A team needs a name.");
+  if (!name) throw new Error(t("agents.myTeams.nameRequired"));
   if ([...name].length > MY_TEAM_MAX_NAME_CHARS) {
     throw new Error(
-      `A team name can be up to ${MY_TEAM_MAX_NAME_CHARS} characters.`,
+      t("agents.myTeams.nameTooLong", { max: MY_TEAM_MAX_NAME_CHARS }),
     );
   }
   if (
@@ -254,12 +255,16 @@ export async function saveMyTeam(
     MY_TEAM_MAX_DESCRIPTION_CHARS
   ) {
     throw new Error(
-      `A description can be up to ${MY_TEAM_MAX_DESCRIPTION_CHARS} characters.`,
+      t("agents.myTeams.descriptionTooLong", {
+        max: MY_TEAM_MAX_DESCRIPTION_CHARS,
+      }),
     );
   }
   const agentPubkeys = uniqueAgentPubkeys(input.agentPubkeys);
   if (agentPubkeys.length > MY_TEAM_MAX_AGENTS) {
-    throw new Error(`A team can have up to ${MY_TEAM_MAX_AGENTS} agents.`);
+    throw new Error(
+      t("agents.myTeams.tooManyAgents", { max: MY_TEAM_MAX_AGENTS }),
+    );
   }
   const queryKey = myTeamsQueryKey(ownerPubkey);
   const previous = queryClient
@@ -280,7 +285,7 @@ export async function saveMyTeam(
   });
   await deps.publish(event);
   const [team] = myTeamsFromEvents([event], ownerPubkey);
-  if (!team) throw new Error("Could not save the team.");
+  if (!team) throw new Error(t("agents.myTeams.saveFailed"));
   await queryClient.cancelQueries({ queryKey });
   queryClient.setQueryData<MyTeam[]>(queryKey, (current) =>
     [...(current ?? []).filter((other) => other.id !== id), team].sort((a, b) =>

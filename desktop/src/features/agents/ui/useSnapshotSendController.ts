@@ -32,6 +32,7 @@ import { isTimeoutActive } from "@/features/moderation/lib/timeout";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useSendMessageMutation } from "@/features/messages/hooks";
 import type { Channel, Identity } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ export function checkSendEligibility(
   // same value `useTimeoutState` serves but without requiring a render cycle.
   const timeoutState = getTimeoutSnapshot();
   if (timeoutState.active && isTimeoutActive(timeoutState.expiresAtMs, nowMs)) {
-    return "You are currently timed out and cannot send messages.";
+    return t("agents.snapshotSend.timedOut");
   }
 
   // ── Channel-cache check ───────────────────────────────────────────────────
@@ -132,10 +133,10 @@ export function checkSendEligibility(
   const channel = channels.find((ch) => ch.id === channelId);
 
   if (!channel) {
-    return "The selected destination is no longer available. Please pick another.";
+    return t("agents.snapshotSend.destinationGone");
   }
   if (!isSendableDestination(channel)) {
-    return "The selected destination is no longer available. Please pick another.";
+    return t("agents.snapshotSend.destinationGone");
   }
 
   // ── Moderation-DM check (fail-closed) ────────────────────────────────────
@@ -154,10 +155,10 @@ export function checkSendEligibility(
     // that means the relay advertises no self pubkey (a valid, known answer),
     // and we pass it to isModerationDm, which fails open by its own contract.
     if (identityState?.status !== "success") {
-      return "The selected destination is no longer available. Please pick another.";
+      return t("agents.snapshotSend.destinationGone");
     }
     if (relaySelfState?.status !== "success") {
-      return "The selected destination is no longer available. Please pick another.";
+      return t("agents.snapshotSend.destinationGone");
     }
 
     const identity = queryClient.getQueryData<Identity>(["identity"]);
@@ -166,7 +167,7 @@ export function checkSendEligibility(
     );
 
     if (isModerationDm(channel, identity?.pubkey, relaySelf ?? undefined)) {
-      return "The selected destination is no longer available. Please pick another.";
+      return t("agents.snapshotSend.destinationGone");
     }
   }
 
@@ -231,8 +232,10 @@ export async function runSendPipeline(deps: {
       phase: "error",
       error:
         err instanceof Error
-          ? `Encode failed: ${err.message}`
-          : "Encode failed.",
+          ? t("agents.snapshotSend.encodeFailedWithError", {
+              error: err.message,
+            })
+          : t("agents.snapshotSend.encodeFailed"),
     });
     return false;
   }
@@ -257,8 +260,10 @@ export async function runSendPipeline(deps: {
       phase: "error",
       error:
         err instanceof Error
-          ? `Upload failed: ${err.message}`
-          : "Upload failed.",
+          ? t("agents.snapshotSend.uploadFailedWithError", {
+              error: err.message,
+            })
+          : t("agents.snapshotSend.uploadFailed"),
     });
     return false;
   }
@@ -289,7 +294,9 @@ export async function runSendPipeline(deps: {
     setStateFn({
       phase: "error",
       error:
-        err instanceof Error ? `Send failed: ${err.message}` : "Send failed.",
+        err instanceof Error
+          ? t("agents.snapshotSend.sendFailedWithError", { error: err.message })
+          : t("agents.snapshotSend.sendFailed"),
     });
     return false;
   }
@@ -334,8 +341,10 @@ export function runGuardedSend(
         phase: "error",
         error:
           error instanceof Error
-            ? `Couldn’t open the conversation: ${error.message}`
-            : "Couldn’t open the conversation.",
+            ? t("agents.snapshotSend.openFailedWithError", {
+                error: error.message,
+              })
+            : t("agents.snapshotSend.openFailed"),
       });
       return false;
     }

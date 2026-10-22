@@ -8,6 +8,7 @@ import { Switch } from "@/shared/ui/switch";
 
 import { SnapshotShareDialog } from "./PersonaShareDialog";
 import { teamCatalogCopy } from "./teamLibraryCopy";
+import { useT } from "@/shared/i18n";
 
 type TeamShareDialogProps = {
   catalogShareLevel: CatalogTeamShareLevel;
@@ -28,6 +29,7 @@ export function TeamShareDialog({
   open,
   team,
 }: TeamShareDialogProps) {
+  const t = useT();
   const encodeSnapshot = React.useCallback(
     (memoryLevel: "none" | "core" | "everything") =>
       encodeTeamSnapshotForSend(team.id, memoryLevel, "png"),
@@ -55,7 +57,7 @@ export function TeamShareDialog({
               </p>
             </div>
             <Switch
-              aria-label="Share to catalog"
+              aria-label={t("agents.share.toCatalog")}
               checked={catalogShareLevel !== "not-shared"}
               data-testid="team-share-catalog-access"
               disabled={isPending}

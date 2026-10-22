@@ -1,4 +1,5 @@
 import type { AcpRuntime, AcpRuntimeCatalogEntry } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /**
  * Select the best default runtime from a catalog, using the same preference
@@ -66,11 +67,7 @@ export function resolvePersonaRuntime(
   if (!personaRuntimeId) {
     return {
       runtime: defaultRuntime,
-      warnings: defaultRuntime
-        ? []
-        : [
-            "No agent runtimes are available. Install a runtime (e.g. Goose) to deploy agents.",
-          ],
+      warnings: defaultRuntime ? [] : [t("agents.runtime.noneAvailable")],
       isOverridden: false,
     };
   }
@@ -82,7 +79,10 @@ export function resolvePersonaRuntime(
       return {
         runtime: defaultRuntime,
         warnings: [
-          `Runtime override: using ${defaultRuntime.label} instead of ${matched.label}.`,
+          t("agents.runtime.override", {
+            used: defaultRuntime.label,
+            configured: matched.label,
+          }),
         ],
         isOverridden: true,
       };
@@ -99,7 +99,10 @@ export function resolvePersonaRuntime(
     return {
       runtime: defaultRuntime,
       warnings: [
-        `This agent is configured for runtime "${personaRuntimeId}" but it is not available. Using ${defaultRuntime.label} instead.`,
+        t("agents.runtime.fallback", {
+          configured: personaRuntimeId,
+          used: defaultRuntime.label,
+        }),
       ],
       isOverridden: true,
     };
@@ -107,9 +110,7 @@ export function resolvePersonaRuntime(
 
   return {
     runtime: null,
-    warnings: [
-      `This agent is configured for runtime "${personaRuntimeId}" but it is not available, and no other runtimes were found.`,
-    ],
+    warnings: [t("agents.runtime.missing", { configured: personaRuntimeId })],
     isOverridden: false,
   };
 }

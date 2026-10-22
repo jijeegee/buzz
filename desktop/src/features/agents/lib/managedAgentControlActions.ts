@@ -3,6 +3,7 @@ import { openDm, sendChannelMessage } from "@/shared/api/tauri";
 import type { Channel, ManagedAgent, RelayAgent } from "@/shared/api/types";
 import type { AgentAvailabilityReader } from "./useAgentAvailability";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 type DeleteManagedAgentInput = {
   pubkey: string;
@@ -35,14 +36,16 @@ export function isManagedAgentActive(agent: Pick<ManagedAgent, "status">) {
 
 export function getManagedAgentPrimaryActionLabel(agent: ManagedAgent) {
   if (agent.backend.type === "provider") {
-    return isManagedAgentActive(agent) ? "Shutdown" : "Deploy";
+    return isManagedAgentActive(agent)
+      ? t("agents.control.shutdown")
+      : t("agents.control.deploy");
   }
 
   if (isManagedAgentActive(agent)) {
-    return "Stop";
+    return t("agents.control.stop");
   }
 
-  return "Start agent";
+  return t("agents.control.start");
 }
 
 export function resolveManagedAgentChannelId(
@@ -132,15 +135,14 @@ export async function stopManagedAgentWithRules({
       relayAgents,
     });
     if (!channelId) {
-      throw new Error("Cannot stop: agent is not in any group");
+      throw new Error(t("agents.control.stopNoGroup"));
     }
 
     await sendChannelMessage(channelId, "!shutdown", undefined, undefined, [
       agent.pubkey,
     ]);
     return {
-      noticeMessage:
-        "Shutdown requested. This does not confirm the agent has stopped.",
+      noticeMessage: t("agents.control.shutdownRequested"),
     };
   }
 
@@ -172,8 +174,7 @@ export async function stopRemoteOwnedAgent({
     pubkey,
   ]);
   return {
-    noticeMessage:
-      "Stop requested. The agent stops on the computer it runs on.",
+    noticeMessage: t("agents.control.stopRequested"),
   };
 }
 
@@ -194,7 +195,9 @@ export async function startRemoteOwnedAgent({
   const channelId = await ownerCommandChannelId(pubkey);
   await sendChannelMessage(channelId, "!start", undefined, undefined, [pubkey]);
   return {
-    noticeMessage: `Start requested. It starts only if Kuzz is open on ${hostName?.trim() || "that computer"} now.`,
+    noticeMessage: hostName?.trim()
+      ? t("agents.control.startRequestedOn", { host: hostName.trim() })
+      : t("agents.control.startRequested"),
   };
 }
 
@@ -229,12 +232,9 @@ export async function deleteManagedAgentWithRules({
 
         if (!skipRemoteDeleteConfirm) {
           const confirmed = window.confirm(
-            (availability === undefined
-              ? "This agent’s availability is unknown. "
-              : "") +
-              "Shutdown requested, but the agent may still be running. " +
-              "Deleting now removes the local record — the remote deployment " +
-              "will be orphaned if shutdown hasn't completed. Continue?",
+            availability === undefined
+              ? t("agents.control.deleteConfirmUnknown")
+              : t("agents.control.deleteConfirmRunning"),
           );
           if (!confirmed) {
             return { cancelled: true };
@@ -243,8 +243,7 @@ export async function deleteManagedAgentWithRules({
       } else {
         if (!skipRemoteDeleteConfirm) {
           const confirmed = window.confirm(
-            "This agent is offline but the remote deployment may still exist. " +
-              "Deleting removes the local management record. Continue?",
+            t("agents.control.deleteConfirmOffline"),
           );
           if (!confirmed) {
             return { cancelled: true };
@@ -254,8 +253,7 @@ export async function deleteManagedAgentWithRules({
     } else {
       if (!skipRemoteDeleteConfirm) {
         const confirmed = window.confirm(
-          "This agent is deployed but not in any group. " +
-            "Deleting removes the local management record; the remote deployment may still be running. Continue?",
+          t("agents.control.deleteConfirmNoGroup"),
         );
         if (!confirmed) {
           return { cancelled: true };

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 export const personaLibraryCopy = {
   title: "My agents",
   description:
@@ -34,8 +35,9 @@ export const personaCatalogCopy = {
     "Turn this on to make the agent available for teams and agent creation.",
   useAction: "Add agent",
   addedAction: "Added to My Agents",
-  teamEmptyState:
-    "No agents in My Agents yet. Create one or choose one from Agent Catalog first.",
+  get teamEmptyState() {
+    return t("agents.libraryCopy.teamEmptyState");
+  },
 } as const;
 
 export function getPersonaCatalogSelectionActionCopy(isActive: boolean) {

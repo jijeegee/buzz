@@ -39,6 +39,7 @@ import {
   useCompactSessionPending,
 } from "./runCompactSession";
 import { useContextUsageQuery } from "./useContextUsageQuery";
+import { useT, t } from "@/shared/i18n";
 
 const STAGE_FILL_CLASS: Record<ContextGaugeStage, string> = {
   normal: "fill-muted-foreground/35",
@@ -95,8 +96,8 @@ export function ContextGaugeDial({
 
 function scopeDescription(reading: AgentContextUsage): string {
   return reading.threadRootEventId
-    ? `Thread ${reading.threadRootEventId.slice(0, 8)}`
-    : "Whole conversation";
+    ? t("agents.sessions.thread", { id: reading.threadRootEventId.slice(0, 8) })
+    : t("agents.compact.wholeConversation");
 }
 
 /**
@@ -117,6 +118,7 @@ export function CompactSessionDialog({
   open: boolean;
   reading: AgentContextUsage;
 }) {
+  const t = useT();
   const activeTurns = useActiveAgentTurns(reading.agentPubkey);
   const hasActiveTurn = activeTurns.some(
     (turn) => turn.channelId === reading.channelId,
@@ -164,10 +166,11 @@ export function CompactSessionDialog({
     <AlertDialog onOpenChange={onOpenChange} open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Compact {agentName}'s session?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {t("agents.compact.title", { name: agentName })}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            Compacting summarizes the earlier conversation in this session so
-            the agent has more room to keep working.
+            {t("agents.compact.description")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div
@@ -181,8 +184,10 @@ export function CompactSessionDialog({
               {formatContextUsageLabel(view.reading.used, view.reading.size)}
             </p>
             <p className="text-xs text-muted-foreground">
-              {scopeDescription(reading)} · Updated{" "}
-              {formatContextUpdatedAgo(view.updatedAt, now)}
+              {t("agents.compact.scopeUpdated", {
+                scope: scopeDescription(reading),
+                ago: formatContextUpdatedAgo(view.updatedAt, now),
+              })}
             </p>
           </div>
         </div>
@@ -206,7 +211,7 @@ export function CompactSessionDialog({
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <Button
@@ -214,7 +219,7 @@ export function CompactSessionDialog({
             onClick={compact}
             type="button"
           >
-            Compact
+            {t("agents.sessions.compact")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -237,6 +242,7 @@ export function ContextGaugeButton({
   dialSize?: number;
   reading: AgentContextUsage;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const usageLabel = formatContextUsageLabel(reading.used, reading.size);
   const updatedAgo = formatContextUpdatedAgo(reading.updatedAt);
@@ -245,7 +251,11 @@ export function ContextGaugeButton({
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            aria-label={`${agentName} context: ${usageLabel}, updated ${updatedAgo}. Compact session`}
+            aria-label={t("agents.compact.gaugeLabel", {
+              name: agentName,
+              usage: usageLabel,
+              ago: updatedAgo,
+            })}
             className={cn(
               "flex items-center justify-center rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
               className,
@@ -259,7 +269,9 @@ export function ContextGaugeButton({
         </TooltipTrigger>
         <TooltipContent>
           <p>{usageLabel}</p>
-          <p className="text-xs opacity-80">Updated {updatedAgo}</p>
+          <p className="text-xs opacity-80">
+            {t("agents.compact.updated", { ago: updatedAgo })}
+          </p>
         </TooltipContent>
       </Tooltip>
       {open ? (

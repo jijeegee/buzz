@@ -66,6 +66,7 @@ import { Skeleton } from "@/shared/ui/skeleton";
 import { deferMenuAction } from "@/features/sidebar/ui/sidebarMenuHelpers";
 import { DeviceRobot } from "./MyAgentsSection";
 import { useManagedAgentActions } from "./useManagedAgentActions";
+import { useT } from "@/shared/i18n";
 
 /** One row: one real agent, here or on another computer. */
 type AgentListItem = {
@@ -138,6 +139,7 @@ export function AgentsSidebarList({
 }: {
   onCreateAgent: () => void;
 }) {
+  const t = useT();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { values } = useHistorySearchState(PROFILE_KEYS);
@@ -172,7 +174,7 @@ export function AgentsSidebarList({
     return [
       {
         key: "local",
-        title: "This device",
+        title: t("agents.list.thisDevice"),
         deviceId: currentDeviceId,
         // Like the page: only the active account's agents.
         items: localAgentsForList(
@@ -183,7 +185,7 @@ export function AgentsSidebarList({
       ...remoteGroups.map(
         (group): AgentListSection => ({
           key: `device-${group.deviceId}`,
-          title: group.name || "Another device",
+          title: group.name || t("agents.list.anotherDevice"),
           deviceId: group.deviceId,
           items: group.agents.map((agent): AgentListItem => {
             const availability = getRemoteAvailability(agent.pubkey);
@@ -211,6 +213,7 @@ export function AgentsSidebarList({
     managedQuery.data,
     personasQuery.data,
     remoteAgents,
+    t,
     viewerPubkey,
   ]);
 
@@ -255,7 +258,7 @@ export function AgentsSidebarList({
       await goChannel(dm.id);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Could not open the DM.",
+        error instanceof Error ? error.message : t("agents.list.openDmFailed"),
       );
     }
   };
@@ -272,7 +275,9 @@ export function AgentsSidebarList({
       if (result.noticeMessage) toast.success(result.noticeMessage);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : `Could not ${verb} the agent.`,
+        error instanceof Error
+          ? error.message
+          : t("agents.list.actionFailed", { action: verb }),
       );
     } finally {
       setRemotePending(null);
@@ -322,7 +327,7 @@ export function AgentsSidebarList({
       <div className="space-y-2 px-2 pb-2 pt-1">
         <div className="flex items-center gap-1.5 px-1">
           <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-sidebar-foreground">
-            Agents
+            {t("agents.list.title")}
           </h2>
           <Button
             className="h-7 gap-1 px-2 text-xs"
@@ -332,7 +337,7 @@ export function AgentsSidebarList({
             variant="outline"
           >
             <LayoutGrid className="h-3.5 w-3.5" />
-            All agents
+            {t("agents.list.all")}
           </Button>
           <Button
             className="h-7 gap-1 px-2 text-xs"
@@ -341,15 +346,15 @@ export function AgentsSidebarList({
             size="sm"
           >
             <Plus className="h-3.5 w-3.5" />
-            New
+            {t("agents.list.new")}
           </Button>
         </div>
         <Input
-          aria-label="Find agents by name"
+          aria-label={t("agents.list.findLabel")}
           className="h-8 bg-background"
           data-testid="agents-filter"
           onChange={(event) => setFilter(event.target.value)}
-          placeholder="Find agents"
+          placeholder={t("agents.list.findPlaceholder")}
           value={filter}
         />
       </div>
@@ -387,7 +392,9 @@ export function AgentsSidebarList({
                   </div>
                 ) : (
                   <p className="px-2 py-3 text-xs text-sidebar-foreground/60">
-                    {needle ? "No agents match that name." : "No agents yet."}
+                    {needle
+                      ? t("agents.list.noMatches")
+                      : t("agents.routing.noAgents")}
                   </p>
                 )}
               </section>
@@ -413,6 +420,7 @@ function AgentRowMenuItems({
   item: AgentListItem;
   onAction: (item: AgentListItem, action: AgentRowAction) => void;
 }) {
+  const t = useT();
   const run = (action: AgentRowAction) => () =>
     deferMenuAction(() => onAction(item, action));
   const testId = (action: string) => `agents-row-menu-${action}-${item.key}`;
@@ -421,7 +429,7 @@ function AgentRowMenuItems({
     <>
       <Item data-testid={testId("message")} onSelect={run("message")}>
         <MessageSquare className={iconClass} />
-        Message
+        {t("agents.list.message")}
       </Item>
       {item.running ? (
         <Item
@@ -430,7 +438,7 @@ function AgentRowMenuItems({
           onSelect={run("stop")}
         >
           <Square className={iconClass} />
-          Stop
+          {t("agents.list.stop")}
         </Item>
       ) : (
         <Item
@@ -439,7 +447,7 @@ function AgentRowMenuItems({
           onSelect={run("start")}
         >
           <Play className={iconClass} />
-          Start
+          {t("agents.runtimeBadge.start")}
         </Item>
       )}
       {item.running && item.managed?.needsRestart ? (
@@ -449,17 +457,17 @@ function AgentRowMenuItems({
           onSelect={run("restart")}
         >
           <RotateCw className={iconClass} />
-          Restart
+          {t("agents.runtimeBadge.restart")}
         </Item>
       ) : null}
       <Separator />
       <Item data-testid={testId("edit")} onSelect={run("edit")}>
         <Pencil className={iconClass} />
-        Edit
+        {t("common.edit")}
       </Item>
       <Item data-testid={testId("profile")} onSelect={run("profile")}>
         <UserRound className={iconClass} />
-        View profile
+        {t("agents.list.viewProfile")}
       </Item>
     </>
   );
@@ -478,6 +486,7 @@ function AgentRow({
   onAction: (item: AgentListItem, action: AgentRowAction) => void;
   viewerPubkey: string | null;
 }) {
+  const t = useT();
   const [menuOpen, setMenuOpen] = React.useState(false);
   // A remote agent has no record here; its own profile has the picture.
   const profile = useUserProfileQuery(
@@ -485,7 +494,8 @@ function AgentRow({
   ).data;
   const avatarUrl =
     item.avatarUrl ?? profile?.avatarUrl ?? item.fallbackAvatarUrl ?? null;
-  const name = item.name || profile?.displayName?.trim() || "Agent";
+  const name =
+    item.name || profile?.displayName?.trim() || t("agents.list.agentFallback");
   const working = useAgentWorking(item.running ? item.pubkey : null).working;
   const status = !item.running ? "Stopped" : working ? "Working" : "Running";
   return (
@@ -541,13 +551,17 @@ function AgentRow({
                       : "bg-muted-foreground/40",
                 )}
               />
-              {status}
+              {status === "Working"
+                ? t("agents.tile.working")
+                : status === "Running"
+                  ? t("agents.tile.running")
+                  : t("agents.tile.stopped")}
             </span>
           </button>
           <DropdownMenu onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
-                aria-label={`${name} actions`}
+                aria-label={t("agents.list.rowActions", { name })}
                 className={cn(
                   "absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground focus-visible:opacity-100 group-hover:opacity-100",
                   menuOpen && "opacity-100",

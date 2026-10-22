@@ -1,5 +1,6 @@
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { codeWorkEnabled, withCodeWork } from "./codeWorkSetting";
+import { useT } from "@/shared/i18n";
 
 /** The per-agent "Code work" checkbox; see `codeWorkSetting`. */
 export function CodeWorkField({
@@ -15,6 +16,7 @@ export function CodeWorkField({
   inheritedEnvVars?: EnvVarsValue;
   onEnvVarsChange: (value: EnvVarsValue) => void;
 }) {
+  const t = useT();
   return (
     <div className="space-y-1.5">
       <label
@@ -33,11 +35,10 @@ export function CodeWorkField({
           }
           type="checkbox"
         />
-        Code work
+        {t("agents.codeWork.label")}
       </label>
       <p className="text-xs text-muted-foreground" id={`${id}-description`}>
-        Include engineering and repository guidance in this agent's
-        instructions.
+        {t("agents.codeWork.help")}
       </p>
     </div>
   );

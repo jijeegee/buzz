@@ -6,7 +6,7 @@
  * threshold, yellow from the warning threshold, red from the critical one.
  */
 
-import { localeNumberFormat } from "@/shared/i18n";
+import { localeNumberFormat, t } from "@/shared/i18n";
 
 export type ContextGaugeStage = "normal" | "warning" | "critical";
 
@@ -83,7 +83,11 @@ const tokenFormatter = localeNumberFormat();
 /** "50,000 / 200,000 tokens (25%)". */
 export function formatContextUsageLabel(used: number, size: number): string {
   const percent = contextFillPercent(contextFillFraction(used, size));
-  return `${tokenFormatter.format(used)} / ${tokenFormatter.format(size)} tokens (${percent}%)`;
+  return t("agents.contextGauge.usage", {
+    used: tokenFormatter.format(used),
+    size: tokenFormatter.format(size),
+    percent,
+  });
 }
 
 /** Coarse relative age, e.g. "just now", "5m ago", "3h ago", "2d ago". */
@@ -92,8 +96,16 @@ export function formatContextUpdatedAgo(
   now: number = Date.now(),
 ): string {
   const seconds = Math.max(0, Math.floor((now - updatedAt) / 1000));
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86_400)}d ago`;
+  if (seconds < 60) return t("time.justNow");
+  if (seconds < 3600)
+    return t("agents.contextGauge.minutesAgo", {
+      count: Math.floor(seconds / 60),
+    });
+  if (seconds < 86_400)
+    return t("agents.contextGauge.hoursAgo", {
+      count: Math.floor(seconds / 3600),
+    });
+  return t("agents.contextGauge.daysAgo", {
+    count: Math.floor(seconds / 86_400),
+  });
 }

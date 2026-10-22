@@ -5,6 +5,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import type { PresenceLookup, PresenceStatus } from "@/shared/api/types";
 import { useRelayConnection } from "@/shared/api/useRelayConnection";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 /** Availability is relay presence, never a retained deployment receipt or PID. */
 export function resolveAgentAvailability(
@@ -26,7 +27,7 @@ export function agentPresenceStartBlockReason(
 ): string | undefined {
   return !isLifecycleActive &&
     (availability === "online" || availability === "away")
-    ? "This agent is already running somewhere else."
+    ? t("agents.start.runningElsewhere")
     : undefined;
 }
 

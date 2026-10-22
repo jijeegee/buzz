@@ -1,4 +1,5 @@
 import type { ManagedAgent } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /** The agents of one of the owner's other computers. */
 export type RemoteDeviceGroup<Agent> = {
@@ -64,6 +65,6 @@ export function groupRemoteAgentsByDevice<
 
 /** "used by 2 agents" / "not used yet" for a preset card. */
 export function presetUsageLabel(agentCount: number): string {
-  if (agentCount <= 0) return "not used yet";
-  return agentCount === 1 ? "used by 1 agent" : `used by ${agentCount} agents`;
+  if (agentCount <= 0) return t("agents.preset.notUsed");
+  return t("agents.preset.usedBy", { count: agentCount });
 }

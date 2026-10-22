@@ -12,6 +12,7 @@ import {
 import { useDefaultAi } from "@/features/agents/useDefaultAi";
 import { getChannelRouting } from "@/shared/api/tauriChannelRouting";
 import type { ManagedAgent } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /**
  * Adds the default AI to a channel you just created, as a bot, starting it
@@ -49,11 +50,11 @@ export function useAttachDefaultAi() {
         });
         joins = routingJoinsNewChannels(routing.mode);
       } catch (error) {
-        toast.warning(`${agent.name} was not added to this group`, {
+        toast.warning(t("agents.defaultAi.notAdded", { name: agent.name }), {
           description:
             error instanceof Error
               ? error.message
-              : "Couldn't read group routing.",
+              : t("agents.defaultAi.routingReadFailed"),
         });
         return;
       }
@@ -66,9 +67,11 @@ export function useAttachDefaultAi() {
           ensureRunning: true,
         });
       } catch (error) {
-        toast.warning(`${agent.name} could not be added to this group`, {
+        toast.warning(t("agents.defaultAi.addFailed", { name: agent.name }), {
           description:
-            error instanceof Error ? error.message : "Failed to add agent.",
+            error instanceof Error
+              ? error.message
+              : t("agents.addAgent.failed"),
         });
       } finally {
         // Same keys `useApplyTemplate.applyAgents` refreshes after adding

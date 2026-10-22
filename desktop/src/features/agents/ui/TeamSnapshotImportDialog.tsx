@@ -17,6 +17,7 @@ import {
   deriveImportPhase,
   getProfileSyncFailures,
 } from "./teamSnapshotImport.lib";
+import { useT } from "@/shared/i18n";
 
 type TeamSnapshotImportDialogProps = {
   open: boolean;
@@ -44,6 +45,7 @@ export function TeamSnapshotImportDialog({
   onConfirm,
   onOpenChange,
 }: TeamSnapshotImportDialogProps) {
+  const t = useT();
   const phase = deriveImportPhase(result, isConfirming);
 
   return (
@@ -57,7 +59,9 @@ export function TeamSnapshotImportDialog({
         <DialogHeader className="space-y-0">
           <div className="flex items-center justify-between gap-4">
             <DialogTitle>
-              {phase === "result" ? "Team imported" : "Import team snapshot"}
+              {phase === "result"
+                ? t("agents.teamImport.imported")
+                : t("agents.teamImport.title")}
             </DialogTitle>
             <div className="flex items-center gap-2">
               {phase === "preview" ? (
@@ -71,7 +75,7 @@ export function TeamSnapshotImportDialog({
                     variant="default"
                   >
                     <Upload className="h-4 w-4" />
-                    Import
+                    {t("agents.import.import")}
                   </Button>
                   <DialogClose asChild>
                     <Button
@@ -80,14 +84,14 @@ export function TeamSnapshotImportDialog({
                       type="button"
                       variant="ghost"
                     >
-                      Cancel
+                      {t("common.cancel")}
                     </Button>
                   </DialogClose>
                 </>
               ) : (
                 <DialogClose asChild>
                   <Button size="sm" type="button" variant="ghost">
-                    Close
+                    {t("common.close")}
                   </Button>
                 </DialogClose>
               )}
@@ -112,7 +116,7 @@ export function TeamSnapshotImportDialog({
           </div>
         ) : phase === "confirming" ? (
           <div className="py-4 text-center text-sm text-muted-foreground">
-            Creating team…
+            {t("agents.teamImport.creating")}
           </div>
         ) : result !== null ? (
           <ResultBody result={result} />
@@ -125,6 +129,7 @@ export function TeamSnapshotImportDialog({
 // ── Preview body ──────────────────────────────────────────────────────────────
 
 function PreviewBody({ preview }: { preview: TeamSnapshotImportPreview }) {
+  const t = useT();
   return (
     <div className="space-y-4 py-1">
       {/* Team identity */}
@@ -141,16 +146,14 @@ function PreviewBody({ preview }: { preview: TeamSnapshotImportPreview }) {
       </div>
 
       <p className="text-sm text-muted-foreground">
-        A new team will be created with fresh keypairs for all members. The
-        imported team is independent of the source — identity never travels.
-        Every member starts as owner-only.
+        {t("agents.teamImport.previewNote")}
       </p>
 
       {/* Member list */}
       {preview.members.length > 0 ? (
         <div className="space-y-1">
           <p className="text-sm font-medium">
-            Members ({preview.members.length})
+            {t("agents.teamImport.members", { count: preview.members.length })}
           </p>
           <div className="max-h-36 space-y-1 overflow-y-auto rounded-md border border-border p-2">
             {preview.members.map((member, idx) => (
@@ -174,6 +177,7 @@ function PreviewBody({ preview }: { preview: TeamSnapshotImportPreview }) {
 // ── Result body ───────────────────────────────────────────────────────────────
 
 function ResultBody({ result }: { result: TeamSnapshotImportResult }) {
+  const t = useT();
   const totalMemoryErrors = result.members.reduce(
     (sum, m) => sum + m.memoryErrors.length,
     0,
@@ -193,10 +197,17 @@ function ResultBody({ result }: { result: TeamSnapshotImportResult }) {
   return (
     <div className="space-y-3 py-1">
       <p className="text-sm">
-        <span className="font-medium">{result.team.name}</span> was created
         {profileSyncFailures.length > 0
-          ? `, but ${profileSyncFailures.length} member${profileSyncFailures.length === 1 ? "" : "s"} failed to publish ${profileSyncFailures.length === 1 ? "a profile" : "profiles"}.`
-          : ` successfully with ${result.members.length} member${result.members.length === 1 ? "" : "s"}.`}
+          ? t("agents.teamImport.createdWithFailures", {
+              name: result.team.name,
+              count: profileSyncFailures.length,
+              b: (chunks) => <span className="font-medium">{chunks}</span>,
+            })
+          : t("agents.teamImport.created", {
+              name: result.team.name,
+              count: result.members.length,
+              b: (chunks) => <span className="font-medium">{chunks}</span>,
+            })}
       </p>
 
       {profileSyncFailures.length > 0 ? (
@@ -206,7 +217,7 @@ function ResultBody({ result }: { result: TeamSnapshotImportResult }) {
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="flex flex-col gap-1">
-            <p>Profile sync failed for:</p>
+            <p>{t("agents.teamImport.profileSyncFailed")}</p>
             <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-xs">
               {profileSyncFailures.map((m) => (
                 <li key={m.pubkey} className="break-all font-mono">
@@ -227,10 +238,10 @@ function ResultBody({ result }: { result: TeamSnapshotImportResult }) {
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="flex flex-col gap-1">
               <p>
-                Memory partially restored: {totalMemoryWritten} of{" "}
-                {totalMemoryTotal} entr
-                {totalMemoryTotal === 1 ? "y" : "ies"} written across all
-                members.
+                {t("agents.teamImport.memoryPartial", {
+                  written: totalMemoryWritten,
+                  total: totalMemoryTotal,
+                })}
               </p>
               {totalMemoryErrors > 0 ? (
                 <ul
@@ -257,8 +268,9 @@ function ResultBody({ result }: { result: TeamSnapshotImportResult }) {
             className="text-xs text-muted-foreground"
             data-testid="team-snapshot-import-memory-success"
           >
-            {totalMemoryTotal} memory entr
-            {totalMemoryTotal === 1 ? "y" : "ies"} restored across all members.
+            {t("agents.teamImport.memoryRestored", {
+              count: totalMemoryTotal,
+            })}
           </p>
         )
       ) : null}

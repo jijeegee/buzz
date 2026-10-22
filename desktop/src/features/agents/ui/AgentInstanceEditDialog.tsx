@@ -99,6 +99,7 @@ import {
   runtimeDropdownAction,
   usePendingHarnessSelection,
 } from "./addCustomHarness";
+import { useT } from "@/shared/i18n";
 
 export function AgentInstanceEditDialog({
   agent,
@@ -117,6 +118,7 @@ export function AgentInstanceEditDialog({
   onOpenChange: (open: boolean) => void;
   onUpdated?: (agent: ManagedAgent) => void;
 }) {
+  const t = useT();
   const updateMutation = useUpdateManagedAgentMutation();
   const startMutation = useStartManagedAgentMutation();
   const queryClient = useQueryClient();
@@ -258,7 +260,7 @@ export function AgentInstanceEditDialog({
         label: formatRuntimeOptionLabel(candidate),
         value: candidate.id,
       })),
-      { label: "Custom command", value: "custom" },
+      { label: t("agents.edit.customCommand"), value: "custom" },
     ];
     if (
       selectedRuntimeId &&
@@ -266,13 +268,13 @@ export function AgentInstanceEditDialog({
       !options.some((o) => o.value === selectedRuntimeId)
     ) {
       options.push({
-        label: `${selectedRuntimeId} (current)`,
+        label: t("agents.options.current", { value: selectedRuntimeId }),
         value: selectedRuntimeId,
       });
     }
     options.push(ADD_CUSTOM_HARNESS_OPTION);
     return options;
-  }, [sortedRuntimes, selectedRuntimeId]);
+  }, [sortedRuntimes, selectedRuntimeId, t]);
 
   // Resolve the dialog-opening command as the catalog loads. Edit-state runtime
   // ids mutate during selection changes and cannot identify the original state.
@@ -802,7 +804,9 @@ export function AgentInstanceEditDialog({
           });
         }
       } catch (e) {
-        setSetterError(e instanceof Error ? e : new Error("Failed to save"));
+        setSetterError(
+          e instanceof Error ? e : new Error(t("agents.edit.saveFailed")),
+        );
         return;
       }
 
@@ -817,16 +821,24 @@ export function AgentInstanceEditDialog({
       // explicitly instead of relying on the user to know the policy.
       if (!isManagedAgentActive(result.agent)) {
         const startedName = result.agent.name;
-        toast(`${startedName} saved while stopped.`, {
+        toast(t("agents.edit.savedWhileStopped", { name: startedName }), {
           action: {
-            label: "Start now",
+            label: t("agents.edit.startNow"),
             onClick: () => {
               startMutation.mutate(result.agent.pubkey, {
-                onSuccess: () => toast.success(`${startedName} started.`),
+                onSuccess: () =>
+                  toast.success(
+                    t("agents.edit.started", { name: startedName }),
+                  ),
                 onError: (error) =>
                   isRelayRemovedError(error) ||
                   toast.error(
-                    `${startedName} failed to start${error instanceof Error ? `: ${error.message}` : "."}`,
+                    error instanceof Error
+                      ? t("agents.edit.startFailedWithError", {
+                          name: startedName,
+                          error: error.message,
+                        })
+                      : t("agents.edit.startFailed", { name: startedName }),
                   ),
               });
             },
@@ -906,10 +918,13 @@ export function AgentInstanceEditDialog({
           : option.label,
       value: option.id || AUTO_PROVIDER_DROPDOWN_VALUE,
     })),
-    { label: "Custom provider...", value: CUSTOM_PROVIDER_DROPDOWN_VALUE },
+    {
+      label: t("agents.provider.customOption"),
+      value: CUSTOM_PROVIDER_DROPDOWN_VALUE,
+    },
   ];
 
-  const previewLabel = name.trim() || "Agent name";
+  const previewLabel = name.trim() || t("agents.identity.name");
   const previewAvatarUrl = avatarUrl.trim() || null;
   const advancedFieldsTransition = shouldReduceMotion
     ? { duration: 0 }
@@ -928,7 +943,7 @@ export function AgentInstanceEditDialog({
         data-testid="edit-agent-dialog"
         footerClassName="border-t-0 pt-0"
         headerClassName="pb-2"
-        title={`Edit ${agent.name}`}
+        title={t("agents.edit.title", { name: agent.name })}
         footer={
           <div className="flex w-full items-center justify-end gap-2">
             <Button
@@ -937,7 +952,7 @@ export function AgentInstanceEditDialog({
               type="button"
               variant="outline"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               data-testid="edit-agent-dialog-submit"
@@ -945,7 +960,9 @@ export function AgentInstanceEditDialog({
               onClick={() => void handleSubmit()}
               type="button"
             >
-              {isSaving ? "Saving..." : "Save changes"}
+              {isSaving
+                ? t("agents.dialog.saving")
+                : t("agents.dialog.saveChanges")}
             </Button>
           </div>
         }
@@ -974,11 +991,11 @@ export function AgentInstanceEditDialog({
                 type="button"
                 variant="outline"
               >
-                Edit avatar
+                {t("agents.edit.editAvatar")}
               </Button>
             ) : (
               <p className="text-center text-xs text-muted-foreground">
-                Avatar is shared identity
+                {t("agents.edit.avatarShared")}
               </p>
             )}
           </div>
@@ -988,7 +1005,7 @@ export function AgentInstanceEditDialog({
                 className="text-sm font-medium text-foreground"
                 htmlFor="edit-agent-name"
               >
-                Agent name
+                {t("agents.identity.name")}
               </label>
               <div
                 className={cn(
@@ -1005,7 +1022,7 @@ export function AgentInstanceEditDialog({
                   disabled={isSaving}
                   id="edit-agent-name"
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Agent name"
+                  placeholder={t("agents.identity.name")}
                   value={name}
                 />
               </div>
@@ -1026,24 +1043,27 @@ export function AgentInstanceEditDialog({
                 className="text-sm font-medium text-foreground"
                 htmlFor="edit-agent-runtime"
               >
-                Provider
+                {t("agents.aiDefaults.provider")}
               </label>
               <PersonaDropdownField
                 disabled={isSaving}
                 id="edit-agent-runtime"
                 onValueChange={handleRuntimeDropdownChange}
                 options={runtimeDropdownOptions}
-                placeholder="Choose a provider"
+                placeholder={t("agents.harnessProvider.choose")}
                 value={runtimeDropdownValue}
               />
               {selectedRuntime ? (
                 <p className="text-xs text-muted-foreground">
-                  Detected at{" "}
-                  <span className="font-medium">
-                    {selectedRuntime.binaryPath ??
+                  {t("agents.edit.detectedAt", {
+                    path:
+                      selectedRuntime.binaryPath ??
                       selectedRuntime.command ??
-                      selectedRuntime.id}
-                  </span>
+                      selectedRuntime.id,
+                    b: (chunks) => (
+                      <span className="font-medium">{chunks}</span>
+                    ),
+                  })}
                 </p>
               ) : null}
               <AddCustomHarnessDialog
@@ -1058,7 +1078,7 @@ export function AgentInstanceEditDialog({
                   className="text-sm font-medium text-foreground"
                   htmlFor="edit-agent-command"
                 >
-                  Agent command
+                  {t("agents.edit.command")}
                 </label>
                 <div
                   className={cn(
@@ -1075,7 +1095,7 @@ export function AgentInstanceEditDialog({
                     disabled={isSaving}
                     id="edit-agent-command"
                     onChange={(event) => setAgentCommand(event.target.value)}
-                    placeholder="Full path or shell command"
+                    placeholder={t("agents.edit.commandPlaceholder")}
                     value={agentCommand}
                   />
                 </div>
@@ -1181,7 +1201,7 @@ export function AgentInstanceEditDialog({
                 onClick={() => setShowAdvancedFields((current) => !current)}
                 type="button"
               >
-                <span>Advanced</span>
+                <span>{t("agents.advanced.toggle")}</span>
                 <AdvancedRequiredBadge
                   envVars={inheritedSubmission.envVars}
                   requiredEnvKeys={advancedRequiredEnvKeys}

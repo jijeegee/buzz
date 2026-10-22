@@ -1,4 +1,5 @@
 import type { PersonaSharePublicationResult } from "@/shared/api/tauriPersonas";
+import { t } from "@/shared/i18n";
 
 /**
  * The confirmation shown after a persona edit is saved.
@@ -15,10 +16,10 @@ export function personaSaveNotice(
 ): string {
   switch (publicationStatus) {
     case "published":
-      return `Updated ${displayName} and published it to the community catalog.`;
+      return t("agents.personaSave.published", { name: displayName });
     case "queued":
-      return `Updated ${displayName}. It will appear in the community catalog shortly.`;
+      return t("agents.personaSave.queued", { name: displayName });
     default:
-      return `Updated ${displayName}.`;
+      return t("agents.personaSave.updated", { name: displayName });
   }
 }

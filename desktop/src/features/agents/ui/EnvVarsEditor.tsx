@@ -8,6 +8,7 @@ import {
   PERSONA_FIELD_CONTROL_CLASS,
   PERSONA_FIELD_SHELL_CLASS,
 } from "./agentConfigOptions";
+import { useT, t } from "@/shared/i18n";
 
 export type EnvVarsValue = Record<string, string>;
 
@@ -212,8 +213,8 @@ export function EnvVarsEditor({
   value,
   onChange,
   inheritedFrom,
-  inheritedLabel = "inherited",
-  label = "Environment variables",
+  inheritedLabel: inheritedLabelProp,
+  label: labelProp,
   helperText,
   disabled = false,
   requiredKeys = [],
@@ -221,9 +222,14 @@ export function EnvVarsEditor({
   hiddenKeys = [],
   focusKey,
   inheritedRows = [],
-  inheritedRowsLabel = "build",
+  inheritedRowsLabel: inheritedRowsLabelProp,
   keyAnnotations,
 }: EnvVarsEditorProps) {
+  const t = useT();
+  const inheritedLabel = inheritedLabelProp ?? t("agents.envVars.inherited");
+  const label = labelProp ?? t("agents.envVars.label");
+  const inheritedRowsLabel =
+    inheritedRowsLabelProp ?? t("agents.envVars.build");
   // Keys that render as their own special rows (required amber rows or
   // file-satisfied read-only rows). These must NEVER enter `rows` state —
   // they read/write `value` directly via `onChange`/`updateRequiredValue`.
@@ -373,7 +379,7 @@ export function EnvVarsEditor({
                   {isMissing ? (
                     <span className="ml-1 flex items-center gap-0.5 rounded-sm bg-amber-100 px-1 py-0.5 text-2xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
                       <AlertCircle className="h-2.5 w-2.5" aria-hidden />
-                      Required
+                      {t("agents.advanced.required")}
                     </span>
                   ) : null}
                 </div>
@@ -384,7 +390,7 @@ export function EnvVarsEditor({
                   )}
                 >
                   <Input
-                    aria-label={`Value for ${key}`}
+                    aria-label={t("agents.envVars.valueFor", { key })}
                     className={cn(
                       "h-8 px-0 py-0 font-mono leading-6",
                       PERSONA_FIELD_CONTROL_CLASS,
@@ -394,7 +400,7 @@ export function EnvVarsEditor({
                     onChange={(event) =>
                       updateRequiredValue(key, event.target.value)
                     }
-                    placeholder="value"
+                    placeholder={t("agents.envVars.valuePlaceholder")}
                     ref={(el) => {
                       if (el) {
                         requiredValueRefs.current.set(key, el);
@@ -416,13 +422,21 @@ export function EnvVarsEditor({
                 // (even as ""), it is an intentional override — show "Overrides"
                 // not "Inherited from". Only show "Inherited from" when the local
                 // record has no entry for this key (global/persona satisfies it).
-                const verb = key in value ? "Overrides" : "Inherited from";
+                const isOverride = key in value;
                 return (
                   <p className="ml-1 text-xs text-muted-foreground">
-                    {verb} {inheritedLabel} value{" "}
-                    <span className="font-mono">
-                      {maskInherited(inheritedValue)}
-                    </span>
+                    {t(
+                      isOverride
+                        ? "agents.envVars.overridesValue"
+                        : "agents.envVars.inheritedValue",
+                      {
+                        source: inheritedLabel,
+                        value: maskInherited(inheritedValue),
+                        code: (chunks) => (
+                          <span className="font-mono">{chunks}</span>
+                        ),
+                      },
+                    )}
                   </p>
                 );
               })()}
@@ -460,7 +474,7 @@ export function EnvVarsEditor({
                   {key}
                 </span>
                 <span className="ml-1 rounded-sm bg-muted px-1 py-0.5 text-2xs font-medium text-muted-foreground">
-                  Set in goose config
+                  {t("agents.envVars.setInGooseConfig")}
                 </span>
               </div>
               {/* Spacer columns to align with required-key rows */}
@@ -505,7 +519,9 @@ export function EnvVarsEditor({
                     {irow.key}
                   </span>
                   <span className="ml-1 rounded-sm bg-muted px-1 py-0.5 text-2xs font-medium text-muted-foreground">
-                    Inherited from {inheritedRowsLabel}
+                    {t("agents.envVars.inheritedFrom", {
+                      source: inheritedRowsLabel,
+                    })}
                   </span>
                 </div>
                 <div
@@ -539,7 +555,7 @@ export function EnvVarsEditor({
         fileSatisfiedKeys.length === 0 &&
         inheritedRows.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">
-            No variables set.
+            {t("agents.envVars.empty")}
           </p>
         ) : null}
         {rows.map((row) => {
@@ -556,7 +572,7 @@ export function EnvVarsEditor({
                   )}
                 >
                   <Input
-                    aria-label="Variable name"
+                    aria-label={t("agents.envVars.name")}
                     className={cn(
                       "h-8 px-0 py-0 font-mono leading-6",
                       PERSONA_FIELD_CONTROL_CLASS,
@@ -577,7 +593,7 @@ export function EnvVarsEditor({
                   )}
                 >
                   <Input
-                    aria-label="Variable value"
+                    aria-label={t("agents.envVars.value")}
                     className={cn(
                       "h-8 px-0 py-0 font-mono leading-6",
                       PERSONA_FIELD_CONTROL_CLASS,
@@ -587,12 +603,12 @@ export function EnvVarsEditor({
                     onChange={(event) =>
                       updateRow(row.id, { value: event.target.value })
                     }
-                    placeholder="value"
+                    placeholder={t("agents.envVars.valuePlaceholder")}
                     value={row.value}
                   />
                 </div>
                 <Button
-                  aria-label="Remove variable"
+                  aria-label={t("agents.envVars.remove")}
                   data-testid="env-vars-remove"
                   disabled={disabled}
                   onClick={() => removeRow(row.id)}
@@ -605,10 +621,13 @@ export function EnvVarsEditor({
               </div>
               {showsInherited ? (
                 <p className="ml-1 text-xs text-muted-foreground">
-                  Overrides {inheritedLabel} value{" "}
-                  <span className="font-mono">
-                    {maskInherited(inheritedValue)}
-                  </span>
+                  {t("agents.envVars.overridesValue", {
+                    source: inheritedLabel,
+                    value: maskInherited(inheritedValue),
+                    code: (chunks) => (
+                      <span className="font-mono">{chunks}</span>
+                    ),
+                  })}
                 </p>
               ) : null}
               {(() => {
@@ -619,8 +638,13 @@ export function EnvVarsEditor({
                 if (!override) return null;
                 return (
                   <p className="ml-1 text-xs text-muted-foreground">
-                    Overrides {inheritedRowsLabel} default{" "}
-                    <span className="font-mono">{override.value}</span>
+                    {t("agents.envVars.overridesDefault", {
+                      source: inheritedRowsLabel,
+                      value: override.value,
+                      code: (chunks) => (
+                        <span className="font-mono">{chunks}</span>
+                      ),
+                    })}
                   </p>
                 );
               })()}
@@ -644,7 +668,7 @@ export function EnvVarsEditor({
           variant="outline"
         >
           <Plus className="mr-1 h-4 w-4" />
-          Add variable
+          {t("agents.envVars.add")}
         </Button>
       </div>
     </div>
@@ -659,7 +683,7 @@ export function EnvVarsEditor({
  * set at all.
  */
 function maskInherited(value: string): string {
-  if (value.length === 0) return "(empty)";
+  if (value.length === 0) return t("agents.envVars.emptyValue");
   if (value.length <= 4) return "•".repeat(value.length);
   return `••••${value.slice(-4)}`;
 }

@@ -38,12 +38,24 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { getInheritedAgentDefaults } from "./bakedEnvHelpers";
+import { useT, t } from "@/shared/i18n";
 
 type AgentsTab = "agents" | "presets";
 
+// Getters translate when shown, not at import.
 const AGENTS_TABS = [
-  { value: "agents", label: "My agents" },
-  { value: "presets", label: "Presets" },
+  {
+    value: "agents",
+    get label() {
+      return t("agents.page.myAgentsTab");
+    },
+  },
+  {
+    value: "presets",
+    get label() {
+      return t("agents.page.presetsTab");
+    },
+  },
 ] as const;
 
 /**
@@ -52,6 +64,7 @@ const AGENTS_TABS = [
  * hidden; Import preset brings one in from a file.
  */
 export function AgentsView() {
+  const t = useT();
   const [tab, setTab] = React.useState<AgentsTab>("agents");
   const { openPersonaProfilePanel, openProfilePanel } = useProfilePanel();
   const { globalConfig } = useGlobalAgentConfig();
@@ -163,9 +176,11 @@ export function AgentsView() {
           data-testid="agents-page-content"
         >
           <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3">
-            <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {t("agents.list.title")}
+            </h1>
             <SegmentedControl
-              legend="Agents view"
+              legend={t("agents.page.viewLegend")}
               onValueChange={setTab}
               optionTestIdPrefix="agents-tab"
               options={AGENTS_TABS}
@@ -180,7 +195,7 @@ export function AgentsView() {
                 size="sm"
               >
                 <Plus />
-                New agent
+                {t("agents.page.newAgent")}
               </Button>
               <div className="flex flex-wrap justify-end gap-2 [@container(max-width:40rem)]:hidden">
                 <Button
@@ -192,8 +207,8 @@ export function AgentsView() {
                 >
                   <Settings2 />
                   {hasSavedAgentDefaults
-                    ? "Agent defaults"
-                    : "Set agent defaults"}
+                    ? t("agents.defaults.title")
+                    : t("agents.page.setDefaults")}
                 </Button>
                 {runningAgentCount > 0 ? (
                   <Button
@@ -205,7 +220,7 @@ export function AgentsView() {
                     variant="outline"
                   >
                     <OctagonX />
-                    Stop running agents
+                    {t("agents.page.stopRunning")}
                   </Button>
                 ) : null}
               </div>
@@ -213,7 +228,7 @@ export function AgentsView() {
               <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    aria-label="Agent actions"
+                    aria-label={t("agents.page.actions")}
                     className="hidden [@container(max-width:40rem)]:inline-flex"
                     data-testid="agent-actions-menu-trigger"
                     ref={compactActionsTriggerRef}
@@ -232,8 +247,8 @@ export function AgentsView() {
                   >
                     <Settings2 />
                     {hasSavedAgentDefaults
-                      ? "Agent defaults"
-                      : "Set agent defaults"}
+                      ? t("agents.defaults.title")
+                      : t("agents.page.setDefaults")}
                   </DropdownMenuItem>
                   {runningAgentCount > 0 ? (
                     <DropdownMenuItem
@@ -243,7 +258,7 @@ export function AgentsView() {
                       }}
                     >
                       <OctagonX />
-                      Stop running agents
+                      {t("agents.page.stopRunning")}
                     </DropdownMenuItem>
                   ) : null}
                 </DropdownMenuContent>
@@ -536,7 +551,7 @@ export function AgentsView() {
                     ? "error"
                     : "ready"
               }
-              submitLabel="Add agent"
+              submitLabel={t("agents.page.addAgent")}
             />
           )}
           // Persona side

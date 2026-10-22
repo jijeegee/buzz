@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 export type AgentAiConfigurationMode = "defaults" | "custom";
 
 export type AgentAiConfigurationPair = {
@@ -63,8 +64,8 @@ export function agentAiConfigurationSubmitBlockReason(
   )
     return null;
   return !pair.provider.trim()
-    ? "Choose a provider to save custom AI configuration."
-    : "Choose a model to save custom AI configuration.";
+    ? t("agents.aiConfig.chooseProvider")
+    : t("agents.aiConfig.chooseModel");
 }
 
 export function agentAiConfigurationModeSatisfied(

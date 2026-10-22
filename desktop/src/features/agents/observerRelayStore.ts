@@ -29,6 +29,7 @@ import {
   createEmptyTranscriptState,
   processTranscriptEvent,
 } from "./ui/agentSessionTranscript";
+import { t } from "@/shared/i18n";
 
 const MAX_OBSERVER_EVENTS = 3000;
 // Length the per-agent journal is evicted down to when it overflows
@@ -584,8 +585,8 @@ async function handleRelayObserverEvent(
     setConnectionState(
       "error",
       error instanceof Error
-        ? `Observer event decrypt failed: ${error.message}`
-        : "Observer event decrypt failed.",
+        ? t("agents.observer.decryptFailedDetail", { error: error.message })
+        : t("agents.observer.decryptFailed"),
     );
   }
 }
@@ -614,8 +615,10 @@ export function ensureRelayObserverSubscription() {
             setConnectionState(
               "error",
               error instanceof Error
-                ? `Observer event handling failed: ${error.message}`
-                : "Observer event handling failed.",
+                ? t("agents.observer.handlingFailedDetail", {
+                    error: error.message,
+                  })
+                : t("agents.observer.handlingFailed"),
             );
           });
       },
@@ -633,7 +636,7 @@ export function ensureRelayObserverSubscription() {
           "error",
           error instanceof Error
             ? error.message
-            : "Couldn't load agent activity.",
+            : t("agents.observer.loadFailed"),
         );
       }
     })

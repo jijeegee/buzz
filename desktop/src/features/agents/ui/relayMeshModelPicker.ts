@@ -7,15 +7,13 @@ import {
   type PersonaDropdownOption,
   type PersonaModelOption,
 } from "./agentConfigOptions";
+import { t } from "@/shared/i18n";
 
 function withSharedComputeAutoOption(
   options: readonly PersonaModelOption[],
 ): readonly PersonaModelOption[] {
   const modelOptions = options.filter((option) => option.id.trim() !== "");
-  return [
-    { id: "", label: "Auto (collective when available)" },
-    ...modelOptions,
-  ];
+  return [{ id: "", label: t("agents.modelPicker.meshAuto") }, ...modelOptions];
 }
 
 export function relayMeshModelPickerState({
@@ -90,10 +88,21 @@ export function modelDropdownOptions({
   return [
     ...modelOptions,
     ...(loading
-      ? [{ disabled: true, label: "Loading models...", value: loadingValue }]
+      ? [
+          {
+            disabled: true,
+            label: t("agents.model.loading"),
+            value: loadingValue,
+          },
+        ]
       : []),
     ...(allowCustom
-      ? [{ label: "Custom model...", value: CUSTOM_MODEL_DROPDOWN_VALUE }]
+      ? [
+          {
+            label: t("agents.model.customOption"),
+            value: CUSTOM_MODEL_DROPDOWN_VALUE,
+          },
+        ]
       : []),
   ];
 }

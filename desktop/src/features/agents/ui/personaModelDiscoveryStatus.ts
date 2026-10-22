@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 export type PersonaModelDiscoveryStatus = {
   message: string;
   tone: "muted" | "warning";
@@ -13,7 +14,7 @@ function errorMessage(error: unknown): string {
   try {
     return JSON.stringify(error);
   } catch {
-    return "Unknown model discovery error";
+    return t("agents.modelStatus.unknownError");
   }
 }
 
@@ -26,7 +27,7 @@ function providerObjectLabel(provider: string): string {
     case "openai-compat":
       return "OpenAI-compatible";
     default:
-      return provider.trim() || "this provider";
+      return provider.trim();
   }
 }
 
@@ -51,38 +52,34 @@ export function formatModelDiscoveryErrorStatus(
   if (provider.trim() === "relay-mesh") {
     if (message.includes("waiting for the current member roster")) {
       return {
-        message: "Still loading community members. Try again shortly.",
+        message: t("agents.modelStatus.loadingMembers"),
         tone: "warning",
       };
     }
 
     if (isEmptySharedComputeError(message)) {
       return {
-        message:
-          "No members are sharing compute right now. On a member machine, open Settings > Compute, choose a model, and turn on Share this machine.",
+        message: t("agents.modelStatus.noSharedCompute"),
         tone: "warning",
       };
     }
 
     if (message.includes("shared compute is not available in this build")) {
       return {
-        message:
-          "This version of Kuzz cannot use shared compute. Update Kuzz or choose another provider.",
+        message: t("agents.modelStatus.sharedComputeUnsupported"),
         tone: "warning",
       };
     }
 
     if (message.includes("shared compute status is malformed")) {
       return {
-        message:
-          "Kuzz received an invalid shared compute status. Check the member machine, then try again.",
+        message: t("agents.modelStatus.sharedComputeMalformed"),
         tone: "warning",
       };
     }
 
     return {
-      message:
-        "Couldn't check shared computers. Check your connection and try again.",
+      message: t("agents.modelStatus.sharedComputeFailed"),
       tone: "warning",
     };
   }
@@ -95,22 +92,23 @@ export function formatModelDiscoveryErrorStatus(
   if (message.toLowerCase().includes("authentication required")) {
     const label = agentLabel?.trim();
     return {
-      message: `${label || "This agent"} requires sign-in before models can load. Sign in with the ${label || "agent's"} CLI in a terminal, then try again.`,
+      message: label
+        ? t("agents.modelStatus.signInRequired", { name: label })
+        : t("agents.modelStatus.signInRequiredUnnamed"),
       tone: "warning",
     };
   }
 
   if (message.includes("ANTHROPIC_API_KEY required")) {
     return {
-      message: "Enter an Anthropic API key to load Anthropic models.",
+      message: t("agents.modelStatus.anthropicKey"),
       tone: "warning",
     };
   }
 
   if (message.includes("OPENAI_COMPAT_API_KEY required")) {
     return {
-      message:
-        "Enter an OpenAI runtime API key (OPENAI_COMPAT_API_KEY) to load OpenAI models.",
+      message: t("agents.modelStatus.openaiKey"),
       tone: "warning",
     };
   }
@@ -133,10 +131,11 @@ export function formatModelDiscoveryErrorStatus(
     return databricksStatus;
   }
 
+  const providerLabel = providerObjectLabel(provider);
   return {
-    message: `Using built-in model options. Could not load live models for ${providerObjectLabel(
-      provider,
-    )}.`,
+    message: providerLabel
+      ? t("agents.modelStatus.builtInOptions", { provider: providerLabel })
+      : t("agents.modelStatus.builtInOptionsUnnamed"),
     tone: "warning",
   };
 }
@@ -153,8 +152,7 @@ function formatDatabricksAuthStatus(
 ): PersonaModelDiscoveryStatus | null {
   if (message.includes("Databricks sign-in is required")) {
     return {
-      message:
-        "Databricks sign-in is required. Open the model picker to sign in, or run `kuzz-agent auth databricks` in a terminal.",
+      message: t("agents.modelStatus.databricksSignIn"),
       tone: "muted",
     };
   }
@@ -164,8 +162,7 @@ function formatDatabricksAuthStatus(
     message.includes("Databricks sign-in timed out")
   ) {
     return {
-      message:
-        "Databricks sign-in didn't complete. Open the model picker to retry, or run `kuzz-agent auth databricks` in a terminal.",
+      message: t("agents.modelStatus.databricksIncomplete"),
       tone: "warning",
     };
   }

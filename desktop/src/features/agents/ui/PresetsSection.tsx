@@ -29,6 +29,7 @@ import {
   AgentTile,
   TileMenuTrigger as MenuTrigger,
 } from "./AgentTile";
+import { useT } from "@/shared/i18n";
 
 type PresetsSectionProps = {
   agents: ManagedAgent[];
@@ -86,6 +87,7 @@ function SectionTitle({
  * set of agent presets.
  */
 export function PresetsSection(props: PresetsSectionProps) {
+  const t = useT();
   const {
     agents,
     isActionPending,
@@ -124,16 +126,18 @@ export function PresetsSection(props: PresetsSectionProps) {
               variant="outline"
             >
               <Upload />
-              Import preset
+              {t("agents.presets.importPreset")}
             </Button>
           }
-          description='A preset is a template. It has no status. "Create agent" makes a new agent on this computer.'
-          title="Agent presets"
+          description={t("agents.presets.agentDescription")}
+          title={t("agents.presets.agentTitle")}
         />
         {isLoading ? (
           <TilesSkeleton />
         ) : personas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No presets yet.</p>
+          <p className="text-sm text-muted-foreground">
+            {t("agents.presets.empty")}
+          </p>
         ) : (
           <div className={AGENT_TILE_GRID_CLASS}>
             {personas.map((persona) => (
@@ -153,8 +157,8 @@ export function PresetsSection(props: PresetsSectionProps) {
 
       <section className="space-y-3" data-testid="agents-library-teams">
         <SectionTitle
-          description="A team preset is a set of agent presets."
-          title="Team presets"
+          description={t("agents.presets.teamDescription")}
+          title={t("agents.presets.teamTitle")}
         />
         {isTeamsLoading ? (
           <TilesSkeleton />
@@ -199,13 +203,18 @@ function AgentPresetTile({
   isPending: boolean;
   persona: AgentPersona;
 }) {
+  const t = useT();
   // A team's own presets are managed by that team.
   const canEdit = !persona.sourceTeam;
   return (
     <AgentTile
       actions={
         <DropdownMenu modal={false}>
-          <MenuTrigger label={`Open actions for ${persona.displayName}`} />
+          <MenuTrigger
+            label={t("agents.teamsSection.openActions", {
+              name: persona.displayName,
+            })}
+          />
           <DropdownMenuContent
             align="end"
             onCloseAutoFocus={(event) => event.preventDefault()}
@@ -215,20 +224,20 @@ function AgentPresetTile({
               onClick={() => onDuplicatePersona(persona)}
             >
               <CopyPlus className="h-4 w-4" />
-              Duplicate
+              {t("agents.presets.duplicate")}
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={isPending}
               onClick={() => onSharePersona(persona)}
             >
               <Share2 className="h-4 w-4" />
-              Share
+              {t("agents.presets.share")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             {persona.sourceTeam ? (
               <DropdownMenuItem disabled>
                 <Trash2 className="h-4 w-4" />
-                Managed by team
+                {t("agents.presets.managedByTeam")}
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem
@@ -241,14 +250,14 @@ function AgentPresetTile({
                 }
               >
                 <Trash2 className="h-4 w-4" />
-                Delete
+                {t("common.delete")}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
       }
       avatarUrl={persona.avatarUrl}
-      badge="Preset"
+      badge={t("agents.presets.badge")}
       buttons={
         <>
           <Button
@@ -257,7 +266,9 @@ function AgentPresetTile({
             onClick={() => onCreateAgent(persona)}
             size="xs"
           >
-            {isCreating ? "Creating…" : "Create agent"}
+            {isCreating
+              ? t("agents.routing.creatingHost")
+              : t("agents.catalog.createAgent")}
           </Button>
           {canEdit ? (
             <Button
@@ -267,7 +278,7 @@ function AgentPresetTile({
               size="xs"
               variant="outline"
             >
-              Edit preset
+              {t("agents.presets.editPreset")}
             </Button>
           ) : null}
         </>
@@ -275,7 +286,7 @@ function AgentPresetTile({
       dataTestId={`persona-agent-row-${persona.id}`}
       description={effectiveAgentDescription(persona)}
       label={persona.displayName}
-      openLabel={`${persona.displayName} preset`}
+      openLabel={t("agents.presets.openLabel", { name: persona.displayName })}
       subtitle={presetUsageLabel(agentCount)}
       // A persona target, never an agent pubkey: the panel resolves it to a
       // live agent made from it on every render.
@@ -295,6 +306,7 @@ function TeamPresetTile({
   onEditTeam,
   onShareTeam,
 }: PresetsSectionProps & { isPending: boolean; team: AgentTeam }) {
+  const t = useT();
   const resolution = resolveTeamPersonas(team, personas);
   const missing = resolution.missingPersonaCount;
   const names = resolution.resolvedPersonas.map(
@@ -305,7 +317,9 @@ function TeamPresetTile({
     <AgentTile
       actions={
         <DropdownMenu modal={false}>
-          <MenuTrigger label={`${team.name} team actions`} />
+          <MenuTrigger
+            label={t("agents.presets.teamActions", { name: team.name })}
+          />
           <DropdownMenuContent
             align="end"
             onCloseAutoFocus={(event) => event.preventDefault()}
@@ -315,14 +329,14 @@ function TeamPresetTile({
               onClick={() => onDuplicateTeam(team)}
             >
               <CopyPlus className="h-4 w-4" />
-              Duplicate
+              {t("agents.presets.duplicate")}
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={isPending || resolution.hasMissingPersonas}
               onClick={() => onShareTeam(team)}
             >
               <Share2 className="h-4 w-4" />
-              Share
+              {t("agents.presets.share")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -331,13 +345,13 @@ function TeamPresetTile({
               onClick={() => onDeleteTeam(team)}
             >
               <Trash2 className="h-4 w-4" />
-              Delete
+              {t("common.delete")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       }
       avatarUrl={null}
-      badge="Team preset"
+      badge={t("agents.presets.teamBadge")}
       buttons={
         <>
           <SetUpOnMenu
@@ -356,19 +370,19 @@ function TeamPresetTile({
             size="xs"
             variant="outline"
           >
-            Edit preset
+            {t("agents.presets.editPreset")}
           </Button>
         </>
       }
       dataTestId={`team-card-${team.id}`}
       description={
         missing > 0
-          ? `${missing} preset${missing === 1 ? " is" : "s are"} missing. Edit the team to fix it.`
+          ? t("agents.presets.missing", { count: missing })
           : names.join(" · ") || team.description
       }
       label={team.name}
-      openLabel={`${team.name} team preset`}
-      subtitle={count === 1 ? "1 preset" : `${count} presets`}
+      openLabel={t("agents.presets.teamOpenLabel", { name: team.name })}
+      subtitle={t("agents.presets.presetCount", { count })}
       onOpen={() => onEditTeam(team)}
     />
   );
@@ -390,6 +404,7 @@ function SetUpOnMenu({
   team: AgentTeam;
   onSetUpHere: () => void;
 }) {
+  const t = useT();
   const devices = useAuthDevicesQuery().data ?? [];
   const here = devices.find((device) => device.current);
   const others = devices.filter((device) => !device.current);
@@ -401,7 +416,9 @@ function SetUpOnMenu({
           disabled={disabled}
           size="xs"
         >
-          {isSettingUp ? "Setting up…" : "Set up on…"}
+          {isSettingUp
+            ? t("agents.presets.settingUp")
+            : t("agents.presets.setUpOn")}
           <ChevronDown className="h-3 w-3" />
         </Button>
       </DropdownMenuTrigger>
@@ -414,19 +431,24 @@ function SetUpOnMenu({
           onClick={onSetUpHere}
         >
           <span className="flex flex-col">
-            <span>This computer{here?.name ? ` · ${here.name}` : ""}</span>
+            <span>
+              {here?.name
+                ? t("agents.presets.thisComputerNamed", { name: here.name })
+                : t("agents.presets.thisComputer")}
+            </span>
             <span className="text-2xs text-muted-foreground">
-              Makes {team.personaIds.length === 1 ? "its agent" : "its agents"}{" "}
-              here, and a team of them
+              {t("agents.presets.setUpHereHelp", {
+                count: team.personaIds.length,
+              })}
             </span>
           </span>
         </DropdownMenuItem>
         {others.map((device) => (
           <DropdownMenuItem disabled key={device.id}>
             <span className="flex flex-col">
-              <span>{device.name || "Another computer"}</span>
+              <span>{device.name || t("agents.presets.anotherComputer")}</span>
               <span className="text-2xs text-muted-foreground">
-                Open Kuzz on that computer to set it up there
+                {t("agents.presets.openThere")}
               </span>
             </span>
           </DropdownMenuItem>
@@ -445,6 +467,7 @@ function NewTeamPresetTile({
   onCreate: () => void;
   onImport: () => void;
 }) {
+  const t = useT();
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
@@ -455,7 +478,7 @@ function NewTeamPresetTile({
           type="button"
         >
           <Plus className="h-4 w-4" />
-          New team preset
+          {t("agents.presets.newTeamPreset")}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -463,9 +486,11 @@ function NewTeamPresetTile({
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <DropdownMenuItem onClick={onCreate}>
-          Create team preset
+          {t("agents.presets.createTeamPreset")}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onImport}>Import</DropdownMenuItem>
+        <DropdownMenuItem onClick={onImport}>
+          {t("agents.import.import")}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
