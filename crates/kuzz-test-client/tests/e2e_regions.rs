@@ -1090,6 +1090,187 @@ async fn a_signed_query_in_jp_is_marked_in_jp_only() {
     );
 }
 
+/// A kr room with one message, created in kr and known to jp.
+async fn kr_room(keys: &Keys) -> String {
+    let room = uuid::Uuid::new_v4().to_string();
+    let (status, body) = post(&kr_url(), keys, &create_room(keys, &room)).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    tell_jp_room_lives_in_kr(&room).await;
+    room
+}
+
+/// The order numbers kr gave the messages of `room`, in order.
+async fn kr_sequences(room: &str) -> Vec<i64> {
+    sqlx::query_scalar(
+        "SELECT channel_sequence FROM events WHERE channel_id = $1::uuid \
+           AND kind = 9 AND channel_sequence > 0 ORDER BY channel_sequence",
+    )
+    .bind(room)
+    .fetch_all(&region_db("kr").await)
+    .await
+    .expect("sequences")
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn writes_from_two_regions_at_once_get_one_gapless_order() {
+    let keys = Keys::generate();
+    let room = kr_room(&keys).await;
+
+    // Twenty writes at once, half through jp (forwarded), half straight to kr.
+    let (jp, kr) = (jp_url(), kr_url());
+    let events: Vec<(String, Event)> = (0..20)
+        .map(|i| {
+            let url = if i % 2 == 0 { jp.clone() } else { kr.clone() };
+            (url, message(&keys, &room, &format!("at once {i}")))
+        })
+        .collect();
+    let answers =
+        futures_util::future::join_all(events.iter().map(|(url, event)| post(url, &keys, event)))
+            .await;
+    let mut numbers: Vec<i64> = answers
+        .iter()
+        .map(|(status, body)| {
+            assert_eq!(
+                (*status, &body["accepted"]),
+                (200, &Value::Bool(true)),
+                "{body}"
+            );
+            body["channel_sequence"].as_i64().expect("order number")
+        })
+        .collect();
+    numbers.sort_unstable();
+    numbers.dedup();
+    assert_eq!(numbers.len(), 20, "each write has its own number");
+
+    // kr holds all of them, numbered without a gap; jp holds none.
+    let stored = kr_sequences(&room).await;
+    assert_eq!(stored.len(), 20);
+    assert!(
+        stored.windows(2).all(|pair| pair[1] == pair[0] + 1),
+        "gap in {stored:?}"
+    );
+    let jp_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM events WHERE channel_id = $1::uuid")
+            .bind(&room)
+            .fetch_one(&region_db("jp").await)
+            .await
+            .expect("jp rows");
+    assert_eq!(jp_rows, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_resend_after_a_lost_reply_is_stored_once() {
+    let keys = Keys::generate();
+    let room = kr_room(&keys).await;
+
+    // The app sent through jp and lost the reply; it sends the same event
+    // again, through jp and then straight to kr.
+    let event = message(&keys, &room, "sent twice");
+    let (status, first) = post(&jp_url(), &keys, &event).await;
+    assert_eq!(
+        (status, &first["accepted"]),
+        (200, &Value::Bool(true)),
+        "{first}"
+    );
+    for url in [jp_url(), kr_url()] {
+        let (status, again) = post(&url, &keys, &event).await;
+        assert_eq!(status, 200, "{again}");
+        assert_eq!(again["accepted"], Value::Bool(true), "{again}");
+    }
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM events WHERE id = decode($1, 'hex')")
+        .bind(event.id.to_hex())
+        .fetch_one(&region_db("kr").await)
+        .await
+        .expect("rows");
+    assert_eq!(rows, 1, "stored once");
+    assert_eq!(kr_sequences(&room).await.len(), 1, "numbered once");
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_moved_epoch_is_followed_once_and_kept() {
+    let keys = Keys::generate();
+    let room = kr_room(&keys).await;
+
+    // kr's directory says the room is at epoch 2 now (as after a move back);
+    // jp still has epoch 0. jp's forward is answered "wrong region" with the
+    // new epoch, follows it once, and the write lands in kr.
+    let kr = region_db("kr").await;
+    sqlx::query(
+        "INSERT INTO room_directory (community_id, channel_id, home_region, epoch) \
+         SELECT id, $1::uuid, 'kr', 2 FROM communities WHERE host = 'localhost:3041' \
+         ON CONFLICT (community_id, channel_id) DO UPDATE SET epoch = 2",
+    )
+    .bind(&room)
+    .execute(&kr)
+    .await
+    .expect("epoch");
+    let (status, body) = post(&jp_url(), &keys, &message(&keys, &room, "after a move")).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    assert_eq!(kr_sequences(&room).await.len(), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_link_down_fails_retryably_and_never_splits_the_room() {
+    let keys = Keys::generate();
+    let room = kr_room(&keys).await;
+
+    // jp loses kr: its address for kr points at nothing.
+    let jp = region_db("jp").await;
+    let address: String = sqlx::query_scalar("SELECT connect_url FROM regions WHERE id = 'kr'")
+        .fetch_one(&jp)
+        .await
+        .expect("kr address");
+    sqlx::query("UPDATE regions SET connect_url = 'ws://127.0.0.1:9' WHERE id = 'kr'")
+        .execute(&jp)
+        .await
+        .expect("cut the link");
+
+    let event = message(&keys, &room, "while the link is down");
+    let (status, body) = post(&jp_url(), &keys, &event).await;
+
+    sqlx::query("UPDATE regions SET connect_url = $1 WHERE id = 'kr'")
+        .bind(&address)
+        .execute(&jp)
+        .await
+        .expect("restore the link");
+
+    // Not accepted, not "not found", and nothing written in jp.
+    assert_ne!(body["accepted"], Value::Bool(true), "{status} {body}");
+    let message_text = body["message"].as_str().unwrap_or_default();
+    assert!(
+        !message_text.contains("not found") && !message_text.starts_with("blocked"),
+        "{status} {body}"
+    );
+    let jp_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM events WHERE id = decode($1, 'hex')")
+            .bind(event.id.to_hex())
+            .fetch_one(&jp)
+            .await
+            .expect("jp rows");
+    assert_eq!(jp_rows, 0, "jp wrote a kr room's message itself");
+
+    // The app's retry goes through once the link is back.
+    let (status, body) = post(&jp_url(), &keys, &event).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    assert_eq!(kr_sequences(&room).await.len(), 1);
+}
+
 #[tokio::test]
 #[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
 async fn region_link_accepts_only_a_fresh_call_signed_by_a_known_region() {
