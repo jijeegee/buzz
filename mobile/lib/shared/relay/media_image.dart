@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import 'media_auth.dart';
+import 'media_disk_cache.dart';
 
 /// Shared, keep-alive HTTP client for media fetches. One client per container
 /// so TLS connections are reused across images instead of re-handshaking per
@@ -33,6 +34,9 @@ final mediaHttpClientProvider = Provider<http.Client>((ref) {
 ///
 /// The auth scope (relay base URL + signing identity) is part of key equality:
 /// switching relay or account can never reuse another identity's cached bytes.
+///
+/// Load order is memory ([ImageCache]) -> [diskCache] -> network. Bytes
+/// fetched over the network are written to the disk cache after they decode.
 class MediaImageProvider extends ImageProvider<MediaImageProvider> {
   final String url;
   final double scale;
@@ -45,11 +49,17 @@ class MediaImageProvider extends ImageProvider<MediaImageProvider> {
   /// Excluded from equality: transport, not identity.
   final http.Client client;
 
+  /// Persistent byte cache checked before the network. Excluded from
+  /// equality: entries are scoped by [MediaGetAuthService.cacheScope], which
+  /// [auth] already carries.
+  final MediaDiskCache? diskCache;
+
   const MediaImageProvider({
     required this.url,
     required this.auth,
     required this.client,
     this.onBytesLoaded,
+    this.diskCache,
     this.scale = 1.0,
   });
 
@@ -86,6 +96,27 @@ class MediaImageProvider extends ImageProvider<MediaImageProvider> {
     ImageDecoderCallback decode,
   ) async {
     try {
+      // Only relay media fetched as a signed-in identity is stored on disk.
+      final scope = auth.cacheScope ?? '';
+      final disk = scope.isNotEmpty && auth.isRelayMediaUrl(url)
+          ? diskCache
+          : null;
+      if (disk != null) {
+        final stored = await disk.read(scope, url);
+        if (stored != null) {
+          try {
+            final codec = await decode(
+              await ui.ImmutableBuffer.fromUint8List(stored),
+            );
+            onBytesLoaded?.call(stored);
+            return codec;
+          } catch (_) {
+            // Unreadable entry: drop it and fetch again below.
+            await disk.remove(scope, url);
+          }
+        }
+      }
+
       final until = _cooldownUntil[url];
       if (until != null) {
         if (debugNow().isBefore(until)) {
@@ -116,7 +147,9 @@ class MediaImageProvider extends ImageProvider<MediaImageProvider> {
       }
       onBytesLoaded?.call(bytes);
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      return decode(buffer);
+      final codec = await decode(buffer);
+      if (disk != null) unawaited(disk.write(scope, url, bytes));
+      return codec;
     } catch (_) {
       // Match NetworkImage: make sure an errored key is not retained in the
       // cache. The cooldown map (not the cache) throttles retries.
@@ -211,6 +244,7 @@ class MediaImage extends ConsumerWidget {
       auth: ref.watch(mediaGetAuthServiceProvider),
       client: ref.watch(mediaHttpClientProvider),
       onBytesLoaded: onBytesLoaded,
+      diskCache: ref.watch(mediaDiskCacheProvider),
     );
 
     if (decodeWidth != null) {

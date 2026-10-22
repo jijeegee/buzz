@@ -69,7 +69,7 @@ test("a channel main message is the channel room", () => {
     channelId: "chan-1",
     channelLabel: "kuzz",
   });
-  assert.equal(formatInboxConversationRoomTitle(room), "#kuzz");
+  assert.equal(formatInboxConversationRoomTitle(room), "kuzz");
 });
 
 test("a thread reply is the thread room named after the thread", () => {
@@ -82,7 +82,7 @@ test("a thread reply is the thread room named after the thread", () => {
   assert.equal(room.threadId, root);
   assert.equal(
     formatInboxConversationRoomTitle(room, "Activity filter"),
-    "#kuzz › Activity filter",
+    "kuzz › Activity filter",
   );
-  assert.equal(formatInboxConversationRoomTitle(room, null), "#kuzz › Thread");
+  assert.equal(formatInboxConversationRoomTitle(room, null), "kuzz › Thread");
 });

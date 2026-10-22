@@ -19,6 +19,8 @@ use crate::{
 // lives in the `fetch` submodule to keep this file under the per-file line cap.
 mod fetch;
 use fetch::{compute_channels_hash, fetch_channels, DirectoryScope};
+mod group_chat;
+pub use group_chat::*;
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
@@ -298,6 +300,9 @@ pub struct UpdateChannelInput {
     /// Per-room goals switch; absent = leave unchanged.
     #[serde(default)]
     pub goals_enabled: Option<bool>,
+    /// Group photo URL; absent = leave unchanged, `""` = remove.
+    #[serde(default)]
+    pub picture: Option<String>,
 }
 
 #[tauri::command]
@@ -313,6 +318,7 @@ pub async fn update_channel(
         input.visibility.as_deref(),
         input.ttl_seconds,
         input.goals_enabled,
+        input.picture.as_deref(),
     )?;
     submit_event(builder, &state).await?;
 

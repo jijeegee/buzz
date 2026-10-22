@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/deeplink/pending_deep_link_provider.dart';
+import '../groups/group_preview.dart';
 import '../invites/invite_join_provider.dart';
 import '../invites/invite_join_sheet.dart';
 import 'channel.dart';
@@ -71,6 +72,20 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
       _maybeDispatchInvite(link);
       return;
     }
+    if (link is GroupJoinDeepLink) {
+      // Held while signed out; the signed-in dispatcher opens it.
+      if (!widget.dispatchMessageLinks) return;
+      // Open Join with link on the target; its preview does the rest.
+      ref.read(pendingDeepLinkProvider.notifier).consume();
+      final target = link.target;
+      unawaited(
+        Future<void>.microtask(() async {
+          if (!mounted) return;
+          await showJoinWithLinkSheet(context, target: target);
+        }),
+      );
+      return;
+    }
     if ((link is! MessageDeepLink && link is! ChannelDeepLink) ||
         !widget.dispatchMessageLinks) {
       return;
@@ -132,7 +147,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
         'deep-link: channel $channelId not found in workspace; dropping link',
       );
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('Channel not found in this workspace')),
+        const SnackBar(content: Text('Group not found in this workspace')),
       );
       return;
     }

@@ -142,6 +142,20 @@ pub struct ChannelInfo {
     pub channel_type: String,
     /// Channel description from the kind-39000 `about` tag, if present.
     pub description: Option<String>,
+    /// Ownerless group chat (kind-39000 bare `["group_chat"]` tag). Agents
+    /// never get the dispatcher full subscription in these rooms.
+    pub group_chat: bool,
+}
+
+/// Whether kind-39000 tags mark the channel as an ownerless group chat.
+/// Only the exact bare `["group_chat"]` marker counts.
+pub(crate) fn group_chat_from_tags(tags: &[serde_json::Value]) -> bool {
+    tags.iter().any(|tag| {
+        tag.as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            == Some("group_chat")
+    })
 }
 
 pub(crate) fn channel_type_from_tags(tags: &[serde_json::Value]) -> String {
@@ -181,7 +195,7 @@ pub(crate) fn merge_discovered_channels(
     channel_uuids: Vec<Uuid>,
     meta_events: &serde_json::Value,
 ) -> HashMap<Uuid, ChannelInfo> {
-    let mut meta_map: HashMap<Uuid, (String, String, Option<String>)> = HashMap::new();
+    let mut meta_map: HashMap<Uuid, ChannelInfo> = HashMap::new();
     let mut archived: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
     if let Some(arr) = meta_events.as_array() {
         for ev in arr {
@@ -218,7 +232,15 @@ pub(crate) fn merge_discovered_channels(
                         .map(|s| s.trim())
                         .filter(|s| !s.is_empty())
                         .map(str::to_string);
-                    meta_map.insert(uuid, (ch_name, ch_type, ch_desc));
+                    meta_map.insert(
+                        uuid,
+                        ChannelInfo {
+                            name: ch_name,
+                            channel_type: ch_type,
+                            description: ch_desc,
+                            group_chat: group_chat_from_tags(tags),
+                        },
+                    );
                 }
             }
         }
@@ -229,17 +251,13 @@ pub(crate) fn merge_discovered_channels(
         if archived.contains(&uuid) {
             continue;
         }
-        let (name, channel_type, description) = meta_map
-            .remove(&uuid)
-            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string(), None));
-        map.insert(
-            uuid,
-            ChannelInfo {
-                name,
-                channel_type,
-                description,
-            },
-        );
+        let info = meta_map.remove(&uuid).unwrap_or_else(|| ChannelInfo {
+            name: "unknown".to_string(),
+            channel_type: "unknown".to_string(),
+            description: None,
+            group_chat: false,
+        });
+        map.insert(uuid, info);
     }
     map
 }
@@ -4862,6 +4880,35 @@ mod tests {
             map[&ch].description, None,
             "a whitespace-only about tag is trimmed away to None"
         );
+    }
+
+    #[test]
+    fn merge_discovered_channels_marks_group_chats() {
+        let chat = Uuid::new_v4();
+        let group = Uuid::new_v4();
+        let meta = serde_json::json!([
+            meta_event(chat, "", &["private", "", "group_chat"]),
+            meta_event(group, "team", &["private", ""]),
+        ]);
+
+        let map = merge_discovered_channels(vec![chat, group], &meta);
+
+        assert!(map[&chat].group_chat, "bare group_chat tag marks the room");
+        assert_eq!(map[&chat].channel_type, "private");
+        assert!(
+            !map[&group].group_chat,
+            "a managed private group is not a group chat"
+        );
+    }
+
+    #[test]
+    fn group_chat_from_tags_requires_the_tag_name() {
+        assert!(group_chat_from_tags(&[serde_json::json!(["group_chat"])]));
+        assert!(!group_chat_from_tags(&[serde_json::json!([
+            "t",
+            "group_chat"
+        ])]));
+        assert!(!group_chat_from_tags(&[]));
     }
 
     #[test]

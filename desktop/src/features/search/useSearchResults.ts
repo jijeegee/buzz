@@ -21,6 +21,12 @@ import {
   useSearchMessagesQuery,
 } from "@/features/search/hooks";
 import {
+  compareGroupMatches,
+  findThreadNameMatches,
+  type GroupMatch,
+  sortNewestFirst,
+} from "@/features/search/lib/searchRanking";
+import {
   isChannelUuid,
   isHexPubkey,
   normalizeFromHandle,
@@ -29,8 +35,12 @@ import {
   type OperatorResolveResult,
 } from "@/features/search/lib/parseSearchOperators";
 import type { SearchResult } from "@/features/search/ui/SearchResultItem";
+import { useSearchHitThreads } from "@/features/search/useSearchHitThreads";
+import type { ChatListRow } from "@/features/chats/chatListState";
 import type { Channel, SearchHit, UserSearchResult } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+
+const NO_HITS: SearchHit[] = [];
 
 function formatUserResultName(user: UserSearchResult) {
   return user.displayName?.trim() || user.nip05Handle?.trim() || user.pubkey;
@@ -105,12 +115,15 @@ export function useSearchResults({
   enabled,
   limit = 12,
   scopeChannelId,
+  threadRows,
 }: {
   channelLabels?: Record<string, string>;
   channels: Channel[];
   enabled: boolean;
   limit?: number;
   scopeChannelId?: string | null;
+  /** The relay's Chats list rows; their thread names are searched. */
+  threadRows?: readonly ChatListRow[];
 }) {
   const [query, setQuery] = React.useState("");
   const [debouncedQuery, setDebouncedQuery] = React.useState("");
@@ -256,13 +269,21 @@ export function useSearchResults({
     minimumQueryLength,
   });
 
-  const messageResults = React.useMemo(() => {
+  const searchHits = React.useMemo(() => {
     if (hasUnresolvedOperator) {
       return [];
     }
-    return dedupeSearchHits(searchQuery.data?.hits ?? []);
+    return sortNewestFirst(dedupeSearchHits(searchQuery.data?.hits ?? []));
   }, [hasUnresolvedOperator, searchQuery.data?.hits]);
-  const channelResults = React.useMemo(() => {
+  const hitThreads = useSearchHitThreads({
+    channelLookup,
+    enabled,
+    hits: searchHits,
+    threadRows,
+  });
+  // Held back until each hit's thread is known, so rows draw once.
+  const messageResults = hitThreads.isLoading ? NO_HITS : searchHits;
+  const channelMatches = React.useMemo(() => {
     if (scopeChannelId || ftsQuery.length < MIN_SEARCH_QUERY_LENGTH) {
       return [];
     }
@@ -290,15 +311,50 @@ export function useSearchResults({
         );
         if (scores.length === 0) return [];
 
-        return [{ channel, displayName, score: Math.min(...scores) }];
+        const lastMessageAt = channel.lastMessageAt
+          ? Date.parse(channel.lastMessageAt)
+          : 0;
+        const match: GroupMatch = {
+          activity: Number.isFinite(lastMessageAt) ? lastMessageAt : 0,
+          joined: channel.isMember || channel.channelType === "dm",
+          label: displayName,
+          score: Math.min(...scores),
+        };
+        return [{ channel, match }];
       })
-      .sort(
-        (a, b) =>
-          a.score - b.score || a.displayName.localeCompare(b.displayName),
-      )
-      .slice(0, 5)
-      .map(({ channel }) => channel);
+      .sort((a, b) => compareGroupMatches(a.match, b.match))
+      .slice(0, 5);
   }, [channelLabels, channels, ftsQuery, scopeChannelId]);
+  const channelResults = React.useMemo(
+    () => channelMatches.map(({ channel }) => channel),
+    [channelMatches],
+  );
+  const threadMatches = React.useMemo(() => {
+    if (
+      scopeChannelId ||
+      !threadRows ||
+      ftsQuery.length < MIN_SEARCH_QUERY_LENGTH
+    ) {
+      return [];
+    }
+    return findThreadNameMatches(
+      threadRows,
+      ftsQuery.toLowerCase(),
+      (channelId) => channelLookup.has(channelId),
+    )
+      .map(({ score, thread }) => ({
+        isDm: channelLookup.get(thread.channelId)?.channelType === "dm",
+        match: {
+          activity: thread.at * 1_000,
+          joined: true,
+          label: thread.name,
+          score,
+        },
+        thread,
+      }))
+      .sort((a, b) => compareGroupMatches(a.match, b.match))
+      .slice(0, 5);
+  }, [channelLookup, ftsQuery, scopeChannelId, threadRows]);
   const managedAgentPubkeys = React.useMemo(
     () =>
       new Set(
@@ -432,12 +488,24 @@ export function useSearchResults({
     userSearchQuery.data,
   ]);
 
-  const results = React.useMemo<SearchResult[]>(
-    () => [
-      ...channelResults.map((channel) => ({
-        kind: "channel" as const,
-        channel,
+  const results = React.useMemo<SearchResult[]>(() => {
+    // Group chats (group and thread names) first, then DMs, each ranked by
+    // match quality and recent activity.
+    const conversations = [
+      ...channelMatches.map(({ channel, match }) => ({
+        isDm: channel.channelType === "dm",
+        match,
+        result: { kind: "channel" as const, channel },
       })),
+      ...threadMatches.map(({ isDm, match, thread }) => ({
+        isDm,
+        match,
+        result: { kind: "thread" as const, isDm, thread },
+      })),
+    ].sort((a, b) => compareGroupMatches(a.match, b.match));
+    return [
+      ...conversations.filter(({ isDm }) => !isDm).map(({ result }) => result),
+      ...conversations.filter(({ isDm }) => isDm).map(({ result }) => result),
       ...userResults.map((user) => ({
         kind: "user" as const,
         user,
@@ -445,10 +513,16 @@ export function useSearchResults({
       ...messageResults.map((hit) => ({
         kind: "message" as const,
         hit,
+        thread: hitThreads.threadByEventId.get(hit.eventId) ?? null,
       })),
-    ],
-    [channelResults, messageResults, userResults],
-  );
+    ];
+  }, [
+    channelMatches,
+    hitThreads.threadByEventId,
+    messageResults,
+    threadMatches,
+    userResults,
+  ]);
 
   const resultProfilesQuery = useUsersBatchQuery(
     messageResults.map((hit) => hit.pubkey),
@@ -495,6 +569,7 @@ export function useSearchResults({
     channelLookup,
     channelResults,
     debouncedQuery,
+    isThreadContextLoading: hitThreads.isLoading,
     isWaitingOnFromResolution: waitingOnFromResolution,
     messageResults,
     query,

@@ -238,7 +238,7 @@ test("one label owner each: the group is named once by the title, every control 
     '[data-testid="agents-channel-routing-modes"]',
   );
   const titleId = group.getAttribute("aria-labelledby");
-  assert.equal(document.getElementById(titleId).textContent, "Channel routing");
+  assert.equal(document.getElementById(titleId).textContent, "Group routing");
   assert.equal(
     container
       .querySelector('[data-testid="agents-channel-routing"]')
@@ -278,7 +278,7 @@ test("one label owner each: the group is named once by the title, every control 
   );
   assert.equal(autoJoin.getAttribute("role"), "checkbox");
   assert.equal(autoJoin.labels.length, 1);
-  assert.equal(autoJoin.labels[0].textContent, "Join new channels I create");
+  assert.equal(autoJoin.labels[0].textContent, "Join new groups I create");
 
   assert.equal(statusText(container), "On — Honey is hosting.");
 });

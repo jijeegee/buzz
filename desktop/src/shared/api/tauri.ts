@@ -43,6 +43,7 @@ export {
 } from "@/shared/api/tauriCanvas";
 export { sendChannelMessage } from "@/shared/api/tauriMessages";
 export { getEventById, getEventsByIds } from "@/shared/api/tauriEvents";
+import { splitMemberAddResult } from "@/shared/api/groupAddOutcome";
 
 type RawPresenceLookup = Record<string, PresenceStatus>;
 
@@ -367,7 +368,7 @@ export async function addChannelMembers(
     input,
   );
   record(input.channelId);
-  return result;
+  return splitMemberAddResult(result);
 }
 
 export async function removeChannelMember(

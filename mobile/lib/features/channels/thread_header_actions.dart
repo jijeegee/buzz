@@ -1,0 +1,209 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
+import '../../shared/clipboard_utils.dart';
+import '../../shared/deeplink/deep_link.dart';
+import '../../shared/read_state/read_state_format.dart';
+import '../../shared/read_state/read_state_provider.dart';
+import 'channel_detail_page.dart';
+import 'channels_provider.dart';
+import 'send_message_provider.dart';
+import 'thread_follows/thread_follows_provider.dart';
+import 'timeline_message.dart';
+
+/// Close marker written by `kuzz threads close` and the desktop Close button.
+const threadClosedTag = 'kuzz:thread-closed';
+
+/// Reopen marker written by `kuzz threads reopen` and the desktop Reopen.
+const threadReopenedTag = 'kuzz:thread-reopened';
+
+const _threadClosedContent = '✅ Thread closed.';
+const _threadReopenedContent = 'Thread reopened.';
+
+/// A thread is closed while its latest reply is a close marker; any later
+/// message reopens it (same rule as desktop and the CLI).
+bool isThreadClosed(Iterable<TimelineMessage> replies) {
+  TimelineMessage? latest;
+  for (final reply in replies) {
+    if (latest == null || reply.createdAt >= latest.createdAt) latest = reply;
+  }
+  return latest != null &&
+      latest.tags.any(
+        (tag) => tag.length > 1 && tag[0] == threadClosedTag && tag[1] != '',
+      );
+}
+
+/// Closes or reopens a thread with the marker reply desktop and the CLI send.
+Future<void> sendThreadCloseMarker(
+  WidgetRef ref, {
+  required String channelId,
+  required String rootId,
+  required bool closing,
+}) => ref
+    .read(sendMessageProvider)
+    .call(
+      channelId: channelId,
+      content: closing ? _threadClosedContent : _threadReopenedContent,
+      parentEventId: rootId,
+      rootEventId: rootId,
+      mentionPubkeys: const [],
+      extraTags: [
+        [closing ? threadClosedTag : threadReopenedTag, rootId],
+      ],
+    );
+
+String threadCloseFailure(bool closing, Object error) => closing
+    ? 'Could not close the thread: $error'
+    : 'Could not reopen the thread: $error';
+
+/// The thread header's group button: back to the group this thread is in.
+///
+/// [channelBelow] says the group page is the route right under this thread
+/// (opened from the group), so going there is a pop. Opened straight from
+/// Chats, the thread replaced the group page, so the group opens in its place.
+class ThreadGroupButton extends ConsumerWidget {
+  const ThreadGroupButton({
+    super.key,
+    required this.channelId,
+    required this.channelBelow,
+  });
+
+  final String channelId;
+  final bool channelBelow;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      key: const ValueKey('thread-open-group'),
+      tooltip: 'Open group',
+      icon: const Icon(LucideIcons.messagesSquare),
+      onPressed: () {
+        final navigator = Navigator.of(context);
+        if (channelBelow) {
+          navigator.pop();
+          return;
+        }
+        final channel = ref
+            .read(channelsProvider)
+            .value
+            ?.where((channel) => channel.id == channelId)
+            .firstOrNull;
+        if (channel == null) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(content: Text('This group is still loading.')),
+          );
+          return;
+        }
+        unawaited(
+          navigator.pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => ChannelDetailPage(channel: channel),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The thread header's `⋯` menu, matching the desktop thread header: follow,
+/// copy link, close or reopen, and mark as unread.
+class ThreadMoreMenu extends ConsumerWidget {
+  const ThreadMoreMenu({
+    super.key,
+    required this.channelId,
+    required this.rootId,
+    required this.closed,
+    required this.canClose,
+  });
+
+  final String channelId;
+  final String rootId;
+
+  /// Whether the thread currently reads as closed.
+  final bool closed;
+
+  /// Close and Reopen are offered to members of a live top-level thread.
+  final bool canClose;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final following = ref.watch(threadFollowsProvider).isFollowing(rootId);
+    return PopupMenuButton<String>(
+      key: const ValueKey('thread-more'),
+      tooltip: 'More thread actions',
+      icon: const Icon(LucideIcons.ellipsis),
+      onSelected: (action) async {
+        switch (action) {
+          case 'follow':
+            final notifier = ref.read(threadFollowsProvider.notifier);
+            if (following) {
+              notifier.unfollowThread(rootId);
+            } else {
+              notifier.followThread(rootId);
+            }
+          case 'copy-link':
+            await copyToClipboard(
+              context,
+              buildMessageLink(channelId: channelId, messageId: rootId),
+              message: 'Link copied',
+            );
+          case 'close':
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            try {
+              await sendThreadCloseMarker(
+                ref,
+                channelId: channelId,
+                rootId: rootId,
+                closing: !closed,
+              );
+            } catch (error) {
+              messenger?.showSnackBar(
+                SnackBar(content: Text(threadCloseFailure(!closed, error))),
+              );
+            }
+          case 'mark-unread':
+            ref
+                .read(readStateProvider.notifier)
+                .markContextUnread(
+                  threadContextKey(rootId),
+                  channelId: channelId,
+                );
+            // Staying here would read it again at once.
+            if (context.mounted) Navigator.of(context).maybePop();
+        }
+      },
+      itemBuilder: (_) => [
+        _item(
+          'follow',
+          following ? LucideIcons.bellOff : LucideIcons.bellRing,
+          following ? 'Unfollow thread' : 'Follow thread',
+        ),
+        _item('copy-link', LucideIcons.link2, 'Copy link'),
+        if (canClose)
+          _item(
+            'close',
+            closed ? LucideIcons.rotateCcw : LucideIcons.circleCheck,
+            closed ? 'Reopen thread' : 'Close thread',
+          ),
+        _item('mark-unread', LucideIcons.circleDot, 'Mark as unread'),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _item(String value, IconData icon, String label) =>
+      PopupMenuItem<String>(
+        key: ValueKey('thread-more-$value'),
+        value: value,
+        child: Row(
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 12),
+            Text(label),
+          ],
+        ),
+      );
+}

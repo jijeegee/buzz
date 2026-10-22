@@ -12,7 +12,7 @@ export function getChannelScopeLabel(
 ) {
   const name = channelLabels?.[channel.id]?.trim() || channel.name;
   if (channel.channelType !== "dm") {
-    return `#${name}`;
+    return `${name}`;
   }
 
   const participantLabel = buildDirectMessageIntro({
@@ -137,7 +137,7 @@ export function CurrentChannelSearchAction({
         <span className="ml-auto shrink-0 text-xs text-muted-foreground/70">
           {isDirectMessage
             ? "Search messages in this conversation."
-            : "Search messages in this channel"}
+            : "Search messages in this group"}
         </span>
       </button>
     </div>

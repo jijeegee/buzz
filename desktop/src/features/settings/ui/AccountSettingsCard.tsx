@@ -86,8 +86,9 @@ export function agentsWillStopLabel(count: number): string {
 }
 
 /**
- * Settings › Profile › Account: Google sign-in for the active community and,
- * once signed in, its devices and account-level security actions. Renders
+ * Settings › Account: Google sign-in for the active community and, once
+ * signed in, the accounts on this computer and account-level actions
+ * (devices live in Settings › Devices). Renders
  * nothing on a relay that does not offer token sign-in. `onStatusChange`
  * lets the Profile panel adapt to whether Google holds the account.
  */
@@ -301,10 +302,9 @@ function ActiveAccount({
   run: (label: string, action: () => Promise<unknown>) => Promise<void>;
   onStatus: (status: TokenAuthStatus) => void;
 }) {
-  const [devices, setDevices] = React.useState<AuthDevice[] | null>(null);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [confirming, setConfirming] = React.useState<
-    "sign-out" | "sign-out-others" | "disconnect-agents" | null
+    "sign-out" | "disconnect-agents" | null
   >(null);
   // Counted fresh each time the sign-out dialog opens.
   const [runningCount, setRunningCount] = React.useState(0);
@@ -326,18 +326,6 @@ function ActiveAccount({
   const closeConfirm = (open: boolean) => {
     if (!open) setConfirming(null);
   };
-
-  const loadDevices = React.useCallback(async () => {
-    try {
-      setDevices(await listAuthDevices());
-    } catch (error) {
-      toast.error(errorText(error, "Could not load devices."));
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void loadDevices();
-  }, [loadDevices]);
 
   const disabled = busy !== null;
 
@@ -385,66 +373,6 @@ function ActiveAccount({
           </p>
         ) : null}
       </SettingsConfirmDialog>
-      <SettingsOptionRow className="items-start">
-        <div className="min-w-0 flex-1">
-          <p className="font-medium" id="account-devices-heading">
-            Devices
-          </p>
-          {devices === null ? (
-            <p className="text-sm text-muted-foreground/70">Loading…</p>
-          ) : (
-            <ul
-              aria-labelledby="account-devices-heading"
-              className="mt-2 space-y-2"
-            >
-              {devices.map((device) => (
-                <AccountDeviceRow
-                  device={device}
-                  disabled={disabled}
-                  key={device.id}
-                  onChanged={loadDevices}
-                  onSignOut={() =>
-                    void run("Sign out device", async () => {
-                      await revokeAuthDevice(device.id);
-                      await loadDevices();
-                    })
-                  }
-                  run={run}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </SettingsOptionRow>
-      <SettingsOptionRow>
-        <p className="min-w-0 text-sm text-muted-foreground/70">
-          Sign out every other device. Your agents keep running.
-        </p>
-        <Button
-          data-testid="account-sign-out-others"
-          disabled={disabled}
-          onClick={() => setConfirming("sign-out-others")}
-          type="button"
-          variant="outline"
-        >
-          Sign out other devices
-        </Button>
-      </SettingsOptionRow>
-      <SettingsConfirmDialog
-        confirmLabel="Sign out other devices"
-        description="Every other computer and phone using your account is signed out and will need to sign in with Google again. This computer stays signed in, and your agents keep running."
-        onConfirm={() =>
-          void run("Sign out other devices", async () => {
-            await revokeOtherSessions();
-            await loadDevices();
-            toast.success("Signed out of all other devices.");
-          })
-        }
-        onOpenChange={closeConfirm}
-        open={confirming === "sign-out-others"}
-        testId="account-sign-out-others-dialog"
-        title="Sign out other devices?"
-      />
       {!status.keyBackup ? (
         <>
           <SettingsOptionRow>
@@ -528,6 +456,162 @@ function ActiveAccount({
           </AlertDialog>
         </>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * Settings › Devices: the computers and phones signed in to the active
+ * account — rename, pick each one's robot, sign one out, or sign out every
+ * other device. Renders nothing on a relay without token sign-in.
+ */
+export function DevicesSettingsCard() {
+  const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
+  const [busy, setBusy] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const refresh = () =>
+      void getTokenAuthStatus()
+        .then(setStatus)
+        .catch((error) =>
+          console.error("[devices] token auth status failed:", error),
+        );
+    refresh();
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void onTokenAuthChanged(refresh).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  async function run(label: string, action: () => Promise<unknown>) {
+    setBusy(label);
+    try {
+      await action();
+    } catch (error) {
+      toast.error(errorText(error, `${label} failed.`));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!status?.supported) return null;
+
+  return (
+    <div data-testid="settings-devices">
+      <SettingsOptionGroup
+        description="Computers and phones signed in to your account."
+        title="Devices"
+      >
+        {status.state === "active" ? (
+          <SignedInDevices busy={busy} run={run} />
+        ) : (
+          <SettingsOptionRow>
+            <p className="min-w-0 text-sm text-muted-foreground/70">
+              Sign in with Google under Account to see your devices.
+            </p>
+          </SettingsOptionRow>
+        )}
+      </SettingsOptionGroup>
+    </div>
+  );
+}
+
+function SignedInDevices({
+  busy,
+  run,
+}: {
+  busy: string | null;
+  run: (label: string, action: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [devices, setDevices] = React.useState<AuthDevice[] | null>(null);
+  const [confirming, setConfirming] = React.useState<"sign-out-others" | null>(
+    null,
+  );
+  const closeConfirm = (open: boolean) => {
+    if (!open) setConfirming(null);
+  };
+  const loadDevices = React.useCallback(async () => {
+    try {
+      setDevices(await listAuthDevices());
+    } catch (error) {
+      toast.error(errorText(error, "Could not load devices."));
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadDevices();
+  }, [loadDevices]);
+
+  const disabled = busy !== null;
+
+  return (
+    <>
+      <SettingsOptionRow className="items-start">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium" id="account-devices-heading">
+            Devices
+          </p>
+          {devices === null ? (
+            <p className="text-sm text-muted-foreground/70">Loading…</p>
+          ) : (
+            <ul
+              aria-labelledby="account-devices-heading"
+              className="mt-2 space-y-2"
+            >
+              {devices.map((device) => (
+                <AccountDeviceRow
+                  device={device}
+                  disabled={disabled}
+                  key={device.id}
+                  onChanged={loadDevices}
+                  onSignOut={() =>
+                    void run("Sign out device", async () => {
+                      await revokeAuthDevice(device.id);
+                      await loadDevices();
+                    })
+                  }
+                  run={run}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </SettingsOptionRow>
+      <SettingsOptionRow>
+        <p className="min-w-0 text-sm text-muted-foreground/70">
+          Sign out every other device. Your agents keep running.
+        </p>
+        <Button
+          data-testid="account-sign-out-others"
+          disabled={disabled}
+          onClick={() => setConfirming("sign-out-others")}
+          type="button"
+          variant="outline"
+        >
+          Sign out other devices
+        </Button>
+      </SettingsOptionRow>
+      <SettingsConfirmDialog
+        confirmLabel="Sign out other devices"
+        description="Every other computer and phone using your account is signed out and will need to sign in with Google again. This computer stays signed in, and your agents keep running."
+        onConfirm={() =>
+          void run("Sign out other devices", async () => {
+            await revokeOtherSessions();
+            await loadDevices();
+            toast.success("Signed out of all other devices.");
+          })
+        }
+        onOpenChange={closeConfirm}
+        open={confirming === "sign-out-others"}
+        testId="account-sign-out-others-dialog"
+        title="Sign out other devices?"
+      />
     </>
   );
 }

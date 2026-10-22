@@ -21,6 +21,7 @@ Channel _channel({
   bool isMember = true,
   bool goalsEnabled = true,
   List<String> participantPubkeys = const [],
+  String? picture,
 }) => Channel(
   id: 'channel-id',
   name: type == 'dm' ? 'Alice' : 'general',
@@ -34,6 +35,7 @@ Channel _channel({
   archivedAt: isArchived ? DateTime(2025, 1, 2) : null,
   goalsEnabled: goalsEnabled,
   participantPubkeys: participantPubkeys,
+  picture: picture,
 );
 
 Widget _app({
@@ -122,21 +124,21 @@ void main() {
     for (final label in [
       'Pin',
       'Mark Unread',
-      'Mute channel',
-      'Manage channel',
-      'Copy channel name',
-      'Copy channel ID',
-      'Leave channel',
-      'Archive channel',
-      'Delete channel',
+      'Mute group',
+      'Manage group',
+      'Copy group name',
+      'Copy group ID',
+      'Leave group',
+      'Archive group',
+      'Delete group',
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
 
-    final muteTop = tester.getTopLeft(find.text('Mute channel')).dy;
-    final manageTop = tester.getTopLeft(find.text('Manage channel')).dy;
-    final copyNameTop = tester.getTopLeft(find.text('Copy channel name')).dy;
-    final copyIdTop = tester.getTopLeft(find.text('Copy channel ID')).dy;
+    final muteTop = tester.getTopLeft(find.text('Mute group')).dy;
+    final manageTop = tester.getTopLeft(find.text('Manage group')).dy;
+    final copyNameTop = tester.getTopLeft(find.text('Copy group name')).dy;
+    final copyIdTop = tester.getTopLeft(find.text('Copy group ID')).dy;
     expect(muteTop, lessThan(manageTop));
     expect(manageTop, lessThan(copyNameTop));
     expect(copyNameTop, lessThan(copyIdTop));
@@ -171,8 +173,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Archive channel'), findsOneWidget);
-    expect(find.text('Delete channel'), findsNothing);
+    expect(find.text('Archive group'), findsOneWidget);
+    expect(find.text('Delete group'), findsNothing);
   });
 
   testWidgets('verified owner agent grants archive and delete', (tester) async {
@@ -192,8 +194,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Archive channel'), findsOneWidget);
-    expect(find.text('Delete channel'), findsOneWidget);
+    expect(find.text('Archive group'), findsOneWidget);
+    expect(find.text('Delete group'), findsOneWidget);
   });
 
   testWidgets('unresolved identity grants no lifecycle actions', (
@@ -214,8 +216,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Archive channel'), findsNothing);
-    expect(find.text('Delete channel'), findsNothing);
+    expect(find.text('Archive group'), findsNothing);
+    expect(find.text('Delete group'), findsNothing);
   });
 
   testWidgets('archived owner can unarchive but cannot delete', (tester) async {
@@ -235,13 +237,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Archive channel'), findsNothing);
-    expect(find.text('Unarchive channel'), findsOneWidget);
-    expect(find.text('Delete channel'), findsNothing);
+    expect(find.text('Archive group'), findsNothing);
+    expect(find.text('Unarchive group'), findsOneWidget);
+    expect(find.text('Delete group'), findsNothing);
 
-    await tester.tap(find.text('Unarchive channel'));
+    await tester.tap(find.text('Unarchive group'));
     await tester.pumpAndSettle();
-    expect(find.text('Unarchive #general?'), findsOneWidget);
+    expect(find.text('Unarchive general?'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Unarchive'));
     await tester.pumpAndSettle();
 
@@ -267,8 +269,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Archive channel'), findsNothing);
-    expect(find.text('Delete channel'), findsNothing);
+    expect(find.text('Archive group'), findsNothing);
+    expect(find.text('Delete group'), findsNothing);
   });
 
   testWidgets('agent ownership loading keeps lifecycle actions pending', (
@@ -283,9 +285,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Loading channel actions…'), findsOneWidget);
-    expect(find.text('Archive channel'), findsNothing);
-    expect(find.text('Delete channel'), findsNothing);
+    expect(find.text('Loading group actions…'), findsOneWidget);
+    expect(find.text('Archive group'), findsNothing);
+    expect(find.text('Delete group'), findsNothing);
   });
 
   testWidgets('member sees neither owner action', (tester) async {
@@ -303,10 +305,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Archive channel'), findsNothing);
-    expect(find.text('Delete channel'), findsNothing);
+    expect(find.text('Archive group'), findsNothing);
+    expect(find.text('Delete group'), findsNothing);
     expect(find.text('Move to section…'), findsNothing);
-    expect(find.text('Leave channel'), findsOneWidget);
+    expect(find.text('Leave group'), findsOneWidget);
   });
 
   testWidgets('shows loading and unavailable capability states', (
@@ -317,11 +319,11 @@ void main() {
       _app(channel: _channel(), loadMembers: () => pending.future),
     );
     await tester.pump();
-    expect(find.text('Loading channel actions…'), findsOneWidget);
+    expect(find.text('Loading group actions…'), findsOneWidget);
 
     pending.completeError(Exception('relay unavailable'));
     await tester.pumpAndSettle();
-    expect(find.text('Channel actions unavailable'), findsOneWidget);
+    expect(find.text('Group actions unavailable'), findsOneWidget);
   });
 
   testWidgets('Manage contains editing and canvas, not mute or leave', (
@@ -338,7 +340,7 @@ void main() {
     await tester.tap(find.text('Open actions'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Manage channel'));
+    await tester.tap(find.text('Manage group'));
     await tester.pumpAndSettle();
 
     final manageSheet = find.byType(ManageChannelSheet);
@@ -355,11 +357,11 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(of: manageSheet, matching: find.text('Mute channel')),
+      find.descendant(of: manageSheet, matching: find.text('Mute group')),
       findsNothing,
     );
     expect(
-      find.descendant(of: manageSheet, matching: find.text('Leave channel')),
+      find.descendant(of: manageSheet, matching: find.text('Leave group')),
       findsNothing,
     );
     expect(
@@ -394,18 +396,22 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open actions'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Manage channel'));
+    await tester.tap(find.text('Manage group'));
     await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const ValueKey('manage-channel-name')),
       'renamed',
     );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('manage-channel-save-details')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('manage-channel-save-details')));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(ListTile, 'Manage channel'), findsOneWidget);
-    await tester.tap(find.widgetWithText(ListTile, 'Manage channel'));
+    expect(find.widgetWithText(ListTile, 'Manage group'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ListTile, 'Manage group'));
     await tester.pumpAndSettle();
     final nameField = tester.widget<TextField>(
       find.byKey(const ValueKey('manage-channel-name')),
@@ -426,7 +432,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open actions'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Manage channel'));
+    await tester.tap(find.text('Manage group'));
     await tester.pumpAndSettle();
 
     final editCanvas = find.widgetWithText(FilledButton, 'Create canvas');
@@ -455,7 +461,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Move to section…'), findsNothing);
-    await tester.tap(find.text('Manage channel'));
+    await tester.tap(find.text('Manage group'));
     await tester.pumpAndSettle();
 
     final nameField = find.byKey(const ValueKey('manage-channel-name'));
@@ -496,9 +502,9 @@ void main() {
     for (final label in [
       'Pin',
       'Mark Unread',
-      'Mute channel',
-      'Copy channel name',
-      'Copy channel ID',
+      'Mute chat',
+      'Copy chat name',
+      'Copy chat ID',
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
@@ -506,17 +512,17 @@ void main() {
       'Unpin',
       'Mark Read',
       'Move to section…',
-      'Manage channel',
-      'Leave channel',
-      'Archive channel',
-      'Delete channel',
+      'Manage group',
+      'Leave group',
+      'Archive group',
+      'Delete group',
     ]) {
       expect(find.text(label), findsNothing, reason: label);
     }
 
-    final muteTop = tester.getTopLeft(find.text('Mute channel')).dy;
-    final copyNameTop = tester.getTopLeft(find.text('Copy channel name')).dy;
-    final copyIdTop = tester.getTopLeft(find.text('Copy channel ID')).dy;
+    final muteTop = tester.getTopLeft(find.text('Mute chat')).dy;
+    final copyNameTop = tester.getTopLeft(find.text('Copy chat name')).dy;
+    final copyIdTop = tester.getTopLeft(find.text('Copy chat ID')).dy;
     expect(muteTop, lessThan(copyNameTop));
     expect(copyNameTop, lessThan(copyIdTop));
   });
@@ -626,6 +632,117 @@ void main() {
       expect(goalsSwitch, findsNothing);
     });
   });
+
+  group('group photo in Manage group', () {
+    const photoUrl = 'https://relay.example/media/photo.jpg';
+    late _FakeChannelActions actions;
+    Channel? updated;
+
+    Future<void> pumpSheet(
+      WidgetTester tester, {
+      required Channel channel,
+      required bool canEditDetails,
+    }) async {
+      updated = null;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentPubkeyProvider.overrideWith((ref) => _currentPubkey),
+            channelCanvasProvider(channel.id).overrideWith(
+              (ref) async => const ChannelCanvas(
+                content: null,
+                updatedAt: null,
+                authorPubkey: null,
+              ),
+            ),
+            channelActionsProvider.overrideWith(
+              (ref) => actions = _FakeChannelActions(ref),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: Scaffold(
+              body: ManageChannelSheet(
+                channel: channel,
+                canEditDetails: canEditDetails,
+                onChannelUpdated: (channel) => updated = channel,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('owners see the photo with Change and Remove on top', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        channel: _channel(picture: photoUrl),
+        canEditDetails: true,
+      );
+
+      expect(
+        find.byKey(const ValueKey('manage-channel-photo')),
+        findsOneWidget,
+      );
+      expect(find.text('Change photo'), findsOneWidget);
+      expect(find.text('Remove photo'), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('manage-channel-photo')))
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('manage-channel-name')))
+              .dy,
+        ),
+      );
+    });
+
+    testWidgets('without a photo only Change photo shows', (tester) async {
+      await pumpSheet(tester, channel: _channel(), canEditDetails: true);
+
+      expect(find.text('Change photo'), findsOneWidget);
+      expect(find.text('Remove photo'), findsNothing);
+      expect(find.text('G'), findsOneWidget);
+    });
+
+    testWidgets('members who cannot edit see no photo controls', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        channel: _channel(picture: photoUrl),
+        canEditDetails: false,
+      );
+
+      expect(find.byKey(const ValueKey('manage-channel-photo')), findsNothing);
+      expect(find.text('Change photo'), findsNothing);
+      expect(find.text('Remove photo'), findsNothing);
+    });
+
+    testWidgets('Remove photo sends an empty picture and shows the letter', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        channel: _channel(picture: photoUrl),
+        canEditDetails: true,
+      );
+
+      await tester.tap(find.text('Remove photo'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(actions.pictureUpdates, ['']);
+      expect(updated?.picture, isNull);
+      expect(updated?.name, 'general');
+      expect(find.text('Remove photo'), findsNothing);
+      expect(find.text('G'), findsOneWidget);
+    });
+  });
 }
 
 class _FakeChannelSectionsNotifier extends ChannelSectionsNotifier {
@@ -663,7 +780,10 @@ class _FakeChannelActions extends ChannelActions {
     String? name,
     String? description,
     bool? goalsEnabled,
+    String? visibility,
+    String? picture,
   }) async {
+    if (picture != null) pictureUpdates.add(picture);
     if (goalsEnabled != null) {
       goalsUpdates.add(goalsEnabled);
       final failure = goalsUpdateError;
@@ -673,6 +793,7 @@ class _FakeChannelActions extends ChannelActions {
   }
 
   final List<bool> goalsUpdates = [];
+  final List<String> pictureUpdates = [];
   Object? goalsUpdateError;
 
   String? unarchivedChannelId;

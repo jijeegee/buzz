@@ -173,6 +173,7 @@ void main() {
         'channel_created': SystemEventType.channelCreated,
         'channel_archived': SystemEventType.channelArchived,
         'channel_unarchived': SystemEventType.channelUnarchived,
+        'picture_changed': SystemEventType.pictureChanged,
       };
 
       for (final entry in types.entries) {
@@ -253,7 +254,7 @@ void main() {
         actorPubkey: 'pk1',
         targetPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice joined the channel');
+      expect(event.describe(resolve), 'Alice joined the group');
     });
 
     test('member_joined by other', () {
@@ -270,7 +271,7 @@ void main() {
         type: SystemEventType.memberLeft,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice left the channel');
+      expect(event.describe(resolve), 'Alice left the group');
     });
 
     test('member_removed', () {
@@ -279,7 +280,32 @@ void main() {
         actorPubkey: 'pk1',
         targetPubkey: 'pk2',
       );
-      expect(event.describe(resolve), 'Alice removed Bob from the channel');
+      expect(event.describe(resolve), 'Alice removed Bob from the group');
+    });
+
+    test('a chat is called a chat, never a group', () {
+      String chat(SystemEventType type, {String? target, String? picture}) =>
+          SystemEvent(
+            type: type,
+            actorPubkey: 'pk1',
+            targetPubkey: target,
+            picture: picture,
+          ).describe(resolve, roomNoun: 'chat');
+
+      expect(
+        chat(SystemEventType.memberJoined, target: 'pk1'),
+        'Alice joined the chat',
+      );
+      expect(chat(SystemEventType.memberLeft), 'Alice left the chat');
+      expect(
+        chat(SystemEventType.memberRemoved, target: 'pk2'),
+        'Alice removed Bob from the chat',
+      );
+      expect(chat(SystemEventType.channelCreated), 'Alice created this chat');
+      expect(
+        chat(SystemEventType.pictureChanged, picture: 'https://x/p.png'),
+        'Alice changed the chat photo',
+      );
     });
 
     test('topic_changed', () {
@@ -358,7 +384,7 @@ void main() {
         type: SystemEventType.channelCreated,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice created this channel');
+      expect(event.describe(resolve), 'Alice created this group');
     });
 
     test('channel_archived', () {
@@ -366,7 +392,7 @@ void main() {
         type: SystemEventType.channelArchived,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice archived this channel');
+      expect(event.describe(resolve), 'Alice archived this group');
     });
 
     test('channel_unarchived', () {
@@ -374,7 +400,7 @@ void main() {
         type: SystemEventType.channelUnarchived,
         actorPubkey: 'pk1',
       );
-      expect(event.describe(resolve), 'Alice unarchived this channel');
+      expect(event.describe(resolve), 'Alice unarchived this group');
     });
 
     test('goals_changed', () {
@@ -386,6 +412,18 @@ void main() {
         );
         expect(event.describe(resolve), 'Alice turned goals $goals');
       }
+    });
+
+    test('picture_changed', () {
+      SystemEvent picture(String? url) => SystemEvent.fromContent(
+        jsonEncode({'type': 'picture_changed', 'actor': 'pk1', 'picture': url}),
+      )!;
+      expect(
+        picture('https://relay.example/media/a.jpg').describe(resolve),
+        'Alice changed the group photo',
+      );
+      expect(picture('').describe(resolve), 'Alice removed the group photo');
+      expect(picture(null).describe(resolve), 'Alice removed the group photo');
     });
 
     test('huddle_started', () {

@@ -51,11 +51,11 @@ class _ChannelTile extends ConsumerWidget {
                 alignment: Alignment.centerLeft,
                 child: channel.isDm
                     ? _DmAvatar(channel: channel, currentPubkey: currentPubkey)
-                    : Icon(
-                        channelIcon(channel),
+                    : GroupAvatar(
                         key: ValueKey('channel-icon-${channel.id}'),
+                        channel: channel,
                         size: _kChannelIconSize,
-                        color: contentColor,
+                        iconColor: contentColor,
                       ),
               ),
             ),
@@ -65,15 +65,17 @@ class _ChannelTile extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    ref.watch(
-                      identityNameSourcesProvider.select(
-                        (names) => resolveDmChannelDisplayLabel(
-                          channel,
-                          currentPubkey: currentPubkey,
-                          names: names,
-                        ),
-                      ),
-                    ),
+                    channel.isGroupChat
+                        ? watchChannelTitle(ref, channel)
+                        : ref.watch(
+                            identityNameSourcesProvider.select(
+                              (names) => resolveDmChannelDisplayLabel(
+                                channel,
+                                currentPubkey: currentPubkey,
+                                names: names,
+                              ),
+                            ),
+                          ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: contentListTitleTextStyle.copyWith(
@@ -124,7 +126,7 @@ class _ChannelTile extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(Radii.sm),
                   ),
                   child: Text(
-                    'Open',
+                    'Public',
                     style: context.textTheme.labelSmall?.copyWith(
                       color: context.colors.primary,
                       fontWeight: FontWeight.w600,

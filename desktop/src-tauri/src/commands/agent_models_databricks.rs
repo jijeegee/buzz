@@ -291,6 +291,7 @@ pub(super) fn databricks_models_response(
         agent_default_model: None,
         selected_model,
         supports_switching: !entries_are_empty,
+        harness_providers: None,
     })
 }
 

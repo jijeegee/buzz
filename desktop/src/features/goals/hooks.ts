@@ -71,7 +71,7 @@ export function useGoalTreeQuery(channelId: string | null, enabled = true) {
   return useQuery({
     queryKey: goalTreeKey(channelId),
     queryFn: () => {
-      if (!channelId) return Promise.reject(new Error("No channel selected"));
+      if (!channelId) return Promise.reject(new Error("No group selected"));
       return getGoalTree(channelId);
     },
     enabled: active,
@@ -84,7 +84,7 @@ export function useApplyGoalOpMutation(channelId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (op: GoalOp | GoalOp[]) => {
-      if (!channelId) return Promise.reject(new Error("No channel selected"));
+      if (!channelId) return Promise.reject(new Error("No group selected"));
       return Array.isArray(op)
         ? applyGoalOps(channelId, op)
         : applyGoalOp(channelId, op);
@@ -128,7 +128,7 @@ export function useGoalLinkKinds(
   return useQuery({
     queryKey: ["goal-link-kinds", channelId, ids.join(",")],
     queryFn: () => {
-      if (!channelId) return Promise.reject(new Error("No channel selected"));
+      if (!channelId) return Promise.reject(new Error("No group selected"));
       return classifyGoalLinks(channelId, ids);
     },
     enabled: channelId !== null && ids.length > 0,
@@ -143,7 +143,7 @@ export function useGoalHistoryQuery(
   return useQuery({
     queryKey: goalHistoryKey(channelId),
     queryFn: () => {
-      if (!channelId) return Promise.reject(new Error("No channel selected"));
+      if (!channelId) return Promise.reject(new Error("No group selected"));
       return getGoalTreeHistory(channelId);
     },
     enabled: enabled && channelId !== null,
@@ -154,7 +154,7 @@ export function useRestoreGoalTreeMutation(channelId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (revision: string) => {
-      if (!channelId) return Promise.reject(new Error("No channel selected"));
+      if (!channelId) return Promise.reject(new Error("No group selected"));
       return restoreGoalTree(channelId, revision);
     },
     onSettled: () => {

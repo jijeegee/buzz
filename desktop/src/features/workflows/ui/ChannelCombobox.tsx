@@ -2,13 +2,12 @@ import {
   Asterisk,
   Check,
   ChevronDown,
-  Hash,
-  Lock,
   MessageSquareMore,
   Search,
 } from "lucide-react";
 import * as React from "react";
 
+import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -19,15 +18,23 @@ import { PortalledScrollArea } from "@/shared/ui/PortalledScrollArea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 function ChannelPrivacyIcon({ channel }: { channel: Channel }) {
-  const Icon =
-    channel.channelType === "dm"
-      ? MessageSquareMore
-      : channel.visibility === "private"
-        ? Lock
-        : Hash;
+  if (channel.channelType !== "dm") {
+    return (
+      <GroupLetterAvatar
+        channelId={channel.id}
+        isPrivate={channel.visibility === "private"}
+        label={channel.name}
+        picture={channel.picture}
+        size="sm"
+      />
+    );
+  }
 
   return (
-    <Icon aria-hidden className="h-5 w-5 shrink-0 text-muted-foreground/60" />
+    <MessageSquareMore
+      aria-hidden
+      className="h-5 w-5 shrink-0 text-muted-foreground/60"
+    />
   );
 }
 
@@ -51,21 +58,29 @@ type ChannelComboboxProps = {
 
 export function ChannelCombobox({
   allowEmpty = false,
-  ariaLabel = "Channel",
-  channels,
+  ariaLabel = "Group",
+  channels: allChannels,
   defaultOpen = false,
   disabled,
-  emptyLabel = "Choose a channel",
+  emptyLabel = "Choose a group",
   id,
   isChannelDisabled,
   onAutoOpen,
   onChange,
   readOnly = false,
-  readOnlyTooltip = "The channel can't be changed after a workflow is created.",
+  readOnlyTooltip = "The group can't be changed after a workflow is created.",
   required = false,
   variant = "header",
   value,
 }: ChannelComboboxProps) {
+  // Workflows never run in ownerless chats; keep a saved one visible only.
+  const channels = React.useMemo(
+    () =>
+      allChannels.filter(
+        (channel) => channel.groupChat !== true || channel.id === value,
+      ),
+    [allChannels, value],
+  );
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [highlightedIndex, setHighlightedIndex] = React.useState(0);
@@ -179,7 +194,7 @@ export function ChannelCombobox({
   const selectedLabel = selected
     ? (channelLabels.get(selected.id) ?? selected.name)
     : value
-      ? "Unavailable channel"
+      ? "Unavailable group"
       : emptyLabel;
 
   if (readOnly) {
@@ -270,7 +285,7 @@ export function ChannelCombobox({
               setHighlightedIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search channels..."
+            placeholder="Search groups..."
             role="combobox"
             spellCheck={false}
             value={query}
@@ -306,7 +321,7 @@ export function ChannelCombobox({
           ) : null}
           {filtered.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-              No channels found.
+              No groups found.
             </p>
           ) : (
             filtered.map((channel) => {

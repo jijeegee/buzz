@@ -335,7 +335,7 @@ function getActionCardClause(
         : "wait for a moment";
     }
     case "send_message":
-      if (!configuredDetail) return "send a channel message";
+      if (!configuredDetail) return "send a group message";
       return nonEmptyString(step.text)
         ? `send ${configuredDetail}`
         : `send a message in ${configuredDetail}`;
@@ -356,8 +356,8 @@ function getActionCardClause(
     }
     case "set_channel_topic":
       return configuredDetail
-        ? `set the channel topic to ${configuredDetail}`
-        : "update the channel topic";
+        ? `set the group topic to ${configuredDetail}`
+        : "update the group topic";
     default: {
       return (actionLabel ?? humanizeIdentifier(action)).toLocaleLowerCase();
     }

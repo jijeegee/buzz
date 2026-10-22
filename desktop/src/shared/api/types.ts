@@ -23,6 +23,13 @@ export type Channel = {
    * when disabled, so an absent tag (and old relays) means enabled.
    */
   goalsEnabled: boolean;
+  /** Group photo URL from kind:39000 `["picture", url]`; null/absent = none. */
+  picture?: string | null;
+  /**
+   * Ownerless multi-person chat (kind:39000 `["group_chat"]`). A private
+   * stream with no owner; the UI calls it a "Chat" alongside 1:1 DMs.
+   */
+  groupChat?: boolean;
 };
 export type ChannelDetail = Channel & {
   createdBy: string;
@@ -61,6 +68,8 @@ export type UpdateChannelInput = {
   ttlSeconds?: number | null;
   /** Omit to leave unchanged; emits `["goals", "on" | "off"]` when set. */
   goalsEnabled?: boolean;
+  /** Group photo URL; absent = unchanged, "" = remove. */
+  picture?: string;
 };
 
 export type SetChannelTopicInput = {
@@ -91,6 +100,8 @@ export type AddChannelMembersInput = {
 };
 export type AddChannelMembersResult = {
   added: string[];
+  /** Sent an invitation instead of being added (`invite-sent:`). */
+  invited: string[];
   errors: Array<{
     pubkey: string;
     error: string;
@@ -656,6 +667,18 @@ export type AgentModelsResponse = {
   agentDefaultModel: string | null;
   selectedModel: string | null;
   supportsSwitching: boolean;
+  /**
+   * Providers set up inside the harness itself (Hermes only), default first.
+   * When present, `models` holds only these providers' models.
+   */
+  harnessProviders?: HarnessProviderInfo[];
+};
+export type HarnessProviderInfo = {
+  /** The provider prefix of model ids (`<id>:<model>`). */
+  id: string;
+  label: string;
+  /** The provider the harness runs when no model is chosen. */
+  isDefault: boolean;
 };
 export type AgentModelInfo = {
   id: string;

@@ -22,6 +22,7 @@ export function useNonMemberInvite({
   addMembers,
   completeSend,
   setError,
+  onInvited,
 }: {
   sourceOwner: ComposerDraftOwner;
   draft: PendingNonMemberMentionSend | null;
@@ -37,13 +38,15 @@ export function useNonMemberInvite({
     channelId?: string;
     pubkeys: string[];
     role: "member" | "bot";
-  }) => Promise<{ errors: { error: string }[] }>;
+  }) => Promise<{ errors: { error: string }[]; invited?: string[] }>;
   completeSend: (
     draft: PendingNonMemberMentionSend,
     pubkeys: string[],
     tags?: string[][],
   ) => Promise<void>;
   setError: (error: string | null) => void;
+  /** People sent an invitation instead of being added (`invite-sent:`). */
+  onInvited?: (pubkeys: string[]) => void;
 }) {
   const active = React.useRef<{
     controller: AbortController;
@@ -51,6 +54,8 @@ export function useNonMemberInvite({
   } | null>(null);
   const currentOwner = React.useRef(sourceOwner);
   currentOwner.current = sourceOwner;
+  const onInvitedRef = React.useRef(onInvited);
+  onInvitedRef.current = onInvited;
   const [isPending, setIsPending] = React.useState(false);
   const cancel = React.useCallback(() => {
     active.current?.controller.abort();
@@ -130,6 +135,9 @@ export function useNonMemberInvite({
         // An accepted add cannot be undone, but it never revives cancelled intent.
         if (!isCurrent()) return;
         errors.push(...result.errors.map((error) => error.error));
+        if (result.invited && result.invited.length > 0) {
+          onInvitedRef.current?.(result.invited);
+        }
       }
       if (errors.length > 0) {
         setError(errors.join("; "));

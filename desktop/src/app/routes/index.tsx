@@ -3,10 +3,12 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { preloadChannelRouteScreen } from "@/app/routes/lazyChannelRouteScreen";
+import { isFreshStartLandingPending } from "@/app/useChatsRailNavigation";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { HomeScreen } from "@/features/home/ui/HomeScreen";
 import {
   consumePendingWelcomeChannel,
+  hasPendingWelcomeChannel,
   WELCOME_CHANNEL_READY_EVENT,
 } from "@/features/onboarding/welcome";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -95,6 +97,15 @@ function HomeRouteComponent() {
   React.useEffect(() => {
     preloadChannelRouteScreen();
   }, []);
+
+  // A fresh launch is about to open the first chat: don't flash Activity.
+  if (
+    isFreshStartLandingPending() &&
+    !hasPendingWelcomeChannel() &&
+    (!channelsQuery.isSuccess || channels.length > 0)
+  ) {
+    return null;
+  }
 
   return (
     <HomeScreen

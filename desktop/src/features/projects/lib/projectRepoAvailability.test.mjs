@@ -110,7 +110,7 @@ test("never rewrites non-missing reasons", () => {
 test("presents access failures without exposing the relay's masked 404", () => {
   assert.deepEqual(projectRepoUnavailablePresentation("access"), {
     description:
-      "Repository access is granted through its channel, and you’re not a member. Ask the repository owner for an invite.",
+      "Repository access is granted through its group, and you’re not a member. Ask the repository owner for an invite.",
     title: "Repository access restricted",
   });
 });

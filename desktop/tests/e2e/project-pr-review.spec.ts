@@ -198,7 +198,7 @@ test("PR creator/owner can toggle draft, request reviews, and approve", async ({
   const detailMeta = page.getByTestId("project-detail-meta");
   await expect(detailMeta.locator("img")).toHaveCount(0);
   const sourceChannelLink = page.getByRole("button", {
-    name: "Open author-claimed origin channel #general",
+    name: "Open author-claimed origin group general",
     exact: true,
   });
   await expect(sourceChannelLink).toBeVisible();
@@ -2421,7 +2421,7 @@ test("selecting overview list rows switches the context pod to the cluster", asy
   ).toBeVisible();
   await page.getByTestId("projects-selection-search-channels").click();
   await expect(
-    page.getByPlaceholder("Search channels by name or description"),
+    page.getByPlaceholder("Search groups by name or description"),
   ).toBeVisible();
   await page.keyboard.press("Escape");
 

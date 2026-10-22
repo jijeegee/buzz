@@ -47,7 +47,7 @@ export const ROUTING_MODE_OPTIONS: readonly RoutingModeOption[] = [
     mode: "desktop-router",
     label: "Smart routing",
     description:
-      "Kuzz picks the agent as you send. No extra messages in the channel.",
+      "Kuzz picks the agent as you send. No extra messages in the group.",
     available: true,
   },
 ];
@@ -298,10 +298,10 @@ export function routingSummaryText(
   nameOf: NameOf,
 ): string {
   const label = routingModeLabel(status.mode);
-  if (!modeNeedsAgent(status.mode)) return `Channel routing: ${label}`;
+  if (!modeNeedsAgent(status.mode)) return `Group routing: ${label}`;
   return status.routingAgent === null
-    ? `Channel routing: ${label} (no agent chosen)`
-    : `Channel routing: ${label} (${nameOf(status.routingAgent)})`;
+    ? `Group routing: ${label} (no agent chosen)`
+    : `Group routing: ${label} (${nameOf(status.routingAgent)})`;
 }
 
 /** Display name for a pubkey from the managed-agent list. */

@@ -950,7 +950,10 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       // rejects an over-quota EVENT on the OK channel so this pending publish
       // can be settled at all. Without arming the gate the send would fail
       // without ever backing off.
-      if (message.startsWith('rate-limited:')) {
+      // The group invitation cap is a 24-hour quota on one action, not
+      // back-pressure: pausing every publish for it would only stall sends.
+      if (message.startsWith('rate-limited:') &&
+          !message.contains('too many invitations')) {
         _rateLimitGate.activate(parseRateLimitRetrySeconds(message));
       }
       if (!pending.completer.isCompleted) {

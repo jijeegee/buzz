@@ -56,6 +56,8 @@ class SendMessage {
   /// Pass [quote] to add exactly one NIP-18 `["q", id, "", author]` tag. A
   /// quote is a reference only: it adds no `e` or `p` tags, so it never
   /// changes where the message lands or who is notified.
+  ///
+  /// [extraTags] are appended as given (e.g. a thread close marker).
   Future<void> call({
     required String channelId,
     required String content,
@@ -65,6 +67,7 @@ class SendMessage {
     Channel? channel,
     List<List<String>> mediaTags = const [],
     QuoteTarget? quote,
+    List<List<String>> extraTags = const [],
   }) async {
     _ensureDeliveryValid();
     // Validate before any network work so a malformed quote fails fast.
@@ -107,6 +110,7 @@ class SendMessage {
       for (final tag in mediaTags)
         if (quoteTag == null || tag.isEmpty || tag.first != quoteTagName) tag,
       ?quoteTag,
+      ...extraTags,
     ];
 
     _ensureDeliveryValid();

@@ -93,6 +93,28 @@ fn in_app_persona_matches_existing_uuid_and_patches() {
 }
 
 #[test]
+fn shared_inbound_head_never_sets_the_audience() {
+    // A shared head carries no audience, so it must neither clear this
+    // device's setting nor hand a fresh insert a wider one.
+    let mut local = local_in_app();
+    local.respond_to = Some("anyone".to_string());
+    let mut personas = vec![local];
+    let mut inbound = inbound_for(UUID, "Remote");
+    inbound.shared = true;
+    apply_inbound_persona(&mut personas, inbound);
+    assert_eq!(personas[0].respond_to.as_deref(), Some("anyone"));
+
+    let mut personas = Vec::new();
+    let mut inbound = inbound_for(UUID, "Remote");
+    inbound.shared = true;
+    inbound.respond_to = Some("anyone".to_string());
+    inbound.respond_to_allowlist = vec!["a".repeat(64)];
+    apply_inbound_persona(&mut personas, inbound);
+    assert_eq!(personas[0].respond_to, None);
+    assert!(personas[0].respond_to_allowlist.is_empty());
+}
+
+#[test]
 fn inbound_quad_edit_applies_to_existing_matched_record() {
     // B5 quad activation: a remote quad edit must land on the MATCH branch,
     // not just the insert branch — otherwise device B keeps its stale quad

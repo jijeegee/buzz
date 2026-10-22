@@ -112,6 +112,7 @@ void durableMentionTests() {
               RelayConfig(baseUrl: 'https://relay.example', nsec: signer.nsec),
             ),
             channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
+            members: [if (eligible) _agentMember(agent)],
             relayAgents: [
               if (eligible)
                 AgentDirectoryEntry(
@@ -188,7 +189,7 @@ void durableMentionTests() {
       expect(events.where((e) => e['kind'] == 9000), isEmpty);
       if (fallback == 'human') {
         expect(
-          find.textContaining('Former Helper is not in this channel'),
+          find.textContaining('Former Helper is not in this group'),
           findsOneWidget,
         );
         await tester.tap(find.text('Do nothing'));

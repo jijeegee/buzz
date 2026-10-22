@@ -27,11 +27,14 @@ import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/widgets/skeleton.dart';
+import '../groups/group_preview.dart';
+import '../groups/groups_api.dart';
 import '../profile/profile_avatar.dart';
 import '../profile/presence_cache_provider.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import 'channel.dart';
+import 'group_avatar.dart';
 import 'chats_order.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_detail_page.dart';
@@ -39,6 +42,7 @@ import 'channel_management_provider.dart';
 import 'dm_channel_labels.dart';
 import 'ephemeral_channel_display.dart';
 import 'channel_mutes/channel_mutes_provider.dart';
+import 'channel_names/channel_names_storage.dart' show channelNameMaxLength;
 import 'channel_stars/channel_stars_provider.dart';
 import 'channels_provider.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
@@ -64,7 +68,7 @@ part 'channels_page/community.dart';
 part 'channels_page/quick_actions.dart';
 part 'channels_page/quick_actions_launcher.dart';
 
-enum _QuickAction { createChannel, newDm, browseChannels }
+enum _QuickAction { createChannel, newDm, browseChannels, joinWithLink }
 
 const double _kChannelSectionInset = Grid.gutter;
 const double _kChannelLeadingWidth = 22.0;

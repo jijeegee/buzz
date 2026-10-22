@@ -79,6 +79,8 @@ export type WatcherDeps = {
   setTimer?: (callback: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
   log?: (message: string, error?: unknown) => void;
+  /** Every new message in the account's channels, its own included. */
+  onMessage?: (event: RelayEvent) => void;
 };
 
 /** Reconnect delay after `attempt` consecutive failures: exponential, jittered. */
@@ -310,6 +312,7 @@ export class InactiveAccountWatcher {
   private handleMessage(event: RelayEvent): void {
     if (this.seenSet.has(event.id)) return;
     this.remember(event.id);
+    this.deps.onMessage?.(event);
     if (this.lastSeen === null || event.created_at > this.lastSeen) {
       this.lastSeen = event.created_at;
     }

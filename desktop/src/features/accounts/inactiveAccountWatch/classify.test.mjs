@@ -7,6 +7,7 @@ const ME = "a".repeat(64);
 const OTHER = "b".repeat(64);
 const stream = { id: "ch", channelType: "stream" };
 const dm = { id: "dm1", channelType: "dm" };
+const groupChat = { id: "gc1", channelType: "stream", groupChat: true };
 
 function context(overrides = {}) {
   return {
@@ -134,6 +135,34 @@ const cases = [
       },
     }),
     { notify: null, unread: true, mention: true },
+  ],
+  [
+    "group chat message → dm alert",
+    event(),
+    groupChat,
+    context(),
+    { notify: "dm", unread: true, mention: false },
+  ],
+  [
+    "muted group chat message → nothing",
+    event(),
+    groupChat,
+    context({ mutedChannelIds: new Set(["gc1"]) }),
+    { notify: null, unread: false, mention: false },
+  ],
+  [
+    "muted group chat mention → still alerts",
+    event({ tags: [["p", ME]] }),
+    groupChat,
+    context({ mutedChannelIds: new Set(["gc1"]) }),
+    { notify: "dm", unread: true, mention: true },
+  ],
+  [
+    "muted DM message tagging me → nothing (DM tags are not mentions)",
+    event({ tags: [["p", ME]] }),
+    dm,
+    context({ mutedChannelIds: new Set(["dm1"]) }),
+    { notify: null, unread: false, mention: false },
   ],
   [
     "reaction in a DM → nothing",

@@ -154,7 +154,27 @@ pub struct AppState {
 /// (the dev/CI/harness override). `None` means absent or malformed — callers
 /// fall through to persisted resolution. A malformed value is logged and
 /// treated as absent rather than left on an ephemeral identity.
+///
+/// Dev builds only: a prod build ignores the variable. Managed agents receive
+/// their own key through it, so a prod app launched from an agent's shell
+/// would otherwise run the signed-in person's account on the agent's key.
 fn identity_from_env() -> Option<Keys> {
+    identity_from_env_in(crate::relay::server::kuzz_env())
+}
+
+/// Whether this build lets `KUZZ_PRIVATE_KEY` stand in for the person's key
+/// (see [`identity_from_env`]).
+pub(crate) fn env_identity_allowed(env: crate::relay::server::KuzzEnv) -> bool {
+    env == crate::relay::server::KuzzEnv::Dev
+}
+
+fn identity_from_env_in(env: crate::relay::server::KuzzEnv) -> Option<Keys> {
+    if !env_identity_allowed(env) {
+        if std::env::var_os("KUZZ_PRIVATE_KEY").is_some() {
+            eprintln!("kuzz-desktop: ignoring KUZZ_PRIVATE_KEY (prod build)");
+        }
+        return None;
+    }
     match std::env::var("KUZZ_PRIVATE_KEY") {
         Ok(nsec) => match Keys::parse(nsec.trim()) {
             Ok(keys) => Some(keys),

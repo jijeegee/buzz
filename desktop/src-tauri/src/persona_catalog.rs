@@ -63,7 +63,8 @@ struct CatalogAgentProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     effort_level: Option<String>,
     name_pool: Vec<String>,
-    respond_to: Option<String>,
+    // No `respond_to`: who may command an agent is never taken from someone
+    // else's head, so a catalog copy always starts owner-only.
     parallelism: Option<u64>,
     session_policy: AcpSessionPolicy,
 }
@@ -256,11 +257,6 @@ fn parse_agent(content: &str) -> Option<CatalogAgentProjection> {
     let effort_level = optional_string(object.get("effort_level"));
     crate::managed_agents::validate_effort_level_text(effort_level.as_deref()).ok()?;
 
-    let respond_to = match object.get("respond_to").and_then(Value::as_str) {
-        Some("allowlist") => Some("owner-only".to_string()),
-        Some(value @ ("owner-only" | "anyone")) => Some(value.to_string()),
-        _ => None,
-    };
     let parallelism = object
         .get("parallelism")
         .and_then(Value::as_u64)
@@ -296,7 +292,6 @@ fn parse_agent(content: &str) -> Option<CatalogAgentProjection> {
         provider: optional_string(object.get("provider")),
         effort_level,
         name_pool,
-        respond_to,
         parallelism,
         session_policy,
     })

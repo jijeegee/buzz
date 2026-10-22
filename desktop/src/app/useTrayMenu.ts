@@ -73,7 +73,7 @@ export function useTrayMenu({
           agentName: agentNames.get(normalizePubkey(pubkey)) ?? "Agent",
           channelId: channelTurn.channelId,
           channelName:
-            channelNames.get(channelTurn.channelId) ?? "Unknown channel",
+            channelNames.get(channelTurn.channelId) ?? "Unknown group",
           elapsed: formatElapsed(
             now - (agentTurn?.anchorAt ?? channelTurn.anchorAt),
           ),

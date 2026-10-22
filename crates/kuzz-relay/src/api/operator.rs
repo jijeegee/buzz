@@ -143,8 +143,29 @@ async fn authorize_operator_request(
             "actor not authorized: not a relay operator",
         ));
     }
+    admit_operator_key(state, headers, &pubkey).await?;
 
     Ok(pubkey)
+}
+
+/// Device-bound keys (surface `admin`): an operator key is used from its own
+/// signed-in device. Operator keys are configuration (`RELAY_OPERATOR_PUBKEYS`,
+/// `KUZZ_OPERATOR_LISTENERS`); one with no registry row is admitted (and
+/// reported as `unregistered` while the surface logs), so the env operator
+/// key keeps working.
+async fn admit_operator_key(
+    state: &AppState,
+    headers: &HeaderMap,
+    pubkey: &nostr::PublicKey,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    crate::identity::admission::admit_key_for_nip98(
+        state,
+        headers,
+        pubkey,
+        crate::identity::device::Surface::Admin,
+    )
+    .await
+    .map_err(crate::identity::admission::KeyRefused::http_error)
 }
 
 /// Authenticate a deployment-global operator listener using its configured
@@ -178,6 +199,7 @@ async fn authorize_operator_listener_request(
             "actor not authorized: not a configured operator listener",
         ));
     }
+    admit_operator_key(state, headers, &pubkey).await?;
     Ok(pubkey)
 }
 

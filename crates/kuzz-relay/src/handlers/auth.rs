@@ -15,6 +15,9 @@ use axum::extract::ws::Message as WsMessage;
 use tracing::{debug, info, warn};
 
 use crate::connection::{AuthState, ConnectionState};
+use crate::identity::admission::{admit_key_with_owner, KeyRefused};
+use crate::identity::config::DeviceAdmissionMode;
+use crate::identity::device::Surface;
 use crate::metrics::{AuthOutcome, AuthPostTerminalState};
 use crate::protocol::RelayMessage;
 use crate::state::AppState;
@@ -280,6 +283,26 @@ fn deny_admission(conn: &ConnectionState, event_id_hex: &str, denial: AdmissionD
     conn.cancel.cancel();
 }
 
+/// The AUTH denial for a key refused on this device. A signed-out owner gets
+/// its own reason, so a supervisor parks its agents instead of restarting
+/// them (device-bound keys plan F9).
+pub(crate) fn device_denial(refused: KeyRefused) -> AdmissionDenial {
+    match refused {
+        KeyRefused::Unavailable => AdmissionDenial {
+            metric: "device_check_error",
+            reason: refused.reason(),
+            outcome: AuthOutcome::DeviceCheckError,
+            class: kuzz_auth::DenialClass::AuthorizationUnavailable,
+        },
+        refused => AdmissionDenial {
+            metric: "device_refused",
+            reason: refused.reason(),
+            outcome: AuthOutcome::DeviceRefused,
+            class: kuzz_auth::DenialClass::AuthorizationDenied,
+        },
+    }
+}
+
 /// Extract a NIP-OA `auth` tag from a verified AUTH event and serialize it as
 /// the JSON-array string that [`kuzz_sdk::nip_oa::verify_auth_tag`] expects.
 ///
@@ -342,6 +365,12 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
     // tampered, NIP-42 verification will fail before we ever inspect it.
     let auth_tag_json = extract_auth_tag_json(&event);
     let signed_auth_created_at = event.created_at.as_secs();
+    // Likewise the device tag (pure P-256 crypto, device-bound keys). Its
+    // result is used only once the event's own signature has verified, and
+    // nothing runs while the surface is off.
+    let device_tag = (crate::identity::device::mode(&state, Surface::Ws)
+        != DeviceAdmissionMode::Off)
+        .then(|| kuzz_auth::device_proof::verify_event_device_tag(&event));
 
     let relay_url =
         crate::api::bridge::nip42_expected_relay_url(&state.config.relay_url, &conn.tenant);
@@ -369,6 +398,32 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                 == crate::nip_fi_session::PairingOutcome::Denied
             {
                 return;
+            }
+
+            // Device-bound keys: the key must be used from its own device
+            // (signed in there, or an external agent's paired device), and a
+            // registered key's NIP-OA tag must name its registry owner. After
+            // pairing and before the policy gates; refuses only in enforce.
+            if let Some(device_tag) = device_tag {
+                let claimed_owner = crate::api::relay_members::extract_nip_oa_owner(
+                    pubkey.as_bytes(),
+                    auth_tag_json.as_deref(),
+                    Some(signed_auth_created_at),
+                );
+                if let Err(refused) =
+                    admit_key_with_owner(&state, &pubkey, device_tag, claimed_owner, Surface::Ws)
+                        .await
+                {
+                    // `report` already logged it once an hour; a supervisor
+                    // retrying must not flood the log.
+                    debug!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = refused.as_str(), "key refused on this device");
+                    // Known limit (plan F9): with NIP-FI on, the client sees
+                    // only the canonical denial class, not the specific reason
+                    // (`restricted: signed_out` / `revoked`), so a supervisor
+                    // cannot tell "park" from "retry" there.
+                    deny_admission(&conn, &event_id_hex, device_denial(refused));
+                    return;
+                }
             }
 
             // Community ban gate (NIP-42 seam). Runs after NIP-FI pairing and
@@ -909,8 +964,8 @@ mod tests {
 
     #[tokio::test]
     async fn handle_auth_pairing_mismatch_runs_full_root_denial_path() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::collections::HashMap;
         use std::sync::Arc;
         use tokio::sync::mpsc;
@@ -1335,6 +1390,90 @@ mod tests {
         let harness = AuthHarness::new(true);
         harness.run(harness.auth_event(), state).await;
         harness.assert_fi_terminal(kuzz_auth::DenialClass::AuthorizationUnavailable);
+    }
+
+    /// The reason of the one `OK false` a refused root AUTH sends on the
+    /// control channel, after checking the socket failed and closed.
+    fn ctrl_refusal(harness: &mut AuthHarness) -> String {
+        let frame = match harness.ctrl_rx.try_recv().expect("refusal on ctrl channel") {
+            WsMessage::Text(text) => serde_json::from_str::<serde_json::Value>(&text).unwrap(),
+            other => panic!("expected text frame, got {other:?}"),
+        };
+        assert_eq!((&frame[0], &frame[2]), (&"OK".into(), &false.into()));
+        assert!(matches!(
+            harness.conn.auth_state_snapshot(),
+            AuthState::Failed
+        ));
+        assert!(
+            harness.conn.cancel.is_cancelled(),
+            "refusal closes the socket"
+        );
+        frame[3].as_str().unwrap().to_owned()
+    }
+
+    async fn device_state(
+        mode: crate::identity::config::DeviceAdmissionMode,
+    ) -> std::sync::Arc<crate::state::AppState> {
+        crate::state::tests::test_state_with_config(
+            "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
+            |config| config.auth_token.device_admission = mode,
+        )
+        .await
+    }
+
+    /// A `device` tag whose signature fails is refused under enforce before
+    /// any lookup (the database here is unreachable), on the device reason.
+    ///
+    /// Mutation: drop the `admit_key` call from `handle_auth` → the ban
+    /// check's database error answers instead → RED.
+    #[tokio::test]
+    async fn enforce_refuses_a_bad_device_tag_before_any_lookup() {
+        let state = device_state(crate::identity::config::DeviceAdmissionMode::Enforce).await;
+        let mut harness = AuthHarness::new(false);
+        let (_, device) = crate::identity::admission::test_support::device(3);
+        let bad_sig = "00".repeat(64);
+        let event = EventBuilder::new(Kind::Authentication, "")
+            .tag(Tag::parse(["relay", "ws://test.local"]).unwrap())
+            .tag(Tag::parse(["challenge", harness.challenge.as_str()]).unwrap())
+            .tag(Tag::parse(["device", device.to_hex().as_str(), bad_sig.as_str()]).unwrap())
+            .sign_with_keys(&harness.key)
+            .unwrap();
+        harness.run(event, state).await;
+        assert_eq!(ctrl_refusal(&mut harness), "restricted: device");
+    }
+
+    /// With the key registry unreachable, enforce refuses fail-closed on its
+    /// own reason; log and off let the AUTH through to the next gate (whose
+    /// lookup fails the same way).
+    #[tokio::test]
+    async fn device_admission_fails_closed_only_under_enforce() {
+        use crate::identity::config::DeviceAdmissionMode;
+        for (mode, reason) in [
+            (
+                DeviceAdmissionMode::Enforce,
+                "error: internal error checking device",
+            ),
+            (
+                DeviceAdmissionMode::Log,
+                "error: internal error checking restriction state",
+            ),
+            (
+                DeviceAdmissionMode::Off,
+                "error: internal error checking restriction state",
+            ),
+        ] {
+            let state = device_state(mode).await;
+            let mut harness = AuthHarness::new(false);
+            let (device, _) = crate::identity::admission::test_support::device(4);
+            let event = crate::identity::admission::test_support::auth_event(
+                &harness.key,
+                &harness.challenge,
+                "ws://test.local",
+                Some(&device),
+            );
+            harness.run(event, state).await;
+            assert_eq!(ctrl_refusal(&mut harness), reason, "{mode:?}");
+        }
     }
 
     /// Root wire frames for an FI session whose NIP-42 key is not the
@@ -2074,8 +2213,8 @@ mod tests {
         //
         // Runs in PG lane on wrapper DB (same constraint as W1: ban-check is fail-closed).
         async fn w_deny_straddle_entry_inserted_between_registration_and_check_is_caught_body() {
-            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use chrono::{Duration, Utc};
+            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2285,8 +2424,8 @@ mod tests {
         //
         // Runs in PG lane on wrapper DB (ban-check is fail-closed).
         async fn w_deny_other_issuer_straddle_leaves_session_admitted_body() {
-            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use chrono::{Duration, Utc};
+            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2463,8 +2602,8 @@ mod tests {
         // Mutation: bypass the `[FI-TRACE-DENY-SET]` check in `handle_auth` →
         // the denied case sends OK(true), stays uncancelled, enqueues no frame.
         async fn w_deny_pre_registration_body(deny_self: bool) {
-            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use chrono::{Duration, Utc};
+            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2635,8 +2774,8 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn w1_auth_barrier_expiry_mid_flight_blocks_auth_commit() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2744,8 +2883,8 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn expiry_before_nip_oa_materialize_writes_no_rows_and_commits_no_auth() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2868,8 +3007,8 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn fix_4a_allowlist_denial_with_fi_assertion_emits_canonical_restricted_frame() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;

@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 import {
   deriveCommunityName,
   normalizeRelayUrl,
@@ -221,7 +222,7 @@ export function markCommunityOnboardingComplete(
   storage: Storage = localStorage,
 ): void {
   storage.setItem(
-    `kuzz-community-onboarding-complete.v1:${encodeURIComponent(relayUrl)}:${pubkey}`,
+    `kuzz-community-onboarding-complete.v1:${encodeURIComponent(relayStorageScope(relayUrl, relayUrl))}:${pubkey}`,
     "true",
   );
   // The legacy gate is identity-scoped. Marking it here prevents the old profile

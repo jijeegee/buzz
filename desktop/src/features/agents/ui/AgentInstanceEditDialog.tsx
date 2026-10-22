@@ -36,7 +36,7 @@ import { isKuzzAgentRuntime } from "./kuzzAgentConfig";
 import {
   ADVANCED_FIELDS_MOTION_TRANSITION,
   AUTO_PROVIDER_DROPDOWN_VALUE,
-  BLOCK_BUILD_HIDDEN_PROVIDER_IDS,
+  buildHiddenProviderIds,
   CUSTOM_PROVIDER_DROPDOWN_VALUE,
   formatRuntimeOptionLabel,
   getDefaultLlmModelLabel,
@@ -442,11 +442,15 @@ export function AgentInstanceEditDialog({
 
   const {
     discoveredModelOptions,
+    harnessProviderChoice,
     modelDiscoveryLoading,
     modelDiscoveryStatus,
   } = usePersonaModelDiscovery({
     envVars: envVarsForDiscovery,
     isCustomProviderEditing,
+    model,
+    agentPubkey: agent.pubkey,
+    persistedModel: agent.model ?? undefined,
     modelFieldVisible: true,
     open,
     provider: providerForDiscovery,
@@ -878,13 +882,7 @@ export function AgentInstanceEditDialog({
 
   // Provider field derived state
   const trimmedProvider = provider.trim();
-  const hideProviderIds = React.useMemo(
-    () =>
-      (bakedEnvKeys ?? []).includes("KUZZ_AGENT_PROVIDER")
-        ? BLOCK_BUILD_HIDDEN_PROVIDER_IDS
-        : new Set<string>(),
-    [bakedEnvKeys],
-  );
+  const hideProviderIds = buildHiddenProviderIds(bakedEnvKeys);
   const providerOptions = getPersonaProviderOptions(
     trimmedProvider,
     selectedRuntime?.id ?? "",
@@ -1102,6 +1100,7 @@ export function AgentInstanceEditDialog({
                 value: effortTouched.current ? effortLevel : launchEffortLevel,
               }}
               llmProviderFieldVisible={llmProviderFieldVisible}
+              harnessProviderChoice={harnessProviderChoice}
               providerRequired={providerRequired}
               providerDropdownOptions={providerDropdownOptions}
               providerSelectValue={providerSelectValue}

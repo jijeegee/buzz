@@ -170,6 +170,61 @@ impl PendingEntityDeepLinks {
     }
 }
 
+/// Queue for `kuzz://join/<code>` and `kuzz://join/@<handle>` group links.
+/// Same take/acknowledge contract as entity links; separate state so the two
+/// consumers never see each other's items.
+#[derive(Default)]
+pub(crate) struct PendingGroupJoinDeepLinks(PendingEntityDeepLinks);
+
+#[tauri::command]
+pub(crate) fn take_pending_group_join_deep_link(
+    pending: State<'_, PendingGroupJoinDeepLinks>,
+) -> Option<PendingEntityDeepLink> {
+    pending.0.first()
+}
+
+#[tauri::command]
+pub(crate) fn acknowledge_pending_group_join_deep_link(
+    id: String,
+    pending: State<'_, PendingGroupJoinDeepLinks>,
+) -> bool {
+    pending.0.acknowledge(&id)
+}
+
+/// `kuzz://join/<code>` or `kuzz://join/@<handle>` (any build scheme) →
+/// the canonical `kuzz://join/...` href the frontend parses again. The rules
+/// mirror the server: codes are 22-64 URL-safe characters, handles 3-32 of
+/// `a-z0-9_` (lowercased).
+fn canonical_group_join_deep_link(url: &Url) -> Option<String> {
+    if url.host_str() != Some("join")
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+    let mut segments = url.path_segments()?;
+    let target = segments.next()?;
+    if segments.next().is_some() {
+        return None;
+    }
+    let target = target.replace("%40", "@");
+    if let Some(handle) = target.strip_prefix('@') {
+        let handle = handle.to_ascii_lowercase();
+        let valid = (3..=32).contains(&handle.len())
+            && handle
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        return valid.then(|| format!("kuzz://join/@{handle}"));
+    }
+    let valid = (22..=64).contains(&target.len())
+        && target
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    valid.then(|| format!("kuzz://join/{target}"))
+}
+
 #[tauri::command]
 pub(crate) fn take_pending_community_deep_link(
     pending: State<'_, PendingCommunityDeepLinks>,
@@ -626,6 +681,17 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
             activate_main_window(app);
             queue_community_deep_link(app, "connect", relay_url.clone(), None, None, None);
             let _ = app.emit("deep-link-connect", relay_url);
+        }
+        Some("join") if !matches!(url.path(), "" | "/") => {
+            // `kuzz://join/<code>` / `kuzz://join/@<handle>`: a group link
+            // from the server's /g/ landing page. Opens the group preview.
+            let Some(href) = canonical_group_join_deep_link(&url) else {
+                eprintln!("kuzz-desktop: malformed group join deep link: {url_str}");
+                return;
+            };
+            activate_main_window(app);
+            let pending = app.state::<PendingGroupJoinDeepLinks>().0.enqueue(href);
+            let _ = app.emit("deep-link-group-join", pending);
         }
         Some("join") => {
             // `kuzz://join?relay=<ws(s)://...>&code=<invite code>` — fired by

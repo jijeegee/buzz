@@ -1,11 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'channel.dart';
+import '../profile/avatar_upload_image.dart';
+import '../profile/profile_avatar_crop_page.dart';
 import 'channel_management_provider.dart';
+import 'group_photo_field.dart';
 
 class ManageChannelSheet extends HookConsumerWidget {
   const ManageChannelSheet({
@@ -33,6 +38,8 @@ class ManageChannelSheet extends HookConsumerWidget {
     final isSavingCanvas = useState(false);
     final isSavingDetails = useState(false);
     final actionError = useState<String?>(null);
+    final picture = useState<String?>(channel.picture);
+    final isSavingPhoto = useState(false);
 
     useEffect(() {
       final canvas = canvasAsync.asData?.value;
@@ -71,6 +78,7 @@ class ManageChannelSheet extends HookConsumerWidget {
         final updated = channel.copyWith(
           name: canonicalName,
           description: description,
+          picture: picture.value,
         );
         onChannelUpdated?.call(updated);
         if (context.mounted) Navigator.of(context).pop(false);
@@ -80,6 +88,69 @@ class ManageChannelSheet extends HookConsumerWidget {
         isSavingDetails.value = false;
       }
     }
+
+    Future<void> savePicture(String url) async {
+      await ref
+          .read(channelActionsProvider)
+          .updateChannel(channelId: channel.id, picture: url);
+      final next = url.isEmpty ? null : url;
+      if (!context.mounted) return;
+      picture.value = next;
+      onChannelUpdated?.call(
+        channel.copyWith(
+          name: canonicalName.isEmpty ? channel.name : canonicalName,
+          description: description,
+          picture: next,
+        ),
+      );
+    }
+
+    Future<void> runPhotoChange(Future<void> Function() change) async {
+      if (isSavingPhoto.value) return;
+      isSavingPhoto.value = true;
+      actionError.value = null;
+      try {
+        await change();
+      } catch (_) {
+        if (context.mounted) {
+          actionError.value = "We couldn't update the group photo. Try again.";
+        }
+      } finally {
+        if (context.mounted) isSavingPhoto.value = false;
+      }
+    }
+
+    Future<void> changePhoto() => runPhotoChange(() async {
+      final service = ref.read(mediaUploadServiceProvider);
+      final picked = await service.pickGalleryImage();
+      if (picked == null || !context.mounted) return;
+      final prepared = await service.prepareImageBytes(picked);
+      if (!context.mounted) return;
+      // A GIF is uploaded as it is: cropping would drop its animation.
+      if (isGifImage(prepared)) {
+        final uploaded = await service.uploadBytes(
+          prepared,
+          mimeType: 'image/gif',
+        );
+        await savePicture(uploaded.url);
+        return;
+      }
+      final cropped = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(
+          builder: (_) => ProfileAvatarCropPage(
+            imageBytes: Future<Uint8List?>.value(prepared),
+          ),
+        ),
+      );
+      if (cropped == null || !context.mounted) return;
+      final uploaded = await service.uploadBytes(
+        cropped,
+        mimeType: avatarUploadMimeType(cropped),
+      );
+      await savePicture(uploaded.url);
+    });
+
+    Future<void> removePhoto() => runPhotoChange(() => savePicture(''));
 
     Future<void> saveCanvas() async {
       if (isSavingCanvas.value) return;
@@ -112,12 +183,22 @@ class ManageChannelSheet extends HookConsumerWidget {
         child: ListView(
           shrinkWrap: true,
           children: [
+            if (canEditDetails) ...[
+              GroupPhotoField(
+                channel: channel,
+                picture: picture.value,
+                isSaving: isSavingPhoto.value,
+                onChange: changePhoto,
+                onRemove: removePhoto,
+              ),
+              const SizedBox(height: Grid.xs),
+            ],
             _ManageChannelTextField(
               fieldKey: const ValueKey('manage-channel-name'),
               outlineKey: const ValueKey('manage-channel-name-outline'),
               controller: nameController,
               enabled: canEditDetails && !isSavingDetails.value,
-              hintText: 'Channel name',
+              hintText: 'Group name',
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: Grid.xs),
@@ -134,7 +215,7 @@ class ManageChannelSheet extends HookConsumerWidget {
             if (canonicalName.isEmpty) ...[
               const SizedBox(height: Grid.half),
               Text(
-                'Channel name is required.',
+                'Group name is required.',
                 style: context.textTheme.bodySmall?.copyWith(
                   color: context.colors.error,
                 ),
@@ -204,7 +285,7 @@ class ManageChannelSheet extends HookConsumerWidget {
                       Text(
                         canvas.content?.trim().isNotEmpty == true
                             ? canvas.content!
-                            : 'No canvas set for this channel.',
+                            : 'No canvas set for this group.',
                         style: context.textTheme.bodyMedium?.copyWith(
                           color: context.colors.onSurfaceVariant,
                         ),
@@ -229,11 +310,11 @@ class ManageChannelSheet extends HookConsumerWidget {
                 loading: () => const Center(
                   child: KuzzLoadingIndicator(
                     size: 40,
-                    semanticLabel: 'Loading channel canvas',
+                    semanticLabel: 'Loading group canvas',
                   ),
                 ),
                 error: (error, _) => Text(
-                  'Couldn’t load the channel canvas.',
+                  'Couldn’t load the group canvas.',
                   style: context.textTheme.bodySmall?.copyWith(
                     color: context.colors.error,
                   ),

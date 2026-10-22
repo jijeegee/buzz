@@ -21,6 +21,7 @@ void main() {
     'app.kuzz://user@auth/cb',
     'app.kuzz://auth:123/cb',
     'app.kuzz://auth/cb#fragment',
+    'app.kuzz://auth/cb#code=other',
   ]) {
     test(
       'rejects callback address $address before exchanging a code',
@@ -54,6 +55,19 @@ void main() {
       },
     );
   }
+
+  test('accepts the bare # iOS appends to the callback', () async {
+    final server = FakeAuthServer();
+    final launcher = FakeWebAuthLauncher(
+      (start) => Uri.parse('${FakeWebAuthLauncher.success(start)}#'),
+    );
+    final grant = await runOidcLogin(
+      api: AuthApi(origin: 'https://relay.example', client: server.client),
+      launcher: launcher,
+    );
+    expect(grant, isNotNull);
+    expect(server.requests, isNotEmpty);
+  });
 
   for (final parameter in ['state', 'code', 'error']) {
     test('rejects duplicate $parameter before exchanging a code', () async {

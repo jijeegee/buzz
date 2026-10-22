@@ -207,6 +207,10 @@ async fn authenticate(
     bridge::check_nip98_replay(state, &tenant, event_id_bytes)
         .await
         .map_err(IntoResponse::into_response)?;
+    // Device-bound keys, after the replay check (a replay costs no lookup).
+    bridge::admit_bridge_key(state, headers, &pubkey)
+        .await
+        .map_err(IntoResponse::into_response)?;
     let tag = relay_members::extract_auth_tag_header(headers);
     relay_members::enforce_relay_membership(
         state,

@@ -100,6 +100,6 @@ test("caps extra related channels", () => {
         liveHead: liveHead(tags),
         ownerPubkey: OWNER,
       }),
-    /extra channels/,
+    /extra groups/,
   );
 });

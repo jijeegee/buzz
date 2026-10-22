@@ -9,8 +9,7 @@ import 'package:image/image.dart' as image;
 
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
-
-const _cropOutputSize = 512;
+import 'avatar_upload_image.dart';
 
 /// Lets a person pan and zoom a selected image inside the final avatar mask.
 class ProfileAvatarCropPage extends HookWidget {
@@ -484,10 +483,5 @@ Uint8List _cropAvatar(_CropRequest request) {
     width: cropSize,
     height: cropSize,
   );
-  final resized = image.copyResize(
-    cropped,
-    width: _cropOutputSize,
-    height: _cropOutputSize,
-  );
-  return image.encodeJpg(resized, quality: 90);
+  return encodeAvatarForUpload(cropped);
 }

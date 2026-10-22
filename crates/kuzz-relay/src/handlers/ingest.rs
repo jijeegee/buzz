@@ -13,29 +13,29 @@ use kuzz_auth::Scope;
 use kuzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
     is_relay_admin_kind, KIND_AGENT_ENGRAM, KIND_AGENT_HOST_DEVICES, KIND_AGENT_PROFILE,
-    KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST,
-    KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION, KIND_DEVICE_ROBOT,
-    KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST, KIND_EMOJI_SET,
-    KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE,
-    KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
-    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
-    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_TREE, KIND_HUDDLE_ENDED,
-    KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT,
-    KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM,
-    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
-    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
-    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
-    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
-    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
-    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST,
-    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
-    KIND_PROJECT, KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
-    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
-    KIND_THREAD_NAME, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
-    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_AGENT_TEAM, KIND_AGENT_TURN_METRIC, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH,
+    KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET, KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION,
+    KIND_DEVICE_ROBOT, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN, KIND_EMOJI_LIST,
+    KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST,
+    KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
+    KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED,
+    KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_TREE,
+    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
+    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
+    KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
+    KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
+    KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST,
+    KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP,
+    KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
+    KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
+    KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
+    KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT,
+    KIND_PUBLIC_GOAL, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
+    KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED, KIND_STREAM_MESSAGE_V2,
+    KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE, KIND_THREAD_NAME,
+    KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use kuzz_core::tenant::TenantContext;
 use kuzz_core::verification::verify_event;
@@ -571,7 +571,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_CONTACT_LIST | KIND_READ_STATE | KIND_USER_STATUS | KIND_AGENT_ENGRAM
         | KIND_EVENT_REMINDER | KIND_PERSONA | KIND_TEAM | KIND_MANAGED_AGENT
         | KIND_PRIVATE_MANAGED_AGENT | KIND_AGENT_HOST_DEVICES | KIND_DEVICE_ROBOT
-        | KIND_TEAM_CATALOG
+        | KIND_AGENT_TEAM | KIND_TEAM_CATALOG
         | super::push_lease::KIND_PUSH_LEASE => {
             Ok(Scope::UsersWrite)
         }
@@ -797,6 +797,8 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_AGENT_HOST_DEVICES
             // Device robot appearance (30181): owner-authored, keyed by (pubkey, kind, device id).
             | KIND_DEVICE_ROBOT
+            // Agent team (30182): owner-authored, keyed by (pubkey, kind, team id).
+            | KIND_AGENT_TEAM
             | KIND_TEAM_CATALOG
             // NIP-34: git events use `a` tags (repo reference), not `h` tags (channel scope).
             // Parameterized replaceable kinds are keyed by (pubkey, kind, d_tag).
@@ -1297,12 +1299,30 @@ fn count_e_tags(event: &Event) -> usize {
         .count()
 }
 
+/// Kinds whose relay-signed copies name their real author in the first `p`
+/// tag: workflow and legacy REST messages, edits, forum posts and reactions.
+///
+/// Every other relay-signed event (member rosters, membership notices, huddle
+/// events) uses `p` for the people it is *about*. Reading those as authors
+/// would let the first listed person edit or delete the relay's own record.
+fn relay_signed_kind_attributes_p(kind: u32) -> bool {
+    matches!(
+        kind,
+        KIND_STREAM_MESSAGE
+            | KIND_STREAM_MESSAGE_V2
+            | KIND_STREAM_MESSAGE_EDIT
+            | KIND_FORUM_POST
+            | KIND_FORUM_COMMENT
+            | KIND_REACTION
+    )
+}
+
 /// Extract the effective author of a stored event (handles workflow-generated and
 /// legacy relay-signed attributed events).
 pub(crate) fn effective_message_author(event: &Event, relay_pubkey: &nostr::PublicKey) -> Vec<u8> {
     if event.pubkey == *relay_pubkey {
         // Workflow-generated or legacy relay-signed attributed event — real author
-        // in "actor" or "p" tag.
+        // in "actor" or, for message kinds only, "p" tag.
         if let Some(hex) = event.tags.iter().find_map(|t| {
             if t.kind().to_string() == "actor" {
                 t.content().map(|s| s.to_string())
@@ -1315,6 +1335,9 @@ pub(crate) fn effective_message_author(event: &Event, relay_pubkey: &nostr::Publ
                     return bytes;
                 }
             }
+        }
+        if !relay_signed_kind_attributes_p(event_kind_u32(event)) {
+            return event.pubkey.to_bytes().to_vec();
         }
         for tag in event.tags.iter() {
             if tag.kind().to_string() == "p" {
@@ -1684,6 +1707,11 @@ fn validate_persona_envelope(event: &Event) -> Result<(), String> {
     const LABEL: &str = "persona event";
     validate_shared_tag(event, LABEL)?;
     let d = single_bounded_d_tag(event, LABEL)?;
+    if kuzz_core::kind::event_is_shared(event) {
+        if let Ok(content) = serde_json::from_str::<serde_json::Value>(&event.content) {
+            reject_shared_audience(&content, LABEL)?;
+        }
+    }
     // Slug grammar: ^[a-z0-9][a-z0-9_-]{0,63}$
     let bytes = d.as_bytes();
     if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
@@ -1715,7 +1743,42 @@ fn validate_team_catalog_envelope(event: &Event) -> Result<(), String> {
     const LABEL: &str = "team-catalog event";
     validate_shared_tag(event, LABEL)?;
     single_bounded_d_tag(event, LABEL)?;
+    if kuzz_core::kind::event_is_shared(event) {
+        if let Ok(content) = serde_json::from_str::<serde_json::Value>(&event.content) {
+            let members = content.get("members").and_then(serde_json::Value::as_array);
+            for member in members.into_iter().flatten() {
+                reject_shared_audience(member, LABEL)?;
+            }
+        }
+    }
     Ok(())
+}
+
+/// Rejects a community-readable agent definition that would hand its readers
+/// a wider audience than owner-only.
+///
+/// Who may command an agent never travels between owners: shared kind:30175
+/// heads and kind:30178 members must not carry `respond_to` other than
+/// `owner-only`, nor any `respond_to_allowlist` entry. Clients drop both on
+/// write and ignore them on read; this is the relay's layer of that defense.
+/// Unshared heads are author-only device sync and keep both fields.
+fn reject_shared_audience(definition: &serde_json::Value, label: &str) -> Result<(), String> {
+    match definition.get("respond_to") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::String(mode)) if mode == "owner-only" => {}
+        Some(other) => {
+            return Err(format!(
+                "shared {label} must not carry respond_to {other} (only owner-only)"
+            ));
+        }
+    }
+    match definition.get("respond_to_allowlist") {
+        None | Some(serde_json::Value::Null) => Ok(()),
+        Some(serde_json::Value::Array(list)) if list.is_empty() => Ok(()),
+        Some(_) => Err(format!(
+            "shared {label} must not carry a respond_to_allowlist"
+        )),
+    }
 }
 
 /// Maximum number of member `a` tags on a kind:30621 project.
@@ -2222,6 +2285,76 @@ fn validate_device_id_d_tag(event: &Event) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// Most agents one team may hold.
+const AGENT_TEAM_MAX_MEMBERS: usize = 64;
+/// Longest team name and description, in characters.
+const AGENT_TEAM_MAX_NAME_CHARS: usize = 200;
+const AGENT_TEAM_MAX_DESCRIPTION_CHARS: usize = 2_000;
+
+/// Validate a `kind:30182` agent team: one UUID `d` tag and content
+/// `{"v":1,"name":"…","agent_pubkeys":["<hex>",...]}` with a non-empty name
+/// and at most [`AGENT_TEAM_MAX_MEMBERS`] lowercase hex pubkeys.
+fn validate_agent_team(event: &Event) -> Result<(), &'static str> {
+    let mut d: Option<&str> = None;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        if parts.first().map(String::as_str) != Some("d") {
+            continue;
+        }
+        if d.is_some() {
+            return Err("duplicate d tag");
+        }
+        d = Some(parts.get(1).map(String::as_str).unwrap_or(""));
+    }
+    if Uuid::parse_str(d.ok_or("missing d tag")?).is_err() {
+        return Err("d tag must be a team id");
+    }
+    let content: serde_json::Value =
+        serde_json::from_str(&event.content).map_err(|_| "content must be JSON")?;
+    if content.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err("unsupported content version");
+    }
+    if !content
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|name| !name.trim().is_empty())
+    {
+        return Err("team needs a name");
+    }
+    if content
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|name| name.chars().count() > AGENT_TEAM_MAX_NAME_CHARS)
+    {
+        return Err("team name is too long");
+    }
+    match content.get("description") {
+        None | Some(serde_json::Value::Null) => {}
+        Some(serde_json::Value::String(description))
+            if description.chars().count() <= AGENT_TEAM_MAX_DESCRIPTION_CHARS => {}
+        Some(_) => return Err("description must be text up to 2000 characters"),
+    }
+    let members = content
+        .get("agent_pubkeys")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("agent_pubkeys must be a list")?;
+    if members.len() > AGENT_TEAM_MAX_MEMBERS {
+        return Err("too many agents");
+    }
+    let all_hex = members.iter().all(|member| {
+        member.as_str().is_some_and(|pubkey| {
+            pubkey.len() == 64
+                && pubkey
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+    });
+    if !all_hex {
+        return Err("agent_pubkeys must be lowercase hex pubkeys");
+    }
+    Ok(())
+}
+
 /// Validate a `kind:30181` device robot: a device-id `d` tag and content
 /// `{"v":1|2,"shape":"<name>","color":<index>}`. Shape names and palette size
 /// belong to clients; the relay only bounds them.
@@ -2509,6 +2642,24 @@ pub async fn ingest_event(
 ///   client ceiling (60 s, CANVAS_MAX_FUTURE_SKEW_SECS) < canvas relay bound (300 s) < relay general bound (900 s)
 const CANVAS_MAX_INGEST_FUTURE_SECS: i64 = 300;
 
+/// Most tags a client-submitted event may carry. Each `p` tag becomes an
+/// `event_mentions` row and a notification fan-out target, so an unbounded
+/// tag list lets one event force thousands of writes. Relay-signed events
+/// (e.g. kind 39002 member rosters) do not pass through client ingest.
+const MAX_CLIENT_EVENT_TAGS: usize = 2_000;
+
+/// Rejects a client event carrying more than [`MAX_CLIENT_EVENT_TAGS`] tags.
+/// Pure, and checked before any DB work so an oversized event costs nothing.
+fn check_client_event_tag_count(event: &Event) -> Result<(), IngestError> {
+    if event.tags.len() > MAX_CLIENT_EVENT_TAGS {
+        return Err(IngestError::Rejected(format!(
+            "invalid: event has {} tags, maximum is {MAX_CLIENT_EVENT_TAGS}",
+            event.tags.len()
+        )));
+    }
+    Ok(())
+}
+
 /// Returns `Ok(())` if the canvas event timestamp is within the allowed future
 /// window, or `Err` with a rejection message otherwise.
 ///
@@ -2531,6 +2682,8 @@ async fn ingest_event_inner(
     let event_id_hex = event.id.to_hex();
     let kind_u32 = event_kind_u32(&event);
     debug!(event_id = %event_id_hex, kind = kind_u32, "ingest_event");
+
+    check_client_event_tag_count(&event)?;
 
     // Durable community write fence: persistent ingest is a DB write the
     // deletion engine cannot exclude via serving-write leases (those cover
@@ -3035,7 +3188,20 @@ async fn ingest_event_inner(
     if crate::handlers::side_effects::is_admin_kind(kind_u32) {
         crate::handlers::side_effects::validate_admin_event(tenant, kind_u32, &event, state)
             .await
-            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+            .map_err(|e| {
+                if e.is::<crate::handlers::side_effects::InvitationSent>() {
+                    IngestError::Rejected(format!(
+                        "{} not added; they were sent an invitation to join",
+                        crate::handlers::side_effects::INVITE_SENT_PREFIX
+                    ))
+                } else if e.is::<crate::handlers::side_effects::InvitationRateLimited>() {
+                    IngestError::Rejected(
+                        crate::handlers::side_effects::INVITATIONS_RATE_LIMITED.to_owned(),
+                    )
+                } else {
+                    IngestError::Rejected(format!("invalid: {e}"))
+                }
+            })?;
     }
 
     // Processed here (verify consent, mutate archived_identities, emit the
@@ -3200,6 +3366,10 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
+    if kind_u32 == KIND_AGENT_TEAM {
+        validate_agent_team(&event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
     if kind_u32 == KIND_DEVICE_ROBOT {
         validate_device_robot(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
@@ -3227,8 +3397,71 @@ async fn ingest_event_inner(
 
     // Track pre-created channel UUID for compensation on insert failure.
     let mut pre_created_channel: Option<Uuid> = None;
+    // `OK` message of an accepted group chat creation (invitations sent).
+    let mut accepted_message = String::new();
 
-    if kind_u32 == KIND_NIP29_CREATE_GROUP {
+    if kind_u32 == KIND_NIP29_CREATE_GROUP && super::group_chat::has_group_chat_tag(&event) {
+        // Ownerless group chat: validated, its initial people resolved and
+        // everything written in one transaction before the event is stored.
+        let creator = event.pubkey.to_bytes().to_vec();
+        let spec = super::group_chat::parse_group_chat_create(&event, &creator)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        let Some(client_uuid) = channel_id else {
+            return Err(IngestError::Rejected(
+                "invalid: a chat needs an h tag".into(),
+            ));
+        };
+        // A replayed or colliding creation must not run the per-person
+        // planning queries; the transactional insert below still decides
+        // the race.
+        match state.db.get_channel(tenant.community(), client_uuid).await {
+            Ok(_) => {
+                return Ok(IngestResult {
+                    event_id: event_id_hex,
+                    accepted: false,
+                    message: "duplicate: channel already exists".into(),
+                });
+            }
+            Err(kuzz_db::DbError::ChannelNotFound(_)) => {}
+            Err(e) => return Err(IngestError::Internal(format!("error: {e}"))),
+        }
+        let people = super::group_chat::plan_initial_people(
+            tenant,
+            state,
+            client_uuid,
+            &creator,
+            &spec.people,
+        )
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+        let (_, was_created) = state
+            .db
+            .create_group_chat_with_id(
+                tenant.community(),
+                client_uuid,
+                &spec.name,
+                &creator,
+                &people.members,
+                &people.invitees,
+            )
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+        if !was_created {
+            return Ok(IngestResult {
+                event_id: event_id_hex,
+                accepted: false,
+                message: "duplicate: channel already exists".into(),
+            });
+        }
+        pre_created_channel = Some(client_uuid);
+        accepted_message = people.ok_message();
+        metrics::counter!(
+            "kuzz_channels_created_total",
+            "community" => tenant.host().to_owned(),
+            "type" => "group_chat"
+        )
+        .increment(1);
+    } else if kind_u32 == KIND_NIP29_CREATE_GROUP {
         // Validate name tag is present and non-empty before any DB work.
         let create_name = event.tags.iter().find_map(|t| {
             if t.kind().to_string() == "name" {
@@ -3551,6 +3784,15 @@ async fn ingest_event_inner(
             },
         };
         emit(tracer, action, state_for_request(tenant, auth.pubkey()));
+        if was_inserted {
+            crate::media_access::record_event_media(
+                state,
+                tenant.community(),
+                &event,
+                stored_event.channel_id,
+            )
+            .await;
+        }
         dispatch_persistent_event(
             tenant,
             state,
@@ -3700,6 +3942,15 @@ async fn ingest_event_inner(
     };
 
     if !was_inserted {
+        // A retry of a stored event re-links its media in case the first
+        // attempt's linking failed after the insert.
+        crate::media_access::record_event_media(
+            state,
+            tenant.community(),
+            &event,
+            stored_event.channel_id,
+        )
+        .await;
         return Ok(IngestResult {
             event_id: event_id_hex,
             accepted: true,
@@ -3787,6 +4038,15 @@ async fn ingest_event_inner(
         };
         emit(tracer, action, state_for_request(tenant, auth.pubkey()));
     }
+    // Link the blobs this event names before it fans out, so its readers can
+    // open them as soon as it arrives.
+    crate::media_access::record_event_media(
+        state,
+        tenant.community(),
+        &event,
+        stored_event.channel_id,
+    )
+    .await;
     dispatch_persistent_event(
         tenant,
         state,
@@ -3802,7 +4062,7 @@ async fn ingest_event_inner(
     Ok(IngestResult {
         event_id: event_id_hex,
         accepted: true,
-        message: String::new(),
+        message: accepted_message,
     })
 }
 
@@ -3818,6 +4078,31 @@ mod postgres_tests {
         KIND_STREAM_MESSAGE_DIFF, KIND_TEAM, KIND_USER_STATUS,
     };
     use nostr::{EventBuilder, Kind};
+
+    #[test]
+    fn relay_signed_roster_is_not_authored_by_its_first_member() {
+        let relay = nostr::Keys::generate();
+        let member = nostr::Keys::generate();
+        let p = nostr::Tag::parse(["p", &member.public_key().to_hex()]).unwrap();
+        let roster = EventBuilder::new(Kind::Custom(39002), "")
+            .tags([p.clone()])
+            .sign_with_keys(&relay)
+            .unwrap();
+        assert_eq!(
+            effective_message_author(&roster, &relay.public_key()),
+            relay.public_key().to_bytes().to_vec(),
+            "a roster names members; it is the relay's own record"
+        );
+        let message = EventBuilder::new(Kind::Custom(KIND_STREAM_MESSAGE as u16), "hi")
+            .tags([p])
+            .sign_with_keys(&relay)
+            .unwrap();
+        assert_eq!(
+            effective_message_author(&message, &relay.public_key()),
+            member.public_key().to_bytes().to_vec(),
+            "a relay-signed message still credits its p-tagged sender"
+        );
+    }
 
     /// A channel lookup failure must deny the write. Before, the error became
     /// "no row", which skipped the archive check while a cached membership
@@ -4416,6 +4701,84 @@ mod postgres_tests {
         assert!(is_global_only_kind(KIND_AGENT_HOST_DEVICES));
         assert!(!requires_h_channel_scope(KIND_AGENT_HOST_DEVICES));
         assert!(kuzz_core::kind::AUTHOR_ONLY_KINDS.contains(&KIND_AGENT_HOST_DEVICES));
+    }
+
+    #[test]
+    fn agent_team_is_owner_written_readable_and_validated() {
+        const TEAM: &str = "bd5fcb77-c83d-4590-b6e6-78db532c66f3";
+        let event = make_dummy_event();
+        assert_eq!(
+            required_scope_for_kind(KIND_AGENT_TEAM, &event),
+            Ok(Scope::UsersWrite)
+        );
+        assert!(is_global_only_kind(KIND_AGENT_TEAM));
+        // Readable by the owner's agents, like personas.
+        assert!(!kuzz_core::kind::AUTHOR_ONLY_KINDS.contains(&KIND_AGENT_TEAM));
+        let team = |content: &str, tags: &[&[&str]]| {
+            validate_agent_team(&make_event_with_tags(KIND_AGENT_TEAM, content, tags))
+        };
+        let member = "a".repeat(64);
+        let ok = format!(r#"{{"v":1,"name":"Build","agent_pubkeys":["{member}"]}}"#);
+        assert_eq!(team(&ok, &[&["d", TEAM]]), Ok(()));
+        assert_eq!(
+            team(
+                r#"{"v":1,"name":"Empty","agent_pubkeys":[]}"#,
+                &[&["d", TEAM]]
+            ),
+            Ok(())
+        );
+        assert_eq!(team(&ok, &[]), Err("missing d tag"));
+        assert_eq!(
+            team(&ok, &[&["d", "build"]]),
+            Err("d tag must be a team id")
+        );
+        assert_eq!(
+            team(&ok, &[&["d", TEAM], &["d", TEAM]]),
+            Err("duplicate d tag")
+        );
+        assert_eq!(
+            team(r#"{"v":2,"name":"B","agent_pubkeys":[]}"#, &[&["d", TEAM]]),
+            Err("unsupported content version")
+        );
+        assert_eq!(
+            team(r#"{"v":1,"name":" ","agent_pubkeys":[]}"#, &[&["d", TEAM]]),
+            Err("team needs a name")
+        );
+        assert_eq!(
+            team(r#"{"v":1,"name":"B"}"#, &[&["d", TEAM]]),
+            Err("agent_pubkeys must be a list")
+        );
+        let upper = format!(
+            r#"{{"v":1,"name":"B","agent_pubkeys":["{}"]}}"#,
+            "A".repeat(64)
+        );
+        assert_eq!(
+            team(&upper, &[&["d", TEAM]]),
+            Err("agent_pubkeys must be lowercase hex pubkeys")
+        );
+        let many = format!(
+            r#"{{"v":1,"name":"B","agent_pubkeys":[{}]}}"#,
+            vec![format!("\"{member}\""); 65].join(",")
+        );
+        assert_eq!(team(&many, &[&["d", TEAM]]), Err("too many agents"));
+        // Name length in characters: 200 Korean characters fit.
+        let korean = format!(
+            r#"{{"v":1,"name":"{}","agent_pubkeys":[]}}"#,
+            "팀".repeat(200)
+        );
+        assert_eq!(team(&korean, &[&["d", TEAM]]), Ok(()));
+        let long = format!(
+            r#"{{"v":1,"name":"{}","agent_pubkeys":[]}}"#,
+            "팀".repeat(201)
+        );
+        assert_eq!(team(&long, &[&["d", TEAM]]), Err("team name is too long"));
+        assert_eq!(
+            team(
+                r#"{"v":1,"name":"B","description":5,"agent_pubkeys":[]}"#,
+                &[&["d", TEAM]]
+            ),
+            Err("description must be text up to 2000 characters")
+        );
     }
 
     #[test]
@@ -5628,6 +5991,43 @@ mod postgres_tests {
     }
 
     #[test]
+    fn shared_persona_rejects_a_wider_audience() {
+        let shared: &[&[&str]] = &[&["d", "p"], &["shared", "true"]];
+        for body in [
+            r#"{"display_name":"x","respond_to":"anyone"}"#,
+            r#"{"display_name":"x","respond_to":"allowlist"}"#,
+            r#"{"display_name":"x","respond_to_allowlist":["aa"]}"#,
+        ] {
+            let ev = make_event_with_tags(KIND_PERSONA, body, shared);
+            let err = validate_persona_envelope(&ev).unwrap_err();
+            assert!(err.contains("respond_to"), "{body}: {err}");
+            // The same body stays legal as author-only device sync.
+            let private = make_event_with_tags(KIND_PERSONA, body, &[&["d", "p"]]);
+            assert!(validate_persona_envelope(&private).is_ok(), "{body}");
+        }
+        for body in [
+            r#"{"display_name":"x"}"#,
+            r#"{"display_name":"x","respond_to":"owner-only","respond_to_allowlist":[]}"#,
+        ] {
+            let ev = make_event_with_tags(KIND_PERSONA, body, shared);
+            assert!(validate_persona_envelope(&ev).is_ok(), "{body}");
+        }
+    }
+
+    #[test]
+    fn shared_team_catalog_rejects_a_member_with_a_wider_audience() {
+        let shared: &[&[&str]] = &[&["d", "team-1"], &["shared", "true"]];
+        let body = r#"{"v":1,"name":"T","members":[{"member_key":"a","display_name":"A"},{"member_key":"b","display_name":"B","respond_to":"anyone"}]}"#;
+        let ev = make_event_with_tags(KIND_TEAM_CATALOG, body, shared);
+        let err = validate_team_catalog_envelope(&ev).unwrap_err();
+        assert!(err.contains("respond_to"), "{err}");
+
+        let clean = r#"{"v":1,"name":"T","members":[{"member_key":"a","display_name":"A"}]}"#;
+        let ev = make_event_with_tags(KIND_TEAM_CATALOG, clean, shared);
+        assert!(validate_team_catalog_envelope(&ev).is_ok());
+    }
+
+    #[test]
     fn team_catalog_is_in_scope_allowlist() {
         let dummy = make_dummy_event();
         assert_eq!(
@@ -6141,6 +6541,23 @@ mod postgres_tests {
         let err = validate_agent_turn_metric_envelope(&ev).unwrap_err();
         // error comes from validate_engram_nip44_content with label replaced
         assert!(err.contains("agent-turn-metric"), "got: {err}");
+    }
+
+    #[test]
+    fn client_event_tag_count_is_capped() {
+        let keys = nostr::Keys::generate();
+        let signed = |count: usize| {
+            let tags = (0..count).map(|i| nostr::Tag::hashtag(i.to_string()));
+            nostr::EventBuilder::new(nostr::Kind::TextNote, "x")
+                .tags(tags)
+                .sign_with_keys(&keys)
+                .expect("sign")
+        };
+        assert!(check_client_event_tag_count(&signed(MAX_CLIENT_EVENT_TAGS)).is_ok());
+        assert!(matches!(
+            check_client_event_tag_count(&signed(MAX_CLIENT_EVENT_TAGS + 1)),
+            Err(IngestError::Rejected(m)) if m.contains("tags")
+        ));
     }
 
     /// The HTTP bridge's `submit_event` 400 arm and the WS `EVENT` handler's

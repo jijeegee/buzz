@@ -8,6 +8,7 @@ import {
   useBlockedPeopleQuery,
   useUnblockPersonMutation,
 } from "@/features/people/BlockedPeopleContext";
+import { GroupAddPolicySetting } from "@/features/groups/ui/GroupAddPolicySetting";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -44,6 +45,7 @@ export function PeoplePrivacySettingsCard() {
   return (
     <div className="mt-12 space-y-12" data-testid="settings-people-privacy">
       <FindingYouGroup pubkey={pubkey} />
+      <GroupAddPolicySetting />
       <BlockedUsersGroup pubkey={pubkey} />
       <SettingsOptionGroup title="Help">
         <SettingsOptionRow>
@@ -221,7 +223,7 @@ function FindingYouGroup({ pubkey }: { pubkey: string | undefined }) {
             className="text-sm font-normal text-muted-foreground/70"
             data-settings-subcopy
           >
-            When this is off, only people in your channels can find you.
+            When this is off, only people in your groups can find you.
           </p>
         </div>
         <Switch
@@ -251,7 +253,7 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
 
   return (
     <SettingsOptionGroup
-      description="Blocked people can't reach you, and their messages in shared channels are hidden."
+      description="Blocked people can't reach you, and their messages in shared groups are hidden."
       title="Blocked users"
     >
       {blockedQuery.isLoading ? (
@@ -292,6 +294,7 @@ function BlockedUsersGroup({ pubkey }: { pubkey: string | undefined }) {
             >
               <div className="flex min-w-0 items-center gap-3">
                 <ProfileAvatar
+                  mediaVariant="small"
                   avatarUrl={profile?.avatarUrl ?? null}
                   className="h-8 w-8 text-xs shadow-none"
                   iconClassName="h-4 w-4"

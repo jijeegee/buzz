@@ -75,7 +75,8 @@ export function ProjectRepositoryManagement({
         (channel) =>
           channel.isMember &&
           !channel.archivedAt &&
-          channel.channelType !== "dm",
+          channel.channelType !== "dm" &&
+          channel.groupChat !== true,
       ),
     [channelsQuery.data],
   );
@@ -209,7 +210,7 @@ export function ProjectRepositoryManagement({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-56">
-            <DropdownMenuLabel>Repository access channel</DropdownMenuLabel>
+            <DropdownMenuLabel>Repository access group</DropdownMenuLabel>
             {accessChannels.map((channel) => (
               <DropdownMenuItem
                 className="justify-between gap-4"
@@ -224,7 +225,7 @@ export function ProjectRepositoryManagement({
                     })
                     .then(() => {
                       toast.success(
-                        `Repository access set to #${channel.name}.`,
+                        `Repository access set to ${channel.name}.`,
                       );
                     })
                     .catch((error: unknown) => {
@@ -236,7 +237,7 @@ export function ProjectRepositoryManagement({
                     });
                 }}
               >
-                <span className="min-w-0 truncate">#{channel.name}</span>
+                <span className="min-w-0 truncate">{channel.name}</span>
                 {channel.id === repository?.channelId ? (
                   <Check className="h-4 w-4 shrink-0" />
                 ) : null}

@@ -59,6 +59,7 @@ export function PersonRow({
             type="button"
           >
             <ProfileAvatar
+              mediaVariant="small"
               avatarUrl={user.avatarUrl}
               className="h-9 w-9 text-xs shadow-none"
               iconClassName="h-4 w-4"

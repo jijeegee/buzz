@@ -132,7 +132,7 @@ class InviteJoinSheet extends ConsumerWidget {
             const SizedBox(height: Grid.sm),
             if (isStarterSetupRecovery) ...[
               Text(
-                'Your membership is ready, but starter channels still need to be set up. You can safely retry without claiming the invite again.',
+                'Your membership is ready, but starter groups still need to be set up. You can safely retry without claiming the invite again.',
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),

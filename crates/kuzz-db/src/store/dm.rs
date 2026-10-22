@@ -97,7 +97,9 @@ pub async fn find_dm_by_participants(
 /// existing one if a DM with the same participant set already exists.
 ///
 /// Rules:
-/// - `participants` must contain 2-9 entries (enforced here).
+/// - `participants` must contain 2-9 entries, or only `created_by` (notes to
+///   self). New DMs are 1:1 ([`open_dm`] enforces it); the larger sets are
+///   legacy group DMs, kept so existing rows and their reads stay covered.
 /// - `created_by` must be one of the participants.
 /// - The operation is idempotent: same participant set -> same channel returned.
 pub async fn create_dm(
@@ -106,7 +108,8 @@ pub async fn create_dm(
     participants: &[&[u8]],
     created_by: &[u8],
 ) -> Result<ChannelRecord> {
-    if participants.len() < 2 {
+    let notes_to_self = participants.len() == 1 && participants[0] == created_by;
+    if participants.len() < 2 && !notes_to_self {
         return Err(DbError::InvalidData(
             "DM requires at least 2 participants".to_string(),
         ));
@@ -156,8 +159,8 @@ pub async fn create_dm(
         return row_to_channel_record(row);
     }
 
-    // Name the DM based on participant count.
-    let name = if participants.len() == 2 {
+    // Name the DM based on participant count (notes to self is a DM too).
+    let name = if participants.len() <= 2 {
         "DM".to_string()
     } else {
         format!("Group DM ({})", participants.len())
@@ -180,16 +183,23 @@ pub async fn create_dm(
     .execute(&mut *tx)
     .await?;
 
-    // Add all participants as members with role='member'. A participant who
-    // blocked the creator starts hidden (silent block): the DM opens normally
-    // for the creator but never appears in the blocker's list.
+    // Add all participants as members with role='member'. In a 1:1 DM, a
+    // participant who blocks the creator starts hidden (silent block): the DM
+    // opens normally for the creator but never appears in the blocker's list.
+    // Group DMs open normally for everyone (clients fold blocked people's
+    // messages there).
+    let one_to_one = participants
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        == 2;
     for pk in participants {
         sqlx::query(
             r#"
             INSERT INTO channel_members
                 (community_id, channel_id, pubkey, role, invited_by, hidden_at)
             VALUES ($1, $2, $3, 'member', $4,
-                    CASE WHEN EXISTS (
+                    CASE WHEN $5 AND EXISTS (
                         SELECT 1 FROM user_blocks ub
                         WHERE ub.community_id = $1 AND ub.blocker = $3 AND ub.blocked = $4
                     ) THEN NOW() END)
@@ -203,6 +213,7 @@ pub async fn create_dm(
         .bind(id)
         .bind(*pk)
         .bind(created_by)
+        .bind(one_to_one)
         .execute(&mut *tx)
         .await?;
     }
@@ -374,10 +385,10 @@ pub async fn open_dm(
         all.push(created_by);
     }
 
-    // Enforce max before hitting the DB.
-    if all.len() > 9 {
+    // DMs are 1:1 (or notes to self). Enforce before hitting the DB.
+    if all.len() > 2 {
         return Err(DbError::InvalidData(
-            "DM supports at most 9 participants".to_string(),
+            "DMs are 1:1; start a group chat for more people".to_string(),
         ));
     }
 
@@ -521,6 +532,8 @@ fn row_to_channel_record(row: sqlx::postgres::PgRow) -> Result<ChannelRecord> {
         ttl_seconds: row.try_get("ttl_seconds").unwrap_or(None),
         ttl_deadline: row.try_get("ttl_deadline").unwrap_or(None),
         goals_enabled: row.try_get("goals_enabled").unwrap_or(true),
+        picture: None,
+        group_chat: false,
     })
 }
 

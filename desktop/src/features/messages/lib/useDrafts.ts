@@ -1,3 +1,4 @@
+import { relayStorageScope } from "@/shared/lib/serviceAddress";
 import * as React from "react";
 
 import { discardQueuedAttachmentsForDraft } from "@/features/messages/lib/backgroundMediaUploadStore";
@@ -182,7 +183,10 @@ function legacyStorageKey(): string {
  * so a workspace switch never serves the wrong workspace's drafts.
  */
 export function initDraftStore(pubkey: string, relayUrl = ""): void {
-  const relayScope = canonicalizeRelayScope(relayUrl);
+  const relayScope = relayStorageScope(
+    relayUrl,
+    canonicalizeRelayScope(relayUrl),
+  );
   if (currentPubkey !== pubkey || currentRelayScope !== relayScope) {
     _memCache = null;
     resetDraftAuthorities();

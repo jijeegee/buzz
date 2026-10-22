@@ -28,7 +28,8 @@ String _ownerOf(RelayConfig config, String pubkey) =>
     '${config.baseUrl}:${pubkey.toLowerCase()}';
 
 String _cacheKey(RelayConfig config, String pubkey) =>
-    'kuzz.chatList.v1:${_ownerOf(config, pubkey)}';
+    'kuzz.chatList.v1:${storageScopeFor(config.baseUrl)}:'
+    '${pubkey.toLowerCase()}';
 
 /// A first page that failed for a passing reason is retried this soon.
 const _firstPageRetryDelay = Duration(seconds: 5);

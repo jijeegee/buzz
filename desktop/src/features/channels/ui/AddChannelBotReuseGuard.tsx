@@ -37,8 +37,8 @@ export function AddChannelBotReuseGuard({
         <span className="font-medium text-foreground">
           {reusableAgent.name}
         </span>{" "}
-        is already {statusLabel}. Reusing adds it to this channel without
-        creating a duplicate keypair.
+        is already {statusLabel}. Reusing adds it to this group without creating
+        a duplicate keypair.
       </p>
     </div>
   );

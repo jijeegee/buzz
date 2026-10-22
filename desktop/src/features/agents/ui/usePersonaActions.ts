@@ -390,7 +390,7 @@ export function usePersonaActions() {
     }
   }
 
-  async function handleConfirmSnapshotImport(keepAllowlist: boolean) {
+  async function handleConfirmSnapshotImport() {
     if (!snapshotImportState) {
       return;
     }
@@ -398,7 +398,6 @@ export function usePersonaActions() {
     try {
       const result = await confirmSnapshotImportMutation.mutateAsync({
         fileBytes: snapshotImportState.fileBytes,
-        keepAllowlist,
       });
       setSnapshotImportResult(result);
       void queryClient.invalidateQueries({ queryKey: personasQueryKey });

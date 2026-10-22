@@ -88,6 +88,34 @@ pub fn get_built_in_relay_url() -> String {
     relay::relay_ws_url()
 }
 
+/// How the webview keys stored settings for the built-in server: by the
+/// service scope, never by the address (see `auth::service`).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceInfo {
+    pub scope: String,
+    /// Earlier addresses of the built-in server, whose stored settings are
+    /// this service's.
+    pub previous_relay_urls: Vec<String>,
+    /// The current and earlier addresses the native side treats as this
+    /// service. A dev build pointed elsewhere at run time keeps that
+    /// address's own keys, in the webview too.
+    pub relay_urls: Vec<String>,
+}
+
+#[tauri::command]
+pub fn get_service_info() -> ServiceInfo {
+    ServiceInfo {
+        scope: crate::auth::service::scope().to_owned(),
+        previous_relay_urls: crate::auth::service::previous_relay_urls(),
+        // As built, not normalised: normalising maps `localhost` to
+        // `127.0.0.1`, which the webview would read as another server.
+        relay_urls: std::iter::once(crate::relay::server::relay_endpoints().ws)
+            .chain(crate::auth::service::previous_relay_urls())
+            .collect(),
+    }
+}
+
 #[tauri::command]
 pub fn auto_connect_default_relay_enabled() -> bool {
     option_env!("KUZZ_DESKTOP_BUILD_AUTO_CONNECT_DEFAULT_RELAY").is_some()
@@ -111,7 +139,8 @@ mod auto_connect_default_relay_tests {
 
 #[tauri::command]
 pub fn is_shared_identity() -> bool {
-    std::env::var("KUZZ_SHARE_IDENTITY")
+    crate::app_state::env_identity_allowed(crate::relay::server::kuzz_env())
+        && std::env::var("KUZZ_SHARE_IDENTITY")
         .map(|v| v == "1")
         .unwrap_or(false)
         && std::env::var("KUZZ_PRIVATE_KEY")

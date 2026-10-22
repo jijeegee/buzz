@@ -80,3 +80,50 @@ test("named channels keep their name", () => {
   const channel = { ...groupDm([key("b")]), name: "Launch crew" };
   assert.equal(resolveChannelDisplayLabel(channel, ME, {}), "Launch crew");
 });
+
+function groupChat(pubkeys, name = "") {
+  return {
+    id: "gc",
+    channelType: "stream",
+    groupChat: true,
+    name,
+    memberPubkeys: [ME, ...pubkeys],
+    participantPubkeys: [],
+    participants: [],
+  };
+}
+
+test("group chats: private name, shared name, then members", () => {
+  const profiles = profilesFor({ [key("b")]: "Alice", [key("c")]: "Bob" });
+  assert.equal(
+    resolveChannelDisplayLabel(
+      groupChat([key("b")], "Crew"),
+      ME,
+      profiles,
+      "Mine",
+    ),
+    "Mine",
+  );
+  assert.equal(
+    resolveChannelDisplayLabel(
+      groupChat([key("b")], "Crew"),
+      ME,
+      profiles,
+      null,
+    ),
+    "Crew",
+  );
+  assert.equal(
+    resolveChannelDisplayLabel(
+      groupChat([key("b"), key("c")]),
+      ME,
+      profiles,
+      null,
+    ),
+    "Alice, Bob",
+  );
+  assert.equal(
+    resolveChannelDisplayLabel(groupChat([]), ME, profiles, null),
+    "Empty chat",
+  );
+});

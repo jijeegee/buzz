@@ -1025,7 +1025,7 @@ test("opens Send feedback from the profile menu", async ({ page }) => {
   await page.getByTestId("profile-popover-send-feedback").click();
   await expect(page.getByTestId("send-feedback-dialog")).toBeVisible();
   await expect(page.getByTestId("feedback-privacy-disclosure")).toContainText(
-    "not posted to a channel",
+    "not posted to a group",
   );
 });
 
@@ -2191,7 +2191,7 @@ test("renders settings in the app shell with a back button", async ({
   await expect(personalGroup).toContainText("Personal");
   await expect(
     page.getByTestId("settings-nav-channel-templates"),
-  ).toContainText("Channel templates");
+  ).toContainText("Group templates");
   await expect(page.getByTestId("settings-nav-profile")).toHaveAttribute(
     "aria-pressed",
     "true",

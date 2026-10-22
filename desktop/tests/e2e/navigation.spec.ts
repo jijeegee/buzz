@@ -818,7 +818,7 @@ test("message links to visible root messages open the thread panel", async ({
     )
     .toBe(1);
   const randomChannelLink = linkMessage.getByRole("button", {
-    name: "Open channel random",
+    name: "Open group random",
   });
   await expect(randomChannelLink).toBeVisible();
   await expect(randomChannelLink).toHaveClass(/wrapping-inline-chip/);
@@ -906,7 +906,7 @@ test("direct-message tooltip metadata stays on one physical line", async ({
     .getByTestId("message-row")
     .filter({ hasText: "DM link" })
     .last()
-    .getByRole("button", { name: "Open message in channel alice-tyler" });
+    .getByRole("button", { name: "Open message in group alice-tyler" });
   await expect(dmLink).toHaveText("alice-tyler");
   await hoverUntilMetadataTooltip(page, dmLink);
 

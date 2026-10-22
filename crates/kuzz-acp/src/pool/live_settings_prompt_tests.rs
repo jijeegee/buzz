@@ -466,6 +466,7 @@ async fn new_session_system_prompt(project: Option<PromptProjectInfo>) -> String
                 name: "general".into(),
                 channel_type: "stream".into(),
                 description: None,
+                group_chat: false,
             },
         )]),
         ctx.rest_client.clone(),

@@ -295,7 +295,7 @@ export function CanvasHistoryPanel({
               {confirmRevision
                 ? `${authorLabel(confirmRevision.revision.author)}'s revision from ${formatItemTimestamp(confirmRevision.revision.createdAt, { withTime: true })}`
                 : "the selected revision"}{" "}
-              as the current canvas for everyone in this channel. History is
+              as the current canvas for everyone in this group. History is
               preserved.
             </AlertDialogDescription>
           </AlertDialogHeader>

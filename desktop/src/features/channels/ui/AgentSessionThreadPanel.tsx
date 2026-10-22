@@ -231,9 +231,9 @@ export function AgentSessionThreadPanel({
       : (referencedChannel?.name ?? null);
   const scopeLabel = sessionChannelId
     ? scopeChannelName
-      ? `#${scopeChannelName}`
-      : "1 channel"
-    : "All channels";
+      ? `${scopeChannelName}`
+      : "1 group"
+    : "All groups";
   const agentProfile = profiles?.[normalizePubkey(agent.pubkey)] ?? null;
   const agentLabel = resolveUserLabel({
     pubkey: agent.pubkey,
@@ -272,7 +272,7 @@ export function AgentSessionThreadPanel({
       });
       if (outcome === "ambiguous_target") {
         toast.error(
-          "This channel has multiple agent sessions. Stopping a specific thread isn't available here yet.",
+          "This group has multiple agent sessions. Stopping a specific thread isn't available here yet.",
         );
         return;
       }
@@ -336,7 +336,7 @@ export function AgentSessionThreadPanel({
                 showRawFeed
                   ? "Hide raw JSON-RPC payloads."
                   : channel
-                    ? "Show raw JSON-RPC payloads for this channel."
+                    ? "Show raw JSON-RPC payloads for this group."
                     : "Show raw JSON-RPC payloads for this agent."
               }
             >
@@ -423,7 +423,7 @@ export function AgentSessionThreadPanel({
                 canStopCurrentTurn
                   ? "Interrupt the current ACP turn without stopping the agent process."
                   : !sessionChannelId
-                    ? "Open activity for a channel to stop its current turn."
+                    ? "Open activity for a group to stop its current turn."
                     : isWorking
                       ? "Only locally managed agents can be interrupted from this community."
                       : "Available while the agent is working."
@@ -437,7 +437,7 @@ export function AgentSessionThreadPanel({
                 {!canStopCurrentTurn ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground">
                     {!sessionChannelId
-                      ? "Open activity for a channel to stop its current turn."
+                      ? "Open activity for a group to stop its current turn."
                       : isWorking
                         ? "Only available for locally managed agents."
                         : "Available while the agent is working."}
@@ -460,6 +460,7 @@ export function AgentSessionThreadPanel({
         onBack={onBack}
       >
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={agentProfile?.avatarUrl ?? null}
           className="size-9"
           label={agentLabel}
@@ -530,8 +531,8 @@ export function AgentSessionThreadPanel({
             className="border-0 bg-transparent px-0 py-2 shadow-none"
             emptyDescription={
               sessionChannelId
-                ? `Mention ${agent.name} in the channel to see its work here.`
-                : `Mention ${agent.name} in any channel to see its work here.`
+                ? `Mention ${agent.name} in the group to see its work here.`
+                : `Mention ${agent.name} in any group to see its work here.`
             }
             profiles={profiles}
             rawLayout="exclusive"

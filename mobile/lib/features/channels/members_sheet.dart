@@ -353,7 +353,7 @@ class _MemberTile extends ConsumerWidget {
                   color: context.colors.error,
                 ),
                 title: Text(
-                  'Remove from channel',
+                  'Remove from group',
                   style: TextStyle(color: context.colors.error),
                 ),
                 onTap: () async {
@@ -362,7 +362,7 @@ class _MemberTile extends ConsumerWidget {
                     context: context,
                     builder: (context) => AlertDialog(
                       title: const Text('Remove member'),
-                      content: Text('Remove $label from this channel?'),
+                      content: Text('Remove $label from this group?'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(false),

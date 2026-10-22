@@ -43,7 +43,7 @@ function formatChannelActivity(timestamp: string): string | null {
 
 export function channelTooltipFooter(channel: Channel) {
   const details = [
-    channel.visibility === "private" ? "Private channel" : "Public channel",
+    channel.visibility === "private" ? "Private group" : "Public group",
     channel.channelType === "forum" ? "Forum" : null,
     channel.archivedAt ? "Archived" : null,
     channel.lastMessageAt ? formatChannelActivity(channel.lastMessageAt) : null,
@@ -126,7 +126,7 @@ function ChannelPermalinkChipContents({
         href={href}
         icon="channel"
         title={href}
-        aria-label={openable ? `Open channel ${label}` : `Channel ${label}`}
+        aria-label={openable ? `Open group ${label}` : `Group ${label}`}
         interactive={openable && interactive}
         onOpenLink={() => {
           if (openable) onOpenChannel(channelId);
@@ -188,7 +188,7 @@ function ResolvedAuthoredDeepLink({
     <KuzzInlineLink
       href={href}
       title={href}
-      aria-label={`${messageLink ? "Open message" : "Open channel"}: ${label}`}
+      aria-label={`${messageLink ? "Open message" : "Open group"}: ${label}`}
       interactive={interactive}
       onOpenLink={() =>
         messageLink ? onOpenMessageLink(messageLink) : onOpenChannel(channelId)
@@ -235,7 +235,7 @@ export function AuthoredDeepLinkAnchor({
       <KuzzInlineLink
         href={href}
         title={href}
-        aria-label={`${messageLink ? "Open message" : "Open channel"}: ${label}`}
+        aria-label={`${messageLink ? "Open message" : "Open group"}: ${label}`}
         interactive={interactive}
         onOpenLink={openLink}
       >
@@ -415,7 +415,7 @@ function ChannelReferenceChip({
         href={channel ? buildChannelLink(channel.id) : undefined}
         icon="channel"
         aria-label={
-          channel ? `Open channel ${channelName}` : `Channel ${channelName}`
+          channel ? `Open group ${channelName}` : `Group ${channelName}`
         }
         interactive={Boolean(channel) && interactive}
         onOpenLink={() => {

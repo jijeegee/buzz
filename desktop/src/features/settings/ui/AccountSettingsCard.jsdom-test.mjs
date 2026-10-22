@@ -108,7 +108,9 @@ const { createRoot } = await import("react-dom/client");
 const { QueryClient, QueryClientProvider } = await import(
   "@tanstack/react-query"
 );
-const { AccountSettingsCard } = await import("./AccountSettingsCard.tsx");
+const { AccountSettingsCard, DevicesSettingsCard } = await import(
+  "./AccountSettingsCard.tsx"
+);
 const tokenAuthApi = await import("../../../shared/api/tokenAuth.ts");
 const accountSwitch = await import("../../accounts/lib/accountSwitch.ts");
 const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
@@ -247,7 +249,7 @@ test("a signed-out community offers Google sign-in through login_with_google", a
 
 test("a signed-in community lists devices with one labelled sign-out per other device", async () => {
   status = baseStatus({ state: "active", principal: "ab".repeat(32) });
-  const { container, unmount } = await mount();
+  const { container, unmount } = await mount(DevicesSettingsCard);
   await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
   const list = container.querySelector("ul[aria-labelledby]");
   assert.ok(list, "device list is labelled by its heading");
@@ -275,7 +277,7 @@ test("a signed-in community lists devices with one labelled sign-out per other d
 
 test("any device can be renamed; the saved name is trimmed and Escape cancels", async () => {
   status = baseStatus({ state: "active", principal: "ab".repeat(32) });
-  const { container, unmount } = await mount();
+  const { container, unmount } = await mount(DevicesSettingsCard);
   await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
   const rename = (label) =>
     container.querySelector(`button[aria-label='Rename ${label}']`);
@@ -562,18 +564,56 @@ function dialogButton(label) {
   );
 }
 
-test("signing out, signing out other devices and disconnecting agents each confirm first", async () => {
+test("signing out other devices confirms first, in Settings › Devices", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount(DevicesSettingsCard);
+  await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
+  const open = container.querySelector(
+    "[data-testid='account-sign-out-others']",
+  );
+  await act(async () => fireEvent.click(open));
+  assert.ok(
+    document
+      .querySelector('[role="alertdialog"]')
+      .textContent.includes("Sign out other devices?"),
+  );
+  assert.equal(
+    calls.some((c) => c.command === "revoke_other_sessions"),
+    false,
+  );
+  await act(async () =>
+    fireEvent.click(dialogButton("Sign out other devices")),
+  );
+  await settle(() => calls.some((c) => c.command === "revoke_other_sessions"));
+  assert.equal(
+    calls.filter((c) => c.command === "revoke_other_sessions").length,
+    1,
+  );
+  await unmount();
+});
+
+test("Account has no device list; Devices is its own section", async () => {
   status = baseStatus({ state: "active", principal: "ab".repeat(32) });
   const { container, unmount } = await mount();
-  await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
+  await settle(
+    () => container.querySelector("[data-testid='account-name']") !== null,
+  );
+  assert.equal(container.querySelector("ul[aria-labelledby]"), null);
+  assert.equal(
+    container.querySelector("[data-testid='account-sign-out-others']"),
+    null,
+  );
+  await unmount();
+});
+
+test("signing out and disconnecting agents each confirm first", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount();
+  await settle(
+    () => container.querySelector("[data-testid='account-name']") !== null,
+  );
   // Sign out last: the mocked logout never settles (the real one reloads).
   const cases = [
-    [
-      "account-sign-out-others",
-      "Sign out other devices?",
-      "Sign out other devices",
-      "revoke_other_sessions",
-    ],
     [
       "account-disconnect-agents",
       "Disconnect all agents?",

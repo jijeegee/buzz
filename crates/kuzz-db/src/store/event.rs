@@ -124,9 +124,10 @@ pub struct EventQuery {
     /// SQL pushdown is sound.  Keeping `event_visible_to_reader` as post-filter
     /// defense-in-depth catches any residual mismatch.
     pub shared_gated_reader: Option<Vec<u8>>,
-    /// Silent-block reader: when set, exclude DM-channel events whose author
-    /// this reader blocked (`user_blocks`), before ORDER/LIMIT so history
-    /// pages and counts never include them.
+    /// Silent-block reader: when set, exclude 1:1 DM events the server
+    /// received from someone while this reader blocked them
+    /// (`user_block_periods`), before ORDER/LIMIT so history pages and counts
+    /// never include them.
     pub blocked_dm_reader: Option<Vec<u8>>,
 }
 
@@ -535,7 +536,22 @@ pub(crate) async fn query_events_with_operation(
     operation: crate::observability::WriterOperation,
 ) -> Result<Vec<StoredEvent>> {
     let mut conn = crate::observability::acquire_writer(pool, operation).await?;
-    query_events_on(&mut conn, q).await
+    if operation == crate::observability::WriterOperation::SubscriptionHistory {
+        query_history_on(&mut conn, q).await
+    } else {
+        query_events_on(&mut conn, q).await
+    }
+}
+
+/// [`query_events_on`] for a client's historical REQ/COUNT read: every
+/// statement runs under the read deadline (see [`E_TAG_STATEMENT_TIMEOUT_SQL`]),
+/// not just `#e` reads, so a filter a client shaped to be slow is cancelled
+/// instead of holding a connection indefinitely.
+pub(crate) async fn query_history_on(
+    conn: &mut sqlx::PgConnection,
+    q: &EventQuery,
+) -> Result<Vec<StoredEvent>> {
+    query_events_on_inner(conn, q, true).await
 }
 
 /// [`query_events`] on a specific session — the replica-routing path runs
@@ -544,6 +560,14 @@ pub(crate) async fn query_events_with_operation(
 pub(crate) async fn query_events_on(
     conn: &mut sqlx::PgConnection,
     q: &EventQuery,
+) -> Result<Vec<StoredEvent>> {
+    query_events_on_inner(conn, q, false).await
+}
+
+async fn query_events_on_inner(
+    conn: &mut sqlx::PgConnection,
+    q: &EventQuery,
+    read_deadline: bool,
 ) -> Result<Vec<StoredEvent>> {
     // Composite cursor requires both halves.
     if q.before_id.is_some() && q.until.is_none() {
@@ -574,7 +598,7 @@ pub(crate) async fn query_events_on(
     }
 
     let mut qb = build_query_events_sql(q);
-    let rows = if q.e_tags.is_some() {
+    let rows = if read_deadline || q.e_tags.is_some() {
         fetch_with_e_tag_deadline(conn, &mut qb).await?
     } else {
         qb.build().fetch_all(&mut *conn).await?
@@ -589,26 +613,45 @@ pub(crate) async fn query_events_on(
     Ok(out)
 }
 
-/// Silent-block pushdown: hide DM events authored by people the reader
-/// blocked. Channel-less events and non-DM channels are untouched.
+/// Silent-block pushdown: hide 1:1 DM events the server received from
+/// someone while the reader blocked them (`user_block_periods`). Messages
+/// from before a block or after an unblock, channel-less events, group DMs
+/// and other channels are untouched.
+///
+/// The author set and the reader's 1:1 DMs are hashed once per query; only
+/// rows passing both probe the period index.
 fn push_blocked_dm_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
     let Some(ref reader) = q.blocked_dm_reader else {
         return;
     };
+    let community = q.community_id.as_uuid();
     qb.push(format!(
         " AND NOT ({col_prefix}channel_id IS NOT NULL \
-         AND {col_prefix}pubkey IN (SELECT ub.blocked FROM user_blocks ub \
-         WHERE ub.community_id = "
+         AND {col_prefix}pubkey IN (SELECT bp.blocked FROM user_block_periods bp \
+         WHERE bp.community_id = "
     ));
-    qb.push_bind(q.community_id.as_uuid());
-    qb.push(" AND ub.blocker = ");
+    qb.push_bind(community);
+    qb.push(" AND bp.blocker = ");
     qb.push_bind(reader.clone());
     qb.push(format!(
-        ") AND {col_prefix}channel_id IN (SELECT c.id FROM channels c \
-         WHERE c.channel_type = 'dm' AND c.community_id = "
+        ") AND {col_prefix}channel_id IN (SELECT me.channel_id FROM channel_members me \
+         WHERE me.community_id = "
     ));
-    qb.push_bind(q.community_id.as_uuid());
-    qb.push("))");
+    qb.push_bind(community);
+    qb.push(" AND me.pubkey = ");
+    qb.push_bind(reader.clone());
+    qb.push(
+        " AND dm_is_one_to_one(me.community_id, me.channel_id)) \
+         AND EXISTS (SELECT 1 FROM user_block_periods bp WHERE bp.community_id = ",
+    );
+    qb.push_bind(community);
+    qb.push(" AND bp.blocker = ");
+    qb.push_bind(reader.clone());
+    qb.push(format!(
+        " AND bp.blocked = {col_prefix}pubkey \
+         AND bp.started_at <= {col_prefix}received_at \
+         AND (bp.ended_at IS NULL OR {col_prefix}received_at < bp.ended_at)))"
+    ));
 }
 
 /// SQL for [`query_events_on`], after its match-nothing early returns.
@@ -844,16 +887,17 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
     qb
 }
 
-/// Server-side deadline for e-tag (aux-closure / `#e`) reads, kept under the
+/// Server-side deadline for e-tag (aux-closure / `#e`) reads and client
+/// history reads ([`query_history_on`]), kept under the
 /// desktop's 30 s request timeout so a runaway query is cancelled once no
 /// client can still be waiting for it. It only ever tightens the effective
 /// `statement_timeout`: a shorter operator cap (`KUZZ_DB_STATEMENT_TIMEOUT_MS`)
-/// is kept, and a disabled (`0`) or longer one is lowered to 20 s. The limit is
+/// is kept, and a disabled (`0`) or longer one is lowered to 10 s. The limit is
 /// per statement, not per request.
 const E_TAG_STATEMENT_TIMEOUT_SQL: &str = "SELECT set_config('statement_timeout', \
      CASE WHEN current_setting('statement_timeout')::interval = interval '0' \
-            OR current_setting('statement_timeout')::interval > interval '20s' \
-          THEN '20s' ELSE current_setting('statement_timeout') END, true)";
+            OR current_setting('statement_timeout')::interval > interval '10s' \
+          THEN '10s' ELSE current_setting('statement_timeout') END, true)";
 
 /// Run an e-tag read under [`E_TAG_STATEMENT_TIMEOUT_SQL`] without changing the
 /// deadline for anything else on `conn`. `begin()` opens a transaction on an
@@ -2148,7 +2192,7 @@ impl Db {
             .await
         {
             crate::RouteDecision::Replica(mut tx, _entry, reason) => {
-                match crate::event::query_events_on(&mut tx, q).await {
+                match crate::event::query_history_on(&mut tx, q).await {
                     Ok(events) => {
                         Self::record_route(path, "replica", reason);
                         Ok(events)
@@ -2207,7 +2251,7 @@ impl Db {
             .await
         {
             crate::RouteDecision::Replica(mut tx, _entry, reason) => {
-                match crate::event::query_events_on(&mut tx, q).await {
+                match crate::event::query_history_on(&mut tx, q).await {
                     Ok(events) => {
                         Self::record_route(path, "replica", reason);
                         Ok(events)
@@ -2812,7 +2856,7 @@ mod postgres_tests {
     async fn e_tag_deadline_only_tightens_and_restores_timeout() {
         let pool = setup_pool().await;
         // (operator setting, expected effective value inside the read)
-        let cases = [("0", "20s"), ("5s", "5s"), ("1min", "20s")];
+        let cases = [("0", "10s"), ("5s", "5s"), ("1min", "10s")];
         for (setting, expected) in cases {
             // Autocommit connection (writer path).
             let mut conn = pool.acquire().await.expect("acquire");
@@ -2881,7 +2925,7 @@ mod postgres_tests {
     }
 
     /// Pins the dispatch: an e-tag read through the production
-    /// `query_events_on` is cancelled at the 20 s deadline even with the
+    /// `query_events_on` is cancelled at the 10 s deadline even with the
     /// session timeout disabled, while `events` is locked. (Slow by design.)
     #[tokio::test]
     #[ignore = "requires Postgres"]
@@ -2903,14 +2947,51 @@ mod postgres_tests {
         q.e_tags = Some(vec!["00".repeat(32)]);
         let started = std::time::Instant::now();
         let result = tokio::time::timeout(
-            std::time::Duration::from_secs(40),
+            std::time::Duration::from_secs(30),
             query_events_on(&mut conn, &q),
         )
         .await
-        .expect("deadline must fire before the 40 s guard");
+        .expect("deadline must fire before the 30 s guard");
         let err = result.expect_err("locked read must be cancelled");
         assert!(err.is_statement_cancelled(), "want 57014, got {err}");
-        assert!(started.elapsed() >= std::time::Duration::from_secs(19));
+        assert!(started.elapsed() >= std::time::Duration::from_secs(9));
+
+        locker.rollback().await.expect("unlock");
+        sqlx::query("RESET statement_timeout")
+            .execute(&mut *conn)
+            .await
+            .expect("reset");
+    }
+
+    /// A client history read without any `#e` filter is cancelled at the same
+    /// deadline: a filter shaped to be slow cannot hold a connection.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn history_read_is_cancelled_at_deadline_when_timeout_disabled() {
+        let pool = setup_pool().await;
+        let community = CommunityId::from_uuid(make_test_community(&pool).await);
+        let mut locker = pool.begin().await.expect("begin locker");
+        sqlx::query("LOCK TABLE events IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *locker)
+            .await
+            .expect("lock events");
+
+        let mut conn = pool.acquire().await.expect("acquire");
+        sqlx::query("SET statement_timeout = 0")
+            .execute(&mut *conn)
+            .await
+            .expect("disable timeout");
+        let q = EventQuery::for_community(community);
+        let started = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            query_history_on(&mut conn, &q),
+        )
+        .await
+        .expect("deadline must fire before the 30 s guard");
+        let err = result.expect_err("locked read must be cancelled");
+        assert!(err.is_statement_cancelled(), "want 57014, got {err}");
+        assert!(started.elapsed() >= std::time::Duration::from_secs(9));
 
         locker.rollback().await.expect("unlock");
         sqlx::query("RESET statement_timeout")
@@ -2920,7 +3001,7 @@ mod postgres_tests {
     }
 
     /// Pins the dispatch: a COUNT with an e-tag filter through the production
-    /// `count_events_on` is cancelled at the 20 s deadline even with the
+    /// `count_events_on` is cancelled at the 10 s deadline even with the
     /// session timeout disabled, while `events` is locked. Connection and
     /// setting are restored afterwards. (Slow by design.)
     #[tokio::test]
@@ -2943,14 +3024,14 @@ mod postgres_tests {
         q.e_tags = Some(vec!["00".repeat(32)]);
         let started = std::time::Instant::now();
         let result = tokio::time::timeout(
-            std::time::Duration::from_secs(40),
+            std::time::Duration::from_secs(30),
             count_events_on(&mut conn, &q),
         )
         .await
-        .expect("deadline must fire before the 40 s guard");
+        .expect("deadline must fire before the 30 s guard");
         let err = result.expect_err("locked COUNT must be cancelled");
         assert!(err.is_statement_cancelled(), "want 57014, got {err}");
-        assert!(started.elapsed() >= std::time::Duration::from_secs(19));
+        assert!(started.elapsed() >= std::time::Duration::from_secs(9));
 
         // Connection and session timeout are restored after the error.
         let after: String = sqlx::query_scalar("SHOW statement_timeout")

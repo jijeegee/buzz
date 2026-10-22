@@ -911,6 +911,23 @@ pub struct AgentModelsResponse {
     pub selected_model: Option<String>,
     /// Whether this agent supports model switching.
     pub supports_switching: bool,
+    /// Providers the harness's own setup offers, default first. Set only for
+    /// harnesses whose provider is chosen outside Kuzz (Hermes); each model id
+    /// starts with one of these ids followed by `:`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness_providers: Option<Vec<HarnessProviderInfo>>,
+}
+
+/// A provider set up in a harness's own configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessProviderInfo {
+    /// Id as it prefixes model ids (`openai-codex`).
+    pub id: String,
+    /// Display name reported by the harness.
+    pub label: String,
+    /// The provider the harness runs when no model is chosen.
+    pub is_default: bool,
 }
 
 /// A single model available from an agent.

@@ -22,7 +22,6 @@ import {
   useTeamCatalogQuery,
 } from "@/features/agents/lib/useTeamCatalogRelay";
 import { useCommunities } from "@/features/communities/useCommunities";
-import type { CreateChannelManagedAgentsResult } from "@/features/agents/channelAgents";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { deletePersona } from "@/shared/api/tauriPersonas";
 import {
@@ -36,7 +35,6 @@ import {
 } from "@/shared/api/tauriTeams";
 import type {
   AgentTeam,
-  Channel,
   CreateTeamInput,
   UpdateTeamInput,
 } from "@/shared/api/types";
@@ -55,15 +53,7 @@ type ActionMessages = {
   setActionErrorMessage: (message: string | null) => void;
 };
 
-type RefetchCallbacks = {
-  refetchManagedAgents: () => void;
-  refetchRelayAgents: () => void;
-};
-
-export function useTeamActions(
-  actions: ActionMessages,
-  refetch: RefetchCallbacks,
-) {
+export function useTeamActions(actions: ActionMessages) {
   const queryClient = useQueryClient();
   const { activeCommunity } = useCommunities();
   const identityQuery = useIdentityQuery();
@@ -82,8 +72,6 @@ export function useTeamActions(
   const [teamToDelete, setTeamToDelete] = React.useState<AgentTeam | null>(
     null,
   );
-  const [teamToAddToChannel, setTeamToAddToChannel] =
-    React.useState<AgentTeam | null>(null);
   const [teamToExport, setTeamToExport] = React.useState<AgentTeam | null>(
     null,
   );
@@ -119,7 +107,7 @@ export function useTeamActions(
     }) => previewTeamSnapshotImport(fileBytes, fileName),
   });
   const confirmTeamSnapshotImportMutation = useMutation({
-    mutationFn: (input: { fileBytes: number[]; keepAllowlist: boolean }) =>
+    mutationFn: (input: { fileBytes: number[] }) =>
       confirmTeamSnapshotImport(input),
   });
 
@@ -170,33 +158,12 @@ export function useTeamActions(
     }
   }
 
-  function handleTeamDeployed(
-    channel: Channel,
-    result: CreateChannelManagedAgentsResult,
-  ) {
-    actions.setActionErrorMessage(null);
-    const successCount = result.successes.length;
-    const failCount = result.failures.length;
-    if (failCount === 0) {
-      actions.setActionNoticeMessage(
-        `Deployed ${successCount} ${successCount === 1 ? "agent" : "agents"} to ${channel.name}.`,
-      );
-    } else {
-      actions.setActionNoticeMessage(
-        `Deployed ${successCount} ${successCount === 1 ? "agent" : "agents"} to ${channel.name}. ${failCount} failed.`,
-      );
-    }
-    setTeamToAddToChannel(null);
-    refetch.refetchManagedAgents();
-    refetch.refetchRelayAgents();
-  }
-
   function openCreateDialog() {
     actions.setActionNoticeMessage(null);
     actions.setActionErrorMessage(null);
     setTeamDialogState({
       title: "Create team",
-      description: "Group agents together for quick deployment to channels.",
+      description: "Bundle agents together for quick deployment to groups.",
       submitLabel: "Create team",
       initialValues: {
         name: "",
@@ -379,7 +346,7 @@ export function useTeamActions(
     }
   }
 
-  async function handleConfirmTeamSnapshotImport(keepAllowlist: boolean) {
+  async function handleConfirmTeamSnapshotImport() {
     if (!teamSnapshotImportState) {
       return;
     }
@@ -387,7 +354,6 @@ export function useTeamActions(
     try {
       const result = await confirmTeamSnapshotImportMutation.mutateAsync({
         fileBytes: teamSnapshotImportState.fileBytes,
-        keepAllowlist,
       });
       setTeamSnapshotImportResult(result);
       void queryClient.invalidateQueries({ queryKey: personasQueryKey });
@@ -426,8 +392,6 @@ export function useTeamActions(
     setTeamDialogState,
     teamToDelete,
     setTeamToDelete,
-    teamToAddToChannel,
-    setTeamToAddToChannel,
     teamToExport,
     setTeamToExport,
     teamToShare,
@@ -440,7 +404,6 @@ export function useTeamActions(
     handleTeamSubmit,
     handleDeleteRemovedPersonas,
     handleDeleteTeam,
-    handleTeamDeployed,
     openCreateDialog,
     openDuplicateDialog,
     openEditDialog,

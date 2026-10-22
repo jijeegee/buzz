@@ -20,14 +20,14 @@ function makeChannel(overrides = {}) {
 test("getChannelDescription falls back when channel is null", () => {
   assert.equal(
     getChannelDescription(null),
-    "Connect to browse channels and read messages.",
+    "Connect to find groups and read messages.",
   );
 });
 
 test("getChannelDescription falls back when no detail fields are set", () => {
   assert.equal(
     getChannelDescription(makeChannel()),
-    "Channel details and activity.",
+    "Group details and activity.",
   );
 });
 
@@ -70,7 +70,7 @@ test("getChannelDescription puts status prefixes on their own line", () => {
         isMember: false,
       }),
     ),
-    `Archived. Read-only until you join this open channel.\n${detail}`,
+    `Archived. Read-only until you join this open group.\n${detail}`,
   );
 });
 

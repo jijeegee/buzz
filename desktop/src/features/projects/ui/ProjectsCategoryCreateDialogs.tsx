@@ -38,7 +38,8 @@ export function ProjectsCategoryCreateDialogs({
         (channel) =>
           channel.isMember &&
           !channel.archivedAt &&
-          channel.channelType !== "dm",
+          channel.channelType !== "dm" &&
+          channel.groupChat !== true,
       ),
     [channelsQuery.data],
   );
@@ -50,7 +51,7 @@ export function ProjectsCategoryCreateDialogs({
         description={
           channelProject
             ? `Add another stream to ${channelProject.name}.`
-            : "Choose a project for this channel."
+            : "Choose a project for this group."
         }
         isCreating={createChannelMutation.isPending}
         onCreate={async (input) => {
@@ -60,12 +61,12 @@ export function ProjectsCategoryCreateDialogs({
             ownerControlAgentPubkey: ownerControlAgentPubkeyFor(channelProject),
             project: channelProject,
           });
-          toast.success(`Channel "#${result.channel.name}" created.`);
+          toast.success(`Group "${result.channel.name}" created.`);
           await goChannel(result.channel.id);
         }}
         onOpenChange={onChannelOpenChange}
         testId="create-project-channel-dialog"
-        title="Create a project channel"
+        title="Create a project group"
       >
         <label className="block space-y-1.5 text-sm font-medium">
           <span>Project</span>

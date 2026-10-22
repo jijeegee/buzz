@@ -46,11 +46,13 @@ export const KIND_HUDDLE_ENDED = 48103;
 export const KIND_HUDDLE_LIVENESS = 48104;
 // NIP-78 application-specific data. All use kind 30078; the relay
 // differentiates them by d-tag ("read-state:<slotId>", "channel-sections",
-// "channel-mutes", "channel-stars", "channel-sort", "project-sidebar-membership").
+// "channel-mutes", "channel-stars", "channel-sort", "project-sidebar-membership",
+// "channel-names").
 export const KIND_READ_STATE = 30078;
 export const KIND_THREAD_NAME = 40009;
 export const KIND_CHANNEL_SECTIONS = 30078;
 export const KIND_CHANNEL_MUTES = 30078;
+export const KIND_CHANNEL_NAMES = 30078;
 export const KIND_CHANNEL_STARS = 30078;
 export const KIND_CHANNEL_SORT = 30078;
 export const KIND_PROJECT_SIDEBAR_MEMBERSHIP = 30078;
@@ -73,6 +75,9 @@ export const KIND_AGENT_HOST_DEVICES = 30180;
 // The owner's chosen robot (shape + colour) for one of their devices; d = the
 // device id. Author-only like 30180.
 export const KIND_DEVICE_ROBOT = 30181;
+// A team: a group of the owner's real agents, any computer; d = the team id.
+// Author-only like 30181. Not KIND_TEAM (30176), which is a team preset.
+export const KIND_AGENT_TEAM = 30182;
 export const KIND_USER_STATUS = 30315;
 export const KIND_AGENT_OBSERVER_FRAME = 24200;
 export const KIND_AGENT_TURN_METRIC = 44200;

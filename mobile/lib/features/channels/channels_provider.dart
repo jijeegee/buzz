@@ -19,6 +19,7 @@ import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
 import 'channel_mutes/channel_mutes_provider.dart';
 import 'huddle_channel_filter.dart';
+import 'timeline_message.dart' show SystemEvent, SystemEventType;
 import '../../shared/read_state/read_state_provider.dart';
 import 'thread_follows/thread_follows_provider.dart';
 import 'unread_badge/is_high_priority_event.dart';
@@ -55,6 +56,13 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   bool _pushCacheDirty = false;
 
   static const _backstopInterval = Duration(seconds: 60);
+
+  /// Wait between a live metadata-change system message and the refetch it
+  /// triggers. The relay posts the system message before it republishes the
+  /// group's kind:39000, so an immediate refetch could read the old metadata.
+  @visibleForTesting
+  static Duration liveMetadataRefreshDelay = const Duration(seconds: 1);
+  Timer? _metadataRefreshTimer;
 
   final Map<String, _LiveChunkSubscription> _liveSubscriptionsByChunk = {};
   Future<void> _liveSubscriptionQueue = Future.value();
@@ -153,6 +161,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       _observedUnreadEventsByChannel.clear();
       _backstopTimer?.cancel();
       _backstopTimer = null;
+      _metadataRefreshTimer?.cancel();
+      _metadataRefreshTimer = null;
     });
 
     if (sessionState.status != SessionStatus.connected) {
@@ -324,6 +334,16 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       if (count != null) {
         channels[i] = channels[i].copyWith(memberCount: count);
       }
+      // A group chat's 39000 lists no people; its members (39002 order)
+      // draw its title and photo, as a DM's participants do.
+      if (channels[i].isGroupChat) {
+        channels[i] = channels[i].copyWith(
+          participantPubkeys: [
+            for (final member in cachedMembersForChannel(channels[i].id))
+              member.pubkey.toLowerCase(),
+          ],
+        );
+      }
     }
 
     // Step 3: fetch the most recent message per channel to populate lastMessageAt.
@@ -404,9 +424,9 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     // (e.g. TTL auto-archive by the relay reaper) could keep showing compose
     // and manage actions in the detail view until the cache expired naturally.
     //
-    // Scoped narrowly to the archived and goals flips — broader metadata staleness
-    // (renames, topic changes, etc.) is a separate, pre-existing concern that
-    // already affects this provider for other reasons.
+    // The same holds for the group photo, name, description and topic: a
+    // change made on another device must reach the header and details, which
+    // read the merged details, not only the Chats rows.
     // Re-check before the first write that other providers can observe. Every
     // await above is fenced, but the switch can also land in the synchronous
     // gap, so the guard sits immediately before the write rather than only
@@ -420,7 +440,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       final prev = prevById[channel.id];
       if (prev != null &&
           (prev.isArchived != channel.isArchived ||
-              prev.goalsEnabled != channel.goalsEnabled)) {
+              prev.goalsEnabled != channel.goalsEnabled ||
+              prev.picture != channel.picture ||
+              prev.name != channel.name ||
+              prev.description != channel.description ||
+              prev.topic != channel.topic)) {
         ref.invalidate(channelDetailsProvider(channel.id));
       }
       // A tree read while goals were off is empty (the relay hides it), so
@@ -566,6 +590,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       ttlSeconds: data.ttlSeconds,
       ttlDeadline: data.ttlDeadline,
       goalsEnabled: data.goalsEnabled,
+      picture: data.picture,
+      groupChat: data.groupChat,
     );
   }
 
@@ -731,6 +757,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     final channelId = event.channelId;
     if (channelId == null) return;
 
+    if (_changesChannelMetadata(event) ||
+        _changesGroupChatMembers(event, channelId)) {
+      _scheduleMetadataRefresh();
+    }
+
     final myPk = ref.read(myPubkeyProvider);
     final mutedChannelIds = _mutedChannelIds();
 
@@ -771,6 +802,46 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       }
 
       return updated;
+    });
+  }
+
+  /// Whether [event] is a system message announcing a change to the group's
+  /// kind:39000 metadata (photo, topic or purpose).
+  static bool _changesChannelMetadata(NostrEvent event) {
+    if (event.kind != EventKind.systemMessage) return false;
+    return switch (SystemEvent.fromContent(event.content)?.type) {
+      SystemEventType.pictureChanged ||
+      SystemEventType.topicChanged ||
+      SystemEventType.purposeChanged => true,
+      _ => false,
+    };
+  }
+
+  /// Whether [event] announces a member change in a group chat, whose
+  /// members draw its title and photo.
+  bool _changesGroupChatMembers(NostrEvent event, String channelId) {
+    if (event.kind != EventKind.systemMessage) return false;
+    final isGroupChat =
+        state.value?.any((c) => c.id == channelId && c.isGroupChat) ?? false;
+    if (!isGroupChat) return false;
+    return switch (SystemEvent.fromContent(event.content)?.type) {
+      SystemEventType.memberJoined ||
+      SystemEventType.memberLeft ||
+      SystemEventType.memberRemoved => true,
+      _ => false,
+    };
+  }
+
+  /// Refetches the channel list (and with it the changed kind:39000) shortly
+  /// after a metadata-change system message, so another device's change shows
+  /// without a restart. The message itself is only a trigger: anyone may post
+  /// a kind:40099, so the new values come from the relay-signed metadata.
+  /// Changes that arrive while a refetch is pending share it.
+  void _scheduleMetadataRefresh() {
+    if (_metadataRefreshTimer?.isActive ?? false) return;
+    _metadataRefreshTimer = Timer(liveMetadataRefreshDelay, () {
+      _metadataRefreshTimer = null;
+      if (ref.mounted) unawaited(_backstopRefresh());
     });
   }
 

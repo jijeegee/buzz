@@ -403,10 +403,12 @@ async fn apply_reply(
 
 /// Add one unread (and one mention when the message mentions them) for the
 /// room's current members who have not read `seq`, except the author and, in
-/// a DM, members who blocked the author. Rows already at the cap are still
-/// updated (a no-op value change) so the row lock is always taken: a
-/// concurrent mark-read then waits for this transaction and recounts with the
-/// message visible, instead of resetting to 0 while the message is in flight.
+/// a 1:1 DM, a member who blocks the author now (the message is received
+/// inside their block period, so recounts skip it too). Rows already at the
+/// cap are still updated (a no-op value change) so the row lock is always
+/// taken: a concurrent mark-read then waits for this transaction and recounts
+/// with the message visible, instead of resetting to 0 while the message is
+/// in flight.
 async fn add_room_unread(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -425,11 +427,10 @@ async fn add_room_unread(
                     THEN LEAST(cm.unread_mentions + 1, $6) ELSE cm.unread_mentions END \
           WHERE cm.community_id = $1 AND cm.channel_id = $2 AND cm.removed_at IS NULL \
             AND cm.pubkey <> $4 AND COALESCE(cm.read_seq, 0) < $5 \
-            AND NOT EXISTS ( \
-                SELECT 1 FROM channels c \
-                  JOIN user_blocks ub ON ub.community_id = c.community_id \
-                 WHERE c.community_id = $1 AND c.id = $2 AND c.channel_type = 'dm' \
-                   AND ub.blocker = cm.pubkey AND ub.blocked = $4)",
+            AND NOT (EXISTS ( \
+                SELECT 1 FROM user_blocks ub \
+                 WHERE ub.community_id = $1 AND ub.blocker = cm.pubkey AND ub.blocked = $4) \
+                AND dm_is_one_to_one($1, $2))",
     )
     .bind(community)
     .bind(channel_id)
@@ -443,7 +444,7 @@ async fn add_room_unread(
 }
 
 /// [`add_room_unread`] for every follow row of thread `root` (any follow
-/// state; the row's own room decides the DM block rule).
+/// state; the row's own room decides the 1:1 DM block rule).
 async fn add_thread_unread(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -462,11 +463,10 @@ async fn add_thread_unread(
                     THEN LEAST(tf.unread_mentions + 1, $6) ELSE tf.unread_mentions END \
           WHERE tf.community_id = $1 AND tf.root_event_id = $2 \
             AND tf.pubkey <> $4 AND COALESCE(tf.read_seq, 0) < $5 \
-            AND NOT EXISTS ( \
-                SELECT 1 FROM channels c \
-                  JOIN user_blocks ub ON ub.community_id = c.community_id \
-                 WHERE c.community_id = $1 AND c.id = tf.channel_id AND c.channel_type = 'dm' \
-                   AND ub.blocker = tf.pubkey AND ub.blocked = $4)",
+            AND NOT (EXISTS ( \
+                SELECT 1 FROM user_blocks ub \
+                 WHERE ub.community_id = $1 AND ub.blocker = tf.pubkey AND ub.blocked = $4) \
+                AND dm_is_one_to_one($1, tf.channel_id))",
     )
     .bind(community)
     .bind(root)
@@ -480,7 +480,7 @@ async fn add_thread_unread(
 }
 
 /// A new message in a DM brings it back for every other member who hid it,
-/// except members who blocked the author (silent block).
+/// except, in a 1:1 DM, a member who blocks the author (silent block).
 async fn unhide_dm_for_recipients(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -494,9 +494,10 @@ async fn unhide_dm_for_recipients(
             AND c.channel_type = 'dm' \
             AND cm.community_id = $1 AND cm.channel_id = $2 AND cm.pubkey <> $3 \
             AND cm.removed_at IS NULL AND cm.hidden_at IS NOT NULL \
-            AND NOT EXISTS (SELECT 1 FROM user_blocks ub \
-                             WHERE ub.community_id = cm.community_id \
-                               AND ub.blocker = cm.pubkey AND ub.blocked = $3) \
+            AND NOT (EXISTS (SELECT 1 FROM user_blocks ub \
+                              WHERE ub.community_id = cm.community_id \
+                                AND ub.blocker = cm.pubkey AND ub.blocked = $3) \
+                     AND dm_is_one_to_one($1, $2)) \
          RETURNING cm.pubkey",
     )
     .bind(community)

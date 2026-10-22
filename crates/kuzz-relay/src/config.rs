@@ -168,6 +168,12 @@ pub struct Config {
     pub pairing_relay_url: Option<String>,
     /// Maximum number of concurrent WebSocket connections.
     pub max_connections: usize,
+    /// Maximum concurrently open WebSocket connections from one client IP
+    /// (`KUZZ_WS_MAX_OPEN_PER_IP`, default 200, `0` disables).
+    pub ws_max_open_per_ip: u32,
+    /// Maximum new WebSocket connections from one client IP per minute
+    /// (`KUZZ_WS_NEW_PER_IP_PER_MIN`, default 600, `0` disables).
+    pub ws_new_per_ip_per_min: u64,
     /// Maximum number of concurrently executing message handlers.
     pub max_concurrent_handlers: usize,
     /// Per-connection outbound message buffer size (number of messages).
@@ -396,6 +402,56 @@ pub struct Config {
     pub nip_fi: crate::nip_fi_config::NipFiRelayConfig,
     /// Centralized-identity token auth (`AUTH_TOKEN_ENABLED`, default off).
     pub auth_token: crate::identity::AuthTokenConfig,
+}
+
+/// Returns whether `relay_url` points at this machine (`localhost`,
+/// `*.localhost`, `127.0.0.0/8`, or `::1`).
+fn relay_url_is_loopback(relay_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(relay_url) else {
+        return false;
+    };
+    match url.host() {
+        Some(url::Host::Domain(host)) => host == "localhost" || host.ends_with(".localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
+}
+
+/// The `X-Pubkey` header bypass (`require_auth_token = false`) trusts any
+/// caller-supplied pubkey, so it is only honoured when the relay is served
+/// from a loopback `RELAY_URL`. Any other deployment requires real REST auth
+/// regardless of `KUZZ_REQUIRE_AUTH_TOKEN`.
+fn enforce_auth_token_off_loopback(require_auth_token: bool, relay_url: &str) -> bool {
+    if require_auth_token || relay_url_is_loopback(relay_url) {
+        return require_auth_token;
+    }
+    warn!(
+        relay_url,
+        "KUZZ_REQUIRE_AUTH_TOKEN=false ignored: the X-Pubkey dev bypass is only \
+         allowed on a loopback RELAY_URL"
+    );
+    true
+}
+
+/// Device-bound keys: `KUZZ_DEVICE_ADMISSION=enforce` cannot run beside the
+/// `X-Pubkey` dev bypass, which names a key with no signature at all. A
+/// surface switched to `enforce` at runtime (Redis) still refuses `X-Pubkey`
+/// requests one by one (`unsigned`).
+fn check_device_admission_with_dev_bypass(
+    require_auth_token: bool,
+    device_admission: crate::identity::config::DeviceAdmissionMode,
+) -> Result<(), ConfigError> {
+    if !require_auth_token
+        && device_admission == crate::identity::config::DeviceAdmissionMode::Enforce
+    {
+        return Err(ConfigError::InvalidValue(
+            "KUZZ_DEVICE_ADMISSION=enforce requires KUZZ_REQUIRE_AUTH_TOKEN=true \
+             (the X-Pubkey dev bypass is enabled)"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -718,6 +774,15 @@ impl Config {
             .and_then(|v| v.parse().ok())
             .unwrap_or(10_000);
 
+        let ws_max_open_per_ip = std::env::var("KUZZ_WS_MAX_OPEN_PER_IP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(crate::ip_connection_limit::DEFAULT_MAX_OPEN_PER_IP);
+        let ws_new_per_ip_per_min = std::env::var("KUZZ_WS_NEW_PER_IP_PER_MIN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(crate::ip_connection_limit::DEFAULT_NEW_PER_IP_PER_MIN);
+
         let max_concurrent_handlers = std::env::var("KUZZ_MAX_CONCURRENT_HANDLERS")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -742,6 +807,7 @@ impl Config {
         let require_auth_token = std::env::var("KUZZ_REQUIRE_AUTH_TOKEN")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+        let require_auth_token = enforce_auth_token_off_loopback(require_auth_token, &relay_url);
 
         let pubkey_allowlist_enabled = std::env::var("KUZZ_PUBKEY_ALLOWLIST")
             .map(|v| v == "true" || v == "1")
@@ -891,8 +957,8 @@ impl Config {
 
         if !require_auth_token {
             warn!(
-                "KUZZ_REQUIRE_AUTH_TOKEN is false — REST API requests bypass token auth. \
-                 WebSocket protocol auth is unaffected. Set to true for production."
+                "KUZZ_REQUIRE_AUTH_TOKEN is false on a loopback RELAY_URL — REST API \
+                 requests accept the X-Pubkey dev header. WebSocket protocol auth is unaffected."
             );
         }
 
@@ -1346,6 +1412,7 @@ impl Config {
 
         // Centralized-identity token auth (Phase 0, default off).
         let auth_token = crate::identity::AuthTokenConfig::from_env(&relay_url)?;
+        check_device_admission_with_dev_bypass(require_auth_token, auth_token.device_admission)?;
 
         Ok(Self {
             bind_addr,
@@ -1360,6 +1427,8 @@ impl Config {
             relay_url,
             pairing_relay_url,
             max_connections,
+            ws_max_open_per_ip,
+            ws_new_per_ip_per_min,
             max_concurrent_handlers,
             send_buffer_size,
             max_frame_bytes,
@@ -2866,5 +2935,47 @@ mod tests {
             matches!(result, Err(ConfigError::InvalidValue(ref msg)) if msg.contains("KUZZ_GIT_REPO_PATH")),
             "expected InvalidValue mentioning KUZZ_GIT_REPO_PATH, got {result:?}"
         );
+    }
+
+    #[test]
+    fn x_pubkey_bypass_only_survives_on_loopback_relay_url() {
+        for url in [
+            "ws://localhost:3000",
+            "ws://admin.localhost:3000",
+            "ws://127.0.0.1:3000",
+            "ws://[::1]:3000",
+        ] {
+            assert!(relay_url_is_loopback(url), "{url} should be loopback");
+            assert!(!enforce_auth_token_off_loopback(false, url), "{url}");
+        }
+        for url in [
+            "wss://jihobuzz.duckdns.org:8443",
+            "ws://10.0.0.5:3000",
+            "ws://localhost.example.com",
+            "not a url",
+        ] {
+            assert!(!relay_url_is_loopback(url), "{url} should not be loopback");
+            assert!(enforce_auth_token_off_loopback(false, url), "{url}");
+        }
+        assert!(enforce_auth_token_off_loopback(true, "ws://localhost:3000"));
+    }
+
+    #[test]
+    fn device_enforce_refuses_to_start_with_the_x_pubkey_bypass() {
+        use crate::identity::config::DeviceAdmissionMode;
+        assert!(matches!(
+            check_device_admission_with_dev_bypass(false, DeviceAdmissionMode::Enforce),
+            Err(ConfigError::InvalidValue(message)) if message.contains("KUZZ_DEVICE_ADMISSION")
+        ));
+        for (require_auth_token, mode) in [
+            (false, DeviceAdmissionMode::Off),
+            (false, DeviceAdmissionMode::Log),
+            (true, DeviceAdmissionMode::Enforce),
+        ] {
+            assert!(
+                check_device_admission_with_dev_bypass(require_auth_token, mode).is_ok(),
+                "{require_auth_token} {mode:?}"
+            );
+        }
     }
 }

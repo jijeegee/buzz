@@ -1,4 +1,3 @@
-import { AgentDefaultsSettingsCard } from "./AgentDefaultsSettingsCard";
 import {
   setKeepMentionedAgentsPinned,
   useKeepMentionedAgentsPinned,
@@ -20,7 +19,7 @@ export function AgentsSettingsPanel() {
     <section className="min-w-0" data-testid="settings-agents">
       <SettingsSectionHeader
         title="Agents"
-        description="Control how agents behave in conversations and run on this machine."
+        description="How agents behave in conversations and run on this computer. Their AI and models live in Settings › Models."
       />
 
       <SettingsOptionGroupList>
@@ -37,7 +36,7 @@ export function AgentsSettingsPanel() {
                 className="mt-0.5 text-sm text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Address selected agents in channel and thread replies
+                Address selected agents in group and thread replies
               </p>
             </div>
             <Switch
@@ -50,7 +49,6 @@ export function AgentsSettingsPanel() {
         </SettingsOptionGroup>
         <PreventSleepSettingsCard />
         <HarnessesSettingsPanel />
-        <AgentDefaultsSettingsCard />
       </SettingsOptionGroupList>
     </section>
   );

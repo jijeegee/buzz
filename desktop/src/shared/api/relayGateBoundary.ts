@@ -36,7 +36,7 @@ export async function requestHistoryGated(
     const timeout = window.setTimeout(() => {
       subscriptions.delete(subId);
       void closeSubscription(subId);
-      reject(new Error("Timed out while loading channel history."));
+      reject(new Error("Timed out while loading messages."));
     }, historyTimeoutMs);
 
     subscriptions.set(subId, {
@@ -53,9 +53,7 @@ export async function requestHistoryGated(
       window.clearTimeout(timeout);
       subscriptions.delete(subId);
       reject(
-        error instanceof Error
-          ? error
-          : new Error("Failed to request channel history."),
+        error instanceof Error ? error : new Error("Failed to load messages."),
       );
     });
   });

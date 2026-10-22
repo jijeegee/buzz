@@ -25,10 +25,11 @@ impl BlossomVerb {
 /// exact cardinality (exactly one each of `t`, `expiration`, `server`; at most
 /// one `x`).
 ///
-/// `Permissive` preserves the pre-NIP-FI behavior for Off-mode deployments:
-/// 3600-second proof window, `server` tag optional, and duplicate tags accepted.
-/// This keeps a deployed desktop that mints old-shape tokens working against an
-/// Off-mode relay [FI-INV-15].
+/// `Permissive` preserves the pre-NIP-FI tag shape for Off-mode deployments:
+/// `server` tag optional and duplicate tags accepted. The freshness window is
+/// the same 60 seconds as `Strict`: every client this service ships mints
+/// 60-second proofs, and a longer window only lengthens how long a leaked
+/// proof can be replayed.
 ///
 /// The relay call sites derive strictness from `config.nip_fi.mode`; library
 /// callers without mode access may pass `Strict` directly.
@@ -36,7 +37,7 @@ impl BlossomVerb {
 pub enum BlossomStrictness {
     /// Full NIP-FI compliance: 60s window, mandatory `server`, exact cardinality.
     Strict,
-    /// Pre-NIP-FI compatibility: 3600s window, optional `server`, tolerant cardinality.
+    /// Pre-NIP-FI tag shape: 60s window, optional `server`, tolerant cardinality.
     Permissive,
 }
 
@@ -55,7 +56,7 @@ pub enum BlossomStrictness {
 ///        (origin/main `found_t` semantics).
 ///   4. `expiration` tag present, strictly future, and within the freshness window
 ///   5. `created_at` bounded: not more than 5s in the future; not older than the
-///      mode-selected window (60s `Strict`, 3600s `Permissive`)
+///      60-second window (both modes)
 ///   6. `server` tag enforcement: in `Strict` mode, exactly one `server` tag is
 ///      required and MUST match the bound tenant host; in `Permissive`, optional
 ///      when-present behavior is preserved
@@ -194,24 +195,18 @@ pub fn verify_blossom_auth_event_for_verb(
 
     // 5. created_at freshness bounds.
     //
-    //   Strict  (NIP-FI active modes):
+    //   Both modes:
     //     created_at <= now + 5s          — bounded future skew
     //     now - created_at <= 60s         — 60-second replay window
     //     expiration <= created_at + 60s  — token cannot outlive its window
-    //
-    //   Permissive (Off mode):
-    //     created_at <= now + 5s          — future skew only
-    //     now - created_at <= 3600s       — 1-hour replay window (pre-NIP-FI)
-    //     expiration window not enforced
     let created = auth_event.created_at.as_secs();
     if created > now + 5 {
         return Err(MediaError::TimestampOutOfWindow);
     }
-    let max_age = if strict { 60u64 } else { 3600u64 };
-    if now > created + max_age {
+    if now > created + 60 {
         return Err(MediaError::TimestampOutOfWindow);
     }
-    if strict && exp_value > created + 60 {
+    if exp_value > created + 60 {
         // expiration tag must satisfy expiration <= created_at + 60s
         return Err(MediaError::TimestampOutOfWindow);
     }
@@ -460,9 +455,9 @@ mod tests {
     }
 
     fn build_permissive_auth(keys: &Keys, sha256: &str) -> nostr::Event {
-        // Old-shape token: no server tag, 300s expiry — valid in Permissive, rejected in Strict.
+        // Old-shape token: no server tag — valid in Permissive, rejected in Strict.
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", sha256]).unwrap(),
@@ -507,7 +502,7 @@ mod tests {
 
     #[test]
     fn test_verify_permissive_old_shape_token_admitted() {
-        // Old-shape token (no server tag, 300s expiry) MUST be admitted in Permissive mode.
+        // Old-shape token (no server tag) MUST be admitted in Permissive mode.
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let event = build_permissive_auth(&keys, &sha256);
@@ -524,31 +519,42 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_permissive_long_expiry_admitted() {
-        // 600s expiry token (pre-NIP-FI desktop default) MUST be admitted in Permissive mode.
+    fn test_verify_permissive_rejects_long_lived_and_stale_tokens() {
+        // A leaked proof must not replay for longer than 60 seconds in either
+        // mode: neither a long expiration nor an old created_at is admitted.
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 600).to_string();
-        let tags = vec![
+        let long_lived = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),
-            Tag::parse(["expiration", &exp_str]).unwrap(),
+            Tag::parse(["expiration", &(now + 600).to_string()]).unwrap(),
         ];
-        let event = EventBuilder::new(Kind::from(24242), "Upload kuzz-media")
-            .tags(tags)
+        let long_lived = EventBuilder::new(Kind::from(24242), "Upload kuzz-media")
+            .tags(long_lived)
             .sign_with_keys(&keys)
             .unwrap();
-        assert!(
-            verify_blossom_upload_auth(
-                &event,
-                &sha256,
-                Some("relay.example"),
-                BlossomStrictness::Permissive
-            )
-            .is_ok(),
-            "Off-mode must admit 600s expiry tokens [FI-INV-15]"
-        );
+        let stale = vec![
+            Tag::parse(["t", "upload"]).unwrap(),
+            Tag::parse(["x", &sha256]).unwrap(),
+            Tag::parse(["expiration", &(now + 30).to_string()]).unwrap(),
+        ];
+        let stale = EventBuilder::new(Kind::from(24242), "Upload kuzz-media")
+            .tags(stale)
+            .custom_created_at(Timestamp::from(now - 120))
+            .sign_with_keys(&keys)
+            .unwrap();
+        for event in [long_lived, stale] {
+            assert!(matches!(
+                verify_blossom_upload_auth(
+                    &event,
+                    &sha256,
+                    Some("relay.example"),
+                    BlossomStrictness::Permissive
+                ),
+                Err(MediaError::TimestampOutOfWindow)
+            ));
+        }
     }
 
     // ── Cardinality: Strict rejects duplicates ────────────────────────────────
@@ -904,7 +910,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let event = build_get_auth(
             &keys,
             vec![
@@ -927,7 +933,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let event = build_get_auth(
             &keys,
             vec![
@@ -967,7 +973,7 @@ mod tests {
         let sha256 = "a".repeat(64);
         let other_hash = "b".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let event = build_get_auth(
             &keys,
             vec![
@@ -992,7 +998,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let event = build_get_auth(
             &keys,
             vec![
@@ -1061,7 +1067,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),
@@ -1236,7 +1242,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),
@@ -1412,7 +1418,7 @@ mod tests {
     fn permissive_get_with_t_tags(t_tags: &[&[&str]]) -> Result<(), MediaError> {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
-        let exp_str = (Timestamp::now().as_secs() + 300).to_string();
+        let exp_str = (Timestamp::now().as_secs() + 60).to_string();
         let mut tags: Vec<Tag> = t_tags
             .iter()
             .map(|t| Tag::parse(t.iter().copied()).unwrap())
@@ -1500,7 +1506,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),
@@ -1531,7 +1537,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),
@@ -1561,7 +1567,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),
@@ -1637,7 +1643,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "a".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         // Valid proof: matching x, valid expiration, lone valueless server tag.
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
@@ -1673,7 +1679,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "b".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),
@@ -1847,7 +1853,7 @@ mod tests {
         let keys = Keys::generate();
         let sha256 = "c".repeat(64);
         let now = Timestamp::now().as_secs();
-        let exp_str = (now + 300).to_string();
+        let exp_str = (now + 60).to_string();
         let tags = vec![
             Tag::parse(["t", "upload"]).unwrap(),
             Tag::parse(["x", &sha256]).unwrap(),

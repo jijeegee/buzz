@@ -78,9 +78,6 @@ function makePreview(overrides = {}) {
     avatarUrl: null,
     memoryLevel: "none",
     memoryEntryCount: 0,
-    hasSourceAllowlist: true,
-    sourceAllowlistCount: 2,
-    sourceAllowlist: ["a".repeat(64), "b".repeat(64)],
     manifestJson: '{\n  "format": "kuzz-agent-snapshot"\n}',
     locked: false,
     ...overrides,
@@ -89,21 +86,16 @@ function makePreview(overrides = {}) {
 
 // ── preview transparency ──────────────────────────────────────────────────────
 
-test("preview_body_discloses_prompt_allowlist_and_full_manifest", () => {
+test("preview_body_discloses_prompt_and_full_manifest", () => {
   const preview = makePreview();
   const element = PreviewBody({
     preview,
     hasMemory: false,
     memoryLevelLabel: "none",
-    keepAllowlist: false,
-    onKeepAllowlistChange: () => {},
   });
   const allText = collectText(element).join(" ");
 
   assert.ok(allText.includes(preview.systemPrompt));
-  for (const pubkey of preview.sourceAllowlist) {
-    assert.ok(!allText.includes(pubkey), `raw allowlist key shown: ${pubkey}`);
-  }
   assert.ok(allText.includes(preview.manifestJson));
   assert.equal(
     findAll(
@@ -123,8 +115,6 @@ test("preview_body_shows_locked_notice_only_for_locked_cards", () => {
         preview: makePreview({ locked }),
         hasMemory: false,
         memoryLevelLabel: "none",
-        keepAllowlist: false,
-        onKeepAllowlistChange: () => {},
       }),
       (n) => n.props?.["data-testid"] === "agent-snapshot-import-locked-notice",
     );

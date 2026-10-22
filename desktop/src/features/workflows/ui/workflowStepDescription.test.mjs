@@ -23,7 +23,7 @@ test("describes configured workflow steps on the canvas", () => {
       },
       { channelLabel: "deployments" },
     ),
-    "“deploying now” in #deployments",
+    "“deploying now” in deployments",
   );
   assert.equal(
     workflowStepDescription({

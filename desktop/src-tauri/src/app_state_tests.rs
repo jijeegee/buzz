@@ -48,27 +48,43 @@ fn with_env_key<T>(value: Option<&str>, body: impl FnOnce() -> T) -> T {
     out
 }
 
+fn dev_env_identity() -> Option<Keys> {
+    identity_from_env_in(crate::relay::server::KuzzEnv::Dev)
+}
+
+#[test]
+fn prod_build_ignores_env_identity() {
+    // Agents get their own key through KUZZ_PRIVATE_KEY; a prod app started
+    // from an agent's shell must stay on the person's stored key.
+    let agent = Keys::generate();
+    let nsec = agent.secret_key().to_bech32().unwrap();
+    let resolved = with_env_key(Some(&nsec), || {
+        identity_from_env_in(crate::relay::server::KuzzEnv::Prod)
+    });
+    assert!(resolved.is_none());
+}
+
 #[test]
 fn identity_from_env_wins_when_valid() {
     let configured = Keys::generate();
     let nsec = configured.secret_key().to_bech32().unwrap();
 
     let resolved =
-        with_env_key(Some(&nsec), identity_from_env).expect("valid env key must resolve");
+        with_env_key(Some(&nsec), dev_env_identity).expect("valid env key must resolve");
 
     assert_key_eq(&configured, &resolved);
 }
 
 #[test]
 fn identity_from_env_none_when_absent() {
-    assert!(with_env_key(None, identity_from_env).is_none());
+    assert!(with_env_key(None, dev_env_identity).is_none());
 }
 
 #[test]
 fn identity_from_env_none_when_malformed() {
     // A malformed env var falls through to persisted resolution rather than
     // winning — otherwise a typo'd key would silently shadow the real one.
-    assert!(with_env_key(Some("not-a-valid-nsec"), identity_from_env).is_none());
+    assert!(with_env_key(Some("not-a-valid-nsec"), dev_env_identity).is_none());
 }
 
 #[test]

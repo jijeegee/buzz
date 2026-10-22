@@ -26,7 +26,9 @@ import '../channels/channel_detail_page.dart';
 import '../channels/channel_identity_names_provider.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
-import '../channels/dm_channel_labels.dart';
+import '../channels/channel_names/channel_names_provider.dart';
+import '../channels/group_chat/chat_grid_avatar.dart';
+import '../channels/group_chat/chat_title.dart';
 import '../channels/message_content.dart';
 import '../channels/thread_name_provider.dart';
 import '../../shared/read_state/read_state_format.dart';
@@ -67,7 +69,7 @@ EdgeInsets _activityScrollPadding(
 ///
 /// Matches desktop's Home inbox item design and semantics (see
 /// `desktop/src/features/home/ui/InboxListPane.tsx`): full sender avatar +
-/// name, contextual "Mentioned in #channel"-style label, unread dot + time,
+/// name, contextual "Mentioned in group"-style label, unread dot + time,
 /// message preview — while keeping mobile's list → canonical destination
 /// navigation. Row taps deep-link to the represented message (oldest unread
 /// for grouped conversations) rather than just opening the channel.
@@ -218,7 +220,7 @@ class ActivityPage extends HookConsumerWidget {
       final channelId = item.item.channelId;
       if (channelId == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text("This item isn't linked to a channel.")),
+          const SnackBar(content: Text("This item isn't linked to a group.")),
         );
         return;
       }
@@ -264,7 +266,7 @@ class ActivityPage extends HookConsumerWidget {
       if (channel == null) {
         if (!context.mounted) return;
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('Channel not found in this workspace.')),
+          const SnackBar(content: Text('Group not found in this workspace.')),
         );
         return;
       }
@@ -308,7 +310,7 @@ class ActivityPage extends HookConsumerWidget {
       if (channel == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           const SnackBar(
-            content: Text('Channel for this draft is no longer available.'),
+            content: Text('Group for this draft is no longer available.'),
           ),
         );
         return;
@@ -339,7 +341,7 @@ class ActivityPage extends HookConsumerWidget {
       if (channel == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           const SnackBar(
-            content: Text('Channel for this reminder is no longer available.'),
+            content: Text('Group for this reminder is no longer available.'),
           ),
         );
         return;

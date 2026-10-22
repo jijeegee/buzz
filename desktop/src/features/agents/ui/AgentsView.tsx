@@ -1,11 +1,10 @@
 import * as React from "react";
-import { EllipsisVertical, OctagonX, Settings2 } from "lucide-react";
+import { EllipsisVertical, OctagonX, Plus, Settings2 } from "lucide-react";
 import {
   consumePendingSnapshotImport,
   subscribeSnapshotImport,
 } from "@/features/agents/openSnapshotImportFromUrlEvent";
 import { AddAgentToChannelDialog } from "./AddAgentToChannelDialog";
-import { AddTeamToChannelDialog } from "./AddTeamToChannelDialog";
 import { AgentDefaultsDialog } from "./AgentDefaultsDialog";
 import { AgentDialog } from "./AgentDialog";
 import { CommunityCatalogDialog } from "./CommunityCatalogDialog";
@@ -18,11 +17,14 @@ import { TeamSnapshotImportDialog } from "./TeamSnapshotImportDialog";
 import { TeamShareDialog } from "./TeamShareDialog";
 import { TeamDeleteDialog } from "./TeamDeleteDialog";
 import { TeamDialog } from "./TeamDialog";
-import { TeamsSection } from "./TeamsSection";
-import { UnifiedAgentsSection } from "./UnifiedAgentsSection";
+import { MyAgentsSection } from "./MyAgentsSection";
+import { PresetsSection } from "./PresetsSection";
+import { useTeamPresetMigration } from "@/features/agents/lib/teamPresetMigration";
+import { useFeedbackToasts } from "@/shared/hooks/useToastEffect";
 import { useManagedAgentActions } from "./useManagedAgentActions";
 import { usePersonaActions } from "./usePersonaActions";
 import { useTeamActions } from "./useTeamActions";
+import { requestOpenCreateAgent } from "@/features/agents/openCreateAgentEvent";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { useBakedBuildEnvQuery } from "@/features/agents/hooks";
 import { isManagedAgentActive } from "@/features/agents/lib/managedAgentControlActions";
@@ -34,16 +36,41 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
-import { PageHeader } from "@/shared/ui/PageHeader";
+import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { getInheritedAgentDefaults } from "./bakedEnvHelpers";
 
+type AgentsTab = "agents" | "presets";
+
+const AGENTS_TABS = [
+  { value: "agents", label: "My agents" },
+  { value: "presets", label: "Presets" },
+] as const;
+
+/**
+ * The Agents page: "My agents" are real agents (by computer, with status);
+ * "Presets" are templates that make agents. The shared catalog list is
+ * hidden; Import preset brings one in from a file.
+ */
 export function AgentsView() {
+  const [tab, setTab] = React.useState<AgentsTab>("agents");
   const { openPersonaProfilePanel, openProfilePanel } = useProfilePanel();
   const { globalConfig } = useGlobalAgentConfig();
   const { data: bakedEnv } = useBakedBuildEnvQuery({ enabled: true });
   const inheritedDefaults = getInheritedAgentDefaults(globalConfig, bakedEnv);
   const agents = useManagedAgentActions();
   const personas = usePersonaActions();
+  // Old teams' agents become real teams, once.
+  useTeamPresetMigration();
+  // Start/stop/create results and preset delete/deactivate results.
+  useFeedbackToasts(agents.actionNoticeMessage, agents.actionErrorMessage);
+  useFeedbackToasts(
+    personas.personaFeedbackSurface === "library"
+      ? personas.personaNoticeMessage
+      : null,
+    personas.personaFeedbackSurface === "library"
+      ? personas.personaErrorMessage
+      : null,
+  );
   const teamImportInputRef = React.useRef<HTMLInputElement | null>(null);
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const fullAiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
@@ -65,16 +92,10 @@ export function AgentsView() {
     setIsAiDefaultsOpen(open);
   }
 
-  const teamActions = useTeamActions(
-    {
-      setActionNoticeMessage: agents.setActionNoticeMessage,
-      setActionErrorMessage: agents.setActionErrorMessage,
-    },
-    {
-      refetchManagedAgents: agents.refetchManagedAgents,
-      refetchRelayAgents: agents.refetchRelayAgents,
-    },
-  );
+  const teamActions = useTeamActions({
+    setActionNoticeMessage: agents.setActionNoticeMessage,
+    setActionErrorMessage: agents.setActionErrorMessage,
+  });
 
   // Parent-owned unified catalog state per Thufir's corrective:
   // - discriminated launch target so both sections refetch on open
@@ -83,12 +104,10 @@ export function AgentsView() {
     "agents" | "teams" | null
   >(null);
 
-  function openCommunityCatalog(target: "agents" | "teams") {
+  function openImportPreset() {
     personas.clearFeedback("catalog");
     personas.prepareCreate();
-    void personas.catalogQuery.refetch();
-    void teamActions.catalogQuery.refetch();
-    setCatalogLaunchTarget(target);
+    setCatalogLaunchTarget("agents");
   }
 
   const isActionPending =
@@ -143,171 +162,193 @@ export function AgentsView() {
           className="mx-auto w-full max-w-6xl space-y-8 [container-type:inline-size]"
           data-testid="agents-page-content"
         >
-          <PageHeader
-            action={
-              <>
-                <div className="flex flex-wrap justify-end gap-2 [@container(max-width:40rem)]:hidden">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3">
+            <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
+            <SegmentedControl
+              legend="Agents view"
+              onValueChange={setTab}
+              optionTestIdPrefix="agents-tab"
+              options={AGENTS_TABS}
+              size="compact"
+              testId="agents-tabs"
+              value={tab}
+            />
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <Button
+                data-testid="agents-new-agent"
+                onClick={() => requestOpenCreateAgent()}
+                size="sm"
+              >
+                <Plus />
+                New agent
+              </Button>
+              <div className="flex flex-wrap justify-end gap-2 [@container(max-width:40rem)]:hidden">
+                <Button
+                  data-testid="agent-defaults-button"
+                  ref={fullAiDefaultsTriggerRef}
+                  onClick={(event) => openAiDefaults(event.currentTarget)}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Settings2 />
+                  {hasSavedAgentDefaults
+                    ? "Agent defaults"
+                    : "Set agent defaults"}
+                </Button>
+                {runningAgentCount > 0 ? (
                   <Button
-                    data-testid="agent-defaults-button"
-                    ref={fullAiDefaultsTriggerRef}
-                    onClick={(event) => openAiDefaults(event.currentTarget)}
+                    disabled={isActionPending}
+                    onClick={() => {
+                      void agents.handleBulkStopRunning();
+                    }}
                     size="sm"
                     variant="outline"
+                  >
+                    <OctagonX />
+                    Stop running agents
+                  </Button>
+                ) : null}
+              </div>
+
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label="Agent actions"
+                    className="hidden [@container(max-width:40rem)]:inline-flex"
+                    data-testid="agent-actions-menu-trigger"
+                    ref={compactActionsTriggerRef}
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                  >
+                    <EllipsisVertical />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      openAiDefaults(compactActionsTriggerRef.current);
+                    }}
                   >
                     <Settings2 />
                     {hasSavedAgentDefaults
                       ? "Agent defaults"
                       : "Set agent defaults"}
-                  </Button>
+                  </DropdownMenuItem>
                   {runningAgentCount > 0 ? (
-                    <Button
+                    <DropdownMenuItem
                       disabled={isActionPending}
-                      onClick={() => {
+                      onSelect={() => {
                         void agents.handleBulkStopRunning();
                       }}
-                      size="sm"
-                      variant="outline"
                     >
                       <OctagonX />
                       Stop running agents
-                    </Button>
-                  ) : null}
-                </div>
-
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-label="Agent actions"
-                      className="hidden [@container(max-width:40rem)]:inline-flex"
-                      data-testid="agent-actions-menu-trigger"
-                      ref={compactActionsTriggerRef}
-                      size="icon"
-                      type="button"
-                      variant="outline"
-                    >
-                      <EllipsisVertical />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        openAiDefaults(compactActionsTriggerRef.current);
-                      }}
-                    >
-                      <Settings2 />
-                      {hasSavedAgentDefaults
-                        ? "Agent defaults"
-                        : "Set agent defaults"}
                     </DropdownMenuItem>
-                    {runningAgentCount > 0 ? (
-                      <DropdownMenuItem
-                        disabled={isActionPending}
-                        onSelect={() => {
-                          void agents.handleBulkStopRunning();
-                        }}
-                      >
-                        <OctagonX />
-                        Stop running agents
-                      </DropdownMenuItem>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            }
-            description="Set up and manage your agents."
-            title="Agents"
-          />
-          <div className="flex flex-col gap-8">
-            <UnifiedAgentsSection
-              getAvailability={agents.getAvailability}
-              defaultModel={inheritedDefaults.model.value}
-              actionErrorMessage={agents.actionErrorMessage}
-              actionNoticeMessage={agents.actionNoticeMessage}
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+          {tab === "agents" ? (
+            <MyAgentsSection
               agents={agents.managedAgents}
               agentsError={
                 agents.managedAgentsQuery.error instanceof Error
                   ? agents.managedAgentsQuery.error
                   : null
               }
+              defaultModel={inheritedDefaults.model.value}
+              getAvailability={agents.getAvailability}
               isActionPending={isActionPending}
               isAgentsLoading={agents.managedAgentsQuery.isLoading}
               isStartOnLaunchPending={agents.isStartOnLaunchPending}
-              startingAgentPubkey={agents.startingAgentPubkey}
+              personas={personas.libraryPersonas}
               restartingAgentPubkey={agents.restartingAgentPubkey}
-              startingPersonaIds={agents.startingPersonaIds}
+              startingAgentPubkey={agents.startingAgentPubkey}
+              onAddToChannel={agents.setAgentToAddToChannel}
+              onEditPersona={personas.openEdit}
               onOpenAgentProfile={(pubkey, options) => {
                 openProfilePanel?.(pubkey, options);
-              }}
-              onOpenPersonaProfile={(persona) => {
-                openPersonaProfilePanel?.(persona);
-              }}
-              onStartAgent={(pubkey) => {
-                void agents.handleStart(pubkey);
               }}
               onRestartAgent={(pubkey) => {
                 void agents.handleRestart(pubkey);
               }}
-              onStartPersona={(persona) => {
-                void agents.handleStartPersona(persona);
+              onStartAgent={(pubkey) => {
+                void agents.handleStart(pubkey);
+              }}
+              onStopAgent={(pubkey) => {
+                void agents.handleStop(pubkey);
               }}
               onToggleStartOnLaunch={(agent, next) => {
                 void agents.handleToggleStartOnAppLaunch(agent.pubkey, next);
               }}
-              // Persona props
+            />
+          ) : (
+            <PresetsSection
+              agents={agents.managedAgents}
+              isActionPending={isActionPending || personas.isPending}
+              isLoading={
+                personas.personasQuery.isLoading ||
+                agents.managedAgentsQuery.isLoading
+              }
+              isTeamsLoading={teamActions.teamsQuery.isLoading}
+              isTeamsPending={
+                teamActions.createTeamMutation.isPending ||
+                teamActions.updateTeamMutation.isPending ||
+                teamActions.deleteTeamMutation.isPending
+              }
               personas={personas.libraryPersonas}
               personasError={
                 personas.personasQuery.error instanceof Error
                   ? personas.personasQuery.error
                   : null
               }
-              personaFeedbackErrorMessage={
-                personas.personaFeedbackSurface === "library"
-                  ? personas.personaErrorMessage
-                  : null
-              }
-              personaFeedbackNoticeMessage={
-                personas.personaFeedbackSurface === "library"
-                  ? personas.personaNoticeMessage
-                  : null
-              }
-              isPersonasLoading={personas.personasQuery.isLoading}
-              isPersonasPending={personas.isPending}
-              onOpenCatalog={() => openCommunityCatalog("agents")}
-              onDuplicatePersona={personas.openDuplicate}
-              onEditPersona={personas.openEdit}
-              onSharePersona={personas.openShare}
-              onDeactivatePersona={(persona) => {
-                void personas.handleSetActive(persona, false, "library");
-              }}
-              onDeletePersona={personas.openDelete}
-            />
-
-            <TeamsSection
-              error={
+              startingPersonaIds={agents.startingPersonaIds}
+              teams={teamActions.teams}
+              teamsError={
                 teamActions.teamsQuery.error instanceof Error
                   ? teamActions.teamsQuery.error
                   : null
               }
-              isLoading={teamActions.teamsQuery.isLoading}
-              isPending={
-                teamActions.createTeamMutation.isPending ||
-                teamActions.updateTeamMutation.isPending ||
-                teamActions.deleteTeamMutation.isPending
-              }
-              onCreate={teamActions.openCreateDialog}
-              onDelete={teamActions.setTeamToDelete}
-              onDuplicate={teamActions.openDuplicateDialog}
-              onEdit={teamActions.openEditDialog}
-              onAddToChannel={teamActions.setTeamToAddToChannel}
-              onDiscover={() => openCommunityCatalog("teams")}
-              onShare={teamActions.openShare}
-              onImport={() => {
+              settingUpTeamId={agents.settingUpTeamId}
+              onSetUpTeam={(team) => {
+                void agents
+                  .handleSetUpTeamPreset(team, personas.libraryPersonas)
+                  .then((made) => {
+                    // Show the new agents and their team.
+                    if (made) setTab("agents");
+                  });
+              }}
+              onCreateAgent={(persona) => {
+                void agents.handleStartPersona(persona);
+              }}
+              onCreateTeam={teamActions.openCreateDialog}
+              onDeactivatePersona={(persona) => {
+                void personas.handleSetActive(persona, false, "library");
+              }}
+              onDeletePersona={personas.openDelete}
+              onDeleteTeam={teamActions.setTeamToDelete}
+              onDuplicatePersona={personas.openDuplicate}
+              onDuplicateTeam={teamActions.openDuplicateDialog}
+              onEditPersona={personas.openEdit}
+              onEditTeam={teamActions.openEditDialog}
+              onImportPreset={openImportPreset}
+              onImportTeam={() => {
                 teamImportInputRef.current?.click();
               }}
-              personas={personas.libraryPersonas}
-              teams={teamActions.teams}
+              onOpenPersonaProfile={(persona) => {
+                openPersonaProfilePanel?.(persona);
+              }}
+              onSharePersona={(persona) => {
+                const linkedAgent = agents.managedAgents.find(
+                  (agent) => agent.personaId === persona.id,
+                );
+                personas.openShare(persona, linkedAgent, persona.avatarUrl);
+              }}
+              onShareTeam={teamActions.openShare}
             />
-          </div>
+          )}
         </div>
       </div>
 
@@ -458,8 +499,8 @@ export function AgentsView() {
           isConfirming={personas.isSnapshotImportConfirming}
           result={personas.snapshotImportResult}
           confirmError={personas.snapshotImportConfirmError}
-          onConfirm={(keepAllowlist) => {
-            void personas.handleConfirmSnapshotImport(keepAllowlist);
+          onConfirm={() => {
+            void personas.handleConfirmSnapshotImport();
           }}
           onOpenChange={(open) => {
             if (!open) {
@@ -549,6 +590,8 @@ export function AgentsView() {
             );
           }}
           // Dialog
+          hideCatalog
+          initialSelection="import"
           open={catalogLaunchTarget !== null}
           preferSection={catalogLaunchTarget}
           onOpenChange={(open) => {
@@ -596,19 +639,6 @@ export function AgentsView() {
           }}
           open={teamActions.teamToDelete !== null}
           team={teamActions.teamToDelete}
-        />
-      ) : null}
-      {teamActions.teamToAddToChannel ? (
-        <AddTeamToChannelDialog
-          onDeployed={teamActions.handleTeamDeployed}
-          onOpenChange={(open) => {
-            if (!open) {
-              teamActions.setTeamToAddToChannel(null);
-            }
-          }}
-          open={teamActions.teamToAddToChannel !== null}
-          personas={personas.libraryPersonas}
-          team={teamActions.teamToAddToChannel}
         />
       ) : null}
       {teamActions.teamToShare ? (
@@ -674,8 +704,8 @@ export function AgentsView() {
           isConfirming={teamActions.isTeamSnapshotImportConfirming}
           result={teamActions.teamSnapshotImportResult}
           confirmError={teamActions.teamSnapshotImportConfirmError}
-          onConfirm={(keepAllowlist) => {
-            void teamActions.handleConfirmTeamSnapshotImport(keepAllowlist);
+          onConfirm={() => {
+            void teamActions.handleConfirmTeamSnapshotImport();
           }}
           onOpenChange={(open) => {
             if (!open) {

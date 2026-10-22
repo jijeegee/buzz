@@ -7,6 +7,7 @@ import 'package:nostr/nostr.dart' as nostr;
 
 import 'relay_access_tokens.dart';
 import 'relay_provider.dart';
+import 'service_address.dart';
 
 const _mediaGetAuthKind = 24242;
 const _mediaGetAuthLifetimeSeconds = 60;
@@ -18,6 +19,9 @@ const _mediaGetAuthLifetimeSeconds = 60;
 const _mediaGetAuthRefreshMarginSeconds = 60;
 
 /// Builds BUD-01 Blossom `t=get` auth headers for relay-host media URLs.
+///
+/// Media URLs on a previous address of this build's service count as relay
+/// media and must be fetched from [resolve]d URLs ([get] does that).
 ///
 /// Returns an empty map for non-relay URLs or when no signing key is available,
 /// so callers can safely use this on arbitrary profile/custom-emoji URLs without
@@ -39,6 +43,11 @@ class MediaGetAuthService {
   /// call (never cached here, so a rotation applies to the next request).
   final RelayAccessTokens? _accessTokens;
 
+  /// Relay and signed-in identity this service fetches as, or null when
+  /// signed out. Media fetched with this service is stored on disk under
+  /// this scope only, so one account never reads another's cached media.
+  final String? cacheScope;
+
   Map<String, String>? _cachedHeaders;
   DateTime? _refreshAt;
 
@@ -47,13 +56,19 @@ class MediaGetAuthService {
     required String? nsec,
     DateTime Function()? now,
     RelayAccessTokens? accessTokens,
+    this.cacheScope,
   }) : _baseUrl = baseUrl,
        _nsec = nsec,
        _accessTokens = accessTokens,
        _now = now ?? DateTime.now;
 
+  /// The address to fetch [url] from: media on any address of this build's
+  /// service (e.g. a URL stored in an event before a server move) is loaded
+  /// from the service's current address; every other URL is unchanged.
+  String resolve(String url) => currentServiceUrl(url);
+
   bool isRelayMediaUrl(String url) {
-    final uri = Uri.tryParse(url);
+    final uri = Uri.tryParse(resolve(url));
     final relayUri = Uri.tryParse(_baseUrl);
     if (uri == null || relayUri == null) return false;
     return _isRelayMediaUrl(uri, relayUri);
@@ -106,10 +121,11 @@ class MediaGetAuthService {
   /// sends none inside the expiry margin) and a 401 `token_expired` rotates
   /// once and retries once; every other URL is fetched exactly as before.
   Future<http.Response> get(http.Client client, String url) {
-    final uri = Uri.parse(url);
+    final target = resolve(url);
+    final uri = Uri.parse(target);
     final tokens = _accessTokens;
-    if (tokens == null || !isRelayMediaUrl(url)) {
-      return client.get(uri, headers: headersFor(url));
+    if (tokens == null || !isRelayMediaUrl(target)) {
+      return client.get(uri, headers: headersFor(target));
     }
     return sendWithBearer(
       tokens,
@@ -160,14 +176,23 @@ class MediaGetAuthService {
 
 final mediaGetAuthServiceProvider = Provider<MediaGetAuthService>((ref) {
   final config = ref.watch(relayConfigProvider);
+  final pubkey = ref.watch(myPubkeyProvider);
+  final cacheScope = pubkey == null || pubkey.isEmpty
+      ? null
+      : '${config.baseUrl}\n$pubkey';
   if (config.tokenAuth) {
     return MediaGetAuthService(
       baseUrl: config.baseUrl,
       nsec: null,
       accessTokens: ref.watch(relayAccessTokensProvider),
+      cacheScope: cacheScope,
     );
   }
-  return MediaGetAuthService(baseUrl: config.baseUrl, nsec: config.nsec);
+  return MediaGetAuthService(
+    baseUrl: config.baseUrl,
+    nsec: config.nsec,
+    cacheScope: cacheScope,
+  );
 });
 
 Map<String, String> mediaGetHeadersFor(WidgetRef ref, String url) {

@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 
 use super::{
-    validate_agent_definition_text, validate_visible_text, AgentDefinition, RespondTo, TeamRecord,
+    validate_agent_definition_text, validate_visible_text, AgentDefinition, TeamRecord,
 };
 
 /// Schema version of the 30178 content body. A reader that does not recognize
@@ -141,10 +141,10 @@ pub struct TeamCatalogMember {
     pub provider: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub name_pool: Vec<String>,
-    /// Sanitized audience mode. `allowlist` is never projected — see
-    /// [`sanitized_respond_to`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub respond_to: Option<String>,
+    // No audience field: who may command an agent never travels in a shared
+    // team. A `respond_to` written by an older publisher is ignored on read,
+    // every adopted copy starts owner-only, and the relay rejects shared heads
+    // that still carry a wider mode.
     /// Clamped to 1..=32 at projection time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parallelism: Option<u32>,
@@ -193,22 +193,6 @@ pub fn resolve_team_members(
                 .ok_or_else(|| format!("team member {persona_id} not found"))
         })
         .collect()
-}
-
-/// There is no `respond_to_allowlist` field on [`TeamCatalogMember`], and that
-/// absence is the anti-leak guarantee: an allowlist is a list of real pubkeys
-/// the owner trusts, and publishing it would disclose the owner's social
-/// graph. Rather than projecting an emptied list — which a recipient reading
-/// `allowlist` mode with no entries would treat as "everyone" — the mode
-/// itself is downgraded to `owner-only`, the most restrictive setting. A
-/// recipient that wants an allowlist must author one.
-fn sanitized_respond_to(record: &AgentDefinition) -> Option<String> {
-    match record.respond_to.as_deref() {
-        Some(mode) if mode == RespondTo::Allowlist.as_str() => {
-            Some(RespondTo::OwnerOnly.as_str().to_string())
-        }
-        other => other.map(str::to_string),
-    }
 }
 
 /// The opaque published identity of one member.
@@ -315,7 +299,6 @@ fn member_projection(record: &AgentDefinition) -> TeamCatalogMember {
         model: record.model.clone(),
         provider: record.provider.clone(),
         name_pool: record.name_pool.clone(),
-        respond_to: sanitized_respond_to(record),
         parallelism: record.parallelism.map(|value| value.clamp(1, 32)),
         session_policy: record.session_policy,
         builtin_slug: None,
@@ -566,11 +549,6 @@ fn validate_member(member: &TeamCatalogMember) -> Result<(), String> {
         // they carry the same human-reviewed-identity contract as the member
         // display name — reject concealed controls here too.
         validate_visible_text(name, &format!("a name-pool entry for '{who}'"), false)?;
-    }
-    // Rejected at the boundary: an unrecognized mode must not become a local
-    // definition whose audience differs from what the recipient was shown.
-    if let Some(mode) = &member.respond_to {
-        RespondTo::parse_wire(mode)?;
     }
     // Mirrors the 1..=32 range `mint_behavioral_defaults` enforces, so a team
     // whose members could never launch is refused at add time.

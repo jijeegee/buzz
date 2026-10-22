@@ -1,3 +1,4 @@
+import { isGroupChat } from "@/features/channels/lib/groupChat";
 import {
   Archive,
   Bell,
@@ -109,6 +110,8 @@ function MoveToSectionSubmenu({
  * "Copy" submenu (channel name / channel ID).
  */
 function CopyChannelSubmenu({ channel }: { channel: Channel }) {
+  const noun = channel.channelType === "dm" ? "chat" : "group";
+  const Noun = channel.channelType === "dm" ? "Chat" : "Group";
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
@@ -122,18 +125,18 @@ function CopyChannelSubmenu({ channel }: { channel: Channel }) {
           onSelect={() =>
             copyTextToClipboard(
               channel.name,
-              "Channel name copied to clipboard",
+              `${Noun} name copied to clipboard`,
             )
           }
         >
-          <span>Copy channel name</span>
+          <span>Copy {noun} name</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() =>
-            copyTextToClipboard(channel.id, "Channel ID copied to clipboard")
+            copyTextToClipboard(channel.id, `${Noun} ID copied to clipboard`)
           }
         >
-          <span>Copy channel ID</span>
+          <span>Copy {noun} ID</span>
         </ContextMenuItem>
       </ContextMenuSubContent>
     </ContextMenuSub>
@@ -291,7 +294,9 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <Bell className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>Unmute channel</span>
+            <span>
+              Unmute {channel.channelType === "dm" ? "chat" : "group"}
+            </span>
           </ContextMenuItem>
         ) : (
           <ContextMenuItem
@@ -300,7 +305,7 @@ export function ChannelContextMenuItems({
             <ContextMenuIconSlot>
               <BellOff className="h-4 w-4" />
             </ContextMenuIconSlot>
-            <span>Mute channel</span>
+            <span>Mute {channel.channelType === "dm" ? "chat" : "group"}</span>
           </ContextMenuItem>
         )
       ) : null}
@@ -339,7 +344,9 @@ export function ChannelContextMenuItems({
           <span>
             {channel.channelType === "dm"
               ? "Leave conversation"
-              : "Leave channel"}
+              : isGroupChat(channel)
+                ? "Leave chat"
+                : "Leave group"}
           </span>
         </ContextMenuItem>
       ) : null}
@@ -359,14 +366,14 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <LoaderCircle className="h-4 w-4 animate-spin" />
           </ContextMenuIconSlot>
-          <span>Loading channel actions...</span>
+          <span>Loading group actions...</span>
         </ContextMenuItem>
       ) : ownerActionsError ? (
         <ContextMenuItem disabled>
           <ContextMenuIconSlot>
             <TriangleAlert className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Channel actions unavailable</span>
+          <span>Group actions unavailable</span>
         </ContextMenuItem>
       ) : null}
       {canManageChannel ? (
@@ -378,7 +385,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <Archive className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Archive channel</span>
+          <span>Archive group</span>
         </ContextMenuItem>
       ) : null}
       {canDeleteChannel ? (
@@ -390,7 +397,7 @@ export function ChannelContextMenuItems({
           <ContextMenuIconSlot>
             <Trash2 className="h-4 w-4" />
           </ContextMenuIconSlot>
-          <span>Delete channel</span>
+          <span>Delete group</span>
         </ContextMenuItem>
       ) : null}
     </>

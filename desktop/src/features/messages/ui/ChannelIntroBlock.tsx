@@ -1,6 +1,6 @@
 import type * as React from "react";
-import { Hash } from "lucide-react";
 
+import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import { cn } from "@/shared/lib/cn";
 
 export type ChannelIntroAction = {
@@ -13,15 +13,22 @@ export type ChannelIntroAction = {
 
 export type ChannelIntro = {
   actions?: ChannelIntroAction[];
+  /** Seeds the letter avatar color when no explicit icon is given. */
+  channelId?: string;
   channelKindLabel: string;
   channelName: string;
   description?: string | null;
   hideBeginning?: boolean;
   icon?: React.ReactNode;
+  isPrivate?: boolean;
+  /** Group photo; the letter avatar shows when absent or it fails. */
+  picture?: string | null;
+  /** Replaces the letter avatar (an ownerless chat's people picture). */
+  avatar?: React.ReactNode;
 };
 
 /**
- * The empty-channel intro block: channel icon, heading, kind label, and
+ * The empty-group intro block: group avatar, heading, kind label, and
  * action cards. Rendered both as the virtualized timeline's leading row and
  * as the non-virtualized empty state — one component so the two surfaces
  * cannot drift and the first message always lands below it without layout
@@ -42,14 +49,37 @@ export function ChannelIntroBlock({
       )}
       data-testid="message-channel-intro"
     >
-      <div
-        className="flex h-[60px] w-[60px] items-center justify-center rounded-2xl border border-border/70 bg-muted/40 text-muted-foreground"
-        data-testid="message-channel-intro-icon"
-      >
-        {intro.icon ?? <Hash aria-hidden className="h-7 w-7" />}
-      </div>
+      {intro.icon ? (
+        <div
+          className="flex h-[60px] w-[60px] items-center justify-center rounded-2xl border border-border/70 bg-muted/40 text-muted-foreground"
+          data-testid="message-channel-intro-icon"
+        >
+          {intro.icon}
+        </div>
+      ) : intro.avatar ? (
+        <div
+          className="flex h-[60px] w-[60px] items-center justify-center"
+          data-testid="message-channel-intro-icon"
+        >
+          {intro.avatar}
+        </div>
+      ) : (
+        <div
+          className="flex h-[60px] w-[60px] items-center justify-center"
+          data-testid="message-channel-intro-icon"
+        >
+          <GroupLetterAvatar
+            channelId={intro.channelId ?? intro.channelName}
+            className="h-[60px] w-[60px] text-2xl"
+            isPrivate={intro.isPrivate}
+            label={intro.channelName}
+            picture={intro.picture}
+            size="xl"
+          />
+        </div>
+      )}
       <p className="mt-4 max-w-2xl truncate text-xl font-semibold leading-7 tracking-tight text-foreground">
-        #{intro.channelName}
+        {intro.channelName}
       </p>
       {intro.hideBeginning ? null : (
         <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">

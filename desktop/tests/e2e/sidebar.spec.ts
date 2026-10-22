@@ -350,7 +350,7 @@ test("channel context menu only shows owner actions to the owner", async ({
     page.getByRole("menuitem", { name: "Leave channel" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("menuitem", { name: "Loading channel actions..." }),
+    page.getByRole("menuitem", { name: "Loading group actions..." }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("menuitem", { name: "Archive channel" }),
@@ -368,13 +368,13 @@ test("channel context menu explains when owner actions are loading", async ({
 
   await page.getByTestId("channel-general").click({ button: "right" });
   await expect(
-    page.getByRole("menuitem", { name: "Loading channel actions..." }),
+    page.getByRole("menuitem", { name: "Loading group actions..." }),
   ).toBeVisible();
   await expect(
     page.getByRole("menuitem", { name: "Archive channel" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("menuitem", { name: "Loading channel actions..." }),
+    page.getByRole("menuitem", { name: "Loading group actions..." }),
   ).toHaveCount(0);
 });
 

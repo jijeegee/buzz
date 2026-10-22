@@ -649,7 +649,7 @@ test("deleted reply links identify deletion and fall back to their thread root",
     .filter({ hasText: "Deleted reply" })
     .last()
     .getByRole("button", {
-      name: "Open thread in channel random; linked message was deleted",
+      name: "Open thread in group random; linked message was deleted",
     });
   await expect(deletedLink).toHaveAttribute(
     "data-message-link-state",
@@ -683,7 +683,7 @@ test("deleted top-level message links identify deletion and fall back to channel
     .filter({ hasText: "Missing link" })
     .last();
   const deletedLink = linkMessage.getByRole("button", {
-    name: "Open channel random; linked message was deleted",
+    name: "Open group random; linked message was deleted",
   });
   await expect(deletedLink).toHaveText("random");
   await expect(deletedLink).toHaveAttribute(

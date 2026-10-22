@@ -23,11 +23,14 @@ type NonMemberMentionDialogProps = {
   open: boolean;
   /** Restore the initiating editor when it still owns the visible draft. */
   onRestoreFocus?: () => void;
+  /** Ownerless chat: ask "Add X to this chat?" instead of group wording. */
+  isChat?: boolean;
 };
 
 export function NonMemberMentionDialog({
   canInvite,
   error,
+  isChat = false,
   isInvitePending,
   names,
   onDismiss,
@@ -63,18 +66,30 @@ export function NonMemberMentionDialog({
       >
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Mention people outside this channel?
+            {isChat
+              ? `Add ${names.join(", ")} to this chat?`
+              : "Mention people outside this group?"}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {names.join(", ")} {names.length === 1 ? "is" : "are"} not in this
-            channel.{" "}
-            {onDoNothing
-              ? canInvite
-                ? "Invite them to the channel, or send without inviting them."
-                : `${PRIVATE_CHANNEL_ADD_DENIED_MESSAGE} You can still send without inviting them.`
-              : canInvite
-                ? "Invite them to the channel, or cancel to keep your draft."
-                : PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
+            {isChat ? (
+              `${names.join(", ")} ${names.length === 1 ? "isn't" : "aren't"} in this chat.${
+                onDoNothing ? " You can also send without adding them." : ""
+              }`
+            ) : (
+              <>
+                {names.join(", ")} {names.length === 1 ? "is" : "are"} not in
+                this group.{" "}
+              </>
+            )}
+            {isChat
+              ? null
+              : onDoNothing
+                ? canInvite
+                  ? "Add them to the group, or send without inviting them."
+                  : `${PRIVATE_CHANNEL_ADD_DENIED_MESSAGE} You can still send without inviting them.`
+                : canInvite
+                  ? "Add them to the group, or cancel to keep your draft."
+                  : PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? (
@@ -96,7 +111,9 @@ export function NonMemberMentionDialog({
           >
             {onDoNothing
               ? canInvite
-                ? "Do nothing"
+                ? isChat
+                  ? "Send without adding"
+                  : "Do nothing"
                 : "Send anyway"
               : "Cancel"}
           </Button>
@@ -107,7 +124,13 @@ export function NonMemberMentionDialog({
               size="sm"
               type="button"
             >
-              {isInvitePending ? "Inviting..." : "Invite"}
+              {isChat
+                ? isInvitePending
+                  ? "Adding..."
+                  : "Add"
+                : isInvitePending
+                  ? "Inviting..."
+                  : "Invite"}
             </Button>
           ) : null}
         </AlertDialogFooter>

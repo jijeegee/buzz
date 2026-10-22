@@ -164,6 +164,7 @@ export function MembersSidebarMemberCard({
     <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-3">
       <div className="relative shrink-0">
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={profileAvatarUrl ?? null}
           className="h-8 w-8 text-xs shadow-none"
           iconClassName="h-4 w-4"
@@ -448,7 +449,7 @@ function MemberActionsMenu({
               onClick={() => onRemoveMember(member)}
             >
               <Trash2 className="h-4 w-4" />
-              Remove from channel
+              Remove from group
             </DropdownMenuItem>
           </>
         ) : null}

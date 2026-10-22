@@ -101,14 +101,22 @@ macro_rules! event_json {
 const SUMMARY_SQL: &str = concat!(
     r#"
 WITH my AS MATERIALIZED (
-    SELECT cm.channel_id, c.channel_type::text AS channel_type, cm.joined_at
+    SELECT cm.channel_id, c.channel_type::text AS channel_type, cm.joined_at,
+           -- A 1:1 DM with someone the reader blocks or once blocked: only
+           -- there are messages hidden by block periods.
+           (c.channel_type = 'dm' AND EXISTS (
+               SELECT 1 FROM user_block_periods bp
+               JOIN channel_members bm ON bm.community_id = bp.community_id
+                   AND bm.channel_id = cm.channel_id AND bm.pubkey = bp.blocked
+               WHERE bp.community_id = $1 AND bp.blocker = $2
+           ) AND dm_is_one_to_one($1, cm.channel_id)) AS dm_blocked
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
     WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
       AND c.deleted_at IS NULL AND c.archived_at IS NULL
 ),
 rooms AS (
-    SELECT 'room'::text AS row_kind, m.channel_id, m.channel_type,
+    SELECT 'room'::text AS row_kind, m.channel_id, m.channel_type, m.dm_blocked,
            NULL::bytea AS root_id, NULL::timestamptz AS root_created_at,
            COALESCE(l.created_at, m.joined_at) AS at, m.channel_id::text AS row_key,
            NULL::int AS reply_count, l.id AS latest_id, l.created_at AS latest_created_at
@@ -121,15 +129,16 @@ rooms AS (
               SELECT 1 FROM thread_metadata r
               WHERE r.community_id = $1 AND r.event_id = e.id
                 AND r.depth > 0 AND NOT r.broadcast)
-          AND NOT (m.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
-                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
+          AND NOT (m.dm_blocked AND "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#")
         ORDER BY e.created_at DESC, e.id DESC LIMIT 1
     ) l ON true
 ),
 threads AS (
     -- No room can contribute more than one page to the global top-N, so each
     -- room reads at most $6 roots from idx_thread_metadata_inbox.
-    SELECT 'thread'::text, m.channel_id, m.channel_type,
+    SELECT 'thread'::text, m.channel_id, m.channel_type, m.dm_blocked,
            t.event_id, t.event_created_at, t.last_reply_at, encode(t.event_id, 'hex'),
            t.reply_count, NULL::bytea, NULL::timestamptz
     FROM my m
@@ -170,8 +179,9 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             AND e.created_at = r.event_created_at AND e.id = r.event_id
         WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
           AND e.kind = ANY($3) AND e.deleted_at IS NULL
-          AND NOT (p.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
-                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
+          AND NOT (p.dm_blocked AND "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#")
         ORDER BY r.event_created_at DESC, r.event_id DESC LIMIT 1
     ) END AS latest,
     CASE WHEN p.row_kind = 'thread' THEN (
@@ -187,8 +197,9 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             WHERE e.community_id = $1 AND e.channel_id = p.channel_id
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
               AND e.created_at > cm.read_at
-              AND NOT (p.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
-                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
+              AND NOT (p.dm_blocked AND "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#")
               AND NOT EXISTS (
                   SELECT 1 FROM thread_metadata r
                   WHERE r.community_id = $1 AND r.event_id = e.id
@@ -203,8 +214,9 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
               AND e.created_at > GREATEST(tm.read_at, cm.read_at)
-              AND NOT (p.channel_type = 'dm' AND EXISTS (SELECT 1 FROM user_blocks ub
-                  WHERE ub.community_id = $1 AND ub.blocker = $2 AND ub.blocked = e.pubkey))
+              AND NOT (p.dm_blocked AND "#,
+    crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
+    r#")
             LIMIT $11
         ) n WHERE COALESCE(tm.read_at, cm.read_at) IS NOT NULL
     ) END AS unread,

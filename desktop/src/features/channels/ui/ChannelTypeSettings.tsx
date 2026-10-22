@@ -1,4 +1,4 @@
-import { ChevronDown, ClockFading, Hash } from "lucide-react";
+import { ChevronDown, ClockFading, Users } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import {
@@ -26,7 +26,7 @@ import { ChannelTypePicker } from "./ChannelTypePicker";
 
 const CHANNEL_TYPE_OPTIONS = [
   { value: "temporary", label: "Temporary", Icon: ClockFading },
-  { value: "ongoing", label: "Ongoing", Icon: Hash },
+  { value: "ongoing", label: "Ongoing", Icon: Users },
 ] as const;
 
 const EPHEMERAL_TIMEOUT_OPTIONS = [
@@ -64,7 +64,7 @@ export function ChannelTypeDetailRow({
   return (
     <EditableInfoFieldRow
       editTestId="channel-management-edit-channel-type"
-      label="Channel type"
+      label="Group type"
       onEdit={canEdit ? onEdit : undefined}
       testId="channel-management-type"
       value={channelLifecycleLabel(lifecycle, channel.ttlSeconds)}
@@ -75,7 +75,7 @@ export function ChannelTypeDetailRow({
 export function ChannelTypeSettings({
   channelId,
   disabled,
-  label = "Channel type",
+  label = "Group type",
   onOpenChange,
   onTemporaryChange,
   onTtlSecondsChange,
@@ -136,7 +136,7 @@ export function ChannelTypeSettings({
         {variant === "segmented" ? (
           <SegmentedControl
             disabled={disabled}
-            legend="Channel type"
+            legend="Group type"
             onValueChange={(value) => onTemporaryChange(value === "temporary")}
             optionTestIdPrefix={`${testIdPrefix}-channel-type-option`}
             options={CHANNEL_TYPE_OPTIONS}

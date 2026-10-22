@@ -28,6 +28,7 @@ class _ChatRow extends HookConsumerWidget {
     required this.threadUnread,
     this.working,
     required this.onTap,
+    this.onLongPress,
   });
 
   final ChatListRow row;
@@ -49,6 +50,9 @@ class _ChatRow extends HookConsumerWidget {
   /// Agents working in this chat now (left of the time).
   final ChatWorkingSummary? working;
   final VoidCallback onTap;
+
+  /// A thread row's menu (pin, read, unfollow, close).
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -80,10 +84,18 @@ class _ChatRow extends HookConsumerWidget {
         ? ConversationThreadAvatar(
             key: const ValueKey('chat-thread-avatar'),
             channelSeed: row.channelId,
-            channelLabel: _bareRoomName(row, channel),
+            channelLabel: _isChatRow(row, channel)
+                ? roomName
+                : _bareRoomName(row, channel),
             threadSeed: row.rootId ?? row.key,
             threadLabel: threadTitle!,
             ringColor: background,
+            channelPicture: channel?.picture,
+          )
+        : _isChatRow(row, channel)
+        ? ChatGridAvatar(
+            key: const ValueKey('chat-room-grid-avatar'),
+            memberPubkeys: _chatRowChannel(row, channel).participantPubkeys,
           )
         : row.isDm
         ? _DmAvatar(
@@ -95,7 +107,9 @@ class _ChatRow extends HookConsumerWidget {
         : ConversationLetterAvatar(
             seed: row.channelId,
             label: _bareRoomName(row, channel),
+            isPrivate: channel?.isPrivate ?? false,
             avatarKey: const ValueKey('chat-channel-avatar'),
+            imageUrl: channel?.picture,
           );
 
     final titleStyle = activityUsernameTextStyle.copyWith(
@@ -222,7 +236,7 @@ class _ChatRow extends HookConsumerWidget {
             rowKey: row.key,
             unread: unread,
             muted: muted,
-            threadUnread: threadUnread && !row.isDm && !row.isThread,
+            threadUnread: threadUnread && !row.isPersonChat && !row.isThread,
           ),
         ],
       ),
@@ -236,6 +250,7 @@ class _ChatRow extends HookConsumerWidget {
         child: InkWell(
           key: ValueKey('chat-row-tap-${row.key}'),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: content,
         ),
       ),
@@ -288,7 +303,7 @@ class _ChatRow extends HookConsumerWidget {
   }
 }
 
-/// The room's name without `#`: the channel's, or the DM's people.
+/// The room's bare name: the channel's, or the DM's people.
 String _bareRoomName(ChatListRow row, Channel? channel) {
   final name = channel?.name.trim().isNotEmpty == true
       ? channel!.name.trim()
@@ -296,16 +311,48 @@ String _bareRoomName(ChatListRow row, Channel? channel) {
   return name;
 }
 
-/// A room's name: `#channel`, or the DM's people.
+/// Whether a row is a chat of people (not a 1:1 DM, not a group).
+bool _isChatRow(ChatListRow row, Channel? channel) =>
+    row.isGroupChat || (channel?.isGroupChat ?? false);
+
+/// A chat row's channel, its members filled from the row when the channel
+/// list has not loaded them.
+Channel _chatRowChannel(ChatListRow row, Channel? channel) {
+  final base =
+      channel ??
+      Channel(
+        id: row.channelId,
+        name: row.channelName,
+        channelType: 'stream',
+        visibility: 'private',
+        description: '',
+        createdBy: '',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        memberCount: row.memberCount ?? 0,
+        isMember: true,
+        groupChat: true,
+      );
+  return base.participantPubkeys.isNotEmpty
+      ? base
+      : base.copyWith(
+          participantPubkeys: row.dmMembers,
+          memberCount: base.memberCount > 0 ? null : row.memberCount,
+        );
+}
+
+/// A room's name: a chat's resolved title, the group's, or the DM's people.
 String _roomName(
   WidgetRef ref,
   ChatListRow row,
   Channel? channel,
   String? currentPubkey,
 ) {
+  if (_isChatRow(row, channel)) {
+    return watchChannelTitle(ref, _chatRowChannel(row, channel));
+  }
   if (!row.isDm) {
     final name = _bareRoomName(row, channel);
-    return name.isEmpty ? '#channel' : '#$name';
+    return name.isEmpty ? 'Group' : name;
   }
   if (channel != null) {
     return resolveDmChannelDisplayLabel(
@@ -553,7 +600,7 @@ class _PersonAvatar extends ConsumerWidget {
 }
 
 /// A channel whose threads are listed but whose room row is not.
-class _ChannelHeaderRow extends StatelessWidget {
+class _ChannelHeaderRow extends ConsumerWidget {
   const _ChannelHeaderRow({
     super.key,
     required this.channel,
@@ -568,8 +615,10 @@ class _ChannelHeaderRow extends StatelessWidget {
   final ChatWorkingSummary? working;
 
   @override
-  Widget build(BuildContext context) {
-    final name = channel?.name.trim().isNotEmpty == true
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = channel?.isGroupChat == true
+        ? watchChannelTitle(ref, channel!)
+        : channel?.name.trim().isNotEmpty == true
         ? channel!.name.trim()
         : fallbackName.trim();
     return Padding(
@@ -578,7 +627,7 @@ class _ChannelHeaderRow extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              name.isEmpty ? '#channel' : '#$name',
+              name.isEmpty ? 'Group' : name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: activityUsernameTextStyle.copyWith(
@@ -599,12 +648,20 @@ class _ChannelHeaderRow extends StatelessWidget {
   }
 }
 
-/// "+ N more threads" / "Show less" under a channel in By channel.
+/// "+ N more threads" under a channel in By channel. Each tap shows 10 more:
+/// "+ 10 more · N left" (or "+ N more" for the last ones) beside "Show less";
+/// with every thread shown, only "Show less".
 class _MoreThreadsRow extends StatelessWidget {
-  const _MoreThreadsRow({super.key, required this.more, required this.onTap});
+  const _MoreThreadsRow({
+    super.key,
+    required this.more,
+    required this.onShowMore,
+    required this.onShowLess,
+  });
 
   final ChatGroupMore more;
-  final VoidCallback onTap;
+  final VoidCallback onShowMore;
+  final VoidCallback onShowLess;
 
   @override
   Widget build(BuildContext context) {
@@ -612,104 +669,67 @@ class _MoreThreadsRow extends StatelessWidget {
       color: context.colors.primary,
       fontWeight: FontWeight.w600,
     );
-    final label = more.expanded
-        ? 'Show less'
-        : '+ ${more.hidden} more ${more.hidden == 1 ? 'thread' : 'threads'}';
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Grid.gutter +
-              _threadIndent +
-              activityAvatarSize +
-              messageAvatarContentGap,
-          0,
-          Grid.gutter,
-          Grid.twelve,
-        ),
-        child: Row(
-          children: [
-            Text(label, style: style),
-            if (!more.expanded && more.hiddenUnread > 0) ...[
-              const SizedBox(width: Grid.xxs),
-              _Pill(
-                label: formatChatCount(more.hiddenUnread, false),
-                color: context.colors.primary,
-                foreground: context.colors.onPrimary,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ViewModeSwitch extends StatelessWidget {
-  const _ViewModeSwitch({required this.mode, required this.onChanged});
-
-  final ChatsViewMode mode;
-  final ValueChanged<ChatsViewMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget option(ChatsViewMode value, String label) {
-      final selected = mode == value;
-      return Expanded(
-        child: GestureDetector(
-          key: ValueKey('chats-view-${value.name}'),
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            if (!selected) {
-              unawaited(HapticFeedback.selectionClick());
-              onChanged(value);
-            }
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            margin: const EdgeInsets.all(3),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? context.colors.surface : Colors.transparent,
-              borderRadius: BorderRadius.circular(Grid.xxs),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: context.colors.shadow.withValues(alpha: 0.08),
-                        blurRadius: 3,
-                        offset: const Offset(0, 1),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Text(
-              label,
-              style: context.textTheme.labelLarge?.copyWith(
-                color: selected
-                    ? context.colors.onSurface
-                    : context.colors.onSurfaceVariant,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
+    final hidden = more.hidden;
+    final label = !more.expanded
+        ? '+ $hidden more ${hidden == 1 ? 'thread' : 'threads'}'
+        : hidden > byChannelThreadStep
+        ? '+ $byChannelThreadStep more · $hidden left'
+        : '+ $hidden more';
+    final showMore = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: style),
+        if (more.hiddenUnread > 0) ...[
+          const SizedBox(width: Grid.xxs),
+          _Pill(
+            label: formatChatCount(more.hiddenUnread, false),
+            color: context.colors.primary,
+            foreground: context.colors.onPrimary,
           ),
+        ],
+      ],
+    );
+    const padding = EdgeInsets.fromLTRB(
+      Grid.gutter +
+          _threadIndent +
+          activityAvatarSize +
+          messageAvatarContentGap,
+      0,
+      Grid.gutter,
+      Grid.twelve,
+    );
+    final showLess = Text('Show less', style: style);
+    // One control: the whole line taps, as before.
+    if (hidden == 0 || !more.expanded) {
+      return InkWell(
+        key: ValueKey(
+          hidden == 0
+              ? 'chat-more-less-${more.channelId}'
+              : 'chat-more-show-${more.channelId}',
+        ),
+        onTap: hidden == 0 ? onShowLess : onShowMore,
+        child: Padding(
+          padding: padding,
+          child: hidden == 0 ? Row(children: [showLess]) : showMore,
         ),
       );
     }
-
-    return Semantics(
-      container: true,
-      label: 'Chats view',
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: context.colors.surfaceContainerHighest.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(Grid.xs),
-        ),
-        child: Row(
-          children: [
-            option(ChatsViewMode.all, 'All chats'),
-            option(ChatsViewMode.byChannel, 'By channel'),
-          ],
-        ),
+    return Padding(
+      padding: padding,
+      child: Row(
+        children: [
+          InkWell(
+            key: ValueKey('chat-more-show-${more.channelId}'),
+            onTap: onShowMore,
+            child: showMore,
+          ),
+          const Spacer(),
+          InkWell(
+            key: ValueKey('chat-more-less-${more.channelId}'),
+            onTap: onShowLess,
+            child: showLess,
+          ),
+        ],
       ),
     );
   }
@@ -745,7 +765,7 @@ class _ChatsEmptyState extends StatelessWidget {
               OutlinedButton(
                 key: const ValueKey('chats-empty-find-channels'),
                 onPressed: onFindChannels,
-                child: const Text('Find channels'),
+                child: const Text('Find groups'),
               ),
               const SizedBox(width: Grid.xs),
               FilledButton(

@@ -89,7 +89,7 @@ test("cancelling the empty-edit delete keeps the message", async ({ page }) => {
   await expect(page.getByTestId("message-timeline")).toContainText(
     RENDERED_ORIGINAL_CONTENT,
   );
-  await expect(row.getByLabel("Open channel general")).toBeVisible();
+  await expect(row.getByLabel("Open group general")).toBeVisible();
 });
 
 test("a non-empty edit still edits and never deletes", async ({ page }) => {

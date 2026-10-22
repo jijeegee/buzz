@@ -223,7 +223,7 @@ export function projectSelectionPresentation(
   ];
   actions.push({
     id: "discuss",
-    label: "Discuss in a channel",
+    label: "Discuss in a group",
     testId: "projects-selection-discuss",
   });
   if (kind === "commit") {

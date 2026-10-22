@@ -778,8 +778,12 @@ fn apply_inbound_persona(
             local.provider = inbound.provider;
             local.effort_level = inbound.effort_level;
             local.name_pool = inbound.name_pool;
-            local.respond_to = inbound.respond_to;
-            local.respond_to_allowlist = inbound.respond_to_allowlist;
+            // A shared head never carries the audience (see
+            // `build_persona_event`), so it must not clear this device's copy.
+            if !inbound.shared {
+                local.respond_to = inbound.respond_to;
+                local.respond_to_allowlist = inbound.respond_to_allowlist;
+            }
             local.parallelism = inbound.parallelism;
             local.session_policy = inbound.session_policy;
             local.shared = inbound.shared;
@@ -787,6 +791,11 @@ fn apply_inbound_persona(
             Some(change)
         }
         None => {
+            let mut inbound = inbound;
+            if inbound.shared {
+                inbound.respond_to = None;
+                inbound.respond_to_allowlist = Vec::new();
+            }
             personas.push(inbound);
             None
         }

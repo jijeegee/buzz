@@ -80,7 +80,7 @@ test("activity pod shows workspace details without a create action", () => {
     [
       ["Projects", 2],
       ["Repositories", 2],
-      ["Channels", 2],
+      ["Groups", 2],
       ["Tasks", 5],
       ["Reviews", 5],
     ],
@@ -99,7 +99,7 @@ test("projects pod keeps create-project and drops task/review totals", () => {
   assert.equal(context.action?.kind, "project");
   assert.deepEqual(
     context.stats.map((stat) => stat.label),
-    ["Projects", "Repositories", "Channels"],
+    ["Projects", "Repositories", "Groups"],
   );
 });
 
@@ -133,13 +133,13 @@ test("channels pod titles itself and provides an add action", () => {
     pullRequests: [],
   });
 
-  assert.equal(context.title, "Channels");
+  assert.equal(context.title, "Groups");
   assert.equal(context.detailsTitle, "Details");
   assert.equal(context.action?.kind, "channel");
-  assert.equal(context.action?.label, "Add channel");
+  assert.equal(context.action?.label, "Add group");
   assert.deepEqual(
     context.stats.map((stat) => stat.label),
-    ["Channels", "Projects", "Repositories"],
+    ["Groups", "Projects", "Repositories"],
   );
 });
 
@@ -192,7 +192,7 @@ test("repository-only read models count toward repository and channel context", 
   assert.deepEqual(
     channels.stats.map((stat) => [stat.label, stat.count]),
     [
-      ["Channels", 2],
+      ["Groups", 2],
       ["Projects", 1],
       ["Repositories", 2],
     ],

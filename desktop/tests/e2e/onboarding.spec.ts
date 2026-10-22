@@ -383,11 +383,11 @@ async function expectWelcomeView(page: Page) {
   await expect(page.getByTestId("message-unread-pill")).toHaveCount(0);
   await expect(page.getByTestId("message-channel-intro")).toBeVisible();
   await expect(page.getByTestId("message-channel-intro")).toContainText(
-    "private welcome channel",
+    "private welcome group",
   );
   await expect(
     page.getByTestId("message-channel-intro").getByRole("button"),
-  ).toHaveText(["Browse channels", "Create a channel", "Create an agent"]);
+  ).toHaveText(["Find groups", "New group", "Create an agent"]);
   await expect(
     page.getByTestId("welcome-intro-action-browse-channels"),
   ).toBeVisible();
@@ -396,12 +396,12 @@ async function expectWelcomeView(page: Page) {
   );
   await expectIntroActionIconStackedAboveTitle(
     page.getByTestId("welcome-intro-action-browse-channels"),
-    "Browse channels",
+    "Find groups",
   );
   await page.getByTestId("welcome-intro-action-browse-channels").click();
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
   await expect(page.getByTestId("channel-browser-search")).toBeFocused();
-  await expect(page.getByRole("tab", { name: "All channels" })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "My groups" })).toHaveAttribute(
     "data-state",
     "active",
   );
@@ -415,12 +415,12 @@ async function expectWelcomeView(page: Page) {
   );
   await expectIntroActionIconStackedAboveTitle(
     page.getByTestId("welcome-intro-action-create-channel"),
-    "Create a channel",
+    "New group",
   );
   await expect(
     page
       .getByTestId("welcome-intro-action-create-channel")
-      .getByText("Create a channel", { exact: true }),
+      .getByText("New group", { exact: true }),
   ).toHaveCSS("white-space", "normal");
   await expect(
     page.getByTestId("welcome-intro-action-create-agent"),

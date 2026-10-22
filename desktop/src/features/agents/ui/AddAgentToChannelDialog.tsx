@@ -113,18 +113,18 @@ export function AddAgentToChannelDialog({
       <DialogContent className="max-w-xl overflow-hidden p-0">
         <div className="flex max-h-[85vh] flex-col">
           <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
-            <DialogTitle>Add agent to channel</DialogTitle>
+            <DialogTitle>Add agent to group</DialogTitle>
             <DialogDescription>
-              Add {agent?.name ?? "this agent"} to a channel so desktop chat can
-              `@mention` it. Running agents pick up new channels automatically
-              via membership notifications.
+              Add {agent?.name ?? "this agent"} to a group so desktop chat can
+              `@mention` it. Running agents pick up new groups automatically via
+              membership notifications.
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
             <div className="space-y-1.5">
               <label className="text-sm font-medium" htmlFor="agent-channel-id">
-                Channel
+                Group
               </label>
               <select
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs"
@@ -136,7 +136,7 @@ export function AddAgentToChannelDialog({
                 value={channelId}
               >
                 {channels.length === 0 ? (
-                  <option value="">No channels available</option>
+                  <option value="">No groups available</option>
                 ) : null}
                 {channels.map((channel) => (
                   <option key={channel.id} value={channel.id}>
@@ -145,7 +145,7 @@ export function AddAgentToChannelDialog({
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">
-                Only channels accessible to the current desktop user are shown
+                Only groups accessible to the current desktop user are shown
                 here.
               </p>
             </div>
@@ -153,7 +153,7 @@ export function AddAgentToChannelDialog({
             {isAlreadyMember ? (
               <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 <span>✓</span>
-                <span>Already a member of this channel</span>
+                <span>Already a member of this group</span>
               </div>
             ) : null}
 
@@ -216,8 +216,8 @@ export function AddAgentToChannelDialog({
               {attachAgentMutation.isPending
                 ? "Adding..."
                 : isAlreadyMember
-                  ? "Re-add to channel"
-                  : "Add to channel"}
+                  ? "Re-add to group"
+                  : "Add to group"}
             </Button>
           </div>
         </div>

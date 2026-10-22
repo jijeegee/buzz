@@ -7,9 +7,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/read_aloud/read_aloud_preferences.dart';
 import 'read_aloud_engine_settings.dart';
 
-/// Experiment rows for mobile read-aloud: the toggle and, when enabled on
-/// Android, the engine picker. The preference defaults to disabled.
-List<Widget> readAloudExperimentRows(BuildContext context, WidgetRef ref) => [
+/// Settings rows for read-aloud: the toggle and, when enabled on Android,
+/// the engine picker. The preference defaults to disabled.
+List<Widget> readAloudSettingsRows(BuildContext context, WidgetRef ref) => [
   const ReadAloudToggle(),
   if (ref.watch(readAloudEnabledProvider) && Platform.isAndroid)
     const ReadAloudEngineSettings(),
@@ -25,8 +25,10 @@ class ReadAloudToggle extends HookConsumerWidget {
     final saving = useState(false);
     return SwitchListTile.adaptive(
       key: const ValueKey('read-aloud-enabled'),
-      title: const Text('모바일 읽어주기 버튼'),
-      subtitle: const Text('메시지에 음성 재생 버튼 표시 · 무료 기기 내장 음성'),
+      title: const Text('Read aloud'),
+      subtitle: const Text(
+        'Show a play button on messages · uses this phone\'s built-in voice',
+      ),
       value: enabled,
       onChanged: saving.value
           ? null
@@ -39,9 +41,7 @@ class ReadAloudToggle extends HookConsumerWidget {
               } catch (_) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('설정을 저장하지 못했습니다. 다시 시도해 주세요.'),
-                    ),
+                    const SnackBar(content: Text("Couldn't save. Try again.")),
                   );
                 }
               } finally {

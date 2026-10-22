@@ -475,6 +475,72 @@ pub async fn add_member(
     role: MemberRole,
     invited_by: Option<&[u8]>,
 ) -> Result<MemberRecord> {
+    add_member_inner(
+        pool,
+        community_id,
+        channel_id,
+        pubkey,
+        role,
+        invited_by,
+        false,
+    )
+    .await
+}
+
+/// Most active members a group chat may hold.
+pub const GROUP_CHAT_MAX_MEMBERS: i64 = 1000;
+
+/// Error text when a group chat already holds [`GROUP_CHAT_MAX_MEMBERS`].
+pub const GROUP_CHAT_FULL: &str = "chat is full";
+
+/// Accept a pending invitation to a group chat: add `pubkey` as `member`,
+/// recording `inviter` as who invited them.
+///
+/// Unlike [`add_member`], the inviter need not still be in the chat: a group
+/// chat invitation stays valid while the chat has at least one active member.
+/// The member cap applies. Refuses channels that are not group chats.
+pub async fn add_member_via_group_chat_invitation(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    inviter: &[u8],
+) -> Result<MemberRecord> {
+    add_member_inner(
+        pool,
+        community_id,
+        channel_id,
+        pubkey,
+        MemberRole::Member,
+        Some(inviter),
+        true,
+    )
+    .await
+}
+
+async fn count_active_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+) -> Result<i64> {
+    Ok(sqlx::query_scalar(
+        "SELECT count(*) FROM channel_members           WHERE community_id = $1 AND channel_id = $2 AND removed_at IS NULL",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+async fn add_member_inner(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    role: MemberRole,
+    invited_by: Option<&[u8]>,
+    via_group_chat_invitation: bool,
+) -> Result<MemberRecord> {
     if pubkey.len() != 32 {
         return Err(DbError::InvalidData(format!(
             "pubkey must be 32 bytes, got {}",
@@ -495,13 +561,38 @@ pub async fn add_member(
 
     let channel = get_channel_tx(&mut tx, community_id, channel_id).await?;
 
-    let effective_role = if channel.visibility == "private" {
+    // Group chats have no owner/admin and no guests: people are members,
+    // agents are bots.
+    if channel.group_chat && !matches!(role, MemberRole::Member | MemberRole::Bot) {
+        return Err(DbError::AccessDenied(
+            "chats have no owners, admins or guests".to_string(),
+        ));
+    }
+
+    let effective_role = if via_group_chat_invitation {
+        if !channel.group_chat {
+            return Err(DbError::AccessDenied(
+                "only chat invitations outlive their inviter".to_string(),
+            ));
+        }
+        if count_active_members_tx(&mut tx, community_id, channel_id).await? == 0 {
+            return Err(DbError::AccessDenied(
+                "this chat has no members left".to_string(),
+            ));
+        }
+        role
+    } else if channel.visibility == "private" {
         let inviter = invited_by.ok_or_else(|| {
             DbError::AccessDenied("private channel requires an invite".to_string())
         })?;
 
-        // Bootstrap: channel creator may add themselves as the first member.
-        let is_creator_bootstrap = inviter == pubkey && inviter == channel.created_by.as_slice();
+        // Bootstrap: the channel creator may add themselves as the first
+        // member, but only while the room has never had any member. Once
+        // anyone joined (and maybe left), the creator is an ordinary former
+        // member who needs an active inviter like everyone else.
+        let is_creator_bootstrap = inviter == pubkey
+            && inviter == channel.created_by.as_slice()
+            && !channel_ever_had_members_tx(&mut tx, community_id, channel_id).await?;
 
         if !is_creator_bootstrap {
             let inviter_role_str = get_active_role_tx(&mut tx, community_id, channel_id, inviter)
@@ -563,7 +654,10 @@ pub async fn add_member(
     // resurrection token: an owner removed by another owner could self-rejoin
     // via kind:9021 (`Member, None`) and silently regain ownership.
     let current_role = get_active_role_tx(&mut tx, community_id, channel_id, pubkey).await?;
-    if let Some(current_role) = current_role.filter(|r| r != effective_role.as_str()) {
+    if let Some(current_role) = current_role
+        .as_deref()
+        .filter(|r| *r != effective_role.as_str())
+    {
         let actor_role = match invited_by {
             Some(inviter) => get_active_role_tx(&mut tx, community_id, channel_id, inviter).await?,
             None => None,
@@ -594,6 +688,16 @@ pub async fn add_member(
                 ));
             }
         }
+    }
+
+    // Group chat cap, checked under the membership lock so concurrent adds
+    // cannot overshoot. Re-adding an active member is not a new seat.
+    if channel.group_chat
+        && current_role.is_none()
+        && count_active_members_tx(&mut tx, community_id, channel_id).await?
+            >= GROUP_CHAT_MAX_MEMBERS
+    {
+        return Err(DbError::AccessDenied(GROUP_CHAT_FULL.to_string()));
     }
 
     sqlx::query(
@@ -1163,6 +1267,21 @@ pub async fn list_large_channel_rosters_needing_reconciliation(
 }
 
 /// Transaction-aware variant of [`get_active_role_tx`].
+/// Whether the channel has any membership row at all, active or removed.
+async fn channel_ever_had_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM channel_members           WHERE community_id = $1 AND channel_id = $2)",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
 async fn get_active_role_tx(
     tx: &mut Transaction<'_, Postgres>,
     community_id: CommunityId,
@@ -1195,7 +1314,7 @@ async fn get_channel_tx(
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
                purpose, purpose_set_by, purpose_set_at,
-               ttl_seconds, ttl_deadline, goals_enabled
+               ttl_seconds, ttl_deadline, goals_enabled, picture, group_chat
         FROM channels WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL
         "#,
     )
@@ -1291,7 +1410,7 @@ pub async fn get_accessible_channels(
                c.nip29_group_id, c.topic_required, c.max_members,
                c.topic, c.topic_set_by, c.topic_set_at,
                c.purpose, c.purpose_set_by, c.purpose_set_at,
-               c.ttl_seconds, c.ttl_deadline, c.goals_enabled,
+               c.ttl_seconds, c.ttl_deadline, c.goals_enabled, c.picture, c.group_chat,
                (cm.channel_id IS NOT NULL) AS is_member
         FROM channels c
         LEFT JOIN channel_members cm
@@ -1561,6 +1680,19 @@ impl Db {
         relay_pubkey: &[u8],
     ) -> Result<LockedMemberSnapshot> {
         lock_member_snapshot(&self.pool, community_id, channel_id, relay_pubkey).await
+    }
+
+    /// Accept a group chat invitation; see [`add_member_via_group_chat_invitation`].
+    #[datastore_span(name = "add_member_via_group_chat_invitation", system = "postgresql")]
+    pub async fn add_member_via_group_chat_invitation(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        pubkey: &[u8],
+        inviter: &[u8],
+    ) -> Result<MemberRecord> {
+        add_member_via_group_chat_invitation(&self.pool, community_id, channel_id, pubkey, inviter)
+            .await
     }
 
     /// Adds a member to a channel.
