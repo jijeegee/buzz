@@ -918,7 +918,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                       child: Center(
                         child: Text(
                           normalizedQuery.isEmpty
-                              ? 'Add friends in People to message them here.'
+                              ? 'Add friends in the Friends tab to message them here.'
                               : 'No matching people.',
                           textAlign: TextAlign.center,
                         ),
