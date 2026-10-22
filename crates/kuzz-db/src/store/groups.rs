@@ -52,6 +52,8 @@ pub struct GroupSummary {
     pub is_member: bool,
     /// When the group was archived, if it is.
     pub archived_at: Option<DateTime<Utc>>,
+    /// Ownerless group chat (never searchable, no address or invite link).
+    pub group_chat: bool,
 }
 
 /// The active invite link of a group.
@@ -78,7 +80,13 @@ pub struct GroupInvitation {
     pub inviter: Vec<u8>,
     /// When the invitation was (last) sent.
     pub created_at: DateTime<Utc>,
+    /// Group chats only: up to [`INVITATION_MEMBER_PREVIEW`] active members
+    /// (never the invitee), oldest first, so an unnamed chat has a title.
+    pub member_pubkeys: Vec<Vec<u8>>,
 }
+
+/// Most members an invitation to a group chat previews.
+pub const INVITATION_MEMBER_PREVIEW: i64 = 4;
 
 /// See [`Db::group_invitation_write_state`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,7 +144,7 @@ fn check_key(name: &str, key: &[u8]) -> Result<()> {
 macro_rules! summary_columns {
     () => {
         "c.id, c.name, c.description, c.handle, c.picture, c.channel_type::text AS channel_type, \
-         c.visibility::text AS visibility, c.invite_policy, c.archived_at, c.created_at, \
+         c.visibility::text AS visibility, c.invite_policy, c.archived_at, c.created_at,          c.group_chat, \
          (SELECT count(*) FROM channel_members m \
            WHERE m.community_id = c.community_id AND m.channel_id = c.id \
              AND m.removed_at IS NULL) AS member_count, \
@@ -150,7 +158,7 @@ macro_rules! summary_columns {
 macro_rules! open_group_filter {
     () => {
         "c.community_id = $1 AND c.visibility = 'open' AND c.archived_at IS NULL \
-         AND c.deleted_at IS NULL AND c.channel_type IN ('stream', 'forum')"
+         AND c.deleted_at IS NULL AND c.channel_type IN ('stream', 'forum')          AND NOT c.group_chat"
     };
 }
 
@@ -182,7 +190,7 @@ const BY_ID_SQL: &str = concat!(
 );
 
 const INVITATIONS_SQL: &str = concat!(
-    "SELECT i.id AS invitation_id, i.inviter, i.created_at AS invited_at, ",
+    "SELECT i.id AS invitation_id, i.inviter, i.created_at AS invited_at,        CASE WHEN c.group_chat THEN ARRAY(SELECT m.pubkey FROM channel_members m            WHERE m.community_id = c.community_id AND m.channel_id = c.id              AND m.removed_at IS NULL AND m.pubkey <> $2            ORDER BY m.joined_at, m.pubkey LIMIT $4)        ELSE ARRAY[]::bytea[] END AS member_pubkeys, ",
     summary_columns!(),
     " FROM group_invitations i \
       JOIN channels c ON c.community_id = i.community_id AND c.id = i.channel_id \
@@ -209,6 +217,7 @@ fn summary_from_row(row: &sqlx::postgres::PgRow) -> Result<GroupSummary> {
         member_count: row.try_get("member_count")?,
         is_member: row.try_get("is_member")?,
         archived_at: row.try_get("archived_at")?,
+        group_chat: row.try_get("group_chat")?,
     })
 }
 
@@ -549,6 +558,7 @@ impl Db {
             .bind(community.as_uuid())
             .bind(invitee)
             .bind(INVITATION_TTL_DAYS)
+            .bind(INVITATION_MEMBER_PREVIEW)
             .fetch_all(&self.pool)
             .await?;
         rows.iter()
@@ -558,6 +568,7 @@ impl Db {
                     channel: summary_from_row(row)?,
                     inviter: row.try_get("inviter")?,
                     created_at: row.try_get("invited_at")?,
+                    member_pubkeys: row.try_get("member_pubkeys")?,
                 })
             })
             .collect()

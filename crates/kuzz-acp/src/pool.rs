@@ -1039,6 +1039,7 @@ impl ChannelInfoResolver {
                         description: info.description,
                         project: None,
                         goals_off: false,
+                        group_chat: info.group_chat,
                     },
                 ))
             })
@@ -5330,6 +5331,7 @@ fn prompt_channel_info_from_tags(tags: &[serde_json::Value]) -> PromptChannelInf
         description,
         project: None,
         goals_off,
+        group_chat: crate::relay::group_chat_from_tags(tags),
     }
 }
 
@@ -7652,6 +7654,18 @@ pub(crate) mod tests {
         assert_eq!(off.name, "team");
     }
 
+    #[test]
+    fn channel_group_chat_marker_comes_from_metadata() {
+        let plain = prompt_channel_info_from_tags(&[json!(["private"])]);
+        assert!(!plain.group_chat);
+        let chat = prompt_channel_info_from_tags(&[json!(["private"]), json!(["group_chat"])]);
+        assert!(
+            chat.group_chat,
+            "runtime-joined group chats carry the marker"
+        );
+        assert_eq!(chat.channel_type, "private");
+    }
+
     /// A capture path for a `bash` script's single-quoted string. Forward
     /// slashes, because bash keeps Windows `\` literally and the file would
     /// land in the crate directory under a mangled name.
@@ -9626,6 +9640,7 @@ printf '%s
                         name: "test-channel".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 )]),
                 ctx.rest_client.clone(),
@@ -10024,6 +10039,7 @@ done"#
                         name: "test-thread".into(),
                         channel_type: "stream".into(),
                         description: None,
+                        group_chat: false,
                     },
                 )]),
                 RestClient {
@@ -10236,6 +10252,7 @@ done"#
                     name: "test-dm".into(),
                     channel_type: "dm".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             RestClient {
@@ -10403,6 +10420,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                     name: "test-dm".into(),
                     channel_type: "dm".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             RestClient {
@@ -10693,6 +10711,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                     name: "general".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             ctx.rest_client.clone(),
@@ -13943,6 +13962,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                     name: "ordinary-looking".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             crate::relay::RestClient {
@@ -14082,6 +14102,7 @@ done"#
                     name: "ordinary-looking".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             RestClient {
@@ -14188,6 +14209,7 @@ done"#
                     name: "project-home".into(),
                     channel_type: "stream".into(),
                     description: None,
+                    group_chat: false,
                 },
             )]),
             crate::relay::RestClient {

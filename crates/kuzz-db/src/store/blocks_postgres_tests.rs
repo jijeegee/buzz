@@ -425,12 +425,12 @@ async fn new_dm_from_blocked_person_is_hidden_for_blocker() {
             .rows;
     assert!(a_rows.iter().any(|r| r.channel_id == channel.id));
 
-    // A group DM B starts with A opens normally for A.
+    // A (legacy) group DM B started with A opens normally for A. New DMs
+    // are 1:1, so only the low-level create_dm still makes one.
     let c = Keys::generate();
-    let (group, created) = dm::open_dm(&f.pool, f.scope, &[&pk(&a), &pk(&c)], &pk(&b))
+    let group = dm::create_dm(&f.pool, f.scope, &[&pk(&a), &pk(&b), &pk(&c)], &pk(&b))
         .await
         .unwrap();
-    assert!(created);
     let a_rows =
         f.db.chat_list(f.scope, &a.public_key(), &chats())
             .await

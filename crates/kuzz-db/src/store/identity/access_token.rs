@@ -44,6 +44,9 @@ pub struct AccessTokenRecord {
     pub bot_deleted_at: Option<DateTime<Utc>>,
     /// Whether the principal is an `operator` in the DB roster.
     pub is_operator: bool,
+    /// Device key of a user token's session device (`None`: keyless device
+    /// or not a user session token).
+    pub device_pubkey: Option<Vec<u8>>,
 }
 
 /// Why a stored access token does not authenticate.
@@ -92,12 +95,14 @@ pub(super) async fn lookup_access_token(
                 p.disabled_at AS principal_disabled_at, \
                 s.revoked_at AS session_revoked_at, s.device_id AS session_device_id, \
                 b.owner_principal_id, b.host_device_id, b.deleted_at AS bot_deleted_at, \
+                d.device_pubkey, \
                 EXISTS (SELECT 1 FROM relay_operators o \
                         WHERE o.pubkey = t.principal_id AND o.role = 'operator') AS is_operator \
          FROM access_tokens t \
          JOIN principals p ON p.id = t.principal_id \
          LEFT JOIN sessions s ON s.id = t.session_id \
          LEFT JOIN bots b ON b.id = t.bot_id \
+         LEFT JOIN devices d ON d.id = s.device_id \
          WHERE t.token_hash = $1",
     )
     .bind(token_hash.as_slice())
@@ -129,6 +134,7 @@ pub(super) async fn lookup_access_token(
         bot_host_device_id: row.try_get("host_device_id")?,
         bot_deleted_at: row.try_get("bot_deleted_at")?,
         is_operator: row.try_get("is_operator")?,
+        device_pubkey: row.try_get("device_pubkey")?,
     }))
 }
 

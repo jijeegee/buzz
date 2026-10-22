@@ -112,6 +112,7 @@ void durableMentionTests() {
               RelayConfig(baseUrl: 'https://relay.example', nsec: signer.nsec),
             ),
             channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
+            members: [if (eligible) _agentMember(agent)],
             relayAgents: [
               if (eligible)
                 AgentDirectoryEntry(

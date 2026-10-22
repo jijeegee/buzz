@@ -8,11 +8,11 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use chrono::Utc;
 use kuzz_auth::token::{generate_token, TokenKind};
 use kuzz_auth::TokenBinding;
 use kuzz_core::principal::{AccessTokenKind, PrincipalId};
 use kuzz_db::identity::{BotRecord, ExchangeOutcome, IssuedToken, RevokeReason};
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -21,7 +21,7 @@ use super::{
     auth_error, authenticate_user, bad_request, bearer_token, forbidden, internal, json_object,
     not_found, rate_limit, rejection_response, unavailable, validate_display_name,
 };
-use crate::identity::{kv, publish_revocations, verify_access_token};
+use crate::identity::{kv, publish_revocations, verify_message_token};
 use crate::state::AppState;
 
 /// Exchange replay cache lifetime (plan §3.3, §6.5).
@@ -169,6 +169,9 @@ pub(super) async fn issue_token(
         Ok(binding) => binding,
         Err(response) => return response,
     };
+    if let Err(rejection) = crate::identity::device::close_token_path(&state, &binding) {
+        return rejection_response(rejection);
+    }
     let bot = match owned_bot(&state, &binding, &id).await {
         Ok(bot) => bot,
         Err(response) => return response,
@@ -269,6 +272,9 @@ pub(super) async fn issue_headless(
         Ok(binding) => binding,
         Err(response) => return response,
     };
+    if let Err(rejection) = crate::identity::device::close_token_path(&state, &binding) {
+        return rejection_response(rejection);
+    }
     let bot = match owned_bot(&state, &binding, &id).await {
         Ok(bot) => bot,
         Err(response) => return response,
@@ -392,7 +398,7 @@ pub(super) async fn exchange(State(state): State<Arc<AppState>>, headers: Header
         Ok(None) => {}
         Err(response) => return response,
     }
-    let binding = match verify_access_token(&state, &token).await {
+    let binding = match verify_message_token(&state, &token).await {
         Ok(binding) => binding,
         Err(rejection) => return rejection_response(rejection),
     };

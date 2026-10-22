@@ -565,12 +565,21 @@ pub(crate) async fn handle_active_audio_connection(
     // pubkey and may carry a NIP-OA tag; token AUTH (centralized identity,
     // only reachable when enabled — see `auth_msg_is_admissible`) resolves a
     // principal and, for a bot, its server-recorded owner.
-    let (pubkey, auth_tag_json, signed_auth_created_at, token_binding) = match auth_msg.event.take()
+    let (pubkey, auth_tag_json, signed_auth_created_at, token_binding, device_tag) = match auth_msg
+        .event
+        .take()
     {
         Some(auth_event) => {
             // Extract NIP-OA auth tag before verify_auth_event consumes the event.
             let auth_tag_json = crate::handlers::auth::extract_auth_tag_json(&auth_event);
             let signed_auth_created_at = auth_event.created_at.as_secs();
+            // Likewise the device tag (device-bound keys, surface `audio`):
+            // pure crypto, used only once the event's own signature verified,
+            // and nothing runs while the surface is off.
+            let device_tag =
+                (crate::identity::device::mode(&state, crate::identity::device::Surface::Audio)
+                    != crate::identity::config::DeviceAdmissionMode::Off)
+                    .then(|| kuzz_auth::device_proof::verify_event_device_tag(&auth_event));
 
             let relay_url =
                 crate::api::bridge::nip42_expected_relay_url(&state.config.relay_url, &tenant);
@@ -633,6 +642,7 @@ pub(crate) async fn handle_active_audio_connection(
                 auth_tag_json,
                 Some(signed_auth_created_at),
                 None,
+                device_tag,
             )
         }
         None => {
@@ -656,7 +666,13 @@ pub(crate) async fn handle_active_audio_connection(
                 }
             };
             match verified {
-                Ok(binding) => (binding.principal.as_public_key(), None, None, Some(binding)),
+                Ok(binding) => (
+                    binding.principal.as_public_key(),
+                    None,
+                    None,
+                    Some(binding),
+                    None,
+                ),
                 Err(message) => {
                     warn!(channel_id = %channel_id, "audio token auth failed: {message}");
                     crate::connection::send_exit_frames_bounded(
@@ -769,6 +785,41 @@ pub(crate) async fn handle_active_audio_connection(
                 false,
                 class,
                 serde_json::json!({"type": "error", "message": message}),
+            )
+            .await;
+            return;
+        }
+    }
+
+    // Device-bound keys: the key is used from its own device, and a
+    // registered key's NIP-OA tag names its registry owner. Refuses only in
+    // enforce, with the root route's reasons (`restricted: signed_out`, ...).
+    if let Some(device_tag) = device_tag {
+        let claimed_owner = crate::api::relay_members::extract_nip_oa_owner(
+            pubkey.as_bytes(),
+            auth_tag_json.as_deref(),
+            signed_auth_created_at,
+        );
+        if let Err(refused) = crate::identity::admission::admit_key_with_owner(
+            &state,
+            &pubkey,
+            device_tag,
+            claimed_owner,
+            crate::identity::device::Surface::Audio,
+        )
+        .await
+        {
+            // Known limit (plan F9): with NIP-FI on, only the denial class
+            // reaches the client, not `restricted: signed_out` / `revoked`.
+            let denial = crate::handlers::auth::device_denial(refused);
+            debug!(channel_id = %channel_id, pubkey = %pubkey_hex, reason = refused.as_str(), "audio: key refused on this device");
+            exit_authorization_refusal(
+                &mut ws_send,
+                &control,
+                &mut terminal_ctrl_rx,
+                nip_fi_assertion.is_some(),
+                denial.class,
+                serde_json::json!({"type": "error", "message": denial.reason}),
             )
             .await;
             return;
@@ -3924,8 +3975,8 @@ mod tests {
 
     #[tokio::test]
     async fn handle_active_audio_connection_pairing_mismatch_runs_full_audio_denial_path() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key_a = nostr::Keys::generate();
@@ -4684,8 +4735,8 @@ mod tests {
 
     #[tokio::test]
     async fn b1_already_expired_session_denied_at_pairing_before_admission() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key = nostr::Keys::generate();
@@ -4831,8 +4882,8 @@ mod tests {
     //      `pairing_reached_after_cancel` counter = 1 → `assert_eq!(count, 0)` panics.
     #[tokio::test]
     async fn p2_verify_fence_cancel_blocks_pairing() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
         use tokio_tungstenite::connect_async;
 
@@ -5029,8 +5080,8 @@ mod tests {
 
     #[tokio::test]
     async fn b1_mid_admission_expiry_does_not_add_peer_to_room() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
         use tokio_tungstenite::connect_async;
 
@@ -5814,8 +5865,8 @@ mod tests {
     //      effect as A.
     #[tokio::test]
     async fn f3_audio_pre_built_expired_gate_fires_during_bootstrap() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key = nostr::Keys::generate();
@@ -5991,9 +6042,9 @@ mod tests {
     async fn f3_audio_outer_wrapper_delivers_denial_on_bootstrap_cancellation() {
         use axum::extract::ws::WebSocketUpgrade;
         use axum::{routing::get, Router};
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
         use futures_util::StreamExt as _;
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
         use tokio::net::TcpListener;
         use tokio_tungstenite::connect_async;
@@ -6215,8 +6266,8 @@ mod tests {
     //      w_admin_disconnect_at_deny_check_delivers_payload_then_terminates below.)
     #[tokio::test]
     async fn admin_disconnect_nip_fi_delivers_restricted_json_then_terminates() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key = nostr::Keys::generate();
@@ -6430,8 +6481,8 @@ mod tests {
     //   B) Remove `set_terminal_frame_sender` entirely → same outcome as (A).
     #[tokio::test]
     async fn w_admin_disconnect_at_deny_check_delivers_payload_then_terminates() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key = nostr::Keys::generate();
@@ -6637,8 +6688,8 @@ mod tests {
         //   D) Remove `nip_fi_deny_map` from state → map is None → guard
         //      short-circuits → both hooks still fire (map guard is after both
         //      hooks are in the control path) — off-mode passes through cleanly.
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key = nostr::Keys::generate();
@@ -6800,8 +6851,8 @@ mod tests {
 
     #[tokio::test]
     async fn w_audio_deny_active_key_refused_at_post_registration_check() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key = nostr::Keys::generate();
@@ -6956,8 +7007,8 @@ mod tests {
         // Arms `before_deny_set_check` — fires AFTER audio_post_auth_register and
         // BEFORE the is_denied call. Entry starts absent; inserted during the window.
         // The deny check finds it and closes the connection.
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::sync::Arc;
 
         let key = nostr::Keys::generate();
@@ -8864,8 +8915,8 @@ mod tests {
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         #[tokio::test]
         async fn cw8_expiry_after_add_peer_removes_peer_and_cleans_up() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::sync::Arc;
 
             let key = nostr::Keys::generate();
@@ -9050,8 +9101,8 @@ mod tests {
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         #[tokio::test]
         async fn cw8_post_add_peer_cancel_removes_peer_and_cleans_up_real_db() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::sync::Arc;
 
             let state = audio_test_state_real_db()
@@ -9439,8 +9490,8 @@ mod tests {
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         #[tokio::test]
         async fn cw10_full_handler_committed_join_produces_exactly_one_leave_event() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::sync::Arc;
 
             let state = audio_test_state_real_db()
@@ -10267,9 +10318,9 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn b0_bootstrap_order_handler_wire_joiner_receives_own_joined_first() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
             use futures_util::StreamExt as _;
+            use kuzz_auth::VerifiedAssertion;
             use std::sync::Arc;
 
             let state = audio_test_state_real_db()
@@ -10491,11 +10542,11 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn fix_b_w1_w3_handler_pre_commit_cancel_emits_no_delta() {
+            use chrono::{Duration, Utc};
+            use futures_util::StreamExt as _;
             use kuzz_auth::VerifiedAssertion;
             use kuzz_relay_mesh::wire::FencedHeader;
             use kuzz_relay_mesh::MeshError;
-            use chrono::{Duration, Utc};
-            use futures_util::StreamExt as _;
             use std::sync::Arc;
             use tokio::net::TcpListener;
             use tokio_tungstenite::connect_async;
@@ -11008,11 +11059,11 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn f7b_b1_handler_releases_owner_lease_via_real_caller() {
+            use chrono::{Duration, Utc};
+            use futures_util::StreamExt as _;
             use kuzz_auth::VerifiedAssertion;
             use kuzz_relay_mesh::wire::FencedHeader;
             use kuzz_relay_mesh::MeshError;
-            use chrono::{Duration, Utc};
-            use futures_util::StreamExt as _;
             use std::sync::Arc;
             use tokio::net::TcpListener;
             use tokio_tungstenite::connect_async;
@@ -11285,11 +11336,11 @@ mod tests {
                 AcquireOutcome, HuddleDirectory, HuddleLease, HuddleOwnerRegistry,
                 HuddleReleaseOutcome, HuddleRenewOutcome, Ownership,
             };
+            use chrono::{Duration, Utc};
+            use futures_util::StreamExt as _;
             use kuzz_core::CommunityId;
             use kuzz_relay_mesh::wire::FencedHeader;
             use kuzz_relay_mesh::{MeshError, RuntimeId};
-            use chrono::{Duration, Utc};
-            use futures_util::StreamExt as _;
             use std::sync::atomic::{AtomicUsize, Ordering};
             use std::sync::Arc;
             use uuid::Uuid;
@@ -11743,8 +11794,8 @@ mod tests {
             use axum::extract::ws::WebSocketUpgrade;
             use axum::routing::get;
             use axum::Router;
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::sync::Arc;
             use tokio::net::TcpListener;
             use tokio_tungstenite::connect_async;
@@ -11947,8 +11998,8 @@ mod tests {
             use axum::extract::ws::WebSocketUpgrade;
             use axum::routing::get;
             use axum::Router;
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::sync::Arc;
             use tokio::net::TcpListener;
             use tokio_tungstenite::connect_async;
@@ -12148,8 +12199,8 @@ mod tests {
             use axum::extract::ws::WebSocketUpgrade;
             use axum::routing::get;
             use axum::Router;
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::sync::Arc;
             use tokio::net::TcpListener;
             use tokio_tungstenite::connect_async;
@@ -12610,8 +12661,8 @@ mod tests {
             conn_cancel: &tokio_util::sync::CancellationToken,
             pre_built: Option<PreBuiltNipFiBundle>,
         ) -> (WsClient, tokio::task::JoinHandle<()>) {
-            use kuzz_auth::VerifiedAssertion;
             use futures_util::StreamExt as _;
+            use kuzz_auth::VerifiedAssertion;
 
             let assertion = VerifiedAssertion::for_test(
                 Some(h.member_key.public_key()),

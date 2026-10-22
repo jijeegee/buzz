@@ -43,13 +43,17 @@ pub(crate) enum AuthOutcome {
     NotRelayMember,
     /// NIP-FI key pairing mismatch: the NIP-42 key differs from the asserted key.
     PairingMismatch,
+    /// The key may not be used from this device (device-bound keys).
+    DeviceRefused,
+    /// The key registry could not be read; fail closed.
+    DeviceCheckError,
     Timeout,
     Disconnect,
     Shutdown,
 }
 
 impl AuthOutcome {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::Success,
         Self::Invalid,
         Self::Banned,
@@ -59,6 +63,8 @@ impl AuthOutcome {
         Self::RelayMembershipCheckError,
         Self::NotRelayMember,
         Self::PairingMismatch,
+        Self::DeviceRefused,
+        Self::DeviceCheckError,
         Self::Timeout,
         Self::Disconnect,
         Self::Shutdown,
@@ -75,6 +81,8 @@ impl AuthOutcome {
             Self::RelayMembershipCheckError => "relay_membership_check_error",
             Self::NotRelayMember => "not_relay_member",
             Self::PairingMismatch => "pairing_mismatch",
+            Self::DeviceRefused => "device_refused",
+            Self::DeviceCheckError => "device_check_error",
             Self::Timeout => "timeout",
             Self::Disconnect => "disconnect",
             Self::Shutdown => "shutdown",

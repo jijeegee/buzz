@@ -682,19 +682,23 @@ pub enum ChannelsCmd {
         #[arg(long, default_value_t = 1000)]
         limit: u32,
     },
-    /// Create a new channel
+    /// Create a new channel, or a group chat with --chat
     #[command(
-        after_help = "Examples:\n  kuzz channels create --name general --type stream --visibility open\n  kuzz channels create --name design --type forum --visibility open --description \"Design discussions\"\n  kuzz channels create --name standup --type stream --visibility open --ttl 3600  # ephemeral, archived after 1h idle\n  kuzz channels create --name project-x --template \"Kuzz Team\"  # type/visibility/canvas/roster from the template; explicit flags override"
+        after_help = "Examples:\n  kuzz channels create --name general --type stream --visibility open\n  kuzz channels create --name design --type forum --visibility open --description \"Design discussions\"\n  kuzz channels create --name standup --type stream --visibility open --ttl 3600  # ephemeral, archived after 1h idle\n  kuzz channels create --name project-x --template \"Kuzz Team\"  # type/visibility/canvas/roster from the template; explicit flags override\n  kuzz channels create --chat --member <hex-or-npub> --member <hex-or-npub>  # ownerless private group chat; --name optional"
     )]
     Create {
-        /// Channel name
-        #[arg(long)]
-        name: String,
+        /// Channel name. Optional with --chat (an unnamed chat shows its members).
+        #[arg(long, required_unless_present = "chat")]
+        name: Option<String>,
         /// Channel type. Required unless --template supplies one.
-        #[arg(long = "type", value_enum, required_unless_present = "template")]
+        #[arg(
+            long = "type",
+            value_enum,
+            required_unless_present_any = ["template", "chat"]
+        )]
         channel_type: Option<ChannelType>,
         /// Channel visibility. Required unless --template supplies one.
-        #[arg(long, value_enum, required_unless_present = "template")]
+        #[arg(long, value_enum, required_unless_present_any = ["template", "chat"])]
         visibility: Option<ChannelVisibility>,
         /// Channel description
         #[arg(long)]
@@ -713,6 +717,17 @@ pub enum ChannelsCmd {
         /// app's prod app-data dir). Mainly for the dev store or testing.
         #[arg(long, value_name = "PATH")]
         templates_file: Option<String>,
+        /// Create an ownerless private group chat instead of a channel. Any
+        /// member can add people; nobody can rename, kick, or delete it.
+        #[arg(
+            long,
+            conflicts_with_all = ["channel_type", "visibility", "description", "ttl", "template", "templates_file"]
+        )]
+        chat: bool,
+        /// Person to start the group chat with (64-char hex or npub; repeat,
+        /// up to 100). Not yourself — you are added automatically. Only with --chat.
+        #[arg(long = "member", value_name = "PUBKEY")]
+        members: Vec<String>,
     },
     /// Update channel name, description, visibility, ephemeral TTL, or goals
     #[command(
@@ -1144,20 +1159,24 @@ pub enum DmsCmd {
         #[arg(long)]
         limit: Option<u32>,
     },
-    /// Open a new direct message with one or more users
+    /// Open a 1:1 direct message (or notes to self with your own pubkey)
+    #[command(
+        after_help = "Direct messages are 1:1. To talk with more people, start a group chat:\n  kuzz channels create --chat --member <pubkey> --member <pubkey>"
+    )]
     Open {
-        /// User pubkey(s) to DM (64-char hex, 1-8)
-        #[arg(long = "pubkey")]
+        /// The other person's pubkey (64-char hex), or your own for notes to self
+        #[arg(long = "pubkey", required = true)]
         pubkeys: Vec<String>,
     },
-    /// Add a member to an existing DM conversation
+    /// No longer supported: direct messages are 1:1. Start a group chat instead
+    /// (kuzz channels create --chat --member <pubkey> ...)
     AddMember {
-        /// DM conversation UUID
+        /// DM conversation UUID (ignored)
         #[arg(long)]
-        channel: String,
-        /// User pubkey to add (64-char hex)
+        channel: Option<String>,
+        /// User pubkey (ignored)
         #[arg(long)]
-        pubkey: String,
+        pubkey: Option<String>,
     },
     /// Hide a DM conversation from your DM list
     Hide {
@@ -2578,6 +2597,10 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             PackCmd::Inspect { path } => commands::pack::cmd_inspect(path),
         };
     }
+    // Retired command: explain the 1:1 rule without needing a login.
+    if let Cmd::Dms(DmsCmd::AddMember { .. }) = cli.command {
+        return commands::dms::cmd_add_dm_member();
+    }
 
     let token_source = token_source_for(&cli, kuzz_token_broker::TokenSource::from_env());
 
@@ -2656,6 +2679,118 @@ mod tests {
         let without = parse_args(["kuzz", "channels", "list"]).unwrap();
         assert!(!without.private_key_from_argv);
         assert!(token_source_for(&without, token()).is_some());
+    }
+
+    #[test]
+    fn channels_create_chat_needs_no_name_type_or_visibility() {
+        let pk = "a".repeat(64);
+        let cli = Cli::try_parse_from([
+            "kuzz",
+            "channels",
+            "create",
+            "--chat",
+            "--member",
+            pk.as_str(),
+            "--member",
+            pk.as_str(),
+        ])
+        .expect("--chat parses without --name/--type/--visibility");
+        let Cmd::Channels(ChannelsCmd::Create {
+            chat,
+            members,
+            name,
+            ..
+        }) = cli.command
+        else {
+            panic!("expected channels create");
+        };
+        assert!(chat);
+        assert_eq!(members.len(), 2);
+        assert!(name.is_none());
+        assert!(
+            Cli::try_parse_from(["kuzz", "channels", "create", "--chat", "--name", "Trip"]).is_ok()
+        );
+    }
+
+    #[test]
+    fn channels_create_chat_rejects_channel_options() {
+        let pk = "a".repeat(64);
+        for extra in [
+            &["--visibility", "open"][..],
+            &["--type", "stream"][..],
+            &["--ttl", "3600"][..],
+            &["--description", "x"][..],
+            &["--template", "Kuzz Team"][..],
+        ] {
+            let mut args = vec![
+                "kuzz",
+                "channels",
+                "create",
+                "--chat",
+                "--member",
+                pk.as_str(),
+            ];
+            args.extend_from_slice(extra);
+            assert!(Cli::try_parse_from(args).is_err(), "--chat with {extra:?}");
+        }
+        assert!(
+            Cli::try_parse_from([
+                "kuzz",
+                "channels",
+                "create",
+                "--type",
+                "stream",
+                "--visibility",
+                "open"
+            ])
+            .is_err(),
+            "a regular channel still needs --name"
+        );
+    }
+
+    /// `--member` without `--chat` is rejected before anything is sent (the
+    /// client points at a closed port, so reaching the network would fail
+    /// differently).
+    #[tokio::test]
+    async fn channels_create_member_requires_chat() {
+        let pk = "a".repeat(64);
+        let cli = Cli::try_parse_from([
+            "kuzz",
+            "channels",
+            "create",
+            "--name",
+            "x",
+            "--type",
+            "stream",
+            "--visibility",
+            "open",
+            "--member",
+            pk.as_str(),
+        ])
+        .unwrap();
+        let Cmd::Channels(cmd) = cli.command else {
+            panic!("expected channels");
+        };
+        let client = client::KuzzClient::new(
+            "http://127.0.0.1:9".into(),
+            nostr::Keys::generate(),
+            None,
+            None,
+        )
+        .unwrap();
+        let err = commands::channels::dispatch(cmd, &client, &OutputFormat::Json)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, CliError::Usage(m) if m.contains("--member")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn dms_add_member_parses_without_arguments_so_it_can_explain() {
+        assert!(Cli::try_parse_from(["kuzz", "dms", "add-member"]).is_ok());
+        assert!(Cli::try_parse_from(["kuzz", "dms", "open"]).is_err());
     }
 
     /// The bot token is env-only: there is no argv flag that would put it in
