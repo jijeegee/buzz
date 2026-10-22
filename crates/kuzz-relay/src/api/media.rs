@@ -434,6 +434,9 @@ async fn admit_blossom_upload(
         Ok(Nip98Proof::new(pubkey, auth_event))
     })?;
     let auth_event = admission.into_extra();
+    admit_media_key(state, &auth_event, headers)
+        .await
+        .map_err(IntoResponse::into_response)?;
 
     // Post-admission: validate X-SHA-256 header and hash binding.
     // These are Blossom-protocol checks, not NIP-FI — Off mode still enforces
@@ -735,6 +738,25 @@ fn extract_blossom_read_proof(
     Ok(crate::nip_fi_http::Nip98Proof::new(pubkey, auth_event))
 }
 
+/// Device-bound keys (surface `media`): the signer of a verified kind-24242
+/// event is used from its own device (the event's `device` tag), and a
+/// registered key's `X-Auth-Tag` owner is its registry owner. Blossom tokens
+/// already expire within 60 s of signing (`kuzz_media::auth`).
+async fn admit_media_key(
+    state: &AppState,
+    auth_event: &nostr::Event,
+    headers: &HeaderMap,
+) -> Result<(), (StatusCode, axum::Json<serde_json::Value>)> {
+    crate::identity::admission::admit_key_for_event(
+        state,
+        auth_event,
+        crate::api::relay_members::extract_auth_tag_header(headers),
+        crate::identity::device::Surface::Media,
+    )
+    .await
+    .map_err(crate::identity::admission::KeyRefused::http_error)
+}
+
 /// Kind-24242 Blossom read authorization: NIP-FI admission with Blossom
 /// extraction as the NIP-98 closure, then the membership gate. Returns the
 /// proven reader, or `Err` with the admission's own denial response, to be
@@ -761,6 +783,9 @@ async fn authorize_blossom_read(
         Err(resp) => return Ok(Err(resp)),
     };
     let auth_event = admission.into_extra();
+    if let Err(refused) = admit_media_key(state, &auth_event, headers).await {
+        return Ok(Err(refused.into_response()));
+    }
     enforce_blossom_read_membership(state, tenant, &auth_event, headers, strictness).await?;
     Ok(Ok(auth_event.pubkey))
 }

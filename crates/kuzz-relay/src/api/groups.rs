@@ -126,6 +126,9 @@ async fn authenticate(
                 bridge::check_nip98_replay(state, &tenant, event_id_bytes)
                     .await
                     .map_err(IntoResponse::into_response)?;
+                bridge::admit_bridge_key(state, headers, &pubkey)
+                    .await
+                    .map_err(IntoResponse::into_response)?;
                 (
                     pubkey,
                     super::relay_members::extract_auth_tag_header(headers),

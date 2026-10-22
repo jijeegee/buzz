@@ -15,7 +15,7 @@ use axum::extract::ws::Message as WsMessage;
 use tracing::{debug, info, warn};
 
 use crate::connection::{AuthState, ConnectionState};
-use crate::identity::admission::{admit_key, KeyRefused};
+use crate::identity::admission::{admit_key_with_owner, KeyRefused};
 use crate::identity::config::DeviceAdmissionMode;
 use crate::identity::device::Surface;
 use crate::metrics::{AuthOutcome, AuthPostTerminalState};
@@ -286,23 +286,17 @@ fn deny_admission(conn: &ConnectionState, event_id_hex: &str, denial: AdmissionD
 /// The AUTH denial for a key refused on this device. A signed-out owner gets
 /// its own reason, so a supervisor parks its agents instead of restarting
 /// them (device-bound keys plan F9).
-fn device_denial(refused: KeyRefused) -> AdmissionDenial {
+pub(crate) fn device_denial(refused: KeyRefused) -> AdmissionDenial {
     match refused {
         KeyRefused::Unavailable => AdmissionDenial {
             metric: "device_check_error",
-            reason: "error: internal error checking device",
+            reason: refused.reason(),
             outcome: AuthOutcome::DeviceCheckError,
             class: kuzz_auth::DenialClass::AuthorizationUnavailable,
         },
         refused => AdmissionDenial {
             metric: "device_refused",
-            reason: if refused.signed_out() {
-                "restricted: signed_out"
-            } else if refused.revoked() {
-                "restricted: revoked"
-            } else {
-                "restricted: device"
-            },
+            reason: refused.reason(),
             outcome: AuthOutcome::DeviceRefused,
             class: kuzz_auth::DenialClass::AuthorizationDenied,
         },
@@ -407,13 +401,26 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             }
 
             // Device-bound keys: the key must be used from its own device
-            // (signed in there, or an external agent's paired device). After
+            // (signed in there, or an external agent's paired device), and a
+            // registered key's NIP-OA tag must name its registry owner. After
             // pairing and before the policy gates; refuses only in enforce.
             if let Some(device_tag) = device_tag {
-                if let Err(refused) = admit_key(&state, &pubkey, device_tag, Surface::Ws).await {
+                let claimed_owner = crate::api::relay_members::extract_nip_oa_owner(
+                    pubkey.as_bytes(),
+                    auth_tag_json.as_deref(),
+                    Some(signed_auth_created_at),
+                );
+                if let Err(refused) =
+                    admit_key_with_owner(&state, &pubkey, device_tag, claimed_owner, Surface::Ws)
+                        .await
+                {
                     // `report` already logged it once an hour; a supervisor
                     // retrying must not flood the log.
                     debug!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = refused.as_str(), "key refused on this device");
+                    // Known limit (plan F9): with NIP-FI on, the client sees
+                    // only the canonical denial class, not the specific reason
+                    // (`restricted: signed_out` / `revoked`), so a supervisor
+                    // cannot tell "park" from "retry" there.
                     deny_admission(&conn, &event_id_hex, device_denial(refused));
                     return;
                 }
@@ -957,8 +964,8 @@ mod tests {
 
     #[tokio::test]
     async fn handle_auth_pairing_mismatch_runs_full_root_denial_path() {
-        use kuzz_auth::VerifiedAssertion;
         use chrono::{Duration, Utc};
+        use kuzz_auth::VerifiedAssertion;
         use std::collections::HashMap;
         use std::sync::Arc;
         use tokio::sync::mpsc;
@@ -2206,8 +2213,8 @@ mod tests {
         //
         // Runs in PG lane on wrapper DB (same constraint as W1: ban-check is fail-closed).
         async fn w_deny_straddle_entry_inserted_between_registration_and_check_is_caught_body() {
-            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use chrono::{Duration, Utc};
+            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2417,8 +2424,8 @@ mod tests {
         //
         // Runs in PG lane on wrapper DB (ban-check is fail-closed).
         async fn w_deny_other_issuer_straddle_leaves_session_admitted_body() {
-            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use chrono::{Duration, Utc};
+            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2595,8 +2602,8 @@ mod tests {
         // Mutation: bypass the `[FI-TRACE-DENY-SET]` check in `handle_auth` →
         // the denied case sends OK(true), stays uncancelled, enqueues no frame.
         async fn w_deny_pre_registration_body(deny_self: bool) {
-            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use chrono::{Duration, Utc};
+            use kuzz_auth::{IssuerCapacity, NipFiDenyMap, VerifiedAssertion};
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2767,8 +2774,8 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn w1_auth_barrier_expiry_mid_flight_blocks_auth_commit() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -2876,8 +2883,8 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn expiry_before_nip_oa_materialize_writes_no_rows_and_commits_no_auth() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;
@@ -3000,8 +3007,8 @@ mod tests {
         #[tokio::test]
         #[ignore = "requires Postgres — runs in postgres-ci nextest lane"]
         async fn fix_4a_allowlist_denial_with_fi_assertion_emits_canonical_restricted_frame() {
-            use kuzz_auth::VerifiedAssertion;
             use chrono::{Duration, Utc};
+            use kuzz_auth::VerifiedAssertion;
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::mpsc;

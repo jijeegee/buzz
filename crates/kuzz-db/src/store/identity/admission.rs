@@ -92,6 +92,10 @@ pub enum KeyAdmission {
         principal: PrincipalId,
         /// The device row it is used from.
         device_id: Uuid,
+        /// The message key of the account the key acts for: the key itself
+        /// for a person, the owner's key for agents (`None`: the owner has
+        /// none). A NIP-OA tag must name this key.
+        owner_pubkey: Option<[u8; 32]>,
     },
     /// The key is registered but may not be used from this device.
     Refused {
@@ -117,6 +121,8 @@ pub(super) struct AdmissionFacts {
     pub device_revoked: bool,
     /// The row has an unrevoked session with an unused, unexpired refresh token.
     pub live_session: bool,
+    /// See [`KeyAdmission::Admitted::owner_pubkey`].
+    pub owner_pubkey: Option<[u8; 32]>,
 }
 
 /// Decide admission from the stored facts. `device_presented` is whether the
@@ -153,6 +159,7 @@ pub(super) fn decide(facts: Option<AdmissionFacts>, device_presented: bool) -> K
         role: facts.role,
         principal: facts.principal,
         device_id,
+        owner_pubkey: facts.owner_pubkey,
     }
 }
 
@@ -179,7 +186,10 @@ pub(super) async fn key_admission(
                          WHERE s.device_id = d.id AND s.revoked_at IS NULL \
                            AND EXISTS (SELECT 1 FROM refresh_tokens rt \
                                         WHERE rt.session_id = s.id AND rt.used_at IS NULL \
-                                          AND rt.expires_at > now())) AS live_session \
+                                          AND rt.expires_at > now())) AS live_session, \
+                CASE WHEN k.role = 'person' THEN $1 \
+                     ELSE (SELECT o.pubkey FROM account_key_backups o \
+                            WHERE o.account_id = k.principal_id) END AS owner_pubkey \
            FROM k \
            JOIN principals p ON p.id = k.principal_id \
            LEFT JOIN LATERAL ( \
@@ -220,6 +230,9 @@ pub(super) async fn key_admission(
                     .try_get::<Option<DateTime<Utc>>, _>("device_revoked_at")?
                     .is_some(),
                 live_session: row.try_get("live_session")?,
+                owner_pubkey: row
+                    .try_get::<Option<Vec<u8>>, _>("owner_pubkey")?
+                    .and_then(|key| key.try_into().ok()),
             })
         }
     };
@@ -253,6 +266,7 @@ mod tests {
             device_key_matches: true,
             device_revoked: false,
             live_session: true,
+            owner_pubkey: Some([2u8; 32]),
         }
     }
 
@@ -272,6 +286,7 @@ mod tests {
                     role,
                     principal: facts(role).principal,
                     device_id: Uuid::from_u128(7),
+                    owner_pubkey: Some([2u8; 32]),
                 }
             );
         }

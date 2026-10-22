@@ -434,6 +434,26 @@ fn enforce_auth_token_off_loopback(require_auth_token: bool, relay_url: &str) ->
     true
 }
 
+/// Device-bound keys: `KUZZ_DEVICE_ADMISSION=enforce` cannot run beside the
+/// `X-Pubkey` dev bypass, which names a key with no signature at all. A
+/// surface switched to `enforce` at runtime (Redis) still refuses `X-Pubkey`
+/// requests one by one (`unsigned`).
+fn check_device_admission_with_dev_bypass(
+    require_auth_token: bool,
+    device_admission: crate::identity::config::DeviceAdmissionMode,
+) -> Result<(), ConfigError> {
+    if !require_auth_token
+        && device_admission == crate::identity::config::DeviceAdmissionMode::Enforce
+    {
+        return Err(ConfigError::InvalidValue(
+            "KUZZ_DEVICE_ADMISSION=enforce requires KUZZ_REQUIRE_AUTH_TOKEN=true \
+             (the X-Pubkey dev bypass is enabled)"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
     raw.parse::<SocketAddr>()
         .map_err(|e| ConfigError::InvalidBindAddr(e.to_string()))
@@ -1392,6 +1412,7 @@ impl Config {
 
         // Centralized-identity token auth (Phase 0, default off).
         let auth_token = crate::identity::AuthTokenConfig::from_env(&relay_url)?;
+        check_device_admission_with_dev_bypass(require_auth_token, auth_token.device_admission)?;
 
         Ok(Self {
             bind_addr,
@@ -2937,5 +2958,24 @@ mod tests {
             assert!(enforce_auth_token_off_loopback(false, url), "{url}");
         }
         assert!(enforce_auth_token_off_loopback(true, "ws://localhost:3000"));
+    }
+
+    #[test]
+    fn device_enforce_refuses_to_start_with_the_x_pubkey_bypass() {
+        use crate::identity::config::DeviceAdmissionMode;
+        assert!(matches!(
+            check_device_admission_with_dev_bypass(false, DeviceAdmissionMode::Enforce),
+            Err(ConfigError::InvalidValue(message)) if message.contains("KUZZ_DEVICE_ADMISSION")
+        ));
+        for (require_auth_token, mode) in [
+            (false, DeviceAdmissionMode::Off),
+            (false, DeviceAdmissionMode::Log),
+            (true, DeviceAdmissionMode::Enforce),
+        ] {
+            assert!(
+                check_device_admission_with_dev_bypass(require_auth_token, mode).is_ok(),
+                "{require_auth_token} {mode:?}"
+            );
+        }
     }
 }
