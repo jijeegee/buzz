@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/theme.dart';
 
 /// The shared mobile loading indicator, matching the desktop arc spinner.
@@ -14,14 +15,15 @@ class KuzzLoadingIndicator extends HookConsumerWidget {
   /// An optional spinner color. Defaults to the active accent color.
   final Color? color;
 
-  /// The accessibility announcement for this loading state.
-  final String semanticLabel;
+  /// The accessibility announcement for this loading state. Defaults to
+  /// "Loading" in the app language.
+  final String? semanticLabel;
 
   /// Creates a looping arc loading indicator.
   const KuzzLoadingIndicator({
     this.size = 40,
     this.color,
-    this.semanticLabel = 'Loading',
+    this.semanticLabel,
     super.key,
   });
 
@@ -48,7 +50,7 @@ class KuzzLoadingIndicator extends HookConsumerWidget {
 
     return Semantics(
       liveRegion: true,
-      label: semanticLabel,
+      label: semanticLabel ?? context.l10n.loadingLabel,
       child: ExcludeSemantics(
         child: RotationTransition(
           key: const ValueKey('kuzz-loading-indicator-spinner'),

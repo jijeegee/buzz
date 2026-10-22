@@ -91,6 +91,56 @@ const statePath = (config, lang) =>
 const workPath = (config, lang, suffix = "") =>
   path.join(config.root, "i18n", "work", `${lang}${suffix}.json`);
 
+// ---------- iOS language list ----------
+
+// iOS only offers an app the languages named in its Info.plist
+// CFBundleLocalizations, so that list follows the shipped mobile files.
+const PLIST_BLOCK =
+  /\t<key>CFBundleLocalizations<\/key>\n\t<array>\n(?:\t\t<string>[^<]*<\/string>\n)*\t<\/array>\n/;
+
+/** Languages (source first) that ship a file for `src`, in languages.json order. */
+function shippedLanguages(config, src) {
+  return config.languages
+    .map((lang) => lang.code)
+    .filter(
+      (code) =>
+        code === config.source || fs.existsSync(sourcePath(config, src, code)),
+    );
+}
+
+/** The Info.plist text with CFBundleLocalizations set for `src`. */
+function iosPlistText(config, src) {
+  const file = path.join(config.root, src.iosInfoPlist);
+  const text = fs.readFileSync(file, "utf8");
+  const block = `\t<key>CFBundleLocalizations</key>\n\t<array>\n${shippedLanguages(
+    config,
+    src,
+  )
+    .map((code) => `\t\t<string>${code}</string>\n`)
+    .join("")}\t</array>\n`;
+  if (PLIST_BLOCK.test(text))
+    return { file, text, next: text.replace(PLIST_BLOCK, block) };
+  const anchor =
+    /(\t<key>CFBundleDevelopmentRegion<\/key>\n\t<string>[^<]*<\/string>\n)/;
+  if (!anchor.test(text))
+    throw new Error(`${src.iosInfoPlist}: no CFBundleDevelopmentRegion entry`);
+  return { file, text, next: text.replace(anchor, `$1${block}`) };
+}
+
+/** Rewrites Info.plist language lists; returns the files that changed. */
+export function syncIosLanguages(config) {
+  const changed = [];
+  for (const src of config.sources) {
+    if (!src.iosInfoPlist) continue;
+    const { file, text, next } = iosPlistText(config, src);
+    if (next !== text) {
+      fs.writeFileSync(file, next);
+      changed.push(src.iosInfoPlist);
+    }
+  }
+  return changed;
+}
+
 // ---------- validation ----------
 
 function pluralCategories(lang, ordinal) {
@@ -321,6 +371,8 @@ export function apply(config, requested = [], log = console.log) {
       `${lang.code}: applied ${applied}, ${remaining.length} left in work file`,
     );
   }
+  for (const file of syncIosLanguages(config))
+    log(`${file}: language list updated`);
   return summary;
 }
 
@@ -391,6 +443,13 @@ export function check(config, log = console.log) {
       if (missing)
         log(
           `${src.id} ${lang.code}: ${missing} not translated yet (shown in English)`,
+        );
+    }
+    if (src.iosInfoPlist) {
+      const { text, next } = iosPlistText(config, src);
+      if (next !== text)
+        problems.push(
+          `${src.iosInfoPlist}: CFBundleLocalizations does not match the ${src.id} language files (run i18n.mjs apply)`,
         );
     }
   }

@@ -1,20 +1,37 @@
 import 'package:flutter/material.dart';
+import '../l10n/l10n.dart';
 
 /// Accent colors matching the desktop Kuzz app.
 class AccentColor {
-  final String name;
+  /// English name; also picks the translated [name].
+  final String _englishName;
   final Color light;
   final Color dark;
   final bool useThemeForegroundInDark;
   final String wireValue;
 
   const AccentColor({
-    required this.name,
+    required String name,
     required this.light,
     required this.dark,
     this.useThemeForegroundInDark = false,
     required this.wireValue,
-  });
+  }) : _englishName = name;
+
+  /// Display name in the app language.
+  String get name => switch (_englishName) {
+    'Neutral' => appL10n.accentNeutral,
+    'Blue' => appL10n.accentBlue,
+    'Cyan' => appL10n.accentCyan,
+    'Green' => appL10n.accentGreen,
+    'Orange' => appL10n.accentOrange,
+    'Red' => appL10n.accentRed,
+    'Pink' => appL10n.accentPink,
+    'Lilac' => appL10n.accentLilac,
+    'Purple' => appL10n.accentPurple,
+    'Indigo' => appL10n.accentIndigo,
+    _ => _englishName,
+  };
 }
 
 const accentColors = [

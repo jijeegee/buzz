@@ -11,6 +11,7 @@ import '../community/community_storage.dart';
 import '../device_key/device_proof.dart';
 import '../relay/service_address.dart';
 import 'token/token.dart';
+import '../l10n/l10n.dart';
 
 /// A safe, body-free explanation of a custody operation failure.
 class KeyBackupException implements Exception {
@@ -33,12 +34,10 @@ class KeyBackupException implements Exception {
 }
 
 // User-visible copy: plain English, no key or server jargon (product rule).
-const _tryAgain = KeyBackupException(
-  'Couldn’t connect your Google account. Try again.',
-);
-const _mismatch = KeyBackupException(
-  'This Google account is linked to a different Kuzz account. '
-  'Try a different Google account.',
+KeyBackupException get _tryAgain =>
+    KeyBackupException(appL10n.googleBackupConnectFailed);
+KeyBackupException get _mismatch => KeyBackupException(
+  appL10n.googleBackupAccountLinkedElsewhere,
   code: KeyBackupException.accountMismatch,
 );
 
@@ -105,15 +104,10 @@ class GoogleKeyBackupService {
     try {
       existing = await _existing();
     } catch (_) {
-      throw const KeyBackupException(
-        'Couldn’t read your sign-in on this device. Try again.',
-      );
+      throw KeyBackupException(appL10n.googleBackupReadSignInFailed);
     }
     if (existing?.tokenAuth == true) {
-      throw const KeyBackupException(
-        'This community already has a different sign-in on this device. '
-        'Nothing was changed.',
-      );
+      throw KeyBackupException(appL10n.googleBackupDifferentSignIn);
     }
   }
 
@@ -135,9 +129,7 @@ class GoogleKeyBackupService {
       if (isCurrent?.call() == false ||
           generation != _session.generation ||
           _session.state.status != TokenSessionStatus.signedIn) {
-        throw const KeyBackupException(
-          'Sign-in changed or was cancelled. Try again.',
-        );
+        throw KeyBackupException(appL10n.googleBackupSignInChanged);
       }
     }
 
@@ -145,10 +137,12 @@ class GoogleKeyBackupService {
     await checkLocalCompatibility();
     guard();
     if (_session.identityMode != 'key_backup') {
-      throw const KeyBackupException('Sign in with Google first.');
+      throw KeyBackupException(appL10n.googleBackupSignInWithGoogleFirst);
     }
     final account = _session.state.principalId;
-    if (account == null) throw const KeyBackupException('Sign in again.');
+    if (account == null) {
+      throw KeyBackupException(appL10n.googleBackupSignInAgain);
+    }
     final existing = await _existing();
     final local = existing == null ? null : _keys(existing.nsec);
     final missingLocalKey =
@@ -159,10 +153,7 @@ class GoogleKeyBackupService {
             (local != null &&
                 existing.pubkey != null &&
                 existing.pubkey != local.public))) {
-      throw const KeyBackupException(
-        'Couldn’t sign in to this community on this device. '
-        'Nothing was changed.',
-      );
+      throw KeyBackupException(appL10n.googleBackupCommunitySignInFailed);
     }
     final status = await _status(account, guard);
     late nostr.Keys keys;
@@ -182,13 +173,10 @@ class GoogleKeyBackupService {
         // The right Google account with no backup on the server is not a
         // wrong-account choice; don't send the user to another account.
         if (existing?.googleBackupAccountId == account) {
-          throw const KeyBackupException(
-            'Couldn’t restore this account. Try again later.',
-          );
+          throw KeyBackupException(appL10n.googleBackupRestoreFailed);
         }
-        throw const KeyBackupException(
-          'This Google account isn’t connected to this community. '
-          'Try a different Google account.',
+        throw KeyBackupException(
+          appL10n.googleBackupAccountNotConnected,
           code: KeyBackupException.accountMismatch,
         );
       }
@@ -219,9 +207,7 @@ class GoogleKeyBackupService {
     }
     if (_session.state.principalId != account ||
         _session.identityMode != 'key_backup') {
-      throw const KeyBackupException(
-        'The Google account changed. Sign in again.',
-      );
+      throw KeyBackupException(appL10n.googleBackupAccountChanged);
     }
     final now = await _existing();
     guard();
@@ -229,9 +215,7 @@ class GoogleKeyBackupService {
         now?.nsec != existing?.nsec ||
         now?.pubkey != existing?.pubkey ||
         now?.tokenAuth != existing?.tokenAuth) {
-      throw const KeyBackupException(
-        'This community changed during sign-in. Try again.',
-      );
+      throw KeyBackupException(appL10n.googleBackupCommunityChanged);
     }
     return existing?.copyWith(
           googleBackupAccountId: account,
@@ -351,7 +335,7 @@ class GoogleKeyBackupService {
     final token = await _session.ensureFreshAccessToken();
     guard();
     if (token == null) {
-      throw const KeyBackupException('Sign in with Google again.');
+      throw KeyBackupException(appL10n.googleBackupSignInWithGoogleAgain);
     }
     try {
       final request = http.Request(method, Uri.parse('$origin$path'))
@@ -377,13 +361,10 @@ class GoogleKeyBackupService {
         final code = decoded['code'];
         throw KeyBackupException(
           switch (code) {
-            'reauth_required' => 'Sign in with Google again.',
+            'reauth_required' => appL10n.googleBackupSignInWithGoogleAgain,
             'key_already_linked' =>
-              'This community is linked to a different Google account. '
-                  'Try a different Google account.',
-            'account_mode_conflict' =>
-              'This Google account can’t be used with this community. '
-                  'Try a different Google account.',
+              appL10n.googleBackupCommunityLinkedElsewhere,
+            'account_mode_conflict' => appL10n.googleBackupAccountModeConflict,
             _ => _tryAgain.message,
           },
           code: code is String ? code : null,
@@ -419,9 +400,7 @@ class GoogleKeyBackupService {
         !(allowLocal &&
             uri.scheme == 'http' &&
             ['localhost', '127.0.0.1', '::1'].contains(uri.host))) {
-      throw const KeyBackupException(
-        'Signing in with Google needs a secure connection to this community.',
-      );
+      throw KeyBackupException(appL10n.googleBackupSecureConnectionRequired);
     }
   }
 
