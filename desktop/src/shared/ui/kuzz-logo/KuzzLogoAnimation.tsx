@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type { CSSProperties } from "react";
 
 import { KUZZ_MARK_PATH, KUZZ_MARK_FRAMED_VIEWBOX } from "./kuzzLogoPaths";
@@ -25,7 +26,7 @@ export type KuzzLogoAnimationProps = {
  * read as "alive".
  */
 export default function KuzzLogoAnimation({
-  ariaLabel = "Kuzz logo animation",
+  ariaLabel,
   className = "",
   fullScreen = true,
   loop = false,
@@ -33,6 +34,7 @@ export default function KuzzLogoAnimation({
   showBackground = true,
   style,
 }: KuzzLogoAnimationProps) {
+  const t = useT();
   const classes = [
     "kuzz-logo",
     fullScreen && "kuzz-logo--screen",
@@ -45,7 +47,12 @@ export default function KuzzLogoAnimation({
     .join(" ");
 
   return (
-    <div className={classes} style={style} role="img" aria-label={ariaLabel}>
+    <div
+      className={classes}
+      style={style}
+      role="img"
+      aria-label={ariaLabel ?? t("ui.logo.animation")}
+    >
       <svg
         className="kuzz-logo__mark"
         viewBox={KUZZ_MARK_FRAMED_VIEWBOX}

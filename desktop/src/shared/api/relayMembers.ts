@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { relayClient } from "@/shared/api/relayClient";
 import { invokeTauri, signRelayEvent } from "@/shared/api/tauri";
 import { getIdentity } from "@/shared/api/tauriIdentity";
@@ -163,8 +164,8 @@ async function publishRelayAdminEvent(
 
   await relayClient.publishEvent(
     event,
-    "Couldn't update access. Try again.",
-    "Couldn't update access. Try again.",
+    t("ui.relayMembers.updateFailed"),
+    t("ui.relayMembers.updateFailed"),
   );
 }
 

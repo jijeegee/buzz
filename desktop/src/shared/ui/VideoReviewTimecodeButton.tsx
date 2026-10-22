@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type * as React from "react";
 
 import { cn } from "@/shared/lib/cn";
@@ -42,9 +43,10 @@ export function VideoReviewTimecodeButton({
   surface?: "message" | "review";
   timecode: string;
 }) {
+  const t = useT();
   return (
     <button
-      aria-label={`Jump to ${timecode}`}
+      aria-label={t("ui.videoReview.jumpTo", { timecode })}
       className={timecodeClasses({ className, interactive: true, surface })}
       data-testid="video-review-comment-timecode"
       type="button"

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -116,7 +117,7 @@ export function useGoogleLogin() {
         current.current === id &&
         message !== "Google sign-in cancelled."
       ) {
-        setError(message || "Google sign-in failed. Try again.");
+        setError(message || t("ui.googleLogin.failed"));
       }
       return null;
     } finally {
@@ -138,7 +139,7 @@ export function useGoogleLogin() {
         setPhase("completing");
     } catch {
       if (mounted.current && current.current === id) {
-        setError("Could not cancel sign-in. Try again.");
+        setError(t("ui.googleLogin.cancelFailed"));
       }
     }
   }

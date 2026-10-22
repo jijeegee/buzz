@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -295,6 +296,7 @@ const Sidebar = React.forwardRef<
     },
     ref,
   ) => {
+    const t = useT();
     const { isMobile, isResizing, state, openMobile, setOpenMobile } =
       useSidebar();
 
@@ -328,8 +330,10 @@ const Sidebar = React.forwardRef<
             side={side}
           >
             <SheetHeader className="sr-only">
-              <SheetTitle>Sidebar</SheetTitle>
-              <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+              <SheetTitle>{t("ui.sidebar.title")}</SheetTitle>
+              <SheetDescription>
+                {t("ui.sidebar.mobileDescription")}
+              </SheetDescription>
             </SheetHeader>
             <div className="flex h-full w-full flex-col">{children}</div>
           </SheetContent>
@@ -396,6 +400,7 @@ const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
+  const t = useT();
   const { open, toggleSidebar } = useSidebar();
 
   return (
@@ -412,7 +417,7 @@ const SidebarTrigger = React.forwardRef<
       {...props}
     >
       <DrawerPanelIcon side={open ? "left" : "right"} />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{t("ui.sidebar.toggle")}</span>
     </Button>
   );
 });
@@ -433,6 +438,7 @@ const SidebarRail = React.forwardRef<
     },
     ref,
   ) => {
+    const t = useT();
     const {
       setIsResizing,
       setSidebarWidth,
@@ -474,7 +480,7 @@ const SidebarRail = React.forwardRef<
       <button
         ref={ref}
         data-sidebar="rail"
-        aria-label="Resize sidebar"
+        aria-label={t("ui.sidebar.resize")}
         tabIndex={-1}
         disabled={isRailDisabled || state !== "expanded"}
         onPointerCancel={(event) => {
@@ -547,7 +553,7 @@ const SidebarRail = React.forwardRef<
           onPointerUp?.(event);
           finishResize(event);
         }}
-        title="Drag to resize sidebar"
+        title={t("ui.sidebar.resizeTooltip")}
         className={cn(
           "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
           "cursor-col-resize",

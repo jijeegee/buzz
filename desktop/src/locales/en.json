@@ -2802,5 +2802,1229 @@
   "identityArchive.toast.unarchiveFailed": "Unarchive failed: {error}",
   "@identityArchive.toast.unarchiveFailed": {
     "description": "Profile: error toast when unarchiving fails. {error} is the error message."
+  },
+  "ui.agentName.taken": "You already have an agent named \"{name}\". Choose a different name.",
+  "@ui.agentName.taken": {
+    "description": "Error when creating or renaming an AI agent with a name the user already uses; {name} is the agent name."
+  },
+  "ui.communityIcon.updateTimedOut": "Timed out while updating the community icon.",
+  "@ui.communityIcon.updateTimedOut": {
+    "description": "Error message shown in a toast or inline error when saving the community icon takes too long."
+  },
+  "ui.communityIcon.updateFailed": "Failed to update the community icon.",
+  "@ui.communityIcon.updateFailed": {
+    "description": "Error message shown in a toast or inline error when saving the community icon fails."
+  },
+  "ui.customEmoji.invalidName": "Invalid emoji name. Use letters, numbers, hyphen, or underscore.",
+  "@ui.customEmoji.invalidName": {
+    "description": "Error message shown in a toast or inline error when a custom emoji name has characters that are not allowed."
+  },
+  "ui.customEmoji.addTimedOut": "Timed out while adding emoji.",
+  "@ui.customEmoji.addTimedOut": {
+    "description": "Error message shown in a toast or inline error when adding a custom emoji takes too long."
+  },
+  "ui.customEmoji.addFailed": "Failed to add emoji.",
+  "@ui.customEmoji.addFailed": {
+    "description": "Error message shown in a toast or inline error when adding a custom emoji fails."
+  },
+  "ui.customEmoji.removeTimedOut": "Timed out while removing emoji.",
+  "@ui.customEmoji.removeTimedOut": {
+    "description": "Error message shown in a toast or inline error when removing a custom emoji takes too long."
+  },
+  "ui.customEmoji.removeFailed": "Failed to remove emoji.",
+  "@ui.customEmoji.removeFailed": {
+    "description": "Error message shown in a toast or inline error when removing a custom emoji fails."
+  },
+  "ui.invite.invalidLink": "This invite link isn't valid.",
+  "@ui.invite.invalidLink": {
+    "description": "Error message shown in a toast or inline error when an invite link cannot be read."
+  },
+  "ui.moderation.reportTimedOut": "Timed out while submitting the report.",
+  "@ui.moderation.reportTimedOut": {
+    "description": "Error message shown in a toast or inline error when sending a report about a message or member takes too long."
+  },
+  "ui.moderation.reportFailed": "Failed to submit the report.",
+  "@ui.moderation.reportFailed": {
+    "description": "Error message shown in a toast or inline error when sending a report about a message or member fails."
+  },
+  "ui.moderation.banTimedOut": "Timed out while banning the member.",
+  "@ui.moderation.banTimedOut": {
+    "description": "Error message shown in a toast or inline error when a moderator's ban takes too long."
+  },
+  "ui.moderation.banFailed": "Failed to ban the member.",
+  "@ui.moderation.banFailed": {
+    "description": "Error message shown in a toast or inline error when a moderator's ban fails."
+  },
+  "ui.moderation.unbanTimedOut": "Timed out while lifting the ban.",
+  "@ui.moderation.unbanTimedOut": {
+    "description": "Error message shown in a toast or inline error when lifting a ban takes too long."
+  },
+  "ui.moderation.unbanFailed": "Failed to lift the ban.",
+  "@ui.moderation.unbanFailed": {
+    "description": "Error message shown in a toast or inline error when lifting a ban fails."
+  },
+  "ui.moderation.timeoutTimedOut": "Timed out while applying the timeout.",
+  "@ui.moderation.timeoutTimedOut": {
+    "description": "Error message shown in a toast or inline error when muting a member for a while (a moderation 'timeout') takes too long."
+  },
+  "ui.moderation.timeoutFailed": "Failed to apply the timeout.",
+  "@ui.moderation.timeoutFailed": {
+    "description": "Error message shown in a toast or inline error when muting a member for a while (a moderation 'timeout') fails."
+  },
+  "ui.moderation.untimeoutTimedOut": "Timed out while lifting the timeout.",
+  "@ui.moderation.untimeoutTimedOut": {
+    "description": "Error message shown in a toast or inline error when ending a member's moderation timeout takes too long."
+  },
+  "ui.moderation.untimeoutFailed": "Failed to lift the timeout.",
+  "@ui.moderation.untimeoutFailed": {
+    "description": "Error message shown in a toast or inline error when ending a member's moderation timeout fails."
+  },
+  "ui.moderation.resolveTimedOut": "Timed out while resolving the report.",
+  "@ui.moderation.resolveTimedOut": {
+    "description": "Error message shown in a toast or inline error when closing a report in the moderation queue takes too long."
+  },
+  "ui.moderation.resolveFailed": "Failed to resolve the report.",
+  "@ui.moderation.resolveFailed": {
+    "description": "Error message shown in a toast or inline error when closing a report in the moderation queue fails."
+  },
+  "ui.agentControl.sendTimedOut": "Timed out while sending the agent control command.",
+  "@ui.agentControl.sendTimedOut": {
+    "description": "Error message shown in a toast or inline error when a command to a running AI agent (such as stop) takes too long."
+  },
+  "ui.agentControl.sendFailed": "Failed to send the agent control command.",
+  "@ui.agentControl.sendFailed": {
+    "description": "Error message shown in a toast or inline error when a command to a running AI agent (such as stop) fails."
+  },
+  "ui.groupAdd.rateLimited": "Too many invitations. Try again later.",
+  "@ui.groupAdd.rateLimited": {
+    "description": "Info line after adding people to a group, when the user has sent too many invitations today."
+  },
+  "ui.groupAdd.invitationSent": "Invitation sent to {name}",
+  "@ui.groupAdd.invitationSent": {
+    "description": "Info line after adding a person to a group who only accepts friends, so an invitation was sent instead; {name} is one or more names."
+  },
+  "ui.message.sendTimedOut": "Timed out while sending the message.",
+  "@ui.message.sendTimedOut": {
+    "description": "Error message shown in a toast or inline error when sending a chat message takes too long."
+  },
+  "ui.message.sendFailed": "Failed to send the message.",
+  "@ui.message.sendFailed": {
+    "description": "Error message shown in a toast or inline error when sending a chat message fails."
+  },
+  "ui.presence.updateTimedOut": "Timed out while updating presence.",
+  "@ui.presence.updateTimedOut": {
+    "description": "Error message shown in a toast or inline error when updating the user's online status takes too long."
+  },
+  "ui.presence.updateFailed": "Failed to update presence.",
+  "@ui.presence.updateFailed": {
+    "description": "Error message shown in a toast or inline error when updating the user's online status fails."
+  },
+  "ui.userStatus.publishTimedOut": "Timed out publishing user status",
+  "@ui.userStatus.publishTimedOut": {
+    "description": "Error message shown in a toast or inline error when saving the user's custom status text takes too long."
+  },
+  "ui.userStatus.publishFailed": "Failed to publish user status",
+  "@ui.userStatus.publishFailed": {
+    "description": "Error message shown in a toast or inline error when saving the user's custom status text fails."
+  },
+  "ui.deviceRobot.saveTimedOut": "Timed out saving the device robot.",
+  "@ui.deviceRobot.saveTimedOut": {
+    "description": "Error message shown in a toast or inline error when saving the robot picture chosen for one of the user's computers takes too long."
+  },
+  "ui.deviceRobot.saveFailed": "Could not save the device robot.",
+  "@ui.deviceRobot.saveFailed": {
+    "description": "Error message shown in a toast or inline error when saving the robot picture chosen for one of the user's computers fails."
+  },
+  "ui.reconnect.stillTrying": "Still trying to reconnect — check your network.",
+  "@ui.reconnect.stillTrying": {
+    "description": "Toast when the app has been trying to reconnect to the server for a while."
+  },
+  "ui.media.uploadFailed": "Media upload failed.",
+  "@ui.media.uploadFailed": {
+    "description": "Error message shown in a toast or inline error when uploading a photo, video or file fails."
+  },
+  "ui.communityTheme.publishTimedOut": "Timed out publishing community theme.",
+  "@ui.communityTheme.publishTimedOut": {
+    "description": "Error message shown in a toast or inline error when saving the community's color theme takes too long."
+  },
+  "ui.communityTheme.publishFailed": "Failed to publish community theme.",
+  "@ui.communityTheme.publishFailed": {
+    "description": "Error message shown in a toast or inline error when saving the community's color theme fails."
+  },
+  "ui.shortcuts.quickSearch.label": "Quick search",
+  "@ui.shortcuts.quickSearch.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.quickSearch.description": "Open the search dialog",
+  "@ui.shortcuts.quickSearch.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Quick search' does."
+  },
+  "ui.shortcuts.browseChannels.label": "Find groups",
+  "@ui.shortcuts.browseChannels.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.browseChannels.description": "Open Find groups",
+  "@ui.shortcuts.browseChannels.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Find groups' does."
+  },
+  "ui.shortcuts.browseDms.label": "New direct message",
+  "@ui.shortcuts.browseDms.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.browseDms.description": "Open the new message composer",
+  "@ui.shortcuts.browseDms.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'New direct message' does."
+  },
+  "ui.shortcuts.newChannel.label": "New group",
+  "@ui.shortcuts.newChannel.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.newChannel.description": "Open the create group dialog",
+  "@ui.shortcuts.newChannel.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'New group' does."
+  },
+  "ui.shortcuts.openSettings.label": "Settings",
+  "@ui.shortcuts.openSettings.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.openSettings.description": "Open or close settings",
+  "@ui.shortcuts.openSettings.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Settings' does."
+  },
+  "ui.shortcuts.goBack.label": "Go back",
+  "@ui.shortcuts.goBack.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.goBack.description": "Navigate to the previous page",
+  "@ui.shortcuts.goBack.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Go back' does."
+  },
+  "ui.shortcuts.goForward.label": "Go forward",
+  "@ui.shortcuts.goForward.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.goForward.description": "Navigate to the next page",
+  "@ui.shortcuts.goForward.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Go forward' does."
+  },
+  "ui.shortcuts.findInChannel.label": "Find in group",
+  "@ui.shortcuts.findInChannel.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.findInChannel.description": "Search messages in current group",
+  "@ui.shortcuts.findInChannel.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Find in group' does."
+  },
+  "ui.shortcuts.goHome.label": "Home",
+  "@ui.shortcuts.goHome.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.goHome.description": "Navigate to the home feed",
+  "@ui.shortcuts.goHome.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Home' does."
+  },
+  "ui.shortcuts.toggleSidebar.label": "Toggle sidebar",
+  "@ui.shortcuts.toggleSidebar.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.toggleSidebar.description": "Show or hide the sidebar",
+  "@ui.shortcuts.toggleSidebar.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Toggle sidebar' does."
+  },
+  "ui.shortcuts.markCurrentRead.label": "Mark as read",
+  "@ui.shortcuts.markCurrentRead.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.markCurrentRead.description": "Mark the current conversation as read",
+  "@ui.shortcuts.markCurrentRead.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Mark as read' does."
+  },
+  "ui.shortcuts.markAllRead.label": "Mark all as read",
+  "@ui.shortcuts.markAllRead.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.markAllRead.description": "Mark all conversations as read",
+  "@ui.shortcuts.markAllRead.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Mark all as read' does."
+  },
+  "ui.shortcuts.zoomIn.label": "Zoom in",
+  "@ui.shortcuts.zoomIn.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.zoomIn.description": "Increase the zoom level",
+  "@ui.shortcuts.zoomIn.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Zoom in' does."
+  },
+  "ui.shortcuts.zoomOut.label": "Zoom out",
+  "@ui.shortcuts.zoomOut.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.zoomOut.description": "Decrease the zoom level",
+  "@ui.shortcuts.zoomOut.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Zoom out' does."
+  },
+  "ui.shortcuts.zoomReset.label": "Reset zoom",
+  "@ui.shortcuts.zoomReset.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.zoomReset.description": "Reset zoom to default level",
+  "@ui.shortcuts.zoomReset.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Reset zoom' does."
+  },
+  "ui.shortcuts.sendMessage.label": "Send message",
+  "@ui.shortcuts.sendMessage.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.sendMessage.description": "Send the current message",
+  "@ui.shortcuts.sendMessage.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Send message' does."
+  },
+  "ui.shortcuts.newLine.label": "New line",
+  "@ui.shortcuts.newLine.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.newLine.description": "Insert a line break in the composer",
+  "@ui.shortcuts.newLine.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'New line' does."
+  },
+  "ui.shortcuts.alwaysAddressAgent.label": "Always address agent",
+  "@ui.shortcuts.alwaysAddressAgent.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.alwaysAddressAgent.description": "Address the default agent, or toggle the highlighted agent",
+  "@ui.shortcuts.alwaysAddressAgent.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Always address agent' does."
+  },
+  "ui.shortcuts.publishNote.label": "Publish note",
+  "@ui.shortcuts.publishNote.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.publishNote.description": "Publish a Pulse note",
+  "@ui.shortcuts.publishNote.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Publish note' does."
+  },
+  "ui.shortcuts.closeDialog.label": "Close dialog",
+  "@ui.shortcuts.closeDialog.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.closeDialog.description": "Close the current dialog or settings",
+  "@ui.shortcuts.closeDialog.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Close dialog' does."
+  },
+  "ui.shortcuts.toggleHuddle.label": "Start or leave huddle",
+  "@ui.shortcuts.toggleHuddle.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.toggleHuddle.description": "Start or join a huddle in the current group; leave when connected",
+  "@ui.shortcuts.toggleHuddle.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Start or leave huddle' does."
+  },
+  "ui.shortcuts.pushToTalk.label": "Push to talk",
+  "@ui.shortcuts.pushToTalk.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.pushToTalk.description": "Hold to unmute in a huddle",
+  "@ui.shortcuts.pushToTalk.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Push to talk' does."
+  },
+  "ui.shortcuts.formatBold.label": "Bold",
+  "@ui.shortcuts.formatBold.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.formatBold.description": "Toggle bold formatting",
+  "@ui.shortcuts.formatBold.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Bold' does."
+  },
+  "ui.shortcuts.formatItalic.label": "Italic",
+  "@ui.shortcuts.formatItalic.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.formatItalic.description": "Toggle italic formatting",
+  "@ui.shortcuts.formatItalic.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Italic' does."
+  },
+  "ui.shortcuts.formatStrikethrough.label": "Strikethrough",
+  "@ui.shortcuts.formatStrikethrough.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.formatStrikethrough.description": "Toggle strikethrough formatting",
+  "@ui.shortcuts.formatStrikethrough.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Strikethrough' does."
+  },
+  "ui.shortcuts.formatCode.label": "Inline code",
+  "@ui.shortcuts.formatCode.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.formatCode.description": "Toggle inline code formatting",
+  "@ui.shortcuts.formatCode.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Inline code' does."
+  },
+  "ui.shortcuts.formatLink.label": "Insert link",
+  "@ui.shortcuts.formatLink.label": {
+    "description": "Settings > Keyboard shortcuts, name of one shortcut in the list. Short."
+  },
+  "ui.shortcuts.formatLink.description": "Link the selected composer text, or edit the link under the caret",
+  "@ui.shortcuts.formatLink.description": {
+    "description": "Settings > Keyboard shortcuts, grey text after the shortcut name explaining what 'Insert link' does."
+  },
+  "ui.shortcuts.category.navigation": "Navigation",
+  "@ui.shortcuts.category.navigation": {
+    "description": "Settings > Keyboard shortcuts, group title for shortcuts about moving around the app. Short."
+  },
+  "ui.shortcuts.category.messages": "Messages",
+  "@ui.shortcuts.category.messages": {
+    "description": "Settings > Keyboard shortcuts, group title for shortcuts about writing and sending messages. Short."
+  },
+  "ui.shortcuts.category.formatting": "Formatting",
+  "@ui.shortcuts.category.formatting": {
+    "description": "Settings > Keyboard shortcuts, group title for shortcuts about text formatting in the message box. Short."
+  },
+  "ui.shortcuts.category.zoom": "Zoom",
+  "@ui.shortcuts.category.zoom": {
+    "description": "Settings > Keyboard shortcuts, group title for shortcuts about zooming the window. Short."
+  },
+  "ui.previewFeature.disabledWarning": "{name} is a preview feature. Enable it in Settings → Experiments to surface it in your sidebar.",
+  "@ui.previewFeature.disabledWarning": {
+    "description": "Warning toast when opening a preview feature that is turned off; {name} is the feature name. 'Settings → Experiments' is the path to the settings page."
+  },
+  "ui.googleLogin.failed": "Google sign-in failed. Try again.",
+  "@ui.googleLogin.failed": {
+    "description": "Error under the Sign in with Google button when sign-in fails."
+  },
+  "ui.googleLogin.cancelFailed": "Could not cancel sign-in. Try again.",
+  "@ui.googleLogin.cancelFailed": {
+    "description": "Error on the sign-in screen when cancelling a Google sign-in in progress fails."
+  },
+  "ui.auxiliaryPanel.close": "Close panel",
+  "@ui.auxiliaryPanel.close": {
+    "description": "Screen-reader label of the close (X) button on a side panel (thread, members, etc.)."
+  },
+  "ui.auxiliaryPanel.resize": "Resize panel",
+  "@ui.auxiliaryPanel.resize": {
+    "description": "Screen-reader label of the drag handle on the left edge of a side panel."
+  },
+  "ui.auxiliaryPanel.resizeTooltip": "Drag to resize.",
+  "@ui.auxiliaryPanel.resizeTooltip": {
+    "description": "Tooltip on the drag handle on the left edge of a side panel."
+  },
+  "ui.auxiliaryPanel.resizeTooltipWithReset": "Drag to resize. Double-click to reset width.",
+  "@ui.auxiliaryPanel.resizeTooltipWithReset": {
+    "description": "Tooltip on the drag handle on the left edge of a side panel, when double-clicking resets its width."
+  },
+  "ui.clipboard.copied": "Copied to clipboard",
+  "@ui.clipboard.copied": {
+    "description": "Toast after copying text or an image. Short."
+  },
+  "ui.clipboard.copyFailed": "Failed to copy to clipboard",
+  "@ui.clipboard.copyFailed": {
+    "description": "Error toast when copying text to the clipboard fails."
+  },
+  "ui.entityLink.openFailed": "Couldn't open this link.",
+  "@ui.entityLink.openFailed": {
+    "description": "Error when a link to a project, repository, review or task in the app is broken."
+  },
+  "ui.install.failedNoOutput": "Install failed with no output.",
+  "@ui.install.failedNoOutput": {
+    "description": "Error when installing an agent tool (runtime) fails without any message."
+  },
+  "ui.install.stepFailed": "Step \"{step}\" failed: {detail}",
+  "@ui.install.stepFailed": {
+    "description": "Error when installing an agent tool (runtime) fails; {step} is the install step name, {detail} the technical output."
+  },
+  "ui.install.unknownError": "unknown error",
+  "@ui.install.unknownError": {
+    "description": "Shown after 'Step X failed:' when the install step gave no output. Lowercase."
+  },
+  "ui.localStorage.fullTitle": "Local storage is full",
+  "@ui.localStorage.fullTitle": {
+    "description": "Error toast title when the app cannot save data on this computer."
+  },
+  "ui.localStorage.fullDescription": "Kuzz could not save some local data — read positions may not persist across restarts.",
+  "@ui.localStorage.fullDescription": {
+    "description": "Error toast text under 'Local storage is full'."
+  },
+  "ui.linkPreview.driveFolder": "Drive folder",
+  "@ui.linkPreview.driveFolder": {
+    "description": "Title of a link preview card for a Google Drive folder link when no name is known. Short."
+  },
+  "ui.linkPreview.driveFile": "Drive file",
+  "@ui.linkPreview.driveFile": {
+    "description": "Title of a link preview card for a Google Drive file link when no name is known. Short."
+  },
+  "ui.linkPreview.document": "Document",
+  "@ui.linkPreview.document": {
+    "description": "Title of a link preview card for a Google Docs link when no name is known. Short."
+  },
+  "ui.linkPreview.spreadsheet": "Spreadsheet",
+  "@ui.linkPreview.spreadsheet": {
+    "description": "Title of a link preview card for a Google Sheets link when no name is known. Short."
+  },
+  "ui.linkPreview.presentation": "Presentation",
+  "@ui.linkPreview.presentation": {
+    "description": "Title of a link preview card for a Google Slides link when no name is known. Short."
+  },
+  "ui.backendError.connectivity": "Couldn't connect. Check your internet connection and try again.",
+  "@ui.backendError.connectivity": {
+    "description": "Error shown in place of a technical server error when the server cannot be reached."
+  },
+  "ui.backendError.rateLimited": "Too many requests. Wait a moment and try again.",
+  "@ui.backendError.rateLimited": {
+    "description": "Error shown in place of a technical server error when the user did too much too quickly."
+  },
+  "ui.backendError.serverRejected": "The server couldn't complete the request. Try again.",
+  "@ui.backendError.serverRejected": {
+    "description": "Error shown in place of a technical server error when the server refused the request."
+  },
+  "ui.carousel.previous": "Previous slide",
+  "@ui.carousel.previous": {
+    "description": "Screen-reader label of the left arrow button in an image carousel."
+  },
+  "ui.carousel.next": "Next slide",
+  "@ui.carousel.next": {
+    "description": "Screen-reader label of the right arrow button in an image carousel."
+  },
+  "ui.createAccount.title": "Create your Kuzz account",
+  "@ui.createAccount.title": {
+    "description": "Title of the dialog shown after choosing a Google account that has no Kuzz account yet."
+  },
+  "ui.createAccount.description": "There's no Kuzz account for this Google account yet.",
+  "@ui.createAccount.description": {
+    "description": "Text in the 'Create your Kuzz account' dialog, above the Google email address."
+  },
+  "ui.createAccount.useDifferent": "Use a different account",
+  "@ui.createAccount.useDifferent": {
+    "description": "Button in the 'Create your Kuzz account' dialog that opens Google's account picker again."
+  },
+  "ui.createAccount.create": "Create account",
+  "@ui.createAccount.create": {
+    "description": "Main button in the 'Create your Kuzz account' dialog. Short."
+  },
+  "ui.googleLogin.finishing": "Finishing sign-in in Kuzz…",
+  "@ui.googleLogin.finishing": {
+    "description": "Status line on the sign-in screen after Google sign-in completed in the browser."
+  },
+  "ui.googleLogin.openingBrowser": "Opening your browser…",
+  "@ui.googleLogin.openingBrowser": {
+    "description": "Status line on the sign-in screen while the web browser opens for Google sign-in."
+  },
+  "ui.googleLogin.finishInBrowser": "Finish signing in in your browser.",
+  "@ui.googleLogin.finishInBrowser": {
+    "description": "Status line on the sign-in screen while the user signs in with Google in the web browser."
+  },
+  "ui.hoverCopy.copied": "Copied {label}",
+  "@ui.hoverCopy.copied": {
+    "description": "Toast after copying a value by clicking it; {label} is the lowercased name of the value (e.g. 'agent id')."
+  },
+  "ui.hoverCopy.failed": "Couldn't copy {label}.",
+  "@ui.hoverCopy.failed": {
+    "description": "Error toast when copying a value fails; {label} is the lowercased name of the value (e.g. 'agent id')."
+  },
+  "ui.logo.label": "Kuzz logo",
+  "@ui.logo.label": {
+    "description": "Screen-reader label of the Kuzz logo picture."
+  },
+  "ui.logo.animation": "Kuzz logo animation",
+  "@ui.logo.animation": {
+    "description": "Screen-reader label of the animated Kuzz logo shown while loading."
+  },
+  "ui.linkPreview.styleRich": "Rich",
+  "@ui.linkPreview.styleRich": {
+    "description": "Link preview style option: large card with image. Menu item. Short."
+  },
+  "ui.linkPreview.styleCompact": "Compact",
+  "@ui.linkPreview.styleCompact": {
+    "description": "Link preview style option: small one-line card. Menu item. Short."
+  },
+  "ui.linkPreview.setToRich": "Link previews set to Rich.",
+  "@ui.linkPreview.setToRich": {
+    "description": "Toast after choosing the Rich link preview style ('Rich' as in the menu item)."
+  },
+  "ui.linkPreview.setToCompact": "Link previews set to Compact.",
+  "@ui.linkPreview.setToCompact": {
+    "description": "Toast after choosing the Compact link preview style ('Compact' as in the menu item)."
+  },
+  "ui.linkPreview.appearanceAction": "Appearance",
+  "@ui.linkPreview.appearanceAction": {
+    "description": "Button in a toast that opens Settings > Appearance. Short."
+  },
+  "ui.linkPreview.changeInAppearance": "You can always modify this and other settings in Appearance.",
+  "@ui.linkPreview.changeInAppearance": {
+    "description": "Toast text after changing the link preview style; Appearance is a settings page."
+  },
+  "ui.linkPreview.displaySettings": "Link display settings",
+  "@ui.linkPreview.displaySettings": {
+    "description": "Tooltip and screen-reader label of the ⋮ button next to a link preview in a message."
+  },
+  "ui.linkPreview.display": "Display",
+  "@ui.linkPreview.display": {
+    "description": "Menu item opening the link preview style choices (Rich, Compact). Short."
+  },
+  "ui.linkPreview.removePreview": "Remove preview",
+  "@ui.linkPreview.removePreview": {
+    "description": "Menu item that removes a link preview from a message. Short."
+  },
+  "ui.linkPreview.removeTitle": "{count, plural, one {Remove preview?} other {Remove previews?}}",
+  "@ui.linkPreview.removeTitle": {
+    "description": "Title of the dialog confirming removal of link preview cards from a message; {count} is how many."
+  },
+  "ui.linkPreview.removeDescription": "{count, plural, one {This removes the preview for everyone.} other {This removes the previews for everyone.}}",
+  "@ui.linkPreview.removeDescription": {
+    "description": "Text of the dialog confirming removal of link preview cards from a message."
+  },
+  "ui.linkPreview.removeConfirm": "{count, plural, one {Remove preview} other {Remove previews}}",
+  "@ui.linkPreview.removeConfirm": {
+    "description": "Red confirm button in the dialog removing link preview cards. Short."
+  },
+  "ui.linkPreview.imageAlt": "Preview from {domain}",
+  "@ui.linkPreview.imageAlt": {
+    "description": "Alt text of a link preview image; {domain} is the website (e.g. github.com)."
+  },
+  "ui.linkPreview.openLabel": "Open {provider} {type, select, PR {PR} issue {issue} Review {Review} Task {Task} repo {repo} project {project} file {file} folder {folder} document {document} spreadsheet {spreadsheet} presentation {presentation} other {link}}: {title}",
+  "@ui.linkPreview.openLabel": {
+    "description": "Screen-reader label of a link preview card; {provider} is a service name (GitHub, Google Drive, Kuzz), the select picks the kind of item, {title} is its title."
+  },
+  "ui.linkPreview.showLess": "Show less",
+  "@ui.linkPreview.showLess": {
+    "description": "Button under a link preview that collapses its text and image. Short."
+  },
+  "ui.linkPreview.showMore": "Show more",
+  "@ui.linkPreview.showMore": {
+    "description": "Button under a link preview that expands its text and image. Short."
+  },
+  "app.loading.settingUp": "Setting up your community...",
+  "@app.loading.settingUp": {
+    "description": "Startup splash while the app loads, screen-reader text only."
+  },
+  "app.loading.switchingCommunity": "Switching community…",
+  "@app.loading.switchingCommunity": {
+    "description": "Loading screen shown while switching to another community, screen-reader label of the spinner."
+  },
+  "app.community.applyFailed": "Could not save or apply the community. Please retry.",
+  "@app.community.applyFailed": {
+    "description": "Error on the community setup screen when the community could not be saved or opened."
+  },
+  "app.community.connectTimedOut": "Community connection timed out. Please retry.",
+  "@app.community.connectTimedOut": {
+    "description": "Error on the community setup screen when connecting takes too long."
+  },
+  "app.community.authFailed": "Could not authenticate with the community. Please retry.",
+  "@app.community.authFailed": {
+    "description": "Error on the community setup screen when signing in to the community fails."
+  },
+  "app.server.unreachable": "Couldn't reach Kuzz.",
+  "@app.server.unreachable": {
+    "description": "Full-screen error at startup when the app cannot reach the Kuzz server; a Retry button follows."
+  },
+  "app.rootError.title": "Kuzz failed to start",
+  "@app.rootError.title": {
+    "description": "Title of the full-screen error shown when the app crashes at startup."
+  },
+  "app.rootError.description": "Reload Kuzz to try again. If this keeps happening, check that Kuzz can access website data, then contact support.",
+  "@app.rootError.description": {
+    "description": "Body text of the full-screen error shown when the app crashes at startup."
+  },
+  "app.rootError.reload": "Reload",
+  "@app.rootError.reload": {
+    "description": "Button on the full-screen startup error that reloads the app. Short."
+  },
+  "app.topChrome.goBack": "Go back",
+  "@app.topChrome.goBack": {
+    "description": "Window top bar, screen-reader label of the back arrow button."
+  },
+  "app.topChrome.goForward": "Go forward",
+  "@app.topChrome.goForward": {
+    "description": "Window top bar, screen-reader label of the forward arrow button."
+  },
+  "app.shell.currentIdentityFallback": "Current identity",
+  "@app.shell.currentIdentityFallback": {
+    "description": "Profile menu, name shown for the signed-in user when they have no display name yet."
+  },
+  "app.notifications.accountSignedOut": "That account is signed out on this computer. Sign in to it from the profile menu.",
+  "@app.notifications.accountSignedOut": {
+    "description": "Error toast after clicking a desktop notification for another account that is signed out on this computer."
+  },
+  "app.notifications.accountCommunityGone": "That account's community is no longer on this computer.",
+  "@app.notifications.accountCommunityGone": {
+    "description": "Error toast after clicking a desktop notification for another account whose community was removed from this computer."
+  },
+  "app.notifications.accountSwitchFailed": "Could not switch to that account.",
+  "@app.notifications.accountSwitchFailed": {
+    "description": "Error toast after clicking a desktop notification for another account when switching fails."
+  },
+  "app.notifications.directMessageFallback": "Direct message",
+  "@app.notifications.directMessageFallback": {
+    "description": "Desktop notification, conversation name used for a direct message that has no name."
+  },
+  "app.notifications.switchingAccounts": "Switching accounts…",
+  "@app.notifications.switchingAccounts": {
+    "description": "Caption on the loading screen while the app restarts into another account."
+  },
+  "app.tray.agentFallback": "Agent",
+  "@app.tray.agentFallback": {
+    "description": "System tray menu, name shown for an AI agent whose name is not known. Short."
+  },
+  "app.tray.unknownGroup": "Unknown group",
+  "@app.tray.unknownGroup": {
+    "description": "System tray menu, name shown for a group whose name is not known. Short."
+  },
+  "app.community.removeIncomplete": "Couldn't finish removing the community from this device because community discovery state could not be saved. Restart Kuzz and try again.",
+  "@app.community.removeIncomplete": {
+    "description": "Error when removing the last community from this computer fails partway."
+  },
+  "ui.codeBlock.copied": "Copied code to clipboard",
+  "@ui.codeBlock.copied": {
+    "description": "Toast after copying a code block in a message."
+  },
+  "ui.codeBlock.copyFailed": "Failed to copy code",
+  "@ui.codeBlock.copyFailed": {
+    "description": "Error toast when copying a code block in a message fails."
+  },
+  "ui.codeBlock.copyLabel": "Copy code block",
+  "@ui.codeBlock.copyLabel": {
+    "description": "Screen-reader label of the copy button on a code block in a message."
+  },
+  "ui.codeBlock.copyTooltip": "Copy code",
+  "@ui.codeBlock.copyTooltip": {
+    "description": "Tooltip of the copy button on a code block in a message. Short."
+  },
+  "ui.linkMenu.open": "Open link",
+  "@ui.linkMenu.open": {
+    "description": "Right-click menu on a link in a message, menu item. Short."
+  },
+  "ui.linkMenu.openFailed": "Failed to open link",
+  "@ui.linkMenu.openFailed": {
+    "description": "Error toast when a link from the right-click menu cannot be opened."
+  },
+  "ui.linkMenu.copy": "Copy link",
+  "@ui.linkMenu.copy": {
+    "description": "Right-click menu on a link, image or video in a message, menu item. Short."
+  },
+  "ui.linkMenu.copied": "Link copied to clipboard",
+  "@ui.linkMenu.copied": {
+    "description": "Toast after copying a link from a right-click menu."
+  },
+  "ui.image.copyFailed": "Copy failed",
+  "@ui.image.copyFailed": {
+    "description": "Error toast when copying an image from a message fails."
+  },
+  "ui.download.failed": "Download failed",
+  "@ui.download.failed": {
+    "description": "Error toast when downloading a file, image or video from a message fails."
+  },
+  "ui.agentSnapshot.loadAgentFailed": "Couldn’t load this agent. Try again.",
+  "@ui.agentSnapshot.loadAgentFailed": {
+    "description": "Error on a shared AI agent card in a message when its file cannot be loaded."
+  },
+  "ui.agentSnapshot.loadTeamFailed": "Couldn’t load this team. Try again.",
+  "@ui.agentSnapshot.loadTeamFailed": {
+    "description": "Error on a shared agent team card in a message when its file cannot be loaded."
+  },
+  "ui.agentSnapshot.sharedBy": "Shared by {name}",
+  "@ui.agentSnapshot.sharedBy": {
+    "description": "Small grey text on a shared AI agent card in a message; {name} is the person who shared it."
+  },
+  "ui.agentSnapshot.actionsLabel": "Actions for {name}",
+  "@ui.agentSnapshot.actionsLabel": {
+    "description": "Screen-reader label of the button group on a shared AI agent card; {name} is the agent or team name."
+  },
+  "ui.agentSnapshot.downloadLabel": "Download {name}",
+  "@ui.agentSnapshot.downloadLabel": {
+    "description": "Screen-reader label of the download button on a shared AI agent card; {name} is the agent or team name."
+  },
+  "ui.agentSnapshot.download": "Download",
+  "@ui.agentSnapshot.download": {
+    "description": "Tooltip of the download icon button on a shared AI agent card. Short."
+  },
+  "ui.agentSnapshot.addTeam": "Add team",
+  "@ui.agentSnapshot.addTeam": {
+    "description": "Button on a shared agent team card in a message that adds the team. Short."
+  },
+  "ui.agentSnapshot.addAgent": "Add agent",
+  "@ui.agentSnapshot.addAgent": {
+    "description": "Button on a shared AI agent card in a message that adds the agent. Short."
+  },
+  "ui.channelLink.activeJustNow": "Active just now",
+  "@ui.channelLink.activeJustNow": {
+    "description": "Tooltip on a group link in a message, last activity. Short."
+  },
+  "ui.channelLink.activeMinutesAgo": "Active {count}m ago",
+  "@ui.channelLink.activeMinutesAgo": {
+    "description": "Tooltip on a group link in a message, last activity; {count} is minutes, m is the short unit. Short."
+  },
+  "ui.channelLink.activeHoursAgo": "Active {count}h ago",
+  "@ui.channelLink.activeHoursAgo": {
+    "description": "Tooltip on a group link in a message, last activity; {count} is hours, h is the short unit. Short."
+  },
+  "ui.channelLink.activeDaysAgo": "Active {count}d ago",
+  "@ui.channelLink.activeDaysAgo": {
+    "description": "Tooltip on a group link in a message, last activity; {count} is days, d is the short unit. Short."
+  },
+  "ui.channelLink.activeWeeksAgo": "Active {count}w ago",
+  "@ui.channelLink.activeWeeksAgo": {
+    "description": "Tooltip on a group link in a message, last activity; {count} is weeks, w is the short unit. Short."
+  },
+  "ui.channelLink.privateGroup": "Private group",
+  "@ui.channelLink.privateGroup": {
+    "description": "Tooltip on a group link in a message, the group's kind. Short."
+  },
+  "ui.channelLink.publicGroup": "Public group",
+  "@ui.channelLink.publicGroup": {
+    "description": "Tooltip on a group link in a message, the group's kind. Short."
+  },
+  "ui.channelLink.forum": "Forum",
+  "@ui.channelLink.forum": {
+    "description": "Tooltip on a group link in a message, shown when the group is a forum. Short."
+  },
+  "ui.channelLink.archived": "Archived",
+  "@ui.channelLink.archived": {
+    "description": "Tooltip on a group link in a message, shown when the group is archived. Short."
+  },
+  "ui.channelLink.openGroup": "Open group {name}",
+  "@ui.channelLink.openGroup": {
+    "description": "Screen-reader label of a group link chip in a message; {name} is the group name."
+  },
+  "ui.channelLink.group": "Group {name}",
+  "@ui.channelLink.group": {
+    "description": "Screen-reader label of a group link chip in a message that cannot be opened; {name} is the group name."
+  },
+  "ui.channelLink.openGroupNamed": "Open group: {name}",
+  "@ui.channelLink.openGroupNamed": {
+    "description": "Screen-reader label of a link to a group in a message; {name} is the link text."
+  },
+  "ui.channelLink.openMessageNamed": "Open message: {name}",
+  "@ui.channelLink.openMessageNamed": {
+    "description": "Screen-reader label of a link to a message in a message; {name} is the link text."
+  },
+  "ui.entityLink.openCommit": "Open commit {commit} in repository {repo}",
+  "@ui.entityLink.openCommit": {
+    "description": "Screen-reader label of a commit link chip in a message; {commit} is a short commit id, {repo} the repository name."
+  },
+  "ui.entityLink.openRepo": "Open repository {repo}",
+  "@ui.entityLink.openRepo": {
+    "description": "Screen-reader label of a repository link chip in a message; {repo} is the repository name."
+  },
+  "ui.entityLink.repository": "Repository",
+  "@ui.entityLink.repository": {
+    "description": "Tooltip footer on a repository link chip in a message, the link's kind. Short."
+  },
+  "ui.entityLink.openPullRequest": "Open pull request {id} in repository {repo}",
+  "@ui.entityLink.openPullRequest": {
+    "description": "Screen-reader label of a pull request link chip in a message; {id} is a short id, {repo} the repository name."
+  },
+  "ui.entityLink.pullRequestIn": "Pull request · {repo}",
+  "@ui.entityLink.pullRequestIn": {
+    "description": "Tooltip footer on a pull request link chip in a message; {repo} is the repository name. Short."
+  },
+  "ui.entityLink.openIssue": "Open issue {id} in repository {repo}",
+  "@ui.entityLink.openIssue": {
+    "description": "Screen-reader label of an issue link chip in a message; {id} is a short id, {repo} the repository name."
+  },
+  "ui.entityLink.issueIn": "Issue · {repo}",
+  "@ui.entityLink.issueIn": {
+    "description": "Tooltip footer on an issue link chip in a message; {repo} is the repository name. Short."
+  },
+  "ui.entityLink.openProject": "Open project {project}",
+  "@ui.entityLink.openProject": {
+    "description": "Screen-reader label of a project link chip in a message; {project} is the project name."
+  },
+  "ui.entityLink.project": "Project",
+  "@ui.entityLink.project": {
+    "description": "Tooltip footer on a project link chip in a message, the link's kind. Short."
+  },
+  "ui.imageGallery.position": "Image {position} of {count}",
+  "@ui.imageGallery.position": {
+    "description": "Image viewer, screen-reader text for the position counter (shown as 2 / 5)."
+  },
+  "ui.imageLightbox.zoomOut": "Zoom out",
+  "@ui.imageLightbox.zoomOut": {
+    "description": "Image viewer, screen-reader label of the zoom-out button."
+  },
+  "ui.imageLightbox.zoom": "Image zoom",
+  "@ui.imageLightbox.zoom": {
+    "description": "Image viewer, screen-reader label of the zoom slider."
+  },
+  "ui.imageLightbox.zoomIn": "Zoom in",
+  "@ui.imageLightbox.zoomIn": {
+    "description": "Image viewer, screen-reader label of the zoom-in button."
+  },
+  "ui.imageLightbox.zoomImageNamed": "Zoom image: {alt}",
+  "@ui.imageLightbox.zoomImageNamed": {
+    "description": "Screen-reader label of an image in a message that opens the image viewer; {alt} is the image description."
+  },
+  "ui.imageLightbox.zoomImage": "Zoom image",
+  "@ui.imageLightbox.zoomImage": {
+    "description": "Screen-reader label of an image in a message that opens the image viewer, when the image has no description."
+  },
+  "ui.inlineEmoji.fallbackLabel": "Custom emoji",
+  "@ui.inlineEmoji.fallbackLabel": {
+    "description": "Name shown for a custom emoji in a message when it has no name. Short."
+  },
+  "ui.markdown.taskDone": "Completed task",
+  "@ui.markdown.taskDone": {
+    "description": "Screen-reader label of a checked checkbox in a message's task list."
+  },
+  "ui.markdown.taskNotDone": "Incomplete task",
+  "@ui.markdown.taskNotDone": {
+    "description": "Screen-reader label of an unchecked checkbox in a message's task list."
+  },
+  "ui.messageLink.deleted": "Message deleted",
+  "@ui.messageLink.deleted": {
+    "description": "Tooltip on a link to a message that was deleted. Short."
+  },
+  "ui.messageLink.unavailable": "Message unavailable",
+  "@ui.messageLink.unavailable": {
+    "description": "Tooltip on a link to a message that cannot be loaded. Short."
+  },
+  "ui.messageLink.threadIn": "Thread in {name}",
+  "@ui.messageLink.threadIn": {
+    "description": "Tooltip footer on a link to a thread message; {name} is the group name."
+  },
+  "ui.messageLink.dmWith": "Direct message with {name}",
+  "@ui.messageLink.dmWith": {
+    "description": "Tooltip footer on a link to a direct message; {name} is the other person's name."
+  },
+  "ui.messageLink.forumPostIn": "Forum post in {name}",
+  "@ui.messageLink.forumPostIn": {
+    "description": "Tooltip footer on a link to a forum post; {name} is the forum name."
+  },
+  "ui.messageLink.inGroup": "Message in group {name}",
+  "@ui.messageLink.inGroup": {
+    "description": "Screen-reader label of a link to a message that cannot be opened; {name} is the group name."
+  },
+  "ui.messageLink.openThreadDeleted": "Open thread in group {name}; linked message was deleted",
+  "@ui.messageLink.openThreadDeleted": {
+    "description": "Screen-reader label of a link to a deleted thread message; {name} is the group name."
+  },
+  "ui.messageLink.openGroupDeleted": "Open group {name}; linked message was deleted",
+  "@ui.messageLink.openGroupDeleted": {
+    "description": "Screen-reader label of a link to a deleted message; {name} is the group name."
+  },
+  "ui.messageLink.openInGroup": "Open message in group {name}",
+  "@ui.messageLink.openInGroup": {
+    "description": "Screen-reader label of a link to a message; {name} is the group name."
+  },
+  "ui.messageLink.openThreadIn": "Open thread in {name}",
+  "@ui.messageLink.openThreadIn": {
+    "description": "Screen-reader label of the thread link under a message sent from a thread; {name} is the group name."
+  },
+  "ui.spoiler.hide": "Hide spoiler",
+  "@ui.spoiler.hide": {
+    "description": "Screen-reader label of revealed spoiler text in a message; activating hides it again."
+  },
+  "ui.spoiler.reveal": "Reveal spoiler",
+  "@ui.spoiler.reveal": {
+    "description": "Screen-reader label of hidden spoiler text in a message; activating shows it."
+  },
+  "ui.video.fallbackTitle": "Video",
+  "@ui.video.fallbackTitle": {
+    "description": "Title of the video review panel when the video has no file name or description. Short."
+  },
+  "ui.imageLightbox.previewFallback": "Image preview",
+  "@ui.imageLightbox.previewFallback": {
+    "description": "Image viewer, name of the shown image when it has no description."
+  },
+  "ui.imageLightbox.previous": "Previous image",
+  "@ui.imageLightbox.previous": {
+    "description": "Image viewer, screen-reader label of the previous-image arrow button."
+  },
+  "ui.imageLightbox.next": "Next image",
+  "@ui.imageLightbox.next": {
+    "description": "Image viewer, screen-reader label of the next-image arrow button."
+  },
+  "ui.imageLightbox.controls": "Image controls",
+  "@ui.imageLightbox.controls": {
+    "description": "Image viewer, screen-reader name of the toolbar with zoom and download controls."
+  },
+  "ui.imageMenu.copy": "Copy image",
+  "@ui.imageMenu.copy": {
+    "description": "Right-click menu on an image in a message or the image viewer, menu item. Short."
+  },
+  "ui.imageMenu.download": "Download image",
+  "@ui.imageMenu.download": {
+    "description": "Right-click menu item and image viewer download button label. Short."
+  },
+  "ui.markdown.videoAttachment": "Video attachment",
+  "@ui.markdown.videoAttachment": {
+    "description": "Text shown in place of a video in a message preview (e.g. a reply quote) when the video has no description. Short."
+  },
+  "ui.markdown.imageAttachment": "Image attachment",
+  "@ui.markdown.imageAttachment": {
+    "description": "Text shown in place of an image in a message preview (e.g. a reply quote) when the image has no description. Short."
+  },
+  "ui.loading.label": "Loading",
+  "@ui.loading.label": {
+    "description": "Screen-reader label of a loading animation or spinner. Short."
+  },
+  "ui.agentSnapshot.fallbackName": "Agent",
+  "@ui.agentSnapshot.fallbackName": {
+    "description": "Name shown on a shared AI agent card when its file has no usable name. Short."
+  },
+  "ui.configNudge.missingBinaryHint": "not found in PATH — install it or update PATH, then restart Kuzz",
+  "@ui.configNudge.missingBinaryHint": {
+    "description": "Agent setup card in a chat, shown right after a command name in code font (e.g. 'codex not found in PATH — ...'). Starts lowercase because it continues that line."
+  },
+  "ui.configNudge.cliToolFallback": "the CLI tool",
+  "@ui.configNudge.cliToolFallback": {
+    "description": "Agent setup card, used as {harness} in the other agent setup messages when the tool's name is unknown."
+  },
+  "ui.configNudge.notInstalled": "{harness} isn't installed",
+  "@ui.configNudge.notInstalled": {
+    "description": "Agent setup card in a chat; {harness} is the name of an AI coding tool (e.g. codex, claude)."
+  },
+  "ui.configNudge.cliMissing": "{harness} CLI is missing",
+  "@ui.configNudge.cliMissing": {
+    "description": "Agent setup card in a chat; {harness} is the name of an AI coding tool (e.g. codex, claude)."
+  },
+  "ui.configNudge.adapterMissing": "{harness} ACP adapter isn't installed",
+  "@ui.configNudge.adapterMissing": {
+    "description": "Agent setup card in a chat; {harness} is the name of an AI coding tool. ACP is a protocol name, keep it."
+  },
+  "ui.configNudge.adapterOutdated": "{harness} ACP adapter is outdated — reinstall required",
+  "@ui.configNudge.adapterOutdated": {
+    "description": "Agent setup card in a chat; {harness} is the name of an AI coding tool. ACP is a protocol name, keep it."
+  },
+  "ui.configNudge.title": "{name} needs configuration",
+  "@ui.configNudge.title": {
+    "description": "Title of the agent setup card posted in a chat; {name} is the AI agent's name."
+  },
+  "ui.configNudge.openRuntimes": "Open Agent runtimes →",
+  "@ui.configNudge.openRuntimes": {
+    "description": "Link-style button on the agent setup card that opens the Agent runtimes settings page. Short."
+  },
+  "ui.configNudge.openRuntimesFor": "Open Agent runtimes for {name}",
+  "@ui.configNudge.openRuntimesFor": {
+    "description": "Screen-reader label of the agent setup card when clicking it opens the Agent runtimes settings page; {name} is the agent's name."
+  },
+  "ui.configNudge.openEditAgentFor": "Open Edit Agent for {name}",
+  "@ui.configNudge.openEditAgentFor": {
+    "description": "Screen-reader label of the agent setup card when clicking it opens the Edit Agent panel; {name} is the agent's name."
+  },
+  "ui.configNudge.setEnvKey": "Set <code>{key}</code> in Edit Agent → Environment variables",
+  "@ui.configNudge.setEnvKey": {
+    "description": "Agent setup card row; {key} is an environment variable name shown in code font. Edit Agent and Environment variables are screen names."
+  },
+  "ui.configNudge.editAgent": "Edit Agent →",
+  "@ui.configNudge.editAgent": {
+    "description": "Link-style button on an agent setup card row that opens the Edit Agent panel. Short."
+  },
+  "ui.configNudge.setField": "Set the <b>{field}</b> field in Edit Agent dropdowns",
+  "@ui.configNudge.setField": {
+    "description": "Agent setup card row; {field} is a setting name shown in bold."
+  },
+  "ui.configNudge.gitBashRequired": "Git for Windows is required for kuzz-agent shell tools",
+  "@ui.configNudge.gitBashRequired": {
+    "description": "Agent setup card row on Windows. Git for Windows and kuzz-agent are product names."
+  },
+  "ui.configNudge.cliFallback": "the CLI",
+  "@ui.configNudge.cliFallback": {
+    "description": "Agent setup card, used as the tool name inside a config file path when the tool's name is unknown."
+  },
+  "ui.configNudge.configInvalid": "{file} is invalid: <code>{diagnostic}</code> — fix the config and restart the agent",
+  "@ui.configNudge.configInvalid": {
+    "description": "Agent setup card row; {file} is a config file path, {diagnostic} the error detail shown in code font."
+  },
+  "ui.pubkey.copyNamed": "Copy {label}",
+  "@ui.pubkey.copyNamed": {
+    "description": "Screen-reader label of the copy button next to a public key in a popover; {label} is the key type (e.g. npub)."
+  },
+  "ui.pubkey.copiedNamed": "{label} copied",
+  "@ui.pubkey.copiedNamed": {
+    "description": "Toast after copying a public key; {label} is the key type (e.g. npub)."
+  },
+  "ui.pubkey.copy": "Copy public key",
+  "@ui.pubkey.copy": {
+    "description": "Screen-reader label of the copy button next to a full public key."
+  },
+  "ui.pubkey.showFull": "Show full public key",
+  "@ui.pubkey.showFull": {
+    "description": "Screen-reader label of a shortened public key that opens a popover with the full key."
+  },
+  "ui.sidebar.title": "Sidebar",
+  "@ui.sidebar.title": {
+    "description": "Screen-reader title of the sidebar when it opens as a drawer on narrow windows. Short."
+  },
+  "ui.sidebar.mobileDescription": "Displays the mobile sidebar.",
+  "@ui.sidebar.mobileDescription": {
+    "description": "Screen-reader description of the sidebar drawer on narrow windows."
+  },
+  "ui.sidebar.toggle": "Toggle Sidebar",
+  "@ui.sidebar.toggle": {
+    "description": "Screen-reader label of the button that shows or hides the sidebar (window top bar and sidebar)."
+  },
+  "ui.sidebar.resize": "Resize sidebar",
+  "@ui.sidebar.resize": {
+    "description": "Screen-reader label of the sidebar's drag handle for changing its width."
+  },
+  "ui.sidebar.resizeTooltip": "Drag to resize sidebar",
+  "@ui.sidebar.resizeTooltip": {
+    "description": "Tooltip on the sidebar's drag handle for changing its width."
+  },
+  "ui.simpleLightbox.description": "Full-size image preview. Press Escape or click outside the image to close.",
+  "@ui.simpleLightbox.description": {
+    "description": "Screen-reader description of the full-size image popup."
+  },
+  "ui.simpleLightbox.close": "Close lightbox",
+  "@ui.simpleLightbox.close": {
+    "description": "Screen-reader label of the area around a full-size image popup that closes it."
+  },
+  "ui.stepProgress.label": "Step {step} of {total}",
+  "@ui.stepProgress.label": {
+    "description": "Screen-reader label of the step progress bar in setup flows."
+  },
+  "ui.videoMenu.download": "Download video",
+  "@ui.videoMenu.download": {
+    "description": "Right-click menu on a video in a message, menu item. Short."
+  },
+  "ui.videoReview.jumpTo": "Jump to {timecode}",
+  "@ui.videoReview.jumpTo": {
+    "description": "Screen-reader label of a timecode button in a video comment; {timecode} is a time like 01:23."
+  },
+  "ui.loading.projects": "Loading projects",
+  "@ui.loading.projects": {
+    "description": "Screen-reader label of the loading animation on the Projects screen."
+  },
+  "ui.sidebarCard.dismiss": "Dismiss notification",
+  "@ui.sidebarCard.dismiss": {
+    "description": "Screen-reader label of the close button on a small notice card in the sidebar."
+  },
+  "ui.video.unmute": "Unmute",
+  "@ui.video.unmute": {
+    "description": "Video player, screen-reader label of the sound button when muted. Short."
+  },
+  "ui.video.mute": "Mute",
+  "@ui.video.mute": {
+    "description": "Video player, screen-reader label of the sound button. Short."
+  },
+  "ui.video.volume": "Volume",
+  "@ui.video.volume": {
+    "description": "Video player, screen-reader label of the volume slider. Short."
+  },
+  "ui.video.playbackSpeed": "Playback speed: {speed}",
+  "@ui.video.playbackSpeed": {
+    "description": "Video player, screen-reader label of the playback speed button; {speed} is e.g. 1.5x."
+  },
+  "ui.video.speed": "Speed",
+  "@ui.video.speed": {
+    "description": "Video player, heading of the playback speed menu. Short."
+  },
+  "ui.video.pause": "Pause video",
+  "@ui.video.pause": {
+    "description": "Video player, screen-reader label of the pause button."
+  },
+  "ui.video.play": "Play video",
+  "@ui.video.play": {
+    "description": "Video player, screen-reader label of the play button."
+  },
+  "ui.video.retryLoad": "Retry loading video",
+  "@ui.video.retryLoad": {
+    "description": "Video player, screen-reader label of the retry button after the video failed to load."
+  },
+  "ui.video.loadFailed": "Failed to load — tap to retry",
+  "@ui.video.loadFailed": {
+    "description": "Video player, text over a video that failed to load. Short."
+  },
+  "ui.video.progress": "Video progress",
+  "@ui.video.progress": {
+    "description": "Video player, screen-reader label of the progress bar."
+  },
+  "ui.videoReview.open": "Open video review",
+  "@ui.videoReview.open": {
+    "description": "Video player, label and tooltip of the button that opens the video review panel with timecoded comments."
+  },
+  "ui.videoReview.commentingUnavailable": "Commenting is unavailable for this video.",
+  "@ui.videoReview.commentingUnavailable": {
+    "description": "Video review panel, tooltip on disabled comment controls."
+  },
+  "ui.videoReview.waitForSend": "Wait for the video message to finish sending.",
+  "@ui.videoReview.waitForSend": {
+    "description": "Video review panel, tooltip on comment controls while the video is still being sent."
+  },
+  "ui.videoReview.posting": "Posting...",
+  "@ui.videoReview.posting": {
+    "description": "Video review panel, tooltip on comment controls while a comment is being posted."
+  },
+  "ui.videoReview.now": "now",
+  "@ui.videoReview.now": {
+    "description": "Video review panel, time shown on a comment that was just posted. Lowercase. Short."
+  },
+  "ui.videoReview.postFailed": "Failed to post comment.",
+  "@ui.videoReview.postFailed": {
+    "description": "Video review panel, error when a comment cannot be posted."
+  },
+  "ui.videoReview.close": "Close video review",
+  "@ui.videoReview.close": {
+    "description": "Video review panel, screen-reader label of the close button."
+  },
+  "ui.videoReview.title": "Video review",
+  "@ui.videoReview.title": {
+    "description": "Video review panel, screen-reader title."
+  },
+  "ui.videoReview.description": "Review video comments and timecoded replies.",
+  "@ui.videoReview.description": {
+    "description": "Video review panel, screen-reader description."
+  },
+  "ui.videoReview.hideComments": "Hide comments",
+  "@ui.videoReview.hideComments": {
+    "description": "Video review panel, screen-reader label of the button that hides the comments column."
+  },
+  "ui.videoReview.showComments": "Show comments",
+  "@ui.videoReview.showComments": {
+    "description": "Video review panel, screen-reader label of the button that shows the comments column."
+  },
+  "ui.videoReview.pause": "Pause review video",
+  "@ui.videoReview.pause": {
+    "description": "Video review panel, screen-reader label of the pause button."
+  },
+  "ui.videoReview.play": "Play review video",
+  "@ui.videoReview.play": {
+    "description": "Video review panel, screen-reader label of the play button."
+  },
+  "ui.videoReview.timeline": "Video timeline",
+  "@ui.videoReview.timeline": {
+    "description": "Video review panel, screen-reader label of the timeline with comment markers."
+  },
+  "ui.videoReview.seekTo": "Seek to {timecode}",
+  "@ui.videoReview.seekTo": {
+    "description": "Video review panel, screen-reader label of a comment marker on the timeline; {timecode} is a time like 01:23."
+  },
+  "ui.videoReview.reactAt": "React {emoji} at {timecode}",
+  "@ui.videoReview.reactAt": {
+    "description": "Video review panel, screen-reader label of a quick emoji reaction button; {timecode} is the current video time."
+  },
+  "ui.videoReview.moreReactions": "More reactions",
+  "@ui.videoReview.moreReactions": {
+    "description": "Video review panel, label and tooltip of the button that opens the emoji picker. Short."
+  },
+  "ui.videoReview.comments": "Comments",
+  "@ui.videoReview.comments": {
+    "description": "Video review panel, heading of the comments column. Short."
+  },
+  "ui.videoReview.noComments": "No comments yet",
+  "@ui.videoReview.noComments": {
+    "description": "Video review panel, empty state of the comments column."
+  },
+  "ui.videoReview.replyingTo": "Replying to {name}",
+  "@ui.videoReview.replyingTo": {
+    "description": "Video review panel, note above the comment box when replying; {name} is the comment author."
+  },
+  "ui.videoReview.commentAtFrame": "Comment at current frame",
+  "@ui.videoReview.commentAtFrame": {
+    "description": "Video review panel, checkbox label above the comment box. Short."
+  },
+  "ui.videoReview.commentPlaceholder": "Leave your comment...",
+  "@ui.videoReview.commentPlaceholder": {
+    "description": "Video review panel, placeholder of the comment box."
+  },
+  "ui.videoReview.toggleReaction": "Toggle {emoji} reaction",
+  "@ui.videoReview.toggleReaction": {
+    "description": "Video review panel, screen-reader label of a reaction chip under a comment."
+  },
+  "ui.videoReview.reply": "Reply",
+  "@ui.videoReview.reply": {
+    "description": "Video review panel, button under a comment. Short."
+  },
+  "ui.relayMembers.updateFailed": "Couldn't update access. Try again.",
+  "@ui.relayMembers.updateFailed": {
+    "description": "Error when changing a community member's access role fails."
   }
 }

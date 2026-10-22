@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { Component, type ReactNode } from "react";
 
 type RootErrorBoundaryProps = {
@@ -38,17 +39,16 @@ export class RootErrorBoundary extends Component<
     if (error) {
       return (
         <div className="flex h-screen w-screen flex-col items-center justify-center gap-3 bg-background px-6 text-foreground">
-          <p className="text-base font-semibold">Kuzz failed to start</p>
+          <p className="text-base font-semibold">{t("app.rootError.title")}</p>
           <p className="max-w-md text-center text-sm text-muted-foreground">
-            Reload Kuzz to try again. If this keeps happening, check that Kuzz
-            can access website data, then contact support.
+            {t("app.rootError.description")}
           </p>
           <button
             type="button"
             className="rounded-md border border-border bg-secondary px-4 py-2 text-sm hover:bg-secondary/80"
             onClick={() => window.location.reload()}
           >
-            Reload
+            {t("app.rootError.reload")}
           </button>
         </div>
       );

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import type { InstallRuntimeResult } from "@/shared/api/types";
 
 /**
@@ -13,9 +14,12 @@ export function getInstallErrorMessage(result: InstallRuntimeResult): string {
   const { steps, logPath } = result;
   const lastStep = steps[steps.length - 1];
   if (!lastStep) {
-    return withLog("Install failed with no output.", logPath);
+    return withLog(t("ui.install.failedNoOutput"), logPath);
   }
-  const base = `Step "${lastStep.step}" failed: ${lastStep.stderr || lastStep.stdout || "unknown error"}`;
+  const base = t("ui.install.stepFailed", {
+    step: lastStep.step,
+    detail: lastStep.stderr || lastStep.stdout || t("ui.install.unknownError"),
+  });
   const detail = lastStep.hint ? `${lastStep.hint}\n\n${base}` : base;
   return withLog(detail, logPath);
 }

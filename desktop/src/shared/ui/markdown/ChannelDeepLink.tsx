@@ -1,3 +1,4 @@
+import { t, useT } from "@/shared/i18n";
 import type * as React from "react";
 
 import {
@@ -32,20 +33,27 @@ function formatChannelActivity(timestamp: string): string | null {
     0,
     Math.floor((Date.now() - activityAt) / 60_000),
   );
-  if (elapsedMinutes < 1) return "Active just now";
-  if (elapsedMinutes < 60) return `Active ${elapsedMinutes}m ago`;
+  if (elapsedMinutes < 1) return t("ui.channelLink.activeJustNow");
+  if (elapsedMinutes < 60)
+    return t("ui.channelLink.activeMinutesAgo", { count: elapsedMinutes });
   const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24) return `Active ${elapsedHours}h ago`;
+  if (elapsedHours < 24)
+    return t("ui.channelLink.activeHoursAgo", { count: elapsedHours });
   const elapsedDays = Math.floor(elapsedHours / 24);
-  if (elapsedDays < 7) return `Active ${elapsedDays}d ago`;
-  return `Active ${Math.floor(elapsedDays / 7)}w ago`;
+  if (elapsedDays < 7)
+    return t("ui.channelLink.activeDaysAgo", { count: elapsedDays });
+  return t("ui.channelLink.activeWeeksAgo", {
+    count: Math.floor(elapsedDays / 7),
+  });
 }
 
 export function channelTooltipFooter(channel: Channel) {
   const details = [
-    channel.visibility === "private" ? "Private group" : "Public group",
-    channel.channelType === "forum" ? "Forum" : null,
-    channel.archivedAt ? "Archived" : null,
+    channel.visibility === "private"
+      ? t("ui.channelLink.privateGroup")
+      : t("ui.channelLink.publicGroup"),
+    channel.channelType === "forum" ? t("ui.channelLink.forum") : null,
+    channel.archivedAt ? t("ui.channelLink.archived") : null,
     channel.lastMessageAt ? formatChannelActivity(channel.lastMessageAt) : null,
   ];
   return details.filter(Boolean).join(" · ");
@@ -119,6 +127,7 @@ function ChannelPermalinkChipContents({
   label: string;
   openable?: boolean;
 }) {
+  const t = useT();
   return (
     <ChannelMetadataTooltip channel={channel}>
       <KuzzLinkChip
@@ -126,7 +135,11 @@ function ChannelPermalinkChipContents({
         href={href}
         icon="channel"
         title={href}
-        aria-label={openable ? `Open group ${label}` : `Group ${label}`}
+        aria-label={
+          openable
+            ? t("ui.channelLink.openGroup", { name: label })
+            : t("ui.channelLink.group", { name: label })
+        }
         interactive={openable && interactive}
         onOpenLink={() => {
           if (openable) onOpenChannel(channelId);
@@ -174,6 +187,7 @@ function ResolvedAuthoredDeepLink({
   onOpenChannel,
   onOpenMessageLink,
 }: AuthoredDeepLinkProps) {
+  const t = useT();
   const channel = useChannelReference(channelId);
   const openable = isChannelReferenceOpenable(channel);
   const label = getReactNodeText(children);
@@ -188,7 +202,11 @@ function ResolvedAuthoredDeepLink({
     <KuzzInlineLink
       href={href}
       title={href}
-      aria-label={`${messageLink ? "Open message" : "Open group"}: ${label}`}
+      aria-label={
+        messageLink
+          ? t("ui.channelLink.openMessageNamed", { name: label })
+          : t("ui.channelLink.openGroupNamed", { name: label })
+      }
       interactive={interactive}
       onOpenLink={() =>
         messageLink ? onOpenMessageLink(messageLink) : onOpenChannel(channelId)
@@ -220,6 +238,7 @@ export function AuthoredDeepLinkAnchor({
   interactive: boolean;
   messageLink: AuthoredMessageLink | null;
 }) {
+  const t = useT();
   const {
     channels,
     onOpenChannel,
@@ -235,7 +254,11 @@ export function AuthoredDeepLinkAnchor({
       <KuzzInlineLink
         href={href}
         title={href}
-        aria-label={`${messageLink ? "Open message" : "Open group"}: ${label}`}
+        aria-label={
+          messageLink
+            ? t("ui.channelLink.openMessageNamed", { name: label })
+            : t("ui.channelLink.openGroupNamed", { name: label })
+        }
         interactive={interactive}
         onOpenLink={openLink}
       >
@@ -406,6 +429,7 @@ function ChannelReferenceChip({
   interactive,
   onOpenChannel,
 }: ChannelReferenceChipProps) {
+  const t = useT();
   return (
     <ChannelMetadataTooltip channel={channel}>
       <KuzzLinkChip
@@ -415,7 +439,9 @@ function ChannelReferenceChip({
         href={channel ? buildChannelLink(channel.id) : undefined}
         icon="channel"
         aria-label={
-          channel ? `Open group ${channelName}` : `Group ${channelName}`
+          channel
+            ? t("ui.channelLink.openGroup", { name: channelName })
+            : t("ui.channelLink.group", { name: channelName })
         }
         interactive={Boolean(channel) && interactive}
         onOpenLink={() => {
