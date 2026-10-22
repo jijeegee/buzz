@@ -60,20 +60,14 @@ pub fn parse_group_chat_create(event: &Event, creator: &[u8]) -> Result<GroupCha
             continue;
         };
         match key {
-            "visibility" => {
-                if parts.get(1).map(String::as_str) != Some("private") {
-                    return Err("chats are always private".into());
-                }
+            "visibility" if parts.get(1).map(String::as_str) != Some("private") => {
+                return Err("chats are always private".into());
             }
-            "channel_type" => {
-                if parts.get(1).map(String::as_str) != Some("stream") {
-                    return Err("chats are always streams".into());
-                }
+            "channel_type" if parts.get(1).map(String::as_str) != Some("stream") => {
+                return Err("chats are always streams".into());
             }
-            "name" => {
-                if name.is_none() {
-                    name = Some(parts.get(1).cloned().unwrap_or_default());
-                }
+            "name" if name.is_none() => {
+                name = Some(parts.get(1).cloned().unwrap_or_default());
             }
             "p" => {
                 let raw = parts.get(1).map(String::as_str).unwrap_or("");
