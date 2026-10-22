@@ -143,6 +143,9 @@ export async function setup({ lifecycle = false } = {}) {
     "@/features/channels/useCanAddChannelMembers": {
       useCanAddChannelMembers: () => true,
     },
+    "@/features/channels/useIsGroupChatChannel": {
+      useIsGroupChatChannel: () => false,
+    },
     "@/features/channels/lib/channelMemberAdmission": {},
     "@/features/messages/lib/dmThreadAgentMentionError": {
       dmThreadAgentMentionError: () => null,

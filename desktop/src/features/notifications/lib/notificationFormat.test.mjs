@@ -161,3 +161,24 @@ test("senderNameFromSummary prefers displayName, then NIP-05, never a pubkey", (
   assert.equal(senderNameFromSummary(null), null);
   assert.equal(senderNameFromSummary(undefined), null);
 });
+
+test("chat title names the sender and the chat", () => {
+  assert.equal(
+    formatMessageNotification({
+      source: "chat",
+      senderName: "Ann",
+      channelName: "Trip",
+      content: "hi",
+    }).title,
+    "Ann in Trip",
+  );
+  assert.equal(
+    formatMessageNotification({
+      source: "chat",
+      senderName: null,
+      channelName: "Trip",
+      content: "",
+    }).title,
+    "Trip",
+  );
+});
