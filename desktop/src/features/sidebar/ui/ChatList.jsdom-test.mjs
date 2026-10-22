@@ -5,6 +5,10 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SidebarProvider } from "@/shared/ui/sidebar";
 import { ChatList } from "./ChatList.tsx";
+import {
+  BlockedPeopleProvider,
+  blockedPeopleQueryKey,
+} from "@/features/people/BlockedPeopleContext";
 import { applyChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
 
 window.matchMedia = () => ({
@@ -443,6 +447,88 @@ test("By channel groups threads under their channel and expands in place", async
       "5",
       "room-a",
     ]);
+  } finally {
+    cleanup();
+    client.clear();
+  }
+});
+
+test("a blocked author's latest message: shown in a 1:1 DM, folded in a group DM and a channel", async () => {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { enabled: false, retry: false, gcTime: Infinity },
+    },
+  });
+  const bob = "b".repeat(64);
+  const carol = "e".repeat(64);
+  client.setQueryData(["identity"], { pubkey: "owner" });
+  client.setQueryData(blockedPeopleQueryKey("owner"), [
+    { pubkey: bob, createdAt: null },
+  ]);
+  const dm = (id, participantPubkeys) =>
+    channel(id, { channelType: "dm", participantPubkeys });
+  const items = [
+    dm("dm-pair", ["owner", bob]),
+    dm("dm-group", ["owner", bob, carol]),
+    channel("room"),
+  ];
+  const fromBob = (channelId, at) =>
+    serverRow({
+      channel_id: channelId,
+      at,
+      latest: {
+        id: `latest-${channelId}`,
+        pubkey: bob,
+        created_at: at,
+        kind: 9,
+        tags: [],
+        content: "hello from bob",
+      },
+    });
+  const preview = (view, id) =>
+    view.getByTestId("chat-list").querySelector(`[data-channel-id="${id}"]`)
+      .textContent;
+  let view;
+  try {
+    await act(async () => {
+      view = render(
+        React.createElement(
+          QueryClientProvider,
+          { client },
+          React.createElement(
+            BlockedPeopleProvider,
+            null,
+            React.createElement(
+              SidebarProvider,
+              null,
+              React.createElement(ChatList, {
+                isActiveChannel: false,
+                selectedChannelId: null,
+                items,
+                unreadChannelIds: new Set(),
+                unreadChannelCounts: new Map(),
+                channelLabels: {},
+                onSelectChannel: () => {},
+                serverChats: {
+                  rows: [
+                    fromBob("dm-pair", 300),
+                    fromBob("dm-group", 200),
+                    fromBob("room", 100),
+                  ],
+                  getReadAt: () => null,
+                  onOpenThread: () => {},
+                  readStateVersion: 0,
+                },
+              }),
+            ),
+          ),
+        ),
+      );
+    });
+    assert.match(preview(view, "dm-pair"), /hello from bob/);
+    assert.match(preview(view, "dm-group"), /Message from a blocked user/);
+    assert.doesNotMatch(preview(view, "dm-group"), /hello from bob/);
+    assert.match(preview(view, "room"), /Message from a blocked user/);
   } finally {
     cleanup();
     client.clear();

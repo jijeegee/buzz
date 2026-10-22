@@ -14,6 +14,7 @@ import {
   type ChatListRow,
 } from "@/features/chats/chatListState";
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
+import { foldsBlockedAuthors } from "@/features/people/lib/blockedDm";
 import { isJoinedChat, sortChatList } from "@/features/sidebar/lib/chatList";
 import type { Channel } from "@/shared/api/types";
 import {
@@ -81,14 +82,19 @@ function buildServerChatRows(
   workingByRootId: ChatWorking["threads"],
   isBlocked: (pubkey: string) => boolean,
 ) {
-  const previewOf = (row: ChatListRow): ChatRowPreview => {
-    const event = row.latest;
-    if (!event) return { line: null, at: row.at > 0 ? row.at : null };
-    return { at: row.at, line: chatRowPreviewLine(event, isBlocked) };
-  };
   const channelById = new Map(
     localItems.map((channel) => [channel.id, channel]),
   );
+  const previewOf = (row: ChatListRow): ChatRowPreview => {
+    const event = row.latest;
+    if (!event) return { line: null, at: row.at > 0 ? row.at : null };
+    // A 1:1 DM shows what the server sent, even from someone I blocked.
+    const folds = foldsBlockedAuthors(channelById.get(row.channel_id));
+    return {
+      at: row.at,
+      line: chatRowPreviewLine(event, folds ? isBlocked : undefined),
+    };
+  };
   const unreadIds = new Set<string>();
   const counts = new Map<string, number>();
   const shown = new Set<string>();
