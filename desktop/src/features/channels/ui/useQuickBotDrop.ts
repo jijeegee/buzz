@@ -6,6 +6,7 @@ import {
 } from "@/features/agents/hooks";
 import { resolvePersonaRuntime } from "@/features/agents/lib/resolvePersonaRuntime";
 import type { AgentPersona } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 type QuickBotDropState = {
   pending: boolean;
@@ -42,7 +43,7 @@ export function useQuickBotDrop(channelId: string | null) {
         if (!runtime) {
           setState({
             pending: false,
-            error: "No agent runtime available.",
+            error: t("channels.quickBots.noRuntime"),
           });
           return;
         }
@@ -60,7 +61,10 @@ export function useQuickBotDrop(channelId: string | null) {
       } catch (err) {
         setState({
           pending: false,
-          error: err instanceof Error ? err.message : "Failed to create agent.",
+          error:
+            err instanceof Error
+              ? err.message
+              : t("channels.quickBots.createFailed"),
         });
       }
     },

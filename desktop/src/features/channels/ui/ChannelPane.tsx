@@ -81,6 +81,7 @@ import { isWelcomeExperienceChannel as isWelcomeExperience } from "@/features/on
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
+import { useT } from "@/shared/i18n";
 const HUDDLE_TRANSCRIPT_ROOT_STYLE = {
   "--kuzz-channel-content-top-padding": "0rem",
   "--channel-top-chrome-height": "0.25rem",
@@ -206,6 +207,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   threadFirstUnreadReplyId,
   typingPubkeys,
 }: ChannelPaneProps) {
+  const t = useT();
   const timelineScrollRef = React.useRef<HTMLDivElement>(null);
   const messageTimelineRef = React.useRef<MessageTimelineHandle>(null);
   const composerWrapperRef = React.useRef<HTMLDivElement>(null);
@@ -587,7 +589,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     );
   const wrapThreadPanel = (panel: React.ReactNode) => (
     <ThreadPanelSurface
-      channelName={activeChannel?.name ?? "group"}
+      channelName={activeChannel?.name ?? t("channels.pane.groupFallback")}
       covered={threadSurface.covered}
       hasActiveEdit={threadEditTarget !== null}
       isFocusDrawer={useFocusThreadDrawer}
@@ -605,9 +607,9 @@ export const ChannelPane = React.memo(function ChannelPane({
   const wrapIdlePanel = (panel: React.ReactNode) =>
     useFocusIdleDrawer && onCloseIdleAuxiliaryPanel ? (
       <FocusThreadDrawer
-        channelName={activeChannel?.name ?? "group"}
+        channelName={activeChannel?.name ?? t("channels.pane.groupFallback")}
         key="idle-auxiliary-surface"
-        label={idleAuxiliaryTitle || "Panel"}
+        label={idleAuxiliaryTitle || t("channels.pane.panelFallback")}
         onClose={onCloseIdleAuxiliaryPanel}
         restoreFocusTarget={threadSurface.restoreFocusTarget}
       >
@@ -663,7 +665,7 @@ export const ChannelPane = React.memo(function ChannelPane({
       ) : null}
       {!isSinglePanelView ? (
         <section
-          aria-label="Group messages and composer"
+          aria-label={t("channels.pane.messagesLabel")}
           className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           inert={channelIsCovered ? true : undefined}
           data-testid="channel-drop-zone"
@@ -721,15 +723,15 @@ export const ChannelPane = React.memo(function ChannelPane({
                 unfollowThreadById={unfollowThreadById}
                 emptyDescription={
                   activeChannel?.channelType === "forum"
-                    ? "Select a stream or DM to load real message history in this first integration pass."
-                    : "Messages and replies will appear here."
+                    ? t("channels.pane.forumEmptyBody")
+                    : t("channels.pane.emptyBody")
                 }
                 emptyTitle={
                   activeChannel
                     ? activeChannel.channelType === "forum"
-                      ? "Forum groups are next"
-                      : "No messages yet"
-                    : "No group selected"
+                      ? t("channels.pane.forumEmptyTitle")
+                      : t("channels.pane.emptyTitle")
+                    : t("channels.canvas.noGroupSelected")
                 }
                 isError={isTimelineError}
                 isLoading={isHuddleTranscript ? false : isTimelineLoading}
@@ -785,7 +787,9 @@ export const ChannelPane = React.memo(function ChannelPane({
                     }}
                     variant="default"
                   >
-                    {isJoining ? "Joining..." : "Join group"}
+                    {isJoining
+                      ? t("channels.browser.joining")
+                      : t("channels.settings.join")}
                   </Button>
                 </div>
               ) : (
@@ -828,7 +832,9 @@ export const ChannelPane = React.memo(function ChannelPane({
                           : null
                       }
                       channelId={activeChannel?.id ?? null}
-                      channelName={activeChannel?.name ?? "group"}
+                      channelName={
+                        activeChannel?.name ?? t("channels.pane.groupFallback")
+                      }
                       channelType={activeChannel?.channelType ?? null}
                       containerClassName="px-5 pb-0"
                       layoutMode="dock"
@@ -854,21 +860,25 @@ export const ChannelPane = React.memo(function ChannelPane({
                       showBackgroundUploadProgress={false}
                       placeholder={
                         timeoutActive
-                          ? "You're timed out by community moderators."
+                          ? t("channels.composer.timedOut")
                           : blockedPeer
-                            ? "You can't send messages to someone you blocked."
+                            ? t("channels.composer.blocked")
                             : isModerationDmChannel
-                              ? "This group is read-only."
+                              ? t("channels.composer.readOnly")
                               : activeChannel?.archivedAt
-                                ? "Archived groups are read-only."
+                                ? t("channels.composer.archived")
                                 : activeChannel?.channelType === "forum"
-                                  ? "Forum posting is not wired in this pass."
+                                  ? t("channels.composer.forum")
                                   : activeChannel
                                     ? activeChannel.channelType === "dm" &&
                                       directMessageIntro
-                                      ? `Message ${directMessageIntro.displayName}`
-                                      : `Message ${activeChannelTitle}`
-                                    : "Select a group"
+                                      ? t("channels.composer.message", {
+                                          name: directMessageIntro.displayName,
+                                        })
+                                      : t("channels.composer.message", {
+                                          name: activeChannelTitle,
+                                        })
+                                    : t("channels.composer.selectGroup")
                       }
                       showTopBorder={false}
                     />
@@ -924,7 +934,9 @@ export const ChannelPane = React.memo(function ChannelPane({
                   channel={activeChannel}
                   onOpenGoalLink={onOpenGoalLink}
                   channelId={activeChannel?.id ?? null}
-                  channelName={activeChannel?.name ?? "group"}
+                  channelName={
+                    activeChannel?.name ?? t("channels.pane.groupFallback")
+                  }
                   currentPubkey={currentPubkey}
                   disabled={isComposerDisabled}
                   editTarget={threadEditTarget}

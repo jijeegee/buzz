@@ -31,6 +31,7 @@ import {
   MAX_NEW_CHAT_PEOPLE,
   otherChatPeople,
 } from "../lib/groupChat";
+import { useT } from "@/shared/i18n";
 
 /** People for the new chat: the 1:1 partner(s) first, then the picks. */
 export function newChatPeopleFromDm(
@@ -59,6 +60,7 @@ export function AddPeopleToDmDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const t = useT();
   const { goChannel } = useAppNavigation();
   const createGroupChat = useCreateGroupChatMutation();
   const upsertCachedChannel = useUpsertCachedChannel();
@@ -98,7 +100,7 @@ export function AddPeopleToDmDialog({
       if (invited) toast(invited);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not start the chat.",
+        cause instanceof Error ? cause.message : t("channels.dm.startFailed"),
       );
     }
   }
@@ -115,11 +117,10 @@ export function AddPeopleToDmDialog({
         data-testid="add-people-dialog"
       >
         <DialogHeader>
-          <DialogTitle>Add people</DialogTitle>
+          <DialogTitle>{t("channels.addPeople.title")}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          This starts a new chat with everyone. This conversation stays as it
-          is.
+          {t("channels.addPeople.body")}
         </p>
         {picks.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
@@ -142,7 +143,7 @@ export function AddPeopleToDmDialog({
             disabled={createGroupChat.isPending}
             id="add-people-search"
             onChange={(event) => recipients.setSearchQuery(event.target.value)}
-            placeholder="Search people and agents"
+            placeholder={t("channels.addPeople.searchPlaceholder")}
             spellCheck={false}
             type="text"
             value={recipients.searchQuery}
@@ -173,14 +174,14 @@ export function AddPeopleToDmDialog({
           ) : (
             <p className="px-4 py-3 text-sm text-muted-foreground">
               {recipients.isDirectoryLoading
-                ? "Loading..."
-                : "No matching people."}
+                ? t("channels.addPeople.loading")
+                : t("channels.addPeople.noMatches")}
             </p>
           )}
         </div>
         {tooMany ? (
           <p className="text-sm text-muted-foreground">
-            A new chat can start with up to {MAX_NEW_CHAT_PEOPLE} people.
+            {t("channels.addPeople.tooMany", { max: MAX_NEW_CHAT_PEOPLE })}
           </p>
         ) : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -191,7 +192,7 @@ export function AddPeopleToDmDialog({
             type="button"
             variant="outline"
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             data-testid="add-people-start"
@@ -202,7 +203,9 @@ export function AddPeopleToDmDialog({
             size="sm"
             type="button"
           >
-            {createGroupChat.isPending ? "Starting..." : "Start chat"}
+            {createGroupChat.isPending
+              ? t("channels.addPeople.starting")
+              : t("channels.addPeople.start")}
           </Button>
         </div>
       </DialogContent>

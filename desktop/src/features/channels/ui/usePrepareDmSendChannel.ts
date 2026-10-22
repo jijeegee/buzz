@@ -9,6 +9,7 @@ import type { Channel } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
 import { invitationsSentText, otherChatPeople } from "../lib/groupChat";
+import { t } from "@/shared/i18n";
 
 /** Mentioned people who are not already in the 1:1. */
 export function peopleOutsideDm(
@@ -70,7 +71,7 @@ export function usePrepareDmSendChannel(
         return result.channel.id;
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Could not start the chat.",
+          error instanceof Error ? error.message : t("channels.dm.startFailed"),
         );
         return null;
       }

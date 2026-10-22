@@ -5,6 +5,7 @@ import {
   isIncomingChannelMessageFromOther,
   relayEventChannelId,
 } from "./dmResurface";
+import { t } from "@/shared/i18n";
 
 type HiddenDmResurfaceActionOptions = {
   event: RelayEvent;
@@ -43,7 +44,7 @@ export async function resurfaceHiddenDmMessage({
   });
   if (!isCurrent()) return false;
   if (opened.id !== channelId) {
-    throw new Error("Couldn't reopen this conversation.");
+    throw new Error(t("channels.dm.reopenFailed"));
   }
   return true;
 }

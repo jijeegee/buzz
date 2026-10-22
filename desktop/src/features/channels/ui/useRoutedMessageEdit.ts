@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { isThreadReply } from "@/features/messages/lib/threading";
 import type { TimelineMessage } from "@/features/messages/types";
 import { KIND_SYSTEM_MESSAGE } from "@/shared/constants/kinds";
+import { t } from "@/shared/i18n";
 
 type Input = {
   activeChannelId: string | null;
@@ -76,7 +77,7 @@ export function useRoutedMessageEdit({
         current.isThreadReply !== isThreadReply(message.tags ?? [])
       ) {
         pendingMainEditRef.current = null;
-        toast.info("Finish or cancel your edit first.");
+        toast.info(t("channels.edit.finishFirst"));
         return false;
       }
       if (current?.id === message.id) {

@@ -5,6 +5,7 @@ import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { useT } from "@/shared/i18n";
 
 const MEMBER_ROW_INSET_DIVIDER_CLASS =
   "after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-0 after:h-px after:bg-border/60 after:content-[''] last:after:hidden";
@@ -26,6 +27,7 @@ export function AddMemberSearchResultRow({
   ownerLabel?: string | null;
   user: UserSearchResult;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -35,7 +37,9 @@ export function AddMemberSearchResultRow({
       data-testid={`channel-user-search-result-${user.pubkey}`}
     >
       <button
-        aria-label={`Select ${formatAddCandidateName(user)}`}
+        aria-label={t("channels.addMembers.select", {
+          name: formatAddCandidateName(user),
+        })}
         className="absolute inset-0 z-0 cursor-pointer focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
         disabled={disabled}
         onClick={() => onSelect(user)}
@@ -61,7 +65,7 @@ export function AddMemberSearchResultRow({
                   className="pointer-events-auto h-4 w-4"
                   ownerPubkey={user.ownerPubkey}
                 />
-                agent
+                {t("channels.addMembers.agentBadge")}
               </span>
               <AgentManagementMarker
                 pubkey={user.pubkey}
@@ -70,7 +74,7 @@ export function AddMemberSearchResultRow({
             </div>
             {ownerLabel ? (
               <span className="block truncate text-xs text-muted-foreground">
-                managed by {ownerLabel}
+                {t("channels.addMembers.managedBy", { name: ownerLabel })}
               </span>
             ) : null}
           </div>
@@ -90,7 +94,7 @@ export function AddMemberSearchResultRow({
         size="sm"
         type="button"
       >
-        Add
+        {t("common.add")}
       </Button>
     </div>
   );
