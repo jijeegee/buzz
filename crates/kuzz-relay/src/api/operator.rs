@@ -232,8 +232,14 @@ async fn check_operator_replay(
     event_id_bytes: [u8; 32],
 ) -> Result<(), (StatusCode, Json<Value>)> {
     let event_id = nostr::EventId::from_byte_array(event_id_bytes);
-    match state
-        .nip98_replay
+    // Global regions (S4-7): the primary region's seen-set when linked.
+    let primary = crate::region_shared::PrimaryReplay(state);
+    let guard: &dyn kuzz_auth::Nip98ReplayGuard = if crate::region_shared::forwards(state) {
+        &primary
+    } else {
+        state.nip98_replay.as_ref()
+    };
+    match guard
         .try_mark_in_scope(
             OPERATOR_REPLAY_SCOPE,
             &event_id,

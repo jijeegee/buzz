@@ -79,6 +79,8 @@ pub mod region_link;
 pub mod region_live;
 /// Logouts and disconnects across regions (S4-5).
 pub mod region_propagate;
+/// Sign-in state, replay marks and sign-in limits kept at the primary (S4-7).
+pub mod region_shared;
 /// Reads of rooms another region serves.
 pub mod region_read;
 /// Axum router construction.

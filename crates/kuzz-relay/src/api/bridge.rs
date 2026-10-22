@@ -317,8 +317,29 @@ pub(crate) fn verify_nip98_exempt_operator(
 /// The correctness boundary is the shared, community-scoped Redis seen-set on
 /// `AppState`, not process-local memory. Any Redis/guard error fails closed:
 /// without the shared `SET NX EX` proof, a stateless worker cannot admit the
-/// NIP-98 request safely.
+/// NIP-98 request safely. With the region link on, the seen-set is the
+/// primary region's (S4-7), so a request cannot be replayed in another region.
+/// Requests that run on every message use [`check_nip98_replay_here`].
 pub(crate) async fn check_nip98_replay(
+    state: &AppState,
+    tenant: &TenantContext,
+    event_id_bytes: [u8; 32],
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let primary = crate::region_shared::PrimaryReplay(state);
+    let guard: &dyn Nip98ReplayGuard = if crate::region_shared::forwards(state) {
+        &primary
+    } else {
+        state.nip98_replay.as_ref()
+    };
+    check_nip98_replay_with_guard(guard, tenant, event_id_bytes).await
+}
+
+/// [`check_nip98_replay`] against this region's seen-set only, for requests
+/// that run on every message (event submit, query, count, GIF search): a
+/// round trip to the primary there would slow chat, and a primary outage
+/// would stop it. Events are idempotent by id and a replayed read returns
+/// only what its signer could read (S4-7).
+pub(crate) async fn check_nip98_replay_here(
     state: &AppState,
     tenant: &TenantContext,
     event_id_bytes: [u8; 32],
@@ -1570,7 +1591,7 @@ async fn submit_event_authed(
             response: e,
         };
     }
-    if let Err(e) = check_nip98_replay(state, tenant, event_id_bytes).await {
+    if let Err(e) = check_nip98_replay_here(state, tenant, event_id_bytes).await {
         return SubmitOutcome::Err {
             status: e.0,
             response: e,
@@ -1942,7 +1963,7 @@ async fn query_events_authed(
     if origin != ReadOrigin::Part {
         enforce_http_admission(state, tenant, &pubkey).await?;
     }
-    check_nip98_replay(state, tenant, event_id_bytes).await?;
+    check_nip98_replay_here(state, tenant, event_id_bytes).await?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
     // A read another region proxied here was admitted there with the
@@ -2794,7 +2815,7 @@ async fn count_events_authed(
     if origin != ReadOrigin::Part {
         enforce_http_admission(state, tenant, &pubkey).await?;
     }
-    check_nip98_replay(state, tenant, event_id_bytes).await?;
+    check_nip98_replay_here(state, tenant, event_id_bytes).await?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
     // A read another region proxied here was admitted there with the

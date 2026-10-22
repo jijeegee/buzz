@@ -272,24 +272,51 @@ async fn rate_limit_client(
     per_ip_per_min: u64,
     global_per_min: u64,
 ) -> Result<(), Response> {
-    match client_ip(state, extensions, headers) {
-        Some(ip) => rate_limit(state, &format!("{scope}:{ip}"), 60, per_ip_per_min).await,
-        None => rate_limit(state, &format!("{scope}:global"), 60, global_per_min).await,
-    }
+    // Per-IP limits stay in each region (S4-7).
+    let (key, limit) = match client_ip(state, extensions, headers) {
+        Some(ip) => (format!("{scope}:{ip}"), per_ip_per_min),
+        None => (format!("{scope}:global"), global_per_min),
+    };
+    let result = state
+        .admission_rate_limiter
+        .check_key(&key, 60, limit)
+        .await
+        .map_err(|e| e.to_string());
+    limit_response(result)
 }
 
-/// Shared Redis fixed-window limit. Fails closed when Redis is unavailable.
+/// Shared Redis fixed-window limit on an account, bot or session. Fails
+/// closed when Redis is unavailable. With the region link on, the count is
+/// the primary region's (S4-7), so one account's limit is not multiplied by
+/// the number of regions.
 async fn rate_limit(
     state: &AppState,
     key: &str,
     window_secs: u64,
     limit: u64,
 ) -> Result<(), Response> {
-    match state
-        .admission_rate_limiter
-        .check_key(key, window_secs, limit)
-        .await
-    {
+    let result = if crate::region_shared::forwards(state) {
+        let op = crate::region_shared::Op::Count {
+            key: key.to_string(),
+            window: window_secs,
+            limit,
+        };
+        crate::region_shared::at_primary(state, &op)
+            .await
+            .and_then(|answer| crate::region_shared::limit_result(&answer))
+            .map_err(|e| e.to_string())
+    } else {
+        state
+            .admission_rate_limiter
+            .check_key(key, window_secs, limit)
+            .await
+            .map_err(|e| e.to_string())
+    };
+    limit_response(result)
+}
+
+fn limit_response(result: Result<kuzz_auth::RateLimitResult, String>) -> Result<(), Response> {
+    match result {
         Ok(result) if result.allowed => Ok(()),
         Ok(result) => Err(auth_error(
             StatusCode::TOO_MANY_REQUESTS,

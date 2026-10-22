@@ -162,6 +162,7 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/internal/region/propagate",
     "/internal/region/reserve-room",
     "/internal/region/room-home",
+    "/internal/region/shared-state",
 ];
 
 /// Middleware: full offline assertion guard for NIP-FI protected paths.
@@ -440,6 +441,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                 .route(
                     crate::region_directory::LOOKUP_PATH,
                     post(crate::region_directory::room_home),
+                )
+                .route(
+                    crate::region_shared::PATH,
+                    post(crate::region_shared::shared_state),
                 )
                 .layer(RequestBodyLimitLayer::new(1024 * 1024))
                 .with_state(state.clone()),

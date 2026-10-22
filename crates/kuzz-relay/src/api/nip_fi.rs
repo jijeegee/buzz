@@ -120,13 +120,20 @@ pub async fn disconnect(
         }
     };
 
+    // Global regions (S4-7): the primary region's seen-set when linked.
+    let primary = crate::region_shared::PrimaryReplay(&state);
+    let replay: &dyn kuzz_auth::CommandReplayGuard = if crate::region_shared::forwards(&state) {
+        &primary
+    } else {
+        state.nip_fi_command_replay.as_ref()
+    };
     let result = verifier
         .verify(
             token,
             "POST",
             "/api/nip-fi/disconnect",
             &body_pubkey,
-            state.nip_fi_command_replay.as_ref(),
+            replay,
         )
         .await;
 

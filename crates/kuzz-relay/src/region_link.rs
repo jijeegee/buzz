@@ -43,7 +43,7 @@ pub const AUTH_SCHEME: &str = "KuzzRegion";
 pub const ATTESTATION_WINDOW_SECS: u64 = 30;
 
 /// Replay scope for attestation ids (shared with the NIP-98 seen-set store).
-const REPLAY_SCOPE: &str = "kuzz:region-link";
+pub const REPLAY_SCOPE: &str = "kuzz:region-link";
 
 /// Per-call deadline. Shorter than the apps' send retry, so an app retries
 /// against a fresh attempt rather than racing a stalled one.
@@ -275,6 +275,27 @@ pub async fn verify(
     headers: &HeaderMap,
     expected: &Expected<'_>,
 ) -> Result<VerifiedCall, Refusal> {
+    let (event, claims) = check_caller(state, headers, expected).await?;
+    let community = CommunityId::from_uuid(claims.community_id);
+    let Some(host) = state
+        .db
+        .lookup_community_host(community)
+        .await
+        .map_err(|_| Refusal::Unavailable)?
+    else {
+        return Err(Refusal::UnknownCommunity);
+    };
+    let tenant = TenantContext::resolved(community, host);
+    mark_fresh(state, &event).await?;
+    Ok(VerifiedCall { claims, tenant })
+}
+
+/// [`check`], then the calling region's link key.
+async fn check_caller(
+    state: &AppState,
+    headers: &HeaderMap,
+    expected: &Expected<'_>,
+) -> Result<(Event, Claims), Refusal> {
     let header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
@@ -290,25 +311,47 @@ pub async fn verify(
     if key.as_deref() != Some(event.pubkey.to_hex().as_str()) {
         return Err(Refusal::WrongKey);
     }
-    let community = CommunityId::from_uuid(claims.community_id);
-    let Some(host) = state
-        .db
-        .lookup_community_host(community)
-        .await
-        .map_err(|_| Refusal::Unavailable)?
-    else {
-        return Err(Refusal::UnknownCommunity);
-    };
-    let tenant = TenantContext::resolved(community, host);
+    Ok((event, claims))
+}
+
+/// Refuse an attestation this region has seen before.
+async fn mark_fresh(state: &AppState, event: &Event) -> Result<(), Refusal> {
     match state
         .nip98_replay
         .try_mark_in_scope(REPLAY_SCOPE, &event.id, ATTESTATION_WINDOW_SECS * 2)
         .await
     {
-        Ok(true) => Ok(VerifiedCall { claims, tenant }),
+        Ok(true) => Ok(()),
         Ok(false) => Err(Refusal::Replayed),
         Err(_) => Err(Refusal::Unavailable),
     }
+}
+
+/// [`admit`] for a call that belongs to no community (sign-in state and
+/// limits, S4-7): the claims name the nil community.
+pub async fn admit_deployment(
+    state: &AppState,
+    method: &Method,
+    uri: &Uri,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<Claims, Refusal> {
+    if uri.query().is_some() {
+        return Err(Refusal::WrongRequest);
+    }
+    let expected = Expected {
+        local_region: &state.config.region_id,
+        method: method.as_str(),
+        path: uri.path(),
+        body,
+        now: Timestamp::now(),
+    };
+    let (event, claims) = check_caller(state, headers, &expected).await?;
+    if !claims.community_id.is_nil() {
+        return Err(Refusal::UnknownCommunity);
+    }
+    mark_fresh(state, &event).await?;
+    Ok(claims)
 }
 
 /// This region's link key (`KUZZ_REGION_KEY`), or `None` when the link is

@@ -73,7 +73,7 @@ async fn cached_rotation(
     state: &AppState,
     old_hash: &str,
 ) -> Result<Option<CachedRotation>, Response> {
-    match kv::get(&state.redis_pool, "refresh:replay", old_hash).await {
+    match kv::get(&state, "refresh:replay", old_hash).await {
         Ok(cached) => Ok(cached.and_then(|json| serde_json::from_str(&json).ok())),
         Err(error) => {
             tracing::warn!(%error, "refresh replay cache unavailable");
@@ -151,7 +151,7 @@ pub(super) async fn refresh(
             };
             if let Ok(json) = serde_json::to_string(&rotation) {
                 if let Err(error) = kv::put_replay(
-                    &state.redis_pool,
+                    &state,
                     "refresh:replay",
                     &old_hash_hex,
                     &json,

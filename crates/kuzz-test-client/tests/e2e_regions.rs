@@ -962,6 +962,134 @@ async fn two_regions_opening_the_same_dm_at_once_get_one_room() {
     assert_eq!(dm_rows("jp", &a, &b).await + dm_rows("kr", &a, &b).await, 1);
 }
 
+/// POST a shared-state operation from jp to kr, signed with jp's link key
+/// and naming `community` (the nil one for shared state).
+async fn shared_state_at_kr(body: &Value, community: &str) -> (u16, Value) {
+    let jp_key = Keys::parse(&std::env::var("REGION_JP_LINK_KEY").expect("REGION_JP_LINK_KEY"))
+        .expect("jp link key");
+    let path = "/internal/region/shared-state";
+    let bytes = serde_json::to_vec(body).expect("body");
+    let auth = jp_attestation(&jp_key, community, path, &bytes, "kr");
+    let response = reqwest::Client::new()
+        .post(format!("{}{path}", http(&kr_url())))
+        .header("Authorization", auth)
+        .header("Content-Type", "application/json")
+        .body(bytes)
+        .send()
+        .await
+        .expect("shared-state request");
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+const NIL: &str = "00000000-0000-0000-0000-000000000000";
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn the_primary_keeps_sign_in_state_for_linked_regions() {
+    let key = format!("kuzz:auth:e2e:{}", uuid::Uuid::new_v4());
+    let put_new = serde_json::json!({ "op": "put_new", "key": key, "value": "v", "ttl": 60 });
+    assert_eq!(
+        shared_state_at_kr(&put_new, NIL).await,
+        (200, serde_json::json!({ "set": true }))
+    );
+    assert_eq!(
+        shared_state_at_kr(&put_new, NIL).await,
+        (200, serde_json::json!({ "set": false }))
+    );
+    let take = serde_json::json!({ "op": "take", "key": key });
+    assert_eq!(
+        shared_state_at_kr(&take, NIL).await,
+        (200, serde_json::json!({ "value": "v" }))
+    );
+    assert_eq!(
+        shared_state_at_kr(&take, NIL).await,
+        (200, serde_json::json!({ "value": null }))
+    );
+
+    // One account's sign-in limit counts in kr for every region.
+    let count = serde_json::json!({
+        "op": "count",
+        "key": format!("auth:key-backup:{}", uuid::Uuid::new_v4()),
+        "window": 60,
+        "limit": 1,
+    });
+    let (status, first) = shared_state_at_kr(&count, NIL).await;
+    assert_eq!((status, &first["count"]), (200, &Value::from(1)), "{first}");
+    let (status, second) = shared_state_at_kr(&count, NIL).await;
+    assert_eq!(
+        (status, &second["count"]),
+        (200, &Value::from(2)),
+        "{second}"
+    );
+
+    // Nothing else in kr's Redis is reachable, nor its per-IP limits.
+    let other = serde_json::json!({ "op": "get", "key": "kuzz:ratelimit:ip:127.0.0.1:conn" });
+    assert_eq!(shared_state_at_kr(&other, NIL).await.0, 400);
+    let per_ip = serde_json::json!({
+        "op": "count", "key": "auth:login:start:global", "window": 60, "limit": 1,
+    });
+    assert_eq!(shared_state_at_kr(&per_ip, NIL).await.0, 400);
+    // Shared state belongs to no community.
+    let community = kr_community().await;
+    assert_eq!(shared_state_at_kr(&take, &community).await.0, 401);
+}
+
+fn nip98_post(keys: &Keys, url: &str, body: &[u8]) -> (Event, String) {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let event = EventBuilder::new(Kind::Custom(27235), "")
+        .tags([
+            Tag::parse(["u", url]).unwrap(),
+            Tag::parse(["method", "POST"]).unwrap(),
+            Tag::parse(["payload", &hex::encode(sha2::Sha256::digest(body))]).unwrap(),
+        ])
+        .sign_with_keys(keys)
+        .unwrap();
+    let header = format!(
+        "Nostr {}",
+        base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&event).unwrap())
+    );
+    (event, header)
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_signed_query_in_jp_is_marked_in_jp_only() {
+    let keys = Keys::generate();
+    let url = format!("{}/query", http(&jp_url()));
+    let body = br#"[{"kinds":[9],"limit":1}]"#;
+    let (event, header) = nip98_post(&keys, &url, body);
+    let send = || async {
+        reqwest::Client::new()
+            .post(&url)
+            .header("Authorization", &header)
+            .header("Content-Type", "application/json")
+            .body(body.to_vec())
+            .send()
+            .await
+            .expect("query request")
+    };
+    let first = send().await;
+    assert_eq!(first.status().as_u16(), 200, "{:?}", first.text().await);
+    let again = send().await;
+    assert_eq!(again.status().as_u16(), 401);
+
+    // Queries run on every screen: their mark stays in jp's seen-set, so
+    // kr has none (and sets it now).
+    let community = kr_community().await;
+    let mark = serde_json::json!({
+        "op": "put_new",
+        "key": format!("kuzz:{community}:nip98:{}", event.id.to_hex()),
+        "value": "1",
+        "ttl": 120,
+    });
+    assert_eq!(
+        shared_state_at_kr(&mark, NIL).await,
+        (200, serde_json::json!({ "set": true }))
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
 async fn region_link_accepts_only_a_fresh_call_signed_by_a_known_region() {

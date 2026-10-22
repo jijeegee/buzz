@@ -350,7 +350,7 @@ async fn cached_exchange(
     state: &AppState,
     old_hash_hex: &str,
 ) -> Result<Option<Response>, Response> {
-    match kv::get(&state.redis_pool, "exchange:replay", old_hash_hex).await {
+    match kv::get(&state, "exchange:replay", old_hash_hex).await {
         Ok(cached) => Ok(cached
             .and_then(|json| serde_json::from_str::<CachedExchange>(&json).ok())
             .map(|cached| {
@@ -442,7 +442,7 @@ pub(super) async fn exchange(State(state): State<Arc<AppState>>, headers: Header
             };
             if let Ok(json) = serde_json::to_string(&cached) {
                 if let Err(error) = kv::put_replay(
-                    &state.redis_pool,
+                    &state,
                     "exchange:replay",
                     &old_hash_hex,
                     &json,

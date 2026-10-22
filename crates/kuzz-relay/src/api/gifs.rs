@@ -160,7 +160,7 @@ async fn authenticate(
     bridge::enforce_http_admission(state, &tenant, &pubkey)
         .await
         .map_err(|e| e.into_response())?;
-    bridge::check_nip98_replay(state, &tenant, event_id_bytes)
+    bridge::check_nip98_replay_here(state, &tenant, event_id_bytes)
         .await
         .map_err(|e| e.into_response())?;
     relay_members::enforce_relay_membership(
