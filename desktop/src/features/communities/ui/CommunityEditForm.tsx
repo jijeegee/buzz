@@ -6,6 +6,7 @@ import {
   isJoinPolicyDiscoveryCandidate,
   type JoinPolicy,
 } from "@/shared/api/invites";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
@@ -33,7 +34,7 @@ export type CommunityEditFormProps = {
 };
 
 export function CommunityEditForm({
-  cancelLabel = "Cancel",
+  cancelLabel,
   initialName,
   initialRelayUrl,
   isSubmitting = false,
@@ -43,6 +44,7 @@ export function CommunityEditForm({
   showUrlField = signingKeyUiTestSeam(),
   submitLabel,
 }: CommunityEditFormProps) {
+  const t = useT();
   const [name, setName] = React.useState(initialName);
   const [relayUrl, setRelayUrl] = React.useState(initialRelayUrl);
   const [error, setError] = React.useState<string | null>(null);
@@ -101,12 +103,12 @@ export function CommunityEditForm({
       event.preventDefault();
       const trimmedName = name.trim();
       if (!trimmedName) {
-        setError("Please enter a community name.");
+        setError(t("communities.editForm.nameRequired"));
         return;
       }
       const normalizedUrl = normalizeRelayUrl(relayUrl);
       if (!normalizedUrl) {
-        setError("Enter a valid community URL.");
+        setError(t("communities.editForm.invalidUrl"));
         return;
       }
 
@@ -129,14 +131,14 @@ export function CommunityEditForm({
             return;
           }
           if (policy.ageAttestationRequired && !ageConfirmed) {
-            setError("Confirm that you are at least 18 years old.");
+            setError(t("communities.editForm.confirmAge"));
             return;
           }
           if (
             (policy.termsMarkdown || policy.privacyMarkdown) &&
             !agreementConfirmed
           ) {
-            setError("Agree to the Terms of Service and Privacy Policy.");
+            setError(t("communities.editForm.agreeTerms"));
             return;
           }
         } catch (policyError) {
@@ -166,7 +168,7 @@ export function CommunityEditForm({
       }
 
       if (!reachable) {
-        setProbeWarning("Couldn't connect to this community.");
+        setProbeWarning(t("communities.editForm.unreachable"));
         return;
       }
 
@@ -181,6 +183,7 @@ export function CommunityEditForm({
       onSubmit,
       policyRelayUrl,
       relayUrl,
+      t,
       useAnywayOverride,
     ],
   );
@@ -209,7 +212,7 @@ export function CommunityEditForm({
           className="text-sm font-medium text-foreground"
           htmlFor="community-edit-name"
         >
-          Community name
+          {t("communities.editForm.nameLabel")}
         </label>
         <Input
           autoFocus
@@ -220,7 +223,7 @@ export function CommunityEditForm({
             setName(event.target.value);
             setError(null);
           }}
-          placeholder="Design team"
+          placeholder={t("communities.editForm.namePlaceholder")}
           type="text"
           value={name}
         />
@@ -234,7 +237,7 @@ export function CommunityEditForm({
             className="text-sm font-medium text-foreground"
             htmlFor="community-edit-url"
           >
-            Community URL
+            {t("communities.editForm.urlLabel")}
           </label>
           <Input
             className="h-10 bg-background"
@@ -250,7 +253,7 @@ export function CommunityEditForm({
               setAgeConfirmed(false);
               setAgreementConfirmed(false);
             }}
-            placeholder="Paste the community link"
+            placeholder={t("communities.editForm.urlPlaceholder")}
             type="text"
             value={relayUrl}
           />
@@ -330,11 +333,14 @@ export function CommunityEditForm({
         >
           {isProbing ? (
             <Spinner
-              aria-label="Checking connection"
+              aria-label={t("communities.editForm.checkingConnection")}
               className="h-4 w-4 border-2"
             />
           ) : isSubmitting ? (
-            <Spinner aria-label="Saving" className="h-4 w-4 border-2" />
+            <Spinner
+              aria-label={t("communities.editForm.saving")}
+              className="h-4 w-4 border-2"
+            />
           ) : (
             submitLabel
           )}
@@ -347,7 +353,7 @@ export function CommunityEditForm({
           type="button"
           variant="ghost"
         >
-          {cancelLabel}
+          {cancelLabel ?? t("common.cancel")}
         </Button>
 
         {error ? (
@@ -366,7 +372,7 @@ export function CommunityEditForm({
               type="button"
               variant="outline"
             >
-              Use anyway
+              {t("communities.editForm.useAnyway")}
             </Button>
           </div>
         ) : null}

@@ -158,5 +158,2649 @@
   "common.you": "You",
   "@common.you": {
     "description": "Refers to the current user, e.g. in a member list or as a message author. Short."
+  },
+  "communities.addDialog.title": "Add community",
+  "@communities.addDialog.title": {
+    "description": "Add community dialog, title on the first page. Short."
+  },
+  "communities.addDialog.description": "Join a community you already have.",
+  "@communities.addDialog.description": {
+    "description": "Add community dialog, subtitle on the first page."
+  },
+  "communities.addDialog.joinTitle": "Join an existing community",
+  "@communities.addDialog.joinTitle": {
+    "description": "Add community dialog, title on the join page. Short."
+  },
+  "communities.addDialog.joinDescription": "Use the community URL or invite link you received.",
+  "@communities.addDialog.joinDescription": {
+    "description": "Add community dialog, subtitle on the join page."
+  },
+  "communities.addDialog.backLabel": "Back to add community options",
+  "@communities.addDialog.backLabel": {
+    "description": "Add community dialog, back arrow button, screen-reader label."
+  },
+  "communities.addDialog.joinOption": "Join an existing community",
+  "@communities.addDialog.joinOption": {
+    "description": "Add community dialog, option card title. Short."
+  },
+  "communities.addDialog.joinOptionHint": "Use a community URL or invite link.",
+  "@communities.addDialog.joinOptionHint": {
+    "description": "Add community dialog, small grey text under the join option."
+  },
+  "communities.addDialog.connectionInProgress": "Finish connecting the community already in progress, then try again.",
+  "@communities.addDialog.connectionInProgress": {
+    "description": "Add or create community, error when another community connection is still running."
+  },
+  "communities.applyError.title": "Community connection failed",
+  "@communities.applyError.title": {
+    "description": "Full-screen error when the app cannot connect to the community, big title."
+  },
+  "communities.applyError.checkConnection": "Check your internet connection and try again.",
+  "@communities.applyError.checkConnection": {
+    "description": "Community connection error screen, hint under the error text."
+  },
+  "communities.applyError.changeCommunity": "Change community",
+  "@communities.applyError.changeCommunity": {
+    "description": "Community connection error screen, secondary button. Short."
+  },
+  "communities.applyError.signOut": "Sign out",
+  "@communities.applyError.signOut": {
+    "description": "Community connection error screen, secondary button that signs out on this computer. Short."
+  },
+  "communities.applyError.signOutFailed": "Couldn't sign out. Try again.",
+  "@communities.applyError.signOutFailed": {
+    "description": "Community connection error screen, error under the buttons when sign-out fails."
+  },
+  "communities.changeOverlay.title": "Change community",
+  "@communities.changeOverlay.title": {
+    "description": "Change community overlay, title."
+  },
+  "communities.changeOverlay.description": "Update your community name.",
+  "@communities.changeOverlay.description": {
+    "description": "Change community overlay, subtitle."
+  },
+  "communities.changeOverlay.descriptionWithAddress": "Update your community name or address.",
+  "@communities.changeOverlay.descriptionWithAddress": {
+    "description": "Change community overlay, subtitle when the address can also be edited."
+  },
+  "communities.changeOverlay.save": "Save changes",
+  "@communities.changeOverlay.save": {
+    "description": "Change community overlay, submit button. Short."
+  },
+  "communities.changeOverlay.duplicate": "You've already added this community.",
+  "@communities.changeOverlay.duplicate": {
+    "description": "Change community overlay, error when the address belongs to another saved community."
+  },
+  "communities.changeOverlay.notFound": "Community not found.",
+  "@communities.changeOverlay.notFound": {
+    "description": "Change community overlay, error when the community no longer exists."
+  },
+  "communities.editForm.nameLabel": "Community name",
+  "@communities.editForm.nameLabel": {
+    "description": "Community form, label above the name field."
+  },
+  "communities.editForm.namePlaceholder": "Design team",
+  "@communities.editForm.namePlaceholder": {
+    "description": "Community form, example text in the empty name field."
+  },
+  "communities.editForm.urlLabel": "Community URL",
+  "@communities.editForm.urlLabel": {
+    "description": "Community form, label above the address field."
+  },
+  "communities.editForm.urlPlaceholder": "Paste the community link",
+  "@communities.editForm.urlPlaceholder": {
+    "description": "Community form, placeholder in the empty address field."
+  },
+  "communities.editForm.nameRequired": "Please enter a community name.",
+  "@communities.editForm.nameRequired": {
+    "description": "Community form, error when the name is empty."
+  },
+  "communities.editForm.invalidUrl": "Enter a valid community URL.",
+  "@communities.editForm.invalidUrl": {
+    "description": "Community form, error when the address is not valid."
+  },
+  "communities.editForm.confirmAge": "Confirm that you are at least 18 years old.",
+  "@communities.editForm.confirmAge": {
+    "description": "Community form, error when the community requires an age confirmation that is not ticked."
+  },
+  "communities.editForm.agreeTerms": "Agree to the Terms of Service and Privacy Policy.",
+  "@communities.editForm.agreeTerms": {
+    "description": "Community form, error when the terms checkbox is not ticked."
+  },
+  "communities.editForm.unreachable": "Couldn't connect to this community.",
+  "@communities.editForm.unreachable": {
+    "description": "Community form, warning when the community address does not respond."
+  },
+  "communities.editForm.checkingConnection": "Checking connection",
+  "@communities.editForm.checkingConnection": {
+    "description": "Community form, spinner in the submit button, screen-reader label."
+  },
+  "communities.editForm.saving": "Saving",
+  "@communities.editForm.saving": {
+    "description": "Community form, spinner in the submit button, screen-reader label."
+  },
+  "communities.editForm.useAnyway": "Use anyway",
+  "@communities.editForm.useAnyway": {
+    "description": "Community form, button under the unreachable warning to save the address anyway. Short."
+  },
+  "communities.iconSettings.assetLabel": "community icon",
+  "@communities.iconSettings.assetLabel": {
+    "description": "Community icon picker, lowercase noun inserted into the picker's texts (e.g. 'Remove community icon'). Short."
+  },
+  "communities.iconSettings.iconLabel": "Icon",
+  "@communities.iconSettings.iconLabel": {
+    "description": "Community icon picker, label under the preview when the app has a single built-in server. Short."
+  },
+  "communities.iconSettings.communityLabel": "Community",
+  "@communities.iconSettings.communityLabel": {
+    "description": "Community icon picker, label under the preview when the community has no name. Short."
+  },
+  "communities.iconSettings.updateFailed": "Couldn’t update the community icon.",
+  "@communities.iconSettings.updateFailed": {
+    "description": "Toast error when saving the community icon fails."
+  },
+  "communities.iconSettings.processFailed": "Could not process that image.",
+  "@communities.iconSettings.processFailed": {
+    "description": "Community icon picker, error when the chosen image cannot be read."
+  },
+  "communities.membersIcon.title": "Icon",
+  "@communities.membersIcon.title": {
+    "description": "Settings, Members page, title of the community icon row. Short."
+  },
+  "communities.membersIcon.description": "Shown to everyone who signs in.",
+  "@communities.membersIcon.description": {
+    "description": "Settings, Members page, small grey text under the icon row title."
+  },
+  "communities.connectionState.idle": "Not connected",
+  "@communities.connectionState.idle": {
+    "description": "Community switcher, connection status tooltip. Short."
+  },
+  "communities.connectionState.connecting": "Connecting…",
+  "@communities.connectionState.connecting": {
+    "description": "Community switcher, connection status tooltip. Short."
+  },
+  "communities.connectionState.connected": "Connected",
+  "@communities.connectionState.connected": {
+    "description": "Community switcher, connection status tooltip. Short."
+  },
+  "communities.connectionState.reconnecting": "Reconnecting…",
+  "@communities.connectionState.reconnecting": {
+    "description": "Community switcher, connection status tooltip. Short."
+  },
+  "communities.connectionState.stalled": "Connection lost",
+  "@communities.connectionState.stalled": {
+    "description": "Community switcher, connection status tooltip. Short."
+  },
+  "communities.connectionState.disconnected": "Disconnected",
+  "@communities.connectionState.disconnected": {
+    "description": "Community switcher, connection status tooltip. Short."
+  },
+  "communities.switcher.noCommunity": "No community",
+  "@communities.switcher.noCommunity": {
+    "description": "Community switcher button text when no community is selected. Short."
+  },
+  "communities.switcher.communityFallback": "Community",
+  "@communities.switcher.communityFallback": {
+    "description": "Community switcher, used as the name in the screen-reader label when the community has no name. Short."
+  },
+  "communities.switcher.degradedLabel": "{name} — {status}",
+  "@communities.switcher.degradedLabel": {
+    "description": "Community switcher button, screen-reader label while the connection has a problem: community name, then connection status."
+  },
+  "communities.switcher.actionsLabel": "Community actions",
+  "@communities.switcher.actionsLabel": {
+    "description": "Profile menu, community submenu, screen-reader label."
+  },
+  "communities.switcher.switchLabel": "Switch community",
+  "@communities.switcher.switchLabel": {
+    "description": "Community switcher button, screen-reader label."
+  },
+  "communities.switcher.copyUrl": "Copy community URL",
+  "@communities.switcher.copyUrl": {
+    "description": "Community actions menu item. Short."
+  },
+  "communities.switcher.invite": "Invite to community",
+  "@communities.switcher.invite": {
+    "description": "Community actions menu item. Short."
+  },
+  "communities.switcher.settings": "Community settings",
+  "@communities.switcher.settings": {
+    "description": "Community actions menu item. Short."
+  },
+  "communities.switcher.membership": "Community membership…",
+  "@communities.switcher.membership": {
+    "description": "Community actions menu item that opens the leave dialog. Short."
+  },
+  "communities.switcher.removeFromDevice": "Remove from this device",
+  "@communities.switcher.removeFromDevice": {
+    "description": "Community actions menu item. Short."
+  },
+  "communities.switcher.addCommunity": "Add a community",
+  "@communities.switcher.addCommunity": {
+    "description": "Community switcher menu item. Short."
+  },
+  "communities.switcher.editCommunity": "Edit {name}",
+  "@communities.switcher.editCommunity": {
+    "description": "Community switcher list, edit button next to a community, screen-reader label."
+  },
+  "communities.switcher.removedToastTitle": "Community removed",
+  "@communities.switcher.removedToastTitle": {
+    "description": "Toast title after leaving a community you were no longer a member of. Short."
+  },
+  "communities.switcher.removedToastDescription": "You were no longer a member, so Kuzz removed the community from this device.",
+  "@communities.switcher.removedToastDescription": {
+    "description": "Toast text after leaving a community you were no longer a member of."
+  },
+  "communities.switcher.leaveFailed": "Couldn't leave the community. Try again.",
+  "@communities.switcher.leaveFailed": {
+    "description": "Community actions menu, error when leaving fails."
+  },
+  "communities.switcher.leaveFailedHint": "{message} If the community no longer exists, use Remove from this device.",
+  "@communities.switcher.leaveFailedHint": {
+    "description": "Community actions menu, error when leaving fails: the error text, then a hint to use the 'Remove from this device' menu item."
+  },
+  "communities.switcher.removeFailed": "Couldn't remove the community from this device. Try again.",
+  "@communities.switcher.removeFailed": {
+    "description": "Toast error when removing a community from this device fails."
+  },
+  "communities.leaveDialog.title": "Leave this community?",
+  "@communities.leaveDialog.title": {
+    "description": "Leave community confirmation dialog, title."
+  },
+  "communities.leaveDialog.description": "You will leave \"{name}\". This is not sign-out. You may need a new invitation to return.",
+  "@communities.leaveDialog.description": {
+    "description": "Leave community confirmation dialog, text. {name} is the community name."
+  },
+  "communities.leaveDialog.confirm": "Leave community",
+  "@communities.leaveDialog.confirm": {
+    "description": "Leave community confirmation dialog, red confirm button. Short."
+  },
+  "communities.leaveDialog.leaving": "Leaving…",
+  "@communities.leaveDialog.leaving": {
+    "description": "Leave community confirmation dialog, confirm button while leaving. Short."
+  },
+  "communities.removeDialog.title": "Remove from this device",
+  "@communities.removeDialog.title": {
+    "description": "Remove community from this device confirmation dialog, title."
+  },
+  "communities.removeDialog.description": "Remove \"{name}\" from this device? You'll stay a member and can add it again later.",
+  "@communities.removeDialog.description": {
+    "description": "Remove community from this device confirmation dialog, text. {name} is the community name."
+  },
+  "communities.editDialog.title": "Edit Community",
+  "@communities.editDialog.title": {
+    "description": "Edit community dialog, title."
+  },
+  "communities.editDialog.description": "Update this community's name.",
+  "@communities.editDialog.description": {
+    "description": "Edit community dialog, subtitle."
+  },
+  "communities.editDialog.descriptionWithAddress": "Update this community's name or address.",
+  "@communities.editDialog.descriptionWithAddress": {
+    "description": "Edit community dialog, subtitle when the address can also be edited."
+  },
+  "communities.editDialog.iconTitle": "Community icon",
+  "@communities.editDialog.iconTitle": {
+    "description": "Edit community dialog, title of the icon row."
+  },
+  "communities.editDialog.iconDescription": "Shown in the community rail and switcher.",
+  "@communities.editDialog.iconDescription": {
+    "description": "Edit community dialog, small grey text under the icon row title."
+  },
+  "communities.editDialog.nameLabel": "Name",
+  "@communities.editDialog.nameLabel": {
+    "description": "Edit community dialog, label above the name field. Short."
+  },
+  "communities.editDialog.namePlaceholder": "My Community",
+  "@communities.editDialog.namePlaceholder": {
+    "description": "Edit community dialog, example text in the empty name field."
+  },
+  "communities.editDialog.urlLabel": "Community URL",
+  "@communities.editDialog.urlLabel": {
+    "description": "Edit community dialog, label above the address field."
+  },
+  "communities.editDialog.urlPlaceholder": "Paste the community link",
+  "@communities.editDialog.urlPlaceholder": {
+    "description": "Edit community dialog, placeholder in the empty address field."
+  },
+  "communities.editDialog.reposDirLabel": "Repos Directory",
+  "@communities.editDialog.reposDirLabel": {
+    "description": "Edit community dialog, label above the folder field for agents' code checkouts."
+  },
+  "communities.editDialog.optional": "(optional)",
+  "@communities.editDialog.optional": {
+    "description": "Edit community dialog, small grey text after the Repos Directory label. Short."
+  },
+  "communities.editDialog.reposDirHint": "Point the agent's <code>REPOS</code> directory at an existing folder so agents work in your local checkouts. Leave blank to use the default location.",
+  "@communities.editDialog.reposDirHint": {
+    "description": "Edit community dialog, help text under the Repos Directory field. Keep REPOS (a folder name) untranslated inside the code tags."
+  },
+  "communities.editDialog.save": "Save Changes",
+  "@communities.editDialog.save": {
+    "description": "Edit community dialog, submit button. Short."
+  },
+  "communities.hosted.action.signingIn": "Signing in…",
+  "@communities.hosted.action.signingIn": {
+    "description": "Hosted community setup, button text while signing in to Builderlab. Short."
+  },
+  "communities.hosted.action.signingOut": "Signing out…",
+  "@communities.hosted.action.signingOut": {
+    "description": "Hosted community setup, button text while signing out of Builderlab. Short."
+  },
+  "communities.hosted.action.connectingIdentity": "Connecting identity…",
+  "@communities.hosted.action.connectingIdentity": {
+    "description": "Hosted community setup, button text while linking this device's account to Builderlab. Short."
+  },
+  "communities.hosted.action.switchingIdentity": "Switching identity…",
+  "@communities.hosted.action.switchingIdentity": {
+    "description": "Hosted community setup, button text while moving the Builderlab account to this device's identity. Short."
+  },
+  "communities.hosted.action.creating": "Creating community…",
+  "@communities.hosted.action.creating": {
+    "description": "Hosted community setup, button text while creating the community. Short."
+  },
+  "communities.hosted.action.connectingCommunity": "Connecting community…",
+  "@communities.hosted.action.connectingCommunity": {
+    "description": "Hosted community setup, button text while connecting an owned community. Short."
+  },
+  "communities.hosted.checkingSignIn": "Checking sign-in",
+  "@communities.hosted.checkingSignIn": {
+    "description": "Hosted community setup, loading spinner, screen-reader label."
+  },
+  "communities.hosted.continueToBuilderlab": "Continue to Builderlab",
+  "@communities.hosted.continueToBuilderlab": {
+    "description": "Hosted community creation, button that opens Builderlab sign-in in the browser. Short."
+  },
+  "communities.hosted.connectIdentityIntro": "Connect this device’s Kuzz identity to your Builderlab account. Your private key stays on this device.",
+  "@communities.hosted.connectIdentityIntro": {
+    "description": "Hosted community creation, text above the connect button."
+  },
+  "communities.hosted.useDifferentAccount": "Use a different account",
+  "@communities.hosted.useDifferentAccount": {
+    "description": "Hosted community creation, button that signs out of Builderlab. Short."
+  },
+  "communities.hosted.connectAndContinue": "Connect and continue",
+  "@communities.hosted.connectAndContinue": {
+    "description": "Hosted community setup, button that links this device's account to Builderlab. Short."
+  },
+  "communities.hosted.identityMismatch": "This Builderlab account uses a different Kuzz identity. Switch it to this device, or sign in with another account.",
+  "@communities.hosted.identityMismatch": {
+    "description": "Hosted community creation, text when the Builderlab account is linked to another identity."
+  },
+  "communities.hosted.accountKey": "Account: {key}",
+  "@communities.hosted.accountKey": {
+    "description": "Hosted community setup, identity comparison row: the Builderlab account's public ID."
+  },
+  "communities.hosted.deviceKey": "This device: {key}",
+  "@communities.hosted.deviceKey": {
+    "description": "Hosted community setup, identity comparison row: this device's public ID."
+  },
+  "communities.hosted.useThisDevice": "Use this device",
+  "@communities.hosted.useThisDevice": {
+    "description": "Hosted community creation, button that moves the Builderlab account to this device's identity. Short."
+  },
+  "communities.hosted.limitReached": "You’ve reached the limit of {limit} hosted communities.",
+  "@communities.hosted.limitReached": {
+    "description": "Hosted community setup, message under the address field when the account has too many communities."
+  },
+  "communities.hosted.nameRule": "Use lowercase letters, numbers, and single hyphens.",
+  "@communities.hosted.nameRule": {
+    "description": "Hosted community setup, error under the address field when the name has invalid characters."
+  },
+  "communities.hosted.checkingAvailability": "Checking availability…",
+  "@communities.hosted.checkingAvailability": {
+    "description": "Hosted community setup, status under the address field."
+  },
+  "communities.hosted.addressTaken": "That address is already taken.",
+  "@communities.hosted.addressTaken": {
+    "description": "Hosted community setup, error under the address field."
+  },
+  "communities.hosted.addressAvailable": "That address is available.",
+  "@communities.hosted.addressAvailable": {
+    "description": "Hosted community setup, status under the address field."
+  },
+  "communities.hosted.addressPermanent": "You can’t change this address after creating the community.",
+  "@communities.hosted.addressPermanent": {
+    "description": "Hosted community creation, hint under the address field."
+  },
+  "communities.hosted.addressLabel": "Community address",
+  "@communities.hosted.addressLabel": {
+    "description": "Hosted community creation, label above the address field."
+  },
+  "communities.hosted.createCommunity": "Create community",
+  "@communities.hosted.createCommunity": {
+    "description": "Hosted community creation, submit button. Short."
+  },
+  "communities.hosted.error.connectIdentity": "Could not connect the Kuzz identity.",
+  "@communities.hosted.error.connectIdentity": {
+    "description": "Hosted community setup, error when linking the identity to Builderlab fails."
+  },
+  "communities.hosted.error.disconnectPrevious": "Could not disconnect the account's previous Kuzz identity.",
+  "@communities.hosted.error.disconnectPrevious": {
+    "description": "Hosted community setup, error when unlinking the old identity from Builderlab fails."
+  },
+  "communities.hosted.error.deviceIdentityBound": "This device's Kuzz identity belongs to a different Builderlab account. Sign in with the account that already owns this identity.",
+  "@communities.hosted.error.deviceIdentityBound": {
+    "description": "Hosted community creation, error when this device's identity is linked to another Builderlab account."
+  },
+  "communities.hosted.error.connectDeviceIdentity": "Could not connect this device's Kuzz identity.",
+  "@communities.hosted.error.connectDeviceIdentity": {
+    "description": "Hosted community setup, error when linking this device's identity fails."
+  },
+  "communities.hosted.error.taken": "That Kuzz address is already taken.",
+  "@communities.hosted.error.taken": {
+    "description": "Hosted community setup, error when the chosen community address is in use."
+  },
+  "communities.hosted.error.createFailed": "Could not create the community.",
+  "@communities.hosted.error.createFailed": {
+    "description": "Hosted community setup, error when creating the community fails."
+  },
+  "communities.hosted.error.missingUrl": "The community was created, but Builderlab did not return its community URL. Try connecting it again from settings.",
+  "@communities.hosted.error.missingUrl": {
+    "description": "Hosted community creation, error when the new community has no address."
+  },
+  "communities.hostedCreate.signInIntro": "Sign in with Builderlab to create and host a community. Kuzz will open your browser, then bring you back here.",
+  "@communities.hostedCreate.signInIntro": {
+    "description": "Hosted community creation, text above the Builderlab sign-in button."
+  },
+  "communities.hostedOnboarding.signIn.title": "Set up your community",
+  "@communities.hostedOnboarding.signIn.title": {
+    "description": "Hosted community onboarding, sign-in dialog title."
+  },
+  "communities.hostedOnboarding.signIn.description": "Sign in to connect a community you already own or create a new one. We’ll open Builderlab in your browser, then bring you back to Kuzz.",
+  "@communities.hostedOnboarding.signIn.description": {
+    "description": "Hosted community onboarding, sign-in dialog text."
+  },
+  "communities.hostedOnboarding.signIn.waiting": "Waiting for your browser…",
+  "@communities.hostedOnboarding.signIn.waiting": {
+    "description": "Hosted community onboarding, sign-in dialog button while the browser sign-in is open. Short."
+  },
+  "communities.hostedOnboarding.signIn.button": "Sign in to continue",
+  "@communities.hostedOnboarding.signIn.button": {
+    "description": "Hosted community onboarding, sign-in dialog button. Short."
+  },
+  "communities.hostedOnboarding.signIn.openSource": "Kuzz is open source. Builderlab hosts the relay for this account.",
+  "@communities.hostedOnboarding.signIn.openSource": {
+    "description": "Hosted community onboarding, sign-in dialog, small grey note at the bottom."
+  },
+  "communities.hostedOnboarding.connect.title": "Finish connecting Kuzz",
+  "@communities.hostedOnboarding.connect.title": {
+    "description": "Hosted community onboarding, link-identity dialog title."
+  },
+  "communities.hostedOnboarding.connect.description": "Your Builderlab account is ready. Connect this device’s Kuzz identity to finish setup. Your private key stays on this device.",
+  "@communities.hostedOnboarding.connect.description": {
+    "description": "Hosted community onboarding, link-identity dialog text."
+  },
+  "communities.hostedOnboarding.connect.descriptionWithEmail": "Your Builderlab account ({email}) is ready. Connect this device’s Kuzz identity to finish setup. Your private key stays on this device.",
+  "@communities.hostedOnboarding.connect.descriptionWithEmail": {
+    "description": "Hosted community onboarding, link-identity dialog text with the account email."
+  },
+  "communities.hostedOnboarding.mismatch.title": "This account uses a different Kuzz identity",
+  "@communities.hostedOnboarding.mismatch.title": {
+    "description": "Hosted community onboarding, identity mismatch dialog title."
+  },
+  "communities.hostedOnboarding.mismatch.description": "This account is connected to another Kuzz identity. Reconnect this device, or sign out to use a different email.",
+  "@communities.hostedOnboarding.mismatch.description": {
+    "description": "Hosted community onboarding, identity mismatch dialog text."
+  },
+  "communities.hostedOnboarding.mismatch.useDevice": "Use this device's identity",
+  "@communities.hostedOnboarding.mismatch.useDevice": {
+    "description": "Hosted community onboarding, identity mismatch dialog, main button. Short."
+  },
+  "communities.hostedOnboarding.mismatch.differentEmail": "Sign in with a different email",
+  "@communities.hostedOnboarding.mismatch.differentEmail": {
+    "description": "Hosted community onboarding, identity mismatch dialog, secondary button. Short."
+  },
+  "communities.hostedOnboarding.deviceIdentityBound": "This device's Kuzz identity belongs to a different Builderlab account and can't be moved from here. Sign out, then sign in with the account that already owns this identity.",
+  "@communities.hostedOnboarding.deviceIdentityBound": {
+    "description": "Hosted community onboarding, error when this device's identity is linked to another Builderlab account."
+  },
+  "communities.hostedOnboarding.missingRelay": "Builderlab did not return its relay address. Try connecting it again, or contact support if it does not appear in your communities.",
+  "@communities.hostedOnboarding.missingRelay": {
+    "description": "Hosted community onboarding, error when an owned community has no address."
+  },
+  "communities.hostedOnboarding.missingRelayAfterCreate": "The community was created, but Builderlab did not return its relay address. Try connecting it again, or contact support if it does not appear in your communities.",
+  "@communities.hostedOnboarding.missingRelayAfterCreate": {
+    "description": "Hosted community onboarding, error when a newly created community has no address."
+  },
+  "communities.hostedOnboarding.inProgress": "onboarding is already in progress for another community. Go back and finish or restart that connection, then connect this community from your owned communities list.",
+  "@communities.hostedOnboarding.inProgress": {
+    "description": "Hosted community onboarding, error when another community connection is running. Starts lowercase in English (kept as is)."
+  },
+  "communities.hostedOnboarding.inProgressAfterCreate": "The community was created, but onboarding is already in progress for another community. Go back and finish or restart that connection, then connect this community from your owned communities list.",
+  "@communities.hostedOnboarding.inProgressAfterCreate": {
+    "description": "Hosted community onboarding, error after creating a community while another community connection is running."
+  },
+  "communities.hostedOnboarding.chooseTitle": "Choose a community",
+  "@communities.hostedOnboarding.chooseTitle": {
+    "description": "Hosted community onboarding page, big title when the account owns communities."
+  },
+  "communities.hostedOnboarding.createTitle": "Create a community",
+  "@communities.hostedOnboarding.createTitle": {
+    "description": "Hosted community onboarding page, big title when the account owns no communities."
+  },
+  "communities.hostedOnboarding.chooseDescription": "Connect one you own, or start something new.",
+  "@communities.hostedOnboarding.chooseDescription": {
+    "description": "Hosted community onboarding page, subtitle when the account owns communities."
+  },
+  "communities.hostedOnboarding.createDescription": "Claim a Kuzz address to get started.",
+  "@communities.hostedOnboarding.createDescription": {
+    "description": "Hosted community onboarding page, subtitle when the account owns no communities."
+  },
+  "communities.hostedOnboarding.yourCommunities": "Your communities",
+  "@communities.hostedOnboarding.yourCommunities": {
+    "description": "Hosted community onboarding page, title of the owned communities list."
+  },
+  "communities.hostedOnboarding.hostedCommunityFallback": "Hosted community",
+  "@communities.hostedOnboarding.hostedCommunityFallback": {
+    "description": "Hosted community onboarding page, list row name when the community has no name. Short."
+  },
+  "communities.hostedOnboarding.connectButton": "Connect",
+  "@communities.hostedOnboarding.connectButton": {
+    "description": "Hosted community onboarding page, button on an owned community row. Short."
+  },
+  "communities.hostedOnboarding.createPrompt": "Want to create a new community?",
+  "@communities.hostedOnboarding.createPrompt": {
+    "description": "Hosted community onboarding page, text on the last list row."
+  },
+  "communities.hostedOnboarding.addNew": "+ Add new",
+  "@communities.hostedOnboarding.addNew": {
+    "description": "Hosted community onboarding page, button that shows the new community name field. Short."
+  },
+  "communities.hostedOnboarding.setNewName": "Set new community name",
+  "@communities.hostedOnboarding.setNewName": {
+    "description": "Hosted community onboarding page, label next to the new community name field."
+  },
+  "communities.hostedOnboarding.nameLabel": "Community name",
+  "@communities.hostedOnboarding.nameLabel": {
+    "description": "Hosted community onboarding page, community address field, screen-reader label."
+  },
+  "communities.hostedOnboarding.namePlaceholder": "Community name here",
+  "@communities.hostedOnboarding.namePlaceholder": {
+    "description": "Hosted community onboarding page, placeholder in the new community name field."
+  },
+  "communities.hostedOnboarding.addressStatus": "Community address status",
+  "@communities.hostedOnboarding.addressStatus": {
+    "description": "Hosted community onboarding page, hidden placeholder for the address status line (read by screen readers)."
+  },
+  "communities.hostedApi.missingMapping": "Connect your Kuzz identity before creating a community.",
+  "@communities.hostedApi.missingMapping": {
+    "description": "Hosted community error from the server: the account has no linked identity."
+  },
+  "communities.hostedApi.invalidName": "Use lowercase letters, numbers, and hyphens.",
+  "@communities.hostedApi.invalidName": {
+    "description": "Hosted community error from the server: invalid community address."
+  },
+  "communities.hostedApi.limitReached": "You've reached the limit of {limit} hosted communities.",
+  "@communities.hostedApi.limitReached": {
+    "description": "Hosted community error from the server: too many communities."
+  },
+  "communities.hostedApi.relayUnavailable": "Community provisioning is temporarily unavailable.",
+  "@communities.hostedApi.relayUnavailable": {
+    "description": "Hosted community error from the server: community creation is down."
+  },
+  "communities.hostedApi.identityAlreadyBound": "This Builderlab account is connected to another Kuzz identity.",
+  "@communities.hostedApi.identityAlreadyBound": {
+    "description": "Hosted community error from the server."
+  },
+  "communities.hostedApi.pubkeyAlreadyBound": "This Kuzz identity is connected to another Builderlab account.",
+  "@communities.hostedApi.pubkeyAlreadyBound": {
+    "description": "Hosted community error from the server."
+  },
+  "communities.hostedApi.notOwner": "Only the community owner can do that.",
+  "@communities.hostedApi.notOwner": {
+    "description": "Hosted community error from the server: action needs the owner."
+  },
+  "communities.hostedApi.transfereeNotRegistered": "That person needs a connected Kuzz identity before you can transfer ownership to them.",
+  "@communities.hostedApi.transfereeNotRegistered": {
+    "description": "Hosted community error from the server: ownership transfer target is not set up."
+  },
+  "communities.hostedApi.withCorrelationId": "{message} Correlation ID: {correlationId}",
+  "@communities.hostedApi.withCorrelationId": {
+    "description": "Hosted community error: the error text followed by a support reference ID."
+  },
+  "communities.hostedApi.loadIdentityFailed": "Could not load the connected Kuzz identity.",
+  "@communities.hostedApi.loadIdentityFailed": {
+    "description": "Hosted community error when loading the linked identity fails."
+  },
+  "communities.hostedApi.loadCommunitiesFailed": "Could not load communities.",
+  "@communities.hostedApi.loadCommunitiesFailed": {
+    "description": "Hosted community error when loading the owned communities fails."
+  },
+  "communities.welcome.title": "Find your community",
+  "@communities.welcome.title": {
+    "description": "First-run community page, big title."
+  },
+  "communities.welcome.description": "Join with an invite, or reconnect to a community you already have.",
+  "@communities.welcome.description": {
+    "description": "First-run community page, subtitle."
+  },
+  "communities.welcome.joinOption": "Join a community",
+  "@communities.welcome.joinOption": {
+    "description": "First-run community page, option card. Short."
+  },
+  "communities.welcome.existingOption": "I already have a community",
+  "@communities.welcome.existingOption": {
+    "description": "First-run community page, option card. Short."
+  },
+  "communities.welcome.joinTitle": "Join a community",
+  "@communities.welcome.joinTitle": {
+    "description": "First-run join page, big title."
+  },
+  "communities.welcome.memberTitle": "Reconnect to your community",
+  "@communities.welcome.memberTitle": {
+    "description": "First-run reconnect page, big title."
+  },
+  "communities.welcome.joinDescription": "Enter the invite link or community URL you received.",
+  "@communities.welcome.joinDescription": {
+    "description": "First-run join page, subtitle."
+  },
+  "communities.welcome.memberDescription": "Enter the community URL or an invite link. Your role will be restored when you connect.",
+  "@communities.welcome.memberDescription": {
+    "description": "First-run reconnect page, subtitle."
+  },
+  "communities.welcome.invitePlaceholder": "Invite link or community URL",
+  "@communities.welcome.invitePlaceholder": {
+    "description": "First-run join page, placeholder in the link field."
+  },
+  "communities.welcome.privateTitle": "Joining a private community?",
+  "@communities.welcome.privateTitle": {
+    "description": "First-run join page, title of the public ID box."
+  },
+  "communities.welcome.privateDescription": "Some communities need the owner to add you before you can join. Copy your public ID and send it to the community owner.",
+  "@communities.welcome.privateDescription": {
+    "description": "First-run join page, text in the public ID box."
+  },
+  "communities.welcome.copyPublicId": "Copy public ID",
+  "@communities.welcome.copyPublicId": {
+    "description": "First-run join page, copy button, screen-reader label."
+  },
+  "communities.welcome.accountLoadFailed": "Couldn't load your account.",
+  "@communities.welcome.accountLoadFailed": {
+    "description": "First-run join page, error when the account's public ID cannot be loaded."
+  },
+  "communities.builtInServer.differentServiceInvite": "This invite is for a different service.",
+  "@communities.builtInServer.differentServiceInvite": {
+    "description": "Error when an invite link points to a server other than the app's built-in one."
+  },
+  "communities.leave.timedOut": "Timed out while leaving the community. Try again.",
+  "@communities.leave.timedOut": {
+    "description": "Error when leaving a community takes too long."
+  },
+  "communities.leave.sendFailed": "Couldn't send the leave request. Check your connection and try again.",
+  "@communities.leave.sendFailed": {
+    "description": "Error when the leave request cannot be sent."
+  },
+  "communities.init.avatarPermissionsFailed": "Could not refresh avatar source permissions. Reload to retry.",
+  "@communities.init.avatarPermissionsFailed": {
+    "description": "Community connection error screen, error text when avatar permissions cannot be refreshed."
+  },
+  "communities.init.leaveFailed": "Could not safely leave community",
+  "@communities.init.leaveFailed": {
+    "description": "Community connection error screen, error text when leaving the community fails."
+  },
+  "communities.init.leaveFailedWithReason": "Could not safely leave community: {reason}",
+  "@communities.init.leaveFailedWithReason": {
+    "description": "Community connection error screen, error text with the technical reason."
+  },
+  "communities.init.switchFailed": "Could not safely switch communities",
+  "@communities.init.switchFailed": {
+    "description": "Community connection error screen, error text when switching communities fails."
+  },
+  "communities.init.switchFailedWithReason": "Could not safely switch communities: {reason}",
+  "@communities.init.switchFailedWithReason": {
+    "description": "Community connection error screen, error text with the technical reason."
+  },
+  "communities.init.applyFailed": "Failed to apply community configuration",
+  "@communities.init.applyFailed": {
+    "description": "Community connection error screen, error text when the community settings cannot be applied."
+  },
+  "communities.nestNotifications.reposDirError": "Repos directory not applied",
+  "@communities.nestNotifications.reposDirError": {
+    "description": "Toast title when the agents' Repos Directory setting is invalid; the reason is shown below."
+  },
+  "communities.nestNotifications.migrated": "Migrated notes from ~/.sprout",
+  "@communities.nestNotifications.migrated": {
+    "description": "Toast title after agent notes were moved from the old ~/.sprout folder. Keep ~/.sprout as is."
+  },
+  "communities.nestNotifications.migratedDescription": "You can delete it to reclaim disk space.",
+  "@communities.nestNotifications.migratedDescription": {
+    "description": "Toast text after agent notes were moved; 'it' is the old ~/.sprout folder."
+  },
+  "adminConsole.tabs.reports": "Reports",
+  "@adminConsole.tabs.reports": {
+    "description": "Settings > Admin, tab bar: moderation reports tab. Short."
+  },
+  "adminConsole.tabs.feedback": "Feedback",
+  "@adminConsole.tabs.feedback": {
+    "description": "Settings > Admin, tab bar: product feedback tab. Short."
+  },
+  "adminConsole.tabs.actions": "Actions",
+  "@adminConsole.tabs.actions": {
+    "description": "Settings > Admin, tab bar: direct moderation actions tab. Short."
+  },
+  "adminConsole.tabs.staffing": "Staffing",
+  "@adminConsole.tabs.staffing": {
+    "description": "Settings > Admin, tab bar: operator/moderator roster tab (operators only). Short."
+  },
+  "adminConsole.role": "{role, select, operator {operator} moderator {moderator} other {{role}}}",
+  "@adminConsole.role": {
+    "description": "Settings > Admin: a staff role name (operator or moderator), shown in option lists and badges. Short."
+  },
+  "adminConsole.field.id": "ID",
+  "@adminConsole.field.id": {
+    "description": "Settings > Admin, report/feedback detail: label of the record id row. Short."
+  },
+  "adminConsole.field.community": "Community",
+  "@adminConsole.field.community": {
+    "description": "Settings > Admin, report/feedback detail: label of the community id row. Short."
+  },
+  "adminConsole.field.host": "Host",
+  "@adminConsole.field.host": {
+    "description": "Settings > Admin, report/feedback detail: label of the community host name row. Short."
+  },
+  "adminConsole.field.eventId": "Event ID",
+  "@adminConsole.field.eventId": {
+    "description": "Settings > Admin, report/feedback detail: label of the event id row. Short."
+  },
+  "adminConsole.reasonOptionalPlaceholder": "Reason (optional)",
+  "@adminConsole.reasonOptionalPlaceholder": {
+    "description": "Settings > Admin, moderation forms: placeholder of the optional reason text field."
+  },
+  "adminConsole.reasonAudience.deletePublic": "Sent verbatim to the affected user and posted publicly in the room.",
+  "@adminConsole.reasonAudience.deletePublic": {
+    "description": "Settings > Admin, moderation forms: small note under the reason field for delete, saying who sees the reason."
+  },
+  "adminConsole.reasonAudience.affectedUser": "Sent verbatim to the affected user.",
+  "@adminConsole.reasonAudience.affectedUser": {
+    "description": "Settings > Admin, moderation forms: small note under the reason field for kick/ban/timeout, saying who sees the reason."
+  },
+  "adminConsole.reasonAudience.reporter": "Sent verbatim to the reporter.",
+  "@adminConsole.reasonAudience.reporter": {
+    "description": "Settings > Admin, moderation forms: small note under the reason field for dismiss/escalate, saying who sees the reason."
+  },
+  "adminConsole.grouping.severedCommunity": "(source community removed)",
+  "@adminConsole.grouping.severedCommunity": {
+    "description": "Settings > Admin, Reports/Feedback lists: group heading for rows whose community was deleted."
+  },
+  "adminConsole.settings.title": "Admin",
+  "@adminConsole.settings.title": {
+    "description": "Settings > Admin: section title. Short."
+  },
+  "adminConsole.settings.description": "Manage your relay's platform layer: triage cross-community reports, review product feedback, and configure the relay operator roster.",
+  "@adminConsole.settings.description": {
+    "description": "Settings > Admin: section description under the title."
+  },
+  "adminConsole.settings.accessDenied": "Access denied",
+  "@adminConsole.settings.accessDenied": {
+    "description": "Settings > Admin: status line when the account is not allowed to use the admin console. Short."
+  },
+  "adminConsole.settings.deniedHelp": "Your pubkey is not authorized as an operator on this relay. Ask a relay operator to add:",
+  "@adminConsole.settings.deniedHelp": {
+    "description": "Settings > Admin, access denied: explanation; the user's public key is shown right after it."
+  },
+  "adminConsole.settings.copyPubkey": "Copy pubkey",
+  "@adminConsole.settings.copyPubkey": {
+    "description": "Settings > Admin, access denied: screen-reader label of the copy button next to the public key."
+  },
+  "adminConsole.settings.pubkeyCopied": "Pubkey copied",
+  "@adminConsole.settings.pubkeyCopied": {
+    "description": "Settings > Admin, access denied: notification after copying the public key."
+  },
+  "adminConsole.settings.deniedOtherCauses": "Other possible causes: clock skew > 60 s or a relay config mismatch.",
+  "@adminConsole.settings.deniedOtherCauses": {
+    "description": "Settings > Admin, access denied: extra hint below the public key."
+  },
+  "adminConsole.settings.probing": "Probing…",
+  "@adminConsole.settings.probing": {
+    "description": "Settings > Admin: status while checking access to the admin console. Short."
+  },
+  "adminConsole.settings.connectedAs": "Connected as {role, select, operator {operator} moderator {moderator} other {{role}}}",
+  "@adminConsole.settings.connectedAs": {
+    "description": "Settings > Admin: status line after access is confirmed; role is operator or moderator."
+  },
+  "adminConsole.settings.authDisabled": "Auth is disabled on this relay. The admin console is accessible without a credential.",
+  "@adminConsole.settings.authDisabled": {
+    "description": "Settings > Admin: warning status when the server does not require sign-in for the admin console."
+  },
+  "adminConsole.settings.notAdminApi": "No admin API found at this origin. Check the URL matches <code>{envVar}</code>.",
+  "@adminConsole.settings.notAdminApi": {
+    "description": "Settings > Admin: status when the entered address is not an admin console. envVar is a config setting name, keep as is."
+  },
+  "adminConsole.settings.networkOrIntercepted": "Could not reach the relay. Check: network, TLS certificate, DNS, or whether a VPN/SSO layer (e.g. Cloudflare Access) intercepts this host.",
+  "@adminConsole.settings.networkOrIntercepted": {
+    "description": "Settings > Admin: error status when the server could not be reached."
+  },
+  "adminConsole.settings.advancedOrigin": "Advanced: admin origin",
+  "@adminConsole.settings.advancedOrigin": {
+    "description": "Settings > Admin: title of the collapsible section for entering the admin console address."
+  },
+  "adminConsole.settings.reprobe": "Re-probe",
+  "@adminConsole.settings.reprobe": {
+    "description": "Settings > Admin, advanced section: button to check access again. Short."
+  },
+  "adminConsole.settings.originSource": "Origin resolved from {source, select, config {relay config} owner_fallback {relay config (owner fallback)} other {database}}.",
+  "@adminConsole.settings.originSource": {
+    "description": "Settings > Admin, advanced section: small note saying where the user's admin role comes from."
+  },
+  "adminConsole.reports.empty": "No reports found.",
+  "@adminConsole.reports.empty": {
+    "description": "Settings > Admin, Reports tab: empty list message."
+  },
+  "adminConsole.reports.fallbackType": "Report",
+  "@adminConsole.reports.fallbackType": {
+    "description": "Settings > Admin, Reports list: row title when the report has no type. Short."
+  },
+  "adminConsole.reports.snippetReporter": "reporter: {name}",
+  "@adminConsole.reports.snippetReporter": {
+    "description": "Settings > Admin, Reports list: small grey text naming who sent the report."
+  },
+  "adminConsole.reports.snippetTarget": "target: {target}",
+  "@adminConsole.reports.snippetTarget": {
+    "description": "Settings > Admin, Reports list: small grey text naming what was reported."
+  },
+  "adminConsole.reports.targetMessageBy": "message by {name}",
+  "@adminConsole.reports.targetMessageBy": {
+    "description": "Settings > Admin, Reports list: reported target when it is a message; name is its author."
+  },
+  "adminConsole.reports.targetMessageId": "message {id}",
+  "@adminConsole.reports.targetMessageId": {
+    "description": "Settings > Admin, Reports list: reported target when it is a message with unknown author; id is a short message id."
+  },
+  "adminConsole.reports.status": "{status, select, open {open} resolved {resolved} dismissed {dismissed} escalated {escalated} processing {processing} other {{status}}}",
+  "@adminConsole.reports.status": {
+    "description": "Settings > Admin, Reports list and detail: report status label. Short."
+  },
+  "adminConsole.reports.back": "Back to reports",
+  "@adminConsole.reports.back": {
+    "description": "Settings > Admin, report detail: back link to the list."
+  },
+  "adminConsole.reports.fieldReporter": "Reporter",
+  "@adminConsole.reports.fieldReporter": {
+    "description": "Settings > Admin, report detail: label of the reporter row. Short."
+  },
+  "adminConsole.reports.fieldTargetKind": "Target kind",
+  "@adminConsole.reports.fieldTargetKind": {
+    "description": "Settings > Admin, report detail: label of the row saying what kind of thing was reported. Short."
+  },
+  "adminConsole.reports.fieldTarget": "Target",
+  "@adminConsole.reports.fieldTarget": {
+    "description": "Settings > Admin, report detail: label of the reported member/message row. Short."
+  },
+  "adminConsole.reports.copyEventId": "Copy event ID",
+  "@adminConsole.reports.copyEventId": {
+    "description": "Settings > Admin, report detail: screen-reader label of the copy button next to the message id."
+  },
+  "adminConsole.reports.fieldGroup": "Group",
+  "@adminConsole.reports.fieldGroup": {
+    "description": "Settings > Admin, report detail: label of the group (channel) row. Short."
+  },
+  "adminConsole.reports.fieldNote": "Note",
+  "@adminConsole.reports.fieldNote": {
+    "description": "Settings > Admin, report detail: label of the reporter's note row. Short."
+  },
+  "adminConsole.reports.fieldResolvedBy": "Resolved by",
+  "@adminConsole.reports.fieldResolvedBy": {
+    "description": "Settings > Admin, report detail: label of the row naming who resolved it. Short."
+  },
+  "adminConsole.reports.fieldResolvedAt": "Resolved at",
+  "@adminConsole.reports.fieldResolvedAt": {
+    "description": "Settings > Admin, report detail: label of the resolve time row. Short."
+  },
+  "adminConsole.reports.fieldActionId": "Action ID",
+  "@adminConsole.reports.fieldActionId": {
+    "description": "Settings > Admin, report detail: label of the enforcement action id row. Short."
+  },
+  "adminConsole.reports.fieldCreated": "Created",
+  "@adminConsole.reports.fieldCreated": {
+    "description": "Settings > Admin, report detail: label of the report creation time row. Short."
+  },
+  "adminConsole.reports.reportedMessage": "Reported message",
+  "@adminConsole.reports.reportedMessage": {
+    "description": "Settings > Admin, report detail: heading of the reported message box."
+  },
+  "adminConsole.reports.messageDeleted": "(deleted)",
+  "@adminConsole.reports.messageDeleted": {
+    "description": "Settings > Admin, report detail: marker after the heading when the reported message was deleted. Short."
+  },
+  "adminConsole.reports.fieldAuthor": "Author",
+  "@adminConsole.reports.fieldAuthor": {
+    "description": "Settings > Admin, report detail, reported message: label of the author row. Short."
+  },
+  "adminConsole.reports.fieldContent": "Content",
+  "@adminConsole.reports.fieldContent": {
+    "description": "Settings > Admin, report detail, reported message: label of the message text row. Short."
+  },
+  "adminConsole.reports.fieldMessageCreated": "Msg created",
+  "@adminConsole.reports.fieldMessageCreated": {
+    "description": "Settings > Admin, report detail, reported message: label of the message time row. Short."
+  },
+  "adminConsole.reports.enforcementPending": "Enforcement pending…",
+  "@adminConsole.reports.enforcementPending": {
+    "description": "Settings > Admin, report detail: badge while the moderation action waits to run. Short."
+  },
+  "adminConsole.reports.enforcementEnforcing": "Enforcing…",
+  "@adminConsole.reports.enforcementEnforcing": {
+    "description": "Settings > Admin, report detail: badge while the moderation action runs. Short."
+  },
+  "adminConsole.reports.enforcementSucceeded": "Enforcement succeeded",
+  "@adminConsole.reports.enforcementSucceeded": {
+    "description": "Settings > Admin, report detail: badge when the moderation action ran. Short."
+  },
+  "adminConsole.reports.enforcementFailed": "Enforcement failed",
+  "@adminConsole.reports.enforcementFailed": {
+    "description": "Settings > Admin, report detail: badge when the moderation action failed. Short."
+  },
+  "adminConsole.reports.enforcementCancelled": "Enforcement cancelled",
+  "@adminConsole.reports.enforcementCancelled": {
+    "description": "Settings > Admin, report detail: badge when the moderation action was cancelled. Short."
+  },
+  "adminConsole.reports.kickAlreadyAbsent": "No group membership to remove — use Timeout or Ban for open groups.",
+  "@adminConsole.reports.kickAlreadyAbsent": {
+    "description": "Settings > Admin, report detail: explanation when a kick failed because the member was not in the group."
+  },
+  "adminConsole.reports.cancelSuccessToast": "Enforcement cancelled — report reopened",
+  "@adminConsole.reports.cancelSuccessToast": {
+    "description": "Settings > Admin, report detail: notification after cancelling a failed action."
+  },
+  "adminConsole.reports.cancelRejectedToast": "Cancel rejected: {error}",
+  "@adminConsole.reports.cancelRejectedToast": {
+    "description": "Settings > Admin, report detail: error notification when cancelling failed; error is the server's message."
+  },
+  "adminConsole.reports.cancelAndReopen": "Cancel & reopen",
+  "@adminConsole.reports.cancelAndReopen": {
+    "description": "Settings > Admin, report detail: button to cancel a failed action and reopen the report. Short."
+  },
+  "adminConsole.reports.resolveTitle": "Resolve report",
+  "@adminConsole.reports.resolveTitle": {
+    "description": "Settings > Admin, report detail: heading of the resolve form."
+  },
+  "adminConsole.reports.actionDelete": "Delete",
+  "@adminConsole.reports.actionDelete": {
+    "description": "Settings > Admin, resolve form: action button that deletes the reported message. Short."
+  },
+  "adminConsole.reports.actionKick": "Kick",
+  "@adminConsole.reports.actionKick": {
+    "description": "Settings > Admin, resolve form: action button that removes the member from the group. Short."
+  },
+  "adminConsole.reports.actionBan": "Ban",
+  "@adminConsole.reports.actionBan": {
+    "description": "Settings > Admin, resolve form: action button that bans the member. Short."
+  },
+  "adminConsole.reports.actionTimeout": "Timeout",
+  "@adminConsole.reports.actionTimeout": {
+    "description": "Settings > Admin, resolve form: action button that temporarily mutes the member. Short."
+  },
+  "adminConsole.reports.actionDismiss": "Dismiss",
+  "@adminConsole.reports.actionDismiss": {
+    "description": "Settings > Admin, resolve form: action button that closes the report without action. Short."
+  },
+  "adminConsole.reports.actionEscalate": "Escalate",
+  "@adminConsole.reports.actionEscalate": {
+    "description": "Settings > Admin, resolve form: action button that passes the report up for review. Short."
+  },
+  "adminConsole.reports.durationLabel": "Duration (seconds)",
+  "@adminConsole.reports.durationLabel": {
+    "description": "Settings > Admin, resolve form: label of the timeout length field."
+  },
+  "adminConsole.reports.durationPlaceholder": "e.g. 3600",
+  "@adminConsole.reports.durationPlaceholder": {
+    "description": "Settings > Admin, resolve form: example in the timeout length field. Short."
+  },
+  "adminConsole.reports.confirmAction": "Confirm: {action}",
+  "@adminConsole.reports.confirmAction": {
+    "description": "Settings > Admin, resolve form: submit button; action is the chosen action name. Short."
+  },
+  "adminConsole.reports.resolvedToast": "Report resolved: {action}",
+  "@adminConsole.reports.resolvedToast": {
+    "description": "Settings > Admin: notification after resolving a report; action is the action name."
+  },
+  "adminConsole.reports.reopenTitle": "Reopen report",
+  "@adminConsole.reports.reopenTitle": {
+    "description": "Settings > Admin, report detail: heading of the reopen form."
+  },
+  "adminConsole.reports.reopenHelp": "Moves this report back to the open queue for re-triage. Reopening does not reverse any enforcement action.",
+  "@adminConsole.reports.reopenHelp": {
+    "description": "Settings > Admin, reopen form: explanation."
+  },
+  "adminConsole.reports.reopenHelpEnforced": "Moves this report back to the open queue for re-triage. The enforcement action already taken is not reversed — reopening does not un-ban, un-timeout, or restore a deleted message.",
+  "@adminConsole.reports.reopenHelpEnforced": {
+    "description": "Settings > Admin, reopen form: explanation when an action was already taken."
+  },
+  "adminConsole.reports.reopenSubmit": "Reopen report",
+  "@adminConsole.reports.reopenSubmit": {
+    "description": "Settings > Admin, reopen form: submit button. Short."
+  },
+  "adminConsole.reports.reopenedToast": "Report reopened",
+  "@adminConsole.reports.reopenedToast": {
+    "description": "Settings > Admin: notification after reopening a report."
+  },
+  "adminConsole.feedback.empty": "No feedback found.",
+  "@adminConsole.feedback.empty": {
+    "description": "Settings > Admin, Feedback tab: empty list message."
+  },
+  "adminConsole.feedback.status": "{status, select, new {new} reviewed {reviewed} archived {archived} other {{status}}}",
+  "@adminConsole.feedback.status": {
+    "description": "Settings > Admin, Feedback: feedback status name, shown on badges and status buttons. Short."
+  },
+  "adminConsole.feedback.statusLabel": "Status",
+  "@adminConsole.feedback.statusLabel": {
+    "description": "Settings > Admin, feedback detail: label above the status buttons. Short."
+  },
+  "adminConsole.feedback.markedToast": "Feedback marked {status, select, new {new} reviewed {reviewed} archived {archived} other {{status}}}",
+  "@adminConsole.feedback.markedToast": {
+    "description": "Settings > Admin, feedback detail: notification after changing the status."
+  },
+  "adminConsole.feedback.back": "Back to feedback",
+  "@adminConsole.feedback.back": {
+    "description": "Settings > Admin, feedback detail: back link to the list."
+  },
+  "adminConsole.feedback.fieldBody": "Body",
+  "@adminConsole.feedback.fieldBody": {
+    "description": "Settings > Admin, feedback detail: label of the feedback text row. Short."
+  },
+  "adminConsole.feedback.fieldSubmitter": "Submitter",
+  "@adminConsole.feedback.fieldSubmitter": {
+    "description": "Settings > Admin, feedback detail: label of the sender row. Short."
+  },
+  "adminConsole.feedback.fieldCategory": "Category",
+  "@adminConsole.feedback.fieldCategory": {
+    "description": "Settings > Admin, feedback detail: label of the category row. Short."
+  },
+  "adminConsole.feedback.fieldEventCreated": "Event created",
+  "@adminConsole.feedback.fieldEventCreated": {
+    "description": "Settings > Admin, feedback detail: label of the time the feedback was written. Short."
+  },
+  "adminConsole.feedback.fieldReceived": "Received",
+  "@adminConsole.feedback.fieldReceived": {
+    "description": "Settings > Admin, feedback detail: label of the time the server received it. Short."
+  },
+  "adminConsole.feedback.attachmentsTitle": "Attachments",
+  "@adminConsole.feedback.attachmentsTitle": {
+    "description": "Settings > Admin, feedback detail: heading above attached files. Short."
+  },
+  "adminConsole.feedback.attachmentsTruncated": "{count, plural, one {# attachment} other {# attachments}} not shown (display limit reached).",
+  "@adminConsole.feedback.attachmentsTruncated": {
+    "description": "Settings > Admin, feedback detail: note when some attachments are hidden."
+  },
+  "adminConsole.feedback.attachmentSavedToast": "Attachment saved",
+  "@adminConsole.feedback.attachmentSavedToast": {
+    "description": "Settings > Admin, feedback detail: notification after saving an attachment."
+  },
+  "adminConsole.feedback.saveAttachment": "Save attachment ({mime})",
+  "@adminConsole.feedback.saveAttachment": {
+    "description": "Settings > Admin, feedback detail: button to save a non-image attachment; mime is its file type."
+  },
+  "adminConsole.feedback.attachmentAlt": "Feedback attachment",
+  "@adminConsole.feedback.attachmentAlt": {
+    "description": "Settings > Admin, feedback detail: image description for screen readers."
+  },
+  "adminConsole.feedback.attachmentTooLarge": "Attachment exceeds the 10 MiB desktop cap.",
+  "@adminConsole.feedback.attachmentTooLarge": {
+    "description": "Settings > Admin, feedback detail: error when an attachment is too big."
+  },
+  "adminConsole.feedback.attachmentMimeMismatch": "Attachment MIME type does not match the imeta record.",
+  "@adminConsole.feedback.attachmentMimeMismatch": {
+    "description": "Settings > Admin, feedback detail: error when an attachment's file type is wrong."
+  },
+  "adminConsole.feedback.attachmentSizeMismatch": "Attachment byte count does not match the imeta record.",
+  "@adminConsole.feedback.attachmentSizeMismatch": {
+    "description": "Settings > Admin, feedback detail: error when an attachment's size is wrong."
+  },
+  "adminConsole.feedback.attachmentNetworkError": "Network error fetching attachment.",
+  "@adminConsole.feedback.attachmentNetworkError": {
+    "description": "Settings > Admin, feedback detail: error when an attachment could not be downloaded."
+  },
+  "adminConsole.feedback.attachmentError": "Error: {code}",
+  "@adminConsole.feedback.attachmentError": {
+    "description": "Settings > Admin, feedback detail: generic attachment error; code is an internal error code."
+  },
+  "adminConsole.actions.banMember": "Ban member",
+  "@adminConsole.actions.banMember": {
+    "description": "Settings > Admin, Actions tab: action choice button. Short."
+  },
+  "adminConsole.actions.timeOutMember": "Time out member",
+  "@adminConsole.actions.timeOutMember": {
+    "description": "Settings > Admin, Actions tab: action choice button. Short."
+  },
+  "adminConsole.actions.deleteMessage": "Delete message",
+  "@adminConsole.actions.deleteMessage": {
+    "description": "Settings > Admin, Actions tab: action choice button. Short."
+  },
+  "adminConsole.actions.doneToast": "{action}: done",
+  "@adminConsole.actions.doneToast": {
+    "description": "Settings > Admin, Actions tab: notification after an action finished; action is the action name."
+  },
+  "adminConsole.actions.errorTargetIsStaff": "Relay staff can't be banned or timed out. Remove their staff role first.",
+  "@adminConsole.actions.errorTargetIsStaff": {
+    "description": "Settings > Admin, Actions tab: error when the target is staff."
+  },
+  "adminConsole.actions.errorRequestIdConflict": "This request id was already used for a different action. Review again to send it with a new id.",
+  "@adminConsole.actions.errorRequestIdConflict": {
+    "description": "Settings > Admin, Actions tab: error when the request id was reused."
+  },
+  "adminConsole.actions.errorUnsupported": "This relay doesn't support direct actions yet.",
+  "@adminConsole.actions.errorUnsupported": {
+    "description": "Settings > Admin, Actions tab: error when the server is too old."
+  },
+  "adminConsole.actions.errorHostRequired": "Enter the community host.",
+  "@adminConsole.actions.errorHostRequired": {
+    "description": "Settings > Admin, Actions tab: validation error when the community field is empty."
+  },
+  "adminConsole.actions.errorEventId": "Event id must be 64 lowercase hex characters.",
+  "@adminConsole.actions.errorEventId": {
+    "description": "Settings > Admin, Actions tab: validation error for the message id field."
+  },
+  "adminConsole.actions.errorMemberRequired": "Choose a member: search by name, or paste an npub or hex key.",
+  "@adminConsole.actions.errorMemberRequired": {
+    "description": "Settings > Admin, Actions tab: validation error when no member is picked."
+  },
+  "adminConsole.actions.errorDuration": "Duration must be a whole number of seconds above zero.",
+  "@adminConsole.actions.errorDuration": {
+    "description": "Settings > Admin, Actions tab: validation error for the timeout length."
+  },
+  "adminConsole.actions.hostPlaceholder": "Community host (e.g. team.example.com)",
+  "@adminConsole.actions.hostPlaceholder": {
+    "description": "Settings > Admin, Actions tab: placeholder of the community address field."
+  },
+  "adminConsole.actions.communityLabel": "Community: <code>{host}</code>",
+  "@adminConsole.actions.communityLabel": {
+    "description": "Settings > Admin, Actions tab: the target community; host is its address."
+  },
+  "adminConsole.actions.changeHost": "Change",
+  "@adminConsole.actions.changeHost": {
+    "description": "Settings > Admin, Actions tab: link button to type a different community. Short."
+  },
+  "adminConsole.actions.eventIdPlaceholder": "Event id (hex)",
+  "@adminConsole.actions.eventIdPlaceholder": {
+    "description": "Settings > Admin, Actions tab: placeholder of the message id field."
+  },
+  "adminConsole.actions.durationPlaceholder": "Duration (seconds)",
+  "@adminConsole.actions.durationPlaceholder": {
+    "description": "Settings > Admin, Actions tab: placeholder of the timeout length field."
+  },
+  "adminConsole.actions.pending": "Accepted; the relay is still applying it. Retry to check.",
+  "@adminConsole.actions.pending": {
+    "description": "Settings > Admin, Actions tab: note when the action is still in progress."
+  },
+  "adminConsole.actions.confirmSummary": "{action, select, ban {Ban member} timeout {Time out member} other {Delete message}} {target} in <code>{host}</code>?",
+  "@adminConsole.actions.confirmSummary": {
+    "description": "Settings > Admin, Actions tab: confirmation question; target is the member or message, host the community."
+  },
+  "adminConsole.actions.confirmSummaryTimed": "{action, select, ban {Ban member} timeout {Time out member} other {Delete message}} {target} in <code>{host}</code> for {secs}s?",
+  "@adminConsole.actions.confirmSummaryTimed": {
+    "description": "Settings > Admin, Actions tab: confirmation question for a timeout; secs is the length in seconds."
+  },
+  "adminConsole.actions.confirmReason": "Reason: {reason}",
+  "@adminConsole.actions.confirmReason": {
+    "description": "Settings > Admin, Actions tab, confirmation: the reason that will be sent."
+  },
+  "adminConsole.actions.reasonNone": "(none)",
+  "@adminConsole.actions.reasonNone": {
+    "description": "Settings > Admin, Actions tab, confirmation: shown as the reason when none was given. Short."
+  },
+  "adminConsole.actions.discard": "Discard",
+  "@adminConsole.actions.discard": {
+    "description": "Settings > Admin, Actions tab, confirmation: button to drop the prepared action. Short."
+  },
+  "adminConsole.actions.review": "Review",
+  "@adminConsole.actions.review": {
+    "description": "Settings > Admin, Actions tab: button to check the action before confirming. Short."
+  },
+  "adminConsole.actions.memberSearchHint": "Name search only works in the community you're connected to.",
+  "@adminConsole.actions.memberSearchHint": {
+    "description": "Settings > Admin, Actions tab: hint under the member field."
+  },
+  "adminConsole.actions.memberSearchPlaceholder": "Search by name, or paste an npub or hex key",
+  "@adminConsole.actions.memberSearchPlaceholder": {
+    "description": "Settings > Admin, Actions tab: placeholder of the member field."
+  },
+  "adminConsole.actions.memberKeyPlaceholder": "npub or hex key",
+  "@adminConsole.actions.memberKeyPlaceholder": {
+    "description": "Settings > Admin, Actions tab: placeholder of the member field when name search is off."
+  },
+  "adminConsole.actions.memberSecretKey": "That's a secret key. Never paste it here.",
+  "@adminConsole.actions.memberSecretKey": {
+    "description": "Settings > Admin, Actions tab: warning when a private key was pasted into the member field."
+  },
+  "adminConsole.actions.memberPublicKey": "public key",
+  "@adminConsole.actions.memberPublicKey": {
+    "description": "Settings > Admin, Actions tab: small grey label on a search result made from a pasted key. Short."
+  },
+  "adminConsole.staffing.sourceConfig": "config",
+  "@adminConsole.staffing.sourceConfig": {
+    "description": "Settings > Admin, Staffing tab: badge saying the role comes from the server config file. Short."
+  },
+  "adminConsole.staffing.sourceOwnerFallback": "owner (fallback)",
+  "@adminConsole.staffing.sourceOwnerFallback": {
+    "description": "Settings > Admin, Staffing tab: badge saying the role comes from the server owner setting. Short."
+  },
+  "adminConsole.staffing.sourceDb": "db",
+  "@adminConsole.staffing.sourceDb": {
+    "description": "Settings > Admin, Staffing tab: badge saying the role is stored in the database. Short."
+  },
+  "adminConsole.staffing.alreadyOperator": "Already an operator: {role, select, operator {operator} moderator {moderator} other {{role}}}. Change role with the edit control on their row.",
+  "@adminConsole.staffing.alreadyOperator": {
+    "description": "Settings > Admin, Staffing tab: error when adding someone who is already staff."
+  },
+  "adminConsole.staffing.removeTitle": "Remove operator?",
+  "@adminConsole.staffing.removeTitle": {
+    "description": "Settings > Admin, Staffing tab: remove confirmation dialog title."
+  },
+  "adminConsole.staffing.removeDescription": "This will remove <mono>{pubkey}</mono> ({role, select, operator {operator} moderator {moderator} other {{role}}}) from the operator list.",
+  "@adminConsole.staffing.removeDescription": {
+    "description": "Settings > Admin, Staffing tab: remove confirmation dialog text; pubkey is a shortened key."
+  },
+  "adminConsole.staffing.removeSelfWarning": "You are removing your own operator access. Once removed, you may lose the ability to undo this action.",
+  "@adminConsole.staffing.removeSelfWarning": {
+    "description": "Settings > Admin, Staffing tab: warning in the remove dialog when removing yourself."
+  },
+  "adminConsole.staffing.addTitle": "Add operator",
+  "@adminConsole.staffing.addTitle": {
+    "description": "Settings > Admin, Staffing tab: heading of the add form."
+  },
+  "adminConsole.staffing.pubkeyPlaceholder": "64-hex pubkey",
+  "@adminConsole.staffing.pubkeyPlaceholder": {
+    "description": "Settings > Admin, Staffing tab: placeholder of the public key field."
+  },
+  "adminConsole.staffing.empty": "No operators configured.",
+  "@adminConsole.staffing.empty": {
+    "description": "Settings > Admin, Staffing tab: empty list message."
+  },
+  "adminConsole.staffing.changeRoleLabel": "Change role for {name}",
+  "@adminConsole.staffing.changeRoleLabel": {
+    "description": "Settings > Admin, Staffing tab: screen-reader label of a member's role dropdown."
+  },
+  "adminConsole.staffing.removeLabel": "Remove {name}",
+  "@adminConsole.staffing.removeLabel": {
+    "description": "Settings > Admin, Staffing tab: screen-reader label of a member's remove button."
+  },
+  "adminConsole.staffing.configBackedTooltip": "Config-backed — cannot be removed via API",
+  "@adminConsole.staffing.configBackedTooltip": {
+    "description": "Settings > Admin, Staffing tab: tooltip of a disabled remove button."
+  },
+  "adminConsole.staffing.removeTooltip": "Remove operator",
+  "@adminConsole.staffing.removeTooltip": {
+    "description": "Settings > Admin, Staffing tab: tooltip of the remove button."
+  },
+  "adminConsole.restrictions.title": "Active restrictions",
+  "@adminConsole.restrictions.title": {
+    "description": "Settings > Admin, Staffing tab: heading of the bans and timeouts list."
+  },
+  "adminConsole.restrictions.empty": "No active bans or timeouts.",
+  "@adminConsole.restrictions.empty": {
+    "description": "Settings > Admin, Staffing tab: empty restrictions list message."
+  },
+  "adminConsole.restrictions.bannedBadge": "banned",
+  "@adminConsole.restrictions.bannedBadge": {
+    "description": "Settings > Admin, restrictions list: badge on a banned member. Short."
+  },
+  "adminConsole.restrictions.timeoutBadge": "timeout",
+  "@adminConsole.restrictions.timeoutBadge": {
+    "description": "Settings > Admin, restrictions list: badge on a timed-out member. Short."
+  },
+  "adminConsole.restrictions.liftBan": "Lift ban",
+  "@adminConsole.restrictions.liftBan": {
+    "description": "Settings > Admin, restrictions list and dialog: button to remove a ban. Short."
+  },
+  "adminConsole.restrictions.liftBanTitle": "Lift ban?",
+  "@adminConsole.restrictions.liftBanTitle": {
+    "description": "Settings > Admin, restrictions: lift-ban confirmation dialog title."
+  },
+  "adminConsole.restrictions.liftBanDescription": "This will remove the active ban for <mono>{pubkey}</mono>. They will be able to post again.",
+  "@adminConsole.restrictions.liftBanDescription": {
+    "description": "Settings > Admin, restrictions: lift-ban confirmation dialog text; pubkey is a shortened key."
+  },
+  "adminConsole.restrictions.clearTimeout": "Clear timeout",
+  "@adminConsole.restrictions.clearTimeout": {
+    "description": "Settings > Admin, restrictions list and dialog: button to end a timeout. Short."
+  },
+  "adminConsole.restrictions.clearTimeoutTitle": "Clear timeout?",
+  "@adminConsole.restrictions.clearTimeoutTitle": {
+    "description": "Settings > Admin, restrictions: clear-timeout confirmation dialog title."
+  },
+  "adminConsole.restrictions.clearTimeoutDescription": "This will clear the active timeout for <mono>{pubkey}</mono>. They will be able to post again.",
+  "@adminConsole.restrictions.clearTimeoutDescription": {
+    "description": "Settings > Admin, restrictions: clear-timeout confirmation dialog text; pubkey is a shortened key."
+  },
+  "adminConsole.restrictions.loadMore": "Load more",
+  "@adminConsole.restrictions.loadMore": {
+    "description": "Settings > Admin, restrictions list: button to load more rows. Short."
+  },
+  "people.message": "Message",
+  "@people.message": {
+    "description": "People: button/menu item that opens a direct chat with the person. Short."
+  },
+  "people.messageFailed": "Could not open the chat",
+  "@people.messageFailed": {
+    "description": "People: error toast when opening the chat with a person fails"
+  },
+  "people.unknownPerson": "Unknown",
+  "@people.unknownPerson": {
+    "description": "People: name shown for a person with no display name or handle. Short."
+  },
+  "people.friend.add": "Add friend",
+  "@people.friend.add": {
+    "description": "People: button, tooltip and right-click menu item that adds the person as a friend. Short."
+  },
+  "people.friend.remove": "Remove friend",
+  "@people.friend.remove": {
+    "description": "People: button and right-click menu item that removes the person from friends. Short."
+  },
+  "people.friend.addedToast": "{name} is now your friend",
+  "@people.friend.addedToast": {
+    "description": "People: success toast after adding a friend; name is the person"
+  },
+  "people.friend.removedToast": "{name} was removed from your friends",
+  "@people.friend.removedToast": {
+    "description": "People: success toast after removing a friend; name is the person"
+  },
+  "people.friend.addFailed": "Could not add friend",
+  "@people.friend.addFailed": {
+    "description": "People: error toast when adding a friend fails"
+  },
+  "people.friend.removeFailed": "Could not remove friend",
+  "@people.friend.removeFailed": {
+    "description": "People: error toast when removing a friend fails"
+  },
+  "people.favorite.add": "Add to favorites",
+  "@people.favorite.add": {
+    "description": "People: star button tooltip/screen-reader label and menu item that stars the person. Short."
+  },
+  "people.favorite.remove": "Remove from favorites",
+  "@people.favorite.remove": {
+    "description": "People: star button tooltip/screen-reader label and menu item that unstars the person. Short."
+  },
+  "people.screen.emptyHint": "Pick someone on the left to see their profile, or find people by name to add them as friends.",
+  "@people.screen.emptyHint": {
+    "description": "People tab main pane: hint shown while no person is picked"
+  },
+  "people.screen.youBlocked": "You blocked this person.",
+  "@people.screen.youBlocked": {
+    "description": "People tab profile: small note under the buttons when the person is blocked"
+  },
+  "people.list.title": "Friends",
+  "@people.list.title": {
+    "description": "People tab left column: heading above the list. Short."
+  },
+  "people.list.filterLabel": "Find people by name",
+  "@people.list.filterLabel": {
+    "description": "People tab left column: screen-reader label of the name filter field"
+  },
+  "people.list.filterPlaceholder": "Find people",
+  "@people.list.filterPlaceholder": {
+    "description": "People tab left column: placeholder of the name filter field. Short."
+  },
+  "people.list.favorites": "Favorites",
+  "@people.list.favorites": {
+    "description": "People tab left column: section heading for starred people (shown in capitals). Short."
+  },
+  "people.list.friendsCount": "Friends · {count}",
+  "@people.list.friendsCount": {
+    "description": "People tab left column: section heading with the number of friends (shown in capitals). Short."
+  },
+  "people.list.noFriendsMatch": "No friends match that name.",
+  "@people.list.noFriendsMatch": {
+    "description": "People tab left column: empty state when the name filter matches no friend"
+  },
+  "people.list.noFriendsYet": "No friends yet. Use Add friend to find someone by Kuzz ID or email.",
+  "@people.list.noFriendsYet": {
+    "description": "People tab left column: empty state when there are no friends; 'Add friend' is the button above"
+  },
+  "people.list.inYourGroups": "In your groups",
+  "@people.list.inYourGroups": {
+    "description": "People tab left column: section heading for people found in your groups while searching (shown in capitals). Short."
+  },
+  "people.list.noGroupMatch": "No one in your groups matches that name. Use Add friend to find someone by Kuzz ID or email.",
+  "@people.list.noGroupMatch": {
+    "description": "People tab left column: empty state of the 'In your groups' section; 'Add friend' is the button above"
+  },
+  "people.row.favorite": "Favorite",
+  "@people.row.favorite": {
+    "description": "People list row: screen-reader label of the star icon on a starred person"
+  },
+  "people.row.addAsFriend": "Add {name} as a friend",
+  "@people.row.addAsFriend": {
+    "description": "People list row: screen-reader label of the add-friend icon button; name is the person"
+  },
+  "people.addFriend.title": "Add friend",
+  "@people.addFriend.title": {
+    "description": "Add friend dialog: title. Short."
+  },
+  "people.addFriend.description": "Enter their Kuzz ID or email address exactly.",
+  "@people.addFriend.description": {
+    "description": "Add friend dialog: text under the title"
+  },
+  "people.addFriend.queryPlaceholder": "Kuzz ID or email",
+  "@people.addFriend.queryPlaceholder": {
+    "description": "Add friend dialog: placeholder and screen-reader label of the search field"
+  },
+  "people.addFriend.find": "Find",
+  "@people.addFriend.find": {
+    "description": "Add friend dialog: search button. Short."
+  },
+  "people.addFriend.searching": "Searching…",
+  "@people.addFriend.searching": {
+    "description": "Add friend dialog: shown while the search runs"
+  },
+  "people.addFriend.notFound": "No one found with that ID or email",
+  "@people.addFriend.notFound": {
+    "description": "Add friend dialog: result when nobody matches"
+  },
+  "people.addFriend.searchFailed": "Couldn't search. Try again.",
+  "@people.addFriend.searchFailed": {
+    "description": "Add friend dialog: error when the search fails without a server message"
+  },
+  "people.addFriend.someone": "Someone",
+  "@people.addFriend.someone": {
+    "description": "Add friend dialog: name used for a found person without a display name or username"
+  },
+  "people.addFriend.thisIsYou": "This is you",
+  "@people.addFriend.thisIsYou": {
+    "description": "Add friend dialog: shown next to the result when it is your own account. Short."
+  },
+  "people.addFriend.blocked": "Blocked",
+  "@people.addFriend.blocked": {
+    "description": "Add friend dialog: shown next to the result when you blocked the person. Short."
+  },
+  "people.addFriend.added": "Added",
+  "@people.addFriend.added": {
+    "description": "Add friend dialog: shown next to the result right after adding. Short."
+  },
+  "people.addFriend.friend": "Friend",
+  "@people.addFriend.friend": {
+    "description": "Add friend dialog: shown next to the result when the person is already a friend. Short."
+  },
+  "people.removeFriend.title": "Remove {name} from friends?",
+  "@people.removeFriend.title": {
+    "description": "Remove friend confirm dialog: title; name is the person"
+  },
+  "people.removeFriend.description": "You can add them again anytime.",
+  "@people.removeFriend.description": {
+    "description": "Remove friend confirm dialog: text under the title"
+  },
+  "people.safety.moreOptions": "More options for {name}",
+  "@people.safety.moreOptions": {
+    "description": "Person profile: screen-reader label of the More menu button; name is the person"
+  },
+  "people.safety.block": "Block",
+  "@people.safety.block": {
+    "description": "Person profile More menu: item that blocks the person. Short."
+  },
+  "people.safety.unblock": "Unblock",
+  "@people.safety.unblock": {
+    "description": "Person profile More menu: item that unblocks the person. Short."
+  },
+  "people.safety.report": "Report",
+  "@people.safety.report": {
+    "description": "Person profile More menu: item that opens the report dialog. Short."
+  },
+  "people.safety.blockConfirmTitle": "Block {name}?",
+  "@people.safety.blockConfirmTitle": {
+    "description": "Block person confirm dialog: title; name is the person"
+  },
+  "people.safety.blockDescription": "You won't get messages from {name}, and their messages in shared groups are hidden. They're removed from your friends and aren't told you blocked them. You can unblock them in Settings.",
+  "@people.safety.blockDescription": {
+    "description": "Block person confirm dialog: explanation of what blocking does; name is the person"
+  },
+  "people.safety.blockConfirm": "Block",
+  "@people.safety.blockConfirm": {
+    "description": "Block person confirm dialog: confirm button. Short."
+  },
+  "people.safety.blockedToast": "{name} is blocked",
+  "@people.safety.blockedToast": {
+    "description": "Person profile: success toast after blocking; name is the person"
+  },
+  "people.safety.unblockedToast": "{name} is unblocked",
+  "@people.safety.unblockedToast": {
+    "description": "Person profile: success toast after unblocking; name is the person"
+  },
+  "people.safety.blockFailed": "Could not block",
+  "@people.safety.blockFailed": {
+    "description": "Person profile: error toast when blocking fails"
+  },
+  "people.safety.unblockFailed": "Could not unblock",
+  "@people.safety.unblockFailed": {
+    "description": "Person profile: error toast when unblocking fails"
+  },
+  "people.safety.blockedStillFriend": "Blocked. Couldn't remove them from your friends. Try removing them again.",
+  "@people.safety.blockedStillFriend": {
+    "description": "Person profile: error toast when the block worked but removing the person from friends failed"
+  },
+  "communityMembers.role.owner": "Owner",
+  "@communityMembers.role.owner": {
+    "description": "Community members: role name of the community owner. Short."
+  },
+  "communityMembers.role.admin": "Admin",
+  "@communityMembers.role.admin": {
+    "description": "Community members: role name (role picker option and member list). Short."
+  },
+  "communityMembers.role.member": "Member",
+  "@communityMembers.role.member": {
+    "description": "Community members: role name (role picker option and member list). Short."
+  },
+  "communityMembers.addMember.title": "Add member",
+  "@communityMembers.addMember.title": {
+    "description": "Add member dialog: title. Short."
+  },
+  "communityMembers.addMember.description": "Add a person to this community by their public key.",
+  "@communityMembers.addMember.description": {
+    "description": "Add member dialog: text under the title"
+  },
+  "communityMembers.addMember.submit": "Add member",
+  "@communityMembers.addMember.submit": {
+    "description": "Add member form: submit button. Short."
+  },
+  "communityMembers.addMember.inviting": "Inviting…",
+  "@communityMembers.addMember.inviting": {
+    "description": "Add member form: submit button while adding. Short."
+  },
+  "communityMembers.addMember.personLabel": "Person",
+  "@communityMembers.addMember.personLabel": {
+    "description": "Add member form: label above the people search field. Short."
+  },
+  "communityMembers.addMember.searchPlaceholder": "Search people",
+  "@communityMembers.addMember.searchPlaceholder": {
+    "description": "Add member form: placeholder of the people search field. Short."
+  },
+  "communityMembers.addMember.chooseRole": "Choose member role",
+  "@communityMembers.addMember.chooseRole": {
+    "description": "Add member form: screen-reader label of the role picker"
+  },
+  "communityMembers.addMember.searching": "Searching…",
+  "@communityMembers.addMember.searching": {
+    "description": "Add member form: search results popup while searching"
+  },
+  "communityMembers.addMember.noPeopleFound": "No people found.",
+  "@communityMembers.addMember.noPeopleFound": {
+    "description": "Add member form: search results popup when nobody matches"
+  },
+  "communityMembers.addMember.publicKey": "public key",
+  "@communityMembers.addMember.publicKey": {
+    "description": "Add member form: small grey tag on a search result that is a pasted public key. Short."
+  },
+  "communityMembers.addMember.alreadyMember": "This person is already a community member.",
+  "@communityMembers.addMember.alreadyMember": {
+    "description": "Add member form: error under the field"
+  },
+  "communityMembers.addMember.memberAdded": "Member added",
+  "@communityMembers.addMember.memberAdded": {
+    "description": "Add member form: success toast after adding one member"
+  },
+  "communityMembers.addMember.adminAdded": "Admin added",
+  "@communityMembers.addMember.adminAdded": {
+    "description": "Add member form: success toast after adding one admin"
+  },
+  "communityMembers.addMember.membersAdded": "Members added",
+  "@communityMembers.addMember.membersAdded": {
+    "description": "Add member form: success toast after adding several members"
+  },
+  "communityMembers.addMember.adminsAdded": "Admins added",
+  "@communityMembers.addMember.adminsAdded": {
+    "description": "Add member form: success toast after adding several admins"
+  },
+  "communityMembers.invite.title": "Invite to community",
+  "@communityMembers.invite.title": {
+    "description": "Community invite dialog: title, and the Settings button that opens it"
+  },
+  "communityMembers.invite.description": "Add someone directly or share a link they can use to join.",
+  "@communityMembers.invite.description": {
+    "description": "Community invite dialog: text under the title"
+  },
+  "communityMembers.invite.submit": "Invite",
+  "@communityMembers.invite.submit": {
+    "description": "Community invite dialog: submit button of the add-someone form. Short."
+  },
+  "communityMembers.invite.orCopyLink": "Or, copy a link",
+  "@communityMembers.invite.orCopyLink": {
+    "description": "Community invite dialog: divider text between adding directly and the invite link. Short."
+  },
+  "communityMembers.inviteLink.linkLabel": "Community invite link",
+  "@communityMembers.inviteLink.linkLabel": {
+    "description": "Community invite dialog: screen-reader label of the invite link field"
+  },
+  "communityMembers.inviteLink.creating": "Creating invite link…",
+  "@communityMembers.inviteLink.creating": {
+    "description": "Community invite dialog: placeholder of the link field while the link is created"
+  },
+  "communityMembers.inviteLink.createFailed": "Couldn’t create invite link",
+  "@communityMembers.inviteLink.createFailed": {
+    "description": "Community invite dialog: placeholder of the link field when creating the link failed"
+  },
+  "communityMembers.inviteLink.createFailedToast": "Couldn’t create an invite link.",
+  "@communityMembers.inviteLink.createFailedToast": {
+    "description": "Community invite dialog: error toast when creating the link failed"
+  },
+  "communityMembers.inviteLink.copyLink": "Copy link",
+  "@communityMembers.inviteLink.copyLink": {
+    "description": "Community invite dialog: button that copies the invite link. Short."
+  },
+  "communityMembers.inviteLink.copiedToast": "Invite link copied",
+  "@communityMembers.inviteLink.copiedToast": {
+    "description": "Community invite dialog: success toast after copying the link"
+  },
+  "communityMembers.inviteLink.copyFailedToast": "Couldn’t copy the invite link. Try again.",
+  "@communityMembers.inviteLink.copyFailedToast": {
+    "description": "Community invite dialog: error toast when copying the link failed"
+  },
+  "communityMembers.inviteLink.expiresAfter": "Expires after",
+  "@communityMembers.inviteLink.expiresAfter": {
+    "description": "Community invite dialog: label before the expiry picker"
+  },
+  "communityMembers.inviteLink.chooseExpiry": "Choose invite expiry",
+  "@communityMembers.inviteLink.chooseExpiry": {
+    "description": "Community invite dialog: screen-reader label of the expiry picker"
+  },
+  "communityMembers.inviteLink.ttlDays": "{count, plural, one {# day} other {# days}}",
+  "@communityMembers.inviteLink.ttlDays": {
+    "description": "Community invite dialog: expiry picker option and its current value. Short."
+  },
+  "communityMembers.inviteLink.limitUses": "Limit number of uses",
+  "@communityMembers.inviteLink.limitUses": {
+    "description": "Community invite dialog: label before the use-limit picker"
+  },
+  "communityMembers.inviteLink.chooseMaxUses": "Choose maximum invite uses",
+  "@communityMembers.inviteLink.chooseMaxUses": {
+    "description": "Community invite dialog: screen-reader label of the use-limit picker"
+  },
+  "communityMembers.inviteLink.noLimit": "No limit",
+  "@communityMembers.inviteLink.noLimit": {
+    "description": "Community invite dialog: use-limit picker option for unlimited uses. Short."
+  },
+  "communityMembers.inviteLink.uses": "{count, plural, one {# use} other {# uses}}",
+  "@communityMembers.inviteLink.uses": {
+    "description": "Community invite dialog: use-limit picker option and its current value. Short."
+  },
+  "communityMembers.confirmRemove.title": "Remove {name}?",
+  "@communityMembers.confirmRemove.title": {
+    "description": "Remove community member dialog: title; name is the member"
+  },
+  "communityMembers.confirmRemove.description": "This will immediately revoke their access to the relay.",
+  "@communityMembers.confirmRemove.description": {
+    "description": "Remove community member dialog: text under the title"
+  },
+  "communityMembers.confirmRemove.removing": "Removing...",
+  "@communityMembers.confirmRemove.removing": {
+    "description": "Remove community member dialog: confirm button while removing. Short."
+  },
+  "communityMembers.confirmRemove.removed": "Member removed",
+  "@communityMembers.confirmRemove.removed": {
+    "description": "Remove community member dialog: success toast"
+  },
+  "communityMembers.confirmRemove.failed": "Failed to remove member",
+  "@communityMembers.confirmRemove.failed": {
+    "description": "Remove community member dialog: error toast"
+  },
+  "communityMembers.card.title": "Community Members",
+  "@communityMembers.card.title": {
+    "description": "Community members card: heading"
+  },
+  "communityMembers.card.description": "Manage who has access to this relay.",
+  "@communityMembers.card.description": {
+    "description": "Community members card: text under the heading"
+  },
+  "communityMembers.card.addMember": "Add Member",
+  "@communityMembers.card.addMember": {
+    "description": "Community members card: button that opens the add member dialog. Short."
+  },
+  "communityMembers.card.loading": "Loading members...",
+  "@communityMembers.card.loading": {
+    "description": "Community members card: shown while the list loads"
+  },
+  "communityMembers.card.empty": "No members yet.",
+  "@communityMembers.card.empty": {
+    "description": "Community members card: empty list"
+  },
+  "communityMembers.card.you": "(you)",
+  "@communityMembers.card.you": {
+    "description": "Community members card: small grey tag after your own name. Short."
+  },
+  "communityMembers.card.joined": "Joined {when}",
+  "@communityMembers.card.joined": {
+    "description": "Community members card: when the member joined; when is e.g. '5m ago' or a date"
+  },
+  "communityMembers.card.minutesAgo": "{count}m ago",
+  "@communityMembers.card.minutesAgo": {
+    "description": "Community members card: join time in minutes, compact. Short."
+  },
+  "communityMembers.card.hoursAgo": "{count}h ago",
+  "@communityMembers.card.hoursAgo": {
+    "description": "Community members card: join time in hours, compact. Short."
+  },
+  "communityMembers.card.daysAgo": "{count}d ago",
+  "@communityMembers.card.daysAgo": {
+    "description": "Community members card: join time in days, compact. Short."
+  },
+  "communityMembers.card.actions": "Actions",
+  "@communityMembers.card.actions": {
+    "description": "Community members card: screen-reader label of a member's actions menu button"
+  },
+  "communityMembers.card.makeAdmin": "Make Admin",
+  "@communityMembers.card.makeAdmin": {
+    "description": "Community members card: member menu item that promotes to admin. Short."
+  },
+  "communityMembers.card.makeMember": "Make Member",
+  "@communityMembers.card.makeMember": {
+    "description": "Community members card: member menu item that demotes to member. Short."
+  },
+  "communityMembers.card.roleBadge.owner": "owner",
+  "@communityMembers.card.roleBadge.owner": {
+    "description": "Community members card: lowercase role badge next to a name. Short."
+  },
+  "communityMembers.card.roleBadge.admin": "admin",
+  "@communityMembers.card.roleBadge.admin": {
+    "description": "Community members card: lowercase role badge next to a name. Short."
+  },
+  "communityMembers.card.roleBadge.member": "member",
+  "@communityMembers.card.roleBadge.member": {
+    "description": "Community members card: lowercase role badge next to a name. Short."
+  },
+  "communityMembers.card.roleChanged": "{role, select, admin {Role changed to admin} member {Role changed to member} other {Role changed to {role}}}",
+  "@communityMembers.card.roleChanged": {
+    "description": "Community members card: success toast after changing a member's role; role is admin or member"
+  },
+  "communityMembers.card.roleChangeFailed": "Failed to change role",
+  "@communityMembers.card.roleChangeFailed": {
+    "description": "Community members card: error toast when changing a role fails"
+  },
+  "communityMembers.settings.title": "Invites",
+  "@communityMembers.settings.title": {
+    "description": "Settings, community members section: heading. Short."
+  },
+  "communityMembers.settings.description": "Manage members and community access.",
+  "@communityMembers.settings.description": {
+    "description": "Settings, community members section: text under the heading"
+  },
+  "communityMembers.settings.members": "Members",
+  "@communityMembers.settings.members": {
+    "description": "Settings, community members section: title of the member list box, followed by the count. Short."
+  },
+  "communityMembers.settings.searchPlaceholder": "Search members",
+  "@communityMembers.settings.searchPlaceholder": {
+    "description": "Settings, community members section: placeholder of the member search field. Short."
+  },
+  "communityMembers.settings.checkingPermissions": "Checking invite permissions…",
+  "@communityMembers.settings.checkingPermissions": {
+    "description": "Settings, community members section: shown while checking your role"
+  },
+  "communityMembers.settings.loading": "Loading community members…",
+  "@communityMembers.settings.loading": {
+    "description": "Settings, community members section: shown while the list loads"
+  },
+  "communityMembers.settings.empty": "No community members yet.",
+  "@communityMembers.settings.empty": {
+    "description": "Settings, community members section: empty list"
+  },
+  "communityMembers.settings.noMatch": "No members match your search.",
+  "@communityMembers.settings.noMatch": {
+    "description": "Settings, community members section: no member matches the search"
+  },
+  "communityMembers.settings.communityOwner": "Community owner",
+  "@communityMembers.settings.communityOwner": {
+    "description": "Settings, community members list: name shown for the owner when they have no display name"
+  },
+  "communityMembers.settings.added": "Added {date}",
+  "@communityMembers.settings.added": {
+    "description": "Settings, community members list: small grey text with the date the member was added"
+  },
+  "communityMembers.settings.openProfile": "Open profile for {name}",
+  "@communityMembers.settings.openProfile": {
+    "description": "Settings, community members list: screen-reader label of a member's avatar button"
+  },
+  "communityMembers.settings.actionsFor": "Actions for {name}",
+  "@communityMembers.settings.actionsFor": {
+    "description": "Settings, community members list: screen-reader label of a member's actions menu button"
+  },
+  "communityMembers.settings.makeAdmin": "Make admin",
+  "@communityMembers.settings.makeAdmin": {
+    "description": "Settings, community members list: member menu item that promotes to admin. Short."
+  },
+  "communityMembers.settings.makeMember": "Make member",
+  "@communityMembers.settings.makeMember": {
+    "description": "Settings, community members list: member menu item that demotes to member. Short."
+  },
+  "communityMembers.settings.removeFromCommunity": "Remove from community",
+  "@communityMembers.settings.removeFromCommunity": {
+    "description": "Settings, community members list: member menu item that removes the member. Short."
+  },
+  "communityMembers.settings.madeAdmin": "Made community admin",
+  "@communityMembers.settings.madeAdmin": {
+    "description": "Settings, community members list: success toast after promoting to admin"
+  },
+  "communityMembers.settings.madeMember": "Made community member",
+  "@communityMembers.settings.madeMember": {
+    "description": "Settings, community members list: success toast after demoting to member"
+  },
+  "communityMembers.settings.removed": "Removed community member",
+  "@communityMembers.settings.removed": {
+    "description": "Settings, community members list: success toast after removing a member"
+  },
+  "communityMembers.settings.updateFailed": "Couldn’t update this community member.",
+  "@communityMembers.settings.updateFailed": {
+    "description": "Settings, community members list: error toast when a member change fails"
+  },
+  "communityMembers.settings.removeTitle": "Remove {name}?",
+  "@communityMembers.settings.removeTitle": {
+    "description": "Settings, remove community member confirm dialog: title; name is the member"
+  },
+  "communityMembers.settings.removeDescription": "{name} will lose access to this community's groups and conversations. You can invite them again later.",
+  "@communityMembers.settings.removeDescription": {
+    "description": "Settings, remove community member confirm dialog: explanation; name is the member"
+  },
+  "communityMembers.joinAlert.title": "New member joined",
+  "@communityMembers.joinAlert.title": {
+    "description": "Desktop notification title when someone joins the community (admins only)"
+  },
+  "communityMembers.joinAlert.titleIn": "New member in {community}",
+  "@communityMembers.joinAlert.titleIn": {
+    "description": "Desktop notification title when someone joins; community is the community name"
+  },
+  "communityMembers.joinAlert.body": "{name} joined",
+  "@communityMembers.joinAlert.body": {
+    "description": "Desktop notification text when someone joins; name is the new member"
+  },
+  "communityMembers.joinAlert.summaryBody": "{count, plural, one {# new member joined} other {# new members joined}}",
+  "@communityMembers.joinAlert.summaryBody": {
+    "description": "Desktop notification text when many people joined at once"
+  },
+  "moderation.timeout.menuLabel": "Time out",
+  "@moderation.timeout.menuLabel": {
+    "description": "Moderation: submenu label that opens the timeout durations. Short."
+  },
+  "moderation.timeout.oneHour": "1 hour",
+  "@moderation.timeout.oneHour": {
+    "description": "Moderation: timeout duration menu option. Short."
+  },
+  "moderation.timeout.twentyFourHours": "24 hours",
+  "@moderation.timeout.twentyFourHours": {
+    "description": "Moderation: timeout duration menu option. Short."
+  },
+  "moderation.timeout.sevenDays": "7 days",
+  "@moderation.timeout.sevenDays": {
+    "description": "Moderation: timeout duration menu option. Short."
+  },
+  "moderation.timeout.remainingHours": "{hours}h {minutes}m",
+  "@moderation.timeout.remainingHours": {
+    "description": "Composer timeout banner: compact time left, hours and minutes. Short."
+  },
+  "moderation.timeout.remainingMinutes": "{minutes}m {seconds}s",
+  "@moderation.timeout.remainingMinutes": {
+    "description": "Composer timeout banner: compact time left, minutes and seconds. Short."
+  },
+  "moderation.timeout.remainingSeconds": "{seconds}s",
+  "@moderation.timeout.remainingSeconds": {
+    "description": "Composer timeout banner: compact time left, seconds. Short."
+  },
+  "moderation.timeoutBanner.withRemaining": "You're timed out by community moderators — {remaining} left.",
+  "@moderation.timeoutBanner.withRemaining": {
+    "description": "Composer banner while you are timed out; remaining is e.g. '2h 5m'"
+  },
+  "moderation.timeoutBanner.noRemaining": "You're timed out by community moderators.",
+  "@moderation.timeoutBanner.noRemaining": {
+    "description": "Composer banner while you are timed out and the end time is unknown"
+  },
+  "moderation.menu.liftTimeout": "Lift timeout",
+  "@moderation.menu.liftTimeout": {
+    "description": "Message menu (moderators): item that ends the author's timeout. Short."
+  },
+  "moderation.menu.timeOutAuthor": "Time out author",
+  "@moderation.menu.timeOutAuthor": {
+    "description": "Message menu (moderators): submenu that times out the message author. Short."
+  },
+  "moderation.menu.kick": "Kick from group",
+  "@moderation.menu.kick": {
+    "description": "Message menu (moderators): item that removes the author from the group. Short."
+  },
+  "moderation.menu.liftBan": "Lift ban",
+  "@moderation.menu.liftBan": {
+    "description": "Message menu (moderators): item that unbans the author. Short."
+  },
+  "moderation.menu.ban": "Ban author from community",
+  "@moderation.menu.ban": {
+    "description": "Message menu (moderators): item that bans the author. Short."
+  },
+  "moderation.menu.timeoutLifted": "Timeout lifted",
+  "@moderation.menu.timeoutLifted": {
+    "description": "Message menu (moderators): success toast"
+  },
+  "moderation.menu.authorTimedOut": "Author timed out",
+  "@moderation.menu.authorTimedOut": {
+    "description": "Message menu (moderators): success toast"
+  },
+  "moderation.menu.authorKicked": "Author removed from group",
+  "@moderation.menu.authorKicked": {
+    "description": "Message menu (moderators): success toast"
+  },
+  "moderation.menu.banLifted": "Ban lifted",
+  "@moderation.menu.banLifted": {
+    "description": "Message menu (moderators): success toast"
+  },
+  "moderation.menu.authorBanned": "Author banned",
+  "@moderation.menu.authorBanned": {
+    "description": "Message menu (moderators): success toast"
+  },
+  "moderation.menu.actionFailed": "Moderation action failed",
+  "@moderation.menu.actionFailed": {
+    "description": "Message menu (moderators): error toast"
+  },
+  "moderation.report.titlePerson": "Report person",
+  "@moderation.report.titlePerson": {
+    "description": "Report dialog: title when reporting a person"
+  },
+  "moderation.report.titleMessage": "Report message",
+  "@moderation.report.titleMessage": {
+    "description": "Report dialog: title when reporting a message"
+  },
+  "moderation.report.descriptionPerson": "Reports go to this community's moderators for review. The person is not told who reported them.",
+  "@moderation.report.descriptionPerson": {
+    "description": "Report dialog: text under the title when reporting a person"
+  },
+  "moderation.report.descriptionMessage": "Reports go to this community's moderators for review. The author is not notified of who reported them.",
+  "@moderation.report.descriptionMessage": {
+    "description": "Report dialog: text under the title when reporting a message"
+  },
+  "moderation.report.category.spam": "Spam",
+  "@moderation.report.category.spam": {
+    "description": "Report dialog: reason button. Short."
+  },
+  "moderation.report.category.profanity": "Profanity or hate speech",
+  "@moderation.report.category.profanity": {
+    "description": "Report dialog: reason button"
+  },
+  "moderation.report.category.nudity": "Nudity or sexual content",
+  "@moderation.report.category.nudity": {
+    "description": "Report dialog: reason button"
+  },
+  "moderation.report.category.impersonation": "Impersonation",
+  "@moderation.report.category.impersonation": {
+    "description": "Report dialog: reason button"
+  },
+  "moderation.report.category.malware": "Malware or scam",
+  "@moderation.report.category.malware": {
+    "description": "Report dialog: reason button"
+  },
+  "moderation.report.category.illegal": "Illegal content",
+  "@moderation.report.category.illegal": {
+    "description": "Report dialog: reason button"
+  },
+  "moderation.report.category.other": "Other",
+  "@moderation.report.category.other": {
+    "description": "Report dialog: reason button for anything else. Short."
+  },
+  "moderation.report.noteLabel": "Additional context (optional)",
+  "@moderation.report.noteLabel": {
+    "description": "Report dialog: label above the note field"
+  },
+  "moderation.report.notePlaceholder": "Add anything that helps moderators...",
+  "@moderation.report.notePlaceholder": {
+    "description": "Report dialog: placeholder of the note field"
+  },
+  "moderation.report.alsoBlock": "Also block",
+  "@moderation.report.alsoBlock": {
+    "description": "Report dialog: checkbox that also blocks the person. Short."
+  },
+  "moderation.report.submit": "Submit report",
+  "@moderation.report.submit": {
+    "description": "Report dialog: submit button. Short."
+  },
+  "moderation.report.submitFailed": "Failed to submit report",
+  "@moderation.report.submitFailed": {
+    "description": "Report dialog: error toast when the report fails without a server message"
+  },
+  "moderation.report.done": "Report submitted to community moderators",
+  "@moderation.report.done": {
+    "description": "Report dialog: success toast"
+  },
+  "moderation.report.doneBlocked": "Report sent to moderators and the person is blocked",
+  "@moderation.report.doneBlocked": {
+    "description": "Report dialog: success toast when 'Also block' was checked"
+  },
+  "moderation.report.blockedStillFriend": "Report sent and the person is blocked. Couldn't remove them from your friends; remove them in the Friends list.",
+  "@moderation.report.blockedStillFriend": {
+    "description": "Report dialog: warning toast when the report and block worked but removing from friends failed"
+  },
+  "moderation.report.blockFailed": "Report sent, but blocking didn't work. Try blocking them again.",
+  "@moderation.report.blockFailed": {
+    "description": "Report dialog: warning toast when the report worked but the block failed"
+  },
+  "localArchive.header.title": "Local archive",
+  "@localArchive.header.title": {
+    "description": "Settings > Local archive: section title."
+  },
+  "localArchive.header.description": "Save messages on this computer.",
+  "@localArchive.header.description": {
+    "description": "Settings > Local archive: one-line description under the section title."
+  },
+  "localArchive.scope.turnMetrics": "My agents' turn metrics",
+  "@localArchive.scope.turnMetrics": {
+    "description": "Settings > Local archive: name of the archive subscription that keeps your agents' turn metrics."
+  },
+  "localArchive.scope.sessionFrames": "My agent session frames",
+  "@localArchive.scope.sessionFrames": {
+    "description": "Settings > Local archive: name of the archive subscription that keeps your agents' session (observer) frames."
+  },
+  "localArchive.kindSummary.none": "no kinds",
+  "@localArchive.kindSummary.none": {
+    "description": "Settings > Local archive: subscription row detail when it saves no event kinds. Lowercase, follows 'kinds:'."
+  },
+  "localArchive.kindSummary.more": "{kinds} +{count} more",
+  "@localArchive.kindSummary.more": {
+    "description": "Settings > Local archive: shortened list of event kind numbers, e.g. '1, 7, 9 +4 more'. {kinds} is a comma list of numbers, {count} how many more. Short."
+  },
+  "localArchive.observer.title": "Agent observer feed",
+  "@localArchive.observer.title": {
+    "description": "Settings > Local archive (test builds only): group title for the observer-frame archive."
+  },
+  "localArchive.observer.toggleLabel": "Archive my agents' observer frames",
+  "@localArchive.observer.toggleLabel": {
+    "description": "Settings > Local archive (test builds only): label of the switch that archives your agents' observer frames."
+  },
+  "localArchive.observer.description": "Saves kind {kind} observer frames addressed to your pubkey. These are ephemeral — not stored by the relay — so local archiving is the only way to retain them.",
+  "@localArchive.observer.description": {
+    "description": "Settings > Local archive (test builds only): help text under the observer-frame switch. {kind} is an event kind number."
+  },
+  "localArchive.metric.title": "Agent turn metrics",
+  "@localArchive.metric.title": {
+    "description": "Settings > Local archive (test builds only): group title for the agent turn-metric archive."
+  },
+  "localArchive.metric.toggleLabel": "Archive my agents' turn metrics",
+  "@localArchive.metric.toggleLabel": {
+    "description": "Settings > Local archive (test builds only): label of the switch that archives your agents' turn metrics."
+  },
+  "localArchive.metric.description": "Saves kind {kind} turn-metric events addressed to your pubkey. Stored as plaintext in your local archive so token-usage calculators can read them directly.",
+  "@localArchive.metric.description": {
+    "description": "Settings > Local archive (test builds only): help text under the turn-metric switch. {kind} is an event kind number."
+  },
+  "localArchive.kindGroup.messages": "Messages & posts",
+  "@localArchive.kindGroup.messages": {
+    "description": "Settings > Local archive > Add group subscription: checkbox group header for message and post event types."
+  },
+  "localArchive.kindGroup.reactions": "Reactions, edits & deletions",
+  "@localArchive.kindGroup.reactions": {
+    "description": "Settings > Local archive > Add group subscription: checkbox group header for reaction, edit and deletion event types."
+  },
+  "localArchive.kindGroup.huddle": "Huddle events",
+  "@localArchive.kindGroup.huddle": {
+    "description": "Settings > Local archive > Add group subscription: checkbox group header for huddle (voice call) event types."
+  },
+  "localArchive.kindGroup.system": "System messages",
+  "@localArchive.kindGroup.system": {
+    "description": "Settings > Local archive > Add group subscription: checkbox group header for system message event types."
+  },
+  "localArchive.kind.messageDiffs": "Message diffs (kind {kind})",
+  "@localArchive.kind.messageDiffs": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.huddleStarted": "Huddle started",
+  "@localArchive.kind.huddleStarted": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for the 'huddle started' event type."
+  },
+  "localArchive.kind.participantJoined": "Participant joined",
+  "@localArchive.kind.participantJoined": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for the 'huddle participant joined' event type."
+  },
+  "localArchive.kind.participantLeft": "Participant left",
+  "@localArchive.kind.participantLeft": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for the 'huddle participant left' event type."
+  },
+  "localArchive.kind.huddleEnded": "Huddle ended",
+  "@localArchive.kind.huddleEnded": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for the 'huddle ended' event type."
+  },
+  "localArchive.kind.systemMessages": "System messages (kind {kind})",
+  "@localArchive.kind.systemMessages": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.eventDeletions": "Event deletions (kind {kind})",
+  "@localArchive.kind.eventDeletions": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.reactions": "Reactions (kind {kind})",
+  "@localArchive.kind.reactions": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.streamMessages": "Stream messages (kind {kind})",
+  "@localArchive.kind.streamMessages": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.nativeDeletions": "Kuzz-native deletions (kind {kind})",
+  "@localArchive.kind.nativeDeletions": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. Keep 'Kuzz' (product name). {kind} is the event kind number."
+  },
+  "localArchive.kind.streamMessagesV2": "Stream messages v2 (kind {kind})",
+  "@localArchive.kind.streamMessagesV2": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.messageEdits": "Message edits (kind {kind})",
+  "@localArchive.kind.messageEdits": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.forumPosts": "Forum posts (kind {kind})",
+  "@localArchive.kind.forumPosts": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.forumComments": "Forum comments (kind {kind})",
+  "@localArchive.kind.forumComments": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type. {kind} is the event kind number."
+  },
+  "localArchive.kind.other": "Kind {kind}",
+  "@localArchive.kind.other": {
+    "description": "Settings > Local archive > Add group subscription: checkbox label for an event type without a name. {kind} is the event kind number. Short."
+  },
+  "localArchive.customKinds.label": "Advanced: custom kinds",
+  "@localArchive.customKinds.label": {
+    "description": "Settings > Local archive > Add group subscription: label of the text field for extra event kind numbers."
+  },
+  "localArchive.customKinds.placeholder": "e.g. 30023 1337",
+  "@localArchive.customKinds.placeholder": {
+    "description": "Settings > Local archive > Add group subscription: placeholder example in the custom kinds field. Keep the numbers."
+  },
+  "localArchive.customKinds.help": "Space- or comma-separated non-negative integers. Kinds already in the checklist above are ignored.",
+  "@localArchive.customKinds.help": {
+    "description": "Settings > Local archive > Add group subscription: help text under the custom kinds field."
+  },
+  "localArchive.customKinds.invalid": "Invalid tokens (ignored):",
+  "@localArchive.customKinds.invalid": {
+    "description": "Settings > Local archive > Add group subscription: error before a list of entries in the custom kinds field that are not valid numbers."
+  },
+  "localArchive.addForm.groupLabel": "Group",
+  "@localArchive.addForm.groupLabel": {
+    "description": "Settings > Local archive > Add group subscription: label of the group (channel) picker. Short."
+  },
+  "localArchive.addForm.selectGroup": "Select a group…",
+  "@localArchive.addForm.selectGroup": {
+    "description": "Settings > Local archive > Add group subscription: empty first option of the group picker."
+  },
+  "localArchive.addForm.eventTypes": "Event types",
+  "@localArchive.addForm.eventTypes": {
+    "description": "Settings > Local archive > Add group subscription: heading above the event type checkboxes."
+  },
+  "localArchive.addForm.saving": "Saving…",
+  "@localArchive.addForm.saving": {
+    "description": "Settings > Local archive > Add group subscription: Save button text while saving. Short."
+  },
+  "localArchive.toast.created": "Archive subscription created.",
+  "@localArchive.toast.created": {
+    "description": "Settings > Local archive: toast after a group subscription is added."
+  },
+  "localArchive.toast.createFailed": "Failed to create subscription.",
+  "@localArchive.toast.createFailed": {
+    "description": "Settings > Local archive: error toast when adding a group subscription fails."
+  },
+  "localArchive.toast.removed": "Archive subscription removed.",
+  "@localArchive.toast.removed": {
+    "description": "Settings > Local archive: toast after a group subscription is removed."
+  },
+  "localArchive.toast.removeFailed": "Failed to remove subscription.",
+  "@localArchive.toast.removeFailed": {
+    "description": "Settings > Local archive: error toast when removing a group subscription fails."
+  },
+  "localArchive.toast.observerEnabled": "Observer feed archive enabled.",
+  "@localArchive.toast.observerEnabled": {
+    "description": "Settings > Local archive (test builds only): toast after turning the observer archive on."
+  },
+  "localArchive.toast.observerDisabled": "Observer feed archive disabled.",
+  "@localArchive.toast.observerDisabled": {
+    "description": "Settings > Local archive (test builds only): toast after turning the observer archive off."
+  },
+  "localArchive.toast.observerFailed": "Failed to update observer archive.",
+  "@localArchive.toast.observerFailed": {
+    "description": "Settings > Local archive (test builds only): error toast when the observer archive switch fails."
+  },
+  "localArchive.toast.metricEnabled": "Agent turn metric archive enabled.",
+  "@localArchive.toast.metricEnabled": {
+    "description": "Settings > Local archive (test builds only): toast after turning the turn-metric archive on."
+  },
+  "localArchive.toast.metricDisabled": "Agent turn metric archive disabled.",
+  "@localArchive.toast.metricDisabled": {
+    "description": "Settings > Local archive (test builds only): toast after turning the turn-metric archive off."
+  },
+  "localArchive.toast.metricFailed": "Failed to update agent metric archive.",
+  "@localArchive.toast.metricFailed": {
+    "description": "Settings > Local archive (test builds only): error toast when the turn-metric archive switch fails."
+  },
+  "localArchive.subscriptions.title": "Group subscriptions",
+  "@localArchive.subscriptions.title": {
+    "description": "Settings > Local archive: title of the list of group archive subscriptions."
+  },
+  "localArchive.subscriptions.titleWithCount": "Group subscriptions ({count})",
+  "@localArchive.subscriptions.titleWithCount": {
+    "description": "Settings > Local archive: title of the list of group archive subscriptions with how many there are."
+  },
+  "localArchive.subscriptions.empty": "No group subscriptions yet. Add one below.",
+  "@localArchive.subscriptions.empty": {
+    "description": "Settings > Local archive: empty state of the group subscriptions list."
+  },
+  "localArchive.subscriptions.subMeta": "{scope} · kinds: {kinds}",
+  "@localArchive.subscriptions.subMeta": {
+    "description": "Settings > Local archive: detail line of a subscription row. {scope} is a technical scope code, {kinds} a list of event kind numbers. Short."
+  },
+  "localArchive.subscriptions.removeLabel": "Remove archive subscription for {name}",
+  "@localArchive.subscriptions.removeLabel": {
+    "description": "Settings > Local archive: screen-reader label of the trash button on a subscription row. {name} is the group name."
+  },
+  "localArchive.add.title": "Add group subscription",
+  "@localArchive.add.title": {
+    "description": "Settings > Local archive: title of the section / form for adding a group subscription."
+  },
+  "localArchive.add.rowTitle": "Subscribe to a group",
+  "@localArchive.add.rowTitle": {
+    "description": "Settings > Local archive: row title next to the Add button."
+  },
+  "localArchive.add.rowDescription": "Choose a group and select which event types to archive.",
+  "@localArchive.add.rowDescription": {
+    "description": "Settings > Local archive: help text next to the Add button."
+  },
+  "pulse.tab.everyone": "Everyone",
+  "@pulse.tab.everyone": {
+    "description": "Pulse: feed name in the left list (all public notes). Short."
+  },
+  "pulse.tab.following": "Following",
+  "@pulse.tab.following": {
+    "description": "Pulse: feed name in the left list (notes from people you follow). Short."
+  },
+  "pulse.tab.liked": "Liked",
+  "@pulse.tab.liked": {
+    "description": "Pulse: feed name in the left list (notes you liked). Short."
+  },
+  "pulse.tab.agents": "Agents",
+  "@pulse.tab.agents": {
+    "description": "Pulse: feed name in the left list (notes from AI agents). Short."
+  },
+  "pulse.tab.mine": "Mine",
+  "@pulse.tab.mine": {
+    "description": "Pulse: feed name in the left list (your own notes). Short."
+  },
+  "pulse.tab.search": "Search",
+  "@pulse.tab.search": {
+    "description": "Pulse: feed name in the left list (search notes). Short."
+  },
+  "pulse.sidebar.title": "Pulse",
+  "@pulse.sidebar.title": {
+    "description": "Pulse: heading of the left list. 'Pulse' is the name of the social feed screen. Short."
+  },
+  "pulse.empty.search": "Search Pulse notes by author or text.",
+  "@pulse.empty.search": {
+    "description": "Pulse > Search: hint text before searching."
+  },
+  "pulse.empty.everyone": "No public notes yet.",
+  "@pulse.empty.everyone": {
+    "description": "Pulse > Everyone: empty state."
+  },
+  "pulse.empty.following": "No notes yet. Follow people to see their updates here.",
+  "@pulse.empty.following": {
+    "description": "Pulse > Following: empty state."
+  },
+  "pulse.empty.liked": "No likes yet — tap the heart on a note to save it here.",
+  "@pulse.empty.liked": {
+    "description": "Pulse > Liked: empty state."
+  },
+  "pulse.empty.noAgents": "No agents registered yet.",
+  "@pulse.empty.noAgents": {
+    "description": "Pulse > Agents: empty state when there are no agents at all."
+  },
+  "pulse.empty.agents": "No agent notes yet. Agents post here when they publish.",
+  "@pulse.empty.agents": {
+    "description": "Pulse > Agents: empty state when agents exist but have no notes."
+  },
+  "pulse.empty.mine": "You haven't posted any notes yet.",
+  "@pulse.empty.mine": {
+    "description": "Pulse > Mine: empty state."
+  },
+  "pulse.search.title": "What are you looking for?",
+  "@pulse.search.title": {
+    "description": "Pulse > Search: large heading above the search field."
+  },
+  "pulse.search.placeholder": "What would you like to know?",
+  "@pulse.search.placeholder": {
+    "description": "Pulse > Search: placeholder in the search field."
+  },
+  "pulse.search.submitLabel": "Search Pulse",
+  "@pulse.search.submitLabel": {
+    "description": "Pulse > Search: screen-reader label of the round search button."
+  },
+  "pulse.composer.publishFailed": "Failed to publish note",
+  "@pulse.composer.publishFailed": {
+    "description": "Pulse: error above the note composer when posting a note fails."
+  },
+  "pulse.composer.placeholder": "What's on your mind?",
+  "@pulse.composer.placeholder": {
+    "description": "Pulse: placeholder in the new note composer."
+  },
+  "pulse.noteCard.parentAuthorFallback": "Parent note author",
+  "@pulse.noteCard.parentAuthorFallback": {
+    "description": "Pulse note card: avatar name fallback for the author of the note being replied to."
+  },
+  "pulse.noteCard.parentNoText": "No text",
+  "@pulse.noteCard.parentNoText": {
+    "description": "Pulse note card: shown after the author name when the replied-to note has no text. Short."
+  },
+  "pulse.noteCard.parentLoading": "Loading reply context…",
+  "@pulse.noteCard.parentLoading": {
+    "description": "Pulse note card: shown while the replied-to note loads."
+  },
+  "pulse.noteCard.parentUnavailable": "Replying to an unavailable note",
+  "@pulse.noteCard.parentUnavailable": {
+    "description": "Pulse note card: shown when the replied-to note can't be found."
+  },
+  "pulse.noteCard.minutesShort": "{count}m",
+  "@pulse.noteCard.minutesShort": {
+    "description": "Pulse note card: post age in minutes, very short (e.g. '5m'). Short."
+  },
+  "pulse.noteCard.hoursShort": "{count}h",
+  "@pulse.noteCard.hoursShort": {
+    "description": "Pulse note card: post age in hours, very short (e.g. '3h'). Short."
+  },
+  "pulse.noteCard.daysShort": "{count}d",
+  "@pulse.noteCard.daysShort": {
+    "description": "Pulse note card: post age in days, very short (e.g. '2d'). Short."
+  },
+  "pulse.noteCard.botBadge": "bot",
+  "@pulse.noteCard.botBadge": {
+    "description": "Pulse note card: small badge next to an AI agent's name. Lowercase. Short."
+  },
+  "pulse.noteCard.like": "Like",
+  "@pulse.noteCard.like": {
+    "description": "Pulse note card: heart button label and tooltip. Short."
+  },
+  "pulse.noteCard.unlike": "Unlike",
+  "@pulse.noteCard.unlike": {
+    "description": "Pulse note card: heart button label and tooltip when already liked. Short."
+  },
+  "pulse.noteCard.reply": "Reply",
+  "@pulse.noteCard.reply": {
+    "description": "Pulse note card: reply button label and tooltip. Short."
+  },
+  "pulse.noteCard.share": "Share",
+  "@pulse.noteCard.share": {
+    "description": "Pulse note card: share (copy link) button label and tooltip. Short."
+  },
+  "pulse.noteCard.startDm": "Start direct message",
+  "@pulse.noteCard.startDm": {
+    "description": "Pulse note card: button label and tooltip to message the author."
+  },
+  "pulse.noteCard.replyPlaceholder": "Post your reply",
+  "@pulse.noteCard.replyPlaceholder": {
+    "description": "Pulse note card: placeholder in the reply composer."
+  },
+  "pulse.agentActivity.minutesAgo": "{count}m ago",
+  "@pulse.agentActivity.minutesAgo": {
+    "description": "Pulse > Agents card: post age in minutes, short (e.g. '5m ago'). Short."
+  },
+  "pulse.agentActivity.hoursAgo": "{count}h ago",
+  "@pulse.agentActivity.hoursAgo": {
+    "description": "Pulse > Agents card: post age in hours, short (e.g. '3h ago'). Short."
+  },
+  "pulse.agentActivity.daysAgo": "{count}d ago",
+  "@pulse.agentActivity.daysAgo": {
+    "description": "Pulse > Agents card: post age in days, short (e.g. '2d ago'). Short."
+  },
+  "pulse.agentActivity.status": "{status, select, online {Agent online} away {Agent away} other {Agent offline}}",
+  "@pulse.agentActivity.status": {
+    "description": "Pulse > Agents card: screen-reader label of the colored status dot next to an agent's name."
+  },
+  "pulse.agentActivity.openProfile": "Open profile for {name}",
+  "@pulse.agentActivity.openProfile": {
+    "description": "Pulse > Agents card: screen-reader label of the agent avatar button. {name} is the agent name."
+  },
+  "pulse.agentActivity.updates": "{count, plural, one {# update} other {# updates}}",
+  "@pulse.agentActivity.updates": {
+    "description": "Pulse > Agents card: button that expands the agent's grouped notes. Short."
+  },
+  "pulse.toast.reactionFailed": "Failed to update reaction",
+  "@pulse.toast.reactionFailed": {
+    "description": "Pulse: error toast when liking or unliking a note fails."
+  },
+  "pulse.toast.replyFailed": "Failed to post reply",
+  "@pulse.toast.replyFailed": {
+    "description": "Pulse: error toast when posting a reply fails."
+  },
+  "pulse.toast.linkCopied": "Copied note link",
+  "@pulse.toast.linkCopied": {
+    "description": "Pulse: toast after the Share button copies the note link."
+  },
+  "pulse.toast.linkCopyFailed": "Failed to copy note link",
+  "@pulse.toast.linkCopyFailed": {
+    "description": "Pulse: error toast when copying the note link fails."
+  },
+  "pulse.toast.dmFailed": "Failed to open DM",
+  "@pulse.toast.dmFailed": {
+    "description": "Pulse: error toast when opening a direct message with the author fails."
+  },
+  "customEmoji.header.title": "Custom emoji",
+  "@customEmoji.header.title": {
+    "description": "Settings > Custom emoji: section title."
+  },
+  "customEmoji.header.description": "Add your own custom emoji for everyone on this relay to use. Type <code>:name:</code> in messages and reactions.",
+  "@customEmoji.header.description": {
+    "description": "Settings > Custom emoji: description under the title. Keep <code>:name:</code> as is (it is what users type)."
+  },
+  "customEmoji.add.title": "Add emoji",
+  "@customEmoji.add.title": {
+    "description": "Settings > Custom emoji: title of the add form."
+  },
+  "customEmoji.add.uploadTitle": "Upload an image",
+  "@customEmoji.add.uploadTitle": {
+    "description": "Settings > Custom emoji > Add emoji: step heading for choosing the image."
+  },
+  "customEmoji.add.uploadHelp": "Square images work best. GIF, PNG, JPEG, and WebP files are supported.",
+  "@customEmoji.add.uploadHelp": {
+    "description": "Settings > Custom emoji > Add emoji: help text under the image step."
+  },
+  "customEmoji.add.previewAlt": "Selected custom emoji preview",
+  "@customEmoji.add.previewAlt": {
+    "description": "Settings > Custom emoji > Add emoji: alt text of the chosen image preview."
+  },
+  "customEmoji.add.uploading": "Uploading…",
+  "@customEmoji.add.uploading": {
+    "description": "Settings > Custom emoji > Add emoji: upload button text while uploading. Short."
+  },
+  "customEmoji.add.chooseDifferent": "Choose different image",
+  "@customEmoji.add.chooseDifferent": {
+    "description": "Settings > Custom emoji > Add emoji: upload button text after an image was chosen. Short."
+  },
+  "customEmoji.add.uploadButton": "Upload image",
+  "@customEmoji.add.uploadButton": {
+    "description": "Settings > Custom emoji > Add emoji: button to pick an image file. Short."
+  },
+  "customEmoji.add.nameTitle": "Give it a name",
+  "@customEmoji.add.nameTitle": {
+    "description": "Settings > Custom emoji > Add emoji: step heading for the emoji name."
+  },
+  "customEmoji.add.nameHelp": "This is what you’ll type to add this emoji to messages and reactions.",
+  "@customEmoji.add.nameHelp": {
+    "description": "Settings > Custom emoji > Add emoji: help text under the name step."
+  },
+  "customEmoji.add.namePlaceholder": "party-parrot",
+  "@customEmoji.add.namePlaceholder": {
+    "description": "Settings > Custom emoji > Add emoji: example emoji name in the name field. Only letters, numbers, hyphen or underscore allowed."
+  },
+  "customEmoji.add.nameInvalid": "Use only letters, numbers, hyphen, or underscore.",
+  "@customEmoji.add.nameInvalid": {
+    "description": "Settings > Custom emoji > Add emoji: error under the name field."
+  },
+  "customEmoji.add.chooseImageFirst": "Choose an image first; Kuzz will suggest a name from the filename.",
+  "@customEmoji.add.chooseImageFirst": {
+    "description": "Settings > Custom emoji > Add emoji: hint under the name field before an image is chosen. 'Kuzz' is the product name."
+  },
+  "customEmoji.add.replaceWarning": "You already have :{shortcode}: — saving will replace its image.",
+  "@customEmoji.add.replaceWarning": {
+    "description": "Settings > Custom emoji > Add emoji: note when the name is already used by one of your emoji. Keep the colons around {shortcode}."
+  },
+  "customEmoji.add.clear": "Clear",
+  "@customEmoji.add.clear": {
+    "description": "Settings > Custom emoji > Add emoji: button that resets the form. Short."
+  },
+  "customEmoji.add.saving": "Saving…",
+  "@customEmoji.add.saving": {
+    "description": "Settings > Custom emoji > Add emoji: save button text while saving. Short."
+  },
+  "customEmoji.add.save": "Save emoji",
+  "@customEmoji.add.save": {
+    "description": "Settings > Custom emoji > Add emoji: save button. Short."
+  },
+  "customEmoji.mine.title": "My emoji",
+  "@customEmoji.mine.title": {
+    "description": "Settings > Custom emoji: title of the list of your own emoji."
+  },
+  "customEmoji.mine.titleWithCount": "My emoji ({count})",
+  "@customEmoji.mine.titleWithCount": {
+    "description": "Settings > Custom emoji: title of the list of your own emoji with how many there are."
+  },
+  "customEmoji.mine.empty": "You haven't added any emoji yet. Add one above.",
+  "@customEmoji.mine.empty": {
+    "description": "Settings > Custom emoji: empty state of your emoji list."
+  },
+  "customEmoji.mine.removeLabel": "Remove :{shortcode}:",
+  "@customEmoji.mine.removeLabel": {
+    "description": "Settings > Custom emoji: screen-reader label of the trash button on an emoji row. Keep the colons around {shortcode}."
+  },
+  "customEmoji.community.titleWithCount": "Community emoji ({count})",
+  "@customEmoji.community.titleWithCount": {
+    "description": "Settings > Custom emoji: title of the list of emoji added by other members, with how many there are."
+  },
+  "customEmoji.community.description": "Added by other members. You can use these, but only their owner can remove them.",
+  "@customEmoji.community.description": {
+    "description": "Settings > Custom emoji: description of the community emoji list."
+  },
+  "customEmoji.toast.notImage": "Choose an image file for custom emoji.",
+  "@customEmoji.toast.notImage": {
+    "description": "Settings > Custom emoji: error toast when the chosen file is not an image."
+  },
+  "customEmoji.toast.uploadFailed": "Failed to upload emoji image.",
+  "@customEmoji.toast.uploadFailed": {
+    "description": "Settings > Custom emoji: error toast when the image upload fails."
+  },
+  "customEmoji.toast.added": "Added :{shortcode}:",
+  "@customEmoji.toast.added": {
+    "description": "Settings > Custom emoji: toast after an emoji is saved. Keep the colons around {shortcode}."
+  },
+  "customEmoji.toast.addFailed": "Failed to add emoji.",
+  "@customEmoji.toast.addFailed": {
+    "description": "Settings > Custom emoji: error toast when saving an emoji fails."
+  },
+  "customEmoji.toast.removed": "Removed :{shortcode}:",
+  "@customEmoji.toast.removed": {
+    "description": "Settings > Custom emoji: toast after an emoji is removed. Keep the colons around {shortcode}."
+  },
+  "customEmoji.toast.removeFailed": "Failed to remove emoji.",
+  "@customEmoji.toast.removeFailed": {
+    "description": "Settings > Custom emoji: error toast when removing an emoji fails."
+  },
+  "customEmoji.picker.categoryName": "Custom",
+  "@customEmoji.picker.categoryName": {
+    "description": "Emoji picker: category name for the community's custom emoji. Short."
+  },
+  "agentMemory.refreshLabel": "Refresh memory",
+  "@agentMemory.refreshLabel": {
+    "description": "Agent profile > Memory: screen-reader label of the refresh icon button."
+  },
+  "agentMemory.loadingLabel": "Loading memory",
+  "@agentMemory.loadingLabel": {
+    "description": "Agent profile > Memory: screen-reader label of the loading placeholder."
+  },
+  "agentMemory.error.title": "Couldn't load memory",
+  "@agentMemory.error.title": {
+    "description": "Agent profile > Memory: error title when the agent's memory can't be loaded."
+  },
+  "agentMemory.error.retrying": "Retrying…",
+  "@agentMemory.error.retrying": {
+    "description": "Agent profile > Memory: retry button text while retrying. Short."
+  },
+  "agentMemory.staleError.message": "Refresh failed.",
+  "@agentMemory.staleError.message": {
+    "description": "Agent profile > Memory: small banner when refreshing fails but older memory is still shown."
+  },
+  "agentMemory.empty.title": "Build this agent's memory",
+  "@agentMemory.empty.title": {
+    "description": "Agent profile > Memory: empty state title."
+  },
+  "agentMemory.empty.description": "Try telling this agent to remember something for next time.",
+  "@agentMemory.empty.description": {
+    "description": "Agent profile > Memory: empty state text."
+  },
+  "agentMemory.noCore": "No <code>core</code> memory yet — agent identity is unrooted.",
+  "@agentMemory.noCore": {
+    "description": "Agent profile > Memory: note when the agent has no 'core' memory entry. Keep <code>core</code> unchanged (it is a fixed name)."
+  },
+  "agentMemory.showLess": "Show less",
+  "@agentMemory.showLess": {
+    "description": "Agent profile > Memory: button to collapse the full memory list. Short."
+  },
+  "agentMemory.viewAll": "View all ({count})",
+  "@agentMemory.viewAll": {
+    "description": "Agent profile > Memory: button to show the full memory list, with how many entries. Short."
+  },
+  "agentMemory.truncatedTooltip": "This list may be incomplete.",
+  "@agentMemory.truncatedTooltip": {
+    "description": "Agent profile > Memory: tooltip when the server returned only part of the memory list."
+  },
+  "agentMemory.dangling.missingLinks": "{count, plural, one {Missing link:} other {Missing links:}}",
+  "@agentMemory.dangling.missingLinks": {
+    "description": "Agent profile > Memory entry: warning before a list of [[links]] to memories that don't exist."
+  },
+  "agentMemory.dangling.description": "This memory links to a slug that wasn't found in the loaded memory list.",
+  "@agentMemory.dangling.description": {
+    "description": "Agent profile > Memory entry: explanation under the missing links warning. A slug is a memory's short name."
+  },
+  "agentMemory.entry.empty": "(empty)",
+  "@agentMemory.entry.empty": {
+    "description": "Agent profile > Memory entry: shown instead of text when a memory has no content. Short."
+  },
+  "gifs.picker.searchLabel": "Search KLIPY",
+  "@gifs.picker.searchLabel": {
+    "description": "GIF picker: placeholder and screen-reader label of the search field. KLIPY is the GIF provider's name; keep it."
+  },
+  "gifs.picker.loading": "Loading GIFs",
+  "@gifs.picker.loading": {
+    "description": "GIF picker: screen-reader text while GIFs load."
+  },
+  "gifs.picker.tryAgain": "Try again",
+  "@gifs.picker.tryAgain": {
+    "description": "GIF picker: button under an error message. Short."
+  },
+  "gifs.picker.empty": "No GIFs found.",
+  "@gifs.picker.empty": {
+    "description": "GIF picker: empty search result."
+  },
+  "gifs.picker.chooseLabel": "Choose {title}",
+  "@gifs.picker.chooseLabel": {
+    "description": "GIF picker: screen-reader label of a GIF button. {title} is the GIF's title."
+  },
+  "gifs.picker.poweredBy": "Powered by KLIPY",
+  "@gifs.picker.poweredBy": {
+    "description": "GIF picker: provider credit at the bottom. KLIPY is the provider's name; keep it."
+  },
+  "gifs.error.membershipRequired": "Join this community to search GIFs.",
+  "@gifs.error.membershipRequired": {
+    "description": "GIF picker: error when the user is not a member of the community."
+  },
+  "gifs.error.requestFailed": "GIF request failed ({status})",
+  "@gifs.error.requestFailed": {
+    "description": "GIF picker: error when the server request fails. {status} is an HTTP status number."
+  },
+  "gifs.error.unavailable": "GIFs aren't available right now.",
+  "@gifs.error.unavailable": {
+    "description": "GIF picker: error when the GIF service can't be reached."
+  },
+  "gifs.error.searchFailed": "GIF search failed",
+  "@gifs.error.searchFailed": {
+    "description": "GIF picker: error when the GIF search returns a failure."
+  },
+  "identityArchive.toast.archived": "Archived",
+  "@identityArchive.toast.archived": {
+    "description": "Profile: toast after a person or agent is archived. Short."
+  },
+  "identityArchive.toast.archiveFailed": "Archive failed: {error}",
+  "@identityArchive.toast.archiveFailed": {
+    "description": "Profile: error toast when archiving fails. {error} is the error message."
+  },
+  "identityArchive.toast.unarchived": "Unarchived",
+  "@identityArchive.toast.unarchived": {
+    "description": "Profile: toast after a person or agent is unarchived. Short."
+  },
+  "identityArchive.toast.unarchiveFailed": "Unarchive failed: {error}",
+  "@identityArchive.toast.unarchiveFailed": {
+    "description": "Profile: error toast when unarchiving fails. {error} is the error message."
   }
 }

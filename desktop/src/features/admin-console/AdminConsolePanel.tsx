@@ -24,6 +24,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Gavel, MessageSquare, ShieldAlert, Users } from "lucide-react";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import type { AdminPrincipalRole } from "./api";
 import { ReportsTab } from "./AdminConsoleReportsTab";
@@ -49,16 +50,31 @@ function TabBar({
   onSelect: (tab: Tab) => void;
   showStaffing: boolean;
 }) {
+  const t = useT();
   const allTabs: Array<{
     value: Tab;
     label: string;
     Icon: React.ComponentType<{ className?: string }>;
   }> = [
-    { value: "reports", label: "Reports", Icon: ShieldAlert },
-    { value: "feedback", label: "Feedback", Icon: MessageSquare },
-    { value: "actions", label: "Actions", Icon: Gavel },
+    {
+      value: "reports",
+      label: t("adminConsole.tabs.reports"),
+      Icon: ShieldAlert,
+    },
+    {
+      value: "feedback",
+      label: t("adminConsole.tabs.feedback"),
+      Icon: MessageSquare,
+    },
+    { value: "actions", label: t("adminConsole.tabs.actions"), Icon: Gavel },
     ...(showStaffing
-      ? [{ value: "staffing" as const, label: "Staffing", Icon: Users }]
+      ? [
+          {
+            value: "staffing" as const,
+            label: t("adminConsole.tabs.staffing"),
+            Icon: Users,
+          },
+        ]
       : []),
   ];
   return (

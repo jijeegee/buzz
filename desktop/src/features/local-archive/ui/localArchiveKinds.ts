@@ -9,14 +9,17 @@ import {
   KIND_STREAM_MESSAGE_DIFF,
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
+import type { MessageKey } from "@/shared/i18n";
 
 // ── Kind groups (derived from shared constants — never raw literals) ──────────
 
 export type KindGroup = {
-  /** Group label shown as a section header. */
+  /** Stable English group name (used for test ids and lookups). */
   label: string;
-  /** Individual kinds in this group, each with a human-readable name. */
-  items: ReadonlyArray<{ kind: number; label: string }>;
+  /** Group label shown as a section header (translated). */
+  labelKey: MessageKey;
+  /** Individual kinds in this group, each with a human-readable name key. */
+  items: ReadonlyArray<{ kind: number; labelKey: MessageKey }>;
 };
 
 /**
@@ -26,59 +29,78 @@ export type KindGroup = {
 export const KIND_GROUPS: ReadonlyArray<KindGroup> = [
   {
     label: "Messages & posts",
+    labelKey: "localArchive.kindGroup.messages",
     items: [
       ...CHANNEL_MESSAGE_EVENT_KINDS.map((k) => ({
         kind: k,
-        label: kindLabel(k),
+        labelKey: kindLabelKey(k),
       })),
-      { kind: KIND_STREAM_MESSAGE_DIFF, label: "Message diffs (kind 40008)" },
+      {
+        kind: KIND_STREAM_MESSAGE_DIFF,
+        labelKey: "localArchive.kind.messageDiffs",
+      },
     ],
   },
   {
     label: "Reactions, edits & deletions",
+    labelKey: "localArchive.kindGroup.reactions",
     items: CHANNEL_AUX_EVENT_KINDS.map((k) => ({
       kind: k,
-      label: kindLabel(k),
+      labelKey: kindLabelKey(k),
     })),
   },
   {
     label: "Huddle events",
+    labelKey: "localArchive.kindGroup.huddle",
     items: [
-      { kind: KIND_HUDDLE_STARTED, label: "Huddle started" },
-      { kind: KIND_HUDDLE_PARTICIPANT_JOINED, label: "Participant joined" },
-      { kind: KIND_HUDDLE_PARTICIPANT_LEFT, label: "Participant left" },
-      { kind: KIND_HUDDLE_ENDED, label: "Huddle ended" },
+      {
+        kind: KIND_HUDDLE_STARTED,
+        labelKey: "localArchive.kind.huddleStarted",
+      },
+      {
+        kind: KIND_HUDDLE_PARTICIPANT_JOINED,
+        labelKey: "localArchive.kind.participantJoined",
+      },
+      {
+        kind: KIND_HUDDLE_PARTICIPANT_LEFT,
+        labelKey: "localArchive.kind.participantLeft",
+      },
+      { kind: KIND_HUDDLE_ENDED, labelKey: "localArchive.kind.huddleEnded" },
     ],
   },
   {
     label: "System messages",
+    labelKey: "localArchive.kindGroup.system",
     items: [
-      { kind: KIND_SYSTEM_MESSAGE, label: "System messages (kind 40099)" },
+      {
+        kind: KIND_SYSTEM_MESSAGE,
+        labelKey: "localArchive.kind.systemMessages",
+      },
     ],
   },
 ] as const;
 
-/** Human-readable label for a known kind number. */
-function kindLabel(kind: number): string {
+/** Message key for a known kind number's label (each takes `{kind}`). */
+function kindLabelKey(kind: number): MessageKey {
   switch (kind) {
     case 5:
-      return "Event deletions (kind 5)";
+      return "localArchive.kind.eventDeletions";
     case 7:
-      return "Reactions (kind 7)";
+      return "localArchive.kind.reactions";
     case 9:
-      return "Stream messages (kind 9)";
+      return "localArchive.kind.streamMessages";
     case 9005:
-      return "Kuzz-native deletions (kind 9005)";
+      return "localArchive.kind.nativeDeletions";
     case 40002:
-      return "Stream messages v2 (kind 40002)";
+      return "localArchive.kind.streamMessagesV2";
     case 40003:
-      return "Message edits (kind 40003)";
+      return "localArchive.kind.messageEdits";
     case 45001:
-      return "Forum posts (kind 45001)";
+      return "localArchive.kind.forumPosts";
     case 45003:
-      return "Forum comments (kind 45003)";
+      return "localArchive.kind.forumComments";
     default:
-      return `Kind ${kind}`;
+      return "localArchive.kind.other";
   }
 }
 
