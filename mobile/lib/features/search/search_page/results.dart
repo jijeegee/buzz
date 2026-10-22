@@ -441,10 +441,21 @@ class _MessageTile extends ConsumerWidget {
     final threadTitle = thread == null
         ? null
         : searchHitThreadTitle(thread, chatRows);
-    // In a thread: "group › thread", as its Chats row reads.
-    final where = threadTitle == null
-        ? (hasChannelName ? channelName : null)
-        : [if (!isDm && hasChannelName) channelName, threadTitle].join(' › ');
+    // The chat on top, as its Chats row reads: "group › thread" in a
+    // thread, the group, or the DM's name.
+    final dmName = isDm && channel != null
+        ? resolveDmChannelDisplayLabel(
+            channel!,
+            currentPubkey: currentPubkey,
+            names: ref.watch(identityNameSourcesProvider),
+          )
+        : null;
+    final place = threadTitle == null
+        ? (dmName ?? (hasChannelName ? channelName : null))
+        : [
+            if (dmName != null) dmName else if (hasChannelName) channelName,
+            threadTitle,
+          ].join(' › ');
     final profileMentionNames = {
       for (final pubkey in mentionedPubkeysFromTags(hit.tags))
         if (userCache[pubkey]?.displayName?.trim().isNotEmpty == true)
@@ -473,93 +484,71 @@ class _MessageTile extends ConsumerWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
       titleAlignment: ListTileTitleAlignment.top,
       horizontalTitleGap: messageAvatarContentGap,
-      leading: thread == null
-          ? SmallAvatar(
-              key: ValueKey('search-message-avatar-${hit.eventId}'),
-              pubkey: hit.pubkey,
-              userCache: userCache,
-              size: compactMessageAvatarSize,
-            )
-          : _ThreadAvatar(
+      leading: thread != null
+          ? _ThreadAvatar(
               key: ValueKey('search-message-thread-avatar-${hit.eventId}'),
               channelId: hitChannelId ?? '',
               channelName: hasChannelName ? channelName : (channel?.name ?? ''),
               threadSeed: thread.rootId,
               threadTitle: threadTitle!,
               size: compactMessageAvatarSize,
+            )
+          : channel != null && !isDm
+          ? GroupAvatar(
+              key: ValueKey('search-message-avatar-${hit.eventId}'),
+              channel: channel!,
+              size: compactMessageAvatarSize,
+            )
+          : SmallAvatar(
+              key: ValueKey('search-message-avatar-${hit.eventId}'),
+              pubkey: hit.pubkey,
+              userCache: userCache,
+              size: compactMessageAvatarSize,
             ),
       title: MessageAuthorMeta(
-        displayName: authorName,
-        username: messageUsernameLabel(authorProfile),
+        key: ValueKey('search-message-context-${hit.eventId}'),
+        displayName: place ?? (isDm ? 'Direct message' : 'Message'),
         timestamp: timeAgo,
         nameColor: context.colors.onSurface,
         metadataColor: context.colors.onSurfaceVariant,
-        displayNameKey: ValueKey('search-message-author-${hit.eventId}'),
-        usernameKey: ValueKey('search-message-username-${hit.eventId}'),
+        displayNameKey: ValueKey('search-message-channel-${hit.eventId}'),
         timestampKey: ValueKey('search-message-timestamp-${hit.eventId}'),
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 2),
-          Row(
-            key: ValueKey('search-message-context-${hit.eventId}'),
-            children: [
-              Flexible(
-                // "group › thread" takes the room; the short label keeps
-                // its width.
-                flex: threadTitle == null ? 1 : 0,
-                child: Text(
-                  isDm
-                      ? 'Direct message'
-                      : where != null
-                      ? 'Message in'
-                      : 'Message',
-                  style: activityContextTextStyle.copyWith(
-                    color: context.colors.onSurfaceVariant,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+      // The author goes with the text: "name: message".
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                '$authorName: ',
+                key: ValueKey('search-message-author-${hit.eventId}'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: activityPreviewTextStyle.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              if (where != null && (!isDm || threadTitle != null)) ...[
-                const SizedBox(width: Grid.half),
-                Flexible(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: Grid.half + Grid.quarter,
-                      vertical: Grid.quarter / 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(Radii.xs),
-                    ),
-                    child: Text(
-                      where,
-                      key: ValueKey('search-message-channel-${hit.eventId}'),
-                      style: activityContextTextStyle.copyWith(
-                        color: context.colors.onSurfaceVariant,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: Grid.half),
-          MessageContent(
-            key: ValueKey('search-message-body-${hit.eventId}'),
-            content: hit.content,
-            mentionNames: mentionNames,
-            mentionLabels: labels,
-            agentMentionPubkeys: agentMentionPubkeys,
-            tags: hit.tags,
-            maxLines: 2,
-            baseStyle: activityPreviewTextStyle.copyWith(
-              color: context.colors.onSurface,
             ),
-          ),
-        ],
+            Expanded(
+              child: MessageContent(
+                key: ValueKey('search-message-body-${hit.eventId}'),
+                content: hit.content,
+                mentionNames: mentionNames,
+                mentionLabels: labels,
+                agentMentionPubkeys: agentMentionPubkeys,
+                tags: hit.tags,
+                maxLines: 2,
+                baseStyle: activityPreviewTextStyle.copyWith(
+                  color: context.colors.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       onTap: () {
         onResultSelected();

@@ -25,10 +25,6 @@ import { cn } from "@/shared/lib/cn";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/ui/dialog";
 import { useDeferredModalOpen } from "@/shared/ui/deferredModalOpen";
-import {
-  MENTION_CHIP_BASE_CLASSES,
-  MESSAGE_MARKDOWN_CLASS,
-} from "@/shared/ui/mentionChip";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 type TopbarSearchProps = {
@@ -69,12 +65,6 @@ type SearchResultSection = {
   key: SearchResultSectionKey;
   results: SearchResult[];
   title: string;
-};
-type SearchHitContextLabel = {
-  channelLabel: string | null;
-  text: string;
-  /** Set when the message is in a thread: `group › thread`. */
-  threadName?: string;
 };
 function formatRelativeTime(unixSeconds: number) {
   const diff = Math.floor(Date.now() / 1_000) - unixSeconds;
@@ -174,46 +164,6 @@ function getSearchHitChannelName(
   return channelName;
 }
 
-function getSearchHitContextLabel(
-  hit: SearchHit,
-  channelLookup: ReadonlyMap<string, Channel>,
-  channelLabels?: Record<string, string>,
-  threadName?: string,
-): SearchHitContextLabel {
-  const channel = hit.channelId ? channelLookup.get(hit.channelId) : null;
-  const channelName = getSearchHitChannelName(
-    hit,
-    channelLookup,
-    channelLabels,
-  );
-
-  if (threadName) {
-    return {
-      channelLabel: channelName,
-      text: "",
-      threadName,
-    };
-  }
-
-  if (channel?.channelType === "dm") {
-    return {
-      channelLabel: null,
-      text: "Direct message",
-    };
-  }
-
-  const isThread = hit.kind === 45003 || Boolean(hit.threadRootId);
-
-  return {
-    channelLabel: channelName,
-    text: channelName
-      ? `${isThread ? "Thread" : "Message"} in`
-      : isThread
-        ? "Thread"
-        : "Message",
-  };
-}
-
 function getResultSectionKey(result: SearchResult): SearchResultSectionKey {
   if (result.kind === "channel") {
     return result.channel.channelType === "dm" ? "direct-messages" : "channels";
@@ -249,43 +199,6 @@ function getSectionTitle(sectionKey: SearchResultSectionKey) {
     case "actions":
       return "Actions";
   }
-}
-
-function SearchHitContextLine({ label }: { label: SearchHitContextLabel }) {
-  return (
-    <span
-      className={cn(
-        MESSAGE_MARKDOWN_CLASS,
-        "mt-0 flex min-w-0 items-center gap-1.5 text-2xs font-medium leading-3 text-muted-foreground/80",
-      )}
-    >
-      {label.text ? <span className="shrink-0">{label.text}</span> : null}
-      {label.channelLabel ? (
-        <span
-          className={cn(
-            MENTION_CHIP_BASE_CLASSES,
-            "search-channel-chip min-w-0 max-w-full overflow-hidden",
-            label.threadName && "max-w-[45%] shrink-0",
-          )}
-          data-channel-link=""
-        >
-          <span className="truncate">{label.channelLabel}</span>
-        </span>
-      ) : null}
-      {label.threadName ? (
-        <>
-          <span
-            aria-hidden="true"
-            className="shrink-0 text-muted-foreground/60"
-          >
-            ›
-          </span>
-          <span className="sr-only">thread</span>
-          <span className="min-w-0 truncate">{label.threadName}</span>
-        </>
-      ) : null}
-    </span>
-  );
 }
 
 function groupSearchResults(results: SearchResult[]): SearchResultSection[] {
@@ -738,15 +651,14 @@ export function TopbarSearch({
             preferResolvedSelfLabel: true,
           })
         : null;
-    const messageContextLabel =
+    const messageChannelName =
       result.kind === "message"
-        ? getSearchHitContextLabel(
-            result.hit,
-            channelLookup,
-            channelLabels,
-            result.thread?.name,
-          )
+        ? getSearchHitChannelName(result.hit, channelLookup, channelLabels)
         : null;
+    const messageIsDm =
+      result.kind === "message" &&
+      result.hit.channelId !== null &&
+      channelLookup.get(result.hit.channelId)?.channelType === "dm";
     const title =
       result.kind === "channel"
         ? channelDisplayName
@@ -756,7 +668,8 @@ export function TopbarSearch({
             ? result.action.title
             : result.kind === "user"
               ? userDisplayName
-              : messageAuthorLabel;
+              : messageChannelName ||
+                (messageIsDm ? "Direct message" : "Message");
     const preview =
       result.kind === "channel"
         ? getChannelPreview(result.channel)
@@ -805,6 +718,16 @@ export function TopbarSearch({
             testId={`search-result-thread-avatar-${threadPlace.thread.id}`}
             thread={threadPlace.thread}
           />
+        ) : result.kind === "message" &&
+          result.hit.channelId &&
+          messageChannelName &&
+          !messageIsDm ? (
+          <ConversationLetterAvatar
+            channelId={result.hit.channelId}
+            channelLabel={messageChannelName}
+            isThread={false}
+            testId={`search-result-channel-avatar-${result.hit.eventId}`}
+          />
         ) : result.kind === "message" ? (
           <UserAvatar
             avatarUrl={
@@ -844,21 +767,39 @@ export function TopbarSearch({
         <span className="min-w-0 flex-1">
           {result.kind === "message" ? (
             <span className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3">
-              <span className="col-start-1 row-start-1 min-w-0 truncate text-sm font-semibold leading-4 text-foreground">
-                {title}
-              </span>
+              {/* Like Chats rows: the conversation on top, then
+                  `author: text` on the line below. */}
+              {threadPlace ? (
+                <span className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-4 text-foreground">
+                  <span className="max-w-[45%] shrink-0 truncate font-normal text-muted-foreground">
+                    {threadPlace.label}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="shrink-0 font-normal text-muted-foreground/60"
+                  >
+                    ›
+                  </span>
+                  <span className="sr-only">thread</span>
+                  <span className="min-w-0 truncate">
+                    {threadPlace.thread.label}
+                  </span>
+                </span>
+              ) : (
+                <span className="col-start-1 row-start-1 min-w-0 truncate text-sm font-semibold leading-4 text-foreground">
+                  {title}
+                </span>
+              )}
               {trailingLabel ? (
                 <span className="col-start-2 row-start-1 flex shrink-0 items-center justify-self-end text-xs font-medium leading-4 text-muted-foreground/70">
                   {trailingLabel}
                 </span>
               ) : null}
-              {messageContextLabel ? (
-                <span className="col-start-1 min-w-0">
-                  <SearchHitContextLine label={messageContextLabel} />
-                </span>
-              ) : null}
               {preview ? (
                 <span className="col-start-1 mt-1.5 block min-w-0 truncate text-sm leading-5 text-muted-foreground">
+                  <span className="font-medium text-foreground/80">
+                    {messageAuthorLabel}:
+                  </span>{" "}
                   <HighlightedSearchText query={resultQuery} text={preview} />
                 </span>
               ) : null}

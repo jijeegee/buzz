@@ -4,7 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
-import 'package:kuzz/features/channels/small_avatar.dart';
+import 'package:kuzz/features/channels/group_avatar.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
 import 'package:kuzz/features/chats/chat_list_provider.dart';
 import 'package:kuzz/features/profile/profile_provider.dart';
@@ -205,7 +205,7 @@ void main() {
       findsNothing,
     );
 
-    // A main-timeline message keeps its author's picture and the group.
+    // A main-timeline message shows its group's picture and name.
     expect(
       tester
           .widget<Text>(
@@ -217,7 +217,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('search-message-row-on-timeline')),
-        matching: find.byType(SmallAvatar),
+        matching: find.byType(GroupAvatar),
       ),
       findsOneWidget,
     );
