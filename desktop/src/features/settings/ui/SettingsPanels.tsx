@@ -21,6 +21,7 @@ import {
   SunMoon,
   KeyRound,
   MonitorSmartphone,
+  Power,
   ShieldCheck,
   Ticket,
   UserRound,
@@ -89,9 +90,11 @@ import { DevicesSettingsCard } from "./AccountSettingsCard";
 import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { VoiceSettingsCard } from "./VoiceSettingsCard";
+import { GeneralSettingsCard } from "./GeneralSettingsCard";
 import { Layer0GoalCard } from "@/features/goals/ui/Layer0GoalCard";
 
 export type SettingsSection =
+  | "general"
   | "profile"
   | "account"
   | "devices"
@@ -116,6 +119,7 @@ export type SettingsSection =
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = "account";
 
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
+  "general",
   "profile",
   "account",
   "devices",
@@ -169,6 +173,11 @@ export type SettingsPanelProps = {
 };
 
 export const settingsSections: SettingsSectionDescriptor[] = [
+  {
+    value: "general",
+    label: "General",
+    icon: Power,
+  },
   {
     value: "appearance",
     label: "Appearance",
@@ -870,6 +879,8 @@ export function renderSettingsSection(
       );
     case "devices":
       return <DevicesSettingsCard />;
+    case "general":
+      return <GeneralSettingsCard />;
     case "privacy":
       return <PeoplePrivacySettingsCard />;
     case "notifications":
