@@ -8,6 +8,7 @@ import {
   normalizeRelayUrl,
 } from "@/features/communities/communityStorage";
 import { validateReposDir } from "@/shared/api/tauri";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -41,6 +42,7 @@ export function EditCommunityDialog({
   showIconEditor = false,
   showUrlField = false,
 }: EditCommunityDialogProps) {
+  const t = useT();
   const [name, setName] = React.useState("");
   const [relayUrl, setRelayUrl] = React.useState("");
   const [token, setToken] = React.useState("");
@@ -129,11 +131,11 @@ export function EditCommunityDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Community</DialogTitle>
+          <DialogTitle>{t("communities.editDialog.title")}</DialogTitle>
           <DialogDescription>
             {showUrlField
-              ? "Update this community's name or address."
-              : "Update this community's name."}
+              ? t("communities.editDialog.descriptionWithAddress")
+              : t("communities.editDialog.description")}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -143,9 +145,11 @@ export function EditCommunityDialog({
           {canEditIcon ? (
             <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/20 p-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium">Community icon</p>
+                <p className="text-sm font-medium">
+                  {t("communities.editDialog.iconTitle")}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  Shown in the community rail and switcher.
+                  {t("communities.editDialog.iconDescription")}
                 </p>
               </div>
               <CommunityIconSettingsCard compact />
@@ -156,13 +160,13 @@ export function EditCommunityDialog({
               className="text-sm font-medium text-foreground"
               htmlFor="edit-ws-name"
             >
-              Name
+              {t("communities.editDialog.nameLabel")}
             </label>
             <Input
               autoFocus
               id="edit-ws-name"
               onChange={(e) => setName(e.target.value)}
-              placeholder="My Community"
+              placeholder={t("communities.editDialog.namePlaceholder")}
               type="text"
               value={name}
             />
@@ -173,12 +177,12 @@ export function EditCommunityDialog({
                 className="text-sm font-medium text-foreground"
                 htmlFor="edit-ws-relay-url"
               >
-                Community URL
+                {t("communities.editDialog.urlLabel")}
               </label>
               <Input
                 id="edit-ws-relay-url"
                 onChange={(e) => setRelayUrl(e.target.value)}
-                placeholder="Paste the community link"
+                placeholder={t("communities.editDialog.urlPlaceholder")}
                 type="text"
                 value={relayUrl}
               />
@@ -189,9 +193,9 @@ export function EditCommunityDialog({
               className="text-sm font-medium text-foreground"
               htmlFor="edit-ws-repos-dir"
             >
-              Repos Directory
+              {t("communities.editDialog.reposDirLabel")}
               <span className="ml-1 text-xs font-normal text-muted-foreground">
-                (optional)
+                {t("communities.editDialog.optional")}
               </span>
             </label>
             <Input
@@ -208,17 +212,17 @@ export function EditCommunityDialog({
               <p className="text-xs text-destructive">{reposDirError}</p>
             ) : null}
             <p className="text-xs text-muted-foreground">
-              Point the agent's <code>REPOS</code> directory at an existing
-              folder so agents work in your local checkouts. Leave blank to use
-              the default location.
+              {t("communities.editDialog.reposDirHint", {
+                code: (chunks) => <code>{chunks}</code>,
+              })}
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button onClick={handleClose} type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button disabled={!name.trim() || !relayUrl.trim()} type="submit">
-              Save Changes
+              {t("communities.editDialog.save")}
             </Button>
           </div>
         </form>

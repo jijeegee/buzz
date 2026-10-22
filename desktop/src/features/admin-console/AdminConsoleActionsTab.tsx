@@ -26,6 +26,7 @@ import {
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { SelectedRecipientChip } from "@/features/profile/ui/SelectedRecipientChip";
 import { getRelayWsUrl } from "@/shared/api/tauri";
+import { type MessageKey, t as translate, useT } from "@/shared/i18n";
 import type { UserSearchResult } from "@/shared/api/types";
 import { parsePubkeyInput } from "@/shared/lib/nostrUtils";
 import { truncateNpub } from "@/shared/lib/pubkey";
@@ -51,18 +52,18 @@ import { reasonAudienceCopy } from "./AdminConsoleReportsTab";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-const ACTION_LABELS: Record<AdminDirectAction, string> = {
-  ban: "Ban member",
-  timeout: "Time out member",
-  delete: "Delete message",
+const ACTION_LABELS: Record<AdminDirectAction, MessageKey> = {
+  ban: "adminConsole.actions.banMember",
+  timeout: "adminConsole.actions.timeOutMember",
+  delete: "adminConsole.actions.deleteMessage",
 };
 
 function directErrorMessage(e: unknown): string {
   switch (adminErrorCode(e)) {
     case "target_is_staff":
-      return "Relay staff can't be banned or timed out. Remove their staff role first.";
+      return translate("adminConsole.actions.errorTargetIsStaff");
     case "request_id_conflict":
-      return "This request id was already used for a different action. Review again to send it with a new id.";
+      return translate("adminConsole.actions.errorRequestIdConflict");
     case null: {
       // A relay from before direct actions answers these routes with an empty
       // 404/405; any other uncoded body keeps its own text.
@@ -72,7 +73,7 @@ function directErrorMessage(e: unknown): string {
         adminMutationBodyComplete(e) &&
         adminErrorMessage(e).trim() === "admin API error:"
       ) {
-        return "This relay doesn't support direct actions yet.";
+        return translate("adminConsole.actions.errorUnsupported");
       }
       return adminErrorMessage(e);
     }
@@ -102,18 +103,18 @@ function validate(
   member: UserSearchResult | null,
   secs: string,
 ): string | null {
-  if (!host.trim()) return "Enter the community host.";
+  if (!host.trim()) return translate("adminConsole.actions.errorHostRequired");
   if (action === "delete" && !HEX64.test(target.trim())) {
-    return "Event id must be 64 lowercase hex characters.";
+    return translate("adminConsole.actions.errorEventId");
   }
   if (action !== "delete" && !member) {
-    return "Choose a member: search by name, or paste an npub or hex key.";
+    return translate("adminConsole.actions.errorMemberRequired");
   }
   if (
     action === "timeout" &&
     !(Number.isInteger(Number(secs)) && Number(secs) > 0)
   ) {
-    return "Duration must be a whole number of seconds above zero.";
+    return translate("adminConsole.actions.errorDuration");
   }
   return null;
 }
@@ -128,6 +129,7 @@ export function ActionsTab({
   /** Active signer; frozen into the intent at review. */
   pubkey: string;
 }) {
+  const t = useT();
   const [action, setAction] = useState<AdminDirectAction>("ban");
   const { activeCommunity } = useCommunities();
   /** Operator-typed host; null while following the active community. */
@@ -180,7 +182,7 @@ export function ActionsTab({
       const communityHost =
         hostOverride?.trim() ?? communityHostFromRelayUrl(expectedRelay);
       if (!communityHost) {
-        setError("Enter the community host.");
+        setError(t("adminConsole.actions.errorHostRequired"));
         return;
       }
       const isMember = action !== "delete" && member;
@@ -219,7 +221,11 @@ export function ActionsTab({
       if (result.state === "pending") {
         setPending(true);
       } else {
-        toast.success(`${ACTION_LABELS[frozen.action]}: done`);
+        toast.success(
+          t("adminConsole.actions.doneToast", {
+            action: t(ACTION_LABELS[frozen.action]),
+          }),
+        );
         setFrozen(null);
         setTarget("");
         setMember(null);
@@ -288,19 +294,22 @@ export function ActionsTab({
             type="button"
             variant={a === action ? "default" : "outline"}
           >
-            {ACTION_LABELS[a]}
+            {t(ACTION_LABELS[a])}
           </Button>
         ))}
       </div>
       {editingHost ? (
-        input("host", host, editHost, "Community host (e.g. team.example.com)")
+        input("host", host, editHost, t("adminConsole.actions.hostPlaceholder"))
       ) : (
         <p
           className="flex items-center gap-2 text-xs"
           data-testid="direct-host"
         >
           <span>
-            Community: <code>{host}</code>
+            {t("adminConsole.actions.communityLabel", {
+              host,
+              code: (chunks) => <code>{chunks}</code>,
+            })}
           </span>
           <Button
             className="h-auto p-0 text-xs"
@@ -311,12 +320,18 @@ export function ActionsTab({
             type="button"
             variant="link"
           >
-            Change
+            {t("adminConsole.actions.changeHost")}
           </Button>
         </p>
       )}
       {action === "delete" ? (
-        input("target", target, setTarget, "Event id (hex)", "font-mono")
+        input(
+          "target",
+          target,
+          setTarget,
+          t("adminConsole.actions.eventIdPlaceholder"),
+          "font-mono",
+        )
       ) : (
         <MemberPicker
           disabled={locked}
@@ -327,20 +342,32 @@ export function ActionsTab({
         />
       )}
       {action === "timeout" &&
-        input("duration", secs, setSecs, "Duration (seconds)", "", "number")}
-      {input("reason", reason, setReason, "Reason (optional)")}
+        input(
+          "duration",
+          secs,
+          setSecs,
+          t("adminConsole.actions.durationPlaceholder"),
+          "",
+          "number",
+        )}
+      {input(
+        "reason",
+        reason,
+        setReason,
+        t("adminConsole.reasonOptionalPlaceholder"),
+      )}
       <p
         className="text-xs text-muted-foreground"
         data-testid="direct-reason-audience"
       >
-        {reasonAudienceCopy(frozen?.action ?? action)}
+        {reasonAudienceCopy(t, frozen?.action ?? action)}
       </p>
       {pending && (
         <p
           className="text-xs text-muted-foreground"
           data-testid="direct-pending"
         >
-          Accepted; the relay is still applying it. Retry to check.
+          {t("adminConsole.actions.pending")}
         </p>
       )}
       {error && (
@@ -354,21 +381,30 @@ export function ActionsTab({
           data-testid="direct-confirm"
         >
           <p>
-            {ACTION_LABELS[frozen.action]}{" "}
-            {frozen.action === "delete" ? (
-              <code>{frozen.target}</code>
-            ) : (
-              <span data-testid="direct-confirm-member">
-                {confirmName ? `${confirmName} ` : ""}
-                <code>
-                  {confirmName
-                    ? `(${truncateNpub(frozen.target)})`
-                    : truncateNpub(frozen.target)}
-                </code>
-              </span>
-            )}{" "}
-            in <code>{frozen.communityHost}</code>
-            {frozen.expirationSecs ? ` for ${frozen.expirationSecs}s` : ""}?
+            {t(
+              frozen.expirationSecs
+                ? "adminConsole.actions.confirmSummaryTimed"
+                : "adminConsole.actions.confirmSummary",
+              {
+                action: frozen.action,
+                host: frozen.communityHost,
+                secs: frozen.expirationSecs ?? 0,
+                target:
+                  frozen.action === "delete" ? (
+                    <code>{frozen.target}</code>
+                  ) : (
+                    <span data-testid="direct-confirm-member">
+                      {confirmName ? `${confirmName} ` : ""}
+                      <code>
+                        {confirmName
+                          ? `(${truncateNpub(frozen.target)})`
+                          : truncateNpub(frozen.target)}
+                      </code>
+                    </span>
+                  ),
+                code: (chunks) => <code>{chunks}</code>,
+              },
+            )}
           </p>
           {frozen.action !== "delete" && (
             <PubKey
@@ -378,7 +414,9 @@ export function ActionsTab({
             />
           )}
           <p data-testid="direct-confirm-reason">
-            Reason: {frozen.reason ?? "(none)"}
+            {t("adminConsole.actions.confirmReason", {
+              reason: frozen.reason ?? t("adminConsole.actions.reasonNone"),
+            })}
           </p>
           <div className="flex gap-1.5">
             <Button
@@ -389,7 +427,7 @@ export function ActionsTab({
               type="button"
               variant="destructive"
             >
-              {error || pending ? "Retry" : "Confirm"}
+              {error || pending ? t("common.retry") : t("common.confirm")}
             </Button>
             <Button
               data-testid="direct-discard-btn"
@@ -403,7 +441,7 @@ export function ActionsTab({
               type="button"
               variant="ghost"
             >
-              Discard
+              {t("adminConsole.actions.discard")}
             </Button>
           </div>
         </div>
@@ -415,7 +453,7 @@ export function ActionsTab({
           size="sm"
           type="button"
         >
-          Review
+          {t("adminConsole.actions.review")}
         </Button>
       )}
     </div>
@@ -438,6 +476,7 @@ function MemberPicker({
   /** Off when the target community is not the active relay's. */
   searchEnabled: boolean;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [inspecting, setInspecting] = useState(false);
   const deferred = useDeferredValue(query.trim());
@@ -468,7 +507,7 @@ function MemberPicker({
       className="text-xs text-muted-foreground"
       data-testid="direct-member-search-hint"
     >
-      Name search only works in the community you're connected to.
+      {t("adminConsole.actions.memberSearchHint")}
     </p>
   );
   if (member) {
@@ -502,8 +541,8 @@ function MemberPicker({
         onChange={(e) => setQuery(e.target.value)}
         placeholder={
           searchEnabled
-            ? "Search by name, or paste an npub or hex key"
-            : "npub or hex key"
+            ? t("adminConsole.actions.memberSearchPlaceholder")
+            : t("adminConsole.actions.memberKeyPlaceholder")
         }
         value={query}
       />
@@ -512,7 +551,7 @@ function MemberPicker({
           className="text-xs text-destructive"
           data-testid="direct-member-secret"
         >
-          That's a secret key. Never paste it here.
+          {t("adminConsole.actions.memberSecretKey")}
         </p>
       )}
       {hint}
@@ -543,7 +582,9 @@ function MemberPicker({
                 {memberLabel(user)}
               </span>
               {parsed ? (
-                <span className="text-muted-foreground">public key</span>
+                <span className="text-muted-foreground">
+                  {t("adminConsole.actions.memberPublicKey")}
+                </span>
               ) : (
                 <PubKey
                   className="text-muted-foreground"

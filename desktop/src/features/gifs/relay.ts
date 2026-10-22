@@ -9,6 +9,7 @@ import {
 } from "@/features/gifs/api";
 import { relayHttpFromWs } from "@/shared/api/inviteHelpers";
 import { signRelayEvent } from "@/shared/api/tauri";
+import { type MessageKey, t } from "@/shared/i18n";
 
 const KLIPY_CUSTOMER_ID_STORAGE_KEY_PREFIX = "kuzz:klipy-customer-id:v1:";
 const NIP98_KIND = 27235;
@@ -55,13 +56,13 @@ async function nip98PostHeader(url: string, body: string): Promise<string> {
   return `Nostr ${btoa(JSON.stringify(authEvent))}`;
 }
 
-const FRIENDLY_GIF_ERRORS: Record<string, string> = {
-  relay_membership_required: "Join this community to search GIFs.",
+const FRIENDLY_GIF_ERRORS: Record<string, MessageKey> = {
+  relay_membership_required: "gifs.error.membershipRequired",
 };
 
 function gifErrorMessage(error: string | undefined, status: number): string {
-  if (error && FRIENDLY_GIF_ERRORS[error]) return FRIENDLY_GIF_ERRORS[error];
-  return error || `GIF request failed (${status})`;
+  if (error && FRIENDLY_GIF_ERRORS[error]) return t(FRIENDLY_GIF_ERRORS[error]);
+  return error || t("gifs.error.requestFailed", { status });
 }
 
 async function relayPost<T>(
@@ -101,7 +102,7 @@ export async function relayKlipyEndpoints(
     headers: { Accept: "application/nostr+json" },
     signal,
   });
-  if (!response.ok) throw new Error("GIFs aren't available right now.");
+  if (!response.ok) throw new Error(t("gifs.error.unavailable"));
   const info = (await response.json()) as RelayGifSearchInfo;
   return relayKlipyCapability(info);
 }
@@ -124,7 +125,7 @@ export async function fetchKlipyGifs(
     signal,
   );
   if (response.result === false) {
-    throw new Error("GIF search failed");
+    throw new Error(t("gifs.error.searchFailed"));
   }
   return normalizeKlipyGifs(response.data?.data ?? []);
 }
