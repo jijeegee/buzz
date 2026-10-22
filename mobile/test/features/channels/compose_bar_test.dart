@@ -621,27 +621,14 @@ class _RecordingRelaySocket extends RelaySocket {
   final List<Map<String, dynamic>> events;
   final void Function(List<dynamic> message) handleMessage;
 
-  /// Invoked after an event is handed to the socket but before its relay
-  /// acknowledgement is delivered. Tests may defer that acknowledgement.
-  final Future<void> Function(Map<String, dynamic> event)? beforeAcknowledged;
-
-  /// Invoked after an event has been recorded and acknowledged, before the
-  /// caller's `await` resumes. Lets a test interleave state changes (such as
-  /// a community switch) between two relay round trips.
-  final void Function(Map<String, dynamic> event)? onEventAcknowledged;
-
-  _RecordingRelaySocket(
-    this.events,
-    this.handleMessage, {
-    this.beforeAcknowledged,
-    this.onEventAcknowledged,
-  }) : super(
-         wsUrl: 'ws://localhost',
-         nsec: null,
-         onMessage: handleMessage,
-         onConnected: () {},
-         onDisconnected: (_) {},
-       );
+  _RecordingRelaySocket(this.events, this.handleMessage)
+    : super(
+        wsUrl: 'ws://localhost',
+        nsec: null,
+        onMessage: handleMessage,
+        onConnected: () {},
+        onDisconnected: (_) {},
+      );
 
   @override
   SocketState get state => SocketState.connected;
@@ -651,18 +638,7 @@ class _RecordingRelaySocket extends RelaySocket {
     if (payload case ['EVENT', final Map<String, dynamic> event]) {
       events.add(event);
       final id = event['id'] as String;
-      final pending = beforeAcknowledged?.call(event);
-      if (pending == null) {
-        super.debugHandleOkForTest(['OK', id, true, '']);
-        onEventAcknowledged?.call(event);
-      } else {
-        unawaited(
-          pending.then((_) {
-            super.debugHandleOkForTest(['OK', id, true, '']);
-            onEventAcknowledged?.call(event);
-          }),
-        );
-      }
+      super.debugHandleOkForTest(['OK', id, true, '']);
     }
   }
 
@@ -1822,6 +1798,7 @@ void main() {
           _buildComposeBar(
             uploadService: _testUploadService(nostr.Keys.generate().nsec),
             currentPubkey: owner,
+            members: [_agentMember(mine), _agentMember(theirs, 'Other Bot')],
             relayAgents: [
               _testAgent(mine),
               AgentDirectoryEntry(
@@ -1875,6 +1852,32 @@ void main() {
       },
     );
 
+    testWidgets('offers only people and agents already in the room', (
+      tester,
+    ) async {
+      final signer = nostr.Keys.generate();
+      final member = 'a' * 64;
+      final outsider = 'b' * 64;
+      await tester.pumpWidget(
+        _buildComposeBar(
+          uploadService: _testUploadService(signer.nsec),
+          currentPubkey: signer.public,
+          members: [_agentMember(member, 'Room Bot')],
+          // Reachable agents outside the room, owned or shared, stay hidden.
+          relayAgents: [_testAgent(outsider)],
+          agentOwners: {outsider: signer.public},
+          channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
+          onSend: (_, _, {mediaTags = const <List<String>>[]}) async {},
+        ),
+      );
+
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), '@');
+      await tester.pumpAndSettle();
+      expect(find.text('Room Bot'), findsOneWidget);
+      expect(find.text('Helper Bot'), findsNothing);
+    });
+
     testWidgets('dismisses mention suggestions in the selection frame', (
       tester,
     ) async {
@@ -1883,6 +1886,7 @@ void main() {
         _buildComposeBar(
           uploadService: _testUploadService(signer.nsec),
           currentPubkey: signer.public,
+          members: [_agentMember('f' * 64)],
           relayAgents: [_testAgent('f' * 64)],
           channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
           onSend:
@@ -3267,94 +3271,6 @@ void main() {
       },
     );
 
-    testWidgets('surfaces an error and keeps the draft when a community switch '
-        'cancels a text-only send', (tester) async {
-      final agentPubkey = 'c' * 64;
-      final signer = nostr.Keys.generate();
-      final publishedEvents = <Map<String, dynamic>>[];
-      var sendCount = 0;
-
-      await tester.pumpWidget(
-        _buildComposeBar(
-          uploadService: _testUploadService(signer.nsec),
-          currentPubkey: signer.public,
-          relayAgents: [_testAgent(agentPubkey)],
-          channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
-          relayConfig: () => _SwitchableRelayConfigNotifier(
-            RelayConfig(baseUrl: 'https://relay.example', nsec: signer.nsec),
-          ),
-          onSend: (_, _, {mediaTags = const <List<String>>[]}) async {
-            sendCount += 1;
-          },
-        ),
-      );
-
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ComposeBar)),
-      );
-      final session = container.read(relaySessionProvider.notifier);
-      // Switch community the moment the agent's kind:9000 add is
-      // acknowledged. That is the only window in which the guard can fire:
-      // everything before the first relay round trip runs in the same
-      // microtask as the ChannelActions read.
-      session.debugAttachSocketForTest(
-        _RecordingRelaySocket(
-          publishedEvents,
-          session.debugHandleSocketMessageForTest,
-          onEventAcknowledged: (event) {
-            if (event['kind'] != 9000) return;
-            container
-                .read(relayConfigProvider.notifier)
-                .update(baseUrl: 'https://other.example', nsec: signer.nsec);
-          },
-        ),
-      );
-
-      await _expandComposer(tester);
-      await tester.enterText(find.byType(TextField), '@hel');
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Helper Bot'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'hello @Helper Bot');
-      await tester.tap(find.byIcon(LucideIcons.arrowUp));
-      await tester.pumpAndSettle();
-
-      // The cancelled send must not reach the relay.
-      expect(sendCount, 0);
-      // The escaped StateError itself is pinned by flutter_test's own
-      // unhandled-exception reporting, which fails this test if the error
-      // is not caught. Deliberately no `takeException()` row: the framework
-      // has already consumed the error by this point, so such a row reads
-      // null whether or not the error escaped, and would never fail.
-      //
-      // What needs pinning is the user-visible half. The composer's own
-      // error line cannot carry it, because the same identity change resets
-      // that state on the very next frame, so the surface must outlive the
-      // switch.
-      expect(
-        find.widgetWithText(
-          SnackBar,
-          'Message not sent: the community changed',
-        ),
-        findsOneWidget,
-      );
-      // Characterization, not a fix: the unsent text is already retained in
-      // the originating community's own draft store (the send path never
-      // reaches `clearComposer`, and the persist listener wrote it while
-      // typing), so it is waiting when the user switches back. This row
-      // holds without the catch above and exists to keep it that way.
-      final storedDrafts = _testPrefs.getString(
-        'compose_drafts_v1:https://relay.example:${signer.public}',
-      );
-      expect(storedDrafts, isNotNull);
-      expect(
-        (jsonDecode(storedDrafts!) as List)
-            .map((d) => (d as Map<String, dynamic>)['text'])
-            .toList(),
-        contains('hello @Helper Bot'),
-      );
-    });
-
     testWidgets(
       'stale channel actions cannot invite after a community switch',
       (tester) async {
@@ -3462,86 +3378,6 @@ void main() {
         // The invitation cap is not relay back-pressure.
         expect(session.isRateLimited, isFalse);
         expect(publishedEvents, hasLength(4));
-      },
-    );
-
-    testWidgets(
-      'does not add a mentioned non-member when media upload is cancelled',
-      (tester) async {
-        final agentPubkey = 'c' * 64;
-        final signer = nostr.Keys.generate();
-        final publishedEvents = <Map<String, dynamic>>[];
-        final uploadResponse = Completer<http.Response>();
-        final uploadService = MediaUploadService(
-          baseUrl: 'https://relay.example',
-          nsec: signer.nsec,
-          httpClient: http_testing.MockClient(
-            (request) => uploadResponse.future,
-          ),
-          pickGalleryVideo: () async => null,
-          pickGalleryImage: () async => null,
-          pickGalleryImages: () async => [
-            XFile.fromData(_pngBytes, name: 'tiny.png'),
-          ],
-        );
-
-        await tester.pumpWidget(
-          _buildComposeBar(
-            uploadService: uploadService,
-            currentPubkey: signer.public,
-            relayAgents: [_testAgent(agentPubkey)],
-            channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
-            onSend: (_, _, {mediaTags = const <List<String>>[]}) async {},
-          ),
-        );
-
-        final container = ProviderScope.containerOf(
-          tester.element(find.byType(ComposeBar)),
-        );
-        final session = container.read(relaySessionProvider.notifier);
-        final socket = _RecordingRelaySocket(
-          publishedEvents,
-          session.debugHandleSocketMessageForTest,
-        );
-        session.debugAttachSocketForTest(socket);
-
-        await _openSystemPhotoPicker(tester);
-        await tester.pumpAndSettle();
-        await _expandComposer(tester);
-        await tester.enterText(find.byType(TextField), '@hel');
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Helper Bot'));
-        await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextField), 'hello @Helper Bot');
-        await tester.tap(find.byIcon(LucideIcons.arrowUp));
-        await tester.pump();
-
-        expect(
-          publishedEvents.where((event) => event['kind'] == 9000),
-          isEmpty,
-        );
-
-        await tester.pump(const Duration(milliseconds: 220));
-        await tester.tap(find.byKey(const ValueKey('compose-upload-cancel')));
-        uploadResponse.complete(
-          http.Response(
-            jsonEncode({
-              'url': 'https://relay.example/media/test.png',
-              'sha256':
-                  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-              'size': 16,
-              'type': 'image/png',
-              'uploaded': 1,
-            }),
-            200,
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(
-          publishedEvents.where((event) => event['kind'] == 9000),
-          isEmpty,
-        );
       },
     );
 
@@ -4357,154 +4193,6 @@ void main() {
       expect(find.byTooltip('Remove attachment'), findsOneWidget);
     });
 
-    testWidgets('adds a selected non-member agent as a bot before sending', (
-      tester,
-    ) async {
-      final agentPubkey = 'c' * 64;
-      final signer = nostr.Keys.generate();
-      final publishedEvents = <Map<String, dynamic>>[];
-      final uploadService = MediaUploadService(
-        baseUrl: 'https://relay.example',
-        nsec: signer.nsec,
-        pickGalleryImage: () async => null,
-        pickGalleryVideo: () async => null,
-      );
-      String? sentContent;
-      List<String> sentMentionPubkeys = const <String>[];
-
-      await tester.pumpWidget(
-        _buildComposeBar(
-          uploadService: uploadService,
-          currentPubkey: signer.public,
-          relayAgents: [
-            AgentDirectoryEntry(
-              pubkey: agentPubkey,
-              displayName: 'Helper Bot',
-              respondTo: 'anyone',
-              channelIds: const ['shared-channel'],
-            ),
-          ],
-          channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
-          onSend:
-              (
-                content,
-                mentionPubkeys, {
-                mediaTags = const <List<String>>[],
-              }) async {
-                sentContent = content;
-                sentMentionPubkeys = mentionPubkeys;
-              },
-        ),
-      );
-
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ComposeBar)),
-      );
-      final session = container.read(relaySessionProvider.notifier);
-      final socket = _RecordingRelaySocket(
-        publishedEvents,
-        session.debugHandleSocketMessageForTest,
-      );
-      session.debugAttachSocketForTest(socket);
-
-      await _expandComposer(tester);
-      await tester.enterText(find.byType(TextField), '@hel');
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Helper Bot'));
-      await tester.pumpAndSettle();
-      expect(find.byIcon(LucideIcons.bot), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('composer-agent-mention-chip')),
-        findsOneWidget,
-      );
-      await tester.enterText(find.byType(TextField), 'hello @Helper Bot');
-      await tester.tap(find.byIcon(LucideIcons.arrowUp));
-      await tester.pumpAndSettle();
-
-      expect(sentContent, 'hello @Helper Bot');
-      expect(sentMentionPubkeys, [agentPubkey]);
-      final addMemberEvent = publishedEvents.singleWhere(
-        (event) => event['kind'] == 9000,
-      );
-      expect(addMemberEvent['tags'], [
-        ['h', 'channel-1'],
-        ['p', agentPubkey],
-        ['role', 'bot'],
-      ]);
-    });
-
-    testWidgets('preserves edits made while a mentioned agent is being added', (
-      tester,
-    ) async {
-      final agentPubkey = 'c' * 64;
-      final signer = nostr.Keys.generate();
-      final publishedEvents = <Map<String, dynamic>>[];
-      final addMemberAcknowledgement = Completer<void>();
-      String? sentContent;
-
-      await tester.pumpWidget(
-        _buildComposeBar(
-          uploadService: _testUploadService(signer.nsec),
-          currentPubkey: signer.public,
-          relayAgents: [
-            AgentDirectoryEntry(
-              pubkey: agentPubkey,
-              displayName: 'Helper Bot',
-              respondTo: 'anyone',
-              channelIds: const ['shared-channel'],
-            ),
-          ],
-          channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
-          onSend:
-              (
-                content,
-                mentionPubkeys, {
-                mediaTags = const <List<String>>[],
-              }) async {
-                sentContent = content;
-              },
-        ),
-      );
-
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ComposeBar)),
-      );
-      final session = container.read(relaySessionProvider.notifier);
-      session.debugAttachSocketForTest(
-        _RecordingRelaySocket(
-          publishedEvents,
-          session.debugHandleSocketMessageForTest,
-          beforeAcknowledged: (event) async {
-            if (event['kind'] == 9000) await addMemberAcknowledgement.future;
-          },
-        ),
-      );
-
-      await _expandComposer(tester);
-      await tester.enterText(find.byType(TextField), '@hel');
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Helper Bot'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'hello @Helper Bot');
-      await tester.tap(find.byIcon(LucideIcons.arrowUp));
-      await tester.pump();
-
-      expect(
-        publishedEvents.where((event) => event['kind'] == 9000),
-        hasLength(1),
-      );
-
-      await tester.enterText(find.byType(TextField), 'newer draft');
-      addMemberAcknowledgement.complete();
-      await tester.pumpAndSettle();
-
-      expect(sentContent, 'hello @Helper Bot');
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        'newer draft',
-      );
-    });
-
     testWidgets(
       'renders chips only for selected agents outside code and composition',
       (tester) async {
@@ -4514,6 +4202,7 @@ void main() {
           _buildComposeBar(
             uploadService: _testUploadService(signer.nsec),
             currentPubkey: signer.public,
+            members: [_agentMember('f' * 64)],
             relayAgents: [_testAgent('f' * 64)],
             channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
             onSend:
@@ -4566,186 +4255,6 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 250));
         semantics.dispose();
-      },
-    );
-
-    testWidgets('does not mutate a DM when mentioning a non-member agent', (
-      tester,
-    ) async {
-      final agentPubkey = 'd' * 64;
-      final signer = nostr.Keys.generate();
-      final publishedEvents = <Map<String, dynamic>>[];
-      String? sentContent;
-
-      await tester.pumpWidget(
-        _buildComposeBar(
-          uploadService: _testUploadService(signer.nsec),
-          currentPubkey: signer.public,
-          relayAgents: [_testAgent(agentPubkey)],
-          channels: [
-            _makeCurrentChannel(channelType: 'dm'),
-            _makeSharedMemberChannel(),
-          ],
-          onSend:
-              (
-                content,
-                mentionPubkeys, {
-                mediaTags = const <List<String>>[],
-              }) async {
-                sentContent = content;
-              },
-        ),
-      );
-
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ComposeBar)),
-      );
-      final session = container.read(relaySessionProvider.notifier);
-      final socket = _RecordingRelaySocket(
-        publishedEvents,
-        session.debugHandleSocketMessageForTest,
-      );
-      session.debugAttachSocketForTest(socket);
-
-      await _selectAndSendAgentMention(tester);
-
-      expect(sentContent, 'hello @Helper Bot');
-      expect(publishedEvents.where((event) => event['kind'] == 9000), isEmpty);
-    });
-
-    testWidgets('waits for current member data before adding an agent', (
-      tester,
-    ) async {
-      final agentPubkey = 'e' * 64;
-      final signer = nostr.Keys.generate();
-      final membersCompleter = Completer<List<ChannelMember>>();
-      final publishedEvents = <Map<String, dynamic>>[];
-      var didSend = false;
-
-      await tester.pumpWidget(
-        _buildComposeBar(
-          uploadService: _testUploadService(signer.nsec),
-          currentPubkey: signer.public,
-          membersFuture: membersCompleter.future,
-          relayAgents: [_testAgent(agentPubkey)],
-          channels: [_makeCurrentChannel(), _makeSharedMemberChannel()],
-          onSend:
-              (
-                content,
-                mentionPubkeys, {
-                mediaTags = const <List<String>>[],
-              }) async {
-                didSend = true;
-              },
-        ),
-      );
-
-      final container = ProviderScope.containerOf(
-        tester.element(find.byType(ComposeBar)),
-      );
-      final session = container.read(relaySessionProvider.notifier);
-      final socket = _RecordingRelaySocket(
-        publishedEvents,
-        session.debugHandleSocketMessageForTest,
-      );
-      session.debugAttachSocketForTest(socket);
-
-      await _expandComposer(tester);
-      await tester.enterText(find.byType(TextField), '@hel');
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Helper Bot'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'hello @Helper Bot');
-      await tester.tap(find.byIcon(LucideIcons.arrowUp));
-      await tester.pump();
-
-      expect(didSend, isFalse);
-      expect(publishedEvents.where((event) => event['kind'] == 9000), isEmpty);
-
-      membersCompleter.complete([
-        ChannelMember(
-          pubkey: agentPubkey,
-          role: 'admin',
-          joinedAt: DateTime(2024),
-        ),
-      ]);
-      await tester.pumpAndSettle();
-
-      expect(didSend, isTrue);
-      expect(publishedEvents.where((event) => event['kind'] == 9000), isEmpty);
-    });
-
-    testWidgets(
-      'adds the agent in a private channel when the sender is a plain member',
-      (tester) async {
-        final agentPubkey = 'a' * 64;
-        final signer = nostr.Keys.generate();
-        final publishedEvents = <Map<String, dynamic>>[];
-        var didSend = false;
-        List<String> sentMentionPubkeys = const <String>[];
-        List<List<String>> sentMediaTags = const <List<String>>[];
-
-        await tester.pumpWidget(
-          _buildComposeBar(
-            uploadService: _testUploadService(signer.nsec),
-            currentPubkey: signer.public,
-            // Plain member of a private channel: ordinary member and bot
-            // additions are permitted; elevated-role grants still are not.
-            members: [
-              ChannelMember(
-                pubkey: signer.public,
-                role: 'member',
-                joinedAt: DateTime(2024),
-              ),
-            ],
-            relayAgents: [_testAgent(agentPubkey)],
-            channels: [
-              _makeCurrentChannel(visibility: 'private'),
-              _makeSharedMemberChannel(),
-            ],
-            onSend:
-                (
-                  content,
-                  mentionPubkeys, {
-                  mediaTags = const <List<String>>[],
-                }) async {
-                  didSend = true;
-                  sentMentionPubkeys = mentionPubkeys;
-                  sentMediaTags = mediaTags;
-                },
-          ),
-        );
-
-        final container = ProviderScope.containerOf(
-          tester.element(find.byType(ComposeBar)),
-        );
-        final session = container.read(relaySessionProvider.notifier);
-        final socket = _RecordingRelaySocket(
-          publishedEvents,
-          session.debugHandleSocketMessageForTest,
-        );
-        session.debugAttachSocketForTest(socket);
-
-        await _expandComposer(tester);
-        await tester.enterText(find.byType(TextField), '@hel');
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Helper Bot'));
-        await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextField), 'hello @Helper Bot');
-        await tester.tap(find.byIcon(LucideIcons.arrowUp));
-        await tester.pumpAndSettle();
-
-        expect(didSend, isTrue);
-        expect(
-          publishedEvents.where((event) => event['kind'] == 9000),
-          hasLength(1),
-        );
-        expect(sentMentionPubkeys, contains(agentPubkey));
-        expect(
-          sentMediaTags,
-          isNot(contains(orderedEquals(['mention', agentPubkey]))),
-        );
-        expect(find.text(privateChannelAddDeniedMessage), findsNothing);
       },
     );
 
@@ -5760,6 +5269,15 @@ MediaUploadService _testUploadService(String nsec) {
   );
 }
 
+ChannelMember _agentMember(String pubkey, [String name = 'Helper Bot']) {
+  return ChannelMember(
+    pubkey: pubkey,
+    displayName: name,
+    role: 'bot',
+    joinedAt: DateTime(2024),
+  );
+}
+
 AgentDirectoryEntry _testAgent(String pubkey) {
   return AgentDirectoryEntry(
     pubkey: pubkey,
@@ -5785,17 +5303,6 @@ Future<void> _openSystemPhotoPicker(WidgetTester tester) async {
   await tester.tap(find.text('Photos'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('All photos'));
-}
-
-Future<void> _selectAndSendAgentMention(WidgetTester tester) async {
-  await _expandComposer(tester);
-  await tester.enterText(find.byType(TextField), '@hel');
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('Helper Bot'));
-  await tester.pumpAndSettle();
-  await tester.enterText(find.byType(TextField), 'hello @Helper Bot');
-  await tester.tap(find.byIcon(LucideIcons.arrowUp));
-  await tester.pumpAndSettle();
 }
 
 List<({String text, TextStyle style})> _flattenStyledTextSpans(

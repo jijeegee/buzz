@@ -2623,6 +2623,14 @@ pub(crate) mod tests {
     /// tests deterministically exercise fail-closed database seams without
     /// depending on whether a developer has the normal test database running.
     pub(crate) async fn test_state_with_database_url(database_url: &str) -> Arc<AppState> {
+        test_state_with_config(database_url, |_| {}).await
+    }
+
+    /// [`test_state_with_database_url`] with further config changes.
+    pub(crate) async fn test_state_with_config(
+        database_url: &str,
+        configure: impl FnOnce(&mut crate::config::Config),
+    ) -> Arc<AppState> {
         // Fix 5: use Config::for_test() which holds NIP_FI_ENV_LOCK internally. [FI-TRACE-ENV-RACE]
         let mut config = crate::config::Config::for_test();
         config.require_relay_membership = false;
@@ -2633,6 +2641,7 @@ pub(crate) mod tests {
             .acquire_timeout(std::time::Duration::from_millis(100))
             .connect_lazy(&config.database_url)
             .expect("lazy pg pool");
+        configure(&mut config);
         build_test_state(config, pool).await
     }
 

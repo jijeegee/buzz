@@ -12,8 +12,10 @@
 //! - [`publish_revocations`] closes bound connections on this instance and
 //!   fans the revoked hashes out over Redis after the revoking commit.
 
+pub(crate) mod admission;
 pub mod client_ip;
 pub mod config;
+pub mod device;
 pub(crate) mod kv;
 pub(crate) mod profile;
 pub(crate) mod ws;
@@ -43,6 +45,11 @@ pub enum TokenRejection {
     TokenRevoked,
     /// The principal is disabled.
     PrincipalDisabled,
+    /// The use was not proven by the token's device key (enforced).
+    DeviceProofRequired,
+    /// The device proof's time is outside the window: the client should
+    /// correct its clock from `x-kuzz-server-time` and retry (enforced).
+    DeviceProofStale,
     /// The token store could not be read; fail closed.
     Unavailable,
 }
@@ -55,6 +62,8 @@ impl TokenRejection {
             Self::TokenExpired => "token_expired",
             Self::TokenRevoked => "token_revoked",
             Self::PrincipalDisabled => "principal_disabled",
+            Self::DeviceProofRequired => "device_proof_required",
+            Self::DeviceProofStale => "device_proof_stale",
             Self::Unavailable => "unavailable",
         }
     }
@@ -71,6 +80,10 @@ pub struct IdentityRuntime {
     pub(crate) write_triggers: profile::WriteTriggers,
     /// Bound on concurrent kind:0 publishes (see [`profile::PublishSlots`]).
     pub(crate) publish_slots: profile::PublishSlots,
+    /// Device-check modes and "would refuse" log dedup.
+    pub(crate) devices: device::DeviceRuntime,
+    /// Recently admitted (message key, device key) pairs.
+    pub(crate) admissions: admission::AdmissionCache,
 }
 
 impl std::fmt::Debug for IdentityRuntime {
@@ -110,6 +123,8 @@ impl IdentityRuntime {
             sessions: ws::TokenSessionRegistry::default(),
             write_triggers: profile::WriteTriggers::default(),
             publish_slots: profile::PublishSlots::default(),
+            devices: device::DeviceRuntime::default(),
+            admissions: admission::AdmissionCache::default(),
         }
     }
 
@@ -246,6 +261,9 @@ pub(crate) async fn verify_session_token(
         bot_id: record.bot_id,
         bot_owner: record.bot_owner,
         is_operator: record.is_operator,
+        // A stored key of the wrong length counts as keyless: proofs then
+        // fail closed under `enforce`.
+        device_pubkey: record.device_pubkey.and_then(|key| key.try_into().ok()),
     })
 }
 

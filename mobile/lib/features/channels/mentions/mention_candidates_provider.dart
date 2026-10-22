@@ -67,9 +67,8 @@ UserProfile _profileFromEvent(NostrEvent event) {
   );
 }
 
-/// Ranked mention candidates for a channel + query. Channel members first,
-/// then non-member relay agents the user can actually reach, then global
-/// search results; ordering matches desktop's `rankMentionCandidates`.
+/// Ranked mention candidates for a channel + query: channel members only
+/// (desktop does the same); ordering matches desktop's `rankMentionCandidates`.
 final mentionCandidatesProvider = Provider.family
     .autoDispose<List<MentionCandidate>, ({String channelId, String query})>((
       ref,
@@ -112,7 +111,9 @@ final mentionCandidatesProvider = Provider.family
         ownerByAgentPubkey: owners,
         searchResults: searchResults,
         currentPubkey: currentPubkey,
-      );
+        // Kuzz: the picker offers only people and agents already in this
+        // room; bringing someone in goes through group invites.
+      ).where((candidate) => candidate.isMember).toList();
 
       final names = mentionPickerNames(
         ref.watch(identityNameSourcesProvider),
