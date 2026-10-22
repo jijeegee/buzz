@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { isMacPlatform } from "@/shared/lib/platform";
+import { t } from "@/shared/i18n";
 
 import { relayClient } from "@/shared/api/relayClient";
 import { closeSocketsThenReload } from "@/shared/api/relayWebSocketClose";
@@ -183,7 +184,7 @@ export function useCommunityInit(
         isReady: false,
         needsSetup: false,
         appliedKey: null,
-        error: "Could not refresh avatar source permissions. Reload to retry.",
+        error: t("communities.init.avatarPermissionsFailed"),
       });
     });
   }, [communityRelaysKey]);
@@ -229,8 +230,10 @@ export function useCommunityInit(
                 attemptedKey: communityKey,
                 error:
                   error instanceof Error
-                    ? `Could not safely leave community: ${error.message}`
-                    : "Could not safely leave community",
+                    ? t("communities.init.leaveFailedWithReason", {
+                        reason: error.message,
+                      })
+                    : t("communities.init.leaveFailed"),
               });
             }
             return;
@@ -355,8 +358,10 @@ export function useCommunityInit(
               attemptedKey: communityKey,
               error:
                 error instanceof Error
-                  ? `Could not safely switch communities: ${error.message}`
-                  : "Could not safely switch communities",
+                  ? t("communities.init.switchFailedWithReason", {
+                      reason: error.message,
+                    })
+                  : t("communities.init.switchFailed"),
             });
           }
           return;
@@ -411,7 +416,7 @@ export function useCommunityInit(
             error:
               error instanceof Error
                 ? error.message
-                : "Failed to apply community configuration",
+                : t("communities.init.applyFailed"),
           });
         }
         return;

@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import useEmblaCarousel, {
   type UseEmblaCarouselType,
@@ -202,6 +203,7 @@ const CarouselPrevious = React.forwardRef<
   React.ComponentProps<typeof Button>
 >(({ className, variant = "outline", size = "icon", ...props }, ref) => {
   const { canScrollPrev, orientation, scrollPrev } = useCarousel();
+  const t = useT();
 
   return (
     <Button
@@ -220,7 +222,7 @@ const CarouselPrevious = React.forwardRef<
       {...props}
     >
       <ArrowLeft className="h-4 w-4" />
-      <span className="sr-only">Previous slide</span>
+      <span className="sr-only">{t("ui.carousel.previous")}</span>
     </Button>
   );
 });
@@ -231,6 +233,7 @@ const CarouselNext = React.forwardRef<
   React.ComponentProps<typeof Button>
 >(({ className, variant = "outline", size = "icon", ...props }, ref) => {
   const { canScrollNext, orientation, scrollNext } = useCarousel();
+  const t = useT();
 
   return (
     <Button
@@ -249,7 +252,7 @@ const CarouselNext = React.forwardRef<
       {...props}
     >
       <ArrowRight className="h-4 w-4" />
-      <span className="sr-only">Next slide</span>
+      <span className="sr-only">{t("ui.carousel.next")}</span>
     </Button>
   );
 });

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 
 import type { UserSearchResult } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import {
@@ -48,10 +49,11 @@ export function SelectedRecipientChip({
   testIds?: SelectedRecipientChipTestIds;
   user: UserSearchResult;
 }) {
+  const t = useT();
   return (
     <div className="inline-flex h-7 max-w-56 items-center gap-1.5 rounded-full bg-muted px-1 pr-2.5 text-sm transition-colors hover:bg-muted/80">
       <button
-        aria-label={`Remove ${label}`}
+        aria-label={t("profile.recipientChip.remove", { name: label })}
         className={cn(
           "group/remove-recipient relative h-5 w-5 shrink-0 rounded-full focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
           poofOnRemove && POOF_TRIGGER_CLASS,
@@ -97,7 +99,7 @@ export function SelectedRecipientChip({
             <button
               aria-expanded={inspectionOpen}
               aria-haspopup="dialog"
-              aria-label={`Verify ${label} public key`}
+              aria-label={t("profile.recipientChip.verifyKey", { name: label })}
               className="min-w-0 cursor-pointer truncate rounded font-medium hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
               data-testid={testIds?.name}
               onClick={(event) => {
@@ -116,7 +118,9 @@ export function SelectedRecipientChip({
             data-testid={testIds?.keyPopover}
             onOpenAutoFocus={(event) => event.preventDefault()}
           >
-            <p className="text-sm font-medium">Verify {label}</p>
+            <p className="text-sm font-medium">
+              {t("profile.recipientChip.verifyTitle", { name: label })}
+            </p>
             <PubKey
               pubkey={user.pubkey}
               testId={testIds?.pubkey}
@@ -131,7 +135,7 @@ export function SelectedRecipientChip({
         <AgentBadgeIcon
           agentPubkey={user.pubkey}
           className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-          defaultLabel="agent"
+          defaultLabel={t("profile.recipientChip.agentLabel")}
           othersSee="bot"
           ownerPubkey={user.ownerPubkey}
         />

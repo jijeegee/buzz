@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -121,9 +122,7 @@ export function useCommunityNavigationTransitions({
       );
       if (!fallback) {
         if (!markCommunityDiscoveryAfterLeave()) {
-          throw new Error(
-            "Couldn't finish removing the community from this device because community discovery state could not be saved. Restart Kuzz and try again.",
-          );
+          throw new Error(t("app.community.removeIncomplete"));
         }
         markRemoved();
         await refuseRelay();

@@ -2,6 +2,7 @@ import * as React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { joinPolicyDocumentUrl, type JoinPolicy } from "@/shared/api/invites";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
 
@@ -33,6 +34,7 @@ export function JoinPolicyNotice({
   policy,
   relayWsUrl,
 }: JoinPolicyNoticeProps) {
+  const t = useT();
   const ageConfirmationId = React.useId();
   const agreementConfirmationId = React.useId();
 
@@ -52,7 +54,7 @@ export function JoinPolicyNotice({
             className="cursor-pointer text-xs leading-5 text-muted-foreground"
             htmlFor={ageConfirmationId}
           >
-            I am 18 years of age or older.
+            {t("onboarding.joinPolicy.age")}
           </label>
         </div>
       ) : null}
@@ -71,35 +73,43 @@ export function JoinPolicyNotice({
             className="cursor-pointer text-xs leading-5 text-muted-foreground"
             htmlFor={agreementConfirmationId}
           >
-            I agree to the Kuzz{" "}
-            {policy.termsMarkdown ? (
-              <Button
-                className="h-auto p-0 align-baseline text-xs no-underline hover:underline focus-visible:no-underline"
-                onClick={(event) => {
-                  event.preventDefault();
-                  void openUrl(joinPolicyDocumentUrl(relayWsUrl, "terms"));
-                }}
-                type="button"
-                variant="link"
-              >
-                Terms of Service
-              </Button>
-            ) : null}
-            {policy.termsMarkdown && policy.privacyMarkdown ? " and " : null}
-            {policy.privacyMarkdown ? (
-              <Button
-                className="h-auto p-0 align-baseline text-xs no-underline hover:underline focus-visible:no-underline"
-                onClick={(event) => {
-                  event.preventDefault();
-                  void openUrl(joinPolicyDocumentUrl(relayWsUrl, "privacy"));
-                }}
-                type="button"
-                variant="link"
-              >
-                Privacy Policy
-              </Button>
-            ) : null}
-            .
+            {t(
+              policy.termsMarkdown && policy.privacyMarkdown
+                ? "onboarding.joinPolicy.agreeBoth"
+                : policy.termsMarkdown
+                  ? "onboarding.joinPolicy.agreeTerms"
+                  : "onboarding.joinPolicy.agreePrivacy",
+              {
+                terms: (chunks) => (
+                  <Button
+                    className="h-auto p-0 align-baseline text-xs no-underline hover:underline focus-visible:no-underline"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void openUrl(joinPolicyDocumentUrl(relayWsUrl, "terms"));
+                    }}
+                    type="button"
+                    variant="link"
+                  >
+                    {chunks}
+                  </Button>
+                ),
+                privacy: (chunks) => (
+                  <Button
+                    className="h-auto p-0 align-baseline text-xs no-underline hover:underline focus-visible:no-underline"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void openUrl(
+                        joinPolicyDocumentUrl(relayWsUrl, "privacy"),
+                      );
+                    }}
+                    type="button"
+                    variant="link"
+                  >
+                    {chunks}
+                  </Button>
+                ),
+              },
+            )}
           </label>
         </div>
       ) : null}

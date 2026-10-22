@@ -12,22 +12,22 @@ import { listenForNostrBindDeepLinks } from "@/shared/deep-link";
 import { OnboardingSlideTransition } from "@/features/onboarding/ui/OnboardingSlideTransition";
 import { buildNostrBindCallbackUrl } from "@/features/profile/lib/nostrBindCallback";
 import { signNostrIdentityBinding } from "@/features/profile/lib/nostrIdentityBinding";
+import { type MessageKey, t as translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
-const COPY_SUCCESS_MESSAGE =
-  "Signed response copied. Paste it into the Kuzz admin console.";
-const PREVIEW_COPY_SUCCESS_MESSAGE = "Preview response copied.";
-const COPY_FAILURE_MESSAGE = "Kuzz couldn't access the clipboard. Try again.";
-const EXPIRED_LINK_MESSAGE =
-  "This binding link has expired. Request a new one from the requesting app.";
+const COPY_SUCCESS_MESSAGE: MessageKey = "profile.nostrBind.copySuccess";
+const PREVIEW_COPY_SUCCESS_MESSAGE: MessageKey =
+  "profile.nostrBind.previewCopySuccess";
+const COPY_FAILURE_MESSAGE: MessageKey = "profile.nostrBind.copyFailure";
+const EXPIRED_LINK_MESSAGE: MessageKey = "profile.nostrBind.expired";
 const VERIFICATION_CODE_LENGTH = 6;
 const VERIFICATION_CODE_DIGIT_KEYS = ["1", "2", "3", "4", "5", "6"] as const;
-const VERIFICATION_CODE_MISMATCH_MESSAGE =
-  "That code doesn't match. Check the code and try again.";
+const VERIFICATION_CODE_MISMATCH_MESSAGE: MessageKey =
+  "profile.nostrBind.codeMismatch";
 const COPY_BUTTON_LABEL_CLASS =
   "col-start-1 row-start-1 transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:translate-y-0 motion-reduce:duration-0";
 const NOSTR_BIND_PREVIEW_PAYLOAD: NostrBindDeepLinkPayload = {
@@ -138,7 +138,7 @@ async function returnSignedResponseToBrowser(
     return null;
   } catch (error) {
     console.warn("return signed nostr binding response failed:", error);
-    return "Could not open the browser. Copy the response below to finish manually.";
+    return translate("profile.nostrBind.browserOpenFailed");
   }
 }
 
@@ -153,6 +153,7 @@ function SignedResponseControls({
   onCopy: () => void;
   signedResponse: string;
 }) {
+  const t = useT();
   return (
     <div className="space-y-4" data-testid="nostr-bind-manual-fallback-content">
       <pre
@@ -166,7 +167,7 @@ function SignedResponseControls({
 
       {copyFailed ? (
         <p className="w-full rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
-          {COPY_FAILURE_MESSAGE}
+          {t(COPY_FAILURE_MESSAGE)}
         </p>
       ) : null}
 
@@ -187,22 +188,22 @@ function SignedResponseControls({
           <span
             className={cn(
               COPY_BUTTON_LABEL_CLASS,
-              copyLabel === "Copy response"
+              copyLabel === t("profile.nostrBind.copyResponse")
                 ? "translate-y-0 opacity-100"
                 : "-translate-y-0.5 opacity-0",
             )}
           >
-            Copy response
+            {t("profile.nostrBind.copyResponse")}
           </span>
           <span
             className={cn(
               COPY_BUTTON_LABEL_CLASS,
-              copyLabel === "Copied"
+              copyLabel === t("common.copied")
                 ? "translate-y-0 opacity-100"
                 : "translate-y-0.5 opacity-0",
             )}
           >
-            Copied
+            {t("common.copied")}
           </span>
         </span>
       </Button>
@@ -211,6 +212,7 @@ function SignedResponseControls({
 }
 
 export function NostrBindConsentDialog() {
+  const t = useT();
   const isPreview = isNostrBindPreviewEnabled();
   const [payload, setPayload] = React.useState<NostrBindDeepLinkPayload | null>(
     isPreview ? NOSTR_BIND_PREVIEW_PAYLOAD : null,
@@ -245,8 +247,12 @@ export function NostrBindConsentDialog() {
     enteredVerificationCode.length === VERIFICATION_CODE_LENGTH;
   const isVerificationCodeValid =
     payload !== null && enteredVerificationCode === payload.verificationCode;
-  const copyButtonLabel = isSigning ? "Signing…" : "Continue";
-  const finishCopyButtonLabel = isCopied ? "Copied" : "Copy response";
+  const copyButtonLabel = isSigning
+    ? t("profile.nostrBind.signing")
+    : t("common.continue");
+  const finishCopyButtonLabel = isCopied
+    ? t("common.copied")
+    : t("profile.nostrBind.copyResponse");
 
   const clearCopiedState = React.useCallback(() => {
     if (copiedTimerRef.current) {
@@ -298,7 +304,7 @@ export function NostrBindConsentDialog() {
         .catch((error) => {
           console.warn("get_identity for nostr bind failed:", error);
           setIdentity(null);
-          setError("Could not load the current Kuzz identity.");
+          setError(translate("profile.nostrBind.identityLoadFailed"));
         });
     });
 
@@ -515,7 +521,7 @@ export function NostrBindConsentDialog() {
       return;
     }
     if (isNostrBindRequestExpired(payload)) {
-      setError(EXPIRED_LINK_MESSAGE);
+      setError(translate(EXPIRED_LINK_MESSAGE));
       return;
     }
     if (!isVerificationCodeValid) {
@@ -563,7 +569,9 @@ export function NostrBindConsentDialog() {
       }
     } catch (error) {
       if (activeSignAttemptRef.current === attempt) {
-        setError(formatError(error) || "Failed to sign binding response.");
+        setError(
+          formatError(error) || translate("profile.nostrBind.signFailed"),
+        );
       }
     } finally {
       if (activeSignAttemptRef.current === attempt) {
@@ -623,10 +631,12 @@ export function NostrBindConsentDialog() {
         await notifySignedResponseReady(payload.callbackUrl);
       }
       toast.success(
-        isPreview ? PREVIEW_COPY_SUCCESS_MESSAGE : COPY_SUCCESS_MESSAGE,
+        translate(
+          isPreview ? PREVIEW_COPY_SUCCESS_MESSAGE : COPY_SUCCESS_MESSAGE,
+        ),
       );
     } else {
-      toast.warning(COPY_FAILURE_MESSAGE);
+      toast.warning(translate(COPY_FAILURE_MESSAGE));
     }
   }, [
     isPreview,
@@ -667,16 +677,16 @@ export function NostrBindConsentDialog() {
                 >
                   <DialogPrimitive.Title className="mt-6 text-3xl font-semibold tracking-tight">
                     {payload.returnMode === "browser_fragment_v1"
-                      ? "Continue in your browser"
-                      : "Finish on the Kuzz website"}
+                      ? t("profile.nostrBind.continueInBrowser")
+                      : t("profile.nostrBind.finishOnWebsite")}
                   </DialogPrimitive.Title>
                   <DialogPrimitive.Description
                     className="mt-3 max-w-[440px] text-sm leading-6 text-muted-foreground"
                     id="nostr-bind-description"
                   >
                     {payload.returnMode === "browser_fragment_v1"
-                      ? "Kuzz opened your browser to finish verification."
-                      : "Copy the response below, then paste it into the Kuzz website to finish verification."}
+                      ? t("profile.nostrBind.browserOpened")
+                      : t("profile.nostrBind.copyAndPaste")}
                   </DialogPrimitive.Description>
 
                   {error ? (
@@ -695,12 +705,12 @@ export function NostrBindConsentDialog() {
                       open={isManualFallbackOpen}
                     >
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-sm font-medium transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                        <span>Pairing didn’t finish automatically?</span>
+                        <span>{t("profile.nostrBind.notFinished")}</span>
                         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-180" />
                       </summary>
                       <div className="space-y-4 border-t border-border/55 p-4">
                         <p className="text-sm leading-6 text-muted-foreground">
-                          Copy this response and paste it into the pairing page.
+                          {t("profile.nostrBind.copyToPairingPage")}
                         </p>
                         <SignedResponseControls
                           copyFailed={copyFailed}
@@ -728,7 +738,7 @@ export function NostrBindConsentDialog() {
                       type="button"
                       variant="ghost"
                     >
-                      Continue
+                      {t("common.continue")}
                     </Button>
                   </div>
                 </OnboardingSlideTransition>
@@ -740,13 +750,13 @@ export function NostrBindConsentDialog() {
                   transitionKey="nostr-bind-code"
                 >
                   <DialogPrimitive.Title className="mt-6 text-3xl font-semibold tracking-tight">
-                    Enter verification code
+                    {t("profile.nostrBind.enterCodeTitle")}
                   </DialogPrimitive.Title>
                   <DialogPrimitive.Description
                     className="mt-3 max-w-[440px] text-sm leading-6 text-muted-foreground"
                     id="nostr-bind-description"
                   >
-                    Enter the six-digit code shown in your browser
+                    {t("profile.nostrBind.enterCodeBody")}
                   </DialogPrimitive.Description>
 
                   <div className="mt-10 w-full space-y-4 text-sm">
@@ -757,7 +767,9 @@ export function NostrBindConsentDialog() {
                       aria-invalid={hasCodeMismatch}
                       className="w-full min-w-0 text-center"
                     >
-                      <legend className="sr-only">Verification code</legend>
+                      <legend className="sr-only">
+                        {t("profile.nostrBind.codeLegend")}
+                      </legend>
                       <div
                         className="flex justify-center gap-2"
                         data-testid="nostr-bind-verification-code"
@@ -769,7 +781,10 @@ export function NostrBindConsentDialog() {
                             key={VERIFICATION_CODE_DIGIT_KEYS[index]}
                           >
                             <input
-                              aria-label={`Verification code digit ${index + 1} of ${VERIFICATION_CODE_LENGTH}`}
+                              aria-label={t("profile.nostrBind.codeDigit", {
+                                index: index + 1,
+                                total: VERIFICATION_CODE_LENGTH,
+                              })}
                               autoComplete={
                                 index === 0 ? "one-time-code" : "off"
                               }
@@ -851,14 +866,14 @@ export function NostrBindConsentDialog() {
                         role={hasCodeMismatch ? "alert" : undefined}
                       >
                         {hasCodeMismatch
-                          ? VERIFICATION_CODE_MISMATCH_MESSAGE
+                          ? t(VERIFICATION_CODE_MISMATCH_MESSAGE)
                           : "\u00a0"}
                       </p>
                     </fieldset>
 
                     {isExpired ? (
                       <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-destructive">
-                        {EXPIRED_LINK_MESSAGE}
+                        {t(EXPIRED_LINK_MESSAGE)}
                       </p>
                     ) : null}
 
@@ -893,22 +908,22 @@ export function NostrBindConsentDialog() {
                         <span
                           className={cn(
                             COPY_BUTTON_LABEL_CLASS,
-                            copyButtonLabel === "Continue"
+                            copyButtonLabel === t("common.continue")
                               ? "translate-y-0 opacity-100"
                               : "-translate-y-0.5 opacity-0",
                           )}
                         >
-                          Continue
+                          {t("common.continue")}
                         </span>
                         <span
                           className={cn(
                             COPY_BUTTON_LABEL_CLASS,
-                            copyButtonLabel === "Signing…"
+                            copyButtonLabel === t("profile.nostrBind.signing")
                               ? "translate-y-0 opacity-100"
                               : "translate-y-0.5 opacity-0",
                           )}
                         >
-                          Signing…
+                          {t("profile.nostrBind.signing")}
                         </span>
                       </span>
                     </Button>
@@ -919,7 +934,7 @@ export function NostrBindConsentDialog() {
                       type="button"
                       variant="ghost"
                     >
-                      Cancel
+                      {t("common.cancel")}
                     </Button>
                   </div>
                 </OnboardingSlideTransition>

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -70,10 +71,13 @@ export function useTrayMenu({
 
         return {
           activityId: `${channelTurn.channelId}:${normalizePubkey(pubkey)}`,
-          agentName: agentNames.get(normalizePubkey(pubkey)) ?? "Agent",
+          agentName:
+            agentNames.get(normalizePubkey(pubkey)) ??
+            t("app.tray.agentFallback"),
           channelId: channelTurn.channelId,
           channelName:
-            channelNames.get(channelTurn.channelId) ?? "Unknown group",
+            channelNames.get(channelTurn.channelId) ??
+            t("app.tray.unknownGroup"),
           elapsed: formatElapsed(
             now - (agentTurn?.anchorAt ?? channelTurn.anchorAt),
           ),

@@ -13,6 +13,7 @@ import {
   suggestShortcodeFromFilename,
 } from "@/shared/api/customEmoji";
 import { pickAndUploadMedia } from "@/shared/api/tauri";
+import { t as translate, useT } from "@/shared/i18n";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -29,6 +30,7 @@ import { SettingsSectionHeader } from "@/features/settings/ui/SettingsSectionHea
  * deterministic winner (see `unionCustomEmoji`).
  */
 export function CustomEmojiSettingsCard() {
+  const t = useT();
   const { data: own = [], isLoading: ownLoading } = useOwnCustomEmojiQuery();
   const { data: community = [], isLoading: communityLoading } =
     useCustomEmojiQuery();
@@ -62,7 +64,7 @@ export function CustomEmojiSettingsCard() {
         return;
       }
       if (!blob.type.startsWith("image/")) {
-        toast.error("Choose an image file for custom emoji.");
+        toast.error(translate("customEmoji.toast.notImage"));
         return;
       }
       setPendingUpload({ url: blob.url, filename: blob.filename ?? null });
@@ -76,7 +78,7 @@ export function CustomEmojiSettingsCard() {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Failed to upload emoji image.",
+          : translate("customEmoji.toast.uploadFailed"),
       );
     } finally {
       setIsUploading(false);
@@ -92,10 +94,14 @@ export function CustomEmojiSettingsCard() {
       });
       setName("");
       setPendingUpload(null);
-      toast.success(`Added :${stored}:`);
+      toast.success(
+        translate("customEmoji.toast.added", { shortcode: stored }),
+      );
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to add emoji.",
+        error instanceof Error
+          ? error.message
+          : translate("customEmoji.toast.addFailed"),
       );
     }
   }, [normalized, pendingUpload, setEmoji]);
@@ -109,10 +115,12 @@ export function CustomEmojiSettingsCard() {
     async (shortcode: string) => {
       try {
         await removeEmoji.mutateAsync(shortcode);
-        toast.success(`Removed :${shortcode}:`);
+        toast.success(translate("customEmoji.toast.removed", { shortcode }));
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to remove emoji.",
+          error instanceof Error
+            ? error.message
+            : translate("customEmoji.toast.removeFailed"),
         );
       }
     },
@@ -126,13 +134,10 @@ export function CustomEmojiSettingsCard() {
   return (
     <section className="min-w-0" data-testid="settings-custom-emoji">
       <SettingsSectionHeader
-        title="Custom emoji"
-        description={
-          <>
-            Add your own custom emoji for everyone on this relay to use. Type{" "}
-            <code>:name:</code> in messages and reactions.
-          </>
-        }
+        title={t("customEmoji.header.title")}
+        description={t("customEmoji.header.description", {
+          code: (chunks) => <code>{chunks}</code>,
+        })}
       />
 
       <div className="space-y-6">
@@ -143,23 +148,24 @@ export function CustomEmojiSettingsCard() {
             if (canSubmit) void handleAdd();
           }}
         >
-          <SettingsOptionGroup title="Add emoji">
+          <SettingsOptionGroup title={t("customEmoji.add.title")}>
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
               <div className="min-w-0 flex-[1_1_22rem]">
-                <h4 className="text-sm font-medium">Upload an image</h4>
+                <h4 className="text-sm font-medium">
+                  {t("customEmoji.add.uploadTitle")}
+                </h4>
                 <p
                   className="text-sm font-normal text-muted-foreground/70"
                   data-settings-subcopy
                 >
-                  Square images work best. GIF, PNG, JPEG, and WebP files are
-                  supported.
+                  {t("customEmoji.add.uploadHelp")}
                 </p>
               </div>
               <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-3">
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border bg-background">
                   {pendingUpload ? (
                     <img
-                      alt="Selected custom emoji preview"
+                      alt={t("customEmoji.add.previewAlt")}
                       src={rewriteRelayUrl(pendingUpload.url)}
                       className="h-14 w-14 object-contain"
                       draggable={false}
@@ -182,10 +188,10 @@ export function CustomEmojiSettingsCard() {
                     variant="outline"
                   >
                     {isUploading
-                      ? "Uploading…"
+                      ? t("customEmoji.add.uploading")
                       : pendingUpload
-                        ? "Choose different image"
-                        : "Upload image"}
+                        ? t("customEmoji.add.chooseDifferent")
+                        : t("customEmoji.add.uploadButton")}
                   </Button>
                 </div>
               </div>
@@ -193,13 +199,14 @@ export function CustomEmojiSettingsCard() {
 
             <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm">
               <div className="min-w-0 flex-[1_1_22rem]">
-                <h4 className="text-sm font-medium">Give it a name</h4>
+                <h4 className="text-sm font-medium">
+                  {t("customEmoji.add.nameTitle")}
+                </h4>
                 <p
                   className="text-sm font-normal text-muted-foreground/70"
                   data-settings-subcopy
                 >
-                  This is what you’ll type to add this emoji to messages and
-                  reactions.
+                  {t("customEmoji.add.nameHelp")}
                 </p>
               </div>
               <div className="w-full min-w-0 max-w-sm flex-[1_1_20rem] space-y-2">
@@ -213,7 +220,7 @@ export function CustomEmojiSettingsCard() {
                     autoCapitalize="none"
                     autoCorrect="off"
                     className="px-6"
-                    placeholder="party-parrot"
+                    placeholder={t("customEmoji.add.namePlaceholder")}
                     spellCheck={false}
                     value={name}
                     onChange={(event) => setName(event.target.value)}
@@ -224,23 +231,23 @@ export function CustomEmojiSettingsCard() {
                 </div>
                 {nameInvalid ? (
                   <p className="text-sm text-destructive">
-                    Use only letters, numbers, hyphen, or underscore.
+                    {t("customEmoji.add.nameInvalid")}
                   </p>
                 ) : pendingUpload === null ? (
                   <p
                     className="text-sm font-normal text-muted-foreground/70"
                     data-settings-subcopy
                   >
-                    Choose an image first; Kuzz will suggest a name from the
-                    filename.
+                    {t("customEmoji.add.chooseImageFirst")}
                   </p>
                 ) : ownDuplicate ? (
                   <p
                     className="text-sm font-normal text-muted-foreground/70"
                     data-settings-subcopy
                   >
-                    You already have :{normalized}: — saving will replace its
-                    image.
+                    {t("customEmoji.add.replaceWarning", {
+                      shortcode: normalized,
+                    })}
                   </p>
                 ) : null}
               </div>
@@ -255,14 +262,16 @@ export function CustomEmojiSettingsCard() {
                   setEmoji.isPending || (name.length === 0 && !pendingUpload)
                 }
               >
-                Clear
+                {t("customEmoji.add.clear")}
               </Button>
               <Button
                 type="submit"
                 data-testid="custom-emoji-add"
                 disabled={!canSubmit}
               >
-                {setEmoji.isPending ? "Saving…" : "Save emoji"}
+                {setEmoji.isPending
+                  ? t("customEmoji.add.saving")
+                  : t("customEmoji.add.save")}
               </Button>
             </div>
           </SettingsOptionGroup>
@@ -270,19 +279,23 @@ export function CustomEmojiSettingsCard() {
 
         <div data-testid="custom-emoji-mine">
           {ownLoading ? (
-            <SettingsOptionGroup title="My emoji">
+            <SettingsOptionGroup title={t("customEmoji.mine.title")}>
               <div className="px-4 py-3 text-sm font-normal text-muted-foreground">
-                Loading…
+                {t("common.loading")}
               </div>
             </SettingsOptionGroup>
           ) : own.length === 0 ? (
-            <SettingsOptionGroup title="My emoji">
+            <SettingsOptionGroup title={t("customEmoji.mine.title")}>
               <div className="px-4 py-3 text-sm font-normal text-muted-foreground">
-                You haven&apos;t added any emoji yet. Add one above.
+                {t("customEmoji.mine.empty")}
               </div>
             </SettingsOptionGroup>
           ) : (
-            <SettingsOptionGroup title={`My emoji (${own.length})`}>
+            <SettingsOptionGroup
+              title={t("customEmoji.mine.titleWithCount", {
+                count: own.length,
+              })}
+            >
               {own.map((e) => (
                 <div
                   key={e.shortcode}
@@ -298,7 +311,9 @@ export function CustomEmojiSettingsCard() {
                     :{e.shortcode}:
                   </span>
                   <Button
-                    aria-label={`Remove :${e.shortcode}:`}
+                    aria-label={t("customEmoji.mine.removeLabel", {
+                      shortcode: e.shortcode,
+                    })}
                     size="icon"
                     variant="ghost"
                     onClick={() => void handleRemove(e.shortcode)}
@@ -315,8 +330,10 @@ export function CustomEmojiSettingsCard() {
         {!communityLoading && othersEmoji.length > 0 ? (
           <div data-testid="custom-emoji-community">
             <SettingsOptionGroup
-              description="Added by other members. You can use these, but only their owner can remove them."
-              title={`Community emoji (${othersEmoji.length})`}
+              description={t("customEmoji.community.description")}
+              title={t("customEmoji.community.titleWithCount", {
+                count: othersEmoji.length,
+              })}
             >
               {othersEmoji.map((e) => (
                 <div

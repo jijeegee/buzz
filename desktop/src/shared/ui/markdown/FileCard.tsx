@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { Download, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -49,7 +50,8 @@ export function FileCard({
       onClick={() => {
         invokeTauri("download_file", { url: href, filename }).catch(
           (err: unknown) => {
-            const msg = err instanceof Error ? err.message : "Download failed";
+            const msg =
+              err instanceof Error ? err.message : t("ui.download.failed");
             toast.error(msg);
           },
         );

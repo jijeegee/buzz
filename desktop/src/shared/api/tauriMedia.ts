@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { invoke as invokeTauriRaw, isTauri } from "@tauri-apps/api/core";
 import { type BlobDescriptor, invokeTauri } from "./tauri";
 
@@ -50,7 +51,7 @@ export async function uploadMediaFile(
     ) {
       throw new Error(error.message);
     }
-    throw new Error("Media upload failed.");
+    throw new Error(t("ui.media.uploadFailed"));
   }
 }
 

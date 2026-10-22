@@ -8,6 +8,7 @@ import {
 } from "@/features/profile/lib/animatedAvatarCapture";
 import { beginAvatarPresentation } from "@/features/profile/avatarPresentationStore";
 import { AVATAR_COLORS } from "@/features/profile/ui/ProfileAvatarEditor.utils";
+import type { MessageKey } from "@/shared/i18n";
 import { buildAnimatedAvatarUrl } from "@/shared/lib/animatedAvatar";
 
 export type CapturePhase =
@@ -25,8 +26,8 @@ const PHONE_DEFAULT_PERSON_SCALE =
   (Math.round(DEFAULT_PERSON_SCALE * 100) - SLIDER_TICK_STEP) / 100;
 
 export const RECORD_SECONDS = ANIMATED_AVATAR_DURATION_MS / 1000;
-export const PERSON_SIZE_TIP =
-  "Scale just past the color circle for a pop-out look.";
+export const PERSON_SIZE_TIP: MessageKey =
+  "profile.animatedAvatar.personSizeTip";
 export const ENTRANCE_TRANSITION = {
   duration: 0.18,
   ease: [0.23, 1, 0.32, 1],

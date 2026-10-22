@@ -19,6 +19,7 @@ import { nip19 } from "nostr-tools";
 import { LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Badge } from "@/shared/ui/badge";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { useCommunities } from "@/features/communities/useCommunities";
@@ -111,10 +112,11 @@ function SourceBadge({
 }: {
   source: "config" | "owner_fallback" | "db";
 }) {
-  const label: Record<string, string> = {
-    config: "config",
-    owner_fallback: "owner (fallback)",
-    db: "db",
+  const t = useT();
+  const label: Record<string, MessageKey> = {
+    config: "adminConsole.staffing.sourceConfig",
+    owner_fallback: "adminConsole.staffing.sourceOwnerFallback",
+    db: "adminConsole.staffing.sourceDb",
   };
   const variant: Record<string, "secondary" | "outline"> = {
     config: "secondary",
@@ -123,7 +125,7 @@ function SourceBadge({
   };
   return (
     <Badge variant={variant[source] ?? "outline"}>
-      {label[source] ?? source}
+      {label[source] ? t(label[source]) : source}
     </Badge>
   );
 }
@@ -138,6 +140,7 @@ function RestrictionTypeBadge({
 }: {
   record: AdminMemberRestrictionDto;
 }) {
+  const t = useT();
   const now = new Date();
   const isBanned =
     record.banned &&
@@ -146,8 +149,16 @@ function RestrictionTypeBadge({
     record.mutedUntil !== null && new Date(record.mutedUntil) > now;
   return (
     <span className="flex flex-wrap gap-1">
-      {isBanned && <Badge variant="destructive">banned</Badge>}
-      {isTimedOut && <Badge variant="secondary">timeout</Badge>}
+      {isBanned && (
+        <Badge variant="destructive">
+          {t("adminConsole.restrictions.bannedBadge")}
+        </Badge>
+      )}
+      {isTimedOut && (
+        <Badge variant="secondary">
+          {t("adminConsole.restrictions.timeoutBadge")}
+        </Badge>
+      )}
     </span>
   );
 }
@@ -168,6 +179,7 @@ function RestrictionsSection({
   relayKey: string;
   generation: number;
 }) {
+  const t = useT();
   const [listGen, setListGen] = useState(0);
   const [liftError, setLiftError] = useState<string | null>(null);
   const [workingPubkey, setWorkingPubkey] = useState<string | null>(null);
@@ -300,18 +312,21 @@ function RestrictionsSection({
       >
         <AlertDialogContent data-testid="restrictions-lift-ban-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Lift ban?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("adminConsole.restrictions.liftBanTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove the active ban for{" "}
-              <span className="font-mono">
-                {pendingLiftBan ? truncatePubkey(pendingLiftBan.pubkey) : ""}
-              </span>
-              . They will be able to post again.
+              {t("adminConsole.restrictions.liftBanDescription", {
+                pubkey: pendingLiftBan
+                  ? truncatePubkey(pendingLiftBan.pubkey)
+                  : "",
+                mono: (chunks) => <span className="font-mono">{chunks}</span>,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="restrictions-lift-ban-cancel">
-              Cancel
+              {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               asChild
@@ -321,7 +336,7 @@ function RestrictionsSection({
                 onClick={() => void handleConfirmLiftBan()}
                 variant="default"
               >
-                Lift ban
+                {t("adminConsole.restrictions.liftBan")}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -337,20 +352,21 @@ function RestrictionsSection({
       >
         <AlertDialogContent data-testid="restrictions-lift-timeout-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear timeout?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("adminConsole.restrictions.clearTimeoutTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will clear the active timeout for{" "}
-              <span className="font-mono">
-                {pendingLiftTimeout
+              {t("adminConsole.restrictions.clearTimeoutDescription", {
+                pubkey: pendingLiftTimeout
                   ? truncatePubkey(pendingLiftTimeout.pubkey)
-                  : ""}
-              </span>
-              . They will be able to post again.
+                  : "",
+                mono: (chunks) => <span className="font-mono">{chunks}</span>,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="restrictions-lift-timeout-cancel">
-              Cancel
+              {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               asChild
@@ -360,7 +376,7 @@ function RestrictionsSection({
                 onClick={() => void handleConfirmLiftTimeout()}
                 variant="default"
               >
-                Clear timeout
+                {t("adminConsole.restrictions.clearTimeout")}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -368,7 +384,7 @@ function RestrictionsSection({
       </AlertDialog>
 
       <p className="text-xs font-medium text-muted-foreground">
-        Active restrictions
+        {t("adminConsole.restrictions.title")}
       </p>
 
       {listState.status === "loading" && <LoadingSpinner />}
@@ -381,7 +397,7 @@ function RestrictionsSection({
           className="text-sm text-muted-foreground"
           data-testid="restrictions-empty"
         >
-          No active bans or timeouts.
+          {t("adminConsole.restrictions.empty")}
         </p>
       )}
       {listState.status === "ok" && items.length > 0 && (
@@ -420,7 +436,7 @@ function RestrictionsSection({
                     {isWorking ? (
                       <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      "Lift ban"
+                      t("adminConsole.restrictions.liftBan")
                     )}
                   </Button>
                 )}
@@ -436,7 +452,7 @@ function RestrictionsSection({
                     {isWorking ? (
                       <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      "Clear timeout"
+                      t("adminConsole.restrictions.clearTimeout")
                     )}
                   </Button>
                 )}
@@ -458,7 +474,7 @@ function RestrictionsSection({
           {moreStatus?.busy ? (
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            "Load more"
+            t("adminConsole.restrictions.loadMore")
           )}
         </Button>
       )}
@@ -491,6 +507,7 @@ export function StaffingTab({
    */
   onSelfMutation?: () => void;
 }) {
+  const t = useT();
   const { activeCommunity } = useCommunities();
   const [listGen, setListGen] = useState(0);
   const [addPubkey, setAddPubkey] = useState("");
@@ -533,7 +550,9 @@ export function StaffingTab({
     const existing = listState.data.find((op) => op.pubkey === trimmed);
     if (existing) {
       setAddError(
-        `Already an operator: ${existing.effectiveRole}. Change role with the edit control on their row.`,
+        t("adminConsole.staffing.alreadyOperator", {
+          role: existing.effectiveRole,
+        }),
       );
       return;
     }
@@ -609,23 +628,28 @@ export function StaffingTab({
       >
         <AlertDialogContent data-testid="staffing-remove-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove operator?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("adminConsole.staffing.removeTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>
-                  This will remove{" "}
-                  <span className="font-mono">
-                    {pendingRemove ? truncatePubkey(pendingRemove.pubkey) : ""}
-                  </span>{" "}
-                  ({pendingRemove?.effectiveRole}) from the operator list.
+                  {t("adminConsole.staffing.removeDescription", {
+                    pubkey: pendingRemove
+                      ? truncatePubkey(pendingRemove.pubkey)
+                      : "",
+                    role: pendingRemove?.effectiveRole ?? "",
+                    mono: (chunks) => (
+                      <span className="font-mono">{chunks}</span>
+                    ),
+                  })}
                 </p>
                 {isSelf && (
                   <p
                     className="text-destructive"
                     data-testid="staffing-remove-self-warning"
                   >
-                    You are removing your own operator access. Once removed, you
-                    may lose the ability to undo this action.
+                    {t("adminConsole.staffing.removeSelfWarning")}
                   </p>
                 )}
               </div>
@@ -633,14 +657,14 @@ export function StaffingTab({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="staffing-remove-cancel">
-              Cancel
+              {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction asChild data-testid="staffing-remove-confirm">
               <Button
                 onClick={() => void handleConfirmRemove()}
                 variant="destructive"
               >
-                Remove
+                {t("common.remove")}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -651,7 +675,7 @@ export function StaffingTab({
       {canMutate && (
         <div className="rounded-md border border-border/60 px-3 py-2.5 space-y-2">
           <p className="text-xs font-medium text-muted-foreground">
-            Add operator
+            {t("adminConsole.staffing.addTitle")}
           </p>
           <div className="flex gap-2">
             <input
@@ -659,7 +683,7 @@ export function StaffingTab({
               data-testid="staffing-add-pubkey-input"
               disabled={isAdding}
               onChange={(e) => setAddPubkey(e.target.value)}
-              placeholder="64-hex pubkey"
+              placeholder={t("adminConsole.staffing.pubkeyPlaceholder")}
               type="text"
               value={addPubkey}
             />
@@ -672,8 +696,12 @@ export function StaffingTab({
               }
               value={addRole}
             >
-              <option value="moderator">moderator</option>
-              <option value="operator">operator</option>
+              <option value="moderator">
+                {t("adminConsole.role", { role: "moderator" })}
+              </option>
+              <option value="operator">
+                {t("adminConsole.role", { role: "operator" })}
+              </option>
             </select>
             <Button
               data-testid="staffing-add-btn"
@@ -687,7 +715,7 @@ export function StaffingTab({
               {isAdding ? (
                 <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                "Add"
+                t("common.add")
               )}
             </Button>
           </div>
@@ -705,7 +733,7 @@ export function StaffingTab({
         <ul className="space-y-1">
           {listState.data.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No operators configured.
+              {t("adminConsole.staffing.empty")}
             </p>
           )}
           {listState.data.map((op: AdminOperatorDto) => {
@@ -737,7 +765,9 @@ export function StaffingTab({
                 {/* In-place role selector — hidden in read-only / config-backed mode */}
                 {canMutate && !isConfigBacked && (
                   <select
-                    aria-label={`Change role for ${displayName}`}
+                    aria-label={t("adminConsole.staffing.changeRoleLabel", {
+                      name: displayName,
+                    })}
                     className="rounded-md border border-border/60 bg-background px-1.5 py-0.5 text-xs"
                     data-testid={`staffing-role-select-${op.pubkey}`}
                     disabled={isWorking}
@@ -749,26 +779,34 @@ export function StaffingTab({
                     }
                     value={op.effectiveRole}
                   >
-                    <option value="moderator">moderator</option>
-                    <option value="operator">operator</option>
+                    <option value="moderator">
+                      {t("adminConsole.role", { role: "moderator" })}
+                    </option>
+                    <option value="operator">
+                      {t("adminConsole.role", { role: "operator" })}
+                    </option>
                   </select>
                 )}
                 {/* Config-backed: show role as badge (not editable) */}
                 {isConfigBacked && (
-                  <Badge variant="outline">{op.effectiveRole}</Badge>
+                  <Badge variant="outline">
+                    {t("adminConsole.role", { role: op.effectiveRole })}
+                  </Badge>
                 )}
                 {/* Remove button — hidden in read-only (disabled-auth) mode */}
                 {canMutate && (
                   <Button
-                    aria-label={`Remove ${displayName}`}
+                    aria-label={t("adminConsole.staffing.removeLabel", {
+                      name: displayName,
+                    })}
                     data-testid={`staffing-remove-btn-${op.pubkey}`}
                     disabled={isConfigBacked || isWorking}
                     onClick={() => setPendingRemove(op)}
                     size="icon-xs"
                     title={
                       isConfigBacked
-                        ? "Config-backed — cannot be removed via API"
-                        : "Remove operator"
+                        ? t("adminConsole.staffing.configBackedTooltip")
+                        : t("adminConsole.staffing.removeTooltip")
                     }
                     type="button"
                     variant="ghost"

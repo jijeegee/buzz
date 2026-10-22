@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { AgentStatusBadge } from "@/features/agents/ui/AgentStatusBadge";
+import { type MessageKey, t, useT } from "@/shared/i18n";
 import { canonicalNpub, truncateNpub } from "@/shared/lib/pubkey";
 import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import {
@@ -35,6 +36,34 @@ const RUNTIME_LABELS: Record<string, string> = {
 
 function runtimeLabel(command: string): string {
   return RUNTIME_LABELS[command] ?? command;
+}
+
+/**
+ * Field `label`s stay English: they identify the row (bucketing, ordering).
+ * The text shown comes from this map.
+ */
+const PROFILE_FIELD_LABEL_KEYS: Record<string, MessageKey> = {
+  "Public key": "profile.field.publicKey",
+  "NIP-05": "profile.field.nip05",
+  "Agent type": "profile.field.agentType",
+  Status: "profile.field.status",
+  Capabilities: "profile.field.capabilities",
+  "Managed by": "profile.field.managedBy",
+  Runtime: "profile.field.runtime",
+  "Agent profile": "profile.field.agentProfile",
+  "ACP command": "profile.field.acpCommand",
+  "MCP command": "profile.field.mcpCommand",
+  Backend: "profile.field.backend",
+  "Start on launch": "profile.field.startOnLaunch",
+  "Who can send instructions": "profile.field.respondTo",
+  "Last error": "profile.field.lastError",
+  Visibility: "profile.field.visibility",
+};
+
+/** The translated text for a field's English `label`. */
+export function profileFieldLabel(label: string): string {
+  const key = PROFILE_FIELD_LABEL_KEYS[label];
+  return key ? t(key) : label;
 }
 
 export type ProfileField = {
@@ -209,7 +238,7 @@ export function buildPublicFields({
 
   if (!pubkey && persona) {
     fields.push({
-      displayValue: "Not deployed",
+      displayValue: t("profile.field.notDeployed"),
       icon: Activity,
       label: "Status",
       testId: "user-profile-agent-status",
@@ -259,11 +288,11 @@ export function buildOwnerFields({
   const respondToDisplayValue = respondTo
     ? respondTo === "owner-only"
       ? ownerDisplayName
-        ? `Only ${ownerDisplayName} (owner)`
-        : "Only the owner"
+        ? t("profile.field.respondToOwnerNamed", { name: ownerDisplayName })
+        : t("profile.field.respondToOwner")
       : respondTo === "allowlist"
-        ? "Selected people"
-        : "Anyone"
+        ? t("profile.field.respondToAllowlist")
+        : t("profile.field.respondToAnyone")
     : null;
 
   const ownerClickable = Boolean(onOpenProfile && ownerProfilePubkey);
@@ -322,7 +351,7 @@ export function buildOwnerFields({
   } else if (ownerPubkey) {
     fields.push({
       copyValue: canonicalNpub(ownerPubkey) ?? undefined,
-      displayValue: "Declared owner verified",
+      displayValue: t("profile.field.ownerVerified"),
       icon: UserRound,
       label: "Agent profile",
       testId: "user-profile-agent-profile",
@@ -382,7 +411,9 @@ export function buildOwnerFields({
 
   if (managedAgent) {
     fields.push({
-      displayValue: managedAgent.startOnAppLaunch ? "Yes" : "No",
+      displayValue: managedAgent.startOnAppLaunch
+        ? t("common.yes")
+        : t("common.no"),
       icon: Server,
       label: "Start on launch",
       testId: "user-profile-start-on-launch",
@@ -505,13 +536,15 @@ function ProfileFieldRow({
   field: ProfileField;
   variant: "default" | "runtime";
 }) {
+  const t = useT();
   const Icon = field.icon;
+  const label = profileFieldLabel(field.label);
   const isCopyable = Boolean(field.copyValue);
   const isActionable = Boolean(field.onClick);
   const isTrailingDisplay =
     variant === "runtime" && field.label === "Status" && field.displayNode;
   const { copied, copy } = useCopyFeedback({
-    label: field.label,
+    label,
     value: field.copyValue ?? "",
   });
 
@@ -525,7 +558,7 @@ function ProfileFieldRow({
       ) : null}
       <span className="min-w-0 flex-1 text-left">
         <span className="block text-sm font-medium text-foreground">
-          {field.label}
+          {label}
         </span>
         {!isTrailingDisplay ? (
           <span
@@ -557,11 +590,11 @@ function ProfileFieldRow({
   if (isActionable) {
     return (
       <button
-        aria-label={`Open ${field.label}`}
+        aria-label={t("profile.field.open", { label })}
         className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-testid={field.testId}
         onClick={field.onClick}
-        title={`Open ${field.label}`}
+        title={t("profile.field.open", { label })}
         type="button"
       >
         {content}
@@ -572,11 +605,11 @@ function ProfileFieldRow({
   if (isCopyable && field.copyValue) {
     return (
       <button
-        aria-label={`Copy ${field.label}`}
+        aria-label={t("profile.field.copy", { label })}
         className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-testid={field.testId}
         onClick={() => void copy()}
-        title={`Copy ${field.label}`}
+        title={t("profile.field.copy", { label })}
         type="button"
       >
         {content}

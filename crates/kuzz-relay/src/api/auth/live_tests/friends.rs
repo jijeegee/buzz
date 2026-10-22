@@ -580,3 +580,45 @@ async fn dm_opened_by_a_blocked_person_stays_hidden_for_the_blocker() {
         "{snapshot:?}"
     );
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn profile_language_is_saved_validated_and_found_by_pubkey() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let db = kuzz_db::Db::from_pool(pool.clone());
+    let ann = new_user(&inst).await;
+    let set = |locale: Value| {
+        inst.patch("/auth/profile")
+            .bearer_auth(&ann.access)
+            .json(&json!({ "locale": locale }))
+            .send()
+    };
+
+    assert_eq!(me_status(&inst, &ann.access).await.1["locale"], Value::Null);
+    assert_eq!(
+        db.locale_for_pubkey(&key(&ann.principal)).await.unwrap(),
+        None
+    );
+
+    let (code, body) = status(set(json!("zh-Hant")).await.unwrap()).await;
+    assert_eq!(code, 200, "{body}");
+    assert_eq!(body["locale"], "zh-Hant");
+    assert_eq!(me_status(&inst, &ann.access).await.1["locale"], "zh-Hant");
+    assert_eq!(
+        db.locale_for_pubkey(&key(&ann.principal)).await.unwrap(),
+        Some("zh-Hant".to_owned())
+    );
+
+    for bad in [json!("not a tag"), json!(""), json!(7)] {
+        let (code, body) = status(set(bad.clone()).await.unwrap()).await;
+        assert_eq!(code, 400, "{bad}: {body}");
+    }
+    assert_eq!(me_status(&inst, &ann.access).await.1["locale"], "zh-Hant");
+
+    let (code, body) = status(set(Value::Null).await.unwrap()).await;
+    assert_eq!(code, 200, "{body}");
+    assert_eq!(me_status(&inst, &ann.access).await.1["locale"], Value::Null);
+}

@@ -9,6 +9,7 @@ import { useUserProfileQuery } from "@/features/profile/hooks";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { PersonSafetyMenu } from "./PersonSafetyMenu";
@@ -25,6 +26,7 @@ const PEOPLE_PANEL_SEARCH_KEYS = ["profile"] as const;
  * while no one is picked. The list itself lives in the left column.
  */
 export function PeopleScreen() {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const currentPubkey = identityQuery.data?.pubkey;
   const { values } = useHistorySearchState(PEOPLE_PANEL_SEARCH_KEYS);
@@ -39,10 +41,7 @@ export function PeopleScreen() {
       ) : (
         <div className="m-auto flex max-w-xs flex-col items-center gap-3 text-center text-muted-foreground">
           <Users className="h-10 w-10" />
-          <p className="text-sm">
-            Pick someone on the left to see their profile, or find people by
-            name to add them as friends.
-          </p>
+          <p className="text-sm">{t("people.screen.emptyHint")}</p>
         </div>
       )}
     </div>
@@ -56,6 +55,7 @@ function PersonProfile({
   currentPubkey: string | undefined;
   pubkey: string;
 }) {
+  const t = useT();
   const profileQuery = useUserProfileQuery(pubkey);
   const favorites = usePeopleFavorites();
   const friends = usePeopleFriends(currentPubkey);
@@ -64,7 +64,9 @@ function PersonProfile({
   const [pending, setPending] = React.useState(false);
   const profile = profileQuery.data;
   const name =
-    profile?.displayName?.trim() || profile?.nip05Handle?.trim() || "Unknown";
+    profile?.displayName?.trim() ||
+    profile?.nip05Handle?.trim() ||
+    t("people.unknownPerson");
   const isFavorite = favorites?.isFavorite(pubkey) ?? false;
   const isFriend = friends.isFriend(pubkey);
   const isSelf = currentPubkey?.toLowerCase() === pubkey;
@@ -101,7 +103,9 @@ function PersonProfile({
         {favorites && !isSelf ? (
           <button
             aria-label={
-              isFavorite ? "Remove from favorites" : "Add to favorites"
+              isFavorite
+                ? t("people.favorite.remove")
+                : t("people.favorite.add")
             }
             aria-pressed={isFavorite}
             className="rounded-md p-1 text-muted-foreground hover:bg-muted"
@@ -111,7 +115,11 @@ function PersonProfile({
                 ? favorites.removeFavorite(pubkey)
                 : favorites.addFavorite(pubkey)
             }
-            title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+            title={
+              isFavorite
+                ? t("people.favorite.remove")
+                : t("people.favorite.add")
+            }
             type="button"
           >
             <Star
@@ -135,7 +143,7 @@ function PersonProfile({
             onClick={() => onMessage(pubkey)}
           >
             <MessageSquare className="h-4 w-4" />
-            Message
+            {t("people.message")}
           </Button>
           <Button
             data-testid="people-profile-friend"
@@ -148,7 +156,7 @@ function PersonProfile({
             ) : (
               <UserPlus className="h-4 w-4" />
             )}
-            {isFriend ? "Remove friend" : "Add friend"}
+            {isFriend ? t("people.friend.remove") : t("people.friend.add")}
           </Button>
           <PersonSafetyMenu name={name} pubkey={pubkey} />
         </div>
@@ -158,7 +166,7 @@ function PersonProfile({
           className="text-xs text-muted-foreground"
           data-testid="people-profile-blocked"
         >
-          You blocked this person.
+          {t("people.screen.youBlocked")}
         </p>
       ) : null}
       <RemoveFriendDialog

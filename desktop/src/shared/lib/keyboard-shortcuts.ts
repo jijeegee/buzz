@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { isMacPlatform } from "@/shared/lib/platform";
 
 export const HUDDLE_SHORTCUT_EVENT = "kuzz:huddle-shortcut";
@@ -25,96 +26,144 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   // Navigation
   {
     id: "quick-search",
-    label: "Quick search",
-    description: "Open the search dialog",
+    get label() {
+      return t("ui.shortcuts.quickSearch.label");
+    },
+    get description() {
+      return t("ui.shortcuts.quickSearch.description");
+    },
     keys: "⌘K",
     keysWindows: "Ctrl+K",
     category: "Navigation",
   },
   {
     id: "browse-channels",
-    label: "Find groups",
-    description: "Open Find groups",
+    get label() {
+      return t("ui.shortcuts.browseChannels.label");
+    },
+    get description() {
+      return t("ui.shortcuts.browseChannels.description");
+    },
     keys: "⇧⌘O",
     keysWindows: "Shift+Ctrl+O",
     category: "Navigation",
   },
   {
     id: "browse-dms",
-    label: "New direct message",
-    description: "Open the new message composer",
+    get label() {
+      return t("ui.shortcuts.browseDms.label");
+    },
+    get description() {
+      return t("ui.shortcuts.browseDms.description");
+    },
     keys: "⇧⌘K",
     keysWindows: "Shift+Ctrl+K",
     category: "Navigation",
   },
   {
     id: "new-channel",
-    label: "New group",
-    description: "Open the create group dialog",
+    get label() {
+      return t("ui.shortcuts.newChannel.label");
+    },
+    get description() {
+      return t("ui.shortcuts.newChannel.description");
+    },
     keys: "⇧⌘N",
     keysWindows: "Shift+Ctrl+N",
     category: "Navigation",
   },
   {
     id: "open-settings",
-    label: "Settings",
-    description: "Open or close settings",
+    get label() {
+      return t("ui.shortcuts.openSettings.label");
+    },
+    get description() {
+      return t("ui.shortcuts.openSettings.description");
+    },
     keys: "⌘,",
     keysWindows: "Ctrl+,",
     category: "Navigation",
   },
   {
     id: "go-back",
-    label: "Go back",
-    description: "Navigate to the previous page",
+    get label() {
+      return t("ui.shortcuts.goBack.label");
+    },
+    get description() {
+      return t("ui.shortcuts.goBack.description");
+    },
     keys: "⌘[",
     keysWindows: "Alt+←",
     category: "Navigation",
   },
   {
     id: "go-forward",
-    label: "Go forward",
-    description: "Navigate to the next page",
+    get label() {
+      return t("ui.shortcuts.goForward.label");
+    },
+    get description() {
+      return t("ui.shortcuts.goForward.description");
+    },
     keys: "⌘]",
     keysWindows: "Alt+→",
     category: "Navigation",
   },
   {
     id: "find-in-channel",
-    label: "Find in group",
-    description: "Search messages in current group",
+    get label() {
+      return t("ui.shortcuts.findInChannel.label");
+    },
+    get description() {
+      return t("ui.shortcuts.findInChannel.description");
+    },
     keys: "⌘F",
     keysWindows: "Ctrl+F",
     category: "Navigation",
   },
   {
     id: "go-home",
-    label: "Home",
-    description: "Navigate to the home feed",
+    get label() {
+      return t("ui.shortcuts.goHome.label");
+    },
+    get description() {
+      return t("ui.shortcuts.goHome.description");
+    },
     keys: "⇧⌘A",
     keysWindows: "Shift+Ctrl+A",
     category: "Navigation",
   },
   {
     id: "toggle-sidebar",
-    label: "Toggle sidebar",
-    description: "Show or hide the sidebar",
+    get label() {
+      return t("ui.shortcuts.toggleSidebar.label");
+    },
+    get description() {
+      return t("ui.shortcuts.toggleSidebar.description");
+    },
     keys: "⌘S",
     keysWindows: "Ctrl+S",
     category: "Navigation",
   },
   {
     id: "mark-current-read",
-    label: "Mark as read",
-    description: "Mark the current conversation as read",
+    get label() {
+      return t("ui.shortcuts.markCurrentRead.label");
+    },
+    get description() {
+      return t("ui.shortcuts.markCurrentRead.description");
+    },
     keys: "Escape",
     keysWindows: "Escape",
     category: "Navigation",
   },
   {
     id: "mark-all-read",
-    label: "Mark all as read",
-    description: "Mark all conversations as read",
+    get label() {
+      return t("ui.shortcuts.markAllRead.label");
+    },
+    get description() {
+      return t("ui.shortcuts.markAllRead.description");
+    },
     keys: "⇧Escape",
     keysWindows: "Shift+Escape",
     category: "Navigation",
@@ -123,24 +172,36 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   // Zoom
   {
     id: "zoom-in",
-    label: "Zoom in",
-    description: "Increase the zoom level",
+    get label() {
+      return t("ui.shortcuts.zoomIn.label");
+    },
+    get description() {
+      return t("ui.shortcuts.zoomIn.description");
+    },
     keys: "⌘+",
     keysWindows: "Ctrl+=",
     category: "Zoom",
   },
   {
     id: "zoom-out",
-    label: "Zoom out",
-    description: "Decrease the zoom level",
+    get label() {
+      return t("ui.shortcuts.zoomOut.label");
+    },
+    get description() {
+      return t("ui.shortcuts.zoomOut.description");
+    },
     keys: "⌘-",
     keysWindows: "Ctrl+-",
     category: "Zoom",
   },
   {
     id: "zoom-reset",
-    label: "Reset zoom",
-    description: "Reset zoom to default level",
+    get label() {
+      return t("ui.shortcuts.zoomReset.label");
+    },
+    get description() {
+      return t("ui.shortcuts.zoomReset.description");
+    },
     keys: "⌘0",
     keysWindows: "Ctrl+0",
     category: "Zoom",
@@ -149,57 +210,84 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   // Messages
   {
     id: "send-message",
-    label: "Send message",
-    description: "Send the current message",
+    get label() {
+      return t("ui.shortcuts.sendMessage.label");
+    },
+    get description() {
+      return t("ui.shortcuts.sendMessage.description");
+    },
     keys: "Enter",
     keysWindows: "Enter",
     category: "Messages",
   },
   {
     id: "new-line",
-    label: "New line",
-    description: "Insert a line break in the composer",
+    get label() {
+      return t("ui.shortcuts.newLine.label");
+    },
+    get description() {
+      return t("ui.shortcuts.newLine.description");
+    },
     keys: "Shift+Enter",
     keysWindows: "Shift+Enter",
     category: "Messages",
   },
   {
     id: "always-address-agent",
-    label: "Always address agent",
-    description: "Address the default agent, or toggle the highlighted agent",
+    get label() {
+      return t("ui.shortcuts.alwaysAddressAgent.label");
+    },
+    get description() {
+      return t("ui.shortcuts.alwaysAddressAgent.description");
+    },
     keys: "⇧⌘M",
     keysWindows: "Ctrl+Shift+M",
     category: "Messages",
   },
   {
     id: "publish-note",
-    label: "Publish note",
-    description: "Publish a Pulse note",
+    get label() {
+      return t("ui.shortcuts.publishNote.label");
+    },
+    get description() {
+      return t("ui.shortcuts.publishNote.description");
+    },
     keys: "⌘Enter",
     keysWindows: "Ctrl+Enter",
     category: "Messages",
   },
   {
     id: "close-dialog",
-    label: "Close dialog",
-    description: "Close the current dialog or settings",
+    get label() {
+      return t("ui.shortcuts.closeDialog.label");
+    },
+    get description() {
+      return t("ui.shortcuts.closeDialog.description");
+    },
     keys: "Escape",
     keysWindows: "Escape",
     category: "Messages",
   },
   {
     id: "toggle-huddle",
-    label: "Start or leave huddle",
-    description:
-      "Start or join a huddle in the current group; leave when connected",
+    get label() {
+      return t("ui.shortcuts.toggleHuddle.label");
+    },
+    get description() {
+      return t("ui.shortcuts.toggleHuddle.description");
+    },
     keys: "Ctrl+Shift+Space",
     keysWindows: "Ctrl+Shift+Space",
     category: "Messages",
   },
   {
     id: "push-to-talk",
-    label: "Push to talk",
-    description: "Hold to unmute in a huddle",
+    get label() {
+      return t("ui.shortcuts.pushToTalk.label");
+    },
+    get description() {
+      return t("ui.shortcuts.pushToTalk.description");
+    },
     keys: "Ctrl+Space",
     keysWindows: "Ctrl+Space",
     category: "Messages",
@@ -208,41 +296,60 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   // Formatting
   {
     id: "format-bold",
-    label: "Bold",
-    description: "Toggle bold formatting",
+    get label() {
+      return t("ui.shortcuts.formatBold.label");
+    },
+    get description() {
+      return t("ui.shortcuts.formatBold.description");
+    },
     keys: "⌘B",
     keysWindows: "Ctrl+B",
     category: "Formatting",
   },
   {
     id: "format-italic",
-    label: "Italic",
-    description: "Toggle italic formatting",
+    get label() {
+      return t("ui.shortcuts.formatItalic.label");
+    },
+    get description() {
+      return t("ui.shortcuts.formatItalic.description");
+    },
     keys: "⌘I",
     keysWindows: "Ctrl+I",
     category: "Formatting",
   },
   {
     id: "format-strikethrough",
-    label: "Strikethrough",
-    description: "Toggle strikethrough formatting",
+    get label() {
+      return t("ui.shortcuts.formatStrikethrough.label");
+    },
+    get description() {
+      return t("ui.shortcuts.formatStrikethrough.description");
+    },
     keys: "⌘⇧X",
     keysWindows: "Ctrl+Shift+X",
     category: "Formatting",
   },
   {
     id: "format-code",
-    label: "Inline code",
-    description: "Toggle inline code formatting",
+    get label() {
+      return t("ui.shortcuts.formatCode.label");
+    },
+    get description() {
+      return t("ui.shortcuts.formatCode.description");
+    },
     keys: "⌘E",
     keysWindows: "Ctrl+E",
     category: "Formatting",
   },
   {
     id: "format-link",
-    label: "Insert link",
-    description:
-      "Link the selected composer text, or edit the link under the caret",
+    get label() {
+      return t("ui.shortcuts.formatLink.label");
+    },
+    get description() {
+      return t("ui.shortcuts.formatLink.description");
+    },
     keys: "⌘K",
     keysWindows: "Ctrl+K",
     category: "Formatting",
@@ -255,6 +362,20 @@ const CATEGORY_ORDER: ShortcutCategory[] = [
   "Formatting",
   "Zoom",
 ];
+
+/** Translated group title for a shortcut category (the category values are ids). */
+export function shortcutCategoryLabel(category: ShortcutCategory): string {
+  switch (category) {
+    case "Navigation":
+      return t("ui.shortcuts.category.navigation");
+    case "Messages":
+      return t("ui.shortcuts.category.messages");
+    case "Formatting":
+      return t("ui.shortcuts.category.formatting");
+    case "Zoom":
+      return t("ui.shortcuts.category.zoom");
+  }
+}
 
 export function getShortcutsByCategory(): Map<
   ShortcutCategory,

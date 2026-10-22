@@ -12,6 +12,7 @@ import {
   importIdentity,
   persistCurrentIdentity,
 } from "@/shared/api/tauriIdentity";
+import { useT } from "@/shared/i18n";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { AvatarStep } from "./AvatarStep";
@@ -157,6 +158,7 @@ export function OnboardingFlow({
   initialProfile,
   initialProfileDecisionSettled,
 }: OnboardingFlowProps) {
+  const t = useT();
   const { complete, skipForNow } = actions;
   const { activeCommunity } = useCommunities();
   // One built-in server: no way to change server from onboarding.
@@ -267,7 +269,7 @@ export function OnboardingFlow({
         if (membershipStatus === "error") {
           setMembershipError({
             kind: "error",
-            message: "Something went wrong. Please try again.",
+            message: t("onboarding.flow.membershipCheckFailed"),
           });
           return;
         }
@@ -313,6 +315,7 @@ export function OnboardingFlow({
       savedProfile,
       complete,
       showAvatarPage,
+      t,
     ],
   );
 
@@ -405,9 +408,7 @@ export function OnboardingFlow({
   // machinery (bootedLost + !identityLost) replace this flow with
   // RelaunchRequiredScreen. No navigation needed here.
   const handleLostModeBack = React.useCallback(async () => {
-    const confirmed = window.confirm(
-      "This will create a new identity and abandon your previous key. This cannot be undone. Continue?",
-    );
+    const confirmed = window.confirm(t("onboarding.flow.confirmNewIdentity"));
     if (!confirmed) {
       return;
     }
@@ -418,10 +419,10 @@ export function OnboardingFlow({
       setPersistError(
         error instanceof Error
           ? error.message
-          : "Failed to create a new identity. Please try again.",
+          : t("onboarding.flow.newIdentityFailed"),
       );
     }
-  }, [queryClient]);
+  }, [queryClient, t]);
 
   const handleKeyImportBack = React.useCallback(() => {
     if (keyImportStage === "backup-password") {
@@ -442,7 +443,7 @@ export function OnboardingFlow({
   const chromeBackAction =
     currentPage === "profile"
       ? {
-          label: "Skip setup",
+          label: t("onboarding.flow.skipSetup"),
           disabled: profileStepState.isSaving || !initialProfileDecisionSettled,
           onClick: () => {
             setMembershipError(null);
@@ -453,10 +454,10 @@ export function OnboardingFlow({
         ? {
             label:
               keyImportStage === "backup-password"
-                ? "Back"
+                ? t("common.back")
                 : identityLost
-                  ? "Start new identity"
-                  : "Back",
+                  ? t("onboarding.flow.startNewIdentity")
+                  : t("common.back"),
             disabled: isKeyImporting,
             onClick: handleKeyImportBack,
           }
@@ -512,10 +513,10 @@ export function OnboardingFlow({
               {membershipError.kind === "unreachable" ? (
                 <>
                   <p className="font-medium text-destructive">
-                    Couldn't connect
+                    {t("onboarding.flow.connectFailedTitle")}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    Check your internet connection and try again.
+                    {t("onboarding.flow.connectFailedBody")}
                   </p>
                   <Button
                     className="mt-3"
@@ -528,16 +529,16 @@ export function OnboardingFlow({
                     size="sm"
                     variant="outline"
                   >
-                    Try again
+                    {t("onboarding.flow.tryAgain")}
                   </Button>
                 </>
               ) : (
                 <>
                   <p className="font-medium text-destructive">
-                    {membershipError.message ?? "Something went wrong"}
+                    {membershipError.message ?? t("common.somethingWentWrong")}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    Please try again.
+                    {t("onboarding.flow.pleaseTryAgain")}
                   </p>
                 </>
               )}
@@ -573,24 +574,19 @@ export function OnboardingFlow({
                 {identityLost ? (
                   <>
                     <h1 className="text-title font-normal text-foreground">
-                      Re-import your key
+                      {t("onboarding.flow.reimportTitle")}
                     </h1>
                     <p className="mt-5 text-sm leading-6 text-muted-foreground">
-                      Your identity is no longer in the system keyring.
-                      Re-import your nsec to restore it — Kuzz will restart to
-                      finish recovery. Or go back to start a new identity with a
-                      fresh key.
+                      {t("onboarding.flow.reimportBody")}
                     </p>
                   </>
                 ) : (
                   <>
                     <h1 className="text-title font-normal text-foreground">
-                      Use your existing key
+                      {t("onboarding.flow.importTitle")}
                     </h1>
                     <p className="mt-5 text-sm leading-6 text-muted-foreground">
-                      Import your Nostr private key to use that identity with
-                      Kuzz. If this key already has a profile on the relay, your
-                      name and avatar are restored automatically.
+                      {t("onboarding.flow.importBody")}
                     </p>
                   </>
                 )}

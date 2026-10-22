@@ -29,6 +29,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import type { AgentPersona } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/ui/dialog";
 import { MembershipDenied } from "./MembershipDenied";
@@ -83,6 +84,7 @@ function AvatarCircle({
   previewName: string;
   triggerRef?: React.Ref<HTMLButtonElement>;
 }) {
+  const t = useT();
   const cardLayout = useOnboardingCardLayout();
   const emojiAvatar = parseEmojiAvatarDataUrl(avatarUrl);
   const presentation = useAvatarPresentation(avatarUrl);
@@ -91,7 +93,11 @@ function AvatarCircle({
 
   return (
     <button
-      aria-label={hasAvatar ? "Change your avatar" : "Add an avatar"}
+      aria-label={
+        hasAvatar
+          ? t("onboarding.community.changeAvatar")
+          : t("onboarding.community.addAvatar")
+      }
       className="group block shrink-0 rounded-full"
       data-testid="community-avatar-open"
       onClick={onClick}
@@ -164,6 +170,7 @@ export function CommunityOnboardingFlow({
   onConnect: () => void;
   onRetryConnection: () => void;
 }) {
+  const t = useT();
   const { transaction, update, clear } = useCommunityOnboarding();
   const queryClient = useQueryClient();
   const systemColorScheme = useSystemColorScheme();
@@ -535,8 +542,10 @@ export function CommunityOnboardingFlow({
                 <Users aria-hidden="true" className="mx-auto h-10 w-10" />
                 <h1 className="mt-5 text-title font-normal">
                   {singleServer
-                    ? "Setting things up"
-                    : `Joining ${transaction.communityName}`}
+                    ? t("onboarding.community.settingUp")
+                    : t("onboarding.community.joining", {
+                        name: transaction.communityName,
+                      })}
                 </h1>
                 <p
                   className="mt-3 text-sm text-foreground/80"
@@ -544,13 +553,13 @@ export function CommunityOnboardingFlow({
                 >
                   {transaction.error ??
                     (transaction.stage === "claiming"
-                      ? "Accepting your invite…"
-                      : "Connecting securely…")}
+                      ? t("onboarding.community.acceptingInvite")
+                      : t("onboarding.community.connecting"))}
                 </p>
                 <div className="mt-6 flex justify-center gap-3">
                   {transaction.error ? (
                     <Button className="rounded-full px-6" onClick={retry}>
-                      Retry
+                      {t("common.retry")}
                     </Button>
                   ) : null}
                   {singleServer &&
@@ -561,8 +570,8 @@ export function CommunityOnboardingFlow({
                       variant="ghost"
                     >
                       {transaction.source === "default-community"
-                        ? "Advanced setup"
-                        : "Cancel"}
+                        ? t("onboarding.community.advancedSetup")
+                        : t("common.cancel")}
                     </Button>
                   )}
                 </div>
@@ -579,18 +588,20 @@ export function CommunityOnboardingFlow({
                 >
                   <div className="shrink-0">
                     <h1 className="text-title font-normal">
-                      Build your profile
+                      {t("onboarding.community.profileTitle")}
                     </h1>
                     <p className="mx-auto mt-3 max-w-[380px] text-sm leading-6 text-foreground/80">
-                      Add a name and avatar. They’ll show up on your messages,
-                      reactions, and agent handoffs.
+                      {t("onboarding.community.profileBody")}
                     </p>
                   </div>
                   <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center pt-6">
                     <AvatarCircle
                       avatarUrl={avatarUrl}
                       onClick={() => setIsAvatarEditorOpen(true)}
-                      previewName={displayName.trim() || "Your profile"}
+                      previewName={
+                        displayName.trim() ||
+                        t("onboarding.community.profileFallbackName")
+                      }
                       triggerRef={avatarTriggerRef}
                     />
                     <label
@@ -598,10 +609,10 @@ export function CommunityOnboardingFlow({
                       htmlFor="community-display-name"
                     >
                       <span className="mb-2 block pl-4 text-sm text-foreground">
-                        Your username
+                        {t("onboarding.community.usernameLabel")}
                       </span>
                       <OnboardingInput
-                        aria-label="Community username"
+                        aria-label={t("onboarding.community.usernameAria")}
                         autoCapitalize="none"
                         autoComplete="username"
                         autoCorrect="off"
@@ -609,7 +620,9 @@ export function CommunityOnboardingFlow({
                         disabled={isPending || isUploadingAvatar}
                         id="community-display-name"
                         onChange={(event) => setDisplayName(event.target.value)}
-                        placeholder="Enter your username here"
+                        placeholder={t(
+                          "onboarding.community.usernamePlaceholder",
+                        )}
                         ref={nameInputRef}
                         spellCheck={false}
                         type="text"
@@ -639,7 +652,7 @@ export function CommunityOnboardingFlow({
                     onClick={() => void saveProfile()}
                     type="button"
                   >
-                    Next
+                    {t("common.next")}
                   </Button>
                 </OnboardingFooter>
                 <Dialog
@@ -663,7 +676,7 @@ export function CommunityOnboardingFlow({
                     }
                   >
                     <DialogTitle className="sr-only">
-                      Edit your avatar
+                      {t("onboarding.community.editAvatarTitle")}
                     </DialogTitle>
                     <div
                       className="grid items-center gap-8 md:grid-cols-[240px_minmax(0,1fr)]"
@@ -688,7 +701,10 @@ export function CommunityOnboardingFlow({
                                       avatarUrl={localAvatarPreviewUrl}
                                       className="h-full w-full rounded-full text-5xl"
                                       label={
-                                        displayName.trim() || "Your profile"
+                                        displayName.trim() ||
+                                        t(
+                                          "onboarding.community.profileFallbackName",
+                                        )
                                       }
                                       testId="community-avatar-live-preview"
                                     />
@@ -698,7 +714,16 @@ export function CommunityOnboardingFlow({
                                   parseEmojiAvatarDataUrl(avatarUrl);
                                 return emojiAvatar ? (
                                   <div
-                                    aria-label={`${displayName.trim() || "Your profile"} avatar`}
+                                    aria-label={t(
+                                      "onboarding.community.avatarAria",
+                                      {
+                                        name:
+                                          displayName.trim() ||
+                                          t(
+                                            "onboarding.community.profileFallbackName",
+                                          ),
+                                      },
+                                    )}
                                     className="flex h-full w-full items-center justify-center overflow-hidden rounded-full text-6xl shadow-xs"
                                     data-testid="community-avatar-live-preview"
                                     role="img"
@@ -723,7 +748,12 @@ export function CommunityOnboardingFlow({
                                       localAvatarPreviewUrl || avatarUrl || null
                                     }
                                     className="h-full w-full rounded-full text-5xl"
-                                    label={displayName.trim() || "Your profile"}
+                                    label={
+                                      displayName.trim() ||
+                                      t(
+                                        "onboarding.community.profileFallbackName",
+                                      )
+                                    }
                                     testId="community-avatar-live-preview"
                                   />
                                 );
@@ -754,7 +784,10 @@ export function CommunityOnboardingFlow({
                         onUploadingChange={setIsUploadingAvatar}
                         onUrlChange={setAvatarUrl}
                         presentation="onboarding-modal"
-                        previewName={displayName.trim() || "Your profile"}
+                        previewName={
+                          displayName.trim() ||
+                          t("onboarding.community.profileFallbackName")
+                        }
                         testIdPrefix="community-avatar"
                       />
                     </div>
@@ -764,11 +797,10 @@ export function CommunityOnboardingFlow({
             ) : (
               <>
                 <h1 className="text-title font-normal">
-                  Meet your starter team
+                  {t("onboarding.community.teamTitle")}
                 </h1>
                 <p className="mx-auto mt-3 max-w-[400px] text-sm leading-6 text-foreground/80">
-                  Kuzz lets you bring multiple agents into the same workspace.
-                  Your team will help you get started using Kuzz.
+                  {t("onboarding.community.teamBody")}
                 </p>
                 <div className="flex w-full flex-1 items-center justify-center py-6">
                   {starterPersonas.length > 0 ? (
@@ -783,7 +815,12 @@ export function CommunityOnboardingFlow({
                           >
                             {animationUrl ? (
                               <img
-                                alt={`${persona.displayName} animated character`}
+                                alt={t(
+                                  "onboarding.community.personaAnimationAlt",
+                                  {
+                                    name: persona.displayName,
+                                  },
+                                )}
                                 className="size-24 object-contain"
                                 data-testid={`starter-persona-${persona.displayName.toLowerCase()}`}
                                 src={animationUrl}
@@ -807,7 +844,9 @@ export function CommunityOnboardingFlow({
                 {transaction.error ? (
                   <p className="text-sm text-destructive">
                     {transaction.error}
-                    {starterChannelFailureCount === 1 ? " Try again." : null}
+                    {starterChannelFailureCount === 1
+                      ? ` ${t("onboarding.community.tryAgain")}`
+                      : null}
                   </p>
                 ) : null}
                 <OnboardingFooter>
@@ -818,9 +857,11 @@ export function CommunityOnboardingFlow({
                     onClick={() => void finalize()}
                   >
                     {isPending || transaction.stage === "entering" ? (
-                      <LoadingDots label="Preparing Welcome" />
+                      <LoadingDots
+                        label={t("onboarding.community.preparingWelcome")}
+                      />
                     ) : (
-                      "Take me to Kuzz"
+                      t("onboarding.community.enter")
                     )}
                   </Button>
                   {starterChannelFailureCount >= 2 ? (
@@ -831,7 +872,7 @@ export function CommunityOnboardingFlow({
                       onClick={() => void finish()}
                       variant="ghost"
                     >
-                      Skip for now
+                      {t("onboarding.community.skip")}
                     </Button>
                   ) : null}
                 </OnboardingFooter>

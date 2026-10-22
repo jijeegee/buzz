@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Link2 } from "lucide-react";
 import type { AddCommunityPrefillRequest } from "@/features/communities/addCommunityPrefill";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
 import { InviteRedeemForm } from "@/features/onboarding/ui/InviteRedeemForm";
+import { useT } from "@/shared/i18n";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ export function AddCommunityDialog({
   open,
   onOpenChange,
 }: AddCommunityDialogProps) {
+  const t = useT();
   const communityOnboarding = useCommunityOnboarding();
   const [mode, setMode] = React.useState<AddCommunityMode>("choose");
   const [joinError, setJoinError] = React.useState<string | null>(null);
@@ -67,23 +69,23 @@ export function AddCommunityDialog({
         policyReceipt,
       });
       if (!started) {
-        setJoinError(
-          "Finish connecting the community already in progress, then try again.",
-        );
+        setJoinError(t("communities.addDialog.connectionInProgress"));
         return;
       }
       handleClose();
     },
-    [communityOnboarding, handleClose, prefill?.name],
+    [communityOnboarding, handleClose, prefill?.name, t],
   );
 
   const title =
-    mode === "join" ? "Join an existing community" : "Add community";
+    mode === "join"
+      ? t("communities.addDialog.joinTitle")
+      : t("communities.addDialog.title");
 
   const description =
     mode === "join"
-      ? "Use the community URL or invite link you received."
-      : "Join a community you already have.";
+      ? t("communities.addDialog.joinDescription")
+      : t("communities.addDialog.description");
 
   return (
     <Dialog
@@ -101,7 +103,7 @@ export function AddCommunityDialog({
           <div className="flex min-w-0 items-center gap-2">
             {mode !== "choose" ? (
               <button
-                aria-label="Back to add community options"
+                aria-label={t("communities.addDialog.backLabel")}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                 data-testid="add-community-back"
                 onClick={() => {
@@ -134,10 +136,10 @@ export function AddCommunityDialog({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-foreground">
-                    Join an existing community
+                    {t("communities.addDialog.joinOption")}
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Use a community URL or invite link.
+                    {t("communities.addDialog.joinOptionHint")}
                   </span>
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />

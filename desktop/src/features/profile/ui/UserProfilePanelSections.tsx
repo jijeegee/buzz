@@ -50,6 +50,7 @@ import type {
   ProfileChannelLink,
   ProfilePanelTab,
 } from "@/features/profile/ui/UserProfilePanelUtils";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { observeElementBlockSize } from "@/shared/layout/observeElementBlockSize";
 import { useMeasuredCssVariable } from "@/shared/layout/useMeasuredCssVariable";
@@ -195,6 +196,7 @@ export function ProfileSummaryView({
   unfollowMutation,
   userStatus,
 }: ProfileSummaryViewProps) {
+  const t = useT();
   const notManagedOnDevice = useIsOtherSetupAgent(pubkey, profile?.ownerPubkey);
   const activeTurns = useAgentWorking(isBot ? pubkey : null).channels;
   const stickyLayoutRef = React.useRef<HTMLDivElement>(null);
@@ -261,7 +263,7 @@ export function ProfileSummaryView({
         title={diagnosticsErrorField.displayValue}
         variant="destructive"
       >
-        Error
+        {t("profile.summary.errorBadge")}
       </Badge>
     ) : null;
   const tabs = React.useMemo(() => {
@@ -271,22 +273,22 @@ export function ProfileSummaryView({
       trailing?: React.ReactNode;
     }> = [];
     if (showInfoTab) {
-      items.push({ id: "info", label: "Info" });
+      items.push({ id: "info", label: t("profile.tabs.info") });
     }
     if (showRuntimeTab) {
-      items.push({ id: "runtime", label: "Runtime" });
+      items.push({ id: "runtime", label: t("profile.tabs.runtime") });
     }
     if (showChannelsTab) {
-      items.push({ id: "channels", label: "Groups" });
+      items.push({ id: "channels", label: t("profile.tabs.groups") });
     }
     if (showMemoriesTab) {
       items.push({
         id: "memories",
-        label: "Memories",
+        label: t("profile.tabs.memories"),
       });
     }
     return items;
-  }, [showChannelsTab, showInfoTab, showMemoriesTab, showRuntimeTab]);
+  }, [showChannelsTab, showInfoTab, showMemoriesTab, showRuntimeTab, t]);
 
   const showTabSection = tabs.length > 0;
   const showTabBar = !(tabs.length === 1 && tabs[0]?.id === "info");
@@ -641,6 +643,7 @@ function ProfileHero({
   profile: ProfileSummaryViewProps["profile"];
   userStatus: ProfileSummaryViewProps["userStatus"];
 }) {
+  const t = useT();
   const presenceDotClassName = isBot ? "h-4.5 w-4.5" : "h-3.5 w-3.5";
   const botIndicator = isBot ? (
     <BotIdenticon
@@ -691,7 +694,7 @@ function ProfileHero({
         {onEditAgent ? (
           <h3 className="max-w-full" data-testid="user-profile-name-row">
             <button
-              aria-label={`Edit ${displayName}`}
+              aria-label={t("profile.summary.editName", { name: displayName })}
               className="group relative flex max-w-full items-center justify-center gap-2 rounded-lg px-1 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               data-testid="user-profile-edit-agent"
               onClick={onEditAgent}
@@ -750,6 +753,7 @@ function ProfileHero({
 }
 
 function ProfileHeroDescription({ about }: { about: string }) {
+  const t = useT();
   const [expanded, setExpanded] = React.useState(false);
   const [isTruncated, setIsTruncated] = React.useState(false);
   const textRef = React.useRef<HTMLParagraphElement>(null);
@@ -803,7 +807,7 @@ function ProfileHeroDescription({ about }: { about: string }) {
           onClick={() => setExpanded(true)}
           type="button"
         >
-          more
+          {t("profile.summary.showMore")}
           <ChevronDown className="h-4 w-4" />
         </button>
       ) : null}
@@ -814,7 +818,7 @@ function ProfileHeroDescription({ about }: { about: string }) {
           onClick={() => setExpanded(false)}
           type="button"
         >
-          less
+          {t("profile.summary.showLess")}
           <ChevronUp className="h-4 w-4" />
         </button>
       ) : null}

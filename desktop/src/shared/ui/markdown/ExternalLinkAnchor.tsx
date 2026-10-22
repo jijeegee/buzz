@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
@@ -34,6 +35,7 @@ export function ExternalLinkAnchor({
   isLinearLink: boolean;
   label: string;
 }) {
+  const t = useT();
   const [menu, setMenu] = React.useState<MediaContextMenuPosition | null>(null);
   const closeMenu = React.useCallback(() => setMenu(null), []);
   useDismissMediaContextMenu(Boolean(menu), closeMenu);
@@ -68,19 +70,19 @@ export function ExternalLinkAnchor({
           dataAttributes={["data-link-context-menu"]}
           items={[
             {
-              label: "Open link",
+              label: t("ui.linkMenu.open"),
               onSelect: () => {
                 closeMenu();
                 void openUrl(href).catch(() => {
-                  toast.error("Failed to open link");
+                  toast.error(t("ui.linkMenu.openFailed"));
                 });
               },
             },
             {
-              label: "Copy link",
+              label: t("ui.linkMenu.copy"),
               onSelect: () => {
                 closeMenu();
-                copyTextToClipboard(href, "Link copied to clipboard");
+                copyTextToClipboard(href, t("ui.linkMenu.copied"));
               },
             },
           ]}

@@ -17,6 +17,7 @@ import {
   toggleNoteIdInSet,
 } from "@/features/pulse/lib/noteActions";
 import type { UserNote } from "@/shared/api/socialTypes";
+import { t } from "@/shared/i18n";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 
 export type PulseNoteActions = {
@@ -98,7 +99,9 @@ export function usePulseNoteActions({
 
         queryClient.setQueryData(reactionQueryKey, previousReactions);
         toast.error(
-          error instanceof Error ? error.message : "Failed to update reaction",
+          error instanceof Error
+            ? error.message
+            : t("pulse.toast.reactionFailed"),
         );
       } finally {
         setPendingUpvoteNoteIds((current) =>
@@ -135,7 +138,7 @@ export function usePulseNoteActions({
         });
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to post reply",
+          error instanceof Error ? error.message : t("pulse.toast.replyFailed"),
         );
         throw error;
       }
@@ -146,9 +149,9 @@ export function usePulseNoteActions({
   const share = React.useCallback(async (note: UserNote) => {
     try {
       await writeTextToClipboard(buildNoteShareUri(note));
-      toast.success("Copied note link");
+      toast.success(t("pulse.toast.linkCopied"));
     } catch {
-      toast.error("Failed to copy note link");
+      toast.error(t("pulse.toast.linkCopyFailed"));
     }
   }, []);
 
@@ -164,7 +167,7 @@ export function usePulseNoteActions({
         });
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to open DM",
+          error instanceof Error ? error.message : t("pulse.toast.dmFailed"),
         );
       }
     },

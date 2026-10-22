@@ -1,5 +1,6 @@
 import type * as React from "react";
 
+import { useT } from "@/shared/i18n";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
@@ -11,6 +12,7 @@ import { GoogleSignInButton } from "./GoogleSignInButton";
  * signed-out account's agents stopped with it, so none are reported here.
  */
 export function SignedOutScreen() {
+  const t = useT();
   const systemColorScheme = useSystemColorScheme();
 
   return (
@@ -28,21 +30,20 @@ export function SignedOutScreen() {
           className="text-3xl font-semibold tracking-tight"
           id="signed-out-title"
         >
-          You're signed out
+          {t("onboarding.signedOut.title")}
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Sign in with Google to get back to your conversations. Nothing was
-          deleted.
+          {t("onboarding.signedOut.body")}
         </p>
         <div className="mt-8 w-full">
           <GoogleSignInButton
             allowRestore
-            note="Use the Google account you signed in with before."
+            note={t("onboarding.signedOut.note")}
             showWhenSignedIn
             unavailable={
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground" role="status">
-                  Google sign-in isn't available right now.
+                  {t("onboarding.signedOut.unavailable")}
                 </p>
                 <Button
                   className="h-10 w-full"
@@ -50,7 +51,7 @@ export function SignedOutScreen() {
                   type="button"
                   variant="outline"
                 >
-                  Try again
+                  {t("onboarding.signedOut.tryAgain")}
                 </Button>
               </div>
             }
