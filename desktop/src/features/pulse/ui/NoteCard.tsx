@@ -19,6 +19,7 @@ import { Markdown } from "@/shared/ui/markdown";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { formatLocale } from "@/shared/i18n";
 
 export type NoteCardActions = {
   reply?: (
@@ -138,7 +139,7 @@ function formatRelativeTime(unixSeconds: number): string {
   if (diff < 86_400) return `${Math.floor(diff / 3_600)}h`;
   if (diff < 604_800) return `${Math.floor(diff / 86_400)}d`;
 
-  return new Date(unixSeconds * 1_000).toLocaleDateString(undefined, {
+  return new Date(unixSeconds * 1_000).toLocaleDateString(formatLocale(), {
     month: "short",
     day: "numeric",
   });

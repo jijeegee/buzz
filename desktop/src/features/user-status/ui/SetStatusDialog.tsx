@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
+import { formatLocale } from "@/shared/i18n";
 
 const PRESETS = [
   { text: "In a meeting", emoji: "\uD83D\uDDE3\uFE0F" },
@@ -83,7 +84,7 @@ function toLocalTimeValue(date: Date) {
 }
 
 function formattedTime(date: Date) {
-  return date.toLocaleTimeString(undefined, {
+  return date.toLocaleTimeString(formatLocale(), {
     hour: "2-digit",
     hourCycle: "h23",
     minute: "2-digit",
@@ -141,7 +142,7 @@ function startOfToday() {
 }
 
 function formattedDate(date: Date) {
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(formatLocale(), {
     day: "numeric",
     month: "short",
     year: "numeric",

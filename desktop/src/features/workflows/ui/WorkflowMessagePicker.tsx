@@ -22,6 +22,7 @@ import {
   validatedWorkflowMessageCandidate,
   validateWorkflowMessageSearchResults,
 } from "./workflowMessageCandidates";
+import { localeDateTimeFormat } from "@/shared/i18n";
 
 const PAGE_SIZE = 25;
 
@@ -35,7 +36,7 @@ function truncateContent(content: string | null): string {
 
 function formatTimestamp(unixSeconds: number | null): string | null {
   if (unixSeconds === null) return null;
-  return new Intl.DateTimeFormat(undefined, {
+  return localeDateTimeFormat({
     month: "short",
     day: "numeric",
     hour: "2-digit",

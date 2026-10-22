@@ -11,6 +11,7 @@ import { relativeTime } from "@/features/projects/lib/projectsViewHelpers";
 import { useProjectSelection } from "@/features/projects/lib/useProjectSelection";
 import { cn } from "@/shared/lib/cn";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { formatLocale } from "@/shared/i18n";
 
 /** One-line list row: title, optional description column, then trailing metadata. */
 export const PROJECT_ENTITY_LIST_ROW_CLASS =
@@ -350,7 +351,7 @@ export function ProjectEntityListRow({
           className="hidden w-24 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground/55 sm:block"
           data-projects-text-priority="secondary"
           data-testid={dateTestId}
-          title={new Date(dateSeconds * 1_000).toLocaleString()}
+          title={new Date(dateSeconds * 1_000).toLocaleString(formatLocale())}
         >
           {relativeTime(dateSeconds)}
         </span>

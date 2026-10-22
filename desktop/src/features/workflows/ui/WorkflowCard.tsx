@@ -31,6 +31,7 @@ import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import type { WorkflowCardAuthorPresentation } from "./useWorkflowListAuthorPresentations";
 import type { WorkflowMessagePresentation } from "./useWorkflowListMessagePresentations";
 import { workflowTriggerDescription } from "./workflowTriggerDescription";
+import { formatLocale } from "@/shared/i18n";
 
 type WorkflowCardProps = {
   workflow: Workflow;
@@ -319,7 +320,9 @@ export function WorkflowCard({
             </p>
           </div>
           <span className="shrink-0 text-2xs">
-            {new Date(workflow.updatedAt * 1000).toLocaleDateString()}
+            {new Date(workflow.updatedAt * 1000).toLocaleDateString(
+              formatLocale(),
+            )}
           </span>
         </div>
       </div>

@@ -57,6 +57,7 @@ import {
 import { ProjectWorkItemGroup } from "./ProjectWorkItemGroup";
 import { ProjectWorkItemRow } from "./ProjectWorkItemRow";
 import { ProjectPanelState } from "./ProjectPanelState";
+import { formatLocale } from "@/shared/i18n";
 
 export function issueStatusClassName(status: ProjectIssue["status"]) {
   if (status === "Triage" || status === "In Progress") return "text-amber-500";
@@ -260,7 +261,9 @@ function IssueRow({
           <span
             className="hidden w-20 shrink-0 text-right text-xs text-muted-foreground/55 sm:block"
             data-testid="project-issue-row-date"
-            title={new Date(issue.createdAt * 1_000).toLocaleString()}
+            title={new Date(issue.createdAt * 1_000).toLocaleString(
+              formatLocale(),
+            )}
           >
             {relativeTime(issue.createdAt)}
           </span>
@@ -342,7 +345,9 @@ export function ProjectIssueDetail({
           <span>Task created</span>
           <span
             className="shrink-0 whitespace-nowrap"
-            title={new Date(issue.createdAt * 1_000).toLocaleString()}
+            title={new Date(issue.createdAt * 1_000).toLocaleString(
+              formatLocale(),
+            )}
           >
             {relativeTime(issue.createdAt)}
           </span>

@@ -1,4 +1,5 @@
 import type { WorkflowApproval } from "@/shared/api/types";
+import { formatLocale } from "@/shared/i18n";
 
 type WorkflowApprovalCardProps = {
   approval: WorkflowApproval;
@@ -21,7 +22,7 @@ export function WorkflowApprovalCard({ approval }: WorkflowApprovalCardProps) {
         Approver: {approval.approverSpec}
       </p>
       <p className="mb-2 text-xs text-muted-foreground">
-        Expires: {new Date(approval.expiresAt).toLocaleString()}
+        Expires: {new Date(approval.expiresAt).toLocaleString(formatLocale())}
       </p>
       <p className="text-xs text-muted-foreground" role="status">
         Approval actions are not yet available in Desktop.

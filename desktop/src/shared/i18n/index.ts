@@ -6,3 +6,9 @@ export {
   type PlainValues,
   t,
 } from "./intl";
+export {
+  formatLocale,
+  localeDateTimeFormat,
+  localeNumberFormat,
+  localeRelativeTimeFormat,
+} from "./format";

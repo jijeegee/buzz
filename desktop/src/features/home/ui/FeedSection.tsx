@@ -22,8 +22,9 @@ import { Button } from "@/shared/ui/button";
 import { Markdown } from "@/shared/ui/markdown";
 import { hasLinkPreviewSuppression } from "@/features/messages/lib/formatTimelineMessages";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { localeDateTimeFormat, localeRelativeTimeFormat } from "@/shared/i18n";
 
-const relativeTimeFormatter = new Intl.RelativeTimeFormat("en-US", {
+const relativeTimeFormatter = localeRelativeTimeFormat({
   numeric: "auto",
 });
 
@@ -50,7 +51,7 @@ function formatRelativeTime(unixSeconds: number) {
     );
   }
 
-  return new Intl.DateTimeFormat("en-US", {
+  return localeDateTimeFormat({
     month: "short",
     day: "numeric",
     hour: "2-digit",

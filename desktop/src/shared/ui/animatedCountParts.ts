@@ -1,3 +1,5 @@
+import { localeNumberFormat } from "@/shared/i18n";
+
 export type AnimatedCountSlot = {
   current: string;
   isDigit: boolean;
@@ -5,7 +7,7 @@ export type AnimatedCountSlot = {
   previous: string;
 };
 
-const COUNT_FORMATTER = new Intl.NumberFormat("en-US", {
+const COUNT_FORMATTER = localeNumberFormat({
   maximumFractionDigits: 0,
 });
 

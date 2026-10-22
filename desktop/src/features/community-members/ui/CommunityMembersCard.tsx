@@ -22,6 +22,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { AddMemberDialog } from "./AddMemberDialog";
 import { ConfirmRemoveDialog } from "./ConfirmRemoveDialog";
+import { formatLocale } from "@/shared/i18n";
 
 function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);
@@ -34,7 +35,7 @@ function formatRelativeDate(dateString: string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 30) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  return date.toLocaleDateString(formatLocale());
 }
 
 function RoleBadge({ role }: { role: RelayMemberRole }) {

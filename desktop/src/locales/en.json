@@ -26,5 +26,25 @@
   "nav.label": "Main",
   "@nav.label": {
     "description": "Screen-reader name of the main navigation rail. Short."
+  },
+  "time.today": "Today",
+  "@time.today": {
+    "description": "Date label on a chat day divider or an Inbox section. Capitalized label. Short."
+  },
+  "time.yesterday": "Yesterday",
+  "@time.yesterday": {
+    "description": "Date label on a chat day divider, Inbox section or list row. Capitalized label. Short."
+  },
+  "time.dayAtTime": "{day} at {time}",
+  "@time.dayAtTime": {
+    "description": "Message timestamp: a day label (Yesterday, Monday, Sat, Jun 20) then a 24-hour clock time (14:34)."
+  },
+  "time.justNow": "just now",
+  "@time.justNow": {
+    "description": "How long ago the last reply in a thread was, after the words 'last reply'. Lowercase. Short."
+  },
+  "time.onDate": "on {date}",
+  "@time.onDate": {
+    "description": "When the last reply in a thread was, after the words 'last reply'; {date} is a short month and day (May 19). Lowercase. Short."
   }
 }

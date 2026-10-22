@@ -35,6 +35,7 @@ import { PROJECT_DETAIL_PANEL_CLASS } from "./projectPanelStyles";
 import { ProfileIdentityButton } from "./ProjectProfileIdentity";
 import { ProjectWorkItemRow } from "./ProjectWorkItemRow";
 import { ProjectPanelState } from "./ProjectPanelState";
+import { formatLocale } from "@/shared/i18n";
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -423,7 +424,7 @@ export function ActivityPanel({
                     data-testid="project-commit-row-date"
                     title={new Date(
                       item.commit.timestamp * 1_000,
-                    ).toLocaleString()}
+                    ).toLocaleString(formatLocale())}
                   >
                     {relativeTime(item.commit.timestamp)}
                   </span>

@@ -12,6 +12,7 @@ import {
 
 import { cn } from "@/shared/lib/cn";
 import { Button, buttonVariants } from "@/shared/ui/button";
+import { formatLocale } from "@/shared/i18n";
 
 function Calendar({
   className,
@@ -163,7 +164,7 @@ function Calendar({
       }}
       formatters={{
         formatMonthDropdown: (date) =>
-          date.toLocaleString("default", { month: "short" }),
+          date.toLocaleString(formatLocale(), { month: "short" }),
         ...formatters,
       }}
       showOutsideDays={showOutsideDays}
@@ -192,7 +193,7 @@ function CalendarDayButton({
         defaultClassNames.day,
         className,
       )}
-      data-day={day.date.toLocaleDateString()}
+      data-day={day.date.toLocaleDateString(formatLocale())}
       data-range-end={modifiers.range_end}
       data-range-middle={modifiers.range_middle}
       data-range-start={modifiers.range_start}

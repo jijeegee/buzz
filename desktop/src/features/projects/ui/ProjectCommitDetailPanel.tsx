@@ -16,9 +16,10 @@ import { ProjectDiffFilesPanel } from "./ProjectPullRequestFilesChangedPanel";
 import { ProjectOriginReference } from "./ProjectOriginReference";
 import { ProjectRichContent } from "./ProjectRichContent";
 import { ShareLinkButton } from "./ShareLinkButton";
+import { formatLocale } from "@/shared/i18n";
 
 function commitDateLabel(timestamp: number) {
-  return new Date(timestamp * 1_000).toLocaleString(undefined, {
+  return new Date(timestamp * 1_000).toLocaleString(formatLocale(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
