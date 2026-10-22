@@ -186,7 +186,7 @@ pub(crate) async fn verify_bridge_bearer(
     let Some(token) = crate::api::auth::bearer_token(headers) else {
         return Ok(None);
     };
-    let binding = crate::identity::verify_access_token(state, &token)
+    let binding = crate::identity::verify_message_token(state, &token)
         .await
         .map_err(crate::api::auth::rejection_response)?;
     if let Some(owner) = binding.bot_owner {
@@ -359,6 +359,25 @@ async fn check_nip98_replay_with_guard(
             ))
         }
     }
+}
+
+/// Device-bound keys: admit the signer of a request the bridge verifier
+/// authenticated by NIP-98 (or the `X-Pubkey` dev header) on the `http`
+/// surface. No work at all while the surface is off. Call it after NIP-FI
+/// admission, never for the `Bearer` branch (closed as a token path).
+pub(crate) async fn admit_bridge_key(
+    state: &AppState,
+    headers: &HeaderMap,
+    pubkey: &nostr::PublicKey,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    crate::identity::admission::admit_key_for_nip98(
+        state,
+        headers,
+        pubkey,
+        crate::identity::device::Surface::Http,
+    )
+    .await
+    .map_err(crate::identity::admission::KeyRefused::http_error)
 }
 
 /// Construct the NIP-98 `u`-tag expected URL for a request bound to `tenant`.
@@ -1240,6 +1259,16 @@ async fn submit_event_authed(
             response: e,
         };
     }
+    // Device-bound keys for a key-signed request (not the closed Bearer
+    // branch), after the replay check.
+    if !server_stamped {
+        if let Err(e) = admit_bridge_key(state, headers, &pubkey).await {
+            return SubmitOutcome::Err {
+                status: e.0,
+                response: e,
+            };
+        }
+    }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
     let parsed: Result<nostr::Event, serde_json::Error> = if server_stamped {
@@ -1442,9 +1471,9 @@ pub async fn query_events(
 
     // Centralized-identity Bearer branch (token auth on, NIP-FI off); the
     // NIP-98 admission below is unchanged otherwise.
-    let (pubkey, event_id_bytes, signed_created_at) =
+    let (pubkey, event_id_bytes, signed_created_at, key_signed) =
         match verify_bridge_bearer(&state, &headers, &tenant).await? {
-            Some(pubkey) => (pubkey, [0u8; 32], None),
+            Some(pubkey) => (pubkey, [0u8; 32], None, false),
             None => {
                 // NIP-FI admission. [FI-TRACE-AUTHORITY-UNIFORM]
                 let admission = admit_nip_fi_http_on_state(&state, &headers, || {
@@ -1463,7 +1492,7 @@ pub async fn query_events(
                 })?;
                 let pubkey = *admission.proven_pubkey();
                 let (event_id_bytes, signed_created_at) = admission.into_extra();
-                (pubkey, event_id_bytes, signed_created_at)
+                (pubkey, event_id_bytes, signed_created_at, true)
             }
         };
     let pubkey_hex = pubkey.to_hex();
@@ -1480,6 +1509,7 @@ pub async fn query_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        key_signed,
     )
     .await;
     match &result {
@@ -1510,6 +1540,7 @@ pub async fn query_events(
 /// Filter execution for [`query_events`], run once NIP-98 auth succeeds.
 /// Handles admission, replay, membership, and all filter paths so the thin
 /// wrapper above can emit exactly one terminal attribution line from the Result.
+#[allow(clippy::too_many_arguments)]
 async fn query_events_authed(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -1518,9 +1549,15 @@ async fn query_events_authed(
     pubkey: nostr::PublicKey,
     event_id_bytes: [u8; 32],
     signed_auth_created_at: Option<u64>,
+    key_signed: bool,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     enforce_http_admission(state, tenant, &pubkey).await?;
     check_nip98_replay(state, tenant, event_id_bytes).await?;
+    // Device-bound keys for a key-signed request (not the closed Bearer
+    // branch), after the replay check.
+    if key_signed {
+        admit_bridge_key(state, headers, &pubkey).await?;
+    }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
     let auth_tag = super::relay_members::extract_auth_tag_header(headers);
@@ -2158,9 +2195,9 @@ pub async fn count_events(
 
     // Centralized-identity Bearer branch (token auth on, NIP-FI off); the
     // NIP-98 admission below is unchanged otherwise.
-    let (pubkey, event_id_bytes, signed_created_at) =
+    let (pubkey, event_id_bytes, signed_created_at, key_signed) =
         match verify_bridge_bearer(&state, &headers, &tenant).await? {
-            Some(pubkey) => (pubkey, [0u8; 32], None),
+            Some(pubkey) => (pubkey, [0u8; 32], None, false),
             None => {
                 // NIP-FI admission. [FI-TRACE-AUTHORITY-UNIFORM]
                 let admission = admit_nip_fi_http_on_state(&state, &headers, || {
@@ -2179,7 +2216,7 @@ pub async fn count_events(
                 })?;
                 let pubkey = *admission.proven_pubkey();
                 let (event_id_bytes, signed_created_at) = admission.into_extra();
-                (pubkey, event_id_bytes, signed_created_at)
+                (pubkey, event_id_bytes, signed_created_at, true)
             }
         };
     let pubkey_hex = pubkey.to_hex();
@@ -2196,6 +2233,7 @@ pub async fn count_events(
         pubkey,
         event_id_bytes,
         signed_created_at,
+        key_signed,
     )
     .await;
     match &result {
@@ -2224,6 +2262,7 @@ pub async fn count_events(
 /// Filter execution for [`count_events`], run once NIP-98 auth succeeds.
 /// Handles admission, replay, membership, and count execution so the thin
 /// wrapper above can emit exactly one terminal attribution line from the Result.
+#[allow(clippy::too_many_arguments)]
 async fn count_events_authed(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -2232,9 +2271,15 @@ async fn count_events_authed(
     pubkey: nostr::PublicKey,
     event_id_bytes: [u8; 32],
     signed_auth_created_at: Option<u64>,
+    key_signed: bool,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     enforce_http_admission(state, tenant, &pubkey).await?;
     check_nip98_replay(state, tenant, event_id_bytes).await?;
+    // Device-bound keys for a key-signed request (not the closed Bearer
+    // branch), after the replay check.
+    if key_signed {
+        admit_bridge_key(state, headers, &pubkey).await?;
+    }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
     let auth_tag = super::relay_members::extract_auth_tag_header(headers);
@@ -2598,18 +2643,14 @@ async fn handle_bridge_search(
             mode: search_mode,
         };
 
-        let search_result = state
-            .search
-            .search(&search_query)
-            .await
-            .map_err(|e| {
-                if e.is_statement_cancelled() {
-                    tracing::warn!("search exceeded its execution budget: {e}");
-                    api_error(StatusCode::SERVICE_UNAVAILABLE, QUERY_TIMED_OUT)
-                } else {
-                    internal_error(&format!("search error: {e}"))
-                }
-            })?;
+        let search_result = state.search.search(&search_query).await.map_err(|e| {
+            if e.is_statement_cancelled() {
+                tracing::warn!("search exceeded its execution budget: {e}");
+                api_error(StatusCode::SERVICE_UNAVAILABLE, QUERY_TIMED_OUT)
+            } else {
+                internal_error(&format!("search error: {e}"))
+            }
+        })?;
 
         // Fetch full events from DB by ID. Hit ids are already raw 32-byte
         // arrays from the FTS layer — no hex decode.
@@ -3008,8 +3049,10 @@ async fn authorize_moderation_read(
     })?;
     let pubkey = *admission.proven_pubkey();
     let event_id_bytes = admission.into_extra();
-
     check_nip98_replay(state, &tenant, event_id_bytes)
+        .await
+        .map_err(|e| e.into_response())?;
+    admit_bridge_key(state, headers, &pubkey)
         .await
         .map_err(|e| e.into_response())?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();

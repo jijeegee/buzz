@@ -882,6 +882,15 @@ async fn finish_login(
         Err(error) => return internal("complete_login", &error),
     };
     tracing::info!(principal = %principal, device = %session.device_id, "auth.login");
+    // Device-bound keys: a refusal cached before this login must not outlive it.
+    crate::identity::admission::forget_login(
+        state,
+        signing_pubkey
+            .as_deref()
+            .and_then(|key| hex::decode(key).ok())
+            .and_then(|key| key.try_into().ok()),
+        device_key.map(|device| *device.key.as_bytes()),
+    );
     let expires_in = state.identity.config().access_ttl.as_secs();
     if client == "web" {
         let cookie = refresh_cookie(

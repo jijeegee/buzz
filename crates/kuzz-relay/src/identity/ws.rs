@@ -15,17 +15,17 @@ use std::sync::{Arc, Mutex as StdMutex, PoisonError};
 use std::time::Duration;
 
 use axum::extract::ws::Message as WsMessage;
+use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use kuzz_auth::{AuthContext, AuthMethod, TokenSecret};
 use kuzz_core::draft::StampError;
 use kuzz_core::principal::PrincipalId;
-use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use tokio::sync::{mpsc, Notify};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use super::{verify_access_token, TokenRejection};
+use super::{verify_message_token, TokenRejection};
 use crate::connection::{AuthState, ConnectionState};
 use crate::handlers::auth::{
     community_ban_outcome, final_admission_denial, AdmissionDenial, BanOutcome,
@@ -331,7 +331,7 @@ async fn initial_auth(token: TokenSecret, conn: Arc<ConnectionState>, state: Arc
         );
         return;
     }
-    let binding = match verify_access_token(&state, &token).await {
+    let binding = match verify_message_token(&state, &token).await {
         Ok(binding) => binding,
         Err(rejection) => {
             let (outcome, metric) = match rejection {
@@ -515,7 +515,7 @@ async fn reauth(
     conn: Arc<ConnectionState>,
     state: Arc<AppState>,
 ) {
-    let binding = match verify_access_token(&state, &token).await {
+    let binding = match verify_message_token(&state, &token).await {
         Ok(binding) => binding,
         Err(rejection) => {
             // The old binding stays in force; the client decides (acp treats
