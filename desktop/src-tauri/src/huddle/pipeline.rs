@@ -647,9 +647,13 @@ impl SttPoster {
                 eprintln!("kuzz-desktop: STT transcripts disabled: {reason}");
                 None
             }
-            crate::auth::CredentialMode::Keys => {
-                state.keys.lock().ok().map(|k| Self::Keys(k.clone()))
-            }
+            crate::auth::CredentialMode::Keys => match state.signing_keys() {
+                Ok(keys) => Some(Self::Keys(keys)),
+                Err(reason) => {
+                    eprintln!("kuzz-desktop: STT transcripts disabled: {reason}");
+                    None
+                }
+            },
         }
     }
 
