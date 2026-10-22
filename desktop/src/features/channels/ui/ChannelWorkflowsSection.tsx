@@ -3,6 +3,7 @@ import { Plus, Workflow as WorkflowIcon } from "lucide-react";
 import type { Workflow } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 import { FieldGroup } from "./ChannelManagementSheetRows";
+import { useT } from "@/shared/i18n";
 
 export function ChannelWorkflowsSection({
   error,
@@ -19,17 +20,18 @@ export function ChannelWorkflowsSection({
   onRetry: () => void;
   workflows: Workflow[];
 }) {
+  const t = useT();
   return (
     <div className="space-y-4 pt-3" data-testid="channel-workflows-section">
       {loading ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          Loading workflows...
+          {t("channels.workflows.loading")}
         </p>
       ) : error instanceof Error ? (
         <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4">
           <p className="text-sm text-destructive">{error.message}</p>
           <Button onClick={onRetry} size="sm" variant="outline">
-            Retry
+            {t("common.retry")}
           </Button>
         </div>
       ) : workflows.length > 0 ? (
@@ -58,7 +60,7 @@ export function ChannelWorkflowsSection({
         </FieldGroup>
       ) : (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          No workflows in this group yet.
+          {t("channels.workflows.empty")}
         </p>
       )}
 
@@ -70,7 +72,7 @@ export function ChannelWorkflowsSection({
         variant="outline"
       >
         <Plus />
-        New workflow
+        {t("channels.workflows.new")}
       </Button>
     </div>
   );

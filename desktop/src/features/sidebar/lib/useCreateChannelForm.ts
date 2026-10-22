@@ -5,6 +5,7 @@ import { getDefaultAiAutoJoin } from "@/features/agents/lib/defaultAiPreferences
 import { useDefaultAi } from "@/features/agents/useDefaultAi";
 import { useChannelTemplatesQuery } from "@/features/channel-templates/hooks";
 import { DEFAULT_EPHEMERAL_TTL_SECONDS } from "@/features/channels/lib/ephemeralChannel";
+import { t } from "@/shared/i18n";
 import type {
   ChannelTemplate,
   ChannelVisibility,
@@ -197,17 +198,17 @@ export function useCreateChannelForm({
           setErrorMessage(
             error instanceof Error
               ? error.message
-              : `Failed to create ${kindLabel}.`,
+              : t("sidebar.createChannel.failed", { kind: channelKind }),
           );
         }
       })();
     },
     [
       addDefaultAi,
+      channelKind,
       defaultAi,
       description,
       ephemeral,
-      kindLabel,
       name,
       onCreate,
       onCreated,

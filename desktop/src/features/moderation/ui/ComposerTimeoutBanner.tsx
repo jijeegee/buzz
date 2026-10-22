@@ -2,6 +2,7 @@ import { Clock } from "lucide-react";
 
 import { formatTimeoutRemaining } from "@/features/moderation/lib/timeout";
 import { useTimeoutState } from "@/features/moderation/lib/timeoutStore";
+import { useT } from "@/shared/i18n";
 
 /**
  * A banner docked to the top edge of the composer while the member is timed
@@ -15,6 +16,7 @@ import { useTimeoutState } from "@/features/moderation/lib/timeoutStore";
  * the hook's effect clears the store — flipping the flag and unmounting this.
  */
 export function ComposerTimeoutBanner() {
+  const t = useT();
   const { expiresAtMs } = useTimeoutState();
   const remaining = formatTimeoutRemaining(expiresAtMs);
 
@@ -26,8 +28,8 @@ export function ComposerTimeoutBanner() {
       <Clock aria-hidden className="h-4 w-4 shrink-0 text-amber-600" />
       <span className="min-w-0">
         {remaining
-          ? `You're timed out by community moderators — ${remaining} left.`
-          : "You're timed out by community moderators."}
+          ? t("moderation.timeoutBanner.withRemaining", { remaining })
+          : t("moderation.timeoutBanner.noRemaining")}
       </span>
     </div>
   );

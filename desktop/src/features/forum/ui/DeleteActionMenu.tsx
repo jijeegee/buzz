@@ -8,15 +8,21 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 
-import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { useT } from "@/shared/i18n";
+import {
+  DeleteConfirmDialog,
+  FORUM_DELETE_ACTION_KEYS,
+  type ForumDeleteKind,
+} from "./DeleteConfirmDialog";
 
 type DeleteActionMenuProps = {
-  label: string;
+  label: ForumDeleteKind;
   onConfirm: () => void;
   iconSize?: "sm" | "md";
 };
 
 export function DeleteActionMenu({ label, onConfirm }: DeleteActionMenuProps) {
+  const t = useT();
   const [isOpen, setIsOpen] = React.useState(false);
   const iconClass = "h-4 w-4";
 
@@ -38,7 +44,7 @@ export function DeleteActionMenu({ label, onConfirm }: DeleteActionMenuProps) {
             onClick={() => setIsOpen(true)}
           >
             <Trash2 className="mr-2 h-4 w-4" />
-            Delete {label}
+            {t(FORUM_DELETE_ACTION_KEYS[label])}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

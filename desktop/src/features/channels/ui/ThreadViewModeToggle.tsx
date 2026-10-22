@@ -6,6 +6,7 @@ import {
 } from "@/features/channels/lib/threadViewModePreference";
 import { Button } from "@/shared/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
+import { useT } from "@/shared/i18n";
 
 /** Preserve focus only when activation did not come from a pointer click. */
 export function shouldRestoreThreadToggleFocus(clickDetail: number): boolean {
@@ -28,13 +29,13 @@ const THREAD_VIEW_MODE_TOGGLE = {
   focus: {
     // Viewing the drawer → offer the pane.
     icon: Columns2,
-    label: "Show thread beside group",
+    labelKey: "channels.thread.showBeside",
     target: "split",
   },
   split: {
     // Viewing the pane → offer the drawer.
     icon: PanelRightOpen,
-    label: "Expand thread",
+    labelKey: "channels.thread.expand",
     target: "focus",
   },
 } as const;
@@ -57,8 +58,10 @@ export function ThreadViewModeToggle({
 }: {
   onChange: (mode: ThreadViewMode, restoreFocus: boolean) => void;
 }) {
+  const t = useT();
   const viewMode = useThreadViewMode();
-  const { icon: Icon, label, target } = THREAD_VIEW_MODE_TOGGLE[viewMode];
+  const { icon: Icon, labelKey, target } = THREAD_VIEW_MODE_TOGGLE[viewMode];
+  const label = t(labelKey);
 
   return (
     <Tooltip disableHoverableContent>

@@ -5,6 +5,7 @@ import {
   createNcryptsecBackup,
   saveNcryptsecCopy,
 } from "@/shared/api/tauriIdentity";
+import { t } from "@/shared/i18n";
 import {
   type EncryptedBackupEvent,
   type EncryptedBackupState,
@@ -98,7 +99,7 @@ export function EncryptedBackupProvider({
             message:
               err instanceof Error
                 ? err.message
-                : "Failed to encrypt your key.",
+                : t("settings.encryptedBackup.encryptFailed"),
           });
         });
     };
@@ -114,8 +115,8 @@ export function EncryptedBackupProvider({
 
   React.useEffect(() => {
     if (state.downloadPending) {
-      toast.loading("Preparing backup…", {
-        description: "You can close this window while Kuzz finishes.",
+      toast.loading(t("settings.encryptedBackup.preparing"), {
+        description: t("settings.encryptedBackup.preparingDescription"),
         duration: Number.POSITIVE_INFINITY,
         id: BACKUP_READY_TOAST_ID,
       });
@@ -126,7 +127,7 @@ export function EncryptedBackupProvider({
       state.passphrase.length === 0 &&
       !state.ncryptsec
     ) {
-      toast.error("Couldn’t create backup", {
+      toast.error(t("settings.encryptedBackup.createFailed"), {
         description: state.createError,
         id: BACKUP_READY_TOAST_ID,
       });
@@ -142,14 +143,14 @@ export function EncryptedBackupProvider({
     (description: string, error = false) => {
       const options = {
         action: {
-          label: "Open settings",
+          label: t("settings.encryptedBackup.openSettings"),
           onClick: () => onOpenSettingsRef.current(),
         },
         description,
         id: BACKUP_READY_TOAST_ID,
       };
-      if (error) toast.error("Backup ready to download", options);
-      else toast.success("Backup ready to download", options);
+      if (error) toast.error(t("settings.encryptedBackup.ready"), options);
+      else toast.success(t("settings.encryptedBackup.ready"), options);
     },
     [],
   );
@@ -159,8 +160,8 @@ export function EncryptedBackupProvider({
       if (isSaving) return;
       setIsSaving(true);
       setSaveError(null);
-      toast("Saving backup…", {
-        description: "The download window will open when it’s ready.",
+      toast(t("settings.encryptedBackup.saving"), {
+        description: t("settings.encryptedBackup.savingDescription"),
         id: BACKUP_READY_TOAST_ID,
       });
       try {
@@ -168,17 +169,19 @@ export function EncryptedBackupProvider({
         if (mountedRef.current) {
           showAvailableToast(
             path === null
-              ? "Your backup will be available to download for 5 minutes."
-              : "You can download another copy for 5 minutes.",
+              ? t("settings.encryptedBackup.availableFor5Minutes")
+              : t("settings.encryptedBackup.anotherCopy"),
           );
         }
       } catch (err) {
         if (!mountedRef.current) return;
         const message =
-          err instanceof Error ? err.message : "Failed to save your key.";
+          err instanceof Error
+            ? err.message
+            : t("settings.encryptedBackup.saveFailed");
         setSaveError(message);
         showAvailableToast(
-          `${message} It will be available to download for 5 minutes.`,
+          t("settings.encryptedBackup.saveFailedAvailable", { message }),
           true,
         );
       } finally {

@@ -12,6 +12,7 @@ import {
   type AuthDeviceLabel,
   useAuthDeviceLabels,
 } from "@/shared/api/useAuthDeviceNames";
+import { t } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { DeviceRobotIcon } from "@/shared/ui/DeviceRobotIcon";
@@ -47,7 +48,7 @@ function OwnerMark({
       data-agent-badge="owner"
       data-owner-pubkey={ownerPubkey}
       data-testid={testId ?? "agent-owner-mark"}
-      title={`Agent owned by ${name}`}
+      title={t("profile.agentBadge.ownedBy", { name })}
     >
       <ProfileAvatar
         mediaVariant="small"
@@ -67,9 +68,13 @@ function OwnerMark({
 export function agentHostDeviceLabel(device: AuthDeviceLabel | undefined) {
   const name = device?.name.trim();
   if (device?.current) {
-    return name ? `Running on this device (${name})` : "Running on this device";
+    return name
+      ? t("profile.agentBadge.runningOnThisDeviceNamed", { name })
+      : t("profile.agentBadge.runningOnThisDevice");
   }
-  return name ? `Running on ${name}` : "Running on another device";
+  return name
+    ? t("profile.agentBadge.runningOnNamed", { name })
+    : t("profile.agentBadge.runningOnAnotherDevice");
 }
 
 /**

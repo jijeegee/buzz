@@ -39,6 +39,7 @@ import { AddChannelBotDialog } from "./AddChannelBotDialog";
 import { isGroupChat } from "@/features/channels/lib/groupChat";
 import { AddPeopleToDmDialog } from "./AddPeopleToDmDialog";
 import { useChatTitle } from "../useChatTitle";
+import { useT } from "@/shared/i18n";
 
 type ChannelMembersBarProps = {
   channel: Channel;
@@ -61,6 +62,7 @@ export function ChannelMembersBar({
   onToggleMembers,
   variant = "inline",
 }: ChannelMembersBarProps) {
+  const t = useT();
   const [uncontrolledAddBotOpen, setUncontrolledAddBotOpen] =
     React.useState(false);
   const isAddBotOpen = isAddBotOpenProp ?? uncontrolledAddBotOpen;
@@ -209,7 +211,11 @@ export function ChannelMembersBar({
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={isChat ? "Chat actions" : "Group actions"}
+              aria-label={
+                isChat
+                  ? t("channels.membersBar.chatActions")
+                  : t("channels.membersBar.groupActions")
+              }
               data-testid="channel-actions-menu-trigger"
               size="icon"
               type="button"
@@ -224,7 +230,7 @@ export function ChannelMembersBar({
               onSelect={onToggleMembers}
             >
               <Users />
-              <span>Members</span>
+              <span>{t("channels.settings.members")}</span>
               <span className="ml-auto text-xs text-muted-foreground">
                 {memberCount}
               </span>
@@ -235,7 +241,7 @@ export function ChannelMembersBar({
                 onSelect={() => setIsAddPeopleOpen(true)}
               >
                 <UserRoundPlus />
-                <span>Add people</span>
+                <span>{t("channels.membersBar.addPeople")}</span>
               </DropdownMenuItem>
             ) : null}
             {huddleIndicator}
@@ -244,7 +250,11 @@ export function ChannelMembersBar({
               onSelect={onManageChannel}
             >
               <Settings2 />
-              <span>{isChat ? "Chat info" : "Manage group"}</span>
+              <span>
+                {isChat
+                  ? t("channels.settings.chatInfo")
+                  : t("channels.membersBar.manageGroup")}
+              </span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -257,8 +267,8 @@ export function ChannelMembersBar({
             <Button
               aria-label={
                 isChat
-                  ? `View people (${memberCount})`
-                  : `View group members (${memberCount})`
+                  ? t("channels.membersBar.viewPeople", { count: memberCount })
+                  : t("channels.membersBar.viewMembers", { count: memberCount })
               }
               className="h-8 px-2.5"
               data-testid="channel-members-trigger"
@@ -272,14 +282,18 @@ export function ChannelMembersBar({
               </span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{isChat ? "People" : "Group members"}</TooltipContent>
+          <TooltipContent>
+            {isChat
+              ? t("channels.membersBar.people")
+              : t("channels.membersBar.groupMembers")}
+          </TooltipContent>
         </Tooltip>
 
         {isDm ? (
           <Tooltip disableHoverableContent>
             <TooltipTrigger asChild>
               <Button
-                aria-label="Add people"
+                aria-label={t("channels.membersBar.addPeople")}
                 data-testid="dm-add-people-trigger"
                 onClick={() => setIsAddPeopleOpen(true)}
                 size="icon"
@@ -289,7 +303,9 @@ export function ChannelMembersBar({
                 <UserRoundPlus />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Add people</TooltipContent>
+            <TooltipContent>
+              {t("channels.membersBar.addPeople")}
+            </TooltipContent>
           </Tooltip>
         ) : null}
 
@@ -298,7 +314,11 @@ export function ChannelMembersBar({
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
             <Button
-              aria-label={isChat ? "Chat info" : "Manage group"}
+              aria-label={
+                isChat
+                  ? t("channels.settings.chatInfo")
+                  : t("channels.membersBar.manageGroup")
+              }
               data-testid="channel-management-trigger"
               onClick={onManageChannel}
               size="icon"
@@ -309,7 +329,9 @@ export function ChannelMembersBar({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {isChat ? "Chat info" : "Group settings"}
+            {isChat
+              ? t("channels.settings.chatInfo")
+              : t("channels.settings.title")}
           </TooltipContent>
         </Tooltip>
 

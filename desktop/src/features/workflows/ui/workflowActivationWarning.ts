@@ -1,5 +1,7 @@
 import { parse as yamlParse } from "yaml";
 
+import { t } from "@/shared/i18n";
+
 import {
   formatDurationSecondsVerbose,
   parseDurationSeconds,
@@ -31,7 +33,9 @@ function frequentIntervalDescription(interval: string): string | null {
   ) {
     return null;
   }
-  return `It is scheduled to run every ${formatDurationSecondsVerbose(seconds)}. Review the schedule before turning it on.`;
+  return t("workflows.activationWarning.everyDuration", {
+    duration: formatDurationSecondsVerbose(seconds),
+  });
 }
 
 function normalizedCronFields(cron: string): string[] | null {
@@ -104,21 +108,21 @@ function frequentCronDescription(cron: string): string | null {
   if (!matchesEveryHour(hour)) return null;
 
   if (secondRuns > 1) {
-    return "It is scheduled to run multiple times a minute. Review the schedule before turning it on.";
+    return t("workflows.activationWarning.multipleTimesAMinute");
   }
   if (minute === "*") {
-    return "It is scheduled to run every minute. Review the schedule before turning it on.";
+    return t("workflows.activationWarning.everyMinutes", { count: 1 });
   }
   const steppedMinute = /^\*\/(\d+)$/.exec(minute);
   if (steppedMinute) {
     const minutes = Number(steppedMinute[1]);
-    return `It is scheduled to run every ${minutes} minute${minutes === 1 ? "" : "s"}. Review the schedule before turning it on.`;
+    return t("workflows.activationWarning.everyMinutes", { count: minutes });
   }
   if (minuteRuns === 1) {
-    return "It is scheduled to run every hour. Review the schedule before turning it on.";
+    return t("workflows.activationWarning.everyHour");
   }
   if (minuteRuns > 1) {
-    return "It is scheduled to run multiple times an hour. Review the schedule before turning it on.";
+    return t("workflows.activationWarning.multipleTimesAnHour");
   }
   return null;
 }
@@ -137,9 +141,8 @@ export function getWorkflowActivationWarning(
 
   if (triggerType === "message_posted" && !nonEmptyString(trigger?.filter)) {
     return {
-      description:
-        "It will run for every new message in this group. Review the trigger before turning it on.",
-      title: "This workflow may run often",
+      description: t("workflows.activationWarning.everyMessage"),
+      title: t("workflows.activationWarning.title"),
     };
   }
 
@@ -152,7 +155,7 @@ export function getWorkflowActivationWarning(
         ? frequentCronDescription(cron)
         : null;
     if (description) {
-      return { description, title: "This workflow may run often" };
+      return { description, title: t("workflows.activationWarning.title") };
     }
   }
 

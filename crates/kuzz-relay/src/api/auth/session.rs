@@ -428,6 +428,7 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         "avatar_url": principal.avatar_url,
         "username": principal.username,
         "discoverable": principal.discoverable,
+        "locale": principal.locale,
         "email": email,
         "device_id": binding.device_id,
         "bot": bot,
@@ -447,8 +448,28 @@ fn validate_username(username: &str) -> Result<(), Response> {
     Ok(())
 }
 
+/// A BCP 47 tag as the apps write it: `en`, `ko`, `zh-Hant`, `pt-BR`, `fil`.
+/// Mirrors the `principals_locale` CHECK.
+fn validate_locale(locale: &str) -> Result<(), Response> {
+    let mut parts = locale.split('-');
+    let language_ok = parts
+        .next()
+        .is_some_and(|l| (2..=3).contains(&l.len()) && l.bytes().all(|b| b.is_ascii_lowercase()));
+    let rest: Vec<&str> = parts.collect();
+    let rest_ok = rest.len() <= 2
+        && rest
+            .iter()
+            .all(|p| (2..=8).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_alphanumeric()));
+    if !(language_ok && rest_ok) {
+        return Err(bad_request(
+            "locale must be a language tag like en, ko or zh-Hant",
+        ));
+    }
+    Ok(())
+}
+
 /// Parse and validate a profile update body. `allow_username` also gates
-/// `discoverable` (person accounts only; bots have neither).
+/// `discoverable` and `locale` (person accounts only; bots have none).
 pub(super) fn parse_profile_update(
     body: &Bytes,
     allow_username: bool,
@@ -485,11 +506,23 @@ pub(super) fn parse_profile_update(
         Some(serde_json::Value::Bool(value)) => Some(*value),
         Some(_) => return Err(bad_request("discoverable must be a boolean")),
     };
+    let locale = if allow_username {
+        let locale = optional_string(&body, "locale")?;
+        if let Some(Some(tag)) = &locale {
+            validate_locale(tag)?;
+        }
+        locale
+    } else if body.contains_key("locale") {
+        return Err(bad_request("locale cannot be set here"));
+    } else {
+        None
+    };
     Ok(ProfileUpdate {
         display_name,
         avatar_url,
         username,
         discoverable,
+        locale,
     })
 }
 
@@ -500,6 +533,7 @@ fn profile_json(record: &kuzz_db::identity::PrincipalRecord) -> Response {
         "avatar_url": record.avatar_url,
         "username": record.username,
         "discoverable": record.discoverable,
+        "locale": record.locale,
     }))
     .into_response()
 }
@@ -508,7 +542,7 @@ fn profile_json(record: &kuzz_db::identity::PrincipalRecord) -> Response {
 /// community's `users` row in the same transaction).
 ///
 /// Key-backup accounts sign their own kind:0, so their session may set only
-/// account-level fields (`username`, `discoverable`); display name and avatar
+/// account-level fields (`username`, `discoverable`, `locale`); display name and avatar
 /// stay with the client-signed profile.
 pub(super) async fn update_profile(
     State(state): State<Arc<AppState>>,
@@ -538,7 +572,13 @@ pub(super) async fn update_profile(
         .await
     {
         Ok(Some(record)) => {
-            if !key_mode {
+            // The language is account-only; it is not part of the public profile.
+            let locale_only = update.locale.is_some()
+                && update.display_name.is_none()
+                && update.avatar_url.is_none()
+                && update.username.is_none()
+                && update.discoverable.is_none();
+            if !key_mode && !locale_only {
                 crate::identity::profile::spawn_publish_everywhere(&state, record.id);
             }
             profile_json(&record)

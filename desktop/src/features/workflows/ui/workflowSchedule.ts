@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/shared/i18n";
 import type { TriggerConfig } from "./workflowFormTypes";
 
 export const SCHEDULE_FREQUENCIES = [
@@ -22,14 +23,18 @@ export type ScheduleFormState = {
   weekday: string;
 };
 
-export const SCHEDULE_FREQUENCY_LABELS: Record<ScheduleFrequency, string> = {
-  every_15_minutes: "Every 15 minutes",
-  every_30_minutes: "Every 30 minutes",
-  hourly: "Every hour",
-  daily: "Daily",
-  weekly: "Weekly",
-  monthly: "Monthly",
-  custom_cron: "Custom cron",
+/** Language-file keys of the frequency names; translate where shown. */
+export const SCHEDULE_FREQUENCY_LABEL_KEYS: Record<
+  ScheduleFrequency,
+  MessageKey
+> = {
+  every_15_minutes: "workflows.schedule.frequency.every15Minutes",
+  every_30_minutes: "workflows.schedule.frequency.every30Minutes",
+  hourly: "workflows.schedule.frequency.hourly",
+  daily: "workflows.schedule.frequency.daily",
+  weekly: "workflows.schedule.frequency.weekly",
+  monthly: "workflows.schedule.frequency.monthly",
+  custom_cron: "workflows.schedule.frequency.customCron",
 };
 
 const INTERVAL_FREQUENCIES = {

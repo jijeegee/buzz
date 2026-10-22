@@ -9,6 +9,8 @@
  * Shapes match the server: codes are 22-64 URL-safe characters, handles 3-32
  * of `a-z0-9_` (case-insensitive, stored lowercase).
  */
+import { t } from "@/shared/i18n";
+
 export type GroupLinkTarget =
   | { kind: "code"; code: string }
   | { kind: "handle"; handle: string };
@@ -88,10 +90,17 @@ export function isValidGroupHandle(handle: string): boolean {
   return HANDLE_RE.test(handle);
 }
 
-export const PUBLIC_ADDRESS_TAKEN_TEXT = "This address is taken.";
-export const PUBLIC_ADDRESS_INVALID_TEXT =
-  "Use 3-32 characters: a-z, 0-9 and _.";
-export const PUBLIC_ADDRESS_RESERVED_TEXT = "This address is reserved.";
+export function publicAddressTakenText(): string {
+  return t("groups.publicAddress.taken");
+}
+
+export function publicAddressInvalidText(): string {
+  return t("groups.publicAddress.invalid");
+}
+
+export function publicAddressReservedText(): string {
+  return t("groups.publicAddress.reserved");
+}
 
 /**
  * The message for a failed public-address save: 409 is taken; a 400 that
@@ -101,11 +110,11 @@ export function publicAddressErrorText(
   status: number | null,
   serverText: string,
 ): string | null {
-  if (status === 409) return PUBLIC_ADDRESS_TAKEN_TEXT;
+  if (status === 409) return publicAddressTakenText();
   if (status === 400) {
     return /reserved/i.test(serverText)
-      ? PUBLIC_ADDRESS_RESERVED_TEXT
-      : PUBLIC_ADDRESS_INVALID_TEXT;
+      ? publicAddressReservedText()
+      : publicAddressInvalidText();
   }
   return null;
 }

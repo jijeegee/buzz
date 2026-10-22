@@ -18,6 +18,7 @@ import {
   resolveSlotSound,
 } from "@/features/notifications/lib/sound";
 import { buildEventNotificationTarget } from "@/features/notifications/lib/target";
+import { t } from "@/shared/i18n";
 import { readCachedUserLabels } from "@/features/profile/lib/userLabelStorage";
 import { ReadOnlyRelayClient } from "@/shared/api/readOnlyRelayClient";
 import { accountAuthFrame } from "@/shared/api/relayAuthFrame";
@@ -66,7 +67,7 @@ function watcherDeps(target: WatchTarget): WatcherDeps {
       });
       void sendDesktopNotification({
         // Which account it is for: it is not the open one.
-        title: `${label} · ${title}`,
+        title: t("accounts.watch.notificationTitle", { account: label, title }),
         body,
         target: {
           ...buildEventNotificationTarget(event, {

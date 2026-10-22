@@ -10,6 +10,7 @@ import {
   useSetTaskThreadsMutation,
   useTaskThreadsQuery,
 } from "@/features/settings/taskThreadsHooks";
+import { useT } from "@/shared/i18n";
 import { Checkbox } from "@/shared/ui/checkbox";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
@@ -21,6 +22,7 @@ import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
  * makes the level Custom. Running agents apply a change on their next message.
  */
 export function TaskThreadsExperimentGroup() {
+  const t = useT();
   const query = useTaskThreadsQuery();
   const setting = query.data ?? DEFAULT_TASK_THREADS_SETTING;
   const save = useSetTaskThreadsMutation();
@@ -31,27 +33,32 @@ export function TaskThreadsExperimentGroup() {
   return (
     <SettingsOptionGroup
       data-testid="settings-task-threads"
-      description="When agents move work into its own thread without being asked. Applies to agents whose conversation context is Each thread, from their next message."
-      title="Agents open task threads"
+      description={t("settings.taskThreads.description")}
+      title={t("settings.taskThreads.title")}
     >
       <SettingsOptionRow>
         <div className="min-w-0">
-          <p className="font-medium text-foreground">Level</p>
+          <p className="font-medium text-foreground">
+            {t("settings.taskThreads.levelLabel")}
+          </p>
           <p
             className="mt-0.5 text-sm text-muted-foreground/70"
             data-settings-subcopy
           >
-            Off keeps threads to when someone asks for one
+            {t("settings.taskThreads.levelHint")}
           </p>
         </div>
         <SegmentedControl
           disabled={locked}
-          legend="Task thread level"
+          legend={t("settings.taskThreads.levelLegend")}
           onValueChange={(level) =>
             save.mutate(selectTaskThreadLevel(setting, level))
           }
           optionTestIdPrefix="task-threads-level"
-          options={TASK_THREAD_LEVEL_OPTIONS}
+          options={TASK_THREAD_LEVEL_OPTIONS.map((option) => ({
+            value: option.value,
+            label: t(option.label),
+          }))}
           size="wide"
           testId="task-threads-level"
           value={setting.level}
@@ -63,13 +70,13 @@ export function TaskThreadsExperimentGroup() {
           <SettingsOptionRow data-testid={id} key={trigger.value}>
             <div className="min-w-0">
               <label className="font-medium text-foreground" htmlFor={id}>
-                {trigger.label}
+                {t(trigger.label)}
               </label>
               <p
                 className="mt-0.5 text-sm text-muted-foreground/70"
                 data-settings-subcopy
               >
-                {trigger.description}
+                {t(trigger.description)}
               </p>
             </div>
             <Checkbox
@@ -93,7 +100,7 @@ export function TaskThreadsExperimentGroup() {
         <p className="px-4 py-3 text-sm text-destructive" role="alert">
           {save.error instanceof Error
             ? save.error.message
-            : "Couldn't save the task thread setting."}
+            : t("settings.taskThreads.saveFailed")}
         </p>
       ) : null}
     </SettingsOptionGroup>

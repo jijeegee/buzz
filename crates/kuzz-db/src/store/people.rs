@@ -102,6 +102,16 @@ const MESSAGING_PUBKEY_SQL: &str = concat!(
       WHERE p.id = $1"
 );
 
+/// App language of the person account whose messaging key is `$1`. Both
+/// sides of the `OR` are indexed (primary key, unique backup pubkey).
+const LOCALE_BY_PUBKEY_SQL: &str = concat!(
+    "SELECT p.locale FROM principals p \
+       LEFT JOIN account_key_backups kb ON kb.account_id = p.id \
+      WHERE (p.id = $1 OR kb.pubkey = $1) AND p.kind = 'user' AND ",
+    messaging_pubkey!(),
+    " = $1 LIMIT 1"
+);
+
 const LOOKUP_BY_USERNAME_SQL: &str = lookup_sql!("lower(p.username) = lower($2)");
 
 const LOOKUP_BY_EMAIL_SQL: &str = lookup_sql!(
@@ -118,6 +128,17 @@ impl Db {
             .fetch_optional(&self.pool)
             .await?;
         Ok(pubkey.flatten())
+    }
+
+    /// The app language of the person whose messaging key is `pubkey`, for
+    /// text the server writes to them. `None` when unset or not an account.
+    #[datastore_span(name = "locale_for_pubkey", system = "postgresql")]
+    pub async fn locale_for_pubkey(&self, pubkey: &[u8]) -> Result<Option<String>> {
+        let locale: Option<Option<String>> = sqlx::query_scalar(LOCALE_BY_PUBKEY_SQL)
+            .bind(pubkey)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(locale.flatten())
     }
 
     /// Find one discoverable, active user by exact username or email.

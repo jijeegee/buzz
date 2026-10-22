@@ -6,6 +6,7 @@ import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { Button } from "@/shared/ui/button";
 import { SimpleImageLightbox } from "@/shared/ui/SimpleImageLightbox";
 import { Spinner } from "@/shared/ui/spinner";
+import { useT } from "@/shared/i18n";
 
 /**
  * Group photo on top of the group edit dialog: the group's avatar (photo, or
@@ -32,9 +33,10 @@ export function GroupPhotoField({
   onUploadingChange?: (isUploading: boolean) => void;
   picture: string;
 }) {
+  const t = useT();
   const { errorMessage, handleFileChange, inputRef, isUploading, openPicker } =
     useAvatarUpload({
-      fallbackErrorMessage: "Could not upload that photo.",
+      fallbackErrorMessage: t("channels.photo.uploadFailed"),
       onUploadSuccess: onPictureChange,
     });
 
@@ -61,7 +63,7 @@ export function GroupPhotoField({
       <div className="relative">
         {fullSizeUrl ? (
           <button
-            aria-label="View group photo"
+            aria-label={t("channels.photo.view")}
             className="block cursor-zoom-in rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             data-testid="group-photo-view"
             onClick={() => setIsViewerOpen(true)}
@@ -74,7 +76,7 @@ export function GroupPhotoField({
         )}
         {isUploading ? (
           <span
-            aria-label="Uploading photo"
+            aria-label={t("channels.photo.uploading")}
             className="absolute inset-0 flex items-center justify-center rounded-full bg-black/35 text-white"
             role="status"
           >
@@ -91,7 +93,7 @@ export function GroupPhotoField({
           type="button"
           variant="outline"
         >
-          Change photo
+          {t("channels.photo.change")}
         </Button>
         {picture ? (
           <Button
@@ -102,7 +104,7 @@ export function GroupPhotoField({
             type="button"
             variant="ghost"
           >
-            Remove photo
+            {t("channels.photo.remove")}
           </Button>
         ) : null}
       </div>
@@ -113,7 +115,11 @@ export function GroupPhotoField({
       ) : null}
       {fullSizeUrl ? (
         <SimpleImageLightbox
-          alt={label.trim() ? `${label.trim()} group photo` : "Group photo"}
+          alt={
+            label.trim()
+              ? t("channels.photo.altNamed", { name: label.trim() })
+              : t("channels.photo.alt")
+          }
           onOpenChange={setIsViewerOpen}
           open={isViewerOpen}
           src={rewriteRelayUrl(fullSizeUrl)}

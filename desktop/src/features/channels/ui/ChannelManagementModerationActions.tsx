@@ -18,6 +18,7 @@ import {
   AlertDialogTrigger,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 type ChannelMutation<TArgs = void> = {
   error: unknown;
@@ -103,6 +104,7 @@ export function ChannelDeleteConfirmationDialog({
   open,
   trigger,
 }: ChannelDeleteConfirmationDialogProps) {
+  const t = useT();
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
       {trigger ? (
@@ -110,10 +112,9 @@ export function ChannelDeleteConfirmationDialog({
       ) : null}
       <AlertDialogContent data-testid="channel-delete-confirmation-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete group?</AlertDialogTitle>
+          <AlertDialogTitle>{t("channels.delete.title")}</AlertDialogTitle>
           <AlertDialogDescription>
-            Delete {channelName} from the community list. This action cannot be
-            undone.
+            {t("channels.delete.body", { name: channelName })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error instanceof Error ? (
@@ -127,7 +128,7 @@ export function ChannelDeleteConfirmationDialog({
               type="button"
               variant="outline"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
@@ -141,7 +142,9 @@ export function ChannelDeleteConfirmationDialog({
               type="button"
               variant="destructive"
             >
-              {isPending ? "Deleting..." : "Delete group"}
+              {isPending
+                ? t("channels.delete.deleting")
+                : t("channels.delete.action")}
             </Button>
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -163,6 +166,7 @@ export function ChannelManagementModerationActions({
   resolvedChannelName,
   unarchiveChannelMutation,
 }: ChannelManagementModerationActionsProps) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -177,8 +181,8 @@ export function ChannelManagementModerationActions({
         <Button
           aria-label={
             unarchiveChannelMutation.isPending
-              ? "Restoring group"
-              : "Unarchive group"
+              ? t("channels.archive.restoring")
+              : t("channels.archive.unarchive")
           }
           data-testid="channel-management-unarchive"
           disabled={!canManageChannel || unarchiveChannelMutation.isPending}
@@ -188,8 +192,8 @@ export function ChannelManagementModerationActions({
           size="icon"
           title={
             unarchiveChannelMutation.isPending
-              ? "Restoring group"
-              : "Unarchive group"
+              ? t("channels.archive.restoring")
+              : t("channels.archive.unarchive")
           }
           type="button"
           variant="ghost"
@@ -200,8 +204,8 @@ export function ChannelManagementModerationActions({
         <Button
           aria-label={
             archiveChannelMutation.isPending
-              ? "Archiving group"
-              : "Archive group"
+              ? t("channels.archive.archiving")
+              : t("channels.archive.archive")
           }
           data-testid="channel-management-archive"
           disabled={!canManageChannel || archiveChannelMutation.isPending}
@@ -211,8 +215,8 @@ export function ChannelManagementModerationActions({
           size="icon"
           title={
             archiveChannelMutation.isPending
-              ? "Archiving group"
-              : "Archive group"
+              ? t("channels.archive.archiving")
+              : t("channels.archive.archive")
           }
           type="button"
           variant="ghost"
@@ -232,11 +236,11 @@ export function ChannelManagementModerationActions({
           open={isDeleteDialogOpen}
           trigger={
             <Button
-              aria-label="Delete group"
+              aria-label={t("channels.delete.action")}
               data-testid="channel-management-delete"
               disabled={deleteChannelMutation.isPending}
               size="icon"
-              title="Delete group"
+              title={t("channels.delete.action")}
               type="button"
               variant="ghost"
             >

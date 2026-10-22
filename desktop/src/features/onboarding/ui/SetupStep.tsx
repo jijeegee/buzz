@@ -13,6 +13,7 @@ import { describeResolvedCommand } from "@/features/agents/ui/agentUi";
 import type { AcpAuthMethod, AcpRuntimeCatalogEntry } from "@/shared/api/types";
 import { getInstallErrorMessage } from "@/shared/lib/installError";
 import { cn } from "@/shared/lib/cn";
+import { type MessageKey, type Translate, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Spinner } from "@/shared/ui/spinner";
@@ -59,12 +60,12 @@ type InstallResultState = {
 
 type InstallResultsState = Record<string, InstallResultState>;
 
-const SUBSCRIPTION_NAMES: Record<string, string> = {
-  amp: "Amp subscription",
-  claude: "Claude subscription",
-  codex: "ChatGPT subscription",
-  cursor: "Cursor subscription",
-  devin: "Devin account",
+const SUBSCRIPTION_NAME_KEYS: Record<string, MessageKey> = {
+  amp: "onboarding.setup.subscriptionName.amp",
+  claude: "onboarding.setup.subscriptionName.claude",
+  codex: "onboarding.setup.subscriptionName.codex",
+  cursor: "onboarding.setup.subscriptionName.cursor",
+  devin: "onboarding.setup.subscriptionName.devin",
 };
 
 function useSetupStepState() {
@@ -126,6 +127,7 @@ function RuntimeStatus({
   prominent?: boolean;
   runtime: AcpRuntimeCatalogEntry;
 }) {
+  const t = useT();
   const shouldSignIn =
     runtime.availability === "available" &&
     runtime.authStatus.status === "logged_out";
@@ -178,7 +180,7 @@ function RuntimeStatus({
           className="inline-flex h-5 cursor-default items-center rounded-md bg-[#EBEFEF] px-2.5 text-xs font-medium text-foreground/70"
           data-testid={`onboarding-runtime-sign-in-required-${runtime.id}`}
         >
-          Sign in required
+          {t("onboarding.setup.signInRequired")}
         </span>
       );
     }
@@ -186,7 +188,9 @@ function RuntimeStatus({
     return (
       <div className="flex flex-col items-center gap-1.5">
         <Button
-          aria-label={`Sign in to ${runtime.label}`}
+          aria-label={t("onboarding.setup.signInTo", {
+            runtime: runtime.label,
+          })}
           className="h-7 shrink-0 rounded-full bg-foreground px-3 text-xs font-normal text-background shadow-none hover:bg-foreground/85 hover:text-background"
           data-testid={`onboarding-runtime-instructions-${runtime.id}`}
           onClick={() => {
@@ -214,23 +218,23 @@ function RuntimeStatus({
           variant="ghost"
         >
           {isWaitingForSignIn
-            ? "Checking…"
+            ? t("onboarding.setup.checking")
             : didSignInCheckTimeOut
-              ? "Check again"
-              : "Sign in"}
+              ? t("onboarding.setup.checkAgain")
+              : t("onboarding.setup.signIn")}
         </Button>
         {methodsQuery.error instanceof Error ? (
           <RuntimeErrorTooltip
             className="absolute inset-x-3 bottom-2 truncate text-xs leading-4 text-destructive"
-            detail="Couldn’t load sign-in options."
-            label="Sign-in unavailable"
+            detail={t("onboarding.setup.signInOptionsError")}
+            label={t("onboarding.setup.signInUnavailable")}
           />
         ) : null}
         {connectMutation.error instanceof Error ? (
           <RuntimeErrorTooltip
             className="absolute inset-x-3 bottom-2 truncate text-xs leading-4 text-destructive"
-            detail="Couldn’t start sign-in. Try again."
-            label="Sign-in failed"
+            detail={t("onboarding.setup.signInStartError")}
+            label={t("onboarding.setup.signInFailed")}
           />
         ) : null}
       </div>
@@ -240,12 +244,14 @@ function RuntimeStatus({
   if (isInstalling) {
     return (
       <div
-        aria-label={`Installing ${runtime.label}`}
+        aria-label={t("onboarding.setup.installingRuntime", {
+          runtime: runtime.label,
+        })}
         className="flex h-5 items-center gap-2 rounded-md bg-white/60 px-2.5 text-xs font-medium text-foreground/70"
         role="status"
       >
         <Spinner className="h-3 w-3 border-2 text-foreground" />
-        Installing
+        {t("onboarding.setup.installing")}
       </div>
     );
   }
@@ -256,14 +262,16 @@ function RuntimeStatus({
     if (runtimesQuery.isError) {
       return (
         <Button
-          aria-label={`Check ${runtime.label} again`}
+          aria-label={t("onboarding.setup.checkRuntimeAgain", {
+            runtime: runtime.label,
+          })}
           className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
           data-testid={`onboarding-runtime-recheck-${runtime.id}`}
           onClick={() => void runtimesQuery.forceRefresh()}
           type="button"
           variant="ghost"
         >
-          Check again
+          {t("onboarding.setup.checkAgain")}
         </Button>
       );
     }
@@ -276,23 +284,35 @@ function RuntimeStatus({
   ) {
     return (
       <Button
-        aria-label={`Check ${runtime.label} again`}
+        aria-label={t("onboarding.setup.checkRuntimeAgain", {
+          runtime: runtime.label,
+        })}
         className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
         disabled={runtimesQuery.isFetching}
         onClick={() => void runtimesQuery.forceRefresh()}
         type="button"
         variant="ghost"
       >
-        {runtimesQuery.isFetching ? "Checking…" : "Check again"}
+        {runtimesQuery.isFetching
+          ? t("onboarding.setup.checking")
+          : t("onboarding.setup.checkAgain")}
       </Button>
     );
   }
 
-  const installLabel = installError ? "Retry install" : "Install";
+  const installLabel = installError
+    ? t("onboarding.setup.retryInstall")
+    : t("onboarding.setup.install");
   if (runtime.canAutoInstall) {
     return (
       <Button
-        aria-label={`${installError ? "Retry installing" : "Install"} ${runtime.label}`}
+        aria-label={
+          installError
+            ? t("onboarding.setup.retryInstallingRuntime", {
+                runtime: runtime.label,
+              })
+            : t("onboarding.setup.installRuntime", { runtime: runtime.label })
+        }
         className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
         data-testid={`onboarding-runtime-install-${runtime.id}`}
         onClick={onInstall}
@@ -306,19 +326,24 @@ function RuntimeStatus({
 
   return (
     <Button
-      aria-label={`View ${runtime.label} install instructions`}
+      aria-label={t("onboarding.setup.viewInstallInstructions", {
+        runtime: runtime.label,
+      })}
       className="kuzz-onboarding-runtime-setup h-5 rounded-md bg-[var(--kuzz-welcome-chartreuse)]/30 px-2.5 text-xs font-medium text-foreground hover:bg-[var(--kuzz-welcome-chartreuse)]/40"
       data-testid={`onboarding-runtime-instructions-${runtime.id}`}
       onClick={() => void openUrl(runtime.installInstructionsUrl)}
       type="button"
       variant="ghost"
     >
-      Install
+      {t("onboarding.setup.install")}
     </Button>
   );
 }
 
-function runtimeDetailText(runtime: AcpRuntimeCatalogEntry): string {
+function runtimeDetailText(
+  runtime: AcpRuntimeCatalogEntry,
+  t: Translate,
+): string {
   if (
     runtime.availability === "available" &&
     runtime.command &&
@@ -331,16 +356,16 @@ function runtimeDetailText(runtime: AcpRuntimeCatalogEntry): string {
     return description.charAt(0).toUpperCase() + description.slice(1);
   }
   if (runtime.availability === "adapter_missing") {
-    return "CLI detected; ACP adapter missing.";
+    return t("onboarding.setup.adapterMissing");
   }
   if (runtime.availability === "adapter_outdated") {
-    return "ACP adapter detected but outdated — reinstall required.";
+    return t("onboarding.setup.adapterOutdated");
   }
   if (
     runtime.availability === "cli_missing" ||
     runtime.availability === "not_installed"
   ) {
-    return "CLI not detected.";
+    return t("onboarding.setup.cliMissing");
   }
   return "";
 }
@@ -393,12 +418,13 @@ function getOnboardingAuthMethods(
 }
 
 function RuntimeAuthError({ runtime }: { runtime: AcpRuntimeCatalogEntry }) {
+  const t = useT();
   if (runtime.authStatus.status === "config_invalid") {
     return (
       <RuntimeErrorTooltip
         className="absolute inset-x-3 bottom-2 truncate text-xs leading-4 text-destructive"
-        detail="Check this runtime’s configuration and try again."
-        label="Configuration invalid"
+        detail={t("onboarding.setup.configInvalidDetail")}
+        label={t("onboarding.setup.configInvalid")}
       />
     );
   }
@@ -409,8 +435,8 @@ function RuntimeAuthError({ runtime }: { runtime: AcpRuntimeCatalogEntry }) {
     return (
       <RuntimeErrorTooltip
         className="absolute inset-x-3 bottom-2 truncate text-xs leading-4 text-destructive"
-        detail="Couldn’t verify authentication."
-        label="Status unavailable"
+        detail={t("onboarding.setup.authUnknownDetail")}
+        label={t("onboarding.setup.statusUnavailable")}
       />
     );
   }
@@ -434,6 +460,7 @@ function RuntimeCard({
   >;
   runtime: AcpRuntimeCatalogEntry;
 }) {
+  const t = useT();
   const cardLayout = useOnboardingCardLayout();
   // Each card owns its own mutation instance so concurrent installs on
   // different cards each track their own isPending state and callbacks
@@ -491,7 +518,10 @@ function RuntimeCard({
         onInstallResultsChange((current) => ({
           ...current,
           [runtime.id]: {
-            error: error instanceof Error ? error.message : "Install failed.",
+            error:
+              error instanceof Error
+                ? error.message
+                : t("onboarding.setup.installFailedFallback"),
             success: false,
           },
         }));
@@ -514,14 +544,18 @@ function RuntimeCard({
       >
         {onOpenDetails ? (
           <button
-            aria-label={`Open ${getRuntimeDisplayLabel(runtime)} setup`}
+            aria-label={t("onboarding.setup.openRuntimeSetup", {
+              runtime: getRuntimeDisplayLabel(runtime),
+            })}
             className="absolute inset-0 rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-foreground/20"
             data-testid={`onboarding-runtime-details-${runtime.id}`}
             onClick={onOpenDetails}
             type="button"
           >
             <span className="sr-only">
-              Open {getRuntimeDisplayLabel(runtime)} setup
+              {t("onboarding.setup.openRuntimeSetup", {
+                runtime: getRuntimeDisplayLabel(runtime),
+              })}
             </span>
           </button>
         ) : null}
@@ -533,7 +567,7 @@ function RuntimeCard({
                 className="inline-flex h-5 shrink-0 items-center rounded-md bg-muted px-2 text-xs font-medium text-muted-foreground transition-colors duration-150 ease-out group-hover:bg-background group-hover:text-foreground motion-reduce:transition-none"
                 data-testid={`onboarding-runtime-recommended-${runtime.id}`}
               >
-                Recommended
+                {t("onboarding.setup.recommended")}
               </span>
             ) : null}
             {isAvailable && !isReady ? (
@@ -569,7 +603,7 @@ function RuntimeCard({
           <RuntimeErrorTooltip
             className="absolute bottom-0 left-16 right-28 z-20 truncate text-xs leading-4 text-destructive"
             detail={installError}
-            label="Installation failed"
+            label={t("onboarding.setup.installationFailed")}
             showIcon
             testId={`onboarding-runtime-error-${runtime.id}`}
           />
@@ -618,7 +652,7 @@ function RuntimeCard({
           >
             {installOutputLine}
           </p>
-        ) : !isAvailable && runtimeDetailText(runtime) ? (
+        ) : !isAvailable && runtimeDetailText(runtime, t) ? (
           <p
             aria-hidden={installError ? "true" : undefined}
             className={cn(
@@ -626,7 +660,7 @@ function RuntimeCard({
               installError && "invisible",
             )}
           >
-            {runtimeDetailText(runtime)}
+            {runtimeDetailText(runtime, t)}
           </p>
         ) : null}
       </div>
@@ -634,7 +668,7 @@ function RuntimeCard({
         <RuntimeErrorTooltip
           className="absolute inset-x-3 bottom-2 flex min-w-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap text-xs leading-4 text-destructive"
           detail={installError}
-          label="Installation failed"
+          label={t("onboarding.setup.installationFailed")}
           showIcon
           testId={`onboarding-runtime-error-${runtime.id}`}
         />
@@ -646,6 +680,7 @@ function RuntimeCard({
 }
 
 function RuntimeProvidersLoadingState() {
+  const t = useT();
   return (
     <div
       aria-live="polite"
@@ -654,7 +689,7 @@ function RuntimeProvidersLoadingState() {
       role="status"
     >
       <Spinner aria-hidden className="h-4 w-4 border-2" />
-      <span>Loading providers…</span>
+      <span>{t("onboarding.setup.loadingProviders")}</span>
     </div>
   );
 }
@@ -674,6 +709,7 @@ function RuntimeProvidersSection({
   onOpenDetails: (runtimeId: string) => void;
   runtimeProviders: SetupStepState["runtimeProviders"];
 }) {
+  const t = useT();
   const cardLayout = useOnboardingCardLayout();
   const { errorMessage, isChecking, items } = runtimeProviders;
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -720,8 +756,8 @@ function RuntimeProvidersSection({
       >
         <h1 className="text-title font-normal text-foreground">
           {method === "subscription"
-            ? "Continue with an AI subscription"
-            : "Choose a harness"}
+            ? t("onboarding.setup.subscriptionTitle")
+            : t("onboarding.setup.harnessTitle")}
         </h1>
         <p
           className={cn(
@@ -730,8 +766,8 @@ function RuntimeProvidersSection({
           )}
         >
           {method === "subscription"
-            ? "Subscriptions connect through a compatible harness, like Claude Code or Codex. Choose yours to sign in."
-            : "Choose how your agents will connect to AI providers. You can change this at any time."}
+            ? t("onboarding.setup.subscriptionDescription")
+            : t("onboarding.setup.harnessDescription")}
         </p>
       </div>
 
@@ -798,7 +834,7 @@ function RuntimeProvidersSection({
                   <React.Fragment key={runtime.id}>
                     {startsNotInstalledSection ? (
                       <p className="px-2 pb-1 pt-4 text-xs font-medium text-muted-foreground">
-                        Not installed
+                        {t("onboarding.setup.notInstalled")}
                       </p>
                     ) : null}
                     <RuntimeCard
@@ -822,7 +858,7 @@ function RuntimeProvidersSection({
             className="max-w-[560px] rounded-2xl bg-white/70 px-6 py-6 text-sm text-muted-foreground"
             data-testid="onboarding-acp-empty"
           >
-            No supported harnesses are available for this connection method.
+            {t("onboarding.setup.noHarnesses")}
           </p>
         )}
 
@@ -854,13 +890,16 @@ function RuntimeSetupGuide({
   onRefresh: () => void;
   runtime: AcpRuntimeCatalogEntry;
 }) {
+  const t = useT();
   const label = getRuntimeDisplayLabel(runtime);
   const available = runtime.availability === "available";
   const subscriptionDetail =
     method === "subscription"
       ? {
-          description: `Kuzz will open a sign-in window for ${label}.`,
-          title: SUBSCRIPTION_NAMES[runtime.id] ?? label,
+          description: t("onboarding.setup.signInWindow", { runtime: label }),
+          title: SUBSCRIPTION_NAME_KEYS[runtime.id]
+            ? t(SUBSCRIPTION_NAME_KEYS[runtime.id])
+            : label,
         }
       : undefined;
 
@@ -871,11 +910,10 @@ function RuntimeSetupGuide({
         data-testid="onboarding-harness-setup-guide"
       >
         <h1 className="text-title font-normal text-foreground">
-          Set up {label}
+          {t("onboarding.setup.setUpRuntime", { runtime: label })}
         </h1>
         <p className="mt-2 w-full text-base leading-6 text-foreground/80">
-          Follow the setup guide to install {label}. When you’re done, come back
-          and check again.
+          {t("onboarding.setup.setUpRuntimeDescription", { runtime: label })}
         </p>
 
         <div className="mt-8 flex min-h-0 flex-1 flex-col">
@@ -897,7 +935,7 @@ function RuntimeSetupGuide({
               size="xs"
               type="button"
             >
-              Open guide
+              {t("onboarding.setup.openGuide")}
               <ExternalLink aria-hidden />
             </Button>
           </div>
@@ -910,7 +948,7 @@ function RuntimeSetupGuide({
             onClick={onRefresh}
             type="button"
           >
-            Check again
+            {t("onboarding.setup.checkAgain")}
           </Button>
         </OnboardingFooter>
       </section>
@@ -924,10 +962,10 @@ function RuntimeSetupGuide({
     >
       <div className="shrink-0">
         <h1 className="text-title font-normal text-foreground">
-          Connect {label}
+          {t("onboarding.setup.connectRuntime", { runtime: label })}
         </h1>
         <p className="mt-2 w-full text-base leading-6 text-foreground/80">
-          Sign in to connect {label}. You can change this anytime.
+          {t("onboarding.setup.connectRuntimeDescription", { runtime: label })}
         </p>
       </div>
 
@@ -953,7 +991,7 @@ function RuntimeSetupGuide({
           onClick={onRefresh}
           type="button"
         >
-          Check again
+          {t("onboarding.setup.checkAgain")}
         </Button>
       </OnboardingFooter>
     </section>
@@ -971,6 +1009,7 @@ function SetupStepContent({
   onReadyRuntimeIdsChange,
   state,
 }: SetupStepContentProps) {
+  const t = useT();
   const cardLayout = useOnboardingCardLayout();
   const { runtimeProviders } = state;
   const readinessConfirmed =
@@ -1122,7 +1161,7 @@ function SetupStepContent({
               type="button"
               variant="ghost"
             >
-              Set up later
+              {t("onboarding.setup.setUpLater")}
             </Button>
           </OnboardingFooter>
         </>
@@ -1143,7 +1182,7 @@ function SetupStepContent({
               type="button"
               variant="ghost"
             >
-              Set up later
+              {t("onboarding.setup.setUpLater")}
             </Button>
           </OnboardingFooter>
         </>

@@ -9,6 +9,7 @@ import { useHuddle, useHuddleLevels } from "../HuddleContext";
 import { useHuddleParticipantRoster } from "../hooks/useHuddleParticipantRoster";
 import type { HuddleAgentVoiceSettings } from "./AgentVoiceMenu";
 import { HuddleParticipantsControl } from "./ParticipantList";
+import { t } from "@/shared/i18n";
 
 type HuddleRosterState = {
   phase:
@@ -56,7 +57,7 @@ export function HuddleRoomHeader() {
   }, [currentPubkey, isMuted, micConnected, micLevel, speakerLevels]);
   const handleRemoveAgent = React.useCallback(
     async (pubkey: string) => {
-      if (!window.confirm("Remove this agent from the huddle?")) return;
+      if (!window.confirm(t("huddle.removeAgentConfirm"))) return;
       const record = beginChannelMembershipWrite();
       try {
         await invoke("remove_agent_from_huddle", {

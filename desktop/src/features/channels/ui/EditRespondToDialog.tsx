@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
+import { useT } from "@/shared/i18n";
 
 export function EditRespondToDialog({
   agent,
@@ -29,6 +30,7 @@ export function EditRespondToDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const t = useT();
   const updateMutation = useUpdateManagedAgentMutation();
   const { data: agentAccessOwnerOnly } = useAgentAccessOwnerOnlyQuery({
     enabled: open,
@@ -65,9 +67,11 @@ export function EditRespondToDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Manage agent access</DialogTitle>
+          <DialogTitle>{t("channels.respondTo.title")}</DialogTitle>
           <DialogDescription>
-            Choose who can send instructions to {agent?.name ?? "this agent"}.
+            {agent?.name
+              ? t("channels.respondTo.bodyNamed", { name: agent.name })
+              : t("channels.respondTo.body")}
           </DialogDescription>
         </DialogHeader>
         <CreateAgentRespondToField
@@ -94,7 +98,7 @@ export function EditRespondToDialog({
             type="button"
             variant="outline"
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             disabled={
@@ -104,7 +108,9 @@ export function EditRespondToDialog({
             size="sm"
             type="button"
           >
-            {updateMutation.isPending ? "Saving..." : "Save access"}
+            {updateMutation.isPending
+              ? t("channels.edit.saving")
+              : t("channels.respondTo.save")}
           </Button>
         </div>
       </DialogContent>

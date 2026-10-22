@@ -12,6 +12,7 @@ import { getSendToChannelSemantics } from "@/features/messages/lib/sendToChannel
 import { summarizeThreadRoot } from "@/features/messages/lib/sentFromThread";
 import type { TimelineMessage } from "@/features/messages/types";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
+import { t } from "@/shared/i18n";
 
 /**
  * Stable callback references for ChannelPane so that keystroke-driven
@@ -124,7 +125,7 @@ export function useChannelPaneHandlers({
 
   const requireThreadEditResolution = React.useCallback(() => {
     if (!editTargetIsThreadReplyRef.current) return true;
-    toast.info("Finish or cancel your edit before leaving the thread.");
+    toast.info(t("channels.edit.finishBeforeLeaving"));
     return false;
   }, []);
 

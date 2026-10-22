@@ -6,6 +6,7 @@
  */
 
 import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 // Builtins that anchor the top of "Your runtimes" — mirrors the old
 // DoctorSettingsPanel RUNTIME_SORT_PRIORITY so the Kuzz + Goose rows stay
@@ -137,17 +138,21 @@ export function stableRowOrder(
 
 /** Human status label for a catalog entry; null when nothing needs saying. */
 export function entryStatusLabel(entry: AcpRuntimeCatalogEntry): string | null {
-  if (entry.authStatus.status === "config_invalid") return "Config error";
+  if (entry.authStatus.status === "config_invalid") {
+    return t("settings.harnessCatalog.status.configError");
+  }
   switch (entry.availability) {
     case "adapter_missing":
-      return "Adapter needed";
+      return t("settings.harnessCatalog.status.adapterNeeded");
     case "adapter_outdated":
-      return "Update needed";
+      return t("settings.harnessCatalog.status.updateNeeded");
     case "cli_missing":
     case "not_installed":
-      return "CLI needed";
+      return t("settings.harnessCatalog.status.cliNeeded");
     case "available":
-      return entry.authStatus.status === "logged_out" ? "Sign-in needed" : null;
+      return entry.authStatus.status === "logged_out"
+        ? t("settings.harnessCatalog.status.signInNeeded")
+        : null;
     default:
       return null;
   }
@@ -163,17 +168,12 @@ export function entryStatusLabel(entry: AcpRuntimeCatalogEntry): string | null {
  */
 export function adapterUpdateWarning(entry: AcpRuntimeCatalogEntry): string {
   if (entry.id === "codex") {
-    return (
-      "This replaces the machine-wide codex-acp adapter. Older Kuzz " +
-      "releases using the legacy adapter may lose community access until " +
-      "@zed-industries/codex-acp@0.16.0 is restored."
-    );
+    return t("settings.harnessCatalog.updateWarningCodex", {
+      package: "@zed-industries/codex-acp@0.16.0",
+    });
   }
   const adapter = entry.command?.trim() || entry.label;
-  return (
-    `This replaces the machine-wide ${adapter} adapter. Other tools using ` +
-    "the currently installed adapter will switch to the updated version."
-  );
+  return t("settings.harnessCatalog.updateWarning", { adapter });
 }
 
 export type CatalogPrimaryAction =
@@ -197,8 +197,8 @@ export function isDownloadPageUrl(url: string): boolean {
 /** Label for a link that opens `installInstructionsUrl`. */
 export function installLinkLabel(entry: AcpRuntimeCatalogEntry): string {
   return isDownloadPageUrl(entry.installInstructionsUrl)
-    ? "Download page"
-    : "Setup guide";
+    ? t("settings.harnessCatalog.downloadPage")
+    : t("settings.harnessCatalog.setupGuide");
 }
 
 /**
@@ -216,7 +216,10 @@ export function catalogPrimaryAction(
   if (entry.canAutoInstall && !entry.nodeRequired) {
     return {
       kind: "install",
-      label: entry.availability === "adapter_outdated" ? "Update" : "Install",
+      label:
+        entry.availability === "adapter_outdated"
+          ? t("settings.harnessCatalog.update")
+          : t("settings.harnessCatalog.install"),
     };
   }
   if (entry.installInstructionsUrl.trim().length > 0) {

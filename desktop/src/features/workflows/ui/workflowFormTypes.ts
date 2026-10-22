@@ -1,5 +1,6 @@
 import { stringify as yamlStringify, parse as yamlParse } from "yaml";
 
+import { type MessageKey, t } from "@/shared/i18n";
 import {
   parsePubkeyInput as parseCanonicalPubkey,
   safeNpub,
@@ -103,23 +104,33 @@ export const DEFAULT_FORM_STATE: WorkflowFormState = {
   steps: [],
 };
 
-export const TRIGGER_LABELS: Record<TriggerType, string> = {
-  message_posted: "Message Posted",
-  reaction_added: "Reaction Added",
-  diff_posted: "Diff Posted",
-  webhook: "Webhook",
-  schedule: "Schedule",
+/** Language-file keys of the trigger type names; translate where shown. */
+export const TRIGGER_LABEL_KEYS: Record<TriggerType, MessageKey> = {
+  message_posted: "workflows.triggerType.messagePosted",
+  reaction_added: "workflows.triggerType.reactionAdded",
+  diff_posted: "workflows.triggerType.diffPosted",
+  webhook: "workflows.triggerType.webhook",
+  schedule: "workflows.triggerType.schedule",
 };
 
-export const ACTION_LABELS: Record<ActionType, string> = {
-  delay: "Delay",
-  send_message: "Send Message",
-  send_dm: "Send DM",
-  call_webhook: "Call Webhook",
-  request_approval: "Request Approval",
-  add_reaction: "Add Reaction",
-  set_channel_topic: "Set Group Topic",
+/** Language-file keys of the action type names; translate where shown. */
+export const ACTION_LABEL_KEYS: Record<ActionType, MessageKey> = {
+  delay: "workflows.actionType.delay",
+  send_message: "workflows.actionType.sendMessage",
+  send_dm: "workflows.actionType.sendDm",
+  call_webhook: "workflows.actionType.callWebhook",
+  request_approval: "workflows.actionType.requestApproval",
+  add_reaction: "workflows.actionType.addReaction",
+  set_channel_topic: "workflows.actionType.setChannelTopic",
 };
+
+export function triggerTypeLabel(type: TriggerType): string {
+  return t(TRIGGER_LABEL_KEYS[type]);
+}
+
+export function actionTypeLabel(type: ActionType): string {
+  return t(ACTION_LABEL_KEYS[type]);
+}
 
 const EXACT_HEX_64 = /^[0-9a-fA-F]{64}$/;
 
@@ -386,7 +397,7 @@ function requireNonEmptyString(
 ): string | { error: string } {
   const value = record[key];
   if (typeof value !== "string" || value.length === 0) {
-    return { error: `${label} must be a non-empty string` };
+    return { error: t("workflows.yamlError.nonEmptyString", { field: label }) };
   }
   return value;
 }
@@ -395,12 +406,18 @@ function optionalOwnedStringError(
   record: UnknownRecord,
   key: string,
   label: string,
+  // Schedule triggers point every refusal at the YAML editor.
+  pointToYamlEditor = false,
 ): string | null {
   const value = record[key];
   if (value === undefined) return null;
-  if (typeof value !== "string") return `${label} must be a string`;
+  if (typeof value !== "string") {
+    return pointToYamlEditor
+      ? t("workflows.yamlError.stringUseYaml", { field: label })
+      : t("workflows.yamlError.string", { field: label });
+  }
   if (value.length === 0) {
-    return `${label} cannot be empty in Form mode — use the YAML editor`;
+    return t("workflows.yamlError.emptyInForm", { field: label });
   }
   return null;
 }
@@ -410,21 +427,29 @@ export function yamlToFormState(
 ): { ok: true; state: WorkflowFormState } | { ok: false; error: string } {
   try {
     const parsed = objectRecord(yamlParse(yaml));
-    if (!parsed) return { ok: false, error: "YAML must be an object" };
+    if (!parsed) {
+      return { ok: false, error: t("workflows.yamlError.notObject") };
+    }
 
     const topUnknown = unknownKey(parsed, TOP_LEVEL_KEYS);
     if (topUnknown) {
       return {
         ok: false,
-        error: `Unsupported workflow field "${topUnknown}" — use the YAML editor`,
+        error: t("workflows.yamlError.unsupportedField", { field: topUnknown }),
       };
     }
     if (typeof parsed.name !== "string") {
-      return { ok: false, error: "name must be a string" };
+      return {
+        ok: false,
+        error: t("workflows.yamlError.string", { field: "name" }),
+      };
     }
     if (parsed.description !== undefined) {
       if (typeof parsed.description !== "string") {
-        return { ok: false, error: "description must be a string" };
+        return {
+          ok: false,
+          error: t("workflows.yamlError.string", { field: "description" }),
+        };
       }
       if (
         parsed.description.length === 0 ||
@@ -432,23 +457,30 @@ export function yamlToFormState(
       ) {
         return {
           ok: false,
-          error:
-            "description cannot be empty or have surrounding whitespace in Form mode — use the YAML editor",
+          error: t("workflows.yamlError.descriptionWhitespace"),
         };
       }
     }
     if (parsed.enabled !== undefined && typeof parsed.enabled !== "boolean") {
-      return { ok: false, error: "enabled must be a boolean" };
+      return {
+        ok: false,
+        error: t("workflows.yamlError.boolean", { field: "enabled" }),
+      };
     }
 
     const rawTrigger = objectRecord(parsed.trigger);
     if (!rawTrigger || typeof rawTrigger.on !== "string") {
-      return { ok: false, error: "trigger.on is required" };
+      return {
+        ok: false,
+        error: t("workflows.yamlError.required", { field: "trigger.on" }),
+      };
     }
     if (!TRIGGER_TYPES.includes(rawTrigger.on as TriggerType)) {
       return {
         ok: false,
-        error: `Unsupported trigger type "${rawTrigger.on}" — use the YAML editor`,
+        error: t("workflows.yamlError.unsupportedTriggerType", {
+          type: rawTrigger.on,
+        }),
       };
     }
     const triggerOn = rawTrigger.on as TriggerType;
@@ -456,20 +488,20 @@ export function yamlToFormState(
     if (triggerUnknown) {
       return {
         ok: false,
-        error: `Unsupported ${triggerOn} trigger field "${triggerUnknown}" — use the YAML editor`,
+        error: t("workflows.yamlError.unsupportedTriggerField", {
+          trigger: triggerOn,
+          field: triggerUnknown,
+        }),
       };
     }
     for (const key of ["filter", "emoji", "cron", "interval"] as const) {
-      const error = optionalOwnedStringError(rawTrigger, key, `trigger.${key}`);
-      if (error) {
-        return {
-          ok: false,
-          error:
-            triggerOn === "schedule" && !error.includes("YAML editor")
-              ? `${error} — use the YAML editor`
-              : error,
-        };
-      }
+      const error = optionalOwnedStringError(
+        rawTrigger,
+        key,
+        `trigger.${key}`,
+        triggerOn === "schedule",
+      );
+      if (error) return { ok: false, error };
     }
     if (triggerOn === "schedule") {
       const hasCron = rawTrigger.cron !== undefined;
@@ -478,8 +510,8 @@ export function yamlToFormState(
         return {
           ok: false,
           error: hasCron
-            ? "Schedule triggers cannot specify both cron and interval — use the YAML editor"
-            : "Schedule triggers require either cron or interval — use the YAML editor",
+            ? t("workflows.yamlError.scheduleBoth")
+            : t("workflows.yamlError.scheduleNeither"),
         };
       }
       if (typeof rawTrigger.cron === "string") {
@@ -487,7 +519,7 @@ export function yamlToFormState(
         if (error) {
           return {
             ok: false,
-            error: `Unsupported cron expression: ${error} Use the YAML editor`,
+            error: t("workflows.yamlError.unsupportedCron", { error }),
           };
         }
       }
@@ -501,28 +533,32 @@ export function yamlToFormState(
     };
 
     if (!Array.isArray(parsed.steps)) {
-      return { ok: false, error: "steps must be a list" };
+      return { ok: false, error: t("workflows.yamlError.stepsNotList") };
     }
     const ids = new Set<string>();
     const steps: StepFormState[] = [];
     for (const [index, value] of parsed.steps.entries()) {
       const number = index + 1;
       const step = objectRecord(value);
-      if (!step)
-        return { ok: false, error: `Step ${number} must be an object` };
+      if (!step) {
+        return {
+          ok: false,
+          error: t("workflows.yamlError.stepNotObject", { number }),
+        };
+      }
       if (
         typeof step.id !== "string" ||
         !STEP_ID_PATTERN_STRICT.test(step.id)
       ) {
         return {
           ok: false,
-          error: `Step ${number} requires a unique 1–64 character alphanumeric or underscore ID`,
+          error: t("workflows.yamlError.stepIdInvalid", { number }),
         };
       }
       if (ids.has(step.id)) {
         return {
           ok: false,
-          error: `Duplicate step ID "${step.id}" — use the YAML editor`,
+          error: t("workflows.yamlError.duplicateStepId", { id: step.id }),
         };
       }
       ids.add(step.id);
@@ -533,7 +569,9 @@ export function yamlToFormState(
       ) {
         return {
           ok: false,
-          error: `Unsupported action type "${String(step.action)}" — use the YAML editor`,
+          error: t("workflows.yamlError.unsupportedActionType", {
+            type: String(step.action),
+          }),
         };
       }
       const action = step.action as ActionType;
@@ -541,25 +579,28 @@ export function yamlToFormState(
       if (stepUnknown) {
         return {
           ok: false,
-          error: `Unsupported ${action} step field "${stepUnknown}" — use the YAML editor`,
+          error: t("workflows.yamlError.unsupportedStepField", {
+            action,
+            field: stepUnknown,
+          }),
         };
       }
       if (step.if !== undefined) {
         return {
           ok: false,
-          error: "Step conditions are only available in the YAML editor",
+          error: t("workflows.yamlError.stepConditions"),
         };
       }
       const nameError = optionalOwnedStringError(
         step,
         "name",
-        `Step ${number} name`,
+        t("workflows.yamlError.stepField", { number, field: "name" }),
       );
       if (nameError) return { ok: false, error: nameError };
       if (typeof step.name === "string" && step.name.trim() !== step.name) {
         return {
           ok: false,
-          error: `Step ${number} name has surrounding whitespace — use the YAML editor`,
+          error: t("workflows.yamlError.stepNameWhitespace", { number }),
         };
       }
       if (
@@ -569,7 +610,7 @@ export function yamlToFormState(
       ) {
         return {
           ok: false,
-          error: `Step ${number} timeout_secs must be a positive integer`,
+          error: t("workflows.yamlError.stepTimeoutSecs", { number }),
         };
       }
 
@@ -577,7 +618,7 @@ export function yamlToFormState(
         const required = requireNonEmptyString(
           step,
           key,
-          `Step ${number} ${key}`,
+          t("workflows.yamlError.stepField", { number, field: key }),
         );
         if (typeof required !== "string")
           return { ok: false, error: required.error };
@@ -586,7 +627,7 @@ export function yamlToFormState(
         const error = optionalOwnedStringError(
           step,
           key,
-          `Step ${number} ${key}`,
+          t("workflows.yamlError.stepField", { number, field: key }),
         );
         if (error) return { ok: false, error };
       }
@@ -597,7 +638,9 @@ export function yamlToFormState(
       ) {
         return {
           ok: false,
-          error: `Unsupported webhook method "${String(step.method)}" — use the YAML editor`,
+          error: t("workflows.yamlError.unsupportedWebhookMethod", {
+            method: String(step.method),
+          }),
         };
       }
       if (step.headers !== undefined) {
@@ -609,8 +652,7 @@ export function yamlToFormState(
         ) {
           return {
             ok: false,
-            error:
-              "Webhook headers must be a non-empty object containing string values",
+            error: t("workflows.yamlError.webhookHeadersShape"),
           };
         }
         const unsafeHeader = Object.keys(headers).find(
@@ -619,8 +661,7 @@ export function yamlToFormState(
         if (unsafeHeader !== undefined) {
           return {
             ok: false,
-            error:
-              "Webhook header names cannot be empty or have surrounding whitespace in Form mode",
+            error: t("workflows.yamlError.webhookHeaderNames"),
           };
         }
       }
@@ -629,13 +670,17 @@ export function yamlToFormState(
         if (typeof step.reply_in_thread !== "boolean") {
           return {
             ok: false,
-            error: `Step ${number} reply_in_thread must be a boolean — use the YAML editor`,
+            error: t("workflows.yamlError.stepReplyInThreadBoolean", {
+              number,
+            }),
           };
         }
         if (step.reply_in_thread && !isThreadReplyEligibleTrigger(triggerOn)) {
           return {
             ok: false,
-            error: `reply_in_thread is not supported for ${triggerOn} triggers — use the YAML editor`,
+            error: t("workflows.yamlError.replyInThreadUnsupported", {
+              trigger: triggerOn,
+            }),
           };
         }
       }
@@ -678,7 +723,10 @@ export function yamlToFormState(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Invalid YAML",
+      error:
+        error instanceof Error
+          ? error.message
+          : t("workflows.yamlError.invalid"),
     };
   }
 }

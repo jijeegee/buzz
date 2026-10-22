@@ -1,6 +1,7 @@
 // biome-ignore format: keep compact to stay within file size limit
 import * as React from "react";
 import { FeatureGate } from "@/shared/features";
+import { useT } from "@/shared/i18n";
 
 import { AddCommunityDialog } from "@/features/communities/ui/AddCommunityDialog";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -109,6 +110,7 @@ export function AppSidebar({
   onUnstarChannel,
   serverChats,
 }: AppSidebarProps) {
+  const t = useT();
   const activeWorkingByChannelId = useActiveWorkingChannelsById();
   const { status: updateStatus } = useUpdaterContext();
   const canShowSidebarUpdateCard = shouldShowSidebarUpdateCard(updateStatus);
@@ -350,7 +352,7 @@ export function AppSidebar({
           <ChatsColumnTitle
             menu={
               <SectionActionsMenu
-                sectionLabel="chats"
+                sectionLabel={t("sidebar.chatsSectionName")}
                 testId="section-actions-chats"
                 visibilityClassName="opacity-100"
                 onOpenChange={setChatActionsMenuOpen}
@@ -449,7 +451,7 @@ export function AppSidebar({
                           className="flex flex-col items-start gap-2"
                           data-testid="chats-empty-state"
                         >
-                          <span>No chats yet</span>
+                          <span>{t("sidebar.chatsEmpty")}</span>
                           <div className="flex flex-wrap gap-1.5">
                             {onBrowseChannels ? (
                               <Button
@@ -459,7 +461,7 @@ export function AppSidebar({
                                 size="sm"
                                 variant="outline"
                               >
-                                Find groups
+                                {t("sidebar.findGroups")}
                               </Button>
                             ) : null}
                             <Button
@@ -469,7 +471,7 @@ export function AppSidebar({
                               size="sm"
                               variant="outline"
                             >
-                              Message someone
+                              {t("sidebar.messageSomeone")}
                             </Button>
                           </div>
                         </div>
@@ -477,7 +479,7 @@ export function AppSidebar({
                     />
                     <FeatureGate feature="forum">
                       <ChannelGroupSection
-                        createLabel="New forum"
+                        createLabel={t("sidebar.forums.new")}
                         hasUnread={unreadChannelIds.size > 0}
                         isCollapsed={collapsedGroups.forums}
                         isActiveChannel={selectedView === "channel"}
@@ -496,7 +498,7 @@ export function AppSidebar({
                         onSelectChannel={onSelectChannel}
                         onToggleCollapsed={() => toggleCollapsedGroup("forums")}
                         selectedChannelId={selectedChannelId}
-                        title="Forums"
+                        title={t("sidebar.forums.title")}
                         unreadChannelIds={unreadChannelIds}
                         mutedChannelIds={mutedChannelIds}
                         onMuteChannel={onMuteChannel}

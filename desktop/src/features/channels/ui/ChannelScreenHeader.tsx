@@ -25,6 +25,7 @@ import {
   toggleTerminalPanel,
   useTerminalPanel,
 } from "@/features/terminal/terminalPanelStore";
+import { useT } from "@/shared/i18n";
 
 const DM_HEADER_AVATAR_SIZE = 32;
 const DM_HEADER_AVATAR_STATUS_GEOMETRY = scaleProfileAvatarStatusGeometry(
@@ -75,6 +76,7 @@ export function ChannelScreenHeader({
   onOpenGoals,
   onToggleMembers,
 }: ChannelScreenHeaderProps) {
+  const t = useT();
   const isGroupDm =
     activeChannel?.channelType === "dm" &&
     activeDmHeaderParticipants.length > 1;
@@ -90,7 +92,9 @@ export function ChannelScreenHeader({
   const terminalButton = activeChannel ? (
     <Button
       aria-label={
-        terminalPanel.mode === "closed" ? "Open Kuzz Term" : "Hide Kuzz Term"
+        terminalPanel.mode === "closed"
+          ? t("channels.header.openTerm")
+          : t("channels.header.hideTerm")
       }
       onClick={toggleTerminalPanel}
       size="icon"
@@ -111,7 +115,9 @@ export function ChannelScreenHeader({
           variant="default"
         >
           <LogIn className="mr-1.5 h-4 w-4" />
-          {isJoining ? "Joining…" : "Join"}
+          {isJoining
+            ? t("channels.header.joining")
+            : t("channels.browser.join")}
         </Button>
         {headerEndActions}
       </div>
@@ -171,7 +177,9 @@ export function ChannelScreenHeader({
             <UserProfilePopover
               pubkey={activeDmParticipant.pubkey}
               role={activeDmParticipant.isAgent ? "bot" : undefined}
-              triggerAriaLabel={`Open profile for ${activeChannelTitle}`}
+              triggerAriaLabel={t("channels.header.openProfile", {
+                name: activeChannelTitle,
+              })}
               triggerElement="span"
             >
               <ProfileAvatarWithStatus
@@ -246,6 +254,7 @@ function DmHeaderParticipantStack({
 }: {
   participants: ActiveDmHeaderParticipant[];
 }) {
+  const t = useT();
   const { hiddenCount, visibleParticipants } =
     getDmParticipantPreview(participants);
   const stackItemCount = visibleParticipants.length + (hiddenCount > 0 ? 1 : 0);
@@ -259,7 +268,9 @@ function DmHeaderParticipantStack({
         <UserProfilePopover
           key={participant.pubkey}
           pubkey={participant.pubkey}
-          triggerAriaLabel={`Open profile for ${participant.displayName}`}
+          triggerAriaLabel={t("channels.header.openProfile", {
+            name: participant.displayName,
+          })}
           triggerElement="span"
           role={participant.isAgent ? "bot" : undefined}
         >

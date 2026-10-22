@@ -6,6 +6,7 @@ import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { Dialog } from "@/shared/ui/dialog";
 import { ChooserDialogContent } from "@/shared/ui/chooser-dialog-content";
 import type { ManagedAgentBackend } from "@/shared/api/types";
+import { t as translate, useT } from "@/shared/i18n";
 
 type ManagedAgentSummary = {
   pubkey: string;
@@ -34,6 +35,7 @@ export function AddAgentDialog({
   onAdd,
   currentAgentPubkeys,
 }: AddAgentDialogProps) {
+  const t = useT();
   const [agents, setAgents] = React.useState<ManagedAgentSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [adding, setAdding] = React.useState<string | null>(null);
@@ -56,7 +58,7 @@ export function AddAgentDialog({
       .catch((e: unknown) => {
         if (cancelled) return;
         console.error("Failed to load agents:", e);
-        setError("Could not load agents.");
+        setError(translate("huddle.addAgent.loadFailed"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -98,7 +100,7 @@ export function AddAgentDialog({
             startError instanceof Error
               ? startError.message
               : String(startError);
-          setWarning(`Added to huddle, but could not start agent: ${msg}`);
+          setWarning(t("huddle.addAgent.startFailed", { message: msg }));
           console.error("Failed to start agent after huddle add:", startError);
           return;
         }
@@ -107,7 +109,7 @@ export function AddAgentDialog({
         // Agent was added to the ephemeral channel but parent channel add failed.
         // Show as a warning — don't close the dialog so the user can see it.
         setWarning(
-          `Added to huddle, but parent group failed: ${result.parent_error}`,
+          t("huddle.addAgent.parentFailed", { message: result.parent_error }),
         );
       } else {
         onClose();
@@ -124,7 +126,7 @@ export function AddAgentDialog({
         }
       }
       const msg = e instanceof Error ? e.message : String(e);
-      setError(`Failed to add agent: ${msg}`);
+      setError(t("huddle.addAgent.addFailed", { message: msg }));
       console.error("Failed to add agent to huddle:", e);
     } finally {
       setAdding(null);
@@ -141,9 +143,9 @@ export function AddAgentDialog({
       <ChooserDialogContent
         className="max-w-xl"
         data-testid="add-huddle-agent-dialog"
-        headerSubtitle="Choose an agent to join this huddle."
+        headerSubtitle={t("huddle.addAgent.subtitle")}
         scrollAreaClassName="space-y-5"
-        title="Add agents"
+        title={t("huddle.addAgent.title")}
       >
         {error ? (
           <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -159,11 +161,11 @@ export function AddAgentDialog({
 
         {loading ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            Loading agents…
+            {t("huddle.addAgent.loading")}
           </p>
         ) : availableAgents.length === 0 ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            All available agents are already in this huddle.
+            {t("huddle.addAgent.allAdded")}
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
@@ -189,7 +191,9 @@ export function AddAgentDialog({
                     </span>
                     {isAdding ? (
                       <LoaderCircle
-                        aria-label={`Adding ${agent.name}`}
+                        aria-label={t("huddle.addAgent.adding", {
+                          name: agent.name,
+                        })}
                         className="h-4 w-4 shrink-0 animate-spin text-muted-foreground"
                       />
                     ) : null}

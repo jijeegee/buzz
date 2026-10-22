@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import * as React from "react";
 
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import {
@@ -36,6 +37,7 @@ export function DownloadKeyStep({
   session,
   onBack,
 }: DownloadKeyStepProps) {
+  const t = useT();
   const reduceMotion = useReducedMotion() ?? false;
   const cardLayout = useOnboardingCardLayout();
   // Once the encrypted payload is saved, the creator advances to its guided
@@ -86,12 +88,12 @@ export function DownloadKeyStep({
             text-title size token as conflicting with text-foreground. */}
         <h1 className="text-title font-normal text-foreground">
           {hasVerifiedBackup
-            ? "Your backup is verified"
+            ? t("onboarding.downloadKey.verifiedTitle")
             : hasSelectedBackup
-              ? "Verify your backup"
+              ? t("onboarding.downloadKey.verifyTitle")
               : hasCreated
-                ? "Your backup is ready"
-                : "Create a secure backup file"}
+                ? t("onboarding.downloadKey.readyTitle")
+                : t("onboarding.downloadKey.createTitle")}
         </h1>
         <p
           className={cn(
@@ -100,12 +102,12 @@ export function DownloadKeyStep({
           )}
         >
           {hasVerifiedBackup
-            ? "Your file and password can restore your identity."
+            ? t("onboarding.downloadKey.verifiedDescription")
             : hasSelectedBackup
-              ? "Enter your password to make sure you can unlock this file."
+              ? t("onboarding.downloadKey.verifyDescription")
               : hasCreated
-                ? "Test your backup to make sure it works, or continue without testing."
-                : "This creates a password-protected file with your private key. Remember, Kuzz can’t recover your key if you lose it."}
+                ? t("onboarding.downloadKey.readyDescription")
+                : t("onboarding.downloadKey.createDescription")}
         </p>
       </motion.div>
 
@@ -175,7 +177,9 @@ export function DownloadKeyStep({
             type="button"
             variant="ghost"
           >
-            {hasVerifiedBackup ? "Continue" : "Skip for now"}
+            {hasVerifiedBackup
+              ? t("common.continue")
+              : t("onboarding.downloadKey.skip")}
           </Button>
         ) : null}
       </OnboardingFooter>

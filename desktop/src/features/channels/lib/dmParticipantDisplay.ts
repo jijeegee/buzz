@@ -5,6 +5,7 @@ import {
 } from "@/features/profile/lib/identity";
 import type { Channel } from "@/shared/api/types";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 export const DM_PARTICIPANT_PREVIEW_LIMIT = 3;
 
@@ -64,7 +65,10 @@ export function formatDmParticipantLabels(
     count > 1 ? `${label} (${count})` : label,
   );
   return hiddenCount > 0
-    ? [...names, `+${hiddenCount} more`].join(", ")
+    ? [
+        ...names,
+        t("channels.dm.moreParticipants", { count: hiddenCount }),
+      ].join(", ")
     : names.join(", ");
 }
 

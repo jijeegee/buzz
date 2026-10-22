@@ -35,6 +35,7 @@ use uuid::Uuid;
 
 use super::{api_error, bridge, internal_error, parse_query_or_400};
 use crate::handlers::side_effects::{add_channel_member, add_group_chat_member_by_invitation};
+use crate::i18n::{self, Arg};
 use crate::nip_fi_http::admit_nip_fi_http_on_state;
 use crate::state::AppState;
 
@@ -1108,6 +1109,8 @@ struct Landing<'a> {
     deep_link: String,
     /// Same-origin path of the group photo (`/g/<target>/picture`), if set.
     picture_src: Option<String>,
+    /// Page language (from the browser's `Accept-Language`).
+    lang: &'a str,
 }
 
 const LANDING_STYLE: &str =
@@ -1122,23 +1125,26 @@ padding:12px 28px;border-radius:999px;font-weight:600}.hint{color:#6b6b66;font-s
 margin:20px 0 0}.photo{width:96px;height:96px;border-radius:50%;object-fit:cover;\
 margin:0 0 16px}";
 
-fn landing_document(title: &str, main: &str) -> String {
+fn landing_document(lang: &str, title: &str, main: &str) -> String {
     format!(
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+        "<!DOCTYPE html><html lang=\"{lang}\" dir=\"{dir}\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
          <meta name=\"robots\" content=\"noindex,nofollow\">\
          <title>{title}</title><style>{LANDING_STYLE}</style></head>\
          <body><main>{main}</main></body></html>",
+        lang = escape_html(lang),
+        dir = i18n::direction(lang),
         title = escape_html(title),
     )
 }
 
 fn render_landing(landing: &Landing<'_>) -> String {
-    let members = if landing.member_count == 1 {
-        "1 member".to_owned()
-    } else {
-        format!("{} members", landing.member_count)
-    };
+    let lang = landing.lang;
+    let members = i18n::tr(
+        lang,
+        "groups.landing.members",
+        &[("count", Arg::Num(landing.member_count))],
+    );
     let description = landing
         .description
         .map(str::trim)
@@ -1165,20 +1171,37 @@ fn render_landing(landing: &Landing<'_>) -> String {
         .unwrap_or_default();
     let main = format!(
         "{photo}<h1>{name}</h1><p class=\"count\">{members}</p>{description}\
-         <a class=\"open\" href=\"{link}\">Open in Kuzz</a>\
-         <p class=\"hint\">Don&#39;t have Kuzz yet? Ask the person who shared this link.</p>",
+         <a class=\"open\" href=\"{link}\">{open}</a><p class=\"hint\">{no_app}</p>",
         name = escape_html(landing.name),
+        members = escape_html(&members),
         link = escape_html(&landing.deep_link),
+        open = escape_html(&i18n::tr(lang, "groups.landing.open", &[])),
+        no_app = escape_html(&i18n::tr(lang, "groups.landing.noApp", &[])),
     );
-    landing_document(&format!("{} on Kuzz", landing.name), &main)
+    let title = i18n::tr(
+        lang,
+        "groups.landing.title",
+        &[("name", Arg::Str(landing.name))],
+    );
+    landing_document(lang, &title, &main)
 }
 
-fn render_landing_not_found() -> String {
-    landing_document(
-        "Link not found",
-        "<h1>This link doesn&#39;t work</h1>\
-         <p class=\"hint\">It may have been reset or the group may no longer exist. \
-         Ask the person who shared it for a new link.</p>",
+/// A landing page with only a heading and a hint (link gone, rate limited).
+fn render_landing_message(lang: &str, title: &str, heading: &str, hint: &str) -> String {
+    let main = format!(
+        "<h1>{}</h1><p class=\"hint\">{}</p>",
+        escape_html(&i18n::tr(lang, heading, &[])),
+        escape_html(&i18n::tr(lang, hint, &[])),
+    );
+    landing_document(lang, &i18n::tr(lang, title, &[]), &main)
+}
+
+fn render_landing_not_found(lang: &str) -> String {
+    render_landing_message(
+        lang,
+        "groups.landing.notFoundTitle",
+        "groups.landing.notFoundHeading",
+        "groups.landing.notFoundHint",
     )
 }
 
@@ -1215,7 +1238,12 @@ pub async fn landing(
     extensions: axum::http::Extensions,
     Path(target): Path<String>,
 ) -> Response {
-    let not_found = || html_response(StatusCode::NOT_FOUND, render_landing_not_found());
+    let lang = i18n::from_accept_language(
+        headers
+            .get(axum::http::header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    );
+    let not_found = || html_response(StatusCode::NOT_FOUND, render_landing_not_found(lang));
     let raw_host = headers
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
@@ -1236,9 +1264,11 @@ pub async fn landing(
     {
         return html_response(
             StatusCode::TOO_MANY_REQUESTS,
-            landing_document(
-                "Try again soon",
-                "<h1>Too many requests</h1><p class=\"hint\">Try again in a minute.</p>",
+            render_landing_message(
+                lang,
+                "groups.landing.rateLimitedTitle",
+                "groups.landing.rateLimitedHeading",
+                "groups.landing.rateLimitedHint",
             ),
         );
     }
@@ -1265,6 +1295,7 @@ pub async fn landing(
                     .picture
                     .as_ref()
                     .map(|_| format!("/g/@{handle}/picture")),
+                lang,
             }),
             Ok(None) => return not_found(),
             Err(e) => {
@@ -1287,6 +1318,7 @@ pub async fn landing(
                     .picture
                     .as_ref()
                     .map(|_| format!("/g/{}/picture", link.code)),
+                lang,
             }),
             Err(response) if response.status() == StatusCode::NOT_FOUND => return not_found(),
             Err(response) => return response,
@@ -1389,6 +1421,7 @@ mod tests {
             description: Some("a \"quoted\" <img src=x> & more"),
             deep_link: "kuzz://join/abc\"onclick=\"x".to_owned(),
             picture_src: None,
+            lang: "en",
         });
         assert!(!page.contains("<script>alert"), "{page}");
         assert!(!page.contains("<img"), "{page}");
@@ -1407,6 +1440,7 @@ mod tests {
             description: None,
             deep_link: "kuzz://join/code".to_owned(),
             picture_src: None,
+            lang: "en",
         });
         assert!(private.contains("3 members"));
         assert!(!private.contains("class=\"desc\""));
@@ -1421,6 +1455,7 @@ mod tests {
             description: None,
             deep_link: "kuzz://join/code".to_owned(),
             picture_src: Some("/g/code\"x/picture".to_owned()),
+            lang: "en",
         });
         assert!(
             page.contains("<img class=\"photo\" src=\"/g/code&quot;x/picture\" alt=\"\">"),

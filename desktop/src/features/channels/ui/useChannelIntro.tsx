@@ -22,6 +22,7 @@ import type { Channel } from "@/shared/api/types";
 import { isGroupChat } from "@/features/channels/lib/groupChat";
 import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { useChatTitle } from "@/features/channels/useChatTitle";
+import { useT } from "@/shared/i18n";
 
 type ChannelIntroAction = {
   description?: string;
@@ -54,6 +55,7 @@ export function useChannelIntro({
   onOpenMembers?: () => void;
   onWelcomeAddAgent?: () => void;
 }) {
+  const t = useT();
   const projectHome = useIsProjectHomeChannel(activeChannel?.id);
   const chatTitle = useChatTitle(activeChannel, activeChannel?.name ?? "");
 
@@ -67,7 +69,7 @@ export function useChannelIntro({
       if (activeChannel.isMember && onOpenMembers) {
         actions.push({
           icon: <UserPlus aria-hidden className="h-5 w-5" />,
-          label: "Add people",
+          label: t("channels.membersBar.addPeople"),
           onClick: onOpenMembers,
           testId: "channel-intro-action-add-people",
         });
@@ -82,7 +84,7 @@ export function useChannelIntro({
           />
         ),
         channelId: activeChannel.id,
-        channelKindLabel: "chat",
+        channelKindLabel: t("channels.intro.kindChat"),
         channelName: chatTitle,
         description: null,
       };
@@ -93,7 +95,7 @@ export function useChannelIntro({
       if (onBrowseChannels) {
         actions.push({
           icon: <UsersRound aria-hidden className="h-6 w-6" />,
-          label: "Find groups",
+          label: t("channels.browser.findGroups"),
           onClick: onBrowseChannels,
           testId: "welcome-intro-action-browse-channels",
         });
@@ -102,7 +104,7 @@ export function useChannelIntro({
       if (onCreateChannel) {
         actions.push({
           icon: <Plus aria-hidden className="h-6 w-6" />,
-          label: "New group",
+          label: t("channels.intro.newGroup"),
           onClick: onCreateChannel,
           testId: "welcome-intro-action-create-channel",
         });
@@ -111,7 +113,7 @@ export function useChannelIntro({
       if (onWelcomeAddAgent) {
         actions.push({
           icon: <Bot aria-hidden className="h-6 w-6" />,
-          label: "Create an agent",
+          label: t("channels.intro.createAgent"),
           onClick: onWelcomeAddAgent,
           testId: "welcome-intro-action-create-agent",
         });
@@ -120,7 +122,7 @@ export function useChannelIntro({
       return {
         actions,
         channelKindLabel: isWelcomeChannel(activeChannel)
-          ? "private welcome group"
+          ? t("channels.intro.kindWelcome")
           : getChannelIntroKind(activeChannel, projectHome),
         channelName: activeChannel.name,
         description: isWelcomeChannel(activeChannel)
@@ -133,9 +135,9 @@ export function useChannelIntro({
     if (!activeChannel.archivedAt && activeChannel.isMember) {
       if (onAddFiles) {
         actions.push({
-          description: "Add a repo.",
+          description: t("channels.intro.addFilesHint"),
           icon: <FolderPlus aria-hidden className="h-5 w-5" />,
-          label: "Add files",
+          label: t("channels.intro.addFiles"),
           onClick: onAddFiles,
           testId: "channel-intro-action-add-files",
         });
@@ -143,9 +145,9 @@ export function useChannelIntro({
 
       if (onAddAgent) {
         actions.push({
-          description: "Add an agent here.",
+          description: t("channels.intro.addAgentHint"),
           icon: <Bot aria-hidden className="h-5 w-5" />,
-          label: "Add agent",
+          label: t("channels.addBot.addOne"),
           onClick: onAddAgent,
           testId: "channel-intro-action-create-agent",
         });
@@ -153,9 +155,9 @@ export function useChannelIntro({
 
       if (onOpenMembers) {
         actions.push({
-          description: "Invite members.",
+          description: t("channels.intro.addPeopleHint"),
           icon: <UserPlus aria-hidden className="h-5 w-5" />,
-          label: "Add people",
+          label: t("channels.membersBar.addPeople"),
           onClick: onOpenMembers,
           testId: "channel-intro-action-add-people",
         });
@@ -185,5 +187,6 @@ export function useChannelIntro({
     onOpenMembers,
     onWelcomeAddAgent,
     projectHome,
+    t,
   ]);
 }

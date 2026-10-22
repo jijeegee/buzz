@@ -8,6 +8,7 @@ import {
   switchAccount,
 } from "@/shared/api/tokenAuth";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
+import { t } from "@/shared/i18n";
 import {
   beginAccountAction,
   finishAccountSwitchBoot,
@@ -53,16 +54,13 @@ export function useAccountMenu({ open }: { open: boolean }) {
   const signingIn = React.useRef(false);
 
   const showProgress = React.useCallback(() => {
-    progressToast.current = toast.loading(
-      "Finish signing in in your browser…",
-      {
-        duration: Number.POSITIVE_INFINITY,
-        action: {
-          label: "Cancel",
-          onClick: () => void loginRef.current.cancel(),
-        },
+    progressToast.current = toast.loading(t("accounts.menu.finishInBrowser"), {
+      duration: Number.POSITIVE_INFINITY,
+      action: {
+        label: t("common.cancel"),
+        onClick: () => void loginRef.current.cancel(),
       },
-    );
+    });
   }, []);
 
   const hideProgress = React.useCallback(() => {
@@ -94,13 +92,13 @@ export function useAccountMenu({ open }: { open: boolean }) {
     try {
       const incomplete = await switchAccount(account.pubkey);
       action.reload(
-        `Switching to ${accountLabel(account)}…`,
+        t("accounts.switch.switchingTo", { name: accountLabel(account) }),
         incomplete ? SWITCH_INCOMPLETE_NOTICE : null,
       );
     } catch (error) {
       action.cancel();
       setBusy(false);
-      toast.error(errorText(error, "Could not switch accounts."));
+      toast.error(errorText(error, t("accounts.menu.switchFailed")));
     }
   }, []);
 
@@ -120,13 +118,13 @@ export function useAccountMenu({ open }: { open: boolean }) {
         hideProgress();
         const opened = next?.keyBackup ? next.signingPubkey : next?.principal;
         if (next && (next.accountChanged || opened !== activePubkey)) {
-          action.reload("Switching accounts…");
+          action.reload(t("accounts.switch.switching"));
           return;
         }
         action.cancel();
         setBusy(false);
         if (next) {
-          toast.success("You're signed in to this account.");
+          toast.success(t("accounts.menu.signedIn"));
           void refetch();
         }
       } catch (error) {
@@ -134,7 +132,7 @@ export function useAccountMenu({ open }: { open: boolean }) {
         hideProgress();
         action.cancel();
         setBusy(false);
-        toast.error(errorText(error, "Google sign-in failed. Try again."));
+        toast.error(errorText(error, t("accounts.menu.googleSignInFailed")));
       }
     },
     [refetch, showProgress, hideProgress],

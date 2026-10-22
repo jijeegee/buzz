@@ -15,6 +15,7 @@ import { useLastRuntime } from "@/features/agents/lib/useLastRuntime";
 import { useChannelTemplatesQuery } from "@/features/channel-templates/hooks";
 import { setCanvas } from "@/shared/api/tauri";
 import type { ChannelTemplate } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /**
  * TemplateBackend omits `config` — supply an empty object for provider backends.
@@ -140,9 +141,9 @@ export function useApplyTemplate() {
       if (result.failures.length > 0) {
         const { toast } = await import("sonner");
         toast.warning(
-          result.failures.length === 1
-            ? "1 agent from the template could not be created"
-            : `${result.failures.length} agents from the template could not be created`,
+          t("channelTemplates.apply.agentsFailed", {
+            count: result.failures.length,
+          }),
         );
       }
       await Promise.all([

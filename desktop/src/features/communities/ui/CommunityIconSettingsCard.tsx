@@ -12,6 +12,7 @@ import { useBuiltInServer } from "@/features/communities/builtInServer";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 import { setCommunityIcon } from "@/shared/api/communityProfile";
+import { useT } from "@/shared/i18n";
 
 /**
  * Community icon editor using the same image/emoji picker as agent creation.
@@ -23,6 +24,7 @@ export function CommunityIconSettingsCard({
 }: {
   compact?: boolean;
 }) {
+  const t = useT();
   const { activeCommunity } = useCommunities();
   const singleServer = useBuiltInServer() !== null;
   const relayUrl = activeCommunity?.relayUrl;
@@ -75,7 +77,7 @@ export function CommunityIconSettingsCard({
             toast.error(
               error instanceof Error
                 ? error.message
-                : "Couldn’t update the community icon.",
+                : t("communities.iconSettings.updateFailed"),
             );
           }
         }
@@ -85,7 +87,7 @@ export function CommunityIconSettingsCard({
       };
       void drainQueue();
     },
-    [mutateIcon, persistedIcon],
+    [mutateIcon, persistedIcon, t],
   );
 
   function previewIcon(icon: string) {
@@ -108,9 +110,14 @@ export function CommunityIconSettingsCard({
       data-testid="community-icon-settings"
     >
       <AgentCreationPreview
-        assetLabel="community icon"
+        assetLabel={t("communities.iconSettings.assetLabel")}
         avatarUrl={draftIcon || null}
-        label={singleServer ? "Icon" : (activeCommunity?.name ?? "Community")}
+        label={
+          singleServer
+            ? t("communities.iconSettings.iconLabel")
+            : (activeCommunity?.name ??
+              t("communities.iconSettings.communityLabel"))
+        }
         onClearAvatar={clearIconPreview}
         onCommitAvatar={persistIcon}
         onSelectAvatar={previewIcon}
@@ -147,6 +154,7 @@ export function canEditCommunityIcon(
  * to members who may edit it.
  */
 export function MembersIconSettingsSection() {
+  const t = useT();
   const singleServer = useBuiltInServer() !== null;
   const membershipQuery = useMyRelayMembershipLookupQuery();
   if (!singleServer || !canEditCommunityIcon(membershipQuery.data)) {
@@ -158,9 +166,11 @@ export function MembersIconSettingsSection() {
       data-testid="members-icon-settings"
     >
       <div className="min-w-0">
-        <p className="text-sm font-medium">Icon</p>
+        <p className="text-sm font-medium">
+          {t("communities.membersIcon.title")}
+        </p>
         <p className="text-xs text-muted-foreground">
-          Shown to everyone who signs in.
+          {t("communities.membersIcon.description")}
         </p>
       </div>
       <CommunityIconSettingsCard compact />

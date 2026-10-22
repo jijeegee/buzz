@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { Card } from "@/shared/ui/card";
 import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -395,6 +396,7 @@ export function ViewLoadingFallback({
   includeHeader = false,
   kind,
 }: ViewLoadingFallbackProps) {
+  const t = useT();
   const shouldShowChannelHeader =
     includeHeader && (kind === "channel" || kind === "forum");
 
@@ -404,7 +406,7 @@ export function ViewLoadingFallback({
       {kind === "agents" ? <AgentsLoadingBody /> : null}
       {kind === "workflows" ? <CardListLoadingBody /> : null}
       {kind === "projects" ? (
-        <KuzzLoadingState fill label="Loading projects" />
+        <KuzzLoadingState fill label={t("ui.loading.projects")} />
       ) : null}
       {kind === "channel" ? (
         <ChannelLoadingBody hasHeader={shouldShowChannelHeader} />

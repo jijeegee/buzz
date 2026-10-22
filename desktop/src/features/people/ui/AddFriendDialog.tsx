@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { lookupPerson, type PersonInfo } from "@/shared/api/people";
+import { t as translate, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -16,6 +17,7 @@ import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
 import { friendAddedMessage } from "./RemoveFriendDialog";
 
+/** English of `people.addFriend.notFound`, for tests. */
 export const NO_ONE_FOUND = "No one found with that ID or email";
 
 type LookupState =
@@ -28,7 +30,7 @@ type LookupState =
 function errorText(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error) return error;
-  return "Couldn't search. Try again.";
+  return translate("people.addFriend.searchFailed");
 }
 
 /**
@@ -54,6 +56,7 @@ export function AddFriendDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const t = useT();
   const [query, setQuery] = React.useState("");
   const [lookup, setLookup] = React.useState<LookupState>({ status: "idle" });
   const [adding, setAdding] = React.useState(false);
@@ -102,7 +105,7 @@ export function AddFriendDialog({
       })
       .catch((error: unknown) =>
         toast.error(
-          error instanceof Error ? error.message : "Could not add friend",
+          error instanceof Error ? error.message : t("people.friend.addFailed"),
         ),
       )
       .finally(() => setAdding(false));
@@ -117,15 +120,15 @@ export function AddFriendDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-4 w-4" />
-            Add friend
+            {t("people.addFriend.title")}
           </DialogTitle>
           <DialogDescription>
-            Enter their Kuzz ID or email address exactly.
+            {t("people.addFriend.description")}
           </DialogDescription>
         </DialogHeader>
         <form className="flex items-center gap-2" onSubmit={search}>
           <Input
-            aria-label="Kuzz ID or email"
+            aria-label={t("people.addFriend.queryPlaceholder")}
             autoFocus
             data-testid="add-friend-query"
             onChange={(event) => {
@@ -135,7 +138,7 @@ export function AddFriendDialog({
               setLookup({ status: "idle" });
               setAddedPubkey(null);
             }}
-            placeholder="Kuzz ID or email"
+            placeholder={t("people.addFriend.queryPlaceholder")}
             value={query}
           />
           <Button
@@ -143,21 +146,21 @@ export function AddFriendDialog({
             disabled={!query.trim() || lookup.status === "searching"}
             type="submit"
           >
-            Find
+            {t("people.addFriend.find")}
           </Button>
         </form>
         <div aria-live="polite" className="min-h-14">
           {lookup.status === "searching" ? (
             <div className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
               <Spinner aria-hidden className="h-4 w-4 border-2" />
-              Searching…
+              {t("people.addFriend.searching")}
             </div>
           ) : lookup.status === "not-found" ? (
             <p
               className="px-1 text-sm text-muted-foreground"
               data-testid="add-friend-not-found"
             >
-              {NO_ONE_FOUND}
+              {t("people.addFriend.notFound")}
             </p>
           ) : lookup.status === "error" ? (
             <p className="px-1 text-sm text-destructive" role="alert">
@@ -185,7 +188,11 @@ export function AddFriendDialog({
 }
 
 function personLabel(person: PersonInfo): string {
-  return person.displayName?.trim() || person.username || "Someone";
+  return (
+    person.displayName?.trim() ||
+    person.username ||
+    translate("people.addFriend.someone")
+  );
 }
 
 function FoundPerson({
@@ -207,6 +214,7 @@ function FoundPerson({
   person: PersonInfo;
   self: boolean;
 }) {
+  const t = useT();
   const name = personLabel(person);
   return (
     <div
@@ -230,9 +238,13 @@ function FoundPerson({
         ) : null}
       </div>
       {self ? (
-        <span className="text-xs text-muted-foreground">This is you</span>
+        <span className="text-xs text-muted-foreground">
+          {t("people.addFriend.thisIsYou")}
+        </span>
       ) : blocked ? (
-        <span className="text-xs text-muted-foreground">Blocked</span>
+        <span className="text-xs text-muted-foreground">
+          {t("people.addFriend.blocked")}
+        </span>
       ) : added ? (
         <div className="flex items-center gap-2">
           <span
@@ -240,7 +252,7 @@ function FoundPerson({
             data-testid="add-friend-added"
           >
             <Check className="h-3.5 w-3.5" />
-            Added
+            {t("people.addFriend.added")}
           </span>
           <Button
             data-testid="add-friend-message"
@@ -248,13 +260,13 @@ function FoundPerson({
             size="sm"
           >
             <MessageSquare className="h-4 w-4" />
-            Message
+            {t("people.message")}
           </Button>
         </div>
       ) : friend ? (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <Check className="h-3.5 w-3.5" />
-          Friend
+          {t("people.addFriend.friend")}
         </span>
       ) : (
         <Button
@@ -263,7 +275,7 @@ function FoundPerson({
           onClick={onAdd}
           size="sm"
         >
-          Add
+          {t("common.add")}
         </Button>
       )}
     </div>

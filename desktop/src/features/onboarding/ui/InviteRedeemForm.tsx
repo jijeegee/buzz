@@ -18,6 +18,7 @@ import {
   useBuiltInServer,
 } from "@/features/communities/builtInServer";
 import { normalizeRelayUrl } from "@/features/communities/relayProbe";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -76,6 +77,7 @@ export function InviteRedeemForm({
   placeholder,
   variant = "default",
 }: InviteRedeemFormProps) {
+  const t = useT();
   const formId = React.useId();
   const [inviteInput, setInviteInput] = React.useState(initialValue);
   const [bareCodeRelayUrl] = React.useState(defaultRelayUrl ?? "");
@@ -188,14 +190,14 @@ export function InviteRedeemForm({
           }
 
           if (policy.ageAttestationRequired && !ageConfirmed) {
-            setPolicyError("Confirm that you are at least 18 years old.");
+            setPolicyError(t("onboarding.inviteRedeem.confirmAge"));
             return;
           }
           if (
             (policy.termsMarkdown || policy.privacyMarkdown) &&
             !agreementConfirmed
           ) {
-            setPolicyError("Agree to the Terms of Service and Privacy Policy.");
+            setPolicyError(t("onboarding.inviteRedeem.agreeTerms"));
             return;
           }
 
@@ -237,14 +239,14 @@ export function InviteRedeemForm({
         }
 
         if (policy.ageAttestationRequired && !ageConfirmed) {
-          setPolicyError("Confirm that you are at least 18 years old.");
+          setPolicyError(t("onboarding.inviteRedeem.confirmAge"));
           return;
         }
         if (
           (policy.termsMarkdown || policy.privacyMarkdown) &&
           !agreementConfirmed
         ) {
-          setPolicyError("Agree to the Terms of Service and Privacy Policy.");
+          setPolicyError(t("onboarding.inviteRedeem.agreeTerms"));
           return;
         }
 
@@ -272,6 +274,7 @@ export function InviteRedeemForm({
       onRedeem,
       parsedInvite,
       policyTarget,
+      t,
     ],
   );
 
@@ -312,21 +315,25 @@ export function InviteRedeemForm({
     >
       {isRedeeming || isLoadingPolicy ? (
         <Spinner
-          aria-label={isRedeeming ? "Redeeming invite" : "Loading policy"}
+          aria-label={
+            isRedeeming
+              ? t("onboarding.inviteRedeem.redeemingAria")
+              : t("onboarding.inviteRedeem.loadingPolicyAria")
+          }
           className="h-4 w-4 border-2"
         />
       ) : isOnboardingSpotlight ? (
-        "Next"
+        t("common.next")
       ) : isAddCommunity ? (
         joinPolicy ? (
-          "Accept and join"
+          t("onboarding.inviteRedeem.acceptAndJoin")
         ) : (
-          "Join community"
+          t("onboarding.inviteRedeem.joinCommunity")
         )
       ) : joinPolicy ? (
-        "Accept and redeem invite"
+        t("onboarding.inviteRedeem.acceptAndRedeem")
       ) : (
-        "Redeem invite"
+        t("onboarding.inviteRedeem.redeem")
       )}
     </Button>
   );
@@ -343,7 +350,7 @@ export function InviteRedeemForm({
       type="button"
       variant="ghost"
     >
-      {isOnboardingSpotlight ? "Back" : "Cancel"}
+      {isOnboardingSpotlight ? t("common.back") : t("common.cancel")}
     </Button>
   );
 
@@ -371,7 +378,9 @@ export function InviteRedeemForm({
             style={SPOTLIGHT_OVERFLOW_FADE}
           >
             <label className="block w-full" htmlFor="invite-input">
-              <span className="sr-only">Invite link or code</span>
+              <span className="sr-only">
+                {t("onboarding.inviteRedeem.inviteLabel")}
+              </span>
               <span className={ONBOARDING_KEY_ROW_CLASS}>
                 <input
                   autoCapitalize="none"
@@ -403,8 +412,8 @@ export function InviteRedeemForm({
             htmlFor="invite-input"
           >
             {isAddCommunity
-              ? "Community URL or invite link"
-              : "Invite link or code"}
+              ? t("onboarding.inviteRedeem.communityUrlLabel")
+              : t("onboarding.inviteRedeem.inviteLabel")}
           </label>
           <Input
             autoComplete="off"
@@ -421,8 +430,8 @@ export function InviteRedeemForm({
             onChange={handleInviteInputChange}
             placeholder={
               isAddCommunity
-                ? "https://community.example.com or paste an invite link"
-                : "https://community.example.com/invite/abc123 or paste a code"
+                ? t("onboarding.inviteRedeem.communityUrlPlaceholder")
+                : t("onboarding.inviteRedeem.invitePlaceholder")
             }
             spellCheck={false}
             type="text"
@@ -441,7 +450,7 @@ export function InviteRedeemForm({
           )}
           data-testid="invalid-invite-tip"
         >
-          Please enter a valid invite link or community URL
+          {t("onboarding.inviteRedeem.invalidInvite")}
         </p>
       ) : null}
 

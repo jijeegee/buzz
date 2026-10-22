@@ -4,6 +4,7 @@ import { UserRound } from "lucide-react";
 import { useAvatarPresentation } from "@/features/profile/avatarPresentationStore";
 import { avatarSourceUrlForShape } from "@/features/profile/ui/ProfileAvatarEditor.utils";
 import { parseAnimatedAvatarUrl } from "@/shared/lib/animatedAvatar";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { getInitials } from "@/shared/lib/initials";
 import {
@@ -78,6 +79,7 @@ export function ProfileAvatar({
   untrusted = false,
   mediaVariant = "thumb",
 }: ProfileAvatarProps) {
+  const t = useT();
   const initials = getInitials(initialsLabel ?? label);
   const presentation = useAvatarPresentation(avatarUrl);
   const presentedAvatarUrl = presentation?.displayUrl ?? avatarUrl;
@@ -140,7 +142,7 @@ export function ProfileAvatar({
     >
       {src !== undefined ? (
         <AvatarImage
-          alt={`${label} avatar`}
+          alt={t("profile.avatar.alt", { name: label })}
           className={cn(
             "object-cover",
             presentation?.state === "pending" && "brightness-75",
@@ -177,7 +179,7 @@ export function ProfileAvatar({
       ) : null}
       {presentation?.state === "pending" ? (
         <span
-          aria-label="Avatar upload pending"
+          aria-label={t("profile.avatar.uploadPending")}
           className="pointer-events-none absolute inset-0 flex items-center justify-center text-white drop-shadow-sm"
           data-testid={testId ? `${testId}-upload-pending` : undefined}
           role="status"

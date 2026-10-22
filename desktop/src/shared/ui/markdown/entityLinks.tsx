@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
@@ -125,36 +126,45 @@ function entityLinkPresentation(link: ParsedEntityLink) {
     case "repo":
       return {
         ariaLabel: link.commitHash
-          ? `Open commit ${link.commitHash.slice(0, 8)} in repository ${link.dtag}`
-          : `Open repository ${link.dtag}`,
+          ? t("ui.entityLink.openCommit", {
+              commit: link.commitHash.slice(0, 8),
+              repo: link.dtag,
+            })
+          : t("ui.entityLink.openRepo", { repo: link.dtag }),
         icon: "repo" as const,
         label: link.commitHash
           ? `${link.dtag} · ${link.commitHash.slice(0, 8)}`
           : link.dtag,
-        tooltipFooter: "Repository",
+        tooltipFooter: t("ui.entityLink.repository"),
       };
     case "pr":
       return {
-        ariaLabel: `Open pull request ${link.id.slice(0, 8)} in repository ${link.dtag}`,
+        ariaLabel: t("ui.entityLink.openPullRequest", {
+          id: link.id.slice(0, 8),
+          repo: link.dtag,
+        }),
         icon: "pr" as const,
         label: `${link.dtag} · ${link.id.slice(0, 8)}`,
-        tooltipFooter: `Pull request · ${link.dtag}`,
+        tooltipFooter: t("ui.entityLink.pullRequestIn", { repo: link.dtag }),
       };
     case "issue":
       return {
-        ariaLabel: `Open issue ${link.id.slice(0, 8)} in repository ${link.dtag}`,
+        ariaLabel: t("ui.entityLink.openIssue", {
+          id: link.id.slice(0, 8),
+          repo: link.dtag,
+        }),
         icon: "issue" as const,
         // Tooltip fallback only — the inline chip renders the repository name
         // alone (see `chip` below).
         label: `${link.dtag} · ${link.id.slice(0, 8)}`,
-        tooltipFooter: `Issue · ${link.dtag}`,
+        tooltipFooter: t("ui.entityLink.issueIn", { repo: link.dtag }),
       };
     case "project":
       return {
-        ariaLabel: `Open project ${link.dtag}`,
+        ariaLabel: t("ui.entityLink.openProject", { project: link.dtag }),
         icon: "project" as const,
         label: link.dtag,
-        tooltipFooter: "Project",
+        tooltipFooter: t("ui.entityLink.project"),
       };
   }
 }

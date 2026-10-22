@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 /**
  * `kuzz://` deep links for Kuzz-hosted git entities, mirroring
  * `features/messages/lib/messageLink.ts` for `kuzz://message`.
@@ -68,7 +69,7 @@ function isValidDtag(dtag: string): boolean {
 
 function checkCoordinate(owner: string, dtag: string): void {
   if (!HEX64_RE.test(owner)) {
-    throw new Error("Couldn't open this link.");
+    throw new Error(t("ui.entityLink.openFailed"));
   }
   if (!isValidDtag(dtag)) {
     throw new Error("entityLink: invalid addressable d-tag");
@@ -87,7 +88,7 @@ export function isLinkableCoordinate(owner: string, dtag: string): boolean {
 
 function checkEventId(id: string): void {
   if (!HEX64_RE.test(id)) {
-    throw new Error("Couldn't open this link.");
+    throw new Error(t("ui.entityLink.openFailed"));
   }
 }
 
@@ -117,7 +118,7 @@ export function buildCommitLink(input: {
 }): string {
   checkCoordinate(input.owner, input.dtag);
   if (!GIT_OBJECT_ID_RE.test(input.commitHash)) {
-    throw new Error("Couldn't open this link.");
+    throw new Error(t("ui.entityLink.openFailed"));
   }
   return `kuzz://repo?owner=${input.owner.toLowerCase()}&d=${input.dtag}&tab=commits&commit=${input.commitHash.toLowerCase()}`;
 }

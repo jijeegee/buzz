@@ -4,11 +4,13 @@ import { toast } from "sonner";
 
 import { ReportMessageDialog } from "@/features/moderation/ui/ReportMessageDialog";
 import {
+  BLOCKED_BUT_STILL_FRIEND,
   useBlockedPeople,
   useBlockPersonMutation,
   useUnblockPersonMutation,
 } from "@/features/people/BlockedPeopleContext";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { t as translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   AlertDialog,
@@ -29,7 +31,7 @@ import {
 
 /** What blocking does, in the words the confirm dialog uses. */
 export function blockDescription(name: string): string {
-  return `You won't get messages from ${name}, and their messages in shared groups are hidden. They're removed from your friends and aren't told you blocked them. You can unblock them in Settings.`;
+  return translate("people.safety.blockDescription", { name });
 }
 
 /**
@@ -48,6 +50,7 @@ export function PersonSafetyMenu({
   /** `icon`: a small "…" button; `button`: an outlined "More" button. */
   variant?: "icon" | "button";
 }) {
+  const t = useT();
   const { isBlocked } = useBlockedPeople();
   const identityQuery = useIdentityQuery();
   const blockPerson = useBlockPersonMutation(identityQuery.data?.pubkey);
@@ -59,18 +62,27 @@ export function PersonSafetyMenu({
 
   const block = () => {
     blockPerson.mutate(pubkey, {
-      onSuccess: () => toast.success(`${name} is blocked`),
+      onSuccess: () => toast.success(t("people.safety.blockedToast", { name })),
       onError: (error) =>
-        toast.error(error instanceof Error ? error.message : "Could not block"),
+        toast.error(
+          error instanceof Error && error.message === BLOCKED_BUT_STILL_FRIEND
+            ? t("people.safety.blockedStillFriend")
+            : error instanceof Error
+              ? error.message
+              : t("people.safety.blockFailed"),
+        ),
       onSettled: () => setConfirmOpen(false),
     });
   };
   const unblock = () => {
     unblockPerson.mutate(pubkey, {
-      onSuccess: () => toast.success(`${name} is unblocked`),
+      onSuccess: () =>
+        toast.success(t("people.safety.unblockedToast", { name })),
       onError: (error) =>
         toast.error(
-          error instanceof Error ? error.message : "Could not unblock",
+          error instanceof Error
+            ? error.message
+            : t("people.safety.unblockFailed"),
         ),
     });
   };
@@ -81,26 +93,26 @@ export function PersonSafetyMenu({
         <DropdownMenuTrigger asChild>
           {variant === "icon" ? (
             <Button
-              aria-label={`More options for ${name}`}
+              aria-label={t("people.safety.moreOptions", { name })}
               className={cn("text-muted-foreground", className)}
               data-testid="person-safety-menu"
               disabled={pending}
               size="icon"
-              title="More"
+              title={t("common.more")}
               variant="ghost"
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           ) : (
             <Button
-              aria-label={`More options for ${name}`}
+              aria-label={t("people.safety.moreOptions", { name })}
               className={className}
               data-testid="person-safety-menu"
               disabled={pending}
               variant="outline"
             >
               <MoreHorizontal className="h-4 w-4" />
-              More
+              {t("common.more")}
             </Button>
           )}
         </DropdownMenuTrigger>
@@ -111,7 +123,7 @@ export function PersonSafetyMenu({
               onSelect={() => unblock()}
             >
               <ShieldCheck className="h-4 w-4" />
-              Unblock
+              {t("people.safety.unblock")}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuItem
@@ -119,7 +131,7 @@ export function PersonSafetyMenu({
               onSelect={() => setConfirmOpen(true)}
             >
               <Ban className="h-4 w-4" />
-              Block
+              {t("people.safety.block")}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem
@@ -127,7 +139,7 @@ export function PersonSafetyMenu({
             onSelect={() => setReportOpen(true)}
           >
             <Flag className="h-4 w-4" />
-            Report
+            {t("people.safety.report")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -135,7 +147,9 @@ export function PersonSafetyMenu({
       <AlertDialog onOpenChange={setConfirmOpen} open={confirmOpen}>
         <AlertDialogContent data-testid="block-person-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Block {name}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("people.safety.blockConfirmTitle", { name })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {blockDescription(name)}
             </AlertDialogDescription>
@@ -143,7 +157,7 @@ export function PersonSafetyMenu({
           <AlertDialogFooter>
             <AlertDialogCancel asChild>
               <Button disabled={pending} type="button" variant="outline">
-                Cancel
+                {t("common.cancel")}
               </Button>
             </AlertDialogCancel>
             <Button
@@ -153,7 +167,7 @@ export function PersonSafetyMenu({
               type="button"
               variant="destructive"
             >
-              Block
+              {t("people.safety.blockConfirm")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

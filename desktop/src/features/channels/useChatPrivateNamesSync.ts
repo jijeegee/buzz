@@ -17,6 +17,7 @@ import {
   withPrivateName,
   writeCachedPrivateNames,
 } from "./lib/chatPrivateNames";
+import { t } from "@/shared/i18n";
 
 const D_TAG = "channel-names";
 
@@ -120,7 +121,7 @@ export function useChatPrivateNamesSync(
 
   return React.useCallback(
     async (channelId: string, name: string | null) => {
-      if (!pubkey) throw new Error("Not signed in.");
+      if (!pubkey) throw new Error(t("channels.chatInfo.notSignedIn"));
       const scope = scopeRef.current;
       const previous = getChatPrivateNames();
       setChatPrivateNames(withPrivateName(previous, channelId, name));
@@ -142,8 +143,8 @@ export function useChatPrivateNamesSync(
         if (scope !== scopeRef.current) return;
         await relayClient.publishEvent(
           event,
-          "Timed out saving the chat name.",
-          "Could not save the chat name.",
+          t("channels.chatInfo.saveTimedOut"),
+          t("channels.chatInfo.saveNameFailed"),
           () => scope === scopeRef.current,
         );
         headRef.current = { createdAt: event.created_at, eventId: event.id };

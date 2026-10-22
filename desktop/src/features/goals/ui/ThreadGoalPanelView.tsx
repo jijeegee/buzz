@@ -10,6 +10,7 @@ import {
 
 import type { GoalNode, GoalTree } from "@/shared/api/tauriGoals";
 import { newGoalId } from "@/shared/api/tauriGoals";
+import { useT } from "@/shared/i18n";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import {
   type GoalLinkInfo,
@@ -63,6 +64,7 @@ export function ThreadGoalPanelView({
   threadRootId,
   tree,
 }: ThreadGoalPanelViewProps) {
+  const t = useT();
   const [expanded, setExpanded] = React.useState(defaultExpanded);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const subtreeId = React.useId();
@@ -104,7 +106,7 @@ export function ThreadGoalPanelView({
               type="button"
             >
               <Link2 className="h-3 w-3" />
-              Link this thread to a goal
+              {t("goals.threadPanel.linkThread")}
             </button>,
           )}
         </div>
@@ -139,7 +141,7 @@ export function ThreadGoalPanelView({
 
   return (
     <section
-      aria-label="Thread goal"
+      aria-label={t("goals.threadPanel.label")}
       className="mx-4 mb-2 rounded-xl border border-border/60 bg-muted/20 text-xs"
       data-testid="thread-goal-panel"
     >
@@ -175,7 +177,7 @@ export function ThreadGoalPanelView({
         </button>
         {picker(
           <button
-            aria-label="Change or unlink this thread's goal"
+            aria-label={t("goals.threadPanel.changeLink")}
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             data-testid="thread-goal-link"
             type="button"
@@ -234,6 +236,7 @@ export function GoalLinkPicker({
   threadRootId: string;
   tree: GoalTree;
 }) {
+  const t = useT();
   const [createUnder, setCreateUnder] = React.useState<GoalNode | null>(null);
 
   if (createUnder) {
@@ -241,8 +244,11 @@ export function GoalLinkPicker({
     return (
       <div className="p-2" data-testid="thread-goal-create">
         <p className="mb-1 break-words text-xs text-muted-foreground">
-          New layer {layer} goal under “{createUnder.title}”, linked to this{" "}
-          {subject}
+          {t("goals.linkPicker.createHeading", {
+            layer,
+            parent: createUnder.title,
+            subject,
+          })}
         </p>
         <GoalEditor
           initialNote=""
@@ -256,8 +262,8 @@ export function GoalLinkPicker({
             ]);
             onDone();
           }}
-          submitLabel="Add and link"
-          titleLabel="Goal (one sentence)"
+          submitLabel={t("goals.linkPicker.addAndLink")}
+          titleLabel={t("goals.linkPicker.titleLabel")}
         />
       </div>
     );
@@ -284,12 +290,17 @@ export function GoalLinkPicker({
               style={{ paddingLeft: `${0.5 + (layer - 1) * 0.75}rem` }}
               type="button"
             >
-              <span className="text-muted-foreground">L{layer}</span>
+              <span className="text-muted-foreground">
+                {t("goals.layerBadge", { layer })}
+              </span>
               <span className="min-w-0 break-words">{node.title}</span>
             </button>
             {canAddUnder ? (
               <button
-                aria-label={`Add a goal under “${node.title}” and link this ${subject} to it`}
+                aria-label={t("goals.linkPicker.addUnder", {
+                  parent: node.title,
+                  subject,
+                })}
                 className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                 data-testid={`thread-goal-create-under-${node.id}`}
                 onClick={() => setCreateUnder(node)}
@@ -312,7 +323,7 @@ export function GoalLinkPicker({
           type="button"
         >
           <Unlink className="h-3 w-3" />
-          Unlink from goal
+          {t("goals.linkPicker.unlink")}
         </button>
       ) : null}
     </div>

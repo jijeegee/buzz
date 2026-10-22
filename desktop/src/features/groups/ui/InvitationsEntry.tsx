@@ -14,6 +14,7 @@ import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { resolveUserLabel } from "@/features/profile/lib/identity";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -30,10 +31,9 @@ import {
 } from "../groupsApi";
 import { groupInvitationsQueryKey, useGroupInvitationsQuery } from "../hooks";
 import {
-  INVITATION_NO_LONGER_VALID_TEXT,
+  invitationNoLongerValidText,
   invitationsRowLabel,
   invitationsViewState,
-  invitedYouText,
   memberCountLabel,
   withoutInvitation,
 } from "../invitationsState";
@@ -100,6 +100,7 @@ function InvitationsDialog({
   onOpenGroup: (channelId: string) => void;
   onRetry: () => void;
 }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const account = useIdentityQuery().data?.pubkey?.toLowerCase() ?? "";
   const listKey = groupInvitationsQueryKey(account);
@@ -142,11 +143,9 @@ function InvitationsDialog({
     } catch (error) {
       if (groupsErrorStatus(error) === 409) {
         remove(invitation.id);
-        toast(INVITATION_NO_LONGER_VALID_TEXT);
+        toast(invitationNoLongerValidText());
       } else {
-        toast.error(
-          groupsErrorText(error) || "Something went wrong. Try again.",
-        );
+        toast.error(groupsErrorText(error) || t("groups.genericError"));
       }
     } finally {
       setBusy(null);
@@ -161,19 +160,19 @@ function InvitationsDialog({
         data-testid="invitations-dialog"
       >
         <DialogHeader>
-          <DialogTitle>Invitations</DialogTitle>
+          <DialogTitle>{t("groups.invitations.title")}</DialogTitle>
         </DialogHeader>
         {state.kind === "loading" ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Loading...
+            {t("groups.invitations.loading")}
           </p>
         ) : state.kind === "error" ? (
           <div className="flex flex-col items-center gap-3 py-6">
             <p className="text-sm text-muted-foreground">
-              Couldn't load invitations.
+              {t("groups.invitations.loadFailed")}
             </p>
             <Button onClick={onRetry} size="sm" type="button" variant="outline">
-              Try again
+              {t("groups.invitations.tryAgain")}
             </Button>
           </div>
         ) : state.kind === "empty" ? (
@@ -181,7 +180,7 @@ function InvitationsDialog({
             className="py-6 text-center text-sm text-muted-foreground"
             data-testid="invitations-empty"
           >
-            No invitations
+            {t("groups.invitations.empty")}
           </p>
         ) : (
           <div className="max-h-[60vh] divide-y divide-border/55 overflow-y-auto rounded-xl border border-border/70">
@@ -218,11 +217,12 @@ function InvitationsDialog({
                         : invitation.channel.name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {`${invitedYouText(inviterName)} · ${
-                        invitation.channel.groupChat
+                      {t("groups.invitations.rowSubtitle", {
+                        name: inviterName,
+                        members: invitation.channel.groupChat
                           ? peopleCountLabel(invitation.channel.memberCount)
-                          : memberCountLabel(invitation.channel.memberCount)
-                      }`}
+                          : memberCountLabel(invitation.channel.memberCount),
+                      })}
                     </p>
                   </div>
                   <Button
@@ -233,7 +233,7 @@ function InvitationsDialog({
                     type="button"
                     variant="outline"
                   >
-                    Decline
+                    {t("groups.invitations.decline")}
                   </Button>
                   <Button
                     data-testid={`invitation-join-${invitation.id}`}
@@ -242,7 +242,9 @@ function InvitationsDialog({
                     size="sm"
                     type="button"
                   >
-                    {joining ? "Joining..." : "Join"}
+                    {joining
+                      ? t("groups.invitations.joining")
+                      : t("groups.invitations.join")}
                   </Button>
                 </div>
               );

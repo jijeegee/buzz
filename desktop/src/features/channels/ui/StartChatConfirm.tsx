@@ -13,6 +13,7 @@ import {
 import { Button } from "@/shared/ui/button";
 
 import { formatChatMemberTitle } from "../lib/groupChat";
+import { t as translate, useT } from "@/shared/i18n";
 
 type Pending = {
   pubkeys: string[];
@@ -23,7 +24,10 @@ type Pending = {
 export function joinPeopleNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   if (names.length <= 3) {
-    return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    return translate("channels.startChat.nameList", {
+      names: names.slice(0, -1).join(", "),
+      last: names[names.length - 1],
+    });
   }
   return formatChatMemberTitle(names);
 }
@@ -32,8 +36,11 @@ export function joinPeopleNames(names: readonly string[]): string {
 export function startChatPromptText(names: readonly string[]) {
   const who = joinPeopleNames(names);
   return {
-    title: `Start a new chat with ${who}?`,
-    description: `${who} ${names.length === 1 ? "isn't" : "aren't"} in this chat. Your message will go to a new chat that includes ${names.length === 1 ? "them" : "everyone"}.`,
+    title: translate("channels.startChat.title", { who }),
+    description: translate("channels.startChat.body", {
+      count: names.length,
+      who,
+    }),
   };
 }
 
@@ -85,6 +92,7 @@ function StartChatConfirmDialog({
   onConfirm: () => void;
   pubkeys: string[] | null;
 }) {
+  const t = useT();
   const profiles = useUsersBatchQuery(pubkeys ?? [], {
     enabled: (pubkeys?.length ?? 0) > 0,
   }).data?.profiles;
@@ -106,7 +114,7 @@ function StartChatConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <Button onClick={onCancel} size="sm" type="button" variant="outline">
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             data-testid="start-chat-confirm-accept"
@@ -114,7 +122,7 @@ function StartChatConfirmDialog({
             size="sm"
             type="button"
           >
-            Start chat
+            {t("channels.startChat.confirm")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

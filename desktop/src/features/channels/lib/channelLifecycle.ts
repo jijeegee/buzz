@@ -1,4 +1,5 @@
 import { formatTtlDuration } from "@/features/channels/lib/ephemeralChannel";
+import { t } from "@/shared/i18n";
 
 export type ChannelLifecycle = "ongoing" | "temporary" | "project";
 
@@ -14,10 +15,12 @@ export function channelLifecycleLabel(
   lifecycle: ChannelLifecycle,
   ttlSeconds: number | null,
 ): string {
-  if (lifecycle === "project") return "Project";
+  if (lifecycle === "project") return t("channels.type.project");
   if (lifecycle === "temporary" && ttlSeconds != null) {
-    return `Temporary · ${formatTtlDuration(ttlSeconds)}`;
+    return t("channels.type.temporaryWithTtl", {
+      ttl: formatTtlDuration(ttlSeconds),
+    });
   }
-  if (lifecycle === "temporary") return "Temporary";
-  return "Ongoing";
+  if (lifecycle === "temporary") return t("channels.type.temporary");
+  return t("channels.type.ongoing");
 }

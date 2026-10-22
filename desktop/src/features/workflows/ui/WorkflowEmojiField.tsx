@@ -3,6 +3,7 @@ import * as React from "react";
 
 import { EmojiPicker } from "@/features/custom-emoji/ui/EmojiPicker";
 import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
+import { useT } from "@/shared/i18n";
 import { emojiDisplayName } from "@/shared/lib/emojiName";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
@@ -38,6 +39,7 @@ export function WorkflowEmojiField({
   onChange,
   value,
 }: WorkflowEmojiFieldProps) {
+  const t = useT();
   const [pickerOpen, setPickerOpen] = React.useState(false);
 
   return (
@@ -60,7 +62,9 @@ export function WorkflowEmojiField({
             ) : (
               <>
                 <SmilePlus className="text-muted-foreground" />
-                <span className="text-muted-foreground">Choose a reaction</span>
+                <span className="text-muted-foreground">
+                  {t("workflows.emojiField.choose")}
+                </span>
               </>
             )}
           </Button>

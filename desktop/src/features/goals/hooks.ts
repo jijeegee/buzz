@@ -12,6 +12,7 @@ import {
   getGoalTreeHistory,
   restoreGoalTree,
 } from "@/shared/api/tauriGoals";
+import { t as translate, useT } from "@/shared/i18n";
 import { classifyGoalLinks } from "./goalLinks";
 
 /** Kind 40110 — see `kuzz_core::kind::KIND_GOAL_TREE`. */
@@ -71,7 +72,8 @@ export function useGoalTreeQuery(channelId: string | null, enabled = true) {
   return useQuery({
     queryKey: goalTreeKey(channelId),
     queryFn: () => {
-      if (!channelId) return Promise.reject(new Error("No group selected"));
+      if (!channelId)
+        return Promise.reject(new Error(translate("goals.noGroupSelected")));
       return getGoalTree(channelId);
     },
     enabled: active,
@@ -84,7 +86,8 @@ export function useApplyGoalOpMutation(channelId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (op: GoalOp | GoalOp[]) => {
-      if (!channelId) return Promise.reject(new Error("No group selected"));
+      if (!channelId)
+        return Promise.reject(new Error(translate("goals.noGroupSelected")));
       return Array.isArray(op)
         ? applyGoalOps(channelId, op)
         : applyGoalOp(channelId, op);
@@ -105,10 +108,12 @@ export function useGoalAssigneeNames(tree: GoalTree | undefined) {
     [tree],
   );
   const usersQuery = useUsersBatchQuery(assigneePubkeys);
+  const t = useT();
   return React.useCallback(
     (pubkey: string) =>
-      usersQuery.data?.profiles[pubkey]?.displayName ?? "Unknown member",
-    [usersQuery.data],
+      usersQuery.data?.profiles[pubkey]?.displayName ??
+      t("goals.unknownMember"),
+    [usersQuery.data, t],
   );
 }
 
@@ -128,7 +133,8 @@ export function useGoalLinkKinds(
   return useQuery({
     queryKey: ["goal-link-kinds", channelId, ids.join(",")],
     queryFn: () => {
-      if (!channelId) return Promise.reject(new Error("No group selected"));
+      if (!channelId)
+        return Promise.reject(new Error(translate("goals.noGroupSelected")));
       return classifyGoalLinks(channelId, ids);
     },
     enabled: channelId !== null && ids.length > 0,
@@ -143,7 +149,8 @@ export function useGoalHistoryQuery(
   return useQuery({
     queryKey: goalHistoryKey(channelId),
     queryFn: () => {
-      if (!channelId) return Promise.reject(new Error("No group selected"));
+      if (!channelId)
+        return Promise.reject(new Error(translate("goals.noGroupSelected")));
       return getGoalTreeHistory(channelId);
     },
     enabled: enabled && channelId !== null,
@@ -154,7 +161,8 @@ export function useRestoreGoalTreeMutation(channelId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (revision: string) => {
-      if (!channelId) return Promise.reject(new Error("No group selected"));
+      if (!channelId)
+        return Promise.reject(new Error(translate("goals.noGroupSelected")));
       return restoreGoalTree(channelId, revision);
     },
     onSettled: () => {

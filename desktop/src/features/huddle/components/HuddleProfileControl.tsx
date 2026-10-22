@@ -7,6 +7,7 @@ import type { Channel } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 import { useHuddle, useHuddleLevels } from "../HuddleContext";
 import { MicControls } from "./MicControls";
+import { useT } from "@/shared/i18n";
 
 type HuddleProfileState = {
   phase:
@@ -36,6 +37,7 @@ export function HuddleProfileControl({
   onHuddleEnded?: (ephemeralChannelId: string | null) => void;
   visible: boolean;
 }) {
+  const t = useT();
   const {
     audioDevices,
     isMuted,
@@ -123,7 +125,7 @@ export function HuddleProfileControl({
       data-testid="profile-huddle-control"
     >
       <Button
-        aria-label="Open huddle window"
+        aria-label={t("huddle.openWindow")}
         className="h-auto min-w-0 flex-1 justify-start gap-2 px-0 py-0 text-left hover:bg-transparent"
         onClick={() => void handleOpenHuddleWindow()}
         type="button"
@@ -135,10 +137,10 @@ export function HuddleProfileControl({
         />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium leading-tight">
-            In a huddle
+            {t("huddle.profile.inHuddle")}
           </span>
           <span className="block truncate text-xs text-sidebar-foreground/65">
-            {channelName ? `${channelName}` : "Huddle"}
+            {channelName ? `${channelName}` : t("huddle.profile.fallbackName")}
           </span>
         </span>
       </Button>
@@ -159,14 +161,14 @@ export function HuddleProfileControl({
         />
         <Button
           aria-busy={isLeaving}
-          aria-label="Leave huddle"
+          aria-label={t("huddle.leaveLabel")}
           className="h-8 px-2 text-sm text-sidebar-foreground/70 hover:bg-destructive/15 hover:text-destructive"
           disabled={isLeaving}
           onClick={(event) => void handleLeave(event)}
           type="button"
           variant="ghost"
         >
-          Leave
+          {t("huddle.leave")}
         </Button>
       </div>
     </div>

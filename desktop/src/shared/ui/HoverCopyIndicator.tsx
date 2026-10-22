@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { Check, Copy } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -35,9 +36,9 @@ export function useCopyFeedback({
         setCopied(false);
         resetTimerRef.current = null;
       }, 1_500);
-      toast.success(`Copied ${label.toLowerCase()}`);
+      toast.success(t("ui.hoverCopy.copied", { label: label.toLowerCase() }));
     } catch {
-      toast.error(`Couldn't copy ${label.toLowerCase()}.`);
+      toast.error(t("ui.hoverCopy.failed", { label: label.toLowerCase() }));
     }
   }, [label, value]);
 

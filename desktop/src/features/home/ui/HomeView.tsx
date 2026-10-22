@@ -94,6 +94,7 @@ import { useThreadPanelWidth } from "@/shared/hooks/useThreadPanelWidth";
 import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@/shared/layout/AuxiliaryPanel";
 import { useHistorySearchState } from "@/shared/hooks/useHistorySearchState";
 import { ProfilePanelProvider } from "@/shared/context/ProfilePanelContext";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { HomeMembersSidebarOverlay } from "./HomeMembersSidebarOverlay";
 
@@ -138,6 +139,7 @@ export function HomeView({
   serverUnread,
   variant = "page",
 }: HomeViewProps) {
+  const t = useT();
   const isPanel = variant === "panel";
   const navigate = useNavigate();
   // The row whose chat room was last entered from this list.
@@ -719,14 +721,14 @@ export function HomeView({
         <div className="flex w-full max-w-3xl flex-col gap-4">
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-5">
             <p className="text-base font-semibold tracking-tight">
-              Home feed unavailable
+              {t("home.feedError.title")}
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              {errorMessage ?? "Couldn't load your feed."}
+              {errorMessage ?? t("home.feedError.description")}
             </p>
             <Button className="mt-5" onClick={onRefresh} type="button">
               <RefreshCcw className="h-4 w-4" />
-              Try again
+              {t("home.feedError.tryAgain")}
             </Button>
           </div>
         </div>
@@ -940,7 +942,7 @@ export function HomeView({
           {showListPane ? inboxListPane : null}
 
           <button
-            aria-label="Resize inbox list"
+            aria-label={t("home.resizeList.label")}
             className={cn(
               "group absolute bottom-0 z-40 w-3 -translate-x-1/2 cursor-col-resize",
               topChromeInset.top,
@@ -954,8 +956,8 @@ export function HomeView({
             style={{ left: `${effectiveInboxListWidthPx}px` }}
             title={
               canResetInboxListWidth
-                ? "Drag to resize. Double-click to reset width."
-                : "Drag to resize."
+                ? t("home.resizeList.tooltipWithReset")
+                : t("home.resizeList.tooltip")
             }
             type="button"
           >
@@ -1019,7 +1021,7 @@ export function HomeView({
               }) => {
                 const channelId = selectedItem?.item.channelId;
                 if (!selectedItem || !channelId || !canReply) {
-                  throw new Error("Replies are not available for this item.");
+                  throw new Error(t("home.reply.unavailable"));
                 }
 
                 const itemToReply = selectedItem;
@@ -1048,7 +1050,7 @@ export function HomeView({
                           profiles: feedProfiles,
                           pubkey: authorPubkey,
                         })
-                      : "You",
+                      : t("common.you"),
                     authorPubkey,
                     avatarUrl:
                       currentPubkey && feedProfiles

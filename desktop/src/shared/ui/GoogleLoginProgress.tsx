@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { CreateAccountDialog } from "./CreateAccountDialog";
 
@@ -7,16 +8,17 @@ export function GoogleLoginProgress({
 }: {
   login: ReturnType<typeof useGoogleLogin>;
 }) {
+  const t = useT();
   return (
     <div className="space-y-2">
       <CreateAccountDialog login={login} />
       {login.phase && login.phase !== "signup" ? (
         <p className="text-sm text-muted-foreground" role="status">
           {login.phase === "completing"
-            ? "Finishing sign-in in Kuzz…"
+            ? t("ui.googleLogin.finishing")
             : login.phase === "opening"
-              ? "Opening your browser…"
-              : "Finish signing in in your browser."}
+              ? t("ui.googleLogin.openingBrowser")
+              : t("ui.googleLogin.finishInBrowser")}
         </p>
       ) : null}
       {login.error ? (

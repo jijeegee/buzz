@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 import type {
   ActionType,
   StepFormState,
@@ -10,70 +11,82 @@ export type WorkflowTemplateVariable = {
   value: string;
 };
 
+type TemplateVariableDefinition = Omit<
+  WorkflowTemplateVariable,
+  "description"
+> & { descriptionKey: MessageKey };
+
 export type ActiveTemplateToken = {
   end: number;
   query: string;
   start: number;
 };
 
-const COMMON_EVENT_VARIABLES: WorkflowTemplateVariable[] = [
+const COMMON_EVENT_VARIABLES: TemplateVariableDefinition[] = [
   {
     value: "trigger.author",
-    description: "Author",
+    descriptionKey: "workflows.templateVariable.author",
     group: "Trigger",
   },
   {
     value: "trigger.channel_id",
-    description: "Group UUID",
+    descriptionKey: "workflows.templateVariable.groupId",
     group: "Trigger",
   },
   {
     value: "trigger.timestamp",
-    description: "Unix timestamp",
+    descriptionKey: "workflows.templateVariable.timestamp",
     group: "Trigger",
   },
   {
     value: "trigger.message_id",
-    description: "Message",
+    descriptionKey: "workflows.templateVariable.message",
     group: "Trigger",
   },
 ];
 
-const STEP_OUTPUTS: Partial<Record<ActionType, Record<string, string>>> = {
-  delay: { slept_secs: "Seconds elapsed" },
+const STEP_OUTPUTS: Partial<Record<ActionType, Record<string, MessageKey>>> = {
+  delay: { slept_secs: "workflows.templateVariable.sleptSecs" },
   send_message: {
-    sent: "Whether the message was sent",
-    event_id: "Sent message ID",
+    sent: "workflows.templateVariable.messageSent",
+    event_id: "workflows.templateVariable.sentMessageId",
   },
-  call_webhook: { status: "HTTP response status", body: "HTTP response body" },
+  call_webhook: {
+    status: "workflows.templateVariable.httpStatus",
+    body: "workflows.templateVariable.httpBody",
+  },
   add_reaction: {
-    added: "Whether the reaction was added",
+    added: "workflows.templateVariable.reactionAdded",
   },
 };
 
-function triggerVariables(
+function triggerVariableDefinitions(
   triggerType: TriggerType,
-): WorkflowTemplateVariable[] {
+): TemplateVariableDefinition[] {
   switch (triggerType) {
     case "message_posted":
       return [
         {
           value: "trigger.text",
-          description: "Message text",
+          descriptionKey: "workflows.templateVariable.messageText",
           group: "Trigger",
         },
         ...COMMON_EVENT_VARIABLES,
       ];
     case "diff_posted":
       return [
-        { value: "trigger.text", description: "Diff text", group: "Trigger" },
+        {
+          value: "trigger.text",
+          descriptionKey: "workflows.templateVariable.diffText",
+          group: "Trigger",
+        },
         ...COMMON_EVENT_VARIABLES,
       ];
     case "reaction_added":
       return [
         {
           value: "trigger.emoji",
-          description: "Reaction emoji",
+          descriptionKey: "workflows.templateVariable.reactionEmoji",
           group: "Trigger",
         },
         ...COMMON_EVENT_VARIABLES,
@@ -87,11 +100,22 @@ function triggerVariables(
       return [
         {
           value: "trigger.channel_id",
-          description: "Workflow group UUID",
+          descriptionKey: "workflows.templateVariable.workflowGroupId",
           group: "Trigger",
         },
       ];
   }
+}
+
+function triggerVariables(
+  triggerType: TriggerType,
+): WorkflowTemplateVariable[] {
+  return triggerVariableDefinitions(triggerType).map(
+    ({ descriptionKey, ...variable }) => ({
+      ...variable,
+      description: t(descriptionKey),
+    }),
+  );
 }
 
 export function workflowTemplateVariables(
@@ -101,9 +125,9 @@ export function workflowTemplateVariables(
   const priorOutputs = previousSteps.flatMap((step) => {
     const outputs = STEP_OUTPUTS[step.action];
     if (!outputs || !/^[A-Za-z0-9_]+$/.test(step.id)) return [];
-    return Object.entries(outputs).map(([field, description]) => ({
+    return Object.entries(outputs).map(([field, descriptionKey]) => ({
       value: `steps.${step.id}.output.${field}`,
-      description,
+      description: t(descriptionKey),
       group: "Previous steps" as const,
     }));
   });

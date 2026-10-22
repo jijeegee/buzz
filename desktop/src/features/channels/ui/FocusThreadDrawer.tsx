@@ -7,6 +7,7 @@ import {
 } from "@/features/channels/lib/threadFocusLayout";
 import { getThreadViewMode } from "@/features/channels/lib/threadViewModePreference";
 import { cn } from "@/shared/lib/cn";
+import { useT } from "@/shared/i18n";
 
 type FocusThreadDrawerProps = {
   channelName: string;
@@ -206,11 +207,13 @@ export function FocusThreadDrawer({
   channelName,
   children,
   escapeEnabled = true,
-  label = "Thread",
+  label: labelProp,
   hasActiveEdit = false,
   onClose,
   restoreFocusTarget,
 }: FocusThreadDrawerProps) {
+  const t = useT();
+  const label = labelProp ?? t("channels.thread.label");
   const prefersReducedMotion = useReducedMotion();
   const travelPx = prefersReducedMotion ? 0 : THREAD_FOCUS_DRAWER_TRAVEL_PX;
   const drawerRef = React.useRef<HTMLDivElement>(null);
@@ -278,7 +281,7 @@ export function FocusThreadDrawer({
     >
       <motion.button
         animate={{ opacity: 1 }}
-        aria-label={`Back to ${channelName}`}
+        aria-label={t("channels.thread.backTo", { name: channelName })}
         className={cn(
           "absolute inset-0 cursor-pointer transition-colors duration-150",
           FOCUS_SCRIM_CLASS,

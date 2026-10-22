@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { ChannelVisibility } from "@/shared/api/types";
 import { ChooserDialogContent } from "@/shared/ui/chooser-dialog-content";
 import { Dialog } from "@/shared/ui/dialog";
+import { useT } from "@/shared/i18n";
 
 import {
   type CreateChannelInput,
@@ -45,6 +46,7 @@ export function CreateChannelDialog({
   testId = "create-channel-dialog",
   title,
 }: CreateChannelDialogProps) {
+  const t = useT();
   const open = channelKind !== null;
 
   const form = useCreateChannelForm({
@@ -54,8 +56,6 @@ export function CreateChannelDialog({
     onCreate: onCreate as (input: CreateChannelInput) => Promise<void>,
     onCreated: () => onOpenChange(false),
   });
-
-  const kindLabel = channelKind === "forum" ? "forum" : "channel";
 
   return (
     <Dialog
@@ -71,12 +71,17 @@ export function CreateChannelDialog({
         data-testid={testId}
         footerClassName="border-t-0 pt-0"
         headerClassName="pb-2"
-        title={title ?? `Create a new ${kindLabel}`}
+        title={
+          title ??
+          t("sidebar.createChannel.dialogTitle", {
+            kind: channelKind ?? "stream",
+          })
+        }
         description={
           description ??
           (channelKind === "forum"
-            ? "Forums organize threaded discussions around a topic."
-            : "Groups are real-time streams for team conversation.")
+            ? t("sidebar.createChannel.forumDescription")
+            : t("sidebar.createChannel.streamDescription"))
         }
         footer={<CreateChannelFormFooter form={form} />}
       >

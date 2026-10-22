@@ -28,6 +28,8 @@ pub struct PrincipalRecord {
     pub purge_after: Option<DateTime<Utc>>,
     /// Whether others may find this account by exact username or email.
     pub discoverable: bool,
+    /// Language picked in the app (BCP 47, e.g. `ko`, `zh-Hant`); `None` = English.
+    pub locale: Option<String>,
 }
 
 /// Result of resolving an OIDC identity to a principal at login.
@@ -52,6 +54,8 @@ pub struct ProfileUpdate {
     pub username: Option<Option<String>>,
     /// New "find me by ID or email" setting.
     pub discoverable: Option<bool>,
+    /// New app language (`Some(None)` clears it).
+    pub locale: Option<Option<String>>,
 }
 
 fn record_from_row(row: &sqlx::postgres::PgRow) -> Result<PrincipalRecord> {
@@ -66,6 +70,7 @@ fn record_from_row(row: &sqlx::postgres::PgRow) -> Result<PrincipalRecord> {
         disabled_at: row.try_get("disabled_at")?,
         purge_after: row.try_get("purge_after")?,
         discoverable: row.try_get("discoverable")?,
+        locale: row.try_get("locale")?,
     })
 }
 
@@ -282,7 +287,7 @@ pub(super) async fn get_principal(
 ) -> Result<Option<PrincipalRecord>> {
     let mut tx = begin(pool).await?;
     let row = sqlx::query(
-        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable          FROM principals WHERE id = $1",
+        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable, locale          FROM principals WHERE id = $1",
     )
     .bind(id.as_bytes().as_slice())
     .fetch_optional(&mut *tx)
@@ -315,9 +320,10 @@ pub(super) async fn update_profile(
            display_name = COALESCE($2, display_name), \
            avatar_url = CASE WHEN $3 THEN $4 ELSE avatar_url END, \
            username = CASE WHEN $5 THEN $6 ELSE username END, \
-           discoverable = COALESCE($7, discoverable) \
+           discoverable = COALESCE($7, discoverable), \
+           locale = CASE WHEN $8 THEN $9 ELSE locale END \
          WHERE id = $1 AND disabled_at IS NULL \
-         RETURNING id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable",
+         RETURNING id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable, locale",
     )
     .bind(id.as_bytes().as_slice())
     .bind(update.display_name.as_deref())
@@ -326,6 +332,8 @@ pub(super) async fn update_profile(
     .bind(update.username.is_some())
     .bind(update.username.clone().flatten())
     .bind(update.discoverable)
+    .bind(update.locale.is_some())
+    .bind(update.locale.clone().flatten())
     .fetch_optional(&mut *tx)
     .await;
     let row = match result {
@@ -461,7 +469,7 @@ async fn lock_profile_publish(
         .execute(&mut *tx)
         .await?;
     let record = sqlx::query(
-        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable \
+        "SELECT id, kind, display_name, avatar_url, username, disabled_at, purge_after, discoverable, locale \
          FROM principals WHERE id = $1",
     )
     .bind(id.as_bytes().as_slice())

@@ -5,6 +5,7 @@ import {
   KIND_JOB_RESULT,
 } from "@/shared/constants/kinds";
 import type { FeedItemCategory } from "@/shared/api/types";
+import type { MessageKey } from "@/shared/i18n";
 
 export const SOUND_NAMES = [
   "bong",
@@ -34,15 +35,16 @@ export const SOUND_SLOTS = [
 ] as const;
 export type SoundSlot = (typeof SOUND_SLOTS)[number];
 
-export const SLOT_LABELS: Record<SoundSlot, string> = {
-  dm: "Direct messages",
-  mention: "@Mentions",
-  thread_reply: "Thread replies",
-  needs_action: "Needs action",
-  job_accepted: "Agent: job accepted",
-  job_progress: "Agent: progress update",
-  job_result: "Agent: job result",
-  job_error: "Agent: job error",
+/** Message keys; translate where shown. */
+export const SLOT_LABELS: Record<SoundSlot, MessageKey> = {
+  dm: "notifications.slot.dm",
+  mention: "notifications.slot.mention",
+  thread_reply: "notifications.slot.threadReply",
+  needs_action: "notifications.slot.needsAction",
+  job_accepted: "notifications.slot.jobAccepted",
+  job_progress: "notifications.slot.jobProgress",
+  job_result: "notifications.slot.jobResult",
+  job_error: "notifications.slot.jobError",
 };
 
 // The agent job protocol (kinds 43001-43006) is defined and queryable but
@@ -56,15 +58,16 @@ export const COMING_SOON_SLOTS: ReadonlySet<SoundSlot> = new Set([
   "job_error",
 ]);
 
-export const SLOT_DESCRIPTIONS: Record<SoundSlot, string> = {
-  dm: "When someone messages you directly.",
-  mention: "When someone tags you in a group.",
-  thread_reply: "When someone replies in a thread you follow or posted in.",
-  needs_action: "When an approval or reminder is waiting on you.",
-  job_accepted: "When an agent picks up a job.",
-  job_progress: "While an agent works through a job.",
-  job_result: "When an agent finishes a job.",
-  job_error: "When an agent job fails.",
+/** Message keys; translate where shown. */
+export const SLOT_DESCRIPTIONS: Record<SoundSlot, MessageKey> = {
+  dm: "notifications.slotDescription.dm",
+  mention: "notifications.slotDescription.mention",
+  thread_reply: "notifications.slotDescription.threadReply",
+  needs_action: "notifications.slotDescription.needsAction",
+  job_accepted: "notifications.slotDescription.jobAccepted",
+  job_progress: "notifications.slotDescription.jobProgress",
+  job_result: "notifications.slotDescription.jobResult",
+  job_error: "notifications.slotDescription.jobError",
 };
 
 export const RECOMMENDED_SOUND_BY_SLOT: Record<SoundSlot, SoundName> = {

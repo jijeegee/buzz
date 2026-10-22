@@ -1,4 +1,5 @@
 import type { Profile, UserProfileSummary } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 import {
   normalizePubkey,
   truncateNpub,
@@ -122,7 +123,7 @@ export function resolveKnownUserLabel(
     normalizePubkey(currentPubkey) === normalizePubkey(pubkey)
   ) {
     if (!preferResolvedSelfLabel) {
-      return "You";
+      return t("common.you");
     }
   }
 
@@ -200,7 +201,7 @@ export function formatOwnerLabel(
     currentPubkey &&
     normalizedOwnerPubkey === normalizePubkey(currentPubkey)
   ) {
-    return "you";
+    return t("profile.ownerLabel.you");
   }
 
   const owner = ownerProfiles?.[normalizedOwnerPubkey];

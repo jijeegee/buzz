@@ -5,9 +5,6 @@ import {
   isValidGroupHandle,
   normalizeGroupHandle,
   parseGroupLink,
-  PUBLIC_ADDRESS_INVALID_TEXT,
-  PUBLIC_ADDRESS_RESERVED_TEXT,
-  PUBLIC_ADDRESS_TAKEN_TEXT,
   publicAddressErrorText,
   publicAddressPrefix,
 } from "./groupLink.ts";
@@ -96,15 +93,15 @@ test("public address prefix and handle rules", () => {
 test("public address save errors", () => {
   assert.equal(
     publicAddressErrorText(409, "this address is taken"),
-    PUBLIC_ADDRESS_TAKEN_TEXT,
+    "This address is taken.",
   );
   assert.equal(
     publicAddressErrorText(400, "this address is reserved"),
-    PUBLIC_ADDRESS_RESERVED_TEXT,
+    "This address is reserved.",
   );
   assert.equal(
     publicAddressErrorText(400, "invalid handle"),
-    PUBLIC_ADDRESS_INVALID_TEXT,
+    "Use 3-32 characters: a-z, 0-9 and _.",
   );
   assert.equal(publicAddressErrorText(500, "boom"), null);
   assert.equal(publicAddressErrorText(null, ""), null);

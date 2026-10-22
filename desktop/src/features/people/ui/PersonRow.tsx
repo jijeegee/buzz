@@ -13,6 +13,7 @@ import {
   deferMenuAction,
 } from "@/features/sidebar/ui/sidebarMenuHelpers";
 import type { UserSearchResult } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   ContextMenu,
@@ -41,6 +42,7 @@ export function PersonRow({
   onToggleFriend: (pubkey: string, friend: boolean) => void;
   user: UserSearchResult;
 }) {
+  const t = useT();
   const name = personName(user);
   return (
     <ContextMenu>
@@ -69,18 +71,18 @@ export function PersonRow({
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
             {isFavorite ? (
               <Star
-                aria-label="Favorite"
+                aria-label={t("people.row.favorite")}
                 className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400"
               />
             ) : null}
           </button>
           {!isFriend ? (
             <button
-              aria-label={`Add ${name} as a friend`}
+              aria-label={t("people.row.addAsFriend", { name })}
               className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 outline-hidden hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               data-testid={`people-add-friend-${user.pubkey}`}
               onClick={() => onToggleFriend(user.pubkey, true)}
-              title="Add friend"
+              title={t("people.friend.add")}
               type="button"
             >
               <UserPlus className="h-4 w-4" />
@@ -101,7 +103,7 @@ export function PersonRow({
               <UserPlus className="h-4 w-4" />
             )}
           </ContextMenuIconSlot>
-          {isFriend ? "Remove friend" : "Add friend"}
+          {isFriend ? t("people.friend.remove") : t("people.friend.add")}
         </ContextMenuItem>
         {onToggleFavorite ? (
           <ContextMenuItem
@@ -116,7 +118,9 @@ export function PersonRow({
                 <Star className="h-4 w-4" />
               )}
             </ContextMenuIconSlot>
-            {isFavorite ? "Remove from favorites" : "Add to favorites"}
+            {isFavorite
+              ? t("people.favorite.remove")
+              : t("people.favorite.add")}
           </ContextMenuItem>
         ) : null}
         <ContextMenuItem
@@ -125,7 +129,7 @@ export function PersonRow({
           <ContextMenuIconSlot>
             <MessageSquare className="h-4 w-4" />
           </ContextMenuIconSlot>
-          Message
+          {t("people.message")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

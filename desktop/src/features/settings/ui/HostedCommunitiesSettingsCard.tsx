@@ -55,6 +55,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
+import { t as translate, useT } from "@/shared/i18n";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 
 function relayHost(url: string | null | undefined) {
@@ -67,6 +68,7 @@ function relayHost(url: string | null | undefined) {
 }
 
 export function HostedCommunitiesSettingsCard() {
+  const t = useT();
   const onboarding = useCommunityOnboarding();
   const { activeCommunity } = useCommunities();
   const localPubkey = useIdentityQuery().data?.pubkey ?? null;
@@ -79,6 +81,8 @@ export function HostedCommunitiesSettingsCard() {
   const [loading, setLoading] = React.useState(true);
   const [action, setAction] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // Uses the app-wide `translate` so a language change does not re-run the
+  // sign-in effect that depends on this callback.
 
   const loadAccount = React.useCallback(async () => {
     setError(null);
@@ -98,7 +102,7 @@ export function HostedCommunitiesSettingsCard() {
         errorMessage(
           identityResponse.error,
           identityResponse.correlation_id,
-          "Could not load the connected Kuzz identity.",
+          translate("settings.hostedCommunities.loadIdentityFailed"),
         ),
       );
     }
@@ -107,7 +111,7 @@ export function HostedCommunitiesSettingsCard() {
         errorMessage(
           communitiesResponse.error,
           communitiesResponse.correlation_id,
-          "Could not load communities.",
+          translate("settings.hostedCommunities.loadCommunitiesFailed"),
         ),
       );
     }
@@ -151,14 +155,14 @@ export function HostedCommunitiesSettingsCard() {
   };
 
   const signIn = () =>
-    run("Signing in…", async () => {
+    run(t("settings.hostedCommunities.signingIn"), async () => {
       const nextAuth = await invoke<BuilderlabAuth>("start_builderlab_login");
       setAuth(nextAuth);
       await loadAccount();
     });
 
   const signOut = () =>
-    run("Signing out…", async () => {
+    run(t("settings.hostedCommunities.signingOut"), async () => {
       await invoke("clear_builderlab_auth");
       setAuth(null);
       setIdentity(null);
@@ -168,7 +172,7 @@ export function HostedCommunitiesSettingsCard() {
     });
 
   const connectIdentity = () =>
-    run("Connecting Kuzz identity…", async () => {
+    run(t("settings.hostedCommunities.connectingIdentity"), async () => {
       const response = await invoke<IdentityResponse>(
         "bind_builderlab_nostr_identity",
       );
@@ -177,7 +181,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not connect the Kuzz identity.",
+            t("settings.hostedCommunities.connectIdentityFailed"),
           ),
         );
       }
@@ -186,7 +190,7 @@ export function HostedCommunitiesSettingsCard() {
     });
 
   const unpairIdentity = () =>
-    run("Unpairing identity…", async () => {
+    run(t("settings.hostedCommunities.unpairingIdentity"), async () => {
       const response = await invoke<IdentityResponse>(
         "delete_builderlab_nostr_identity",
       );
@@ -195,7 +199,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not unpair the Kuzz identity.",
+            t("settings.hostedCommunities.unpairIdentityFailed"),
           ),
         );
       }
@@ -237,7 +241,7 @@ export function HostedCommunitiesSettingsCard() {
   );
 
   const switchToDeviceIdentity = () =>
-    run("Switching identity…", async () => {
+    run(t("settings.hostedCommunities.switchingIdentity"), async () => {
       // The account is bound to a different npub, so re-binding directly returns
       // identity_already_bound. Release the current binding first, then bind
       // this device's key. If the local key is reserved by another Builderlab
@@ -251,7 +255,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             released.error,
             released.correlation_id,
-            "Could not release the previously connected Kuzz identity.",
+            t("settings.hostedCommunities.releaseIdentityFailed"),
           ),
         );
       }
@@ -264,11 +268,11 @@ export function HostedCommunitiesSettingsCard() {
         await loadAccount();
         throw new Error(
           bound.error.code === "pubkey_already_bound"
-            ? "This device's Kuzz identity is already reserved by another Builderlab account, so it can't be connected here. Sign in with that account, or transfer the identity there first."
+            ? t("settings.hostedCommunities.identityReservedElsewhere")
             : errorMessage(
                 bound.error,
                 bound.correlation_id,
-                "Could not connect this device's Kuzz identity.",
+                t("settings.hostedCommunities.connectDeviceIdentityFailed"),
               ),
         );
       }
@@ -278,7 +282,7 @@ export function HostedCommunitiesSettingsCard() {
 
   const archiveCommunity = (community: HostedCommunity) => {
     if (!community.id) return Promise.resolve(false);
-    return run("Archiving community…", async () => {
+    return run(t("settings.hostedCommunities.archiving"), async () => {
       const response = await invoke<CommunityMutationResponse>(
         "archive_builderlab_community",
         { communityId: community.id },
@@ -290,7 +294,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not archive the community.",
+            t("settings.hostedCommunities.archiveFailed"),
           ),
         );
       }
@@ -300,7 +304,7 @@ export function HostedCommunitiesSettingsCard() {
 
   const unarchiveCommunity = (community: HostedCommunity) => {
     if (!community.id) return Promise.resolve(false);
-    return run("Unarchiving community…", async () => {
+    return run(t("settings.hostedCommunities.unarchiving"), async () => {
       const response = await invoke<CommunityMutationResponse>(
         "unarchive_builderlab_community",
         { communityId: community.id },
@@ -310,7 +314,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not unarchive the community.",
+            t("settings.hostedCommunities.unarchiveFailed"),
           ),
         );
       }
@@ -319,7 +323,7 @@ export function HostedCommunitiesSettingsCard() {
   };
 
   const transferCommunity = (community: HostedCommunity, npub: string) =>
-    run("Transferring ownership…", async () => {
+    run(t("settings.hostedCommunities.transferring"), async () => {
       const response = await invoke<CommunityMutationResponse>(
         "transfer_builderlab_community",
         { communityId: community.id, transfereeNpub: npub },
@@ -329,7 +333,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not transfer ownership.",
+            t("settings.hostedCommunities.transferFailed"),
           ),
         );
       }
@@ -389,7 +393,7 @@ export function HostedCommunitiesSettingsCard() {
       communities.length >= MAX_COMMUNITIES
     )
       return;
-    void run("Creating community…", async () => {
+    void run(t("settings.hostedCommunities.creating"), async () => {
       const availabilityResponse = await invoke<AvailabilityResponse>(
         "check_builderlab_community_name",
         { name: normalizedName },
@@ -400,7 +404,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             availabilityResponse.error,
             availabilityResponse.correlation_id,
-            "That Kuzz address is already taken.",
+            t("settings.hostedCommunities.addressTakenError"),
           ),
         );
       }
@@ -413,13 +417,12 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not create the community.",
+            t("settings.hostedCommunities.createFailed"),
           ),
         );
       }
       const url = relayUrl(response.community);
-      if (!url)
-        throw new Error("The new community did not return a relay address.");
+      if (!url) throw new Error(t("settings.hostedCommunities.noRelayAddress"));
       setName("");
       setAvailability(null);
       await loadAccount();
@@ -430,9 +433,7 @@ export function HostedCommunitiesSettingsCard() {
           communityName: response.community.name ?? normalizedName,
         })
       ) {
-        throw new Error(
-          "Another community is already being connected. Finish it before connecting this one.",
-        );
+        throw new Error(t("settings.hostedCommunities.anotherConnecting"));
       }
     });
   };
@@ -443,8 +444,8 @@ export function HostedCommunitiesSettingsCard() {
   return (
     <section className="space-y-6" data-testid="hosted-communities-settings">
       <SettingsSectionHeader
-        title="Hosted communities"
-        description="Kuzz works with any relay. This page is only for relay hosting provided by Block — sign in with a Builderlab account to create and manage Block-hosted communities. Builderlab sign-in is used on this page alone."
+        title={t("settings.hostedCommunities.title")}
+        description={t("settings.hostedCommunities.description")}
       />
 
       {error ? (
@@ -456,17 +457,19 @@ export function HostedCommunitiesSettingsCard() {
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="h-4 w-4 animate-spin" /> Checking sign-in…
+          <LoaderCircle className="h-4 w-4 animate-spin" />{" "}
+          {t("settings.hostedCommunities.checkingSignIn")}
         </div>
       ) : !auth ? (
         <div className="rounded-xl border border-border/70 p-5">
-          <h3 className="font-medium">Sign in to manage hosted communities</h3>
+          <h3 className="font-medium">
+            {t("settings.hostedCommunities.signInTitle")}
+          </h3>
           <p
             className="mt-2 max-w-2xl text-sm text-muted-foreground/70"
             data-settings-subcopy
           >
-            Authentication opens in your browser and returns securely to Kuzz.
-            You can use every other part of the app without signing in.
+            {t("settings.hostedCommunities.signInBody")}
           </p>
           <Button
             className="mt-4"
@@ -478,7 +481,7 @@ export function HostedCommunitiesSettingsCard() {
             ) : (
               <ExternalLink className="h-4 w-4" />
             )}
-            {action ?? "Sign in with Builderlab"}
+            {action ?? t("settings.hostedCommunities.signInButton")}
           </Button>
         </div>
       ) : (
@@ -486,7 +489,9 @@ export function HostedCommunitiesSettingsCard() {
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 p-4">
             <div>
               <p className="text-sm font-medium">
-                {auth.name || auth.email || "Builderlab account"}
+                {auth.name ||
+                  auth.email ||
+                  t("settings.hostedCommunities.accountFallback")}
               </p>
               {auth.name && auth.email ? (
                 <p className="text-xs text-muted-foreground">{auth.email}</p>
@@ -498,23 +503,21 @@ export function HostedCommunitiesSettingsCard() {
               disabled={busy}
               onClick={() => void signOut()}
             >
-              <LogOut className="h-4 w-4" /> Sign out
+              <LogOut className="h-4 w-4" />{" "}
+              {t("settings.hostedCommunities.signOut")}
             </Button>
           </div>
 
           {!identity ? (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-5">
               <h3 className="font-medium">
-                Link this account to your Kuzz identity
+                {t("settings.hostedCommunities.linkTitle")}
               </h3>
               <p
                 className="mt-2 text-sm text-muted-foreground/70"
                 data-settings-subcopy
               >
-                This Builderlab account isn&apos;t linked to a Kuzz identity
-                yet. Connect this device&apos;s key to create and own
-                communities under it — Kuzz signs a one-time challenge locally,
-                so your private key never leaves Desktop.
+                {t("settings.hostedCommunities.linkBody")}
               </p>
               <Button
                 className="mt-4"
@@ -524,7 +527,7 @@ export function HostedCommunitiesSettingsCard() {
                 {action ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                {action ?? "Connect Kuzz identity"}
+                {action ?? t("settings.hostedCommunities.connectIdentity")}
               </Button>
             </div>
           ) : identityMismatch ? (
@@ -533,26 +536,27 @@ export function HostedCommunitiesSettingsCard() {
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <div>
                   <h3 className="font-medium">
-                    This account is connected to a different Kuzz identity
+                    {t("settings.hostedCommunities.mismatchTitle")}
                   </h3>
                   <p
                     className="mt-2 text-sm text-muted-foreground/70"
                     data-settings-subcopy
                   >
-                    Your Builderlab account owns communities under another Kuzz
-                    key, so connecting them here would join a relay this device
-                    isn&apos;t a member of. Creating and connecting are paused
-                    until the identities match.
+                    {t("settings.hostedCommunities.mismatchBody")}
                   </p>
                   <dl className="mt-3 space-y-1 text-xs">
                     <div className="flex flex-wrap gap-x-2">
-                      <dt className="text-muted-foreground">Account uses</dt>
+                      <dt className="text-muted-foreground">
+                        {t("settings.hostedCommunities.accountUses")}
+                      </dt>
                       <dd className="font-mono">
                         {boundNpub ?? UNAVAILABLE_KEY_LABEL}
                       </dd>
                     </div>
                     <div className="flex flex-wrap gap-x-2">
-                      <dt className="text-muted-foreground">This device</dt>
+                      <dt className="text-muted-foreground">
+                        {t("settings.hostedCommunities.thisDevice")}
+                      </dt>
                       <dd className="font-mono">
                         {localNpub ?? UNAVAILABLE_KEY_LABEL}
                       </dd>
@@ -568,14 +572,14 @@ export function HostedCommunitiesSettingsCard() {
                 {action ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                {action ?? "Switch to this device's identity"}
+                {action ?? t("settings.hostedCommunities.switchIdentity")}
               </Button>
             </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 p-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Kuzz
-                identity connected
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />{" "}
+                {t("settings.hostedCommunities.identityConnected")}
                 {boundNpub ? (
                   <span className="font-mono text-xs">{boundNpub}</span>
                 ) : null}
@@ -590,23 +594,32 @@ export function HostedCommunitiesSettingsCard() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-medium">
-                Your communities
+                {t("settings.hostedCommunities.yourCommunities")}
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {communities.length} of {MAX_COMMUNITIES} used
+                  {t("settings.hostedCommunities.usage", {
+                    used: communities.length,
+                    max: MAX_COMMUNITIES,
+                  })}
                 </span>
               </h3>
               <Button
                 variant="ghost"
                 size="sm"
                 disabled={busy}
-                onClick={() => void run("Refreshing…", loadAccount)}
+                onClick={() =>
+                  void run(
+                    t("settings.hostedCommunities.refreshing"),
+                    loadAccount,
+                  )
+                }
               >
-                <RefreshCw className="h-4 w-4" /> Refresh
+                <RefreshCw className="h-4 w-4" />{" "}
+                {t("settings.hostedCommunities.refresh")}
               </Button>
             </div>
             {communities.length === 0 ? (
               <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-                No hosted communities yet.
+                {t("settings.hostedCommunities.empty")}
               </p>
             ) : (
               <ul className="space-y-2">
@@ -657,24 +670,26 @@ export function HostedCommunitiesSettingsCard() {
             onSubmit={createCommunity}
           >
             <div>
-              <h3 className="font-medium">Create a community</h3>
+              <h3 className="font-medium">
+                {t("settings.hostedCommunities.createTitle")}
+              </h3>
               <p
                 className="mt-1 text-sm text-muted-foreground/70"
                 data-settings-subcopy
               >
-                Choose the address your team will use to connect.
+                {t("settings.hostedCommunities.createBody")}
               </p>
             </div>
             {atCommunityLimit ? (
               <p className="text-sm text-muted-foreground">
-                You&apos;ve reached the limit of {MAX_COMMUNITIES} hosted
-                communities. Transfer one to free up a slot before creating
-                another.
+                {t("settings.hostedCommunities.limitReached", {
+                  max: MAX_COMMUNITIES,
+                })}
               </p>
             ) : null}
             <div className="flex max-w-xl items-center gap-2">
               <Input
-                aria-label="Community address"
+                aria-label={t("settings.hostedCommunities.addressLabel")}
                 autoComplete="off"
                 disabled={
                   !usableBoundIdentity ||
@@ -697,19 +712,19 @@ export function HostedCommunitiesSettingsCard() {
             </div>
             {name && !validName ? (
               <p className="text-sm text-destructive">
-                Use lowercase letters, numbers, and single hyphens.
+                {t("settings.hostedCommunities.invalidName")}
               </p>
             ) : validName && checkingName ? (
               <p className="text-sm text-muted-foreground">
-                Checking availability…
+                {t("settings.hostedCommunities.checkingAvailability")}
               </p>
             ) : availability === false ? (
               <p className="text-sm text-destructive">
-                That address is already taken.
+                {t("settings.hostedCommunities.addressTaken")}
               </p>
             ) : availability === true ? (
               <p className="text-sm text-emerald-600">
-                That address is available.
+                {t("settings.hostedCommunities.addressAvailable")}
               </p>
             ) : null}
             <Button
@@ -727,7 +742,7 @@ export function HostedCommunitiesSettingsCard() {
               {action ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
               ) : null}
-              {action ?? "Create and connect"}
+              {action ?? t("settings.hostedCommunities.createAndConnect")}
             </Button>
           </form>
         </>
@@ -743,6 +758,7 @@ function UnpairIdentityButton({
   busy: boolean;
   onConfirm: () => void;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
@@ -753,24 +769,25 @@ function UnpairIdentityButton({
         disabled={busy}
         onClick={() => setOpen(true)}
       >
-        <Unlink className="h-4 w-4" /> Unpair identity
+        <Unlink className="h-4 w-4" />{" "}
+        {t("settings.hostedCommunities.unpairIdentity")}
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Unpair this Kuzz identity?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {t("settings.hostedCommunities.unpairTitle")}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            Your Builderlab account will no longer be connected to this Kuzz
-            key. You can reconnect any key later, but community actions stay
-            unavailable until you do.
+            {t("settings.hostedCommunities.unpairBody")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className={buttonVariants({ variant: "destructive" })}
             onClick={onConfirm}
           >
-            Unpair identity
+            {t("settings.hostedCommunities.unpairIdentity")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -797,12 +814,16 @@ function CommunityRow({
   onTransfer: (npub: string) => Promise<boolean>;
   showIconPicker: boolean;
 }) {
+  const t = useT();
   const [confirmArchive, setConfirmArchive] = React.useState(false);
   const [confirmUnarchive, setConfirmUnarchive] = React.useState(false);
   const [transferOpen, setTransferOpen] = React.useState(false);
   const url = relayUrl(community);
   const archived = Boolean(community.archived_at);
-  const displayName = community.name ?? community.slug ?? "Hosted community";
+  const displayName =
+    community.name ??
+    community.slug ??
+    t("settings.hostedCommunities.communityFallback");
 
   return (
     <li
@@ -820,7 +841,7 @@ function CommunityRow({
             data-settings-subcopy
           >
             {community.normalized_host}
-            {archived ? " · Archived" : ""}
+            {archived ? ` · ${t("settings.hostedCommunities.archived")}` : ""}
           </p>
         </div>
       </div>
@@ -833,7 +854,8 @@ function CommunityRow({
             disabled={busy || !community.id}
             onClick={() => setConfirmUnarchive(true)}
           >
-            <ArchiveRestore className="h-4 w-4" /> Unarchive
+            <ArchiveRestore className="h-4 w-4" />{" "}
+            {t("settings.hostedCommunities.unarchive")}
           </Button>
           <AlertDialog
             open={confirmUnarchive}
@@ -841,16 +863,19 @@ function CommunityRow({
           >
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Unarchive {displayName}?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {t("settings.hostedCommunities.unarchiveTitle", {
+                    name: displayName,
+                  })}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This address becomes connectable again. Connections that
-                  closed during archival will not reconnect automatically.
+                  {t("settings.hostedCommunities.unarchiveBody")}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                 <AlertDialogAction onClick={onUnarchive}>
-                  Unarchive
+                  {t("settings.hostedCommunities.unarchive")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -865,7 +890,7 @@ function CommunityRow({
               disabled={busy}
               onClick={onConnect}
             >
-              Connect
+              {t("settings.hostedCommunities.connect")}
             </Button>
           ) : null}
           <Button
@@ -874,7 +899,8 @@ function CommunityRow({
             disabled={busy || !community.id}
             onClick={() => setTransferOpen(true)}
           >
-            <ArrowLeftRight className="h-4 w-4" /> Transfer
+            <ArrowLeftRight className="h-4 w-4" />{" "}
+            {t("settings.hostedCommunities.transfer")}
           </Button>
           <Button
             variant="ghost"
@@ -883,27 +909,29 @@ function CommunityRow({
             disabled={busy || !community.id}
             onClick={() => setConfirmArchive(true)}
           >
-            <Archive className="h-4 w-4" /> Archive
+            <Archive className="h-4 w-4" />{" "}
+            {t("settings.hostedCommunities.archive")}
           </Button>
 
           <AlertDialog open={confirmArchive} onOpenChange={setConfirmArchive}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Archive {displayName}?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {t("settings.hostedCommunities.archiveTitle", {
+                    name: displayName,
+                  })}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  New and existing connections stop and the address stays
-                  reserved. Archiving can&apos;t be undone from here without
-                  unarchiving, and the community keeps counting toward your
-                  quota — it isn&apos;t deleted.
+                  {t("settings.hostedCommunities.archiveBody")}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                 <AlertDialogAction
                   className={buttonVariants({ variant: "destructive" })}
                   onClick={onArchive}
                 >
-                  Archive
+                  {t("settings.hostedCommunities.archive")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -935,6 +963,7 @@ function TransferOwnershipDialog({
   busy: boolean;
   onTransfer: (npub: string) => Promise<boolean>;
 }) {
+  const t = useT();
   const [npub, setNpub] = React.useState("");
   const npubIsValid = npub.startsWith("npub1") && npub.length >= 50;
 
@@ -952,16 +981,18 @@ function TransferOwnershipDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Transfer ownership</DialogTitle>
+          <DialogTitle>
+            {t("settings.hostedCommunities.transferTitle")}
+          </DialogTitle>
           <DialogDescription>
-            Transfer {communityName} to another person. You become a regular
-            member. The recipient needs a connected Kuzz identity first, and
-            this can&apos;t be undone.
+            {t("settings.hostedCommunities.transferBody", {
+              name: communityName,
+            })}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <Input
-            aria-label="Recipient npub"
+            aria-label={t("settings.hostedCommunities.recipientLabel")}
             autoComplete="off"
             className="font-mono text-sm"
             placeholder="npub1…"
@@ -971,13 +1002,13 @@ function TransferOwnershipDialog({
           />
           {npub.length > 0 && !npubIsValid ? (
             <p className="text-sm text-destructive">
-              Enter a valid npub that starts with npub1.
+              {t("settings.hostedCommunities.invalidNpub")}
             </p>
           ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             variant="destructive"
@@ -985,7 +1016,7 @@ function TransferOwnershipDialog({
             onClick={() => void submit()}
           >
             {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-            Transfer ownership
+            {t("settings.hostedCommunities.transferTitle")}
           </Button>
         </DialogFooter>
       </DialogContent>

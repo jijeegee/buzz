@@ -7,6 +7,7 @@ import type {
   ManagedAgent,
   UpdatePersonaInput,
 } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { AgentCardMintDialog } from "@/features/agents/ui/AgentCardMintDialog";
 import { PersonaDeleteDialog } from "@/features/agents/ui/PersonaDeleteDialog";
 import { AgentDialog } from "@/features/agents/ui/AgentDialog";
@@ -88,6 +89,7 @@ export function UserProfilePersonaDialogs({
   onExportSnapshot: (persona: AgentPersona) => void;
   onSubmit: (input: CreatePersonaInput | UpdatePersonaInput) => Promise<void>;
 }) {
+  const t = useT();
   const runtimeCatalogStatus = runtimesLoading
     ? "loading"
     : runtimesError
@@ -110,8 +112,10 @@ export function UserProfilePersonaDialogs({
         }}
         onSubmit={onSubmit}
         open={personaDialogState !== null}
-        submitLabel={personaDialogState?.submitLabel ?? "Save"}
-        title={personaDialogState?.title ?? "Agent"}
+        submitLabel={personaDialogState?.submitLabel ?? t("common.save")}
+        title={
+          personaDialogState?.title ?? t("profile.panel.agentFallbackName")
+        }
       />
       <PersonaDeleteDialog
         instanceCount={instanceCount}
