@@ -294,3 +294,35 @@ test("narrow threads do not offer an unavailable layout switch", async ({
   await expect(page.getByTestId("message-thread-panel")).toBeVisible();
   await expect(page.getByTestId("thread-view-mode-toggle")).toHaveCount(0);
 });
+
+test("Escape closes the search opened over a thread before the thread", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.addInitScript(() => {
+    localStorage.setItem("kuzz.channels.threadViewMode", "focus");
+  });
+  await installMockBridge(page);
+  await page.goto("/");
+  const rootId = await seedLongThread(page);
+  await page.getByTestId("channel-general").click();
+  await page
+    .locator(
+      `[data-testid="message-thread-summary"][data-thread-head-id="${rootId}"]`,
+    )
+    .click();
+  const drawer = page.getByTestId("focus-thread-drawer");
+  await expect(drawer).toBeVisible();
+
+  await page.getByTestId("open-search").click();
+  const search = page.getByTestId("search-results");
+  await expect(search).toBeVisible();
+
+  // The topmost layer closes first: search, then the thread.
+  await page.keyboard.press("Escape");
+  await expect(search).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("focus-thread-drawer-overlay")).toHaveCount(0);
+});

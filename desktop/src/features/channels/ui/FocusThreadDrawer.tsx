@@ -164,6 +164,18 @@ function useViewportRightInsetPx(
   return rightInsetPx;
 }
 
+const OVERLAY_LAYER_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+
+/** True when a visible dialog or menu outside the thread drawer is open. */
+function hasOpenLayerAbove(drawer: HTMLElement | null) {
+  for (const layer of document.querySelectorAll(OVERLAY_LAYER_SELECTOR)) {
+    if (drawer && (drawer.contains(layer) || layer.contains(drawer))) continue;
+    if (layer.getClientRects().length > 0) return true;
+  }
+  return false;
+}
+
 /**
  * Right-anchored thread drawer that overlays the channel content area.
  *
@@ -212,6 +224,9 @@ export function FocusThreadDrawer({
       ) {
         return;
       }
+      // The topmost layer closes first: a dialog or menu opened over the
+      // thread (e.g. search) handles this Escape, not the thread.
+      if (hasOpenLayerAbove(drawerRef.current)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       onClose();
