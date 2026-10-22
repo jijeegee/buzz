@@ -192,3 +192,62 @@ fn legacy_v1_envelope_is_bound_to_the_pre_rename_domain() {
         .unwrap();
     assert!(master().reencrypt_legacy_v1(&account, &forged).is_err());
 }
+
+#[test]
+fn agent_copy_round_trips_and_never_opens_as_another_envelope() {
+    let agent = Keys::generate();
+    let owner = [5; 32];
+    let copy = master()
+        .encrypt_agent(&owner, &agent.secret_key().to_secret_hex())
+        .unwrap();
+    assert_eq!(copy.version, AGENT_BACKUP_VERSION);
+    assert_eq!(copy.pubkey, agent.public_key().to_bytes());
+    let secret = master().decrypt_agent(&owner, &copy).unwrap();
+    assert_eq!(
+        Keys::parse(secret.as_str()).unwrap().public_key(),
+        agent.public_key()
+    );
+    // Another owner, the account-backup domain and a tampered key all fail.
+    assert!(master().decrypt_agent(&[6; 32], &copy).is_err());
+    assert!(master().decrypt(&owner, &copy).is_err());
+    let account = master()
+        .encrypt(&owner, &agent.secret_key().to_secret_hex())
+        .unwrap();
+    assert!(master().decrypt_agent(&owner, &account).is_err());
+    let mut moved = copy.clone();
+    moved.pubkey = Keys::generate().public_key().to_bytes();
+    assert!(master().decrypt_agent(&owner, &moved).is_err());
+}
+
+#[test]
+fn agent_register_signature_binds_challenge_owner_and_device() {
+    use nostr::hashes::{sha256::Hash as Sha256Hash, Hash as _};
+
+    let agent = Keys::generate();
+    let (challenge, owner, device) = ("c".repeat(64), "a".repeat(64), "02".repeat(33));
+    assert_eq!(
+        agent_register_message(&challenge, &owner, &device),
+        format!("kuzz-agent-register/v1\n{challenge}\n{owner}\n{device}")
+    );
+    let digest = Sha256Hash::hash(agent_register_message(&challenge, &owner, &device).as_bytes());
+    let signature = agent
+        .sign_schnorr(&nostr::secp256k1::Message::from_digest(
+            digest.to_byte_array(),
+        ))
+        .to_string();
+    let pubkey = agent.public_key();
+    assert!(verify_agent_register(&pubkey, &signature, &challenge, &owner, &device).is_ok());
+    let other = "b".repeat(64);
+    assert!(verify_agent_register(&pubkey, &signature, &other, &owner, &device).is_err());
+    assert!(verify_agent_register(&pubkey, &signature, &challenge, &other, &device).is_err());
+    assert!(verify_agent_register(&pubkey, &signature, &challenge, &owner, "03").is_err());
+    assert!(verify_agent_register(
+        &Keys::generate().public_key(),
+        &signature,
+        &challenge,
+        &owner,
+        &device
+    )
+    .is_err());
+    assert!(verify_agent_register(&pubkey, "00", &challenge, &owner, &device).is_err());
+}

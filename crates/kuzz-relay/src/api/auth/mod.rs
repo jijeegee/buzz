@@ -14,6 +14,7 @@
 // does); boxing it would only add an allocation per rejection.
 #![allow(clippy::result_large_err)]
 
+mod agents;
 mod bots;
 mod key_backup;
 mod oidc;
@@ -44,6 +45,8 @@ use tower_http::limit::RequestBodyLimitLayer;
 use crate::identity::{verify_access_token, verify_session_token, TokenRejection};
 use crate::state::AppState;
 
+pub(crate) use agents::{status_many as agent_status_many, status_one as agent_status_one};
+
 /// Bound on `/auth/*` request bodies.
 const AUTH_BODY_LIMIT: usize = 16 * 1024;
 
@@ -56,6 +59,9 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         )
         .route("/auth/key-backup/challenge", post(key_backup::challenge))
         .route("/auth/key-backup/restore", post(key_backup::restore))
+        .route("/auth/agents/challenge", post(agents::challenge))
+        .route("/auth/agents/register", post(agents::register))
+        .route("/auth/agents/keys", get(agents::keys))
         .route("/auth/oidc/{provider}/start", get(oidc::start))
         .route("/auth/oidc/{provider}/callback", get(oidc::callback))
         .route("/auth/oidc/complete", post(oidc::complete))
@@ -253,6 +259,29 @@ async fn authenticate_user_session(
     headers: &HeaderMap,
 ) -> Result<TokenBinding, Response> {
     let binding = authenticate_session(state, headers).await?;
+    if binding.kind != AccessTokenKind::User {
+        return Err(forbidden("a user session token is required"));
+    }
+    Ok(binding)
+}
+
+/// A user session token, without the mode-dependent device proof: the
+/// caller checks it itself in every mode
+/// ([`crate::identity::device::check_request_proof_always`]).
+async fn authenticate_user_token(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<TokenBinding, Response> {
+    let token = bearer_token(headers).ok_or_else(|| {
+        auth_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "missing bearer token",
+        )
+    })?;
+    let binding = verify_session_token(state, &token)
+        .await
+        .map_err(rejection_response)?;
     if binding.kind != AccessTokenKind::User {
         return Err(forbidden("a user session token is required"));
     }

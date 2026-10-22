@@ -6,7 +6,10 @@
 //! - Kuzz agent key (`key_registry` role `agent`, principal = owner): only on
 //!   its host device, while the owner has a live login session there;
 //! - external agent key (role `external`): only on its own paired device
-//!   until that device is revoked; no login is needed.
+//!   until that device is revoked; no login is needed;
+//! - a registry row without a host device (an agent bound to its owner by
+//!   the 0080 backfill but not yet registered from a device, or one whose
+//!   host row was deleted) is usable nowhere until it is registered.
 //!
 //! A saved key is useless without a live login on that device. There is no
 //! key ban: a revoke only revokes, and signing back in needs the identity
@@ -52,6 +55,8 @@ pub enum KeyRefusal {
     PrincipalDisabled,
     /// The key itself was revoked.
     KeyRevoked,
+    /// The agent key has an owner but no host device yet.
+    Unbound,
     /// No device proof was presented.
     NoDevice,
     /// The device key is not a device of the key's account.
@@ -70,6 +75,7 @@ impl KeyRefusal {
         match self {
             Self::PrincipalDisabled => "principal_disabled",
             Self::KeyRevoked => "key_revoked",
+            Self::Unbound => "unbound",
             Self::NoDevice => "no_device",
             Self::DeviceUnknown => "device_unknown",
             Self::DeviceRevoked => "device_revoked",
@@ -113,6 +119,8 @@ pub(super) struct AdmissionFacts {
     pub principal: PrincipalId,
     pub key_revoked: bool,
     pub principal_disabled: bool,
+    /// An agent or external key has a host device (always true for persons).
+    pub host_bound: bool,
     /// The device row checked: for a person the account's row holding the
     /// presented device key (a live row first), for agents the host row.
     pub device_id: Option<Uuid>,
@@ -140,6 +148,9 @@ pub(super) fn decide(facts: Option<AdmissionFacts>, device_presented: bool) -> K
     }
     if facts.key_revoked {
         return refuse(KeyRefusal::KeyRevoked);
+    }
+    if !facts.host_bound {
+        return refuse(KeyRefusal::Unbound);
     }
     if !device_presented {
         return refuse(KeyRefusal::NoDevice);
@@ -179,7 +190,7 @@ pub(super) async fn key_admission(
            SELECT r.role, r.principal_id, r.host_device_id, r.revoked_at \
              FROM key_registry r WHERE r.pubkey = $1 \
          ) \
-         SELECT k.role, k.principal_id, k.key_revoked_at, p.disabled_at, \
+         SELECT k.role, k.principal_id, k.key_revoked_at, p.disabled_at,                 (k.role = 'person' OR k.host_device_id IS NOT NULL) AS host_bound, \
                 d.id AS device_id, COALESCE(d.device_pubkey = $2, false) AS device_key_matches, \
                 d.revoked_at AS device_revoked_at, \
                 EXISTS (SELECT 1 FROM sessions s \
@@ -224,6 +235,7 @@ pub(super) async fn key_admission(
                 principal_disabled: row
                     .try_get::<Option<DateTime<Utc>>, _>("disabled_at")?
                     .is_some(),
+                host_bound: row.try_get("host_bound")?,
                 device_id: row.try_get("device_id")?,
                 device_key_matches: row.try_get("device_key_matches")?,
                 device_revoked: row
@@ -262,6 +274,7 @@ mod tests {
             principal: PrincipalId::from_slice(&[1u8; 32]).expect("principal"),
             key_revoked: false,
             principal_disabled: false,
+            host_bound: true,
             device_id: Some(Uuid::from_u128(7)),
             device_key_matches: true,
             device_revoked: false,
@@ -354,6 +367,32 @@ mod tests {
             decide(Some(external), true),
             KeyAdmission::Admitted { .. }
         ));
+    }
+
+    /// A backfilled agent (owner known, no host yet) is refused on every
+    /// device, the owner's signed-in ones included, until it is registered.
+    #[test]
+    fn an_unbound_agent_is_refused_everywhere() {
+        for role in [KeyRole::Agent, KeyRole::External] {
+            let mut unbound = facts(role);
+            unbound.host_bound = false;
+            unbound.device_id = None;
+            unbound.device_key_matches = false;
+            for presented in [true, false] {
+                assert_eq!(
+                    refused(decide(Some(unbound.clone()), presented)),
+                    Some(KeyRefusal::Unbound)
+                );
+            }
+        }
+        // A disabled owner or a revoked key still says so first.
+        let mut revoked = facts(KeyRole::Agent);
+        revoked.host_bound = false;
+        revoked.key_revoked = true;
+        assert_eq!(
+            refused(decide(Some(revoked), true)),
+            Some(KeyRefusal::KeyRevoked)
+        );
     }
 
     #[test]

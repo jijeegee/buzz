@@ -11,10 +11,14 @@
 
 mod access_token;
 mod admission;
+mod agent_keys;
 mod bot;
 mod key_backup;
 mod principal;
 mod session;
+
+#[cfg(test)]
+mod agent_keys_postgres_tests;
 
 #[cfg(test)]
 mod key_backup_postgres_tests;
@@ -32,6 +36,7 @@ use crate::error::{DbError, Result};
 
 pub use access_token::{AccessTokenRecord, AccessTokenRejection};
 pub use admission::{KeyAdmission, KeyRefusal, KeyRole};
+pub use agent_keys::{AgentKeyBackupRecord, OwnedKey, RegisterAgentKey, MAX_AGENT_KEYS_PER_DEVICE};
 pub use bot::{BotRecord, ExchangeOutcome};
 pub use key_backup::{
     InitializeKeyBackup, KeyBackupRecord, KeyBackupReencryption, KEY_BACKUP_VERSION,
