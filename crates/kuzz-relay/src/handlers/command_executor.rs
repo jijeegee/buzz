@@ -385,12 +385,23 @@ async fn handle_dm_open(
         PersistResult::Inserted(tx) => tx,
     };
 
-    // 4. Execute: open_dm
-    let (channel, was_created) = state
+    // 4. Execute: open_dm. A reserved DM can race with its own region
+    // creating it (a forwarded open, S4-6): the loser takes the winner's room.
+    let opened = state
         .db
         .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: db open_dm: {e}")))?;
+        .await;
+    let (channel, was_created) = match opened {
+        Ok(opened) => opened,
+        Err(e) => match dm_id {
+            Some(_) => state
+                .db
+                .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
+                .await
+                .map_err(|_| IngestError::Internal(format!("error: db open_dm: {e}")))?,
+            None => return Err(IngestError::Internal(format!("error: db open_dm: {e}"))),
+        },
+    };
 
     // Finalize the idempotency record after the separate mutation succeeds.
     tx.commit()

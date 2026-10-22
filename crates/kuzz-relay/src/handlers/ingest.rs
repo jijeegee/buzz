@@ -3078,9 +3078,12 @@ async fn ingest_event_inner(
     }
 
     // Global regions (S3): a room that lives in another region is not
-    // written here.
+    // written here. A new room is placed by its reservation at the primary
+    // instead (S4-6), which answers the same question.
     if let Some(ch_id) = channel_id {
-        ensure_room_here(state, tenant, ch_id).await?;
+        if !(kind_u32 == KIND_NIP29_CREATE_GROUP && state.config.region_link) {
+            ensure_room_here(state, tenant, ch_id).await?;
+        }
     }
 
     if let Some(ch_id) = channel_id {

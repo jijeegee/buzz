@@ -35,6 +35,19 @@ pub const RESERVE_PATH: &str = "/internal/region/reserve-room";
 pub const LOOKUP_PATH: &str = "/internal/region/room-home";
 
 const UNREACHABLE: &str = "error: could not reach the primary region; try again";
+/// A lookup waits at most this long; routing waits on it.
+const LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// What the primary said about a room this region does not know.
+#[derive(Debug)]
+pub enum Asked {
+    /// It lives in another region.
+    Elsewhere(RemoteHome),
+    /// No region has it (or the link is off, or this is the primary).
+    Unknown,
+    /// The primary could not be asked: the caller fails retryably.
+    Failed,
+}
 
 /// Where a room being created must be created.
 #[derive(Debug)]
@@ -109,7 +122,12 @@ pub async fn reserve(
             .db
             .reserve_room_home(community, channel_id, local, participant_hash)
             .await
-            .map_err(|error| IngestError::Rejected(format!("invalid: {error}")))?
+            .map_err(|error| match error {
+                kuzz_db::DbError::InvalidData(message) => {
+                    IngestError::Rejected(format!("invalid: {message}"))
+                }
+                error => IngestError::Internal(format!("error: {error}")),
+            })?
     } else {
         let body = json!({
             "channel_id": channel_id,
@@ -173,44 +191,57 @@ pub async fn reserve(
 }
 
 /// A room this region's directory does not know: ask the primary where it
-/// lives and remember it. `None` when it lives nowhere else, the link is
-/// off, this is the primary, or the primary cannot be reached.
-pub async fn ask_primary(
-    state: &AppState,
-    community: CommunityId,
-    channel_id: Uuid,
-) -> Option<RemoteHome> {
+/// lives and remember it. After a failed lookup the primary is not asked
+/// for a few seconds, and only a bounded number of lookups run at once, so
+/// unknown or random room ids cannot pile up calls.
+pub async fn ask_primary(state: &AppState, community: CommunityId, channel_id: Uuid) -> Asked {
     if !state.config.region_link || is_primary(state) {
-        return None;
+        return Asked::Unknown;
     }
     if state.room_router.recently_unknown(community, channel_id) {
-        return None;
+        return Asked::Unknown;
     }
-    let answer = crate::region_link::call(
-        state,
-        &state.config.primary_region,
-        *community.as_uuid(),
-        LOOKUP_PATH,
-        &json!({ "channel_id": channel_id }),
-        None,
-        None,
+    let Some(_slot) = state.room_router.primary_lookup_slot() else {
+        metrics::counter!("kuzz_region_room_lookups_total", "outcome" => "skipped").increment(1);
+        return Asked::Failed;
+    };
+    let answer = tokio::time::timeout(
+        LOOKUP_TIMEOUT,
+        crate::region_link::call(
+            state,
+            &state.config.primary_region,
+            *community.as_uuid(),
+            LOOKUP_PATH,
+            &json!({ "channel_id": channel_id }),
+            None,
+            None,
+        ),
     )
     .await;
     let answer = match answer {
-        Ok(answer) => answer,
-        Err(error) => {
+        Ok(Ok(answer)) => answer,
+        Ok(Err(error)) => {
             tracing::warn!(?error, "Could not ask the primary region for a room's home");
-            return None;
+            state.room_router.note_primary_down();
+            metrics::counter!("kuzz_region_room_lookups_total", "outcome" => "failed").increment(1);
+            return Asked::Failed;
+        }
+        Err(_) => {
+            tracing::warn!("Asking the primary region for a room's home timed out");
+            state.room_router.note_primary_down();
+            metrics::counter!("kuzz_region_room_lookups_total", "outcome" => "failed").increment(1);
+            return Asked::Failed;
         }
     };
+    metrics::counter!("kuzz_region_room_lookups_total", "outcome" => "ok").increment(1);
     let Some(home) = home_from(&answer) else {
         state.room_router.note_unknown(community, channel_id);
-        return None;
+        return Asked::Unknown;
     };
     if home.region == state.config.region_id {
         // The primary says it is ours, but it is not here (yet).
         state.room_router.note_unknown(community, channel_id);
-        return None;
+        return Asked::Unknown;
     }
     if let Err(error) = state
         .db
@@ -220,7 +251,7 @@ pub async fn ask_primary(
         tracing::warn!(%error, "Could not remember a room's home");
     }
     state.room_router.forget(community, channel_id);
-    Some(remote_home(state, channel_id, home).await)
+    Asked::Elsewhere(remote_home(state, channel_id, home).await)
 }
 
 fn refused() -> (StatusCode, Json<Value>) {
