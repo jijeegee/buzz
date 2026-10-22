@@ -75,6 +75,8 @@ pub mod region_stream;
 /// Calls between relays of different regions (entry attestations).
 pub mod region_link;
 pub mod region_live;
+/// Logouts and disconnects across regions (S4-5).
+pub mod region_propagate;
 /// Reads of rooms another region serves.
 pub mod region_read;
 /// Axum router construction.

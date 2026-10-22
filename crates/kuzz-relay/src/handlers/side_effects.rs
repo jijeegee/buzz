@@ -236,7 +236,7 @@ pub(crate) async fn apply_kick_live_side_effects(
     Ok(())
 }
 
-async fn evict_live_channel_subscriptions(
+pub(crate) async fn evict_live_channel_subscriptions(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     channel_id: Uuid,

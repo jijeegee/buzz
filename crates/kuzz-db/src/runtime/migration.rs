@@ -511,6 +511,7 @@ mod postgres_tests {
             "access_tokens",
             "regions",
             "local_region",
+            "region_outbox",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -725,7 +726,15 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 83);
+        assert_eq!(migrations.len(), 84);
+        assert_eq!(migrations[83].version, 85);
+        assert!(migrations[83]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE region_outbox"));
+        assert!(
+            include_str!("../../../../schema/schema.sql").contains("CREATE TABLE region_outbox")
+        );
         assert_eq!(migrations[82].version, 84);
         assert!(migrations[82]
             .sql

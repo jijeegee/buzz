@@ -308,6 +308,12 @@ pub(crate) async fn publish_revocations(
             metrics::counter!("kuzz_auth_revocation_publish_failures_total").increment(1);
             tracing::warn!(%error, reason, "auth revocation publish failed; DB recheck backstops");
         }
+        // Connections in other regions (S4-5).
+        crate::region_propagate::spread_global(
+            state,
+            &crate::region_propagate::Propagate::AuthRevoked(message),
+        )
+        .await;
     }
 }
 

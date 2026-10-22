@@ -66,7 +66,7 @@ pub use store::{
     channel_members, chat_backfill, chat_import, chat_list, chat_state, chat_user_state, community,
     deletion, dm, event, feed, git_repo, identity, inbox_summary, media_access, moderation,
     operator_listener, partition, people, product_feedback, push, reaction, read_state, region,
-    relay_admin_actions, relay_invite, relay_members, relay_operators, reminder, replaceable,
+    region_outbox, relay_admin_actions, relay_invite, relay_members, relay_operators, reminder, replaceable,
     side_effect_outbox, storage_accounting, thread, thread_window, usage, user, workflow,
 };
 

@@ -1276,6 +1276,9 @@ pub struct AppState {
     pub room_router: Arc<crate::routing::RoomRouter>,
     /// Live rooms of other regions (S4-4b): one stream per home region.
     pub region_live: Arc<crate::region_live::RegionLive>,
+    /// Membership and visibility changes, for the region streams of this pod
+    /// (S4-5).
+    pub room_access_changes: tokio::sync::broadcast::Sender<crate::region_stream::RoomAccessChange>,
     /// Process-local generation advertised for non-mesh huddle liveness.
     ///
     /// A fresh value on every relay start lets desktop clients retire persisted
@@ -1567,6 +1570,7 @@ impl AppState {
             relay_keypair,
             room_router,
             region_live: Arc::new(crate::region_live::RegionLive::default()),
+            room_access_changes: tokio::sync::broadcast::channel(1024).0,
             huddle_liveness_generation: Uuid::new_v4(),
 
             local_event_ids: Arc::new(
@@ -1916,12 +1920,27 @@ impl AppState {
         match invalidation {
             CacheInvalidation::Membership { channel_id, pubkey } => {
                 self.invalidate_membership_local(community_id, channel_id, &pubkey);
+                // No receivers (no region streams) is the usual case.
+                let _ = self
+                    .room_access_changes
+                    .send(crate::region_stream::RoomAccessChange {
+                        community: community_id,
+                        room: channel_id,
+                        reader: Some(pubkey),
+                    });
             }
             CacheInvalidation::AccessibleAll => {
                 self.invalidate_all_accessible_channels_local(community_id);
             }
             CacheInvalidation::Visibility { channel_id } => {
                 self.invalidate_channel_visibility_local(community_id, channel_id);
+                let _ = self
+                    .room_access_changes
+                    .send(crate::region_stream::RoomAccessChange {
+                        community: community_id,
+                        room: channel_id,
+                        reader: None,
+                    });
             }
             CacheInvalidation::ChannelDeleted => {
                 self.invalidate_channel_deleted_local(community_id);
@@ -2071,6 +2090,8 @@ impl AppState {
         // no-ops (its local sockets are already closed above) — intentional; do
         // not add origin-suppression, it buys nothing.
         let pubsub = Arc::clone(&self.pubsub);
+        let db = self.db.clone();
+        let config = Arc::clone(&self.config);
         let tenant = tenant.clone();
         let command = ConnControl::DisconnectPubkey {
             pubkey: pubkey.to_vec(),
@@ -2086,6 +2107,15 @@ impl AppState {
             if let Err(e) = pubsub.publish_conn_control(&tenant, &command).await {
                 tracing::warn!("Failed to publish conn-control disconnect: {e}");
             }
+            // Connections in other regions (S4-5). A failure is logged; the
+            // ban row refuses the member again at sign-in.
+            let _ = crate::region_propagate::spread_with(
+                &db,
+                &config,
+                *tenant.community().as_uuid(),
+                &crate::region_propagate::Propagate::ConnControl(command),
+            )
+            .await;
         });
 
         closed
@@ -2098,7 +2128,7 @@ impl AppState {
     pub async fn disconnect_community_clusterwide(
         &self,
         tenant: &TenantContext,
-    ) -> Result<usize, kuzz_pubsub::PubSubError> {
+    ) -> Result<usize, String> {
         let closed = self
             .community_connections
             .disconnect_community(tenant.community());
@@ -2106,7 +2136,16 @@ impl AppState {
             .fetch_add(1, Ordering::Relaxed);
         self.pubsub
             .publish_conn_control(tenant, &ConnControl::DisconnectCommunity)
-            .await?;
+            .await
+            .map_err(|error| error.to_string())?;
+        // Then other regions (S4-5); a failure is retried by the caller like
+        // the publish, and a repeated row is harmless.
+        crate::region_propagate::spread(
+            self,
+            *tenant.community().as_uuid(),
+            &crate::region_propagate::Propagate::ConnControl(ConnControl::DisconnectCommunity),
+        )
+        .await?;
         Ok(closed)
     }
 
