@@ -8,6 +8,7 @@ import type {
   Repository,
 } from "@/features/projects/hooks";
 import { issueShareLink } from "@/features/projects/lib/projectShareLinks";
+import { issueStatusLabel } from "@/features/projects/lib/projectStatusLabels";
 import { selectionItemFromTask } from "@/features/projects/lib/projectSelection";
 import type { ProjectWorkItemSection } from "@/features/projects/projectWorkItems";
 import {
@@ -34,6 +35,7 @@ import { ProjectSelectableGroup } from "./ProjectSelectableGroup";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { ProjectsWorkItemsLoadNotice } from "./ProjectsWorkItemsLoadNotice";
 import { groupProjectWorkItemsByProject } from "./projectWorkItemGroups";
+import { type Translate, useT } from "@/shared/i18n";
 
 type ProjectsIssuesListProps = {
   /** Render without container chrome — a parent table container provides border and rounding. */
@@ -54,11 +56,12 @@ type ProjectsIssuesListProps = {
   viewMode: "grid" | "list";
 };
 
-function nextStepLabel(status: ProjectIssue["status"]) {
-  if (status === "Done" || status === "Closed") return "View task";
-  if (status === "In Review") return "Review task";
-  if (status === "Triage") return "Triage task";
-  return "Open task";
+function nextStepLabel(status: ProjectIssue["status"], t: Translate) {
+  if (status === "Done" || status === "Closed")
+    return t("projects.tasksList.viewTask");
+  if (status === "In Review") return t("projects.tasksList.reviewTask");
+  if (status === "Triage") return t("projects.tasksList.triageTask");
+  return t("projects.tasksList.openTask");
 }
 
 const IssueGridCard = React.memo(function IssueGridCard({
@@ -76,6 +79,7 @@ const IssueGridCard = React.memo(function IssueGridCard({
   project: Project;
   repository: Repository;
 }) {
+  const t = useT();
   return (
     <Card
       className="group relative flex min-h-32 flex-col overflow-hidden border-border/60 bg-transparent p-4 shadow-none transition-colors duration-150 hover:bg-muted/20"
@@ -86,7 +90,9 @@ const IssueGridCard = React.memo(function IssueGridCard({
         onClick={() => onOpen(project, repository, issue)}
         type="button"
       >
-        <span className="sr-only">View task {issue.title}</span>
+        <span className="sr-only">
+          {t("projects.tasksList.viewItem", { title: issue.title })}
+        </span>
       </button>
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <h3
@@ -99,14 +105,14 @@ const IssueGridCard = React.memo(function IssueGridCard({
           className={cn(PROJECT_GRID_CARD_BODY_CLASS, "text-muted-foreground")}
           data-testid="projects-grid-card-body"
         >
-          {issue.content || "No description provided."}
+          {issue.content || t("projects.list.noDescription")}
         </p>
         <div
           className="mt-auto flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
           data-testid="projects-grid-card-indicator"
         >
           <ProjectEventTypeIcon className="h-3.5 w-3.5" kind="issue" />
-          <span>{issue.status}</span>
+          <span>{issueStatusLabel(issue.status)}</span>
         </div>
       </div>
     </Card>
@@ -149,6 +155,7 @@ const IssueListRow = React.memo(function IssueListRow({
   rangeItems: ReturnType<typeof issueSelectionItem>[];
   repository: Repository;
 }) {
+  const t = useT();
   const authorLabel = resolveUserLabel({ profiles, pubkey: issue.author });
 
   return (
@@ -174,17 +181,19 @@ const IssueListRow = React.memo(function IssueListRow({
       }}
       testId={`projects-issue-row-${issue.id}`}
       title={issue.title}
-      titleAttr={`Open task ${issue.title}`}
+      titleAttr={t("projects.tasksList.openItem", { title: issue.title })}
       titleIcon={<ProjectEventTypeIcon className="h-3.5 w-3.5" kind="issue" />}
       trailing={
-        <ProjectListRowMenu label={`More options for ${issue.title}`}>
+        <ProjectListRowMenu
+          label={t("projects.cards.moreOptions", { name: issue.title })}
+        >
           <DropdownMenuItem onSelect={() => onOpen(project, repository, issue)}>
             <Eye className="h-4 w-4" />
-            {nextStepLabel(issue.status)}
+            {nextStepLabel(issue.status, t)}
           </DropdownMenuItem>
           <CopyShareLinkMenuItem
             link={issueShareLink(issue)}
-            label="Copy task link"
+            label={t("projects.issues.copyLink")}
             testId={`projects-issue-copy-link-${issue.id}`}
           />
         </ProjectListRowMenu>
@@ -195,7 +204,7 @@ const IssueListRow = React.memo(function IssueListRow({
 
 export function ProjectsIssuesList({
   embedded,
-  emptyMessage = "No tasks yet.",
+  emptyMessage,
   error,
   failedSections,
   isLoading,
@@ -206,6 +215,7 @@ export function ProjectsIssuesList({
   profiles,
   viewMode,
 }: ProjectsIssuesListProps) {
+  const t = useT();
   // Grouping and per-group selection arrays are identity-stable across
   // re-renders so the memoized rows only re-render when their data changes.
   const allGroups = React.useMemo(
@@ -241,7 +251,7 @@ export function ProjectsIssuesList({
   );
 
   if (isLoading) {
-    return <KuzzLoadingState label="Loading tasks" />;
+    return <KuzzLoadingState label={t("projects.tasksList.loading")} />;
   }
 
   const loadNotice = (
@@ -264,17 +274,17 @@ export function ProjectsIssuesList({
             size="sm"
             variant="outline"
           >
-            {isRetrying ? "Retrying..." : "Retry"}
+            {isRetrying ? t("projects.loadNotice.retrying") : t("common.retry")}
           </Button>
         }
         description={
           error instanceof Error
             ? error.message
-            : "Something went wrong. Try again."
+            : t("projects.loadNotice.genericError")
         }
         error
         panel={false}
-        title="Could not load tasks"
+        title={t("projects.tasksList.errorTitle")}
       />
     );
   }
@@ -286,7 +296,7 @@ export function ProjectsIssuesList({
         <ProjectPanelState
           className={cn(!embedded && "border border-dashed border-border/60")}
           panel={false}
-          title={emptyMessage}
+          title={emptyMessage ?? t("projects.tasksList.empty")}
         />
       </div>
     );

@@ -4,6 +4,7 @@ import * as React from "react";
 import { cn } from "@/shared/lib/cn";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
+import { useT } from "@/shared/i18n";
 
 /**
  * Copies a `kuzz://` share link for the surrounding entity. Renders nothing
@@ -12,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
  */
 export function ShareLinkButton({
   className,
-  label = "Copy link",
+  label: labelProp,
   link,
   testId,
 }: {
@@ -21,6 +22,8 @@ export function ShareLinkButton({
   link: string | null;
   testId?: string;
 }) {
+  const t = useT();
+  const label = labelProp ?? t("projects.shareLink.copyLink");
   const [copied, setCopied] = React.useState(false);
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -62,7 +65,9 @@ export function ShareLinkButton({
           )}
         </button>
       </TooltipTrigger>
-      <TooltipContent>{copied ? "Link copied" : label}</TooltipContent>
+      <TooltipContent>
+        {copied ? t("projects.shareLink.copied") : label}
+      </TooltipContent>
     </Tooltip>
   );
 }

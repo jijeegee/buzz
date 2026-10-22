@@ -13,6 +13,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { DiscussedInChannels } from "./DiscussionChannels";
+import { pullRequestStatusLabel } from "@/features/projects/lib/projectStatusLabels";
 import { ProjectOriginReference } from "./ProjectOriginReference";
 import { ForumComposer } from "@/features/forum/ui/ForumComposer";
 import {
@@ -58,6 +59,7 @@ import {
 import { ProjectWorkItemGroup } from "./ProjectWorkItemGroup";
 import { ProjectWorkItemRow } from "./ProjectWorkItemRow";
 import { PullRequestsPanelSurface } from "./PullRequestsPanelSurface";
+import { useT } from "@/shared/i18n";
 
 export { PullRequestMetaHeader } from "./PullRequestMetaRail";
 
@@ -158,6 +160,7 @@ function CommitHashChip({
   hash: string;
   onOpenCommit?: (commitHash: string) => void;
 }) {
+  const t = useT();
   const short = hash.slice(0, 7);
   if (!onOpenCommit) {
     return (
@@ -168,7 +171,7 @@ function CommitHashChip({
   }
   return (
     <button
-      aria-label={`View commit ${short}`}
+      aria-label={t("projects.commitsPanel.viewCommit", { hash: short })}
       className="shrink-0 rounded-md bg-background/55 px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onOpenCommit(hash)}
       type="button"
@@ -195,6 +198,7 @@ function PullRequestCommitRow({
   onOpenCommit?: (commitHash: string) => void;
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const authorProfile = profileForPubkey(author, profiles);
   const authorLabel = labelForPubkey(author, profiles);
   const openCommit =
@@ -214,8 +218,13 @@ function PullRequestCommitRow({
             showLabel={false}
           />
           <span className="truncate">
-            <ProfileAuthorName pubkey={author}>{authorLabel}</ProfileAuthorName>{" "}
-            authored
+            {t("projects.reviewDetail.authored", {
+              name: () => (
+                <ProfileAuthorName pubkey={author}>
+                  {authorLabel}
+                </ProfileAuthorName>
+              ),
+            })}
           </span>
           {branch ? (
             <span className="inline-flex min-w-0 items-center gap-1 rounded-full border border-border/60 px-1.5 py-0.5 font-mono text-2xs">
@@ -235,7 +244,9 @@ function PullRequestCommitRow({
               <ProjectFeedRowMonoCell
                 label={hash.slice(0, 7)}
                 onClick={openCommit}
-                title={`View commit ${hash.slice(0, 7)}`}
+                title={t("projects.commitsPanel.viewCommit", {
+                  hash: hash.slice(0, 7),
+                })}
               />
               <CopyCommitHashButton hash={hash} />
             </ProjectFeedRowCluster>
@@ -281,13 +292,14 @@ function PullRequestRow({
 }) {
   const authorProfile = profileForPubkey(pullRequest.author, profiles);
   const authorLabel = labelForPubkey(pullRequest.author, profiles);
+  const t = useT();
   const statusClassName = pullRequestStatusClassName(pullRequest.status);
 
   return (
     <ProjectWorkItemRow
       eventId={pullRequest.id}
       identifier={`#${pullRequest.id.slice(0, 8)}`}
-      identifierTitle="View review"
+      identifierTitle={t("projects.reviewDetail.viewReview")}
       metadata={
         pullRequest.branchName ? (
           <span className="inline-flex min-w-0 items-center gap-1">
@@ -303,7 +315,7 @@ function PullRequestRow({
       }}
       statusIcon={
         <ProjectStatusProgressIcon
-          aria-label={pullRequest.status}
+          aria-label={pullRequestStatusLabel(pullRequest.status)}
           className={`h-3.5 w-3.5 shrink-0 ${statusClassName}`}
           state={pullRequestProgressState(pullRequest.status)}
         />
@@ -316,8 +328,10 @@ function PullRequestRow({
             <button
               aria-label={
                 pullRequest.comments.length > 0
-                  ? `View ${pullRequest.comments.length} comments`
-                  : "View comments"
+                  ? t("projects.issues.viewCommentCount", {
+                      count: pullRequest.comments.length,
+                    })
+                  : t("projects.issues.viewComments")
               }
               className={`flex items-center gap-1 rounded-md text-xs hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
                 pullRequest.comments.length > 0
@@ -361,6 +375,7 @@ export function PullRequestDetailHeader({
 }: {
   pullRequest: ProjectPullRequest;
 }) {
+  const t = useT();
   return (
     <header className="min-w-0 space-y-2 px-6 pb-3 pt-5">
       <h3 className="line-clamp-2 min-w-0 text-lg font-semibold leading-6 text-foreground">
@@ -370,7 +385,7 @@ export function PullRequestDetailHeader({
         </span>
         <ShareLinkButton
           className="ml-1 inline-flex h-7 w-7 align-text-bottom"
-          label="Copy review link"
+          label={t("projects.reviewDetail.copyLink")}
           link={pullRequestShareLink(pullRequest)}
           testId="project-pull-request-copy-link"
         />
@@ -379,7 +394,9 @@ export function PullRequestDetailHeader({
         className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground"
         data-testid="project-pull-request-detail-metadata"
       >
-        <span data-project-metadata-phrase>Review opened</span>
+        <span data-project-metadata-phrase>
+          {t("projects.reviewDetail.opened")}
+        </span>
         <span
           className="shrink-0 whitespace-nowrap"
           data-project-metadata-phrase
@@ -420,6 +437,7 @@ export function ProjectPullRequestDetail({
   project: Project;
   pullRequest: ProjectPullRequest;
 }) {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const commentMutation = useCreateProjectPullRequestCommentMutation(project);
   const [
@@ -460,17 +478,19 @@ export function ProjectPullRequestDetail({
         });
         toast.success(
           decision === "request-changes"
-            ? "Changes requested."
-            : "Comment posted.",
+            ? t("projects.reviewDetail.changesRequested")
+            : t("projects.issues.commentPosted"),
         );
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to post comment.",
+          error instanceof Error
+            ? error.message
+            : t("projects.issues.commentFailed"),
         );
         throw error;
       }
     },
-    [commentMutation, pullRequest],
+    [commentMutation, pullRequest, t],
   );
   const handleCommentSubmit = React.useCallback(
     (content: string, mentionPubkeys: string[], mediaTags?: string[][]) =>
@@ -528,7 +548,10 @@ export function ProjectPullRequestDetail({
         pullRequest={pullRequest}
       />
       {pullRequest.content || pullRequest.updates.length > 0 ? (
-        <ProjectDetailSection defaultOpen title="Description">
+        <ProjectDetailSection
+          defaultOpen
+          title={t("projects.createWorkItem.descriptionLabel")}
+        >
           {pullRequest.content ? (
             <ProjectRichContent
               content={pullRequest.content}
@@ -539,7 +562,9 @@ export function ProjectPullRequestDetail({
             <div
               className={pullRequest.content ? "mt-4 space-y-4" : "space-y-4"}
             >
-              <h4 className="text-sm font-semibold text-foreground">Updates</h4>
+              <h4 className="text-sm font-semibold text-foreground">
+                {t("projects.reviewDetail.updates")}
+              </h4>
               {pullRequest.updates.map((update) => (
                 <article className="space-y-1" key={update.id}>
                   <div className="flex min-w-0 items-center justify-between gap-3">
@@ -580,7 +605,7 @@ export function ProjectPullRequestDetail({
           onOpenChange={setFilesOpen}
           open={filesOpen}
           testId="project-detail-section-files"
-          title="Files changed"
+          title={t("projects.commitDetail.filesChanged")}
         >
           <div className="-mx-6">{filesChanged}</div>
         </ProjectDetailSection>
@@ -588,7 +613,7 @@ export function ProjectPullRequestDetail({
       <ProjectDetailSection
         count={commitCount}
         defaultOpen={false}
-        title="Commits"
+        title={t("projects.homeContext.commits")}
       >
         <div className="-mx-6">
           <PullRequestCommitRow
@@ -607,22 +632,31 @@ export function ProjectPullRequestDetail({
               createdAt={update.createdAt}
               hash={update.commit}
               key={update.id}
-              message={update.content.trim() || "Updated review branch"}
+              message={
+                update.content.trim() ||
+                t("projects.reviewDetail.updatedBranch")
+              }
               onOpenCommit={onOpenCommit}
               profiles={profiles}
             />
           ))}
         </div>
       </ProjectDetailSection>
-      <ProjectDetailSection defaultOpen={false} title="Checks">
+      <ProjectDetailSection
+        defaultOpen={false}
+        title={t("projects.reviewDetail.checks")}
+      >
         <p className="text-sm text-muted-foreground">
-          No checks have been reported for this review yet.
+          {t("projects.reviewDetail.noChecks")}
         </p>
       </ProjectDetailSection>
-      <ProjectDetailSection defaultOpen title="Activity">
+      <ProjectDetailSection
+        defaultOpen
+        title={t("projects.sectionTitle.activity")}
+      >
         <div className="space-y-3">
           <DiscussedInChannels
-            entityLabel="this review"
+            entity="review"
             originChannelId={pullRequest.channelId}
             originCreatedAt={pullRequest.createdAt}
             originPubkey={pullRequest.author}
@@ -660,10 +694,10 @@ export function ProjectPullRequestDetail({
                 </span>
                 <span className="flex min-h-5 min-w-0 flex-1 items-center text-left">
                   {reviewHistoryCollapsed
-                    ? `Show ${reviewHistory.length} earlier ${
-                        reviewHistory.length === 1 ? "activity" : "activities"
-                      }`
-                    : "Collapse review history"}
+                    ? t("projects.reviewDetail.showEarlier", {
+                        count: reviewHistory.length,
+                      })
+                    : t("projects.reviewDetail.collapseHistory")}
                 </span>
                 {reviewHistoryCollapsed ? (
                   <ChevronDown className="mt-0.5 h-3.5 w-3.5" />
@@ -694,8 +728,9 @@ export function ProjectPullRequestDetail({
                   </span>
                 </span>
                 <span className="min-w-0 flex-1 text-left">
-                  Show {earlierReviewHistoryCount} earlier{" "}
-                  {earlierReviewHistoryCount === 1 ? "activity" : "activities"}
+                  {t("projects.reviewDetail.showEarlier", {
+                    count: earlierReviewHistoryCount,
+                  })}
                 </span>
               </button>
             ) : null}
@@ -712,6 +747,23 @@ export function ProjectPullRequestDetail({
                     : timelineKind === "approved" &&
                         !/^approved (these )?changes\.?$/i.test(trimmedContent)
                       ? trimmedContent
+                      : null;
+              const authorName = () => (
+                <ProfileAuthorName key="author" pubkey={item.author}>
+                  {labelForPubkey(item.author, profiles)}
+                </ProfileAuthorName>
+              );
+              const actionKey =
+                timelineKind === "approved"
+                  ? isHistoricalDecision
+                    ? "projects.reviewDetail.approvedEarlier"
+                    : "projects.reviewDetail.approved"
+                  : timelineKind === "changes-requested"
+                    ? isHistoricalDecision
+                      ? "projects.reviewDetail.requestedChangesEarlier"
+                      : "projects.reviewDetail.requestedChanges"
+                    : timelineKind === "review-request" && !trimmedContent
+                      ? "projects.reviewDetail.requestedReview"
                       : null;
               return (
                 <div
@@ -752,23 +804,15 @@ export function ProjectPullRequestDetail({
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center">
                       <span className="min-w-0 truncate">
-                        <ProfileAuthorName pubkey={item.author}>
-                          {labelForPubkey(item.author, profiles)}
-                        </ProfileAuthorName>
-                        {timelineKind ? (
+                        {actionKey ? (
+                          t(actionKey, { name: authorName })
+                        ) : (
                           <>
-                            {" "}
-                            {timelineKind === "approved"
-                              ? isHistoricalDecision
-                                ? "approved an earlier commit"
-                                : "approved these changes"
-                              : timelineKind === "changes-requested"
-                                ? isHistoricalDecision
-                                  ? "requested changes on an earlier commit"
-                                  : "requested changes"
-                                : trimmedContent || "requested a review"}
+                            {authorName()}
+                            {/* Review-request text is stored event content. */}
+                            {timelineKind ? <> {trimmedContent}</> : null}
                           </>
-                        ) : null}
+                        )}
                       </span>
                       <span
                         className="ml-auto w-20 shrink-0 text-right text-xs text-muted-foreground/70"
@@ -786,7 +830,11 @@ export function ProjectPullRequestDetail({
                     ) : null}
                     {item.anchor ? (
                       <button
-                        aria-label={`Open ${item.anchor.path} ${item.anchor.side} line ${item.anchor.line} in Files changed`}
+                        aria-label={t("projects.reviewDetail.openLineComment", {
+                          path: item.anchor.path,
+                          side: item.anchor.side,
+                          line: item.anchor.line,
+                        })}
                         className="mt-1 inline-flex min-w-0 items-center gap-1 rounded-md bg-muted/65 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         onClick={() => {
                           if (item.anchor) onOpenInlineComment?.(item.anchor);
@@ -801,7 +849,7 @@ export function ProjectPullRequestDetail({
                         </span>
                         {item.inlineCommentStatus === "outdated" ? (
                           <span className="shrink-0 text-destructive">
-                            Outdated
+                            {t("projects.reviewDetail.outdated")}
                           </span>
                         ) : null}
                       </button>
@@ -833,9 +881,9 @@ export function ProjectPullRequestDetail({
             canRequestChanges ? handleChangeRequestSubmit : undefined
           }
           onSubmit={handleCommentSubmit}
-          placeholder="Add a comment…"
+          placeholder={t("projects.issues.commentPlaceholder")}
           profiles={profiles}
-          secondarySubmitLabel="Request changes"
+          secondarySubmitLabel={t("projects.review.requestChanges")}
         />
       </div>
     </div>
@@ -917,7 +965,7 @@ export function PullRequestsPanel({
                   reviewSelectionItem(project, pullRequest),
                 )}
                 key={status}
-                label={status}
+                label={pullRequestStatusLabel(status)}
               >
                 {items.map((pullRequest) => (
                   <PullRequestRow

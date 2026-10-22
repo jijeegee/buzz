@@ -1,3 +1,4 @@
+import { t } from "../../shared/i18n/intl.ts";
 import {
   allowedActorsForRoot,
   getAllTags,
@@ -100,20 +101,22 @@ export function projectPullRequestReviewSummary(pullRequest) {
   const changeRequestCount = pullRequest.changeRequests.length;
   const isDraft = pullRequest.status === "Draft";
   const state = isDraft
-    ? "This review is still a work in progress."
+    ? t("projects.pullRequests.reviewDraft")
     : changeRequestCount > 0
-      ? `${changeRequestCount} reviewer${changeRequestCount === 1 ? "" : "s"} requested changes.`
+      ? t("projects.pullRequests.reviewChangesRequested", {
+          count: changeRequestCount,
+        })
       : pullRequest.reviewers.length > 0
-        ? "Review requested — no approvals yet."
-        : "No reviews yet.";
+        ? t("projects.pullRequests.reviewRequested")
+        : t("projects.pullRequests.reviewNone");
 
   return {
     approvalCount,
     changeRequestCount,
     detail: isDraft
-      ? "Draft reviews cannot be merged."
+      ? t("projects.pullRequests.reviewDraftDetail")
       : approvalCount === 0 && changeRequestCount === 0
-        ? "Approvals from reviewers will show up here."
+        ? t("projects.pullRequests.reviewApprovalsHint")
         : null,
     showState: approvalCount === 0 || changeRequestCount > 0,
     state,
@@ -347,7 +350,7 @@ export function eventToProjectPullRequest(
   const title =
     getTag(pullRequest, "subject") ||
     pullRequest.content.split("\n")[0] ||
-    "Untitled review";
+    t("projects.pullRequests.untitled");
   const reviewDecisions = reviewDecisionsForPullRequest(
     comments,
     trustedActors,

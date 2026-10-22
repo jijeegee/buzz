@@ -3,6 +3,7 @@ import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { useT } from "@/shared/i18n";
 
 /** Compact work-item author identity with a minimal hover summary. */
 export function ProjectAuthorIdentity({
@@ -19,7 +20,11 @@ export function ProjectAuthorIdentity({
   testId?: string;
 }) {
   const profile = profiles?.[normalizePubkey(pubkey)];
-  const roleLabel = profile?.isAgent === true ? "Agent" : "Person";
+  const t = useT();
+  const roleLabel =
+    profile?.isAgent === true
+      ? t("projects.authorIdentity.agent")
+      : t("projects.authorIdentity.person");
 
   return (
     <span className="inline-flex align-middle">

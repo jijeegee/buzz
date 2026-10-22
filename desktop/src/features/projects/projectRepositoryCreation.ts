@@ -10,6 +10,7 @@ import {
   KIND_REPO_ANNOUNCEMENT,
 } from "@/shared/constants/kinds";
 import type { ProjectEventTemplate } from "./projectCreation";
+import { t } from "@/shared/i18n";
 
 function repositoryDtagFromName(name: string): string {
   return name
@@ -43,22 +44,22 @@ function buildProjectPatchTemplate({
 }): ProjectEventTemplate {
   const normalizedOwner = ownerPubkey.trim().toLowerCase();
   if (normalizedOwner !== liveHead.pubkey.toLowerCase()) {
-    throw new Error("Only the project owner can add repositories.");
+    throw new Error(t("projects.repositoryCreation.ownerOnly"));
   }
   if (repositoryAddresses.length > MAX_PROJECT_MEMBERS) {
     throw new Error(
-      `A project cannot contain more than ${MAX_PROJECT_MEMBERS} repositories.`,
+      t("projects.repositoryCreation.tooMany", { count: MAX_PROJECT_MEMBERS }),
     );
   }
   if (new Set(repositoryAddresses).size !== repositoryAddresses.length) {
-    throw new Error("A project cannot contain duplicate repositories.");
+    throw new Error(t("projects.creation.duplicateRepositories"));
   }
   if (
     repositoryAddresses.some(
       (address) => !/^30617:[0-9a-f]{64}:.+$/.test(address),
     )
   ) {
-    throw new Error("Repository address is invalid.");
+    throw new Error(t("projects.creation.repositoryAddressInvalid"));
   }
 
   // Replace all existing `a` tags with the new set, preserving everything else
@@ -106,15 +107,13 @@ export function buildRepositoryChannelBindingTemplate({
 }): ProjectEventTemplate {
   const normalizedChannelId = channelId.trim();
   if (ownerPubkey.trim().toLowerCase() !== repository.owner.toLowerCase()) {
-    throw new Error("Only the repository owner can repair its access.");
+    throw new Error(t("projects.repositoryCreation.repairOwnerOnly"));
   }
   if (!isValidProjectChannelId(normalizedChannelId)) {
-    throw new Error("Repository access group is invalid.");
+    throw new Error(t("projects.repositoryCreation.accessGroupInvalid"));
   }
   if (!repository.eventTags) {
-    throw new Error(
-      "Repository metadata is unavailable. Refresh and try again.",
-    );
+    throw new Error(t("projects.repositoryCreation.metadataUnavailable"));
   }
 
   return {
@@ -184,10 +183,11 @@ export function buildAddedRepositoryEventTemplatesFromHead({
   const normalizedOwner = ownerPubkey.trim().toLowerCase();
 
   const normalizedName = name.trim();
-  if (!normalizedName) throw new Error("Repository name is required.");
+  if (!normalizedName)
+    throw new Error(t("projects.repositoryCreation.nameRequired"));
   const repositoryDtag = repositoryDtagFromName(normalizedName);
   if (!repositoryDtag) {
-    throw new Error("Repository name must include letters or numbers.");
+    throw new Error(t("projects.repositoryCreation.nameNeedsLetters"));
   }
 
   const repositoryAddress = `${KIND_REPO_ANNOUNCEMENT}:${normalizedOwner}:${repositoryDtag}`;
@@ -205,7 +205,7 @@ export function buildAddedRepositoryEventTemplatesFromHead({
     liveAddresses.includes(repositoryAddress) && !repositoryHeadExists;
   if (liveAddresses.includes(repositoryAddress) && repositoryHeadExists) {
     throw new Error(
-      `This project already contains "${repositoryDtag}" (it was added by another session).`,
+      t("projects.repositoryCreation.alreadyAdded", { name: repositoryDtag }),
     );
   }
 
@@ -222,10 +222,10 @@ export function buildAddedRepositoryEventTemplatesFromHead({
   ];
   const normalizedAccessChannelId = accessChannelId?.trim();
   if (!normalizedAccessChannelId) {
-    throw new Error("This project has no repository access group to inherit.");
+    throw new Error(t("projects.repositoryCreation.noAccessGroup"));
   }
   if (!isValidProjectChannelId(normalizedAccessChannelId)) {
-    throw new Error("Repository access group is invalid.");
+    throw new Error(t("projects.repositoryCreation.accessGroupInvalid"));
   }
   repositoryTags.push(["kuzz-channel", normalizedAccessChannelId]);
   if (normalizedDescription) {

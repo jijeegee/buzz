@@ -17,6 +17,7 @@ import { KuzzLoadingState } from "@/shared/ui/KuzzLoadingState";
 import { ProjectEntityListRow } from "./ProjectEntityListRow";
 import { ProjectSelectableGroup } from "./ProjectSelectableGroup";
 import { ProjectPanelState } from "./ProjectPanelState";
+import { useT } from "@/shared/i18n";
 
 function lastMessageAtSeconds(value: string | null | undefined) {
   if (!value) return null;
@@ -31,6 +32,7 @@ export function ProjectsChannelsList({
   projects: Project[];
   searchQuery?: string;
 }) {
+  const t = useT();
   const { goChannel } = useAppNavigation();
   const channelsQuery = useChannelsQuery({ enabled: projects.length > 0 });
   const channelsById = React.useMemo(() => {
@@ -55,8 +57,10 @@ export function ProjectsChannelsList({
       .sort((left, right) => {
         const leftChannel = channelsById.get(left.channelId);
         const rightChannel = channelsById.get(right.channelId);
-        const leftName = leftChannel?.name ?? "Group unavailable";
-        const rightName = rightChannel?.name ?? "Group unavailable";
+        const leftName =
+          leftChannel?.name ?? t("projects.groupsList.unavailableName");
+        const rightName =
+          rightChannel?.name ?? t("projects.groupsList.unavailableName");
         const leftActivity =
           lastMessageAtSeconds(leftChannel?.lastMessageAt) ?? 0;
         const rightActivity =
@@ -71,7 +75,7 @@ export function ProjectsChannelsList({
           left.channelId.localeCompare(right.channelId)
         );
       });
-  }, [channelsById, projects, searchQuery]);
+  }, [channelsById, projects, searchQuery, t]);
   const participantPubkeys = React.useMemo(
     () => [
       ...new Set(
@@ -94,7 +98,7 @@ export function ProjectsChannelsList({
     >();
     for (const row of rows) {
       const channel = channelsById.get(row.channelId);
-      const name = channel?.name ?? "Group unavailable";
+      const name = channel?.name ?? t("projects.groupsList.unavailableName");
       const rowKey = projectRelatedChannelDisplayRowKey(row);
       const item = selectionItemFromChannel({
         channelId: row.channelId,
@@ -104,7 +108,7 @@ export function ProjectsChannelsList({
       items.set(rowKey, { ...item, id: `${item.id}:${rowKey}` });
     }
     return items;
-  }, [channelsById, rows]);
+  }, [channelsById, rows, t]);
   const rangeItems = React.useMemo(
     () => [...selectionItemsByRowKey.values()],
     [selectionItemsByRowKey],
@@ -130,7 +134,7 @@ export function ProjectsChannelsList({
   }, [rows]);
 
   if (channelsQuery.isLoading && rows.length === 0) {
-    return <KuzzLoadingState label="Loading project groups" />;
+    return <KuzzLoadingState label={t("projects.groupsList.loading")} />;
   }
   if (rows.length === 0) {
     const searching = Boolean(searchQuery.trim());
@@ -138,11 +142,15 @@ export function ProjectsChannelsList({
       <ProjectPanelState
         description={
           searching
-            ? "Try a different search."
-            : "Link a discussion group to a project or repository and it will appear here."
+            ? t("projects.groupsList.noMatchesDescription")
+            : t("projects.groupsList.emptyDescription")
         }
         panel={false}
-        title={searching ? "No matching groups" : "No project groups yet"}
+        title={
+          searching
+            ? t("projects.groupsList.noMatches")
+            : t("projects.groupsList.emptyTitle")
+        }
       />
     );
   }
@@ -171,16 +179,19 @@ export function ProjectsChannelsList({
             {group.rows.map((row) => {
               const rowKey = projectRelatedChannelDisplayRowKey(row);
               const channel = channelsById.get(row.channelId);
-              const name = channel?.name ?? "Group unavailable";
+              const name =
+                channel?.name ?? t("projects.groupsList.unavailableName");
               const lastActivityAt = lastMessageAtSeconds(
                 channel?.lastMessageAt,
               );
               const repositoryLabel =
                 row.repositoryNames.length === 0
-                  ? "Project group"
+                  ? t("projects.groupsList.projectGroup")
                   : row.repositoryNames.length === 1
                     ? row.repositoryNames[0]
-                    : `${row.repositoryNames.length} repositories`;
+                    : t("projects.browser.repositoryCount", {
+                        count: row.repositoryNames.length,
+                      });
               const people =
                 channel?.participantPubkeys ?? channel?.participants ?? [];
               const selectionItem = selectionItemsByRowKey.get(rowKey);
@@ -197,9 +208,9 @@ export function ProjectsChannelsList({
                     countTestId="project-channel-message-count"
                     countTitle={
                       channel
-                        ? `${channel.memberCount} ${
-                            channel.memberCount === 1 ? "member" : "members"
-                          }`
+                        ? t("projects.groupsList.memberCount", {
+                            count: channel.memberCount,
+                          })
                         : undefined
                     }
                     dateSeconds={lastActivityAt}
@@ -207,7 +218,7 @@ export function ProjectsChannelsList({
                     description={
                       channel
                         ? listRowDescription(channel.description, name)
-                        : "Group details are unavailable"
+                        : t("projects.groupsList.detailsUnavailable")
                     }
                     icon={
                       channel ? (
@@ -228,7 +239,9 @@ export function ProjectsChannelsList({
                     testId="project-channel-row"
                     title={channel ? `${name}` : name}
                     titleAttr={
-                      channel ? `Open ${name}` : "Open unavailable group"
+                      channel
+                        ? t("projects.discussion.open", { name })
+                        : t("projects.groupsList.openUnavailable")
                     }
                   />
                 </li>

@@ -19,6 +19,10 @@ import type {
 import type { ProjectsOverviewAgentContextItem } from "@/features/projects/lib/projectDetailAgentContext";
 import { matchesProjectsSearch } from "@/features/projects/lib/projectsSearch";
 import {
+  issueStatusLabel,
+  pullRequestStatusLabel,
+} from "@/features/projects/lib/projectStatusLabels";
+import {
   formatExactTimestamp,
   markdownToPlainText,
   relativeTime,
@@ -36,6 +40,7 @@ import {
   PROJECT_EVENT_VISUALS,
   type ProjectEventKind,
 } from "./ProjectEventTypeIcon";
+import { type MessageKey, type Translate, useT } from "@/shared/i18n";
 
 type ActivityKind = ProjectEventKind;
 
@@ -61,7 +66,10 @@ type ProjectActivityItem = {
   createdAt: number;
   actorPubkey: string | null;
   actorName: string | null;
+  // English action text feeds the agent context; actionKey is what the
+  // feed shows.
   action: string;
+  actionKey: MessageKey;
   title: string;
   body: string;
   detail: string | null;
@@ -70,7 +78,7 @@ type ProjectActivityItem = {
 
 type ProjectActivityGroup = {
   key: string;
-  label: string;
+  labelKey: MessageKey;
   items: ProjectActivityItem[];
 };
 
@@ -123,6 +131,7 @@ function buildActivityItems({
       actorPubkey: project.owner,
       actorName: null,
       action: "created the repository",
+      actionKey: "projects.activity.createdRepository",
       title: project.name,
       body: project.description,
       detail: null,
@@ -145,6 +154,7 @@ function buildActivityItems({
       actorPubkey: null,
       actorName: commit.authorName,
       action: "pushed a commit to",
+      actionKey: "projects.activity.pushedCommit",
       title: commit.subject || commit.shortHash,
       body: "",
       detail: commit.shortHash,
@@ -170,6 +180,7 @@ function buildActivityItems({
       actorPubkey: pullRequest.author,
       actorName: null,
       action: "opened a review in",
+      actionKey: "projects.activity.openedReview",
       title: pullRequest.title,
       body: pullRequest.content,
       detail: pullRequest.status,
@@ -183,6 +194,7 @@ function buildActivityItems({
         actorPubkey: update.author,
         actorName: null,
         action: "updated a review in",
+        actionKey: "projects.activity.updatedReview",
         title: pullRequest.title,
         body: update.content,
         detail: update.commit?.slice(0, 7) ?? null,
@@ -217,6 +229,14 @@ function buildActivityItems({
               : kind === "review-request"
                 ? "requested review in"
                 : "commented on a review in",
+        actionKey:
+          kind === "approval"
+            ? "projects.activity.approvedReview"
+            : kind === "changes-requested"
+              ? "projects.activity.requestedChanges"
+              : kind === "review-request"
+                ? "projects.activity.requestedReview"
+                : "projects.activity.commentedReview",
         title: pullRequest.title,
         body: comment.content,
         detail:
@@ -239,6 +259,7 @@ function buildActivityItems({
       actorPubkey: issue.author,
       actorName: null,
       action: "created a task in",
+      actionKey: "projects.activity.createdTask",
       title: issue.title,
       body: issue.content,
       detail: issue.status,
@@ -252,6 +273,7 @@ function buildActivityItems({
         actorPubkey: comment.author,
         actorName: null,
         action: "commented on a task in",
+        actionKey: "projects.activity.commentedTask",
         title: issue.title,
         body: comment.content,
         detail: null,
@@ -315,9 +337,9 @@ function groupActivityItems(items: ProjectActivityItem[], nowMs: number) {
   const thisWeek = startOfWeek(Math.floor(nowMs / 1_000));
   const lastWeek = thisWeek - WEEK_SECONDS;
   const groups: ProjectActivityGroup[] = [
-    { key: "this-week", label: "This week", items: [] },
-    { key: "last-week", label: "Last week", items: [] },
-    { key: "earlier", label: "Earlier", items: [] },
+    { key: "this-week", labelKey: "projects.activity.thisWeek", items: [] },
+    { key: "last-week", labelKey: "projects.activity.lastWeek", items: [] },
+    { key: "earlier", labelKey: "projects.activity.earlier", items: [] },
   ];
 
   for (const item of items) {
@@ -331,6 +353,22 @@ function groupActivityItems(items: ProjectActivityItem[], nowMs: number) {
   }
 
   return groups.filter((group) => group.items.length > 0);
+}
+
+// The English detail stays raw for the agent context; statuses and review
+// decisions are shown in the app language.
+function activityDetailLabel(item: ProjectActivityItem, t: Translate) {
+  if (item.kind === "approval") return t("projects.activity.approved");
+  if (item.kind === "changes-requested") {
+    return t("projects.activity.changesRequested");
+  }
+  if (item.kind === "pull-request" && item.target.type === "pull-request") {
+    return pullRequestStatusLabel(item.target.pullRequest.status);
+  }
+  if (item.kind === "issue" && item.target.type === "issue") {
+    return issueStatusLabel(item.target.issue.status);
+  }
+  return item.detail;
 }
 
 function ActivityCard({
@@ -350,6 +388,7 @@ function ActivityCard({
   onOpenProject: () => void;
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const visual = PROJECT_EVENT_VISUALS[item.kind];
   const TypeIcon = visual.icon;
   const profile = item.actorPubkey
@@ -357,7 +396,8 @@ function ActivityCard({
     : undefined;
   const actorLabel = item.actorPubkey
     ? resolveUserLabel({ profiles, pubkey: item.actorPubkey })
-    : item.actorName || "Someone";
+    : item.actorName || t("projects.activity.someone");
+  const detailLabel = activityDetailLabel(item, t);
   return (
     <div
       className={cn(
@@ -367,7 +407,10 @@ function ActivityCard({
       data-testid="projects-activity-card"
     >
       <button
-        aria-label={`Open ${item.title} in ${item.target.project.name}`}
+        aria-label={t("projects.activity.openItem", {
+          title: item.title,
+          project: item.target.project.name,
+        })}
         className="absolute inset-0 rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={onOpen}
         type="button"
@@ -404,7 +447,9 @@ function ActivityCard({
           {item.actorPubkey ? (
             <UserProfilePopover pubkey={item.actorPubkey} triggerElement="span">
               <button
-                aria-label={`View ${actorLabel}'s profile`}
+                aria-label={t("projects.entityRow.viewProfile", {
+                  name: actorLabel,
+                })}
                 className={cn(
                   "pointer-events-auto relative z-10 shrink-0 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                   profile?.isAgent ? "rounded-[30%]" : "rounded-full",
@@ -438,29 +483,33 @@ function ActivityCard({
               data-projects-text-priority="secondary"
             >
               <span>
-                {item.actorPubkey ? (
-                  <UserProfilePopover
-                    pubkey={item.actorPubkey}
-                    triggerElement="span"
-                  >
+                {t(item.actionKey, {
+                  actor: () =>
+                    item.actorPubkey ? (
+                      <UserProfilePopover
+                        pubkey={item.actorPubkey}
+                        triggerElement="span"
+                      >
+                        <button
+                          className="pointer-events-auto relative z-10 rounded-sm font-semibold text-muted-foreground/75 hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                          type="button"
+                        >
+                          {actorLabel}
+                        </button>
+                      </UserProfilePopover>
+                    ) : (
+                      actorLabel
+                    ),
+                  project: () => (
                     <button
-                      className="pointer-events-auto relative z-10 rounded-sm font-semibold text-muted-foreground/75 hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                      className="pointer-events-auto relative z-10 inline-block max-w-48 truncate rounded-sm align-bottom font-semibold text-muted-foreground/75 hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring sm:max-w-64 2xl:max-w-none"
+                      onClick={onOpenProject}
                       type="button"
                     >
-                      {actorLabel}
+                      {item.target.project.name}
                     </button>
-                  </UserProfilePopover>
-                ) : (
-                  actorLabel
-                )}{" "}
-                {item.action}{" "}
-                <button
-                  className="pointer-events-auto relative z-10 inline-block max-w-48 truncate rounded-sm align-bottom font-semibold text-muted-foreground/75 hover:underline focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring sm:max-w-64 2xl:max-w-none"
-                  onClick={onOpenProject}
-                  type="button"
-                >
-                  {item.target.project.name}
-                </button>
+                  ),
+                })}
               </span>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -477,14 +526,14 @@ function ActivityCard({
                 </TooltipContent>
               </Tooltip>
             </div>
-            {item.detail ? (
+            {detailLabel ? (
               <span
                 className={cn(
                   "shrink-0 rounded-full border px-2 py-0.5 text-2xs font-medium",
                   visual.detailClassName,
                 )}
               >
-                {item.detail}
+                {detailLabel}
               </span>
             ) : null}
           </div>
@@ -522,6 +571,7 @@ function ActivityCard({
 
 /** Mixed GitHub-style workspace activity shown beneath the overview callouts. */
 export function ProjectsActivityFeed(props: ProjectsActivityFeedProps) {
+  const t = useT();
   const { issues, projects, pullRequests, snapshots } = props;
   // Memoized: this feed re-renders with every parent state change (profiles
   // landing, selection, hover), and an unmemoized rebuild re-flattened and
@@ -557,7 +607,7 @@ export function ProjectsActivityFeed(props: ProjectsActivityFeedProps) {
   );
 
   if (props.isLoading && items.length === 0) {
-    return <KuzzLoadingState label="Loading project activity" />;
+    return <KuzzLoadingState label={t("projects.activity.loading")} />;
   }
 
   if (items.length === 0) {
@@ -565,12 +615,14 @@ export function ProjectsActivityFeed(props: ProjectsActivityFeedProps) {
     return (
       <div className="rounded-xl border border-dashed border-border/60 px-4 py-12 text-center">
         <p className="text-sm font-medium text-foreground">
-          {searching ? "No matching activity" : "No project activity yet"}
+          {searching
+            ? t("projects.activity.noMatches")
+            : t("projects.activity.empty")}
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
           {searching
-            ? "Try a different search."
-            : "Commits, reviews, review decisions, and tasks will appear here."}
+            ? t("projects.groupsList.noMatchesDescription")
+            : t("projects.activity.emptyDescription")}
         </p>
       </div>
     );
@@ -585,7 +637,7 @@ export function ProjectsActivityFeed(props: ProjectsActivityFeedProps) {
         <section data-testid="projects-activity-group" key={group.key}>
           <div className="mb-1 flex items-center gap-3">
             <h3 className="shrink-0 text-xs font-medium text-muted-foreground">
-              {group.label}
+              {t(group.labelKey)}
             </h3>
             <span aria-hidden="true" className="h-px flex-1 bg-border/70" />
           </div>

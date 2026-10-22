@@ -8,6 +8,7 @@ import {
   CreateProjectWorkItemDialog,
   type CreateProjectWorkItemDialogInput,
 } from "./CreateProjectWorkItemDialog";
+import { useT } from "@/shared/i18n";
 
 export function CreateProjectIssueDialog({
   initialProjectId,
@@ -26,6 +27,7 @@ export function CreateProjectIssueDialog({
   open: boolean;
   projects: Project[];
 }) {
+  const t = useT();
   const repositoryOptions = React.useMemo(
     () =>
       projects.flatMap((project) =>
@@ -55,19 +57,20 @@ export function CreateProjectIssueDialog({
   }, [initialProjectId, open, projects]);
 
   async function handleCreate(input: CreateProjectWorkItemDialogInput) {
-    if (!project || !repository) throw new Error("Choose a repository.");
+    if (!project || !repository)
+      throw new Error(t("projects.createTask.chooseRepository"));
     const issueId = await createMutation.mutateAsync(input);
-    toast.success("Task created.");
+    toast.success(t("projects.createTask.created"));
     await onCreated(project, repository, issueId);
   }
 
   return (
     <CreateProjectWorkItemDialog
-      bodyPlaceholder="Add context, expected behavior, or reproduction steps"
+      bodyPlaceholder={t("projects.createTask.bodyPlaceholder")}
       description={
         repository
-          ? `Create a task in ${repository.name}`
-          : "Choose a repository for this task."
+          ? t("projects.createTask.description", { name: repository.name })
+          : t("projects.createTask.noRepository")
       }
       isCreating={createMutation.isPending}
       itemName="issue"
@@ -75,11 +78,11 @@ export function CreateProjectIssueDialog({
       onOpenChange={onOpenChange}
       open={open}
       submitDisabled={!repository}
-      title="Create a task"
-      titlePlaceholder="Describe the task"
+      title={t("projects.createTask.title")}
+      titlePlaceholder={t("projects.createTask.titlePlaceholder")}
     >
       <label className="block space-y-1.5 text-sm font-medium">
-        <span>Repository</span>
+        <span>{t("projects.createTask.repository")}</span>
         <select
           className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal outline-hidden focus:ring-1 focus:ring-ring"
           data-testid="create-issue-repository"

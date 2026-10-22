@@ -5,6 +5,7 @@ import {
 } from "@/features/projects/lib/projectRepoHost";
 import { isSafeUrl } from "@/shared/lib/url";
 import { useRelayOrigin } from "@/shared/lib/useRelayOrigin";
+import { t } from "@/shared/i18n";
 
 export function useProjectRepoHost(
   repository: Repository | null | undefined,
@@ -30,7 +31,10 @@ export function useProjectRepoPresentation(
     controls: {
       externalUrl: host.kind === "external" ? webUrl : null,
       remoteKind: host.kind === "unresolved" ? undefined : host.kind,
-      remoteLabel: host.kind === "external" ? host.host : "Remote",
+      remoteLabel:
+        host.kind === "external"
+          ? host.host
+          : t("projects.useProjectRepoHost.remote"),
     },
   };
 }

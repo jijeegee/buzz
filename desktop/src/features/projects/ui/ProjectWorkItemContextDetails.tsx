@@ -9,11 +9,17 @@ import {
 } from "lucide-react";
 import type * as React from "react";
 
+import {
+  issueStatusLabel,
+  pullRequestStatusLabel,
+} from "@/features/projects/lib/projectStatusLabels";
+
 import type {
   ProjectIssue,
   ProjectPullRequest,
   Repository,
 } from "@/features/projects/hooks";
+import { useT } from "@/shared/i18n";
 
 function ContextDetailRow({
   icon: Icon,
@@ -44,22 +50,23 @@ export function ProjectWorkItemContextDetails({
   pullRequest?: ProjectPullRequest | null;
   repository: Repository;
 }) {
+  const t = useT();
   if (issue) {
     return (
       <>
         <ContextDetailRow
           icon={CircleDot}
-          label="Status"
-          value={issue.status}
+          label={t("projects.issues.status")}
+          value={issueStatusLabel(issue.status)}
         />
         <ContextDetailRow
           icon={Users}
-          label="Assignees"
+          label={t("projects.issues.assignees")}
           value={issue.assignees.length}
         />
         <ContextDetailRow
           icon={MessageCircle}
-          label="Comments"
+          label={t("projects.contextDetails.comments")}
           value={issue.comments.length}
         />
       </>
@@ -67,15 +74,18 @@ export function ProjectWorkItemContextDetails({
   }
 
   if (pullRequest) {
-    const sourceBranch = pullRequest.branchName || "Unknown branch";
+    const sourceBranch =
+      pullRequest.branchName || t("projects.contextDetails.unknownBranch");
     const targetBranch =
-      pullRequest.targetBranch || repository.defaultBranch || "Default branch";
+      pullRequest.targetBranch ||
+      repository.defaultBranch ||
+      t("projects.contextDetails.defaultBranch");
     const branchLabel = `${sourceBranch} → ${targetBranch}`;
     return (
       <>
         <ContextDetailRow
           icon={GitBranch}
-          label="Branch"
+          label={t("projects.reviewMeta.branch")}
           value={
             <span
               className="block max-w-40 truncate"
@@ -88,17 +98,17 @@ export function ProjectWorkItemContextDetails({
         />
         <ContextDetailRow
           icon={GitPullRequest}
-          label="Status"
-          value={pullRequest.status}
+          label={t("projects.issues.status")}
+          value={pullRequestStatusLabel(pullRequest.status)}
         />
         <ContextDetailRow
           icon={Users}
-          label="Reviewers"
+          label={t("projects.reviewers.label")}
           value={pullRequest.reviewers.length}
         />
         <ContextDetailRow
           icon={CheckCircle2}
-          label="Approvals"
+          label={t("projects.contextDetails.approvals")}
           value={pullRequest.approvals.length}
         />
       </>

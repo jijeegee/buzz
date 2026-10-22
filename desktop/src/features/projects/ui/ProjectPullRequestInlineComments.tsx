@@ -9,6 +9,7 @@ import { relativeTime } from "@/features/projects/lib/projectsViewHelpers";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
 import { ProjectRichContent } from "./ProjectRichContent";
+import { useT } from "@/shared/i18n";
 
 function commentAuthor(
   pubkey: string,
@@ -44,6 +45,7 @@ export function ProjectPullRequestInlineCommentThread({
   ) => Promise<unknown>;
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   if (comments.length === 0 && !activeAnchor) return null;
 
   return (
@@ -104,9 +106,9 @@ export function ProjectPullRequestInlineCommentThread({
               : undefined
           }
           onSubmit={onSubmit}
-          placeholder="Leave a comment on this line…"
+          placeholder={t("projects.inlineComments.placeholder")}
           profiles={profiles}
-          secondarySubmitLabel="Request changes"
+          secondarySubmitLabel={t("projects.review.requestChanges")}
         />
       ) : null}
     </div>

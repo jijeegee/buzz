@@ -29,6 +29,7 @@ import {
 } from "./ProjectEntityListRow";
 import { ProjectPanelState } from "./ProjectPanelState";
 import { useProjectConversationPanel } from "./ProjectConversationPanelContext";
+import { useT } from "@/shared/i18n";
 
 // Relay search caps a page at 500. Use the full page and surface a lower-bound
 // marker when it fills rather than silently presenting partial totals as exact.
@@ -136,7 +137,7 @@ function useChannelNameLookup(channelIds: readonly string[]) {
  */
 export function DiscussedInChannels({
   className,
-  entityLabel = "this",
+  entity,
   originChannelId,
   originCreatedAt,
   originPubkey,
@@ -145,14 +146,15 @@ export function DiscussedInChannels({
 }: {
   /** Extra spacing/alignment classes from the call site. */
   className?: string;
-  /** How the sentence names the entity, e.g. "this issue". */
-  entityLabel?: string;
+  /** Which kind of item the sentence names ("this task"); "this" when unset. */
+  entity?: "commit" | "review" | "task";
   originChannelId?: string | null;
   originCreatedAt?: number;
   originPubkey?: string;
   query: string;
   testId?: string;
 }) {
+  const t = useT();
   const {
     channels: discussed,
     hits,
@@ -206,7 +208,7 @@ export function DiscussedInChannels({
       data-testid={testId}
     >
       <h4 className="border-b border-border/40 px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Related Conversations
+        {t("projects.discussion.related")}
       </h4>
       <div className="divide-y divide-border/40">
         {visible.map((channel) => {
@@ -229,15 +231,15 @@ export function DiscussedInChannels({
               <button
                 aria-label={
                   latestHit
-                    ? `Open conversation in ${name}`
-                    : `Open group ${name}`
+                    ? t("projects.discussion.openConversationIn", { name })
+                    : t("projects.discussion.openGroup", { name })
                 }
                 className="absolute inset-0"
                 onClick={openConversation}
                 title={
                   latestHit
-                    ? `Open the latest conversation in ${name}`
-                    : `Open ${name}`
+                    ? t("projects.discussion.openLatestIn", { name })
+                    : t("projects.discussion.open", { name })
                 }
                 type="button"
               />
@@ -250,24 +252,32 @@ export function DiscussedInChannels({
               </span>
               <span className="pointer-events-none relative z-10 min-w-0 flex-1 text-sm">
                 <span className="block truncate">
-                  <DiscussionNameList
-                    participants={channel.participants}
-                    profiles={profiles}
-                  />
                   <span className="text-muted-foreground">
-                    {" "}
-                    {latestHit
-                      ? `discussed ${entityLabel} in`
-                      : `created ${entityLabel} from`}{" "}
+                    {t(
+                      latestHit
+                        ? "projects.discussion.discussedIn"
+                        : "projects.discussion.createdFrom",
+                      {
+                        entity: entity ?? "other",
+                        names: () => (
+                          <DiscussionNameList
+                            participants={channel.participants}
+                            profiles={profiles}
+                          />
+                        ),
+                        group: () => (
+                          <button
+                            className="pointer-events-auto font-medium text-foreground hover:underline"
+                            onClick={() => void goChannel(channel.id)}
+                            title={t("projects.discussion.open", { name })}
+                            type="button"
+                          >
+                            {name}
+                          </button>
+                        ),
+                      },
+                    )}
                   </span>
-                  <button
-                    className="pointer-events-auto font-medium text-foreground hover:underline"
-                    onClick={() => void goChannel(channel.id)}
-                    title={`Open ${name}`}
-                    type="button"
-                  >
-                    {name}
-                  </button>
                   <span className="text-xs text-muted-foreground">
                     {" "}
                     · {relativeTime(channel.lastActivityAt)}
@@ -289,13 +299,14 @@ export function DiscussedInChannels({
           onClick={() => setExpanded(true)}
           type="button"
         >
-          Show {hiddenCount} more{" "}
-          {hiddenCount === 1 ? "conversation" : "conversations"}
+          {t("projects.discussion.showMore", { count: hiddenCount })}
         </button>
       ) : null}
       {isTruncated ? (
         <p className="border-t border-border/40 px-3 py-1.5 text-xs text-muted-foreground">
-          Showing mentions from the 500 most recent search results.
+          {t("projects.discussion.truncatedCard", {
+            limit: DISCUSSION_SEARCH_LIMIT,
+          })}
         </p>
       ) : null}
     </div>
@@ -333,36 +344,43 @@ function DiscussionNameList({
     ? participants
     : participants.slice(0, NAME_LIST_MAX - 1);
   const others = participants.length - shown.length;
-  return (
-    <>
-      {shown.map((pubkey, index) => {
-        const isLast = index === shown.length - 1;
-        const separator =
-          index === 0 ? null : isLast && others === 0 ? " and " : ", ";
-        return (
-          <React.Fragment key={pubkey}>
-            {separator ? (
-              <span className="text-muted-foreground">{separator}</span>
-            ) : null}
-            <UserProfilePopover pubkey={pubkey} triggerElement="span">
-              <button
-                className="pointer-events-auto font-medium text-foreground hover:underline"
-                type="button"
-              >
-                {resolveUserLabel({ profiles, pubkey })}
-              </button>
-            </UserProfilePopover>
-          </React.Fragment>
-        );
-      })}
-      {others > 0 ? (
-        <span className="font-medium text-foreground">
-          {" "}
-          and {others} others
-        </span>
-      ) : null}
-    </>
-  );
+  const t = useT();
+  // Separators render in the caller's muted text color; names stay bold.
+  const nameAt = (index: number) => () => {
+    const pubkey = shown[index];
+    return (
+      <UserProfilePopover key={pubkey} pubkey={pubkey} triggerElement="span">
+        <button
+          className="pointer-events-auto font-medium text-foreground hover:underline"
+          type="button"
+        >
+          {resolveUserLabel({ profiles, pubkey })}
+        </button>
+      </UserProfilePopover>
+    );
+  };
+  if (others > 0) {
+    return t("projects.discussion.namesOthers", {
+      count: others,
+      name1: nameAt(0),
+      name2: nameAt(1),
+      others: (chunks: React.ReactNode) => (
+        <span className="font-medium text-foreground">{chunks}</span>
+      ),
+    });
+  }
+  if (shown.length === 1) return nameAt(0)();
+  if (shown.length === 2) {
+    return t("projects.discussion.names2", {
+      name1: nameAt(0),
+      name2: nameAt(1),
+    });
+  }
+  return t("projects.discussion.names3", {
+    name1: nameAt(0),
+    name2: nameAt(1),
+    name3: nameAt(2),
+  });
 }
 
 /**
@@ -379,6 +397,7 @@ export function DiscussionChannelsPanel({
   query: string;
   repositoryName: string;
 }) {
+  const t = useT();
   const { channels, hits, isLoading, isTruncated } =
     useDiscussionChannels(query);
   const { goChannel, openSearchHit } = useAppNavigation();
@@ -397,15 +416,15 @@ export function DiscussionChannelsPanel({
   const profiles = profilesQuery.data?.profiles;
 
   if (isLoading) {
-    return <KuzzLoadingState label="Loading group discussions" />;
+    return <KuzzLoadingState label={t("projects.discussion.loading")} />;
   }
   if (channels.length === 0) {
     return (
       <ProjectPanelState
         className="px-4"
-        description="Paste this repository, review, or task link in a group and it will appear here."
+        description={t("projects.discussion.emptyDescription")}
         testId="project-discussion-channels-panel"
-        title="No linked groups yet"
+        title={t("projects.discussion.emptyTitle")}
       />
     );
   }
@@ -432,9 +451,12 @@ export function DiscussionChannelsPanel({
                 count={channel.messageCount}
                 countSuffix={isTruncated ? "+" : undefined}
                 countTestId="project-channel-message-count"
-                countTitle={`${channel.messageCount}${isTruncated ? "+" : ""} ${
-                  channel.messageCount === 1 ? "message" : "messages"
-                }`}
+                countTitle={t(
+                  isTruncated
+                    ? "projects.discussion.messageCountTruncated"
+                    : "projects.discussion.messageCount",
+                  { count: channel.messageCount },
+                )}
                 dateSeconds={channel.lastActivityAt}
                 dateTestId="project-channel-row-date"
                 icon={
@@ -464,8 +486,8 @@ export function DiscussionChannelsPanel({
                 title={`${name}`}
                 titleAttr={
                   latestHit
-                    ? `Open the latest conversation in ${name}`
-                    : `Open ${name}`
+                    ? t("projects.discussion.openLatestIn", { name })
+                    : t("projects.discussion.open", { name })
                 }
               />
             </li>
@@ -474,8 +496,9 @@ export function DiscussionChannelsPanel({
       </ul>
       {isTruncated ? (
         <p className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">
-          Showing the latest {DISCUSSION_SEARCH_LIMIT} mentions; totals may be
-          higher.
+          {t("projects.discussion.truncatedPanel", {
+            limit: DISCUSSION_SEARCH_LIMIT,
+          })}
         </p>
       ) : null}
     </div>

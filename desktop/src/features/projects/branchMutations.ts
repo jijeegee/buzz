@@ -7,6 +7,7 @@ import {
   createProjectRemoteBranch,
   deleteProjectRemoteBranch,
 } from "@/shared/api/projectGit";
+import { t } from "@/shared/i18n";
 
 /** Creates a remote branch from an observed branch commit. */
 export function useCreateProjectRemoteBranchMutation(
@@ -19,7 +20,8 @@ export function useCreateProjectRemoteBranchMutation(
       expectedCommit: string;
       newBranch: string;
     }) => {
-      if (!project?.cloneUrls[0]) throw new Error("No project selected.");
+      if (!project?.cloneUrls[0])
+        throw new Error(t("projects.errors.noProjectSelected"));
       return createProjectRemoteBranch({
         cloneUrl: project.cloneUrls[0],
         ...input,
@@ -39,7 +41,8 @@ export function useDeleteProjectRemoteBranchMutation(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: { branch: string; expectedCommit: string }) => {
-      if (!project?.cloneUrls[0]) throw new Error("No project selected.");
+      if (!project?.cloneUrls[0])
+        throw new Error(t("projects.errors.noProjectSelected"));
       return deleteProjectRemoteBranch({
         cloneUrl: project.cloneUrls[0],
         ...input,
@@ -75,7 +78,7 @@ export function useProjectBranchActions(input: {
   const handleCreate = React.useCallback(
     async (newBranch: string) => {
       if (!input.activeBranch || !input.activeBranchCommit) {
-        throw new Error("Refresh the source branch before creating a branch.");
+        throw new Error(t("projects.branchMutations.refreshSource"));
       }
       const result = await createBranch({
         sourceBranch: input.activeBranch,
@@ -102,7 +105,9 @@ export function useProjectBranchActions(input: {
       !input.activeRemoteBranch ||
       input.deleteBranchReason
     ) {
-      throw new Error(input.deleteBranchReason ?? "Choose a remote branch.");
+      throw new Error(
+        input.deleteBranchReason ?? t("projects.branchMutations.chooseRemote"),
+      );
     }
     const result = await deleteBranch({
       branch: input.activeBranch,

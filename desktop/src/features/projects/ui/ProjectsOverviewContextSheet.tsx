@@ -3,30 +3,37 @@ import * as React from "react";
 import { Button } from "@/shared/ui/button";
 import { DrawerPanelIcon } from "@/shared/ui/DrawerPanelIcon";
 import { Sheet, SheetContent, SheetTitle } from "@/shared/ui/sheet";
+import { useT } from "@/shared/i18n";
 
 export const ProjectsOverviewNarrowContextToggle = React.forwardRef<
   HTMLButtonElement,
   { onToggle: () => void; open: boolean }
->(({ onToggle, open }, ref) => (
-  <Button
-    aria-label={open ? "Hide project context" : "Show project context"}
-    aria-pressed={open}
-    className="h-7 w-7 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-    data-testid="projects-overview-context-toggle"
-    onClick={onToggle}
-    ref={ref}
-    size="icon"
-    title={open ? "Hide project context" : "Show project context"}
-    type="button"
-    variant="ghost"
-  >
-    <DrawerPanelIcon
-      className="-scale-x-100"
-      side={open ? "left" : "right"}
-      testId="projects-overview-context-icon"
-    />
-  </Button>
-));
+>(({ onToggle, open }, ref) => {
+  const t = useT();
+  const label = open
+    ? t("projects.overviewContext.hide")
+    : t("projects.overviewContext.show");
+  return (
+    <Button
+      aria-label={label}
+      aria-pressed={open}
+      className="h-7 w-7 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      data-testid="projects-overview-context-toggle"
+      onClick={onToggle}
+      ref={ref}
+      size="icon"
+      title={label}
+      type="button"
+      variant="ghost"
+    >
+      <DrawerPanelIcon
+        className="-scale-x-100"
+        side={open ? "left" : "right"}
+        testId="projects-overview-context-icon"
+      />
+    </Button>
+  );
+});
 ProjectsOverviewNarrowContextToggle.displayName =
   "ProjectsOverviewNarrowContextToggle";
 
@@ -47,6 +54,7 @@ export function ProjectsOverviewContextSheet({
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
+  const t = useT();
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
       <SheetContent
@@ -56,7 +64,9 @@ export function ProjectsOverviewContextSheet({
         onCloseAutoFocus={onCloseAutoFocus}
         side="right"
       >
-        <SheetTitle className="sr-only">Project context</SheetTitle>
+        <SheetTitle className="sr-only">
+          {t("projects.overviewContext.sheetTitle")}
+        </SheetTitle>
         {children}
       </SheetContent>
     </Sheet>

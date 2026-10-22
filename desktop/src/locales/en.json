@@ -17526,5 +17526,3501 @@
   "messages.thread.updateFailed": "Could not update the thread",
   "@messages.thread.updateFailed": {
     "description": "Error toast when closing or reopening a thread fails."
+  },
+  "projects.errors.projectNotFound": "Couldn't find this project. Refresh and try again.",
+  "@projects.errors.projectNotFound": {
+    "description": "Error shown when adding a group or repository to, or deleting, a project that can no longer be found."
+  },
+  "projects.errors.updatedElsewhere": "This project was updated by another session while you were working. Refresh and try again.",
+  "@projects.errors.updatedElsewhere": {
+    "description": "Error shown when a project changed in another session during an edit (adding a group or repository)."
+  },
+  "projects.errors.unsupported": "Projects aren't available in this community yet.",
+  "@projects.errors.unsupported": {
+    "description": "Error shown when the community server does not support projects."
+  },
+  "projects.errors.ownerAgentIncomplete": "The owner agent updated the project but its response was incomplete. Refresh and try again.",
+  "@projects.errors.ownerAgentIncomplete": {
+    "description": "Error shown after the project's owner AI agent updated the project but returned incomplete data."
+  },
+  "projects.errors.noProjectSelected": "No project selected.",
+  "@projects.errors.noProjectSelected": {
+    "description": "Error shown when a project action runs before a project is open."
+  },
+  "projects.createProject.agentFailed": "The project was created, but adding {name} failed: {error}",
+  "@projects.createProject.agentFailed": {
+    "description": "Error after creating a project when one AI agent could not be added. {name} is the agent name, {error} the reason."
+  },
+  "projects.createProject.agentsFailed": "The project was created, but adding agents failed: {failures}",
+  "@projects.createProject.agentsFailed": {
+    "description": "Error after creating a project when several AI agents could not be added. {failures} is a list like 'Name: reason; Name: reason'."
+  },
+  "projects.createProject.timedOut": "Timed out creating project.",
+  "@projects.createProject.timedOut": {
+    "description": "Error when creating a project takes too long."
+  },
+  "projects.createProject.failed": "Failed to create project.",
+  "@projects.createProject.failed": {
+    "description": "Error when creating a project fails."
+  },
+  "projects.createProject.repositoryTimedOut": "Timed out creating the project repository.",
+  "@projects.createProject.repositoryTimedOut": {
+    "description": "Error when creating the code repository of a new project takes too long."
+  },
+  "projects.createProject.repositoryFailed": "Failed to create the project repository.",
+  "@projects.createProject.repositoryFailed": {
+    "description": "Error when creating the code repository of a new project fails."
+  },
+  "projects.createProject.nameTaken": "A project named \"{name}\" already exists. Open that one instead of creating another.",
+  "@projects.createProject.nameTaken": {
+    "description": "Error in the create-project flow when a project with the same name exists."
+  },
+  "projects.createProject.readFailed": "The project was created but could not be read.",
+  "@projects.createProject.readFailed": {
+    "description": "Error after creating a project when the new project could not be loaded."
+  },
+  "projects.createProject.alreadyYours": "You already have a project named \"{name}\".",
+  "@projects.createProject.alreadyYours": {
+    "description": "Error in the create-project dialog when the user already owns a project with this name. {name} is the project name."
+  },
+  "projects.hooks.reviewCommentTimedOut": "Timed out posting review comment.",
+  "@projects.hooks.reviewCommentTimedOut": {
+    "description": "Error when posting a comment on a code review (pull request) takes too long."
+  },
+  "projects.hooks.reviewCommentFailed": "Failed to post review comment.",
+  "@projects.hooks.reviewCommentFailed": {
+    "description": "Error when posting a comment on a code review (pull request) fails."
+  },
+  "projects.hooks.taskCommentTimedOut": "Timed out posting task comment.",
+  "@projects.hooks.taskCommentTimedOut": {
+    "description": "Error when posting a comment on a project task takes too long."
+  },
+  "projects.hooks.taskCommentFailed": "Failed to post task comment.",
+  "@projects.hooks.taskCommentFailed": {
+    "description": "Error when posting a comment on a project task fails."
+  },
+  "projects.hooks.commentEmpty": "Comment cannot be empty.",
+  "@projects.hooks.commentEmpty": {
+    "description": "Error when posting an empty comment on a project task or review."
+  },
+  "projects.hooks.commentLocationInvalid": "Comment location is invalid.",
+  "@projects.hooks.commentLocationInvalid": {
+    "description": "Error when an inline review comment points to an invalid file line."
+  },
+  "projects.hooks.reviewCommitRequired": "A review commit is required for review comments.",
+  "@projects.hooks.reviewCommitRequired": {
+    "description": "Error when posting a review comment without a commit to attach it to."
+  },
+  "projects.issueAssignments.assignTimedOut": "Timed out assigning task.",
+  "@projects.issueAssignments.assignTimedOut": {
+    "description": "Error when assigning a project task to someone takes too long."
+  },
+  "projects.issueAssignments.unassignTimedOut": "Timed out unassigning task.",
+  "@projects.issueAssignments.unassignTimedOut": {
+    "description": "Error when removing someone from a project task takes too long."
+  },
+  "projects.issueAssignments.assignFailed": "Failed to assign task.",
+  "@projects.issueAssignments.assignFailed": {
+    "description": "Error when assigning a project task to someone fails."
+  },
+  "projects.issueAssignments.unassignFailed": "Failed to unassign task.",
+  "@projects.issueAssignments.unassignFailed": {
+    "description": "Error when removing someone from a project task fails."
+  },
+  "projects.issueAssignments.labelLength": "Assignee label must be between 1 and 128 characters.",
+  "@projects.issueAssignments.labelLength": {
+    "description": "Error when assigning a task with an empty or too long assignee name."
+  },
+  "projects.issueAssignments.selectAssignee": "Select at least one assignee.",
+  "@projects.issueAssignments.selectAssignee": {
+    "description": "Error when assigning a task without choosing anyone."
+  },
+  "projects.issueMutations.createTimedOut": "Timed out creating task.",
+  "@projects.issueMutations.createTimedOut": {
+    "description": "Error when creating a project task takes too long."
+  },
+  "projects.issueMutations.createFailed": "Failed to create task.",
+  "@projects.issueMutations.createFailed": {
+    "description": "Error when creating a project task fails."
+  },
+  "projects.channelCreation.tooManyGroups": "A project cannot contain more than {count} extra groups.",
+  "@projects.channelCreation.tooManyGroups": {
+    "description": "Error when adding a group chat to a project that already has the maximum number. {count} is a number."
+  },
+  "projects.channelCreation.ownerOnly": "Only the project owner can add groups.",
+  "@projects.channelCreation.ownerOnly": {
+    "description": "Error when someone other than the owner adds a group (chat channel) to a project."
+  },
+  "projects.channelCreation.alreadyHome": "That group is already this project's home.",
+  "@projects.channelCreation.alreadyHome": {
+    "description": "Error when adding a group that is already the project's main group."
+  },
+  "projects.deletion.timedOut": "Could not confirm whether the project was deleted. Projects were refreshed.",
+  "@projects.deletion.timedOut": {
+    "description": "Error when deleting a project takes too long to confirm."
+  },
+  "projects.deletion.failed": "Failed to delete project.",
+  "@projects.deletion.failed": {
+    "description": "Error when deleting a project fails."
+  },
+  "projects.deletion.updatedDuringDelete": "This project was updated while it was being deleted. Refresh and try again.",
+  "@projects.deletion.updatedDuringDelete": {
+    "description": "Error when a project changed while it was being deleted."
+  },
+  "projects.enumeration.unknownError": "Unknown error",
+  "@projects.enumeration.unknownError": {
+    "description": "Reason placed inside the 'Could not fetch project deletion records' error when no reason is known. Short."
+  },
+  "projects.enumeration.deletionRecordsFailed": "Could not fetch project deletion records: {error} — refresh to retry.",
+  "@projects.enumeration.deletionRecordsFailed": {
+    "description": "Error on the Projects list when deleted-project records cannot be loaded. {error} is the reason."
+  },
+  "projects.enumeration.loadFailed": "Couldn't load all projects. Try again.",
+  "@projects.enumeration.loadFailed": {
+    "description": "Error on the Projects screen when the project list could not be loaded completely."
+  },
+  "projects.issues.untitledTask": "Untitled task",
+  "@projects.issues.untitledTask": {
+    "description": "Title shown for a project task that has no title."
+  },
+  "projects.issues.titleRequired": "Task title is required.",
+  "@projects.issues.titleRequired": {
+    "description": "Error in the new-task dialog when the title is empty."
+  },
+  "projects.issues.titleTooLong": "Task title must be 256 characters or fewer.",
+  "@projects.issues.titleTooLong": {
+    "description": "Error in the new-task dialog when the title is too long."
+  },
+  "projects.issues.viewTask": "View task",
+  "@projects.issues.viewTask": {
+    "description": "Tooltip of the task id on a task row. Short."
+  },
+  "projects.issues.createdBy": "Created by {name}",
+  "@projects.issues.createdBy": {
+    "description": "Tooltip of the creator avatar on a task row."
+  },
+  "projects.issues.unassigned": "Unassigned",
+  "@projects.issues.unassigned": {
+    "description": "Tooltip of the empty assignee slot on a task row. Short."
+  },
+  "projects.issues.viewCommentCount": "View {count} comments",
+  "@projects.issues.viewCommentCount": {
+    "description": "Screen-reader label of the comment count button on a task row."
+  },
+  "projects.issues.viewComments": "View comments",
+  "@projects.issues.viewComments": {
+    "description": "Screen-reader label of the comment button on a task row with no comments."
+  },
+  "projects.issues.commentPosted": "Comment posted.",
+  "@projects.issues.commentPosted": {
+    "description": "Toast after commenting on a task."
+  },
+  "projects.issues.commentFailed": "Failed to post comment.",
+  "@projects.issues.commentFailed": {
+    "description": "Error toast when commenting on a task fails."
+  },
+  "projects.issues.copyLink": "Copy task link",
+  "@projects.issues.copyLink": {
+    "description": "Tooltip of the link button next to a task title. Short."
+  },
+  "projects.issues.taskCreated": "Task created",
+  "@projects.issues.taskCreated": {
+    "description": "Words before the time under a task title, e.g. 'Task created 2h ago'. Short."
+  },
+  "projects.issues.status": "Status",
+  "@projects.issues.status": {
+    "description": "Row label in task details. Short."
+  },
+  "projects.issues.assignees": "Assignees",
+  "@projects.issues.assignees": {
+    "description": "Row label in task details: people working on the task. Short."
+  },
+  "projects.issues.labels": "Labels",
+  "@projects.issues.labels": {
+    "description": "Row label in task details: tags on the task. Short."
+  },
+  "projects.issues.commentPlaceholder": "Add a comment…",
+  "@projects.issues.commentPlaceholder": {
+    "description": "Placeholder of the comment box under a task."
+  },
+  "projects.issues.loading": "Loading tasks",
+  "@projects.issues.loading": {
+    "description": "Loading label of a project's task list."
+  },
+  "projects.issues.errorTitle": "Could not load tasks",
+  "@projects.issues.errorTitle": {
+    "description": "Task list of a project when loading fails."
+  },
+  "projects.issues.errorDescription": "Refresh the project and try again.",
+  "@projects.issues.errorDescription": {
+    "description": "Task list of a project when loading fails, under the title."
+  },
+  "projects.issues.emptyTitle": "No tasks yet",
+  "@projects.issues.emptyTitle": {
+    "description": "Empty task list of a project."
+  },
+  "projects.issues.emptyProject": "Tasks created for this project's repositories will appear here.",
+  "@projects.issues.emptyProject": {
+    "description": "Empty task list of a whole project, under the title."
+  },
+  "projects.issues.emptyRepository": "Tasks created for this repository will appear here.",
+  "@projects.issues.emptyRepository": {
+    "description": "Empty task list of one repository, under the title."
+  },
+  "projects.ownerControl.updateFailed": "The agent could not update this project.",
+  "@projects.ownerControl.updateFailed": {
+    "description": "Error when the AI agent that owns a project fails to update it."
+  },
+  "projects.ownerControl.noResponse": "The project owner agent did not respond. Make sure it is running and try again.",
+  "@projects.ownerControl.noResponse": {
+    "description": "Error when the AI agent that owns a project does not answer in time."
+  },
+  "projects.ownerControl.contactFailed": "Failed to contact the project owner agent.",
+  "@projects.ownerControl.contactFailed": {
+    "description": "Error when the app cannot reach the AI agent that owns a project."
+  },
+  "projects.pullRequests.reviewDraft": "This review is still a work in progress.",
+  "@projects.pullRequests.reviewDraft": {
+    "description": "Code review (pull request) screen, review status above the review actions, for a draft."
+  },
+  "projects.pullRequests.reviewChangesRequested": "{count, plural, one {# reviewer requested changes.} other {# reviewers requested changes.}}",
+  "@projects.pullRequests.reviewChangesRequested": {
+    "description": "Code review (pull request) screen, review status above the review actions."
+  },
+  "projects.pullRequests.reviewRequested": "Review requested — no approvals yet.",
+  "@projects.pullRequests.reviewRequested": {
+    "description": "Code review (pull request) screen, review status above the review actions."
+  },
+  "projects.pullRequests.reviewNone": "No reviews yet.",
+  "@projects.pullRequests.reviewNone": {
+    "description": "Code review (pull request) screen, review status above the review actions."
+  },
+  "projects.pullRequests.reviewDraftDetail": "Draft reviews cannot be merged.",
+  "@projects.pullRequests.reviewDraftDetail": {
+    "description": "Code review (pull request) screen, small text under the review status, for a draft."
+  },
+  "projects.pullRequests.reviewApprovalsHint": "Approvals from reviewers will show up here.",
+  "@projects.pullRequests.reviewApprovalsHint": {
+    "description": "Code review (pull request) screen, small text under the review status when nobody reviewed yet."
+  },
+  "projects.pullRequests.untitled": "Untitled review",
+  "@projects.pullRequests.untitled": {
+    "description": "Title shown for a code review (pull request) that has no title."
+  },
+  "projects.repositoryCreation.ownerOnly": "Only the project owner can add repositories.",
+  "@projects.repositoryCreation.ownerOnly": {
+    "description": "Error when someone other than the project owner tries to add a code repository."
+  },
+  "projects.repositoryCreation.tooMany": "A project cannot contain more than {count} repositories.",
+  "@projects.repositoryCreation.tooMany": {
+    "description": "Error when adding a code repository to a project that already has the maximum number. {count} is a number."
+  },
+  "projects.repositoryCreation.metadataUnavailable": "Repository metadata is unavailable. Refresh and try again.",
+  "@projects.repositoryCreation.metadataUnavailable": {
+    "description": "Error when a code repository's details are missing while adding it to a project."
+  },
+  "projects.repositoryCreation.alreadyAdded": "This project already contains \"{name}\" (it was added by another session).",
+  "@projects.repositoryCreation.alreadyAdded": {
+    "description": "Error when the code repository was already added to the project from another session. {name} is the repository name."
+  },
+  "projects.repositoryCreation.repairOwnerOnly": "Only the repository owner can repair its access.",
+  "@projects.repositoryCreation.repairOwnerOnly": {
+    "description": "Error when someone other than the owner tries to fix which group can open a code repository."
+  },
+  "projects.repositoryCreation.accessGroupInvalid": "Repository access group is invalid.",
+  "@projects.repositoryCreation.accessGroupInvalid": {
+    "description": "Error when the group that grants access to a code repository is not valid."
+  },
+  "projects.repositoryCreation.nameRequired": "Repository name is required.",
+  "@projects.repositoryCreation.nameRequired": {
+    "description": "Error in the add-repository dialog when the name is empty."
+  },
+  "projects.repositoryCreation.nameNeedsLetters": "Repository name must include letters or numbers.",
+  "@projects.repositoryCreation.nameNeedsLetters": {
+    "description": "Error in the add-repository dialog when the name has no letters or digits."
+  },
+  "projects.repositoryCreation.noAccessGroup": "This project has no repository access group to inherit.",
+  "@projects.repositoryCreation.noAccessGroup": {
+    "description": "Error when adding a repository to a project that has no group to share access with."
+  },
+  "projects.taskCategories.issue": "Issue",
+  "@projects.taskCategories.issue": {
+    "description": "Project task category (a problem to fix): option in the new-task dialog and badge on a task row. Short."
+  },
+  "projects.taskCategories.changeRequest": "Change request",
+  "@projects.taskCategories.changeRequest": {
+    "description": "Project task category (a requested change): option in the new-task dialog and badge on a task row. Short."
+  },
+  "projects.taskCategories.improvement": "Improvement",
+  "@projects.taskCategories.improvement": {
+    "description": "Project task category (something to make better): option in the new-task dialog and badge on a task row. Short."
+  },
+  "projects.workItems.loadFailed": "Could not load project tasks and reviews.",
+  "@projects.workItems.loadFailed": {
+    "description": "Error when the list of project tasks and code reviews fails to load."
+  },
+  "projects.pullRequestMutations.createTimedOut": "Timed out creating review.",
+  "@projects.pullRequestMutations.createTimedOut": {
+    "description": "Error when creating a code review (pull request) takes too long."
+  },
+  "projects.pullRequestMutations.createFailed": "Failed to create review.",
+  "@projects.pullRequestMutations.createFailed": {
+    "description": "Error when creating a code review (pull request) fails."
+  },
+  "projects.pullRequestMutations.updateNotAllowed": "Only the review author or repository owner can publish its update.",
+  "@projects.pullRequestMutations.updateNotAllowed": {
+    "description": "Error when someone else tries to update a code review (pull request)."
+  },
+  "projects.pullRequestMutations.updateTimedOut": "Timed out updating review.",
+  "@projects.pullRequestMutations.updateTimedOut": {
+    "description": "Error when updating a code review (pull request) takes too long."
+  },
+  "projects.pullRequestMutations.updateFailed": "The branch was pushed, but the review update could not be published.",
+  "@projects.pullRequestMutations.updateFailed": {
+    "description": "Error when the code was pushed but the code review (pull request) could not be updated."
+  },
+  "projects.pullRequestMutations.titleEmpty": "Review title cannot be empty.",
+  "@projects.pullRequestMutations.titleEmpty": {
+    "description": "Error in the new-review (pull request) dialog when the title is empty."
+  },
+  "projects.pullRequestMutations.titleTooLong": "Review title must be 256 characters or fewer.",
+  "@projects.pullRequestMutations.titleTooLong": {
+    "description": "Error in the new-review (pull request) dialog when the title is too long."
+  },
+  "projects.pullRequestMutations.noCloneUrl": "This project has no clone URL.",
+  "@projects.pullRequestMutations.noCloneUrl": {
+    "description": "Error when creating a review for a repository without a download address."
+  },
+  "projects.pullRequestMutations.sameBranches": "The base and compare branches must be different.",
+  "@projects.pullRequestMutations.sameBranches": {
+    "description": "Error in the new-review dialog when both git branches are the same."
+  },
+  "projects.pullRequestMutations.noOpenReview": "No open review for this branch.",
+  "@projects.pullRequestMutations.noOpenReview": {
+    "description": "Error when updating a review (pull request) that is no longer open."
+  },
+  "projects.pullRequestMutations.branchInfoIncomplete": "Review branch information is incomplete.",
+  "@projects.pullRequestMutations.branchInfoIncomplete": {
+    "description": "Error when a review (pull request) is missing its git branch details."
+  },
+  "projects.pullRequestReviews.statusTimedOut": "Timed out updating review status.",
+  "@projects.pullRequestReviews.statusTimedOut": {
+    "description": "Error when changing a code review's (pull request's) status takes too long."
+  },
+  "projects.pullRequestReviews.statusFailed": "Failed to update review status.",
+  "@projects.pullRequestReviews.statusFailed": {
+    "description": "Error when changing a code review's (pull request's) status fails."
+  },
+  "projects.pullRequestReviews.requestTimedOut": "Timed out requesting review.",
+  "@projects.pullRequestReviews.requestTimedOut": {
+    "description": "Error when asking someone to review code takes too long."
+  },
+  "projects.pullRequestReviews.requestFailed": "Failed to request review.",
+  "@projects.pullRequestReviews.requestFailed": {
+    "description": "Error when asking someone to review code fails."
+  },
+  "projects.pullRequestReviews.approveFailed": "Failed to approve review.",
+  "@projects.pullRequestReviews.approveFailed": {
+    "description": "Error when approving a code review (pull request) fails."
+  },
+  "projects.pullRequestReviews.approveTimedOut": "Timed out approving review.",
+  "@projects.pullRequestReviews.approveTimedOut": {
+    "description": "Error when approving a code review (pull request) takes too long."
+  },
+  "projects.pullRequestReviews.requestChangesFailed": "Failed to request changes.",
+  "@projects.pullRequestReviews.requestChangesFailed": {
+    "description": "Error when asking for changes on a code review (pull request) fails."
+  },
+  "projects.pullRequestReviews.requestChangesTimedOut": "Timed out requesting changes.",
+  "@projects.pullRequestReviews.requestChangesTimedOut": {
+    "description": "Error when asking for changes on a code review (pull request) takes too long."
+  },
+  "projects.pullRequestReviews.selectReviewer": "Select at least one reviewer.",
+  "@projects.pullRequestReviews.selectReviewer": {
+    "description": "Error when requesting a code review without choosing anyone."
+  },
+  "projects.pullRequestReviews.noCommit": "The review has no commit to inspect.",
+  "@projects.pullRequestReviews.noCommit": {
+    "description": "Error when approving or rejecting a code review that has no commit."
+  },
+  "projects.repoSyncHooks.reviewUpdateFailed": "The review update could not be published.",
+  "@projects.repoSyncHooks.reviewUpdateFailed": {
+    "description": "Error after pushing code when the linked code review (pull request) could not be updated."
+  },
+  "projects.useAddProjectChannel.cleanupFailed": "Kuzz could not verify the project after creating the group, and could not remove the unlinked group. Delete it manually, then refresh and try again.",
+  "@projects.useAddProjectChannel.cleanupFailed": {
+    "description": "Error when adding a group chat to a project half-failed and the app could not clean up. Kuzz is the app name."
+  },
+  "projects.useAddProjectChannel.verifyFailed": "Could not verify the project after creating the group.",
+  "@projects.useAddProjectChannel.verifyFailed": {
+    "description": "Error when adding a group chat to a project: the project could not be checked afterwards."
+  },
+  "projects.useAddProjectChannel.updatedDuringCreate": "This project was updated by another session while the group was being created. Refresh and try again.",
+  "@projects.useAddProjectChannel.updatedDuringCreate": {
+    "description": "Error when a project changed in another session while a group chat was being added to it."
+  },
+  "projects.useAddProjectChannel.linkFailed": "Could not link the group to this project.",
+  "@projects.useAddProjectChannel.linkFailed": {
+    "description": "Error when a new group chat could not be attached to the project."
+  },
+  "projects.useAddProjectRepository.nameTaken": "A repository named \"{name}\" already exists (as a standalone repository or in another project). Choose a different name to avoid overwriting it.",
+  "@projects.useAddProjectRepository.nameTaken": {
+    "description": "Error when adding a code repository to a project with a name that is already used."
+  },
+  "projects.useAddProjectRepository.multipleUnsupported": "This community doesn't support multiple repositories yet.",
+  "@projects.useAddProjectRepository.multipleUnsupported": {
+    "description": "Error when the community server cannot hold more than one code repository per project."
+  },
+  "projects.useAddProjectRepository.readFailed": "The repository was created but could not be read.",
+  "@projects.useAddProjectRepository.readFailed": {
+    "description": "Error after creating a code repository when its details cannot be read back."
+  },
+  "projects.useAddProjectRepository.createFailed": "Failed to create the repository.",
+  "@projects.useAddProjectRepository.createFailed": {
+    "description": "Error when creating a code repository fails."
+  },
+  "projects.useAddProjectRepository.partialWrite": "The project was updated but the repository could not be created (event {event}): {error} The add-repository operation is idempotent — re-run Add repository with the same name to resume: the recovery query will find the stored event or retry the publish.",
+  "@projects.useAddProjectRepository.partialWrite": {
+    "description": "Error when the project lists a new code repository but the repository itself was not saved. {event} is a short id like 1a2b3c4d…; {error} is the reason. 'Add repository' is the button name."
+  },
+  "projects.useAddProjectRepository.partialWriteUnsigned": "The project was updated but the repository could not be created (an event that could not be signed): {error} The add-repository operation is idempotent — re-run Add repository with the same name to resume: the recovery query will find the stored event or retry the publish.",
+  "@projects.useAddProjectRepository.partialWriteUnsigned": {
+    "description": "Error when the project lists a new code repository but the repository itself was not saved or signed. {error} is the reason. 'Add repository' is the button name."
+  },
+  "projects.useAttachProjectRepository.alreadyAttached": "This repository is already part of the project.",
+  "@projects.useAttachProjectRepository.alreadyAttached": {
+    "description": "Error when attaching a code repository that the project already has."
+  },
+  "projects.useBindProjectRepositoryChannel.timedOut": "Timed out repairing repository access.",
+  "@projects.useBindProjectRepositoryChannel.timedOut": {
+    "description": "Error when fixing who can access a code repository takes too long."
+  },
+  "projects.useBindProjectRepositoryChannel.failed": "Failed to repair repository access.",
+  "@projects.useBindProjectRepositoryChannel.failed": {
+    "description": "Error when fixing who can access a code repository fails."
+  },
+  "projects.useBindProjectRepositoryChannel.readFailed": "Repository access was repaired but could not be read.",
+  "@projects.useBindProjectRepositoryChannel.readFailed": {
+    "description": "Error after fixing code repository access when the result cannot be read back."
+  },
+  "projects.useCreateProject.canvasFailed": "Project created, but its project-home canvas could not be added.",
+  "@projects.useCreateProject.canvasFailed": {
+    "description": "Warning notification after creating a project when its home page (canvas) could not be set up."
+  },
+  "projects.useProjectChannelRequests.homeUnresolved": "The project home could not be resolved. Refresh and try again.",
+  "@projects.useProjectChannelRequests.homeUnresolved": {
+    "description": "Error in the dialog where an AI agent asks to create a group chat for a project."
+  },
+  "projects.useProjectChannelRequests.ownerOnly": "Only the project owner can approve this group.",
+  "@projects.useProjectChannelRequests.ownerOnly": {
+    "description": "Error in the dialog where an AI agent asks to create a group chat for a project."
+  },
+  "projects.useProjectChannelRequests.templateMissing": "Group template \"{name}\" is not available on this device.",
+  "@projects.useProjectChannelRequests.templateMissing": {
+    "description": "Error in the dialog where an AI agent asks to create a group chat from a template. {name} is the template name."
+  },
+  "projects.useProjectChannelRequests.created": "Group \"{name}\" created.",
+  "@projects.useProjectChannelRequests.created": {
+    "description": "Notification after a requested project group chat was created. {name} is the group name."
+  },
+  "projects.useProjectChannelRequests.createFailed": "Failed to create the project group.",
+  "@projects.useProjectChannelRequests.createFailed": {
+    "description": "Error when creating a requested project group chat fails."
+  },
+  "projects.useProjectCommitDiff.noCloneUrl": "This project has no clone URL to load the commit from.",
+  "@projects.useProjectCommitDiff.noCloneUrl": {
+    "description": "Error in the commit details panel when the code repository address is missing."
+  },
+  "projects.useProjectCommitDiff.noCommit": "No commit selected.",
+  "@projects.useProjectCommitDiff.noCommit": {
+    "description": "Error in the commit details panel when no commit is chosen."
+  },
+  "projects.useProjectRepoHost.remote": "Remote",
+  "@projects.useProjectRepoHost.remote": {
+    "description": "Label for the online copy of a code repository (git remote), shown when its host name is unknown. Short."
+  },
+  "projects.useProjectRepositorySnapshots.notFound": "Repository not found.",
+  "@projects.useProjectRepositorySnapshots.notFound": {
+    "description": "Error on a project's code repository card when the repository cannot be found."
+  },
+  "projects.branchMutations.chooseRemote": "Choose a remote branch.",
+  "@projects.branchMutations.chooseRemote": {
+    "description": "Error when deleting a code branch without choosing an online (remote) branch."
+  },
+  "projects.branchMutations.refreshSource": "Refresh the source branch before creating a branch.",
+  "@projects.branchMutations.refreshSource": {
+    "description": "Error when creating a git branch from a source branch that is out of date."
+  },
+  "projects.creation.nameRequired": "Project name is required.",
+  "@projects.creation.nameRequired": {
+    "description": "Error in the create-project form when the name is empty."
+  },
+  "projects.creation.nameTooLong": "Project name must not exceed 256 bytes.",
+  "@projects.creation.nameTooLong": {
+    "description": "Error in the create-project form when the name is too long."
+  },
+  "projects.creation.nameNeedsLetters": "Project name must include letters or numbers.",
+  "@projects.creation.nameNeedsLetters": {
+    "description": "Error in the create-project form when the name has only symbols."
+  },
+  "projects.creation.failed": "Couldn't create the project.",
+  "@projects.creation.failed": {
+    "description": "Error when creating a project fails for an unknown reason."
+  },
+  "projects.creation.descriptionTooLong": "Project description must not exceed 2,048 bytes.",
+  "@projects.creation.descriptionTooLong": {
+    "description": "Error in the create-project form when the description is too long."
+  },
+  "projects.creation.groupInvalid": "Project group is invalid.",
+  "@projects.creation.groupInvalid": {
+    "description": "Error when a project's group chat is not valid."
+  },
+  "projects.creation.duplicateRepositories": "A project cannot contain duplicate repositories.",
+  "@projects.creation.duplicateRepositories": {
+    "description": "Error when the same code repository is listed twice in a project."
+  },
+  "projects.creation.repositoryAddressInvalid": "Repository address is invalid.",
+  "@projects.creation.repositoryAddressInvalid": {
+    "description": "Error when a project lists a code repository with a malformed address."
+  },
+  "projects.assignmentHistory.loadFailed": "Couldn't load the full assignment history.",
+  "@projects.assignmentHistory.loadFailed": {
+    "description": "Error when the assignee history of a project task could not be loaded."
+  },
+  "projects.discussions.sharedLink": "Shared a link to this.",
+  "@projects.discussions.sharedLink": {
+    "description": "Discussions list on a project item: preview of a message that only contained a link."
+  },
+  "projects.branches.invalidName": "Enter a valid Git branch name.",
+  "@projects.branches.invalidName": {
+    "description": "Error under the branch-name field in the new-branch dialog."
+  },
+  "projects.branches.nameTaken": "A branch with this name already exists.",
+  "@projects.branches.nameTaken": {
+    "description": "Error under the branch-name field in the new-branch dialog."
+  },
+  "projects.branches.chooseFirst": "Choose a branch first.",
+  "@projects.branches.chooseFirst": {
+    "description": "Hint on the disabled new/delete branch actions when no git branch is selected."
+  },
+  "projects.branches.pushFirstCommit": "Push the first local commit to {branch} before creating another branch.",
+  "@projects.branches.pushFirstCommit": {
+    "description": "Hint on the disabled new-branch action. {branch} is a git branch name."
+  },
+  "projects.branches.createFirstCommit": "Create the repository's first commit before creating another branch.",
+  "@projects.branches.createFirstCommit": {
+    "description": "Hint on the disabled new-branch action in an empty repository."
+  },
+  "projects.branches.defaultNotDeletable": "The repository's default branch cannot be deleted.",
+  "@projects.branches.defaultNotDeletable": {
+    "description": "Hint on the disabled delete-branch action."
+  },
+  "projects.branches.onlyRemoteDeletable": "Only a published remote branch can be deleted.",
+  "@projects.branches.onlyRemoteDeletable": {
+    "description": "Hint on the disabled delete-branch action."
+  },
+  "projects.branches.closeReviewFirst": "Close the branch's review before deleting it.",
+  "@projects.branches.closeReviewFirst": {
+    "description": "Hint on the disabled delete-branch action when the branch has an open review (pull request)."
+  },
+  "projects.gitError.accessNeeded": "You need access to the repository’s group before you can clone it.",
+  "@projects.gitError.accessNeeded": {
+    "description": "Clone (download) error panel for a code repository, description."
+  },
+  "projects.gitError.authTitle": "Repository access required",
+  "@projects.gitError.authTitle": {
+    "description": "Clone error panel for a code repository, title."
+  },
+  "projects.gitError.authGitHub": "This repository requires GitHub authentication. Kuzz currently clones public GitHub repositories without credentials.",
+  "@projects.gitError.authGitHub": {
+    "description": "Clone error panel, description, for a private GitHub repository."
+  },
+  "projects.gitError.notFoundTitle": "Repository not found",
+  "@projects.gitError.notFoundTitle": {
+    "description": "Clone error panel for a code repository, title."
+  },
+  "projects.gitError.notFoundDescription": "Check that the repository link is correct and that the repository still exists.",
+  "@projects.gitError.notFoundDescription": {
+    "description": "Clone error panel, description."
+  },
+  "projects.gitError.networkTitle": "Couldn’t reach the repository",
+  "@projects.gitError.networkTitle": {
+    "description": "Clone error panel for a code repository, title."
+  },
+  "projects.gitError.networkDescription": "Check your connection and try cloning again.",
+  "@projects.gitError.networkDescription": {
+    "description": "Clone error panel, description."
+  },
+  "projects.gitError.folderExistsTitle": "Local folder already exists",
+  "@projects.gitError.folderExistsTitle": {
+    "description": "Clone error panel for a code repository, title."
+  },
+  "projects.gitError.folderExistsDescription": "Choose a different repositories directory or remove the existing checkout.",
+  "@projects.gitError.folderExistsDescription": {
+    "description": "Clone error panel, description."
+  },
+  "projects.gitError.cloneFailedTitle": "Couldn’t clone repository",
+  "@projects.gitError.cloneFailedTitle": {
+    "description": "Clone error panel for a code repository, title."
+  },
+  "projects.gitError.cloneFailedGitHub": "Try again, or open the repository on GitHub for more information.",
+  "@projects.gitError.cloneFailedGitHub": {
+    "description": "Clone error panel, description, for a GitHub repository."
+  },
+  "projects.gitError.cloneFailedOther": "Try again. If the problem continues, contact the repository owner.",
+  "@projects.gitError.cloneFailedOther": {
+    "description": "Clone error panel, description."
+  },
+  "projects.repoAvailability.authTitle": "Repository access failed",
+  "@projects.repoAvailability.authTitle": {
+    "description": "Repository unavailable panel in a project, title."
+  },
+  "projects.repoAvailability.authDescription": "Kuzz could not authenticate with this repository. Check your access and try again.",
+  "@projects.repoAvailability.authDescription": {
+    "description": "Repository unavailable or clone error panel, description."
+  },
+  "projects.repoAvailability.missingTitle": "Repository not initialized",
+  "@projects.repoAvailability.missingTitle": {
+    "description": "Repository unavailable panel in a project, title."
+  },
+  "projects.repoAvailability.missingDescription": "This project's repository wasn't found.",
+  "@projects.repoAvailability.missingDescription": {
+    "description": "Repository unavailable panel, description."
+  },
+  "projects.repoAvailability.accessTitle": "Repository access restricted",
+  "@projects.repoAvailability.accessTitle": {
+    "description": "Repository unavailable or clone error panel, title, when the user is not in the repository's group."
+  },
+  "projects.repoAvailability.accessDescription": "Repository access is granted through its group, and you’re not a member. Ask the repository owner for an invite.",
+  "@projects.repoAvailability.accessDescription": {
+    "description": "Repository unavailable panel, description."
+  },
+  "projects.repoAvailability.unboundTitle": "No access group bound",
+  "@projects.repoAvailability.unboundTitle": {
+    "description": "Repository unavailable panel in a project, title, when no group grants access."
+  },
+  "projects.repoAvailability.unboundDescription": "This repository isn't linked to a group yet, so no one can open it. The repository owner can link a group from the Access menu.",
+  "@projects.repoAvailability.unboundDescription": {
+    "description": "Repository unavailable panel, description. 'Access' is the name of a menu."
+  },
+  "projects.repoAvailability.networkTitle": "Couldn’t reach repository",
+  "@projects.repoAvailability.networkTitle": {
+    "description": "Repository unavailable panel in a project, title."
+  },
+  "projects.repoAvailability.networkDescription": "The Kuzz git service could not be reached. Check your connection and try again.",
+  "@projects.repoAvailability.networkDescription": {
+    "description": "Repository unavailable panel, description."
+  },
+  "projects.repoAvailability.refTitle": "Branch unavailable",
+  "@projects.repoAvailability.refTitle": {
+    "description": "Repository unavailable panel in a project, title, when the selected git branch is missing."
+  },
+  "projects.repoAvailability.refDescription": "The selected branch is advertised by the project but is missing from its git remote.",
+  "@projects.repoAvailability.refDescription": {
+    "description": "Repository unavailable panel, description."
+  },
+  "projects.repoAvailability.unknownTitle": "Repository unavailable",
+  "@projects.repoAvailability.unknownTitle": {
+    "description": "Repository unavailable panel in a project, title."
+  },
+  "projects.repoAvailability.unknownDescription": "Kuzz could not load this repository. Try again or contact the project owner.",
+  "@projects.repoAvailability.unknownDescription": {
+    "description": "Repository unavailable panel, description."
+  },
+  "projects.workspaceSheet.commits": "Commits",
+  "@projects.workspaceSheet.commits": {
+    "description": "Title of the project-home side sheet listing git commits. Short."
+  },
+  "projects.workspaceSheet.people": "People",
+  "@projects.workspaceSheet.people": {
+    "description": "Title of the project-home side sheet listing contributors. Short."
+  },
+  "projects.workspaceSheet.files": "Files",
+  "@projects.workspaceSheet.files": {
+    "description": "Title of the project-home side sheet listing repository files. Short."
+  },
+  "projects.workspaceSheet.tasks": "Tasks",
+  "@projects.workspaceSheet.tasks": {
+    "description": "Title of the project-home side sheet listing tasks (issues). Short."
+  },
+  "projects.workspaceSheet.reviews": "Reviews",
+  "@projects.workspaceSheet.reviews": {
+    "description": "Title of the project-home side sheet listing code reviews (pull requests). Short."
+  },
+  "projects.workspaceSheet.backToTasks": "Back to Tasks",
+  "@projects.workspaceSheet.backToTasks": {
+    "description": "Back button in a project-home side sheet showing one task. Short."
+  },
+  "projects.workspaceSheet.backToReviews": "Back to Reviews",
+  "@projects.workspaceSheet.backToReviews": {
+    "description": "Back button in a project-home side sheet showing one code review. Short."
+  },
+  "projects.workspaceSheet.backToCommits": "Back to Commits",
+  "@projects.workspaceSheet.backToCommits": {
+    "description": "Back button in a project-home side sheet showing one git commit. Short."
+  },
+  "projects.workspaceSheet.backToFiles": "Back to Files",
+  "@projects.workspaceSheet.backToFiles": {
+    "description": "Back button in a project-home side sheet showing one file. Short."
+  },
+  "projects.workspaceSheet.createReviewHint": "Create review — choose a repository and branches to compare",
+  "@projects.workspaceSheet.createReviewHint": {
+    "description": "Tooltip of the + button in the Reviews side sheet of a project home."
+  },
+  "projects.labels.discussionLinked": "Discussion linked",
+  "@projects.labels.discussionLinked": {
+    "description": "Project card label when the project has a discussion group. Short."
+  },
+  "projects.labels.noDiscussion": "No discussion",
+  "@projects.labels.noDiscussion": {
+    "description": "Project card label when the project has no discussion group. Short."
+  },
+  "projects.activityDigest.thisWeek": "This week:",
+  "@projects.activityDigest.thisWeek": {
+    "description": "Projects screen summary line, start of the sentence, followed by a list like '3 new commits, 2 tasks opened'."
+  },
+  "projects.activityDigest.newCommits": "{count, plural, one {# new commit} other {# new commits}}",
+  "@projects.activityDigest.newCommits": {
+    "description": "Projects screen weekly summary, list item."
+  },
+  "projects.activityDigest.tasksOpened": "{count, plural, one {# task opened} other {# tasks opened}}",
+  "@projects.activityDigest.tasksOpened": {
+    "description": "Projects screen weekly summary, list item."
+  },
+  "projects.activityDigest.reviewsOpened": "{count, plural, one {# review opened} other {# reviews opened}}",
+  "@projects.activityDigest.reviewsOpened": {
+    "description": "Projects screen weekly summary, list item. Review = code review (pull request)."
+  },
+  "projects.activityDigest.activeProjects": "{count, plural, one {# active project} other {# active projects}}",
+  "@projects.activityDigest.activeProjects": {
+    "description": "Projects screen weekly summary, last list item."
+  },
+  "projects.activityDigest.currentlyTracking": "Currently tracking",
+  "@projects.activityDigest.currentlyTracking": {
+    "description": "Projects screen summary line when nothing happened this week, followed by a list like '4 projects, 2 tasks, 1 review'."
+  },
+  "projects.activityDigest.projects": "{count, plural, one {# project} other {# projects}}",
+  "@projects.activityDigest.projects": {
+    "description": "Projects screen summary, list item after 'Currently tracking'."
+  },
+  "projects.activityDigest.tasks": "{count, plural, one {# task} other {# tasks}}",
+  "@projects.activityDigest.tasks": {
+    "description": "Projects screen summary, list item after 'Currently tracking'."
+  },
+  "projects.activityDigest.reviews": "{count, plural, one {# review} other {# reviews}}",
+  "@projects.activityDigest.reviews": {
+    "description": "Projects screen summary, list item after 'Currently tracking'."
+  },
+  "projects.activityDigest.separator": ", ",
+  "@projects.activityDigest.separator": {
+    "description": "Separator between items of the weekly summary list on the Projects screen (e.g. '3 new commits, 2 tasks opened'). Keep spaces as needed."
+  },
+  "projects.activityDigest.lastSeparator": ", and ",
+  "@projects.activityDigest.lastSeparator": {
+    "description": "Separator before the last item of the weekly summary list on the Projects screen. Keep spaces as needed."
+  },
+  "projects.viewHelpers.clonePathPending": "Clone path pending",
+  "@projects.viewHelpers.clonePathPending": {
+    "description": "Project card, shown instead of the repository address while it is not known yet. Short."
+  },
+  "projects.viewHelpers.noActivity": "No activity yet",
+  "@projects.viewHelpers.noActivity": {
+    "description": "Project card activity line when nothing happened yet. Short."
+  },
+  "projects.viewHelpers.activity": "{commits, plural, one {# commit} other {# commits}} · {reviews, plural, one {# review} other {# reviews}} · {tasks, plural, one {# task} other {# tasks}}",
+  "@projects.viewHelpers.activity": {
+    "description": "Project card activity line: counts of git commits, code reviews and tasks. Short."
+  },
+  "projects.selection.channelCount": "{count, plural, one {# channel} other {# channels}}",
+  "@projects.selection.channelCount": {
+    "description": "Projects screen selection bar title: how many groups (channels) are selected. Short."
+  },
+  "projects.selection.commitCount": "{count, plural, one {# commit} other {# commits}}",
+  "@projects.selection.commitCount": {
+    "description": "Projects screen selection bar title: how many git commits are selected. Short."
+  },
+  "projects.selection.projectCount": "{count, plural, one {# project} other {# projects}}",
+  "@projects.selection.projectCount": {
+    "description": "Projects screen selection bar title: how many projects are selected. Short."
+  },
+  "projects.selection.repositoryCount": "{count, plural, one {# repository} other {# repositories}}",
+  "@projects.selection.repositoryCount": {
+    "description": "Projects screen selection bar title: how many code repositories are selected. Short."
+  },
+  "projects.selection.reviewCount": "{count, plural, one {# review} other {# reviews}}",
+  "@projects.selection.reviewCount": {
+    "description": "Projects screen selection bar title: how many code reviews (pull requests) are selected. Short."
+  },
+  "projects.selection.taskCount": "{count, plural, one {# task} other {# tasks}}",
+  "@projects.selection.taskCount": {
+    "description": "Projects screen selection bar title: how many tasks are selected. Short."
+  },
+  "projects.selection.discussChannel": "{count, plural, one {Let's talk about this channel:} other {Let's talk about these channels:}}",
+  "@projects.selection.discussChannel": {
+    "description": "First line of a draft message the app writes when the user discusses selected groups (channels) in a group; links follow."
+  },
+  "projects.selection.discussCommit": "{count, plural, one {Let's talk about this commit:} other {Let's talk about these commits:}}",
+  "@projects.selection.discussCommit": {
+    "description": "First line of a draft message about selected git commits; links follow."
+  },
+  "projects.selection.discussProject": "{count, plural, one {Let's talk about this project:} other {Let's talk about these projects:}}",
+  "@projects.selection.discussProject": {
+    "description": "First line of a draft message about selected projects; links follow."
+  },
+  "projects.selection.discussRepository": "{count, plural, one {Let's talk about this repository:} other {Let's talk about these repositories:}}",
+  "@projects.selection.discussRepository": {
+    "description": "First line of a draft message about selected code repositories; links follow."
+  },
+  "projects.selection.discussReview": "{count, plural, one {Let's talk about this review:} other {Let's talk about these reviews:}}",
+  "@projects.selection.discussReview": {
+    "description": "First line of a draft message about selected code reviews (pull requests); links follow."
+  },
+  "projects.selection.discussTask": "{count, plural, one {Let's talk about this task:} other {Let's talk about these tasks:}}",
+  "@projects.selection.discussTask": {
+    "description": "First line of a draft message about selected tasks; links follow."
+  },
+  "projects.selection.chatWithAgent": "Chat with an agent",
+  "@projects.selection.chatWithAgent": {
+    "description": "Projects screen selection bar, action button. Agent = AI agent. Short."
+  },
+  "projects.selection.discussInGroup": "Discuss in a group",
+  "@projects.selection.discussInGroup": {
+    "description": "Projects screen selection bar, action button. Short."
+  },
+  "projects.selection.createReview": "{count, plural, one {Create review} other {Create reviews}}",
+  "@projects.selection.createReview": {
+    "description": "Projects screen selection bar, action button for selected git commits. Review = code review (pull request). Short."
+  },
+  "projects.selection.copyLink": "{count, plural, one {Copy link} other {Copy links}}",
+  "@projects.selection.copyLink": {
+    "description": "Projects screen selection bar, action button. Short."
+  },
+  "projects.selection.linkCopied": "Link copied to clipboard",
+  "@projects.selection.linkCopied": {
+    "description": "Toast after copying the link of one selected project item."
+  },
+  "projects.selection.linksCopied": "Links copied",
+  "@projects.selection.linksCopied": {
+    "description": "Toast after copying links of several selected project items. Short."
+  },
+  "projects.selection.clear": "Clear selection",
+  "@projects.selection.clear": {
+    "description": "Menu item that unselects all selected items on the Projects screen. Short."
+  },
+  "projects.contextPreview.triggerTooltip": "Preview the exact context appended to your message",
+  "@projects.contextPreview.triggerTooltip": {
+    "description": "Tooltip on the info button next to the agent chat composer that shows what project context is sent along."
+  },
+  "projects.contextPreview.explanation": "This exact text is appended to your message before it is signed and sent. Quoted values are untrusted workspace metadata — Kuzz does not verify or rewrite them.",
+  "@projects.contextPreview.explanation": {
+    "description": "Popover above the agent chat composer, explanation above the context text that is sent to the AI agent."
+  },
+  "projects.shareLink.copyLink": "Copy link",
+  "@projects.shareLink.copyLink": {
+    "description": "Menu item and button on projects, tasks and reviews that copies a share link. Short."
+  },
+  "projects.shareLink.copiedToClipboard": "Link copied to clipboard",
+  "@projects.shareLink.copiedToClipboard": {
+    "description": "Toast after copying a share link to a project item."
+  },
+  "projects.shareLink.copied": "Link copied",
+  "@projects.shareLink.copied": {
+    "description": "Tooltip on the copy-link button right after copying. Short."
+  },
+  "projects.agentContextStrip.agentChat": "Agent chat",
+  "@projects.agentContextStrip.agentChat": {
+    "description": "Header of the agent chat panel in a project when several items are selected. Agent = AI agent. Short."
+  },
+  "projects.agentContextStrip.close": "Close agent chat",
+  "@projects.agentContextStrip.close": {
+    "description": "Tooltip and screen-reader label of the X button in the agent chat panel header."
+  },
+  "projects.sentContext.show": "Show sent context",
+  "@projects.sentContext.show": {
+    "description": "Screen-reader label of the small pill under an agent chat message that expands the project context sent with it."
+  },
+  "projects.sentContext.hide": "Hide sent context",
+  "@projects.sentContext.hide": {
+    "description": "Screen-reader label of the same pill when expanded."
+  },
+  "projects.sentContext.label": "Sent context",
+  "@projects.sentContext.label": {
+    "description": "Small pill under a sent agent chat message; opens the project context that was sent. Short."
+  },
+  "projects.sentContext.region": "Sent project context",
+  "@projects.sentContext.region": {
+    "description": "Screen-reader name of the expanded box showing the context text sent to the AI agent."
+  },
+  "projects.authorIdentity.agent": "Agent",
+  "@projects.authorIdentity.agent": {
+    "description": "Hover card on a task or review author, small grey role under the name: an AI agent. Short."
+  },
+  "projects.authorIdentity.person": "Person",
+  "@projects.authorIdentity.person": {
+    "description": "Hover card on a task or review author, small grey role under the name: a human. Short."
+  },
+  "projects.commitCopy.hash": "Copy commit hash",
+  "@projects.commitCopy.hash": {
+    "description": "Screen-reader label of the copy icon button next to a git commit id."
+  },
+  "projects.conversation.thread": "Thread",
+  "@projects.conversation.thread": {
+    "description": "Header title of the message thread side panel in a project when the group name is unknown. Short."
+  },
+  "projects.conversation.openChannel": "Open {name}",
+  "@projects.conversation.openChannel": {
+    "description": "Screen-reader label of the clickable group name in the thread side panel header. {name} is the group name."
+  },
+  "projects.conversation.loadFailed": "This conversation could not be loaded.",
+  "@projects.conversation.loadFailed": {
+    "description": "Thread side panel in a project, message when the conversation failed to load."
+  },
+  "projects.creationDialog.standalone": "Created as a standalone project",
+  "@projects.creationDialog.standalone": {
+    "description": "Warning toast title after creating a project that could not get the full project setup; details follow."
+  },
+  "projects.creationDialog.created": "Project \"{name}\" created.",
+  "@projects.creationDialog.created": {
+    "description": "Toast after creating a project. {name} is the project name."
+  },
+  "projects.homeCommits.loading": "Loading commits",
+  "@projects.homeCommits.loading": {
+    "description": "Loading indicator label in the Commits list of a project home."
+  },
+  "projects.homeCommits.failed": "{repository}: {description}{others, plural, =0 {} other { # other repositories also failed.}}",
+  "@projects.homeCommits.failed": {
+    "description": "Commits list of a project home, error text. {repository} is a repository name, {description} an error sentence, {others} how many more repositories failed."
+  },
+  "projects.homeCommits.emptyDescription": "Commits pushed to this project's repositories will appear here.",
+  "@projects.homeCommits.emptyDescription": {
+    "description": "Empty Commits list of a project home, text under the title."
+  },
+  "projects.homeCommits.emptyTitle": "No commits yet",
+  "@projects.homeCommits.emptyTitle": {
+    "description": "Empty Commits list of a project home, title."
+  },
+  "projects.homeCommits.partial": "Showing commits from {loaded} of {total} repositories. {failed, plural, one {# repository could} other {# repositories could}} not be loaded.",
+  "@projects.homeCommits.partial": {
+    "description": "Warning banner above the Commits list of a project home when some repositories failed."
+  },
+  "projects.commentTimeline.showEarlier": "{count, plural, one {Show # earlier comment} other {Show # earlier comments}}",
+  "@projects.commentTimeline.showEarlier": {
+    "description": "Task detail, comment history: button that expands older comments."
+  },
+  "projects.commentTimeline.collapse": "Collapse comment history",
+  "@projects.commentTimeline.collapse": {
+    "description": "Task detail, comment history: button that hides the comments."
+  },
+  "projects.origin.unverified": "Origin is set by the author and isn't verified.",
+  "@projects.origin.unverified": {
+    "description": "Tooltip on the 'started from <group>' line of a task or review."
+  },
+  "projects.origin.hiddenGroup": "Origin group {id} is not visible to you. Origin is set by the author and isn't verified.",
+  "@projects.origin.hiddenGroup": {
+    "description": "Tooltip on the 'started from a private group' line of a task or review. {id} is a group id."
+  },
+  "projects.origin.startedFrom": "<phrase>started from</phrase> <group>{name}</group> <phrase>(author-claimed)</phrase>",
+  "@projects.origin.startedFrom": {
+    "description": "Metadata line of a task or review: which group it was started from. {name} is the group name (a link). Keep the tags around the matching words."
+  },
+  "projects.origin.startedFromPrivate": "<phrase>started from</phrase> <private>a private group</private> <phrase>(author-claimed)</phrase>",
+  "@projects.origin.startedFromPrivate": {
+    "description": "Metadata line of a task or review started from a group the user cannot see. Keep the tags around the matching words."
+  },
+  "projects.origin.openGroup": "Open author-claimed origin group {name}",
+  "@projects.origin.openGroup": {
+    "description": "Screen-reader label of the group link in the 'started from' line. {name} is the group name."
+  },
+  "projects.origin.privateOmitted": "The private conversation identifier is intentionally omitted.",
+  "@projects.origin.privateOmitted": {
+    "description": "Tooltip on the 'started privately with <agent>' line of a task or review."
+  },
+  "projects.origin.startedPrivately": "<phrase>started privately with</phrase> <agent>{name}</agent>",
+  "@projects.origin.startedPrivately": {
+    "description": "Metadata line of a task or review started in a private chat with an AI agent. {name} is the agent name. Keep the tags around the matching words."
+  },
+  "projects.entityRow.viewProfile": "View {name}'s profile",
+  "@projects.entityRow.viewProfile": {
+    "description": "Screen-reader label of a small avatar in a project list row. {name} is a person or agent name."
+  },
+  "projects.entityRow.select": "Select",
+  "@projects.entityRow.select": {
+    "description": "Screen-reader label of a row checkbox in project lists. Short."
+  },
+  "projects.entityRow.selectItem": "Select {title}",
+  "@projects.entityRow.selectItem": {
+    "description": "Screen-reader label of a row checkbox in project lists. {title} is the item name."
+  },
+  "projects.selectableGroup.selectAll": "Select all {group}",
+  "@projects.selectableGroup.selectAll": {
+    "description": "Screen-reader label of the group header checkbox in project lists. {group} is the group heading, e.g. a status name."
+  },
+  "projects.selectableGroup.clearAll": "Clear all {group}",
+  "@projects.selectableGroup.clearAll": {
+    "description": "Screen-reader label of the group header checkbox when everything in the group is selected."
+  },
+  "projects.selectionDiscuss.searchGroups": "Search groups…",
+  "@projects.selectionDiscuss.searchGroups": {
+    "description": "Projects selection bar, under 'Discuss in a group': button that opens the group browser. Short."
+  },
+  "projects.overviewChat.toggle": "Chat with an agent about {section}",
+  "@projects.overviewChat.toggle": {
+    "description": "Tooltip and screen-reader label of the chat button in the Projects screen header. {section} is the open section, e.g. 'Tasks'."
+  },
+  "projects.overviewContext.show": "Show project context",
+  "@projects.overviewContext.show": {
+    "description": "Tooltip and screen-reader label of the side-panel button in the Projects screen header."
+  },
+  "projects.overviewContext.hide": "Hide project context",
+  "@projects.overviewContext.hide": {
+    "description": "Tooltip and screen-reader label of the side-panel button when the panel is open."
+  },
+  "projects.overviewContext.sheetTitle": "Project context",
+  "@projects.overviewContext.sheetTitle": {
+    "description": "Screen-reader title of the Projects context side sheet on narrow windows."
+  },
+  "projects.deleteProject.deleted": "Project deleted",
+  "@projects.deleteProject.deleted": {
+    "description": "Toast after deleting a project."
+  },
+  "projects.deleteProject.failed": "Failed to delete project",
+  "@projects.deleteProject.failed": {
+    "description": "Error toast when deleting a project failed."
+  },
+  "projects.loadNotice.tasksFailed": "Could not load tasks.",
+  "@projects.loadNotice.tasksFailed": {
+    "description": "Error banner title above a project task list."
+  },
+  "projects.loadNotice.reviewsFailed": "Could not load reviews.",
+  "@projects.loadNotice.reviewsFailed": {
+    "description": "Error banner title above a project code review (pull request) list."
+  },
+  "projects.loadNotice.activityFailed": "Could not load project activity.",
+  "@projects.loadNotice.activityFailed": {
+    "description": "Error banner title above a project activity feed."
+  },
+  "projects.loadNotice.tasksPartial": "Some task details could not be loaded.",
+  "@projects.loadNotice.tasksPartial": {
+    "description": "Warning banner title above a project task list."
+  },
+  "projects.loadNotice.reviewsPartial": "Some review details could not be loaded.",
+  "@projects.loadNotice.reviewsPartial": {
+    "description": "Warning banner title above a project code review list."
+  },
+  "projects.loadNotice.activityPartial": "Some project activity details could not be loaded.",
+  "@projects.loadNotice.activityPartial": {
+    "description": "Warning banner title above a project activity feed."
+  },
+  "projects.loadNotice.genericError": "Something went wrong. Try again.",
+  "@projects.loadNotice.genericError": {
+    "description": "Error banner text in project lists when no specific error is known."
+  },
+  "projects.loadNotice.missing": "Missing {sections}. The available results are shown below.",
+  "@projects.loadNotice.missing": {
+    "description": "Warning banner text in project lists. {sections} is a comma-separated list such as 'comments, statuses'."
+  },
+  "projects.loadNotice.sectionAssignments": "assignments",
+  "@projects.loadNotice.sectionAssignments": {
+    "description": "List item inside 'Missing {sections}' in a project list warning: task assignments. Lowercase."
+  },
+  "projects.loadNotice.sectionComments": "comments",
+  "@projects.loadNotice.sectionComments": {
+    "description": "List item inside 'Missing {sections}' in a project list warning. Lowercase."
+  },
+  "projects.loadNotice.sectionReviewUpdates": "review updates",
+  "@projects.loadNotice.sectionReviewUpdates": {
+    "description": "List item inside 'Missing {sections}' in a project list warning: code review updates. Lowercase."
+  },
+  "projects.loadNotice.sectionStatuses": "statuses",
+  "@projects.loadNotice.sectionStatuses": {
+    "description": "List item inside 'Missing {sections}' in a project list warning. Lowercase."
+  },
+  "projects.loadNotice.retrying": "Retrying...",
+  "@projects.loadNotice.retrying": {
+    "description": "Retry button label while retrying, in a project list warning. Short."
+  },
+  "projects.workItemTable.status": "Status",
+  "@projects.workItemTable.status": {
+    "description": "Column header in the Projects task/review table. Short."
+  },
+  "projects.workItemTable.replies": "Replies",
+  "@projects.workItemTable.replies": {
+    "description": "Column header in the Projects task/review table. Short."
+  },
+  "projects.workItemTable.updated": "Updated",
+  "@projects.workItemTable.updated": {
+    "description": "Column header in the Projects task/review table: last update time. Short."
+  },
+  "projects.workItemTable.actions": "Actions",
+  "@projects.workItemTable.actions": {
+    "description": "Column header in the Projects task/review table. Short."
+  },
+  "projects.reviewsPanel.loading": "Loading reviews",
+  "@projects.reviewsPanel.loading": {
+    "description": "Loading indicator label in a repository's Reviews (pull requests) tab."
+  },
+  "projects.reviewsPanel.errorTitle": "Could not load reviews",
+  "@projects.reviewsPanel.errorTitle": {
+    "description": "Reviews tab of a repository, error title."
+  },
+  "projects.reviewsPanel.errorDescription": "Refresh the repository and try again.",
+  "@projects.reviewsPanel.errorDescription": {
+    "description": "Reviews tab of a repository, error text under the title."
+  },
+  "projects.reviewsPanel.emptyTitle": "No reviews yet",
+  "@projects.reviewsPanel.emptyTitle": {
+    "description": "Empty Reviews tab of a repository, title. Review = code review (pull request)."
+  },
+  "projects.reviewsPanel.emptyDescription": "Reviews opened for this repository will appear here.",
+  "@projects.reviewsPanel.emptyDescription": {
+    "description": "Empty Reviews tab of a repository, text under the title."
+  },
+  "projects.unavailableRepositories.label": "Unavailable",
+  "@projects.unavailableRepositories.label": {
+    "description": "Badge next to a repository of a project that could not be loaded. Short."
+  },
+  "projects.crumbs.files": "Files",
+  "@projects.crumbs.files": {
+    "description": "Breadcrumb in a project repository header: the Files tab. Short."
+  },
+  "projects.crumbs.commits": "Commits",
+  "@projects.crumbs.commits": {
+    "description": "Breadcrumb in a project repository header: the Commits tab. Short."
+  },
+  "projects.crumbs.tasks": "Tasks",
+  "@projects.crumbs.tasks": {
+    "description": "Breadcrumb in a project repository header: the Tasks tab. Short."
+  },
+  "projects.crumbs.review": "Review",
+  "@projects.crumbs.review": {
+    "description": "Breadcrumb in a project repository header: the Reviews (pull requests) tab or an open review. Short."
+  },
+  "projects.crumbs.contributors": "Contributors",
+  "@projects.crumbs.contributors": {
+    "description": "Breadcrumb in a project repository header: the Contributors tab. Short."
+  },
+  "projects.crumbs.groups": "Groups",
+  "@projects.crumbs.groups": {
+    "description": "Breadcrumb in a project repository header: the Groups (chat channels) tab. Short."
+  },
+  "projects.sync.pushLocal": "{count, plural, =0 {Push local commits} one {Push # local commit} other {Push # local commits}}",
+  "@projects.sync.pushLocal": {
+    "description": "Tooltip on the push button of a project repository: push git commits made on this computer."
+  },
+  "projects.sync.pushRemote": "{count, plural, =0 {Push remote commits} one {Push # remote commit} other {Push # remote commits}}",
+  "@projects.sync.pushRemote": {
+    "description": "Tooltip on the push button of a project repository: push git commits from the server."
+  },
+  "projects.sync.pullLocal": "{count, plural, =0 {Pull local commits} one {Pull # local commit} other {Pull # local commits}}",
+  "@projects.sync.pullLocal": {
+    "description": "Tooltip on the pull button of a project repository: pull git commits made on this computer."
+  },
+  "projects.sync.pullRemote": "{count, plural, =0 {Pull remote commits} one {Pull # remote commit} other {Pull # remote commits}}",
+  "@projects.sync.pullRemote": {
+    "description": "Tooltip on the pull button of a project repository: pull git commits from the server."
+  },
+  "projects.openFolder.failed": "Couldn’t open repository folder",
+  "@projects.openFolder.failed": {
+    "description": "Error toast title when opening a repository's local folder failed."
+  },
+  "projects.openFolder.notFound": "Kuzz could not find this repository’s local checkout.",
+  "@projects.openFolder.notFound": {
+    "description": "Error toast text: the downloaded copy of the repository is missing on this computer."
+  },
+  "projects.openFolder.openFailed": "Kuzz could not open this checkout in your file browser.",
+  "@projects.openFolder.openFailed": {
+    "description": "Error toast text when the system file browser could not be opened."
+  },
+  "projects.terminal.open": "Open in Terminal",
+  "@projects.terminal.open": {
+    "description": "Button or menu item on a project repository that opens the system terminal in its folder. Short."
+  },
+  "projects.terminal.cloneAndOpen": "Clone & open in Terminal",
+  "@projects.terminal.cloneAndOpen": {
+    "description": "Button or menu item on a project repository: download it first, then open the system terminal. Short."
+  },
+  "projects.terminal.cloning": "Cloning {name}…",
+  "@projects.terminal.cloning": {
+    "description": "Progress toast while downloading a repository. {name} is the repository name."
+  },
+  "projects.terminal.cloned": "Cloned to {path}",
+  "@projects.terminal.cloned": {
+    "description": "Toast after downloading a repository. {path} is a folder path."
+  },
+  "projects.terminal.openFailed": "Couldn’t open terminal",
+  "@projects.terminal.openFailed": {
+    "description": "Error toast title when the system terminal could not be opened."
+  },
+  "projects.terminal.openFailedDescription": "Kuzz could not open this checkout in your configured terminal.",
+  "@projects.terminal.openFailedDescription": {
+    "description": "Error toast text when the system terminal could not be opened."
+  },
+  "projects.channelManagement.createTitle": "Create a project group",
+  "@projects.channelManagement.createTitle": {
+    "description": "Title of the dialog that creates a new group (chat channel) inside a project."
+  },
+  "projects.channelManagement.createDescription": "Add another stream to this project. A template can keep the same canvas and agents.",
+  "@projects.channelManagement.createDescription": {
+    "description": "Text under the title of the create-project-group dialog. Stream = a chat channel; canvas = the shared note of a group."
+  },
+  "projects.channelManagement.add": "Add group",
+  "@projects.channelManagement.add": {
+    "description": "Tooltip and screen-reader label of the + button next to a project's groups. Short."
+  },
+  "projects.detailUnavailable.loadFailed": "Failed to load project",
+  "@projects.detailUnavailable.loadFailed": {
+    "description": "Project screen, error message when the project could not be loaded."
+  },
+  "projects.detailUnavailable.back": "Back to Projects",
+  "@projects.detailUnavailable.back": {
+    "description": "Button on the project error screen that returns to the Projects list. Short."
+  },
+  "projects.detailUnavailable.notFound": "This project could not be found.",
+  "@projects.detailUnavailable.notFound": {
+    "description": "Project screen, message when the project does not exist (any more)."
+  },
+  "projects.detailUnavailable.noRepositories": "This project does not have any available repositories yet.",
+  "@projects.detailUnavailable.noRepositories": {
+    "description": "Project screen, message under the project name when none of its code repositories can be opened."
+  },
+  "projects.homeCodebase.empty": "Attach a repository to browse the file tree beside this group.",
+  "@projects.homeCodebase.empty": {
+    "description": "Project home group, code side panel, empty state above the add-repository button."
+  },
+  "projects.inlineComments.placeholder": "Leave a comment on this line…",
+  "@projects.inlineComments.placeholder": {
+    "description": "Placeholder of the comment box opened on a line of a code review diff."
+  },
+  "projects.review.requestChanges": "Request changes",
+  "@projects.review.requestChanges": {
+    "description": "Button on a code review (pull request): ask the author to change the code. Short."
+  },
+  "projects.contextActions.addReviewer": "Add Reviewer",
+  "@projects.contextActions.addReviewer": {
+    "description": "Button in the side panel of a code review (pull request) that adds a reviewer. Short."
+  },
+  "projects.sort.label": "Sort projects",
+  "@projects.sort.label": {
+    "description": "Screen-reader label of the sort dropdown on the Projects screen."
+  },
+  "projects.sort.updated": "Recent activity",
+  "@projects.sort.updated": {
+    "description": "Sort option on the Projects screen. Short."
+  },
+  "projects.sort.created": "Created date",
+  "@projects.sort.created": {
+    "description": "Sort option on the Projects screen. Short."
+  },
+  "projects.sort.name": "Name",
+  "@projects.sort.name": {
+    "description": "Sort option on the Projects screen. Short."
+  },
+  "projects.sidebar.title": "Projects",
+  "@projects.sidebar.title": {
+    "description": "Heading of the project list in the left column. Short."
+  },
+  "projects.sidebar.filterLabel": "Find projects by name",
+  "@projects.sidebar.filterLabel": {
+    "description": "Screen-reader label of the filter field in the project list."
+  },
+  "projects.sidebar.filterPlaceholder": "Find projects",
+  "@projects.sidebar.filterPlaceholder": {
+    "description": "Placeholder of the filter field in the project list. Short."
+  },
+  "projects.sidebar.overview": "Overview",
+  "@projects.sidebar.overview": {
+    "description": "First row of the project list; opens the all-projects overview. Short."
+  },
+  "projects.sidebar.noMatch": "No projects match that name.",
+  "@projects.sidebar.noMatch": {
+    "description": "Project list, shown when the filter matches nothing."
+  },
+  "projects.sidebar.empty": "No projects yet.",
+  "@projects.sidebar.empty": {
+    "description": "Project list, shown when there are no projects."
+  },
+  "projects.attachRepository.title": "Add existing repository",
+  "@projects.attachRepository.title": {
+    "description": "Title of the dialog that adds an existing code repository to a project."
+  },
+  "projects.attachRepository.description": "Choose an existing repository to add to {name}.",
+  "@projects.attachRepository.description": {
+    "description": "Text under the title of the add-existing-repository dialog. {name} is the project name."
+  },
+  "projects.attachRepository.allAdded": "Every available repository is already in this project.",
+  "@projects.attachRepository.allAdded": {
+    "description": "Add-existing-repository dialog, empty list message."
+  },
+  "projects.attachRepository.failed": "Failed to attach repository.",
+  "@projects.attachRepository.failed": {
+    "description": "Error in the add-existing-repository dialog."
+  },
+  "projects.selectionKind.channel": "channel",
+  "@projects.selectionKind.channel": {
+    "description": "Kind of a selected item in the agent chat selection list (a group). Lowercase; shown capitalized. Short."
+  },
+  "projects.selectionKind.commit": "commit",
+  "@projects.selectionKind.commit": {
+    "description": "Kind of a selected item in the agent chat selection list (a git commit). Lowercase; shown capitalized. Short."
+  },
+  "projects.selectionKind.project": "project",
+  "@projects.selectionKind.project": {
+    "description": "Kind of a selected item in the agent chat selection list. Lowercase; shown capitalized. Short."
+  },
+  "projects.selectionKind.repository": "repository",
+  "@projects.selectionKind.repository": {
+    "description": "Kind of a selected item in the agent chat selection list (a code repository). Lowercase; shown capitalized. Short."
+  },
+  "projects.selectionKind.review": "review",
+  "@projects.selectionKind.review": {
+    "description": "Kind of a selected item in the agent chat selection list (a code review / pull request). Lowercase; shown capitalized. Short."
+  },
+  "projects.selectionKind.task": "task",
+  "@projects.selectionKind.task": {
+    "description": "Kind of a selected item in the agent chat selection list. Lowercase; shown capitalized. Short."
+  },
+  "projects.agentSelection.summary": "{count, plural, one {# element selected} other {# elements selected}}",
+  "@projects.agentSelection.summary": {
+    "description": "Header of the selection list above the agent chat composer: how many items are attached."
+  },
+  "projects.agentSelection.more": "{count} more",
+  "@projects.agentSelection.more": {
+    "description": "Button under the selection list above the agent chat composer that shows the remaining items. Short."
+  },
+  "projects.chrome.projects": "Projects",
+  "@projects.chrome.projects": {
+    "description": "First breadcrumb in the window top bar on project screens; goes back to all projects. Short."
+  },
+  "projects.chrome.projectBreadcrumb": "Project breadcrumb",
+  "@projects.chrome.projectBreadcrumb": {
+    "description": "Screen-reader name of the breadcrumb bar on a project screen."
+  },
+  "projects.chrome.projectsBreadcrumb": "Projects breadcrumb",
+  "@projects.chrome.projectsBreadcrumb": {
+    "description": "Screen-reader name of the breadcrumb bar on the Projects overview screen."
+  },
+  "projects.rightPanel.showChat": "Show project chat",
+  "@projects.rightPanel.showChat": {
+    "description": "Screen-reader label of the chat button in a project's top bar."
+  },
+  "projects.rightPanel.hideChat": "Hide project chat",
+  "@projects.rightPanel.hideChat": {
+    "description": "Screen-reader label of the chat button in a project's top bar when the chat is open."
+  },
+  "projects.rightPanel.chat": "Project chat",
+  "@projects.rightPanel.chat": {
+    "description": "Tooltip of the chat button in a project's top bar."
+  },
+  "projects.rightPanel.openTerminal": "Open Kuzz Term",
+  "@projects.rightPanel.openTerminal": {
+    "description": "Screen-reader label of the terminal button in a project's top bar. 'Kuzz Term' is the name of the built-in terminal."
+  },
+  "projects.rightPanel.hideTerminal": "Hide Kuzz Term",
+  "@projects.rightPanel.hideTerminal": {
+    "description": "Screen-reader label of the terminal button when the terminal is open. 'Kuzz Term' is a name."
+  },
+  "projects.createTask.title": "Create a task",
+  "@projects.createTask.title": {
+    "description": "Title of the new-task dialog in a project."
+  },
+  "projects.createTask.description": "Create a task in {name}",
+  "@projects.createTask.description": {
+    "description": "Text under the title of the new-task dialog. {name} is the project or repository name."
+  },
+  "projects.createTask.titlePlaceholder": "Describe the task",
+  "@projects.createTask.titlePlaceholder": {
+    "description": "Placeholder of the title field in the new-task dialog."
+  },
+  "projects.createTask.bodyPlaceholder": "Add context, expected behavior, or reproduction steps",
+  "@projects.createTask.bodyPlaceholder": {
+    "description": "Placeholder of the description field in the new-task dialog."
+  },
+  "projects.createTask.chooseRepository": "Choose a repository.",
+  "@projects.createTask.chooseRepository": {
+    "description": "Error in the new-task dialog when no code repository is selected."
+  },
+  "projects.createTask.created": "Task created.",
+  "@projects.createTask.created": {
+    "description": "Toast after creating a task."
+  },
+  "projects.createTask.noRepository": "Choose a repository for this task.",
+  "@projects.createTask.noRepository": {
+    "description": "Text under the title of the new-task dialog when no repository is selected yet."
+  },
+  "projects.createTask.repository": "Repository",
+  "@projects.createTask.repository": {
+    "description": "Field label in the new-task dialog: which code repository the task belongs to. Short."
+  },
+  "projects.sectionTitle.activity": "Activity",
+  "@projects.sectionTitle.activity": {
+    "description": "Projects screen section name: recent activity feed. Shown in the top bar and headings. Short."
+  },
+  "projects.sectionTitle.reviews": "Reviews",
+  "@projects.sectionTitle.reviews": {
+    "description": "Projects screen section name: code reviews (pull requests). Short."
+  },
+  "projects.sectionTitle.tasks": "Tasks",
+  "@projects.sectionTitle.tasks": {
+    "description": "Projects screen section name. Short."
+  },
+  "projects.sectionTitle.repositories": "Repositories",
+  "@projects.sectionTitle.repositories": {
+    "description": "Projects screen section name: code repositories. Short."
+  },
+  "projects.sectionTitle.groups": "Groups",
+  "@projects.sectionTitle.groups": {
+    "description": "Projects screen section name: group chats linked to projects. Short."
+  },
+  "projects.sectionTitle.projects": "Projects",
+  "@projects.sectionTitle.projects": {
+    "description": "Projects screen section name. Short."
+  },
+  "projects.sectionSearch.placeholderActivity": "Search activity",
+  "@projects.sectionSearch.placeholderActivity": {
+    "description": "Placeholder of the search field in the Activity section of the Projects screen. Short."
+  },
+  "projects.sectionSearch.placeholderReviews": "Search reviews",
+  "@projects.sectionSearch.placeholderReviews": {
+    "description": "Placeholder of the search field in the Reviews (pull requests) section of the Projects screen. Short."
+  },
+  "projects.sectionSearch.placeholderTasks": "Search tasks",
+  "@projects.sectionSearch.placeholderTasks": {
+    "description": "Placeholder of the search field in the Tasks section of the Projects screen. Short."
+  },
+  "projects.sectionSearch.placeholderRepositories": "Search repositories",
+  "@projects.sectionSearch.placeholderRepositories": {
+    "description": "Placeholder of the search field in the Repositories section of the Projects screen. Short."
+  },
+  "projects.sectionSearch.placeholderGroups": "Search groups",
+  "@projects.sectionSearch.placeholderGroups": {
+    "description": "Placeholder of the search field in the Groups section of the Projects screen. Short."
+  },
+  "projects.sectionSearch.placeholderProjects": "Search projects",
+  "@projects.sectionSearch.placeholderProjects": {
+    "description": "Placeholder of the search field in the Projects section. Short."
+  },
+  "projects.sectionSearch.search": "Search {section}",
+  "@projects.sectionSearch.search": {
+    "description": "Tooltip and screen-reader label of the search button/field on the Projects screen. {section} is the section name, e.g. 'Tasks'."
+  },
+  "projects.sectionSearch.closeLabel": "Close project search",
+  "@projects.sectionSearch.closeLabel": {
+    "description": "Screen-reader label of the button that closes the Projects search field."
+  },
+  "projects.sectionSearch.close": "Close search",
+  "@projects.sectionSearch.close": {
+    "description": "Tooltip of the button that closes the Projects search field. Short."
+  },
+  "projects.createWorkItem.taskFailed": "Failed to create task.",
+  "@projects.createWorkItem.taskFailed": {
+    "description": "Error in the new-task dialog."
+  },
+  "projects.createWorkItem.reviewFailed": "Failed to create review.",
+  "@projects.createWorkItem.reviewFailed": {
+    "description": "Error in the new-review (pull request) dialog."
+  },
+  "projects.createWorkItem.creating": "Creating…",
+  "@projects.createWorkItem.creating": {
+    "description": "Submit button of the new-task / new-review dialog while saving. Short."
+  },
+  "projects.createWorkItem.createTask": "Create task",
+  "@projects.createWorkItem.createTask": {
+    "description": "Submit button of the new-task dialog. Short."
+  },
+  "projects.createWorkItem.createReview": "Create review",
+  "@projects.createWorkItem.createReview": {
+    "description": "Submit button of the new-review (pull request) dialog. Short."
+  },
+  "projects.createWorkItem.category": "Category",
+  "@projects.createWorkItem.category": {
+    "description": "Field label in the new-task dialog: kind of task. Short."
+  },
+  "projects.createWorkItem.titleLabel": "Title",
+  "@projects.createWorkItem.titleLabel": {
+    "description": "Field label in the new-task / new-review dialog. Short."
+  },
+  "projects.createWorkItem.descriptionLabel": "Description",
+  "@projects.createWorkItem.descriptionLabel": {
+    "description": "Field label in the new-task / new-review dialog. Short."
+  },
+  "projects.createWorkItem.optional": "Optional",
+  "@projects.createWorkItem.optional": {
+    "description": "Small grey note after the Description label: the field may stay empty. Short."
+  },
+  "projects.channelHome.showPanel": "Show {name}",
+  "@projects.channelHome.showPanel": {
+    "description": "Screen-reader label of a top-bar toggle on a project home. {name} is the panel name, e.g. 'Overview'."
+  },
+  "projects.channelHome.hidePanel": "Hide {name}",
+  "@projects.channelHome.hidePanel": {
+    "description": "Screen-reader label of a top-bar toggle on a project home when the panel is open. {name} is the panel name."
+  },
+  "projects.channelHome.overview": "Overview",
+  "@projects.channelHome.overview": {
+    "description": "Name of the project summary side panel on a project home; tooltip of its toggle. Short."
+  },
+  "projects.channelHome.openSectionInRepository": "Open {section} in repository",
+  "@projects.channelHome.openSectionInRepository": {
+    "description": "Tooltip of the expand button on a project-home side sheet. {section} is e.g. 'Tasks' or 'Commits'."
+  },
+  "projects.channelHome.openInRepository": "Open in repository",
+  "@projects.channelHome.openInRepository": {
+    "description": "Tooltip of the expand button on a project-home side sheet. Short."
+  },
+  "projects.channelHome.groupNotFound": "This project's group could not be found.",
+  "@projects.channelHome.groupNotFound": {
+    "description": "Project home, message when the project's main group (chat channel) is missing."
+  },
+  "projects.categoryCreate.channelDescription": "Add another stream to {name}.",
+  "@projects.categoryCreate.channelDescription": {
+    "description": "Text under the title of the create-project-group dialog. Stream = a chat channel. {name} is the project name."
+  },
+  "projects.categoryCreate.chooseProjectForGroup": "Choose a project for this group.",
+  "@projects.categoryCreate.chooseProjectForGroup": {
+    "description": "Text under the title of the create-project-group dialog when no project is selected."
+  },
+  "projects.categoryCreate.chooseProject": "Choose a project.",
+  "@projects.categoryCreate.chooseProject": {
+    "description": "Error in the create-project-group dialog when no project is selected."
+  },
+  "projects.categoryCreate.project": "Project",
+  "@projects.categoryCreate.project": {
+    "description": "Field label in the create-project-group dialog. Short."
+  },
+  "projects.repository.created": "Repository \"{name}\" created.",
+  "@projects.repository.created": {
+    "description": "Toast after creating a code repository in a project. {name} is the repository name."
+  },
+  "projects.repository.added": "Repository \"{name}\" added.",
+  "@projects.repository.added": {
+    "description": "Toast after adding an existing code repository to a project. {name} is the repository name."
+  },
+  "projects.repository.ownerOnly": "Only the project owner can add repositories",
+  "@projects.repository.ownerOnly": {
+    "description": "Tooltip of the disabled add-repository button."
+  },
+  "projects.repository.add": "Add",
+  "@projects.repository.add": {
+    "description": "Button that opens the add-repository menu. Short."
+  },
+  "projects.repository.createNew": "Create new repository",
+  "@projects.repository.createNew": {
+    "description": "Menu item in the add-repository menu. Short."
+  },
+  "projects.repository.selectExisting": "Select existing repository",
+  "@projects.repository.selectExisting": {
+    "description": "Menu item in the add-repository menu. Short."
+  },
+  "projects.repository.manageAccess": "Manage repository access",
+  "@projects.repository.manageAccess": {
+    "description": "Screen-reader label of the repository access button."
+  },
+  "projects.repository.updating": "Updating…",
+  "@projects.repository.updating": {
+    "description": "Repository access button while saving. Short."
+  },
+  "projects.repository.access": "Access",
+  "@projects.repository.access": {
+    "description": "Button that opens the repository access menu. Short."
+  },
+  "projects.repository.accessGroup": "Repository access group",
+  "@projects.repository.accessGroup": {
+    "description": "Heading of the repository access menu: the group (chat channel) whose members may use the repository."
+  },
+  "projects.repository.accessSet": "Repository access set to {name}.",
+  "@projects.repository.accessSet": {
+    "description": "Toast after changing a repository's access group. {name} is the group name."
+  },
+  "projects.repository.accessFailed": "Failed to update repository access.",
+  "@projects.repository.accessFailed": {
+    "description": "Error toast when changing a repository's access group fails."
+  },
+  "projects.createForm.noRuntimes": "No agent runtimes are available. Install a runtime to add agents.",
+  "@projects.createForm.noRuntimes": {
+    "description": "Error in the create-project dialog when no AI agent program is installed. Runtime = the program that runs an AI agent."
+  },
+  "projects.createForm.teamMissing": "Choose a team that still exists.",
+  "@projects.createForm.teamMissing": {
+    "description": "Error in the create-project dialog when the chosen agent team was deleted."
+  },
+  "projects.createForm.agentMissing": "Choose an agent that still exists.",
+  "@projects.createForm.agentMissing": {
+    "description": "Error in the create-project dialog when the chosen AI agent was deleted."
+  },
+  "projects.createForm.none": "None",
+  "@projects.createForm.none": {
+    "description": "Value of a dropdown in the create-project dialog when nothing is chosen (template, team, agent). Short."
+  },
+  "projects.createForm.projectHomeTemplate": "Project home",
+  "@projects.createForm.projectHomeTemplate": {
+    "description": "Name of the built-in group template for a project's main group, in the create-project dialog. Short."
+  },
+  "projects.createForm.template": "Template",
+  "@projects.createForm.template": {
+    "description": "Setting label in the create-project dialog: group template. Short."
+  },
+  "projects.createForm.templateHint": "Project home by default",
+  "@projects.createForm.templateHint": {
+    "description": "Small grey note after the Template label in the create-project dialog."
+  },
+  "projects.createForm.templateValue": "Template: {value}",
+  "@projects.createForm.templateValue": {
+    "description": "Screen-reader label of the template dropdown. {value} is the chosen template name or 'None'."
+  },
+  "projects.createForm.newTemplate": "Create new group template…",
+  "@projects.createForm.newTemplate": {
+    "description": "Menu item at the bottom of the template dropdown in the create-project dialog."
+  },
+  "projects.createForm.team": "Team",
+  "@projects.createForm.team": {
+    "description": "Setting label in the create-project dialog: AI agent team. Short."
+  },
+  "projects.createForm.teamValue": "Team: {value}",
+  "@projects.createForm.teamValue": {
+    "description": "Screen-reader label of the team dropdown. {value} is the chosen team name or 'None'."
+  },
+  "projects.createForm.projectList": "Project list",
+  "@projects.createForm.projectList": {
+    "description": "Setting label in the create-project dialog: whether the project is listed for others. Short."
+  },
+  "projects.createForm.projectListValue": "Project list: {value}",
+  "@projects.createForm.projectListValue": {
+    "description": "Screen-reader label of the listing dropdown. {value} is 'Listed' or 'Unlisted'."
+  },
+  "projects.createForm.listed": "Listed",
+  "@projects.createForm.listed": {
+    "description": "Option in the create-project dialog: the project appears in the community's project list. Short."
+  },
+  "projects.createForm.unlisted": "Unlisted",
+  "@projects.createForm.unlisted": {
+    "description": "Option in the create-project dialog: the project is hidden from the project list. Short."
+  },
+  "projects.createForm.codingAgent": "Coding agent",
+  "@projects.createForm.codingAgent": {
+    "description": "Setting label in the create-project dialog: AI agent that writes code. Short."
+  },
+  "projects.createForm.codingAgentValue": "Coding agent: {value}",
+  "@projects.createForm.codingAgentValue": {
+    "description": "Screen-reader label of the coding-agent dropdown. {value} is the agent name or 'None'."
+  },
+  "projects.createForm.joinTarget": "the project home",
+  "@projects.createForm.joinTarget": {
+    "description": "Inserted into the sentence '<AI name> joins {target} as a bot' in the create-project dialog. Project home = the project's main group."
+  },
+  "projects.createForm.title": "Create a new project",
+  "@projects.createForm.title": {
+    "description": "Title of the create-project dialog."
+  },
+  "projects.createForm.subtitle": "A project starts as a group with a repository. People in the group can talk, clone, and open tasks here.",
+  "@projects.createForm.subtitle": {
+    "description": "Text under the title of the create-project dialog."
+  },
+  "projects.createForm.creating": "Creating...",
+  "@projects.createForm.creating": {
+    "description": "Submit button of the create-project dialog while saving. Short."
+  },
+  "projects.createForm.submit": "Create project",
+  "@projects.createForm.submit": {
+    "description": "Submit button of the create-project dialog. Short."
+  },
+  "projects.createForm.back": "Back to projects",
+  "@projects.createForm.back": {
+    "description": "Back button at the top of the create-project dialog. Short."
+  },
+  "projects.createForm.name": "Name",
+  "@projects.createForm.name": {
+    "description": "Field label in the create-project dialog. Short."
+  },
+  "projects.createForm.descriptionPlaceholder": "What this project should become",
+  "@projects.createForm.descriptionPlaceholder": {
+    "description": "Placeholder of the description field in the create-project dialog."
+  },
+  "projects.createForm.failed": "Failed to create project.",
+  "@projects.createForm.failed": {
+    "description": "Error in the create-project dialog."
+  },
+  "projects.repoUnavailable.owner": "the repository owner",
+  "@projects.repoUnavailable.owner": {
+    "description": "Used inside the sentences 'Ask {owner} for an invite' on the repository-unavailable screen when the owner's name is unknown."
+  },
+  "projects.repoUnavailable.ownerNamed": "<name></name>, the repository owner,",
+  "@projects.repoUnavailable.ownerNamed": {
+    "description": "Used inside 'Ask {owner} for an invite' on the repository-unavailable screen. <name></name> becomes the owner's avatar and name; keep the tags."
+  },
+  "projects.repoUnavailable.accessHidden": "Repository access is granted through a group you can’t see. Ask <owner></owner> for an invite.",
+  "@projects.repoUnavailable.accessHidden": {
+    "description": "Repository-unavailable screen, when access comes from a hidden group (chat channel). <owner></owner> becomes the repository owner's name; keep the tags."
+  },
+  "projects.repoUnavailable.accessJoin": "Repository access is granted through <group></group>, and you’re not a member. Join the group or ask <owner></owner> for an invite.",
+  "@projects.repoUnavailable.accessJoin": {
+    "description": "Repository-unavailable screen. <group></group> becomes a button with the group (chat channel) name; <owner></owner> becomes the owner's name. Keep the tags."
+  },
+  "projects.repoUnavailable.openGroup": "Open repository access group {name}",
+  "@projects.repoUnavailable.openGroup": {
+    "description": "Screen-reader label of the group-name button on the repository-unavailable screen. {name} is the group name."
+  },
+  "projects.repoUnavailable.retrying": "Retrying…",
+  "@projects.repoUnavailable.retrying": {
+    "description": "Retry button on the repository-unavailable screen while retrying. Short."
+  },
+  "projects.repoUnavailable.askForAccess": "Ask for access",
+  "@projects.repoUnavailable.askForAccess": {
+    "description": "Button on the repository-unavailable screen that messages the owner for access. Short."
+  },
+  "projects.tabs.overview": "Overview",
+  "@projects.tabs.overview": {
+    "description": "First tab of a project repository screen: summary of the repository. Short."
+  },
+  "projects.tabs.files": "Files",
+  "@projects.tabs.files": {
+    "description": "Tab of a project repository screen: file browser. Short."
+  },
+  "projects.tabs.commits": "Commits",
+  "@projects.tabs.commits": {
+    "description": "Tab of a project repository screen: git commit history. Short."
+  },
+  "projects.tabs.tasks": "Tasks",
+  "@projects.tabs.tasks": {
+    "description": "Tab of a project repository screen: tasks (issues). Short."
+  },
+  "projects.tabs.review": "Review",
+  "@projects.tabs.review": {
+    "description": "Tab of a project repository screen: code reviews (pull requests). Short."
+  },
+  "projects.tabs.groups": "Groups",
+  "@projects.tabs.groups": {
+    "description": "Tab of a project repository screen: chat groups of the project. Short."
+  },
+  "projects.tabs.contributors": "Contributors",
+  "@projects.tabs.contributors": {
+    "description": "Tab of a project repository screen: people who contributed. Short."
+  },
+  "projects.addRepository.title": "Add repository",
+  "@projects.addRepository.title": {
+    "description": "Title and submit button of the add-repository dialog in a project. Short."
+  },
+  "projects.addRepository.adding": "Adding...",
+  "@projects.addRepository.adding": {
+    "description": "Submit button of the add-repository dialog while saving. Short."
+  },
+  "projects.addRepository.description": "Add another repository to {name}.",
+  "@projects.addRepository.description": {
+    "description": "Text under the title of the add-repository dialog. {name} is the project name."
+  },
+  "projects.addRepository.chooseProject": "Choose a project for this repository.",
+  "@projects.addRepository.chooseProject": {
+    "description": "Text under the title of the add-repository dialog when no project is selected."
+  },
+  "projects.addRepository.accessGroup": "Access group",
+  "@projects.addRepository.accessGroup": {
+    "description": "Field label in the add-repository dialog: the group (chat channel) whose members may use the repository. Short."
+  },
+  "projects.addRepository.selectGroup": "Select a group",
+  "@projects.addRepository.selectGroup": {
+    "description": "Empty choice of the access-group dropdown in the add-repository dialog. Short."
+  },
+  "projects.addRepository.accessGroupHint": "Members of this group can access the repository.",
+  "@projects.addRepository.accessGroupHint": {
+    "description": "Hint under the access-group field in the add-repository dialog."
+  },
+  "projects.addRepository.cloneUrl": "Clone URL",
+  "@projects.addRepository.cloneUrl": {
+    "description": "Field label in the add-repository dialog: web address of an existing git repository to copy. Short."
+  },
+  "projects.addRepository.failed": "Failed to add repository.",
+  "@projects.addRepository.failed": {
+    "description": "Error in the add-repository dialog."
+  },
+  "projects.createReview.title": "Open a review",
+  "@projects.createReview.title": {
+    "description": "Title of the new-review (pull request) dialog."
+  },
+  "projects.createReview.titlePlaceholder": "Describe the change",
+  "@projects.createReview.titlePlaceholder": {
+    "description": "Placeholder of the title field in the new-review dialog."
+  },
+  "projects.createReview.bodyPlaceholder": "Add context for reviewers",
+  "@projects.createReview.bodyPlaceholder": {
+    "description": "Placeholder of the description field in the new-review dialog."
+  },
+  "projects.createReview.base": "Base",
+  "@projects.createReview.base": {
+    "description": "Field label in the new-review dialog: the branch the changes go into. Short."
+  },
+  "projects.createReview.compareLabel": "Compare",
+  "@projects.createReview.compareLabel": {
+    "description": "Field label in the new-review dialog: the branch with the changes. Short."
+  },
+  "projects.createReview.selectBranch": "Select branch",
+  "@projects.createReview.selectBranch": {
+    "description": "Empty choice of the compare-branch dropdown in the new-review dialog. Short."
+  },
+  "projects.createReview.chooseBase": "Choose a base branch.",
+  "@projects.createReview.chooseBase": {
+    "description": "Hint in the new-review dialog when no base branch is chosen."
+  },
+  "projects.createReview.chooseCompare": "Choose a compare branch.",
+  "@projects.createReview.chooseCompare": {
+    "description": "Hint in the new-review dialog when no compare branch is chosen."
+  },
+  "projects.createReview.sameBranches": "The base and compare branches must be different.",
+  "@projects.createReview.sameBranches": {
+    "description": "Hint in the new-review dialog when both branches are the same."
+  },
+  "projects.createReview.alreadyOpen": "An open review already compares these branches.",
+  "@projects.createReview.alreadyOpen": {
+    "description": "Hint in the new-review dialog when a review for these branches exists."
+  },
+  "projects.createReview.notPushed": "The compare branch must be pushed before opening a review.",
+  "@projects.createReview.notPushed": {
+    "description": "Hint in the new-review dialog when the compare branch is only on this computer."
+  },
+  "projects.createReview.compare": "{repository}: {source} → {target}",
+  "@projects.createReview.compare": {
+    "description": "Text under the title of the new-review dialog. {source} branch is merged into {target} branch."
+  },
+  "projects.createReview.compareAtCommit": "{repository}: {source} → {target} at {commit}",
+  "@projects.createReview.compareAtCommit": {
+    "description": "Text under the title of the new-review dialog. {commit} is a short commit id."
+  },
+  "projects.createReview.chooseBranches": "Choose a repository and branches to compare.",
+  "@projects.createReview.chooseBranches": {
+    "description": "Text under the title of the new-review dialog before branches are chosen."
+  },
+  "projects.createReview.incomplete": "Review branches are incomplete.",
+  "@projects.createReview.incomplete": {
+    "description": "Error in the new-review dialog when branches are missing."
+  },
+  "projects.createReview.created": "Review created.",
+  "@projects.createReview.created": {
+    "description": "Toast after creating a code review (pull request)."
+  },
+  "projects.discussion.related": "Related Conversations",
+  "@projects.discussion.related": {
+    "description": "Heading of the card under a task, review or commit listing chat groups that mention it. Short."
+  },
+  "projects.discussion.openConversationIn": "Open conversation in {name}",
+  "@projects.discussion.openConversationIn": {
+    "description": "Screen-reader label of a row in the Related Conversations card. {name} is a group (chat channel) name."
+  },
+  "projects.discussion.openGroup": "Open group {name}",
+  "@projects.discussion.openGroup": {
+    "description": "Screen-reader label of a row in the Related Conversations card. {name} is a group (chat channel) name."
+  },
+  "projects.discussion.openLatestIn": "Open the latest conversation in {name}",
+  "@projects.discussion.openLatestIn": {
+    "description": "Tooltip of a group row in the Related Conversations card or the Groups tab. {name} is a group name."
+  },
+  "projects.discussion.open": "Open {name}",
+  "@projects.discussion.open": {
+    "description": "Tooltip of a group name link. {name} is a group (chat channel) name. Short."
+  },
+  "projects.discussion.discussedIn": "<names></names> discussed {entity, select, commit {this commit} task {this task} review {this review} other {this}} in <group></group>",
+  "@projects.discussion.discussedIn": {
+    "description": "Row in the Related Conversations card. <names></names> becomes a list of people; <group></group> becomes the group name. Keep the tags. {entity} picks the item kind."
+  },
+  "projects.discussion.createdFrom": "<names></names> created {entity, select, commit {this commit} task {this task} review {this review} other {this}} from <group></group>",
+  "@projects.discussion.createdFrom": {
+    "description": "Row in the Related Conversations card for the group the item was made in. <names></names> becomes the creator; <group></group> the group name. Keep the tags."
+  },
+  "projects.discussion.names2": "<name1></name1> and <name2></name2>",
+  "@projects.discussion.names2": {
+    "description": "Two people's names in a Related Conversations row. Each tag becomes a name; keep the tags."
+  },
+  "projects.discussion.names3": "<name1></name1>, <name2></name2> and <name3></name3>",
+  "@projects.discussion.names3": {
+    "description": "Three people's names in a Related Conversations row. Each tag becomes a name; keep the tags."
+  },
+  "projects.discussion.namesOthers": "<name1></name1>, <name2></name2> <others>and {count, plural, one {# other} other {# others}}</others>",
+  "@projects.discussion.namesOthers": {
+    "description": "Two names plus a count of other people in a Related Conversations row. <others> is shown in bold. Keep the tags."
+  },
+  "projects.discussion.showMore": "Show {count} more {count, plural, one {conversation} other {conversations}}",
+  "@projects.discussion.showMore": {
+    "description": "Button at the bottom of the Related Conversations card. Short."
+  },
+  "projects.discussion.truncatedCard": "Showing mentions from the {limit} most recent search results.",
+  "@projects.discussion.truncatedCard": {
+    "description": "Note at the bottom of the Related Conversations card when there are many results. {limit} is a number."
+  },
+  "projects.discussion.loading": "Loading group discussions",
+  "@projects.discussion.loading": {
+    "description": "Loading label of the Groups tab of a project repository."
+  },
+  "projects.discussion.emptyTitle": "No linked groups yet",
+  "@projects.discussion.emptyTitle": {
+    "description": "Title of the empty Groups tab of a project repository."
+  },
+  "projects.discussion.emptyDescription": "Paste this repository, review, or task link in a group and it will appear here.",
+  "@projects.discussion.emptyDescription": {
+    "description": "Text of the empty Groups tab of a project repository. Group = chat channel."
+  },
+  "projects.discussion.messageCount": "{count, plural, one {# message} other {# messages}}",
+  "@projects.discussion.messageCount": {
+    "description": "Tooltip of the message count on a row in the Groups tab of a project repository. Short."
+  },
+  "projects.discussion.messageCountTruncated": "{count, plural, one {#+ message} other {#+ messages}}",
+  "@projects.discussion.messageCountTruncated": {
+    "description": "Tooltip of the message count when results were cut off ('+' means at least). Short."
+  },
+  "projects.discussion.truncatedPanel": "Showing the latest {limit} mentions; totals may be higher.",
+  "@projects.discussion.truncatedPanel": {
+    "description": "Note at the bottom of the Groups tab of a project repository when there are many results. {limit} is a number."
+  },
+  "projects.assignees.assignedTo": "Assigned to {name}",
+  "@projects.assignees.assignedTo": {
+    "description": "Tooltip of an assignee avatar on a task. {name} is a person or AI agent name."
+  },
+  "projects.assignees.assigned": "Task assigned.",
+  "@projects.assignees.assigned": {
+    "description": "Toast after assigning a task to someone."
+  },
+  "projects.assignees.assignFailed": "Failed to assign task.",
+  "@projects.assignees.assignFailed": {
+    "description": "Error toast when assigning a task fails."
+  },
+  "projects.assignees.unassigned": "Task unassigned.",
+  "@projects.assignees.unassigned": {
+    "description": "Toast after removing someone from a task."
+  },
+  "projects.assignees.unassignFailed": "Failed to unassign task.",
+  "@projects.assignees.unassignFailed": {
+    "description": "Error toast when removing an assignee from a task fails."
+  },
+  "projects.assignees.assignToMe": "Assign to me",
+  "@projects.assignees.assignToMe": {
+    "description": "Small button on a task. Short."
+  },
+  "projects.assignees.assignedToMe": "Assigned to me",
+  "@projects.assignees.assignedToMe": {
+    "description": "Disabled small button on a task you are assigned to. Short."
+  },
+  "projects.assignees.assign": "Assign",
+  "@projects.assignees.assign": {
+    "description": "Small button on a task that opens the assignee picker. Short."
+  },
+  "projects.assignees.dialogTitle": "Assign task",
+  "@projects.assignees.dialogTitle": {
+    "description": "Title of the assignee picker dialog."
+  },
+  "projects.assignees.dialogDescription": "Choose a person or agent to work on this task.",
+  "@projects.assignees.dialogDescription": {
+    "description": "Text under the title of the assignee picker dialog. Agent = AI agent."
+  },
+  "projects.assignees.searchPlaceholder": "Search people and agents",
+  "@projects.assignees.searchPlaceholder": {
+    "description": "Placeholder of the search field in the assignee picker dialog."
+  },
+  "projects.assignees.searching": "Searching…",
+  "@projects.assignees.searching": {
+    "description": "Assignee picker dialog while search runs. Short."
+  },
+  "projects.assignees.agent": "Agent",
+  "@projects.assignees.agent": {
+    "description": "Small label under a result in the assignee picker: this is an AI agent. Short."
+  },
+  "projects.assignees.noMatches": "No matching people or agents.",
+  "@projects.assignees.noMatches": {
+    "description": "Assignee picker dialog when the search finds nobody."
+  },
+  "projects.assignees.unassign": "Unassign {name}",
+  "@projects.assignees.unassign": {
+    "description": "Screen-reader label of the button on an assignee avatar that removes them from the task."
+  },
+  "projects.merge.merge": "Merge",
+  "@projects.merge.merge": {
+    "description": "Button on a code review (pull request) that merges it. Short."
+  },
+  "projects.merge.publishing": "Publishing…",
+  "@projects.merge.publishing": {
+    "description": "Merge button while publishing the merged status. Short."
+  },
+  "projects.merge.publishStatus": "Publish merged status",
+  "@projects.merge.publishStatus": {
+    "description": "Merge button when the merge worked but its status was not yet shared. Short."
+  },
+  "projects.merge.confirmTitle": "Merge review?",
+  "@projects.merge.confirmTitle": {
+    "description": "Title of the merge confirmation dialog for a code review (pull request)."
+  },
+  "projects.merge.confirmDescription": "Merge {source} into {target} and push the result to the repository. The remote will reject the operation if the branch changed or conflicts.",
+  "@projects.merge.confirmDescription": {
+    "description": "Merge confirmation dialog. {source} and {target} are git branch names."
+  },
+  "projects.merge.merging": "Merging…",
+  "@projects.merge.merging": {
+    "description": "Confirm button of the merge dialog while merging. Short."
+  },
+  "projects.merge.mergeReview": "Merge review",
+  "@projects.merge.mergeReview": {
+    "description": "Confirm button of the merge dialog. Short."
+  },
+  "projects.merge.failed": "Failed to merge review.",
+  "@projects.merge.failed": {
+    "description": "Error toast when merging a code review fails."
+  },
+  "projects.merge.conflictTitle": "Resolve conflicts in your local checkout",
+  "@projects.merge.conflictTitle": {
+    "description": "Title of the merge-conflict box on a code review. Local checkout = copy of the code on this computer."
+  },
+  "projects.merge.conflictDescription": "Prepare the local checkout, then switch to {target} with the commands shown. After resolving and committing, push the target branch and retry the merge.",
+  "@projects.merge.conflictDescription": {
+    "description": "Merge-conflict box on a code review. {target} is a git branch name."
+  },
+  "projects.merge.terminalHint": "Resolve in Terminal securely fetches the target and review commits before showing copyable commands.",
+  "@projects.merge.terminalHint": {
+    "description": "Merge-conflict box before commands are ready. 'Resolve in Terminal' is the button name."
+  },
+  "projects.merge.preparing": "Preparing…",
+  "@projects.merge.preparing": {
+    "description": "Resolve-in-Terminal button while working. Short."
+  },
+  "projects.merge.resolveInTerminal": "Resolve in Terminal",
+  "@projects.merge.resolveInTerminal": {
+    "description": "Button in the merge-conflict box that opens a terminal. Short."
+  },
+  "projects.merge.recoveryReady": "Recovery commit fetched and terminal opened.",
+  "@projects.merge.recoveryReady": {
+    "description": "Toast after preparing a merge-conflict fix in the terminal."
+  },
+  "projects.merge.recoveryFailed": "Failed to prepare merge recovery.",
+  "@projects.merge.recoveryFailed": {
+    "description": "Error toast when preparing a merge-conflict fix fails."
+  },
+  "projects.merge.statusPublished": "Published merged review status.",
+  "@projects.merge.statusPublished": {
+    "description": "Toast after sharing that a code review was merged."
+  },
+  "projects.merge.statusPublishFailed": "Failed to publish merged review status.",
+  "@projects.merge.statusPublishFailed": {
+    "description": "Error toast when sharing the merged status fails."
+  },
+  "projects.merge.commandsCopied": "Recovery commands copied",
+  "@projects.merge.commandsCopied": {
+    "description": "Toast after copying the merge-conflict commands. Short."
+  },
+  "projects.merge.copyCommands": "Copy commands",
+  "@projects.merge.copyCommands": {
+    "description": "Button in the merge-conflict box. Short."
+  },
+  "projects.agentChat.homeEmptyTitle": "Explain what this project should be",
+  "@projects.agentChat.homeEmptyTitle": {
+    "description": "Empty project-agent chat on a project home. Project agent = the AI agent that helps with the project."
+  },
+  "projects.agentChat.homeEmptyDescription": "The project agent will build it out from this group.",
+  "@projects.agentChat.homeEmptyDescription": {
+    "description": "Empty project-agent chat on a project home, under the title. Group = chat channel."
+  },
+  "projects.agentChat.emptyTitle": "Ask about this page",
+  "@projects.agentChat.emptyTitle": {
+    "description": "Empty project-agent chat on the Projects screen."
+  },
+  "projects.agentChat.emptyDescription": "Start a conversation with the project agent.",
+  "@projects.agentChat.emptyDescription": {
+    "description": "Empty project-agent chat on the Projects screen, under the title."
+  },
+  "projects.agentChat.agentFallback": "project agent",
+  "@projects.agentChat.agentFallback": {
+    "description": "Name used for the chat box when no AI agent is chosen. Lowercase; used inside other text."
+  },
+  "projects.agentChat.placeholder": "Message {name}",
+  "@projects.agentChat.placeholder": {
+    "description": "Placeholder of the project-agent chat box. {name} is the AI agent name."
+  },
+  "projects.agentChat.noAgents": "No agents available",
+  "@projects.agentChat.noAgents": {
+    "description": "Placeholder of the project-agent chat box when there is no AI agent."
+  },
+  "projects.agentChat.previewContext": "Preview message context",
+  "@projects.agentChat.previewContext": {
+    "description": "Tooltip of the button that shows what page details are sent to the AI agent. Short."
+  },
+  "projects.agentChat.clearLabel": "Clear project agent chat",
+  "@projects.agentChat.clearLabel": {
+    "description": "Screen-reader label of the trash button in the project-agent chat."
+  },
+  "projects.agentChat.clear": "Clear conversation",
+  "@projects.agentChat.clear": {
+    "description": "Tooltip of the trash button in the project-agent chat. Short."
+  },
+  "projects.agentChat.failed": "Failed to reach the agent",
+  "@projects.agentChat.failed": {
+    "description": "Error toast when a message to the project AI agent could not be sent."
+  },
+  "projects.branchDialog.createTitle": "Create branch",
+  "@projects.branchDialog.createTitle": {
+    "description": "Title and submit button of the create-branch dialog (git branch). Short."
+  },
+  "projects.branchDialog.createDescription": "Create a remote branch from <branch></branch>.",
+  "@projects.branchDialog.createDescription": {
+    "description": "Create-branch dialog. <branch></branch> becomes the source branch name; keep the tags."
+  },
+  "projects.branchDialog.createDescriptionAt": "Create a remote branch from <branch></branch> at {commit}.",
+  "@projects.branchDialog.createDescriptionAt": {
+    "description": "Create-branch dialog. <branch></branch> becomes the source branch name; {commit} is a short commit id. Keep the tags."
+  },
+  "projects.branchDialog.branchName": "Branch name",
+  "@projects.branchDialog.branchName": {
+    "description": "Field label in the create-branch dialog. Short."
+  },
+  "projects.branchDialog.refreshFirst": "Refresh the repository before creating a branch.",
+  "@projects.branchDialog.refreshFirst": {
+    "description": "Error in the create-branch dialog when the latest commit is unknown."
+  },
+  "projects.branchDialog.createFailed": "Failed to create branch.",
+  "@projects.branchDialog.createFailed": {
+    "description": "Error in the create-branch dialog."
+  },
+  "projects.branchDialog.deleteTitle": "Delete branch?",
+  "@projects.branchDialog.deleteTitle": {
+    "description": "Title of the delete-branch confirmation dialog."
+  },
+  "projects.branchDialog.deleteDescription": "Delete the remote branch <branch></branch>. This cannot be undone and may be rejected by repository protection rules.",
+  "@projects.branchDialog.deleteDescription": {
+    "description": "Delete-branch dialog. <branch></branch> becomes the branch name; keep the tags."
+  },
+  "projects.branchDialog.deleting": "Deleting…",
+  "@projects.branchDialog.deleting": {
+    "description": "Delete button of the delete-branch dialog while working. Short."
+  },
+  "projects.branchDialog.delete": "Delete branch",
+  "@projects.branchDialog.delete": {
+    "description": "Delete button of the delete-branch dialog. Short."
+  },
+  "projects.branchDialog.deleteFailed": "Failed to delete branch.",
+  "@projects.branchDialog.deleteFailed": {
+    "description": "Error in the delete-branch dialog."
+  },
+  "projects.browser.title": "Add a project",
+  "@projects.browser.title": {
+    "description": "Title of the dialog for adding a project to the sidebar."
+  },
+  "projects.browser.searchPlaceholder": "Search or create a project",
+  "@projects.browser.searchPlaceholder": {
+    "description": "Placeholder of the search field in the add-a-project dialog."
+  },
+  "projects.browser.createNamed": "Create “{name}”",
+  "@projects.browser.createNamed": {
+    "description": "Button in the add-a-project dialog to create a project with the typed name. Short."
+  },
+  "projects.browser.createHint": "Configure its repository and access options",
+  "@projects.browser.createHint": {
+    "description": "Small text under the create button in the add-a-project dialog."
+  },
+  "projects.browser.repositoryCount": "{count, plural, one {# repository} other {# repositories}}",
+  "@projects.browser.repositoryCount": {
+    "description": "Under a project name in the add-a-project dialog when it has no description. Short."
+  },
+  "projects.browser.added": "Added",
+  "@projects.browser.added": {
+    "description": "Marker on a project already in the sidebar, in the add-a-project dialog. Short."
+  },
+  "projects.browser.noResults": "No projects found",
+  "@projects.browser.noResults": {
+    "description": "Add-a-project dialog when search finds nothing."
+  },
+  "projects.browser.noResultsHint": "Try another search or create a new project.",
+  "@projects.browser.noResultsHint": {
+    "description": "Add-a-project dialog when search finds nothing, under the title."
+  },
+  "projects.channelRequest.title": "Create project group?",
+  "@projects.channelRequest.title": {
+    "description": "Title of the dialog where an owner approves a group (chat channel) an AI agent asked for."
+  },
+  "projects.channelRequest.description": "Your agent requested a new group in {name}. Review the details before creating it.",
+  "@projects.channelRequest.description": {
+    "description": "Group-request dialog. {name} is the project name."
+  },
+  "projects.channelRequest.descriptionUnnamed": "Your agent requested a new group in this project. Review the details before creating it.",
+  "@projects.channelRequest.descriptionUnnamed": {
+    "description": "Group-request dialog when the project name is unknown."
+  },
+  "projects.channelRequest.create": "Create group",
+  "@projects.channelRequest.create": {
+    "description": "Approve button of the group-request dialog. Short."
+  },
+  "projects.channelRequest.visibility": "Visibility",
+  "@projects.channelRequest.visibility": {
+    "description": "Row label in the group-request dialog: who can see the group. Short."
+  },
+  "projects.channelRequest.visibilityValue": "{visibility, select, open {open} private {private} other {{visibility}}}",
+  "@projects.channelRequest.visibilityValue": {
+    "description": "Value of the Visibility row in the group-request dialog. Short."
+  },
+  "projects.channelRequest.lifetime": "Lifetime",
+  "@projects.channelRequest.lifetime": {
+    "description": "Row label in the group-request dialog: how long a temporary group lasts. Short."
+  },
+  "projects.channelRequest.temporary": "Temporary · {duration}. Cleans up automatically after that period of inactivity.",
+  "@projects.channelRequest.temporary": {
+    "description": "Lifetime row in the group-request dialog. {duration} is e.g. '7 days'."
+  },
+  "projects.commitDetail.copyLink": "Copy commit link",
+  "@projects.commitDetail.copyLink": {
+    "description": "Tooltip of the link button next to a commit title. Short."
+  },
+  "projects.commitDetail.committed": "Committed",
+  "@projects.commitDetail.committed": {
+    "description": "Word before the date under a commit title, e.g. 'Committed Oct 3, 2026'. Short."
+  },
+  "projects.commitDetail.commit": "Commit",
+  "@projects.commitDetail.commit": {
+    "description": "Row label in commit details: the commit id; also the fallback title. Short."
+  },
+  "projects.commitDetail.author": "Author",
+  "@projects.commitDetail.author": {
+    "description": "Row label in commit details. Short."
+  },
+  "projects.commitDetail.date": "Date",
+  "@projects.commitDetail.date": {
+    "description": "Row label in commit details. Short."
+  },
+  "projects.commitDetail.changes": "Changes",
+  "@projects.commitDetail.changes": {
+    "description": "Row label in commit details: lines added and removed. Short."
+  },
+  "projects.commitDetail.filesChanged": "Files changed",
+  "@projects.commitDetail.filesChanged": {
+    "description": "Section title in commit details listing changed files. Short."
+  },
+  "projects.stats.commits": "{count, plural, one {# commit} other {# commits}}",
+  "@projects.stats.commits": {
+    "description": "Tooltip of a segment in a project's activity bar. Short."
+  },
+  "projects.stats.commitsRich": "{count, plural, one {<n>#</n> commit} other {<n>#</n> commits}}",
+  "@projects.stats.commitsRich": {
+    "description": "Commit count on a project card; <n> makes the number bold. Keep the tags. Short."
+  },
+  "projects.stats.reviews": "{count, plural, one {# review} other {# reviews}}",
+  "@projects.stats.reviews": {
+    "description": "Tooltip of a segment in a project's activity bar. Review = code review (pull request). Short."
+  },
+  "projects.stats.reviewsRich": "{count, plural, one {<n>#</n> review} other {<n>#</n> reviews}}",
+  "@projects.stats.reviewsRich": {
+    "description": "Review count on a project card; <n> makes the number bold. Keep the tags. Short."
+  },
+  "projects.stats.tasks": "{count, plural, one {# task} other {# tasks}}",
+  "@projects.stats.tasks": {
+    "description": "Tooltip of a segment in a project's activity bar. Short."
+  },
+  "projects.stats.tasksRich": "{count, plural, one {<n>#</n> task} other {<n>#</n> tasks}}",
+  "@projects.stats.tasksRich": {
+    "description": "Task count on a project card; <n> makes the number bold. Keep the tags. Short."
+  },
+  "projects.cards.status": "{status, select, unlisted {unlisted} other {{status}}}",
+  "@projects.cards.status": {
+    "description": "Small pill on a project card showing its state, shown in capitals. Short."
+  },
+  "projects.cards.authLabel": "Access failed",
+  "@projects.cards.authLabel": {
+    "description": "Tooltip title on a project card's warning icon. Short."
+  },
+  "projects.cards.authDescription": "Kuzz could not authenticate with this repository.",
+  "@projects.cards.authDescription": {
+    "description": "Tooltip on a project card's warning icon."
+  },
+  "projects.cards.missingLabel": "Uninitialized",
+  "@projects.cards.missingLabel": {
+    "description": "Tooltip title on a project card's warning icon: the repository was never set up. Short."
+  },
+  "projects.cards.missingDescription": "No repository was found.",
+  "@projects.cards.missingDescription": {
+    "description": "Tooltip on a project card's warning icon."
+  },
+  "projects.cards.accessLabel": "No access",
+  "@projects.cards.accessLabel": {
+    "description": "Tooltip title on a project card's warning icon. Short."
+  },
+  "projects.cards.accessDescription": "You’re not a member of the group that grants access to this repository.",
+  "@projects.cards.accessDescription": {
+    "description": "Tooltip on a project card's warning icon. Group = chat channel."
+  },
+  "projects.cards.unboundLabel": "No access group",
+  "@projects.cards.unboundLabel": {
+    "description": "Tooltip title on a project card's warning icon. Short."
+  },
+  "projects.cards.unboundDescription": "This repository isn't linked to a group yet, so no one can open it.",
+  "@projects.cards.unboundDescription": {
+    "description": "Tooltip on a project card's warning icon."
+  },
+  "projects.cards.networkLabel": "Unreachable",
+  "@projects.cards.networkLabel": {
+    "description": "Tooltip title on a project card's warning icon. Short."
+  },
+  "projects.cards.networkDescription": "The Kuzz git service could not be reached.",
+  "@projects.cards.networkDescription": {
+    "description": "Tooltip on a project card's warning icon."
+  },
+  "projects.cards.refLabel": "Branch missing",
+  "@projects.cards.refLabel": {
+    "description": "Tooltip title on a project card's warning icon. Short."
+  },
+  "projects.cards.refDescription": "The advertised branch is missing from the git remote.",
+  "@projects.cards.refDescription": {
+    "description": "Tooltip on a project card's warning icon."
+  },
+  "projects.cards.unknownLabel": "Unavailable",
+  "@projects.cards.unknownLabel": {
+    "description": "Tooltip title on a project card's warning icon. Short."
+  },
+  "projects.cards.unknownDescription": "Kuzz could not load this repository.",
+  "@projects.cards.unknownDescription": {
+    "description": "Tooltip on a project card's warning icon."
+  },
+  "projects.cards.unavailableLabel": "Repository {label}",
+  "@projects.cards.unavailableLabel": {
+    "description": "Screen-reader label of a project card's warning icon. {label} is a lowercased state such as 'no access'."
+  },
+  "projects.cards.emptyTitle": "No projects yet",
+  "@projects.cards.emptyTitle": {
+    "description": "Empty Projects screen title."
+  },
+  "projects.cards.emptyDescription": "Projects in this community will appear here.",
+  "@projects.cards.emptyDescription": {
+    "description": "Empty Projects screen text."
+  },
+  "projects.cards.noMatches": "No matching projects",
+  "@projects.cards.noMatches": {
+    "description": "Projects screen when filters hide every project."
+  },
+  "projects.cards.noMatchesHint": "Try another owner filter or sort mode.",
+  "@projects.cards.noMatchesHint": {
+    "description": "Projects screen when filters hide every project, under the title."
+  },
+  "projects.cards.view": "View {name}",
+  "@projects.cards.view": {
+    "description": "Screen-reader text of a project card. {name} is the project name."
+  },
+  "projects.cards.moreOptions": "More options for {name}",
+  "@projects.cards.moreOptions": {
+    "description": "Screen-reader label of the ⋯ menu on a project row. {name} is the project name."
+  },
+  "projects.cards.deleteProject": "Delete project",
+  "@projects.cards.deleteProject": {
+    "description": "Menu item and confirm button for deleting a project. Short."
+  },
+  "projects.cards.deleteTitle": "Delete project?",
+  "@projects.cards.deleteTitle": {
+    "description": "Title of the delete-project confirmation dialog."
+  },
+  "projects.cards.deleteDescription": "Delete {name} from Projects for everyone. This can only be done for projects you own and cannot be undone.",
+  "@projects.cards.deleteDescription": {
+    "description": "Delete-project confirmation dialog. {name} is the project name."
+  },
+  "projects.cards.deleting": "Deleting...",
+  "@projects.cards.deleting": {
+    "description": "Confirm button of the delete-project dialog while deleting. Short."
+  },
+  "projects.cards.defaultDescription": "A shared space for internal git work.",
+  "@projects.cards.defaultDescription": {
+    "description": "Text on a project card when the project has no description."
+  },
+  "projects.contributors.unknown": "Unknown contributor",
+  "@projects.contributors.unknown": {
+    "description": "Name shown for a code contributor with no name or email. Short."
+  },
+  "projects.contributors.kuzzContributor": "Kuzz contributor",
+  "@projects.contributors.kuzzContributor": {
+    "description": "Role shown next to a contributor linked to a Kuzz account. Short."
+  },
+  "projects.contributors.gitContributor": "Git contributor",
+  "@projects.contributors.gitContributor": {
+    "description": "Role shown next to a contributor known only from git history. Short."
+  },
+  "projects.contributors.agentContributor": "Agent contributor",
+  "@projects.contributors.agentContributor": {
+    "description": "Role shown next to an AI agent contributor. Short."
+  },
+  "projects.contributors.unverifiedMatch": "{identity} · unverified match",
+  "@projects.contributors.unverifiedMatch": {
+    "description": "Contributor row when the Kuzz account was matched by guess. {identity} is a handle or email."
+  },
+  "projects.contributors.emptyTitle": "No contributors yet",
+  "@projects.contributors.emptyTitle": {
+    "description": "Empty Contributors tab of a project repository."
+  },
+  "projects.contributors.emptyDescription": "Contributors appear after signed project or repository activity.",
+  "@projects.contributors.emptyDescription": {
+    "description": "Empty Contributors tab of a project repository, under the title."
+  },
+  "projects.contributors.noCommits": "No git commits",
+  "@projects.contributors.noCommits": {
+    "description": "Tooltip of the commit count on a contributor row. Short."
+  },
+  "projects.contributors.noReviews": "No linked reviews",
+  "@projects.contributors.noReviews": {
+    "description": "Tooltip of the review count on a contributor row. Short."
+  },
+  "projects.contributors.noTasks": "No linked tasks",
+  "@projects.contributors.noTasks": {
+    "description": "Tooltip of the task count on a contributor row. Short."
+  },
+  "projects.commitsPanel.loading": "Loading activity",
+  "@projects.commitsPanel.loading": {
+    "description": "Loading label of the Commits list of a project."
+  },
+  "projects.commitsPanel.errorTitle": "Could not load commits",
+  "@projects.commitsPanel.errorTitle": {
+    "description": "Commits list of a project when loading fails."
+  },
+  "projects.commitsPanel.errorDescription": "Refresh the repository and try again.",
+  "@projects.commitsPanel.errorDescription": {
+    "description": "Commits list of a project when loading fails, under the title."
+  },
+  "projects.commitsPanel.emptyTitle": "No commits yet",
+  "@projects.commitsPanel.emptyTitle": {
+    "description": "Empty Commits list of a project."
+  },
+  "projects.commitsPanel.emptyProject": "Commits pushed to this project's repositories will appear here.",
+  "@projects.commitsPanel.emptyProject": {
+    "description": "Empty Commits list of a whole project, under the title."
+  },
+  "projects.commitsPanel.emptyRepository": "Commits pushed to this repository will appear here.",
+  "@projects.commitsPanel.emptyRepository": {
+    "description": "Empty Commits list of one repository, under the title."
+  },
+  "projects.commitsPanel.unknownAuthor": "Unknown author",
+  "@projects.commitsPanel.unknownAuthor": {
+    "description": "Commit author shown when the commit has no name or email. Short."
+  },
+  "projects.commitsPanel.viewCommit": "View commit {hash}",
+  "@projects.commitsPanel.viewCommit": {
+    "description": "Tooltip of the commit id on a commit row. {hash} is a short commit id."
+  },
+  "projects.commitsPanel.committedBy": "Committed by {name}",
+  "@projects.commitsPanel.committedBy": {
+    "description": "Tooltip of the author avatar on a commit row."
+  },
+  "projects.commitsPanel.committedByCount": "Committed by {name} · {count, plural, one {# commit} other {# commits}}",
+  "@projects.commitsPanel.committedByCount": {
+    "description": "Tooltip of the author avatar on a commit row, with the author's total commits."
+  },
+  "projects.homeContext.addRepositoryHint": "Add a repository to this project",
+  "@projects.homeContext.addRepositoryHint": {
+    "description": "Tooltip of the Tasks/Reviews/Commits/Files buttons in a project-home side panel when the project has no repository."
+  },
+  "projects.homeContext.commits": "Commits",
+  "@projects.homeContext.commits": {
+    "description": "Button in the project-home side panel that opens the commit list. Short."
+  },
+  "projects.homeContext.files": "Files",
+  "@projects.homeContext.files": {
+    "description": "Button in the project-home side panel that opens the file browser. Short."
+  },
+  "projects.homeContext.people": "People",
+  "@projects.homeContext.people": {
+    "description": "Button in the project-home side panel that opens the contributor list. Short."
+  },
+  "projects.homeContext.unavailable": "Unavailable",
+  "@projects.homeContext.unavailable": {
+    "description": "Groups section of the project-home side panel when no group can be shown. Short."
+  },
+  "projects.homeContext.codebase": "Codebase",
+  "@projects.homeContext.codebase": {
+    "description": "Section title in the project-home side panel listing code repositories. Short."
+  },
+  "projects.homeContext.noneYet": "None yet",
+  "@projects.homeContext.noneYet": {
+    "description": "Codebase section of the project-home side panel when there is no repository. Short."
+  },
+  "projects.detail.refreshed": "Remote state refreshed.",
+  "@projects.detail.refreshed": {
+    "description": "Toast after checking a project repository for remote changes."
+  },
+  "projects.detail.createBranchHint": "Create a remote branch",
+  "@projects.detail.createBranchHint": {
+    "description": "Tooltip of the create-branch button in a repository's Files tab. Short."
+  },
+  "projects.detail.deleteBranchHint": "Delete this remote branch",
+  "@projects.detail.deleteBranchHint": {
+    "description": "Tooltip of the delete-branch button in a repository's Files tab. Short."
+  },
+  "projects.detail.localChecking": "Local checking",
+  "@projects.detail.localChecking": {
+    "description": "Source switch in a repository's Files tab while checking for a copy on this computer. Short."
+  },
+  "projects.detail.local": "Local",
+  "@projects.detail.local": {
+    "description": "Source switch in a repository's Files tab: show the copy on this computer. Short."
+  },
+  "projects.detail.localMissing": "Local missing",
+  "@projects.detail.localMissing": {
+    "description": "Source switch in a repository's Files tab when there is no copy on this computer. Short."
+  },
+  "projects.detail.fetchHint": "Check for remote changes",
+  "@projects.detail.fetchHint": {
+    "description": "Tooltip of the refresh button in a repository's Files tab. Short."
+  },
+  "projects.detail.pushedReviewUpdated": "{message} Review updated.",
+  "@projects.detail.pushedReviewUpdated": {
+    "description": "Toast after pushing code. {message} is the push result sentence; the code review was updated too."
+  },
+  "projects.detail.pushFailed": "Failed to push repository",
+  "@projects.detail.pushFailed": {
+    "description": "Error toast when pushing code fails."
+  },
+  "projects.detail.pullFailed": "Failed to pull repository",
+  "@projects.detail.pullFailed": {
+    "description": "Error toast when pulling code fails."
+  },
+  "projects.detail.reviewUpdated": "Review updated.",
+  "@projects.detail.reviewUpdated": {
+    "description": "Toast after updating a code review to the latest commit."
+  },
+  "projects.detail.reviewCurrent": "Review is already current.",
+  "@projects.detail.reviewCurrent": {
+    "description": "Toast when a code review already has the latest commit."
+  },
+  "projects.detail.reviewUpdateFailed": "Failed to update review",
+  "@projects.detail.reviewUpdateFailed": {
+    "description": "Error toast when updating a code review fails."
+  },
+  "projects.detail.projectFallback": "Project",
+  "@projects.detail.projectFallback": {
+    "description": "Name of the terminal context when the project has no name. Short."
+  },
+  "projects.status.triage": "Triage",
+  "@projects.status.triage": {
+    "description": "Task status: new, not yet sorted. Short."
+  },
+  "projects.status.backlog": "Backlog",
+  "@projects.status.backlog": {
+    "description": "Task status: accepted but not started. Short."
+  },
+  "projects.status.inProgress": "In Progress",
+  "@projects.status.inProgress": {
+    "description": "Task status: someone is working on it. Short."
+  },
+  "projects.status.inReview": "In Review",
+  "@projects.status.inReview": {
+    "description": "Task status: work is waiting for code review. Short."
+  },
+  "projects.status.done": "Done",
+  "@projects.status.done": {
+    "description": "Task status: finished. Short."
+  },
+  "projects.status.closed": "Closed",
+  "@projects.status.closed": {
+    "description": "Task or code review status: closed without finishing. Short."
+  },
+  "projects.status.open": "Open",
+  "@projects.status.open": {
+    "description": "Code review (pull request) status: open for review. Short."
+  },
+  "projects.status.merged": "Merged",
+  "@projects.status.merged": {
+    "description": "Code review (pull request) status: changes were merged. Short."
+  },
+  "projects.status.draft": "Draft",
+  "@projects.status.draft": {
+    "description": "Code review (pull request) status: not ready yet. Short."
+  },
+  "projects.reviewDetail.authored": "<name></name> authored",
+  "@projects.reviewDetail.authored": {
+    "description": "Commit row inside a code review. <name></name> becomes the author's name; keep the tags."
+  },
+  "projects.reviewDetail.viewReview": "View review",
+  "@projects.reviewDetail.viewReview": {
+    "description": "Tooltip of the review id on a code review row. Short."
+  },
+  "projects.reviewDetail.copyLink": "Copy review link",
+  "@projects.reviewDetail.copyLink": {
+    "description": "Tooltip of the link button next to a code review title. Short."
+  },
+  "projects.reviewDetail.opened": "Review opened",
+  "@projects.reviewDetail.opened": {
+    "description": "Words before the time under a code review title, e.g. 'Review opened 2h ago'. Short."
+  },
+  "projects.reviewDetail.changesRequested": "Changes requested.",
+  "@projects.reviewDetail.changesRequested": {
+    "description": "Toast after asking for changes on a code review."
+  },
+  "projects.reviewDetail.updates": "Updates",
+  "@projects.reviewDetail.updates": {
+    "description": "Heading in a code review's description listing later pushes. Short."
+  },
+  "projects.reviewDetail.updatedBranch": "Updated review branch",
+  "@projects.reviewDetail.updatedBranch": {
+    "description": "Commit row text in a code review when an update has no message."
+  },
+  "projects.reviewDetail.checks": "Checks",
+  "@projects.reviewDetail.checks": {
+    "description": "Section title in code review details: automated test results. Short."
+  },
+  "projects.reviewDetail.noChecks": "No checks have been reported for this review yet.",
+  "@projects.reviewDetail.noChecks": {
+    "description": "Empty Checks section in code review details."
+  },
+  "projects.reviewDetail.showEarlier": "Show {count} earlier {count, plural, one {activity} other {activities}}",
+  "@projects.reviewDetail.showEarlier": {
+    "description": "Button in a code review's activity list that reveals older entries."
+  },
+  "projects.reviewDetail.collapseHistory": "Collapse review history",
+  "@projects.reviewDetail.collapseHistory": {
+    "description": "Button in a code review's activity list that hides older entries."
+  },
+  "projects.reviewDetail.approved": "<name></name> approved these changes",
+  "@projects.reviewDetail.approved": {
+    "description": "Activity entry in a code review. <name></name> becomes a person's name; keep the tags."
+  },
+  "projects.reviewDetail.approvedEarlier": "<name></name> approved an earlier commit",
+  "@projects.reviewDetail.approvedEarlier": {
+    "description": "Activity entry in a code review for an approval of an older version. Keep the tags."
+  },
+  "projects.reviewDetail.requestedChanges": "<name></name> requested changes",
+  "@projects.reviewDetail.requestedChanges": {
+    "description": "Activity entry in a code review. <name></name> becomes a person's name; keep the tags."
+  },
+  "projects.reviewDetail.requestedChangesEarlier": "<name></name> requested changes on an earlier commit",
+  "@projects.reviewDetail.requestedChangesEarlier": {
+    "description": "Activity entry in a code review for a change request on an older version. Keep the tags."
+  },
+  "projects.reviewDetail.requestedReview": "<name></name> requested a review",
+  "@projects.reviewDetail.requestedReview": {
+    "description": "Activity entry in a code review. <name></name> becomes a person's name; keep the tags."
+  },
+  "projects.reviewDetail.openLineComment": "Open {path} {side, select, new {new} old {old} other {{side}}} line {line} in Files changed",
+  "@projects.reviewDetail.openLineComment": {
+    "description": "Screen-reader label of a line-comment chip in a code review. {path} is a file path; side = new or old version of the file; 'Files changed' is a section name."
+  },
+  "projects.reviewDetail.outdated": "Outdated",
+  "@projects.reviewDetail.outdated": {
+    "description": "Badge on a line comment whose code has since changed. Short."
+  },
+  "projects.diff.noTextDiff": "No textual diff is available for this file.",
+  "@projects.diff.noTextDiff": {
+    "description": "Diff viewer when a changed file has no text changes to show (e.g. an image)."
+  },
+  "projects.diff.truncated": "Large diff truncated — showing the first {count} lines. Use a local checkout to review the full change.",
+  "@projects.diff.truncated": {
+    "description": "Warning at the top of a long diff. Local checkout = copy of the code on this computer."
+  },
+  "projects.diff.commentOnLine": "Comment on {path} {side, select, new {new} old {old} other {{side}}} line {line}",
+  "@projects.diff.commentOnLine": {
+    "description": "Screen-reader label of the + button on a diff line. {path} is a file path; side = new or old version of the file."
+  },
+  "projects.diff.addLineComment": "Add line comment",
+  "@projects.diff.addLineComment": {
+    "description": "Tooltip of the + button on a diff line. Short."
+  },
+  "projects.diff.noReview": "No review selected.",
+  "@projects.diff.noReview": {
+    "description": "Error when posting a line comment without an open code review."
+  },
+  "projects.diff.lineCommentPosted": "Line comment posted.",
+  "@projects.diff.lineCommentPosted": {
+    "description": "Toast after commenting on a line of a code review."
+  },
+  "projects.diff.lineCommentFailed": "Failed to post line comment.",
+  "@projects.diff.lineCommentFailed": {
+    "description": "Error toast when commenting on a line fails."
+  },
+  "projects.diff.reviewFallback": "Review",
+  "@projects.diff.reviewFallback": {
+    "description": "Shown after the review title in the diff header when the commit id is unknown. Short."
+  },
+  "projects.diff.loading": "Loading changed files",
+  "@projects.diff.loading": {
+    "description": "Loading label of the changed-files view."
+  },
+  "projects.diff.loadFailed": "Could not load changed files for this {subject, select, commit {commit} review {review} other {item}}.",
+  "@projects.diff.loadFailed": {
+    "description": "Changed-files view when loading fails. {subject} is a commit or a code review."
+  },
+  "projects.diff.empty": "No changed files are available for this {subject, select, commit {commit} review {review} other {item}} yet.",
+  "@projects.diff.empty": {
+    "description": "Empty changed-files view. {subject} is a commit or a code review."
+  },
+  "projects.diff.changedFiles": "{count} changed files",
+  "@projects.diff.changedFiles": {
+    "description": "Count above the file tree in the changed-files view. Short."
+  },
+  "projects.diff.filterPlaceholder": "Filter files…",
+  "@projects.diff.filterPlaceholder": {
+    "description": "Placeholder of the filter field above the file tree in the changed-files view. Short."
+  },
+  "projects.diff.filesChanged": "{count} files changed",
+  "@projects.diff.filesChanged": {
+    "description": "Count in the header of the changed-files view. Short."
+  },
+  "projects.diff.noMatches": "No files match this filter.",
+  "@projects.diff.noMatches": {
+    "description": "Changed-files view when the filter hides every file."
+  },
+  "projects.readme.lastChanged": "Last changed {time}",
+  "@projects.readme.lastChanged": {
+    "description": "Next to the README file name on a repository overview. {time} is e.g. '3 days ago'. Short."
+  },
+  "projects.readme.loadingRepository": "Loading repository",
+  "@projects.readme.loadingRepository": {
+    "description": "Loading label of a repository overview."
+  },
+  "projects.readme.hostedOn": "Code hosted on {host}",
+  "@projects.readme.hostedOn": {
+    "description": "Title on a repository overview when the code lives on another site. {host} is e.g. 'github.com'."
+  },
+  "projects.readme.cloneHint": "Clone this repository locally to explore its files, commits, and contributors in Kuzz.",
+  "@projects.readme.cloneHint": {
+    "description": "Repository overview when the code lives on another site. Clone = copy the code to this computer."
+  },
+  "projects.readme.cloning": "Cloning…",
+  "@projects.readme.cloning": {
+    "description": "Clone button while copying the code to this computer. Short."
+  },
+  "projects.readme.cloneLocally": "Clone locally",
+  "@projects.readme.cloneLocally": {
+    "description": "Button that copies the repository's code to this computer. Short."
+  },
+  "projects.readme.openOn": "Open on {host}",
+  "@projects.readme.openOn": {
+    "description": "Button that opens the repository on another site. {host} is e.g. 'github.com'. Short."
+  },
+  "projects.readme.loading": "Loading README",
+  "@projects.readme.loading": {
+    "description": "Loading label of the README on a repository overview. README is a file name."
+  },
+  "projects.readme.chatWithAgent": "Chat with an agent",
+  "@projects.readme.chatWithAgent": {
+    "description": "Button on an empty repository overview that opens the AI agent chat. Short."
+  },
+  "projects.readme.errorTitle": "Could not load the README",
+  "@projects.readme.errorTitle": {
+    "description": "Repository overview when the README file fails to load."
+  },
+  "projects.readme.errorDescription": "Refresh the repository or ask an agent to investigate.",
+  "@projects.readme.errorDescription": {
+    "description": "Repository overview when the README file fails to load, under the title."
+  },
+  "projects.readme.emptyRepositoryTitle": "No files have been pushed yet",
+  "@projects.readme.emptyRepositoryTitle": {
+    "description": "Repository overview of an empty repository."
+  },
+  "projects.readme.emptyRepositoryDescription": "Ask an agent to create the initial codebase or connect an existing repository.",
+  "@projects.readme.emptyRepositoryDescription": {
+    "description": "Repository overview of an empty repository, under the title."
+  },
+  "projects.readme.noReadmeTitle": "No README yet",
+  "@projects.readme.noReadmeTitle": {
+    "description": "Repository overview when there is no README file."
+  },
+  "projects.readme.noReadmeDescription": "Add a README to describe setup, usage, and project context.",
+  "@projects.readme.noReadmeDescription": {
+    "description": "Repository overview when there is no README file, under the title."
+  },
+  "projects.repoActions.clone": "Clone",
+  "@projects.repoActions.clone": {
+    "description": "Button in a repository's side panel: copy the code to this computer. Short."
+  },
+  "projects.repoActions.askForAccessHint": "Open project chat to ask for repository access",
+  "@projects.repoActions.askForAccessHint": {
+    "description": "Tooltip of the Ask for access button in a repository's side panel."
+  },
+  "projects.repoActions.fetch": "Fetch",
+  "@projects.repoActions.fetch": {
+    "description": "Button in a repository's side panel: check for remote changes (git fetch). Short."
+  },
+  "projects.repoActions.pull": "Pull",
+  "@projects.repoActions.pull": {
+    "description": "Button in a repository's side panel: download remote changes (git pull). A count may follow. Short."
+  },
+  "projects.repoActions.push": "Push",
+  "@projects.repoActions.push": {
+    "description": "Button in a repository's side panel: upload local changes (git push). A count may follow. Short."
+  },
+  "projects.repoActions.openTerminal": "Open terminal",
+  "@projects.repoActions.openTerminal": {
+    "description": "Tooltip of the Terminal button in a repository's side panel. Short."
+  },
+  "projects.repoActions.terminal": "Terminal",
+  "@projects.repoActions.terminal": {
+    "description": "Button in a repository's side panel that opens a command-line terminal. Short."
+  },
+  "projects.repoActions.openFolderHint": "Open local repository folder",
+  "@projects.repoActions.openFolderHint": {
+    "description": "Tooltip of the Open button in a repository's side panel."
+  },
+  "projects.repoActions.open": "Open",
+  "@projects.repoActions.open": {
+    "description": "Button in a repository's side panel: open the folder or website. Short."
+  },
+  "projects.repoActions.details": "Details",
+  "@projects.repoActions.details": {
+    "description": "Section title in a repository's side panel. Short."
+  },
+  "projects.repoActions.latest": "Latest",
+  "@projects.repoActions.latest": {
+    "description": "Row label in a repository's side panel: latest commit id. Short."
+  },
+  "projects.repoActions.activeTasks": "Active tasks",
+  "@projects.repoActions.activeTasks": {
+    "description": "Row label in a repository's side panel: count of unfinished tasks. Short."
+  },
+  "projects.repoActions.active": "Active",
+  "@projects.repoActions.active": {
+    "description": "Row label in a repository's side panel: unfinished tasks. Short."
+  },
+  "projects.repoActions.completed": "Completed",
+  "@projects.repoActions.completed": {
+    "description": "Row label in a repository's side panel: finished tasks. Short."
+  },
+  "projects.repoActions.openReviews": "Open reviews",
+  "@projects.repoActions.openReviews": {
+    "description": "Row label in a repository's side panel: count of open code reviews. Short."
+  },
+  "projects.repoFiles.loadingFile": "Loading file",
+  "@projects.repoFiles.loadingFile": {
+    "description": "Loading label of a file preview in a repository."
+  },
+  "projects.repoFiles.fileLoadFailed": "Could not load this file. Try again after refreshing the repository.",
+  "@projects.repoFiles.fileLoadFailed": {
+    "description": "File preview in a repository when loading fails."
+  },
+  "projects.repoFiles.previewUnavailable": "Preview unavailable for this file. Large and binary files only show metadata.",
+  "@projects.repoFiles.previewUnavailable": {
+    "description": "File preview in a repository for big or non-text files."
+  },
+  "projects.repoFiles.loading": "Loading repository files",
+  "@projects.repoFiles.loading": {
+    "description": "Loading label of a repository's file browser."
+  },
+  "projects.repoFiles.treeFailed": "Could not load the repository file tree.",
+  "@projects.repoFiles.treeFailed": {
+    "description": "Repository file browser when loading fails."
+  },
+  "projects.repoFiles.empty": "No files have been pushed yet.",
+  "@projects.repoFiles.empty": {
+    "description": "Empty repository file browser."
+  },
+  "projects.repoFiles.errorDescription": "Refresh the repository or check its access settings.",
+  "@projects.repoFiles.errorDescription": {
+    "description": "Repository file browser when loading fails, under the title."
+  },
+  "projects.repoFiles.emptyDescription": "Files pushed to this repository will appear here.",
+  "@projects.repoFiles.emptyDescription": {
+    "description": "Empty repository file browser, under the title."
+  },
+  "projects.repoFiles.latestCommit": "<author></author> <muted>committed</muted> <subject></subject>",
+  "@projects.repoFiles.latestCommit": {
+    "description": "Top row of a repository file browser. <author></author> becomes a name; <subject></subject> the commit message; <muted> is grey text. Keep the tags."
+  },
+  "projects.repoFiles.fileCount": "{count, plural, one {# file} other {# files}}",
+  "@projects.repoFiles.fileCount": {
+    "description": "File count after the latest commit in a repository file browser. Short."
+  },
+  "projects.repoFiles.trackedFiles": "Repository files · {count} tracked files",
+  "@projects.repoFiles.trackedFiles": {
+    "description": "Top row of a repository file browser when the latest commit is unknown."
+  },
+  "projects.repoFiles.openEntry": "Open {type, select, directory {directory} file {file} other {{type}}} {name}",
+  "@projects.repoFiles.openEntry": {
+    "description": "Screen-reader label of a row in a repository file browser. {name} is a file or folder name."
+  },
+  "projects.repoFiles.showing": "Showing {shown} of {total} entries.",
+  "@projects.repoFiles.showing": {
+    "description": "Footer of a long repository file list."
+  },
+  "projects.repoFiles.showNextLabel": "Show next {count} entries, {shown} of {total} total",
+  "@projects.repoFiles.showNextLabel": {
+    "description": "Screen-reader label of the show-more button under a long repository file list."
+  },
+  "projects.repoFiles.showNext": "Show next {count}",
+  "@projects.repoFiles.showNext": {
+    "description": "Button under a long repository file list. Short."
+  },
+  "projects.repoSource.branches": "Branches",
+  "@projects.repoSource.branches": {
+    "description": "Heading in the branch menu of a repository (git branches). Short."
+  },
+  "projects.repoSource.tags": "Tags",
+  "@projects.repoSource.tags": {
+    "description": "Heading in the branch menu of a repository (git tags). Short."
+  },
+  "projects.repoSource.createBranch": "Create branch…",
+  "@projects.repoSource.createBranch": {
+    "description": "Item in the branch menu of a repository. Short."
+  },
+  "projects.repoSource.deleteBranch": "Delete {branch}",
+  "@projects.repoSource.deleteBranch": {
+    "description": "Item in the branch menu of a repository. {branch} is a branch name. Short."
+  },
+  "projects.repoSource.openOn": "Open repository on {host}",
+  "@projects.repoSource.openOn": {
+    "description": "Tooltip of the Open button for a repository hosted on another site. {host} is e.g. 'github.com'."
+  },
+  "projects.repoSource.pullHint": "Pull remote commits",
+  "@projects.repoSource.pullHint": {
+    "description": "Tooltip of the Pull button in a repository header. Short."
+  },
+  "projects.repoSource.pushHint": "Push local commits",
+  "@projects.repoSource.pushHint": {
+    "description": "Tooltip of the Push button in a repository header. Short."
+  },
+  "projects.workspaceTabs.updateReviewHint": "Publish the pushed commit to this review",
+  "@projects.workspaceTabs.updateReviewHint": {
+    "description": "Tooltip of the Update review button in a repository header."
+  },
+  "projects.workspaceTabs.updateReview": "Update review",
+  "@projects.workspaceTabs.updateReview": {
+    "description": "Button in a repository header that adds the latest pushed commit to the open code review. Short."
+  },
+  "projects.workspaceTabs.noLocalTitle": "No local checkout found",
+  "@projects.workspaceTabs.noLocalTitle": {
+    "description": "Files tab when 'Local' is chosen but there is no copy of the code on this computer."
+  },
+  "projects.workspaceTabs.noLocalDescription": "Switch to the remote source or clone this repository locally.",
+  "@projects.workspaceTabs.noLocalDescription": {
+    "description": "Files tab with no local copy, under the title."
+  },
+  "projects.workspaceTabs.notMirrored": "Not mirrored on Kuzz. Repository files are hosted on {host}.",
+  "@projects.workspaceTabs.notMirrored": {
+    "description": "Files tab for a repository hosted on another site. {host} is e.g. 'github.com'."
+  },
+  "projects.workspaceTabs.loadingContributors": "Loading contributors",
+  "@projects.workspaceTabs.loadingContributors": {
+    "description": "Loading label of the Contributors tab of a repository."
+  },
+  "projects.agentPrompt.reviewsPrompt": "Which reviews need attention today?",
+  "@projects.agentPrompt.reviewsPrompt": {
+    "description": "Suggested question to the AI agent on the Projects agent page; sent as the user's message."
+  },
+  "projects.agentPrompt.releaseLabel": "Release check",
+  "@projects.agentPrompt.releaseLabel": {
+    "description": "Label of a suggested question on the Projects agent page. Short."
+  },
+  "projects.agentPrompt.releasePrompt": "Are we safe to cut a release this week?",
+  "@projects.agentPrompt.releasePrompt": {
+    "description": "Suggested question to the AI agent; sent as the user's message."
+  },
+  "projects.agentPrompt.releasePromptNamed": "Are we safe to cut a release of {name} this week?",
+  "@projects.agentPrompt.releasePromptNamed": {
+    "description": "Suggested question to the AI agent. {name} is a repository name."
+  },
+  "projects.agentPrompt.tasksPrompt": "Summarize the open tasks and flag anything urgent.",
+  "@projects.agentPrompt.tasksPrompt": {
+    "description": "Suggested question to the AI agent; sent as the user's message."
+  },
+  "projects.agentPrompt.activityPrompt": "Summarize recent repository activity.",
+  "@projects.agentPrompt.activityPrompt": {
+    "description": "Suggested question to the AI agent; sent as the user's message."
+  },
+  "projects.agentPrompt.activityPromptNamed": "Summarize recent activity in {name}.",
+  "@projects.agentPrompt.activityPromptNamed": {
+    "description": "Suggested question to the AI agent. {name} is a repository name."
+  },
+  "projects.agentPrompt.replyPlaceholder": "Reply to {name}…",
+  "@projects.agentPrompt.replyPlaceholder": {
+    "description": "Placeholder of the message box in a Projects agent conversation. {name} is the AI agent name."
+  },
+  "projects.agentPrompt.placeholder": "Are we safe to release this week?",
+  "@projects.agentPrompt.placeholder": {
+    "description": "Example question shown as placeholder of the Projects agent message box."
+  },
+  "projects.agentPrompt.toggleFormatting": "Toggle formatting",
+  "@projects.agentPrompt.toggleFormatting": {
+    "description": "Screen-reader label of the text-formatting button in the Projects agent message box."
+  },
+  "projects.agentPrompt.formatting": "Formatting",
+  "@projects.agentPrompt.formatting": {
+    "description": "Tooltip of the text-formatting button in the Projects agent message box. Short."
+  },
+  "projects.agentPrompt.ask": "Ask",
+  "@projects.agentPrompt.ask": {
+    "description": "Send button of the Projects agent message box. Short."
+  },
+  "projects.agentPrompt.contextAppended": "Context appended to your first message",
+  "@projects.agentPrompt.contextAppended": {
+    "description": "Tooltip of the button that shows project details sent along with the first message to the AI agent."
+  },
+  "projects.agentPrompt.title": "Ask an agent about your projects",
+  "@projects.agentPrompt.title": {
+    "description": "Title of the Projects agent page."
+  },
+  "projects.agentPrompt.noAgents": "No agents available yet — create or start one from the Agents view to ask about your repositories.",
+  "@projects.agentPrompt.noAgents": {
+    "description": "Projects agent page when there is no AI agent. 'Agents view' is the app's Agents screen."
+  },
+  "projects.groupsList.unavailableName": "Group unavailable",
+  "@projects.groupsList.unavailableName": {
+    "description": "Name shown for a project group (chat channel) you cannot see. Short."
+  },
+  "projects.groupsList.loading": "Loading project groups",
+  "@projects.groupsList.loading": {
+    "description": "Loading label of the Groups section of the Projects screen."
+  },
+  "projects.groupsList.noMatches": "No matching groups",
+  "@projects.groupsList.noMatches": {
+    "description": "Groups section of the Projects screen when search finds nothing."
+  },
+  "projects.groupsList.noMatchesDescription": "Try a different search.",
+  "@projects.groupsList.noMatchesDescription": {
+    "description": "Groups section of the Projects screen when search finds nothing, under the title."
+  },
+  "projects.groupsList.emptyTitle": "No project groups yet",
+  "@projects.groupsList.emptyTitle": {
+    "description": "Empty Groups section of the Projects screen."
+  },
+  "projects.groupsList.emptyDescription": "Link a discussion group to a project or repository and it will appear here.",
+  "@projects.groupsList.emptyDescription": {
+    "description": "Empty Groups section of the Projects screen, under the title."
+  },
+  "projects.groupsList.projectGroup": "Project group",
+  "@projects.groupsList.projectGroup": {
+    "description": "Right-side label on a group row linked to the whole project rather than a repository. Short."
+  },
+  "projects.groupsList.memberCount": "{count, plural, one {# member} other {# members}}",
+  "@projects.groupsList.memberCount": {
+    "description": "Tooltip of the member count on a group row. Short."
+  },
+  "projects.groupsList.detailsUnavailable": "Group details are unavailable",
+  "@projects.groupsList.detailsUnavailable": {
+    "description": "Description on a row for a group you cannot see."
+  },
+  "projects.groupsList.openUnavailable": "Open unavailable group",
+  "@projects.groupsList.openUnavailable": {
+    "description": "Tooltip of a row for a group you cannot see."
+  },
+  "projects.list.noDescription": "No description provided.",
+  "@projects.list.noDescription": {
+    "description": "Card text for a task or code review with no description."
+  },
+  "projects.tasksList.viewTask": "View task",
+  "@projects.tasksList.viewTask": {
+    "description": "Menu item on a finished task row. Short."
+  },
+  "projects.tasksList.reviewTask": "Review task",
+  "@projects.tasksList.reviewTask": {
+    "description": "Menu item on a task row that is in review. Short."
+  },
+  "projects.tasksList.triageTask": "Triage task",
+  "@projects.tasksList.triageTask": {
+    "description": "Menu item on a task row waiting to be sorted (triage). Short."
+  },
+  "projects.tasksList.openTask": "Open task",
+  "@projects.tasksList.openTask": {
+    "description": "Menu item on a task row. Short."
+  },
+  "projects.tasksList.viewItem": "View task {title}",
+  "@projects.tasksList.viewItem": {
+    "description": "Screen-reader label of a task card. {title} is the task title."
+  },
+  "projects.tasksList.openItem": "Open task {title}",
+  "@projects.tasksList.openItem": {
+    "description": "Tooltip of a task row. {title} is the task title."
+  },
+  "projects.tasksList.empty": "No tasks yet.",
+  "@projects.tasksList.empty": {
+    "description": "Empty task list on the Projects screen."
+  },
+  "projects.tasksList.loading": "Loading tasks",
+  "@projects.tasksList.loading": {
+    "description": "Loading label of the task list on the Projects screen."
+  },
+  "projects.tasksList.errorTitle": "Could not load tasks",
+  "@projects.tasksList.errorTitle": {
+    "description": "Task list on the Projects screen when loading fails."
+  },
+  "projects.reviewsList.viewDraft": "View draft",
+  "@projects.reviewsList.viewDraft": {
+    "description": "Menu item on a draft code review row. Short."
+  },
+  "projects.reviewsList.viewMerge": "View merge",
+  "@projects.reviewsList.viewMerge": {
+    "description": "Menu item on a merged code review row. Short."
+  },
+  "projects.reviewsList.viewClosed": "View closed",
+  "@projects.reviewsList.viewClosed": {
+    "description": "Menu item on a closed code review row. Short."
+  },
+  "projects.reviewsList.openReview": "Open review",
+  "@projects.reviewsList.openReview": {
+    "description": "Menu item on a code review row. Short."
+  },
+  "projects.reviewsList.viewItem": "View review {title}",
+  "@projects.reviewsList.viewItem": {
+    "description": "Screen-reader label of a code review card. {title} is the review title."
+  },
+  "projects.reviewsList.openItem": "Open review {title}",
+  "@projects.reviewsList.openItem": {
+    "description": "Tooltip of a code review row. {title} is the review title."
+  },
+  "projects.reviewsList.empty": "No reviews yet",
+  "@projects.reviewsList.empty": {
+    "description": "Empty code review list on the Projects screen."
+  },
+  "projects.reviewsList.loading": "Loading reviews",
+  "@projects.reviewsList.loading": {
+    "description": "Loading label of the code review list on the Projects screen."
+  },
+  "projects.reviewsList.errorTitle": "Could not load reviews",
+  "@projects.reviewsList.errorTitle": {
+    "description": "Code review list on the Projects screen when loading fails."
+  },
+  "projects.activity.createdRepository": "<actor></actor> created the repository <project></project>",
+  "@projects.activity.createdRepository": {
+    "description": "Project activity feed line. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags; reorder freely."
+  },
+  "projects.activity.pushedCommit": "<actor></actor> pushed a commit to <project></project>",
+  "@projects.activity.pushedCommit": {
+    "description": "Project activity feed line. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags; reorder freely."
+  },
+  "projects.activity.openedReview": "<actor></actor> opened a review in <project></project>",
+  "@projects.activity.openedReview": {
+    "description": "Project activity feed line about a code review. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.updatedReview": "<actor></actor> updated a review in <project></project>",
+  "@projects.activity.updatedReview": {
+    "description": "Project activity feed line about a code review. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.approvedReview": "<actor></actor> approved a review in <project></project>",
+  "@projects.activity.approvedReview": {
+    "description": "Project activity feed line about a code review. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.requestedChanges": "<actor></actor> requested changes to a review in <project></project>",
+  "@projects.activity.requestedChanges": {
+    "description": "Project activity feed line about a code review. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.requestedReview": "<actor></actor> requested review in <project></project>",
+  "@projects.activity.requestedReview": {
+    "description": "Project activity feed line: someone asked others to review code. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.commentedReview": "<actor></actor> commented on a review in <project></project>",
+  "@projects.activity.commentedReview": {
+    "description": "Project activity feed line about a code review. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.createdTask": "<actor></actor> created a task in <project></project>",
+  "@projects.activity.createdTask": {
+    "description": "Project activity feed line. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.commentedTask": "<actor></actor> commented on a task in <project></project>",
+  "@projects.activity.commentedTask": {
+    "description": "Project activity feed line. <actor></actor> becomes a person's name, <project></project> a project name. Keep the tags."
+  },
+  "projects.activity.thisWeek": "This week",
+  "@projects.activity.thisWeek": {
+    "description": "Date group heading in the project activity feed. Short."
+  },
+  "projects.activity.lastWeek": "Last week",
+  "@projects.activity.lastWeek": {
+    "description": "Date group heading in the project activity feed. Short."
+  },
+  "projects.activity.earlier": "Earlier",
+  "@projects.activity.earlier": {
+    "description": "Date group heading in the project activity feed for older items. Short."
+  },
+  "projects.activity.approved": "Approved",
+  "@projects.activity.approved": {
+    "description": "Badge on an activity item where code review was approved. Short."
+  },
+  "projects.activity.changesRequested": "Changes requested",
+  "@projects.activity.changesRequested": {
+    "description": "Badge on an activity item where a reviewer asked for code changes. Short."
+  },
+  "projects.activity.someone": "Someone",
+  "@projects.activity.someone": {
+    "description": "Shown instead of a name in the activity feed when the person is unknown. Short."
+  },
+  "projects.activity.openItem": "Open {title} in {project}",
+  "@projects.activity.openItem": {
+    "description": "Screen-reader label of an activity card. {title} is a task, review or commit title; {project} a project name."
+  },
+  "projects.activity.loading": "Loading project activity",
+  "@projects.activity.loading": {
+    "description": "Loading label of the project activity feed."
+  },
+  "projects.activity.noMatches": "No matching activity",
+  "@projects.activity.noMatches": {
+    "description": "Project activity feed when search finds nothing."
+  },
+  "projects.activity.empty": "No project activity yet",
+  "@projects.activity.empty": {
+    "description": "Empty project activity feed."
+  },
+  "projects.activity.emptyDescription": "Commits, reviews, review decisions, and tasks will appear here.",
+  "@projects.activity.emptyDescription": {
+    "description": "Empty project activity feed, under the title."
+  },
+  "projects.overviewItems.mine": "Mine",
+  "@projects.overviewItems.mine": {
+    "description": "Group heading on the Projects screen for projects or repositories you own. Short."
+  },
+  "projects.overviewItems.otherProjects": "Other projects",
+  "@projects.overviewItems.otherProjects": {
+    "description": "Group heading on the Projects screen for projects owned by others. Short."
+  },
+  "projects.overviewItems.otherRepositories": "Other repositories",
+  "@projects.overviewItems.otherRepositories": {
+    "description": "Group heading on the Projects screen for repositories owned by others. Short."
+  },
+  "projects.overviewPanel.title": "Projects Activity",
+  "@projects.overviewPanel.title": {
+    "description": "Heading at the top of the Projects screen."
+  },
+  "projects.toolbar.layout": "Project layout",
+  "@projects.toolbar.layout": {
+    "description": "Screen-reader name of the grid/list switch on the Projects screen."
+  },
+  "projects.toolbar.gridLayout": "Grid layout",
+  "@projects.toolbar.gridLayout": {
+    "description": "Screen-reader label of the grid view button on the Projects screen."
+  },
+  "projects.toolbar.listLayout": "List layout",
+  "@projects.toolbar.listLayout": {
+    "description": "Screen-reader label of the list view button on the Projects screen."
+  },
+  "projects.toolbar.ownerFilter": "Project owner filter",
+  "@projects.toolbar.ownerFilter": {
+    "description": "Screen-reader name of the filter tabs row on the Projects screen."
+  },
+  "projects.overviewContext.createProject": "Create project",
+  "@projects.overviewContext.createProject": {
+    "description": "Tooltip of the add button in the Projects side panel. Short."
+  },
+  "projects.overviewContext.addRepository": "Add repository",
+  "@projects.overviewContext.addRepository": {
+    "description": "Tooltip of the add button in the Projects side panel, Repositories section. Short."
+  },
+  "projects.overviewContext.repositoryActivity": "Repository activity",
+  "@projects.overviewContext.repositoryActivity": {
+    "description": "Heading of the counts block in the Projects side panel, Repositories section. Short."
+  },
+  "projects.overviewContext.reviewActivity": "Review activity",
+  "@projects.overviewContext.reviewActivity": {
+    "description": "Heading of the counts block in the Projects side panel, Reviews section. Short."
+  },
+  "projects.overviewContext.details": "Details",
+  "@projects.overviewContext.details": {
+    "description": "Heading of the counts block in the Projects side panel. Short."
+  },
+  "projects.overviewContext.activeTasks": "Active tasks",
+  "@projects.overviewContext.activeTasks": {
+    "description": "Count label in the Projects side panel: tasks not done yet. Short."
+  },
+  "projects.overviewContext.openReviews": "Open reviews",
+  "@projects.overviewContext.openReviews": {
+    "description": "Count label in the Projects side panel: code reviews still open. Short."
+  },
+  "projects.overviewContext.active": "Active",
+  "@projects.overviewContext.active": {
+    "description": "Count label in the Projects side panel, Tasks section: tasks not done yet. Short."
+  },
+  "projects.overviewContext.completed": "Completed",
+  "@projects.overviewContext.completed": {
+    "description": "Count label in the Projects side panel, Tasks section: finished tasks. Short."
+  },
+  "projects.overviewContext.open": "Open",
+  "@projects.overviewContext.open": {
+    "description": "Count label in the Projects side panel, Reviews section: open code reviews. Short."
+  },
+  "projects.overviewContext.merged": "Merged",
+  "@projects.overviewContext.merged": {
+    "description": "Count label in the Projects side panel, Reviews section: merged code reviews. Short."
+  },
+  "projects.view.loadFailed": "Failed to load projects",
+  "@projects.view.loadFailed": {
+    "description": "Projects screen when the project list cannot be loaded."
+  },
+  "projects.view.noMatchingReviews": "No matching reviews",
+  "@projects.view.noMatchingReviews": {
+    "description": "Code review list on the Projects screen when search finds nothing."
+  },
+  "projects.view.noMatchingTasks": "No matching tasks",
+  "@projects.view.noMatchingTasks": {
+    "description": "Task list on the Projects screen when search finds nothing."
+  },
+  "projects.reviewMeta.defaultBranch": "default branch",
+  "@projects.reviewMeta.defaultBranch": {
+    "description": "Shown instead of a branch name in code review details when the target branch is unknown. Lowercase in English. Short."
+  },
+  "projects.reviewMeta.unknownBranch": "unknown branch",
+  "@projects.reviewMeta.unknownBranch": {
+    "description": "Shown instead of a branch name in code review details when the source branch is unknown. Lowercase in English. Short."
+  },
+  "projects.reviewMeta.branch": "Branch",
+  "@projects.reviewMeta.branch": {
+    "description": "Row label in code review details (git branches being merged). Short."
+  },
+  "projects.reviewActions.convertedToDraft": "Converted to draft.",
+  "@projects.reviewActions.convertedToDraft": {
+    "description": "Toast after turning a code review back into a draft."
+  },
+  "projects.reviewActions.closed": "Review closed.",
+  "@projects.reviewActions.closed": {
+    "description": "Toast after closing a code review."
+  },
+  "projects.reviewActions.reopened": "Review reopened.",
+  "@projects.reviewActions.reopened": {
+    "description": "Toast after reopening a closed code review."
+  },
+  "projects.reviewActions.markedReady": "Marked as ready for review.",
+  "@projects.reviewActions.markedReady": {
+    "description": "Toast after marking a draft code review as ready."
+  },
+  "projects.reviewActions.statusFailed": "Failed to update status.",
+  "@projects.reviewActions.statusFailed": {
+    "description": "Toast when changing a code review's status fails."
+  },
+  "projects.reviewActions.approved": "Review approved.",
+  "@projects.reviewActions.approved": {
+    "description": "Toast after approving a code review."
+  },
+  "projects.reviewActions.approveFailed": "Failed to approve.",
+  "@projects.reviewActions.approveFailed": {
+    "description": "Toast when approving a code review fails."
+  },
+  "projects.reviewActions.approve": "Approve",
+  "@projects.reviewActions.approve": {
+    "description": "Button that approves a code review. Short."
+  },
+  "projects.reviewActions.readyForReview": "Ready for review",
+  "@projects.reviewActions.readyForReview": {
+    "description": "Button that marks a draft code review as ready. Short."
+  },
+  "projects.reviewActions.reopen": "Reopen review",
+  "@projects.reviewActions.reopen": {
+    "description": "Button that reopens a closed code review. Short."
+  },
+  "projects.reviewActions.more": "More review actions",
+  "@projects.reviewActions.more": {
+    "description": "Screen-reader label of the '...' menu button of a code review."
+  },
+  "projects.reviewActions.convertToDraft": "Convert to draft",
+  "@projects.reviewActions.convertToDraft": {
+    "description": "Menu item that turns a code review back into a draft. Short."
+  },
+  "projects.reviewActions.close": "Close review",
+  "@projects.reviewActions.close": {
+    "description": "Menu item that closes a code review without merging. Short."
+  },
+  "projects.reviewActions.approveTitle": "Approve review",
+  "@projects.reviewActions.approveTitle": {
+    "description": "Title of the dialog for approving a code review."
+  },
+  "projects.reviewActions.approveDescription": "Add an optional summary for the author and other reviewers.",
+  "@projects.reviewActions.approveDescription": {
+    "description": "Text under the title of the approve-review dialog."
+  },
+  "projects.reviewActions.approvalSummary": "Approval summary",
+  "@projects.reviewActions.approvalSummary": {
+    "description": "Screen-reader label of the text box in the approve-review dialog."
+  },
+  "projects.reviewActions.approvalPlaceholder": "What looks good?",
+  "@projects.reviewActions.approvalPlaceholder": {
+    "description": "Placeholder of the text box in the approve-review dialog."
+  },
+  "projects.reviewers.noCommit": "No commit reported",
+  "@projects.reviewers.noCommit": {
+    "description": "Review status in code review details when no code commit is attached yet. Short."
+  },
+  "projects.reviewers.rereviewNeeded": "Re-review needed",
+  "@projects.reviewers.rereviewNeeded": {
+    "description": "Review status: the code changed after an earlier review, so it needs reviewing again. Short."
+  },
+  "projects.reviewers.approvedCount": "{approved} of {total} approved",
+  "@projects.reviewers.approvedCount": {
+    "description": "Review status: how many requested reviewers approved. Short."
+  },
+  "projects.reviewers.awaiting": "Awaiting review",
+  "@projects.reviewers.awaiting": {
+    "description": "Review status: reviewers were asked but have not answered. Short."
+  },
+  "projects.reviewers.none": "No reviewers",
+  "@projects.reviewers.none": {
+    "description": "Review status when nobody was asked to review. Short."
+  },
+  "projects.reviewers.requested": "Review requested.",
+  "@projects.reviewers.requested": {
+    "description": "Toast after asking someone to review code."
+  },
+  "projects.reviewers.requestFailed": "Failed to request review.",
+  "@projects.reviewers.requestFailed": {
+    "description": "Toast when asking someone to review code fails."
+  },
+  "projects.reviewers.addReviewer": "Add Reviewer",
+  "@projects.reviewers.addReviewer": {
+    "description": "Button in code review details that asks someone to review. Short."
+  },
+  "projects.reviewers.dialogTitle": "Add reviewer",
+  "@projects.reviewers.dialogTitle": {
+    "description": "Title of the dialog for choosing a code reviewer."
+  },
+  "projects.reviewers.dialogDescription": "Choose a person or agent to review these changes.",
+  "@projects.reviewers.dialogDescription": {
+    "description": "Text under the title of the add-reviewer dialog. 'Agent' means an AI agent."
+  },
+  "projects.reviewers.searchPlaceholder": "Search people and agents",
+  "@projects.reviewers.searchPlaceholder": {
+    "description": "Placeholder of the search box in the add-reviewer dialog."
+  },
+  "projects.reviewers.searching": "Searching…",
+  "@projects.reviewers.searching": {
+    "description": "Shown while searching in the add-reviewer dialog. Short."
+  },
+  "projects.reviewers.noMatches": "No matching people or agents.",
+  "@projects.reviewers.noMatches": {
+    "description": "Add-reviewer dialog when search finds nobody."
+  },
+  "projects.reviewers.label": "Reviewers",
+  "@projects.reviewers.label": {
+    "description": "Row label in code review details. Short."
+  },
+  "projects.reviewers.approvedBy": "Approved by {name}",
+  "@projects.reviewers.approvedBy": {
+    "description": "Tooltip on a reviewer name in code review details."
+  },
+  "projects.reviewers.changesRequestedBy": "Changes requested by {name}",
+  "@projects.reviewers.changesRequestedBy": {
+    "description": "Tooltip on a reviewer name in code review details: they asked for code changes."
+  },
+  "projects.reviewers.rereviewFrom": "Re-review needed from {name}",
+  "@projects.reviewers.rereviewFrom": {
+    "description": "Tooltip on a reviewer name: the code changed after their review."
+  },
+  "projects.reviewers.awaitingFrom": "Awaiting review from {name}",
+  "@projects.reviewers.awaitingFrom": {
+    "description": "Tooltip on a reviewer name: they have not reviewed yet."
+  },
+  "projects.reviewers.earlierDecision": "Earlier decision applies to another commit",
+  "@projects.reviewers.earlierDecision": {
+    "description": "Note in code review details: a review was given for an older version of the code."
+  },
+  "projects.repositoryCards.kuzzHosted": "Kuzz-hosted repository",
+  "@projects.repositoryCards.kuzzHosted": {
+    "description": "Tooltip of the icon on a repository card when its code is stored on Kuzz."
+  },
+  "projects.repositoryCards.externalHost": "Git data hosted on {host}",
+  "@projects.repositoryCards.externalHost": {
+    "description": "Tooltip of the icon on a repository card. {host} is a site like 'github.com'."
+  },
+  "projects.repositoryCards.host": "Repository host",
+  "@projects.repositoryCards.host": {
+    "description": "Tooltip of the icon on a repository card when the host is unknown. Short."
+  },
+  "projects.repositoryCards.view": "View {name}",
+  "@projects.repositoryCards.view": {
+    "description": "Screen-reader label of a repository card. {name} is the repository name."
+  },
+  "projects.repositoryCards.defaultDescription": "A repository in this project.",
+  "@projects.repositoryCards.defaultDescription": {
+    "description": "Repository card text when the repository has no description."
+  },
+  "projects.contextDetails.comments": "Comments",
+  "@projects.contextDetails.comments": {
+    "description": "Count label in the side panel of a task. Short."
+  },
+  "projects.contextDetails.unknownBranch": "Unknown branch",
+  "@projects.contextDetails.unknownBranch": {
+    "description": "Shown instead of a branch name in the side panel of a code review. Short."
+  },
+  "projects.contextDetails.defaultBranch": "Default branch",
+  "@projects.contextDetails.defaultBranch": {
+    "description": "Shown instead of a branch name in the side panel of a code review when the target is the main branch. Short."
+  },
+  "projects.contextDetails.approvals": "Approvals",
+  "@projects.contextDetails.approvals": {
+    "description": "Count label in the side panel of a code review. Short."
+  },
+  "projects.latestCommitRow.open": "Open commit {hash}",
+  "@projects.latestCommitRow.open": {
+    "description": "Screen-reader label of the latest-commit row in a repository file list. {hash} is a short commit ID."
   }
 }

@@ -9,6 +9,7 @@ import type {
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { pullRequestStatusLabel } from "@/features/projects/lib/projectStatusLabels";
 import { CopyCommitHashButton } from "./ProjectCommitCopyButton";
 import {
   ProjectDetailMetaList,
@@ -16,6 +17,7 @@ import {
   ProjectDetailMetaRow,
 } from "./ProjectDetailMeta";
 import { PullRequestReviewersRow } from "./PullRequestReviewersRow";
+import { useT } from "@/shared/i18n";
 
 function statusClassName(status: ProjectPullRequest["status"]) {
   if (status === "Closed") return "text-destructive";
@@ -36,10 +38,14 @@ export function PullRequestMetaHeader({
   project: Project;
   pullRequest: ProjectPullRequest;
 }) {
+  const t = useT();
   const identityQuery = useIdentityQuery();
   const targetBranch =
-    pullRequest.targetBranch || project.defaultBranch || "default branch";
-  const sourceBranch = pullRequest.branchName || "unknown branch";
+    pullRequest.targetBranch ||
+    project.defaultBranch ||
+    t("projects.reviewMeta.defaultBranch");
+  const sourceBranch =
+    pullRequest.branchName || t("projects.reviewMeta.unknownBranch");
   const labels = pullRequest.labels.filter(
     (label) => label.toLowerCase() !== "draft",
   );
@@ -71,7 +77,10 @@ export function PullRequestMetaHeader({
 
   return (
     <ProjectDetailMetaList>
-      <ProjectDetailMetaRow icon={GitBranch} label="Branch">
+      <ProjectDetailMetaRow
+        icon={GitBranch}
+        label={t("projects.reviewMeta.branch")}
+      >
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <p className="flex min-w-0 items-center gap-1.5 overflow-hidden">
             <span className="truncate text-foreground">{sourceBranch}</span>
@@ -121,13 +130,16 @@ export function PullRequestMetaHeader({
         pullRequest={pullRequest}
         signAsManagedOwner={isManagedAgentOwner && !isOwner}
       />
-      <ProjectDetailMetaRow icon={StatusIcon} label="Status">
+      <ProjectDetailMetaRow
+        icon={StatusIcon}
+        label={t("projects.issues.status")}
+      >
         <span className={`font-medium ${statusClassName(pullRequest.status)}`}>
-          {pullRequest.status}
+          {pullRequestStatusLabel(pullRequest.status)}
         </span>
       </ProjectDetailMetaRow>
       {labels.length > 0 ? (
-        <ProjectDetailMetaRow icon={Tag} label="Labels">
+        <ProjectDetailMetaRow icon={Tag} label={t("projects.issues.labels")}>
           <ProjectDetailMetaPills labels={labels} />
         </ProjectDetailMetaRow>
       ) : null}

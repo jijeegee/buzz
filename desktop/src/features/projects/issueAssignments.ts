@@ -15,6 +15,7 @@ import {
   nextProjectIssueCommentCreatedAt,
   type ProjectIssue,
 } from "./projectIssues.mjs";
+import { t } from "@/shared/i18n";
 
 function nextAssignmentOperationCreatedAt(
   issue: ProjectIssue,
@@ -33,7 +34,7 @@ function nextAssignmentOperationCreatedAt(
 function normalizedAssigneeLabel(label: string) {
   const normalized = label.trim();
   if (normalized.length === 0 || Array.from(normalized).length > 128) {
-    throw new Error("Assignee label must be between 1 and 128 characters.");
+    throw new Error(t("projects.issueAssignments.labelLength"));
   }
   return normalized;
 }
@@ -60,7 +61,7 @@ async function writeProjectIssueAssignment({
   project: Project;
 }): Promise<void> {
   if (assignees.length === 0) {
-    throw new Error("Select at least one assignee.");
+    throw new Error(t("projects.issueAssignments.selectAssignee"));
   }
   const normalizedLabel = normalizedAssigneeLabel(assigneeLabel);
   const assigneePubkeys = [
@@ -113,8 +114,12 @@ async function writeProjectIssueAssignment({
 
   await relayClient.publishEvent(
     event,
-    `Timed out ${operation}ing task.`,
-    `Failed to ${operation} task.`,
+    isAssignment
+      ? t("projects.issueAssignments.assignTimedOut")
+      : t("projects.issueAssignments.unassignTimedOut"),
+    isAssignment
+      ? t("projects.issueAssignments.assignFailed")
+      : t("projects.issueAssignments.unassignFailed"),
   );
 }
 
@@ -143,7 +148,7 @@ function useProjectIssueAssignmentMutation(
 
   return useMutation({
     mutationFn: (input: IssueAssignmentMutationInput) => {
-      if (!project) throw new Error("No project selected.");
+      if (!project) throw new Error(t("projects.errors.noProjectSelected"));
       return writeProjectIssueAssignment({
         ...input,
         operation,

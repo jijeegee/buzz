@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 export const PROJECT_HOME_WORKSPACE_SHEET_TABS = [
   "issues",
   "prs",
@@ -18,18 +19,19 @@ export function isProjectHomeWorkspaceSheetTab(
   );
 }
 
-const WORKSPACE_SHEET_TITLES: Record<ProjectHomeWorkspaceSheetTab, string> = {
-  commits: "Commits",
-  contributors: "People",
-  files: "Files",
-  issues: "Tasks",
-  prs: "Reviews",
-};
+const WORKSPACE_SHEET_TITLES: Record<ProjectHomeWorkspaceSheetTab, MessageKey> =
+  {
+    commits: "projects.workspaceSheet.commits",
+    contributors: "projects.workspaceSheet.people",
+    files: "projects.workspaceSheet.files",
+    issues: "projects.workspaceSheet.tasks",
+    prs: "projects.workspaceSheet.reviews",
+  };
 
 export function projectHomeWorkspaceSheetTitle(
   tab: ProjectHomeWorkspaceSheetTab,
 ): string {
-  return WORKSPACE_SHEET_TITLES[tab];
+  return t(WORKSPACE_SHEET_TITLES[tab]);
 }
 
 /** Repository workspace tab to open when expanding a home-channel sheet. */

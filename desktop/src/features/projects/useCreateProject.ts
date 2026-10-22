@@ -24,6 +24,7 @@ import {
 import { markProjectDataAuthoritative } from "@/features/projects/projectSnapshot";
 import type { Channel } from "@/shared/api/types";
 import { getCachedRelayOrigin } from "@/shared/lib/mediaUrl";
+import { t } from "@/shared/i18n";
 
 export type { CreateProjectInput, CreateProjectResult };
 
@@ -78,9 +79,7 @@ export function useCreateProjectMutation() {
             project,
           });
           if (!applied) {
-            toast.warning(
-              "Project created, but its project-home canvas could not be added.",
-            );
+            toast.warning(t("projects.useCreateProject.canvasFailed"));
           }
         } else if (input.templateId) {
           await applyCanvas(input.templateId, channel.id, channel.name);

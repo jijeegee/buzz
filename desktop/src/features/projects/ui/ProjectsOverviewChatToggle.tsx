@@ -2,6 +2,7 @@ import { MessageCircle } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 export function ProjectsOverviewChatToggle({
   active,
@@ -12,7 +13,8 @@ export function ProjectsOverviewChatToggle({
   onToggle: () => void;
   sectionTitle: string;
 }) {
-  const label = `Chat with an agent about ${sectionTitle}`;
+  const t = useT();
+  const label = t("projects.overviewChat.toggle", { section: sectionTitle });
 
   return (
     <Button

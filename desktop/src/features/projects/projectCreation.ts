@@ -3,6 +3,7 @@ import {
   KIND_REPO_ANNOUNCEMENT,
 } from "@/shared/constants/kinds";
 import { isValidProjectChannelId } from "./projectModels";
+import { t } from "@/shared/i18n";
 
 export type ProjectEventTemplate = {
   kind: number;
@@ -89,27 +90,27 @@ function normalizeProjectAnnouncementInput({
 } {
   const normalizedName = name.trim();
   if (!normalizedName) {
-    throw new Error("Project name is required.");
+    throw new Error(t("projects.creation.nameRequired"));
   }
   if (new TextEncoder().encode(normalizedName).byteLength > 256) {
-    throw new Error("Project name must not exceed 256 bytes.");
+    throw new Error(t("projects.creation.nameTooLong"));
   }
   const dtag = projectDtagFromName(normalizedName);
   if (!dtag) {
-    throw new Error("Project name must include letters or numbers.");
+    throw new Error(t("projects.creation.nameNeedsLetters"));
   }
   const normalizedOwner = ownerPubkey.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(normalizedOwner)) {
-    throw new Error("Couldn't create the project.");
+    throw new Error(t("projects.creation.failed"));
   }
 
   const normalizedDescription = description?.trim() ?? "";
   if (new TextEncoder().encode(normalizedDescription).byteLength > 2_048) {
-    throw new Error("Project description must not exceed 2,048 bytes.");
+    throw new Error(t("projects.creation.descriptionTooLong"));
   }
   const normalizedProjectChannelId = projectChannelId.trim();
   if (!isValidProjectChannelId(normalizedProjectChannelId)) {
-    throw new Error("Project group is invalid.");
+    throw new Error(t("projects.creation.groupInvalid"));
   }
 
   return {
@@ -150,14 +151,14 @@ export function buildProjectAnnouncementTemplate({
   });
 
   if (new Set(repositoryAddresses).size !== repositoryAddresses.length) {
-    throw new Error("A project cannot contain duplicate repositories.");
+    throw new Error(t("projects.creation.duplicateRepositories"));
   }
   if (
     repositoryAddresses.some(
       (address) => !/^30617:[0-9a-f]{64}:.+$/.test(address),
     )
   ) {
-    throw new Error("Repository address is invalid.");
+    throw new Error(t("projects.creation.repositoryAddressInvalid"));
   }
 
   const projectTags: string[][] = [

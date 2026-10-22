@@ -57,7 +57,8 @@ import {
 import { ProjectWorkItemGroup } from "./ProjectWorkItemGroup";
 import { ProjectWorkItemRow } from "./ProjectWorkItemRow";
 import { ProjectPanelState } from "./ProjectPanelState";
-import { formatLocale } from "@/shared/i18n";
+import { issueStatusLabel } from "@/features/projects/lib/projectStatusLabels";
+import { formatLocale, useT } from "@/shared/i18n";
 
 export function issueStatusClassName(status: ProjectIssue["status"]) {
   if (status === "Triage" || status === "In Progress") return "text-amber-500";
@@ -173,12 +174,13 @@ function IssueRow({
   const authorProfile = profiles?.[normalizePubkey(issue.author)];
   const authorLabel = resolveUserLabel({ profiles, pubkey: issue.author });
   const status = issueStatusVisual(issue.status);
+  const t = useT();
 
   return (
     <ProjectWorkItemRow
       eventId={issue.id}
       identifier={`#${issue.id.slice(0, 8)}`}
-      identifierTitle="View task"
+      identifierTitle={t("projects.issues.viewTask")}
       onOpen={onOpen}
       selection={{
         item: issueSelectionItem(project, issue),
@@ -186,7 +188,7 @@ function IssueRow({
       }}
       statusIcon={
         <ProjectStatusProgressIcon
-          aria-label={issue.status}
+          aria-label={issueStatusLabel(issue.status)}
           className={`h-3.5 w-3.5 shrink-0 ${status.className}`}
           state={status.progress}
         />
@@ -205,7 +207,7 @@ function IssueRow({
             <span
               className="flex h-5 w-5 shrink-0 items-center justify-center"
               data-testid="project-issue-creator"
-              title={`Created by ${authorLabel}`}
+              title={t("projects.issues.createdBy", { name: authorLabel })}
             >
               <ProfileIdentityButton
                 avatarClassName="shrink-0"
@@ -230,10 +232,12 @@ function IssueRow({
                 <span
                   className="flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-muted/35"
                   data-testid="project-issue-assignee-placeholder"
-                  title="Unassigned"
+                  title={t("projects.issues.unassigned")}
                 >
                   <User aria-hidden="true" className="h-3 w-3" />
-                  <span className="sr-only">Unassigned</span>
+                  <span className="sr-only">
+                    {t("projects.issues.unassigned")}
+                  </span>
                 </span>
               )}
             </span>
@@ -242,8 +246,10 @@ function IssueRow({
             <button
               aria-label={
                 issue.comments.length > 0
-                  ? `View ${issue.comments.length} comments`
-                  : "View comments"
+                  ? t("projects.issues.viewCommentCount", {
+                      count: issue.comments.length,
+                    })
+                  : t("projects.issues.viewComments")
               }
               className={`flex items-center gap-1 rounded-md text-xs hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
                 issue.comments.length > 0
@@ -283,6 +289,7 @@ export function ProjectIssueDetail({
   profiles?: UserProfileLookup;
   project: Project;
 }) {
+  const t = useT();
   const commentMutation = useCreateProjectIssueCommentMutation(project);
   const members = React.useMemo(
     () => issueMembers(project, issue, profiles),
@@ -301,15 +308,17 @@ export function ProjectIssueDetail({
           mediaTags,
           mentionPubkeys,
         });
-        toast.success("Comment posted.");
+        toast.success(t("projects.issues.commentPosted"));
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : "Failed to post comment.",
+          error instanceof Error
+            ? error.message
+            : t("projects.issues.commentFailed"),
         );
         throw error;
       }
     },
-    [commentMutation, issue],
+    [commentMutation, issue, t],
   );
   const identityQuery = useIdentityQuery();
   const status = issueStatusVisual(issue.status);
@@ -336,13 +345,13 @@ export function ProjectIssueDetail({
           </span>
           <ShareLinkButton
             className="ml-1 inline-flex h-7 w-7 align-text-bottom"
-            label="Copy task link"
+            label={t("projects.issues.copyLink")}
             link={issueShareLink(issue)}
             testId="project-issue-copy-link"
           />
         </h3>
         <p className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-muted-foreground">
-          <span>Task created</span>
+          <span>{t("projects.issues.taskCreated")}</span>
           <span
             className="shrink-0 whitespace-nowrap"
             title={new Date(issue.createdAt * 1_000).toLocaleString(
@@ -358,16 +367,25 @@ export function ProjectIssueDetail({
         </p>
       </header>
       <ProjectDetailMetaList>
-        <ProjectDetailMetaRow icon={status.icon} label="Status">
+        <ProjectDetailMetaRow
+          icon={status.icon}
+          label={t("projects.issues.status")}
+        >
           <span className={`font-medium ${status.className}`}>
-            {issue.status}
+            {issueStatusLabel(issue.status)}
           </span>
         </ProjectDetailMetaRow>
-        <ProjectDetailMetaRow icon={CircleDot} label="Category">
+        <ProjectDetailMetaRow
+          icon={CircleDot}
+          label={t("projects.createWorkItem.category")}
+        >
           {projectTaskCategoryLabel(issue.category)}
         </ProjectDetailMetaRow>
         {issue.assignees.length > 0 || viewer ? (
-          <ProjectDetailMetaRow icon={User} label="Assignees">
+          <ProjectDetailMetaRow
+            icon={User}
+            label={t("projects.issues.assignees")}
+          >
             <IssueAssigneesRow
               canAssignOthers={canAssignOthers}
               issue={issue}
@@ -379,20 +397,26 @@ export function ProjectIssueDetail({
           </ProjectDetailMetaRow>
         ) : null}
         {labels.length > 0 ? (
-          <ProjectDetailMetaRow icon={Tag} label="Labels">
+          <ProjectDetailMetaRow icon={Tag} label={t("projects.issues.labels")}>
             <ProjectDetailMetaPills labels={labels} />
           </ProjectDetailMetaRow>
         ) : null}
       </ProjectDetailMetaList>
       {issue.content ? (
-        <ProjectDetailSection defaultOpen title="Description">
+        <ProjectDetailSection
+          defaultOpen
+          title={t("projects.createWorkItem.descriptionLabel")}
+        >
           <ProjectRichContent content={issue.content} tags={issue.tags} />
         </ProjectDetailSection>
       ) : null}
-      <ProjectDetailSection defaultOpen title="Activity">
+      <ProjectDetailSection
+        defaultOpen
+        title={t("projects.sectionTitle.activity")}
+      >
         <div className="space-y-3">
           <DiscussedInChannels
-            entityLabel="this task"
+            entity="task"
             originChannelId={issue.channelId}
             originCreatedAt={issue.createdAt}
             originPubkey={issue.author}
@@ -416,7 +440,7 @@ export function ProjectIssueDetail({
           isSending={commentMutation.isPending}
           members={members}
           onSubmit={handleCommentSubmit}
-          placeholder="Add a comment…"
+          placeholder={t("projects.issues.commentPlaceholder")}
           profiles={profiles}
         />
       </div>
@@ -441,6 +465,7 @@ export function ProjectIssuesPanel({
   project: Project;
   selectedIssueId: string | null;
 }) {
+  const t = useT();
   const issuesQuery = useProjectIssuesQuery(
     issueItems === undefined ? project : null,
   );
@@ -452,7 +477,7 @@ export function ProjectIssuesPanel({
   const loadError = error ?? issuesQuery.error;
 
   if (loading) {
-    return <KuzzLoadingState label="Loading tasks" />;
+    return <KuzzLoadingState label={t("projects.issues.loading")} />;
   }
 
   if (resolvedItems.length === 0) {
@@ -460,13 +485,17 @@ export function ProjectIssuesPanel({
       <ProjectPanelState
         description={
           loadError
-            ? "Refresh the project and try again."
+            ? t("projects.issues.errorDescription")
             : issueItems
-              ? "Tasks created for this project's repositories will appear here."
-              : "Tasks created for this repository will appear here."
+              ? t("projects.issues.emptyProject")
+              : t("projects.issues.emptyRepository")
         }
         error={Boolean(loadError)}
-        title={loadError ? "Could not load tasks" : "No tasks yet"}
+        title={
+          loadError
+            ? t("projects.issues.errorTitle")
+            : t("projects.issues.emptyTitle")
+        }
       />
     );
   }
@@ -506,7 +535,7 @@ export function ProjectIssuesPanel({
               issueSelectionItem(itemProject, issue),
             )}
             key={status}
-            label={status}
+            label={issueStatusLabel(status)}
           >
             {items.map(({ issue, project: itemProject }) => (
               <IssueRow

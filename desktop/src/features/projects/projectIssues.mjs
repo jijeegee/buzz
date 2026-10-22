@@ -1,4 +1,5 @@
 import { sortEvents } from "../../shared/api/relayClientShared.ts";
+import { t } from "../../shared/i18n/intl.ts";
 import { projectTaskCategoryFromLabels } from "./projectTaskCategories.ts";
 
 // Issue assignment mirrors PR review requests (projectPullRequests.mjs):
@@ -193,7 +194,9 @@ export function eventToProjectIssue(
   const assignmentState = assignmentStateForIssue(issue, issueCommentEvents);
   const labels = getAllTags(issue, "t");
   const title =
-    getTag(issue, "subject") || issue.content.split("\n")[0] || "Untitled task";
+    getTag(issue, "subject") ||
+    issue.content.split("\n")[0] ||
+    t("projects.issues.untitledTask");
 
   return {
     id: issue.id,
@@ -257,10 +260,10 @@ export function buildGitIssueTags({
   }
   const subject = title.trim();
   if (!subject) {
-    throw new Error("Task title is required.");
+    throw new Error(t("projects.issues.titleRequired"));
   }
   if (subject.length > 256) {
-    throw new Error("Task title must be 256 characters or fewer.");
+    throw new Error(t("projects.issues.titleTooLong"));
   }
 
   const tags = [

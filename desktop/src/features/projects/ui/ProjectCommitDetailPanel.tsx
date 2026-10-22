@@ -16,7 +16,7 @@ import { ProjectDiffFilesPanel } from "./ProjectPullRequestFilesChangedPanel";
 import { ProjectOriginReference } from "./ProjectOriginReference";
 import { ProjectRichContent } from "./ProjectRichContent";
 import { ShareLinkButton } from "./ShareLinkButton";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, useT } from "@/shared/i18n";
 
 function commitDateLabel(timestamp: number) {
   return new Date(timestamp * 1_000).toLocaleString(formatLocale(), {
@@ -48,6 +48,7 @@ export function ProjectCommitDetailPanel({
   originChannelId?: string | null;
   project: Repository;
 }) {
+  const t = useT();
   const shortHash = commit?.shortHash ?? commitHash.slice(0, 7);
 
   return (
@@ -62,13 +63,13 @@ export function ProjectCommitDetailPanel({
             {commit?.subject ?? shortHash}{" "}
             <ShareLinkButton
               className="ml-0.5 inline-flex h-auto w-auto align-middle hover:bg-transparent"
-              label="Copy commit link"
+              label={t("projects.commitDetail.copyLink")}
               link={commitShareLink(project, commit?.hash ?? commitHash)}
               testId="project-commit-copy-link"
             />
           </h3>
           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-            <span>Committed</span>
+            <span>{t("projects.commitDetail.committed")}</span>
             {commit ? (
               <span
                 className="shrink-0 whitespace-nowrap"
@@ -84,7 +85,10 @@ export function ProjectCommitDetailPanel({
           </p>
         </header>
         <ProjectDetailMetaList>
-          <ProjectDetailMetaRow icon={Hash} label="Commit">
+          <ProjectDetailMetaRow
+            icon={Hash}
+            label={t("projects.commitDetail.commit")}
+          >
             <span className="inline-flex min-w-0 items-center gap-1 font-mono text-xs">
               {shortHash}
               <CopyCommitHashButton
@@ -94,7 +98,10 @@ export function ProjectCommitDetailPanel({
             </span>
           </ProjectDetailMetaRow>
           {commit?.authorName ? (
-            <ProjectDetailMetaRow icon={UserRound} label="Author">
+            <ProjectDetailMetaRow
+              icon={UserRound}
+              label={t("projects.commitDetail.author")}
+            >
               <span
                 className="min-w-0 truncate text-muted-foreground"
                 title={commit.authorEmail}
@@ -104,14 +111,20 @@ export function ProjectCommitDetailPanel({
             </ProjectDetailMetaRow>
           ) : null}
           {commit ? (
-            <ProjectDetailMetaRow icon={Calendar} label="Date">
+            <ProjectDetailMetaRow
+              icon={Calendar}
+              label={t("projects.commitDetail.date")}
+            >
               <span className="text-muted-foreground">
                 {commitDateLabel(commit.timestamp)}
               </span>
             </ProjectDetailMetaRow>
           ) : null}
           {diff ? (
-            <ProjectDetailMetaRow icon={GitCommitHorizontal} label="Changes">
+            <ProjectDetailMetaRow
+              icon={GitCommitHorizontal}
+              label={t("projects.commitDetail.changes")}
+            >
               <span className="flex items-center gap-1.5">
                 <span className="text-green-500">+{diff.additions}</span>
                 <span className="text-destructive">-{diff.deletions}</span>
@@ -120,7 +133,10 @@ export function ProjectCommitDetailPanel({
           ) : null}
         </ProjectDetailMetaList>
         {diff?.commitBody ? (
-          <ProjectDetailSection defaultOpen title="Description">
+          <ProjectDetailSection
+            defaultOpen
+            title={t("projects.createWorkItem.descriptionLabel")}
+          >
             <ProjectRichContent
               content={diff.commitBody}
               hardLineBreaks={false}
@@ -129,7 +145,7 @@ export function ProjectCommitDetailPanel({
         ) : null}
         <DiscussedInChannels
           className="mx-6 mb-4"
-          entityLabel="this commit"
+          entity="commit"
           query={commitDiscussionQuery({
             hash: commit?.hash ?? commitHash,
             shortHash: commit?.shortHash,
@@ -142,7 +158,7 @@ export function ProjectCommitDetailPanel({
         contentClassName="flex min-h-0 flex-1 flex-col"
         defaultOpen
         headerClassName="mx-auto max-w-3xl"
-        title="Files changed"
+        title={t("projects.commitDetail.filesChanged")}
       >
         {/* Full-bleed: cancel the section's inner padding so the file
             tree + diff grid spans the whole content column, and let it
@@ -154,7 +170,7 @@ export function ProjectCommitDetailPanel({
             diff={diff}
             embedded
             error={diffError}
-            headerLabel={`${commit?.subject ?? "Commit"} · ${shortHash}`}
+            headerLabel={`${commit?.subject ?? t("projects.commitDetail.commit")} · ${shortHash}`}
             isLoading={diffLoading}
             subjectLabel="commit"
           />

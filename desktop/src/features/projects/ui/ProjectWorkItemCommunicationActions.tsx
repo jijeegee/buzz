@@ -6,6 +6,7 @@ import { Button } from "@/shared/ui/button";
 import { PROJECT_CONTEXT_ACTION_BUTTON_CLASS } from "./projectContextActionStyles";
 import { ProjectSelectionDiscussAction } from "./ProjectSelectionDiscussAction";
 import { useProjectDiscussInChannel } from "./useProjectDiscussInChannel";
+import { useT } from "@/shared/i18n";
 
 export function ProjectWorkItemCommunicationActions({
   item,
@@ -14,6 +15,7 @@ export function ProjectWorkItemCommunicationActions({
   item: ProjectSelectionItem;
   onChatWithAgent: (items: ProjectSelectionItem[]) => void;
 }) {
+  const t = useT();
   const items = React.useMemo(() => [item], [item]);
   const discussInChannel = useProjectDiscussInChannel(items);
 
@@ -31,7 +33,7 @@ export function ProjectWorkItemCommunicationActions({
         variant="ghost"
       >
         <Bot className="h-3.5 w-3.5" />
-        Chat with an agent
+        {t("projects.selection.chatWithAgent")}
       </Button>
       <ProjectSelectionDiscussAction
         items={items}

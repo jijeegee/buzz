@@ -17,6 +17,7 @@ import {
 import { ProjectRepositoryManagement } from "./ProjectRepositoryManagement";
 import { RepositoryFilesPanel } from "./ProjectRepositoryPanel";
 import { useRepositoryFileContentSource } from "./useRepositoryFileContentSource";
+import { useT } from "@/shared/i18n";
 
 export function ProjectHomeCodebasePanel({
   identityPubkey,
@@ -41,6 +42,7 @@ export function ProjectHomeCodebasePanel({
   projects: Project[];
   repository: Repository | null;
 }) {
+  const t = useT();
   const repoStateQuery = useRepoStateQuery(repository);
   const defaultBranch = repository
     ? resolveProjectDefaultBranch(repository.defaultBranch, repoStateQuery.data)
@@ -70,7 +72,7 @@ export function ProjectHomeCodebasePanel({
         data-testid="project-home-codebase-empty"
       >
         <p className="text-sm text-muted-foreground">
-          Attach a repository to browse the file tree beside this group.
+          {t("projects.homeCodebase.empty")}
         </p>
         <ProjectRepositoryManagement
           identityPubkey={identityPubkey}

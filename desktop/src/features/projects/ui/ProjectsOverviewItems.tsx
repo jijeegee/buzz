@@ -39,6 +39,7 @@ import {
 } from "@/features/projects/ui/RepositoryCards";
 import { useIncrementalMount } from "@/shared/hooks/useIncrementalMount";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { useT } from "@/shared/i18n";
 
 const RESPONSIVE_CARD_GRID_CLASS =
   "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]";
@@ -141,6 +142,7 @@ export function ProjectsOverviewProjectItems({
   viewMode: ProjectsViewMode;
   visibleProjects: Project[];
 }) {
+  const t = useT();
   // One selection array shared by every row (was rebuilt per row per render —
   // O(n²) object churn that also defeated row memoization).
   const selectionRangeItems = React.useMemo(
@@ -198,13 +200,13 @@ export function ProjectsOverviewProjectItems({
       items: visibleProjects.filter((project) =>
         isProjectMine(project, currentPubkey),
       ),
-      title: "Mine",
+      title: t("projects.overviewItems.mine"),
     },
     {
       items: visibleProjects.filter(
         (project) => !isProjectMine(project, currentPubkey),
       ),
-      title: "Other projects",
+      title: t("projects.overviewItems.otherProjects"),
     },
   ].filter((group) => group.items.length > 0);
   if (viewMode === "grid") {
@@ -321,6 +323,7 @@ export function ProjectsOverviewRepositoryItems({
   viewMode: ProjectsViewMode;
   visibleRepositories: Array<{ project: Project; repository: Repository }>;
 }) {
+  const t = useT();
   // Shared, identity-stable selection array (see ProjectsOverviewProjectItems).
   const selectionRangeItems = React.useMemo(
     () =>
@@ -363,13 +366,13 @@ export function ProjectsOverviewRepositoryItems({
       items: visibleRepositories.filter(({ repository }) =>
         repositoryIsMine(repository, currentPubkey),
       ),
-      title: "Mine",
+      title: t("projects.overviewItems.mine"),
     },
     {
       items: visibleRepositories.filter(
         ({ repository }) => !repositoryIsMine(repository, currentPubkey),
       ),
-      title: "Other repositories",
+      title: t("projects.overviewItems.otherRepositories"),
     },
   ].filter((group) => group.items.length > 0);
   if (viewMode === "grid") {

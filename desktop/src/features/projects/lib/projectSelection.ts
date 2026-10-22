@@ -1,3 +1,4 @@
+import { type MessageKey, t } from "@/shared/i18n";
 /** Clustered overview selection that drives the context pod. */
 
 export type ProjectSelectionKind =
@@ -62,11 +63,29 @@ export function projectSelectionNoun(
   return count === 1 ? singular : plural;
 }
 
+const KIND_COUNT_KEYS: Record<ProjectSelectionKind, MessageKey> = {
+  channel: "projects.selection.channelCount",
+  commit: "projects.selection.commitCount",
+  project: "projects.selection.projectCount",
+  repository: "projects.selection.repositoryCount",
+  review: "projects.selection.reviewCount",
+  task: "projects.selection.taskCount",
+};
+
+const KIND_DISCUSS_KEYS: Record<ProjectSelectionKind, MessageKey> = {
+  channel: "projects.selection.discussChannel",
+  commit: "projects.selection.discussCommit",
+  project: "projects.selection.discussProject",
+  repository: "projects.selection.discussRepository",
+  review: "projects.selection.discussReview",
+  task: "projects.selection.discussTask",
+};
+
 export function projectSelectionTitle(items: ProjectSelectionItem[]) {
   if (items.length === 0) return "";
   const kind = items[0]?.kind;
   if (!kind) return "";
-  return `${items.length} ${projectSelectionNoun(kind, items.length)}`;
+  return t(KIND_COUNT_KEYS[kind], { count: items.length });
 }
 
 export function nextProjectSelection(
@@ -188,11 +207,7 @@ export function projectSelectionDiscussContent(items: ProjectSelectionItem[]) {
   if (items.length === 0) return "";
   const kind = items[0]?.kind;
   if (!kind) return "";
-  const noun = projectSelectionNoun(kind, items.length);
-  const heading =
-    items.length === 1
-      ? `Let's talk about this ${noun}:`
-      : `Let's talk about these ${noun}:`;
+  const heading = t(KIND_DISCUSS_KEYS[kind], { count: items.length });
   const links = projectSelectionShareLinks(items);
   const lines = links.length > 0 ? links : items.map((item) => item.title);
   return `${heading}\n\n${lines.join("\n")}`;
@@ -217,26 +232,26 @@ export function projectSelectionPresentation(
   const actions: ProjectSelectionAction[] = [
     {
       id: "chat-agent",
-      label: "Chat with an agent",
+      label: t("projects.selection.chatWithAgent"),
       testId: "projects-selection-chat-agent",
     },
   ];
   actions.push({
     id: "discuss",
-    label: "Discuss in a group",
+    label: t("projects.selection.discussInGroup"),
     testId: "projects-selection-discuss",
   });
   if (kind === "commit") {
     actions.push({
       id: "create-review",
-      label: items.length === 1 ? "Create review" : "Create reviews",
+      label: t("projects.selection.createReview", { count: items.length }),
       testId: "projects-selection-create-review",
     });
   }
   if (projectSelectionShareLinks(items).length > 0) {
     actions.push({
       id: "copy",
-      label: items.length === 1 ? "Copy link" : "Copy links",
+      label: t("projects.selection.copyLink", { count: items.length }),
       testId: "projects-selection-copy",
     });
   }

@@ -8,6 +8,7 @@ import {
 import { absorbStandaloneProjectRepositories } from "./lib/projectCollection";
 import { findProjectHomeByChannelId } from "./lib/projectHomeSelection";
 import { buildProjectReadModels, type Project } from "./projectModels";
+import { t } from "@/shared/i18n";
 
 const PROJECT_ENUMERATION_PAGE_SIZE = 500;
 
@@ -90,7 +91,7 @@ export async function enumerateProjectEvents(
       // either a larger pageSize constant or a relay-side deduplication pass.
       // TODO: add a telemetry event here so pathological relay states are
       // diagnosable before they reach users.
-      throw new Error("Couldn't load all projects. Try again.");
+      throw new Error(t("projects.enumeration.loadFailed"));
     }
     if (oldest <= 0) return [...eventsById.values()];
     until = oldest - 1;
@@ -192,13 +193,18 @@ export async function buildProjectsFromFetcher(
     (events) => ({ ok: true as const, events }),
     (error: unknown) => ({
       ok: false as const,
-      message: error instanceof Error ? error.message : "Unknown error",
+      message:
+        error instanceof Error
+          ? error.message
+          : t("projects.enumeration.unknownError"),
     }),
   );
 
   if (!tombstoneResult.ok) {
     throw new Error(
-      `Could not fetch project deletion records: ${tombstoneResult.message} — refresh to retry.`,
+      t("projects.enumeration.deletionRecordsFailed", {
+        error: tombstoneResult.message,
+      }),
     );
   }
 

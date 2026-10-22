@@ -13,6 +13,7 @@ import type {
 import { useProjectRepoHost } from "@/features/projects/useProjectRepoHost";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import { publishProjectPullRequestUpdate } from "./pullRequestMutations";
+import { t } from "@/shared/i18n";
 
 /** Local-vs-remote git sync status for a project checkout (ahead/behind
  * counts, push/pull availability). Polls gently — each check runs a
@@ -40,7 +41,8 @@ export function useProjectRepoSyncStatusQuery(
       selectedBaseBranch ?? "default",
     ],
     queryFn: () => {
-      if (!project?.cloneUrls[0]) throw new Error("No project selected.");
+      if (!project?.cloneUrls[0])
+        throw new Error(t("projects.errors.noProjectSelected"));
       return getProjectRepoSyncStatus({
         reposDir,
         projectDtag: project.dtag,
@@ -68,7 +70,8 @@ export function usePushProjectLocalRepositoryMutation(
 
   return useMutation({
     mutationFn: async () => {
-      if (!project?.cloneUrls[0]) throw new Error("No project selected.");
+      if (!project?.cloneUrls[0])
+        throw new Error(t("projects.errors.noProjectSelected"));
       const result = await pushProjectLocalRepository({
         reposDir,
         projectDtag: project.dtag,
@@ -99,7 +102,7 @@ export function usePushProjectLocalRepositoryMutation(
             error:
               error instanceof Error
                 ? error.message
-                : "The review update could not be published.",
+                : t("projects.repoSyncHooks.reviewUpdateFailed"),
           };
         }
       }
@@ -122,7 +125,8 @@ export function useCloneProjectRepositoryMutation(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => {
-      if (!project?.cloneUrls[0]) throw new Error("No project selected.");
+      if (!project?.cloneUrls[0])
+        throw new Error(t("projects.errors.noProjectSelected"));
       return cloneProjectRepository({
         reposDir,
         projectDtag: project.dtag,
@@ -157,7 +161,8 @@ export function usePullProjectLocalRepositoryMutation(
 
   return useMutation({
     mutationFn: () => {
-      if (!project?.cloneUrls[0]) throw new Error("No project selected.");
+      if (!project?.cloneUrls[0])
+        throw new Error(t("projects.errors.noProjectSelected"));
       return pullProjectLocalRepository({
         reposDir,
         projectDtag: project.dtag,

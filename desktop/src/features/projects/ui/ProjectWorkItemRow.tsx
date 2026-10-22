@@ -4,6 +4,7 @@ import type { ProjectSelectionItem } from "@/features/projects/lib/projectSelect
 import { useProjectSelection } from "@/features/projects/lib/useProjectSelection";
 import { cn } from "@/shared/lib/cn";
 import { ProjectEntitySelectControl } from "./ProjectEntityListRow";
+import { useT } from "@/shared/i18n";
 
 export function ProjectWorkItemRow({
   eventId,
@@ -33,6 +34,7 @@ export function ProjectWorkItemRow({
   title: string;
   trailing?: React.ReactNode;
 }) {
+  const t = useT();
   const projectSelection = useProjectSelection();
   const selected = Boolean(
     selection && projectSelection?.isSelected(selection.item.id),
@@ -73,7 +75,9 @@ export function ProjectWorkItemRow({
           >
             <ProjectEntitySelectControl
               checked={selected}
-              label={`Select ${selection.item.title}`}
+              label={t("projects.entityRow.selectItem", {
+                title: selection.item.title,
+              })}
               onToggle={({ shiftKey }) =>
                 projectSelection.toggle(selection.item, {
                   rangeItems: selection.rangeItems,

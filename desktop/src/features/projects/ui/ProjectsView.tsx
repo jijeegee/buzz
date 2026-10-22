@@ -104,11 +104,13 @@ import {
   useDeleteProjectHandler,
   useOpenProjectTerminalHandler,
 } from "./projectsViewWorkItems";
+import { useT } from "@/shared/i18n";
 
 const MANY_PROJECTS_THRESHOLD = 12;
 const PROJECTS_CONTEXT_POD_MIN_VIEWPORT_PX = 1024;
 
 export function ProjectsView() {
+  const t = useT();
   const { goProject } = useAppNavigation();
   const { activeCommunity } = useCommunities();
   const relayOrigin = useRelayOrigin();
@@ -550,13 +552,13 @@ export function ProjectsView() {
   if (projectsQuery.isError) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-        <p className="text-sm text-red-400">Failed to load projects</p>
+        <p className="text-sm text-red-400">{t("projects.view.loadFailed")}</p>
         <Button
           onClick={() => void projectsQuery.refetch()}
           size="sm"
           variant="outline"
         >
-          Retry
+          {t("common.retry")}
         </Button>
       </div>
     );
@@ -845,7 +847,7 @@ export function ProjectsView() {
                                   embedded={viewMode === "list"}
                                   emptyMessage={
                                     searchQuery.trim()
-                                      ? "No matching reviews"
+                                      ? t("projects.view.noMatchingReviews")
                                       : undefined
                                   }
                                   error={projectsWorkItemsQuery.error}
@@ -871,7 +873,7 @@ export function ProjectsView() {
                                   embedded={viewMode === "list"}
                                   emptyMessage={
                                     searchQuery.trim()
-                                      ? "No matching tasks"
+                                      ? t("projects.view.noMatchingTasks")
                                       : undefined
                                   }
                                   error={projectsWorkItemsQuery.error}
@@ -939,7 +941,7 @@ export function ProjectsView() {
           testId="projects-overview-context-rail"
         >
           <aside
-            aria-label="Project context"
+            aria-label={t("projects.overviewContext.sheetTitle")}
             className="relative z-30 flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
           >
             <div className="min-h-0 flex-1 overflow-y-auto">
