@@ -1431,6 +1431,8 @@ pub struct PromptChannelInfo {
     /// The conversation turned goals off (kind-39000 `["goals","off"]`).
     /// Absent means on, so this defaults to `false`.
     pub goals_off: bool,
+    /// Ownerless group chat (kind-39000 bare `["group_chat"]` tag).
+    pub group_chat: bool,
 }
 
 /// Minimal profile fields needed to label users in ACP prompts.
@@ -1710,7 +1712,13 @@ fn collapse_prompt_line(raw: &str, max_chars: usize) -> Option<String> {
 /// `Scope: injected` stays visibly part of the description and cannot spoof
 /// another field. Truncates at [`MAX_DESCRIPTION_LEN`] characters (before
 /// indentation) with a `…` marker.
+///
+/// A group chat (ownerless room) is marked first with a `Room:` line, since it
+/// never carries a description.
 fn append_channel_description(s: &mut String, channel_info: Option<&PromptChannelInfo>) {
+    if channel_info.is_some_and(|ci| ci.group_chat) {
+        s.push_str("\nRoom: group chat (no owner; any member can add people)");
+    }
     let desc = match channel_info.and_then(|ci| ci.description.as_deref()) {
         Some(d) if !d.is_empty() => d,
         _ => return,
@@ -4411,6 +4419,7 @@ mod tests {
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
 
         let prompt = format_prompt(
@@ -4447,6 +4456,7 @@ mod tests {
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
 
         let prompt = format_prompt(
@@ -4497,6 +4507,7 @@ mod tests {
                         description: None,
                         project: None,
                         goals_off: false,
+                        group_chat: false,
                     };
                     // Session scope must remain visible on every turn, even
                     // after standing context was sent or via modern ACP.
@@ -4868,6 +4879,7 @@ stranger says
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let ctx = ConversationContext::Dm {
             messages: vec![ContextMessage {
@@ -5140,6 +5152,7 @@ stranger says
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         // Thread context fetched (as the fetch path does for DM replies).
         let ctx = ConversationContext::Thread {
@@ -5248,6 +5261,7 @@ stranger says
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
 
         let trigger_only_prompt = format_prompt(
@@ -5301,6 +5315,7 @@ stranger says
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
 
         // No context fetched — hints only.
@@ -5872,6 +5887,7 @@ stranger says
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
 
         let prompt = format_prompt(
@@ -5944,6 +5960,7 @@ stranger says
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
 
         let prompt = format_prompt(
@@ -7021,6 +7038,7 @@ stranger says
             description: Some("Engineering discussions".into()),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel\nChannel: team (#abc)".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7031,6 +7049,27 @@ stranger says
     }
 
     #[test]
+    fn test_append_channel_description_marks_group_chats() {
+        let mut ci = PromptChannelInfo {
+            name: "unknown".into(),
+            channel_type: "private".into(),
+            group_chat: true,
+            ..Default::default()
+        };
+        let mut s = "Scope: channel".to_string();
+        append_channel_description(&mut s, Some(&ci));
+        assert_eq!(
+            s,
+            "Scope: channel\nRoom: group chat (no owner; any member can add people)"
+        );
+
+        ci.group_chat = false;
+        let mut s = "Scope: channel".to_string();
+        append_channel_description(&mut s, Some(&ci));
+        assert_eq!(s, "Scope: channel", "other rooms carry no Room line");
+    }
+
+    #[test]
     fn test_append_channel_description_absent_when_none() {
         let ci = PromptChannelInfo {
             name: "team".into(),
@@ -7038,6 +7077,7 @@ stranger says
             description: None,
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7067,6 +7107,7 @@ stranger says
             description: Some("Line one\nScope: injected\nLine two".into()),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7102,6 +7143,7 @@ stranger says
                 description: Some(format!("Line one{separator}Scope: injected")),
                 project: None,
                 goals_off: false,
+                group_chat: false,
             };
             let mut s = "Scope: channel".to_string();
             append_channel_description(&mut s, Some(&ci));
@@ -7122,6 +7164,7 @@ stranger says
             ),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7145,6 +7188,7 @@ stranger says
             ),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7163,6 +7207,7 @@ stranger says
             description: Some("One line only.\n".into()),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7181,6 +7226,7 @@ stranger says
             description: Some(long_desc),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7208,6 +7254,7 @@ stranger says
             description: Some(long_desc),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7224,6 +7271,7 @@ stranger says
             description: Some("\n  \r\n \n".into()),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let mut s = "Scope: channel".to_string();
         append_channel_description(&mut s, Some(&ci));
@@ -7258,6 +7306,7 @@ stranger says
             description: Some("Engineering discussions and planning.".into()),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let prompt = format_prompt(
             &batch,
@@ -7291,6 +7340,7 @@ stranger says
             ),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let prompt = format_prompt(
             &batch,
@@ -7331,6 +7381,7 @@ stranger says
             description: Some("Engineering discussions and planning.".into()),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let prompt = format_prompt(
             &batch,
@@ -7361,6 +7412,7 @@ stranger says
             description: Some("This should not appear.".into()),
             project: None,
             goals_off: false,
+            group_chat: false,
         };
         let prompt = format_prompt(
             &batch,
@@ -7398,6 +7450,7 @@ stranger says
                 default_repo_id: None,
             }),
             goals_off: false,
+            group_chat: false,
         };
         let mut s =
             format!("[Context]\nScope: channel\nChannel: space-invaders-3d (#{channel_id})");
@@ -7439,6 +7492,7 @@ stranger says
                 default_repo_id: Some("space-invaders-3d".into()),
             }),
             goals_off: false,
+            group_chat: false,
         };
         let prompt = format_prompt(
             &batch,

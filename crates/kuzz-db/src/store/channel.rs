@@ -21,12 +21,13 @@ pub use kuzz_core::channel::{ChannelType, ChannelVisibility, MemberRole};
 // Keep the established channel module paths compatible while membership SQL
 // and invariants live in their dedicated store module.
 pub use crate::channel_members::{
-    add_member, get_accessible_channel_ids, get_accessible_channels, get_bot_members,
-    get_member_count, get_member_counts_bulk, get_member_role, get_members, get_members_bulk,
-    get_users_bulk, is_member, list_large_channel_rosters_needing_reconciliation,
-    lock_member_snapshot, membership_pairs, remove_member, verify_channel_roster_fence_behavior,
-    verify_channel_roster_fence_catalog, AccessibleChannel, BotChannelEntry, BotMemberRecord,
-    LargeChannelRoster, LockedMemberSnapshot, MemberRecord, UserRecord,
+    add_member, add_member_via_group_chat_invitation, get_accessible_channel_ids,
+    get_accessible_channels, get_bot_members, get_member_count, get_member_counts_bulk,
+    get_member_role, get_members, get_members_bulk, get_users_bulk, is_member,
+    list_large_channel_rosters_needing_reconciliation, lock_member_snapshot, membership_pairs,
+    remove_member, verify_channel_roster_fence_behavior, verify_channel_roster_fence_catalog,
+    AccessibleChannel, BotChannelEntry, BotMemberRecord, LargeChannelRoster, LockedMemberSnapshot,
+    MemberRecord, UserRecord, GROUP_CHAT_FULL, GROUP_CHAT_MAX_MEMBERS,
 };
 
 async fn begin_event_write_transaction(
@@ -102,6 +103,9 @@ pub struct ChannelRecord {
     pub goals_enabled: bool,
     /// Group photo URL (a `/media/<sha256>` blob on this relay), if set.
     pub picture: Option<String>,
+    /// Ownerless group chat (set only at creation). Every member is equal:
+    /// no owner/admin, no handle, no invite link, no shared metadata edits.
+    pub group_chat: bool,
 }
 
 /// Creates a new channel, bootstraps the creator as owner, and returns the record.
@@ -175,7 +179,7 @@ pub async fn create_channel(
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
                purpose, purpose_set_by, purpose_set_at,
-               ttl_seconds, ttl_deadline, goals_enabled, picture
+               ttl_seconds, ttl_deadline, goals_enabled, picture, group_chat
         FROM channels WHERE community_id = $1 AND id = $2
         "#,
     )
@@ -275,7 +279,134 @@ pub async fn create_channel_with_id(
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
                purpose, purpose_set_by, purpose_set_at,
-               ttl_seconds, ttl_deadline, goals_enabled, picture
+               ttl_seconds, ttl_deadline, goals_enabled, picture, group_chat
+        FROM channels WHERE community_id = $1 AND id = $2
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let record = row_to_channel_record(row)?;
+    tx.commit().await?;
+    Ok((record, was_created))
+}
+
+/// Most people a kind:9007 group chat creation may add at once.
+pub const GROUP_CHAT_MAX_INITIAL_PEOPLE: usize = 100;
+
+/// Creates an ownerless group chat with a client-supplied UUID, in one
+/// transaction: the channel (`private` `stream`, `group_chat`, history
+/// `since_join`), the creator as `member`, every entry of `members` with the
+/// role the caller decided (`member` for people, `bot` for agents) invited
+/// by the creator, and a pending invitation for every entry of `invitees`.
+///
+/// `name` may be empty (an unnamed chat; clients draw a title from members).
+/// The caller has already applied "who can add me", agent add policies and
+/// blocks. Returns `(record, false)` without writing anything when a channel
+/// with `channel_id` already exists.
+pub async fn create_group_chat_with_id(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    name: &str,
+    created_by: &[u8],
+    members: &[(Vec<u8>, MemberRole)],
+    invitees: &[Vec<u8>],
+) -> Result<(ChannelRecord, bool)> {
+    if created_by.len() != 32
+        || members.iter().any(|(pk, _)| pk.len() != 32)
+        || invitees.iter().any(|pk| pk.len() != 32)
+    {
+        return Err(DbError::InvalidData("pubkeys must be 32 bytes".into()));
+    }
+    if channel_id.is_nil() {
+        return Err(DbError::InvalidData(
+            "channel_id must not be nil (reserved for global fan-out)".into(),
+        ));
+    }
+    if members.len() + invitees.len() > GROUP_CHAT_MAX_INITIAL_PEOPLE {
+        return Err(DbError::InvalidData(format!(
+            "a chat starts with at most {GROUP_CHAT_MAX_INITIAL_PEOPLE} people"
+        )));
+    }
+    if members
+        .iter()
+        .any(|(_, role)| !matches!(role, MemberRole::Member | MemberRole::Bot))
+    {
+        return Err(DbError::InvalidData(
+            "chat members are members or bots".into(),
+        ));
+    }
+    let name = kuzz_core::channel::canonical_channel_name(name);
+
+    let mut tx = begin_event_write_transaction(pool).await?;
+
+    let was_created = sqlx::query(
+        r#"
+        INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by,
+                              group_chat, history_policy)
+        VALUES ($1, $2, $3, 'stream'::channel_type, 'private'::channel_visibility, $4,
+                true, 'since_join')
+        ON CONFLICT (community_id, id) DO NOTHING
+        "#,
+    )
+    .bind(channel_id)
+    .bind(community_id.as_uuid())
+    .bind(name.trim())
+    .bind(created_by)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
+
+    if was_created {
+        crate::channel_members::acquire_channel_membership_lock_in_transaction(
+            &mut tx,
+            community_id,
+            channel_id,
+        )
+        .await?;
+        let creator = (created_by.to_vec(), MemberRole::Member);
+        for (pubkey, role) in std::iter::once(&creator).chain(members.iter()) {
+            sqlx::query(
+                r#"
+                INSERT INTO channel_members (community_id, channel_id, pubkey, role, invited_by)
+                VALUES ($1, $2, $3, $4::member_role, $5)
+                ON CONFLICT (community_id, channel_id, pubkey) DO NOTHING
+                "#,
+            )
+            .bind(community_id.as_uuid())
+            .bind(channel_id)
+            .bind(pubkey)
+            .bind(role.as_str())
+            .bind(created_by)
+            .execute(&mut *tx)
+            .await?;
+        }
+        for invitee in invitees {
+            sqlx::query(
+                "INSERT INTO group_invitations (community_id, channel_id, inviter, invitee)                  VALUES ($1, $2, $3, $4)                  ON CONFLICT (community_id, channel_id, invitee) WHERE status = 'pending'                  DO UPDATE SET inviter = EXCLUDED.inviter, created_at = now()",
+            )
+            .bind(community_id.as_uuid())
+            .bind(channel_id)
+            .bind(created_by)
+            .bind(invitee)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, name, channel_type::text AS channel_type, visibility::text AS visibility,
+               description, canvas,
+               created_by, created_at, updated_at, archived_at, deleted_at,
+               nip29_group_id, topic_required, max_members,
+               topic, topic_set_by, topic_set_at,
+               purpose, purpose_set_by, purpose_set_at,
+               ttl_seconds, ttl_deadline, goals_enabled, picture, group_chat
         FROM channels WHERE community_id = $1 AND id = $2
         "#,
     )
@@ -319,7 +450,7 @@ async fn get_channel_with_operation(
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
                purpose, purpose_set_by, purpose_set_at,
-               ttl_seconds, ttl_deadline, goals_enabled, picture
+               ttl_seconds, ttl_deadline, goals_enabled, picture, group_chat
         FROM channels WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL
         "#,
     )
@@ -401,7 +532,7 @@ async fn list_channels_with_operation(
                    nip29_group_id, topic_required, max_members,
                    topic, topic_set_by, topic_set_at,
                    purpose, purpose_set_by, purpose_set_at,
-                   ttl_seconds, ttl_deadline, goals_enabled, picture
+                   ttl_seconds, ttl_deadline, goals_enabled, picture, group_chat
             FROM channels
             WHERE community_id = $1 AND deleted_at IS NULL AND visibility::text = $2
             ORDER BY created_at DESC
@@ -421,7 +552,7 @@ async fn list_channels_with_operation(
                    nip29_group_id, topic_required, max_members,
                    topic, topic_set_by, topic_set_at,
                    purpose, purpose_set_by, purpose_set_at,
-                   ttl_seconds, ttl_deadline, goals_enabled, picture
+                   ttl_seconds, ttl_deadline, goals_enabled, picture, group_chat
             FROM channels
             WHERE community_id = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC
@@ -463,6 +594,9 @@ pub(crate) fn row_to_channel_record(row: sqlx::postgres::PgRow) -> Result<Channe
     let ttl_deadline: Option<DateTime<Utc>> = row.try_get("ttl_deadline").unwrap_or(None);
     let goals_enabled: bool = row.try_get("goals_enabled").unwrap_or(true);
     let picture: Option<String> = row.try_get("picture").unwrap_or(None);
+    // Strict: every SELECT feeding this mapper must name `group_chat`, so a
+    // missing column fails loudly instead of reading a group chat as a group.
+    let group_chat: bool = row.try_get("group_chat")?;
 
     Ok(ChannelRecord {
         id,
@@ -489,6 +623,7 @@ pub(crate) fn row_to_channel_record(row: sqlx::postgres::PgRow) -> Result<Channe
         ttl_deadline,
         goals_enabled,
         picture,
+        group_chat,
     })
 }
 
@@ -900,6 +1035,30 @@ impl Db {
             description,
             created_by,
             ttl_seconds,
+        )
+        .await
+    }
+
+    /// Creates an ownerless group chat; see [`create_group_chat_with_id`].
+    #[allow(clippy::too_many_arguments)]
+    #[datastore_span(name = "create_group_chat_with_id", system = "postgresql")]
+    pub async fn create_group_chat_with_id(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        name: &str,
+        created_by: &[u8],
+        members: &[(Vec<u8>, MemberRole)],
+        invitees: &[Vec<u8>],
+    ) -> Result<(ChannelRecord, bool)> {
+        create_group_chat_with_id(
+            &self.pool,
+            community_id,
+            channel_id,
+            name,
+            created_by,
+            members,
+            invitees,
         )
         .await
     }

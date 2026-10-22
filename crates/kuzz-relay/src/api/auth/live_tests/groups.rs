@@ -1234,3 +1234,110 @@ async fn group_photo_set_shown_and_removed() {
         .unwrap();
     assert!(!body.contains("<img"), "{body}");
 }
+
+/// Group chats have no invite link, address or invite policy. Every such
+/// route refuses a group chat with its own error, ahead of the owner/admin
+/// check (a group chat has no owner, so that check alone would also refuse),
+/// and a link planted for a group chat neither previews nor joins, while the
+/// same planted link on a managed group works.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn group_chats_refuse_links_addresses_and_invite_policy() {
+    use kuzz_db::channel::{ChannelVisibility, MemberRole};
+    const CHAT_REFUSAL: &str = "chats have no invite link, address or invite settings";
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let scope = community_id(&inst).await;
+    let alice = new_user(&inst).await;
+    let bob = new_user(&inst).await;
+    let carol = new_user(&inst).await;
+
+    let chat = uuid::Uuid::new_v4();
+    let (_, created) = kuzz_db::channel::create_group_chat_with_id(
+        &pool,
+        scope,
+        chat,
+        "Trip",
+        &key(&alice.principal),
+        &[(key(&bob.principal), MemberRole::Member)],
+        &[],
+    )
+    .await
+    .unwrap();
+    assert!(created);
+    let control = group(&pool, scope, &alice, "Control", ChannelVisibility::Private).await;
+
+    // Members of the chat (the creator included) get the chat refusal, not
+    // a link and not the owner/admin refusal.
+    for who in [&alice, &bob] {
+        let (code, body) = get(&inst, who, &format!("/api/groups/{chat}/invite-link")).await;
+        assert_eq!((code, body["error"].as_str()), (400, Some(CHAT_REFUSAL)));
+        let (code, body) = post(&inst, who, &format!("/api/groups/{chat}/invite-link/reset")).await;
+        assert_eq!((code, body["error"].as_str()), (400, Some(CHAT_REFUSAL)));
+        let (code, body) = put(
+            &inst,
+            who,
+            &format!("/api/groups/{chat}/handle"),
+            json!({"handle": "tripchat"}),
+        )
+        .await;
+        assert_eq!((code, body["error"].as_str()), (400, Some(CHAT_REFUSAL)));
+        let policy_path = format!("/api/groups/{chat}/invite-policy");
+        let (code, body) = get(&inst, who, &policy_path).await;
+        assert_eq!((code, body["error"].as_str()), (400, Some(CHAT_REFUSAL)));
+        let (code, body) = put(&inst, who, &policy_path, json!({"policy": "admins"})).await;
+        assert_eq!((code, body["error"].as_str()), (400, Some(CHAT_REFUSAL)));
+    }
+    // A non-member learns nothing about the private chat.
+    assert_eq!(
+        get(&inst, &carol, &format!("/api/groups/{chat}/invite-link"))
+            .await
+            .0,
+        404
+    );
+    assert!(sqlx::query_scalar::<_, Option<String>>(
+        "SELECT handle FROM channels WHERE community_id = $1 AND id = $2"
+    )
+    .bind(scope.as_uuid())
+    .bind(chat)
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+    .is_none());
+
+    // Plant usable links (an active member created each) directly.
+    let chat_code = "groupchatplantedcode00000001";
+    let control_code = "groupchatplantedcode00000002";
+    for (room, code) in [(chat, chat_code), (control, control_code)] {
+        sqlx::query(
+            "INSERT INTO group_invite_links (community_id, channel_id, code, created_by) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(scope.as_uuid())
+        .bind(room)
+        .bind(code)
+        .bind(key(&alice.principal))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let (code, preview) = get(&inst, &carol, &format!("/api/groups/invite/{control_code}")).await;
+    assert_eq!(
+        code, 200,
+        "the planted link works on a managed group: {preview}"
+    );
+    assert_eq!(preview["id"], control.to_string());
+
+    let (code, body) = get(&inst, &carol, &format!("/api/groups/invite/{chat_code}")).await;
+    assert_eq!(code, 404, "{body}");
+    let (code, body) = post(
+        &inst,
+        &carol,
+        &format!("/api/groups/invite/{chat_code}/join"),
+    )
+    .await;
+    assert_eq!(code, 404, "{body}");
+    assert!(!is_member(&pool, scope, chat, &carol.principal).await);
+}

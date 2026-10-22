@@ -52,6 +52,30 @@ pub enum ChannelAuthzError {
     /// `nobody` policy — the agent has opted out of third-party adds.
     #[error("policy:nobody — this agent has disabled external channel additions")]
     PolicyNobody,
+    /// Group chats have no owner/admin/guest roles.
+    #[error("chats have no owners, admins or guests")]
+    GroupChatRoleDenied,
+    /// Only agents take the `bot` role in a group chat.
+    #[error("only agents join a chat as bots")]
+    GroupChatBotRoleForPerson,
+}
+
+/// The role a kind:9000 add may request in a group chat: people are
+/// `member` and agents `bot`. An absent role (or `member` for an agent, which
+/// the applier stores as `bot`) is accepted; `owner`, `admin` and `guest`
+/// never are, and a person cannot be made a `bot`.
+pub fn decide_group_chat_role(
+    requested: Option<MemberRole>,
+    target_is_agent: bool,
+) -> Result<MemberRole, ChannelAuthzError> {
+    match requested {
+        None | Some(MemberRole::Member) | Some(MemberRole::Bot) if target_is_agent => {
+            Ok(MemberRole::Bot)
+        }
+        None | Some(MemberRole::Member) => Ok(MemberRole::Member),
+        Some(MemberRole::Bot) => Err(ChannelAuthzError::GroupChatBotRoleForPerson),
+        Some(_) => Err(ChannelAuthzError::GroupChatRoleDenied),
+    }
 }
 
 /// Whether `pubkey` is the channel's only remaining `owner`.
@@ -345,6 +369,65 @@ mod tests {
     type RemoveOtherCase<'a> = (Roster<'a>, u8, RemoveOtherDecision);
     /// `(policy, owner_tag, actor, expected_error)`.
     type AddPolicyCase<'a> = (&'a str, Option<u8>, u8, Option<ChannelAuthzError>);
+
+    /// Group chat roles over requested role × target kind.
+    #[test]
+    fn group_chat_role_table() {
+        use MemberRole::*;
+        let cases: &[(
+            Option<MemberRole>,
+            bool,
+            Result<MemberRole, ChannelAuthzError>,
+        )] = &[
+            (None, false, Ok(Member)),
+            (Some(Member), false, Ok(Member)),
+            (
+                Some(Bot),
+                false,
+                Err(ChannelAuthzError::GroupChatBotRoleForPerson),
+            ),
+            (
+                Some(Owner),
+                false,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Admin),
+                false,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Guest),
+                false,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (None, true, Ok(Bot)),
+            (Some(Member), true, Ok(Bot)),
+            (Some(Bot), true, Ok(Bot)),
+            (
+                Some(Owner),
+                true,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Admin),
+                true,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+            (
+                Some(Guest),
+                true,
+                Err(ChannelAuthzError::GroupChatRoleDenied),
+            ),
+        ];
+        for (requested, agent, expected) in cases {
+            assert_eq!(
+                decide_group_chat_role(*requested, *agent),
+                *expected,
+                "requested {requested:?} agent {agent}"
+            );
+        }
+    }
 
     /// The single definition of last-owner protection, over the full shape
     /// space the five former call sites covered.

@@ -34,7 +34,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::{api_error, bridge, internal_error, parse_query_or_400};
-use crate::handlers::side_effects::add_channel_member;
+use crate::handlers::side_effects::{add_channel_member, add_group_chat_member_by_invitation};
 use crate::nip_fi_http::admit_nip_fi_http_on_state;
 use crate::state::AppState;
 
@@ -192,7 +192,7 @@ fn json_body(body: &[u8]) -> Result<serde_json::Map<String, Value>, Response> {
 }
 
 /// `{ id, name, description, handle, picture, channelType, memberCount,
-/// isMember }`. `picture` is the group photo URL or null.
+/// isMember, groupChat }`. `picture` is the group photo URL or null.
 fn group_json(group: &GroupSummary) -> Value {
     json!({
         "id": group.id.to_string(),
@@ -203,6 +203,7 @@ fn group_json(group: &GroupSummary) -> Value {
         "channelType": group.channel_type,
         "memberCount": group.member_count,
         "isMember": group.is_member,
+        "groupChat": group.group_chat,
     })
 }
 
@@ -215,6 +216,23 @@ fn group_with_visibility_json(group: &GroupSummary) -> Value {
 
 fn is_group_type(group: &GroupSummary) -> bool {
     matches!(group.channel_type.as_str(), "stream" | "forum")
+}
+
+/// A managed group: a group that is not an ownerless group chat. Only these
+/// have invite links, addresses and invite policies.
+fn is_managed_group(group: &GroupSummary) -> bool {
+    is_group_type(group) && !group.group_chat
+}
+
+/// Refuse the link/address/policy routes for a group chat.
+fn reject_group_chat(group: &GroupSummary) -> Result<(), Response> {
+    if group.group_chat {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "chats have no invite link, address or invite settings",
+        ));
+    }
+    Ok(())
 }
 
 fn parse_group_id(raw: &str) -> Result<Uuid, Response> {
@@ -305,6 +323,7 @@ async fn managed_group(
     if !group.is_member && group.visibility != "open" {
         return Err(not_found());
     }
+    reject_group_chat(&group)?;
     if group.archived_at.is_some() {
         return Err(error(StatusCode::CONFLICT, "group is archived"));
     }
@@ -368,7 +387,7 @@ async fn group_for_code(
         .ok_or_else(not_found)?;
     let group = summary(state, caller, link.channel_id)
         .await?
-        .filter(|g| is_group_type(g) && g.archived_at.is_none())
+        .filter(|g| is_managed_group(g) && g.archived_at.is_none())
         .ok_or_else(not_found)?;
     if !link_is_usable(state, caller, &group, &link).await? {
         return Err(not_found());
@@ -379,6 +398,11 @@ async fn group_for_code(
 /// Map a failed add to a response.
 fn add_failure(e: anyhow::Error) -> Response {
     match e.downcast_ref::<kuzz_db::DbError>() {
+        Some(kuzz_db::DbError::AccessDenied(message))
+            if message == kuzz_db::channel::GROUP_CHAT_FULL =>
+        {
+            error(StatusCode::CONFLICT, message)
+        }
         Some(kuzz_db::DbError::AccessDenied(message)) => error(StatusCode::FORBIDDEN, message),
         Some(kuzz_db::DbError::ChannelNotFound(_)) => not_found(),
         _ => internal("group join", &e),
@@ -574,6 +598,9 @@ pub async fn get_invite_link(
         .filter(is_group_type)
         .ok_or_else(not_found)?;
     let role = role_of(&state, &caller, id, &caller.pubkey).await?;
+    if role.is_some() {
+        reject_group_chat(&group)?;
+    }
     let Some(role) = role else {
         return Err(if group.visibility == "open" {
             error(
@@ -773,6 +800,7 @@ pub async fn get_invite_policy(
         .await?
         .filter(|g| is_group_type(g) && (g.is_member || g.visibility == "open"))
         .ok_or_else(not_found)?;
+    reject_group_chat(&group)?;
     Ok(Json(json!({ "policy": group.invite_policy })).into_response())
 }
 
@@ -899,6 +927,12 @@ pub async fn list_invitations(
                     "channelType": channel.channel_type,
                     "memberCount": channel.member_count,
                     "visibility": channel.visibility,
+                    "groupChat": channel.group_chat,
+                    "memberPubkeys": invitation
+                        .member_pubkeys
+                        .iter()
+                        .map(hex::encode)
+                        .collect::<Vec<_>>(),
                 },
                 "inviter": hex::encode(&invitation.inviter),
                 "createdAt": invitation
@@ -944,7 +978,10 @@ pub async fn accept_invitation(
         Some(_) => role_of(&state, &caller, invitation.channel_id, &invitation.inviter).await?,
         None => None,
     };
+    // A group chat invitation outlives its inviter: valid while anyone is
+    // still in the chat (re-checked under the membership lock on add).
     let still_valid = match (&group, inviter_role) {
+        (Some(group), _) if group.group_chat => group.member_count > 0,
         (Some(group), Some(role)) => group.invite_policy != "admins" || role.is_elevated(),
         _ => false,
     };
@@ -971,17 +1008,29 @@ pub async fn accept_invitation(
             Json(json!({ "channelId": group.id.to_string(), "joined": false })).into_response(),
         );
     }
-    add_channel_member(
-        &caller.tenant,
-        &state,
-        group.id,
-        &caller.pubkey,
-        MemberRole::Member,
-        Some(&invitation.inviter),
-        &invitation.inviter,
-    )
-    .await
-    .map_err(add_failure)?;
+    if group.group_chat {
+        add_group_chat_member_by_invitation(
+            &caller.tenant,
+            &state,
+            group.id,
+            &caller.pubkey,
+            &invitation.inviter,
+        )
+        .await
+        .map_err(add_failure)?;
+    } else {
+        add_channel_member(
+            &caller.tenant,
+            &state,
+            group.id,
+            &caller.pubkey,
+            MemberRole::Member,
+            Some(&invitation.inviter),
+            &invitation.inviter,
+        )
+        .await
+        .map_err(add_failure)?;
+    }
     Ok(Json(json!({ "channelId": group.id.to_string(), "joined": true })).into_response())
 }
 

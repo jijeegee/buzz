@@ -3397,8 +3397,71 @@ async fn ingest_event_inner(
 
     // Track pre-created channel UUID for compensation on insert failure.
     let mut pre_created_channel: Option<Uuid> = None;
+    // `OK` message of an accepted group chat creation (invitations sent).
+    let mut accepted_message = String::new();
 
-    if kind_u32 == KIND_NIP29_CREATE_GROUP {
+    if kind_u32 == KIND_NIP29_CREATE_GROUP && super::group_chat::has_group_chat_tag(&event) {
+        // Ownerless group chat: validated, its initial people resolved and
+        // everything written in one transaction before the event is stored.
+        let creator = event.pubkey.to_bytes().to_vec();
+        let spec = super::group_chat::parse_group_chat_create(&event, &creator)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        let Some(client_uuid) = channel_id else {
+            return Err(IngestError::Rejected(
+                "invalid: a chat needs an h tag".into(),
+            ));
+        };
+        // A replayed or colliding creation must not run the per-person
+        // planning queries; the transactional insert below still decides
+        // the race.
+        match state.db.get_channel(tenant.community(), client_uuid).await {
+            Ok(_) => {
+                return Ok(IngestResult {
+                    event_id: event_id_hex,
+                    accepted: false,
+                    message: "duplicate: channel already exists".into(),
+                });
+            }
+            Err(kuzz_db::DbError::ChannelNotFound(_)) => {}
+            Err(e) => return Err(IngestError::Internal(format!("error: {e}"))),
+        }
+        let people = super::group_chat::plan_initial_people(
+            tenant,
+            state,
+            client_uuid,
+            &creator,
+            &spec.people,
+        )
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+        let (_, was_created) = state
+            .db
+            .create_group_chat_with_id(
+                tenant.community(),
+                client_uuid,
+                &spec.name,
+                &creator,
+                &people.members,
+                &people.invitees,
+            )
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+        if !was_created {
+            return Ok(IngestResult {
+                event_id: event_id_hex,
+                accepted: false,
+                message: "duplicate: channel already exists".into(),
+            });
+        }
+        pre_created_channel = Some(client_uuid);
+        accepted_message = people.ok_message();
+        metrics::counter!(
+            "kuzz_channels_created_total",
+            "community" => tenant.host().to_owned(),
+            "type" => "group_chat"
+        )
+        .increment(1);
+    } else if kind_u32 == KIND_NIP29_CREATE_GROUP {
         // Validate name tag is present and non-empty before any DB work.
         let create_name = event.tags.iter().find_map(|t| {
             if t.kind().to_string() == "name" {
@@ -3999,7 +4062,7 @@ async fn ingest_event_inner(
     Ok(IngestResult {
         event_id: event_id_hex,
         accepted: true,
-        message: String::new(),
+        message: accepted_message,
     })
 }
 
