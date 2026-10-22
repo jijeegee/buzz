@@ -114,7 +114,7 @@ CREATE TABLE channels (
         CONSTRAINT chk_channels_invite_policy CHECK (invite_policy IN ('members', 'admins')),
     -- Group photo URL on this relay's /media, or NULL (migration 0076).
     picture         TEXT,
-    -- Ownerless group chat, set only at creation (migration 0077).
+    -- Ownerless group chat, set only at creation (migration 0079).
     group_chat      BOOLEAN NOT NULL DEFAULT false,
     PRIMARY KEY (community_id, id),
     CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
