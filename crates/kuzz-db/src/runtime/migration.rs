@@ -510,6 +510,7 @@ mod postgres_tests {
             "bots",
             "access_tokens",
             "key_registry",
+            "agent_key_backups",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -723,7 +724,13 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 79);
+        assert_eq!(migrations.len(), 80);
+        assert_eq!(migrations[79].version, 80);
+        let agent_keys = migrations[79].sql.as_str();
+        assert!(agent_keys.contains("CREATE TABLE agent_key_backups"));
+        assert!(agent_keys.contains("INSERT INTO key_registry"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TABLE agent_key_backups"));
         assert_eq!(migrations[78].version, 79);
         assert!(migrations[78]
             .sql

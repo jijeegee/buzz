@@ -285,7 +285,8 @@ fn deny_admission(conn: &ConnectionState, event_id_hex: &str, denial: AdmissionD
 
 /// The AUTH denial for a key refused on this device. A signed-out owner gets
 /// its own reason, so a supervisor parks its agents instead of restarting
-/// them (device-bound keys plan F9).
+/// them (device-bound keys plan F9); so do a removed key (`revoked`) and an
+/// agent its owner has not registered from a device yet (`unbound`).
 pub(crate) fn device_denial(refused: KeyRefused) -> AdmissionDenial {
     match refused {
         KeyRefused::Unavailable => AdmissionDenial {

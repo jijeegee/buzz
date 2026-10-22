@@ -2168,6 +2168,23 @@ CREATE INDEX key_registry_host ON key_registry (host_device_id) WHERE host_devic
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('key_registry', 'deployment-global agent key to owner account and host device binding');
 
+-- Encrypted Kuzz agent key copies (migration 0080).
+CREATE TABLE agent_key_backups (
+    agent_pubkey   BYTEA PRIMARY KEY REFERENCES key_registry(pubkey) ON DELETE CASCADE,
+    owner_id       BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    host_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+    version        SMALLINT NOT NULL CHECK (version = 1),
+    key_id         TEXT NOT NULL CHECK (key_id ~ '^[A-Za-z0-9_-]{1,64}$'),
+    nonce          BYTEA NOT NULL CHECK (length(nonce) = 12),
+    ciphertext     BYTEA NOT NULL CHECK (length(ciphertext) = 48),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX agent_key_backups_owner_host ON agent_key_backups (owner_id, host_device_id);
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('agent_key_backups', 'deployment-global encrypted Kuzz agent key copies of owner accounts');
+
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable
 -- state machine from claim → enforcing → succeeded|failed|cancelled.

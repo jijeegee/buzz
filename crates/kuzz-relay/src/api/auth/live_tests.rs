@@ -20,6 +20,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::identity::AuthTokenConfig;
 use crate::state::AppState;
 
+mod agent_keys;
 mod audio;
 mod device_http;
 mod device_keys;

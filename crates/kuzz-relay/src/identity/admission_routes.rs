@@ -66,6 +66,14 @@ const LEASE: &str = "serving lease check (`serving_write.verify()`), not a signa
 const KEY_EXCEPTIONS: &[(&str, &str, Why)] = &[
     ("api/admin/auth.rs", "authorize_nip98", Why::Helper),
     (
+        "api/auth/agents.rs",
+        "status",
+        Why::Exempt(
+            "reads key_admission itself and answers only an admitted caller, in log \
+             mode too (stricter than admit_key); off returns no keys",
+        ),
+    ),
+    (
         "api/auth/key_backup.rs",
         "initialize",
         Why::Exempt(

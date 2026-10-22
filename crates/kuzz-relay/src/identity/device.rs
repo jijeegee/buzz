@@ -188,6 +188,20 @@ pub(crate) fn mode(state: &AppState, surface: Surface) -> DeviceAdmissionMode {
         .unwrap_or(state.identity.config().device_admission)
 }
 
+/// Override `surface`'s mode in this process, as the Redis poller would.
+#[cfg(test)]
+pub(crate) fn override_mode(state: &AppState, surface: Surface, mode: DeviceAdmissionMode) {
+    let mut overrides = state
+        .identity
+        .devices
+        .overrides
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    overrides.insert(surface, mode);
+    state.identity.devices.set_overrides(overrides);
+}
+
 /// Parse the [`MODES_KEY`] hash; unknown surfaces and bad values are skipped.
 fn parse_overrides(fields: &HashMap<String, String>) -> HashMap<Surface, DeviceAdmissionMode> {
     Surface::ALL
@@ -367,15 +381,21 @@ tokio::task_local! {
     static REQUEST: RequestContext;
 }
 
-/// `/auth/*` middleware: while the auth surface is on, buffer the (already
-/// size-limited) body, record what proofs bind to, and tell the client the
-/// server time.
+/// Routes whose device proof is checked in every mode
+/// ([`check_request_proof_always`]).
+const ALWAYS_PROVEN_PREFIX: &str = "/auth/agents/";
+
+/// `/auth/*` middleware: while the auth surface is on (always for
+/// [`ALWAYS_PROVEN_PREFIX`] routes), buffer the (already size-limited) body,
+/// record what proofs bind to, and tell the client the server time.
 pub(crate) async fn proof_context_layer(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if mode(&state, Surface::Auth) == DeviceAdmissionMode::Off {
+    if mode(&state, Surface::Auth) == DeviceAdmissionMode::Off
+        && !request.uri().path().starts_with(ALWAYS_PROVEN_PREFIX)
+    {
         return next.run(request).await;
     }
     let target = format!(
@@ -479,6 +499,51 @@ pub(crate) async fn check_request_proof(
         &binding.token_hash,
     )
     .await
+}
+
+/// The device proof of a user-token call that hands out or binds keys
+/// (`/auth/agents/*`), checked in every auth surface mode: purpose `auth`,
+/// bound to the request target, the token hash and the body hash, nonce
+/// burnt. `key` is the token's device key; keyless tokens are refused by the
+/// caller first. Fails closed without a request context.
+pub(crate) async fn check_request_proof_always(
+    state: &AppState,
+    key: &DevicePubkey,
+    headers: &HeaderMap,
+    token_hash: &[u8; 32],
+) -> Result<(), TokenRejection> {
+    let outcome = match (
+        REQUEST.try_with(Clone::clone),
+        headers.get(PROOF_HEADER).and_then(|v| v.to_str().ok()),
+    ) {
+        (Err(_), _) | (Ok(_), None) => Err(Refusal::Missing),
+        (Ok(request), Some(raw)) => {
+            verify_proof(
+                state,
+                key,
+                raw,
+                PURPOSE_AUTH,
+                &request_bindings(state, &request.target),
+                Some(token_hash),
+                request.body_hash.as_ref(),
+            )
+            .await
+        }
+    };
+    outcome.map_err(|refusal| {
+        report(
+            state,
+            Surface::Auth,
+            &hex::encode(&token_hash[..8]),
+            refusal.as_str(),
+            true,
+        );
+        match refusal {
+            Refusal::Unavailable => TokenRejection::Unavailable,
+            Refusal::Stale => TokenRejection::DeviceProofStale,
+            _ => TokenRejection::DeviceProofRequired,
+        }
+    })
 }
 
 /// The device proof of `/auth/refresh` for refresh token `refresh_hash`.

@@ -19,6 +19,15 @@ pub const LEGACY_V1_BACKUP_VERSION: u16 = 1;
 /// rename; the bytes are fixed by those ciphertexts.
 const LEGACY_V1_AAD_DOMAIN: &[u8] = b"buzz/custodial-key-backup/v1"; // kuzz-rename: keep (v1 ciphertexts)
 
+/// Envelope version of Kuzz agent key copies (`agent_key_backups`).
+pub const AGENT_BACKUP_VERSION: u16 = 1;
+/// AAD domain of agent key copies: the AAD binds owner account, agent key
+/// and master-key label, so a copy never opens as an account backup or for
+/// another owner.
+const AGENT_AAD_DOMAIN: &[u8] = b"kuzz/agent-key-backup/v1";
+/// Domain of the agent's registration signature ([`agent_register_message`]).
+pub const AGENT_REGISTER_DOMAIN: &str = "kuzz-agent-register/v1";
+
 /// Failure categories intentionally contain no caller-controlled secret data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum BackupError {
@@ -138,6 +147,34 @@ impl BackupMasterKey {
             )
             .map_err(|_| BackupError::Encryption)?;
         Ok(envelope)
+    }
+
+    /// Encrypt a Kuzz agent's key for its owner account (`agent_key_backups`).
+    /// The envelope's `pubkey` is the agent key derived from the secret.
+    pub fn encrypt_agent(
+        &self,
+        owner: &[u8; 32],
+        secret_hex: &str,
+    ) -> Result<EncryptedKeyBackup, BackupError> {
+        let keys = Keys::new(parse_secret(secret_hex)?);
+        let raw = Zeroizing::new(keys.secret_key().to_secret_bytes());
+        self.seal(
+            owner,
+            keys.public_key().to_bytes(),
+            raw.as_ref(),
+            AGENT_BACKUP_VERSION,
+            AGENT_AAD_DOMAIN,
+        )
+    }
+
+    /// Recover an agent key copied by [`Self::encrypt_agent`] for `owner`.
+    pub fn decrypt_agent(
+        &self,
+        owner: &[u8; 32],
+        envelope: &EncryptedKeyBackup,
+    ) -> Result<Zeroizing<String>, BackupError> {
+        let raw = self.open(owner, envelope, AGENT_BACKUP_VERSION, AGENT_AAD_DOMAIN)?;
+        Ok(Zeroizing::new(hex::encode(raw.as_slice())))
     }
 
     /// Authenticate and recover a key. There is no fallback or regeneration.
@@ -272,6 +309,46 @@ pub fn validate_link_proof(
         return Err(BackupError::InvalidProof);
     }
     Ok(())
+}
+
+/// The message a Kuzz agent signs to register on its owner's device:
+/// `kuzz-agent-register/v1\n<challenge>\n<owner pubkey hex>\n<device pubkey hex>`.
+/// The owner key is the account's own Nostr key (the key its NIP-OA tag
+/// names), the device key the SEC1 compressed P-256 key of the device the
+/// owner registers from, and the challenge one issued by
+/// `POST /auth/agents/challenge`. The agent signs SHA-256 of these bytes with
+/// BIP-340 Schnorr.
+pub fn agent_register_message(challenge: &str, owner_hex: &str, device_hex: &str) -> String {
+    format!("{AGENT_REGISTER_DOMAIN}\n{challenge}\n{owner_hex}\n{device_hex}")
+}
+
+/// Verify an agent's registration signature (128 hex characters) over
+/// [`agent_register_message`].
+pub fn verify_agent_register(
+    agent: &nostr::PublicKey,
+    signature_hex: &str,
+    challenge: &str,
+    owner_hex: &str,
+    device_hex: &str,
+) -> Result<(), BackupError> {
+    use nostr::hashes::{sha256::Hash as Sha256Hash, Hash as _};
+    use nostr::secp256k1::{schnorr::Signature, Message};
+    use std::str::FromStr as _;
+
+    if signature_hex.len() != 128 {
+        return Err(BackupError::InvalidProof);
+    }
+    let signature = Signature::from_str(signature_hex).map_err(|_| BackupError::InvalidProof)?;
+    let digest =
+        Sha256Hash::hash(agent_register_message(challenge, owner_hex, device_hex).as_bytes());
+    let xonly = agent.xonly().map_err(|_| BackupError::InvalidProof)?;
+    nostr::SECP256K1
+        .verify_schnorr(
+            &signature,
+            &Message::from_digest(digest.to_byte_array()),
+            &xonly,
+        )
+        .map_err(|_| BackupError::InvalidProof)
 }
 
 #[cfg(test)]

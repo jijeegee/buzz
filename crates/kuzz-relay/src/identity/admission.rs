@@ -79,6 +79,13 @@ impl KeyRefused {
         )
     }
 
+    /// An agent key bound to its owner by the registry backfill but not yet
+    /// registered from a device: a supervisor should park it until the owner
+    /// registers it, never restart it.
+    pub(crate) fn unbound(self) -> bool {
+        matches!(self, Self::Key(KeyRefusal::Unbound))
+    }
+
     /// The key or its account is gone for good (a deleted agent, a disabled
     /// account): a supervisor should park it too, never restart it.
     pub(crate) fn revoked(self) -> bool {
@@ -97,6 +104,8 @@ impl KeyRefused {
             "restricted: signed_out"
         } else if self.revoked() {
             "restricted: revoked"
+        } else if self.unbound() {
+            "restricted: unbound"
         } else if self == Self::OwnerMismatch {
             "restricted: owner"
         } else {
@@ -173,6 +182,22 @@ pub(crate) fn forget_login(
     let _ = cache.denied.invalidate_entries_if(move |key, _| {
         Some(key.0) == account_key || (device_key.is_some() && key.1 == device_key)
     });
+}
+
+impl AdmissionCache {
+    /// Forget every cached answer for `pubkey` on this replica (an agent
+    /// registered or moved to another host). Other replicas forget theirs
+    /// within [`ADMIT_TTL`].
+    pub(crate) fn evict_key(&self, pubkey: &[u8; 32]) {
+        let pubkey = *pubkey;
+        // Only fails when closures are not enabled (they are, above).
+        let _ = self
+            .admitted
+            .invalidate_entries_if(move |key, _| key.0 == pubkey);
+        let _ = self
+            .denied
+            .invalidate_entries_if(move |key, _| key.0 == pubkey);
+    }
 }
 
 /// Admit `pubkey` on `surface` given its auth event's verified `device` tag
@@ -455,6 +480,7 @@ mod tests {
         let signed_out: Vec<_> = [
             KeyRefusal::PrincipalDisabled,
             KeyRefusal::KeyRevoked,
+            KeyRefusal::Unbound,
             KeyRefusal::NoDevice,
             KeyRefusal::DeviceUnknown,
             KeyRefusal::DeviceRevoked,
@@ -470,6 +496,9 @@ mod tests {
         );
         assert!(!KeyRefused::BadTag.signed_out());
         assert!(!KeyRefused::Unavailable.signed_out());
+        assert!(KeyRefused::Key(KeyRefusal::Unbound).unbound());
+        assert!(!KeyRefused::Key(KeyRefusal::WrongHost).unbound());
+        assert!(!KeyRefused::Unavailable.unbound());
     }
 
     #[test]
@@ -688,6 +717,12 @@ mod tests {
         );
         assert_eq!(
             admit_key(&state, &pubkey, Ok(None), Surface::Ws).await,
+            Err(KeyRefused::Unavailable)
+        );
+        // Evicting the key drops it on every device.
+        state.identity.admissions.evict_key(&pubkey.to_bytes());
+        assert_eq!(
+            admit_key(&state, &pubkey, Ok(Some(device)), Surface::Ws).await,
             Err(KeyRefused::Unavailable)
         );
         // A bad tag is refused before any cache or lookup.
