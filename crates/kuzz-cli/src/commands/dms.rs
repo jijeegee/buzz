@@ -86,7 +86,11 @@ pub async fn cmd_open_dm(client: &KuzzClient, pubkeys: &[String]) -> Result<(), 
         .map(|pk| Tag::parse(["p", *pk]).map_err(|e| CliError::Other(format!("tag error: {e}"))))
         .collect::<Result<Vec<_>, _>>()?;
     tags.push(Tag::parse(["d", &dm_id]).map_err(|e| CliError::Other(format!("tag error: {e}")))?);
-    let builder = EventBuilder::new(Kind::Custom(41010), "").tags(tags);
+    // Notes to self tag the caller: keep that `p` tag (nostr drops
+    // self-tags by default, which left the relay an empty participant list).
+    let builder = EventBuilder::new(Kind::Custom(41010), "")
+        .tags(tags)
+        .allow_self_tagging();
     let event = client.sign_event(builder)?;
 
     let resp = client.submit_event(event).await?;
@@ -164,6 +168,54 @@ mod tests {
         );
         assert!(matches!(dm_open_pubkey(&[]), Err(CliError::Usage(_))));
         assert!(dm_open_pubkey(&["short".into()]).is_err());
+    }
+
+    /// Notes to self: the submitted 41010 keeps the caller's own `p` tag
+    /// (nostr drops self-tags unless allowed, and the relay then rejects an
+    /// empty participant list).
+    #[tokio::test]
+    async fn dm_open_notes_to_self_keeps_own_p_tag() {
+        use std::sync::{Arc, Mutex};
+
+        use axum::body::Bytes;
+        use axum::extract::State;
+        use axum::routing::post;
+        use axum::Router;
+        use nostr::Keys;
+
+        let submitted: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        let app = Router::new()
+            .route(
+                "/events",
+                post(
+                    |State(s): State<Arc<Mutex<Option<serde_json::Value>>>>, body: Bytes| async move {
+                        *s.lock().unwrap() = Some(serde_json::from_slice(&body).expect("event"));
+                        r#"{"event_id":"deadbeef","accepted":true,"message":""}"#.to_string()
+                    },
+                ),
+            )
+            .with_state(submitted.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let keys = Keys::generate();
+        let me = keys.public_key().to_hex();
+        let client = KuzzClient::new(format!("http://{addr}"), keys, None, None).unwrap();
+        cmd_open_dm(&client, std::slice::from_ref(&me))
+            .await
+            .unwrap();
+
+        let event = submitted.lock().unwrap().clone().expect("event submitted");
+        assert_eq!(event["kind"], 41010);
+        let ps: Vec<String> = event["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t[0] == "p")
+            .map(|t| t[1].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(ps, vec![me]);
     }
 
     #[test]
