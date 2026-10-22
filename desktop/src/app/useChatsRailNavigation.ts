@@ -1,32 +1,21 @@
 import * as React from "react";
 
-import {
-  setSidebarListTab,
-  STARTED_WITHOUT_ROUTE,
-} from "@/features/sidebar/lib/sidebarListTab";
+import { setSidebarListTab } from "@/features/sidebar/lib/sidebarListTab";
 import { hasPendingWelcomeChannel } from "@/features/onboarding/welcome";
 
-let landingDone = false;
-
 /**
- * A fresh launch has not landed on Chats yet. Until it has, the start route's
- * Activity screen must not switch the left list to Activity.
+ * Whether the home (Activity) screen should give way to Chats. Activity has
+ * no rail item, so every way home — a fresh start, a reload, closing
+ * Settings, hiding the open DM, switching account — lands on Chats instead.
  */
-export function isFreshStartLandingPending(): boolean {
-  return STARTED_WITHOUT_ROUTE && !landingDone;
-}
-
-/** Whether a fresh start should land on Chats instead of Activity. */
 export function shouldLandOnChats({
-  startedWithoutRoute,
   selectedView,
   pendingWelcome,
 }: {
-  startedWithoutRoute: boolean;
   selectedView: string;
   pendingWelcome: boolean;
 }): boolean {
-  return startedWithoutRoute && selectedView === "home" && !pendingWelcome;
+  return selectedView === "home" && !pendingWelcome;
 }
 
 /**
@@ -64,31 +53,33 @@ export function useChatsRailNavigation({
   selectedView: string;
   sidebarChannels: readonly { id: string }[];
 }): () => void {
-  // A fresh start lands on Chats (the first sidebar chat), once per launch.
+  const lastRef = React.useRef<{
+    channelId: string;
+    threadRootId: string | null;
+  } | null>(null);
+  // Home lands on Chats: the room last open in this session, else the first
+  // sidebar chat. With no chat at all, home stays.
   React.useEffect(() => {
-    if (landingDone || !channelsLoaded) return;
-    landingDone = true;
+    if (!channelsLoaded) return;
     if (
       !shouldLandOnChats({
-        startedWithoutRoute: STARTED_WITHOUT_ROUTE,
         selectedView,
         pendingWelcome: hasPendingWelcomeChannel(),
       })
     ) {
       return;
     }
+    const last = lastRef.current;
     const target = resolveChatsRailTarget(
-      null,
+      last?.channelId ?? null,
       sidebarChannels.map((channel) => channel.id),
     );
     if (!target) return;
+    const thread =
+      last?.channelId === target ? (last.threadRootId ?? undefined) : undefined;
     setSidebarListTab("chats");
-    void goChannel(target, { replace: true });
+    void goChannel(target, { replace: true, ...(thread ? { thread } : {}) });
   }, [channelsLoaded, goChannel, selectedView, sidebarChannels]);
-  const lastRef = React.useRef<{
-    channelId: string;
-    threadRootId: string | null;
-  } | null>(null);
   React.useEffect(() => {
     if (selectedView === "channel" && selectedChannelId) {
       lastRef.current = {

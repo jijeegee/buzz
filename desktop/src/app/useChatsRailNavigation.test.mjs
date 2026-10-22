@@ -16,19 +16,10 @@ test("Chats rail falls back to the first sidebar chat", () => {
   assert.equal(resolveChatsRailTarget(null, []), null);
 });
 
-test("a fresh start lands on Chats unless a route or welcome room is waiting", () => {
-  const fresh = {
-    startedWithoutRoute: true,
-    selectedView: "home",
-    pendingWelcome: false,
-  };
-  assert.equal(shouldLandOnChats(fresh), true);
-  // A reload keeps its route, Activity included.
-  assert.equal(
-    shouldLandOnChats({ ...fresh, startedWithoutRoute: false }),
-    false,
-  );
+test("home lands on Chats unless a welcome room is waiting", () => {
+  const home = { selectedView: "home", pendingWelcome: false };
+  assert.equal(shouldLandOnChats(home), true);
   // Already somewhere else, or a new account's welcome room opens instead.
-  assert.equal(shouldLandOnChats({ ...fresh, selectedView: "channel" }), false);
-  assert.equal(shouldLandOnChats({ ...fresh, pendingWelcome: true }), false);
+  assert.equal(shouldLandOnChats({ ...home, selectedView: "channel" }), false);
+  assert.equal(shouldLandOnChats({ ...home, pendingWelcome: true }), false);
 });
