@@ -504,10 +504,15 @@ class _SearchBody extends ConsumerWidget {
             !dmPartners.contains(user.pubkey.toLowerCase()))
           user,
     ];
+    // Nothing written by someone I blocked shows up in search.
+    final messageResults = [
+      for (final hit in state.messageResults)
+        if (!blockedPubkeys.contains(hit.pubkey.toLowerCase())) hit,
+    ];
     final hasAnyResults =
         !chats.isEmpty ||
         userResults.isNotEmpty ||
-        state.messageResults.isNotEmpty;
+        messageResults.isNotEmpty;
     void recordResultSelection() =>
         ref.read(recentSearchesProvider.notifier).record(state.query);
 
@@ -558,9 +563,9 @@ class _SearchBody extends ConsumerWidget {
             users: userResults,
             onResultSelected: recordResultSelection,
           ),
-        if (showMessages && state.messageResults.isNotEmpty)
+        if (showMessages && messageResults.isNotEmpty)
           _MessagesSection(
-            hits: state.messageResults,
+            hits: messageResults,
             currentPubkey: currentPubkey,
             onResultSelected: recordResultSelection,
           ),

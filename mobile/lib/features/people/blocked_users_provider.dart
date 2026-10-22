@@ -15,7 +15,8 @@ import '../../shared/relay/relay.dart';
 ///
 /// The list belongs to the signed-in account: switching accounts or signing
 /// out rebuilds it. A failed load is retried when the relay reconnects or
-/// the app returns to the foreground.
+/// the app returns to the foreground; a good list is re-read quietly on
+/// return to the foreground, so blocks made on another device show up.
 class BlockedUsersNotifier extends AsyncNotifier<Set<String>> {
   @override
   Future<Set<String>> build() async {
@@ -41,7 +42,13 @@ class BlockedUsersNotifier extends AsyncNotifier<Set<String>> {
     ref.listen(appLifecycleProvider, (prev, next) {
       if (next == AppLifecycleState.resumed &&
           prev != AppLifecycleState.resumed) {
-        retryIfFailed();
+        if (state.hasError) {
+          retryIfFailed();
+        } else {
+          Future.microtask(() {
+            if (ref.mounted) unawaited(refresh());
+          });
+        }
       }
     });
 
@@ -62,6 +69,25 @@ class BlockedUsersNotifier extends AsyncNotifier<Set<String>> {
       );
     }
     return ref.read(accountApiProvider(origin));
+  }
+
+  /// Re-reads the list from the server without showing a loading state
+  /// (pull to refresh, return to the foreground). A failed read keeps the
+  /// list shown; with no list yet it shows the failure.
+  Future<void> refresh() async {
+    final AccountApi api;
+    try {
+      api = _api();
+    } on AccountApiException {
+      return;
+    }
+    try {
+      final fresh = await _load(api);
+      if (ref.mounted) state = AsyncValue.data(fresh);
+    } catch (error, stack) {
+      if (!ref.mounted || state.hasValue) return;
+      state = AsyncValue.error(error, stack);
+    }
   }
 
   /// Blocks [pubkey] on the server, then reloads the list from it. Throws

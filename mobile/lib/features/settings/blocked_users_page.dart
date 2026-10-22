@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/widgets/bee_refresh_indicator.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../people/blocked_users_provider.dart';
 import '../people/person_actions.dart';
@@ -32,6 +33,9 @@ class BlockedUsersPage extends HookConsumerWidget {
           cache[a],
         ).toLowerCase().compareTo(personName(cache[b]).toLowerCase()),
       );
+
+    // Pull to refresh: blocks changed on another device.
+    Future<void> refresh() => ref.read(blockedUsersProvider.notifier).refresh();
 
     final Widget body;
     if (blocked.isLoading && !blocked.hasValue) {
@@ -64,21 +68,36 @@ class BlockedUsersPage extends HookConsumerWidget {
         ),
       );
     } else if (sorted.isEmpty) {
-      body = Center(
-        child: Text(
-          'You haven’t blocked anyone',
-          key: const Key('blocked-users-empty'),
-          style: context.textTheme.bodyMedium?.copyWith(
-            color: context.colors.onSurfaceVariant,
+      body = BeeRefreshIndicator(
+        onRefresh: refresh,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: SizedBox(
+              height: constraints.maxHeight,
+              child: Center(
+                child: Text(
+                  'You haven’t blocked anyone',
+                  key: const Key('blocked-users-empty'),
+                  style: context.textTheme.bodyMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       );
     } else {
-      body = ListView(
-        children: [
-          for (final pk in sorted)
-            _BlockedRow(key: ValueKey('blocked-$pk'), pubkey: pk),
-        ],
+      body = BeeRefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            for (final pk in sorted)
+              _BlockedRow(key: ValueKey('blocked-$pk'), pubkey: pk),
+          ],
+        ),
       );
     }
 

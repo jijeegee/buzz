@@ -39,12 +39,25 @@ class PeopleSession extends RelaySessionNotifier {
     return const [];
   }
 
+  /// Live subscriptions still open, by filter.
+  final Map<NostrFilter, void Function(NostrEvent)> live = {};
+
   @override
   Future<void Function()> subscribe(
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
-  }) async => () {};
+  }) async {
+    live[filter] = onEvent;
+    return () => live.remove(filter);
+  }
+
+  /// Delivers [event] to every open subscription for its kind.
+  void deliver(NostrEvent event) {
+    for (final entry in [...live.entries]) {
+      if (entry.key.kinds.contains(event.kind)) entry.value(event);
+    }
+  }
 
   @override
   Future<NostrEvent> publish(

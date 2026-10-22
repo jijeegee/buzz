@@ -8881,20 +8881,8 @@ void main() {
       const bobPubkey =
           'b0b0000000000000000000000000000000000000000000000000000000000000';
       // Not a valid hex public key — the sheet must surface a neutral label
-      // and refuse to copy it rather than leaking the raw string.
+      // rather than leaking the raw string.
       const invalidPubkey = 'bob-not-a-real-pubkey';
-      final clipboardTexts = <String>[];
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
-            if (call.method == 'Clipboard.setData') {
-              clipboardTexts.add((call.arguments as Map)['text'] as String);
-            }
-            return null;
-          });
-      addTearDown(
-        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(SystemChannels.platform, null),
-      );
 
       // Both scenarios share this sheet workflow — a keyed remount so the
       // second [ProviderScope] (and its user-cache override) is fresh.
@@ -8919,7 +8907,7 @@ void main() {
         ),
       );
 
-      // A valid identity: the sheet copies the full canonical npub.
+      // A valid identity: the sheet offers no key to copy.
       await tester.pumpWidget(
         sheetHost(
           'valid',
@@ -8938,34 +8926,16 @@ void main() {
       await tester.tap(find.byType(CircleAvatar));
       await tester.pumpAndSettle();
 
-      expect(find.text('Copy public key'), findsOneWidget);
+      expect(find.text('Copy public key'), findsNothing);
       // The full hex key is never rendered in the sheet.
       expect(find.text(alicePubkey), findsNothing);
       expect(find.text(bobPubkey), findsNothing);
       expect(find.byType(UserProfileSheet), findsOneWidget);
 
-      await tester.ensureVisible(find.text('Copy public key'));
-      await tester.pumpAndSettle();
-      final copyAction = find
-          .ancestor(
-            of: find.text('Copy public key'),
-            matching: find.byType(GestureDetector),
-          )
-          .last;
-      tester.widget<GestureDetector>(copyAction).onTap!();
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('Public key copied'), findsOneWidget);
-      // The clipboard receives the full canonical npub — never the raw hex.
-      expect(clipboardTexts, [
-        'npub1kzcqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0euyv8',
-      ]);
-
       await tester.tap(find.byTooltip('Close sheet'));
       await tester.pumpAndSettle();
 
-      // An invalid identity through the same workflow: neutral label,
-      // disabled copy, and no second clipboard write.
+      // An invalid identity through the same workflow: neutral label.
       await tester.pumpWidget(
         sheetHost(
           'invalid',
@@ -8983,7 +8953,7 @@ void main() {
       await tester.tap(find.byType(CircleAvatar));
       await tester.pumpAndSettle();
 
-      expect(find.text('Copy public key'), findsOneWidget);
+      expect(find.text('Copy public key'), findsNothing);
       // Malformed identity → neutral label, never truncated raw input.
       expect(
         find.descendant(
@@ -8993,31 +8963,6 @@ void main() {
         findsOneWidget,
       );
       expect(find.text(invalidPubkey), findsNothing);
-      // The copy tile is disabled and exposes no tap handler.
-      final disabledCopyAction = find
-          .ancestor(
-            of: find.text('Copy public key'),
-            matching: find.byType(GestureDetector),
-          )
-          .last;
-      expect(tester.widget<GestureDetector>(disabledCopyAction).onTap, isNull);
-      final copySemantics = find
-          .ancestor(
-            of: find.text('Copy public key'),
-            matching: find.byType(Semantics),
-          )
-          .first;
-      expect(
-        tester.widget<Semantics>(copySemantics).properties.enabled,
-        isFalse,
-      );
-
-      await tester.tap(disabledCopyAction, warnIfMissed: false);
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('Public key copied'), findsNothing);
-      // The valid scenario's npub is still the only clipboard write.
-      expect(clipboardTexts, hasLength(1));
 
       await tester.tap(find.byTooltip('Close sheet'));
       await tester.pumpAndSettle();
@@ -9027,7 +8972,7 @@ void main() {
     });
 
     testWidgets(
-      'profile sheet heading falls back to the compact npub for blank cached names',
+      'profile sheet heading falls back to a neutral label for blank cached names',
       (tester) async {
         const alicePubkey =
             'a11ce00000000000000000000000000000000000000000000000000000000000';
@@ -9037,8 +8982,8 @@ void main() {
         // The membership row opens the sheet for the joined member (bob).
         // His cached display name is relay-valid but blank (empty and
         // whitespace-only), so the heading must resolve through the shared
-        // nonblank-name label contract — the compact npub of the b0b key,
-        // never a blank heading. Keyed remounts keep each ProviderScope
+        // nonblank-name label contract to a neutral "Kuzz user" — never a
+        // blank heading and never a key. Keyed remounts keep each ProviderScope
         // (and its user-cache override) fresh between scenarios.
         for (final blankName in const ['', '   ']) {
           await tester.pumpWidget(
@@ -9084,9 +9029,16 @@ void main() {
           expect(
             find.descendant(
               of: find.byType(UserProfileSheet),
-              matching: find.text('npub1kzc…uyv8'),
+              matching: find.text('Kuzz user'),
             ),
             findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: find.byType(UserProfileSheet),
+              matching: find.textContaining('npub'),
+            ),
+            findsNothing,
           );
           // The full hex key is never rendered either.
           expect(find.text(bobPubkey), findsNothing);
@@ -9121,7 +9073,7 @@ void main() {
       await tester.tap(find.byType(CircleAvatar));
       await tester.pumpAndSettle();
 
-      expect(find.text('Copy public key'), findsOneWidget);
+      expect(find.text('Copy public key'), findsNothing);
       expect(find.byType(UserProfileSheet), findsOneWidget);
     });
 
@@ -9252,7 +9204,7 @@ void main() {
       await tester.tap(find.byType(CircleAvatar).first);
       await tester.pumpAndSettle();
 
-      expect(find.text('Copy public key'), findsOneWidget);
+      expect(find.text('Copy public key'), findsNothing);
       expect(find.byType(UserProfileSheet), findsOneWidget);
     });
 

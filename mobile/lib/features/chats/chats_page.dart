@@ -36,6 +36,7 @@ import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
 import 'chat_list_provider.dart';
+import 'chat_row_visible_latest.dart';
 import 'chat_thread_row_menu.dart';
 import 'chat_working.dart';
 import 'thread_pins_provider.dart';

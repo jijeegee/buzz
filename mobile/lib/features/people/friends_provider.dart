@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
@@ -5,9 +8,12 @@ import '../pulse/pulse_provider.dart';
 
 /// My friends: the people in my follow list (kind 3). Adding a friend is
 /// one-way, with no request or acceptance, like desktop's People screen.
+///
+/// Changes made on another device arrive live (see [friendsSyncProvider]).
 final friendIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
   final me = ref.watch(myPubkeyProvider);
   if (me == null || me.isEmpty) return const AsyncValue.data(<String>{});
+  ref.watch(friendsSyncProvider);
   return ref
       .watch(contactListProvider(me.toLowerCase()))
       .whenData(
@@ -15,6 +21,56 @@ final friendIdsProvider = Provider<AsyncValue<Set<String>>>((ref) {
           for (final entry in contacts) entry.pubkey.toLowerCase(),
         },
       );
+});
+
+/// Keeps my follow list current while [friendIdsProvider] is in use: a live
+/// subscription to my own follow list re-reads it when another device
+/// changes it, and returning to the foreground re-reads it in case that
+/// event was missed while the app was in the background.
+final friendsSyncProvider = Provider<void>((ref) {
+  final me = ref.watch(myPubkeyProvider)?.toLowerCase();
+  if (me == null || me.isEmpty) return;
+
+  // Deferred: refreshing from inside a lifecycle or relay callback, while
+  // providers may be building, is not allowed.
+  void refresh() => Future.microtask(() {
+    if (ref.mounted) ref.invalidate(contactListProvider(me));
+  });
+
+  ref.listen(appLifecycleProvider, (prev, next) {
+    if (next == AppLifecycleState.resumed &&
+        prev != AppLifecycleState.resumed) {
+      refresh();
+    }
+  });
+
+  var disposed = false;
+  void Function()? unsubscribe;
+  ref.onDispose(() {
+    disposed = true;
+    unsubscribe?.call();
+  });
+  unawaited(() async {
+    try {
+      final cancel = await ref
+          .read(relaySessionProvider.notifier)
+          .subscribe(
+            NostrFilter(
+              kinds: const [EventKind.contactList],
+              authors: [me],
+              limit: 0,
+            ),
+            (_) => refresh(),
+          );
+      if (disposed) {
+        cancel();
+      } else {
+        unsubscribe = cancel;
+      }
+    } catch (error) {
+      debugPrint('[Friends] follow list subscription failed: $error');
+    }
+  }());
 });
 
 /// Adds and removes friends one person at a time. The follow list is

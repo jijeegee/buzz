@@ -13,8 +13,10 @@ import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart'
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
 import 'package:kuzz/features/chats/chat_list_provider.dart';
+import 'package:kuzz/features/chats/chat_row_visible_latest.dart';
 import 'package:kuzz/features/chats/chats_page.dart';
 import 'package:kuzz/features/chats/thread_pins_provider.dart';
+import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:kuzz/shared/widgets/bee_refresh_indicator.dart';
@@ -426,6 +428,36 @@ void main() {
       find.byKey(ValueKey('chat-row-thread-unread-$_closedRoot')),
       findsNothing,
     );
+  });
+
+  testWidgets('a blocked latest shows an earlier visible message or a '
+      'neutral line', (tester) async {
+    final earlier = NostrEvent(
+      id: 'earlier',
+      pubkey: _other,
+      createdAt: 50,
+      kind: 9,
+      tags: const [],
+      content: 'still visible',
+    );
+    await _pump(
+      tester,
+      [
+        _room(_general, 'general', 100, preview: 'secret one'),
+        _room(_random, 'random', 90, preview: 'secret two'),
+      ],
+      extra: [
+        blockedPubkeysProvider.overrideWithValue({_them}),
+        chatRowVisibleLatestProvider.overrideWith(
+          (ref, key) async => key.channelId == _general ? earlier : null,
+        ),
+      ],
+    );
+    await tester.pump();
+
+    expect(find.textContaining('secret'), findsNothing);
+    expect(find.text('still visible'), findsOneWidget);
+    expect(find.text(blockedMessageLabel), findsOneWidget);
   });
 
   testWidgets('a pinned thread shows a pin', (tester) async {

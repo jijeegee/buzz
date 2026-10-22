@@ -9,6 +9,7 @@ import '../../shared/auth/account/account_api.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
+import '../../shared/widgets/bee_refresh_indicator.dart';
 import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
@@ -135,6 +136,18 @@ class PeoplePage extends HookConsumerWidget {
       titleStyle: headerTitleStyle,
       bottomHeight: Grid.xxs,
     );
+
+    // Pull to refresh: friends and blocks changed on another device.
+    Future<void> refresh() async {
+      final key = me;
+      await Future.wait([
+        if (key != null && key.isNotEmpty)
+          ref
+              .refresh(contactListProvider(key).future)
+              .then<void>((_) {}, onError: (_) {}),
+        ref.read(blockedUsersProvider.notifier).refresh(),
+      ]);
+    }
 
     final searching = query.value.trim().isNotEmpty;
     final children = <Widget>[
@@ -289,11 +302,16 @@ class PeoplePage extends HookConsumerWidget {
       body: SafeArea(
         top: false,
         bottom: false,
-        child: ListView(
-          key: const Key('people-list'),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.only(top: topHeight, bottom: Grid.lg),
-          children: children,
+        child: BeeRefreshIndicator(
+          edgeOffset: topHeight,
+          onRefresh: refresh,
+          child: ListView(
+            key: const Key('people-list'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.only(top: topHeight, bottom: Grid.lg),
+            children: children,
+          ),
         ),
       ),
     );

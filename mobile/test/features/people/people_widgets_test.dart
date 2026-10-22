@@ -5,12 +5,15 @@ import 'package:kuzz/features/people/blocked_message_gate.dart';
 import 'package:kuzz/features/people/people_page.dart';
 import 'package:kuzz/features/people/person_actions.dart';
 import 'package:kuzz/features/people/person_page.dart';
+import 'package:kuzz/features/profile/user_profile_sheet.dart';
 import 'package:kuzz/features/settings/blocked_users_page.dart';
 import 'package:kuzz/features/settings/kuzz_id_page.dart';
 import 'package:kuzz/features/settings/people_settings.dart';
 import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/identity_names/identity_names_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
+import 'package:kuzz/shared/widgets/bee_refresh_indicator.dart';
 
 import 'people_fixture.dart';
 
@@ -31,6 +34,7 @@ void main() {
     Set<String> favorites = const {},
     List<String> agents = const [],
     bool withAccount = true,
+    Map<String, String>? names,
   }) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
@@ -42,7 +46,7 @@ void main() {
           api: withAccount ? api : null,
           favorites: favorites,
           agents: agents,
-          names: {ann: 'Ann', bob: 'Bob', cat: 'Cat', dan: 'Dan'},
+          names: names ?? {ann: 'Ann', bob: 'Bob', cat: 'Cat', dan: 'Dan'},
         ),
         child: MaterialApp(theme: AppTheme.light(), home: page),
       ),
@@ -132,13 +136,38 @@ void main() {
       final written = session.published.single;
       expect(written.kind, EventKind.contactList);
       expect(written.tags.map((t) => t[1]), [bob]);
+      // Added, with a direct way to start talking.
       expect(
         find.descendant(
           of: find.byKey(const Key('add-friend-result')),
-          matching: find.text('Friend'),
+          matching: find.byKey(const Key('add-friend-added')),
         ),
         findsOneWidget,
       );
+      expect(find.text('Added'), findsOneWidget);
+      expect(find.byKey(const Key('add-friend-open-dm')), findsOneWidget);
+      expect(find.byKey(const Key('add-friend-add')), findsNothing);
+    });
+
+    testWidgets('pull to refresh shows friends and blocks made elsewhere', (
+      tester,
+    ) async {
+      session.follow(peopleKeys.public, [ann], createdAt: 100);
+      await pumpPage(tester, const PeoplePage());
+      expect(find.text('Friends · 1'), findsOneWidget);
+
+      // Another device adds Bob and Cat, then blocks Ann.
+      session.follow(peopleKeys.public, [ann, bob, cat], createdAt: 200);
+      api.blocked.add(ann);
+      await tester
+          .widget<BeeRefreshIndicator>(find.byType(BeeRefreshIndicator))
+          .onRefresh();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Friends · 2'), findsOneWidget);
+      expect(find.byKey(ValueKey('people-friend-$ann')), findsNothing);
+      expect(find.byKey(ValueKey('people-friend-$bob')), findsOneWidget);
+      expect(find.byKey(ValueKey('people-friend-$cat')), findsOneWidget);
     });
 
     testWidgets('too many lookups says so', (tester) async {
@@ -177,6 +206,46 @@ void main() {
       expect(find.text('Unblock'), findsOneWidget);
     });
 
+    testWidgets('Remove friend asks first, then confirms', (tester) async {
+      session.follow(peopleKeys.public, [ann, bob]);
+      await pumpPage(tester, PersonPage(pubkey: ann));
+
+      await tester.tap(find.byKey(const Key('person-friend')));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove Ann from friends?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(session.published, isEmpty);
+      expect(find.text('Remove friend'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('person-friend')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirm-remove-friend')));
+      await tester.pumpAndSettle();
+      expect(session.published.single.tags.map((t) => t[1]), [bob]);
+      expect(find.text('Removed Ann from friends'), findsOneWidget);
+      expect(find.text('Add friend'), findsOneWidget);
+    });
+
+    testWidgets('Add friend confirms with a snack bar', (tester) async {
+      await pumpPage(tester, PersonPage(pubkey: ann));
+      await tester.tap(find.byKey(const Key('person-friend')));
+      await tester.pumpAndSettle();
+      expect(session.published.single.tags.map((t) => t[1]), [ann]);
+      expect(find.text('Added Ann to friends'), findsOneWidget);
+    });
+
+    testWidgets('someone without a loaded name is "this user"', (tester) async {
+      final eve = 'e' * 64;
+      await pumpPage(tester, PersonPage(pubkey: eve));
+      await tester.tap(find.byKey(const Key('person-block')));
+      await tester.pumpAndSettle();
+      expect(find.text('Block this user?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('confirm-block')));
+      await tester.pumpAndSettle();
+      expect(find.text('Blocked this user'), findsOneWidget);
+    });
+
     testWidgets('without an account there is no Block, only Report', (
       tester,
     ) async {
@@ -190,6 +259,116 @@ void main() {
       await tester.tap(find.byKey(const Key('person-favorite')));
       await tester.pump();
       expect(find.byTooltip('Remove from favorites'), findsOneWidget);
+    });
+  });
+
+  group('profile sheet', () {
+    Widget launcher(String pubkey) => Builder(
+      builder: (context) => Scaffold(
+        body: TextButton(
+          onPressed: () => showUserProfileSheet(context, pubkey),
+          child: const Text('open'),
+        ),
+      ),
+    );
+
+    testWidgets('has no key to copy', (tester) async {
+      await pumpPage(tester, launcher(ann));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(UserProfileSheet), findsOneWidget);
+      expect(find.text('Copy public key'), findsNothing);
+      expect(find.text('Message'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close sheet'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('Block closes the sheet so its confirmation shows', (
+      tester,
+    ) async {
+      await pumpPage(tester, launcher(ann));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-sheet-block')));
+      await tester.pumpAndSettle();
+      expect(find.text('Block Ann?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('confirm-block')));
+      await tester.pumpAndSettle();
+
+      expect(api.blocked, {ann});
+      expect(find.byType(UserProfileSheet), findsNothing);
+      expect(find.text('Blocked Ann'), findsOneWidget);
+    });
+
+    testWidgets('Report closes the sheet so its confirmation shows', (
+      tester,
+    ) async {
+      await pumpPage(tester, launcher(ann));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-sheet-report')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('report-reason-spam')));
+      await tester.tap(find.byKey(const Key('report-also-block')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('report-submit')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UserProfileSheet), findsNothing);
+      expect(find.text('Report sent to the moderators'), findsOneWidget);
+    });
+
+    testWidgets('a same-name key suffix stays out of the prompts', (
+      tester,
+    ) async {
+      // Two people named Ann: the opener's context tells them apart with a
+      // key suffix, which the Block prompt leaves out.
+      await pumpPage(
+        tester,
+        Consumer(
+          builder: (context, ref, _) => Scaffold(
+            body: TextButton(
+              onPressed: () {
+                final opened = ref.read(identityNameSourcesProvider).scope([
+                  ann,
+                  dan,
+                ]);
+                showUserProfileSheet(
+                  context,
+                  ann,
+                  names: liveIdentityNamesProvider(opened),
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+        names: {ann: 'Ann', dan: 'Ann'},
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Ann · '), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('profile-sheet-block')));
+      await tester.pumpAndSettle();
+      expect(find.text('Block Ann?'), findsOneWidget);
+    });
+
+    testWidgets('an unnamed person is never named by a key fragment', (
+      tester,
+    ) async {
+      final eve = 'e' * 64;
+      await pumpPage(tester, launcher(eve));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('profile-sheet-block')));
+      await tester.pumpAndSettle();
+      expect(find.text('Block this user?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      // The heading is neutral too.
+      expect(find.text('Kuzz user'), findsOneWidget);
+      expect(find.textContaining('npub'), findsNothing);
     });
   });
 
@@ -305,6 +484,20 @@ void main() {
       expect(api.blocked, {bob});
       expect(find.text('Ann'), findsNothing);
       expect(find.text('Unblocked Ann'), findsOneWidget);
+    });
+
+    testWidgets('Blocked users refreshes on pull', (tester) async {
+      api.blocked.add(ann);
+      await pumpPage(tester, const BlockedUsersPage());
+      expect(find.text('Bob'), findsNothing);
+
+      api.blocked.add(bob);
+      await tester
+          .widget<BeeRefreshIndicator>(find.byType(BeeRefreshIndicator))
+          .onRefresh();
+      await tester.pumpAndSettle();
+      expect(find.text('Ann'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
     });
 
     testWidgets('Kuzz ID validates and reports a taken ID', (tester) async {
