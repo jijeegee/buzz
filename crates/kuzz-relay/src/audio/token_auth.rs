@@ -68,6 +68,12 @@ pub(crate) async fn ban_refusal(
                     "blocked: you are banned from this community",
                 ))
             }
+            BanOutcome::AccountDisabled => {
+                return Some((
+                    kuzz_auth::DenialClass::AuthorizationDenied,
+                    crate::handlers::auth::ACCOUNT_DISABLED_REASON,
+                ))
+            }
             BanOutcome::DbError => {
                 return Some((
                     kuzz_auth::DenialClass::AuthorizationUnavailable,

@@ -3,7 +3,8 @@
 //! `AUTH_TOKEN_ENABLED` gates token messaging and bots. Independently,
 //! `AUTH_KEY_BACKUP_ENABLED` mounts account sessions and Google backup routes
 //! while preserving signed NIP-42/NIP-98 messaging. Backup sessions cannot
-//! authorize token messaging, token profiles, bots or account deletion.
+//! authorize token messaging, token profiles or bots; they can delete their
+//! account, after which its key and agents are refused at every auth seam.
 //!
 //! - [`verify_access_token`] is the single token → principal seam (WS AUTH and
 //!   HTTP `Bearer`); message paths use [`verify_message_token`], which the
