@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
@@ -49,11 +50,11 @@ class AgentTeamPage extends ConsumerWidget {
                 ),
                 child: Text(description, style: context.textTheme.bodyMedium),
               ),
-            const AgentsSectionTitle('Agents'),
+            AgentsSectionTitle(context.l10n.agentsTeamSectionAgents),
             if (team.agentPubkeys.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
-                child: Text('This team has no agents yet.', style: muted),
+                child: Text(context.l10n.agentsTeamEmpty, style: muted),
               ),
             for (final pubkey in team.agentPubkeys)
               if (agents[pubkey] case final agent?)
@@ -69,12 +70,10 @@ class AgentTeamPage extends ConsumerWidget {
                   horizontal: Grid.gutter,
                 ),
                 title: Text(
-                  removed.length == 1
-                      ? '1 agent was removed'
-                      : '${removed.length} agents were removed',
+                  context.l10n.agentsTeamAgentsRemoved(removed.length),
                 ),
                 subtitle: Text(
-                  'No longer on any of your computers',
+                  context.l10n.agentsTeamRemovedDetail,
                   style: muted,
                 ),
               ),
@@ -85,11 +84,7 @@ class AgentTeamPage extends ConsumerWidget {
                 Grid.gutter,
                 0,
               ),
-              child: Text(
-                'Change teams and add them to groups in the Kuzz app on '
-                'your computer.',
-                style: muted,
-              ),
+              child: Text(context.l10n.agentsTeamDesktopNote, style: muted),
             ),
           ],
         ),

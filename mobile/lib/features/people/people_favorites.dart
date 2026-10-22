@@ -9,6 +9,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/community/community_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
 import '../channels/channel_stars/channel_stars_manager.dart'
@@ -574,4 +575,4 @@ String? _pubkeyFromNsec(String nsec) {
 }
 
 /// The full-list message desktop shows.
-const peopleFavoritesFullMessage = 'You can favorite up to 200 people.';
+String get peopleFavoritesFullMessage => appL10n.friendsFavoritesFull;

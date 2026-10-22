@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../shared/l10n/l10n.dart';
+
 @immutable
 class FeedItem {
   final String id;
@@ -56,27 +58,29 @@ class FeedItem {
   String get headline {
     switch (kind) {
       case 45001:
-        return 'Forum post';
+        return appL10n.activityHeadlineForumPost;
       case 45003:
-        return 'Forum reply';
+        return appL10n.activityHeadlineForumReply;
       case 46010:
-        return 'Approval requested';
+        return appL10n.activityHeadlineApprovalRequested;
       case 43001:
-        return 'Job requested';
+        return appL10n.activityHeadlineJobRequested;
       case 43002:
-        return 'Job accepted';
+        return appL10n.activityHeadlineJobAccepted;
       case 43003:
-        return 'Progress update';
+        return appL10n.activityHeadlineProgressUpdate;
       case 43004:
-        return 'Job result';
+        return appL10n.activityHeadlineJobResult;
       case 43005:
-        return 'Job cancelled';
+        return appL10n.activityHeadlineJobCancelled;
       case 43006:
-        return 'Job failed';
+        return appL10n.activityHeadlineJobFailed;
       default:
-        if (category == 'mention') return 'Mention';
-        if (category == 'agent_activity') return 'Agent update';
-        return 'Group update';
+        if (category == 'mention') return appL10n.activityHeadlineMention;
+        if (category == 'agent_activity') {
+          return appL10n.activityHeadlineAgentUpdate;
+        }
+        return appL10n.activityHeadlineGroupUpdate;
     }
   }
 
@@ -84,8 +88,8 @@ class FeedItem {
   String get displayContent {
     final trimmed = content.trim();
     if (trimmed.isNotEmpty) return trimmed;
-    if (kind == 46010) return 'A workflow is waiting for approval.';
-    return 'No additional details.';
+    if (kind == 46010) return appL10n.activityApprovalWaiting;
+    return appL10n.activityNoDetails;
   }
 }
 

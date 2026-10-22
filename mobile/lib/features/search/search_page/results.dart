@@ -11,9 +11,9 @@ Set<String> _dmPartners(Channel channel, String? me) => {
 void _openChatResult(BuildContext context, SearchChatResult result) {
   final channel = result.channel;
   if (channel == null) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('This chat is still loading.')),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(context.l10n.searchStillLoading)));
     return;
   }
   final rootId = result.thread?.rootId;
@@ -101,7 +101,7 @@ class _ChannelResultTile extends StatelessWidget {
       ),
       subtitle: channel.isMember
           ? Text(
-              '${channel.memberCount} member${channel.memberCount == 1 ? '' : 's'}',
+              context.l10n.searchMemberCount(channel.memberCount),
               style: contentListBodyTextStyle.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -118,7 +118,7 @@ class _ChannelResultTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(Radii.sm),
               ),
               child: Text(
-                'Public',
+                context.l10n.searchPublic,
                 style: context.textTheme.labelSmall?.copyWith(
                   color: context.colors.primary,
                   fontWeight: FontWeight.w600,
@@ -215,7 +215,7 @@ class _ThreadResultTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        'Thread in ${result.channelName}',
+        context.l10n.searchThreadIn(result.channelName),
         key: ValueKey('search-thread-context-${result.key}'),
         style: contentListBodyTextStyle.copyWith(
           color: context.colors.onSurfaceVariant,
@@ -307,7 +307,7 @@ class _PeopleSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(label: 'People'),
+        _SectionLabel(label: context.l10n.searchSectionPeople),
         for (final user in users)
           ListTile(
             key: ValueKey('search-person-row-${user.pubkey}'),
@@ -379,7 +379,7 @@ class _MessagesSection extends HookConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(label: 'Messages'),
+        _SectionLabel(label: context.l10n.searchSectionMessages),
         for (final hit in hits)
           _MessageTile(
             hit: hit,
@@ -517,7 +517,11 @@ class _MessageTile extends ConsumerWidget {
             ),
       title: MessageAuthorMeta(
         key: ValueKey('search-message-context-${hit.eventId}'),
-        displayName: place ?? (isDm ? 'Direct message' : 'Message'),
+        displayName:
+            place ??
+            (isDm
+                ? context.l10n.searchDirectMessage
+                : context.l10n.searchMessage),
         timestamp: timeAgo,
         nameColor: context.colors.onSurface,
         metadataColor: context.colors.onSurfaceVariant,
@@ -533,7 +537,7 @@ class _MessageTile extends ConsumerWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 140),
               child: Text(
-                '$authorName: ',
+                context.l10n.searchAuthorPrefix(authorName),
                 key: ValueKey('search-message-author-${hit.eventId}'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

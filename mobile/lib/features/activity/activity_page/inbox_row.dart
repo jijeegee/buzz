@@ -24,7 +24,7 @@ class _NewBoundaryDivider extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: Grid.xxs),
             child: Text(
-              'New',
+              context.l10n.activityNewDivider,
               style: context.textTheme.labelSmall?.copyWith(
                 color: context.colors.error,
                 fontWeight: FontWeight.w600,
@@ -180,7 +180,10 @@ class _InboxRow extends HookConsumerWidget {
         ? null
         : threadRootId == null
         ? channelName
-        : '$channelName › ${threadName ?? 'Thread'}';
+        : context.l10n.activityRoomThread(
+            channelName,
+            threadName ?? context.l10n.activityThreadFallback,
+          );
     final label = inboxTypeLabel(
       item,
       channelName: channelName,
@@ -194,9 +197,9 @@ class _InboxRow extends HookConsumerWidget {
     final unreadCountLabel = unread == null
         ? null
         : unread.overflow
-        ? '$inboxSummaryUnreadCap+ unread'
+        ? context.l10n.activityUnreadCountCapped(inboxSummaryUnreadCap)
         : unread.count > 1
-        ? '${unread.count} unread'
+        ? context.l10n.activityUnreadCount(unread.count)
         : null;
     final labelColor = item.isActionRequired && !isDone
         ? context.colors.tertiary
@@ -238,7 +241,9 @@ class _InboxRow extends HookConsumerWidget {
                       color: actionColor,
                       foregroundColor: contrastForeground(actionColor),
                       icon: isDone ? LucideIcons.mail : LucideIcons.mailOpen,
-                      label: isDone ? 'Mark unread' : 'Mark as read',
+                      label: isDone
+                          ? context.l10n.activityMarkUnread
+                          : context.l10n.activityMarkRead,
                       onTap: toggleReadState,
                     ),
                   ),
@@ -486,7 +491,11 @@ class _InboxRow extends HookConsumerWidget {
                   leading: Icon(
                     isDone ? LucideIcons.mail : LucideIcons.mailOpen,
                   ),
-                  title: Text(isDone ? 'Mark unread' : 'Mark as read'),
+                  title: Text(
+                    isDone
+                        ? context.l10n.activityMarkUnread
+                        : context.l10n.activityMarkRead,
+                  ),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     isDone ? onMarkUnread() : onMarkRead();
@@ -494,7 +503,7 @@ class _InboxRow extends HookConsumerWidget {
                 ),
                 ListTile(
                   leading: const Icon(LucideIcons.externalLink),
-                  title: const Text('Open conversation'),
+                  title: Text(context.l10n.activityOpenConversation),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     onTap();

@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -52,16 +53,14 @@ Future<bool> confirmBlock(BuildContext context, String name) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text('Block ${personActionName(name)}?'),
-      content: const Text(
-        'They won’t be told. You won’t get their direct messages, their '
-        'messages in shared groups are hidden, and they are removed from '
-        'your friends. You can unblock them in Settings.',
+      title: Text(
+        dialogContext.l10n.friendsBlockConfirmTitle(personActionName(name)),
       ),
+      content: Text(dialogContext.l10n.friendsBlockConfirmBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Cancel'),
+          child: Text(dialogContext.l10n.friendsCancel),
         ),
         TextButton(
           key: const Key('confirm-block'),
@@ -69,7 +68,7 @@ Future<bool> confirmBlock(BuildContext context, String name) async {
           style: TextButton.styleFrom(
             foregroundColor: dialogContext.colors.error,
           ),
-          child: const Text('Block'),
+          child: Text(dialogContext.l10n.friendsBlock),
         ),
       ],
     ),
@@ -82,14 +81,14 @@ Future<bool> confirmRemoveFriend(BuildContext context, String name) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text('Remove ${personActionName(name)} from friends?'),
-      content: const Text(
-        'They won’t be told. You can add them again at any time.',
+      title: Text(
+        dialogContext.l10n.friendsRemoveConfirmTitle(personActionName(name)),
       ),
+      content: Text(dialogContext.l10n.friendsRemoveConfirmBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Cancel'),
+          child: Text(dialogContext.l10n.friendsCancel),
         ),
         TextButton(
           key: const Key('confirm-remove-friend'),
@@ -97,7 +96,7 @@ Future<bool> confirmRemoveFriend(BuildContext context, String name) async {
           style: TextButton.styleFrom(
             foregroundColor: dialogContext.colors.error,
           ),
-          child: const Text('Remove'),
+          child: Text(dialogContext.l10n.friendsRemove),
         ),
       ],
     ),
@@ -120,25 +119,28 @@ Future<bool> confirmAndBlock(
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final block = personBlocker(ref);
+  final l10n = context.l10n;
   name = personActionName(name);
   if (!await confirmBlock(context, name)) return false;
   onConfirmed?.call();
   try {
     await block(pubkey);
-  } on FriendRemovalFailed catch (error) {
-    messenger?.showSnackBar(SnackBar(content: Text('$error')));
+  } on FriendRemovalFailed {
+    messenger?.showSnackBar(
+      SnackBar(content: Text(l10n.friendsBlockedButStillFriend)),
+    );
     return true;
   } catch (error) {
     messenger?.showSnackBar(
       SnackBar(
         content: Text(
-          friendlyError(error, fallback: 'Couldn’t block $name. Try again.'),
+          friendlyError(error, fallback: l10n.friendsBlockError(name)),
         ),
       ),
     );
     return false;
   }
-  messenger?.showSnackBar(SnackBar(content: Text('Blocked $name')));
+  messenger?.showSnackBar(SnackBar(content: Text(l10n.friendsBlocked(name))));
   return true;
 }
 
@@ -153,6 +155,7 @@ Future<void> unblockWithFeedback(
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final blocked = ref.read(blockedUsersProvider.notifier);
+  final l10n = context.l10n;
   name = personActionName(name);
   onStarted?.call();
   try {
@@ -161,13 +164,13 @@ Future<void> unblockWithFeedback(
     messenger?.showSnackBar(
       SnackBar(
         content: Text(
-          friendlyError(error, fallback: 'Couldn’t unblock $name. Try again.'),
+          friendlyError(error, fallback: l10n.friendsUnblockError(name)),
         ),
       ),
     );
     return;
   }
-  messenger?.showSnackBar(SnackBar(content: Text('Unblocked $name')));
+  messenger?.showSnackBar(SnackBar(content: Text(l10n.friendsUnblocked(name))));
 }
 
 /// Reports [pubkey] (a person) or, with [eventId], one of their messages:
@@ -188,7 +191,9 @@ Future<bool> showReportSheet(
   final outcome = await showKuzzModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
-    title: eventId == null ? 'Report $name' : 'Report message',
+    title: eventId == null
+        ? context.l10n.friendsReportPersonTitle(name)
+        : context.l10n.friendsReportMessageTitle,
     builder: (_) => ReportSheet(pubkey: pubkey, name: name, eventId: eventId),
   );
   if (outcome == null) return false;
@@ -212,6 +217,7 @@ class ReportSheet extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final reason = useState<ReportReason?>(null);
     final alsoBlock = useState(true);
     final sending = useState(false);
@@ -237,23 +243,24 @@ class ReportSheet extends HookConsumerWidget {
         sending.value = false;
         error.value = friendlyError(
           failure,
-          fallback: 'Couldn’t send the report. Try again.',
+          fallback: l10n.friendsReportSendError,
         );
         return;
       }
-      var outcome = 'Report sent to the moderators';
+      var outcome = l10n.friendsReportSent;
       if (block != null) {
         try {
           await block(pubkey);
-          outcome = 'Report sent. ${personActionSubject(name)} is blocked.';
+          outcome = l10n.friendsReportSentBlocked(personActionSubject(name));
         } on FriendRemovalFailed {
-          outcome =
-              'Report sent. ${personActionSubject(name)} is blocked, but is '
-              'still in your friends.';
+          outcome = l10n.friendsReportSentBlockedStillFriend(
+            personActionSubject(name),
+          );
         } catch (failure) {
-          outcome =
-              'Report sent, but couldn’t block $name. '
-              '${friendlyError(failure, fallback: 'Try again from their profile.')}';
+          outcome = l10n.friendsReportSentBlockFailed(
+            name,
+            friendlyError(failure, fallback: l10n.friendsReportBlockRetry),
+          );
         }
       }
       if (context.mounted) Navigator.of(context).pop(outcome);
@@ -273,9 +280,7 @@ class ReportSheet extends HookConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Reports go to this community’s moderators. '
-              '${personActionSubject(name)} isn’t told '
-              'who reported them.',
+              l10n.friendsReportNotice(personActionSubject(name)),
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -293,7 +298,7 @@ class ReportSheet extends HookConsumerWidget {
                       key: Key('report-reason-${item.wireValue}'),
                       value: item,
                       contentPadding: EdgeInsets.zero,
-                      title: Text(item.label),
+                      title: Text(item.label(l10n)),
                     ),
                 ],
               ),
@@ -307,7 +312,7 @@ class ReportSheet extends HookConsumerWidget {
                     : (value) => alsoBlock.value = value ?? false,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                title: Text('Also block $name'),
+                title: Text(l10n.friendsReportAlsoBlock(name)),
               ),
             if (error.value case final message?) ...[
               const SizedBox(height: Grid.xxs),
@@ -329,11 +334,11 @@ class ReportSheet extends HookConsumerWidget {
                   ? null
                   : () => unawaited(send()),
               child: sending.value
-                  ? const KuzzLoadingIndicator(
+                  ? KuzzLoadingIndicator(
                       size: 20,
-                      semanticLabel: 'Sending report',
+                      semanticLabel: l10n.friendsReportSending,
                     )
-                  : const Text('Report'),
+                  : Text(l10n.friendsReport),
             ),
           ],
         ),

@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/deeplink/group_links.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -17,8 +18,7 @@ import '../channels/group_avatar.dart';
 import 'groups_api.dart';
 
 /// "1 member" / "N members".
-String memberCountLabel(int count) =>
-    '$count ${count == 1 ? 'member' : 'members'}';
+String memberCountLabel(int count) => appL10n.groupsMemberCount(count);
 
 /// The group [channelId] from the refreshed channel list, or [fallback]
 /// marked as joined while the list catches up.
@@ -73,10 +73,10 @@ Future<String> joinGroupByLink(
 /// User-facing text for a failed join.
 String joinErrorMessage(Object error) {
   if (error is GroupsApiException) {
-    if (error.isNotFound) return 'No group found for this link.';
-    if (error.statusCode == 403) return 'You can’t join this group.';
+    if (error.isNotFound) return appL10n.groupsLinkNotFound;
+    if (error.statusCode == 403) return appL10n.groupsCantJoin;
   }
-  return 'Couldn’t join group. Try again.';
+  return appL10n.groupsJoinError;
 }
 
 /// Full-width Join group bar that replaces the composer while previewing a
@@ -98,7 +98,7 @@ class GroupJoinBar extends HookConsumerWidget {
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            const SnackBar(content: Text('Couldn’t join group. Try again.')),
+            SnackBar(content: Text(context.l10n.groupsJoinError)),
           );
         }
       } finally {
@@ -140,7 +140,11 @@ class GroupJoinBar extends HookConsumerWidget {
           FilledButton(
             key: const ValueKey('group-join-bar-join'),
             onPressed: joining.value ? null : () => unawaited(join()),
-            child: Text(joining.value ? 'Joining…' : 'Join group'),
+            child: Text(
+              joining.value
+                  ? context.l10n.groupsJoining
+                  : context.l10n.groupsJoinGroup,
+            ),
           ),
         ],
       ),
@@ -211,10 +215,10 @@ class GroupPreviewCard extends StatelessWidget {
               onPressed: joining ? null : onJoin,
               child: Text(
                 group.isMember
-                    ? 'Open'
+                    ? context.l10n.groupsOpen
                     : joining
-                    ? 'Joining…'
-                    : 'Join group',
+                    ? context.l10n.groupsJoining
+                    : context.l10n.groupsJoinGroup,
               ),
             ),
           ),
@@ -233,7 +237,7 @@ Future<void> showJoinWithLinkSheet(
   final mediaQuery = MediaQuery.of(context);
   final channel = await showKuzzModalBottomSheet<Channel>(
     context: context,
-    title: 'Join with link',
+    title: context.l10n.groupsJoinWithLinkTitle,
     isScrollControlled: true,
     showDragHandle: true,
     constraints: BoxConstraints(
@@ -268,12 +272,13 @@ class JoinWithLinkSheet extends HookConsumerWidget {
     final error = useState<String?>(null);
     final found = useState<(GroupLinkTarget, GroupSummary)?>(null);
     final lookupSerial = useRef(0);
+    final l10n = context.l10n;
 
     Future<void> lookUp() async {
       final target = parseGroupLinkInput(controller.text);
       found.value = null;
       if (target == null) {
-        error.value = 'This doesn’t look like a group link.';
+        error.value = l10n.groupsNotAGroupLink;
         return;
       }
       final serial = ++lookupSerial.value;
@@ -289,8 +294,8 @@ class JoinWithLinkSheet extends HookConsumerWidget {
       } catch (e) {
         if (!context.mounted || serial != lookupSerial.value) return;
         error.value = e is GroupsApiException && e.isNotFound
-            ? 'No group found for this link.'
-            : 'Couldn’t look up this link. Try again.';
+            ? l10n.groupsLinkNotFound
+            : l10n.groupsLookupError;
       } finally {
         if (context.mounted && serial == lookupSerial.value) {
           looking.value = false;
@@ -361,7 +366,7 @@ class JoinWithLinkSheet extends HookConsumerWidget {
                   },
                   onSubmitted: (_) => unawaited(lookUp()),
                   decoration: InputDecoration(
-                    hintText: 'Paste an invite link or @address',
+                    hintText: l10n.groupsLinkHint,
                     prefixIcon: Icon(
                       LucideIcons.link,
                       size: 18,
@@ -386,7 +391,7 @@ class JoinWithLinkSheet extends HookConsumerWidget {
                       : null,
                   child: looking.value
                       ? const KuzzLoadingIndicator(size: 20)
-                      : const Text('Continue'),
+                      : Text(l10n.groupsContinue),
                 ),
               if (found.value case (_, final group))
                 GroupPreviewCard(

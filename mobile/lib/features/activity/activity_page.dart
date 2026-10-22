@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/relay/relay.dart';
@@ -220,7 +221,7 @@ class ActivityPage extends HookConsumerWidget {
       final channelId = item.item.channelId;
       if (channelId == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text("This item isn't linked to a group.")),
+          SnackBar(content: Text(context.l10n.activityItemNotLinked)),
         );
         return;
       }
@@ -258,7 +259,7 @@ class ActivityPage extends HookConsumerWidget {
           if (!isCurrentScope()) return;
           if (!context.mounted) return;
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            SnackBar(content: Text('Could not reopen conversation: $error')),
+            SnackBar(content: Text(context.l10n.activityReopenError('$error'))),
           );
           return;
         }
@@ -266,7 +267,7 @@ class ActivityPage extends HookConsumerWidget {
       if (channel == null) {
         if (!context.mounted) return;
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('Group not found in this workspace.')),
+          SnackBar(content: Text(context.l10n.activityGroupNotFound)),
         );
         return;
       }
@@ -309,9 +310,7 @@ class ActivityPage extends HookConsumerWidget {
       final channel = channelById[draft.channelId];
       if (channel == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text('Group for this draft is no longer available.'),
-          ),
+          SnackBar(content: Text(context.l10n.activityDraftGroupGone)),
         );
         return;
       }
@@ -331,18 +330,14 @@ class ActivityPage extends HookConsumerWidget {
       final target = reminder.target;
       if (target == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text("This reminder isn't linked to a message."),
-          ),
+          SnackBar(content: Text(context.l10n.activityReminderNotLinked)),
         );
         return;
       }
       final channel = channelById[target.channelId];
       if (channel == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text('Group for this reminder is no longer available.'),
-          ),
+          SnackBar(content: Text(context.l10n.activityReminderGroupGone)),
         );
         return;
       }
@@ -465,7 +460,7 @@ class ActivityPage extends HookConsumerWidget {
         horizontalInset: Grid.gutter,
         showBottomDivider: true,
         bottomDividerOpacity: 0.07,
-        title: Text('Activity', style: headerTitleStyle),
+        title: Text(context.l10n.activityTitle, style: headerTitleStyle),
         titleStyle: headerTitleStyle,
         actions: [
           _ActivityActionsPill(

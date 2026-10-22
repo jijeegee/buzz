@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../channels/channel.dart';
 import 'person_actions.dart';
@@ -60,7 +61,7 @@ class BlockedDmBar extends HookConsumerWidget {
         children: [
           Expanded(
             child: Text(
-              'You blocked $name.',
+              context.l10n.friendsYouBlocked(name),
               style: context.textTheme.bodyMedium?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -80,7 +81,7 @@ class BlockedDmBar extends HookConsumerWidget {
                     );
                     if (context.mounted) busy.value = false;
                   },
-            child: const Text('Unblock'),
+            child: Text(context.l10n.friendsUnblock),
           ),
         ],
       ),

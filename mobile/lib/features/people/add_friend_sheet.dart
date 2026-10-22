@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -24,7 +25,7 @@ Future<void> showAddFriendSheet(BuildContext context) async {
   final channel = await showKuzzModalBottomSheet<Channel>(
     context: context,
     isScrollControlled: true,
-    title: 'Add friend',
+    title: context.l10n.friendsAddFriend,
     builder: (_) => const AddFriendSheet(),
   );
   if (channel == null || !context.mounted) return;
@@ -54,6 +55,7 @@ class AddFriendSheet extends HookConsumerWidget {
     final friends = ref.watch(friendIdsProvider).value ?? const <String>{};
     final blocked = ref.watch(blockedPubkeysProvider);
     final agents = ref.watch(peopleAgentPubkeysProvider);
+    final l10n = context.l10n;
 
     Future<void> find() async {
       final query = controller.text.trim();
@@ -69,8 +71,8 @@ class AddFriendSheet extends HookConsumerWidget {
         person = await api.lookupPerson(query);
       } catch (error) {
         failure = error is AccountApiException && error.statusCode == 429
-            ? 'Too many searches. Wait a minute and try again.'
-            : friendlyError(error, fallback: 'Couldn’t search. Try again.');
+            ? l10n.friendsTooManySearches
+            : friendlyError(error, fallback: l10n.friendsAddSearchError);
       }
       // A newer search owns the result.
       if (!context.mounted || mine != generation.value) return;
@@ -81,7 +83,7 @@ class AddFriendSheet extends HookConsumerWidget {
           person.pubkey == me ||
           blocked.contains(person.pubkey) ||
           agents.contains(person.pubkey)) {
-        message.value = 'No one found with that ID or email';
+        message.value = l10n.friendsAddNotFound;
       } else {
         found.value = person;
       }
@@ -95,10 +97,7 @@ class AddFriendSheet extends HookConsumerWidget {
       } catch (error) {
         if (context.mounted) {
           adding.value = false;
-          message.value = friendlyError(
-            error,
-            fallback: 'Couldn’t add friend. Try again.',
-          );
+          message.value = friendlyError(error, fallback: l10n.friendsAddError);
         }
         return;
       }
@@ -121,7 +120,7 @@ class AddFriendSheet extends HookConsumerWidget {
         opening.value = false;
         message.value = friendlyError(
           error,
-          fallback: 'Couldn’t open the conversation. Try again.',
+          fallback: l10n.friendsOpenChatError,
         );
       }
     }
@@ -158,9 +157,9 @@ class AddFriendSheet extends HookConsumerWidget {
                 }
               },
               onSubmitted: (_) => unawaited(find()),
-              decoration: const InputDecoration(
-                labelText: 'Kuzz ID or email',
-                helperText: 'Enter it exactly as they gave it to you',
+              decoration: InputDecoration(
+                labelText: l10n.friendsAddIdLabel,
+                helperText: l10n.friendsAddIdHelper,
               ),
             ),
             const SizedBox(height: Grid.xs),
@@ -175,11 +174,11 @@ class AddFriendSheet extends HookConsumerWidget {
                     ? null
                     : () => unawaited(find()),
                 child: searching.value
-                    ? const KuzzLoadingIndicator(
+                    ? KuzzLoadingIndicator(
                         size: 20,
-                        semanticLabel: 'Searching',
+                        semanticLabel: l10n.friendsSearching,
                       )
-                    : const Text('Find'),
+                    : Text(l10n.friendsAddFind),
               ),
             ),
             if (message.value case final text?) ...[
@@ -215,9 +214,9 @@ class AddFriendSheet extends HookConsumerWidget {
                         children: [
                           Semantics(
                             liveRegion: true,
-                            child: const Text(
-                              'Added',
-                              key: Key('add-friend-added'),
+                            child: Text(
+                              l10n.friendsAdded,
+                              key: const Key('add-friend-added'),
                             ),
                           ),
                           const SizedBox(width: Grid.xxs),
@@ -226,18 +225,18 @@ class AddFriendSheet extends HookConsumerWidget {
                             onPressed: opening.value
                                 ? null
                                 : () => unawaited(openMessage(person)),
-                            child: const Text('Message'),
+                            child: Text(l10n.friendsMessage),
                           ),
                         ],
                       )
                     : isFriend
-                    ? const Text('Friend')
+                    ? Text(l10n.friendsIsFriend)
                     : FilledButton.tonal(
                         key: const Key('add-friend-add'),
                         onPressed: adding.value
                             ? null
                             : () => unawaited(add(person)),
-                        child: const Text('Add'),
+                        child: Text(l10n.friendsAdd),
                       ),
               ),
             ],

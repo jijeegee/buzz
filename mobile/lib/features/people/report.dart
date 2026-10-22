@@ -1,24 +1,35 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 
 /// NIP-56 report categories in the order shown, matching desktop's
 /// `ReportMessageDialog` and the relay's accepted types. `other` comes last
 /// so it reads as the fallback.
 enum ReportReason {
-  spam('spam', 'Spam'),
-  profanity('profanity', 'Profanity or hate speech'),
-  nudity('nudity', 'Nudity or sexual content'),
-  impersonation('impersonation', 'Impersonation'),
-  malware('malware', 'Malware or scam'),
-  illegal('illegal', 'Illegal content'),
-  other('other', 'Other');
+  spam('spam'),
+  profanity('profanity'),
+  nudity('nudity'),
+  impersonation('impersonation'),
+  malware('malware'),
+  illegal('illegal'),
+  other('other');
 
-  const ReportReason(this.wireValue, this.label);
+  const ReportReason(this.wireValue);
 
   /// The NIP-56 report type on the wire.
   final String wireValue;
-  final String label;
+
+  /// The reason as the report sheet shows it.
+  String label(AppLocalizations l10n) => switch (this) {
+    spam => l10n.friendsReportReasonSpam,
+    profanity => l10n.friendsReportReasonProfanity,
+    nudity => l10n.friendsReportReasonNudity,
+    impersonation => l10n.friendsReportReasonImpersonation,
+    malware => l10n.friendsReportReasonMalware,
+    illegal => l10n.friendsReportReasonIllegal,
+    other => l10n.friendsReportReasonOther,
+  };
 }
 
 /// The tags of a kind 1984 report. A person report carries the type on its

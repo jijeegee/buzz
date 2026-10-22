@@ -117,32 +117,36 @@ class _EmptyFilterState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (unreadOnly) {
-      return const _EmptySurface(
+      return _EmptySurface(
         icon: LucideIcons.mailOpen,
-        message: 'No unread messages',
-        detail: 'Turn off the unread filter to see read messages.',
+        message: context.l10n.activityNoUnread,
+        detail: context.l10n.activityNoUnreadDetail,
       );
     }
+    final l10n = context.l10n;
     final (icon, message) = switch (filter) {
-      InboxFilter.mention => (LucideIcons.atSign, 'No mentions yet'),
+      InboxFilter.mention => (LucideIcons.atSign, l10n.activityNoMentions),
       InboxFilter.thread => (
         LucideIcons.messageSquare,
-        'No thread replies yet',
+        l10n.activityNoThreadReplies,
       ),
       InboxFilter.conversations => (
         LucideIcons.messagesSquare,
-        'No recent conversations',
+        l10n.activityNoConversations,
       ),
       InboxFilter.needsAction => (
         LucideIcons.circleAlert,
-        'Nothing needs your action',
+        l10n.activityNothingNeedsAction,
       ),
       InboxFilter.activity => (
         LucideIcons.activity,
-        'No recent group activity',
+        l10n.activityNoGroupActivity,
       ),
-      InboxFilter.agentActivity => (LucideIcons.bot, 'No agent updates'),
-      _ => (LucideIcons.bell, 'No activity yet'),
+      InboxFilter.agentActivity => (
+        LucideIcons.bot,
+        l10n.activityNoAgentUpdates,
+      ),
+      _ => (LucideIcons.bell, l10n.activityNoActivity),
     };
     return _EmptySurface(icon: icon, message: message);
   }
@@ -166,7 +170,7 @@ class _ErrorView extends StatelessWidget {
           ),
           const SizedBox(height: Grid.xxs),
           Text(
-            'Failed to load activity',
+            context.l10n.activityLoadError,
             style: context.textTheme.bodyMedium?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),
@@ -175,7 +179,7 @@ class _ErrorView extends StatelessWidget {
           FilledButton.icon(
             onPressed: () => unawaited(onRetry()),
             icon: const Icon(LucideIcons.refreshCcw, size: 16),
-            label: const Text('Retry'),
+            label: Text(context.l10n.activityRetry),
           ),
         ],
       ),
