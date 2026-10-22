@@ -22,6 +22,7 @@ use crate::state::AppState;
 
 mod audio;
 mod device_keys;
+mod device_ws;
 mod friends;
 mod groups;
 mod invites;

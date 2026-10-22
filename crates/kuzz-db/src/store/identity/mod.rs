@@ -10,6 +10,7 @@
 //! Tokens are only ever handled as SHA-256 hashes here.
 
 mod access_token;
+mod admission;
 mod bot;
 mod key_backup;
 mod principal;
@@ -30,6 +31,7 @@ use kuzz_core::principal::{AccessTokenKind, PrincipalId, PrincipalKind};
 use crate::error::{DbError, Result};
 
 pub use access_token::{AccessTokenRecord, AccessTokenRejection};
+pub use admission::{KeyAdmission, KeyRefusal, KeyRole};
 pub use bot::{BotRecord, ExchangeOutcome};
 pub use key_backup::{
     InitializeKeyBackup, KeyBackupRecord, KeyBackupReencryption, KEY_BACKUP_VERSION,

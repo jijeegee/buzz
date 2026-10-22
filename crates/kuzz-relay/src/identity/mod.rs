@@ -12,6 +12,7 @@
 //! - [`publish_revocations`] closes bound connections on this instance and
 //!   fans the revoked hashes out over Redis after the revoking commit.
 
+pub(crate) mod admission;
 pub mod client_ip;
 pub mod config;
 pub mod device;
@@ -81,6 +82,8 @@ pub struct IdentityRuntime {
     pub(crate) publish_slots: profile::PublishSlots,
     /// Device-check modes and "would refuse" log dedup.
     pub(crate) devices: device::DeviceRuntime,
+    /// Recently admitted (message key, device key) pairs.
+    pub(crate) admissions: admission::AdmissionCache,
 }
 
 impl std::fmt::Debug for IdentityRuntime {
@@ -121,6 +124,7 @@ impl IdentityRuntime {
             write_triggers: profile::WriteTriggers::default(),
             publish_slots: profile::PublishSlots::default(),
             devices: device::DeviceRuntime::default(),
+            admissions: admission::AdmissionCache::default(),
         }
     }
 
