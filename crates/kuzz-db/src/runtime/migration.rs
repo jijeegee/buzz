@@ -509,6 +509,7 @@ mod postgres_tests {
             "refresh_tokens",
             "bots",
             "access_tokens",
+            "key_registry",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -722,7 +723,12 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 77);
+        assert_eq!(migrations.len(), 78);
+        assert_eq!(migrations[77].version, 78);
+        assert!(migrations[77]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE key_registry"));
         // URL/path split search terms (0077): same capture-and-rewrite shape
         // as 0062, swapping only the to_tsvector term so every kind filter
         // stays as it was. schema.sql must carry the same split term.
