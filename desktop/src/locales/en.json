@@ -46,5 +46,117 @@
   "time.onDate": "on {date}",
   "@time.onDate": {
     "description": "When the last reply in a thread was, after the words 'last reply'; {date} is a short month and day (May 19). Lowercase. Short."
+  },
+  "common.cancel": "Cancel",
+  "@common.cancel": {
+    "description": "Button that closes a dialog or form without saving."
+  },
+  "common.save": "Save",
+  "@common.save": {
+    "description": "Button that saves changes."
+  },
+  "common.delete": "Delete",
+  "@common.delete": {
+    "description": "Button or menu item that permanently removes something."
+  },
+  "common.remove": "Remove",
+  "@common.remove": {
+    "description": "Button or menu item that takes something out of a list (not permanent deletion)."
+  },
+  "common.close": "Close",
+  "@common.close": {
+    "description": "Button or screen-reader label that closes a dialog, panel or popover."
+  },
+  "common.edit": "Edit",
+  "@common.edit": {
+    "description": "Button or menu item that starts editing something."
+  },
+  "common.copy": "Copy",
+  "@common.copy": {
+    "description": "Button or menu item that copies text to the clipboard."
+  },
+  "common.copied": "Copied",
+  "@common.copied": {
+    "description": "Brief confirmation after copying to the clipboard. Short."
+  },
+  "common.retry": "Retry",
+  "@common.retry": {
+    "description": "Button that tries a failed action again."
+  },
+  "common.done": "Done",
+  "@common.done": {
+    "description": "Button that finishes a step or closes a finished flow."
+  },
+  "common.back": "Back",
+  "@common.back": {
+    "description": "Button that goes to the previous step or screen."
+  },
+  "common.next": "Next",
+  "@common.next": {
+    "description": "Button that goes to the next step."
+  },
+  "common.continue": "Continue",
+  "@common.continue": {
+    "description": "Button that moves on in a flow."
+  },
+  "common.confirm": "Confirm",
+  "@common.confirm": {
+    "description": "Button that confirms an action in a confirmation dialog."
+  },
+  "common.create": "Create",
+  "@common.create": {
+    "description": "Button that creates the thing described by the dialog."
+  },
+  "common.add": "Add",
+  "@common.add": {
+    "description": "Button that adds the selected or typed item."
+  },
+  "common.send": "Send",
+  "@common.send": {
+    "description": "Button that sends a message or invitation."
+  },
+  "common.search": "Search",
+  "@common.search": {
+    "description": "Placeholder or label of a search field. Short."
+  },
+  "common.loading": "Loading…",
+  "@common.loading": {
+    "description": "Shown while something is loading. Short."
+  },
+  "common.more": "More",
+  "@common.more": {
+    "description": "Screen-reader label or menu button that opens more actions. Short."
+  },
+  "common.settings": "Settings",
+  "@common.settings": {
+    "description": "Button or menu item that opens settings. Short."
+  },
+  "common.learnMore": "Learn more",
+  "@common.learnMore": {
+    "description": "Link to more information. Short."
+  },
+  "common.somethingWentWrong": "Something went wrong",
+  "@common.somethingWentWrong": {
+    "description": "Generic error title when an action fails for an unknown reason."
+  },
+  "common.tryAgainLater": "Please try again later.",
+  "@common.tryAgainLater": {
+    "description": "Generic error advice after a failure."
+  },
+  "common.yes": "Yes",
+  "@common.yes": {
+    "description": "Answer button. Short."
+  },
+  "common.no": "No",
+  "@common.no": {
+    "description": "Answer button. Short."
+  },
+  "common.ok": "OK",
+  "@common.ok": {
+    "description": "Button that acknowledges a message. Short."
+  },
+  "common.you": "You",
+  "@common.you": {
+    "description": "Refers to the current user, e.g. in a member list or as a message author. Short."
   }
 }
