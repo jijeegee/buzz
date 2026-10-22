@@ -21,9 +21,7 @@ export function assertCanSendMessageToChannel(
   profiles: UserProfileLookup | undefined,
 ): void {
   if (message.kind !== KIND_STREAM_MESSAGE) {
-    throw new Error(
-      "Only ordinary channel messages can be sent to the channel.",
-    );
+    throw new Error("Only ordinary messages can be sent to the group.");
   }
   if (message.pending) {
     throw new Error("Wait for the message to finish sending first.");

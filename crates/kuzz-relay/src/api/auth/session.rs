@@ -125,6 +125,11 @@ pub(super) async fn refresh(
     {
         return response;
     }
+    if let Err(response) =
+        crate::identity::device::check_refresh_proof(&state, &headers, &old_hash).await
+    {
+        return response;
+    }
     let refresh_ttl = state.identity.config().refresh_ttl.as_secs();
     match cached_rotation(&state, &old_hash_hex).await {
         Ok(Some(rotation)) => return rotation_response(&rotation, web, refresh_ttl),

@@ -3,6 +3,9 @@ import type { ChatListRow, ChatRowUnread } from "./chatListState";
 /** Live threads shown under a channel before "+ N more threads". */
 export const BY_CHANNEL_VISIBLE_THREADS = 3;
 
+/** Threads each "+ 10 more" click reveals under a channel. */
+export const BY_CHANNEL_THREAD_STEP = 10;
+
 export type ChatsViewMode = "all" | "by-channel";
 
 const VIEW_STORAGE_KEY = "kuzz-chats-view.v1";
@@ -40,8 +43,9 @@ export type ChatGroupEntry =
   | {
       kind: "more";
       channelId: string;
-      /** Threads hidden (collapsed) or shown below the first ones (expanded). */
+      /** Threads still hidden; 0 once every thread shows. */
       count: number;
+      /** Shows threads past the first ones, so "Show less" is offered. */
       expanded: boolean;
       unread: number;
       unreadOverflow: boolean;
@@ -60,8 +64,9 @@ type Group = {
 /**
  * View B, By channel: each channel's main row, then its newest live threads
  * (pinned ones first) up to `visibleThreads`, then a "+ N more threads" line
- * that sums the hidden threads' unread and mentions. Expanded groups list
- * every thread and end with the same line as "Show less". A group with a
+ * that sums the hidden threads' unread and mentions. Each step in
+ * `expandedSteps` shows `BY_CHANNEL_THREAD_STEP` more threads; the line then
+ * counts only the threads still hidden and offers "Show less". A group with a
  * pinned room or thread goes to the top. `rows` comes in list order
  * (`orderChatRows`: pinned, then newest activity), so groups keep the order
  * of their first row. DMs group the same way: one row plus its threads.
@@ -70,13 +75,14 @@ type Group = {
 export function groupChatRowsByChannel(
   rows: readonly ChatListRow[],
   {
-    expandedChannelIds,
+    expandedSteps,
     isPinnedRoom,
     isPinnedThread,
     unreadOf,
     visibleThreads = BY_CHANNEL_VISIBLE_THREADS,
   }: {
-    expandedChannelIds: ReadonlySet<string>;
+    /** Channel id to "+ 10 more" clicks so far, for this session. */
+    expandedSteps: ReadonlyMap<string, number>;
     isPinnedRoom: (channelId: string) => boolean;
     isPinnedThread: (rootId: string) => boolean;
     unreadOf: (row: ChatListRow) => ChatRowUnread;
@@ -112,7 +118,7 @@ export function groupChatRowsByChannel(
   let pinnedEntries = 0;
   for (const group of sorted) {
     appendGroup(entries, group, {
-      expanded: expandedChannelIds.has(group.channelId),
+      steps: expandedSteps.get(group.channelId) ?? 0,
       isPinnedThread,
       unreadOf,
       visibleThreads,
@@ -126,12 +132,12 @@ function appendGroup(
   entries: ChatGroupEntry[],
   group: Group,
   {
-    expanded,
+    steps,
     isPinnedThread,
     unreadOf,
     visibleThreads,
   }: {
-    expanded: boolean;
+    steps: number;
     isPinnedThread: (rootId: string) => boolean;
     unreadOf: (row: ChatListRow) => ChatRowUnread;
     visibleThreads: number;
@@ -151,27 +157,33 @@ function appendGroup(
   ];
   // Pinned threads are always shown, even past the usual three.
   const limit = Math.max(visibleThreads, pinnedThreads.length);
-  const shown = expanded ? threads : threads.slice(0, limit);
-  for (const row of shown) entries.push({ kind: "row", row });
-  if (threads.length <= limit) return;
+  if (threads.length <= limit) {
+    for (const row of threads) entries.push({ kind: "row", row });
+    return;
+  }
+  const shownCount = Math.min(
+    threads.length,
+    limit + steps * BY_CHANNEL_THREAD_STEP,
+  );
+  for (const row of threads.slice(0, shownCount)) {
+    entries.push({ kind: "row", row });
+  }
   let unread = 0;
   let unreadOverflow = false;
   let mentions = 0;
   let marked = false;
-  if (!expanded) {
-    for (const row of threads.slice(limit)) {
-      const counts = unreadOf(row);
-      unread += counts.count;
-      unreadOverflow ||= counts.overflow;
-      mentions += counts.mentions;
-      marked ||= counts.marked;
-    }
+  for (const row of threads.slice(shownCount)) {
+    const counts = unreadOf(row);
+    unread += counts.count;
+    unreadOverflow ||= counts.overflow;
+    mentions += counts.mentions;
+    marked ||= counts.marked;
   }
   entries.push({
     kind: "more",
     channelId: group.channelId,
-    count: threads.length - limit,
-    expanded,
+    count: threads.length - shownCount,
+    expanded: shownCount > limit,
     unread,
     unreadOverflow,
     mentions,

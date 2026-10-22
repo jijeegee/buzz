@@ -77,7 +77,9 @@ export function resolveInboxConversationRoom(
     };
   }
 
-  const channelLabel = item.channelLabel?.trim() || "channel";
+  // Chats carry their resolved title (private name > name > members).
+  const channelLabel =
+    dmChannelLabels?.[channelId] || item.channelLabel?.trim() || "group";
   const threadId = getInboxThreadRootId(item);
   return threadId
     ? { kind: "thread", channelId, channelLabel, threadId }
@@ -93,8 +95,8 @@ export function formatInboxConversationRoomTitle(
     case "dm":
       return room.title;
     case "channel":
-      return `#${room.channelLabel}`;
+      return `${room.channelLabel}`;
     case "thread":
-      return `#${room.channelLabel} › ${threadName || "Thread"}`;
+      return `${room.channelLabel} › ${threadName || "Thread"}`;
   }
 }

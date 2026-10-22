@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { X } from "lucide-react";
+import { SmilePlus, X } from "lucide-react";
 
 import { EmojiPicker } from "@/features/custom-emoji/ui/EmojiPicker";
 import {
@@ -26,6 +26,7 @@ import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import { Input } from "@/shared/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import type { Channel } from "@/shared/api/types";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
 import {
   useDeleteChannelMutation,
   useLeaveChannelMutation,
@@ -115,7 +116,7 @@ function SectionNameDialog({
                     {icon ? (
                       <StatusEmoji className="h-5 w-5" value={icon} />
                     ) : (
-                      <span className="text-sm font-medium">#</span>
+                      <SmilePlus className="h-4 w-4 text-muted-foreground" />
                     )}
                   </button>
                 </PopoverTrigger>
@@ -188,7 +189,7 @@ export function CreateSectionDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Create section"
-      description="Sections let you group related channels in the sidebar."
+      description="Sections let you organize related groups in the sidebar."
       initialValue=""
       confirmLabel="Create"
       isConfirmDisabled={(trimmed) => trimmed.length === 0}
@@ -246,11 +247,11 @@ export function DeleteSectionAlertDialog({
   onConfirm,
 }: DeleteSectionAlertDialogProps) {
   const channelLabel =
-    channelCount === 1 ? "1 channel" : `${channelCount} channels`;
+    channelCount === 1 ? "1 group" : `${channelCount} groups`;
   const description =
     channelCount === 0
-      ? `Delete section "${sectionName}"? It has no channels.`
-      : `Delete section "${sectionName}"? Its ${channelLabel} will move back to the default Channels group.`;
+      ? `Delete section "${sectionName}"? It has no groups.`
+      : `Delete section "${sectionName}"? Its ${channelLabel} will move back to the default Groups section.`;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -283,6 +284,8 @@ export type LeaveChannelAlertDialogProps = {
   channelName: string;
   /** A group DM: no name to quote and no way back in on your own. */
   isConversation?: boolean;
+  /** An ownerless chat: leaving removes only you; someone can add you back. */
+  isChat?: boolean;
   onConfirm: () => void;
 };
 
@@ -291,6 +294,7 @@ export function LeaveChannelAlertDialog({
   onOpenChange,
   channelName,
   isConversation = false,
+  isChat = false,
   onConfirm,
 }: LeaveChannelAlertDialogProps) {
   return (
@@ -298,12 +302,18 @@ export function LeaveChannelAlertDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {isConversation ? "Leave conversation" : "Leave channel"}
+            {isChat
+              ? "Leave chat"
+              : isConversation
+                ? "Leave conversation"
+                : "Leave group"}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {isConversation
-              ? "Leave this conversation? You'll stop receiving its messages."
-              : `Leave "${channelName}"? You'll stop receiving its messages and can rejoin later.`}
+            {isChat
+              ? "Leave this chat? You'll stop receiving its messages. Someone in the chat can add you back."
+              : isConversation
+                ? "Leave this conversation? You'll stop receiving its messages."
+                : `Leave "${channelName}"? You'll stop receiving its messages and can rejoin later.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -335,6 +345,7 @@ export function useLeaveChannelDialog() {
         if (!open) setTarget(null);
       }}
       channelName={target?.name ?? ""}
+      isChat={isGroupChat(target)}
       isConversation={target?.channelType === "dm"}
       onConfirm={() => {
         if (target) {

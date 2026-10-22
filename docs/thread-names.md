@@ -33,6 +33,10 @@ kuzz messages name-thread --channel <UUID> --event <HEAD_ID> --name "Thread nami
 kuzz messages name-thread --channel <UUID> --event <HEAD_ID> --name ""
 ```
 
+`buzz threads start --title` uses the same limit and saves the full title.
+Overlong titles fail before posting the kickoff; use a short title and put the
+details in `--brief`. Titles are never automatically shortened with an ellipsis.
+
 Deploy the updated relay before clients, because older relays reject the new
 kind. No database migration is required. Desktop, mobile and the CLI share the
 same name events. On mobile, open a thread and use **Edit thread name** in the
@@ -45,6 +49,8 @@ survive closing the dialog and restarting the app. Saving requires connectivity;
 a rejected or uncertain save keeps the draft and reports the error. The name
 changes only after relay acceptance. Mobile input uses the same Unicode-scalar
 weight as the relay; the normal Korean keyboard composes Hangul syllables.
+Tapping Save or the keyboard's Done accepts the visible text even while the
+keyboard is still composing the last syllable; no trailing space is needed.
 
 ## Validation
 

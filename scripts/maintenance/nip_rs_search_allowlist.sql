@@ -12,6 +12,7 @@ ALTER TABLE events DROP COLUMN search_tsv;
 ALTER TABLE events ADD COLUMN search_tsv TSVECTOR GENERATED ALWAYS AS (
     CASE WHEN kind IN (0, 9, 40002, 45001, 45003)
          THEN to_tsvector('simple', content)
+              || to_tsvector('simple', regexp_replace(content, '[-/:._?=&#]+', ' ', 'g'))
          ELSE NULL::tsvector
     END
 ) STORED;

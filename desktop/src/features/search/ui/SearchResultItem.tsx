@@ -3,14 +3,17 @@ import {
   ArrowRight,
   Bot,
   FileText,
-  Hash,
+  type LucideIcon,
   MessageCircle,
+  MessagesSquare,
   Plus,
   User,
-  type LucideIcon,
+  Users,
+  UsersRound,
 } from "lucide-react";
 
-import { HashSearch } from "@/shared/ui/icons";
+import type { SearchThread } from "@/features/search/lib/searchRanking";
+import type { SearchHitThread } from "@/features/search/useSearchHitThreads";
 import {
   resolveUserLabel,
   resolveUserSecondaryLabel,
@@ -30,8 +33,9 @@ export type SearchResult =
       };
     }
   | { kind: "channel"; channel: Channel }
+  | { kind: "thread"; isDm: boolean; thread: SearchThread }
   | { kind: "user"; user: UserSearchResult }
-  | { kind: "message"; hit: SearchHit };
+  | { kind: "message"; hit: SearchHit; thread?: SearchHitThread | null };
 
 export function resultKey(result: SearchResult) {
   if (result.kind === "action") {
@@ -40,6 +44,10 @@ export function resultKey(result: SearchResult) {
 
   if (result.kind === "channel") {
     return `channel-${result.channel.id}`;
+  }
+
+  if (result.kind === "thread") {
+    return `thread-${result.thread.rootId}`;
   }
 
   if (result.kind === "user") {
@@ -58,6 +66,10 @@ export function resultTestId(result: SearchResult) {
     return `search-result-channel-${result.channel.id}`;
   }
 
+  if (result.kind === "thread") {
+    return `search-result-thread-${result.thread.rootId}`;
+  }
+
   if (result.kind === "user") {
     return `search-result-user-${result.user.pubkey}`;
   }
@@ -71,13 +83,17 @@ export function resultIcon(
 ) {
   if (result.kind === "action") {
     if (result.action.id === "browse-channels") {
-      return HashSearch;
+      return UsersRound;
     }
     return result.action.id === "create-agent" ? Bot : Plus;
   }
 
   if (result.kind === "user") {
     return result.user.isAgent ? Bot : User;
+  }
+
+  if (result.kind === "thread") {
+    return MessagesSquare;
   }
 
   const channelType =
@@ -95,7 +111,7 @@ export function resultIcon(
     return MessageCircle;
   }
 
-  return Hash;
+  return Users;
 }
 
 export function SearchResultShell({
@@ -145,7 +161,7 @@ export function ChannelResultBody({ channel }: { channel: Channel }) {
         <p className="text-sm font-semibold tracking-tight">{channel.name}</p>
         <Badge variant="secondary">{channel.channelType}</Badge>
         <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
-          Channel
+          Group
         </p>
       </div>
       {channel.description ? (

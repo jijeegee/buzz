@@ -7,6 +7,7 @@ import 'features/age_gate/age_signal_push_bootstrap.dart';
 import 'features/invites/invite_join_provider.dart';
 import 'shared/push/push_bridge.dart';
 import 'shared/relay/relay_closed_policy.dart';
+import 'shared/relay/service_scope_migration.dart';
 import 'shared/theme/theme_provider.dart';
 
 void main() => runKuzzApp(const App());
@@ -18,6 +19,9 @@ Future<void> runKuzzApp(Widget app) async {
 
   // Pre-load preferences so the first frame uses the saved theme/accent.
   final prefs = await SharedPreferences.getInstance();
+  // Before anything reads address-keyed storage: move it to the service
+  // scope so a server address change keeps sign-in and settings.
+  await migrateServiceScopedStorage(prefs: prefs);
 
   runApp(buildRootProviderScope(prefs: prefs, child: app));
 }

@@ -138,7 +138,7 @@ export function getWorkflowActivationWarning(
   if (triggerType === "message_posted" && !nonEmptyString(trigger?.filter)) {
     return {
       description:
-        "It will run for every new message in this channel. Review the trigger before turning it on.",
+        "It will run for every new message in this group. Review the trigger before turning it on.",
       title: "This workflow may run often",
     };
   }

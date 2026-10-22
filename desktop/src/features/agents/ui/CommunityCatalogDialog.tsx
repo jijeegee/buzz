@@ -90,6 +90,10 @@ type CommunityCatalogDialogProps = {
   open: boolean;
   preferSection: "agents" | "teams";
   onOpenChange: (open: boolean) => void;
+  /** Leave out the shared catalog lists: only Create and Import. */
+  hideCatalog?: boolean;
+  /** The pane the dialog opens on. */
+  initialSelection?: "create" | "import";
 };
 
 type PendingNavigation =
@@ -117,6 +121,8 @@ export function CommunityCatalogDialog({
   open,
   preferSection,
   onOpenChange,
+  hideCatalog = false,
+  initialSelection = "create",
 }: CommunityCatalogDialogProps) {
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -130,7 +136,7 @@ export function CommunityCatalogDialog({
   // Active detail selection. Defaults to the create pane (the unified
   // add-agent entry point); a teams-launch may switch to the first team once
   // the teams query settles.
-  const [selection, setSelection] = React.useState("create");
+  const [selection, setSelection] = React.useState<string>(initialSelection);
   const [userHasSelected, setUserHasSelected] = React.useState(false);
 
   const firstTeamKey = teams.length > 0 ? teamKey(teams[0]) : null;
@@ -141,12 +147,12 @@ export function CommunityCatalogDialog({
       createDirtyRef.current = false;
       didInitRef.current = false;
       setUserHasSelected(false);
-      setSelection("create");
+      setSelection(initialSelection);
       setPendingNavigation(null);
       dragDepthRef.current = 0;
       setIsDragOver(false);
     }
-  }, [open]);
+  }, [open, initialSelection]);
 
   // Teams-launch: once the teams query settles, select the first team so the
   // catalog opens on browsable content rather than the create pane. Runs at
@@ -291,7 +297,11 @@ export function CommunityCatalogDialog({
           className="h-[42rem] max-w-4xl"
           contentClassName="flex min-h-0 min-w-0 flex-1 p-0"
           data-testid="community-catalog-dialog"
-          description="Create, discover, and import agents and teams."
+          description={
+            hideCatalog
+              ? "Create an agent, or import a preset."
+              : "Create, discover, and import agents and teams."
+          }
           headerClassName="bg-sidebar pb-3 text-sidebar-foreground"
           headerTestId="community-catalog-dialog-header"
           onOpenAutoFocus={(event) => {
@@ -364,11 +374,15 @@ export function CommunityCatalogDialog({
                   />
                 </div>
 
-                <div className="my-3 border-t border-sidebar-border/60" />
+                {hideCatalog ? null : (
+                  <div className="my-3 border-t border-sidebar-border/60" />
+                )}
 
-                {personasLoading ? <CatalogListSkeleton /> : null}
+                {!hideCatalog && personasLoading ? (
+                  <CatalogListSkeleton />
+                ) : null}
 
-                {!personasLoading && personas.length > 0 ? (
+                {!hideCatalog && !personasLoading && personas.length > 0 ? (
                   <div className="mb-1">
                     <p className="px-4 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
                       Agents
@@ -396,6 +410,7 @@ export function CommunityCatalogDialog({
                             type="button"
                           >
                             <ProfileAvatar
+                              mediaVariant="small"
                               avatarUrl={persona.avatarUrl}
                               className="h-6 w-6 text-3xs"
                               label={persona.displayName}
@@ -421,9 +436,9 @@ export function CommunityCatalogDialog({
                   </div>
                 ) : null}
 
-                {teamsLoading ? <CatalogListSkeleton /> : null}
+                {!hideCatalog && teamsLoading ? <CatalogListSkeleton /> : null}
 
-                {!teamsLoading && teams.length > 0 ? (
+                {!hideCatalog && !teamsLoading && teams.length > 0 ? (
                   <div className="mb-1">
                     <p className="px-4 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
                       Teams
@@ -462,7 +477,9 @@ export function CommunityCatalogDialog({
                   </div>
                 ) : null}
 
-                {bothEmpty && noError ? <CatalogEmptyState /> : null}
+                {!hideCatalog && bothEmpty && noError ? (
+                  <CatalogEmptyState />
+                ) : null}
               </div>
             </div>
 
@@ -746,6 +763,7 @@ function PersonaCatalogDetail({ persona }: { persona: AgentPersona }) {
     <div className="w-full min-w-0 max-w-full space-y-6 overflow-x-hidden">
       <div className="flex items-center gap-3">
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={persona.avatarUrl}
           className="h-12 w-12 text-sm"
           label={persona.displayName}
@@ -866,6 +884,7 @@ function TeamCatalogMemberRow({ member }: TeamCatalogMemberRowProps) {
         type="button"
       >
         <ProfileAvatar
+          mediaVariant="small"
           avatarUrl={member.avatarUrl}
           className="h-8 w-8 shrink-0 text-3xs"
           label={member.displayName}

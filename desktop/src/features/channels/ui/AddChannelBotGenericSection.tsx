@@ -52,7 +52,7 @@ export function AddChannelBotGenericSection({
           disabled={disabled}
           id="channel-generic-prompt"
           onChange={(event) => onPromptChange(event.target.value)}
-          placeholder="What should this agent help with in the channel?"
+          placeholder="What should this agent help with in the group?"
           value={prompt}
         />
         <p className="text-xs text-muted-foreground">

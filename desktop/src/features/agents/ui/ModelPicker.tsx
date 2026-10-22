@@ -180,7 +180,7 @@ export function ModelPicker({
         const outcome = await sendLiveSwitch(modelId);
         if (outcome === "ambiguous") {
           toast.error(
-            "Couldn't switch all sessions — a channel has multiple agent sessions. Stop and restart the agent with the new model.",
+            "Couldn't switch all sessions — a group has multiple agent sessions. Stop and restart the agent with the new model.",
           );
           return;
         }

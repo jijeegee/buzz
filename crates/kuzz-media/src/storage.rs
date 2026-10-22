@@ -352,6 +352,34 @@ impl MediaStorage {
         Ok(())
     }
 
+    /// Server-side copy of `from` to `to` within the bucket. Checks that `to`
+    /// exists with `from`'s size afterwards, since S3 can answer a failed copy
+    /// with 200, so callers may delete `from` once this returns `Ok`.
+    pub async fn copy(&self, from: &str, to: &str) -> Result<(), MediaError> {
+        let source = self
+            .head_with_metadata(from)
+            .await?
+            .ok_or_else(|| MediaError::StorageError(format!("copy {from}: source missing")))?;
+        let status = self
+            .bucket
+            .copy_object_internal(from, to)
+            .await
+            .map_err(|e| MediaError::StorageError(e.to_string()))?;
+        if !(200..300).contains(&status) {
+            return Err(MediaError::StorageError(format!(
+                "copy {from} -> {to} failed with status {status}"
+            )));
+        }
+        match self.head_with_metadata(to).await? {
+            Some(copied) if copied.size == source.size => Ok(()),
+            other => Err(MediaError::StorageError(format!(
+                "copy {from} -> {to} not confirmed: expected {} bytes, found {:?}",
+                source.size,
+                other.map(|meta| meta.size)
+            ))),
+        }
+    }
+
     /// HEAD with metadata — returns Content-Length (size).
     pub async fn head_with_metadata(&self, key: &str) -> Result<Option<BlobHeadMeta>, MediaError> {
         match self.bucket.head_object(key).await {

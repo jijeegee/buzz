@@ -532,6 +532,7 @@ function MemberPicker({
               type="button"
             >
               <ProfileAvatar
+                mediaVariant="small"
                 avatarUrl={user.avatarUrl}
                 className="h-6 w-6 text-2xs shadow-none"
                 iconClassName="h-3 w-3"

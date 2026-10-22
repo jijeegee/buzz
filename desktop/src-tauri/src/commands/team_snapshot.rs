@@ -104,19 +104,10 @@ fn effective_avatar(member: &AgentSnapshot) -> Option<String> {
 }
 
 /// Build a definition from a team member snapshot without consuming its memory.
-fn definition_from_snapshot(
-    member: &AgentSnapshot,
-    keep_allowlist: bool,
-    now: &str,
-) -> Result<AgentDefinition, String> {
-    let behavior = resolve_snapshot_import_behavior(
-        member.definition.respond_to.as_deref(),
-        &member.definition.respond_to_allowlist,
-        member.definition.parallelism,
-        keep_allowlist,
-    )?;
-    let respond_to = (behavior.respond_to != crate::managed_agents::RespondTo::default())
-        .then(|| behavior.respond_to.as_str().to_string());
+///
+/// Every member starts owner-only: a team snapshot carries no access settings.
+fn definition_from_snapshot(member: &AgentSnapshot, now: &str) -> Result<AgentDefinition, String> {
+    let behavior = resolve_snapshot_import_behavior(member.definition.parallelism)?;
 
     Ok(AgentDefinition {
         effort_level: None,
@@ -140,8 +131,8 @@ fn definition_from_snapshot(
         catalog_source: None,
         team_catalog_source: None,
         env_vars: Default::default(),
-        respond_to,
-        respond_to_allowlist: behavior.respond_to_allowlist,
+        respond_to: None,
+        respond_to_allowlist: Vec::new(),
         parallelism: behavior.parallelism,
         session_policy: member.definition.session_policy,
         created_at: now.to_string(),
@@ -151,13 +142,12 @@ fn definition_from_snapshot(
 
 pub(crate) fn build_import_definitions(
     snapshot: &TeamSnapshot,
-    keep_allowlist: bool,
     now: &str,
 ) -> Result<Vec<AgentDefinition>, String> {
     snapshot
         .members
         .iter()
-        .map(|member| definition_from_snapshot(member, keep_allowlist, now))
+        .map(|member| definition_from_snapshot(member, now))
         .collect()
 }
 
@@ -198,8 +188,6 @@ fn member_preview(member: &AgentSnapshot) -> TeamSnapshotMemberPreview {
         display_name: member.profile.display_name.clone(),
         system_prompt: member.definition.system_prompt.clone(),
         avatar_url: effective_avatar(member),
-        has_source_allowlist: !member.definition.respond_to_allowlist.is_empty(),
-        source_allowlist_count: member.definition.respond_to_allowlist.len(),
     }
 }
 
@@ -210,8 +198,6 @@ pub struct TeamSnapshotMemberPreview {
     pub display_name: String,
     pub system_prompt: Option<String>,
     pub avatar_url: Option<String>,
-    pub has_source_allowlist: bool,
-    pub source_allowlist_count: usize,
 }
 
 /// Materialized team snapshot preview. No write happens before confirmation.
@@ -222,7 +208,6 @@ pub struct TeamSnapshotImportPreview {
     pub description: Option<String>,
     pub instructions: Option<String>,
     pub members: Vec<TeamSnapshotMemberPreview>,
-    pub has_source_allowlist: bool,
 }
 
 /// Confirmation input for a team snapshot import.
@@ -230,8 +215,6 @@ pub struct TeamSnapshotImportPreview {
 #[serde(rename_all = "camelCase")]
 pub struct TeamSnapshotImportConfirm {
     pub file_bytes: Vec<u8>,
-    /// Applied uniformly to every member in v1.
-    pub keep_allowlist: bool,
 }
 
 /// Per-member outcome reported after a confirmed team snapshot import.
@@ -478,7 +461,6 @@ pub async fn preview_team_snapshot_import(
             name: snapshot.team.name,
             description: snapshot.team.description,
             instructions: snapshot.team.instructions,
-            has_source_allowlist: members.iter().any(|member| member.has_source_allowlist),
             members,
         })
     })
@@ -519,7 +501,7 @@ pub async fn confirm_team_snapshot_import(
     let now = now_iso();
 
     // Resolve behavioral defaults for every member before any key generation.
-    let definitions = build_import_definitions(&snapshot, input.keep_allowlist, &now)?;
+    let definitions = build_import_definitions(&snapshot, &now)?;
     let persona_ids: Vec<String> = definitions.iter().map(|d| d.id.clone()).collect();
     let imported_team = build_import_team(&snapshot, persona_ids.clone(), &now)?;
 

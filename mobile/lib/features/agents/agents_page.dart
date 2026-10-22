@@ -1,23 +1,42 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/devices/agent_host_devices.dart';
+import '../../shared/devices/device_robot.dart';
+import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
-import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
-import '../profile/user_profile_sheet.dart';
-import '../settings/agents_settings.dart';
+import '../../shared/widgets/kuzz_view_switch.dart';
+import '../profile/presence_cache_provider.dart';
 import 'agent_row.dart';
+import 'agent_team_page.dart';
+import 'my_agent_actions.dart';
+import 'my_agent_status_dot.dart';
+import 'my_agent_tile.dart';
+import 'my_agents.dart';
+import 'my_teams.dart';
 
-/// The Agents tab: my agents, then the community's other agents, and the
-/// agent settings. Agents run on a computer; this tab lists them and opens
-/// their profile (with Message).
+part 'agents_page/computer_header.dart';
+part 'agents_page/preset_row.dart';
+part 'agents_page/team_row.dart';
+
+/// The Agents tab, where the owner sets up and manages their agents, like
+/// desktop's Agents page, with the same two tabs. "My agents": only the
+/// owner's real agents, grouped by the computer each runs on (with that
+/// computer's robot); tapping one opens its settings, its menu starts, stops
+/// or edits it; then the owner's teams of those agents. "Presets": the
+/// templates agents are made from, and team presets, with no status. Agents
+/// run on computers, so they are created there.
 class AgentsPage extends HookConsumerWidget {
   const AgentsPage({this.tabReselection, super.key});
 
@@ -26,66 +45,121 @@ class AgentsPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final me = ref.watch(myPubkeyProvider)?.toLowerCase() ?? '';
-    final directoryAsync = ref.watch(agentDirectoryProvider);
-    final owners = ref.watch(agentOwnersProvider).value ?? const {};
+    final agents = ref.watch(myAgentsProvider);
+    final users = ref.watch(userCacheProvider);
+    final deviceNames = ref.watch(agentHostDeviceNamesProvider);
+    final currentDevice = ref.watch(currentAccountDeviceIdProvider);
+    final robots = ref.watch(deviceRobotOverridesProvider);
+    final tab = useState(_AgentsTab.myAgents);
+    final onPresets = tab.value == _AgentsTab.presets;
+    final teamPresetsAsync = onPresets
+        ? ref.watch(myTeamPresetsProvider)
+        : const AsyncValue<List<MyTeamPreset>>.data([]);
+    final teamsAsync = onPresets
+        ? const AsyncValue<List<MyAgentTeam>>.data([])
+        : ref.watch(myAgentTeamsProvider);
+    final presetsAsync = onPresets
+        ? ref.watch(myAgentPresetsProvider)
+        : const AsyncValue<List<MyAgentPreset>>.data([]);
+    final directoryLoading = ref.watch(
+      agentDirectoryProvider.select((d) => d.isLoading && !d.hasValue),
+    );
     final filterController = useTextEditingController();
     final filter = useState('');
-    final directory = directoryAsync.value ?? const <AgentDirectoryEntry>[];
-    final pubkeys = [for (final agent in directory) agent.pubkey];
-    useEffect(() {
-      final wanted = {...pubkeys, ...owners.values.map((o) => o.toLowerCase())};
-      if (wanted.isEmpty) return null;
-      Future.microtask(
-        () => ref.read(userCacheProvider.notifier).preload(wanted.toList()),
-      );
-      return null;
-    }, [pubkeys.join(','), owners.length]);
-    final profiles = ref.watch(userCacheProvider);
-    String nameOf(AgentDirectoryEntry agent) {
-      final name = profiles[agent.pubkey]?.displayName?.trim();
-      if (name != null && name.isNotEmpty) return name;
-      final display = agent.displayName?.trim();
-      if (display != null && display.isNotEmpty) return display;
-      return shortPubkey(agent.pubkey);
-    }
+    final scrollController = useScrollController();
 
-    String ownerOf(AgentDirectoryEntry agent) =>
-        (owners[agent.pubkey] ?? profiles[agent.pubkey]?.ownerPubkey ?? '')
-            .toLowerCase();
+    final pubkeys = [for (final agent in agents) agent.pubkey];
+    final pubkeysKey = pubkeys.join(',');
+    useEffect(() {
+      if (pubkeys.isEmpty) return null;
+      Future.microtask(() {
+        ref.read(presenceCacheProvider.notifier).track(pubkeys);
+        unawaited(ref.read(userCacheProvider.notifier).preload(pubkeys));
+      });
+      return null;
+    }, [pubkeysKey]);
+
+    useEffect(() {
+      final reselection = tabReselection;
+      if (reselection == null) return null;
+      void scrollToTop() {
+        if (!scrollController.hasClients) return;
+        unawaited(
+          scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          ),
+        );
+      }
+
+      reselection.addListener(scrollToTop);
+      return () => reselection.removeListener(scrollToTop);
+    }, [tabReselection, scrollController]);
+
+    String nameOf(MyAgent agent) {
+      final name = users[agent.pubkey]?.displayName?.trim();
+      if (name != null && name.isNotEmpty) return name;
+      return agent.directoryName ?? shortPubkey(agent.pubkey);
+    }
 
     final needle = filter.value.trim().toLowerCase();
-    final visible =
-        [
-          for (final agent in directory)
-            if (needle.isEmpty || nameOf(agent).toLowerCase().contains(needle))
-              agent,
-        ]..sort(
-          (a, b) => nameOf(a).toLowerCase().compareTo(nameOf(b).toLowerCase()),
-        );
-    final mine = [
-      for (final agent in visible)
-        if (me.isNotEmpty && ownerOf(agent) == me) agent,
-    ];
-    final others = [
-      for (final agent in visible)
-        if (!(me.isNotEmpty && ownerOf(agent) == me)) agent,
-    ];
+    bool matches(String text) =>
+        needle.isEmpty || text.toLowerCase().contains(needle);
 
-    String ownerLabel(AgentDirectoryEntry agent) {
-      final owner = ownerOf(agent);
-      if (owner.isEmpty) return 'Agent';
-      final name = profiles[owner]?.displayName?.trim();
-      return 'Agent · ${name == null || name.isEmpty ? shortPubkey(owner) : name}';
+    // One group per computer: this device first, then by computer name.
+    final groups = <String, List<MyAgent>>{};
+    for (final agent in agents) {
+      if (matches(nameOf(agent))) (groups[agent.deviceId] ??= []).add(agent);
+    }
+    for (final list in groups.values) {
+      list.sort(
+        (a, b) => nameOf(a).toLowerCase().compareTo(nameOf(b).toLowerCase()),
+      );
+    }
+    String computerOf(String deviceId) => myAgentComputerLabel(
+      deviceNames[deviceId],
+      current: currentDevice == deviceId,
+    );
+    final deviceIds = groups.keys.toList()
+      ..sort((a, b) {
+        if (a == currentDevice) return -1;
+        if (b == currentDevice) return 1;
+        final byName = computerOf(
+          a,
+        ).toLowerCase().compareTo(computerOf(b).toLowerCase());
+        return byName != 0 ? byName : a.compareTo(b);
+      });
+
+    final agentsByPubkey = {for (final agent in agents) agent.pubkey: agent};
+    String? agentName(String pubkey) {
+      final agent = agentsByPubkey[pubkey];
+      return agent == null ? null : nameOf(agent);
     }
 
-    Widget agentRow(AgentDirectoryEntry agent, String subtitle) => AgentRow(
-      key: ValueKey('agents-row-${agent.pubkey}'),
-      pubkey: agent.pubkey,
-      name: nameOf(agent),
-      subtitle: subtitle,
-      onTap: () => showUserProfileSheet(context, agent.pubkey),
-    );
+    String memberName(MyTeamPresetMember member) {
+      for (final pubkey in member.agentPubkeys) {
+        final agent = agentsByPubkey[pubkey];
+        if (agent != null) return nameOf(agent);
+      }
+      return member.name ?? 'Missing agent';
+    }
+
+    final teamPresets = [
+      for (final team in teamPresetsAsync.value ?? const <MyTeamPreset>[])
+        if (matches(team.name) || team.members.map(memberName).any(matches))
+          team,
+    ];
+    final teams = [
+      for (final team in teamsAsync.value ?? const <MyAgentTeam>[])
+        if (matches(team.name) ||
+            team.agentPubkeys.map(agentName).nonNulls.any(matches))
+          team,
+    ];
+    final presets = [
+      for (final preset in presetsAsync.value ?? const <MyAgentPreset>[])
+        if (matches(preset.name)) preset,
+    ];
 
     final headerTitleStyle = context.textTheme.titleMedium?.copyWith(
       fontSize: 22,
@@ -97,7 +171,8 @@ class AgentsPage extends HookConsumerWidget {
       titleStyle: headerTitleStyle,
       bottomHeight: Grid.xxs,
     );
-    Widget note(String text) => Padding(
+    Widget note(String text, {Key? key}) => Padding(
+      key: key,
       padding: const EdgeInsets.symmetric(
         horizontal: Grid.gutter,
         vertical: Grid.xs,
@@ -109,6 +184,25 @@ class AgentsPage extends HookConsumerWidget {
         ),
       ),
     );
+
+    Future<void> refresh() async {
+      ref.invalidate(agentDirectoryProvider);
+      refreshMyAgentDefinitions(ref);
+      if (pubkeys.isNotEmpty) {
+        ref.read(presenceCacheProvider.notifier).track(pubkeys);
+      }
+      // Team presets and presets are only watched (and fetched) on Presets,
+      // teams on My agents.
+      if (onPresets) {
+        await ref
+            .read(myTeamPresetsProvider.future)
+            .catchError((_) => <MyTeamPreset>[]);
+      } else {
+        await ref
+            .read(myAgentTeamsProvider.future)
+            .catchError((_) => <MyAgentTeam>[]);
+      }
+    }
 
     return FrostedScaffold(
       backgroundColor: context.colors.surface,
@@ -122,45 +216,166 @@ class AgentsPage extends HookConsumerWidget {
         bottomHeight: Grid.xxs,
         bottom: const SizedBox.expand(),
       ),
-      body: ListView(
-        key: const ValueKey('agents-list'),
-        padding: EdgeInsets.only(
-          top: topSectionHeight,
-          bottom: MediaQuery.paddingOf(context).bottom + Grid.xs,
-        ),
-        children: [
-          AgentsFilterField(
-            controller: filterController,
-            hint: 'Find agents',
-            onChanged: (value) => filter.value = value,
+      body: RefreshIndicator(
+        edgeOffset: topSectionHeight,
+        onRefresh: refresh,
+        child: ListView(
+          key: const ValueKey('agents-list'),
+          controller: scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(
+            top: topSectionHeight,
+            bottom: MediaQuery.paddingOf(context).bottom + Grid.xs,
           ),
-          if (directoryAsync.isLoading && directory.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(Grid.sm),
-              child: Center(child: KuzzLoadingIndicator()),
-            )
-          else ...[
-            const AgentsSectionTitle('My agents'),
-            if (mine.isEmpty)
-              note(
-                needle.isEmpty
-                    ? 'No agents yet. Create one in the desktop app.'
-                    : 'None of your agents match that name.',
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Grid.gutter,
+                Grid.xxs,
+                Grid.gutter,
+                0,
+              ),
+              // The same switch as Chats' "All chats | By channel".
+              child: SizedBox(
+                height: 36,
+                child: KuzzViewSwitch<_AgentsTab>(
+                  key: const Key('agents-tabs'),
+                  semanticsLabel: 'Agents view',
+                  options: const [
+                    KuzzViewOption(
+                      value: _AgentsTab.myAgents,
+                      label: 'My agents',
+                      key: Key('agents-tab-agents'),
+                    ),
+                    KuzzViewOption(
+                      value: _AgentsTab.presets,
+                      label: 'Presets',
+                      key: Key('agents-tab-presets'),
+                    ),
+                  ],
+                  selected: tab.value,
+                  onChanged: (next) => tab.value = next,
+                ),
+              ),
+            ),
+            AgentsFilterField(
+              controller: filterController,
+              hint: onPresets ? 'Find presets' : 'Find agents',
+              onChanged: (value) => filter.value = value,
+            ),
+            if (onPresets)
+              ..._presetsChildren(
+                context,
+                loading:
+                    (presetsAsync.isLoading && !presetsAsync.hasValue) ||
+                    (teamPresetsAsync.isLoading && !teamPresetsAsync.hasValue),
+                presets: presets,
+                teams: teamPresets,
+                memberName: memberName,
+                filtering: needle.isNotEmpty,
+                note: note,
               )
-            else
-              for (final agent in mine) agentRow(agent, 'Agent'),
-            if (others.isNotEmpty) ...[
-              const AgentsSectionTitle('Other agents'),
-              for (final agent in others) agentRow(agent, ownerLabel(agent)),
+            else ...[
+              if (agents.isEmpty && directoryLoading)
+                const Padding(
+                  padding: EdgeInsets.all(Grid.sm),
+                  child: Center(child: KuzzLoadingIndicator()),
+                )
+              else if (agents.isEmpty)
+                note(
+                  'No agents yet. Agents run on your computers: create one in '
+                  'the Kuzz app on your computer.',
+                  key: const Key('agents-empty'),
+                )
+              else if (groups.isEmpty)
+                note(
+                  'No agents match that name.',
+                  key: const Key('agents-no-match'),
+                ),
+              for (final deviceId in deviceIds) ...[
+                _ComputerHeader(
+                  key: ValueKey('agents-computer-$deviceId'),
+                  name: computerOf(deviceId),
+                  robot: resolveDeviceRobot(
+                    deviceId,
+                    override: robots[deviceId],
+                  ),
+                ),
+                for (final agent in groups[deviceId]!)
+                  MyAgentTile(agent: agent, name: nameOf(agent)),
+              ],
+              if (teams.isNotEmpty) ...[
+                const AgentsSectionTitle('Teams'),
+                for (final team in teams)
+                  _TeamRow(
+                    key: ValueKey('agents-team-${team.id}'),
+                    team: team,
+                    agentName: agentName,
+                  ),
+              ],
             ],
           ],
-          const AgentsSectionTitle('Settings'),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: Grid.gutter),
-            child: AgentsSettings(),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
+
+enum _AgentsTab { myAgents, presets }
+
+/// The Presets tab: a note that agents are made on a computer, the agent
+/// presets with how many agents use each, then the team presets.
+List<Widget> _presetsChildren(
+  BuildContext context, {
+  required bool loading,
+  required List<MyAgentPreset> presets,
+  required List<MyTeamPreset> teams,
+  required String Function(MyTeamPresetMember) memberName,
+  required bool filtering,
+  required Widget Function(String text, {Key? key}) note,
+}) => [
+  Container(
+    key: const Key('agents-presets-note'),
+    margin: const EdgeInsets.fromLTRB(
+      Grid.gutter,
+      Grid.xxs,
+      Grid.gutter,
+      Grid.xxs,
+    ),
+    padding: const EdgeInsets.all(Grid.xs),
+    decoration: BoxDecoration(
+      color: context.colors.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(Radii.md),
+    ),
+    child: Text(
+      'Presets are templates. Create agents in the Kuzz app on your computer.',
+      style: context.textTheme.bodySmall?.copyWith(
+        color: context.colors.onSurfaceVariant,
+      ),
+    ),
+  ),
+  if (loading)
+    const Padding(
+      padding: EdgeInsets.all(Grid.sm),
+      child: Center(child: KuzzLoadingIndicator()),
+    )
+  else if (presets.isEmpty && teams.isEmpty)
+    note(
+      filtering ? 'No presets match that name.' : 'No presets yet.',
+      key: const Key('agents-presets-empty'),
+    ),
+  if (presets.isNotEmpty) ...[
+    const AgentsSectionTitle('Agent presets'),
+    for (final preset in presets)
+      _PresetRow(key: ValueKey('agents-preset-${preset.id}'), preset: preset),
+  ],
+  if (teams.isNotEmpty) ...[
+    const AgentsSectionTitle('Team presets'),
+    for (final team in teams)
+      _TeamPresetRow(
+        key: ValueKey('agents-team-preset-${team.id}'),
+        team: team,
+        memberNames: [for (final m in team.members) memberName(m)],
+      ),
+  ],
+];

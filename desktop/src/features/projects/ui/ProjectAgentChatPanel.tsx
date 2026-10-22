@@ -297,7 +297,7 @@ export function ProjectAgentChatPanel({
               </p>
               <p className="max-w-72 text-xs text-muted-foreground">
                 {homeChannel
-                  ? "The project agent will build it out from this channel."
+                  ? "The project agent will build it out from this group."
                   : "Start a conversation with the project agent."}
               </p>
             </div>

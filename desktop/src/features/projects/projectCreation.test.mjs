@@ -134,7 +134,7 @@ test("buildProjectAnnouncementTemplate rejects an invalid project channel", () =
         ownerPubkey: OWNER,
         projectChannelId: "not-a-channel",
       }),
-    /Project channel is invalid/,
+    /Project group is invalid/,
   );
 });
 

@@ -264,13 +264,13 @@ function RepositoryUnavailableIndicator({
     },
     access: {
       description:
-        "You’re not a member of the channel that grants access to this repository.",
+        "You’re not a member of the group that grants access to this repository.",
       label: "No access",
     },
     unbound: {
       description:
-        "This repository isn't linked to a channel yet, so no one can open it.",
-      label: "No access channel",
+        "This repository isn't linked to a group yet, so no one can open it.",
+      label: "No access group",
     },
     network: {
       description: "The Kuzz git service could not be reached.",

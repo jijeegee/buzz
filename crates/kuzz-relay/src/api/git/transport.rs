@@ -226,6 +226,17 @@ impl axum::extract::FromRequestParts<Arc<AppState>> for GitAuth {
         let event_auth_tag = crate::handlers::auth::extract_auth_tag_json(&event);
         let header_auth_tag = crate::api::relay_members::extract_auth_tag_header(&parts.headers);
         let auth_tag = event_auth_tag.as_deref().or(header_auth_tag);
+        // Device-bound keys (surface `git`): the key is used from its own
+        // device, and a registered key's NIP-OA owner is its registry owner.
+        // No replay cache (plan S8): git reuses one event for GET and POST.
+        crate::identity::admission::admit_key_for_event(
+            state,
+            &event,
+            auth_tag,
+            crate::identity::device::Surface::Git,
+        )
+        .await
+        .map_err(|refused| (refused.http_error().0, refused.reason()).into_response())?;
         // A failed policy lookup is 503 (the canonical NIP-FI body outside
         // Off mode); only a real refusal is 403.
         let unavailable = |legacy: Response| match mode {
@@ -354,12 +365,15 @@ async fn authenticate_git_token(
     token: &kuzz_auth::TokenSecret,
 ) -> Result<GitAuth, Response> {
     let method = parts.method.as_str();
-    let binding = match crate::identity::verify_access_token(state, token).await {
+    let binding = match crate::identity::verify_message_token(state, token).await {
         Ok(binding) => binding,
         Err(crate::identity::TokenRejection::Unavailable) => {
             return Err(
                 (StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable").into_response(),
             )
+        }
+        Err(crate::identity::TokenRejection::MessagePathClosed) => {
+            return Err((StatusCode::FORBIDDEN, "token_message_path_closed").into_response())
         }
         Err(rejection) => {
             warn!(code = rejection.code(), "git: token auth failed");

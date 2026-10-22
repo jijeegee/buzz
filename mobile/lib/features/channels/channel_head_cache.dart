@@ -92,7 +92,9 @@ class ChannelHeadCache {
   Future<void> clearRelay(String relayUrl) {
     _clearGeneration++;
     return _serial(() async {
-      final dir = Directory('${(await _root()).path}/${_hash(relayUrl)}');
+      final dir = Directory(
+        '${(await _root()).path}/${_hash(storageScopeFor(relayUrl))}',
+      );
       if (await dir.exists()) await dir.delete(recursive: true);
     });
   }
@@ -106,7 +108,8 @@ class ChannelHeadCache {
   }
 
   Future<String> _scopeDir(ChannelHeadScope scope) async =>
-      '${(await _root()).path}/${_hash(scope.relayUrl)}/${_hash(scope.pubkey)}';
+      '${(await _root()).path}/${_hash(storageScopeFor(scope.relayUrl))}/'
+      '${_hash(scope.pubkey)}';
 }
 
 // Top-level so the isolate closures capture only their arguments, not the

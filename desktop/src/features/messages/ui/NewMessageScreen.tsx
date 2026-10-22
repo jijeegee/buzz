@@ -1,10 +1,17 @@
 import * as React from "react";
+import { toast } from "sonner";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import {
+  useCreateGroupChatMutation,
   useOpenDmMutation,
   useUpsertCachedChannel,
 } from "@/features/channels/hooks";
+import {
+  invitationsSentText,
+  MAX_NEW_CHAT_PEOPLE,
+} from "@/features/channels/lib/groupChat";
+import { useStartChatConfirm } from "@/features/channels/ui/StartChatConfirm";
 import type { Channel } from "@/shared/api/types";
 import { useSendMessageMutation } from "@/features/messages/hooks";
 import { getKeyboardSearchSelection } from "@/features/profile/lib/userCandidateSearch";
@@ -21,15 +28,28 @@ import {
   useNewMessageRecipients,
 } from "./useNewMessageRecipients";
 
+/** Chips shown before the rest collapse into "+N". */
+const VISIBLE_RECIPIENT_CHIPS = 6;
+
+/** Identity of a prepared conversation: the people and the chosen name. */
+function preparedKey(pubkeys: readonly string[], name: string) {
+  return `${[...pubkeys].sort().join(",")}|${name}`;
+}
+
 /**
- * Conversation-shaped compose surface for starting a direct message. The
- * normal chat header becomes an inline "To:" field, while recipient discovery
- * lives in an attached popover instead of taking over the message area.
+ * Conversation-shaped compose surface for starting a conversation. One
+ * person opens the 1:1; two or more start a new chat (optional name) with
+ * one create. The normal chat header becomes an inline "To:" field, while
+ * recipient discovery lives in an attached popover.
  */
 export function NewMessageScreen() {
   const identityQuery = useIdentityQuery();
   const currentPubkey = identityQuery.data?.pubkey;
   const openDmMutation = useOpenDmMutation();
+  const createGroupChatMutation = useCreateGroupChatMutation();
+  const startChatConfirm = useStartChatConfirm();
+  const [chatName, setChatName] = React.useState("");
+  const [showAllRecipients, setShowAllRecipients] = React.useState(false);
   const upsertCachedChannel = useUpsertCachedChannel();
   const sendMessageMutation = useSendMessageMutation(null, identityQuery.data);
   const { goChannel } = useAppNavigation();
@@ -48,10 +68,13 @@ export function NewMessageScreen() {
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const toFieldRef = React.useRef<HTMLDivElement>(null);
   const preparedDirectMessageRef = React.useRef<Channel | null>(null);
+  const preparedKeyRef = React.useRef<string | null>(null);
+  const invitedCountRef = React.useRef({ invited: 0, picked: 0 });
   const isMountedRef = React.useRef(false);
   const isPending =
     isPreparingMentionSend ||
     openDmMutation.isPending ||
+    createGroupChatMutation.isPending ||
     sendMessageMutation.isPending;
 
   const {
@@ -127,6 +150,7 @@ export function NewMessageScreen() {
   const handleRemoveUser = React.useCallback(
     (pubkey: string) => {
       preparedDirectMessageRef.current = null;
+      preparedKeyRef.current = null;
       setInspectedRecipientPubkey((current) =>
         current === pubkey ? null : current,
       );
@@ -168,6 +192,9 @@ export function NewMessageScreen() {
 
   const openDirectMessage = React.useCallback(
     async (additionalParticipantPubkeys: string[] = []) => {
+      const currentNormalizedPubkey = currentPubkey
+        ? normalizePubkey(currentPubkey)
+        : null;
       const requestedPubkeys = [
         ...new Set(
           [
@@ -175,52 +202,64 @@ export function NewMessageScreen() {
             ...additionalParticipantPubkeys,
           ].map(normalizePubkey),
         ),
-      ].filter(Boolean);
+      ].filter((pubkey) => pubkey && pubkey !== currentNormalizedPubkey);
+      const isChat = requestedPubkeys.length > 1;
+      const name = isChat ? chatName.trim() : "";
+      const key = preparedKey(requestedPubkeys, name);
       const preparedDirectMessage = preparedDirectMessageRef.current;
-      const currentNormalizedPubkey = currentPubkey
-        ? normalizePubkey(currentPubkey)
-        : null;
-      const preparedParticipantPubkeys = new Set(
-        (preparedDirectMessage?.participantPubkeys ?? [])
-          .map(normalizePubkey)
-          .filter((pubkey) => pubkey !== currentNormalizedPubkey),
-      );
-      if (
-        preparedDirectMessage &&
-        preparedParticipantPubkeys.size === requestedPubkeys.length &&
-        requestedPubkeys.every((pubkey) =>
-          preparedParticipantPubkeys.has(pubkey),
-        )
-      ) {
+      if (preparedDirectMessage && preparedKeyRef.current === key) {
         return preparedDirectMessage;
       }
 
       if (
         openDmMutation.isPending ||
+        createGroupChatMutation.isPending ||
         sendMessageMutation.isPending ||
         requestedPubkeys.length === 0
       ) {
+        return null;
+      }
+      if (requestedPubkeys.length > MAX_NEW_CHAT_PEOPLE) {
+        setSubmitErrorMessage(
+          `A new chat can start with up to ${MAX_NEW_CHAT_PEOPLE} people.`,
+        );
         return null;
       }
 
       setSubmitErrorMessage(null);
 
       try {
-        const directMessage = await openDmMutation.mutateAsync({
-          pubkeys: requestedPubkeys,
-        });
-        preparedDirectMessageRef.current = directMessage;
-        return directMessage;
+        let conversation: Channel;
+        if (isChat) {
+          const result = await createGroupChatMutation.mutateAsync({
+            name,
+            pubkeys: requestedPubkeys,
+          });
+          conversation = result.channel;
+          invitedCountRef.current = {
+            invited: result.invited.length,
+            picked: requestedPubkeys.length,
+          };
+        } else {
+          conversation = await openDmMutation.mutateAsync({
+            pubkeys: requestedPubkeys,
+          });
+          invitedCountRef.current = { invited: 0, picked: 1 };
+        }
+        preparedDirectMessageRef.current = conversation;
+        preparedKeyRef.current = key;
+        return conversation;
       } catch (error) {
         setSubmitErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "Failed to open direct message.",
+          error instanceof Error ? error.message : "Could not start the chat.",
         );
         return null;
       }
     },
     [
+      chatName,
+      createGroupChatMutation.isPending,
+      createGroupChatMutation.mutateAsync,
       currentPubkey,
       openDmMutation.isPending,
       openDmMutation.mutateAsync,
@@ -229,14 +268,24 @@ export function NewMessageScreen() {
     ],
   );
 
+  // A mention of someone not picked asks first, then joins them to the new
+  // chat. Nobody is added silently.
   const prepareSendChannel = React.useCallback(
     async (additionalParticipantPubkeys: string[] = []) => {
-      const directMessage = await openDirectMessage(
-        additionalParticipantPubkeys,
+      const picked = new Set(
+        selectedUsers.map((user) => normalizePubkey(user.pubkey)),
       );
+      const me = currentPubkey ? normalizePubkey(currentPubkey) : null;
+      const extras = [
+        ...new Set(additionalParticipantPubkeys.map(normalizePubkey)),
+      ].filter((pubkey) => pubkey && pubkey !== me && !picked.has(pubkey));
+      if (extras.length > 0 && !(await startChatConfirm.confirm(extras))) {
+        return null;
+      }
+      const directMessage = await openDirectMessage(extras);
       return directMessage?.id ?? null;
     },
-    [openDirectMessage],
+    [currentPubkey, openDirectMessage, selectedUsers, startChatConfirm.confirm],
   );
 
   const sendFirstMessage = React.useCallback(
@@ -270,7 +319,9 @@ export function NewMessageScreen() {
           transport: "http",
         });
       } catch (error) {
-        preparedDirectMessageRef.current = null;
+        // A created chat is kept so a retry sends there instead of making
+        // a second one; a 1:1 reopen is idempotent.
+        if (!directMessage.groupChat) preparedDirectMessageRef.current = null;
         const message =
           error instanceof Error ? error.message : "Failed to send message.";
         if (isMountedRef.current) setSubmitErrorMessage(message);
@@ -286,6 +337,9 @@ export function NewMessageScreen() {
         return;
       }
       await goChannel(directMessage.id, { replace: true });
+      const { invited, picked } = invitedCountRef.current;
+      const invitedText = invitationsSentText(invited, picked);
+      if (invitedText) toast(invitedText);
     },
     [
       goChannel,
@@ -352,7 +406,10 @@ export function NewMessageScreen() {
                 <span className="shrink-0 text-base font-semibold tracking-tight">
                   To:
                 </span>
-                {selectedUsers.map((user) => (
+                {(showAllRecipients
+                  ? selectedUsers
+                  : selectedUsers.slice(0, VISIBLE_RECIPIENT_CHIPS)
+                ).map((user) => (
                   <SelectedRecipientChip
                     disabled={isPending}
                     inspectionOpen={inspectedRecipientPubkey === user.pubkey}
@@ -373,6 +430,21 @@ export function NewMessageScreen() {
                     user={user}
                   />
                 ))}
+                {!showAllRecipients &&
+                selectedUsers.length > VISIBLE_RECIPIENT_CHIPS ? (
+                  <button
+                    className="h-7 shrink-0 rounded-full bg-muted px-2.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+                    data-testid="new-dm-more-recipients"
+                    disabled={isPending}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setShowAllRecipients(true);
+                    }}
+                    type="button"
+                  >
+                    +{selectedUsers.length - VISIBLE_RECIPIENT_CHIPS}
+                  </button>
+                ) : null}
                 <input
                   aria-activedescendant={
                     highlightedRecipient
@@ -590,12 +662,31 @@ export function NewMessageScreen() {
         data-testid="new-message-body"
       />
 
+      {selectedUsers.length > 1 ? (
+        <div className="px-5 pb-2" data-testid="new-chat-name-row">
+          <input
+            aria-label="Chat name"
+            className="h-9 w-full rounded-lg border border-border/60 bg-transparent px-3 text-sm outline-hidden placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            data-testid="new-chat-name"
+            disabled={isPending}
+            maxLength={100}
+            onChange={(event) => {
+              preparedDirectMessageRef.current = null;
+              preparedKeyRef.current = null;
+              setChatName(event.target.value);
+            }}
+            placeholder="Chat name (optional)"
+            type="text"
+            value={chatName}
+          />
+        </div>
+      ) : null}
       {hasReachedRecipientLimit ? (
         <p
           className="px-5 pb-2 text-sm text-muted-foreground"
           data-testid="new-dm-limit"
         >
-          DMs support up to nine people, including you.
+          A new chat can start with up to {MAX_NEW_CHAT_PEOPLE} people.
         </p>
       ) : null}
       {searchError ? (
@@ -622,6 +713,7 @@ export function NewMessageScreen() {
         showBackgroundUploadProgress
       />
       <div aria-hidden="true" className="min-h-8 bg-background px-5 pb-1.5" />
+      {startChatConfirm.dialog}
     </div>
   );
 }

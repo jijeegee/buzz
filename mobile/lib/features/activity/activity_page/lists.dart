@@ -97,6 +97,7 @@ class _DraftsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final names = ref.watch(identityNameSourcesProvider);
+    final privateNames = ref.watch(channelNamesProvider);
     if (drafts.isEmpty) {
       return const _EmptySurface(
         icon: LucideIcons.filePen,
@@ -113,14 +114,13 @@ class _DraftsList extends ConsumerWidget {
         final draft = drafts[index];
         final channel = channelById[draft.channelId];
         final destination = channel == null
-            ? 'Unavailable channel'
-            : channel.isDm
-            ? resolveDmChannelDisplayLabel(
+            ? 'Unavailable group'
+            : channelTitle(
                 channel,
                 currentPubkey: myPubkey,
                 names: names,
-              )
-            : '#${channel.name}';
+                privateName: privateNames.nameFor(channel.id),
+              );
         return ListTile(
           key: ValueKey('draft-row-${draft.key}'),
           leading: Icon(

@@ -77,7 +77,7 @@ export function ChannelsFocusedView({
             disabled={isActionPending}
             grouped
             icon={UserPlus}
-            label="Add to channel"
+            label="Add to group"
             onClick={onAddToChannel}
             testId="user-profile-agent-add-channel"
             trailing={isActionPending ? "Working…" : undefined}
@@ -85,7 +85,7 @@ export function ChannelsFocusedView({
         ) : null}
         {isLoading ? (
           <p className="px-4 py-3 text-sm leading-6 text-muted-foreground">
-            Loading channels…
+            Loading groups…
           </p>
         ) : channels.length === 0 ? (
           <div
@@ -98,13 +98,13 @@ export function ChannelsFocusedView({
             <UserPlus className="mx-auto h-4 w-4 text-muted-foreground" />
             <p className="mt-3 text-sm font-medium">
               {canAddToChannel
-                ? "Add this agent to a channel"
-                : "Channels appear here"}
+                ? "Add this agent to a group"
+                : "Groups appear here"}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {canAddToChannel
-                ? "Choose a channel above so it can join the conversation."
-                : "Visible memberships appear as this agent joins channels."}
+                ? "Choose a group above so it can join the conversation."
+                : "Visible memberships appear as this agent joins groups."}
             </p>
           </div>
         ) : (
@@ -123,14 +123,14 @@ export function ChannelsFocusedView({
                   />
                 ) : (
                   <button
-                    aria-label={`Open #${channel.name}`}
+                    aria-label={`Open ${channel.name}`}
                     className="group flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
                     data-testid={`user-profile-channel-link-${channel.name}`}
                     onClick={() => onOpenChannel(channel.id)}
                     type="button"
                   >
                     <span className="min-w-0 flex-1 truncate">
-                      #{channel.name}
+                      {channel.name}
                     </span>
                     <ArrowUpRight
                       aria-hidden="true"

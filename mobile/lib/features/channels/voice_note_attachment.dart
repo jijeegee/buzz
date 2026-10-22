@@ -70,7 +70,7 @@ class VoiceNoteAttachment extends HookConsumerWidget {
       if (isRemote) {
         unawaited(
           player.loadRemote(
-            source,
+            ref.read(mediaGetAuthServiceProvider).resolve(source),
             headers: () =>
                 ref.read(mediaGetAuthServiceProvider).headersFor(source),
             fallbackDuration: duration,

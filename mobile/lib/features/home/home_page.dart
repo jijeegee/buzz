@@ -10,22 +10,26 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/directional_transition_scope.dart';
 import '../../shared/widgets/mobile_tab_footer_backdrop.dart';
-import '../activity/activity_page.dart';
 import '../agents/agents_page.dart';
 import '../channels/channels_page.dart';
 import '../chats/chat_state_writer.dart';
 import '../chats/chats_page.dart';
-import '../more/more_page.dart';
+import '../groups/group_invitations.dart';
 import '../people/people_page.dart';
 
 class HomePage extends HookConsumerWidget {
   const HomePage({
     required this.settingsPageBuilder,
     required this.hasUnreadInbox,
+    this.profilePageBuilder,
     super.key,
   });
 
   final WidgetBuilder settingsPageBuilder;
+
+  /// My profile, opened from the More menu's top row. Falls back to
+  /// Settings when absent.
+  final WidgetBuilder? profilePageBuilder;
   final bool hasUnreadInbox;
 
   static const double _tabBarHeight = mobileTabBarHeight;
@@ -48,7 +52,9 @@ class HomePage extends HookConsumerWidget {
   static const double _tabContentTransitionDistance = 24;
 
   static const _chatsTab = 0;
-  static const _activityTab = 2;
+  // Profile and Settings open their own screens instead of a tab page.
+  static const _profileTab = 3;
+  static const _settingsTab = 4;
 
   static const _destinations = [
     _HomeDestination(
@@ -62,19 +68,19 @@ class HomePage extends HookConsumerWidget {
       label: 'People',
     ),
     _HomeDestination(
-      icon: LucideIcons.inbox300,
-      selectedIcon: LucideIcons.inbox500,
-      label: 'Activity',
-    ),
-    _HomeDestination(
       icon: LucideIcons.bot300,
       selectedIcon: LucideIcons.bot500,
       label: 'Agents',
     ),
     _HomeDestination(
-      icon: LucideIcons.ellipsis300,
-      selectedIcon: LucideIcons.ellipsis500,
-      label: 'More',
+      icon: LucideIcons.circleUserRound300,
+      selectedIcon: LucideIcons.circleUserRound500,
+      label: 'Profile',
+    ),
+    _HomeDestination(
+      icon: LucideIcons.settings300,
+      selectedIcon: LucideIcons.settings500,
+      label: 'Settings',
     ),
   ];
 
@@ -112,21 +118,24 @@ class HomePage extends HookConsumerWidget {
     final pages = [
       ChatsPage(tabReselection: reselections[0]),
       lazy(1, () => const PeoplePage()),
-      lazy(2, () => ActivityPage(tabReselection: reselections[2])),
-      lazy(3, () => AgentsPage(tabReselection: reselections[3])),
-      lazy(
-        4,
-        () => MorePage(
-          settingsPageBuilder: settingsPageBuilder,
-          onSettingsTransitionProgress: (progress) {
+      lazy(2, () => AgentsPage(tabReselection: reselections[2])),
+      const SizedBox.shrink(),
+      const SizedBox.shrink(),
+    ];
+
+    void openSettingsRoute(WidgetBuilder builder) {
+      HapticFeedback.lightImpact();
+      Navigator.of(context).push(
+        SettingsPageRoute(
+          builder: builder,
+          onTransitionProgress: (progress) {
             if (settingsTransitionProgress.value != progress) {
               settingsTransitionProgress.value = progress;
             }
           },
-          tabReselection: reselections[4],
         ),
-      ),
-    ];
+      );
+    }
 
     const Gradient? settingsTransitionGradient = null;
 
@@ -208,11 +217,18 @@ class HomePage extends HookConsumerWidget {
             ),
             bottomNavigationBar: _FloatingTabBar(
               selectedIndex: tabIndex.value,
-              unreadTabs: {
-                if (hasUnreadChats) _chatsTab,
-                if (hasUnreadInbox) _activityTab,
-              },
+              unreadTabs: {if (hasUnreadChats) _chatsTab},
               onDestinationSelected: (i) {
+                if (i == _profileTab) {
+                  unawaited(HapticFeedback.selectionClick());
+                  openSettingsRoute(profilePageBuilder ?? settingsPageBuilder);
+                  return;
+                }
+                if (i == _settingsTab) {
+                  unawaited(HapticFeedback.selectionClick());
+                  openSettingsRoute(settingsPageBuilder);
+                  return;
+                }
                 if (i == tabIndex.value) {
                   reselections[i].value++;
                   return;
@@ -223,6 +239,12 @@ class HomePage extends HookConsumerWidget {
                 unawaited(HapticFeedback.selectionClick());
                 visitedTabs.value.add(i);
                 tabIndex.value = i;
+                if (i == _chatsTab) {
+                  ref
+                      .read(groupInvitationsProvider.notifier)
+                      .refresh()
+                      .ignore();
+                }
                 if (reducedMotion) {
                   tabContentTransitionController.value = 1;
                 } else {

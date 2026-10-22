@@ -455,14 +455,14 @@ export function ChannelActivityPopover({
         style={ACTIVITY_POPOVER_MOTION_STYLE}
       >
         <section
-          aria-label="Channel activity"
+          aria-label="Group activity"
           className="flex max-h-96 min-h-0 flex-col overflow-hidden"
         >
           <h3
             className="relative z-20 shrink-0 border-b border-border/70 bg-background/95 px-3 py-2 text-sm font-semibold text-foreground backdrop-blur-md supports-[backdrop-filter]:bg-background/90"
             data-testid="channel-activity-header"
           >
-            Channel activity
+            Group activity
           </h3>
           <div
             className="kuzz-channel-activity-scrollbar min-h-0 overflow-y-auto overscroll-contain"

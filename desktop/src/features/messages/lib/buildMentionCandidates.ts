@@ -56,13 +56,11 @@ export type BuildMentionCandidatesInput = {
 export function buildMentionCandidates({
   activeAgentPubkeys,
   activePersonaById,
-  activePersonas,
   canSearchGlobalUsers,
   currentPubkey,
   isArchived,
   managedAgentDirectoryReady,
   managedAgentNamesByPubkey,
-  managedAgentPersonaIds,
   managedAgentPersonaIdsByPubkey,
   managedAgents,
   memberPubkeys,
@@ -225,20 +223,15 @@ export function buildMentionCandidates({
       });
     }
   }
-  const personaCandidates: MentionCandidate[] = activePersonas
-    .filter((persona) => !managedAgentPersonaIds.has(persona.id))
-    .map((persona) => ({
-      kind: "persona" as const,
-      personaId: persona.id,
-      displayName: persona.displayName,
-      avatarUrl: persona.avatarUrl,
-      isMember: false,
-      isAgent: true,
-    }))
-    .filter((candidate) => candidate.displayName.trim().length > 0);
   return coalesceAgentAutocompleteCandidates(
     coalesceAutocompleteCandidatesByKey(
-      [...candidatesByPubkey.values(), ...personaCandidates],
+      // Kuzz: mentions reach only people and agents already in this room.
+      // Directory agents, unminted personas and global people search results
+      // still enrich member entries above but never appear on their own;
+      // bringing someone in goes through group invites.
+      [...candidatesByPubkey.values()].filter(
+        (candidate) => candidate.isMember,
+      ),
       globalSearchIdentityKey,
     ),
     {

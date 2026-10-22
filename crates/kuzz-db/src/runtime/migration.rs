@@ -509,6 +509,7 @@ mod postgres_tests {
             "refresh_tokens",
             "bots",
             "access_tokens",
+            "key_registry",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -722,7 +723,49 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 72);
+        assert_eq!(migrations.len(), 79);
+        assert_eq!(migrations[78].version, 79);
+        assert!(migrations[78]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN group_chat BOOLEAN NOT NULL DEFAULT false"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("group_chat      BOOLEAN NOT NULL DEFAULT false"));
+        assert_eq!(migrations[77].version, 78);
+        assert!(migrations[77]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE key_registry"));
+        // URL/path split search terms (0077): same capture-and-rewrite shape
+        // as 0062, swapping only the to_tsvector term so every kind filter
+        // stays as it was. schema.sql must carry the same split term.
+        assert_eq!(migrations[76].version, 77);
+        let split_terms = migrations[76].sql.as_str();
+        assert!(split_terms.contains("search_tsv"));
+        assert!(split_terms.contains("regexp_replace(content, ''[-/:._?=&#]+'', '' '', ''g'')"));
+        assert!(split_terms.contains("CREATE INDEX idx_events_search_tsv"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("to_tsvector('simple', regexp_replace(content, '[-/:._?=&#]+', ' ', 'g'))"));
+        assert_eq!(migrations[75].version, 76);
+        assert!(migrations[75]
+            .sql
+            .as_str()
+            .contains("ALTER TABLE channels ADD COLUMN picture"));
+        assert_eq!(migrations[74].version, 75);
+        assert!(migrations[74]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE group_invitations"));
+        assert_eq!(migrations[73].version, 74);
+        assert!(migrations[73]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE media_references"));
+        assert_eq!(migrations[72].version, 73);
+        assert!(migrations[72]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE IF NOT EXISTS user_block_periods"));
         assert_eq!(migrations[71].version, 72);
         assert!(migrations[71]
             .sql
@@ -2180,8 +2223,14 @@ mod postgres_tests {
             [
                 "artifact_heads",
                 "artifact_revisions",
+                "group_add_settings",
+                "group_invitations",
+                "group_invite_links",
                 "thread_follows",
+                "media_references",
+                "media_uploads",
                 "thread_state",
+                "user_block_periods",
                 "user_blocks",
             ]
             .map(str::to_owned),

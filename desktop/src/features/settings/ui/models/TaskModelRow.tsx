@@ -128,7 +128,7 @@ export function TaskModelRow({
           className="mt-1 text-xs text-muted-foreground/70"
           data-settings-subcopy
         >
-          The messages you write in channels — including drafts while you type —
+          The messages you write in groups — including drafts while you type —
           plus your agents' names and descriptions are sent to this provider to
           pick an agent.
         </p>

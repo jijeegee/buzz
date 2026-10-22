@@ -50,12 +50,14 @@ List<KuzzPushSubscription>? desiredKuzzPushSubscriptions({
   return buildDesiredKuzzPushSubscriptions(
     myPubkey: pubkey,
     channelIds: [
-      // Activity surfaces channel-wide traffic only for joined DM channels.
-      // Other message kinds enter the inbox through an exact #p mention or
-      // participant-thread tag, so subscribing to every joined channel would
-      // over-notify compared with the product predicate.
+      // Activity surfaces channel-wide traffic only for joined 1:1 and group
+      // chats. Other message kinds enter the inbox through an exact #p
+      // mention or participant-thread tag, so subscribing to every joined
+      // channel would over-notify compared with the product predicate.
+      // Muted chats are dropped by [mutedChannelIds]; mentions still arrive.
       for (final channel in channels)
-        if (channel.isDm && channel.isMember && !channel.isArchived) channel.id,
+        if (channel.isPersonChat && channel.isMember && !channel.isArchived)
+          channel.id,
     ],
     mutedChannelIds: mutedChannelIds,
   );

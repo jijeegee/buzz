@@ -87,7 +87,7 @@ class RoomPositionStore {
     required String relay,
     required String pubkey,
     int Function()? now,
-  }) : prefsKey = '$roomPositionPrefsKey:$relay:$pubkey',
+  }) : prefsKey = '$roomPositionPrefsKey:${storageScopeFor(relay)}:$pubkey',
        _now = now ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final SharedPreferences _prefs;

@@ -24,7 +24,7 @@ import 'people_favorites.dart';
 import 'person_page.dart';
 import 'person_row.dart';
 
-/// How long typing must pause before "In your channels" asks the server.
+/// How long typing must pause before "In your groups" asks the server.
 const peopleSearchDebounce = Duration(milliseconds: 300);
 
 /// People who share a channel with me and match [query] (server side). Empty
@@ -300,7 +300,7 @@ class PeoplePage extends HookConsumerWidget {
   }
 }
 
-/// "In your channels": server matches not already shown as friends.
+/// "In your groups": server matches not already shown as friends.
 class _SharedResults extends ConsumerWidget {
   const _SharedResults({
     required this.query,
@@ -323,7 +323,7 @@ class _SharedResults extends ConsumerWidget {
     if (ref.watch(accountOriginProvider) == null) {
       return const SizedBox.shrink();
     }
-    final header = const _SectionHeader(title: 'In your channels');
+    final header = const _SectionHeader(title: 'In your groups');
     if (pending || query.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -341,7 +341,7 @@ class _SharedResults extends ConsumerWidget {
           key: const Key('people-shared-error'),
           text: error is AccountApiException && error.statusCode == 429
               ? 'Too many searches. Wait a minute and try again.'
-              : 'Couldn’t search your channels',
+              : 'Couldn’t search your groups',
           action: TextButton(
             onPressed: () => ref.invalidate(sharedPeopleProvider(query)),
             child: const Text('Retry'),

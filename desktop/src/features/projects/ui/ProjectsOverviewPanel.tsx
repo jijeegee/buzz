@@ -5,8 +5,8 @@ import {
   Folders,
   GitMerge,
   GitPullRequest,
-  Hash,
   Plus,
+  Users,
 } from "lucide-react";
 import * as React from "react";
 
@@ -41,7 +41,7 @@ const STAT_ICONS: Record<
   OverviewContextStatIcon,
   React.ComponentType<{ className?: string }>
 > = {
-  channels: Hash,
+  channels: Users,
   completed: CheckCircle2,
   merged: GitMerge,
   projects: Folders,

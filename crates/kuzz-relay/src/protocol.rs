@@ -11,6 +11,34 @@ const MAX_SUB_ID_LENGTH: usize = 256;
 /// NIP-11 advertised limit: REQ messages with more filters than this are rejected.
 const MAX_FILTERS_PER_REQ: usize = 10;
 
+/// Most values one filter may list in `ids`, `authors`, `kinds`, or any single
+/// `#tag`. Bounds the SQL `IN` lists a single filter can force. The desktop
+/// batches its largest list (user-status authors) at exactly this size.
+pub(crate) const MAX_FILTER_LIST_VALUES: usize = 1_000;
+
+/// Rejects a filter whose `ids`, `authors`, `kinds`, or any `#tag` list holds
+/// more than [`MAX_FILTER_LIST_VALUES`] values. Shared by the WebSocket
+/// REQ/COUNT parser and the HTTP `/query` and `/count` bridge.
+pub(crate) fn check_filter_list_limits(filters: &[Filter]) -> std::result::Result<(), String> {
+    for filter in filters {
+        let lists = [
+            ("ids", filter.ids.as_ref().map_or(0, |v| v.len())),
+            ("authors", filter.authors.as_ref().map_or(0, |v| v.len())),
+            ("kinds", filter.kinds.as_ref().map_or(0, |v| v.len())),
+        ]
+        .into_iter()
+        .chain(filter.generic_tags.values().map(|v| ("#tag", v.len())));
+        for (name, len) in lists {
+            if len > MAX_FILTER_LIST_VALUES {
+                return Err(format!(
+                    "filter {name} lists {len} values, maximum is {MAX_FILTER_LIST_VALUES}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// A message sent by a NIP-01 client to the relay.
 #[derive(Debug, Clone)]
 pub enum ClientMessage {
@@ -150,6 +178,7 @@ impl ClientMessage {
                             .map_err(|e| RelayError::InvalidMessage(format!("invalid filter: {e}")))
                     })
                     .collect::<Result<Vec<_>>>()?;
+                check_filter_list_limits(&filters).map_err(RelayError::InvalidMessage)?;
                 let before_ids = filter_values
                     .iter()
                     .map(|value| {
@@ -223,6 +252,7 @@ impl ClientMessage {
                             .map_err(|e| RelayError::InvalidMessage(format!("invalid filter: {e}")))
                     })
                     .collect::<Result<Vec<_>>>()?;
+                check_filter_list_limits(&filters).map_err(RelayError::InvalidMessage)?;
                 Ok(ClientMessage::Count { sub_id, filters })
             }
             "CLOSE" => {
@@ -541,6 +571,51 @@ mod tests {
             ClientMessage::parse(&raw).is_ok(),
             "exactly {MAX_FILTERS_PER_REQ} filters should be accepted"
         );
+    }
+
+    fn authors_value(count: usize) -> serde_json::Value {
+        let authors: Vec<String> = (0..count).map(|i| format!("{i:064x}")).collect();
+        serde_json::json!({ "authors": authors })
+    }
+
+    #[test]
+    fn parse_req_and_count_reject_oversized_filter_lists() {
+        for verb in ["REQ", "COUNT"] {
+            let at_limit =
+                serde_json::json!([verb, "s", authors_value(MAX_FILTER_LIST_VALUES)]).to_string();
+            assert!(
+                ClientMessage::parse(&at_limit).is_ok(),
+                "{verb}: exactly {MAX_FILTER_LIST_VALUES} authors should be accepted"
+            );
+
+            let over = serde_json::json!([verb, "s", authors_value(MAX_FILTER_LIST_VALUES + 1)])
+                .to_string();
+            let err = ClientMessage::parse(&over).unwrap_err();
+            assert!(
+                matches!(&err, RelayError::InvalidMessage(m) if m.contains("authors")),
+                "{verb}: expected authors limit rejection, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn filter_list_limit_covers_ids_kinds_and_tags() {
+        let ids: Vec<String> = (0..=MAX_FILTER_LIST_VALUES)
+            .map(|i| format!("{i:064x}"))
+            .collect();
+        let kinds: Vec<u16> = (0..=MAX_FILTER_LIST_VALUES as u16).collect();
+        let tags: Vec<String> = (0..=MAX_FILTER_LIST_VALUES)
+            .map(|i| i.to_string())
+            .collect();
+        for (name, value) in [
+            ("ids", serde_json::json!({ "ids": ids })),
+            ("kinds", serde_json::json!({ "kinds": kinds })),
+            ("#tag", serde_json::json!({ "#t": tags })),
+        ] {
+            let filter: Filter = serde_json::from_value(value).unwrap();
+            let err = check_filter_list_limits(&[filter]).unwrap_err();
+            assert!(err.contains(name), "{name}: {err}");
+        }
     }
 
     // Type alias to avoid clippy::type_complexity warning on the format test table.

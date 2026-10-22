@@ -110,7 +110,7 @@ test("addProjectChannel removes its channel and does not publish when the projec
         throw new Error("must not publish a stale project replacement");
       },
     }),
-    /updated by another session while the channel was being created/,
+    /updated by another session while the group was being created/,
   );
 
   assert.deepEqual(deleted, [CREATED_CHANNEL]);

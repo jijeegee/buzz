@@ -17,10 +17,19 @@ class AddChannelMembersSheet extends HookConsumerWidget {
     super.key,
     required this.channelId,
     required this.existingPubkeys,
+    this.chat = false,
+    this.startChat,
   });
 
   final String channelId;
   final Set<String> existingPubkeys;
+
+  /// Adding to a chat of people: agents join as `bot`, wording says chat.
+  final bool chat;
+
+  /// When set, the picked people start a new chat through this instead of
+  /// joining [channelId] (a 1:1's "Add people").
+  final Future<void> Function(List<String> pubkeys)? startChat;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -99,15 +108,57 @@ class AddChannelMembersSheet extends HookConsumerWidget {
       final submittedUsers = List<DirectoryUser>.of(selectedUsers.value);
       isSubmitting.value = true;
       submitError.value = null;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      void announceInvited(List<String> invited) {
+        if (invited.isEmpty) return;
+        final names = [
+          for (final user in submittedUsers)
+            if (invited.contains(user.pubkey.toLowerCase())) labelFor(user),
+        ];
+        messenger?.showSnackBar(
+          SnackBar(content: Text(invitationSentMessage(names))),
+        );
+      }
+
       try {
-        await ref
-            .read(channelActionsProvider)
-            .addMembers(
+        if (startChat case final start?) {
+          await start(submittedUsers.map((user) => user.pubkey).toList());
+          if (context.mounted) Navigator.of(context).pop(true);
+          return;
+        }
+        final actions = ref.read(channelActionsProvider);
+        final agents = [
+          for (final user in submittedUsers)
+            if (chat && user.isAgent) user.pubkey,
+        ];
+        final people = [
+          for (final user in submittedUsers)
+            if (!(chat && user.isAgent)) user.pubkey,
+        ];
+        final invited = <String>[];
+        final failures = <String, String>{};
+        // A chat adds agents as bots; each batch reports its own refusals.
+        for (final (pubkeys, role) in [(people, 'member'), (agents, 'bot')]) {
+          if (pubkeys.isEmpty) continue;
+          try {
+            final result = await actions.addMembers(
               channelId: channelId,
-              pubkeys: submittedUsers.map((user) => user.pubkey).toList(),
+              pubkeys: pubkeys,
+              role: role,
             );
+            invited.addAll(result.invited);
+          } on AddMembersException catch (error) {
+            invited.addAll(error.invited);
+            failures.addAll(error.failures);
+          }
+        }
+        if (failures.isNotEmpty) {
+          throw AddMembersException(failures, invited: invited);
+        }
+        announceInvited(invited);
         if (context.mounted) Navigator.of(context).pop(true);
       } on AddMembersException catch (error) {
+        announceInvited(error.invited);
         final failedPubkeys = error.failures.keys
             .map((pubkey) => pubkey.toLowerCase())
             .toSet();
@@ -186,7 +237,8 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                       ? Center(
                           child: Text(
                             normalizedQuery.isEmpty
-                                ? 'Everyone available is already in this channel.'
+                                ? 'Everyone available is already in this '
+                                      '${chat ? 'chat' : 'group'}.'
                                 : 'No matching people or agents.',
                             textAlign: TextAlign.center,
                           ),
@@ -276,8 +328,12 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                       ? null
                       : addSelectedMembers,
                   child: Text(
-                    isSubmitting.value
+                    startChat != null
+                        ? (isSubmitting.value ? 'Starting…' : 'Start chat')
+                        : isSubmitting.value
                         ? 'Adding…'
+                        : chat
+                        ? 'Add people'
                         : selectedUsers.value.length == 1
                         ? 'Add member'
                         : 'Add ${selectedUsers.value.length} members',

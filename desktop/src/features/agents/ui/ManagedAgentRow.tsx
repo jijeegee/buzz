@@ -346,7 +346,7 @@ function WorkingBadge({
         onNavigate(channelId);
       }}
     >
-      Working in #{name} · {formatElapsed(now - anchorAt)}
+      Working in {name} · {formatElapsed(now - anchorAt)}
     </Badge>
   );
 }

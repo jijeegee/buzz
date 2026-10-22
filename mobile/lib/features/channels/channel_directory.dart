@@ -484,7 +484,7 @@ extension _ObservedUnreadRecording on ChannelsNotifier {
     final isThreadedReply =
         event.threadReference.parentId != null && !_isBroadcastReply(event);
     final isHighPriority =
-        channel.isDm || isHighPriorityEvent(event.tags, myPk);
+        channel.isPersonChat || isHighPriorityEvent(event.tags, myPk);
     recordObservedUnreadEvent(
       _observedUnreadEventsByChannel,
       channel.id,
@@ -495,6 +495,7 @@ extension _ObservedUnreadRecording on ChannelsNotifier {
         highPriority: isHighPriority,
         channelType: channel.channelType,
         isThreadedReply: isThreadedReply,
+        isPersonChat: channel.isPersonChat,
       ),
       _unreadCatchUpLimit,
     );

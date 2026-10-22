@@ -1,6 +1,7 @@
 import * as React from "react";
 import { flushSync } from "react-dom";
 
+import { resizeAvatarImage } from "@/features/profile/lib/resizeAvatarImage";
 import { uploadMediaBytes } from "@/shared/api/tauri";
 
 const AVATAR_IMAGE_TYPES = [
@@ -64,7 +65,9 @@ export function useAvatarUpload({
         if (processImage) {
           onUploadSuccess(await processImage(file));
         } else {
-          const buffer = await file.arrayBuffer();
+          // Avatars never need more than 640px; shrink before uploading.
+          const upload = await resizeAvatarImage(file);
+          const buffer = await upload.arrayBuffer();
           const uploaded = await uploadMediaBytes([...new Uint8Array(buffer)]);
           // The shared upload path is now generic (accepts any non-denied file),
           // so the browser-provided `file.type` check above is no longer a

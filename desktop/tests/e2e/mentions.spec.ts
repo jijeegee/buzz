@@ -1713,6 +1713,8 @@ test("managed relay-profile agents with member roles can be addressed explicitly
 
   await openChannelBrowser(page);
   await expect(page.getByTestId("channel-browser-dialog")).toBeVisible();
+  // Groups you are not in only show up through search.
+  await page.getByTestId("channel-browser-search").fill("sales");
   await page
     .getByTestId("browse-channel-sales")
     .getByRole("button", { name: "Join" })
@@ -3883,7 +3885,7 @@ test("system add rows use plain names while remove rows retain agent mention sty
     .filter({ hasText: "added by" });
   const removedRow = page
     .getByTestId("system-message-row")
-    .filter({ hasText: "removed portal from the channel" });
+    .filter({ hasText: "removed portal from the group" });
 
   const addedName = addedRow.getByText("portal", { exact: true });
   await expect(addedName).toBeVisible();
@@ -4117,7 +4119,7 @@ test("system agent avatar keeps keyboard focus decoration outside artwork", asyn
 
   const row = page
     .getByTestId("system-message-row")
-    .filter({ hasText: "created this channel" });
+    .filter({ hasText: "created this group" });
   const control = row.locator('button[data-testid="system-message-avatar"]');
   const artwork = control.getByTestId("system-message-avatar");
   await control.focus();
@@ -4239,7 +4241,7 @@ test("membership activity folds a member joining then leaving", async ({
   const lifecycleRow = page
     .getByTestId("system-message-row")
     .filter({ hasText: "alice" })
-    .filter({ hasText: "joined, then left the channel" });
+    .filter({ hasText: "joined, then left the group" });
   await expect(lifecycleRow).toBeVisible();
   await expect(lifecycleRow.getByTestId("system-message-avatar")).toHaveCount(
     1,

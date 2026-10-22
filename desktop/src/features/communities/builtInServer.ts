@@ -11,6 +11,12 @@ import {
 } from "./communityStorage";
 import { readmitRelay } from "@/features/agents/managedAgentRelayCleanup";
 import { invokeTauri } from "@/shared/api/tauri";
+import {
+  configureService,
+  isServiceAddress,
+  migrateServiceStorage,
+  serviceOrigin,
+} from "@/shared/lib/serviceAddress";
 import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 
 /**
@@ -164,7 +170,33 @@ export type StartupPin = {
   communities: Community[];
   activeId: string;
   created: Community | null;
+  /** Stored entries moved from an earlier address of the service. */
+  rehomed: boolean;
 };
+
+/**
+ * Stored entries on an earlier address of the service now use the built-in
+ * server's address: same account, same settings (they are keyed by the
+ * service, see `serviceAddress`). `null` when none needed moving.
+ */
+function rehomeServiceCommunities(
+  communities: readonly Community[],
+  builtIn: string,
+  isService: (url: string) => boolean,
+): Community[] | null {
+  let changed = false;
+  const next = communities.map((community) => {
+    if (
+      isSameServer(community.relayUrl, builtIn) ||
+      !isService(community.relayUrl)
+    ) {
+      return community;
+    }
+    changed = true;
+    return { ...community, relayUrl: normalizeRelayUrl(builtIn) };
+  });
+  return changed ? next : null;
+}
 
 /**
  * What startup stores so the built-in server is active: select its stored
@@ -173,22 +205,40 @@ export type StartupPin = {
  * run with no communities (the default-server onboarding adds it).
  */
 export function resolveStartupPin(
-  communities: readonly Community[],
+  stored: readonly Community[],
   activeId: string | null,
   builtIn: string | null,
   createId: () => string = () => crypto.randomUUID(),
   now: () => Date = () => new Date(),
+  isService: (url: string) => boolean = isServiceAddress,
 ): StartupPin | null {
-  if (!builtIn || communities.length === 0) return null;
+  if (!builtIn || stored.length === 0) return null;
+  const rehomedList = rehomeServiceCommunities(stored, builtIn, isService);
+  const rehomed = rehomedList !== null;
+  const communities = rehomedList ?? stored;
   const current =
     communities.find((community) => community.id === activeId) ??
     communities[0];
-  if (isSameServer(current.relayUrl, builtIn)) return null;
+  if (isSameServer(current.relayUrl, builtIn)) {
+    return rehomed
+      ? {
+          communities: [...communities],
+          activeId: activeId ?? current.id,
+          created: null,
+          rehomed,
+        }
+      : null;
+  }
   const match = communities.find((community) =>
     isSameServer(community.relayUrl, builtIn),
   );
   if (match) {
-    return { communities: [...communities], activeId: match.id, created: null };
+    return {
+      communities: [...communities],
+      activeId: match.id,
+      created: null,
+      rehomed,
+    };
   }
   // A fresh entry: nothing is copied from the other server's entry (its
   // account is not this server's), so it starts signed out.
@@ -203,6 +253,7 @@ export function resolveStartupPin(
     communities: [...communities, created],
     activeId: created.id,
     created,
+    rehomed,
   };
 }
 
@@ -216,7 +267,9 @@ export function pinStoredCommunitiesToBuiltInServer(
     builtIn,
   );
   if (!pin) return;
-  if (pin.created && !saveCommunities(pin.communities)) return;
+  if ((pin.created || pin.rehomed) && !saveCommunities(pin.communities)) {
+    return;
+  }
   saveActiveCommunityId(pin.activeId);
   if (pin.created) {
     // A server removed from this device earlier admits local agents again.
@@ -255,6 +308,49 @@ function getSnapshot(): BuiltInServerState {
 
 const readBuiltInRelayUrl = () => invokeTauri<string>("get_built_in_relay_url");
 
+type ServiceInfo = {
+  scope: string;
+  previousRelayUrls: string[];
+  /** The addresses the native side keys by the scope (current + earlier). */
+  relayUrls?: string[];
+};
+
+const readServiceInfo = () => invokeTauri<ServiceInfo>("get_service_info");
+
+/**
+ * Key stored settings for the built-in server by the service, and move the
+ * settings an older build stored under one of its addresses (once).
+ */
+async function applyService(
+  relayUrl: string,
+  readService: () => Promise<ServiceInfo>,
+): Promise<void> {
+  try {
+    const info = await readService();
+    // A dev build pointed at another server at run time: the native side
+    // keys that server by its address, so the webview does as well.
+    const nativeOrigins = (info.relayUrls ?? [])
+      .map(serviceOrigin)
+      .filter((origin): origin is string => origin !== null);
+    if (
+      info.relayUrls !== undefined &&
+      !nativeOrigins.includes(serviceOrigin(relayUrl) ?? "")
+    ) {
+      configureService(null);
+      return;
+    }
+    configureService({
+      scope: info.scope,
+      current: relayUrl,
+      previous: info.previousRelayUrls ?? [],
+    });
+    migrateServiceStorage();
+  } catch (error) {
+    // Without the scope the app keys settings by address, as before.
+    console.error("[communities] reading the service scope failed:", error);
+  }
+}
+
 /**
  * Read the built-in server once per app run. A failed native call (or an
  * unusable value) leaves the state `error` and resolves to `null`: the app
@@ -264,6 +360,7 @@ const readBuiltInRelayUrl = () => invokeTauri<string>("get_built_in_relay_url");
 export function loadBuiltInServer(
   readConfigured: () => Promise<string | null> = readBuiltInRelayUrl,
   mode?: string,
+  readService: () => Promise<ServiceInfo> = readServiceInfo,
 ): Promise<string | null> {
   if (state.status === "ready") return Promise.resolve(state.relayUrl);
   if (!loading) {
@@ -274,7 +371,7 @@ export function loadBuiltInServer(
           if (relayUrl === null) {
             throw new Error("no usable built-in server address");
           }
-          return relayUrl;
+          return applyService(relayUrl, readService).then(() => relayUrl);
         });
     loading = read.then(
       (relayUrl) => {

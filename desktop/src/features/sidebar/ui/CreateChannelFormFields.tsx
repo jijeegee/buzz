@@ -52,7 +52,7 @@ export function CreateChannelFormFields({
   const selectedTemplateTeamCount = selectedTemplate?.agents.teams.length ?? 0;
   const selectedTemplateSummary = selectedTemplate
     ? [
-        form.visibility === "private" ? "Private" : "Open",
+        form.visibility === "private" ? "Private" : "Public",
         selectedTemplate.canvasTemplate ? "Canvas included" : null,
         selectedTemplatePersonaCount > 0
           ? `${selectedTemplatePersonaCount} ${selectedTemplatePersonaCount === 1 ? "agent" : "agents"}`
@@ -203,7 +203,7 @@ export function CreateChannelFormFields({
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setIsCreateTemplateOpen(true)}>
               <Plus className="size-4" />
-              Create new channel template…
+              Create new group template…
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

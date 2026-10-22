@@ -1,18 +1,20 @@
 import * as React from "react";
 
-import { setInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
-import { setSidebarListTab } from "@/features/sidebar/lib/sidebarListTab";
+import {
+  setSidebarListTab,
+  STARTED_WITHOUT_ROUTE,
+} from "@/features/sidebar/lib/sidebarListTab";
 import { hasPendingWelcomeChannel } from "@/features/onboarding/welcome";
 
-/**
- * The app was started without a route (no hash), as on a fresh launch. A
- * reload keeps its hash, so it returns to the screen it was on.
- */
-const STARTED_WITHOUT_ROUTE =
-  typeof window === "undefined" ||
-  window.location.hash === "" ||
-  window.location.hash === "#";
 let landingDone = false;
+
+/**
+ * A fresh launch has not landed on Chats yet. Until it has, the start route's
+ * Activity screen must not switch the left list to Activity.
+ */
+export function isFreshStartLandingPending(): boolean {
+  return STARTED_WITHOUT_ROUTE && !landingDone;
+}
 
 /** Whether a fresh start should land on Chats instead of Activity. */
 export function shouldLandOnChats({
@@ -80,7 +82,7 @@ export function useChatsRailNavigation({
       sidebarChannels.map((channel) => channel.id),
     );
     if (!target) return;
-    setInboxPanelOpen(false);
+    setSidebarListTab("chats");
     void goChannel(target, { replace: true });
   }, [channelsLoaded, goChannel, selectedView, sidebarChannels]);
   const lastRef = React.useRef<{

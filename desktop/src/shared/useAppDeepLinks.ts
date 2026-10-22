@@ -1,9 +1,11 @@
+import { useGroupJoinDeepLinks } from "@/features/groups/useGroupJoinDeepLinks";
 import { useEntityDeepLinks } from "@/shared/useEntityDeepLinks";
 import { useMessageDeepLinks } from "@/shared/useMessageDeepLinks";
 
 /**
  * Subscribe to every deep link that routes inside the app shell —
- * `kuzz://message` plus the `kuzz://repo|project|pr|issue` share links.
+ * `kuzz://message`, the `kuzz://repo|project|pr|issue` share links and
+ * `kuzz://join/...` group links.
  *
  * Both need the router, so they mount together in `AppShell`; bundling them
  * here keeps the shell to one line per concern.
@@ -11,4 +13,5 @@ import { useMessageDeepLinks } from "@/shared/useMessageDeepLinks";
 export function useAppDeepLinks(enabled = true) {
   useMessageDeepLinks(enabled);
   useEntityDeepLinks(enabled);
+  useGroupJoinDeepLinks(enabled);
 }

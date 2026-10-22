@@ -880,6 +880,8 @@ class _MessageList extends HookConsumerWidget {
             isMember: isMember,
             isArchived: isArchived,
             initialMessageId: initialMessageId,
+            channelBelow:
+                initialThreadRouteBehavior == InitialThreadRouteBehavior.push,
           ),
         );
         final navigator = Navigator.of(context);

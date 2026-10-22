@@ -138,6 +138,12 @@ const SEARCH_TEXT_MAX_CHARS: usize = 4096;
 /// bridge uses page 1), but clamp here too so a future caller cannot accidentally
 /// wire untrusted input into a multi-trillion-row OFFSET.
 const PAGE_MAX: u32 = 1000;
+/// Execution budget for one search statement. Search runs on every pause in
+/// typing, so a single broad query (a short prefix over a large community)
+/// must not hold a database connection and CPU for long. Measured searches
+/// take ~10 ms; anything past this budget is cancelled and reported as a
+/// timeout instead of slowing every other request.
+pub const SEARCH_STATEMENT_TIMEOUT_MS: u64 = 2_000;
 
 fn push_tsquery(qb: &mut QueryBuilder<sqlx::Postgres>, mode: SearchMode, search_text: &str) {
     match mode {
@@ -322,7 +328,16 @@ pub async fn search(pool: &PgPool, query: &SearchQuery) -> Result<SearchResult, 
     qb.push(" OFFSET ");
     qb.push_bind(offset);
 
-    let rows = qb.build().fetch_all(pool).await?;
+    // A transaction-local setting (`set_config(..., true)`, like `SET LOCAL`)
+    // scopes the budget to this search, so the pooled connection goes back
+    // without it.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT set_config('statement_timeout', $1, true)")
+        .bind(SEARCH_STATEMENT_TIMEOUT_MS.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let rows = qb.build().fetch_all(&mut *tx).await?;
+    tx.commit().await?;
 
     let mut hits = Vec::with_capacity(rows.len());
     for row in rows {

@@ -15,15 +15,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use axum::extract::ws::Message as WsMessage;
+use chrono::Utc;
 use kuzz_auth::{TokenBinding, TokenSecret};
 use kuzz_core::principal::PrincipalId;
-use chrono::Utc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::handlers::auth::{community_ban_outcome, BanOutcome};
-use crate::identity::verify_access_token;
+use crate::identity::verify_message_token;
 use crate::identity::ws::{run_binding_watch, TokenSession};
 use crate::state::AppState;
 
@@ -44,7 +44,7 @@ pub(crate) fn error_frame(message: &str) -> WsMessage {
 
 /// Verify a presented audio token. `Err` carries the client-visible message.
 pub(crate) async fn verify(state: &AppState, token: &str) -> Result<TokenBinding, String> {
-    verify_access_token(state, &TokenSecret::new(token.to_owned()))
+    verify_message_token(state, &TokenSecret::new(token.to_owned()))
         .await
         .map_err(|rejection| format!("auth-required: {}", rejection.code()))
 }

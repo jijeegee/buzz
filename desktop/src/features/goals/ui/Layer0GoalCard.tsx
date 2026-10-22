@@ -56,11 +56,21 @@ export function Layer0GoalCard({
       className="space-y-3 rounded-2xl border border-border/70 p-4"
       data-testid="layer0-goal-card"
     >
-      <div className="flex items-center gap-2">
-        <Target className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold">
-          {isAgent ? "Agent goal (layer 0)" : "My goal (layer 0)"}
-        </h3>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Target className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">
+            {isAgent ? "Agent goal" : "My goal"}
+          </h3>
+        </div>
+        <p
+          className="text-xs text-muted-foreground/70"
+          data-testid="layer0-goal-description"
+        >
+          {isAgent
+            ? "Not shown to others. This agent reads it and steers all of its work toward it."
+            : "Not shown to others. Your agents read it and steer all of their work toward it."}
+        </p>
       </div>
       <div className="space-y-1">
         <label

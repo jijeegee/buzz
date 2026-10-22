@@ -146,7 +146,7 @@ export function ChannelRoutingCard({
       data-testid="agents-channel-routing"
     >
       <h2 className="text-base font-semibold text-foreground" id={titleId}>
-        Channel routing
+        Group routing
       </h2>
       <p className="mt-0.5 text-sm text-muted-foreground" id={descriptionId}>
         How agents pick up messages nobody @mentioned.
@@ -154,7 +154,7 @@ export function ChannelRoutingCard({
 
       {statusQuery.isError ? (
         <p className="mt-3 text-sm text-destructive" role="alert">
-          Couldn't load channel routing.
+          Couldn't load group routing.
         </p>
       ) : null}
 

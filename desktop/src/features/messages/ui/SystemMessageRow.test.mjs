@@ -92,6 +92,7 @@ async function renderSystemMessageRow({
   message = groupedMessages[0],
   onToggleReaction,
   profiles,
+  roomNoun,
 }) {
   const { createElement } = await import("react");
   const { render } = await import("@testing-library/react");
@@ -115,6 +116,7 @@ async function renderSystemMessageRow({
           message,
           onToggleReaction,
           profiles,
+          roomNoun,
         }),
       ),
     ),
@@ -151,7 +153,7 @@ test("grouped duplicate arrival targets render one unique added member", async (
     screen
       .getByTestId("system-message-avatar-stack")
       .getAttribute("aria-label"),
-    "1 channel member",
+    "1 group member",
   );
 });
 
@@ -411,7 +413,7 @@ test("a duplicate self-join followed by leaving renders one lifecycle summary", 
   const row = screen.getByTestId("system-message-row");
   assert.equal(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 
@@ -433,7 +435,7 @@ test("more than two duplicate self-joins before leaving still render one lifecyc
   const row = screen.getByTestId("system-message-row");
   assert.equal(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 
@@ -453,7 +455,7 @@ test("a single self-join followed by leaving keeps the two-event lifecycle copy"
   const row = screen.getByTestId("system-message-row");
   assert.equal(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 
@@ -480,7 +482,7 @@ test("an addition before the departing member's self-join is not a lifecycle sum
   const row = screen.getByTestId("system-message-row");
   assert.notEqual(
     normalizeText(row.textContent ?? ""),
-    "Elrond joined, then left the channel",
+    "Elrond joined, then left the group",
   );
 });
 
@@ -564,4 +566,106 @@ test("removing a reaction from a duplicate self-join lifecycle group targets eve
     ["a", "👍"],
     ["c", "👍"],
   ]);
+});
+
+function pictureChangedMessage({ actor, picture }) {
+  return {
+    author: "System",
+    body: JSON.stringify({ type: "picture_changed", actor, picture }),
+    createdAt: 1,
+    depth: 0,
+    id: `picture-${picture}`,
+    kind: 40099,
+    reactions: [],
+    time: "12:00 PM",
+  };
+}
+
+test("a group photo change renders 'changed the group photo'", async () => {
+  const { screen } = await import("@testing-library/react");
+  const elrond = "11".repeat(32);
+  const message = pictureChangedMessage({
+    actor: elrond,
+    picture: "https://relay.example/media/a.png",
+  });
+  await renderSystemMessageRow({
+    groupedMessages: [message],
+    profiles: profileFor(elrond, "Elrond"),
+  });
+  const text = normalizeText(
+    screen.getByTestId("system-message-row").textContent ?? "",
+  );
+  assert.match(text, /^Elrond ?changed the group photo/);
+});
+
+test("a removed group photo renders 'removed the group photo'", async () => {
+  const { screen } = await import("@testing-library/react");
+  const elrond = "11".repeat(32);
+  const message = pictureChangedMessage({ actor: elrond, picture: "" });
+  await renderSystemMessageRow({
+    groupedMessages: [message],
+    profiles: profileFor(elrond, "Elrond"),
+  });
+  const text = normalizeText(
+    screen.getByTestId("system-message-row").textContent ?? "",
+  );
+  assert.match(text, /^Elrond ?removed the group photo/);
+});
+
+function channelEventMessage(payload, id) {
+  return {
+    author: "System",
+    body: JSON.stringify(payload),
+    createdAt: 1,
+    depth: 0,
+    id,
+    kind: 40099,
+    reactions: [],
+    time: "12:00 PM",
+  };
+}
+
+test("chats are never called a group in system rows", async () => {
+  const { screen, cleanup } = await import("@testing-library/react");
+  const elrond = "11".repeat(32);
+  const profiles = profileFor(elrond, "Elrond");
+  const cases = [
+    [{ type: "channel_created", actor: elrond }, "created this chat"],
+    [{ type: "member_left", actor: elrond }, "left the chat"],
+    [
+      { type: "member_joined", actor: elrond, target: elrond },
+      "joined the chat",
+    ],
+  ];
+  for (const [payload, expected] of cases) {
+    await renderSystemMessageRow({
+      groupedMessages: undefined,
+      message: channelEventMessage(payload, payload.type),
+      profiles,
+      roomNoun: "chat",
+    });
+    const text = normalizeText(
+      screen.getByTestId("system-message-row").textContent ?? "",
+    );
+    assert.ok(text.includes(expected), text);
+    assert.doesNotMatch(text, /group/i);
+    cleanup();
+  }
+});
+
+test("channels keep the group wording by default", async () => {
+  const { screen } = await import("@testing-library/react");
+  const elrond = "11".repeat(32);
+  await renderSystemMessageRow({
+    groupedMessages: undefined,
+    message: channelEventMessage(
+      { type: "channel_created", actor: elrond },
+      "created",
+    ),
+    profiles: profileFor(elrond, "Elrond"),
+  });
+  assert.match(
+    normalizeText(screen.getByTestId("system-message-row").textContent ?? ""),
+    /created this group/,
+  );
 });

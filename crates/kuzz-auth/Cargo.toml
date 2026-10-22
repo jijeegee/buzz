@@ -24,6 +24,8 @@ chrono       = { workspace = true }
 dashmap      = { workspace = true }
 jsonwebtoken = { workspace = true }
 nostr        = { workspace = true }
+# Device keys (TPM / Secure Enclave / Keystore all speak P-256).
+p256         = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 futures-util = { workspace = true }
 reqwest      = { workspace = true }
 serde        = { workspace = true }

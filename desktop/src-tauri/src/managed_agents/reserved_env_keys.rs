@@ -44,6 +44,9 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     // Relay URL: overriding would let a malicious config redirect the
     // agent to an attacker-controlled relay.
     "KUZZ_RELAY_URL",
+    // Which stored session-resume ledger the agent uses (`auth::service`).
+    "KUZZ_SESSION_SCOPE",
+    "KUZZ_PREVIOUS_RELAY_URLS",
     // Code-execution surface: overriding would let the user run arbitrary
     // binaries/args as the agent process.
     "KUZZ_ACP_AGENT_COMMAND",

@@ -33,6 +33,9 @@ abstract final class EventKind {
   /// Kind:30175 owner-authored agent definition ("persona"); `d` is its slug.
   static const persona = 30175;
 
+  /// Kind:30176 owner-authored agent team; `d` is the team id.
+  static const team = 30176;
+
   /// Kind:30177 owner-authored managed agent; `d` is the agent's pubkey.
   static const managedAgent = 30177;
 
@@ -42,6 +45,10 @@ abstract final class EventKind {
 
   /// Kind:30181 owner-authored robot choice for one relay device (`d`).
   static const deviceRobot = 30181;
+
+  /// Kind:30182 owner-authored team of the owner's real agents; `d` is the
+  /// team id, content `{"v":1,"name","description"?,"agent_pubkeys"}`.
+  static const agentTeam = 30182;
   static const eventReminder = 30300;
   static const userStatus = 30315;
   static const dmVisibility = 30622;
@@ -333,6 +340,12 @@ class ChannelData {
   /// Per-room goals switch; only `["goals","off"]` disables it.
   final bool goalsEnabled;
 
+  /// Group photo URL from `["picture", url]`; null when unset or empty.
+  final String? picture;
+
+  /// `["group_chat"]`: an ownerless chat of people (a private stream).
+  final bool groupChat;
+
   const ChannelData({
     required this.id,
     required this.name,
@@ -345,6 +358,8 @@ class ChannelData {
     this.ttlDeadline,
     this.isArchived = false,
     this.goalsEnabled = true,
+    this.picture,
+    this.groupChat = false,
   });
 
   factory ChannelData.fromEvent(NostrEvent event) {
@@ -385,6 +400,13 @@ class ChannelData {
     // Goals default on: the relay emits `["goals", "off"]` only when a room
     // has opted out, so a missing tag (or any other value) means enabled.
     final goalsEnabled = event.getTagValue('goals') != 'off';
+    final pictureRaw = event.getTagValue('picture')?.trim();
+    final picture = pictureRaw == null || pictureRaw.isEmpty
+        ? null
+        : pictureRaw;
+    final groupChat = event.tags.any(
+      (t) => t.isNotEmpty && t[0] == 'group_chat',
+    );
     return ChannelData(
       id: id,
       name: name,
@@ -397,6 +419,8 @@ class ChannelData {
       ttlDeadline: ttlDeadline,
       isArchived: isArchived,
       goalsEnabled: goalsEnabled,
+      picture: picture,
+      groupChat: groupChat && channelType != 'dm',
     );
   }
 }

@@ -1,6 +1,6 @@
 //! Silent blocks and people lookup against a real database: the block store,
-//! the read paths that hide a blocked author's DM events, and the people
-//! lookup/search queries.
+//! its periods, the read paths that hide what a blocked author sent in a 1:1
+//! DM while blocked, and the people lookup/search queries.
 use chrono::{Duration, Utc};
 use kuzz_core::principal::PrincipalId;
 use kuzz_core::CommunityId;
@@ -107,6 +107,41 @@ impl Fixture {
             .await
             .expect("block");
         assert_eq!(outcome, BlockOutcome::Added);
+    }
+
+    async fn unblock(&self, blocker: &Keys, blocked: &Keys) {
+        assert!(self
+            .db
+            .unblock_user(self.scope, &pk(blocker), &pk(blocked))
+            .await
+            .expect("unblock"));
+    }
+
+    /// Ids of kind-9 events `reader` sees in `rooms`, oldest first.
+    async fn seen_ids(&self, reader: &Keys, rooms: &[Uuid]) -> Vec<String> {
+        let mut q = EventQuery::for_community(self.scope);
+        q.kinds = Some(vec![9]);
+        q.channel_ids = Some(rooms.to_vec());
+        q.channel_ids_include_global = false;
+        q.blocked_dm_reader = Some(pk(reader));
+        let mut events = self.db.query_events(&q).await.expect("history");
+        events.sort_by_key(|e| e.event.created_at);
+        events.into_iter().map(|e| e.event.id.to_hex()).collect()
+    }
+
+    /// `(started_at set, ended_at set)` of every period `blocker` has of
+    /// `blocked`, oldest first.
+    async fn periods(&self, blocker: &Keys, blocked: &Keys) -> Vec<bool> {
+        sqlx::query_scalar(
+            "SELECT ended_at IS NOT NULL FROM user_block_periods \
+              WHERE community_id = $1 AND blocker = $2 AND blocked = $3 ORDER BY started_at",
+        )
+        .bind(self.scope.as_uuid())
+        .bind(pk(blocker))
+        .bind(pk(blocked))
+        .fetch_all(&self.pool)
+        .await
+        .expect("periods")
     }
 
     async fn history(&self, reader: Option<&Keys>, rooms: &[Uuid]) -> Vec<Vec<u8>> {
@@ -251,9 +286,16 @@ async fn blocked_author_dm_events_are_hidden_from_blocker_reads() {
         .unwrap()
         .id;
     let room = f.room(&c, &[&a, &b]).await;
+    let group = dm::create_dm(&f.pool, f.scope, &[&pk(&a), &pk(&b), &pk(&c)], &pk(&a))
+        .await
+        .unwrap()
+        .id;
     assert_eq!(
-        f.db.dm_channel_ids(f.scope, &[direct, room]).await.unwrap(),
-        vec![direct]
+        f.db.one_to_one_dm_ids(f.scope, &[direct, room, group])
+            .await
+            .unwrap(),
+        vec![direct],
+        "only the two-person DM is filtered"
     );
 
     f.block(&a, &b).await;
@@ -382,6 +424,179 @@ async fn new_dm_from_blocked_person_is_hidden_for_blocker() {
             .unwrap()
             .rows;
     assert!(a_rows.iter().any(|r| r.channel_id == channel.id));
+
+    // A (legacy) group DM B started with A opens normally for A. New DMs
+    // are 1:1, so only the low-level create_dm still makes one.
+    let c = Keys::generate();
+    let group = dm::create_dm(&f.pool, f.scope, &[&pk(&a), &pk(&b), &pk(&c)], &pk(&b))
+        .await
+        .unwrap();
+    let a_rows =
+        f.db.chat_list(f.scope, &a.public_key(), &chats())
+            .await
+            .unwrap()
+            .rows;
+    assert!(
+        a_rows.iter().any(|r| r.channel_id == group.id),
+        "group DMs are not hidden"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn block_periods_hide_only_what_was_sent_while_blocked() {
+    let f = Fixture::new().await;
+    let (a, b, c) = (Keys::generate(), Keys::generate(), Keys::generate());
+    let direct = dm::create_dm(&f.pool, f.scope, &[&pk(&a), &pk(&b)], &pk(&a))
+        .await
+        .unwrap()
+        .id;
+    let group = dm::create_dm(&f.pool, f.scope, &[&pk(&a), &pk(&b), &pk(&c)], &pk(&a))
+        .await
+        .unwrap()
+        .id;
+    let hex = |e: &Event| e.id.to_hex();
+
+    let before = f.post(direct, &b, 100).await;
+    let group_before = f.post(group, &b, 101).await;
+    f.block(&a, &b).await;
+    assert_eq!(f.periods(&a, &b).await, vec![false], "one open period");
+    let during = f.post(direct, &b, 102).await;
+    let group_during = f.post(group, &b, 103).await;
+    let mine = f.post(direct, &a, 104).await;
+
+    // While blocked: B's earlier message stays, the new one is hidden; the
+    // group DM is not filtered.
+    assert_eq!(
+        f.seen_ids(&a, &[direct]).await,
+        vec![hex(&before), hex(&mine)]
+    );
+    assert_eq!(
+        f.seen_ids(&a, &[group]).await,
+        vec![hex(&group_before), hex(&group_during)]
+    );
+    assert_eq!(f.count(&a, direct).await, 2);
+    assert_eq!(f.count(&b, direct).await, 3, "B never notices");
+
+    // After unblocking, what was sent while blocked stays hidden; new
+    // messages are normal.
+    f.unblock(&a, &b).await;
+    assert_eq!(f.periods(&a, &b).await, vec![true]);
+    let after = f.post(direct, &b, 105).await;
+    assert_eq!(
+        f.seen_ids(&a, &[direct]).await,
+        vec![hex(&before), hex(&mine), hex(&after)]
+    );
+    assert_eq!(f.count(&a, direct).await, 3);
+
+    // Blocking again opens a second period; the first stays closed.
+    f.block(&a, &b).await;
+    assert_eq!(f.periods(&a, &b).await, vec![true, false]);
+    let again = f.post(direct, &b, 106).await;
+    assert_eq!(
+        f.seen_ids(&a, &[direct]).await,
+        vec![hex(&before), hex(&mine), hex(&after)]
+    );
+    f.unblock(&a, &b).await;
+    assert_eq!(f.periods(&a, &b).await, vec![true, true]);
+    assert_eq!(
+        f.seen_ids(&a, &[direct]).await,
+        vec![hex(&before), hex(&mine), hex(&after)]
+    );
+
+    // The id lookup the relay's post-filters use agrees.
+    let mut hidden =
+        f.db.block_hidden_event_ids(
+            f.scope,
+            &pk(&a),
+            &[
+                before.id.to_bytes().to_vec(),
+                during.id.to_bytes().to_vec(),
+                after.id.to_bytes().to_vec(),
+                again.id.to_bytes().to_vec(),
+            ],
+        )
+        .await
+        .unwrap();
+    hidden.sort();
+    let mut expected = vec![during.id.to_bytes().to_vec(), again.id.to_bytes().to_vec()];
+    expected.sort();
+    assert_eq!(hidden, expected);
+    let mut ever = f.db.period_blocked_by(f.scope, &pk(&a)).await.unwrap();
+    ever.dedup();
+    assert_eq!(ever, vec![pk(&b)]);
+    assert!(f.db.blocked_by(f.scope, &pk(&a)).await.unwrap().is_empty());
+
+    // Chats list: the DM shows B's message from after the first unblock as
+    // the latest and does not count the hidden ones; the group DM counts
+    // everything from B.
+    let rows =
+        f.db.chat_list(f.scope, &a.public_key(), &chats())
+            .await
+            .unwrap()
+            .rows;
+    let dm_row = rows
+        .iter()
+        .find(|r| r.kind == ChatRowKind::Room && r.channel_id == direct)
+        .expect("dm row");
+    assert_eq!(dm_row.latest.as_ref().unwrap()["id"], hex(&after));
+    assert_eq!(dm_row.unread, 1, "only the message after the unblock");
+    let group_row = rows
+        .iter()
+        .find(|r| r.kind == ChatRowKind::Room && r.channel_id == group)
+        .expect("group row");
+    assert_eq!(group_row.unread, 2);
+    assert_eq!(group_row.latest.as_ref().unwrap()["id"], hex(&group_during));
+
+    // Inbox summary: same rules.
+    let old = Utc::now() - Duration::days(365 * 60);
+    let markers = InboxReadMarkers {
+        channels: vec![(direct, old), (group, old)],
+        threads: Vec::new(),
+    };
+    let page =
+        f.db.inbox_summary(f.scope, &a.public_key(), 50, None, &markers)
+            .await
+            .unwrap();
+    let dm_summary = page.rows.iter().find(|r| r.channel_id == direct).unwrap();
+    assert_eq!(dm_summary.latest.as_ref().unwrap()["id"], hex(&after));
+    assert_eq!(dm_summary.unread, Some(2), "before + after, by created_at");
+    let group_summary = page.rows.iter().find(|r| r.channel_id == group).unwrap();
+    assert_eq!(group_summary.unread, Some(2));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn existing_blocks_backfill_open_periods() {
+    let f = Fixture::new().await;
+    let (a, b) = (Keys::generate(), Keys::generate());
+    // A block row from before migration 0073 has no period until it is
+    // backfilled; the backfill statement gives it one from its creation time.
+    sqlx::query(
+        "INSERT INTO user_blocks (community_id, blocker, blocked, created_at) \
+         VALUES ($1, $2, $3, now() - interval '1 day')",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(pk(&a))
+    .bind(pk(&b))
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let migration = include_str!("../../../../migrations/0073_user_block_periods.sql");
+    let backfill = migration
+        .split("\n\n")
+        .find(|part| part.contains("INSERT INTO user_block_periods"))
+        .expect("backfill statement");
+    sqlx::raw_sql(backfill).execute(&f.pool).await.unwrap();
+    sqlx::raw_sql(backfill).execute(&f.pool).await.unwrap();
+    assert_eq!(f.periods(&a, &b).await, vec![false], "once, and open");
+
+    // Repeating the block keeps the single open period.
+    assert_eq!(
+        f.db.block_user(f.scope, &pk(&a), &pk(&b)).await.unwrap(),
+        BlockOutcome::AlreadyBlocked
+    );
+    assert_eq!(f.periods(&a, &b).await, vec![false]);
 }
 
 #[tokio::test]

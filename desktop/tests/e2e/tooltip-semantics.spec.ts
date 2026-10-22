@@ -74,7 +74,7 @@ for (const theme of THEMES) {
     await page.getByTestId("channel-random").click();
     await page.getByTestId("channel-members-trigger").hover();
     const simpleTooltip = page.getByRole("tooltip");
-    await expect(simpleTooltip).toHaveText("Channel members");
+    await expect(simpleTooltip).toHaveText("Group members");
     await expectPopoverSurface(simpleTooltip);
 
     await page.mouse.move(0, 0);
@@ -141,12 +141,12 @@ for (const theme of THEMES) {
     const row = page.getByTestId("message-row").last();
     await expect(row).toBeVisible();
     await expectMutedSupportingText(
-      row.getByRole("button", { name: "Open channel general" }),
+      row.getByRole("button", { name: "Open group general" }),
       /Public channel · Active (just now|\d+[mhdw] ago)/,
     );
     await page.mouse.move(0, 0);
     await expectMutedSupportingText(
-      row.getByRole("button", { name: "Open message in channel general" }),
+      row.getByRole("button", { name: "Open message in group general" }),
       /#general · .+ · (just now|\d+[mhdw] ago)/,
     );
     await page.mouse.move(0, 0);

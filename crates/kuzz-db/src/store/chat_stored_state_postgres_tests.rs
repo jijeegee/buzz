@@ -42,6 +42,8 @@ macro_rules! main_only {
     };
 }
 
+/// Not received from someone during one of the reader's block periods of
+/// them, in a DM of exactly two members.
 macro_rules! unblocked {
     ($reader:literal, $channel:literal) => {
         concat!(
@@ -49,10 +51,15 @@ macro_rules! unblocked {
                     AND dc.id = ",
             $channel,
             " AND dc.channel_type = 'dm') \
-              AND EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.community_id = e.community_id \
-                    AND ub.blocker = ",
+              AND (SELECT count(*) FROM channel_members dm WHERE dm.community_id = e.community_id \
+                    AND dm.channel_id = ",
+            $channel,
+            ") = 2 \
+              AND EXISTS (SELECT 1 FROM user_block_periods bp \
+                    WHERE bp.community_id = e.community_id AND bp.blocker = ",
             $reader,
-            " AND ub.blocked = e.pubkey))"
+            " AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at \
+                    AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))"
         )
     };
 }
@@ -628,24 +635,27 @@ async fn dm_blocks_recount_and_skip_new_messages() {
     .expect("dm")
     .id;
     let root = f.post(direct, &reader, 100, Vec::new()).await;
-    f.post(direct, &friend, 101, vec![p_tag(&reader)]).await;
+    let earlier = f.post(direct, &friend, 101, vec![p_tag(&reader)]).await;
     f.reply(direct, &root, &friend, 102, Vec::new()).await;
     f.check("setup").await;
     assert_eq!(f.room_counts(&reader, direct).await, (1, 1));
+    assert_eq!(f.thread_counts(&reader, &root).await, Some((1, 0)));
 
+    // What was sent before the block keeps counting.
     f.db.block_user(f.scope, &pk(&reader), &pk(&friend))
         .await
         .expect("block");
     f.check("block").await;
-    assert_eq!(f.room_counts(&reader, direct).await, (0, 0));
-    assert_eq!(f.thread_counts(&reader, &root).await, Some((0, 0)));
+    assert_eq!(f.room_counts(&reader, direct).await, (1, 1));
+    assert_eq!(f.thread_counts(&reader, &root).await, Some((1, 0)));
 
-    f.post(direct, &friend, 103, Vec::new()).await;
+    f.post(direct, &friend, 103, vec![p_tag(&reader)]).await;
     f.reply(direct, &root, &friend, 104, Vec::new()).await;
     f.check("messages while blocked").await;
-    assert_eq!(f.room_counts(&reader, direct).await, (0, 0));
+    assert_eq!(f.room_counts(&reader, direct).await, (1, 1));
+    assert_eq!(f.thread_counts(&reader, &root).await, Some((1, 0)));
 
-    // The chats list skips the blocked sender's message as the latest.
+    // The chats list skips the message sent while blocked as the latest.
     let rows =
         f.db.chat_list(
             f.scope,
@@ -666,15 +676,263 @@ async fn dm_blocks_recount_and_skip_new_messages() {
         .expect("dm row");
     assert_eq!(
         dm_row.latest.as_ref().expect("latest")["id"],
-        root.id.to_hex()
+        earlier.id.to_hex()
     );
 
+    // Unblocking does not bring them back; new messages count again.
     f.db.unblock_user(f.scope, &pk(&reader), &pk(&friend))
         .await
         .expect("unblock");
     f.check("unblock").await;
+    assert_eq!(f.room_counts(&reader, direct).await, (1, 1));
+    assert_eq!(f.thread_counts(&reader, &root).await, Some((1, 0)));
+    f.post(direct, &friend, 105, Vec::new()).await;
+    f.reply(direct, &root, &friend, 106, Vec::new()).await;
+    f.check("messages after unblock").await;
     assert_eq!(f.room_counts(&reader, direct).await, (2, 1));
     assert_eq!(f.thread_counts(&reader, &root).await, Some((2, 0)));
+
+    // A read position move recounts with the same rule.
+    f.read_room(&reader, direct).await;
+    f.check("read").await;
+    assert_eq!(f.room_counts(&reader, direct).await, (0, 0));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn group_dm_blocks_do_not_filter_counts() {
+    let f = Fixture::new().await;
+    let (reader, friend, third) = (Keys::generate(), Keys::generate(), Keys::generate());
+    let group = dm::create_dm(
+        &f.pool,
+        f.scope,
+        &[&pk(&reader), &pk(&friend), &pk(&third)],
+        &pk(&reader),
+    )
+    .await
+    .expect("group dm")
+    .id;
+    f.db.block_user(f.scope, &pk(&reader), &pk(&friend))
+        .await
+        .expect("block");
+    f.post(group, &friend, 100, vec![p_tag(&reader)]).await;
+    f.check("group message while blocked").await;
+    assert_eq!(f.room_counts(&reader, group).await, (1, 1));
+    let rows = chats(&f, &reader).await;
+    let row = rows
+        .iter()
+        .find(|r| r.kind == ChatRowKind::Room && r.channel_id == group)
+        .expect("group row");
+    assert_eq!(row.unread, 1);
+}
+
+async fn chats(f: &Fixture, reader: &Keys) -> Vec<crate::chat_list::ChatListRow> {
+    f.db.chat_list(
+        f.scope,
+        &reader.public_key(),
+        &ChatListQuery {
+            limit: 50,
+            before: None,
+            pinned_threads: Vec::new(),
+            quiet_before: Utc::now() - chrono::Duration::days(7),
+        },
+    )
+    .await
+    .expect("chat list")
+    .rows
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn dm_blocked_messages_neither_reorder_nor_unarchive() {
+    let f = Fixture::new().await;
+    let (reader, friend, other) = (Keys::generate(), Keys::generate(), Keys::generate());
+    let direct = dm::create_dm(
+        &f.pool,
+        f.scope,
+        &[&pk(&reader), &pk(&friend)],
+        &pk(&reader),
+    )
+    .await
+    .expect("dm")
+    .id;
+    let room = f.room(&other, &[&reader]).await;
+    let root = f.post(direct, &reader, 100, Vec::new()).await;
+    let mine = f.reply(direct, &root, &reader, 101, Vec::new()).await;
+    f.db.chat_thread_follow(
+        f.scope,
+        &reader.public_key(),
+        &id(&root),
+        FollowState::Followed,
+    )
+    .await
+    .expect("follow")
+    .expect("allowed");
+    f.post(room, &other, 102, Vec::new()).await;
+    f.read_room(&reader, room).await;
+
+    f.db.block_user(f.scope, &pk(&reader), &pk(&friend))
+        .await
+        .expect("block");
+    f.post(direct, &friend, 103, Vec::new()).await;
+    f.reply(direct, &root, &friend, 104, Vec::new()).await;
+    f.check("blocked traffic").await;
+
+    // The blocked sender's newer messages do not lift the DM or its thread
+    // above the room that really has the newest message.
+    let rows = chats(&f, &reader).await;
+    assert_eq!(
+        (rows[0].kind, rows[0].channel_id),
+        (ChatRowKind::Room, room),
+        "the room with the newest visible message comes first"
+    );
+    let dm_row = rows
+        .iter()
+        .find(|r| r.kind == ChatRowKind::Room && r.channel_id == direct)
+        .expect("dm row");
+    assert_eq!(
+        dm_row.latest.as_ref().expect("latest")["id"],
+        root.id.to_hex()
+    );
+    assert!(
+        dm_row.last_seq <= dm_row.read_seq,
+        "nothing unread to the reader"
+    );
+    let thread = rows
+        .iter()
+        .find(|r| r.kind == ChatRowKind::Thread && r.root_id.as_deref() == Some(&id(&root)[..]))
+        .expect("thread row");
+    assert_eq!(
+        thread.latest.as_ref().expect("latest")["id"],
+        mine.id.to_hex()
+    );
+    assert_eq!(thread.unread, 0);
+
+    // An archived DM stays archived while only the blocked sender writes.
+    sqlx::query("UPDATE channels SET archived_at = now() WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(direct)
+        .execute(&f.pool)
+        .await
+        .expect("archive");
+    f.post(direct, &friend, 105, Vec::new()).await;
+    f.reply(direct, &root, &friend, 106, Vec::new()).await;
+    let rows = chats(&f, &reader).await;
+    assert!(
+        rows.iter().all(|r| r.channel_id != direct),
+        "archived DM and its thread stay out of the list"
+    );
+
+    // Unblocking does not lift it either: those messages stay hidden.
+    f.db.unblock_user(f.scope, &pk(&reader), &pk(&friend))
+        .await
+        .expect("unblock");
+    f.check("unblock").await;
+    let rows = chats(&f, &reader).await;
+    assert!(
+        rows.iter().all(|r| r.channel_id != direct),
+        "messages sent while blocked do not unarchive after unblocking"
+    );
+
+    // A new message after unblocking brings it back.
+    let fresh = f.post(direct, &friend, 107, Vec::new()).await;
+    let rows = chats(&f, &reader).await;
+    let dm_row = rows
+        .iter()
+        .find(|r| r.kind == ChatRowKind::Room && r.channel_id == direct)
+        .expect("dm back");
+    assert_eq!(
+        dm_row.latest.as_ref().expect("latest")["id"],
+        fresh.id.to_hex()
+    );
+    assert_eq!(dm_row.unread, 1);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn dm_thread_summary_without_blocked_replies() {
+    let f = Fixture::new().await;
+    let (reader, friend) = (Keys::generate(), Keys::generate());
+    let direct = dm::create_dm(
+        &f.pool,
+        f.scope,
+        &[&pk(&reader), &pk(&friend)],
+        &pk(&reader),
+    )
+    .await
+    .expect("dm")
+    .id;
+    let root = f.post(direct, &reader, 100, Vec::new()).await;
+    f.reply(direct, &root, &reader, 101, Vec::new()).await;
+    let before = f.reply(direct, &root, &friend, 102, Vec::new()).await;
+    f.db.block_user(f.scope, &pk(&reader), &pk(&friend))
+        .await
+        .expect("block");
+    f.reply(direct, &root, &friend, 103, Vec::new()).await;
+    f.marker(direct, &root, &friend, 104, THREAD_CLOSED_TAG, false)
+        .await;
+    let gone = f.reply(direct, &root, &friend, 105, Vec::new()).await;
+    f.delete(&gone, Some(&root)).await;
+    // A thread the friend replied to only while blocked.
+    let quiet = f.post(direct, &reader, 106, Vec::new()).await;
+    f.reply(direct, &quiet, &friend, 107, Vec::new()).await;
+    f.db.unblock_user(f.scope, &pk(&reader), &pk(&friend))
+        .await
+        .expect("unblock");
+
+    let mut summary =
+        f.db.get_thread_summary(f.scope, &id(&root))
+            .await
+            .expect("summary")
+            .expect("thread");
+    assert_eq!((summary.reply_count, summary.descendant_count), (3, 3));
+    let mut quiet_summary =
+        f.db.get_thread_summary(f.scope, &id(&quiet))
+            .await
+            .expect("summary")
+            .expect("thread");
+    assert_eq!(quiet_summary.reply_count, 1);
+    assert!(quiet_summary.participants.contains(&pk(&friend)));
+
+    let hidden =
+        f.db.blocked_thread_replies(f.scope, &pk(&reader), &[id(&root), id(&quiet)])
+            .await
+            .expect("blocked replies");
+    assert_eq!(hidden.len(), 2);
+    let main = hidden.iter().find(|h| h.target == id(&root)).unwrap();
+    // Only the reply sent while blocked comes out; the earlier reply stays.
+    assert_eq!((main.direct, main.descendants), (1, 1));
+    assert!(
+        main.hidden_authors.is_empty(),
+        "the friend's earlier reply shows"
+    );
+    let before_at: chrono::DateTime<Utc> =
+        sqlx::query_scalar("SELECT received_at FROM events WHERE community_id = $1 AND id = $2")
+            .bind(f.scope.as_uuid())
+            .bind(id(&before))
+            .fetch_one(&f.pool)
+            .await
+            .expect("received_at");
+    assert_eq!(main.last_other_reply_at, Some(before_at));
+    summary.without_blocked(main);
+    assert_eq!((summary.reply_count, summary.descendant_count), (2, 2));
+    assert_eq!(summary.participants.len(), 2);
+
+    let side = hidden.iter().find(|h| h.target == id(&quiet)).unwrap();
+    assert_eq!((side.direct, side.descendants), (1, 1));
+    assert_eq!(side.hidden_authors, vec![pk(&friend)]);
+    assert_eq!(side.last_other_reply_at, None);
+    quiet_summary.without_blocked(side);
+    assert_eq!(quiet_summary.reply_count, 0);
+    assert!(!quiet_summary.participants.contains(&pk(&friend)));
+
+    // Someone who never blocked anyone: nothing to take out.
+    assert!(f
+        .db
+        .blocked_thread_replies(f.scope, &pk(&friend), &[id(&root), id(&quiet)])
+        .await
+        .expect("blocked replies")
+        .is_empty());
 }
 
 #[tokio::test]

@@ -141,7 +141,14 @@ function EditProfileMetadataButton({
 export function ProfileSettingsCard({
   currentPubkey,
   fallbackDisplayName,
-}: ProfileSettingsCardProps) {
+  part = "all",
+}: ProfileSettingsCardProps & {
+  /**
+   * Settings › Profile shows only how others see me; Settings › Account
+   * shows sign-in and sign-out. `all` keeps both on one page.
+   */
+  part?: "all" | "profile" | "account";
+}) {
   const shouldReduceMotion = useReducedMotion();
   // Google holds the account; key identity and backup UI is an E2E-only seam.
   const [accountStatus, setAccountStatus] =
@@ -494,13 +501,23 @@ export function ProfileSettingsCard({
     setAvatarSquishKey((key) => key + 1);
   }, []);
 
+  if (part === "account") {
+    return (
+      <section className="min-w-0" data-testid="settings-account">
+        {accountCard}
+        <SignOutSection showKeyBackupGate={showKeySettings} />
+      </section>
+    );
+  }
+  const withAccount = part === "all";
+
   return (
     <section
       className="min-w-0"
       data-testid="settings-profile"
       ref={sectionRef}
     >
-      {accountCardFirst ? accountCard : null}
+      {withAccount && accountCardFirst ? accountCard : null}
       <div>
         <SettingsSectionHeader
           title="Profile"
@@ -878,8 +895,10 @@ export function ProfileSettingsCard({
         </div>
       </div>
 
-      {accountCardFirst ? null : accountCard}
-      <SignOutSection showKeyBackupGate={showKeySettings} />
+      {withAccount && !accountCardFirst ? accountCard : null}
+      {withAccount ? (
+        <SignOutSection showKeyBackupGate={showKeySettings} />
+      ) : null}
     </section>
   );
 }

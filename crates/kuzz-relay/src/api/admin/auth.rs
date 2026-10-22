@@ -224,14 +224,14 @@ pub async fn authorize(
         (_, AdminAuth::Disabled) => (None, None),
         (None, AdminAuth::Nip98) => {
             let full_path = format!("{ADMIN_API_PREFIX}{path_and_query}");
-            let (pubkey_bytes, event_id) =
-                authorize_nip98(config, headers, &full_path, method, raw_body).await?;
+            let event = authorize_nip98(config, headers, &full_path, method, raw_body).await?;
             // Resolve the roster grant BEFORE claiming the replay ID: an
             // unrostered-but-validly-signing key (e.g. any WARP-admitted laptop)
             // must not be able to consume replay slots at request rate. Only a
             // request that clears authorization claims its event ID.
-            let principal = resolve_admin_principal(state, pubkey_bytes).await?;
-            (Some(principal), Some(event_id))
+            let principal = resolve_admin_principal(state, event.pubkey.to_bytes()).await?;
+            admit_admin_key(state, &event).await?;
+            (Some(principal), Some(event.id))
         }
     };
 
@@ -409,9 +409,36 @@ pub fn require_operator(principal: &AdminPrincipal) -> Result<(), ApiError> {
     }
 }
 
+/// Device-bound keys (surface `admin`): a rostered key is used from its own
+/// signed-in device. The env operator key (`RELAY_OPERATOR_PUBKEYS`) with no
+/// registry row is admitted (reported as `unregistered` while the surface
+/// logs). After the roster check, so an unrostered signer costs no lookup.
+async fn admit_admin_key(state: &AppState, event: &nostr::Event) -> Result<(), ApiError> {
+    crate::identity::admission::admit_key_for_event(
+        state,
+        event,
+        None,
+        crate::identity::device::Surface::Admin,
+    )
+    .await
+    .map_err(|refused| {
+        let (status, code) = match refused {
+            crate::identity::admission::KeyRefused::Unavailable => {
+                (axum::http::StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+            }
+            _ => (axum::http::StatusCode::FORBIDDEN, "device_refused"),
+        };
+        ApiError {
+            status,
+            code,
+            message: refused.reason().to_owned(),
+        }
+    })
+}
+
 /// Require exactly one `Authorization: Nostr <base64 event>` header, verify
 /// the NIP-98 event (method, url, payload hash for body-bearing methods), and
-/// return the authenticated pubkey bytes and event id.
+/// return the authenticated event (its pubkey, id and tags).
 ///
 /// This performs signature/URL/method/payload verification only — it does NOT
 /// claim the replay ID. The caller resolves the principal (roster check) first
@@ -428,7 +455,7 @@ async fn authorize_nip98(
     path: &str,
     method: &str,
     raw_body: Option<&[u8]>,
-) -> Result<([u8; 32], nostr::EventId), ApiError> {
+) -> Result<nostr::Event, ApiError> {
     let unauth = ApiError::unauthorized;
 
     // 1. Extract exactly one Authorization: Nostr header.
@@ -448,7 +475,6 @@ async fn authorize_nip98(
         String::from_utf8(bytes).map_err(|_| unauth())?
     };
     let event: nostr::Event = serde_json::from_str(&event_json).map_err(|_| unauth())?;
-    let event_id_bytes = event.id.to_bytes();
 
     // 3. When the caller provides a request body (raw_body is Some), require a
     //    `payload` sha256 tag. This catches the case where a client signs without
@@ -474,11 +500,10 @@ async fn authorize_nip98(
     //    For mutations, body bytes are provided so the payload hash is verified.
     let pubkey =
         kuzz_auth::verify_nip98_event(&event_json, &url, method, raw_body).map_err(|_| unauth())?;
-
-    Ok((
-        pubkey.to_bytes(),
-        nostr::EventId::from_byte_array(event_id_bytes),
-    ))
+    if pubkey != event.pubkey {
+        return Err(unauth());
+    }
+    Ok(event)
 }
 
 /// Atomically claim a verified NIP-98 event ID against the deployment-scoped

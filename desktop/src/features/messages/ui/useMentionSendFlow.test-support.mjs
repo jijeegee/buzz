@@ -7,6 +7,7 @@ import * as React from "react";
 import ts from "typescript";
 import * as helpers from "./useMentionSendFlow.helpers.ts";
 import * as draftStore from "../lib/useDrafts.ts";
+import * as groupAddOutcome from "../../../shared/api/groupAddOutcome.ts";
 
 // Execute the product hooks with real React effects/renders; only external
 // query/mutation/media dependencies are mocked. Deferred promises isolate the
@@ -90,6 +91,7 @@ export async function setup({ lifecycle = false } = {}) {
   const stubs = {
     react: React,
     "@/features/messages/lib/useDrafts": draftStore,
+    "@/shared/api/groupAddOutcome": groupAddOutcome,
     sonner: { toast: { error: (error) => calls.push(["error", error]) } },
     "@/features/agents/hooks": new Proxy(
       {},
@@ -140,6 +142,9 @@ export async function setup({ lifecycle = false } = {}) {
     },
     "@/features/channels/useCanAddChannelMembers": {
       useCanAddChannelMembers: () => true,
+    },
+    "@/features/channels/useIsGroupChatChannel": {
+      useIsGroupChatChannel: () => false,
     },
     "@/features/channels/lib/channelMemberAdmission": {},
     "@/features/messages/lib/dmThreadAgentMentionError": {

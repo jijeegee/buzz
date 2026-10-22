@@ -188,7 +188,7 @@ export function AddProjectRepositoryDialog({
               className="text-sm font-medium text-foreground"
               htmlFor="add-project-repository-channel"
             >
-              Access channel
+              Access group
             </label>
             <div className={FIELD_SHELL_CLASS}>
               <select
@@ -203,7 +203,7 @@ export function AddProjectRepositoryDialog({
                 required
                 value={selectedChannelId}
               >
-                <option value="">Select a channel</option>
+                <option value="">Select a group</option>
                 {channels.map((channel) => (
                   <option key={channel.id} value={channel.id}>
                     {channel.name}
@@ -212,7 +212,7 @@ export function AddProjectRepositoryDialog({
               </select>
             </div>
             <p className="text-xs text-muted-foreground">
-              Members of this channel can access the repository.
+              Members of this group can access the repository.
             </p>
           </div>
           <div className="space-y-1.5">

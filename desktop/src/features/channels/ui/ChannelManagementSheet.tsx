@@ -2,9 +2,10 @@ import {
   Archive,
   ArchiveRestore,
   BookOpenText,
-  Target,
   DoorClosed,
   DoorOpen,
+  Fingerprint,
+  Target,
   Trash2,
   Workflow as WorkflowIcon,
 } from "lucide-react";
@@ -71,6 +72,9 @@ import {
   ChannelTypeSettings,
 } from "./ChannelTypeSettings";
 import { ChannelPermissionsSettings } from "./ChannelPermissionsSettings";
+import { GroupSharingSettings } from "@/features/groups/ui/GroupSharingSettings";
+import { GroupVisibilityConfirmDialog } from "@/features/groups/ui/GroupVisibilityConfirmDialog";
+import { GroupPhotoField } from "./GroupPhotoField";
 import {
   ActionFieldRow,
   ChannelHero,
@@ -88,6 +92,8 @@ import {
 import { ChannelMemberAvatarStack } from "./ChannelMemberAvatarStack";
 import { ChannelGoalsSwitchRow } from "./ChannelGoalsSwitchRow";
 import { useChannelGoalsSwitch } from "./useChannelGoalsSwitch";
+import { isGroupChat } from "../lib/groupChat";
+import { ChatInfoSummary, MuteNotificationsRow } from "./ChatInfoSummary";
 
 type ManagementView = "summary" | "canvas" | "workflows" | "goals";
 
@@ -159,12 +165,18 @@ export function ChannelManagementSheet({
 
   const { canDeleteChannel, canManageChannel } =
     useChannelModerationCapabilities(membersQuery.data, currentPubkey, open);
-  const canEditChannel = canManageChannel && detail?.channelType !== "dm";
+  // Ownerless chats have no owner/admin controls at all.
+  const isChat = isGroupChat(detail);
+  const canEditChannel =
+    canManageChannel && detail?.channelType !== "dm" && !isChat;
   // Room goal UI (ingress + goals view) follows the per-room switch.
   const goalsSwitch = useChannelGoalsSwitch(detail, canManageChannel);
   const goalsEnabled = goalsSwitch.enabled;
   const canEditNarrative =
-    canManageChannel && selfMember !== null && detail?.channelType !== "dm";
+    canManageChannel &&
+    selfMember !== null &&
+    detail?.channelType !== "dm" &&
+    !isChat;
   const isArchived =
     detail?.archivedAt !== null && detail?.archivedAt !== undefined;
   const canJoin =
@@ -183,6 +195,8 @@ export function ChannelManagementSheet({
 
   const [nameDraft, setNameDraft] = React.useState("");
   const [descriptionDraft, setDescriptionDraft] = React.useState("");
+  const [pictureDraft, setPictureDraft] = React.useState("");
+  const [isPhotoUploading, setIsPhotoUploading] = React.useState(false);
   const [isPrivateDraft, setIsPrivateDraft] = React.useState(false);
   const [isEphemeralDraft, setIsEphemeralDraft] = React.useState(false);
   const [ttlSecondsDraft, setTtlSecondsDraft] = React.useState(
@@ -190,11 +204,13 @@ export function ChannelManagementSheet({
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
+  const [isVisibilityConfirmOpen, setIsVisibilityConfirmOpen] =
+    React.useState(false);
   const [hasUserEditedChannelDraft, setHasUserEditedChannelDraft] =
     React.useState(false);
   const [activeView, setActiveView] = React.useState<ManagementView>("summary");
   const visibleActiveView =
-    (activeView === "workflows" && !workflowsEnabled) ||
+    (activeView === "workflows" && (!workflowsEnabled || isChat)) ||
     (activeView === "goals" && !goalsEnabled)
       ? "summary"
       : activeView;
@@ -242,6 +258,7 @@ export function ChannelManagementSheet({
 
     setNameDraft(detail.name);
     setDescriptionDraft(detail.description);
+    setPictureDraft(detail.picture ?? "");
     setIsPrivateDraft(detail.visibility === "private");
     setIsEphemeralDraft(detail.ttlSeconds !== null);
     setTtlSecondsDraft(detail.ttlSeconds ?? DEFAULT_EPHEMERAL_TTL_SECONDS);
@@ -320,12 +337,15 @@ export function ChannelManagementSheet({
   const nameDirty = nameDraft.trim() !== resolvedChannel.name.trim();
   const descriptionDirty =
     descriptionDraft.trim() !== resolvedChannel.description.trim();
+  const pictureDirty = pictureDraft !== (resolvedChannel.picture ?? "");
   const isSavingChannelEdits = updateChannelDetailsMutation.isPending;
-  const hasChannelEditChanges = nameDirty || descriptionDirty || lifecycleDirty;
+  const hasChannelEditChanges =
+    nameDirty || descriptionDirty || lifecycleDirty || pictureDirty;
   const canSaveChannelEdits =
     nameDraft.trim().length > 0 &&
     hasUserEditedChannelDraft &&
     hasChannelEditChanges &&
+    !isPhotoUploading &&
     !isSavingChannelEdits;
   const canvasContent = canvasQuery.data?.content?.trim() ?? "";
   const hasCanvas = canvasContent.length > 0;
@@ -346,6 +366,7 @@ export function ChannelManagementSheet({
     cancelDeferredModalOpen();
     setNameDraft(resolvedChannel.name);
     setDescriptionDraft(resolvedChannel.description);
+    setPictureDraft(resolvedChannel.picture ?? "");
     setIsPrivateDraft(currentVisibility === "private");
     setIsEphemeralDraft(currentTtlSeconds !== null);
     setTtlSecondsDraft(currentTtlSeconds ?? DEFAULT_EPHEMERAL_TTL_SECONDS);
@@ -354,12 +375,18 @@ export function ChannelManagementSheet({
     setIsEditDialogOpen(false);
   }
 
-  async function handleSaveChannelEdits() {
+  async function handleSaveChannelEdits(visibilityConfirmed = false) {
+    // Public <-> private changes who can find and read the group: confirm.
+    if (nextVisibility !== currentVisibility && !visibilityConfirmed) {
+      setIsVisibilityConfirmOpen(true);
+      return;
+    }
     try {
-      if (nameDirty || descriptionDirty || lifecycleDirty) {
+      if (hasChannelEditChanges) {
         await updateChannelDetailsMutation.mutateAsync({
           description: descriptionDirty ? descriptionDraft.trim() : undefined,
           name: nameDirty ? nameDraft.trim() : undefined,
+          picture: pictureDirty ? pictureDraft : undefined,
           ttlSeconds:
             nextTtlSeconds !== currentTtlSeconds ? nextTtlSeconds : undefined,
           visibility:
@@ -419,7 +446,8 @@ export function ChannelManagementSheet({
             canvasQuery={canvasQuery}
             channelId={channelId}
             currentPubkey={currentPubkey}
-            workflowsEnabled={workflowsEnabled}
+            isChat={isChat}
+            workflowsEnabled={workflowsEnabled && !isChat}
             workflowsQuery={workflowsQuery}
             onCreateWorkflow={handleCreateWorkflow}
             onOpenWorkflow={handleOpenWorkflow}
@@ -477,7 +505,8 @@ export function ChannelManagementSheet({
               canvasQuery={canvasQuery}
               channelId={channelId}
               currentPubkey={currentPubkey}
-              workflowsEnabled={workflowsEnabled}
+              isChat={isChat}
+              workflowsEnabled={workflowsEnabled && !isChat}
               workflowsQuery={workflowsQuery}
               onCreateWorkflow={handleCreateWorkflow}
               onOpenWorkflow={handleOpenWorkflow}
@@ -525,12 +554,24 @@ export function ChannelManagementSheet({
               <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5 pr-14">
                 <DialogTitle>
                   Edit {nextVisibility === "private" ? "private" : "public"}{" "}
-                  channel
+                  group
                 </DialogTitle>
               </DialogHeader>
 
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
                 <div className="space-y-5">
+                  <GroupPhotoField
+                    channelId={resolvedChannel.id}
+                    disabled={isSavingChannelEdits}
+                    isPrivate={isPrivateDraft}
+                    label={nameDraft || resolvedChannel.name}
+                    onPictureChange={(picture) => {
+                      setPictureDraft(picture);
+                      setHasUserEditedChannelDraft(true);
+                    }}
+                    onUploadingChange={setIsPhotoUploading}
+                    picture={pictureDraft}
+                  />
                   <div className="space-y-1.5">
                     <label
                       className="text-sm font-medium text-foreground"
@@ -638,7 +679,7 @@ export function ChannelManagementSheet({
                 <Button
                   data-testid="channel-management-save-changes"
                   disabled={!canSaveChannelEdits}
-                  onClick={() => void handleSaveChannelEdits()}
+                  onClick={() => void handleSaveChannelEdits(false)}
                   size="sm"
                   type="button"
                 >
@@ -649,6 +690,12 @@ export function ChannelManagementSheet({
           </DialogContent>
         </Dialog>
       ) : null}
+      <GroupVisibilityConfirmDialog
+        nextVisibility={nextVisibility}
+        onConfirm={() => void handleSaveChannelEdits(true)}
+        onOpenChange={setIsVisibilityConfirmOpen}
+        open={isVisibilityConfirmOpen}
+      />
     </DialogPrimitive.Root>
   );
 }
@@ -677,6 +724,8 @@ type ChannelManagementPanelContentProps = {
   isSavingGoals: boolean;
   onGoalsEnabledChange: (enabled: boolean) => void;
   onOpenGoalLink?: (target: GoalLinkTarget) => void;
+  /** Ownerless chat: show "Chat info" instead of group settings. */
+  isChat: boolean;
   workflowsEnabled: boolean;
   workflowsQuery: {
     data?: Workflow[];
@@ -726,6 +775,7 @@ function ChannelManagementPanelContent({
   isSavingGoals,
   onGoalsEnabledChange,
   onOpenGoalLink,
+  isChat,
   workflowsEnabled,
   workflowsQuery,
   onCreateWorkflow,
@@ -775,7 +825,7 @@ function ChannelManagementPanelContent({
         transparent={transparentChrome}
       >
         <AuxiliaryPanelHeaderGroup
-          backButtonAriaLabel="Back to channel"
+          backButtonAriaLabel={isChat ? "Back to chat" : "Back to group"}
           backButtonTestId="channel-management-back"
           mode={mode}
           onBack={
@@ -792,12 +842,14 @@ function ChannelManagementPanelContent({
                   ? "Goals"
                   : activeView === "workflows"
                     ? "Workflows"
-                    : "Channel Settings"}
+                    : isChat
+                      ? "Chat info"
+                      : "Group settings"}
             </AuxiliaryPanelTitle>
           </DialogPrimitive.Title>
         </AuxiliaryPanelHeaderGroup>
         <DialogPrimitive.Description className="sr-only">
-          Channel settings
+          {isChat ? "Chat info" : "Group settings"}
         </DialogPrimitive.Description>
       </AuxiliaryPanelHeader>
 
@@ -807,7 +859,31 @@ function ChannelManagementPanelContent({
         panelPadding
         ref={scrollRef}
       >
-        {activeView === "summary" ? (
+        {activeView === "summary" && isChat ? (
+          <ChatInfoSummary
+            channel={resolvedChannel}
+            currentPubkey={currentPubkey}
+            goals={{
+              canToggle: canToggleGoals,
+              enabled: goalsEnabled,
+              error: goalsSwitchError,
+              isSaving: isSavingGoals,
+              onChange: onGoalsEnabledChange,
+              onOpenGoals: () => setActiveView("goals"),
+            }}
+            isLeaving={leaveChannelMutation.isPending}
+            leaveError={leaveChannelMutation.error}
+            memberCount={memberCount}
+            members={members}
+            membersError={membersError}
+            onLeave={() => {
+              void leaveChannelMutation.mutateAsync().then(() => {
+                onOpenChange(false);
+              });
+            }}
+            onOpenPeople={onOpenMembers}
+          />
+        ) : activeView === "summary" ? (
           <div className="space-y-6 pt-3">
             <ChannelHero
               channel={resolvedChannel}
@@ -860,11 +936,25 @@ function ChannelManagementPanelContent({
                 value={`${memberCount} member${memberCount === 1 ? "" : "s"}`}
               />
               <CopyFieldRow
-                label="Channel ID"
+                icon={Fingerprint}
+                label="Group ID"
                 testId="channel-management-channel-id"
                 value={resolvedChannel.id}
               />
             </FieldGroup>
+
+            {resolvedChannel.channelType !== "dm" && !isArchived ? (
+              <GroupSharingSettings
+                canManage={canEditChannel}
+                channelId={resolvedChannel.id}
+                isMember={members.some(
+                  (member) => member.pubkey === currentPubkey,
+                )}
+                visibility={resolvedChannel.visibility}
+              />
+            ) : null}
+
+            <MuteNotificationsRow channelId={resolvedChannel.id} />
 
             <ChannelGoalsSwitchRow
               canToggle={canToggleGoals}
@@ -888,7 +978,7 @@ function ChannelManagementPanelContent({
               <div className="space-y-3">
                 <IngressRow
                   description={canvasPreview}
-                  helpText="Use the canvas as a shared space for notes, plans, and other channel information."
+                  helpText="Use the canvas as a shared space for notes, plans, and other group information."
                   icon={BookOpenText}
                   label="Canvas"
                   onClick={() => setActiveView("canvas")}
@@ -931,13 +1021,13 @@ function ChannelManagementPanelContent({
               <FieldGroup testId="channel-management-actions">
                 {canJoin ? (
                   <ActionFieldRow
-                    description="Add this channel to your sidebar"
+                    description="Add this group to your sidebar"
                     disabled={joinChannelMutation.isPending}
                     icon={DoorOpen}
                     label={
                       joinChannelMutation.isPending
-                        ? "Joining channel..."
-                        : "Join channel"
+                        ? "Joining group..."
+                        : "Join group"
                     }
                     onClick={() => {
                       void joinChannelMutation.mutateAsync();
@@ -951,8 +1041,8 @@ function ChannelManagementPanelContent({
                     icon={DoorClosed}
                     label={
                       leaveChannelMutation.isPending
-                        ? "Leaving channel..."
-                        : "Leave channel"
+                        ? "Leaving group..."
+                        : "Leave group"
                     }
                     onClick={() => {
                       void leaveChannelMutation.mutateAsync().then(() => {
@@ -969,8 +1059,8 @@ function ChannelManagementPanelContent({
                       icon={ArchiveRestore}
                       label={
                         unarchiveChannelMutation.isPending
-                          ? "Restoring channel..."
-                          : "Unarchive channel"
+                          ? "Restoring group..."
+                          : "Unarchive group"
                       }
                       onClick={() => {
                         void unarchiveChannelMutation.mutateAsync();
@@ -983,8 +1073,8 @@ function ChannelManagementPanelContent({
                       icon={Archive}
                       label={
                         archiveChannelMutation.isPending
-                          ? "Archiving channel..."
-                          : "Archive channel"
+                          ? "Archiving group..."
+                          : "Archive group"
                       }
                       onClick={() => {
                         void archiveChannelMutation.mutateAsync();
@@ -1008,7 +1098,7 @@ function ChannelManagementPanelContent({
                         destructive
                         disabled={deleteChannelMutation.isPending}
                         icon={Trash2}
-                        label="Delete channel"
+                        label="Delete group"
                         testId="channel-management-delete"
                       />
                     }

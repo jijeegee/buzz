@@ -7,26 +7,19 @@ import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { useDeferredLoad } from "@/shared/hooks/useDeferredStartup";
 import { useActiveWorkingChannelsById } from "@/features/sidebar/lib/useActiveWorkingChannelsById";
 import { useDmSidebarMetadata } from "@/features/sidebar/useDmSidebarMetadata";
+import { isGroupChat } from "@/features/channels/lib/groupChat";
 import { sortChannelsForSidebar } from "@/features/sidebar/lib/channelSortPreference";
 import { useChannelSortPreference } from "@/features/sidebar/lib/useChannelSortPreference";
 import { useSidebarScrollLock } from "@/features/sidebar/lib/useSidebarScrollLock";
 import { isSidebarBackgroundTarget } from "@/features/sidebar/lib/sidebarBackgroundTarget";
 import {
-  sidebarOverflowUnreadLabel,
-  useSidebarUnreadOverflow,
-} from "@/features/sidebar/lib/useSidebarUnreadOverflow";
-import {
   useDeleteChannelDialog,
   useLeaveChannelDialog,
 } from "@/features/sidebar/ui/ChannelSectionDialogs";
 import { AppSidebarPinnedHeader } from "@/features/sidebar/ui/AppSidebarPinnedHeader";
-import {
-  canPreviewUnreadDm,
-  MoreUnreadButton,
-  preferredUnreadTarget,
-} from "@/features/sidebar/ui/MoreUnreadButton";
 import { useChatsViewMode } from "@/features/chats/useChatsViewMode";
 import { ChatList } from "@/features/sidebar/ui/ChatList";
+import { InvitationsEntry } from "@/features/groups/ui/InvitationsEntry";
 import {
   ChatsColumnTitle,
   ChatsViewToggle,
@@ -42,7 +35,6 @@ import {
   SectionActionsMenu,
 } from "@/features/sidebar/ui/CustomChannelSection";
 import { CreateChannelDialog } from "@/features/sidebar/ui/CreateChannelDialog";
-import { SidebarProfileCard } from "@/features/sidebar/ui/SidebarProfileCard";
 import { HuddleProfileControl } from "@/features/huddle";
 import type {
   AppSidebarProps,
@@ -59,12 +51,11 @@ import { SidebarUpdateCard } from "@/features/settings/SidebarUpdateCard";
 import { useUpdaterContext } from "@/features/settings/hooks/UpdaterProvider";
 import { shouldShowSidebarUpdateCard } from "@/features/settings/sidebarUpdateCardVisibility";
 import type { ChannelVisibility } from "@/shared/api/types";
+import { Button } from "@/shared/ui/button";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarMenu,
-  SidebarMenuItem,
   SidebarRail,
   useSidebar,
 } from "@/shared/ui/sidebar";
@@ -83,43 +74,28 @@ export function AppSidebar({
   isCreatingForum,
   profile,
   relayConnectionCard,
-  selfPresenceStatus,
   errorMessage,
   selectedChannelId,
   selectedView,
   unreadChannelCounts,
   unreadChannelIds,
-  highPriorityUnreadChannelIds,
-  previewActivityChannelIds,
   communities,
   onAddCommunity,
   onAddCommunityOpenChange,
   onCreateChannel,
   onCreateForum,
-  onOpenAddCommunity,
-  onSendFeedback,
   onHideDm,
   onMarkChannelUnread,
   onMarkChannelRead,
   onMarkAllChannelsRead,
   onBrowseChannels,
   onOpenDm,
-  onUpdateCommunity,
-  onLeaveCommunity,
-  onRemoveCommunityFromDevice,
   onCreateAgent,
   onSelectHome,
   onSelectChannel,
   onOpenSearchResult,
   searchChannels,
   searchFocusRequests,
-  onSelectSettings,
-  onSetPresenceStatus,
-  onSetUserStatus,
-  onClearUserStatus,
-  onSwitchCommunity,
-  selfUserStatus,
-  isPresencePending,
   onNewMessage,
   isCreateChannelOpen: isCreateChannelOpenProp,
   isHuddleCompanionOpen = false,
@@ -151,14 +127,8 @@ export function AppSidebar({
     allDirectMessages,
     currentPubkey,
   );
-  const dmChannelIds = React.useMemo(
-    () => new Set(directMessages.map(({ id }) => id)),
-    [directMessages],
-  );
   const scrollRef = React.useRef<HTMLDivElement>(null);
   useSidebarScrollLock(scrollRef);
-  // biome-ignore format: keep compact to stay within file size limit
-  const { hasHighPriorityAbove, hasHighPriorityBelow, scrollToChannel, scrollToNextAbove, scrollToNextBelow, unreadAboveCount, unreadBelowCount, unreadMessageBelowChannelIds } = useSidebarUnreadOverflow({ dmChannelIds, highPriorityUnreadChannelIds, previewActivityChannelIds, scrollRef, unreadChannelIds });
 
   React.useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -287,10 +257,15 @@ export function AppSidebar({
     immediate: isSelectedDirectMessage,
     timeoutMs: 400,
   });
+  const groupChats = React.useMemo(
+    () => streamChannels.filter(isGroupChat),
+    [streamChannels],
+  );
   const { dmChannelLabels, dmParticipantsByChannelId, dmPresenceByChannelId } =
     useDmSidebarMetadata({
       currentPubkey,
       directMessages,
+      groupChats,
       enabled: shouldLoadDmMetadata,
       fallbackDisplayName,
       profileDisplayName: profile?.displayName,
@@ -298,49 +273,6 @@ export function AppSidebar({
   const chatChannels = React.useMemo(
     () => [...streamChannels, ...directMessages],
     [streamChannels, directMessages],
-  );
-  const unreadDmPreviewsBelow = React.useMemo(
-    () =>
-      unreadMessageBelowChannelIds.flatMap((channelId) => {
-        const channel = directMessages.find(
-          (candidate) => candidate.id === channelId,
-        );
-        const participants = dmParticipantsByChannelId[channelId];
-        const participant = participants?.[0];
-        if (
-          !channel ||
-          !participant ||
-          !canPreviewUnreadDm(
-            channel.participantPubkeys.length,
-            participants?.length ?? 0,
-          )
-        ) {
-          return [];
-        }
-        return [
-          {
-            accessibleLabel: participant.label,
-            avatarUrl: participant.avatarUrl,
-            channelId,
-            isAgent: participant.isAgent,
-            label: dmChannelLabels[channelId] ?? participant.label,
-          },
-        ];
-      }),
-    [
-      directMessages,
-      dmChannelLabels,
-      dmParticipantsByChannelId,
-      unreadMessageBelowChannelIds,
-    ],
-  );
-  const unreadDmChannelIds = React.useMemo(
-    () => new Set(directMessages.map(({ id }) => id)),
-    [directMessages],
-  );
-  const nextUnreadDmBelowId = preferredUnreadTarget(
-    unreadMessageBelowChannelIds,
-    unreadDmChannelIds,
   );
   const sidebarLoadingShape = useSidebarLoadingShape({
     activeCommunityId: activeCommunity?.id,
@@ -350,10 +282,6 @@ export function AppSidebar({
     isLoading,
     streamChannels,
   });
-  const resolvedDisplayName =
-    profile?.displayName?.trim() ||
-    fallbackDisplayName?.trim() ||
-    "Current identity";
   const isCreatingAny =
     createDialogKind === "stream"
       ? isCreatingChannel
@@ -439,6 +367,7 @@ export function AppSidebar({
               />
             }
             onBrowseChannels={onBrowseChannels}
+            onNewGroup={handleOpenCreateChannel}
             onNewMessage={onNewMessage}
           />
           <AppSidebarPinnedHeader
@@ -452,32 +381,27 @@ export function AppSidebar({
             onCreateChannel={handleOpenCreateChannel}
             onOpenDm={onOpenDm}
             onOpenSearchResult={onOpenSearchResult}
+            onOpenThread={serverChats?.onOpenThread}
             onSelectChannel={onSelectChannel}
             searchChannels={searchChannels}
             searchFocusRequest={searchFocusRequests[0]}
             scopeSearchFocusRequest={searchFocusRequests[1]}
             suggestionChannels={channels}
+            threadRows={serverChats?.rows}
           />
           {serverChats ? (
             <ChatsViewToggle onChange={setChatsView} value={chatsView} />
           ) : null}
+          <InvitationsEntry
+            onOpenGroup={onSelectChannel}
+            refreshKey={showOtherList}
+          />
 
           <div
             className="relative flex min-h-0 flex-1 flex-col"
             data-sidebar-background
             data-testid="sidebar-channel-content"
           >
-            {unreadAboveCount > 0 ? (
-              <MoreUnreadButton
-                count={unreadAboveCount}
-                emphasis={hasHighPriorityAbove ? "primary" : "default"}
-                label={sidebarOverflowUnreadLabel(unreadAboveCount)}
-                onClick={scrollToNextAbove}
-                position="top"
-                testId="sidebar-more-unread-above"
-              />
-            ) : null}
-
             <SidebarContent
               className="kuzz-sidebar-scrollbar overscroll-none [overflow-anchor:none]"
               data-sidebar-background
@@ -520,7 +444,36 @@ export function AppSidebar({
                       onUnstarChannel={onUnstarChannel}
                       onDeleteChannel={requestDeleteChannel}
                       onLeaveChannel={requestLeaveChannel}
-                      emptyState="No chats yet. Start a message or browse channels."
+                      emptyState={
+                        <div
+                          className="flex flex-col items-start gap-2"
+                          data-testid="chats-empty-state"
+                        >
+                          <span>No chats yet</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {onBrowseChannels ? (
+                              <Button
+                                className="h-7 px-2 text-xs"
+                                data-testid="chats-empty-find-groups"
+                                onClick={() => onBrowseChannels()}
+                                size="sm"
+                                variant="outline"
+                              >
+                                Find groups
+                              </Button>
+                            ) : null}
+                            <Button
+                              className="h-7 px-2 text-xs"
+                              data-testid="chats-empty-new-message"
+                              onClick={() => onNewMessage()}
+                              size="sm"
+                              variant="outline"
+                            >
+                              Message someone
+                            </Button>
+                          </div>
+                        </div>
+                      }
                     />
                     <FeatureGate feature="forum">
                       <ChannelGroupSection
@@ -566,24 +519,6 @@ export function AppSidebar({
         </div>
 
         <div className="relative z-30 shrink-0" data-kuzz-glass-footer-wrap>
-          {unreadBelowCount > 0 && !showOtherList ? (
-            <MoreUnreadButton
-              bottomClassName="bottom-full"
-              count={unreadBelowCount}
-              dmPreviews={unreadDmPreviewsBelow}
-              emphasis={hasHighPriorityBelow ? "primary" : "default"}
-              label={sidebarOverflowUnreadLabel(unreadBelowCount)}
-              onClick={() =>
-                nextUnreadDmBelowId
-                  ? scrollToChannel(nextUnreadDmBelowId)
-                  : scrollToNextBelow()
-              }
-              position="bottom"
-              targetChannelId={nextUnreadDmBelowId}
-              testId="sidebar-more-unread-below"
-            />
-          ) : null}
-
           <SidebarFooter>
             {relayConnectionCard.showSidebarRelayConnectionCard &&
             (isMobile ? openMobile : sidebarOpen) ? (
@@ -610,29 +545,6 @@ export function AppSidebar({
               onHuddleEnded={onHuddleEnded}
               visible={isHuddleCompanionOpen}
             />
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarProfileCard
-                  activeCommunity={activeCommunity}
-                  isPresencePending={isPresencePending}
-                  onOpenAddCommunity={onOpenAddCommunity}
-                  onOpenSettings={onSelectSettings}
-                  onSendFeedback={onSendFeedback}
-                  onLeaveCommunity={onLeaveCommunity}
-                  onRemoveCommunityFromDevice={onRemoveCommunityFromDevice}
-                  onSetPresenceStatus={onSetPresenceStatus}
-                  onSetUserStatus={onSetUserStatus}
-                  onClearUserStatus={onClearUserStatus}
-                  onSwitchCommunity={onSwitchCommunity}
-                  onUpdateCommunity={onUpdateCommunity}
-                  profile={profile}
-                  resolvedDisplayName={resolvedDisplayName}
-                  selfPresenceStatus={selfPresenceStatus}
-                  selfUserStatus={selfUserStatus}
-                  communities={communities}
-                />
-              </SidebarMenuItem>
-            </SidebarMenu>
           </SidebarFooter>
         </div>
       </div>

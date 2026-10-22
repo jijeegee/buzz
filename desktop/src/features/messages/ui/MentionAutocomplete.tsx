@@ -211,7 +211,7 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                     Automatically mention agents
                   </span>
                   <span className="text-2xs text-muted-foreground">
-                    Address selected agents in channel and thread replies
+                    Address selected agents in group and thread replies
                   </span>
                 </label>
                 <Switch
@@ -373,17 +373,17 @@ export const MentionAutocomplete = React.memo(function MentionAutocomplete({
                             className="min-w-0 truncate"
                             title={
                               ownerLabel && suggestion.notInChannel
-                                ? `managed by ${ownerLabel} · not in channel`
+                                ? `managed by ${ownerLabel} · not in group`
                                 : ownerLabel
                                   ? `managed by ${ownerLabel}`
-                                  : "not in channel"
+                                  : "not in group"
                             }
                           >
                             {ownerLabel && suggestion.notInChannel
-                              ? `managed by ${ownerLabel} · not in channel`
+                              ? `managed by ${ownerLabel} · not in group`
                               : ownerLabel
                                 ? `managed by ${ownerLabel}`
-                                : "not in channel"}
+                                : "not in group"}
                           </span>
                         ) : null}
                       </span>

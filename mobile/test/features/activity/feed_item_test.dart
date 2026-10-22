@@ -124,10 +124,7 @@ void main() {
         makeItem(kind: 9, category: 'agent_activity').headline,
         'Agent update',
       );
-      expect(
-        makeItem(kind: 9, category: 'activity').headline,
-        'Channel update',
-      );
+      expect(makeItem(kind: 9, category: 'activity').headline, 'Group update');
     });
   });
 

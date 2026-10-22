@@ -216,7 +216,7 @@ class _ComposeBarLayout extends HookWidget {
                                   onTap: onMention,
                                 ),
                                 _ComposeAction(
-                                  icon: LucideIcons.hash,
+                                  icon: LucideIcons.users,
                                   onTap: onChannel,
                                 ),
                                 _ComposeAction(

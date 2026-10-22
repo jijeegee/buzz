@@ -31,6 +31,7 @@ import 'thread_replies_provider.dart';
 import 'thread_window.dart';
 import 'thread_name_provider.dart';
 import 'thread_name_editor.dart';
+import 'thread_header_actions.dart';
 import 'channels_provider.dart';
 import 'compose_bar.dart';
 import 'composer_quote_chip.dart';
@@ -97,6 +98,11 @@ class ThreadDetailPage extends HookConsumerWidget {
   final bool isArchived;
   final String? initialMessageId;
 
+  /// The group page is the route right under this one, so the header's
+  /// group button pops back to it. False when the thread replaced the group
+  /// page (opened from Chats) or sits on another thread.
+  final bool channelBelow;
+
   const ThreadDetailPage({
     super.key,
     required this.threadHead,
@@ -106,6 +112,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     required this.isMember,
     required this.isArchived,
     this.initialMessageId,
+    this.channelBelow = true,
   });
 
   @override
@@ -1320,6 +1327,7 @@ class ThreadDetailPage extends HookConsumerWidget {
           ),
         ),
         actions: [
+          ThreadGroupButton(channelId: channelId, channelBelow: channelBelow),
           if (goalsEnabled)
             ThreadGoalsButton(
               channelId: channelId,
@@ -1331,6 +1339,16 @@ class ThreadDetailPage extends HookConsumerWidget {
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => showThreadNameEditor(context, nameKey),
             ),
+          ThreadMoreMenu(
+            channelId: channelId,
+            rootId: effectiveRootId,
+            closed: isThreadClosed(allReplies),
+            canClose:
+                isMember &&
+                !isArchived &&
+                !liveDeletionHidesHead &&
+                threadHead.rootId == null,
+          ),
         ],
         titleStyle: channelTitleTextStyle,
       ),

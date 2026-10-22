@@ -1,6 +1,5 @@
 import 'package:kuzz/features/home/home_page.dart';
 import 'package:kuzz/features/channels/channels_page.dart';
-import 'package:kuzz/features/profile/profile_avatar.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,11 +33,8 @@ void main() {
     );
   }
 
-  Future<void> openSettingsFromMore(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('More'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ProfileAvatar), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('more-profile')));
+  Future<void> openProfileFromTab(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Profile'));
   }
 
   testWidgets('shows icon-only navigation and an aligned quick action', (
@@ -47,7 +43,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pump();
 
-    for (final label in ['People', 'Activity', 'Agents', 'More']) {
+    for (final label in ['People', 'Agents', 'Profile', 'Settings']) {
       expect(find.text(label), findsNothing);
       expect(find.bySemanticsLabel(label), findsOneWidget);
     }
@@ -125,7 +121,7 @@ void main() {
     await tester.pumpWidget(await buildHome());
     await tester.pumpAndSettle();
 
-    await openSettingsFromMore(tester);
+    await openProfileFromTab(tester);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 95));
 
@@ -165,7 +161,7 @@ void main() {
         .transform
         .storage[0];
 
-    await openSettingsFromMore(tester);
+    await openProfileFromTab(tester);
     await tester.pump();
 
     final settingsTransition = find.byKey(
@@ -226,12 +222,12 @@ void main() {
     await tester.pump();
     expect(hapticCalls, isEmpty);
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
     expect(hapticCalls, hasLength(1));
     expect(hapticCalls.single.arguments, 'HapticFeedbackType.selectionClick');
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
     expect(hapticCalls, hasLength(1));
 
@@ -266,41 +262,34 @@ void main() {
     expect(hapticCalls.single.arguments, 'HapticFeedbackType.lightImpact');
   });
 
-  testWidgets('badges the Activity tab when it has unread rows', (tester) async {
+  testWidgets('hides the Activity tab even with unread rows', (tester) async {
     await tester.pumpWidget(await buildHome(unreadInboxCount: 1));
     await tester.pump();
 
-    expect(
-      find.byKey(const ValueKey('activity-tab-unread-dot')),
-      findsOneWidget,
-    );
-    final badge = tester.widget<Container>(
-      find.byKey(const ValueKey('activity-tab-unread-dot')),
-    );
-    expect(badge.constraints?.maxWidth, 12);
-    expect(badge.constraints?.maxHeight, 12);
-    expect(find.bySemanticsLabel('Activity, unread'), findsOneWidget);
-    AnimatedScale unreadDotScale() => tester.widget<AnimatedScale>(
-      find.byKey(const ValueKey('activity-tab-unread-dot-scale')),
-    );
-    expect(unreadDotScale().scale, 1);
-    expect(unreadDotScale().alignment, const Alignment(-0.5, 0.5));
-    expect(unreadDotScale().duration, const Duration(milliseconds: 220));
+    expect(find.byTooltip('Activity'), findsNothing);
+    expect(find.byKey(const ValueKey('activity-tab-unread-dot')), findsNothing);
+  });
 
-    await tester.tap(find.byTooltip('Activity'));
+  testWidgets('puts Profile and Settings on the tab bar, without More', (
+    tester,
+  ) async {
+    await tester.pumpWidget(await buildHome());
     await tester.pump();
 
+    expect(find.byTooltip('More'), findsNothing);
+    for (final hidden in ['Groups', 'Search', 'Pulse']) {
+      expect(find.bySemanticsLabel(hidden), findsNothing);
+    }
+
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('activity-tab-unread-dot')),
+      find.byKey(
+        const ValueKey('settings-transition-opacity'),
+        skipOffstage: false,
+      ),
       findsOneWidget,
     );
-    expect(unreadDotScale().scale, 0);
-    expect(find.bySemanticsLabel('Activity, unread'), findsNothing);
-
-    await tester.tap(find.byTooltip('Chats'));
-    await tester.pump();
-
-    expect(unreadDotScale().scale, 1);
   });
 
   testWidgets('fades and slides tab content in the selected direction', (
@@ -331,7 +320,7 @@ void main() {
     expect(bodyOpacity().opacity, closeTo(1, 0.001));
     expect(appBarOpacity().opacity, closeTo(1, 0.001));
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
 
     expect(bodyOffset(), closeTo(24, 0.001));
@@ -377,7 +366,7 @@ void main() {
     await tester.pumpWidget(await buildHome(disableAnimations: true));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
 
     final bodyTransform = tester.widget<Transform>(
@@ -418,7 +407,7 @@ void main() {
     expect(scale(), closeTo(1, 0.001));
     expect(opacity(), closeTo(1, 0.001));
 
-    await tester.tap(find.byTooltip('Activity'));
+    await tester.tap(find.byTooltip('Agents'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 110));
 

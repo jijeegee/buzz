@@ -3,6 +3,11 @@ import {
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
 import { formatDmParticipantLabels } from "@/features/channels/lib/dmParticipantDisplay";
+import { getChatPrivateName } from "@/features/channels/lib/chatPrivateNames";
+import {
+  isGroupChat,
+  resolveGroupChatTitle,
+} from "@/features/channels/lib/groupChat";
 import type { Channel } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -17,11 +22,25 @@ function isGenericDmChannelName(name: string) {
   );
 }
 
+/**
+ * The one title of a room wherever it shows. Ownerless chats resolve private
+ * name > shared name > other members' names > "Empty chat"; DMs draw from
+ * their participants; other rooms use their name.
+ */
 export function resolveChannelDisplayLabel(
   channel: Channel,
   currentPubkey: string | undefined,
   profiles: UserProfileLookup | undefined,
+  privateName: string | null = getChatPrivateName(channel.id),
 ) {
+  if (isGroupChat(channel)) {
+    return resolveGroupChatTitle({
+      channel,
+      currentPubkey,
+      privateName,
+      profiles,
+    });
+  }
   if (channel.channelType !== "dm" || !isGenericDmChannelName(channel.name)) {
     return channel.name;
   }

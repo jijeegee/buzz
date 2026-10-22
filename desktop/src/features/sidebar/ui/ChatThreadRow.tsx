@@ -31,6 +31,7 @@ import {
 export function ChatThreadRow({
   actions,
   channelLabel,
+  channelPicture = null,
   indent = false,
   isActive = false,
   isDm,
@@ -44,6 +45,8 @@ export function ChatThreadRow({
 }: {
   actions?: ChatThreadRowActions;
   channelLabel: string;
+  /** The group photo, drawn on the channel circle of the avatar. */
+  channelPicture?: string | null;
   /** Set in By channel, where the thread sits under its channel. */
   indent?: boolean;
   /** This thread is the one open now. */
@@ -61,7 +64,7 @@ export function ChatThreadRow({
 }) {
   const rootId = row.root_id ?? row.key;
   const title = chatThreadTitle(row);
-  const place = isDm ? channelLabel : `#${channelLabel}`;
+  const place = isDm ? channelLabel : `${channelLabel}`;
   const hasUnread = unread.count > 0 || unread.marked;
   const dimmed = row.closed || (isMuted && unread.mentions === 0);
   const badges = (
@@ -123,6 +126,7 @@ export function ChatThreadRow({
             channelId={row.channel_id}
             channelLabel={channelLabel}
             isThread
+            picture={channelPicture}
             testId={`chat-thread-avatar-${rootId}`}
             thread={{ id: rootId, label: title }}
           />

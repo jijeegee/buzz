@@ -107,7 +107,7 @@ test("selection presentation names the cluster and its actions", () => {
     presentation?.actions.map((action) => [action.id, action.label]),
     [
       ["chat-agent", "Chat with an agent"],
-      ["discuss", "Discuss in a channel"],
+      ["discuss", "Discuss in a group"],
       ["copy", "Copy links"],
     ],
   );

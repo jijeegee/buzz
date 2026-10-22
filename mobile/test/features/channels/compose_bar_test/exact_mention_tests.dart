@@ -199,7 +199,7 @@ void exactMentionTests() {
       await tester.pumpAndSettle();
       if (scenario == 'non-member human') {
         expect(
-          find.textContaining('Renamed is not in this channel'),
+          find.textContaining('Renamed is not in this group'),
           findsOneWidget,
         );
         await tester.tap(find.text('Do nothing'));

@@ -68,7 +68,7 @@ export function MembersSidebarAgentControls({
               onClick={onRemoveAll}
             >
               <Trash2 className="h-4 w-4" />
-              Remove all from channel
+              Remove all from group
             </DropdownMenuItem>
           </>
         ) : null}

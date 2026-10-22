@@ -42,6 +42,7 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
               currentPubkey: currentPubkey,
               isMember: isMember,
               isArchived: isArchived,
+              channelBelow: false,
             ),
           ),
         );

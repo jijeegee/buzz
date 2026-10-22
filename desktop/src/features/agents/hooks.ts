@@ -6,6 +6,7 @@ import {
   discoverAcpAuthMethods,
 } from "@/shared/api/tauriAgentAuth";
 import {
+  addAgentsToChannel,
   attachManagedAgentToChannel,
   createChannelManagedAgents,
   ensureChannelAgentPresetInChannel,
@@ -77,6 +78,7 @@ import type {
   AcpRuntime,
   AgentPersona,
   Channel,
+  ChannelRole,
   CreateManagedAgentInput,
   CreatePersonaInput,
   GlobalAgentConfig,
@@ -750,7 +752,7 @@ export function useAttachManagedAgentToChannelMutation(
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return attachManagedAgentToChannel(effectiveChannelId, rest);
@@ -791,6 +793,24 @@ export function useAttachManagedAgentToChannelMutation(
   });
 }
 
+/** Add a team's existing agents to a channel (see `addAgentsToChannel`). */
+export function useAddAgentsToChannelMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: {
+      channelId: string;
+      pubkeys: readonly string[];
+      role?: Exclude<ChannelRole, "owner">;
+    }) => addAgentsToChannel(input.channelId, input.pubkeys, input.role),
+    onSettled: (_data, _err, variables) => {
+      invalidateAgentQueriesInBackground(queryClient, variables.channelId, {
+        refetchChannels: true,
+      });
+    },
+  });
+}
+
 export function useEnsureChannelAgentPresetMutation(channelId: string | null) {
   const queryClient = useQueryClient();
 
@@ -799,7 +819,7 @@ export function useEnsureChannelAgentPresetMutation(channelId: string | null) {
       input: EnsureChannelAgentPresetInput,
     ): Promise<EnsureChannelAgentPresetResult> => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return ensureChannelAgentPresetInChannel(channelId, input);
@@ -823,7 +843,7 @@ export function useCreateChannelManagedAgentMutation(channelId: string | null) {
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       const result = await createChannelManagedAgents(effectiveChannelId, [
@@ -885,7 +905,7 @@ export function useProvisionChannelManagedAgentMutation(
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       const [managedAgents, members, personas] = await Promise.all([
@@ -934,7 +954,7 @@ export function useCreateChannelManagedAgentsMutation(
       inputs: readonly CreateChannelManagedAgentInput[],
     ): Promise<CreateChannelManagedAgentsResult> => {
       if (!channelId) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
 
       return createChannelManagedAgents(channelId, inputs);

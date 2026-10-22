@@ -1,5 +1,5 @@
 import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import {
   type QueryClient,
   useMutation,
@@ -60,7 +60,10 @@ import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 // Same .mjs the renderer uses, so the cache-update projection can't drift
 // from the on-render overlay.
-import { noteChannelMembershipChange } from "@/shared/api/channelMembershipWrites";
+import {
+  createSettleTimers,
+  refreshOnSystemMessage,
+} from "@/features/channels/membershipSystemRefresh";
 import { applyEditTagOverlay } from "@/features/messages/lib/applyEditTagOverlay.mjs";
 import { cancelAutoRoute } from "@/features/messages/lib/autoRouteStatus";
 import {
@@ -298,7 +301,7 @@ export function useChannelMessagesQuery(channel: Channel | null) {
     enabled: channel !== null && channel.channelType !== "forum",
     queryKey,
     queryFn: async ({ signal }) => {
-      if (!channel) throw new Error("No channel selected.");
+      if (!channel) throw new Error("No group selected.");
       // Persisted heads seed asynchronously; wait for that seed so a channel
       // opened during boot takes the hydrated path instead of racing it with
       // a cold relay fetch.
@@ -326,6 +329,9 @@ export function useChannelSubscription(channel: Channel | null) {
   const queryClient = useQueryClient();
   const channelId = channel?.id ?? null;
   const channelType = channel?.channelType ?? null;
+  const [settleTimers] = useState(createSettleTimers);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: drop the closed room's follow-up refreshes
+  useEffect(() => settleTimers.clear, [channelId, settleTimers]);
   const refreshNewestWindow = useEffectEvent(async () => {
     if (!channelId) return;
     await refreshChannelWindowMessages(queryClient, channelId);
@@ -379,23 +385,10 @@ export function useChannelSubscription(channel: Channel | null) {
     }
 
     if (event.kind === KIND_SYSTEM_MESSAGE) {
-      try {
-        const payload = JSON.parse(event.content) as { type?: string };
-        if (
-          payload.type === "member_joined" ||
-          payload.type === "member_left" ||
-          payload.type === "member_removed" ||
-          payload.type === "admin_kick"
-        ) {
-          noteChannelMembershipChange(channelId);
-          void queryClient.invalidateQueries({
-            queryKey: ["channels"],
-            exact: true,
-          });
-        }
-      } catch {
-        // Non-JSON system message — ignore.
-      }
+      refreshOnSystemMessage(channelId, event.content, {
+        queryClient,
+        setTimer: settleTimers.setTimer,
+      });
     }
   });
 
@@ -527,13 +520,13 @@ export function useSendMessageMutation(
 
       if (effectiveChannel == null) {
         if (capturedChannelId != null) {
-          throw new Error("Channel is no longer available.");
+          throw new Error("Group is no longer available.");
         }
-        throw new Error("This channel does not support message sending yet.");
+        throw new Error("This group does not support message sending yet.");
       }
 
       if (effectiveChannel.channelType === "forum") {
-        throw new Error("This channel does not support message sending yet.");
+        throw new Error("This group does not support message sending yet.");
       }
 
       if (!identity) {
@@ -816,7 +809,7 @@ export function useDeleteMessageMutation(channel: Channel | null) {
   return useMutation<void, Error, { eventId: string }>({
     mutationFn: async ({ eventId }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
       cancelAutoRoute(eventId);
       await deleteMessage(channel.id, eventId);
@@ -854,7 +847,7 @@ export function useEditMessageMutation(channel: Channel | null) {
   >({
     mutationFn: async ({ eventId, content, mediaTags, mentionPubkeys }) => {
       if (!channel) {
-        throw new Error("No channel selected.");
+        throw new Error("No group selected.");
       }
       // A Smart routing pick still in flight must not land on the old text.
       cancelAutoRoute(eventId);

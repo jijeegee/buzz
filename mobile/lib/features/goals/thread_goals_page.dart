@@ -67,7 +67,7 @@ class ThreadGoalsPage extends ConsumerWidget {
         children: [
           Text(
             'This conversation has no goals yet. Set its goal from the '
-            'channel first.',
+            'group first.',
             style: context.textTheme.bodyMedium,
           ),
         ],

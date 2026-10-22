@@ -2,6 +2,7 @@ import { getPresenceLabel } from "@/features/presence/lib/presence";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import type { PresenceStatus } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { relayMediaVariantForSize } from "@/shared/lib/relayMediaVariants";
 import {
   MaskedAvatarBadgeFrame,
   STATUS_DOT_MASK_CURVE,
@@ -110,6 +111,7 @@ export function ProfileAvatarWithStatus({
         className={cn("h-full w-full", avatarClassName)}
         iconClassName={iconClassName}
         label={label}
+        mediaVariant={relayMediaVariantForSize(size)}
         shape={shape}
         testId={testId}
       />
