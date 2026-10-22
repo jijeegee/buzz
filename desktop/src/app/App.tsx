@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import { router } from "@/app/router";
+import { t, useT } from "@/shared/i18n";
 import {
   completeCommunityViewTransition,
   replaceCommunityDestinationRoute,
@@ -93,8 +94,6 @@ import { KuzzMark } from "@/shared/ui/kuzz-logo/KuzzMark";
 import { FlappingBee } from "@/shared/ui/kuzz-logo/FlappingBee";
 import { FuzzyLogo } from "@/shared/ui/kuzz-logo/FuzzyLogo";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
-
-const LOADING_TEXT = "Setting up your community...";
 
 // Minimum time the cold-boot splash stays on screen. A real boot resolves the
 // community in well under 100ms, and the native window setup plus first paint
@@ -188,6 +187,7 @@ function BeeLoader({
 // its wings flapping (ported from the Kuzz website's wing-flap). Replaces the
 // old "Setting up your community" text, which stays as an sr-only caption.
 function AppLoadingGate() {
+  const t = useT();
   // After an account switch the restart says where it is going.
   const caption = accountSwitchCaption();
   return (
@@ -198,7 +198,9 @@ function AppLoadingGate() {
     >
       <StartupWindowDragRegion />
       <ThemeGrainientBackground />
-      {caption ? null : <span className="sr-only">{LOADING_TEXT}</span>}
+      {caption ? null : (
+        <span className="sr-only">{t("app.loading.settingUp")}</span>
+      )}
       <FlappingBee className="relative z-10 h-auto w-28" />
       {caption ? (
         <p
@@ -215,6 +217,7 @@ function AppLoadingGate() {
 // Quiet gate for switching between already-set-up communities: visually empty
 // unless the switch takes long, so fast switches don't flash the boot splash.
 function CommunitySwitchGate() {
+  const t = useT();
   const [showSpinner, setShowSpinner] = useState(false);
 
   useEffect(() => {
@@ -229,10 +232,10 @@ function CommunitySwitchGate() {
       role="status"
     >
       <StartupWindowDragRegion />
-      <span className="sr-only">Switching community…</span>
+      <span className="sr-only">{t("app.loading.switchingCommunity")}</span>
       {showSpinner ? (
         <BeeLoader
-          ariaLabel="Switching community…"
+          ariaLabel={t("app.loading.switchingCommunity")}
           className="h-auto w-20"
           tintClassName="text-muted-foreground"
         />
@@ -542,7 +545,7 @@ function CommunityApp({
         isTransactionStillConnecting(transactionRef.current, transaction.id)
       ) {
         communityOnboarding.update(
-          { error: "Could not save or apply the community. Please retry." },
+          { error: t("app.community.applyFailed") },
           transaction.id,
         );
       }
@@ -654,10 +657,7 @@ function CommunityApp({
           relayClient.preconnect(),
           new Promise<never>((_, reject) => {
             timer = setTimeout(
-              () =>
-                reject(
-                  new Error("Community connection timed out. Please retry."),
-                ),
+              () => reject(new Error(t("app.community.connectTimedOut"))),
               20_000,
             );
           }),
@@ -699,7 +699,7 @@ function CommunityApp({
             error:
               error instanceof Error
                 ? error.message
-                : "Could not authenticate with the community. Please retry.",
+                : t("app.community.authFailed"),
           },
           transactionId,
         );
@@ -955,6 +955,7 @@ function MachineBootstrap({ sharedIdentity }: { sharedIdentity: boolean }) {
 }
 
 export function App() {
+  const t = useT();
   useReloadShortcut();
   useCloseWindowShortcut();
   useInitialRenderReady();
@@ -982,7 +983,7 @@ export function App() {
   if (builtInServer.status === "error") {
     return (
       <CommunityApplyErrorScreen
-        error="Couldn't reach Kuzz."
+        error={t("app.server.unreachable")}
         onRetry={() => void retryBuiltInServer()}
       />
     );

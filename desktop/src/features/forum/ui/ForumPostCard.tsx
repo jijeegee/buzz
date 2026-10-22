@@ -8,6 +8,7 @@ import {
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import type { ForumPost } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
 import { Markdown } from "@/shared/ui/markdown";
@@ -38,6 +39,7 @@ export function ForumPostCard({
   onClick,
   onDelete,
 }: ForumPostCardProps) {
+  const t = useT();
   const authorLabel = resolveUserLabel({
     pubkey: post.pubkey,
     currentPubkey,
@@ -142,13 +144,16 @@ export function ForumPostCard({
         <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
           <MessageSquare className="h-4 w-4" />
           <span>
-            {summary.replyCount}{" "}
-            {summary.replyCount === 1 ? "reply" : "replies"}
+            {t("forum.postCard.replyCount", { count: summary.replyCount })}
           </span>
           {summary.lastReplyAt ? (
             <>
               <span className="text-muted-foreground/50">·</span>
-              <span>last {formatRelativeTime(summary.lastReplyAt)}</span>
+              <span>
+                {t("forum.postCard.lastReply", {
+                  time: formatRelativeTime(summary.lastReplyAt),
+                })}
+              </span>
             </>
           ) : null}
         </div>

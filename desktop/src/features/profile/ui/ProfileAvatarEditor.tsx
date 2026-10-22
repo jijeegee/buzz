@@ -10,6 +10,7 @@ import { AvatarCustomColorPanel } from "@/features/profile/ui/AvatarCustomColorP
 import { ProfileAvatarModeTabs } from "@/features/profile/ui/ProfileAvatarModeTabs";
 import { useAvatarSelection } from "@/features/profile/avatarPresentationStore";
 import { useAvatarUpload } from "@/features/profile/useAvatarUpload";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { useEmojiBurst } from "@/shared/ui/EmojiBurstProvider";
@@ -89,6 +90,7 @@ export function ProfileAvatarEditor({
   compactCustomColorPicker = false,
   stackAnimatedCameraOptions = false,
 }: ProfileAvatarEditorProps) {
+  const t = useT();
   const { burstEmoji } = useEmojiBurst();
   const shouldReduceMotion = useReducedMotion();
   const initialEmojiAvatar = React.useMemo(
@@ -584,7 +586,9 @@ export function ProfileAvatarEditor({
         void handleFiles(event.dataTransfer.files);
       }}
     >
-      <legend className="sr-only">Avatar image picker</legend>
+      <legend className="sr-only">
+        {t("profile.avatarEditor.imagePicker")}
+      </legend>
       <div
         className="relative"
         style={
@@ -694,20 +698,19 @@ export function ProfileAvatarEditor({
                             : "text-primary"),
                       )}
                     >
-                      {isUploading ? (
-                        "Uploading..."
-                      ) : isImageDropActive ? (
-                        "Drop image here"
-                      ) : isOnboardingModal ? (
-                        "Drag or browse"
-                      ) : (
-                        <>
-                          Drop or{" "}
-                          <span className="underline underline-offset-2">
-                            browse
-                          </span>
-                        </>
-                      )}
+                      {isUploading
+                        ? t("profile.avatarUpload.uploading")
+                        : isImageDropActive
+                          ? t("profile.avatarEditor.dropImageHere")
+                          : isOnboardingModal
+                            ? t("profile.avatarEditor.dragOrBrowse")
+                            : t("profile.avatarEditor.dropOrBrowse", {
+                                link: (chunks) => (
+                                  <span className="underline underline-offset-2">
+                                    {chunks}
+                                  </span>
+                                ),
+                              })}
                     </span>
                   </button>
 
@@ -755,8 +758,8 @@ export function ProfileAvatarEditor({
                       }}
                       placeholder={
                         isOnboardingModal
-                          ? "Paste a URL"
-                          : "Paste a URL (Slack profile, etc.)"
+                          ? t("profile.avatarEditor.pasteUrl")
+                          : t("profile.avatarEditor.pasteUrlLong")
                       }
                       spellCheck={false}
                       type="url"
@@ -903,9 +906,13 @@ export function ProfileAvatarEditor({
                             aria-label={
                               isCustomSwatch
                                 ? selectedEmoji
-                                  ? "Choose custom avatar color"
-                                  : "Choose an emoji before custom avatar color"
-                                : `Use ${swatch} background`
+                                  ? t("profile.avatarEditor.customColor")
+                                  : t(
+                                      "profile.avatarEditor.customColorNeedsEmoji",
+                                    )
+                                : t("profile.avatarEditor.useBackground", {
+                                    color: swatch,
+                                  })
                             }
                             aria-pressed={isSelected}
                             className={cn(
@@ -1026,10 +1033,10 @@ export function ProfileAvatarEditor({
                           transition={DONE_BUTTON_CONTENT_TRANSITION}
                         >
                           <Spinner
-                            aria-label="Saving avatar"
+                            aria-label={t("profile.avatarEditor.saving")}
                             className="h-4 w-4 border-2"
                           />
-                          <span>Saving</span>
+                          <span>{t("profile.avatarEditor.savingShort")}</span>
                         </motion.span>
                       ) : (
                         <motion.span
@@ -1048,7 +1055,9 @@ export function ProfileAvatarEditor({
                           key="ready"
                           transition={DONE_BUTTON_CONTENT_TRANSITION}
                         >
-                          {isOnboardingModal ? "Save" : "Done"}
+                          {isOnboardingModal
+                            ? t("common.save")
+                            : t("common.done")}
                         </motion.span>
                       )}
                     </AnimatePresence>

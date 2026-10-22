@@ -12,6 +12,7 @@ import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { resolveChannelDisplayLabel } from "@/features/sidebar/lib/channelLabels";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import type { Channel } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { PortalledScrollArea } from "@/shared/ui/PortalledScrollArea";
@@ -58,21 +59,29 @@ type ChannelComboboxProps = {
 
 export function ChannelCombobox({
   allowEmpty = false,
-  ariaLabel = "Group",
+  ariaLabel: ariaLabelProp,
   channels: allChannels,
   defaultOpen = false,
   disabled,
-  emptyLabel = "Choose a group",
+  emptyLabel: emptyLabelProp,
   id,
   isChannelDisabled,
   onAutoOpen,
   onChange,
   readOnly = false,
-  readOnlyTooltip = "The group can't be changed after a workflow is created.",
+  readOnlyTooltip: readOnlyTooltipProp,
   required = false,
   variant = "header",
   value,
 }: ChannelComboboxProps) {
+  const t = useT();
+  const ariaLabel = ariaLabelProp ?? t("workflows.channelPicker.label");
+  const emptyLabel = emptyLabelProp ?? t("workflows.channelPicker.empty");
+  const readOnlyTooltip =
+    readOnlyTooltipProp ?? t("workflows.channelPicker.readOnlyTooltip");
+  const searchLabel = ariaLabelProp
+    ? t("workflows.channelPicker.searchNamed", { label: ariaLabelProp })
+    : t("workflows.channelPicker.search");
   // Workflows never run in ownerless chats; keep a saved one visible only.
   const channels = React.useMemo(
     () =>
@@ -194,7 +203,7 @@ export function ChannelCombobox({
   const selectedLabel = selected
     ? (channelLabels.get(selected.id) ?? selected.name)
     : value
-      ? "Unavailable group"
+      ? t("workflows.channelPicker.unavailable")
       : emptyLabel;
 
   if (readOnly) {
@@ -203,7 +212,10 @@ export function ChannelCombobox({
         <TooltipTrigger asChild>
           <button
             aria-disabled="true"
-            aria-label={`${ariaLabel}: ${selectedLabel}. Read only.`}
+            aria-label={t("workflows.channelPicker.readOnlyLabel", {
+              label: ariaLabel,
+              value: selectedLabel,
+            })}
             className={cn(
               "flex w-full cursor-default items-center rounded-lg px-3 py-2 text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
               variant === "header" &&
@@ -274,7 +286,7 @@ export function ChannelCombobox({
             aria-autocomplete="list"
             aria-controls={listboxId}
             aria-expanded={open}
-            aria-label={`Search ${ariaLabel.toLowerCase()}s`}
+            aria-label={searchLabel}
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect="off"
@@ -285,14 +297,16 @@ export function ChannelCombobox({
               setHighlightedIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Search groups..."
+            placeholder={t("workflows.channelPicker.searchPlaceholder")}
             role="combobox"
             spellCheck={false}
             value={query}
           />
         </div>
         <PortalledScrollArea
-          aria-label={`${ariaLabel} options`}
+          aria-label={t("workflows.channelPicker.options", {
+            label: ariaLabel,
+          })}
           className="max-h-60 overflow-y-auto p-1"
           data-testid="channel-combobox-list"
           id={listboxId}
@@ -321,7 +335,7 @@ export function ChannelCombobox({
           ) : null}
           {filtered.length === 0 ? (
             <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-              No groups found.
+              {t("workflows.channelPicker.noResults")}
             </p>
           ) : (
             filtered.map((channel) => {
@@ -347,7 +361,10 @@ export function ChannelCombobox({
                   <span className="truncate">
                     {channelLabels.get(channel.id) ?? channel.name}
                     {channel.channelType === "dm" ? (
-                      <span className="text-muted-foreground"> · dm</span>
+                      <span className="text-muted-foreground">
+                        {" · "}
+                        {t("workflows.channelPicker.dmTag")}
+                      </span>
                     ) : null}
                   </span>
                   <Check

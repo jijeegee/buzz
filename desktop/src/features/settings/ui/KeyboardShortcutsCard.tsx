@@ -9,6 +9,7 @@ import {
   SettingsOptionRow,
 } from "./SettingsOptionGroup";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
+import { useT } from "@/shared/i18n";
 
 function KeyCombo({ shortcut }: { shortcut: KeyboardShortcut }) {
   const keys = getPlatformKeys(shortcut);
@@ -33,13 +34,14 @@ function KeyCombo({ shortcut }: { shortcut: KeyboardShortcut }) {
 }
 
 export function KeyboardShortcutsCard() {
+  const t = useT();
   const categories = getShortcutsByCategory();
 
   return (
     <section className="min-w-0" data-testid="settings-shortcuts">
       <SettingsSectionHeader
-        title="Keyboard shortcuts"
-        description="All available keyboard shortcuts. Shortcuts are read-only."
+        title={t("settings.shortcuts.title")}
+        description={t("settings.shortcuts.description")}
       />
 
       <SettingsOptionGroupList>

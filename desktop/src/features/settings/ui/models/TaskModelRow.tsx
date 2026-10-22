@@ -5,6 +5,7 @@ import * as React from "react";
 import { ModelEffortFields } from "@/features/agents/ui/ModelEffortFields";
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
 import { discoverAgentModels } from "@/shared/api/agentModels";
+import { t as translate, useT } from "@/shared/i18n";
 import type {
   TaskModelProviderOption,
   TaskModelStatus,
@@ -55,7 +56,12 @@ const PROVIDER_KEY_ENV: Record<string, string> = {
 /** Option text: the route, plus what is missing when it can't be used. */
 function providerOptionLabel(provider: TaskModelProviderOption): string {
   if (provider.ready) return provider.label;
-  return `${provider.label} — ${provider.unavailableReason ?? "not available"}`;
+  return translate("settings.taskModels.providerUnavailable", {
+    provider: provider.label,
+    reason:
+      provider.unavailableReason ??
+      translate("settings.taskModels.notAvailable"),
+  });
 }
 
 /**
@@ -75,6 +81,7 @@ export function TaskModelRow({
   status: TaskModelStatus;
   task: TaskModelTask;
 }) {
+  const t = useT();
   const providerId = React.useId();
   const modelId = React.useId();
   const statusId = React.useId();
@@ -128,9 +135,7 @@ export function TaskModelRow({
           className="mt-1 text-xs text-muted-foreground/70"
           data-settings-subcopy
         >
-          The messages you write in groups — including drafts while you type —
-          plus your agents' names and descriptions are sent to this provider to
-          pick an agent.
+          {t("settings.taskModels.routingPrivacy")}
         </p>
       </div>
       <ModelEffortFields disabled={saveMutation.isPending} effort={null}>
@@ -140,7 +145,7 @@ export function TaskModelRow({
               className="text-xs font-medium text-foreground"
               htmlFor={providerId}
             >
-              Provider
+              {t("settings.taskModels.provider")}
             </label>
             <select
               aria-describedby={statusId}
@@ -151,7 +156,9 @@ export function TaskModelRow({
               onChange={(event) => write(event.target.value, AUTOMATIC)}
               value={savedProvider}
             >
-              <option value={AUTOMATIC}>Automatic</option>
+              <option value={AUTOMATIC}>
+                {t("settings.taskModels.automatic")}
+              </option>
               {status.providers.map((provider) => (
                 <option
                   disabled={!provider.ready && provider.id !== savedProvider}
@@ -168,7 +175,7 @@ export function TaskModelRow({
               className="text-xs font-medium text-foreground"
               htmlFor={modelId}
             >
-              Model
+              {t("settings.taskModels.model")}
             </label>
             <select
               className={SELECT_CLASS}
@@ -180,12 +187,14 @@ export function TaskModelRow({
             >
               <option value={AUTOMATIC}>
                 {effectiveProvider
-                  ? `Default — ${effectiveProvider.defaultModel} (${
-                      effectiveProvider.kind === "subscription"
-                        ? "fastest"
-                        : "cheapest"
-                    })`
-                  : "Default"}
+                  ? effectiveProvider.kind === "subscription"
+                    ? t("settings.taskModels.defaultFastest", {
+                        model: effectiveProvider.defaultModel,
+                      })
+                    : t("settings.taskModels.defaultCheapest", {
+                        model: effectiveProvider.defaultModel,
+                      })
+                  : t("settings.taskModels.default")}
               </option>
               {modelOptions.map((model) => (
                 <option key={model} value={model}>
@@ -203,16 +212,27 @@ export function TaskModelRow({
       >
         {status.ready ? (
           <span className="text-muted-foreground">
-            Ready — {status.modelLabel ?? status.effectiveModel}
-            {effectiveProvider ? ` via ${effectiveProvider.label}` : null}
-            {effectiveProvider?.kind === "subscription"
-              ? ". About 5 s per pick, so it usually lands while you type."
-              : null}
+            {effectiveProvider
+              ? effectiveProvider.kind === "subscription"
+                ? t("settings.taskModels.readyViaSubscription", {
+                    model: status.modelLabel ?? status.effectiveModel,
+                    provider: effectiveProvider.label,
+                  })
+                : t("settings.taskModels.readyVia", {
+                    model: status.modelLabel ?? status.effectiveModel,
+                    provider: effectiveProvider.label,
+                  })
+              : t("settings.taskModels.ready", {
+                  model: status.modelLabel ?? status.effectiveModel,
+                })}
           </span>
         ) : (
           <>
             <span className="text-amber-700 dark:text-amber-400">
-              {status.notReadyReason ?? "Not ready"}.
+              {t("settings.taskModels.notReadyReason", {
+                reason:
+                  status.notReadyReason ?? t("settings.taskModels.notReady"),
+              })}
             </span>
             <button
               className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -220,7 +240,7 @@ export function TaskModelRow({
               onClick={onOpenProviders}
               type="button"
             >
-              Set up in Providers
+              {t("settings.taskModels.setUpInProviders")}
               <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </>

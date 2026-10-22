@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
+import { useT } from "@/shared/i18n";
 
 /**
  * In-app confirmation for a consequential settings action. The action runs
@@ -38,6 +39,7 @@ export function SettingsConfirmDialog({
   /** Extra choices shown between the description and the buttons. */
   children?: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <AlertDialog onOpenChange={onOpenChange} open={open}>
       <AlertDialogContent data-testid={testId}>
@@ -49,7 +51,7 @@ export function SettingsConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button type="button" variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>

@@ -1,2 +1,6 @@
+import { t } from "@/shared/i18n";
+
 /** Stands in for the text of a message from someone I blocked. */
-export const BLOCKED_MESSAGE_LABEL = "Message from a blocked user";
+export function blockedMessageLabel(): string {
+  return t("messages.blocked.label");
+}

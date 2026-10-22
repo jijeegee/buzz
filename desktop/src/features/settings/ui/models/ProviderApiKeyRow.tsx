@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { PersonaProviderApiKeyField } from "@/features/agents/ui/PersonaProviderApiKeyField";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 
 import { SettingsConfirmDialog } from "../SettingsConfirmDialog";
@@ -31,6 +32,7 @@ export function ProviderApiKeyRow({
   onSave: (value: string) => Promise<boolean>;
   row: ProviderRow;
 }) {
+  const t = useT();
   const [draft, setDraft] = React.useState("");
   const [confirmRemove, setConfirmRemove] = React.useState(false);
   if (row.apiKeyEnvVar === null || row.apiKeyLabel === null) return null;
@@ -47,11 +49,13 @@ export function ProviderApiKeyRow({
       className="space-y-3 px-4 py-3.5 text-sm"
       data-testid={`settings-models-${row.providerId}-api-key`}
     >
-      <p className="text-xs font-medium text-muted-foreground/70">API key</p>
+      <p className="text-xs font-medium text-muted-foreground/70">
+        {t("settings.providers.apiKeyHeading")}
+      </p>
       <PersonaProviderApiKeyField
         disabled={disabled}
         envVarName={envVar}
-        inheritedLabel="Saved on this device — paste a new key to replace it"
+        inheritedLabel={t("settings.providers.apiKeySaved")}
         isInherited={row.apiKeyIsSet}
         isRequired={false}
         label={row.apiKeyLabel}
@@ -60,8 +64,11 @@ export function ProviderApiKeyRow({
       />
       {companions.length > 0 ? (
         <p className="text-xs text-muted-foreground/70" data-settings-subcopy>
-          Also used by{" "}
-          {companions.map((companion) => companion.label).join(", ")} agents.
+          {t("settings.providers.alsoUsedBy", {
+            providers: companions
+              .map((companion) => companion.label)
+              .join(", "),
+          })}
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
@@ -76,7 +83,7 @@ export function ProviderApiKeyRow({
               type="button"
               variant="outline"
             >
-              Remove key
+              {t("settings.providers.removeKey")}
             </Button>
           ) : null}
           <Button
@@ -86,19 +93,23 @@ export function ProviderApiKeyRow({
             size="sm"
             type="button"
           >
-            Save
+            {t("common.save")}
           </Button>
         </div>
       </div>
       <SettingsConfirmDialog
-        confirmLabel="Remove key"
-        description={`Agents that use ${row.label} through this key stop working until you add a key again.`}
+        confirmLabel={t("settings.providers.removeKey")}
+        description={t("settings.providers.removeKeyBody", {
+          provider: row.label,
+        })}
         destructive
         onConfirm={() => void onRemove()}
         onOpenChange={setConfirmRemove}
         open={confirmRemove}
         testId={`settings-models-${row.providerId}-remove-key-dialog`}
-        title={`Remove your ${row.apiKeyLabel}?`}
+        title={t("settings.providers.removeKeyTitle", {
+          keyLabel: row.apiKeyLabel,
+        })}
       />
     </div>
   );

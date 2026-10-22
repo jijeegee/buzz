@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
 import {
   useCallback,
@@ -1089,7 +1090,7 @@ export function useDeleteMessageMutation(channel: Channel | null) {
       });
     },
     onError: (error) => {
-      toast.error(`Failed to delete message: ${error.message}`);
+      toast.error(t("messages.delete.failed", { error: error.message }));
     },
   });
 }

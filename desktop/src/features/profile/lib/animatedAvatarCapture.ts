@@ -16,6 +16,8 @@
 import type { ImageSegmenter } from "@mediapipe/tasks-vision";
 import UPNG from "upng-js";
 
+import { t } from "@/shared/i18n";
+
 export const ANIMATED_AVATAR_SIZE = 256;
 const ANIMATED_AVATAR_CAPTURE_SIZE = 512;
 export const ANIMATED_AVATAR_FPS = 12;
@@ -240,7 +242,7 @@ export async function recordAnimatedAvatarFrames(
   canvas.height = ANIMATED_AVATAR_CAPTURE_SIZE;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
-    throw new Error("Could not create a drawing context for recording.");
+    throw new Error(t("profile.animatedAvatar.noRecordingContext"));
   }
 
   const frames: ImageData[] = [];
@@ -624,7 +626,7 @@ export function composeAvatarFrames(
   canvas.height = ANIMATED_AVATAR_SIZE;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
-    throw new Error("Could not create a drawing context.");
+    throw new Error(t("profile.animatedAvatar.noDrawingContext"));
   }
 
   return bitmaps.map((bitmap) => {
@@ -699,7 +701,7 @@ export async function renderAvatarPosterPng(
     frameToCanvas(frame).toBlob(resolve, "image/png");
   });
   if (!blob) {
-    throw new Error("Could not render the poster frame.");
+    throw new Error(t("profile.animatedAvatar.posterFailed"));
   }
   return new Uint8Array(await blob.arrayBuffer());
 }
@@ -710,7 +712,7 @@ function frameToCanvas(frame: ImageData): HTMLCanvasElement {
   canvas.height = frame.height;
   const context = canvas.getContext("2d");
   if (!context) {
-    throw new Error("Could not create a drawing context.");
+    throw new Error(t("profile.animatedAvatar.noDrawingContext"));
   }
   context.putImageData(frame, 0, 0);
   return canvas;

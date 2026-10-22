@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AlertCircle, LoaderCircle } from "lucide-react";
 import { formatRelativeTime } from "../forum/lib/time";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, t, useT } from "@/shared/i18n";
 
 // ── Generic async state ───────────────────────────────────────────────────
 
@@ -193,10 +193,11 @@ export function preserveRequestIdOnError(e: unknown): boolean {
 // ── Shared UI helpers ─────────────────────────────────────────────────────
 
 export function LoadingSpinner() {
+  const t = useT();
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <LoaderCircle className="h-4 w-4 animate-spin" />
-      Loading…
+      {t("common.loading")}
     </div>
   );
 }
@@ -313,9 +314,8 @@ export type CommunityGroup<T> = {
   items: T[];
 };
 
-/** React key + heading for rows whose source community has been purged. */
+/** React key for rows whose source community has been purged. */
 const SEVERED_COMMUNITY_KEY = "__severed__";
-const SEVERED_COMMUNITY_HOST = "(source community removed)";
 
 /**
  * Group deployment-wide rows by community, preserving each community's
@@ -344,7 +344,7 @@ export function groupByCommunity<
         communityId: key,
         communityHost:
           item.communityId == null
-            ? SEVERED_COMMUNITY_HOST
+            ? t("adminConsole.grouping.severedCommunity")
             : item.communityHost || item.communityId,
         items: [],
       };

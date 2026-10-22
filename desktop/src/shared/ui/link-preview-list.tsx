@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { useState } from "react";
 
 import { useLinkPreviewStyle } from "@/shared/lib/linkPreviewStylePreference";
@@ -31,9 +32,10 @@ export function LinkPreviewList({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [removed, setRemoved] = useState(false);
   const style = useLinkPreviewStyle();
+  const t = useT();
   if (removed || previews.length === 0) return null;
 
-  const previewNoun = previews.length === 1 ? "preview" : "previews";
+  const count = previews.length;
   const controlsIndex = 0;
   return (
     <>
@@ -64,17 +66,17 @@ export function LinkPreviewList({
         <AlertDialog onOpenChange={setDialogOpen} open={dialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Remove {previewNoun}?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {t("ui.linkPreview.removeTitle", { count })}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                This removes{" "}
-                {previews.length === 1 ? "the preview" : "the previews"} for
-                everyone.
+                {t("ui.linkPreview.removeDescription", { count })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel asChild>
                 <Button type="button" variant="outline">
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </AlertDialogCancel>
               <AlertDialogAction asChild>
@@ -86,7 +88,7 @@ export function LinkPreviewList({
                   type="button"
                   variant="destructive"
                 >
-                  Remove {previewNoun}
+                  {t("ui.linkPreview.removeConfirm", { count })}
                 </Button>
               </AlertDialogAction>
             </AlertDialogFooter>

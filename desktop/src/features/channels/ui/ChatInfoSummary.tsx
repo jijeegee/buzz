@@ -41,6 +41,7 @@ import {
   FieldGroup,
   IngressRow,
 } from "./ChannelManagementSheetRows";
+import { t as translate, useT } from "@/shared/i18n";
 
 /** Most people listed inline; the people dialog shows everyone. */
 const INLINE_PEOPLE_LIMIT = 50;
@@ -52,6 +53,7 @@ const MUTE_SWITCH_ID = "chat-info-mute-switch";
  * notify. Hidden when the shell's preference sync is unavailable.
  */
 export function MuteNotificationsRow({ channelId }: { channelId: string }) {
+  const t = useT();
   const prefs = useChatPrefs();
   if (!prefs) return null;
   const muted = prefs.mutedChannelIds.has(channelId);
@@ -64,10 +66,10 @@ export function MuteNotificationsRow({ channelId }: { channelId: string }) {
             className="block text-sm font-medium text-foreground"
             htmlFor={MUTE_SWITCH_ID}
           >
-            Mute notifications
+            {t("channels.chatInfo.mute")}
           </label>
           <p className="mt-0.5 text-sm text-muted-foreground/70">
-            You'll still hear about mentions of you.
+            {t("channels.chatInfo.muteHint")}
           </p>
         </div>
         <Switch
@@ -122,6 +124,7 @@ export function ChatInfoSummary({
   /** Opens the people dialog (search everyone, add people). */
   onOpenPeople?: () => void;
 }) {
+  const t = useT();
   // The sheet's channel comes from kind:39000, which carries no member list;
   // name an unnamed chat from the loaded roster instead of "Empty chat".
   const titledChannel = React.useMemo(
@@ -190,17 +193,19 @@ export function ChatInfoSummary({
         <FieldGroup testId="chat-info-name">
           <ActionFieldRow
             description={
-              privateName ? `Only you see "${privateName}"` : undefined
+              privateName
+                ? t("channels.chatInfo.privateNameHint", { name: privateName })
+                : undefined
             }
             icon={Pencil}
-            label="Rename for me"
+            label={t("channels.chatInfo.rename")}
             onClick={() => setIsRenameOpen(true)}
             testId="chat-info-rename"
           />
           {privateName ? (
             <ActionFieldRow
               icon={RotateCcw}
-              label="Restore name"
+              label={t("channels.chatInfo.restoreName")}
               onClick={() => {
                 void prefs
                   .setPrivateChatName(channel.id, null)
@@ -208,7 +213,7 @@ export function ChatInfoSummary({
                     toast.error(
                       error instanceof Error
                         ? error.message
-                        : "Could not restore the name.",
+                        : t("channels.chatInfo.restoreFailed"),
                     ),
                   );
               }}
@@ -229,9 +234,9 @@ export function ChatInfoSummary({
       />
       {goals.enabled ? (
         <IngressRow
-          helpText="One top goal for this conversation, split into smaller goals. Agents here see it every turn."
+          helpText={t("channels.settings.goalsHelp")}
           icon={Target}
-          label="Goals"
+          label={t("channels.goals.label")}
           onClick={goals.onOpenGoals}
           testId="channel-goals-ingress"
         />
@@ -243,7 +248,11 @@ export function ChatInfoSummary({
             destructive
             disabled={isLeaving}
             icon={DoorClosed}
-            label={isLeaving ? "Leaving chat..." : "Leave chat"}
+            label={
+              isLeaving
+                ? t("channels.chatInfo.leaving")
+                : t("channels.chatInfo.leave")
+            }
             onClick={() => setIsLeaveConfirmOpen(true)}
             testId="chat-info-leave"
           />
@@ -287,6 +296,7 @@ function ChatPeopleList({
   onAddPeople?: () => void;
   onShowAll?: () => void;
 }) {
+  const t = useT();
   const [query, setQuery] = React.useState("");
   const pubkeys = React.useMemo(
     () => members.map((member) => normalizePubkey(member.pubkey)),
@@ -312,11 +322,14 @@ function ChatPeopleList({
   const shown = matches.slice(0, INLINE_PEOPLE_LIMIT);
 
   return (
-    <FieldGroup testId="chat-info-people" title="People">
+    <FieldGroup
+      testId="chat-info-people"
+      title={t("channels.membersBar.people")}
+    >
       {onAddPeople ? (
         <ActionFieldRow
           icon={UserRoundPlus}
-          label="Add people"
+          label={t("channels.membersBar.addPeople")}
           onClick={onAddPeople}
           testId="chat-info-add-people"
         />
@@ -324,10 +337,10 @@ function ChatPeopleList({
       {members.length > 5 ? (
         <div className="px-4 py-2">
           <Input
-            aria-label="Search people"
+            aria-label={t("channels.invite.searchLabel")}
             data-testid="chat-info-people-search"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search people"
+            placeholder={t("channels.invite.searchLabel")}
             value={query}
           />
         </div>
@@ -352,7 +365,7 @@ function ChatPeopleList({
       ))}
       {needle && matches.length === 0 ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">
-          No one matches.
+          {t("channels.chatInfo.noMatches")}
         </p>
       ) : null}
       {matches.length > shown.length && onShowAll ? (
@@ -362,7 +375,7 @@ function ChatPeopleList({
           onClick={onShowAll}
           type="button"
         >
-          See all {peopleCountLabel(matches.length)}
+          {t("channels.chatInfo.seeAll", { count: matches.length })}
         </button>
       ) : null}
     </FieldGroup>
@@ -382,6 +395,7 @@ function RenameForMeDialog({
   open: boolean;
   placeholder: string;
 }) {
+  const t = useT();
   const [draft, setDraft] = React.useState(currentName);
   const [isSaving, setIsSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -402,7 +416,9 @@ function RenameForMeDialog({
       onOpenChange(false);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not save the name.",
+        cause instanceof Error
+          ? cause.message
+          : translate("channels.chatInfo.saveFailed"),
       );
     } finally {
       setIsSaving(false);
@@ -413,11 +429,13 @@ function RenameForMeDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent aria-describedby={undefined} className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Rename for me</DialogTitle>
+          <DialogTitle>{t("channels.chatInfo.rename")}</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">Only you see this name.</p>
+        <p className="text-sm text-muted-foreground">
+          {t("channels.chatInfo.renameHint")}
+        </p>
         <Input
-          aria-label="Chat name"
+          aria-label={t("channels.chatInfo.nameLabel")}
           autoFocus
           data-testid="chat-info-rename-input"
           disabled={isSaving}
@@ -439,7 +457,7 @@ function RenameForMeDialog({
             type="button"
             variant="outline"
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             data-testid="chat-info-rename-save"
@@ -448,7 +466,7 @@ function RenameForMeDialog({
             size="sm"
             type="button"
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? t("channels.edit.saving") : t("common.save")}
           </Button>
         </div>
       </DialogContent>

@@ -41,6 +41,9 @@ nostr = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = "0.7"
+# Plural rules for server-written text in the reader's language (src/i18n.rs).
+icu_locale_core = "2"
+icu_plurals = "2"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-opentelemetry = { workspace = true }

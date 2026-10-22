@@ -7,6 +7,7 @@ import { mergeCurrentProfileIntoLookup } from "@/features/profile/lib/identity";
 import { getMentionTagPubkey } from "@/shared/lib/resolveMentionNames";
 import type { Channel } from "@/shared/api/types";
 import { channelChrome } from "@/shared/layout/chromeLayout";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
@@ -53,6 +54,7 @@ export function ForumView({
   targetSearchMessageId,
   targetSearchQuery,
 }: ForumViewProps) {
+  const t = useT();
   const [isComposerOpen, setIsComposerOpen] = React.useState(false);
   const postsScrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -189,7 +191,7 @@ export function ForumView({
               });
               setIsComposerOpen(false);
             }}
-            placeholder="Write your post..."
+            placeholder={t("forum.view.postPlaceholder")}
             profiles={profiles}
           />
         ) : (
@@ -200,10 +202,10 @@ export function ForumView({
             type="button"
           >
             {channel.archivedAt
-              ? "This forum is archived."
+              ? t("forum.view.archived")
               : !channel.isMember
-                ? "Join this forum to create posts."
-                : "Start a new post..."}
+                ? t("forum.view.joinToPost")
+                : t("forum.view.startPost")}
           </button>
         )}
       </div>
@@ -225,10 +227,10 @@ export function ForumView({
             <MessageSquareText className="h-10 w-10 text-muted-foreground/40" />
             <div>
               <p className="text-sm font-medium text-foreground/70">
-                No posts yet
+                {t("forum.view.emptyTitle")}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Start a discussion by creating the first post.
+                {t("forum.view.emptyBody")}
               </p>
             </div>
           </div>

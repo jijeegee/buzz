@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 /**
  * How the server answered one person-add (kind:9000) to a group.
  *
@@ -8,11 +9,12 @@
  */
 export type MemberAddOutcome = "invite-sent" | "rate-limited" | "error";
 
+/** English reference text; what users see comes from `t("ui.groupAdd.rateLimited")`. */
 export const INVITATIONS_RATE_LIMITED_TEXT =
   "Too many invitations. Try again later.";
 
 export function invitationSentText(name: string): string {
-  return `Invitation sent to ${name}`;
+  return t("ui.groupAdd.invitationSent", { name });
 }
 
 /** The relay's OK reason, without the native `relay rejected event:` prefix. */
@@ -50,7 +52,7 @@ export function splitMemberAddResult(raw: {
     if (outcome === "invite-sent") {
       invited.push(entry.pubkey);
     } else if (outcome === "rate-limited") {
-      errors.push({ ...entry, error: INVITATIONS_RATE_LIMITED_TEXT });
+      errors.push({ ...entry, error: t("ui.groupAdd.rateLimited") });
     } else {
       errors.push(entry);
     }

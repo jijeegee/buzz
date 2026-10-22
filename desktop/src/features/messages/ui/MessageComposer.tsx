@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import * as React from "react";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -104,6 +105,7 @@ function MessageComposerImpl({
   typingParentEventId = null,
   typingRootEventId = null,
 }: MessageComposerProps) {
+  const t = useT();
   const {
     contentRef,
     isContentEmpty,
@@ -278,11 +280,14 @@ function MessageComposerImpl({
     });
   }, []);
   const computedPlaceholder = editTarget
-    ? "Edit your message"
+    ? t("messages.composer.editPlaceholder")
     : (placeholder ??
       (replyTarget
-        ? `Reply to ${replyTarget.author} in ${channelName}`
-        : `Message ${channelName}`));
+        ? t("messages.composer.replyPlaceholder", {
+            author: replyTarget.author,
+            channel: channelName,
+          })
+        : t("messages.composer.messagePlaceholder", { channel: channelName })));
   const richText = useRichTextEditor({
     placeholder: computedPlaceholder,
     editable: !composerDisabled,
@@ -936,13 +941,15 @@ function MessageComposerImpl({
             />
             {media.uploadState.status === "error" ? (
               <div className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                Upload failed: {media.uploadState.message}
+                {t("messages.composer.uploadFailed", {
+                  error: media.uploadState.message,
+                })}
                 <button
                   className="ml-2 underline"
                   onClick={() => media.setUploadState({ status: "idle" })}
                   type="button"
                 >
-                  Dismiss
+                  {t("messages.composer.dismiss")}
                 </button>
               </div>
             ) : null}

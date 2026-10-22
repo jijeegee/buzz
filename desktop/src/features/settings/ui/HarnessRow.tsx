@@ -13,6 +13,7 @@ import {
 import { useInstallOutputLine } from "@/features/agents/lib/useInstallOutputLine";
 import { RuntimeIcon } from "@/features/onboarding/ui/RuntimeIcon";
 import type { AcpAuthMethod, AcpRuntimeCatalogEntry } from "@/shared/api/types";
+import { t as translate, useT } from "@/shared/i18n";
 import { getInstallErrorMessage } from "@/shared/lib/installError";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
@@ -51,11 +52,11 @@ function runtimeInstallGuideLabel(runtime: AcpRuntimeCatalogEntry) {
     runtime.availability === "adapter_missing" ||
     runtime.availability === "adapter_outdated"
   ) {
-    return "Adapter install guide";
+    return translate("settings.harnesses.adapterInstallGuide");
   }
   return isDownloadPageUrl(runtime.installInstructionsUrl)
-    ? "Download page"
-    : "CLI setup guide";
+    ? translate("settings.harnessCatalog.downloadPage")
+    : translate("settings.harnesses.cliSetupGuide");
 }
 
 function RuntimeLogo({ runtime }: { runtime: AcpRuntimeCatalogEntry }) {
@@ -91,6 +92,7 @@ function RuntimeOverflowMenu({
   onEdit?: () => void;
   runtime: AcpRuntimeCatalogEntry;
 }) {
+  const t = useT();
   const hasInstructions =
     runtime.installInstructionsUrl.trim().length > 0 &&
     (runtime.availability !== "available" ||
@@ -111,7 +113,9 @@ function RuntimeOverflowMenu({
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label={`Open actions for ${runtime.label}`}
+          aria-label={t("settings.harnesses.openActions", {
+            name: runtime.label,
+          })}
           className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           data-testid={`doctor-runtime-menu-${runtime.id}`}
           type="button"
@@ -138,7 +142,7 @@ function RuntimeOverflowMenu({
         {runtime.nodeRequired ? (
           <DropdownMenuItem onSelect={() => void openUrl("https://nodejs.org")}>
             <ExternalLink className="h-4 w-4" />
-            Install Node.js
+            {t("settings.harnesses.installNode")}
           </DropdownMenuItem>
         ) : null}
         {hasInstructions ? (
@@ -154,7 +158,7 @@ function RuntimeOverflowMenu({
             data-testid={`custom-harness-edit-${runtime.id}`}
             onSelect={onEdit}
           >
-            Edit
+            {t("common.edit")}
           </DropdownMenuItem>
         ) : null}
         {onDelete ? (
@@ -163,7 +167,7 @@ function RuntimeOverflowMenu({
             data-testid={`custom-harness-delete-${runtime.id}`}
             onSelect={onDelete}
           >
-            Delete
+            {t("common.delete")}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
@@ -192,6 +196,7 @@ function RuntimeActions({
   onInstall: () => void;
   runtime: AcpRuntimeCatalogEntry;
 }) {
+  const t = useT();
   const isAvailable = runtime.availability === "available";
   // Signed-out rows carry the amber "Sign-in needed" status chip instead of a
   // green Ready chip — auth-required is an explicit row-face state, and Ready
@@ -215,7 +220,15 @@ function RuntimeActions({
       {isWorking ? (
         <div className="flex h-7 w-9 items-center justify-center text-muted-foreground">
           <Spinner
-            aria-label={`${runtime.label} ${isInstalling ? "installing" : "connecting"}`}
+            aria-label={
+              isInstalling
+                ? t("settings.harnesses.installingLabel", {
+                    name: runtime.label,
+                  })
+                : t("settings.harnesses.connectingLabel", {
+                    name: runtime.label,
+                  })
+            }
             className="h-4 w-4 border-2"
             data-testid={`doctor-runtime-loading-${runtime.id}`}
           />
@@ -226,14 +239,16 @@ function RuntimeActions({
             className="inline-flex shrink-0 items-center rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
             data-testid={`doctor-runtime-ready-${runtime.id}`}
           >
-            Ready
+            {t("settings.harnessCatalog.ready")}
           </span>
         )
       ) : canInstall ? (
         // Rows needing multi-step setup render no action here — setup lives in
         // the Add-runtimes catalog. Custom rows keep their ••• menu instead.
         <Button
-          aria-label={`Install ${runtime.label}`}
+          aria-label={t("settings.harnesses.installLabel", {
+            name: runtime.label,
+          })}
           className="h-7 px-3 text-xs"
           data-testid={`doctor-runtime-install-${runtime.id}`}
           onClick={onInstall}
@@ -241,7 +256,9 @@ function RuntimeActions({
           type="button"
           variant="outline"
         >
-          {runtime.availability === "adapter_outdated" ? "Update" : "Install"}
+          {runtime.availability === "adapter_outdated"
+            ? t("settings.harnessCatalog.update")
+            : t("settings.harnessCatalog.install")}
         </Button>
       ) : null}
     </div>
@@ -303,6 +320,7 @@ export function HarnessRow({
   resetEpoch: number;
   runtime: AcpRuntimeCatalogEntry;
 }) {
+  const t = useT();
   const isCustom = runtime.source === "custom";
   const [terminalLaunchMethodId, setTerminalLaunchMethodId] = React.useState<
     string | null
@@ -359,7 +377,10 @@ export function HarnessRow({
       onError: (error) => {
         setInstallResult({
           success: false,
-          error: error instanceof Error ? error.message : "Install failed.",
+          error:
+            error instanceof Error
+              ? error.message
+              : translate("settings.harnessCatalog.installFailed"),
         });
       },
     });
@@ -376,17 +397,20 @@ export function HarnessRow({
     : [];
   const connectMutation = useConnectAcpRuntimeMutation();
   const connectionError = connectMutation.error
-    ? `Couldn't connect ${runtime.label}: ${
-        connectMutation.error instanceof Error
-          ? connectMutation.error.message
-          : "Connection failed."
-      }`
+    ? t("settings.harnesses.connectFailed", {
+        name: runtime.label,
+        error:
+          connectMutation.error instanceof Error
+            ? connectMutation.error.message
+            : t("settings.harnesses.connectionFailed"),
+      })
     : authMethodsQuery.error
-      ? `Couldn't load sign-in options: ${
-          authMethodsQuery.error instanceof Error
-            ? authMethodsQuery.error.message
-            : "Request failed."
-        }`
+      ? t("settings.harnesses.signInOptionsFailed", {
+          error:
+            authMethodsQuery.error instanceof Error
+              ? authMethodsQuery.error.message
+              : t("settings.harnesses.requestFailed"),
+        })
       : null;
 
   if (editing) {
@@ -463,7 +487,9 @@ export function HarnessRow({
             className="mt-2 whitespace-pre-line rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-sm text-destructive"
             data-testid={`doctor-runtime-config-error-${runtime.id}`}
           >
-            Config error: {runtime.authStatus.diagnostic}
+            {t("settings.harnesses.configError", {
+              diagnostic: runtime.authStatus.diagnostic,
+            })}
           </p>
         ) : null}
 
@@ -497,8 +523,9 @@ export function HarnessRow({
             className="mt-2 rounded-lg border border-border/60 bg-background/60 px-3 py-1.5 text-sm text-muted-foreground"
             data-testid={`doctor-runtime-terminal-guidance-${runtime.id}`}
           >
-            Finish signing in from the Terminal window, then click Check again
-            to re-check {runtime.label}.
+            {t("settings.harnesses.terminalSignInHint", {
+              name: runtime.label,
+            })}
           </p>
         ) : null}
         {confirmingDelete ? (
@@ -520,7 +547,7 @@ export function HarnessRow({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 className="h-7 px-3 text-xs"
@@ -542,7 +569,11 @@ export function HarnessRow({
                 type="button"
                 variant="destructive"
               >
-                {del.isPending ? <Spinner className="h-3.5 w-3.5" /> : "Delete"}
+                {del.isPending ? (
+                  <Spinner className="h-3.5 w-3.5" />
+                ) : (
+                  t("common.delete")
+                )}
               </Button>
             </div>
           </div>
@@ -559,18 +590,22 @@ export function HarnessRow({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Update {runtime.label} adapter?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("settings.harnessCatalog.updateDialogTitle", {
+                name: runtime.label,
+              })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {adapterUpdateWarning(runtime)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleInstall}
               data-testid={`doctor-runtime-confirm-update-${runtime.id}`}
             >
-              Update
+              {t("settings.harnessCatalog.update")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

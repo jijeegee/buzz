@@ -54,6 +54,7 @@ import {
   channelMembersQueryKey,
 } from "@/features/channels/rosterFreshness";
 import { dmVisibilityQueryKeyFor } from "@/features/channels/useHiddenDmIds";
+import { t } from "@/shared/i18n";
 
 export const channelsQueryKey = ["channels"] as const;
 /** Keeps focused polling at the established one-minute cadence. */
@@ -653,7 +654,7 @@ export function useChannelDetailsQuery(
     queryKey: ["channels", channelId ?? "none", "detail"],
     queryFn: async () => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       return getChannelDetails(channelId);
@@ -671,7 +672,7 @@ export function useChannelMembersQuery(
     queryKey: ["channels", channelId ?? "none", "members"],
     queryFn: async () => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       return getChannelMembers(channelId);
@@ -686,7 +687,7 @@ export function useUpdateChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: (input: Omit<UpdateChannelInput, "channelId">) => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       return updateChannel({ ...input, channelId });
@@ -739,7 +740,7 @@ export function useSetChannelTopicMutation(channelId: string | null) {
   return useMutation({
     mutationFn: (input: Omit<SetChannelTopicInput, "channelId">) => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       return setChannelTopic({ ...input, channelId });
@@ -757,7 +758,7 @@ export function useSetChannelPurposeMutation(channelId: string | null) {
   return useMutation({
     mutationFn: (input: Omit<SetChannelPurposeInput, "channelId">) => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       return setChannelPurpose({ ...input, channelId });
@@ -775,7 +776,7 @@ export function useArchiveChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       await archiveChannel(channelId);
@@ -799,7 +800,7 @@ export function useUnarchiveChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       await unarchiveChannel(channelId);
@@ -823,7 +824,7 @@ export function useDeleteChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       await deleteChannel(channelId);
@@ -865,7 +866,7 @@ export function useAddChannelMembersMutation(channelId: string | null) {
       const { channelId: capturedChannelId, ...rest } = input;
       const effectiveChannelId = capturedChannelId ?? channelId;
       if (!effectiveChannelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       return addChannelMembers({ ...rest, channelId: effectiveChannelId });
@@ -899,7 +900,7 @@ export function useRemoveChannelMemberMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async (pubkey: string) => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       await removeChannelMember(channelId, pubkey);
@@ -920,7 +921,7 @@ export function useJoinChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       await joinChannel(channelId);
@@ -937,7 +938,7 @@ export function useLeaveChannelMutation(channelId: string | null) {
   return useMutation({
     mutationFn: async () => {
       if (!channelId) {
-        throw new Error("No group selected.");
+        throw new Error(t("channels.noGroupSelected"));
       }
 
       await leaveChannel(channelId);

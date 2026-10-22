@@ -31,7 +31,7 @@ import { StatusEmoji } from "@/features/user-status/ui/StatusEmoji";
 import type { WorkflowCardAuthorPresentation } from "./useWorkflowListAuthorPresentations";
 import type { WorkflowMessagePresentation } from "./useWorkflowListMessagePresentations";
 import { workflowTriggerDescription } from "./workflowTriggerDescription";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, useT } from "@/shared/i18n";
 
 type WorkflowCardProps = {
   workflow: Workflow;
@@ -92,9 +92,12 @@ function StatusToggle({
   enabled: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   return (
     <Switch
-      aria-label={enabled ? "Disable workflow" : "Enable workflow"}
+      aria-label={
+        enabled ? t("workflows.card.disable") : t("workflows.builder.enable")
+      }
       checked={enabled}
       disabled={disabled}
       onCheckedChange={(checked) => {
@@ -207,6 +210,7 @@ export function WorkflowCard({
   onDuplicate,
   onDelete,
 }: WorkflowCardProps) {
+  const t = useT();
   const [triggerAnimationSequence, setTriggerAnimationSequence] =
     React.useState(0);
   const isEnabled = getWorkflowEnabled(workflow.definition);
@@ -239,7 +243,9 @@ export function WorkflowCard({
         onClick={() => onView(workflow)}
         type="button"
       >
-        <span className="sr-only">View {workflow.name}</span>
+        <span className="sr-only">
+          {t("workflows.card.view", { name: workflow.name })}
+        </span>
       </button>
 
       <div className="pointer-events-none relative z-10 flex min-h-48 flex-1 flex-col">

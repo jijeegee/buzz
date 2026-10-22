@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { CircleCheck, RotateCcw } from "lucide-react";
 
 import { hasThreadClosedTag } from "@/features/messages/lib/taskThread";
@@ -14,11 +15,11 @@ export function ThreadMarkerLine({
   currentPubkey: string | undefined;
   message: Pick<TimelineMessage, "author" | "id" | "pubkey" | "tags">;
 }) {
+  const t = useT();
   const closed = hasThreadClosedTag(message.tags);
   const own =
     Boolean(currentPubkey) &&
     message.pubkey?.toLowerCase() === currentPubkey?.toLowerCase();
-  const name = own ? "You" : message.author;
   const Icon = closed ? CircleCheck : RotateCcw;
   return (
     <div
@@ -28,7 +29,13 @@ export function ThreadMarkerLine({
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span>
-        {name} {closed ? "closed" : "reopened"} this thread
+        {own
+          ? closed
+            ? t("messages.threadMarker.youClosed")
+            : t("messages.threadMarker.youReopened")
+          : closed
+            ? t("messages.threadMarker.closed", { name: message.author })
+            : t("messages.threadMarker.reopened", { name: message.author })}
       </span>
     </div>
   );

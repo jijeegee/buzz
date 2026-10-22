@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { FieldGroup } from "@/features/channels/ui/ChannelManagementSheetRows";
 import { SettingsConfirmDialog } from "@/features/settings/ui/SettingsConfirmDialog";
+import { useT } from "@/shared/i18n";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { useRelayOrigin } from "@/shared/lib/useRelayOrigin";
 import { Button } from "@/shared/ui/button";
@@ -13,8 +14,8 @@ import { SegmentedControl } from "@/shared/ui/segmented-control";
 import {
   isValidGroupHandle,
   normalizeGroupHandle,
-  PUBLIC_ADDRESS_INVALID_TEXT,
   publicAddressErrorText,
+  publicAddressInvalidText,
   publicAddressPrefix,
 } from "../groupLink";
 import {
@@ -31,11 +32,6 @@ import {
   useGroupDetailQuery,
   useGroupInviteLinkQuery,
 } from "../hooks";
-
-const INVITE_POLICY_OPTIONS = [
-  { value: "members", label: "All members" },
-  { value: "admins", label: "Admins only" },
-] as const;
 
 function failureText(error: unknown, fallback: string): string {
   return groupsErrorText(error) || fallback;
@@ -57,6 +53,7 @@ export function GroupSharingSettings({
   isMember: boolean;
   visibility: "open" | "private";
 }) {
+  const t = useT();
   const detailQuery = useGroupDetailQuery(channelId, isMember);
   const invalidate = useGroupsInvalidate(channelId);
   // Going private clears the address server-side: refetch on any switch.
@@ -80,7 +77,10 @@ export function GroupSharingSettings({
   }
 
   return (
-    <FieldGroup testId="group-sharing-settings" title="Sharing">
+    <FieldGroup
+      testId="group-sharing-settings"
+      title={t("groups.sharing.title")}
+    >
       {showAddress ? (
         <PublicAddressRow
           channelId={channelId}
@@ -119,6 +119,7 @@ function PublicAddressRow({
 }) {
   // The server's invite link carries its public web host (where /g/ pages
   // live); fall back to the community origin until it loads.
+  const t = useT();
   const linkUrl = useGroupInviteLinkQuery(channelId, true).data?.url;
   const relayOrigin = useRelayOrigin();
   const prefix = publicAddressPrefix(linkUrl ?? relayOrigin);
@@ -132,7 +133,9 @@ function PublicAddressRow({
     onSuccess: (saved: GroupSummary) => {
       setDraft(saved.handle ?? "");
       toast.success(
-        saved.handle ? "Public address saved" : "Public address removed",
+        saved.handle
+          ? t("groups.sharing.addressSaved")
+          : t("groups.sharing.addressRemoved"),
       );
       void invalidate();
     },
@@ -141,7 +144,7 @@ function PublicAddressRow({
         publicAddressErrorText(
           groupsErrorStatus(failure),
           groupsErrorText(failure),
-        ) ?? failureText(failure, "Couldn't save the address."),
+        ) ?? failureText(failure, t("groups.sharing.addressSaveFailed")),
       ),
   });
 
@@ -152,7 +155,7 @@ function PublicAddressRow({
     event.preventDefault();
     if (unchanged) return;
     if (normalized && !isValidGroupHandle(normalized)) {
-      setError(PUBLIC_ADDRESS_INVALID_TEXT);
+      setError(publicAddressInvalidText());
       return;
     }
     setError(null);
@@ -166,7 +169,7 @@ function PublicAddressRow({
       onSubmit={submit}
     >
       <label className="text-sm font-medium" htmlFor="group-public-address">
-        Public address
+        {t("groups.sharing.publicAddress")}
       </label>
       <div className="flex items-center gap-2">
         <div className="flex h-9 min-w-0 flex-1 items-center rounded-md border border-input bg-background pl-3 text-sm focus-within:ring-1 focus-within:ring-ring">
@@ -198,7 +201,7 @@ function PublicAddressRow({
           size="sm"
           type="submit"
         >
-          {save.isPending ? "Saving..." : "Save"}
+          {save.isPending ? t("groups.sharing.saving") : t("common.save")}
         </Button>
       </div>
       {error ? (
@@ -221,6 +224,7 @@ function InviteLinkRow({
   canReset: boolean;
   channelId: string;
 }) {
+  const t = useT();
   const linkQuery = useGroupInviteLinkQuery(channelId, true);
   const invalidate = useGroupsInvalidate(channelId);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -230,27 +234,27 @@ function InviteLinkRow({
     mutationFn: () => resetGroupInviteLink(channelId),
     onSuccess: () => void invalidate(),
     onError: (failure) =>
-      toast.error(failureText(failure, "Couldn't reset the link.")),
+      toast.error(failureText(failure, t("groups.sharing.resetFailed"))),
   });
 
   async function copy() {
     if (!url) return;
     await writeTextToClipboard(url);
-    toast.success("Link copied");
+    toast.success(t("groups.sharing.linkCopied"));
   }
 
   return (
     <div className="space-y-2 px-4 py-3" data-testid="group-invite-link">
-      <p className="text-sm font-medium">Invite link</p>
+      <p className="text-sm font-medium">{t("groups.sharing.inviteLink")}</p>
       <p
         className="truncate font-mono text-sm text-muted-foreground"
         data-testid="group-invite-link-url"
         title={url}
       >
         {linkQuery.isLoading
-          ? "Loading..."
+          ? t("groups.sharing.loading")
           : linkQuery.isError
-            ? "Couldn't load the link."
+            ? t("groups.sharing.linkLoadFailed")
             : url}
       </p>
       <div className="flex flex-wrap gap-2">
@@ -263,7 +267,7 @@ function InviteLinkRow({
           variant="outline"
         >
           <Copy className="h-4 w-4" />
-          Copy link
+          {t("groups.sharing.copyLink")}
         </Button>
         {canReset ? (
           <Button
@@ -275,18 +279,18 @@ function InviteLinkRow({
             variant="outline"
           >
             <RotateCcw className="h-4 w-4" />
-            Reset link
+            {t("groups.sharing.resetLink")}
           </Button>
         ) : null}
       </div>
       <SettingsConfirmDialog
-        confirmLabel="Reset link"
-        description="The old link will stop working."
+        confirmLabel={t("groups.sharing.resetLink")}
+        description={t("groups.sharing.resetBody")}
         onConfirm={() => reset.mutate()}
         onOpenChange={setConfirmOpen}
         open={confirmOpen}
         testId="group-invite-link-reset-dialog"
-        title="Reset link?"
+        title={t("groups.sharing.resetTitle")}
       />
     </div>
   );
@@ -299,6 +303,7 @@ function InvitePolicyRow({
   channelId: string;
   policy: GroupInvitePolicy;
 }) {
+  const t = useT();
   const invalidate = useGroupsInvalidate(channelId);
   const [value, setValue] = React.useState(policy);
   React.useEffect(() => setValue(policy), [policy]);
@@ -308,7 +313,7 @@ function InvitePolicyRow({
     onSuccess: () => void invalidate(),
     onError: (failure) => {
       setValue(policy);
-      toast.error(failureText(failure, "Couldn't change this setting."));
+      toast.error(failureText(failure, t("groups.sharing.policySaveFailed")));
     },
   });
 
@@ -317,17 +322,22 @@ function InvitePolicyRow({
       className="flex min-h-16 items-center justify-between gap-3 px-4 py-3"
       data-testid="group-invite-policy"
     >
-      <p className="text-sm font-medium">Who can invite</p>
+      <p className="text-sm font-medium">{t("groups.sharing.whoCanInvite")}</p>
       <SegmentedControl
         disabled={save.isPending}
-        legend="Who can invite"
+        legend={t("groups.sharing.whoCanInvite")}
         onValueChange={(next) => {
           if (next === value) return;
           setValue(next);
           save.mutate(next);
         }}
         optionTestIdPrefix="group-invite-policy"
-        options={INVITE_POLICY_OPTIONS}
+        options={
+          [
+            { value: "members", label: t("groups.sharing.allMembers") },
+            { value: "admins", label: t("groups.sharing.adminsOnly") },
+          ] as const
+        }
         size="compact"
         testId="group-invite-policy-control"
         value={value}

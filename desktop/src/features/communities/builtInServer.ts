@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 
+import { t } from "@/shared/i18n";
+
 import type { Community } from "./types";
 import {
   deriveCommunityName,
@@ -96,7 +98,9 @@ export function isAllowedServer(
 export function ensureAllowedServer(relayUrl: string): void {
   const allowed =
     state.status === "ready" && isAllowedServer(relayUrl, state.relayUrl);
-  if (!allowed) throw new Error(DIFFERENT_SERVICE_INVITE_MESSAGE);
+  if (!allowed) {
+    throw new Error(t("communities.builtInServer.differentServiceInvite"));
+  }
 }
 
 /**

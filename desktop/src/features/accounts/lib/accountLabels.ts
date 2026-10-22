@@ -1,4 +1,5 @@
 import type { AccountSummary } from "@/shared/api/tokenAuth";
+import { t } from "@/shared/i18n";
 
 type Labelled = Pick<
   AccountSummary,
@@ -14,7 +15,7 @@ export function accountLabel(account: Labelled): string {
   if (name) return name;
   const email = account.email?.trim();
   if (email) return email;
-  return `Account ${account.pubkey.slice(0, 8)}`;
+  return t("accounts.fallbackName", { id: account.pubkey.slice(0, 8) });
 }
 
 /** The email under an account's name, unless the name already is the email. */

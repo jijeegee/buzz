@@ -6,6 +6,7 @@ import { JSDOM } from "jsdom";
 import * as React from "react";
 import ts from "typescript";
 import * as draftStore from "../../messages/lib/useDrafts.ts";
+import * as i18n from "../../../shared/i18n/index.ts";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost",
@@ -79,6 +80,7 @@ async function setup(options = {}) {
   let editor, media, mentionState, prompt;
   const stubs = {
     react: React,
+    "@/shared/i18n": i18n,
     sonner: { toast: { error: (value) => calls.push(["error", value]) } },
     "@tiptap/react": { EditorContent: () => null },
     "lucide-react": { ChevronDown: () => null },

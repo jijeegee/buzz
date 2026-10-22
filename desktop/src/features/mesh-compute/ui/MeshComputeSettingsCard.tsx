@@ -2,6 +2,7 @@ import * as React from "react";
 import { ChevronDown } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
+import { type MessageKey, useT } from "@/shared/i18n";
 import { Switch } from "@/shared/ui/switch";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -85,6 +86,7 @@ function writeDraft(key: string, value: string): void {
  * exposing implementation protocols or raw mesh controls.
  */
 export function MeshComputeSettingsCard() {
+  const t = useT();
   const shouldReduceMotion = useReducedMotion();
   const { status, error, refresh } = useMeshNodeStatus();
   const [installedModels, setInstalledModels] = React.useState<
@@ -227,13 +229,13 @@ export function MeshComputeSettingsCard() {
   return (
     <section className="min-w-0" data-testid="settings-mesh-share-compute">
       <SettingsSectionHeader
-        title="Share compute"
-        description="Share this computer with members of this community so they can run agents here."
+        title={t("meshCompute.title")}
+        description={t("meshCompute.description")}
       />
 
       {error ? (
         <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Couldn't check shared compute: {error}
+          {t("meshCompute.statusError", { error })}
         </p>
       ) : null}
       {actionError ? (
@@ -245,7 +247,7 @@ export function MeshComputeSettingsCard() {
         <DownloadProgressBar progress={downloadProgress} />
       ) : null}
 
-      <SettingsOptionGroup title="Sharing">
+      <SettingsOptionGroup title={t("meshCompute.sharingGroup")}>
         <div className="space-y-5 px-4 py-3">
           <div className="flex min-w-0 items-start justify-between gap-6">
             <div className="min-w-0">
@@ -253,7 +255,7 @@ export function MeshComputeSettingsCard() {
                 className="text-sm font-medium"
                 htmlFor="mesh-share-compute-toggle"
               >
-                Share this machine
+                {t("meshCompute.shareThisMachine")}
               </label>
               {!isSharing ? (
                 <StatusLine
@@ -303,7 +305,7 @@ export function MeshComputeSettingsCard() {
               onClick={() => setAdvancedOpen((current) => !current)}
               type="button"
             >
-              <span>Advanced</span>
+              <span>{t("meshCompute.advanced")}</span>
               <ChevronDown
                 className={cn(
                   "h-4 w-4 text-muted-foreground transition-transform duration-150 ease-out",
@@ -314,7 +316,7 @@ export function MeshComputeSettingsCard() {
             {advancedOpen ? (
               <div className="mt-3 space-y-1.5">
                 <label className="text-sm font-medium" htmlFor="mesh-vram">
-                  Max VRAM (GB)
+                  {t("meshCompute.maxVram")}
                 </label>
                 <AgentConfigTextInput
                   data-testid="mesh-share-compute-vram"
@@ -326,21 +328,24 @@ export function MeshComputeSettingsCard() {
                     setMaxVramGb(next);
                     writeDraft(MAX_VRAM_DRAFT_STORAGE_KEY, next);
                   }}
-                  placeholder="No limit"
+                  placeholder={t("meshCompute.maxVramPlaceholder")}
                   usePersonaInputStyle
                   value={maxVramGb}
                 />
                 {status?.consoleUrl ? (
                   <p className="text-sm font-normal text-muted-foreground">
-                    Debug console:{" "}
-                    <a
-                      className="underline"
-                      href={status.consoleUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      {status.consoleUrl}
-                    </a>
+                    {t("meshCompute.debugConsole", {
+                      url: (
+                        <a
+                          className="underline"
+                          href={status.consoleUrl}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          {status.consoleUrl}
+                        </a>
+                      ),
+                    })}
                   </p>
                 ) : null}
               </div>
@@ -366,7 +371,9 @@ export function MeshComputeSettingsCard() {
                   className="space-y-1"
                   data-testid="mesh-share-compute-sharing-status"
                 >
-                  <h3 className="text-sm font-medium">Status</h3>
+                  <h3 className="text-sm font-medium">
+                    {t("meshCompute.status")}
+                  </h3>
                   <div className="space-y-1 rounded-lg bg-muted/30 px-3 py-2">
                     <StatusLine
                       isConsuming={isConsuming}
@@ -419,6 +426,7 @@ function DownloadProgressBar({
 }: {
   progress: NonNullable<ReturnType<typeof useMeshDownloadProgress>["progress"]>;
 }) {
+  const t = useT();
   const percent = downloadPercent(progress);
   const bytes = formatDownloadBytes(progress);
   return (
@@ -428,8 +436,9 @@ function DownloadProgressBar({
     >
       <div className="flex items-baseline justify-between gap-2 text-sm">
         <span className="min-w-0 truncate font-medium">
-          {progress.status === "preparing" ? "Preparing" : "Downloading"}{" "}
-          {progress.label}
+          {progress.status === "preparing"
+            ? t("meshCompute.download.preparing", { name: progress.label })
+            : t("meshCompute.download.downloading", { name: progress.label })}
         </span>
         <span className="shrink-0 text-muted-foreground">
           {percent != null ? `${percent}%` : bytes || "…"}
@@ -453,11 +462,11 @@ function DownloadProgressBar({
   );
 }
 
-const FIT_LABEL: Record<MeshCatalogEntry["fit"], string> = {
-  comfortable: "Fits well",
-  tight: "Tight fit",
-  tradeoff: "Trade-off",
-  too_large: "Too large",
+const FIT_LABEL: Record<MeshCatalogEntry["fit"], MessageKey> = {
+  comfortable: "meshCompute.fit.comfortable",
+  tight: "meshCompute.fit.tight",
+  tradeoff: "meshCompute.fit.tradeoff",
+  too_large: "meshCompute.fit.tooLarge",
 };
 
 const FIT_CLASS: Record<MeshCatalogEntry["fit"], string> = {
@@ -490,6 +499,7 @@ function MeshModelPicker({
   onCustomModelEditingChange: (editing: boolean) => void;
   onModelChange: (model: string) => void;
 }) {
+  const t = useT();
   const options = React.useMemo<AgentDropdownOption[]>(() => {
     const seen = new Set<string>();
     const catalogOptions = (catalog?.entries ?? []).map((entry) => {
@@ -510,7 +520,7 @@ function MeshModelPicker({
                 {installed.name ?? installed.id}
               </span>
               <span className="shrink-0 text-2xs text-muted-foreground">
-                Installed
+                {t("meshCompute.badge.installed")}
               </span>
             </div>
           ),
@@ -521,9 +531,12 @@ function MeshModelPicker({
     return [
       ...catalogOptions,
       ...localOptions,
-      { label: "Custom model…", value: CUSTOM_MODEL_DROPDOWN_VALUE },
+      {
+        label: t("meshCompute.customModel"),
+        value: CUSTOM_MODEL_DROPDOWN_VALUE,
+      },
     ];
-  }, [catalog?.entries, installedModels]);
+  }, [catalog?.entries, installedModels, t]);
   const knownModel = options.some((option) => option.value === model.trim());
   const showCustomModelInput =
     isCustomModelEditing || (model.trim().length > 0 && !knownModel);
@@ -543,7 +556,7 @@ function MeshModelPicker({
   return (
     <div className="space-y-1.5" data-testid="mesh-share-compute-catalog">
       <label className="text-sm font-medium" htmlFor="mesh-share-compute-model">
-        Model
+        {t("meshCompute.model")}
       </label>
       <AgentDropdownSelect
         className={MESH_SELECT_TRIGGER_CLASS}
@@ -551,7 +564,7 @@ function MeshModelPicker({
         id="mesh-share-compute-model"
         onValueChange={handleModelChange}
         options={options}
-        placeholder="Select a model"
+        placeholder={t("meshCompute.modelPlaceholder")}
         placeholderClassName="text-muted-foreground/55"
         searchable
         testId="mesh-share-compute-model"
@@ -559,7 +572,7 @@ function MeshModelPicker({
       />
       {showCustomModelInput ? (
         <AgentConfigTextInput
-          aria-label="Custom model reference"
+          aria-label={t("meshCompute.customModelLabel")}
           autoCorrect="off"
           disabled={disabled}
           onChange={(event) => {
@@ -569,7 +582,7 @@ function MeshModelPicker({
             onCustomModelEditingChange(true);
             onModelChange(event.target.value);
           }}
-          placeholder="Qwen3-8B-Q4_K_M or hf://meshllm/qwen3-8b@main"
+          placeholder={t("meshCompute.customModelPlaceholder")}
           usePersonaInputStyle
           value={model}
         />
@@ -579,35 +592,41 @@ function MeshModelPicker({
         data-settings-subcopy
       >
         {catalog
-          ? `Recommended for this machine${catalog.gpuName ? ` (${catalog.gpuName}, ${catalog.vramDisplay} AI memory)` : ""}.`
-          : "Choose a model or enter a model reference or local file."}{" "}
-        Kuzz downloads remote models when sharing starts.
+          ? catalog.gpuName
+            ? t("meshCompute.recommendedWithGpu", {
+                gpu: catalog.gpuName,
+                memory: catalog.vramDisplay,
+              })
+            : t("meshCompute.recommendedForMachine")
+          : t("meshCompute.chooseModel")}{" "}
+        {t("meshCompute.downloadsNote")}
       </p>
     </div>
   );
 }
 
 function MeshModelOptionLabel({ entry }: { entry: MeshCatalogEntry }) {
+  const t = useT();
   return (
     <div className="flex min-w-0 items-center gap-2">
       <span className="min-w-0 flex-1 truncate font-medium">{entry.name}</span>
       <span className="shrink-0 text-muted-foreground">{entry.size}</span>
       <span className={cn("shrink-0", FIT_CLASS[entry.fit])}>
-        {FIT_LABEL[entry.fit]}
+        {t(FIT_LABEL[entry.fit])}
       </span>
       {entry.recommended ? (
         <span className="shrink-0 rounded bg-primary/15 px-1.5 text-2xs font-medium text-primary">
-          Recommended
+          {t("meshCompute.badge.recommended")}
         </span>
       ) : null}
       {entry.installed ? (
         <span className="shrink-0 text-2xs text-muted-foreground">
-          Installed
+          {t("meshCompute.badge.installed")}
         </span>
       ) : null}
       {!entry.curated ? (
         <span className="shrink-0 text-2xs text-muted-foreground">
-          Advanced
+          {t("meshCompute.badge.advanced")}
         </span>
       ) : null}
     </div>
@@ -627,11 +646,20 @@ function StatusLine({
   pendingAction: "start" | "stop" | null;
   status: MeshNodeStatus | null;
 }) {
+  const t = useT();
   if (pendingAction === "start") {
-    return <p className="text-sm text-muted-foreground">Starting…</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("meshCompute.state.starting")}
+      </p>
+    );
   }
   if (pendingAction === "stop") {
-    return <p className="text-sm text-muted-foreground">Stopping…</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("meshCompute.state.stopping")}
+      </p>
+    );
   }
   // A client-mode runtime owns the single slot: this machine is consuming a
   // peer's compute, not sharing. The switch stays off, but remains available
@@ -639,13 +667,16 @@ function StatusLine({
   if (isConsuming) {
     return (
       <p className="text-sm text-muted-foreground">
-        This machine is currently using another member's shared compute. Turn on
-        sharing to switch to the selected local model; Kuzz may briefly restart.
+        {t("meshCompute.state.consuming")}
       </p>
     );
   }
   if (!status) {
-    return <p className="text-sm text-muted-foreground">Checking status…</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("meshCompute.state.checking")}
+      </p>
+    );
   }
   const { state, health, modelId, modelName } = status;
   const modelLabel = displayModel ?? modelName ?? modelId ?? "";
@@ -657,40 +688,53 @@ function StatusLine({
     const reason =
       health.status === "degraded" || health.status === "failed"
         ? health.reason
-        : "Starting…";
+        : t("meshCompute.state.starting");
     return <p className="text-sm text-muted-foreground">{reason}</p>;
   }
   if (state === "running") {
     if (health.status === "failed") {
       return (
         <p className="text-sm text-destructive">
-          Couldn't load: {health.reason}
+          {t("meshCompute.state.loadFailed", { reason: health.reason })}
         </p>
       );
     }
     if (health.status === "degraded") {
       return (
         <p className="text-sm text-amber-600 dark:text-amber-400">
-          Active{modelLabel ? ` — ${modelLabel}` : ""}. {health.reason}
+          {modelLabel
+            ? t("meshCompute.state.degradedWithModel", {
+                model: modelLabel,
+                reason: health.reason,
+              })
+            : t("meshCompute.state.degraded", { reason: health.reason })}
         </p>
       );
     }
     return (
       <p className="text-sm text-muted-foreground">
-        {omitSharingVerb ? "" : "Sharing"}
-        {modelLabel ? `${omitSharingVerb ? "" : " "}${modelLabel}` : ""} with
-        relay members.
+        {omitSharingVerb
+          ? modelLabel
+            ? t("meshCompute.state.modelWithMembers", { model: modelLabel })
+            : t("meshCompute.state.withMembers")
+          : modelLabel
+            ? t("meshCompute.state.sharingModel", { model: modelLabel })
+            : t("meshCompute.state.sharing")}
       </p>
     );
   }
   if (state === "stopping") {
-    return <p className="text-sm text-muted-foreground">Stopping…</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("meshCompute.state.stopping")}
+      </p>
+    );
   }
   if (state === "failed") {
     const reason =
       health.status === "failed" || health.status === "degraded"
         ? health.reason
-        : "Couldn't start.";
+        : t("meshCompute.state.startFailed");
     return <p className="text-sm text-destructive">{reason}</p>;
   }
   return null;

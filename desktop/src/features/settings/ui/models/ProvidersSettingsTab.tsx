@@ -10,6 +10,7 @@ import { ChatGptPlanSettingsRow } from "@/features/agents/ui/ChatGptPlanControls
 import { BLOCK_BUILD_HIDDEN_PROVIDER_IDS } from "@/features/agents/ui/agentConfigOptions";
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
 import type { GlobalAgentConfig } from "@/shared/api/types";
+import { t as translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 
@@ -45,6 +46,7 @@ const NO_HIDDEN_PROVIDERS: ReadonlySet<string> = new Set();
  * running agents.
  */
 export function ProvidersSettingsTab() {
+  const t = useT();
   const runtimesQuery = useAcpRuntimesQueryForced();
   const bakedEnvKeysQuery = useBakedBuildEnvKeysQuery();
   const {
@@ -91,7 +93,10 @@ export function ProvidersSettingsTab() {
         setNotice({
           scope,
           tone: "error",
-          text: typeof error === "string" ? error : "Couldn't save.",
+          text:
+            typeof error === "string"
+              ? error
+              : translate("settings.providers.saveFailed"),
         });
         return false;
       }
@@ -125,7 +130,7 @@ export function ProvidersSettingsTab() {
               <RefreshCw
                 className={cn("h-4 w-4", isRefreshing && "animate-spin")}
               />
-              Check again
+              {t("settings.harnesses.checkAgain")}
             </Button>
           ) : undefined
         }
@@ -135,7 +140,7 @@ export function ProvidersSettingsTab() {
         {primary.providerId === "openai" ? (
           <div>
             <p className="px-4 pt-3 text-xs font-medium text-muted-foreground/70">
-              ChatGPT plan · used by Kuzz Agent
+              {t("settings.providers.chatgptPlanHeading")}
             </p>
             <ChatGptPlanSettingsRow />
           </div>
@@ -146,8 +151,8 @@ export function ProvidersSettingsTab() {
           >
             <p className="px-4 pt-3 text-xs font-medium text-muted-foreground/70">
               {primary.providerId === "openai"
-                ? "Codex CLI · used by Codex agents"
-                : "Subscription"}
+                ? t("settings.providers.codexCliHeading")
+                : t("settings.providers.subscriptionHeading")}
             </p>
             <HarnessRow
               embedded
@@ -188,13 +193,16 @@ export function ProvidersSettingsTab() {
             data-testid={`settings-models-${primary.providerId}-workspace`}
           >
             <div className="min-w-0">
-              <p className="font-medium text-foreground">Workspace sign-in</p>
+              <p className="font-medium text-foreground">
+                {t("settings.providers.workspaceSignIn")}
+              </p>
               <p
                 className="mt-0.5 text-sm text-muted-foreground/70"
                 data-settings-subcopy
               >
-                {primary.label} uses a workspace host and OAuth sign-in,
-                configured under Default for new agents.
+                {t("settings.providers.workspaceSignInHint", {
+                  provider: primary.label,
+                })}
               </p>
             </div>
           </SettingsOptionRow>
@@ -212,8 +220,7 @@ export function ProvidersSettingsTab() {
           role="alert"
         >
           <AlertCircle aria-hidden="true" className="size-3.5 shrink-0" />
-          Couldn't load your AI settings, so keys can't be changed here right
-          now. Reopen Settings to try again.
+          {t("settings.providers.configLoadFailed")}
         </p>
       ) : null}
       <SettingsOptionGroupList>

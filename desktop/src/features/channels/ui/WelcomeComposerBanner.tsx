@@ -4,6 +4,7 @@ import { Bot, Check, X } from "lucide-react";
 
 import { ComposerDockGlassBackdrop } from "@/features/messages/ui/ComposerDockBackdrop";
 import { cn } from "@/shared/lib/cn";
+import { useT } from "@/shared/i18n";
 
 const WELCOME_PERSONA_NAMES = ["Fizz"] as const;
 export const WELCOME_PERSONA_ROTATION_MS = 3200;
@@ -303,6 +304,7 @@ export function WelcomeComposerBanner({
   settingUp = false,
   state,
 }: WelcomeComposerBannerProps) {
+  const t = useT();
   if (state === "hidden") {
     return null;
   }
@@ -388,7 +390,7 @@ export function WelcomeComposerBanner({
                 key="complete-copy"
                 variants={welcomeComposerBannerSuccessCopyVariants}
               >
-                Nice work.
+                {t("channels.welcomeBanner.done")}
               </motion.span>
             ) : settingUp ? (
               <motion.span
@@ -400,7 +402,7 @@ export function WelcomeComposerBanner({
                 key="setting-up-copy"
                 variants={welcomeComposerBannerContentVariants}
               >
-                Setting up your welcome team…
+                {t("channels.welcomeBanner.settingUp")}
               </motion.span>
             ) : (
               <motion.span
@@ -411,14 +413,15 @@ export function WelcomeComposerBanner({
                 key="prompt-copy"
                 variants={welcomeComposerBannerContentVariants}
               >
-                Mention <WelcomeComposerPersonaMention /> or another teammate
-                whenever you want their help.
+                {t("channels.welcomeBanner.prompt", {
+                  mention: () => <WelcomeComposerPersonaMention />,
+                })}
               </motion.span>
             )}
           </AnimatePresence>
           {state === "prompt" && onDismiss && !settingUp ? (
             <button
-              aria-label="Dismiss hint"
+              aria-label={t("channels.welcomeBanner.dismiss")}
               className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               data-testid="welcome-composer-dismiss-button"
               onClick={onDismiss}

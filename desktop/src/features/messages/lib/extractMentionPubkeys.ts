@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import { mentionOccurrences } from "@/shared/lib/mentionOccurrences";
 
 export type MentionPubkeyCandidate = {
@@ -134,7 +135,7 @@ export function extractMentionPubkeys(options: {
     );
     if (identities.size > 1) {
       throw new Error(
-        `The mention @${winners[0].displayName} is ambiguous. Choose a recipient from the mention picker.`,
+        t("messages.mentions.ambiguous", { name: winners[0].displayName }),
       );
     }
     for (const match of winners) {

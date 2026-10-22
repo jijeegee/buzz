@@ -5,6 +5,7 @@ import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { Channel, FeedItem, HomeFeedResponse } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 import { scheduleAfterForegroundReady } from "@/shared/lib/foregroundReady";
 import {
   getDesktopNotificationPermissionState,
@@ -273,8 +274,8 @@ export function useNotificationSettings(pubkey?: string) {
         }));
         setErrorMessage(
           nextPermission === "denied"
-            ? "Desktop notifications are blocked for Kuzz. Enable them in system settings to turn alerts on."
-            : "Desktop notifications are unavailable in this environment.",
+            ? t("notifications.permission.blocked")
+            : t("notifications.permission.unavailable"),
         );
         return false;
       }
@@ -292,7 +293,7 @@ export function useNotificationSettings(pubkey?: string) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Failed to enable desktop notifications.",
+          : t("notifications.permission.enableFailed"),
       );
       return false;
     } finally {

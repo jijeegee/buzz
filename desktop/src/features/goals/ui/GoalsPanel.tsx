@@ -20,7 +20,7 @@ import {
   useRestoreGoalTreeMutation,
 } from "../hooks";
 import { AddGoalInline, type Apply, GoalEditor, GoalRow } from "./GoalRows";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, useT } from "@/shared/i18n";
 
 type GoalsPanelProps = {
   channelId: string;
@@ -29,6 +29,7 @@ type GoalsPanelProps = {
 
 /** The goal tree of a channel or DM: layer 1 card, outline, history. */
 export function GoalsPanel({ channelId, onOpenLink }: GoalsPanelProps) {
+  const t = useT();
   const goalQuery = useGoalTreeQuery(channelId);
   const applyMutation = useApplyGoalOpMutation(channelId);
   const [showHistory, setShowHistory] = React.useState(false);
@@ -44,7 +45,11 @@ export function GoalsPanel({ channelId, onOpenLink }: GoalsPanelProps) {
   );
 
   if (goalQuery.isLoading) {
-    return <p className="pt-4 text-sm text-muted-foreground">Loading goals…</p>;
+    return (
+      <p className="pt-4 text-sm text-muted-foreground">
+        {t("goals.panel.loading")}
+      </p>
+    );
   }
   if (goalQuery.error instanceof Error) {
     return (
@@ -78,7 +83,7 @@ export function GoalsPanel({ channelId, onOpenLink }: GoalsPanelProps) {
           ))}
           <AddGoalInline
             apply={apply}
-            label="Add a layer 2 goal"
+            label={t("goals.addLayerGoal", { layer: 2 })}
             parentId={root.id}
           />
         </div>
@@ -99,7 +104,9 @@ export function GoalsPanel({ channelId, onOpenLink }: GoalsPanelProps) {
           variant="ghost"
         >
           <History className="mr-1.5 h-3.5 w-3.5" />
-          {showHistory ? "Hide history" : "History"}
+          {showHistory
+            ? t("goals.panel.hideHistory")
+            : t("goals.panel.history")}
         </Button>
         {showHistory ? <GoalHistory channelId={channelId} /> : null}
       </div>
@@ -116,6 +123,7 @@ function RootCard({
   root: GoalNode;
   tree: GoalTree;
 }) {
+  const t = useT();
   const [editing, setEditing] = React.useState(false);
   const { done, total } = goalProgress(tree, root.id);
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -130,7 +138,7 @@ function RootCard({
           await apply({ op: "set_root", id: root.id, title, note });
           setEditing(false);
         }}
-        titleLabel="Layer 1 goal (one sentence)"
+        titleLabel={t("goals.rootCard.titleLabel")}
       />
     );
   }
@@ -144,14 +152,14 @@ function RootCard({
         <Target className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Layer 1 goal
+            {t("goals.rootCard.heading")}
           </p>
           <p className="mt-1 break-words text-sm font-semibold text-foreground">
             {root.title}
           </p>
         </div>
         <Button
-          aria-label="Edit layer 1 goal"
+          aria-label={t("goals.rootCard.edit")}
           data-testid="goals-root-edit"
           onClick={() => setEditing(true)}
           size="icon"
@@ -175,7 +183,7 @@ function RootCard({
             />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {done} of {total} goals done
+            {t("goals.rootCard.progress", { done, total })}
           </p>
         </div>
       ) : null}
@@ -184,11 +192,11 @@ function RootCard({
 }
 
 function SetRootForm({ apply }: { apply: Apply }) {
+  const t = useT();
   return (
     <section className="space-y-2" data-testid="goals-empty">
       <p className="text-sm text-muted-foreground">
-        Give this conversation one top goal. Split it into smaller goals below,
-        and agents working here will see where their work fits.
+        {t("goals.setRoot.intro")}
       </p>
       <GoalEditor
         initialNote=""
@@ -196,8 +204,8 @@ function SetRootForm({ apply }: { apply: Apply }) {
         onSave={(title, note) =>
           apply({ op: "set_root", id: newGoalId(), title, note })
         }
-        submitLabel="Set goal"
-        titleLabel="Layer 1 goal (one sentence)"
+        submitLabel={t("goals.setRoot.submit")}
+        titleLabel={t("goals.rootCard.titleLabel")}
       />
     </section>
   );
@@ -212,10 +220,13 @@ function GoalHistory({ channelId }: { channelId: string }) {
     [revisions],
   );
   const usersQuery = useUsersBatchQuery(authors);
+  const t = useT();
 
   if (historyQuery.isLoading) {
     return (
-      <p className="mt-2 text-xs text-muted-foreground">Loading history…</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {t("goals.history.loading")}
+      </p>
     );
   }
   return (
@@ -226,14 +237,20 @@ function GoalHistory({ channelId }: { channelId: string }) {
           key={revision.revision}
         >
           <span className="flex-1 text-muted-foreground">
-            {new Date(revision.createdAt * 1000).toLocaleString(formatLocale())}{" "}
-            ·{" "}
-            {usersQuery.data?.profiles[revision.author]?.displayName ??
-              "Unknown member"}{" "}
-            · {revision.goals ?? "?"} goals
+            {t("goals.history.revision", {
+              time: new Date(revision.createdAt * 1000).toLocaleString(
+                formatLocale(),
+              ),
+              author:
+                usersQuery.data?.profiles[revision.author]?.displayName ??
+                t("goals.unknownMember"),
+              goals: revision.goals ?? "?",
+            })}
           </span>
           {index === 0 ? (
-            <span className="text-muted-foreground">Current</span>
+            <span className="text-muted-foreground">
+              {t("goals.history.current")}
+            </span>
           ) : (
             <Button
               disabled={restoreMutation.isPending}
@@ -242,7 +259,7 @@ function GoalHistory({ channelId }: { channelId: string }) {
               type="button"
               variant="ghost"
             >
-              Restore
+              {t("goals.history.restore")}
             </Button>
           )}
         </li>

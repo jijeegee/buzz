@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useOpenDmMutation } from "@/features/channels/hooks";
+import { t } from "@/shared/i18n";
 
 /** Opens (or creates) the DM with these people, like the profile's Message. */
 export function useOpenDm() {
@@ -24,7 +25,7 @@ export function useMessagePerson() {
     (pubkey: string) => {
       openDm([pubkey]).catch((error: unknown) =>
         toast.error(
-          error instanceof Error ? error.message : "Could not open the chat",
+          error instanceof Error ? error.message : t("people.messageFailed"),
         ),
       );
     },

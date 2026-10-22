@@ -4,9 +4,12 @@ import {
 } from "@/features/profile/lib/identity";
 import type { Channel } from "@/shared/api/types";
 import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { t } from "@/shared/i18n";
 
 /** Title of a chat with nobody else in it. */
-export const EMPTY_CHAT_TITLE = "Empty chat";
+export function emptyChatTitle(): string {
+  return t("channels.chat.emptyTitle");
+}
 /** Names shown before the "+N" in an unnamed chat's title. */
 export const CHAT_TITLE_NAME_LIMIT = 3;
 /** Most people a new chat can start with (relay wire contract). */
@@ -65,7 +68,7 @@ export function otherChatPeople(
 export function formatChatMemberTitle(
   labels: readonly (string | null)[],
 ): string {
-  if (labels.length === 0) return EMPTY_CHAT_TITLE;
+  if (labels.length === 0) return emptyChatTitle();
   const shown = labels
     .slice(0, CHAT_TITLE_NAME_LIMIT)
     .map((label) => label?.trim() || UNKNOWN_USER_LABEL);
@@ -156,14 +159,14 @@ export function invitationChatTitle(
 
 /** "1 person" / "N people". */
 export function peopleCountLabel(count: number): string {
-  return count === 1 ? "1 person" : `${count} people`;
+  return t("channels.chat.peopleCount", { count });
 }
 
 /** Toast after picked people became invitations instead of members. */
 export function invitationsSentText(invitedCount: number, pickedCount: number) {
   if (invitedCount <= 0) return null;
   if (invitedCount === pickedCount && invitedCount > 1) {
-    return "Invitations sent";
+    return t("channels.chat.invitationsSent");
   }
-  return `Invitation sent to ${peopleCountLabel(invitedCount)}`;
+  return t("channels.chat.invitationSentTo", { count: invitedCount });
 }

@@ -31,6 +31,7 @@ import type {
   ManagedAgent,
   ManagedAgentRuntimeStatus,
 } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 type UseMembersSidebarActionsOptions = {
   channelId: string | null;
@@ -181,10 +182,10 @@ export function useMembersSidebarActions({
         });
         setActionNoticeMessage(
           action === "stop"
-            ? `Stopped ${agent.name} in this community.`
+            ? t("channels.agentActions.stoppedHere", { name: agent.name })
             : action === "restart"
-              ? `Restarted ${agent.name} in this community.`
-              : `Started ${agent.name} in this community.`,
+              ? t("channels.agentActions.restartedHere", { name: agent.name })
+              : t("channels.agentActions.startedHere", { name: agent.name }),
         );
         return;
       }
@@ -201,8 +202,8 @@ export function useMembersSidebarActions({
         }
         setActionNoticeMessage(
           agent.backend.type === "provider"
-            ? `Shutdown command sent to ${agent.name}.`
-            : `Stopped ${agent.name}.`,
+            ? t("channels.agentActions.shutdownSent", { name: agent.name })
+            : t("channels.agentActions.stopped", { name: agent.name }),
         );
         return;
       }
@@ -216,7 +217,9 @@ export function useMembersSidebarActions({
     } catch (error) {
       if (isRelayRemovedError(error)) return;
       setActionErrorMessage(
-        error instanceof Error ? error.message : "Failed to control agent.",
+        error instanceof Error
+          ? error.message
+          : t("channels.agentActions.controlFailed"),
       );
     } finally {
       setActiveActionKey(null);
@@ -238,9 +241,9 @@ export function useMembersSidebarActions({
       },
       actionKey: "bulk-respawn",
       agents: controllableManagedBots,
-      failureMessage: "Failed to respawn agent.",
+      failureMessage: t("channels.agentActions.respawnFailed"),
       successMessage: (count) =>
-        `Spawned or respawned ${formatCountLabel(count, "agent", "agents")}.`,
+        t("channels.agentActions.respawnedAll", { count }),
     });
   }
 
@@ -260,13 +263,9 @@ export function useMembersSidebarActions({
       },
       actionKey: "bulk-stop",
       agents: stoppableManagedBots,
-      failureMessage: "Failed to stop agent.",
+      failureMessage: t("channels.agentActions.stopFailed"),
       successMessage: (count) =>
-        `Stopped or requested shutdown for ${formatCountLabel(
-          count,
-          "agent",
-          "agents",
-        )}.`,
+        t("channels.agentActions.stoppedAll", { count }),
     });
   }
 
@@ -278,10 +277,10 @@ export function useMembersSidebarActions({
       },
       actionKey: "bulk-remove",
       agents: removableManagedBots,
-      failureMessage: "Failed to remove bot from group.",
+      failureMessage: t("channels.agentActions.removeFailed"),
       onSettled: invalidateSidebarQueries,
       successMessage: (count) =>
-        `Removed ${formatCountLabel(count, "managed bot", "managed bots")} from this group.`,
+        t("channels.agentActions.removedAll", { count }),
     });
   }
 
@@ -298,7 +297,9 @@ export function useMembersSidebarActions({
         })
         .catch((error: unknown) => {
           setActionErrorMessage(
-            error instanceof Error ? error.message : "Failed to remove member.",
+            error instanceof Error
+              ? error.message
+              : t("channels.members.removeFailed"),
           );
         })
         .finally(() => {
@@ -310,7 +311,7 @@ export function useMembersSidebarActions({
 
   async function removeManagedBotMembership(pubkey: string) {
     if (!channelId) {
-      throw new Error("No group selected.");
+      throw new Error(t("channels.noGroupSelected"));
     }
 
     await removeChannelMember(channelId, pubkey);
@@ -344,12 +345,12 @@ export function useMembersSidebarActions({
 
 function getLifecycleSuccessMessage(agent: ManagedAgent) {
   if (agent.backend.type === "provider") {
-    return `Deployed ${agent.name}.`;
+    return t("channels.agentActions.deployed", { name: agent.name });
   }
 
   return agent.status === "stopped"
-    ? `Respawned ${agent.name}.`
-    : `Spawned ${agent.name}.`;
+    ? t("channels.agentActions.respawned", { name: agent.name })
+    : t("channels.agentActions.spawned", { name: agent.name });
 }
 
 function formatFailureSummary(
@@ -370,8 +371,4 @@ function formatFailureSummary(
   return failures
     .map((failure) => `${failure.name}: ${failure.error}`)
     .join("; ");
-}
-
-function formatCountLabel(count: number, singular: string, plural: string) {
-  return `${count} ${count === 1 ? singular : plural}`;
 }

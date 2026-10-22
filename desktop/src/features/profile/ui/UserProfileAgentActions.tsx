@@ -10,6 +10,7 @@ import {
 import type { IdentityArchiveActions } from "@/features/identity-archive/hooks";
 import { ArchiveConfirmDialog } from "@/features/profile/ui/ArchiveConfirmDialog";
 import type { ManagedAgent } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -36,6 +37,7 @@ export function UserProfileAgentSettingsMenu({
   onExportPersona?: () => void;
   personaActionKey?: string;
 }) {
+  const t = useT();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = React.useState(false);
   const actionKey = managedAgent?.pubkey ?? "persona-draft";
   const personaKey = personaActionKey ?? actionKey;
@@ -49,15 +51,19 @@ export function UserProfileAgentSettingsMenu({
     return null;
   }
 
-  const archiveLabel = isBot ? "Archive agent" : "Archive identity";
-  const unarchiveLabel = isBot ? "Unarchive agent" : "Unarchive identity";
+  const archiveLabel = isBot
+    ? t("profile.archive.archiveAgent")
+    : t("profile.archive.archiveIdentity");
+  const unarchiveLabel = isBot
+    ? t("profile.archive.unarchiveAgent")
+    : t("profile.archive.unarchiveIdentity");
 
   return (
     <>
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
-            aria-label="Open profile settings"
+            aria-label={t("profile.settingsMenu.open")}
             data-testid="user-profile-settings-menu-trigger"
             size="icon"
             type="button"
@@ -78,7 +84,7 @@ export function UserProfileAgentSettingsMenu({
               onClick={onDuplicatePersona}
             >
               <CopyPlus className="h-4 w-4" />
-              Duplicate
+              {t("profile.settingsMenu.duplicate")}
             </DropdownMenuItem>
           ) : null}
           {onExportPersona ? (
@@ -88,7 +94,7 @@ export function UserProfileAgentSettingsMenu({
               onClick={onExportPersona}
             >
               <Download className="h-4 w-4" />
-              Export
+              {t("profile.settingsMenu.export")}
             </DropdownMenuItem>
           ) : null}
           {hasArchiveAction && hasPrimaryActions ? (
@@ -102,7 +108,9 @@ export function UserProfileAgentSettingsMenu({
                 onClick={archiveActions.unarchive}
               >
                 <ArchiveRestore className="h-4 w-4" />
-                {archiveActions.isPending ? "Unarchiving…" : unarchiveLabel}
+                {archiveActions.isPending
+                  ? t("profile.archive.unarchiving")
+                  : unarchiveLabel}
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem
@@ -111,7 +119,9 @@ export function UserProfileAgentSettingsMenu({
                 onSelect={() => setArchiveConfirmOpen(true)}
               >
                 <Archive className="h-4 w-4" />
-                {archiveActions.isPending ? "Archiving…" : archiveLabel}
+                {archiveActions.isPending
+                  ? t("profile.archive.archiving")
+                  : archiveLabel}
               </DropdownMenuItem>
             )
           ) : null}

@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useT } from "@/shared/i18n";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 
 import {
@@ -26,6 +27,7 @@ import { TaskModelsSettingsTab } from "./TaskModelsSettingsTab";
  * active tab is mounted, so each reads the saved record fresh when opened.
  */
 export function ModelsSettingsPanel() {
+  const t = useT();
   const [tab, setTab] = React.useState<ModelsSettingsTab>(
     () => readRequestedModelsSettingsTab() ?? "providers",
   );
@@ -34,28 +36,28 @@ export function ModelsSettingsPanel() {
   return (
     <section className="min-w-0" data-testid="settings-models">
       <SettingsSectionHeader
-        title="Models"
-        description="Connect the AI you pay for, pick what new agents start with, and choose the model for each app task."
+        title={t("settings.models.title")}
+        description={t("settings.models.description")}
       />
       <Tabs
         onValueChange={(value) => setTab(value as ModelsSettingsTab)}
         value={tab}
       >
-        <TabsList aria-label="Models settings" className="mb-6">
+        <TabsList aria-label={t("settings.models.tabsLabel")} className="mb-6">
           <TabsTrigger
             data-testid="settings-models-tab-providers"
             value="providers"
           >
-            Connections
+            {t("settings.models.tabConnections")}
           </TabsTrigger>
           <TabsTrigger
             data-testid="settings-models-tab-defaults"
             value="defaults"
           >
-            Default for new agents
+            {t("settings.models.tabDefaults")}
           </TabsTrigger>
           <TabsTrigger data-testid="settings-models-tab-tasks" value="tasks">
-            App tasks
+            {t("settings.models.tabTasks")}
           </TabsTrigger>
         </TabsList>
         <TabsContent className="mt-0" value="providers">

@@ -31,6 +31,7 @@ import { sendManagedAgentChannelMessage } from "@/shared/api/tauriManagedAgentMe
 import { getPresence, listManagedAgents } from "@/shared/api/tauri";
 import { getProfile } from "@/shared/api/tauriProfiles";
 import type { Channel, ManagedAgent, RelayEvent } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -761,7 +762,9 @@ export function useWelcomeKickoff(
         const leadStart = startResults[leadStartIndex];
         if (leadStart?.status === "rejected") {
           reportWelcomeKickoffFailure(
-            `Couldn't start ${resolvedAgentSet.lead.name} for the Welcome kickoff.`,
+            t("onboarding.welcomeKickoff.leadStartFailed", {
+              name: resolvedAgentSet.lead.name,
+            }),
             leadStart.reason,
           );
           return;
@@ -811,7 +814,7 @@ export function useWelcomeKickoff(
         // Kicked off from the computer that runs the team.
         if (error instanceof WelcomeTeamElsewhereError) return;
         reportWelcomeKickoffFailure(
-          "Couldn't start the Welcome team kickoff.",
+          t("onboarding.welcomeKickoff.startFailed"),
           error,
         );
       } finally {
@@ -916,7 +919,7 @@ export function useWelcomeKickoff(
           })()
             .catch((error) => {
               reportWelcomeKickoffFailure(
-                "Couldn't finish the Welcome team kickoff.",
+                t("onboarding.welcomeKickoff.finishFailed"),
                 error,
               );
             })
@@ -971,7 +974,7 @@ export function useWelcomeKickoff(
     })()
       .catch((error) => {
         reportWelcomeKickoffFailure(
-          "Couldn't finish the Welcome team kickoff.",
+          t("onboarding.welcomeKickoff.finishFailed"),
           error,
         );
       })

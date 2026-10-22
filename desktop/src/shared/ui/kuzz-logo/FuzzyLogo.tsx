@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import KuzzLogoAnimation, {
   type KuzzLogoAnimationProps,
@@ -25,20 +26,21 @@ export type FuzzyLogoProps = {
 export function FuzzyLogo({
   fuzz = true,
   className,
-  ariaLabel = "Kuzz logo",
+  ariaLabel,
   loop = false,
   loopRestSeconds = 0,
   pulse = true,
   reverse = false,
   variant = "v8",
 }: FuzzyLogoProps) {
+  const t = useT();
   // The rest-window loop already reads as "alive"; skip the pulse so the two
   // opacity animations don't fight.
   const hasRestWindow = loop && loopRestSeconds > 0;
 
   return (
     <KuzzLogoAnimation
-      ariaLabel={ariaLabel}
+      ariaLabel={ariaLabel ?? t("ui.logo.label")}
       className={cn(
         pulse && !fuzz && !hasRestWindow && "kuzz-logo--pulse",
         className,

@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 
 import { mentionOccurrences } from "@/shared/lib/mentionOccurrences";
@@ -205,7 +206,7 @@ export function useAgentAddressLockPicker({
           removeAddressedAgent(pubkey);
         }
         setAnnouncement(
-          `Stopped automatically mentioning ${suggestion.displayName}`,
+          t("messages.addressLock.stopped", { name: suggestion.displayName }),
         );
       } else {
         unpinnedAgentPubkeysRef.current.delete(pubkey);
@@ -240,7 +241,9 @@ export function useAgentAddressLockPicker({
           audience.addPubkey(pubkey);
           onPulseAddressLock(pubkey);
         }
-        setAnnouncement(`Automatically mentioning ${suggestion.displayName}`);
+        setAnnouncement(
+          t("messages.addressLock.started", { name: suggestion.displayName }),
+        );
       }
 
       if (mentions.isMentionOpen) {
@@ -317,7 +320,9 @@ export function useAgentAddressLockPicker({
             audience.addPubkey(pubkey);
             onPulseAddressLock(pubkey);
           }
-          setAnnouncement(`Automatically mentioning ${suggestion.displayName}`);
+          setAnnouncement(
+            t("messages.addressLock.started", { name: suggestion.displayName }),
+          );
         } else {
           onPulseAddressLock(pubkey);
         }

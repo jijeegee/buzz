@@ -8,7 +8,7 @@ import type { UserProfileSummary } from "@/shared/api/types";
 import { Markdown } from "@/shared/ui/markdown";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
-import { formatLocale } from "@/shared/i18n";
+import { formatLocale, type Translate, useT } from "@/shared/i18n";
 
 type AgentActivityCardProps = {
   group: AgentNoteGroup;
@@ -16,14 +16,23 @@ type AgentActivityCardProps = {
   agentStatus?: "online" | "away" | "offline" | "unknown";
 };
 
-function formatRelativeTime(unixSeconds: number): string {
+function formatRelativeTime(t: Translate, unixSeconds: number): string {
   const now = Date.now() / 1_000;
   const diff = now - unixSeconds;
 
-  if (diff < 60) return "just now";
-  if (diff < 3_600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86_400) return `${Math.floor(diff / 3_600)}h ago`;
-  if (diff < 604_800) return `${Math.floor(diff / 86_400)}d ago`;
+  if (diff < 60) return t("time.justNow");
+  if (diff < 3_600)
+    return t("pulse.agentActivity.minutesAgo", {
+      count: Math.floor(diff / 60),
+    });
+  if (diff < 86_400)
+    return t("pulse.agentActivity.hoursAgo", {
+      count: Math.floor(diff / 3_600),
+    });
+  if (diff < 604_800)
+    return t("pulse.agentActivity.daysAgo", {
+      count: Math.floor(diff / 86_400),
+    });
 
   return new Date(unixSeconds * 1_000).toLocaleDateString(formatLocale(), {
     month: "short",
@@ -32,6 +41,7 @@ function formatRelativeTime(unixSeconds: number): string {
 }
 
 function StatusDot({ status }: { status: "online" | "away" | "offline" }) {
+  const t = useT();
   const color =
     status === "online"
       ? "bg-emerald-500"
@@ -40,7 +50,7 @@ function StatusDot({ status }: { status: "online" | "away" | "offline" }) {
         : "bg-zinc-400";
   return (
     <span
-      aria-label={`Agent ${status}`}
+      aria-label={t("pulse.agentActivity.status", { status })}
       role="img"
       className={`inline-block h-2 w-2 rounded-full ${color}`}
     />
@@ -52,6 +62,7 @@ export function AgentActivityCard({
   profile,
   agentStatus,
 }: AgentActivityCardProps) {
+  const t = useT();
   const [expanded, setExpanded] = React.useState(false);
   const displayName = profile?.displayName ?? UNKNOWN_USER_LABEL;
   const avatarUrl = profile?.avatarUrl ?? null;
@@ -70,7 +81,9 @@ export function AgentActivityCard({
           role={"bot" as const}
         >
           <button
-            aria-label={`Open profile for ${displayName}`}
+            aria-label={t("pulse.agentActivity.openProfile", {
+              name: displayName,
+            })}
             className="relative flex shrink-0 rounded-xl pt-1 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             type="button"
           >
@@ -96,7 +109,7 @@ export function AgentActivityCard({
               <StatusDot status={agentStatus} />
             ) : null}
             <span className="shrink-0 text-2xs text-muted-foreground">
-              {formatRelativeTime(group.latestAt)}
+              {formatRelativeTime(t, group.latestAt)}
             </span>
           </div>
         </div>
@@ -111,7 +124,7 @@ export function AgentActivityCard({
             ) : (
               <ChevronRight className="h-4 w-4" />
             )}
-            {group.notes.length} updates
+            {t("pulse.agentActivity.updates", { count: group.notes.length })}
           </button>
         ) : null}
       </div>
@@ -134,7 +147,7 @@ export function AgentActivityCard({
               <div className="min-w-0 flex-1 text-sm">
                 <Markdown content={note.content} />
                 <p className="mt-1 text-2xs text-muted-foreground">
-                  {formatRelativeTime(note.createdAt)}
+                  {formatRelativeTime(t, note.createdAt)}
                 </p>
               </div>
             </div>

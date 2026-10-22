@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import type {
   Channel,
   ChannelMember,
@@ -400,7 +401,7 @@ export function formatTimelineMessages(
     const profile = profiles?.[actorPubkey];
     const displayName =
       currentPubkeyLower && actorPubkey === currentPubkeyLower
-        ? "You"
+        ? t("common.you")
         : profile?.displayName?.trim() ||
           profile?.nip05Handle?.trim() ||
           UNKNOWN_USER_LABEL;

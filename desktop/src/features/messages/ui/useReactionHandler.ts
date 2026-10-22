@@ -1,3 +1,4 @@
+import { t } from "@/shared/i18n";
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -45,7 +46,9 @@ export function applyOptimisticReaction(
             ...reaction,
             count: nextCount,
             reactedByCurrentUser: false,
-            users: reaction.users.filter((user) => user.displayName !== "You"),
+            users: reaction.users.filter(
+              (user) => user.displayName !== t("common.you"),
+            ),
           }
         : reaction,
     );
@@ -72,7 +75,7 @@ export function applyOptimisticReaction(
       emojiUrl,
       count: 1,
       reactedByCurrentUser: true,
-      users: [{ pubkey: "", displayName: "You", avatarUrl: null }],
+      users: [{ pubkey: "", displayName: t("common.you"), avatarUrl: null }],
     },
   ];
 }
@@ -162,7 +165,7 @@ export function useReactionHandler(
         const nextMessage =
           error instanceof Error
             ? error.message
-            : "Failed to update the reaction.";
+            : t("messages.reactions.updateFailed");
         setErrorMessage(nextMessage);
         throw error;
       } finally {

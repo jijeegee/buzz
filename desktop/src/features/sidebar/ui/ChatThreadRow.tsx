@@ -7,6 +7,7 @@ import {
   type ChatRowUnread,
 } from "@/features/chats/chatListState";
 import type { ChatRowPreview } from "@/features/chats/chatRowPreview";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   ContextMenu,
@@ -62,6 +63,7 @@ export function ChatThreadRow({
   /** Agents working in this thread right now. */
   working?: ActiveChannelTurnSummary;
 }) {
+  const t = useT();
   const rootId = row.root_id ?? row.key;
   const title = chatThreadTitle(row);
   const place = isDm ? channelLabel : `${channelLabel}`;
@@ -75,7 +77,7 @@ export function ChatThreadRow({
             aria-hidden="true"
             className="h-3.5 w-3.5 text-sidebar-foreground/50"
           />
-          <span className="sr-only">Closed</span>
+          <span className="sr-only">{t("sidebar.threadRow.closedSr")}</span>
         </span>
       ) : null}
       {unread.mentions > 0 ? (
@@ -86,8 +88,10 @@ export function ChatThreadRow({
           @
           <span className="sr-only">
             {" "}
-            {formatChatCount(unread.mentions, unread.mentionsOverflow)} unread
-            mention{unread.mentions === 1 ? "" : "s"}
+            {t("sidebar.threadRow.mentionsSr", {
+              count: unread.mentions,
+              shown: formatChatCount(unread.mentions, unread.mentionsOverflow),
+            })}
           </span>
         </span>
       ) : null}
@@ -104,7 +108,7 @@ export function ChatThreadRow({
           {formatChatCount(unread.count, unread.overflow)}
           <span className="sr-only">
             {" "}
-            unread message{unread.count === 1 ? "" : "s"}
+            {t("sidebar.moreThreads.unreadSr", { count: unread.count })}
           </span>
         </span>
       ) : unread.marked ? (
@@ -112,7 +116,7 @@ export function ChatThreadRow({
           className="h-2 w-2 shrink-0 rounded-full bg-primary"
           data-testid={`chat-thread-unread-dot-${rootId}`}
         >
-          <span className="sr-only">unread</span>
+          <span className="sr-only">{t("sidebar.unreadSr")}</span>
         </span>
       ) : null}
     </>
@@ -151,7 +155,7 @@ export function ChatThreadRow({
             >
               ›
             </span>
-            <span className="sr-only">thread</span>
+            <span className="sr-only">{t("sidebar.threadRow.threadSr")}</span>
             <span className="min-w-0 truncate">{title}</span>
           </>
         }
@@ -159,7 +163,7 @@ export function ChatThreadRow({
           isPinned ? (
             <span className="shrink-0">
               <Pin aria-hidden="true" className="h-3 w-3" />
-              <span className="sr-only">Pinned for you</span>
+              <span className="sr-only">{t("sidebar.pinnedForYouSr")}</span>
             </span>
           ) : null
         }

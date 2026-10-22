@@ -1,5 +1,6 @@
 import { PanelSectionGroup } from "@/shared/ui/PanelSectionGroup";
 import { Switch } from "@/shared/ui/switch";
+import { useT } from "@/shared/i18n";
 
 const SWITCH_ID = "channel-management-goals-switch";
 const HINT_ID = `${SWITCH_ID}-hint`;
@@ -22,6 +23,7 @@ export function ChannelGoalsSwitchRow({
   isSaving: boolean;
   onCheckedChange: (enabled: boolean) => void;
 }) {
+  const t = useT();
   return (
     <PanelSectionGroup testId="channel-management-goals">
       <div className="flex min-h-16 w-full items-center gap-3 px-4 py-3">
@@ -30,12 +32,12 @@ export function ChannelGoalsSwitchRow({
             className="block text-sm font-medium text-foreground"
             htmlFor={SWITCH_ID}
           >
-            Goals
+            {t("channels.goals.label")}
           </label>
           <p className="mt-0.5 text-sm text-muted-foreground/70" id={HINT_ID}>
-            Track goals for this conversation. Agents get goal guidance only
-            when on.
-            {canToggle ? null : " Only owners and admins can change this."}
+            {canToggle
+              ? t("channels.goals.hint")
+              : t("channels.goals.hintReadOnly")}
           </p>
           {error instanceof Error ? (
             <p className="mt-1 text-sm text-destructive" role="alert">

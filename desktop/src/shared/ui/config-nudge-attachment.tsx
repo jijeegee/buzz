@@ -1,3 +1,4 @@
+import { t, useT } from "@/shared/i18n";
 import { AlertTriangle } from "lucide-react";
 
 import {
@@ -75,7 +76,7 @@ export function shouldOpenDoctor(
 }
 
 export function missingBinaryRecoveryMessage(): string {
-  return "not found in PATH — install it or update PATH, then restart Kuzz";
+  return t("ui.configNudge.missingBinaryHint");
 }
 
 /**
@@ -114,16 +115,16 @@ function cliLoginMessage(
     { surface: "cli_login" }
   >,
 ): string {
-  const harness = req.probe_args[0] ?? "the CLI tool";
+  const harness = req.probe_args[0] ?? t("ui.configNudge.cliToolFallback");
   switch (req.availability) {
     case "not_installed":
-      return `${harness} isn't installed`;
+      return t("ui.configNudge.notInstalled", { harness });
     case "cli_missing":
-      return `${harness} CLI is missing`;
+      return t("ui.configNudge.cliMissing", { harness });
     case "adapter_missing":
-      return `${harness} ACP adapter isn't installed`;
+      return t("ui.configNudge.adapterMissing", { harness });
     case "adapter_outdated":
-      return `${harness} ACP adapter is outdated — reinstall required`;
+      return t("ui.configNudge.adapterOutdated", { harness });
     case "available":
       // Tooling is present but authentication is needed — fall back to
       // the backend-supplied copy which has the exact login command.
@@ -198,6 +199,7 @@ export function ConfigNudgeCard({
   className?: string;
   nudge: ConfigNudgePayload;
 }) {
+  const t = useT();
   const { openProfilePanel } = useProfilePanel();
   const { onOpenSettings } = useAppShell();
 
@@ -268,7 +270,7 @@ export function ConfigNudgeCard({
       </AttachmentMedia>
       <AttachmentContent>
         <AttachmentTitle className="whitespace-normal text-destructive line-clamp-2">
-          {nudge.agent_name} needs configuration
+          {t("ui.configNudge.title", { name: nudge.agent_name })}
         </AttachmentTitle>
         <div className="mt-1 flex flex-col gap-0.5">
           {nudge.requirements.map((req, i) => (
@@ -287,7 +289,7 @@ export function ConfigNudgeCard({
       {opensDoctor && !informationalOnly && (
         <AttachmentActions className="items-end self-end">
           <span className="text-xs text-muted-foreground">
-            Open Agent runtimes →
+            {t("ui.configNudge.openRuntimes")}
           </span>
         </AttachmentActions>
       )}
@@ -296,8 +298,8 @@ export function ConfigNudgeCard({
         <AttachmentTrigger
           aria-label={
             opensDoctor
-              ? `Open Agent runtimes for ${nudge.agent_name}`
-              : `Open Edit Agent for ${nudge.agent_name}`
+              ? t("ui.configNudge.openRuntimesFor", { name: nudge.agent_name })
+              : t("ui.configNudge.openEditAgentFor", { name: nudge.agent_name })
           }
           onClick={handleOpen}
         />
@@ -320,16 +322,18 @@ function RequirementRow({
   ) => void;
   requirement: ConfigNudgePayload["requirements"][number];
 }) {
+  const t = useT();
+  const code = (chunks: React.ReactNode) => (
+    <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
+      {chunks}
+    </code>
+  );
   switch (requirement.surface) {
     case "env_key":
       return (
         <div className="flex items-center gap-2 text-xs leading-4 text-muted-foreground">
           <span className="flex-1 [overflow-wrap:anywhere]">
-            Set{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
-              {requirement.key}
-            </code>{" "}
-            in Edit Agent → Environment variables
+            {t("ui.configNudge.setEnvKey", { key: requirement.key, code })}
           </span>
           {!allCliLogin && (
             <button
@@ -339,7 +343,7 @@ function RequirementRow({
               }
               type="button"
             >
-              Edit Agent →
+              {t("ui.configNudge.editAgent")}
             </button>
           )}
         </div>
@@ -348,8 +352,10 @@ function RequirementRow({
       return (
         <div className="flex items-center gap-2 text-xs leading-4 text-muted-foreground">
           <span className="flex-1 [overflow-wrap:anywhere]">
-            Set the <strong>{requirement.field}</strong> field in Edit Agent
-            dropdowns
+            {t("ui.configNudge.setField", {
+              field: requirement.field,
+              b: (chunks) => <strong>{chunks}</strong>,
+            })}
           </span>
           {!allCliLogin && (
             <button
@@ -359,7 +365,7 @@ function RequirementRow({
               }
               type="button"
             >
-              Edit Agent →
+              {t("ui.configNudge.editAgent")}
             </button>
           )}
         </div>
@@ -384,7 +390,7 @@ function RequirementRow({
               onClick={onOpenDoctor}
               type="button"
             >
-              Open Agent runtimes →
+              {t("ui.configNudge.openRuntimes")}
             </button>
           )}
         </div>
@@ -393,7 +399,7 @@ function RequirementRow({
       return (
         <div className="flex items-center gap-2 text-xs leading-4 text-muted-foreground">
           <span className="flex-1 [overflow-wrap:anywhere]">
-            Git for Windows is required for kuzz-agent shell tools
+            {t("ui.configNudge.gitBashRequired")}
           </span>
         </div>
       );
@@ -416,16 +422,16 @@ function RequirementRow({
       // Config-invalid rows are purely informational — the user must edit an
       // external file. No Agent runtimes CTA (Kuzz can't repair ~/.codex/config.toml)
       // and no Edit Agent CTA (the field isn't managed by Kuzz).
-      const cli = requirement.probe_args[0] ?? "the CLI";
+      const cli = requirement.probe_args[0] ?? t("ui.configNudge.cliFallback");
       const configFile = `~/.${cli}/config.toml`;
       return (
         <div className="flex items-center gap-2 text-xs leading-4 text-muted-foreground">
           <span className="flex-1 [overflow-wrap:anywhere]">
-            {configFile} is invalid:{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
-              {requirement.diagnostic}
-            </code>{" "}
-            — fix the config and restart the agent
+            {t("ui.configNudge.configInvalid", {
+              file: configFile,
+              diagnostic: requirement.diagnostic,
+              code,
+            })}
           </span>
         </div>
       );

@@ -72,6 +72,7 @@ import {
 import { EditRespondToDialog } from "./EditRespondToDialog";
 import { useMembersSidebarActions } from "./useMembersSidebarActions";
 import { useMembersSidebarModeration } from "./useMembersSidebarModeration";
+import { useT } from "@/shared/i18n";
 const MEMBER_ADD_RESULT_LIMIT = 50;
 const MEMBER_SEARCH_MIN_QUERY_LENGTH = 2;
 const MEMBER_ROW_ESTIMATE_PX = 60;
@@ -145,6 +146,7 @@ export function MembersSidebar({
   onViewActivity,
   relayUrl,
 }: MembersSidebarProps) {
+  const t = useT();
   const channelId = channel?.id ?? null;
   const queryClient = useQueryClient();
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -161,7 +163,7 @@ export function MembersSidebar({
   const addMembersMutation = useAddChannelMembersMutation(channelId);
   const changeRoleMutation = useMutation({
     mutationFn: async ({ pubkey, role }: { pubkey: string; role: string }) => {
-      if (!channelId) throw new Error("No group selected.");
+      if (!channelId) throw new Error(t("channels.noGroupSelected"));
       await changeChannelMemberRole(channelId, pubkey, role);
     },
     onSettled: async () => {
@@ -587,7 +589,9 @@ export function MembersSidebar({
               pubkey: user.pubkey,
               label: formatAddCandidateName(user),
               error:
-                error instanceof Error ? error.message : "Failed to add agent.",
+                error instanceof Error
+                  ? error.message
+                  : t("channels.members.addAgentFailed"),
             },
           ]);
         }
@@ -718,11 +722,13 @@ export function MembersSidebar({
           <DialogHeader className="space-y-0 pb-5">
             <div className="flex items-center justify-between gap-4">
               <DialogTitle>
-                {channel.groupChat ? "People" : "Group members"}
+                {channel.groupChat
+                  ? t("channels.membersBar.people")
+                  : t("channels.membersBar.groupMembers")}
               </DialogTitle>
               <DialogClose className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent hover:text-accent-foreground focus:outline-hidden focus:ring-1 focus:ring-ring">
                 <X className="h-4 w-4" />
-                <span className="sr-only">Close</span>
+                <span className="sr-only">{t("common.close")}</span>
               </DialogClose>
             </div>
             <label
@@ -750,8 +756,8 @@ export function MembersSidebar({
                 }}
                 placeholder={
                   canAddMembers
-                    ? "Add people and agents"
-                    : "Search people and agents"
+                    ? t("channels.members.addPlaceholder")
+                    : t("channels.members.searchPlaceholder")
                 }
                 ref={searchInputRef}
                 spellCheck={false}
@@ -778,8 +784,10 @@ export function MembersSidebar({
               >
                 <SearchResultSectionTitle>
                   {normalizedSearchQuery
-                    ? "Members"
-                    : `Members · ${activeMembers.length}`}
+                    ? t("channels.settings.members")
+                    : t("channels.members.sectionCount", {
+                        count: activeMembers.length,
+                      })}
                 </SearchResultSectionTitle>
                 {normalizedSearchQuery ? (
                   <div>
@@ -791,8 +799,8 @@ export function MembersSidebar({
                         {addSearchResults.length > 0 || isAddSearchLoading ? (
                           <SearchResultSectionTitle>
                             {channel.groupChat
-                              ? "Not in this chat"
-                              : "Not in this group"}
+                              ? t("channels.members.notInChat")
+                              : t("channels.members.notInGroup")}
                           </SearchResultSectionTitle>
                         ) : null}
                         {addSearchResults.map((user) => (
@@ -814,7 +822,7 @@ export function MembersSidebar({
                         ))}
                         {isAddSearchLoading ? (
                           <p className="px-4 py-3 text-sm text-muted-foreground">
-                            Searching...
+                            {t("channels.browser.searching")}
                           </p>
                         ) : null}
                       </>
@@ -823,7 +831,7 @@ export function MembersSidebar({
                     addSearchResults.length === 0 &&
                     !isAddSearchLoading ? (
                       <p className="px-4 py-3 text-sm text-muted-foreground">
-                        No matching people or agents.
+                        {t("channels.members.noMatches")}
                       </p>
                     ) : null}
                   </div>
@@ -840,10 +848,10 @@ export function MembersSidebar({
                 ) : (
                   <p className="px-4 py-3 text-sm text-muted-foreground">
                     {membersQuery.isLoading
-                      ? "Loading members..."
+                      ? t("channels.members.loading")
                       : normalizedSearchQuery
-                        ? "No members match your search."
-                        : "No members found."}
+                        ? t("channels.members.noSearchMatches")
+                        : t("channels.members.none")}
                   </p>
                 )}
               </div>
@@ -857,7 +865,7 @@ export function MembersSidebar({
                 >
                   <summary className="flex cursor-pointer items-center gap-2 list-none [&::-webkit-details-marker]:hidden">
                     <h2 className="text-sm font-semibold tracking-tight text-muted-foreground">
-                      Archived
+                      {t("channels.browser.archivedTab")}
                     </h2>
                     <span
                       className="text-muted-foreground"
@@ -878,7 +886,7 @@ export function MembersSidebar({
                     )}
                     {filteredArchivedMembers.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        No archived members match your search.
+                        {t("channels.members.noArchivedMatches")}
                       </p>
                     ) : null}
                   </div>

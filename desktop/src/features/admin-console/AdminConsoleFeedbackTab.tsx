@@ -11,6 +11,7 @@ import { AlertCircle, ChevronLeft, Download, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui/button";
 import { Badge } from "@/shared/ui/badge";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import {
   fetchAdminAttachmentBlobUrl,
@@ -92,6 +93,7 @@ export function FeedbackTab({
   pubkey: string;
   generation: number;
 }) {
+  const t = useT();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // List refresh fence: bumped when a feedback status change completes in the
   // detail view, so returning to the list shows fresh status without a tab
@@ -126,7 +128,11 @@ export function FeedbackTab({
 
   const items = listState.data;
   if (!Array.isArray(items) || items.length === 0) {
-    return <p className="text-sm text-muted-foreground">No feedback found.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("adminConsole.feedback.empty")}
+      </p>
+    );
   }
 
   return (
@@ -148,7 +154,7 @@ export function FeedbackTab({
                 <span className="block font-medium line-clamp-2">{text}</span>
                 {status !== "new" && (
                   <Badge className="shrink-0" variant="secondary">
-                    {status}
+                    {t("adminConsole.feedback.status", { status })}
                   </Badge>
                 )}
               </div>
@@ -182,6 +188,7 @@ function AttachmentViewer({
    *  context has changed and any in-flight load result is stale. */
   panelGeneration: number;
 }) {
+  const t = useT();
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<AdminAttachmentErrorCode | null>(null);
   const [saving, setSaving] = useState(false);
@@ -286,7 +293,7 @@ function AttachmentViewer({
         attachment.size,
       );
       if (saved) {
-        toast.success("Attachment saved");
+        toast.success(t("adminConsole.feedback.attachmentSavedToast"));
       }
     } catch (e) {
       setSaveError(
@@ -295,7 +302,14 @@ function AttachmentViewer({
     } finally {
       setSaving(false);
     }
-  }, [origin, feedbackId, attachment.sha256, attachment.mime, attachment.size]);
+  }, [
+    origin,
+    feedbackId,
+    attachment.sha256,
+    attachment.mime,
+    attachment.size,
+    t,
+  ]);
 
   if (error) {
     return <AttachmentError code={error} />;
@@ -319,7 +333,9 @@ function AttachmentViewer({
           ) : (
             <>
               <Download className="h-3.5 w-3.5" />
-              {`Save attachment (${attachment.mime})`}
+              {t("adminConsole.feedback.saveAttachment", {
+                mime: attachment.mime,
+              })}
             </>
           )}
         </Button>
@@ -332,14 +348,14 @@ function AttachmentViewer({
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-        Loading…
+        {t("common.loading")}
       </div>
     );
   }
 
   return (
     <img
-      alt="Feedback attachment"
+      alt={t("adminConsole.feedback.attachmentAlt")}
       className="max-h-96 max-w-full rounded-md border border-border/60 object-contain"
       src={blobUrl}
     />
@@ -349,23 +365,48 @@ function AttachmentViewer({
 // ── Feedback fields ───────────────────────────────────────────────────────
 
 function FeedbackFields({ data }: { data: AdminFeedbackDto }) {
+  const t = useT();
   return (
     <div
       className="space-y-1.5 rounded-md border border-border/60 px-3 py-2.5"
       data-testid="feedback-detail-fields"
     >
-      <DetailRow label="ID" value={data.id} mono />
-      <DetailRow label="Body" value={data.body} />
-      <DetailRow label="Submitter" value={data.submitterPubkey} mono />
-      <DetailRow label="Category" value={data.category ?? null} />
-      <DetailRow label="Community" value={data.communityId} mono />
-      <DetailRow label="Host" value={data.communityHost} />
-      <DetailRow label="Event ID" value={data.eventId} mono />
+      <DetailRow label={t("adminConsole.field.id")} value={data.id} mono />
       <DetailRow
-        label="Event created"
+        label={t("adminConsole.feedback.fieldBody")}
+        value={data.body}
+      />
+      <DetailRow
+        label={t("adminConsole.feedback.fieldSubmitter")}
+        value={data.submitterPubkey}
+        mono
+      />
+      <DetailRow
+        label={t("adminConsole.feedback.fieldCategory")}
+        value={data.category ?? null}
+      />
+      <DetailRow
+        label={t("adminConsole.field.community")}
+        value={data.communityId}
+        mono
+      />
+      <DetailRow
+        label={t("adminConsole.field.host")}
+        value={data.communityHost}
+      />
+      <DetailRow
+        label={t("adminConsole.field.eventId")}
+        value={data.eventId}
+        mono
+      />
+      <DetailRow
+        label={t("adminConsole.feedback.fieldEventCreated")}
         value={formatTimestamp(data.eventCreatedAt)}
       />
-      <DetailRow label="Received" value={formatTimestamp(data.receivedAt)} />
+      <DetailRow
+        label={t("adminConsole.feedback.fieldReceived")}
+        value={formatTimestamp(data.receivedAt)}
+      />
     </div>
   );
 }
@@ -388,6 +429,7 @@ function FeedbackStatusControl({
   origin: string;
   onStatusChanged: (newStatus: AdminFeedbackStatus) => void;
 }) {
+  const t = useT();
   const [isWorking, setIsWorking] = useState(false);
 
   const statuses: AdminFeedbackStatus[] = ["new", "reviewed", "archived"];
@@ -397,7 +439,9 @@ function FeedbackStatusControl({
     setIsWorking(true);
     try {
       await patchAdminFeedback(origin, feedbackId, newStatus);
-      toast.success(`Feedback marked ${newStatus}`);
+      toast.success(
+        t("adminConsole.feedback.markedToast", { status: newStatus }),
+      );
       onStatusChanged(newStatus);
     } catch (e) {
       toast.error(adminErrorMessage(e));
@@ -411,7 +455,9 @@ function FeedbackStatusControl({
       className="flex flex-col gap-1.5"
       data-testid="feedback-status-control"
     >
-      <span className="text-xs font-medium text-muted-foreground">Status</span>
+      <span className="text-xs font-medium text-muted-foreground">
+        {t("adminConsole.feedback.statusLabel")}
+      </span>
       <div className="flex gap-1.5">
         {statuses.map((s) => (
           <Button
@@ -428,7 +474,7 @@ function FeedbackStatusControl({
             type="button"
             variant={currentStatus === s ? "default" : "outline"}
           >
-            {s}
+            {t("adminConsole.feedback.status", { status: s })}
           </Button>
         ))}
       </div>
@@ -456,6 +502,7 @@ export function FeedbackDetail({
   /** Called after a status change completes so the parent list can refetch. */
   onMutated: () => void;
 }) {
+  const t = useT();
   // Local status state: initialized from server, updated on PATCH.
   const [localStatus, setLocalStatus] = useState<AdminFeedbackStatus | null>(
     null,
@@ -496,7 +543,7 @@ export function FeedbackDetail({
         type="button"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
-        Back to feedback
+        {t("adminConsole.feedback.back")}
       </button>
       {detailState.status === "loading" && <LoadingSpinner />}
       {detailState.status === "error" && (
@@ -522,15 +569,19 @@ export function FeedbackDetail({
                 data-testid="feedback-status-readonly"
               >
                 <span className="text-xs font-medium text-muted-foreground">
-                  Status
+                  {t("adminConsole.feedback.statusLabel")}
                 </span>
-                <Badge variant="secondary">{localStatus}</Badge>
+                <Badge variant="secondary">
+                  {t("adminConsole.feedback.status", { status: localStatus })}
+                </Badge>
               </div>
             )
           )}
           {attachments.length > 0 && (
             <div className="space-y-3">
-              <h4 className="text-sm font-medium">Attachments</h4>
+              <h4 className="text-sm font-medium">
+                {t("adminConsole.feedback.attachmentsTitle")}
+              </h4>
               {attachments.map((a) => (
                 <AttachmentViewer
                   attachment={a}
@@ -546,9 +597,9 @@ export function FeedbackDetail({
                   className="text-xs text-muted-foreground"
                   data-testid="attachment-truncated-notice"
                 >
-                  {truncatedCount} attachment
-                  {truncatedCount === 1 ? "" : "s"} not shown (display limit
-                  reached).
+                  {t("adminConsole.feedback.attachmentsTruncated", {
+                    count: truncatedCount,
+                  })}
                 </p>
               )}
             </div>
@@ -559,20 +610,25 @@ export function FeedbackDetail({
   );
 }
 
-const FRIENDLY_ATTACHMENT_ERROR: Record<string, string> = {
-  admin_attachment_too_large: "Attachment exceeds the 10 MiB desktop cap.",
+const FRIENDLY_ATTACHMENT_ERROR: Record<string, MessageKey> = {
+  admin_attachment_too_large: "adminConsole.feedback.attachmentTooLarge",
   admin_attachment_mime_mismatch:
-    "Attachment MIME type does not match the imeta record.",
+    "adminConsole.feedback.attachmentMimeMismatch",
   admin_attachment_size_mismatch:
-    "Attachment byte count does not match the imeta record.",
-  admin_attachment_network_error: "Network error fetching attachment.",
+    "adminConsole.feedback.attachmentSizeMismatch",
+  admin_attachment_network_error:
+    "adminConsole.feedback.attachmentNetworkError",
 };
 
 function AttachmentError({ code }: { code: AdminAttachmentErrorCode }) {
+  const t = useT();
+  const friendly = FRIENDLY_ATTACHMENT_ERROR[code];
   return (
     <div className="flex items-center gap-1.5 text-xs text-destructive">
       <AlertCircle className="h-3.5 w-3.5" />
-      {FRIENDLY_ATTACHMENT_ERROR[code] ?? `Error: ${code}`}
+      {friendly
+        ? t(friendly)
+        : t("adminConsole.feedback.attachmentError", { code })}
     </div>
   );
 }

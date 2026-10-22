@@ -1,3 +1,5 @@
+import { t } from "@/shared/i18n";
+
 const DURATION_PARTS_PATTERN =
   /^\s*(?:(\d+)\s*w)?\s*(?:(\d+)\s*d)?\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?\s*$/i;
 
@@ -57,14 +59,30 @@ export function formatDurationSeconds(totalSeconds: number): string {
   return parts.join(" ");
 }
 
-function verboseUnit(value: number, unit: string): string {
-  return `${value} ${unit}${value === 1 ? "" : "s"}`;
+function verboseWeeks(count: number): string {
+  return t("workflows.duration.weeks", { count });
+}
+
+function verboseDays(count: number): string {
+  return t("workflows.duration.days", { count });
+}
+
+function verboseHours(count: number): string {
+  return t("workflows.duration.hours", { count });
+}
+
+function verboseMinutes(count: number): string {
+  return t("workflows.duration.minutes", { count });
+}
+
+function verboseSeconds(count: number): string {
+  return t("workflows.duration.seconds", { count });
 }
 
 /** Format whole seconds with fully spelled-out units for summary UI. */
 export function formatDurationSecondsVerbose(totalSeconds: number): string {
   if (!Number.isSafeInteger(totalSeconds) || totalSeconds < 0) return "";
-  if (totalSeconds === 0) return "0 seconds";
+  if (totalSeconds === 0) return verboseSeconds(0);
 
   const weeks = Math.floor(totalSeconds / SECONDS_PER_WEEK);
   const days = Math.floor((totalSeconds % SECONDS_PER_WEEK) / SECONDS_PER_DAY);
@@ -75,11 +93,11 @@ export function formatDurationSecondsVerbose(totalSeconds: number): string {
   const seconds = totalSeconds % SECONDS_PER_MINUTE;
   const parts: string[] = [];
 
-  if (weeks > 0) parts.push(verboseUnit(weeks, "week"));
-  if (days > 0) parts.push(verboseUnit(days, "day"));
-  if (hours > 0) parts.push(verboseUnit(hours, "hour"));
-  if (minutes > 0) parts.push(verboseUnit(minutes, "minute"));
-  if (seconds > 0) parts.push(verboseUnit(seconds, "second"));
+  if (weeks > 0) parts.push(verboseWeeks(weeks));
+  if (days > 0) parts.push(verboseDays(days));
+  if (hours > 0) parts.push(verboseHours(hours));
+  if (minutes > 0) parts.push(verboseMinutes(minutes));
+  if (seconds > 0) parts.push(verboseSeconds(seconds));
 
   return parts.join(" ");
 }

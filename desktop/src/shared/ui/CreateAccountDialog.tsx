@@ -1,3 +1,4 @@
+import { useT } from "@/shared/i18n";
 import type { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { Button } from "./button";
 import {
@@ -20,6 +21,7 @@ export function CreateAccountDialog({
   login: Pick<ReturnType<typeof useGoogleLogin>, "signup" | "answerSignup">;
 }) {
   const prompt = login.signup;
+  const t = useT();
   return (
     <AlertDialog
       open={prompt !== null}
@@ -29,9 +31,9 @@ export function CreateAccountDialog({
     >
       <AlertDialogContent data-testid="create-account-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle>Create your Kuzz account</AlertDialogTitle>
+          <AlertDialogTitle>{t("ui.createAccount.title")}</AlertDialogTitle>
           <AlertDialogDescription>
-            There's no Kuzz account for this Google account yet.
+            {t("ui.createAccount.description")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {prompt?.email ? (
@@ -49,14 +51,14 @@ export function CreateAccountDialog({
             type="button"
             variant="outline"
           >
-            Use a different account
+            {t("ui.createAccount.useDifferent")}
           </Button>
           <Button
             data-testid="create-account-confirm"
             onClick={() => login.answerSignup("create")}
             type="button"
           >
-            Create account
+            {t("ui.createAccount.create")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

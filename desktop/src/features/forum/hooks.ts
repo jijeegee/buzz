@@ -10,6 +10,7 @@ import type {
   ForumThreadResponse,
 } from "@/shared/api/types";
 import { KIND_FORUM_COMMENT, KIND_FORUM_POST } from "@/shared/constants/kinds";
+import { t } from "@/shared/i18n";
 
 /** Keeps focused polling for forum posts at the established 15-second cadence. */
 export const FORUM_POSTS_REFETCH_INTERVAL_MS = 15_000;
@@ -95,7 +96,7 @@ export function useCreateForumPostMutation(channel: Channel | null) {
       mediaTags?: string[][];
     }) => {
       if (!channel) {
-        throw new Error("No group selected.");
+        throw new Error(t("forum.noGroupSelected"));
       }
 
       return sendChannelMessage(
@@ -123,7 +124,7 @@ export function useDeleteForumPostMutation(channel: Channel | null) {
   return useMutation({
     mutationFn: async ({ eventId }: { eventId: string }) => {
       if (!channel) {
-        throw new Error("No group selected.");
+        throw new Error(t("forum.noGroupSelected"));
       }
       await deleteMessage(channel.id, eventId);
     },
@@ -146,7 +147,7 @@ export function useDeleteForumReplyMutation(
   return useMutation({
     mutationFn: async ({ eventId }: { eventId: string }) => {
       if (!channel) {
-        throw new Error("No group selected.");
+        throw new Error(t("forum.noGroupSelected"));
       }
       await deleteMessage(channel.id, eventId);
     },
@@ -181,7 +182,7 @@ export function useCreateForumReplyMutation(channel: Channel | null) {
       mediaTags?: string[][];
     }) => {
       if (!channel) {
-        throw new Error("No group selected.");
+        throw new Error(t("forum.noGroupSelected"));
       }
 
       return sendChannelMessage(

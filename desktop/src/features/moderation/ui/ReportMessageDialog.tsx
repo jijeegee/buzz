@@ -8,6 +8,7 @@ import {
   useBlockPersonMutation,
 } from "@/features/people/BlockedPeopleContext";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { type MessageKey, t as translate, useT } from "@/shared/i18n";
 import type { ReportType } from "@/features/moderation/hooks";
 import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
@@ -23,14 +24,17 @@ import { Textarea } from "@/shared/ui/textarea";
 
 /** NIP-56 report categories, in the order shown to the reporter. `other` is
  *  last so it reads as the fallback rather than a first-class choice. */
-const REPORT_CATEGORIES: { value: ReportType; label: string }[] = [
-  { value: "spam", label: "Spam" },
-  { value: "profanity", label: "Profanity or hate speech" },
-  { value: "nudity", label: "Nudity or sexual content" },
-  { value: "impersonation", label: "Impersonation" },
-  { value: "malware", label: "Malware or scam" },
-  { value: "illegal", label: "Illegal content" },
-  { value: "other", label: "Other" },
+const REPORT_CATEGORIES: { value: ReportType; labelKey: MessageKey }[] = [
+  { value: "spam", labelKey: "moderation.report.category.spam" },
+  { value: "profanity", labelKey: "moderation.report.category.profanity" },
+  { value: "nudity", labelKey: "moderation.report.category.nudity" },
+  {
+    value: "impersonation",
+    labelKey: "moderation.report.category.impersonation",
+  },
+  { value: "malware", labelKey: "moderation.report.category.malware" },
+  { value: "illegal", labelKey: "moderation.report.category.illegal" },
+  { value: "other", labelKey: "moderation.report.category.other" },
 ];
 
 /**
@@ -45,16 +49,16 @@ export function reportErrorMessage(error: unknown): string {
     // Surface the relay's own reason verbatim. Strip any raw status prefix
     // (e.g. "400: ") so the copy reads naturally in a toast.
     const stripped = msg.replace(/^[45]\d\d:\s?/, "").trim();
-    return stripped || "Failed to submit report";
+    return stripped || translate("moderation.report.submitFailed");
   }
-  return "Failed to submit report";
+  return translate("moderation.report.submitFailed");
 }
 
 /** Toast text after a report, with or without the block that came with it. */
 export function reportDoneMessage(blocked: boolean): string {
   return blocked
-    ? "Report sent to moderators and the person is blocked"
-    : "Report submitted to community moderators";
+    ? translate("moderation.report.doneBlocked")
+    : translate("moderation.report.done");
 }
 
 /**
@@ -63,9 +67,9 @@ export function reportDoneMessage(blocked: boolean): string {
  */
 export function reportBlockFailureMessage(error: unknown): string {
   if (error instanceof Error && error.message === BLOCKED_BUT_STILL_FRIEND) {
-    return "Report sent and the person is blocked. Couldn't remove them from your friends; remove them in the Friends list.";
+    return translate("moderation.report.blockedStillFriend");
   }
-  return "Report sent, but blocking didn't work. Try blocking them again.";
+  return translate("moderation.report.blockFailed");
 }
 
 /** "Also block" starts off: a report never blocks unless the user opts in. */
@@ -89,6 +93,7 @@ export function ReportMessageDialog({
   /** Reported message event id (the `e` tag target); none for a person. */
   eventId?: string;
 }) {
+  const t = useT();
   const submitReport = useSubmitReportMutation();
   const identityQuery = useIdentityQuery();
   const blockPerson = useBlockPersonMutation(identityQuery.data?.pubkey);
@@ -141,12 +146,14 @@ export function ReportMessageDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Flag className="h-4 w-4" />
-            {isPerson ? "Report person" : "Report message"}
+            {isPerson
+              ? t("moderation.report.titlePerson")
+              : t("moderation.report.titleMessage")}
           </DialogTitle>
           <DialogDescription>
             {isPerson
-              ? "Reports go to this community's moderators for review. The person is not told who reported them."
-              : "Reports go to this community's moderators for review. The author is not notified of who reported them."}
+              ? t("moderation.report.descriptionPerson")
+              : t("moderation.report.descriptionMessage")}
           </DialogDescription>
         </DialogHeader>
 
@@ -159,7 +166,7 @@ export function ReportMessageDialog({
               disabled={pending}
               onClick={() => setCategory(item.value)}
             >
-              {item.label}
+              {t(item.labelKey)}
             </Button>
           ))}
         </div>
@@ -169,11 +176,11 @@ export function ReportMessageDialog({
             htmlFor="report-note"
             className="text-sm font-medium text-muted-foreground"
           >
-            Additional context (optional)
+            {t("moderation.report.noteLabel")}
           </label>
           <Textarea
             id="report-note"
-            placeholder="Add anything that helps moderators..."
+            placeholder={t("moderation.report.notePlaceholder")}
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={3}
@@ -192,7 +199,7 @@ export function ReportMessageDialog({
             id="report-also-block"
             onCheckedChange={(checked) => setAlsoBlock(checked === true)}
           />
-          Also block
+          {t("moderation.report.alsoBlock")}
         </label>
 
         <DialogFooter>
@@ -201,7 +208,7 @@ export function ReportMessageDialog({
             onClick={() => onOpenChange(false)}
             disabled={pending}
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             data-testid="report-submit"
@@ -209,7 +216,7 @@ export function ReportMessageDialog({
             onClick={submit}
             disabled={!category || pending}
           >
-            Submit report
+            {t("moderation.report.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -7,6 +7,8 @@
  * without rendering the settings tree.
  */
 
+import { t } from "@/shared/i18n";
+
 /**
  * Display label for the community whose appearance is being edited.
  * Falls back to a generic phrase when no community is active or the
@@ -16,5 +18,5 @@ export function appearanceCommunityLabel(
   communityName: string | null | undefined,
 ): string {
   const trimmed = communityName?.trim();
-  return trimmed ? trimmed : "this community";
+  return trimmed ? trimmed : t("settings.appearance.thisCommunity");
 }

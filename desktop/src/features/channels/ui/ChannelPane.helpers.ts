@@ -4,6 +4,7 @@ import type { TimelineMessage } from "@/features/messages/types";
 import type { TypingIndicatorEntry } from "@/features/messages/useChannelTyping";
 import type { Channel } from "@/shared/api/types";
 import { KIND_SYSTEM_MESSAGE } from "@/shared/constants/kinds";
+import { t } from "@/shared/i18n";
 
 export function shouldUseFocusIdleDrawer({
   channelManagementOpen,
@@ -40,22 +41,22 @@ export function getChannelIntroKind(
   projectHome = false,
 ): string {
   if (projectHome) {
-    return "project group";
+    return t("channels.intro.kindProject");
   }
 
   const isPrivate = channel.visibility === "private";
   const isEphemeral = isEphemeralChannel(channel);
 
   if (isPrivate && isEphemeral) {
-    return "private ephemeral group";
+    return t("channels.intro.kindPrivateEphemeral");
   }
   if (isPrivate) {
-    return "private group";
+    return t("channels.intro.kindPrivate");
   }
   if (isEphemeral) {
-    return "ephemeral group";
+    return t("channels.intro.kindEphemeral");
   }
-  return "regular group";
+  return t("channels.intro.kindRegular");
 }
 
 export function getChannelIntroDescription(channel: Channel): string | null {
