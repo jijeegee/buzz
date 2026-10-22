@@ -4,7 +4,8 @@
     {
       "id": "mobile",
       "path": "mobile/lib/l10n/app_{lang_}.arb",
-      "localeHeader": true
+      "localeHeader": true,
+      "iosInfoPlist": "mobile/ios/Runner/Info.plist"
     },
     { "id": "web", "path": "web/src/locales/{lang}.json" },
     { "id": "relay", "path": "crates/kuzz-relay/locales/{lang}.json" }

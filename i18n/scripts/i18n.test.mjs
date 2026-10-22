@@ -13,6 +13,7 @@ import {
   loadConfig,
   prepare,
   pseudoMessage,
+  syncIosLanguages,
   validate,
 } from "./i18n.mjs";
 
@@ -247,4 +248,44 @@ test("pseudo language keeps ICU structure", () => {
 
 test("repository language packs are valid", () => {
   assert.deepEqual(check(loadConfig(repoRoot), quiet), []);
+});
+
+test("iOS language list follows the shipped mobile files", () => {
+  const config = fixture({
+    desktop: {},
+    mobile: {
+      "@@locale": "en",
+      chatsEmpty: "No chats yet",
+      "@chatsEmpty": { description: "Empty Chats tab title. Short." },
+    },
+  });
+  const mobile = config.sources.find((src) => src.id === "mobile");
+  mobile.iosInfoPlist = "mobile/Info.plist";
+  const plist = path.join(config.root, "mobile", "Info.plist");
+  fs.writeFileSync(
+    plist,
+    "<dict>\n\t<key>CFBundleDevelopmentRegion</key>\n\t<string>en</string>\n\t<key>CFBundleName</key>\n</dict>\n",
+  );
+
+  assert.match(check(config, quiet).join("\n"), /CFBundleLocalizations/);
+  assert.deepEqual(syncIosLanguages(config), ["mobile/Info.plist"]);
+  assert.deepEqual(check(config, quiet), []);
+
+  fs.writeFileSync(
+    path.join(config.root, "mobile", "app_ko.arb"),
+    JSON.stringify({ "@@locale": "ko", chatsEmpty: "아직 채팅이 없어요" }),
+  );
+  fs.writeFileSync(
+    path.join(config.root, "mobile", "app_zh_Hant.arb"),
+    JSON.stringify({ "@@locale": "zh_Hant", chatsEmpty: "還沒有聊天" }),
+  );
+  assert.deepEqual(syncIosLanguages(config), ["mobile/Info.plist"]);
+  assert.equal(
+    fs.readFileSync(plist, "utf8"),
+    "<dict>\n\t<key>CFBundleDevelopmentRegion</key>\n\t<string>en</string>\n" +
+      "\t<key>CFBundleLocalizations</key>\n\t<array>\n" +
+      "\t\t<string>en</string>\n\t\t<string>zh-Hant</string>\n\t\t<string>ko</string>\n" +
+      "\t</array>\n\t<key>CFBundleName</key>\n</dict>\n",
+  );
+  assert.deepEqual(syncIosLanguages(config), []);
 });
