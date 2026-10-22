@@ -73,7 +73,6 @@ async function renderEnsureReady(overrides = {}) {
       throw new Error("attach must not run for an existing member");
     },
     getManagedAgentsByPubkey: async () => new Map(),
-    getPersonas: async () => [],
     memberPubkeys: new Set(),
     ...overrides,
   };

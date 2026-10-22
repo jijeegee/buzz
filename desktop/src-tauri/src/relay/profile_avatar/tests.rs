@@ -409,7 +409,6 @@ async fn startup_reconcile_compares_local_projection_retries_saved_edit_and_hono
         auth_tag: None,
         pubkey: keys.public_key().to_hex(),
         agent_command: "goose".into(),
-        persona_id: None,
         about: None,
     };
     async fn run(

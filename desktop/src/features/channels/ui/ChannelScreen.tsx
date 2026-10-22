@@ -417,7 +417,7 @@ export function ChannelScreen({
     for (const agent of agents) {
       const key = agent.pubkey.toLowerCase();
       rLookup.set(key, agent.respondTo);
-      const pName = agent.personaId ? personaById.get(agent.personaId) : null;
+      const pName = agent.sourcePresetId ? personaById.get(agent.sourcePresetId) : null;
       if (pName) pLookup.set(key, pName);
     }
     return { personaLookup: pLookup, respondToLookup: rLookup };

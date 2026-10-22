@@ -18,19 +18,8 @@
 //!
 //! The fix has to happen at rest. Suppressing the duplicate in the observer
 //! parser would hide the symptom while the agent kept receiving the stale bytes.
-//!
-//! Stripping a definition's prompt also changes its `persona_content_hash`, the
-//! drift basis behind the Agents-menu "out of date" badge, so the migration
-//! advances the pin of instances that were current before the strip (see
-//! [`repin_current_instances`]).
 
-use std::collections::HashMap;
 use std::path::Path;
-
-use crate::managed_agents::{
-    persona_events::{persona_content_hash, persona_event_content},
-    ManagedAgentRecord,
-};
 
 /// The exact producer boundary emitted by the removed `compose_prompt()`.
 /// Matched byte-for-byte: a bare `---`, a `# Team Instructions` heading at a
@@ -40,11 +29,11 @@ const TEAM_DELIMITER: &str = "\n\n---\n# Team Instructions\n";
 
 /// Strip the baked team-instructions suffix from every stored `system_prompt`.
 ///
-/// Ordering (see `run_boot_migrations`): runs AFTER
-/// `fold_personas_into_agent_store` so definitions folded out of the legacy
-/// `personas.json` are cleaned in the same boot, and BEFORE
-/// `backfill_standalone_agents` so a manufactured definition never snapshots
-/// a suffix this migration is about to remove.
+/// Ordering (see `run_boot_migrations`): runs BEFORE the preset move, so the
+/// preset rows still in the agent store are cleaned before they are copied
+/// to `presets.json`, and before the preset-unlink copy so an agent never
+/// copies a suffix this migration is about to remove. Works on raw JSON so
+/// every row keeps every other field as written.
 pub fn strip_baked_team_instructions(app: &tauri::AppHandle) {
     let Ok(base_dir) = crate::managed_agents::managed_agents_base_dir(app) else {
         return;
@@ -71,22 +60,15 @@ pub(super) fn strip_baked_team_instructions_in_dir(base_dir: &Path) -> Result<us
     }
     let content = std::fs::read_to_string(&agents_path)
         .map_err(|e| format!("failed to read managed-agents.json: {e}"))?;
-    let mut all: Vec<ManagedAgentRecord> = serde_json::from_str(&content)
+    let mut all: Vec<serde_json::Value> = serde_json::from_str(&content)
         .map_err(|e| format!("failed to parse managed-agents.json: {e}"))?;
 
-    // Definition hashes BEFORE the strip: stripping a definition's
-    // `system_prompt` changes its `persona_content_hash`, which is the drift
-    // basis the Agents menu compares each linked instance's pinned
-    // `persona_source_version` against. Captured here so instances that were
-    // current before the strip can be re-pinned after it.
-    let pre_strip_hashes = definition_hashes(&all);
-
-    // Applies to every record: the definition records carry the suffix as
-    // surely as the instances minted from them, and neither `team_id` nor
-    // `persona_id` nor a key is evidence either way.
+    // Applies to every record: the preset rows carry the suffix as surely as
+    // the agents made from them, and neither `team_id` nor `persona_id` nor a
+    // key is evidence either way.
     let mut stripped = 0usize;
     for record in all.iter_mut() {
-        let Some(prompt) = record.system_prompt.as_deref() else {
+        let Some(prompt) = record.get("system_prompt").and_then(|v| v.as_str()) else {
             continue;
         };
         // Last occurrence only, mirroring the observer parser's own
@@ -96,20 +78,20 @@ pub(super) fn strip_baked_team_instructions_in_dir(base_dir: &Path) -> Result<us
         let Some(at) = prompt.rfind(TEAM_DELIMITER) else {
             continue;
         };
-        let head = &prompt[..at];
+        let head = prompt[..at].to_string();
         // An empty head means the record held nothing but the baked suffix.
-        // Store `None` rather than `Some("")`, matching the empty-prompt
-        // convention in `AgentDefinition::into_agent_record`, so no phantom
-        // empty prompt is left behind.
-        record.system_prompt = (!head.is_empty()).then(|| head.to_string());
+        // Store null rather than "", so no phantom empty prompt is left behind.
+        record["system_prompt"] = if head.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(head)
+        };
         stripped += 1;
     }
 
     if stripped == 0 {
         return Ok(0);
     }
-
-    repin_current_instances(&mut all, &pre_strip_hashes);
 
     // Pre-migration backup, taken ONCE (same contract as the B5 backfill): a
     // re-run after a partial failure must not replace the pristine backup with
@@ -127,54 +109,6 @@ pub(super) fn strip_baked_team_instructions_in_dir(base_dir: &Path) -> Result<us
         .map_err(|e| format!("failed to serialize managed-agents.json: {e}"))?;
     crate::managed_agents::atomic_write_json_restricted(&agents_path, &payload)?;
     Ok(stripped)
-}
-
-/// `slug → persona_content_hash` for every definition record, computed through
-/// the same projection the drift indicator uses (`persona_drift_state` in
-/// `managed_agents/runtime.rs`).
-fn definition_hashes(records: &[ManagedAgentRecord]) -> HashMap<String, String> {
-    records
-        .iter()
-        .filter(|record| record.pubkey.is_empty())
-        .filter_map(|record| {
-            let definition = record.to_definition_view()?;
-            let hash = persona_content_hash(&persona_event_content(&definition));
-            Some((definition.id, hash))
-        })
-        .collect()
-}
-
-/// Advance the drift pin of instances that were current before the strip.
-///
-/// Stripping a definition's prompt changes its `persona_content_hash`, so every
-/// linked instance would otherwise light up "out of date" in the Agents menu
-/// for a change the user never made — a badge that only clears on the next
-/// start, when `apply_persona_snapshot` re-pins. Same conditional as
-/// `refresh_builtin_agent_avatars`: move the pin only when it still equals the
-/// definition's PRE-strip hash. An instance that had genuinely drifted keeps
-/// its stale pin, and its badge.
-fn repin_current_instances(
-    records: &mut [ManagedAgentRecord],
-    pre_strip_hashes: &HashMap<String, String>,
-) {
-    let post_strip_hashes = definition_hashes(records);
-    for record in records.iter_mut() {
-        if record.pubkey.is_empty() {
-            continue;
-        }
-        let Some(persona_id) = record.persona_id.as_deref() else {
-            continue;
-        };
-        let (Some(old), Some(new)) = (
-            pre_strip_hashes.get(persona_id),
-            post_strip_hashes.get(persona_id),
-        ) else {
-            continue;
-        };
-        if old != new && record.persona_source_version.as_deref() == Some(old.as_str()) {
-            record.persona_source_version = Some(new.clone());
-        }
-    }
 }
 
 #[cfg(test)]

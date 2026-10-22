@@ -48,7 +48,7 @@ use crate::managed_agents::{
     env_vars::merged_user_env,
     global_config::GlobalAgentConfig,
     normalize_agent_args,
-    types::{AcpAvailabilityStatus, AgentDefinition, ManagedAgentRecord},
+    types::{AcpAvailabilityStatus, ManagedAgentRecord},
 };
 
 mod cli_login;
@@ -108,8 +108,8 @@ pub(crate) struct EffectiveHarnessDescriptor {
 /// This is the only place where harness-definition lookup and arg/env layering
 /// happen; spawn, hash, summary, and both model-probe paths all consume this.
 ///
-/// Returns `Err("DANGLING_HARNESS_ID:<id>")` when the record (or its linked
-/// persona) references a runtime id that no longer exists in the registry —
+/// Returns `Err("DANGLING_HARNESS_ID:<id>")` when the record references a
+/// runtime id that no longer exists in the registry —
 /// the same typed error produced by `try_record_agent_command`.  Callers that
 /// cannot meaningfully continue with a dangling id (e.g. `spawn_agent_child`)
 /// propagate the error; callers that degrade gracefully may use
@@ -119,33 +119,16 @@ pub(crate) struct EffectiveHarnessDescriptor {
 ///
 /// # Arguments
 /// * `record` — the managed agent record
-/// * `personas` — all current personas (for command/env resolution)
 /// * `global` — global agent config defaults
 pub(crate) fn resolve_effective_harness_descriptor(
     record: &ManagedAgentRecord,
-    personas: &[crate::managed_agents::types::AgentDefinition],
     global: &crate::managed_agents::GlobalAgentConfig,
 ) -> Result<EffectiveHarnessDescriptor, String> {
-    let effective_command = crate::managed_agents::try_record_agent_command(record, personas)?;
+    let effective_command = crate::managed_agents::try_record_agent_command(record)?;
     let runtime_meta = known_acp_runtime(&effective_command);
 
     // Look up the harness definition once — used for both args and env.
-    // Resolution order: record.runtime → persona.runtime → "".
-    let harness_def = {
-        let runtime_id = record
-            .runtime
-            .as_deref()
-            .or_else(|| {
-                record.persona_id.as_deref().and_then(|pid| {
-                    personas
-                        .iter()
-                        .find(|p| p.id == pid)
-                        .and_then(|p| p.runtime.as_deref())
-                })
-            })
-            .unwrap_or("");
-        crate::managed_agents::custom_harnesses::lookup_loaded_harness_by_id(runtime_id)
-    };
+    let harness_def = record_harness_def(record);
 
     // Args: explicit non-empty instance args win; otherwise use definition args.
     let args = {
@@ -163,7 +146,7 @@ pub(crate) fn resolve_effective_harness_descriptor(
     // Env: full layered resolution (same as resolve_effective_agent_env).
     // Pass harness_def directly to avoid a second lookup.
     let effective_env =
-        resolve_effective_agent_env_with_def(record, personas, runtime_meta, global, harness_def);
+        resolve_effective_agent_env_with_def(record, runtime_meta, global, harness_def);
 
     Ok(EffectiveHarnessDescriptor {
         command: effective_command,
@@ -172,42 +155,31 @@ pub(crate) fn resolve_effective_harness_descriptor(
     })
 }
 
-/// Assemble the effective agent env from a record, personas, optional
-/// known-runtime metadata, and the global agent config defaults — without an
+/// Assemble the effective agent env from a record, optional known-runtime
+/// metadata, and the global agent config defaults — without an
 /// `AppHandle` so it is fully unit-testable.
 ///
 /// # Arguments
 /// * `record` — the managed agent record (model/provider/env_vars/…)
-/// * `personas` — all current persona records (for persona-backed resolution)
 /// * `runtime` — the `KnownAcpRuntime` for the effective command, if any
 /// * `global` — global agent config defaults (lowest user layer; pass
 ///   `&GlobalAgentConfig::default()` in tests that don't need global config)
 pub(crate) fn resolve_effective_agent_env(
     record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
     runtime: Option<&KnownAcpRuntime>,
     global: &GlobalAgentConfig,
 ) -> EffectiveAgentEnv {
-    // Look up the harness definition for definition-level env (preset/custom).
-    // Same resolution logic as spawn_agent_child: record runtime id first, then
-    // persona runtime id, then nothing.
-    let harness_def = {
-        let runtime_id = record
-            .runtime
-            .as_deref()
-            .or_else(|| {
-                record.persona_id.as_deref().and_then(|pid| {
-                    personas
-                        .iter()
-                        .find(|p| p.id == pid)
-                        .and_then(|p| p.runtime.as_deref())
-                })
-            })
-            .unwrap_or("");
-        crate::managed_agents::custom_harnesses::lookup_loaded_harness_by_id(runtime_id)
-    };
+    resolve_effective_agent_env_with_def(record, runtime, global, record_harness_def(record))
+}
 
-    resolve_effective_agent_env_with_def(record, personas, runtime, global, harness_def)
+/// The loaded harness definition (preset/custom) for the record's own
+/// runtime id, if any — the source of definition-level args and env.
+fn record_harness_def(
+    record: &ManagedAgentRecord,
+) -> Option<std::sync::Arc<crate::managed_agents::custom_harnesses::HarnessDefinition>> {
+    crate::managed_agents::custom_harnesses::lookup_loaded_harness_by_id(
+        record.runtime.as_deref().unwrap_or(""),
+    )
 }
 
 /// Inner implementation that accepts a pre-fetched `harness_def` to avoid a
@@ -215,18 +187,17 @@ pub(crate) fn resolve_effective_agent_env(
 /// already has the definition in hand.
 fn resolve_effective_agent_env_with_def(
     record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
     runtime: Option<&KnownAcpRuntime>,
     global: &GlobalAgentConfig,
     harness_def: Option<std::sync::Arc<crate::managed_agents::custom_harnesses::HarnessDefinition>>,
 ) -> EffectiveAgentEnv {
-    let effective_command = crate::managed_agents::record_agent_command(record, personas);
+    let effective_command = crate::managed_agents::record_agent_command(record);
 
     // Layer 1: baked build defaults (floor — internal builds only; OSS = empty).
     let mut env = baked_build_env();
 
     let (effective_model, effective_provider) =
-        super::global_config::resolve_effective_model_provider(record, personas, global);
+        super::global_config::resolve_effective_model_provider(record, global);
 
     if let Some(rt) = runtime {
         for (key, value) in super::runtime::runtime_metadata_env_vars(
@@ -258,14 +229,8 @@ fn resolve_effective_agent_env_with_def(
     let global_env = merged_user_env(&BTreeMap::new(), &global.env_vars);
     env.extend(global_env);
 
-    // Layer 3b: merged user env — live persona env under the record's own
-    // overrides (last-wins), after reserved/malformed-key filtering. Reading
-    // the persona live is what makes persona credential edits refresh on the
-    // next spawn instead of being frozen into the record.
-    let user_env = merged_user_env(
-        &super::env_vars::live_persona_env(personas, record.persona_id.as_deref()),
-        &record.env_vars,
-    );
+    // Layer 3b: the agent's own env, after reserved/malformed-key filtering.
+    let user_env = merged_user_env(&BTreeMap::new(), &record.env_vars);
     env.extend(user_env);
 
     // Single harness-agnostic effort authority (PR #4625): resolve effective
@@ -276,7 +241,6 @@ fn resolve_effective_agent_env_with_def(
         &mut env,
         record,
         runtime,
-        personas,
         &global.env_vars,
         global.effort_level.as_deref(),
         harness_def.as_deref(),
@@ -1244,6 +1208,7 @@ mod tests {
     /// `&["codex-acp"]` when the binary is on PATH, or `&[<absolute_path>]`
     /// when resolving via absolute path.  `underlying_cli` is a portable
     /// stand-in so the adapter is not misclassified as `CliMissing`.
+    #[cfg(unix)]
     fn make_codex_runtime(
         adapter_commands: &'static [&'static str],
         underlying_cli: Option<&'static str>,
@@ -1483,7 +1448,9 @@ mod tests {
             description: None,
             pubkey: "test-pubkey".to_string(),
             name: "test-agent".to_string(),
-            persona_id: None,
+            source_preset_id: None,
+            legacy_persona_id: None,
+            team_instructions: None,
             private_key_nsec: String::new(),
             auth_tag: None,
             relay_url: String::new(),
@@ -1500,7 +1467,6 @@ mod tests {
             system_prompt: None,
             model: None,
             provider: None,
-            persona_source_version: None,
             env_vars,
             start_on_app_launch: false,
             is_default_ai: false,
@@ -1511,8 +1477,6 @@ mod tests {
             provider_policy_pending: false,
             provider_binary_path: None,
             team_id: None,
-            persona_team_dir: None,
-            persona_name_in_team: None,
             created_at: String::new(),
             updated_at: String::new(),
             last_started_at: None,
@@ -1522,27 +1486,14 @@ mod tests {
             last_error_code: None,
             respond_to: Default::default(),
             respond_to_allowlist: vec![],
-            display_name: None,
-            slug: None,
             runtime: None,
-            name_pool: Vec::new(),
-            is_builtin: false,
-            is_active: true,
-            shared: false,
-            source_team: None,
-            source_team_persona_slug: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            definition_respond_to: None,
-            definition_respond_to_allowlist: Vec::new(),
-            definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
             bot_origin: None,
         };
 
         let runtime = known_acp_runtime_exact("kuzz-agent");
-        let effective = resolve_effective_agent_env(&record, &[], runtime, &Default::default());
+        let effective = resolve_effective_agent_env(&record, runtime, &Default::default());
 
         // User env_vars must be present in the output (last-write-wins).
         assert_eq!(

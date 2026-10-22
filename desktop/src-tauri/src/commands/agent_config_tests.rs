@@ -76,7 +76,9 @@ fn agent_record() -> ManagedAgentRecord {
         description: None,
         pubkey: "agent".to_string(),
         name: "Agent".to_string(),
-        persona_id: Some("persona-1".to_string()),
+        source_preset_id: Some("persona-1".to_string()),
+        legacy_persona_id: None,
+        team_instructions: None,
         private_key_nsec: "".to_string(),
         auth_tag: None,
         relay_url: "ws://localhost:3000".to_string(),
@@ -101,8 +103,6 @@ fn agent_record() -> ManagedAgentRecord {
         provider_policy_pending: false,
         provider_binary_path: None,
         team_id: None,
-        persona_team_dir: None,
-        persona_name_in_team: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
         last_started_at: None,
@@ -112,56 +112,12 @@ fn agent_record() -> ManagedAgentRecord {
         last_error_code: None,
         respond_to: RespondTo::OwnerOnly,
         respond_to_allowlist: vec![],
-        display_name: None,
-        slug: None,
         runtime: None,
-        name_pool: Vec::new(),
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: Vec::new(),
-        definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
         agent_command_override: None,
-        persona_source_version: None,
         provider: None,
         bot_origin: None,
-    }
-}
-
-fn persona_with_model(model: &str) -> AgentDefinition {
-    AgentDefinition {
-        effort_level: None,
-        session_policy: Default::default(),
-        description: None,
-        id: "persona-1".to_string(),
-        display_name: "Persona".to_string(),
-        avatar_url: None,
-        system_prompt: "You are a persona.".to_string(),
-        acp_command: None,
-        runtime: None,
-        model: Some(model.to_string()),
-        provider: None,
-        name_pool: Vec::new(),
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        env_vars: Default::default(),
-        respond_to: None,
-        respond_to_allowlist: Vec::new(),
-        parallelism: None,
-        created_at: "".to_string(),
-        updated_at: "".to_string(),
     }
 }
 
@@ -180,77 +136,32 @@ fn session_cache(current_model: &str, model_overridden: bool) -> SessionConfigCa
     }
 }
 
-/// Definition-authoritative: a stale materialized `record.model` on a
-/// linked instance must never outrank (or even be consulted against) the
-/// linked persona's model. `update_managed_agent` already blocks writing
-/// model/provider/prompt for linked instances, so a non-`None` value here
-/// can only be leftover snapshot bytes from before a persona edit — the
-/// panel must report the persona's current model, tagged `PersonaDefault`,
-/// not the stale byte as `KuzzExplicit`.
+/// An agent with no model of its own falls through to the global default,
+/// tagged `GlobalDefault`. The preset label is never consulted.
 #[test]
-fn linked_stale_record_model_never_outranks_persona_model() {
-    let mut record = agent_record();
-    record.model = Some("stale-explicit-model".to_string());
-    let personas = vec![persona_with_model("persona-model")];
-
-    let surface = resolve_config_surface(
-        record,
-        &personas,
-        Some(goose_runtime()),
-        None,
-        &Default::default(),
-        None,
-    );
-
-    let model = surface.normalized.model.as_ref().expect("model resolved");
-    assert_eq!(model.value.as_deref(), Some("persona-model"));
-    assert_eq!(model.origin, ConfigOrigin::PersonaDefault);
-}
-
-/// Definition-authoritative, blank-definition case: a linked instance
-/// whose persona has no model of its own must fall through to the global
-/// default, tagged `GlobalDefault` — mirroring
-/// `effective_config::resolve_linked`'s `None => global` arm. A stale
-/// materialized record model must not shadow this fallthrough either.
-#[test]
-fn linked_blank_definition_model_falls_through_to_global_default() {
-    let mut record = agent_record();
-    record.model = Some("stale-explicit-model".to_string());
-    let mut persona = persona_with_model("unused");
-    persona.model = None;
-    let personas = vec![persona];
+fn agent_without_model_falls_through_to_global_default() {
+    let record = agent_record();
     let global = crate::managed_agents::GlobalAgentConfig {
         model: Some("global-model".to_string()),
         ..Default::default()
     };
 
-    let surface = resolve_config_surface(
-        record,
-        &personas,
-        Some(goose_runtime()),
-        None,
-        &global,
-        None,
-    );
+    let surface = resolve_config_surface(record, Some(goose_runtime()), None, &global, None);
 
     let model = surface.normalized.model.as_ref().expect("model resolved");
     assert_eq!(model.value.as_deref(), Some("global-model"));
     assert_eq!(model.origin, ConfigOrigin::GlobalDefault);
 }
 
-/// A definition-less (no `persona_id`) instance's own explicit model IS
-/// authoritative — the stale-record clearing above is scoped to linked
-/// instances only.
+/// An agent's own explicit model IS authoritative, even when the agent
+/// carries a preset label — the agent owns every setting it runs with.
 #[test]
-fn definition_less_explicit_record_model_keeps_kuzz_explicit_origin() {
+fn agent_explicit_record_model_keeps_kuzz_explicit_origin() {
     let mut record = agent_record();
-    record.persona_id = None;
     record.model = Some("explicit-model".to_string());
-    let personas = vec![persona_with_model("persona-model")];
 
     let surface = resolve_config_surface(
         record,
-        &personas,
         Some(goose_runtime()),
         None,
         &Default::default(),
@@ -271,14 +182,11 @@ fn definition_less_explicit_record_model_keeps_kuzz_explicit_origin() {
 #[test]
 fn pending_pick_keeps_explicit_x_and_does_not_surface_live_y() {
     let mut record = agent_record();
-    record.persona_id = None;
     record.model = Some("model-x".to_string());
-    let personas: Vec<AgentDefinition> = vec![];
     let cache = session_cache("model-y", false);
 
     let surface = resolve_config_surface(
         record,
-        &personas,
         Some(goose_runtime()),
         Some(&cache),
         &Default::default(),
@@ -300,14 +208,11 @@ fn pending_pick_keeps_explicit_x_and_does_not_surface_live_y() {
 #[test]
 fn genuine_explicit_live_switch_renders_y_over_x_kuzz_explicit_secondary() {
     let mut record = agent_record();
-    record.persona_id = None;
     record.model = Some("model-x".to_string());
-    let personas: Vec<AgentDefinition> = vec![];
     let cache = session_cache("model-y", true);
 
     let surface = resolve_config_surface(
         record,
-        &personas,
         Some(goose_runtime()),
         Some(&cache),
         &Default::default(),
@@ -335,15 +240,12 @@ fn genuine_explicit_live_switch_renders_y_over_x_kuzz_explicit_secondary() {
 #[test]
 fn genuine_explicit_live_switch_to_same_model_yields_clean_field() {
     let mut record = agent_record();
-    record.persona_id = None;
     record.model = Some("model-x".to_string());
-    let personas: Vec<AgentDefinition> = vec![];
     let cache = session_cache("model-x", true);
 
     let surface = with_no_goose_config(|| {
         resolve_config_surface(
             record,
-            &personas,
             Some(goose_runtime()),
             Some(&cache),
             &Default::default(),
@@ -360,32 +262,6 @@ fn genuine_explicit_live_switch_to_same_model_yields_clean_field() {
     assert_eq!(model.overridden_origin, None);
 }
 
-/// Persona parity (regression): a persona-linked agent with no explicit
-/// record model that live-switches still renders the persona model as the
-/// secondary tagged `PersonaDefault` — the typed-baseline change must NOT
-/// regress the persona arm to a different origin.
-#[test]
-fn persona_linked_live_switch_keeps_persona_default_secondary() {
-    let record = agent_record();
-    let personas = vec![persona_with_model("persona-model")];
-    let cache = session_cache("model-y", true);
-
-    let surface = resolve_config_surface(
-        record,
-        &personas,
-        Some(goose_runtime()),
-        Some(&cache),
-        &Default::default(),
-        None,
-    );
-    let model = surface.normalized.model.expect("model resolved");
-
-    assert_eq!(model.value.as_deref(), Some("model-y"));
-    assert_eq!(model.origin, ConfigOrigin::RuntimeOverride);
-    assert_eq!(model.overridden_value.as_deref(), Some("persona-model"));
-    assert_eq!(model.overridden_origin, Some(ConfigOrigin::PersonaDefault));
-}
-
 /// Fix 2 regression: a global-default-only agent (no record model, no
 /// persona model, but global has a model) that live-switches mid-session
 /// must render the global model as the secondary tagged `GlobalDefault`.
@@ -395,25 +271,16 @@ fn persona_linked_live_switch_keeps_persona_default_secondary() {
 /// `None` when `!had_model && persona_model.is_none() && model_overridden`.
 #[test]
 fn global_default_live_switch_renders_global_model_as_secondary_global_default() {
-    // Record has no model, no persona, global provides the model.
-    let mut record = agent_record();
-    record.persona_id = None;
-    // record.model = None (set by agent_record())
-    let personas: Vec<AgentDefinition> = vec![];
+    // Record has no model, global provides the model.
+    let record = agent_record();
     let cache = session_cache("model-y", true);
     let global = crate::managed_agents::GlobalAgentConfig {
         model: Some("global-model".to_string()),
         ..Default::default()
     };
 
-    let surface = resolve_config_surface(
-        record,
-        &personas,
-        Some(goose_runtime()),
-        Some(&cache),
-        &global,
-        None,
-    );
+    let surface =
+        resolve_config_surface(record, Some(goose_runtime()), Some(&cache), &global, None);
     let model = surface.normalized.model.expect("model resolved");
 
     // Live model wins as primary.
@@ -435,64 +302,11 @@ fn global_default_live_switch_renders_global_model_as_secondary_global_default()
 // ── Snapshot constructor tests (build_inherited_tiers) ──────────────────────
 //
 // These test the sanitized snapshot constructor — the command-boundary
-// function that builds InheritedConfigTiers from raw persona/global data.
-
-/// Orphaned persona link: a record whose persona_id references a non-existent
-/// persona should produce empty persona tiers (not a panic), and the panel
-/// still renders from the record and global tiers.
-#[test]
-fn orphaned_persona_link_yields_empty_persona_tiers() {
-    let mut record = agent_record();
-    record.persona_id = Some("missing-persona".to_string());
-    // No personas in the list — dangling link.
-    let personas: Vec<AgentDefinition> = vec![];
-    let global = crate::managed_agents::GlobalAgentConfig {
-        model: Some("global-model".to_string()),
-        ..Default::default()
-    };
-
-    let tiers = build_inherited_tiers(record.persona_id.as_deref(), None, &personas, &global);
-
-    // Persona tier is empty — the orphan yields no persona inheritance.
-    assert!(tiers.persona_env.is_empty());
-    assert!(tiers.persona_model.is_none());
-    assert!(tiers.persona_provider.is_none());
-    assert!(tiers.persona_prompt.is_none());
-    // Global tiers are unaffected.
-    assert_eq!(tiers.global_model.as_deref(), Some("global-model"));
-}
-
-/// Reserved key in persona env is stripped by sanitization — it must never
-/// reach the reader or the display surface.
-#[test]
-fn reserved_key_in_inherited_persona_env_is_stripped() {
-    let mut persona = persona_with_model("model");
-    // KUZZ_PRIVATE_KEY is a reserved key — must be stripped.
-    persona
-        .env_vars
-        .insert("KUZZ_PRIVATE_KEY".to_string(), "nsec-secret".to_string());
-    // A safe key — must survive.
-    persona
-        .env_vars
-        .insert("GOOSE_MODEL".to_string(), "persona-model".to_string());
-    let personas = vec![persona];
-    let global = crate::managed_agents::GlobalAgentConfig::default();
-
-    let tiers = build_inherited_tiers(Some("persona-1"), None, &personas, &global);
-
-    assert!(
-        !tiers.persona_env.contains_key("KUZZ_PRIVATE_KEY"),
-        "reserved key must be stripped from persona env tier"
-    );
-    assert!(
-        tiers.persona_env.contains_key("GOOSE_MODEL"),
-        "safe key must survive sanitization"
-    );
-}
+// function that builds InheritedConfigTiers from raw global/definition data.
 
 /// `sanitize_inherited_env` strips reserved keys from a definition-env-shaped
 /// map. This pins the shared sanitization contract for definition_env — the
-/// same function is applied to all three env tiers (persona, global, definition)
+/// same function is applied to the inherited env tiers (global, definition)
 /// at the command boundary.
 #[test]
 fn reserved_key_in_definition_env_shaped_map_is_stripped_by_sanitize() {
@@ -527,7 +341,7 @@ fn malformed_key_in_inherited_global_env_is_stripped() {
         .env_vars
         .insert("GOOSE_PROVIDER".to_string(), "anthropic".to_string());
 
-    let tiers = build_inherited_tiers(None, None, &[], &global);
+    let tiers = build_inherited_tiers(None, &global);
 
     assert!(
         !tiers.global_env.contains_key("BAD=KEY"),
@@ -668,7 +482,6 @@ fn picker_write_sweeps_stale_record_native_effort_alias() {
     let surface = with_no_goose_config(|| {
         resolve_config_surface(
             record.clone(),
-            &[],
             Some(goose_runtime()),
             None,
             &Default::default(),
@@ -685,8 +498,6 @@ fn picker_write_sweeps_stale_record_native_effort_alias() {
     let launch = crate::managed_agents::config_bridge::effort::effort_launch_projection(
         &record,
         Some(goose_runtime()),
-        &[],
-        None,
         &std::collections::BTreeMap::new(),
         None,
         None,

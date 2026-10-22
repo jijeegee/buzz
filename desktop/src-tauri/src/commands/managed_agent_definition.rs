@@ -4,18 +4,13 @@ use crate::managed_agents::{CreateManagedAgentRequest, ManagedAgentRecord};
 
 pub(super) fn validate_create_definition(
     name: &str,
-    persona_id: Option<&str>,
     input: &CreateManagedAgentRequest,
 ) -> Result<(), String> {
-    validate_definition_fields(name, persona_id, input.system_prompt.as_deref())
+    validate_definition_fields(name, input.system_prompt.as_deref())
 }
 
-fn validate_definition_fields(
-    name: &str,
-    persona_id: Option<&str>,
-    system_prompt: Option<&str>,
-) -> Result<(), String> {
-    crate::managed_agents::validate_managed_agent_definition_text(name, persona_id, system_prompt)
+fn validate_definition_fields(name: &str, system_prompt: Option<&str>) -> Result<(), String> {
+    crate::managed_agents::validate_managed_agent_definition_text(name, system_prompt)
         .map_err(|error| format!("Managed agent definition is unsafe: {error}"))
 }
 
@@ -27,23 +22,17 @@ pub(super) fn apply_model_provider_prompt_update(
     provider: Option<Option<String>>,
     system_prompt: Option<Option<String>>,
 ) -> Result<(), String> {
-    if record.persona_id.is_none() {
-        if let Some(model_update) = model {
-            record.model = model_update;
-        }
-        if let Some(provider_update) = provider {
-            record.provider = provider_update;
-        }
-        if let Some(prompt_update) = system_prompt {
-            record.system_prompt = prompt_update;
-        }
+    if let Some(model_update) = model {
+        record.model = model_update;
+    }
+    if let Some(provider_update) = provider {
+        record.provider = provider_update;
+    }
+    if let Some(prompt_update) = system_prompt {
+        record.system_prompt = prompt_update;
     }
 
-    validate_definition_fields(
-        &record.name,
-        record.persona_id.as_deref(),
-        record.system_prompt.as_deref(),
-    )
+    validate_definition_fields(&record.name, record.system_prompt.as_deref())
 }
 
 #[cfg(test)]
@@ -90,7 +79,7 @@ mod tests {
             ("Reviewer", "Review\u{202E} code.", "U+202E"),
         ] {
             let input = create_request(prompt);
-            let error = validate_create_definition(name, None, &input)
+            let error = validate_create_definition(name, &input)
                 .expect_err("create must reject unsafe definition text");
             assert!(error.contains(code), "unexpected error: {error}");
         }
@@ -99,7 +88,7 @@ mod tests {
     #[test]
     fn create_accepts_visible_multiline_definition_less_prompt() {
         let input = create_request("Review changes.\n\tCall out security risks.");
-        validate_create_definition("Reviewer 🐝", None, &input)
+        validate_create_definition("Reviewer 🐝", &input)
             .expect("visible multiline instructions should remain valid");
     }
 

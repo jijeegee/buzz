@@ -264,23 +264,5 @@ pub(crate) fn merged_user_env(
     merged
 }
 
-/// Look up the live env map of `persona_id` within an already-loaded persona
-/// slice. Returns an empty map for standalone agents (`None`) and for links
-/// to personas that no longer exist. The latter is an orphaned instance,
-/// which `spawn_agent_child` refuses before this is ever read at spawn time
-/// (see `effective_config::resolve_effective_config`'s `OrphanedInstance`
-/// arm via `require_resolved`) — an empty map here only matters for
-/// non-spawn callers like readiness/hash that must still resolve
-/// a slice for a record whose orphan status hasn't been checked yet.
-pub(crate) fn live_persona_env(
-    personas: &[super::types::AgentDefinition],
-    persona_id: Option<&str>,
-) -> BTreeMap<String, String> {
-    persona_id
-        .and_then(|pid| personas.iter().find(|p| p.id == pid))
-        .map(|p| p.env_vars.clone())
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests;

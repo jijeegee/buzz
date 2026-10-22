@@ -40,31 +40,6 @@ fn prompt_of(dir: &Path, name: &str) -> Option<String> {
         .and_then(|r| r["system_prompt"].as_str().map(str::to_string))
 }
 
-/// Live `persona_content_hash` of the definition with `slug`, computed off the
-/// store on disk through the same projection the drift badge uses.
-fn definition_hash(dir: &Path, slug: &str) -> String {
-    let records: Vec<crate::managed_agents::ManagedAgentRecord> =
-        serde_json::from_value(serde_json::Value::Array(read_agents_json(dir))).unwrap();
-    super::definition_hashes(&records)
-        .remove(slug)
-        .expect("definition present")
-}
-
-fn definition_json(slug: &str, prompt: &str) -> serde_json::Value {
-    let mut record = agent_json(slug, Some(prompt));
-    record["slug"] = serde_json::json!(slug);
-    record["display_name"] = serde_json::json!("Paul");
-    record
-}
-
-fn instance_json(slug: &str, prompt: &str, pinned: &str) -> serde_json::Value {
-    let mut record = agent_json("Paul", Some(prompt));
-    record["pubkey"] = serde_json::json!("p".repeat(64));
-    record["persona_id"] = serde_json::json!(slug);
-    record["persona_source_version"] = serde_json::json!(pinned);
-    record
-}
-
 #[test]
 fn strip_removes_the_baked_suffix_and_keeps_the_persona_body() {
     let dir = tempfile::tempdir().unwrap();
@@ -178,7 +153,6 @@ fn strip_preserves_every_other_field() {
     record["pubkey"] = serde_json::json!("t".repeat(64));
     record["persona_id"] = serde_json::json!("sietch-tabr:thufir");
     record["team_id"] = serde_json::json!("team-uuid");
-    record["persona_source_version"] = serde_json::json!("a".repeat(64));
     record["auth_tag"] = serde_json::json!("{\"tag\":\"value\"}");
     write_agents_json(dir.path(), &serde_json::json!([record]));
 
@@ -191,7 +165,6 @@ fn strip_preserves_every_other_field() {
     assert_eq!(stored["pubkey"], "t".repeat(64));
     assert_eq!(stored["persona_id"], "sietch-tabr:thufir");
     assert_eq!(stored["team_id"], "team-uuid");
-    assert_eq!(stored["persona_source_version"], "a".repeat(64));
     assert_eq!(stored["auth_tag"], "{\"tag\":\"value\"}");
     assert_eq!(stored["env_vars"]["API_KEY"], "secret");
     assert_eq!(stored["model"], "gpt-x");
@@ -306,76 +279,6 @@ fn strip_on_an_unparseable_store_errors_without_writing() {
             .join("managed-agents.json.pre-team-suffix-strip.bak")
             .exists(),
         "no backup is taken when nothing can be migrated"
-    );
-}
-
-#[test]
-fn strip_repins_an_instance_that_was_current_before_the_strip() {
-    // The definition's content hash changes when its prompt is stripped. An
-    // instance pinned to the pre-strip hash was current, so it must stay
-    // current — the user changed nothing and must not see a drift badge.
-    let dir = tempfile::tempdir().unwrap();
-    let baked = format!("You are Paul.{DELIMITER}frozen roster");
-    write_agents_json(
-        dir.path(),
-        &serde_json::json!([definition_json("sietch-tabr:paul", &baked)]),
-    );
-    let pre_hash = definition_hash(dir.path(), "sietch-tabr:paul");
-    write_agents_json(
-        dir.path(),
-        &serde_json::json!([
-            definition_json("sietch-tabr:paul", &baked),
-            instance_json("sietch-tabr:paul", &baked, &pre_hash),
-        ]),
-    );
-
-    assert_eq!(
-        strip_baked_team_instructions_in_dir(&base(dir.path())).unwrap(),
-        2
-    );
-
-    let post_hash = definition_hash(dir.path(), "sietch-tabr:paul");
-    assert_ne!(pre_hash, post_hash, "stripping must change the drift basis");
-    let instance = read_agents_json(dir.path())
-        .into_iter()
-        .find(|r| r["pubkey"].as_str() == Some(&"p".repeat(64)))
-        .unwrap();
-    assert_eq!(
-        instance["persona_source_version"].as_str(),
-        Some(post_hash.as_str()),
-        "a previously-current instance must not start showing drift"
-    );
-}
-
-#[test]
-fn strip_leaves_an_already_drifted_instance_pin_alone() {
-    // An instance pinned to something other than the definition's pre-strip
-    // hash had genuinely drifted. Silently re-pinning it would erase a real
-    // signal, so its stale pin — and its badge — survive.
-    let dir = tempfile::tempdir().unwrap();
-    let baked = format!("You are Paul.{DELIMITER}frozen roster");
-    let stale = "d".repeat(64);
-    write_agents_json(
-        dir.path(),
-        &serde_json::json!([
-            definition_json("sietch-tabr:paul", &baked),
-            instance_json("sietch-tabr:paul", &baked, &stale),
-        ]),
-    );
-
-    assert_eq!(
-        strip_baked_team_instructions_in_dir(&base(dir.path())).unwrap(),
-        2
-    );
-
-    let instance = read_agents_json(dir.path())
-        .into_iter()
-        .find(|r| r["pubkey"].as_str() == Some(&"p".repeat(64)))
-        .unwrap();
-    assert_eq!(
-        instance["persona_source_version"].as_str(),
-        Some(stale.as_str()),
-        "real drift must keep its signal"
     );
 }
 

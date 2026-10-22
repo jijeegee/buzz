@@ -1,13 +1,9 @@
 import { toast } from "sonner";
 
-import { personaManagedAgentUpdate } from "@/features/profile/ui/UserProfilePanelUtils";
 import type {
-  AcpRuntimeCatalogEntry,
   AgentPersona,
   CreateManagedAgentResponse,
   CreatePersonaInput,
-  ManagedAgent,
-  UpdateManagedAgentInput,
   UpdatePersonaInput,
 } from "@/shared/api/types";
 import { toUserFacingErrorDetail } from "@/shared/lib/userFacingError";
@@ -18,100 +14,28 @@ type SubmitProfilePersonaDialogOptions = {
   ) => Promise<CreateManagedAgentResponse>;
   createPersona: (input: CreatePersonaInput) => Promise<AgentPersona>;
   input: CreatePersonaInput | UpdatePersonaInput;
-  managedAgent: ManagedAgent | undefined;
   onDone: () => void;
   /** Called when the save landed on a new persona (this account's own copy
    *  of a built-in), so the panel can follow it. */
   onPersonaReplaced?: (persona: AgentPersona) => void;
-  previousPersona?: AgentPersona;
-  runtimes?: readonly AcpRuntimeCatalogEntry[];
-  updateManagedAgent: (
-    input: UpdateManagedAgentInput,
-  ) => Promise<{ agent: ManagedAgent; profileSyncError: string | null }>;
   updatePersona: (input: UpdatePersonaInput) => Promise<AgentPersona>;
 };
-
-type ValidateLinkedAgentRuntimeEditOptions = {
-  input: UpdatePersonaInput;
-  managedAgent: ManagedAgent | undefined;
-  previousPersona?: AgentPersona;
-  runtimes?: readonly AcpRuntimeCatalogEntry[];
-};
-
-function normalizeRuntimePreference(value: string | null | undefined): string {
-  return value?.trim() ?? "";
-}
-
-export function validateLinkedAgentRuntimeEdit({
-  input,
-  managedAgent,
-  previousPersona,
-  runtimes,
-}: ValidateLinkedAgentRuntimeEditOptions): string | null {
-  if (!managedAgent || !previousPersona) {
-    return null;
-  }
-
-  const previousRuntime = normalizeRuntimePreference(previousPersona.runtime);
-  const nextRuntime = normalizeRuntimePreference(input.runtime);
-  if (previousRuntime === nextRuntime) {
-    return null;
-  }
-
-  const runtime = runtimes?.find((candidate) => candidate.id === nextRuntime);
-  if (runtime?.availability === "available" && runtime.command) {
-    return null;
-  }
-
-  const runtimeLabel = runtime?.label ?? "This provider";
-  return `${runtimeLabel} is not available. Install it before saving this linked agent.`;
-}
 
 export async function submitProfilePersonaDialog({
   createManagedAgentForPersona,
   createPersona,
   input,
-  managedAgent,
   onDone,
   onPersonaReplaced,
-  previousPersona,
-  runtimes,
-  updateManagedAgent,
   updatePersona,
 }: SubmitProfilePersonaDialogOptions) {
   try {
     if ("id" in input) {
-      const runtimeEditError = validateLinkedAgentRuntimeEdit({
-        input,
-        managedAgent,
-        previousPersona,
-        runtimes,
-      });
-      if (runtimeEditError) {
-        toast.error(runtimeEditError);
-        return;
-      }
-
+      // A preset edit changes only the preset: agents made from it keep their
+      // own copy of its settings.
       const persona = await updatePersona(input);
-      // Editing a built-in saves this account's own copy under a new id and
-      // moves this account's agents to it.
+      // Editing a built-in saves this account's own copy under a new id.
       const replaced = persona.id !== input.id;
-      const linkedAgent =
-        replaced && managedAgent?.personaId === input.id
-          ? { ...managedAgent, personaId: persona.id }
-          : managedAgent;
-      const agentUpdate = linkedAgent
-        ? personaManagedAgentUpdate(linkedAgent, persona, {
-            previousPersona,
-            runtimes,
-          })
-        : null;
-      const result = agentUpdate ? await updateManagedAgent(agentUpdate) : null;
-      if (result?.profileSyncError) {
-        toast.warning(
-          `${result.agent.name} was updated, but profile sync failed: ${toUserFacingErrorDetail(result.profileSyncError)}`,
-        );
-      }
       toast.success(`Updated ${input.displayName}.`);
       if (replaced) onPersonaReplaced?.(persona);
     } else {

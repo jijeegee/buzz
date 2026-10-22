@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::{
     app_state::AppState,
     managed_agents::{
-        load_personas, load_teams, managed_agents_store_path, save_personas, save_teams,
+        load_personas, load_teams, save_personas, save_teams,
         team_catalog::{
             builtin_catalog_slug, local_member_projection_hash, TeamCatalogContent,
             TeamCatalogMember,
@@ -123,7 +123,7 @@ pub(super) fn add_verified_team(
         &state.user_credential()?.public_key().to_hex(),
     )?;
 
-    let personas_path = managed_agents_store_path(app)?;
+    let personas_path = crate::managed_agents::storage::presets_store_path(app)?;
     let teams_path = teams_store_path(app)?;
 
     // Snapshot raw bytes BEFORE any load: load_personas() can write merged

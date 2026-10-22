@@ -92,21 +92,13 @@ pub(crate) fn validate_effort_level_text(effort_level: Option<&str>) -> Result<(
 
 /// Validate the human-reviewed definition text carried by a managed agent.
 ///
-/// Definition-linked agents resolve their executable prompt through the
-/// separately validated persona, so only their instance name is checked here.
-/// Definition-less agents carry their executable prompt directly and must
-/// validate both fields at every local, inbound, and publication boundary.
+/// Every agent carries its executable prompt directly, so both fields are
+/// validated at every local, inbound, and publication boundary.
 pub(crate) fn validate_managed_agent_definition_text(
     name: &str,
-    persona_id: Option<&str>,
     system_prompt: Option<&str>,
 ) -> Result<(), String> {
-    let executable_prompt = if persona_id.is_none() {
-        system_prompt.unwrap_or_default()
-    } else {
-        ""
-    };
-    validate_agent_definition_text(name, executable_prompt)
+    validate_agent_definition_text(name, system_prompt.unwrap_or_default())
 }
 
 /// Reject control and default-ignorable characters in human-reviewed text.
@@ -353,34 +345,32 @@ mod tests {
     }
 
     #[test]
-    fn definition_less_managed_agent_validates_its_own_name_and_prompt() {
-        assert!(validate_managed_agent_definition_text(
-            "Review\u{200B}er",
-            None,
-            Some("Review code."),
-        )
-        .is_err());
-        assert!(validate_managed_agent_definition_text(
-            "Reviewer",
-            None,
-            Some("Review\u{200B} code."),
-        )
-        .is_err());
+    fn managed_agent_validates_its_own_name_and_prompt() {
+        assert!(
+            validate_managed_agent_definition_text("Review\u{200B}er", Some("Review code."),)
+                .is_err()
+        );
+        assert!(
+            validate_managed_agent_definition_text("Reviewer", Some("Review\u{200B} code."),)
+                .is_err()
+        );
         assert!(validate_managed_agent_definition_text(
             "Reviewer 🐝",
-            None,
             Some("Review changes.\n\tCall out risks."),
         )
         .is_ok());
     }
 
     #[test]
-    fn definition_linked_managed_agent_ignores_inert_record_prompt() {
-        assert!(validate_managed_agent_definition_text(
-            "Reviewer",
-            Some("custom:reviewer"),
-            Some("stale\u{200B} prompt"),
-        )
-        .is_ok());
+    fn every_builtin_preset_prompt_passes_agent_validation() {
+        // Agents now carry (and publish) the prompt copied from their preset,
+        // so every built-in preset prompt must pass the agent boundary.
+        for preset in crate::managed_agents::personas::built_in_persona_records("now") {
+            validate_managed_agent_definition_text(
+                &preset.display_name,
+                Some(&preset.system_prompt),
+            )
+            .unwrap_or_else(|error| panic!("{}: {error}", preset.id));
+        }
     }
 }

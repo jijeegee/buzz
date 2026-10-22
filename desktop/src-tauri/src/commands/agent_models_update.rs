@@ -93,16 +93,13 @@ pub(crate) struct RecordFieldsApplied(());
 pub(crate) fn apply_record_field_updates(
     record: &mut ManagedAgentRecord,
     env_vars: Option<&std::collections::BTreeMap<String, String>>,
-    inherit_transition: bool,
     effort_level: Option<Option<String>>,
 ) -> Result<RecordFieldsApplied, String> {
     // Order is load-bearing: env_vars before effort so a same-request
     // env_vars map cannot reintroduce a stale alias after the column write.
-    crate::managed_agents::apply_env_vars_then_effort_transition(
-        record,
-        env_vars.cloned(),
-        inherit_transition,
-    );
+    if let Some(env_vars) = env_vars {
+        record.env_vars = env_vars.clone();
+    }
     apply_effort_update(record, effort_level)?;
     Ok(RecordFieldsApplied(()))
 }
@@ -179,6 +176,20 @@ pub async fn update_managed_agent(
                 name_changed = true;
             }
         }
+        // The agent's own description (its kind:0 `about`).
+        let mut description_changed = false;
+        if let Some(description_update) = input.description {
+            let description = description_update
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            crate::managed_agents::validate_agent_description_text(description.as_deref())?;
+            if description != record.description {
+                record.description = description;
+                description_changed = true;
+            }
+        }
         apply_model_provider_prompt_update(
             record,
             input.model,
@@ -200,25 +211,13 @@ pub async fn update_managed_agent(
         if let Some(acp_command) = input.acp_command {
             record.acp_command = acp_command;
         }
-        // Harness edit: the persona's runtime is authoritative, so an explicit
-        // `agent_command_override` is persisted ONLY when the user picks a
-        // command that diverges from the persona, and the empty/whitespace
-        // "Inherit from persona" sentinel clears the pin, the materialized
-        // record runtime, AND the per-instance effort override (column here,
-        // env aliases after `env_vars` is applied below). A name-only edit
-        // (`agent_command == None`) leaves the pin intact. `harness_override`
-        // threads the user's explicit intent — see `apply_agent_command_update`
-        // and `update_time_agent_command_override` for the full resolution
-        // rules.
-        let mut inherit_transition = false;
+        // Harness edit: an `agent_command_override` is persisted ONLY when the
+        // picked command diverges from what the agent's own runtime runs; an
+        // empty command clears the pin. A name-only edit
+        // (`agent_command == None`) leaves the pin intact. See
+        // `apply_agent_command_update`.
         if let Some(agent_command) = input.agent_command {
-            let personas = load_personas(&app).unwrap_or_default();
-            inherit_transition = crate::managed_agents::apply_agent_command_update(
-                record,
-                &personas,
-                &agent_command,
-                input.harness_override,
-            );
+            crate::managed_agents::apply_agent_command_update(record, &agent_command);
         }
         if let Some(agent_args) = input.agent_args {
             record.agent_args = agent_args;
@@ -227,13 +226,8 @@ pub async fn update_managed_agent(
         // command is always catalog-derived (known_acp_runtime at spawn time)
         // and the per-record field is never read by the runtime.
         //
-        // Apply the caller-supplied `env_vars` (validated first), then — only on
-        // the pin→inherit transition — strip the record effort env aliases. The
-        // order is load-bearing: stripping AFTER the env replacement is what
-        // stops a same-request `env_vars` map from reintroducing a stale effort
-        // alias while the instance inherits its harness. The column was already
-        // cleared inside `apply_agent_command_update`. See
-        // `apply_env_vars_then_effort_transition` for the pinned invariant.
+        // The caller-supplied `env_vars` are validated here and applied in
+        // `apply_record_field_updates`.
         if let Some(ref env_vars) = input.env_vars {
             crate::managed_agents::validate_user_env_keys(env_vars)?;
         }
@@ -320,7 +314,6 @@ pub async fn update_managed_agent(
         let applied = apply_record_field_updates(
             record,
             input.env_vars.as_ref(),
-            inherit_transition,
             input.effort_level,
         )?;
 
@@ -338,7 +331,7 @@ pub async fn update_managed_agent(
         // update that touched only runtime/local fields is a no-op publish.
         super::super::agents::retain_managed_agent_pending(&app, &state, record);
 
-        let sync_params = if name_changed {
+        let sync_params = if name_changed || description_changed {
             // A server bot has no key: its profile is renamed on the relay
             // (`PATCH /auth/bots/{id}/profile`) instead of a signed kind:0.
             let agent_keys = if record.bot_origin.is_some() {
@@ -356,16 +349,13 @@ pub async fn update_managed_agent(
                 &relay_ws_url_with_override(&state),
             );
             let display_name = record.name.clone();
-            // Avatar fallback derives from the EFFECTIVE harness (persona-wins),
-            // not the frozen snapshot, so an inherited harness picks the right
-            // default avatar.
-            let personas = load_personas(&app).unwrap_or_default();
-            let effective_command = crate::managed_agents::record_agent_command(record, &personas);
+            // Avatar fallback derives from the agent's effective harness.
+            let effective_command = crate::managed_agents::record_agent_command(record);
             let avatar_url = record
                 .avatar_url
                 .clone()
                 .or_else(|| managed_agent_avatar_url(&effective_command));
-            let about = crate::managed_agents::record_effective_description(record, &personas);
+            let about = crate::managed_agents::record_effective_description(record);
             let auth_tag = record.auth_tag.clone();
             Some((
                 agent_keys,

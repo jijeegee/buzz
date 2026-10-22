@@ -37,23 +37,16 @@ fn card_template_decodes_with_expected_shape() {
 fn key_resolution_layering_record_wins() {
     let mut global = BTreeMap::new();
     global.insert("OPENAI_API_KEY".to_string(), "global".to_string());
-    let mut persona = BTreeMap::new();
-    persona.insert("OPENAI_API_KEY".to_string(), "persona".to_string());
     let mut record = BTreeMap::new();
     record.insert("OPENAI_API_KEY".to_string(), "record".to_string());
 
     assert_eq!(
-        resolve_env_from_layers("OPENAI_API_KEY", &global, &persona, &record, None).as_deref(),
+        resolve_env_from_layers("OPENAI_API_KEY", &global, &record, None).as_deref(),
         Some("record")
     );
     record.clear();
     assert_eq!(
-        resolve_env_from_layers("OPENAI_API_KEY", &global, &persona, &record, None).as_deref(),
-        Some("persona")
-    );
-    persona.clear();
-    assert_eq!(
-        resolve_env_from_layers("OPENAI_API_KEY", &global, &persona, &record, None).as_deref(),
+        resolve_env_from_layers("OPENAI_API_KEY", &global, &record, None).as_deref(),
         Some("global")
     );
     global.clear();
@@ -61,14 +54,13 @@ fn key_resolution_layering_record_wins() {
         resolve_env_from_layers(
             "OPENAI_API_KEY",
             &global,
-            &persona,
             &record,
             Some("process".to_string())
         )
         .as_deref(),
         Some("process")
     );
-    assert!(resolve_env_from_layers("OPENAI_API_KEY", &global, &persona, &record, None).is_none());
+    assert!(resolve_env_from_layers("OPENAI_API_KEY", &global, &record, None).is_none());
 }
 
 /// Prove that `resolve_key_layer` classifies layers in the same precedence
@@ -78,57 +70,32 @@ fn key_resolution_layering_record_wins() {
 fn key_status_layer_matches_mint_resolution_priority() {
     let key = "OPENAI_API_KEY";
     let mut global = BTreeMap::new();
-    let mut persona = BTreeMap::new();
     let mut record = BTreeMap::new();
 
     // No key anywhere → "none"
-    assert_eq!(resolve_key_layer(&global, &persona, &record, None), "none");
+    assert_eq!(resolve_key_layer(&global, &record, None), "none");
 
     // Only global → "global" (the only writable layer)
     global.insert(key.to_string(), "sk-global".to_string());
+    assert_eq!(resolve_key_layer(&global, &record, None), "global");
+    // mint resolution also picks global when the record is empty
     assert_eq!(
-        resolve_key_layer(&global, &persona, &record, None),
-        "global"
-    );
-    // mint resolution also picks global when record and persona are empty
-    assert_eq!(
-        resolve_env_from_layers(key, &global, &persona, &record, None).as_deref(),
+        resolve_env_from_layers(key, &global, &record, None).as_deref(),
         Some("sk-global")
     );
 
-    // Persona overrides global → status must report "persona", NOT "global"
-    persona.insert(key.to_string(), "sk-persona".to_string());
-    assert_eq!(
-        resolve_key_layer(&global, &persona, &record, None),
-        "persona"
-    );
-    // mint would use the persona key
-    assert_eq!(
-        resolve_env_from_layers(key, &global, &persona, &record, None).as_deref(),
-        Some("sk-persona")
-    );
-    // Writing to global would NOT change what mint resolves — status correctly
-    // returns "persona" so the dialog shows a read-only redirect instead.
-    let mut global_updated = global.clone();
-    global_updated.insert(key.to_string(), "sk-new-global".to_string());
-    assert_eq!(
-        resolve_env_from_layers(key, &global_updated, &persona, &record, None).as_deref(),
-        Some("sk-persona"),
-        "writing global must not change resolution when persona key exists"
-    );
-
-    // Agent record overrides both → status must report "agent"
+    // Agent record overrides global → status must report "agent"
     record.insert(key.to_string(), "sk-agent".to_string());
-    assert_eq!(resolve_key_layer(&global, &persona, &record, None), "agent");
+    assert_eq!(resolve_key_layer(&global, &record, None), "agent");
     assert_eq!(
-        resolve_env_from_layers(key, &global, &persona, &record, None).as_deref(),
+        resolve_env_from_layers(key, &global, &record, None).as_deref(),
         Some("sk-agent")
     );
 
     // Process env is last resort (only when all map layers are empty)
     let empty = BTreeMap::new();
     assert_eq!(
-        resolve_key_layer(&empty, &empty, &empty, Some("sk-process".to_string())),
+        resolve_key_layer(&empty, &empty, Some("sk-process".to_string())),
         "process"
     );
 
@@ -136,12 +103,7 @@ fn key_status_layer_matches_mint_resolution_priority() {
     let mut blank_global = BTreeMap::new();
     blank_global.insert(key.to_string(), "   ".to_string());
     assert_eq!(
-        resolve_key_layer(
-            &blank_global,
-            &empty,
-            &empty,
-            Some("sk-process".to_string())
-        ),
+        resolve_key_layer(&blank_global, &empty, Some("sk-process".to_string())),
         "process"
     );
 }
@@ -150,12 +112,11 @@ fn key_status_layer_matches_mint_resolution_priority() {
 fn key_resolution_skips_blank_values() {
     let mut record = BTreeMap::new();
     record.insert("OPENAI_API_KEY".to_string(), "   ".to_string());
-    let mut persona = BTreeMap::new();
-    persona.insert("OPENAI_API_KEY".to_string(), "persona".to_string());
+    let mut global = BTreeMap::new();
+    global.insert("OPENAI_API_KEY".to_string(), "global".to_string());
     assert_eq!(
-        resolve_env_from_layers("OPENAI_API_KEY", &BTreeMap::new(), &persona, &record, None)
-            .as_deref(),
-        Some("persona")
+        resolve_env_from_layers("OPENAI_API_KEY", &global, &record, None).as_deref(),
+        Some("global")
     );
 }
 

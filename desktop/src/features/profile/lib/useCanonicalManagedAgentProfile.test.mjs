@@ -16,7 +16,7 @@ const A = "a".repeat(64);
 const B = "b".repeat(64);
 const sibling = {
   pubkey: B,
-  personaId: "shared-persona",
+  sourcePresetId: "shared-persona",
   status: "running",
   name: "Local B",
 };
@@ -90,5 +90,5 @@ test("explicit local instance uses only its own definition link, with normalized
     { wrapper: wrapper() },
   );
   assert.equal(result.current.managedAgent, sibling);
-  assert.equal(result.current.linkedPersonaId, sibling.personaId);
+  assert.equal(result.current.linkedPersonaId, sibling.sourcePresetId);
 });

@@ -225,7 +225,6 @@ fn record_on(runtime: Option<&str>) -> ManagedAgentRecord {
     let mut record = serde_json::from_value::<ManagedAgentRecord>(serde_json::json!({
         "pubkey": PUBKEY.to_ascii_lowercase(),
         "name": "agent",
-        "persona_id": "persona-1",
         "relay_url": "ws://localhost:3000",
         "acp_command": "kuzz-acp",
         "agent_command": "",
@@ -240,55 +239,31 @@ fn record_on(runtime: Option<&str>) -> ManagedAgentRecord {
     record
 }
 
-fn persona_on(runtime: &str) -> super::super::AgentDefinition {
-    serde_json::from_value(serde_json::json!({
-        "id": "persona-1",
-        "display_name": "Persona",
-        "system_prompt": "",
-        "runtime": runtime,
-        "is_active": true,
-        "created_at": "",
-        "updated_at": "",
-    }))
-    .expect("persona")
-}
-
-fn hermes_for(record: &ManagedAgentRecord, persona: &str) -> Option<String> {
-    hermes_command_for_start(
-        record,
-        &[persona_on(persona)],
-        &super::super::GlobalAgentConfig::default(),
-    )
+fn hermes_for(record: &ManagedAgentRecord) -> Option<String> {
+    hermes_command_for_start(record, &super::super::GlobalAgentConfig::default())
 }
 
 #[test]
-fn a_fresh_hermes_persona_instance_needs_a_profile() {
-    // `record.runtime` is None on create; the persona supplies the harness.
+fn a_hermes_agent_needs_a_profile() {
     assert_eq!(
-        hermes_for(&record_on(None), "hermes").as_deref(),
-        Some("hermes-acp")
-    );
-    assert_eq!(hermes_for(&record_on(None), "goose"), None);
-}
-
-#[test]
-fn a_persona_switched_to_hermes_needs_a_profile_before_its_resnapshot() {
-    // The stored record still says goose; a caller that re-snapshots before
-    // spawning will launch Hermes, so the profile must exist already.
-    assert_eq!(
-        hermes_for(&record_on(Some("goose")), "hermes").as_deref(),
+        hermes_for(&record_on(Some("hermes"))).as_deref(),
         Some("hermes-acp")
     );
 }
 
 #[test]
-fn a_stale_hermes_record_needs_a_profile_without_a_resnapshot() {
-    // A caller that does not re-snapshot spawns the stored Hermes runtime even
-    // though the persona has moved on.
-    assert_eq!(
-        hermes_for(&record_on(Some("hermes")), "goose").as_deref(),
-        Some("hermes-acp")
-    );
+fn a_non_hermes_agent_needs_no_profile() {
+    assert_eq!(hermes_for(&record_on(Some("goose"))), None);
+    assert_eq!(hermes_for(&record_on(None)), None);
+}
+
+#[test]
+fn source_preset_label_does_not_change_the_harness() {
+    // The preset an agent was made from is only a label: a goose agent made
+    // from a (since edited) Hermes preset still launches goose.
+    let mut record = record_on(Some("goose"));
+    record.source_preset_id = Some("persona-1".to_string());
+    assert_eq!(hermes_for(&record), None);
 }
 
 // ── Spawn env ordering (the production seam) ─────────────────────────────────
@@ -771,13 +746,9 @@ fn spawn_checks_the_profile_and_writes_env_through_the_ordered_seam() {
 
 #[test]
 fn every_agent_removal_path_cleans_up_the_profile() {
-    for (file, source) in [
-        ("commands/agents.rs", include_str!("../commands/agents.rs")),
-        (
-            "commands/personas/mod.rs",
-            include_str!("../commands/personas/mod.rs"),
-        ),
-    ] {
+    // Deleting a preset never removes agents made from it, so agent deletion
+    // is the only removal path.
+    for (file, source) in [("commands/agents.rs", include_str!("../commands/agents.rs"))] {
         assert!(
             source.contains("hermes_profile::delete_profile_for_deleted_agent("),
             "{file} must clean up deleted agents' Hermes profiles"

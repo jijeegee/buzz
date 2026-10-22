@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use super::channel_routing::RoutingRole;
-use super::types::{AgentDefinition, ManagedAgentRecord, TeamRecord};
+use super::types::ManagedAgentRecord;
 use super::{AcpSessionPolicy, GlobalAgentConfig};
 
 /// The harness flag naming the live settings file (`kuzz-acp
@@ -226,34 +226,27 @@ pub(crate) fn remove_live_settings_file<R: tauri::Runtime>(app: &AppHandle<R>, a
     }
 }
 
-/// The live settings `record` would get now from the current personas,
-/// teams, and settings, for a process launched with `session_policy` and
+/// The live settings `record` would get now from its own fields and the
+/// current settings, for a process launched with `session_policy` and
 /// `routing_role`. Resolves the prompt exactly as the restart snapshot does.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn current_live_settings(
     record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
-    teams: &[TeamRecord],
     global: &GlobalAgentConfig,
     task_threads: &str,
     context_history: &str,
     session_policy: AcpSessionPolicy,
     routing_role: RoutingRole,
 ) -> LiveSettingsFile {
-    let record = super::persona_events::preview_prospective_persona_snapshot(record, personas);
-    let prompt = match super::effective_config::resolve_effective_config(&record, personas, global)
-    {
-        super::effective_config::EffectiveConfigResult::Resolved(cfg) => cfg.system_prompt.value,
-        super::effective_config::EffectiveConfigResult::OrphanedInstance { .. } => None,
-    };
-    let user_env = super::resolve_effective_harness_descriptor(&record, personas, global)
+    let prompt = super::effective_config::resolve_effective_config(record, global)
+        .system_prompt
+        .value;
+    let user_env = super::resolve_effective_harness_descriptor(record, global)
         .map(|descriptor| descriptor.env)
         .unwrap_or_default();
     LiveSettingsFile::from_inputs(LiveSettingsInputs {
         system_prompt: prompt.as_deref(),
         user_env: &user_env,
-        team_instructions: super::spawn_snapshot::effective_team_instructions(&record, teams)
-            .as_deref(),
+        team_instructions: super::spawn_snapshot::effective_team_instructions(record).as_deref(),
         task_threads,
         context_history,
         session_policy,
@@ -323,8 +316,6 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
         return Ok(());
     }
     let records = super::storage::load_managed_agents_without_keys(app)?;
-    let personas = super::personas::load_personas_readonly(app)?;
-    let teams = super::teams::load_teams_readonly(&super::teams::teams_store_path(app)?)?;
     let global = super::global_config::load_global_agent_config(app)?;
     let task_threads = super::task_threads::current_task_threads_env(app);
     let context_history = super::context_history::current_context_history_env(app);
@@ -338,8 +329,6 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
         };
         let settings = current_live_settings(
             record,
-            &personas,
-            &teams,
             &global,
             &task_threads,
             &context_history,

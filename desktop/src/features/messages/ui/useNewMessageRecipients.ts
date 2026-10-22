@@ -79,7 +79,7 @@ function candidateWithAgentMetadata(
   return {
     ...candidate,
     isManagedAgent: Boolean(agent),
-    personaId: agent?.personaId,
+    personaId: agent?.sourcePresetId,
   };
 }
 
@@ -244,7 +244,7 @@ export function useNewMessageRecipients({
           ownerPubkey: currentPubkey ?? null,
           isAgent: true,
           isManagedAgent: true,
-          personaId: agent.personaId,
+          personaId: agent.sourcePresetId,
         },
         { includeSelected: deferredSearchQuery.length > 0 },
       );

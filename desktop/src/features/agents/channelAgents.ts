@@ -154,10 +154,6 @@ export type CreateChannelManagedAgentsOptions = {
 type ChannelAgentReuseContext = {
   managedAgents: ManagedAgent[];
   channelMemberPubkeys: ReadonlySet<string>;
-  personas: readonly Pick<
-    AgentPersona,
-    "id" | "respondTo" | "respondToAllowlist"
-  >[];
 };
 
 export type ApplyReusableAgentAccessPolicyResult = {
@@ -353,7 +349,7 @@ export async function provisionChannelManagedAgent(
     throw new Error("Agent name is required.");
   }
 
-  // Smart reuse: if a managed agent with the same personaId already exists
+  // Smart reuse: if a managed agent made from the same preset already exists
   // and is not already in this channel, attach it instead of creating a new one.
   if (
     input.personaId &&
@@ -367,13 +363,12 @@ export async function provisionChannelManagedAgent(
       context.channelMemberPubkeys,
     );
     if (reusable) {
-      const definition = context.personas.find(
-        (persona) => persona.id === input.personaId,
-      );
+      // The agent owns its settings: without an explicit request it keeps its
+      // own access policy (the preset's is not applied to it).
       const { agent: updatedAgent } = await applyReusableAgentAccessPolicy(
         reusable,
         input,
-        definition,
+        reusable,
       );
 
       return {
@@ -439,7 +434,7 @@ export async function provisionChannelManagedAgent(
     // for the rationale — empty args let spawn resolve definition args live).
     agentArgs: [],
     mcpCommand: input.runtime.mcpCommand ?? "",
-    personaId: input.personaId ?? undefined,
+    sourcePresetId: input.personaId ?? undefined,
     teamId: input.teamId ?? undefined,
     systemPrompt: input.systemPrompt?.trim() || undefined,
     avatarUrl: resolvedAvatarUrl,
@@ -490,23 +485,16 @@ export async function createChannelManagedAgents(
 ): Promise<CreateChannelManagedAgentsResult> {
   let inputs = requestedInputs;
   // Fetch managed agents and channel members once for smart reuse checks.
-  const needsPersonaPolicy = inputs.some(
-    (input) =>
-      Boolean(input.personaId) &&
-      !input.forceNewInstance &&
-      input.respondTo === undefined,
-  );
-  const [managedAgents, members, personas] = await Promise.all([
+  const [managedAgents, members] = await Promise.all([
     listManagedAgents(),
     // Read-your-writes: templates call this right after creating the channel,
     // before a read replica may have the member list.
     getChannelMembers(channelId, { readYourWrites: true }),
-    needsPersonaPolicy ? listPersonas() : Promise.resolve([]),
   ]);
   const channelMemberPubkeys = new Set(
     members.map((m) => normalizePubkey(m.pubkey)),
   );
-  const context = { managedAgents, channelMemberPubkeys, personas };
+  const context = { managedAgents, channelMemberPubkeys };
   if (options?.skipPersonasAlreadyInChannel) {
     inputs = dropPersonasAlreadyInChannel(
       inputs,
@@ -569,7 +557,7 @@ async function remoteAgentsForPersonaInputs(
   managedAgents: readonly ManagedAgent[],
 ): Promise<Map<string, string>> {
   const localPersonaIds = new Set(
-    managedAgents.map((agent) => agent.personaId).filter(Boolean),
+    managedAgents.map((agent) => agent.sourcePresetId).filter(Boolean),
   );
   const wanted = inputs.filter(
     (input) =>

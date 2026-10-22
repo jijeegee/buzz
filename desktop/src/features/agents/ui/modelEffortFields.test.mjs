@@ -57,13 +57,12 @@ let cleanup;
 let render;
 let createElement;
 let ModelEffortFields;
-let EFFORT_TEMPLATE_DEFAULT_LABEL;
+const CUSTOM_SENTINEL_LABEL = "Template default";
 
 before(async () => {
   ({ act, cleanup, render } = await import("@testing-library/react"));
   ({ createElement } = await import("react"));
   ({ ModelEffortFields } = await import("./ModelEffortFields.tsx"));
-  ({ EFFORT_TEMPLATE_DEFAULT_LABEL } = await import("./effortPicker.ts"));
 });
 
 afterEach(() => {
@@ -172,14 +171,14 @@ test("the companion shows the current effort, honours the surface's sentinel lab
   const { effort } = await mount({
     disabled: true,
     effort: effortFor({
-      defaultLabel: EFFORT_TEMPLATE_DEFAULT_LABEL,
+      defaultLabel: CUSTOM_SENTINEL_LABEL,
       value: null,
     }),
   });
   assert.ok(effort);
   assert.ok(
     effort.textContent?.includes("Template default"),
-    `a linked instance's sentinel names the template tier; got "${effort.textContent}"`,
+    `the surface's own sentinel label is shown; got "${effort.textContent}"`,
   );
   assert.equal(effort.disabled, true, "disabled flows from the wrapper");
 

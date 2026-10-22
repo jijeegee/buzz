@@ -199,7 +199,7 @@ export function UserProfilePanel({
     });
   const resolvedPersonaFromSource = React.useMemo(() => {
     if (pubkey && !managedAgent) return undefined;
-    const personaId = linkedPersonaId ?? managedAgent?.personaId;
+    const personaId = linkedPersonaId ?? managedAgent?.sourcePresetId;
     if (personaId) {
       const refreshedPersona = personasQuery.data?.find(
         (candidate) => candidate.id === personaId,
@@ -211,11 +211,11 @@ export function UserProfilePanel({
     if (!pubkey && persona) {
       return persona;
     }
-    if (!managedAgent?.personaId) {
+    if (!managedAgent?.sourcePresetId) {
       return undefined;
     }
     return personasQuery.data?.find(
-      (candidate) => candidate.id === managedAgent.personaId,
+      (candidate) => candidate.id === managedAgent.sourcePresetId,
     );
   }, [linkedPersonaId, managedAgent, persona, personasQuery.data, pubkey]);
   const profileIdentityKey =
@@ -403,19 +403,17 @@ export function UserProfilePanel({
     );
     return true;
   }, [managedAgent, resolvedPersona]);
+  // An agent edits its own settings; only a preset profile edits the preset.
   const handleEditAgent = React.useCallback(() => {
-    if (openResolvedPersonaEditor()) return;
+    if (!managedAgent && openResolvedPersonaEditor()) return;
     setEditAgentOpen(true);
-  }, [openResolvedPersonaEditor, setEditAgentOpen]);
-  const { deleteManagedAgentRecord, deleteManagedAgentsForPersona } =
-    useProfileAgentDeletion({
-      channels: channelsQuery.data,
-      deleteManagedAgent: deleteAgentMutation.mutateAsync,
-      managedAgent,
-      managedAgents: managedAgentsQuery.data,
-      getAvailability,
-      relayAgents: relayAgentsQuery.data,
-    });
+  }, [managedAgent, openResolvedPersonaEditor, setEditAgentOpen]);
+  const { deleteManagedAgentRecord } = useProfileAgentDeletion({
+    channels: channelsQuery.data,
+    deleteManagedAgent: deleteAgentMutation.mutateAsync,
+    getAvailability,
+    relayAgents: relayAgentsQuery.data,
+  });
 
   const createManagedAgentForPersona = React.useCallback(
     async (personaToStart: AgentPersona) => {
@@ -503,7 +501,6 @@ export function UserProfilePanel({
         createManagedAgentForPersona,
         createPersona: createPersonaMutation.mutateAsync,
         input,
-        managedAgent,
         onDone: () => {
           setPersonaDialogState(null);
           void personasQuery.refetch();
@@ -515,23 +512,16 @@ export function UserProfilePanel({
           if (openPersonaProfilePanel) openPersonaProfilePanel(replacement);
           else onClose();
         },
-        previousPersona: resolvedPersona,
-        runtimes: acpRuntimesQuery.data ?? [],
-        updateManagedAgent: updateManagedAgentMutation.mutateAsync,
         updatePersona: updatePersonaMutation.mutateAsync,
       });
     },
     [
       createPersonaMutation.mutateAsync,
       createManagedAgentForPersona,
-      managedAgent,
       onClose,
       openPersonaProfilePanel,
       personasQuery.refetch,
       pubkey,
-      resolvedPersona,
-      acpRuntimesQuery.data,
-      updateManagedAgentMutation.mutateAsync,
       updatePersonaMutation.mutateAsync,
     ],
   );
@@ -553,11 +543,8 @@ export function UserProfilePanel({
     if (!resolvedPersona) return;
 
     if (resolvedPersona.isBuiltIn) {
+      // Removes the preset only: agents made from it keep running.
       try {
-        const deletedInstances =
-          await deleteManagedAgentsForPersona(resolvedPersona);
-        if (deletedInstances.cancelled) return;
-
         await setPersonaActiveMutation.mutateAsync({
           id: resolvedPersona.id,
           active: false,
@@ -578,12 +565,7 @@ export function UserProfilePanel({
     }
 
     setPersonaToDelete(resolvedPersona);
-  }, [
-    deleteManagedAgentsForPersona,
-    onClose,
-    resolvedPersona,
-    setPersonaActiveMutation.mutateAsync,
-  ]);
+  }, [onClose, resolvedPersona, setPersonaActiveMutation.mutateAsync]);
 
   const handleConfirmDeletePersona = React.useCallback(
     async (personaToConfirm: AgentPersona) => {
@@ -607,13 +589,13 @@ export function UserProfilePanel({
     [deletePersonaMutation.mutateAsync, onClose],
   );
 
-  // Count of managed-agent instances backed by the persona being deleted.
-  // Shown in the confirm dialog so the user knows what will be cascade-deleted.
+  // Count of agents made from the preset being deleted. Shown in the confirm
+  // dialog so the user knows those agents are not affected.
   const personaDeleteInstanceCount = React.useMemo(
     () =>
       personaToDelete
         ? (managedAgentsQuery.data ?? []).filter(
-            (a) => a.personaId === personaToDelete.id,
+            (a) => a.sourcePresetId === personaToDelete.id,
           ).length
         : 0,
     [managedAgentsQuery.data, personaToDelete],
@@ -900,15 +882,6 @@ export function UserProfilePanel({
       agent={managedAgent}
       canEdit={canEditAgent}
       initialFocus={editAgentFocus}
-      onEditLinkedPersona={
-        resolvedPersona && !resolvedPersona.isBuiltIn
-          ? () => {
-              setEditAgentOpen(false);
-              setEditAgentFocus(undefined);
-              openResolvedPersonaEditor();
-            }
-          : undefined
-      }
       onOpenChange={(next) => {
         setEditAgentOpen(next);
         if (!next) setEditAgentFocus(undefined);

@@ -414,8 +414,7 @@ async fn restart_setup_mode_agents_after_install(
         app_state::AppState,
         managed_agents::{
             agent_readiness, known_acp_runtime, load_global_agent_config, load_managed_agents,
-            load_personas, record_agent_command, resolve_effective_agent_env, AgentReadiness,
-            BackendKind,
+            record_agent_command, resolve_effective_agent_env, AgentReadiness, BackendKind,
         },
     };
     use tauri::Manager;
@@ -425,7 +424,6 @@ async fn restart_setup_mode_agents_after_install(
     let runtime_id_owned = runtime_id.to_string();
     let candidates = tokio::task::spawn_blocking(move || {
         let records = load_managed_agents(&app_for_scan).unwrap_or_default();
-        let personas = load_personas(&app_for_scan).unwrap_or_default();
         let global = load_global_agent_config(&app_for_scan).unwrap_or_default();
 
         // Read the runtimes map to check setup_mode stamps.
@@ -439,7 +437,7 @@ async fn restart_setup_mode_agents_after_install(
             .iter()
             .filter(|record| {
                 let is_local = record.backend == BackendKind::Local;
-                let effective_cmd = record_agent_command(record, &personas);
+                let effective_cmd = record_agent_command(record);
                 let runtime_matches =
                     known_acp_runtime(&effective_cmd).is_some_and(|r| r.id == runtime_id_owned);
                 let setup_mode = runtimes
@@ -447,12 +445,8 @@ async fn restart_setup_mode_agents_after_install(
                     .find(|(key, _)| key.pubkey == record.pubkey)
                     .map(|(_, p)| p.setup_mode)
                     .unwrap_or(false);
-                let effective = resolve_effective_agent_env(
-                    record,
-                    &personas,
-                    known_acp_runtime(&effective_cmd),
-                    &global,
-                );
+                let effective =
+                    resolve_effective_agent_env(record, known_acp_runtime(&effective_cmd), &global);
                 let now_ready = matches!(agent_readiness(&effective), AgentReadiness::Ready);
                 let pid_alive = runtimes.iter().any(|(key, runtime)| {
                     key.pubkey.eq_ignore_ascii_case(&record.pubkey)
@@ -505,7 +499,7 @@ async fn restart_single_agent_after_install(
         app_state::AppState,
         managed_agents::{
             agent_readiness, current_instance_id, find_managed_agent_mut, known_acp_runtime,
-            load_global_agent_config, load_managed_agents, load_personas, record_agent_command,
+            load_global_agent_config, load_managed_agents, record_agent_command,
             resolve_effective_agent_env, save_managed_agents, stop_managed_agent_process,
             sync_managed_agent_processes, AgentReadiness, BackendKind,
         },
@@ -558,10 +552,9 @@ async fn restart_single_agent_after_install(
             ));
         }
 
-        let personas = load_personas(&app_for_stop).unwrap_or_default();
         let global = load_global_agent_config(&app_for_stop).unwrap_or_default();
 
-        let effective_cmd = record_agent_command(record, &personas);
+        let effective_cmd = record_agent_command(record);
         let runtime_matches =
             known_acp_runtime(&effective_cmd).is_some_and(|r| r.id == runtime_id_owned);
         if !runtime_matches {
@@ -582,7 +575,7 @@ async fn restart_single_agent_after_install(
         }
 
         let runtime_meta = known_acp_runtime(&effective_cmd);
-        let effective = resolve_effective_agent_env(record, &personas, runtime_meta, &global);
+        let effective = resolve_effective_agent_env(record,runtime_meta, &global);
         if !matches!(agent_readiness(&effective), AgentReadiness::Ready) {
             return Err(format!(
                 "agent {pubkey_owned} readiness is still NotReady after install — not bouncing"

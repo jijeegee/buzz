@@ -84,7 +84,7 @@ use huddle::{
 };
 use initial_window::*;
 use managed_agents::{
-    backfill_persona_snapshots, ensure_nest, list_managed_agent_runtimes,
+    ensure_nest, list_managed_agent_runtimes,
     reconcile_managed_agent_runtimes, try_regenerate_nest,
 };
 #[cfg(not(feature = "mesh-llm"))]
@@ -332,19 +332,10 @@ pub fn run() {
                     .keyring_locked
                     .load(std::sync::atomic::Ordering::Acquire);
 
-            // Backfill the pinned persona snapshot for any pre-existing agent
-            // that predates the record-authoritative-spawn cutover (persona_id
-            // set but no source_version). Must run before
-            // restore_managed_agents_on_launch so no agent spawns from an empty
-            // snapshot. Synchronous and best-effort — a failure here must not
-            // block launch, but a missing persona is logged loudly inside.
             // Older agents without an attestation get their owner recorded
             // once, so no agent ever borrows the active account as its owner.
             if !recovery_mode {
                 crate::managed_agents::migrate_owners(&app_handle);
-            }
-            if let Err(e) = backfill_persona_snapshots(&app_handle) {
-                eprintln!("kuzz-desktop: persona-snapshot backfill failed: {e}");
             }
             // Settle agent moves onto server bots a crash interrupted (Hermes
             // profile follows the record, leftover local keys removed) before

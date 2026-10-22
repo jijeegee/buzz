@@ -98,8 +98,7 @@ pub struct PersonaEventContent {
     /// pre-existing fields so records without one serialize byte-identically
     /// to the pre-description era — existing content bytes and event ids are
     /// unchanged. EXCLUDED from [`persona_content_hash`]: description is
-    /// display metadata, not spawn-relevant config, so a description-only edit
-    /// must not badge linked instances as needing a restart.
+    /// display metadata, not spawn-relevant config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// ACP conversation boundary. Appended to preserve the historical field
@@ -107,8 +106,8 @@ pub struct PersonaEventContent {
     #[serde(default, skip_serializing_if = "super::AcpSessionPolicy::is_channel")]
     pub session_policy: super::AcpSessionPolicy,
     /// Definition-level thinking effort (see `AgentDefinition::effort_level`).
-    /// Spawn-relevant like `model`, so it IS part of `persona_content_hash`:
-    /// an effort edit must badge linked instances for a restart. Appended and
+    /// Spawn-relevant like `model`, so it IS part of `persona_content_hash`.
+    /// Appended and
     /// omitted while unset so pre-existing content bytes are unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort_level: Option<String>,
@@ -538,8 +537,10 @@ fn redate_tombstone(
 ///
 /// `description` is deliberately EXCLUDED from the hashed projection: it is
 /// public display metadata, not spawn-relevant config, so a description-only
-/// edit must not flip the "restart required" drift badge on linked instances.
-/// Guarded by `description_change_does_not_change_content_hash`.
+/// edit does not change it.
+/// Guarded by `description_change_does_not_change_content_hash`. Test-only
+/// since agents stopped following their preset (no drift badge to feed).
+#[cfg(test)]
 pub fn persona_content_hash(content: &PersonaEventContent) -> String {
     use sha2::{Digest, Sha256};
     let hashed = PersonaEventContent {
@@ -581,156 +582,103 @@ pub fn persona_event_content(record: &AgentDefinition) -> PersonaEventContent {
     }
 }
 
-/// A persona's spawn-relevant config, pinned onto a `ManagedAgentRecord` at
-/// create time for display/backward-compat purposes. For a linked instance,
-/// spawn and deploy do NOT read these snapshotted fields — they resolve
-/// model/provider/prompt live from the definition on every spawn (see
-/// `effective_config::resolve_effective_config`), so a definition edit
-/// propagates on the next restart without delete+respawn. The snapshot still
-/// matters for `runtime` (materialized per B5, no live-read path yet) and for
-/// `persona_source_version`, the drift basis the Agents menu compares against
-/// the definition's current content hash.
-pub struct PersonaSnapshot {
-    pub system_prompt: Option<String>,
-    pub acp_command: Option<String>,
-    pub model: Option<String>,
-    pub provider: Option<String>,
-    /// Preferred ACP runtime ID, copied verbatim from the persona (including
-    /// `None`). Unlike `model`/`provider`, there is no record-fallback: the
-    /// materialized instance `runtime` must mirror the definition so that
-    /// definition edits propagate on the next spawn rather than being silently
-    /// shadowed by the stale materialized value.
-    pub runtime: Option<String>,
-    /// `persona_content_hash` of the persona at snapshot time; the drift basis.
-    pub source_version: String,
-}
-
-/// Build the pinned snapshot for an agent created from `persona`.
+/// Copy everything a launch needs from `preset` into `record`, once, and label
+/// the agent "made from `preset`". After this the agent owns its settings: no
+/// launch, edit or delete path reads the preset through the label again.
 ///
-/// The persona's `system_prompt` is always present, so it is wrapped in
-/// `Some`. Env vars are deliberately absent: `record.env_vars` holds agent
-/// overrides only, and the live persona env is merged underneath at read
-/// time (spawn / readiness / deploy) — never snapshotted.
-pub fn persona_snapshot(persona: &AgentDefinition) -> PersonaSnapshot {
-    PersonaSnapshot {
-        system_prompt: Some(persona.system_prompt.clone()),
-        acp_command: persona.acp_command.clone(),
-        model: persona.model.clone(),
-        provider: persona.provider.clone(),
-        runtime: persona.runtime.clone(),
-        source_version: persona_content_hash(&persona_event_content(persona)),
-    }
-}
-
-/// Re-pin `record` to `persona`: build a snapshot via [`persona_snapshot`]
-/// and mirror it onto the record — the definition quad
-/// (`system_prompt`/`model`/`provider`/`runtime`), the env-override
-/// self-heal, and the `persona_source_version` drift basis.
+/// Used by agent creation (before the create dialog's explicit values are
+/// applied on top), snapshot imports, and the one-time boot migration that
+/// turned pre-existing preset links into copies. The rules keep the copied
+/// agent launching exactly as the linked agent did:
 ///
-/// Definition-authoritative: blank definition model/provider produce `None`
-/// on the record. The effective-config resolver falls through to the global
-/// default at read time; stale materialized record bytes are never preserved.
+/// - prompt / model / provider / runtime / ACP wrapper / session policy are
+///   the preset's (a blank model/provider stays blank → global default);
+/// - a harness pin naming a different known runtime than the preset's is
+///   dropped, as the start-time re-pin used to;
+/// - env: the preset's under the agent's own (agent wins per key);
+/// - effort: when the agent already has its own effort (column or any effort
+///   env key) it keeps only that — the preset's effort keys are not copied,
+///   so they cannot outrank the agent's column; otherwise the preset's
+///   column and effort env keys are copied as they were layered;
+/// - description is the preset's; avatar only when the agent has none;
+/// - `display_name` is never copied: it would replace the agent's own
+///   session title (`runtime::resolve_session_title`);
+/// - the legacy `relay_mesh` marker is cleared: mesh is decided by the
+///   copied provider alone.
 ///
-/// This is the single apply used by every snapshot-apply site: the spawn
-/// re-pin (`start_local_agent_with_preflight`), the launch backfill and
-/// restore re-snapshot (`restore.rs`), and the prospective re-snapshot inside
-/// `prospective_spawn_config_snapshot` — so a future `PersonaSnapshot` field
-/// addition propagates to all of them at once.
-///
-/// Deliberately does NOT touch `updated_at`: persistence stamps are the
-/// caller's concern, and the prospective snapshot (which applies this to a
-/// clone) must stay pure.
-pub fn apply_persona_snapshot(record: &mut ManagedAgentRecord, persona: &AgentDefinition) {
-    let snapshot = persona_snapshot(persona);
-    if let Some(prompt) = snapshot.system_prompt {
-        record.system_prompt = Some(prompt);
-    }
-    // The definition view omits stock kuzz-acp. Absence therefore resets a
-    // previously selected wrapper; preserving the instance would resurrect it.
-    record.acp_command = snapshot
+/// Deliberately does NOT touch `updated_at`.
+pub fn copy_preset_into_agent(record: &mut ManagedAgentRecord, preset: &AgentDefinition) {
+    record.system_prompt = Some(preset.system_prompt.clone());
+    // The definition view omits stock kuzz-acp; absence means the default.
+    record.acp_command = preset
         .acp_command
+        .clone()
         .unwrap_or_else(|| super::DEFAULT_ACP_COMMAND.to_string());
-    record.model = snapshot.model;
-    record.provider = snapshot.provider;
-    record.runtime = snapshot.runtime;
-    record.session_policy = persona.session_policy;
-    // Drop a stale create-time harness pin when the definition switches to a
-    // different known runtime (builtin, static preset, or loaded custom). A pin
-    // that names an unknown/custom command is always kept.
-    //
-    // Both sides are resolved through the canonical harness-identity resolver
-    // (`canonical_harness_command`) which accepts either a runtime id OR a
-    // command string — covering aliases (e.g. "claude-code-acp"), path prefixes
-    // ("/usr/local/bin/goose"), and harnesses whose id ≠ command. The persona
-    // runtime side is resolved via `command_for_runtime_id` (id-only input is
-    // sufficient there since persona.runtime is always an authoritative id).
-    //
-    // Comparison is on canonical primary commands so "goose", "/usr/local/bin/goose",
-    // and runtime id "goose" all represent the same harness; the stale pin is
-    // dropped only when the canonical commands differ.
-    if let Some(new_cmd) = persona
+    record.model = preset.model.clone();
+    record.provider = preset.provider.clone();
+    record.runtime = preset.runtime.clone();
+    record.session_policy = preset.session_policy;
+    drop_stale_harness_pin(record, preset);
+
+    let agent_has_effort = record.effort_level.is_some()
+        || record.env_vars.keys().any(|key| is_effort_env_key(key));
+    let mut env_vars: BTreeMap<String, String> = preset
+        .env_vars
+        .iter()
+        .filter(|(key, _)| !(agent_has_effort && is_effort_env_key(key)))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    env_vars.extend(std::mem::take(&mut record.env_vars));
+    record.env_vars = env_vars;
+    if !agent_has_effort {
+        record.effort_level = preset.effort_level.clone();
+    }
+
+    record.description = preset.description.clone();
+    if record.avatar_url.is_none() {
+        record.avatar_url = preset.avatar_url.clone();
+    }
+    record.relay_mesh = None;
+    record.source_preset_id = Some(preset.id.clone());
+}
+
+fn is_effort_env_key(key: &str) -> bool {
+    super::config_bridge::effort::effort_suppress_keys()
+        .iter()
+        .any(|effort_key| key.eq_ignore_ascii_case(effort_key))
+}
+
+/// Drop a create-time harness pin when the preset names a different known
+/// runtime (builtin, static preset, or loaded custom). A pin naming an
+/// unknown/custom command is always kept. Both sides compare as canonical
+/// primary commands, so "goose", "/usr/local/bin/goose" and runtime id
+/// "goose" are the same harness.
+fn drop_stale_harness_pin(record: &mut ManagedAgentRecord, preset: &AgentDefinition) {
+    let Some(new_cmd) = preset
         .runtime
         .as_deref()
         .map(str::trim)
         .filter(|r| !r.is_empty())
         .and_then(super::command_for_runtime_id)
-    {
-        if let Some(pin) = record
-            .agent_command_override
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-        {
-            // Resolve the pin via the canonical resolver (accepts id OR command).
-            if let Some(pin_cmd) = super::canonical_harness_command(pin) {
-                if pin_cmd != new_cmd {
-                    // Known harness switched to a different known harness — drop stale pin.
-                    record.agent_command_override = None;
-                }
-                // Same harness: keep the pin (e.g. explicit path override for same runtime).
-            }
-            // Custom/unknown pin: always keep.
+    else {
+        return;
+    };
+    let Some(pin) = record
+        .agent_command_override
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    else {
+        return;
+    };
+    if let Some(pin_cmd) = super::canonical_harness_command(pin) {
+        if pin_cmd != new_cmd {
+            record.agent_command_override = None;
         }
     }
-    // env_vars stay overrides-only. Self-heal records written before the env
-    // refresh: persona env used to be baked into `record.env_vars`, turning
-    // inherited values into pseudo-overrides that shadow later persona edits.
-    // An override equal to the persona's current value is indistinguishable
-    // from inheritance, so drop it and let the live merge supply it.
-    record
-        .env_vars
-        .retain(|k, v| persona.env_vars.get(k) != Some(v));
-    record.persona_source_version = Some(snapshot.source_version);
 }
-
-/// Preview what `record` would look like immediately after the start/restore
-/// paths re-pin it to its linked persona, without mutating `record` itself.
-///
-/// Every decision made ahead of the real re-pin — the relay-mesh preflight in
-/// `start_local_agent_with_preflight`, the restart-badge snapshot in
-/// `prospective_spawn_config_snapshot` — needs to reason about spawn-time
-/// state, not
-/// pre-snapshot bytes, so a persona edit that flips a field (e.g. `provider`
-/// to/from relay-mesh) between saves is reflected in the decision instead of
-/// the stale value the real [`apply_persona_snapshot`] is about to overwrite
-/// anyway. Idempotent: applying it to an already-current record is a no-op,
-/// so the spawn-time stamp and later recomputes agree when nothing changed.
-///
-/// Orphaned records (persona deleted) pass through unchanged: the caller's
-/// own orphan handling — refusing to spawn, snapshotting as `(None, None, None)`
-/// — runs on the real record downstream, not on this preview.
-pub fn preview_prospective_persona_snapshot(
-    record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
-) -> ManagedAgentRecord {
-    let mut preview = record.clone();
-    if let Some(persona_id) = preview.persona_id.clone() {
-        if let Some(persona) = personas.iter().find(|p| p.id == persona_id) {
-            apply_persona_snapshot(&mut preview, persona);
-        }
-    }
-    preview
-}
+#[cfg(test)]
+mod copy_tests;
 #[cfg(test)]
 mod stale_pin_tests;
 #[cfg(test)]

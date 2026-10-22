@@ -4,17 +4,18 @@ import test from "node:test";
 import {
   parseProfilePanelTab,
   parseProfilePanelView,
-  personaManagedAgentUpdate,
   profilePanelTabFromSearch,
   profilePanelTargetKey,
   profilePanelViewFromSearch,
+  resolveAgentInstruction,
+  resolvePanelProfile,
 } from "./UserProfilePanelUtils.ts";
 
 function agent(overrides = {}) {
   return {
     pubkey: "deadbeef".repeat(8),
     name: "Fizz",
-    personaId: "persona-1",
+    sourcePresetId: "persona-1",
     relayUrl: "ws://localhost:3000",
     acpCommand: "kuzz-acp",
     agentCommand: "goose",
@@ -67,127 +68,45 @@ function persona(overrides = {}) {
   };
 }
 
-function runtime(overrides = {}) {
-  return {
-    id: "claude",
-    label: "Claude Code",
-    avatarUrl: "app-avatar://claude",
-    availability: "available",
-    command: "claude",
-    binaryPath: "/usr/local/bin/claude",
-    defaultArgs: ["mcp", "serve"],
-    mcpCommand: "claude-mcp",
-    installHint: "",
-    installInstructionsUrl: "",
-    canAutoInstall: false,
-    underlyingCliPath: null,
-    ...overrides,
-  };
-}
-
-test("personaManagedAgentUpdate syncs edited persona identity to linked agent", () => {
-  assert.deepEqual(personaManagedAgentUpdate(agent(), persona()), {
-    pubkey: "deadbeef".repeat(8),
-    name: "Fizz Prime",
-    systemPrompt: "New prompt",
-    model: "new-model",
-    envVars: { NEW_KEY: "2" },
-  });
-});
-
-test("personaManagedAgentUpdate syncs definition access to the linked agent", () => {
-  assert.deepEqual(
-    personaManagedAgentUpdate(
-      agent({ respondTo: "anyone" }),
-      persona({ respondTo: "owner-only" }),
-    ),
-    {
-      pubkey: "deadbeef".repeat(8),
-      name: "Fizz Prime",
-      systemPrompt: "New prompt",
-      model: "new-model",
-      envVars: { NEW_KEY: "2" },
-      respondTo: "owner-only",
-    },
-  );
-
-  assert.deepEqual(
-    personaManagedAgentUpdate(
-      agent({ respondTo: "anyone" }),
-      persona({
-        respondTo: "allowlist",
-        respondToAllowlist: ["a".repeat(64)],
-      }),
-    ),
-    {
-      pubkey: "deadbeef".repeat(8),
-      name: "Fizz Prime",
-      systemPrompt: "New prompt",
-      model: "new-model",
-      envVars: { NEW_KEY: "2" },
-      respondTo: "allowlist",
-      respondToAllowlist: ["a".repeat(64)],
-    },
-  );
-});
-
-test("personaManagedAgentUpdate skips unrelated or unchanged agents", () => {
+test("an agent made from a preset shows its own instructions, not the preset's", () => {
   assert.equal(
-    personaManagedAgentUpdate(agent({ personaId: "persona-2" }), persona()),
+    resolveAgentInstruction(agent({ systemPrompt: " Old prompt " }), persona()),
+    "Old prompt",
+  );
+  assert.equal(
+    resolveAgentInstruction(agent({ systemPrompt: null }), persona()),
+    null,
+    "a blank agent prompt never falls back to the preset's",
+  );
+  assert.equal(resolveAgentInstruction(undefined, persona()), "New prompt");
+});
+
+test("an agent's profile falls back to its own avatar, never its preset's", () => {
+  const presetAvatar = persona({ avatarUrl: "app-avatar://preset" });
+  assert.equal(
+    resolvePanelProfile({
+      managedAgent: agent({ avatarUrl: null }),
+      persona: presetAvatar,
+      profile: undefined,
+    })?.avatarUrl ?? null,
     null,
   );
   assert.equal(
-    personaManagedAgentUpdate(
-      agent({
-        name: "Fizz Prime",
-        avatarUrl: null,
-        systemPrompt: "New prompt",
-        model: "new-model",
-        envVars: { NEW_KEY: "2" },
-      }),
-      persona(),
-    ),
-    null,
+    resolvePanelProfile({
+      managedAgent: agent(),
+      persona: presetAvatar,
+      profile: undefined,
+    })?.avatarUrl,
+    "app-avatar://old",
   );
-});
-
-test("personaManagedAgentUpdate maps changed persona runtime to linked agent commands", () => {
-  assert.deepEqual(
-    personaManagedAgentUpdate(agent(), persona({ runtime: "claude" }), {
-      previousPersona: persona({ runtime: "goose" }),
-      runtimes: [runtime()],
-    }),
-    {
-      pubkey: "deadbeef".repeat(8),
-      name: "Fizz Prime",
-      systemPrompt: "New prompt",
-      model: "new-model",
-      envVars: { NEW_KEY: "2" },
-      agentCommand: "claude",
-      agentArgs: ["mcp", "serve"],
-      mcpCommand: "claude-mcp",
-    },
-  );
-});
-
-test("personaManagedAgentUpdate leaves runtime fields alone when runtime is unchanged", () => {
   assert.equal(
-    personaManagedAgentUpdate(
-      agent({
-        name: "Fizz Prime",
-        avatarUrl: null,
-        systemPrompt: "New prompt",
-        model: "new-model",
-        envVars: { NEW_KEY: "2" },
-        agentArgs: ["custom"],
-      }),
-      persona({ runtime: "goose" }),
-      {
-        previousPersona: persona({ runtime: "goose" }),
-        runtimes: [runtime({ id: "goose", command: "goose" })],
-      },
-    ),
-    null,
+    resolvePanelProfile({
+      managedAgent: undefined,
+      persona: presetAvatar,
+      profile: undefined,
+    })?.avatarUrl,
+    "app-avatar://preset",
+    "a preset profile still shows the preset's avatar",
   );
 });
 

@@ -151,10 +151,6 @@ fn team_export_round_trip_preserves_team_and_excludes_member_memory() {
     assert_eq!(decoded.members[1].profile.about, None);
     let imported = build_import_definitions(&decoded, "now").unwrap();
     assert_eq!(imported[0].acp_command.as_deref(), Some("kuzz-janet-acp"));
-    assert_eq!(
-        imported[0].clone().into_agent_record().acp_command,
-        "kuzz-janet-acp"
-    );
     assert!(decoded.members.iter().all(|member| {
         member.memory.level == MemoryLevel::None && member.memory.entries.is_empty()
     }));
@@ -212,9 +208,9 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         description: None,
         pubkey: "a".repeat(64),
         name: "Alice".to_string(),
-        display_name: None,
-        slug: None,
-        persona_id: Some("alice".to_string()),
+        source_preset_id: Some("alice".to_string()),
+        legacy_persona_id: None,
+        team_instructions: None,
         private_key_nsec: String::new(),
         auth_tag: None,
         relay_url: String::new(),
@@ -231,7 +227,6 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         system_prompt: None,
         model: None,
         provider: None,
-        persona_source_version: None,
         env_vars: Default::default(),
         start_on_app_launch: false,
         is_default_ai: false,
@@ -242,8 +237,6 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         provider_policy_pending: false,
         provider_binary_path: None,
         team_id: Some("t1".to_string()),
-        persona_team_dir: None,
-        persona_name_in_team: None,
         created_at: "now".to_string(),
         updated_at: "now".to_string(),
         last_started_at: None,
@@ -253,20 +246,9 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         last_error_code: None,
         respond_to: crate::managed_agents::RespondTo::default(),
         respond_to_allowlist: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: vec![],
-        definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
         runtime: None,
-        name_pool: vec![],
         bot_origin: None,
     };
 
@@ -378,7 +360,10 @@ fn team_import_starts_every_member_owner_only_even_from_legacy_file() {
     for member in value["members"].as_array_mut().unwrap() {
         let definition = member["definition"].as_object_mut().unwrap();
         definition.insert("respondTo".into(), "anyone".into());
-        definition.insert("respondToAllowlist".into(), serde_json::json!(["ab".repeat(32)]));
+        definition.insert(
+            "respondToAllowlist".into(),
+            serde_json::json!(["ab".repeat(32)]),
+        );
     }
     let decoded = decode_team_snapshot_from_bytes(&serde_json::to_vec(&value).unwrap()).unwrap();
     let definitions = build_import_definitions(&decoded, "now").unwrap();

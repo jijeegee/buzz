@@ -51,19 +51,19 @@ export function pickPreferredManagedAgent(agents: ManagedAgent[]) {
 }
 
 /**
- * True when some managed agent linked to `personaId` is already a member of
+ * True when some managed agent made from preset `personaId` is already a member of
  * the channel. `findReusablePersonaAgent` deliberately looks past members (a
  * deploy dialog may want a second instance), so a template/batch caller that
  * wants "one instance per persona" checks this first.
  */
 export function isPersonaRepresentedInChannel(
-  agents: readonly Pick<ManagedAgent, "pubkey" | "personaId">[],
+  agents: readonly Pick<ManagedAgent, "pubkey" | "sourcePresetId">[],
   personaId: string,
   channelMemberPubkeys: ReadonlySet<string>,
 ): boolean {
   return agents.some(
     (agent) =>
-      agent.personaId === personaId &&
+      agent.sourcePresetId === personaId &&
       channelMemberPubkeys.has(normalizePubkey(agent.pubkey)),
   );
 }
@@ -79,7 +79,7 @@ export function dropPersonasAlreadyInChannel<
   T extends { personaId?: string | null; forceNewInstance?: boolean },
 >(
   inputs: readonly T[],
-  agents: readonly Pick<ManagedAgent, "pubkey" | "personaId">[],
+  agents: readonly Pick<ManagedAgent, "pubkey" | "sourcePresetId">[],
   channelMemberPubkeys: ReadonlySet<string>,
 ): T[] {
   return inputs.filter(
@@ -101,7 +101,7 @@ export function findReusablePersonaAgent(
 ): ManagedAgent | undefined {
   const candidates = agents.filter(
     (agent) =>
-      agent.personaId === personaId &&
+      agent.sourcePresetId === personaId &&
       !channelMemberPubkeys.has(normalizePubkey(agent.pubkey)),
   );
   return pickPreferredManagedAgent(candidates);
@@ -114,7 +114,7 @@ export function findReusableGenericAgent(
 ): ManagedAgent | undefined {
   const candidates = agents.filter(
     (agent) =>
-      !agent.personaId &&
+      !agent.sourcePresetId &&
       !agent.systemPrompt?.trim() &&
       commandsMatch(agent.agentCommand, command) &&
       !channelMemberPubkeys.has(normalizePubkey(agent.pubkey)),

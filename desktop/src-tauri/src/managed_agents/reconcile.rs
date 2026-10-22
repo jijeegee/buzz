@@ -96,6 +96,7 @@ fn reconcile_agents_in_dir_at(
         open_retention_db(db_path).map_err(|e| format!("failed to open retention db: {e}"))?;
 
     let mut reconciled = 0u32;
+    let signer_hex = keys.public_key().to_hex();
 
     for record in &records {
         // A record without a pubkey has no event coordinate yet (key-less
@@ -103,9 +104,19 @@ fn reconcile_agents_in_dir_at(
         if record.pubkey.is_empty() {
             continue;
         }
+        // An agent's event carries its full settings: only its owner signs
+        // it. Another signed-in account's agents publish when it is active.
+        let owner = super::owners::agent_owner_hex_in_dir(base_dir, record);
+        if !super::owners::may_publish_agent(owner.as_deref(), &signer_hex) {
+            continue;
+        }
 
-        if retain_agent_record(&conn, keys, record)? {
-            reconciled += 1;
+        // One agent that fails to publish (e.g. a setting the event rejects)
+        // must not keep the rest from publishing.
+        match retain_agent_record(&conn, keys, record) {
+            Ok(true) => reconciled += 1,
+            Ok(false) => {}
+            Err(e) => eprintln!("kuzz-desktop: agent-event-reconcile: skipped '{}': {e}", record.name),
         }
     }
 

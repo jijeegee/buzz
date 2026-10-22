@@ -37,28 +37,23 @@ use serde::Serialize;
 
 use super::{
     channel_routing::RoutingRole,
-    effective_config::{resolve_effective_config, EffectiveConfigResult},
+    effective_config::resolve_effective_config,
     known_acp_runtime, normalize_agent_args,
-    persona_events::preview_prospective_persona_snapshot,
     readiness::EffectiveHarnessDescriptor,
     runtime::{resolve_session_title, SESSION_TITLE_ENV_VAR},
-    types::{AgentDefinition, ManagedAgentRecord, TeamRecord},
+    types::ManagedAgentRecord,
     AcpSessionPolicy, GlobalAgentConfig,
 };
 
 pub(crate) mod diff;
 pub(crate) use diff::{eligible_restart_diff, RestartDiffEntry, TrackedSpawnState};
 
-/// Resolve the current instructions for this instance's deployment-time team binding.
-/// A deleted team deliberately degrades to no team section.
-pub(crate) fn effective_team_instructions(
-    record: &ManagedAgentRecord,
-    teams: &[TeamRecord],
-) -> Option<String> {
-    teams
-        .iter()
-        .find(|team| Some(team.id.as_str()) == record.team_id.as_deref())
-        .and_then(|team| team.instructions.as_deref())
+/// The team instructions this agent launches with: its own copy, taken from
+/// its team at creation. Editing or deleting the team changes nothing here.
+pub(crate) fn effective_team_instructions(record: &ManagedAgentRecord) -> Option<String> {
+    record
+        .team_instructions
+        .as_deref()
         .map(str::trim)
         .filter(|instructions| !instructions.is_empty())
         .map(str::to_string)
@@ -80,9 +75,8 @@ pub(crate) struct SpawnConfigInputs<'a> {
     /// The stored record remains portable; only effective spawned access is stamped.
     pub enforced_owner_only: bool,
     /// The effective ACP session policy (`channel`/`thread`) the launch applies.
-    /// Resolved from the current linked definition at the shared launch
-    /// boundary; captured here so editing the definition while an agent runs
-    /// drives the existing restart-required path.
+    /// The agent's own setting, captured here so editing it while the agent
+    /// runs drives the existing restart-required path.
     pub session_policy: AcpSessionPolicy,
     /// The channel routing role the launch applies (`routing_role_for`:
     /// saved mode × the record's star), which decides the routing env.
@@ -241,7 +235,7 @@ impl SpawnConfigSnapshot {
             model: model.map(str::to_string),
             provider: provider.map(str::to_string),
             session_title: (!descriptor.env.contains_key(SESSION_TITLE_ENV_VAR))
-                .then(|| resolve_session_title(record.display_name.as_deref(), &record.name))
+                .then(|| resolve_session_title(None, &record.name))
                 .flatten(),
             auth_tag: record.auth_tag.clone(),
             respond_to: respond_to.as_str().to_string(),
@@ -304,29 +298,19 @@ impl std::fmt::Debug for SpawnConfigSnapshot {
 /// actually fed the child's `Command`.
 pub(crate) fn prospective_spawn_config_snapshot(
     record: &ManagedAgentRecord,
-    personas: &[AgentDefinition],
     workspace_relay: &str,
     global: &GlobalAgentConfig,
     enforced_owner_only: bool,
     routing_role: RoutingRole,
 ) -> SpawnConfigSnapshot {
-    // Prospective re-snapshot: apply the same `apply_persona_snapshot` the
-    // start/restore paths run right before spawning, so this describes what a
-    // restart would actually run. Idempotent, so a spawn-time stamp taken
-    // after those paths saved the record compares equal when nothing changed.
-    // The persona env itself arrives through the descriptor's layered env
-    // below; `persona_source_version` is set on the clone but is not an input.
-    let record = preview_prospective_persona_snapshot(record, personas);
-    let record = &record;
-
     // Resolve command, args, and env via the single typed descriptor — same
     // path as spawn_agent_child. Dangling harness id falls back to the
     // infallible record_agent_command (no-op: a dangling harness can't be
     // spawned, so the snapshot never matters for that agent).
     let descriptor =
-        crate::managed_agents::resolve_effective_harness_descriptor(record, personas, global)
+        crate::managed_agents::resolve_effective_harness_descriptor(record, global)
             .unwrap_or_else(|_| {
-                let command = crate::managed_agents::record_agent_command(record, personas);
+                let command = crate::managed_agents::record_agent_command(record);
                 let args = normalize_agent_args(&command, record.agent_args.clone());
                 EffectiveHarnessDescriptor {
                     command,
@@ -337,14 +321,9 @@ pub(crate) fn prospective_spawn_config_snapshot(
 
     // Model and provider come from ONE `resolve_effective_config` call — the
     // SAME resolve `spawn_agent_child` performs for the env write, so env
-    // write and this badge cannot disagree. An orphaned link (missing
-    // definition) resolves as if both were absent: `spawn_agent_child`
-    // refuses to spawn an orphan regardless, and `eligible_restart_diff`
-    // suppresses the badge for one.
-    let (model, provider) = match resolve_effective_config(record, personas, global) {
-        EffectiveConfigResult::Resolved(cfg) => (cfg.model.value, cfg.provider.value),
-        EffectiveConfigResult::OrphanedInstance { .. } => (None, None),
-    };
+    // write and this badge cannot disagree.
+    let cfg = resolve_effective_config(record, global);
+    let (model, provider) = (cfg.model.value, cfg.provider.value);
 
     SpawnConfigSnapshot::from_inputs(SpawnConfigInputs {
         record,

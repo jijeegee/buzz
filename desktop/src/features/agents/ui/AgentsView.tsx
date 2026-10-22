@@ -342,7 +342,7 @@ export function AgentsView() {
               }}
               onSharePersona={(persona) => {
                 const linkedAgent = agents.managedAgents.find(
-                  (agent) => agent.personaId === persona.id,
+                  (agent) => agent.sourcePresetId === persona.id,
                 );
                 personas.openShare(persona, linkedAgent, persona.avatarUrl);
               }}
@@ -422,7 +422,7 @@ export function AgentsView() {
         <PersonaDeleteDialog
           instanceCount={
             (agents.managedAgents ?? []).filter(
-              (a) => a.personaId === personas.personaToDelete?.id,
+              (a) => a.sourcePresetId === personas.personaToDelete?.id,
             ).length
           }
           onConfirm={(persona) => {

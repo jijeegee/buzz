@@ -67,7 +67,7 @@ function isAgentScopedToRelay(agent: ManagedAgent, relayUrl?: string | null) {
 }
 
 function isBuiltInWelcomeGuideAgent(agent: ManagedAgent) {
-  return agent.personaId === WELCOME_GUIDE_PERSONA_ID;
+  return agent.sourcePresetId === WELCOME_GUIDE_PERSONA_ID;
 }
 
 function isLegacyKitWelcomeGuideAgent(agent: ManagedAgent) {
@@ -119,7 +119,7 @@ export function pickWelcomeTeamStarterAgentForRelay(
     agents.filter(
       (agent) =>
         agent.teamId === WELCOME_TEAM_ID &&
-        agent.personaId === starter.personaId &&
+        agent.sourcePresetId === starter.personaId &&
         isAgentScopedToRelay(agent, relayUrl),
     ),
   );
@@ -134,8 +134,8 @@ export async function getWelcomeTeamAgentPubkeys(relayUrl?: string | null) {
     .filter(
       (agent) =>
         agent.teamId === WELCOME_TEAM_ID &&
-        agent.personaId !== null &&
-        personaIds.has(agent.personaId) &&
+        agent.sourcePresetId !== null &&
+        personaIds.has(agent.sourcePresetId) &&
         isAgentScopedToRelay(agent, relayUrl),
     )
     .map((agent) => agent.pubkey);
@@ -234,6 +234,11 @@ export async function buildWelcomeStarterCreateInput(
   };
 }
 
+/**
+ * Moves an existing Welcome starter onto the onboarding runtime. The agent
+ * owns its model and provider: they are only replaced (with `desired`'s,
+ * which are runtime-specific) when the runtime itself changes.
+ */
 export function welcomeStarterRuntimeUpdate(
   existing: ManagedAgent,
   desired: CreateManagedAgentInput,
@@ -247,8 +252,6 @@ export function welcomeStarterRuntimeUpdate(
   if (
     existing.agentCommand === desired.agentCommand &&
     existing.agentArgs.join(",") === desiredArgs.join(",") &&
-    existing.model === desiredModel &&
-    existing.provider === desiredProvider &&
     existing.mcpCommand === desiredMcpCommand
   ) {
     return null;
@@ -412,7 +415,11 @@ async function provisionWelcomeTeam(
       relayUrl,
     );
     if (existing) {
-      const runtimeUpdate = welcomeStarterRuntimeUpdate(existing, desired);
+      const runtimeUpdate = welcomeStarterRuntimeUpdate(existing, {
+        ...desired,
+        model: persona.model ?? undefined,
+        provider: persona.provider ?? undefined,
+      });
       agents.push(
         runtimeUpdate
           ? (await updateManagedAgent(runtimeUpdate)).agent

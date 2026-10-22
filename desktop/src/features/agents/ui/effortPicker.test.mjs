@@ -5,11 +5,11 @@ import {
   EFFORT_DEFAULT_DROPDOWN_VALUE,
   EFFORT_DEFAULT_LABEL,
   EFFORT_FALLBACK_HELPER_TEXT,
-  EFFORT_TEMPLATE_DEFAULT_LABEL,
   effortPickerState,
   effortSelectionToPersistedValue,
-  effortSentinelLabel,
 } from "./effortPicker.ts";
+
+const CUSTOM_SENTINEL_LABEL = "Template default";
 
 const localBackend = { type: "local" };
 const providerBackend = { type: "provider", id: "openai", config: {} };
@@ -236,15 +236,14 @@ test("the sentinel row reads 'Adapter default' unless the surface names the tier
   assert.equal(adapter.options[0].label, EFFORT_DEFAULT_LABEL);
   assert.equal(EFFORT_DEFAULT_LABEL, "Adapter default");
 
-  // A linked instance clearing its own column inherits the template default,
-  // so the row must not promise the adapter default.
+  // A surface may name its own sentinel; the row shows that label.
   const linked = effortPickerState({
     backend: localBackend,
     effortConfigId: undefined,
     effortOptions: undefined,
     fallbackValues: fallback,
     currentEffort: null,
-    defaultLabel: EFFORT_TEMPLATE_DEFAULT_LABEL,
+    defaultLabel: CUSTOM_SENTINEL_LABEL,
   });
   assert.deepEqual(linked.options[0], {
     label: "Template default",
@@ -255,20 +254,6 @@ test("the sentinel row reads 'Adapter default' unless the surface names the tier
     EFFORT_DEFAULT_DROPDOWN_VALUE,
     "the label is presentation only — the sentinel value (and its null persistence) is unchanged",
   );
-});
-
-test("effortSentinelLabel names the template tier only when the linked template sets an effort", () => {
-  assert.equal(
-    effortSentinelLabel({ effortLevel: "high" }),
-    EFFORT_TEMPLATE_DEFAULT_LABEL,
-  );
-  // A template without an effort of its own: clearing really is adapter default.
-  assert.equal(
-    effortSentinelLabel({ effortLevel: null }),
-    EFFORT_DEFAULT_LABEL,
-  );
-  assert.equal(effortSentinelLabel(null), EFFORT_DEFAULT_LABEL);
-  assert.equal(effortSentinelLabel(undefined), EFFORT_DEFAULT_LABEL);
 });
 
 // ── No instance (definition / global surfaces) ──────────────────────────────

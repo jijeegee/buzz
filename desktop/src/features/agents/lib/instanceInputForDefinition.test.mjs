@@ -69,7 +69,7 @@ test("row 4: create input never contains definition env vars", async () => {
     "envVars" in input,
     false,
     "definition env must never be seeded into the create input — " +
-      "record.env_vars is overrides-only and spawn merges the live definition env",
+      "the backend copies the preset env into the new agent",
   );
 });
 
@@ -94,6 +94,11 @@ test("row 2: harnessOverride follows the backend-aligned formula", async () => {
     differs.harnessOverride,
     false,
     "picked != configured → false (definition stays authoritative)",
+  );
+  assert.equal(
+    "agentCommand" in differs,
+    false,
+    "a fallback runtime is not sent, so the backend copies the preset's runtime",
   );
 });
 
@@ -151,10 +156,7 @@ test("mapping carries the runtime and definition fields", async () => {
   // freeze args at create-time and silently ignore later definition edits.
   assert.deepEqual(input.agentArgs, []);
   assert.equal(input.mcpCommand, "goose-mcp");
-  assert.equal(input.personaId, "p-1");
-  assert.equal(input.systemPrompt, "prompt");
-  assert.equal(input.model, undefined);
-  assert.equal(input.provider, undefined);
+  assert.equal(input.sourcePresetId, "p-1");
   assert.equal(input.spawnAfterCreate, true);
   assert.equal(input.startOnAppLaunch, true);
   assert.deepEqual(input.backend, { type: "local" });
@@ -168,34 +170,37 @@ test("no backend intent is byte-identical to the pre-intent mapping", async () =
   const input = await buildInstanceInputForDefinition(persona(), gooseRuntime);
   assert.deepEqual(input, {
     name: "Test Agent",
-    personaId: "p-1",
-    systemPrompt: "prompt",
+    sourcePresetId: "p-1",
     avatarUrl: "https://example.com/a.png",
     acpCommand: "kuzz-acp",
     agentCommand: "goose-cmd",
     agentArgs: [],
     mcpCommand: "goose-mcp",
     harnessOverride: true,
-    model: undefined,
-    provider: undefined,
     spawnAfterCreate: true,
     startOnAppLaunch: true,
     backend: { type: "local" },
   });
 });
 
-test("Kuzz shared compute definition carries native provider and auto model", async () => {
+test("create input sends the preset label and leaves the preset's settings to the backend copy", async () => {
   const input = await buildInstanceInputForDefinition(
     persona({
       runtime: "kuzz-agent",
       provider: "relay-mesh",
       model: "auto",
+      systemPrompt: "preset prompt",
     }),
     { ...gooseRuntime, id: "kuzz-agent", command: "kuzz-agent" },
   );
+  assert.equal(input.sourcePresetId, "p-1");
+  assert.equal("personaId" in input, false, "no live link is sent");
   assert.equal(input.agentCommand, "kuzz-agent");
-  assert.equal(input.provider, "relay-mesh");
-  assert.equal(input.model, "auto");
+  // The backend copies the whole preset first; the builder must not
+  // duplicate that copy (omitted = the preset's value).
+  for (const key of ["systemPrompt", "model", "provider", "envVars"]) {
+    assert.equal(key in input, false, `create input must omit ${key}`);
+  }
   assert.equal(input.spawnAfterCreate, true);
   assert.equal(input.startOnAppLaunch, true);
 });
@@ -229,8 +234,8 @@ test("provider intent forces startOnAppLaunch off and omits local commands", asy
   ]) {
     assert.equal(key in input, false, `provider intent must omit ${key}`);
   }
-  assert.equal(input.personaId, "p-1", "definition link is kept");
-  assert.equal(input.systemPrompt, "prompt");
+  assert.equal(input.sourcePresetId, "p-1", "the preset label is sent");
+  assert.equal("systemPrompt" in input, false);
 });
 
 test("row 1: refuses when the configured runtime is not available", () => {
@@ -338,11 +343,10 @@ test("item-13: no runtimes available — refuses with actionable error", () => {
   );
 });
 
-// ── Definition-level effort is never seeded onto the instance ───────────────
+// ── Definition-level effort is never sent on create ─────────────────────────
 //
-// The create dialog's effort pick is the definition's `effortLevel` default,
-// which spawn resolves live beneath the instance column. Copying it onto the
-// instance would freeze it there and mask every later definition edit.
+// The backend copies the preset's effort into the new agent at creation;
+// sending it again from TS would duplicate that copy.
 
 test("the instance input never carries an effortLevel, even when the definition has one", async () => {
   for (const backendIntent of [
@@ -358,7 +362,7 @@ test("the instance input never carries an effortLevel, even when the definition 
     assert.equal(
       "effortLevel" in input,
       false,
-      "the instance column must stay unset so the definition default applies at spawn",
+      "the backend copies the preset effort; the create input must not repeat it",
     );
   }
 });

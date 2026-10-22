@@ -15,9 +15,9 @@ export function isEditableEntry(entry: AcpRuntimeCatalogEntry): boolean {
 }
 
 /**
- * Count managed agents whose effective harness is the given definition id —
- * either a direct record-level `runtime` pin, or inheritance from a linked
- * persona whose `runtime` is that id.
+ * Count managed agents whose own `runtime` is the given definition id. Agents
+ * never inherit a runtime from the preset they were made from, so
+ * `sourcePresetId` plays no part here.
  *
  * Drives the delete-confirmation copy: deleting a harness that agents still
  * reference is allowed (blocking would turn cleanup into dependency
@@ -25,15 +25,9 @@ export function isEditableEntry(entry: AcpRuntimeCatalogEntry): boolean {
  */
 export function countAgentsReferencingHarness(
   harnessId: string,
-  agents: ReadonlyArray<{ runtime: string | null; personaId: string | null }>,
-  personas: ReadonlyArray<{ id: string; runtime: string | null }>,
+  agents: ReadonlyArray<{ runtime: string | null }>,
 ): number {
-  const personaRuntime = new Map(personas.map((p) => [p.id, p.runtime]));
-  return agents.filter((agent) => {
-    if (agent.runtime !== null) return agent.runtime === harnessId;
-    if (agent.personaId === null) return false;
-    return personaRuntime.get(agent.personaId) === harnessId;
-  }).length;
+  return agents.filter((agent) => agent.runtime === harnessId).length;
 }
 
 /**
@@ -66,9 +60,9 @@ export type DeleteConfirmState = {
 };
 
 /**
- * Drive the delete-confirmation UI from the two blast-radius queries.
+ * Drive the delete-confirmation UI from the blast-radius query.
  *
- * - While either query is initial-loading, confirmation is DISABLED and the
+ * - While the query is initial-loading, confirmation is DISABLED and the
  *   copy says so: the promised "N agents will stop launching" warning must
  *   render before the destructive action is clickable.
  * - On query failure, deletion stays possible (blocking cleanup on a failed
@@ -78,30 +72,21 @@ export type DeleteConfirmState = {
 export function deleteConfirmState(
   harnessId: string,
   label: string,
-  agents: BlastRadiusQuery<
-    ReadonlyArray<{ runtime: string | null; personaId: string | null }>
-  >,
-  personas: BlastRadiusQuery<
-    ReadonlyArray<{ id: string; runtime: string | null }>
-  >,
+  agents: BlastRadiusQuery<ReadonlyArray<{ runtime: string | null }>>,
 ): DeleteConfirmState {
-  if (agents.isPending || personas.isPending) {
+  if (agents.isPending) {
     return {
       canConfirm: false,
       message: "Checking which agents use this harness…",
     };
   }
-  if (agents.isError || personas.isError) {
+  if (agents.isError) {
     return {
       canConfirm: true,
       message: `Couldn't check which agents use this harness — some agents may stop launching. Delete ${label}?`,
     };
   }
-  const count = countAgentsReferencingHarness(
-    harnessId,
-    agents.data ?? [],
-    personas.data ?? [],
-  );
+  const count = countAgentsReferencingHarness(harnessId, agents.data ?? []);
   return {
     canConfirm: true,
     message: deleteHarnessConfirmMessage(label, count),

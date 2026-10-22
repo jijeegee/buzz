@@ -180,7 +180,7 @@ export function useAgentCandidates() {
     const candidates: AgentCandidate[] = managed.map((agent) => ({
       pubkey: normalizePubkey(agent.pubkey),
       name: agent.name,
-      personaId: agent.personaId,
+      personaId: agent.sourcePresetId,
       isManaged: true,
       isActive: isManagedAgentActive(agent),
     }));

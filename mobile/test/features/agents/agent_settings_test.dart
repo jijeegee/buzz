@@ -52,51 +52,50 @@ void main() {
     });
   });
 
-  group('patchedPersonaContent', () {
-    test('applies the draft and keeps every other key', () {
+  group('patchedAgentContent', () {
+    test('applies the draft and keeps every other key in order', () {
       final loaded = {
-        'display_name': 'Fizz',
+        'name': 'Fizz',
+        'source_preset_id': 'fizz-def',
         'system_prompt': 'old',
-        'acp_command': 'claude-agent-acp',
         'model': 'opus',
-        'name_pool': ['a', 'b'],
+        'provider': 'anthropic',
         'parallelism': 2,
+        'respond_to': 'owner-only',
         'description': 'old description',
         'future_field': {'x': 1},
       };
-      final content =
-          jsonDecode(
-                patchedPersonaContent(
-                  loaded,
-                  _draft(
-                    name: '  Buzzy  ',
-                    description: '  Helps out  ',
-                    instructions: '  Be kind.\n',
-                    model: ' sonnet ',
-                  ),
-                ),
-              )
-              as Map<String, dynamic>;
+      final encoded = patchedAgentContent(
+        loaded,
+        _draft(
+          name: '  Buzzy  ',
+          description: '  Helps out  ',
+          instructions: '  Be kind.\n',
+          model: ' sonnet ',
+        ),
+      );
+      final content = jsonDecode(encoded) as Map<String, dynamic>;
       expect(content, {
-        'display_name': 'Buzzy',
+        'name': 'Buzzy',
+        'source_preset_id': 'fizz-def',
         'system_prompt': '  Be kind.\n',
-        'acp_command': 'claude-agent-acp',
         'model': 'sonnet',
-        'name_pool': ['a', 'b'],
+        'provider': 'anthropic',
         'parallelism': 2,
+        'respond_to': 'owner-only',
         'description': 'Helps out',
         'future_field': {'x': 1},
       });
-      // Desktop field order first, unknown keys after.
-      expect(content.keys.first, 'display_name');
-      expect(content.keys.last, 'future_field');
+      expect(content.keys.toList(), loaded.keys.toList());
+      expect(loaded['name'], 'Fizz', reason: 'input is not mutated');
     });
 
     test('leaves blank description and model out', () {
       final content =
           jsonDecode(
-                patchedPersonaContent({
-                  'display_name': 'Fizz',
+                patchedAgentContent({
+                  'name': 'Fizz',
+                  'system_prompt': 'x',
                   'model': 'opus',
                   'description': 'x',
                 }, _draft(description: '   ', model: ' ')),
@@ -104,21 +103,41 @@ void main() {
               as Map<String, dynamic>;
       expect(content.containsKey('model'), isFalse);
       expect(content.containsKey('description'), isFalse);
-      // No prompt before and none now: stays absent.
-      expect(content.containsKey('system_prompt'), isFalse);
-    });
-
-    test('keeps an existing empty prompt', () {
-      final content =
-          jsonDecode(
-                patchedPersonaContent({
-                  'display_name': 'Fizz',
-                  'system_prompt': 'x',
-                }, _draft()),
-              )
-              as Map<String, dynamic>;
+      // An emptied prompt is written as empty, never dropped.
       expect(content['system_prompt'], '');
     });
+  });
+
+  group('managedAgentSourcePresetId', () {
+    test('reads source_preset_id, then an older persona_id', () {
+      expect(
+        managedAgentSourcePresetId(
+          jsonEncode({'source_preset_id': 'new', 'persona_id': 'old'}),
+        ),
+        'new',
+      );
+      expect(
+        managedAgentSourcePresetId(jsonEncode({'persona_id': 'old'})),
+        'old',
+      );
+      expect(
+        managedAgentSourcePresetId(
+          jsonEncode({'source_preset_id': ' ', 'persona_id': 'old'}),
+        ),
+        'old',
+      );
+      expect(managedAgentSourcePresetId(jsonEncode({'name': 'x'})), isNull);
+      expect(managedAgentSourcePresetId('not json'), isNull);
+    });
+  });
+
+  test('agentContentEditable needs the agent\'s own instructions', () {
+    expect(agentContentEditable({'name': 'x', 'system_prompt': ''}), isTrue);
+    expect(
+      agentContentEditable({'name': 'x', 'persona_id': 'fizz-def'}),
+      isFalse,
+    );
+    expect(agentContentEditable({'name': 'x', 'system_prompt': null}), isFalse);
   });
 
   test('copyTags copies d, shared and other tags', () {
@@ -226,21 +245,21 @@ void main() {
       String name, {
       List<NostrEvent> agents = const [],
       List<NostrEvent> personas = const [],
+      String? sourcePresetD = 'fizz-def',
     }) => agentNameConflicts(
       name: name,
-      previousName: 'Fizz',
       owner: _owner,
       agentPubkey: _fizz,
-      personaD: 'fizz-def',
+      sourcePresetD: sourcePresetD,
       agentEvents: agents,
       personaEvents: personas,
     );
 
-    test('finds another agent or definition by name', () {
+    test('finds another agent or preset by name', () {
       final honey = _event(
         kind: EventKind.managedAgent,
         d: _honey,
-        content: {'name': 'Honey', 'persona_id': 'honey-def'},
+        content: {'name': 'Honey', 'source_preset_id': 'honey-def'},
       );
       expect(conflicts(' honey ', agents: [honey]), isTrue);
       expect(conflicts('Pollen', agents: [honey]), isFalse);
@@ -252,42 +271,32 @@ void main() {
       expect(conflicts('POLLEN', personas: [pollen]), isTrue);
     });
 
-    test('ignores this agent, its definition and agents renamed with it', () {
+    test('ignores this agent and the preset it was made from', () {
+      final self = _event(
+        kind: EventKind.managedAgent,
+        d: _fizz,
+        content: {'name': 'Fizz'},
+      );
+      final preset = _event(
+        kind: EventKind.persona,
+        d: 'fizz-def',
+        content: {'display_name': 'Fizz'},
+      );
+      expect(conflicts('fizz', agents: [self], personas: [preset]), isFalse);
       expect(
-        conflicts(
-          'fizz',
-          agents: [
-            _event(
-              kind: EventKind.managedAgent,
-              d: _fizz,
-              content: {'name': 'Buzzy'},
-            ),
-            _event(
-              kind: EventKind.managedAgent,
-              d: _honey,
-              content: {'name': 'Fizz', 'persona_id': 'Fizz-Def'},
-            ),
-          ],
-          personas: [
-            _event(
-              kind: EventKind.persona,
-              d: 'fizz-def',
-              content: {'display_name': 'Fizz'},
-            ),
-          ],
-        ),
-        isFalse,
+        conflicts('fizz', personas: [preset], sourcePresetD: null),
+        isTrue,
       );
     });
 
-    test('a sibling that keeps its own name still holds it', () {
-      // Renaming "Fizz" to "Fizz 2" would leave two agents named "Fizz 2".
+    test('another agent from the same preset still holds its name', () {
+      // Agents are no longer renamed along with their preset.
       final sibling = _event(
         kind: EventKind.managedAgent,
         d: _honey,
-        content: {'name': 'Fizz 2', 'persona_id': 'fizz-def'},
+        content: {'name': 'Fizz', 'persona_id': 'Fizz-Def'},
       );
-      expect(conflicts('Fizz 2', agents: [sibling]), isTrue);
+      expect(conflicts('Fizz', agents: [sibling]), isTrue);
     });
 
     test('uses only the newest event per d tag and the owner\'s', () {

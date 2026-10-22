@@ -1,6 +1,6 @@
 import * as React from "react";
 import { applyReusableAgentAccessPolicy } from "@/features/agents/channelAgents";
-import type { AgentPersona, ManagedAgent } from "@/shared/api/types";
+import type { ManagedAgent } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import {
   enqueueAgentWake,
@@ -50,7 +50,6 @@ type AttachAgentToChannel = (input: {
 type UseEnsureAgentMentionsReadyOptions = {
   attachAgentToChannel: AttachAgentToChannel;
   getManagedAgentsByPubkey: () => Promise<Map<string, ManagedAgent>>;
-  getPersonas: () => Promise<AgentPersona[]>;
   memberPubkeys: ReadonlySet<string>;
 };
 
@@ -67,7 +66,6 @@ type UseEnsureAgentMentionsReadyOptions = {
 export function useEnsureAgentMentionsReady({
   attachAgentToChannel,
   getManagedAgentsByPubkey,
-  getPersonas,
   memberPubkeys,
 }: UseEnsureAgentMentionsReadyOptions): EnsureAgentMentionsReady {
   return React.useCallback(
@@ -86,10 +84,7 @@ export function useEnsureAgentMentionsReady({
           agentsToWake: [] as QueuedAgentWake[],
         };
       }
-      const [managedAgentsByPubkey, personas] = await Promise.all([
-        getManagedAgentsByPubkey(),
-        getPersonas(),
-      ]);
+      const managedAgentsByPubkey = await getManagedAgentsByPubkey();
       for (const agent of preparedManagedAgents) {
         managedAgentsByPubkey.set(normalizePubkey(agent.pubkey), agent);
       }
@@ -109,10 +104,12 @@ export function useEnsureAgentMentionsReady({
         try {
           const { agent: readyAgent, wrote } = existingMembers.has(pubkey)
             ? { agent, wrote: false }
-            : await applyReusableAgentAccessPolicy(
+            : // An agent made from a preset keeps its own access policy;
+              // the preset's is not applied to it.
+              await applyReusableAgentAccessPolicy(
                 agent,
                 {},
-                personas.find((persona) => persona.id === agent.personaId),
+                agent.sourcePresetId ? agent : undefined,
               );
           if (wrote) {
             // The access-policy reconciliation hit the relay; a matching
@@ -153,11 +150,6 @@ export function useEnsureAgentMentionsReady({
         agentsToWake,
       };
     },
-    [
-      attachAgentToChannel,
-      getManagedAgentsByPubkey,
-      getPersonas,
-      memberPubkeys,
-    ],
+    [attachAgentToChannel, getManagedAgentsByPubkey, memberPubkeys],
   );
 }

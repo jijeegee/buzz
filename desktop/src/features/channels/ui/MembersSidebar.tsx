@@ -85,7 +85,7 @@ function addMemberCandidatePersonaId(
   managedAgentsByPubkey: ReadonlyMap<string, ManagedAgent>,
 ) {
   return managedAgentsByPubkey.get(normalizePubkey(candidate.pubkey))
-    ?.personaId;
+    ?.sourcePresetId;
 }
 function addMemberCandidateIsManagedAgent(
   candidate: UserSearchResult,
@@ -346,7 +346,7 @@ export function MembersSidebar({
         ownerPubkey: currentPubkey ?? null,
         isAgent: true,
         isManagedAgent: true,
-        personaId: agent.personaId,
+        personaId: agent.sourcePresetId,
       });
     }
 

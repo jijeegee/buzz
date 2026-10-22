@@ -322,23 +322,25 @@ export type ManagedAgent = {
   name: string;
   /** The account that owns this agent; `null` when unknown. */
   ownerPubkey: string | null;
-  personaId: string | null;
+  /**
+   * Label only: the preset this agent was made from. The agent holds its own
+   * copy of every setting; the preset may be edited or deleted without
+   * affecting it. Used for display and "already made from preset X" lookups.
+   */
+  sourcePresetId: string | null;
+  /** The agent's own description (copied from the preset at creation). */
+  description: string | null;
   /**
    * The record's harness/runtime id (e.g. "goose", "my-custom-harness").
-   * `null` means the agent inherits its harness from the linked persona.
    * Used to count agents referencing a harness definition (delete confirm).
    */
   runtime: string | null;
   teamId?: string | null;
   relayUrl: string;
   acpCommand: string;
-  /** Resolved/effective harness command (persona-wins, override-honored). */
+  /** Resolved/effective harness command. */
   agentCommand: string;
-  /**
-   * Explicit per-instance harness pin. `null` means the agent inherits its
-   * harness from the linked persona's runtime. Lets the Edit dialog show
-   * "Inherit from persona" vs a concrete pin.
-   */
+  /** Explicit per-instance harness pin, when one is stored. */
   agentCommandOverride: string | null;
   agentArgs: string[];
   mcpCommand: string;
@@ -353,20 +355,15 @@ export type ManagedAgent = {
   modelSource: "definition" | "global" | "instance_legacy" | null;
   /** LLM inference provider, from the agent's pinned record snapshot. */
   provider: string | null;
-  /** True when the linked persona has been edited since this agent was created. */
-  personaOutOfDate: boolean;
-  /** True when this agent's linked persona no longer exists. */
-  personaOrphaned: boolean;
   /**
    * `true` when the running process was spawned with a config that no longer
    * matches what a spawn would use today — a plain restart would change what
-   * runs. Complements `personaOutOfDate` ("a respawn would change it").
-   * Always `false` for stopped agents.
+   * runs. Always `false` for stopped agents.
    */
   needsRestart: boolean;
   /** Non-empty iff `needsRestart` is true. Empty when Rust omits the field. */
   restartDiff: RestartDiffEntry[];
-  /** Per-agent env vars. Layered on top of persona envVars. */
+  /** The agent's own env vars. */
   envVars: Record<string, string>;
   status: "running" | "stopped" | "deployed" | "not_deployed";
   pid: number | null;
@@ -428,18 +425,18 @@ export type RelayMeshConfig = {
 
 export type CreateManagedAgentInput = {
   name: string;
-  personaId?: string;
+  /**
+   * The preset to make this agent from. The backend copies every preset
+   * setting into the new agent, then applies the fields sent here (omitted =
+   * the preset's value). Kept on the agent as a label only.
+   */
+  sourcePresetId?: string;
   /** Team this instance was deployed from; controls runtime team instructions. */
   teamId?: string;
   relayUrl?: string;
   acpCommand?: string;
   agentCommand?: string;
-  /**
-   * True when `agentCommand` is a runtime command the caller deliberately wants
-   * to preserve instead of inheriting the linked persona command. This covers
-   * deploy-dialog runtime selections and discovered or installed aliases for the
-   * same persona runtime id, while still ignoring missing-runtime fallbacks.
-   */
+  /** Accepted for wire compatibility; the backend ignores it. */
   harnessOverride?: boolean;
   agentArgs?: string[];
   mcpCommand?: string;
@@ -455,7 +452,7 @@ export type CreateManagedAgentInput = {
   spawnAfterCreate?: boolean;
   startOnAppLaunch?: boolean;
   backend?: ManagedAgentBackend;
-  /** Omitted uses the linked persona default, then `"owner-only"`. */
+  /** Omitted uses the source preset's value, then `"owner-only"`. */
   respondTo?: RespondToMode;
   /**
    * Hex pubkeys to allow when `respondTo === "allowlist"`. Validated &
@@ -790,15 +787,12 @@ export type UpdateManagedAgentInput = {
   relayUrl?: string;
   acpCommand?: string;
   agentCommand?: string;
-  /**
-   * True when `agentCommand` is a runtime/Custom command the user deliberately
-   * picked (the dialog is not inheriting). Preserves a pin that maps to the
-   * linked persona's own runtime instead of letting the backend drop it back to
-   * inherit. Ignored when `agentCommand` is absent or the inherit sentinel.
-   */
+  /** Accepted for wire compatibility; the backend ignores it. */
   harnessOverride?: boolean;
   agentArgs?: string[];
   mcpCommand?: string;
+  /** Absent = don't touch. `null` = clear. */
+  description?: string | null;
   /** Absent = don't touch. Present = set the mode. */
   respondTo?: RespondToMode;
   /** Absent = keep. Present = replace the allowlist (server-validated). */

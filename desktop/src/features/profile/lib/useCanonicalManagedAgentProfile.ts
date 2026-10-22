@@ -55,13 +55,15 @@ export function useCanonicalManagedAgentProfile(input: {
   }, [managedAgents, pubkey]);
   // Explicit identity targets can use only their own local definition link.
   // Relay-only identities must not inherit a local persona's Start/Edit actions.
-  const linkedPersonaId = pubkey ? directManagedAgent?.personaId : personaId;
+  const linkedPersonaId = pubkey
+    ? directManagedAgent?.sourcePresetId
+    : personaId;
   const personaInstances = React.useMemo(() => {
     if (!linkedPersonaId) {
       return directManagedAgent ? [directManagedAgent] : [];
     }
     return (managedAgents ?? []).filter(
-      (agent) => agent.personaId === linkedPersonaId,
+      (agent) => agent.sourcePresetId === linkedPersonaId,
     );
   }, [directManagedAgent, linkedPersonaId, managedAgents]);
   const isArchived = useIsArchivedPredicate();

@@ -6,14 +6,12 @@ export function UserProfileEditAgentDialog({
   agent,
   canEdit,
   initialFocus,
-  onEditLinkedPersona,
   onOpenChange,
   open,
 }: {
   agent: ManagedAgent | undefined;
   canEdit: boolean;
   initialFocus: EditAgentFocusTarget | undefined;
-  onEditLinkedPersona: (() => void) | undefined;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
@@ -26,7 +24,6 @@ export function UserProfileEditAgentDialog({
       agent={agent}
       initialFocus={initialFocus}
       mode="instance-edit"
-      onEditLinkedPersona={onEditLinkedPersona}
       onOpenChange={onOpenChange}
       open={open}
     />

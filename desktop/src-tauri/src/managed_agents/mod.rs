@@ -43,9 +43,9 @@ pub(crate) mod reconcile;
 mod relay_mesh;
 mod repos;
 pub(crate) use owners::{
-    account_uses_persona, active_owner_hex, agent_owner_hex, apply_account_activation,
+    active_owner_hex, agent_owner_hex, apply_account_activation, may_publish_agent,
     builtin_copy, definition_visible, ensure_definition_owners, ensure_owner_signed_in,
-    migrate_owners, move_account_agents, owned_by_viewer, record_agent_owner,
+    migrate_owners, owned_by_viewer, record_agent_owner,
     record_missing_owners, set_builtin_inactive, spawn_owner_hex, token_account_owners,
     token_account_principal, visible_owner_hex, FILE_NAME as AGENT_OWNERS_FILE,
 };
@@ -64,7 +64,6 @@ pub(crate) mod task_threads;
 pub(crate) mod team_catalog;
 pub(crate) mod team_events;
 mod team_repair;
-pub(crate) use team_repair::team_persona_key;
 mod teams;
 mod types;
 

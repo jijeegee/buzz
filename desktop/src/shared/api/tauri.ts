@@ -116,7 +116,10 @@ export type RawManagedAgent = {
   name: string;
   // Optional: pre-feature fixtures may omit it.
   owner_pubkey?: string | null;
-  persona_id: string | null;
+  /** Label only: the preset this agent was made from. */
+  source_preset_id: string | null;
+  /** The agent's own description. */
+  description?: string | null;
   // Optional: pre-feature fixtures may omit it. The record's harness/runtime id.
   runtime?: string | null;
   team_id?: string | null;
@@ -136,8 +139,6 @@ export type RawManagedAgent = {
   model: string | null;
   model_source?: ManagedAgent["modelSource"];
   provider: string | null;
-  persona_out_of_date: boolean;
-  persona_orphaned: boolean;
   needs_restart: boolean;
   restart_diff?: RawRestartDiffEntry[];
   env_vars?: Record<string, string>;
@@ -628,7 +629,8 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
     pubkey: agent.pubkey,
     name: agent.name,
     ownerPubkey: agent.owner_pubkey ?? null,
-    personaId: agent.persona_id,
+    sourcePresetId: agent.source_preset_id ?? null,
+    description: agent.description ?? null,
     runtime: agent.runtime ?? null,
     teamId: agent.team_id ?? null,
     relayUrl: agent.relay_url,
@@ -647,8 +649,6 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
     model: agent.model,
     modelSource: agent.model_source ?? null,
     provider: agent.provider ?? null,
-    personaOutOfDate: agent.persona_out_of_date ?? false,
-    personaOrphaned: agent.persona_orphaned ?? false,
     needsRestart: agent.needs_restart ?? false,
     restartDiff: agent.restart_diff ?? [],
     envVars: agent.env_vars ?? {},
@@ -812,14 +812,14 @@ export async function createManagedAgent(input: CreateManagedAgentInput) {
   await assertAgentNameAvailableLazy({
     kind: "agent",
     name: input.name,
-    personaId: input.personaId ?? null,
+    personaId: input.sourcePresetId ?? null,
   });
   const response = await invokeTauri<RawCreateManagedAgentResponse>(
     "create_managed_agent",
     {
       input: {
         name: input.name,
-        personaId: input.personaId,
+        sourcePresetId: input.sourcePresetId,
         teamId: input.teamId,
         relayUrl: input.relayUrl,
         acpCommand: input.acpCommand,

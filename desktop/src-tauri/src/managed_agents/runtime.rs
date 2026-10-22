@@ -111,35 +111,6 @@ pub use lifecycle::{kill_stale_tracked_processes, sync_managed_agent_processes};
 mod spawn_key; // production spawn-key derivation + its regressions
 pub(crate) use spawn_key::bound_runtime_key;
 
-/// Classify an agent's persona against the live catalog for the Agents-menu
-/// drift indicator. Returns `(out_of_date, orphaned)`.
-///
-/// Drift basis is the RECORD's `persona_source_version`, never the engram:
-/// - persona_id set + persona present: out_of_date when the snapshot hash
-///   differs from the persona's current content hash.
-/// - persona_id set + persona gone: orphaned (no current hash to respawn into,
-///   so never out_of_date — we must not tell the user to respawn into nothing).
-/// - no persona_id: neither — a hand-built agent has no persona to drift from.
-fn persona_drift_state(
-    record: &ManagedAgentRecord,
-    personas: &[crate::managed_agents::types::AgentDefinition],
-) -> (bool, bool) {
-    let Some(persona_id) = record.persona_id.as_deref() else {
-        return (false, false);
-    };
-    let Some(persona) = personas.iter().find(|p| p.id == persona_id) else {
-        return (false, true);
-    };
-    let current = crate::managed_agents::persona_events::persona_content_hash(
-        &crate::managed_agents::persona_events::persona_event_content(persona),
-    );
-    let out_of_date = record
-        .persona_source_version
-        .as_deref()
-        .is_some_and(|pinned| pinned != current);
-    (out_of_date, false)
-}
-
 /// Resolve the runtime-pair key this record maps to for the active
 /// workspace: always the active workspace relay (the legacy per-record relay
 /// pin is ignored — see `effective_agent_relay_url`). Returns `None` for
@@ -174,7 +145,6 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     app: &AppHandle<R>,
     record: &ManagedAgentRecord,
     runtimes: &HashMap<ManagedAgentRuntimeKey, ManagedAgentPairRuntime>,
-    personas: &[crate::managed_agents::types::AgentDefinition],
     global_config: &crate::managed_agents::GlobalAgentConfig,
     routing_mode: super::channel_routing::ChannelRoutingMode,
     owner_pubkey: Option<String>,
@@ -237,34 +207,12 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         }
     };
 
-    let (persona_out_of_date, persona_orphaned) = persona_drift_state(record, personas);
-
-    let effective_cfg = crate::managed_agents::effective_config::resolve_effective_config(
-        record,
-        personas,
-        global_config,
-    );
-    let (effective_model, effective_provider, effective_prompt, model_source) = match effective_cfg
-    {
-        crate::managed_agents::effective_config::EffectiveConfigResult::Resolved(cfg) => {
-            let source = cfg.model.source.clone();
-            (
-                cfg.model.value,
-                cfg.provider.value,
-                cfg.system_prompt.value,
-                Some(source),
-            )
-        }
-        crate::managed_agents::effective_config::EffectiveConfigResult::OrphanedInstance {
-            record_pubkey,
-            missing_persona_id,
-        } => {
-            eprintln!(
-                "orphaned agent instance: pubkey={record_pubkey}, missing_persona_id={missing_persona_id}"
-            );
-            (None, None, None, None)
-        }
-    };
+    let effective_cfg =
+        crate::managed_agents::effective_config::resolve_effective_config(record, global_config);
+    let model_source = Some(effective_cfg.model.source.clone());
+    let effective_model = effective_cfg.model.value;
+    let effective_provider = effective_cfg.provider.value;
+    let effective_prompt = effective_cfg.system_prompt.value;
 
     // Restart badge: the running process stamped its effective spawn config;
     // recompute a prospective one from current disk state and report every
@@ -280,7 +228,6 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     let tracked_spawn = pair_key.as_ref().zip(pair_runtime).map(|(key, runtime)| {
         let current = crate::managed_agents::spawn_snapshot::prospective_spawn_config_snapshot(
             record,
-            personas,
             &key.relay_url,
             global_config,
             super::owner_only_access_build(),
@@ -301,7 +248,6 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         (runtime, current)
     });
     let mut restart_diff = crate::managed_agents::spawn_snapshot::eligible_restart_diff(
-        persona_orphaned,
         tracked_spawn.as_ref().map(|(runtime, current)| {
             crate::managed_agents::spawn_snapshot::TrackedSpawnState {
                 stamped: &runtime.spawn_config,
@@ -330,10 +276,9 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     let needs_restart = !restart_diff.is_empty();
 
     // Resolve the effective harness via the single typed descriptor — same resolver
-    // as spawn, so the UI reflects the persona's current harness (or explicit pin).
+    // as spawn, so the UI reflects the agent's harness (or explicit pin).
     let descriptor = crate::managed_agents::resolve_effective_harness_descriptor(
         record,
-        personas,
         global_config,
     )
     .unwrap_or_else(|e| {
@@ -342,7 +287,7 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         // showing the default-command fallback as if the agent were healthy.
         let cmd = match crate::managed_agents::dangling_harness_id(&e) {
             Some(id) => crate::managed_agents::dangling_harness_display(id),
-            None => crate::managed_agents::record_agent_command(record, personas),
+            None => crate::managed_agents::record_agent_command(record),
         };
         let args = normalize_agent_args(&cmd, record.agent_args.clone());
         crate::managed_agents::readiness::EffectiveHarnessDescriptor {
@@ -360,7 +305,8 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         pubkey: record.pubkey.clone(),
         name: record.name.clone(),
         owner_pubkey,
-        persona_id: record.persona_id.clone(),
+        source_preset_id: record.source_preset_id.clone(),
+        description: record.description.clone(),
         runtime: record.runtime.clone(),
         team_id: record.team_id.clone(),
         relay_url: record.relay_url.clone(),
@@ -373,14 +319,12 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         idle_timeout_seconds: record.idle_timeout_seconds,
         max_turn_duration_seconds: record.max_turn_duration_seconds,
         parallelism: record.parallelism,
-        session_policy: super::effective_acp_session_policy(record, personas),
+        session_policy: super::effective_acp_session_policy(record),
         system_prompt: effective_prompt,
         avatar_url: record.avatar_url.clone(),
         model: effective_model,
         model_source,
         provider: effective_provider,
-        persona_out_of_date,
-        persona_orphaned,
         needs_restart,
         restart_diff,
         env_vars: record.env_vars.clone(),
@@ -490,8 +434,6 @@ pub(crate) fn apply_effort_to_spawn_command(
     cmd: &mut std::process::Command,
     record: &crate::managed_agents::types::ManagedAgentRecord,
     runtime: Option<&crate::managed_agents::discovery::KnownAcpRuntime>,
-    personas: &[crate::managed_agents::types::AgentDefinition],
-    persona_id: Option<&str>,
     global_env: &std::collections::BTreeMap<String, String>,
     global_effort: Option<&str>,
     baked_env: &std::collections::BTreeMap<String, String>,
@@ -500,8 +442,6 @@ pub(crate) fn apply_effort_to_spawn_command(
         cmd,
         record,
         runtime,
-        personas,
-        persona_id,
         global_env,
         global_effort,
         baked_env,
@@ -576,42 +516,23 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     super::ensure_owner_signed_in(app, record, relay_url, &record_owner)?;
     let owner_hex = Some(record_owner.as_str());
     let runtime_key = ManagedAgentRuntimeKey::new(record.pubkey.clone(), relay_url)?;
-    // Resolve the effective harness (agent command) from the linked persona, so
-    // persona harness edits propagate on the next spawn; an explicit per-agent
-    // override wins. `agent_args` and `mcp_command` are pure derivations of the
-    // command, so we recompute them from the effective value rather than the
-    // frozen record snapshot. Mirrors the model resolution below.
-    let personas = super::load_personas(app).unwrap_or_default();
-    let teams = super::load_teams(app).unwrap_or_default();
     // Load global config once; used for runtime_metadata_env_vars (model/provider fallback)
     // and for the env-var merge at spawn time.
     let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
 
     // Resolve model/provider/prompt ONCE, here, at the shared spawn boundary —
     // the single source both the env writes below and the spawn-config snapshot
-    // read from. Previously prompt was read from the record's own (possibly
-    // stale, Phase-A-snapshot) bytes while model/provider were resolved live
-    // from `personas`; a definition edit landing between a caller's snapshot
-    // apply and this spawn could hand a fresh model/provider to a stale
-    // prompt. This also folds in orphan refusal via `require_resolved`: every
-    // caller (interactive start, launch restore, `start_managed_agent_process`)
-    // inherits it — no caller can bypass this by reaching `spawn_agent_child`
-    // directly. Checked before any side effect (log marker, log file, process
-    // spawn) so a refused spawn leaves no trace.
-    let effective_cfg = crate::managed_agents::effective_config::resolve_effective_config(
-        record, &personas, &global,
-    )
-    .require_resolved()?;
+    // read from. The agent runs only from its own record.
+    let effective_cfg =
+        crate::managed_agents::effective_config::resolve_effective_config(record, &global);
 
     // Single typed resolver: validates runtime id (dangling harness → Err), resolves
     // command, args (instance wins over definition default), and the full env layer stack.
     // This is the sole path for harness-definition lookup — spawn, snapshot,
     // summary, and model probes all consume this descriptor rather than
     // assembling values inline.
-    // Like the orphan refusal above, this runs before any side effect so a refused
-    // spawn leaves no trace.
-    let descriptor =
-        crate::managed_agents::resolve_effective_harness_descriptor(record, &personas, &global)
+    // This runs before any side effect so a refused spawn leaves no trace.
+    let descriptor = crate::managed_agents::resolve_effective_harness_descriptor(record, &global)
             .map_err(|e| {
                 format!(
                     "cannot spawn agent {}: {}",
@@ -791,7 +712,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         Ok(path) => command.env("KUZZ_ACP_LAYER0_GOALS_FILE", path),
         Err(_) => command.env_remove("KUZZ_ACP_LAYER0_GOALS_FILE"),
     };
-    let team_instructions = super::spawn_snapshot::effective_team_instructions(record, &teams);
+    let team_instructions = super::spawn_snapshot::effective_team_instructions(record);
     if let Some(instructions) = &team_instructions {
         command.env("KUZZ_ACP_TEAM_INSTRUCTIONS", instructions);
     } else {
@@ -843,7 +764,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // process stale.
     apply_agent_display_env(
         &mut command,
-        resolve_session_title(record.display_name.as_deref(), &record.name),
+        resolve_session_title(None, &record.name),
     );
     // Strip all known effort keys and emit exactly one projected key. Command
     // inherits the parent env — the returned EffortApplied token is consumed
@@ -852,8 +773,6 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         &mut command,
         record,
         runtime_meta,
-        &personas,
-        record.persona_id.as_deref(),
         &global.env_vars,
         global.effort_level.as_deref(),
         &super::agent_env::baked_build_env(),
@@ -911,7 +830,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         hermes_profile.as_ref(),
     );
     // Resolve once and stamp the same value onto the environment and snapshot.
-    let acp_session_policy = super::effective_acp_session_policy(record, &personas);
+    let acp_session_policy = super::effective_acp_session_policy(record);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);
     // Thread-policy agents (main timeline + one session per thread) keep a
     // durable session ledger so a restarted harness can resume their provider

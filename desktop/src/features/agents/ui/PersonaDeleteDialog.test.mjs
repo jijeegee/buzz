@@ -3,30 +3,25 @@ import test from "node:test";
 
 import { personaDeleteDescription } from "./PersonaDeleteDialog.tsx";
 
-// Regression guard for the persona-cascade consent copy: deleting a persona
-// with instances also archives each instance's identity on the relay
-// (NIP-IA 9035), a durable externally visible side effect. The confirmation
-// dialog must disclose it before the destructive confirm, exactly like the
-// direct agent-delete dialog does.
+// Deleting a preset deletes only the preset. Agents made from it own a copy
+// of its settings, so the confirmation must never claim they are deleted.
 
 const persona = { displayName: "Scout" };
 
-test("cascade delete discloses member-list removal (plural)", () => {
-  const copy = personaDeleteDescription(persona, 3);
-  assert.match(copy, /deletes 3 agent instances, so/);
-  assert.match(copy, /no longer appear in member lists/);
+test("agents made from the preset are disclosed as not affected", () => {
+  for (const count of [1, 3]) {
+    const copy = personaDeleteDescription(persona, count);
+    assert.equal(
+      copy,
+      "Delete Scout. Agents made from this preset are not affected.",
+    );
+    assert.doesNotMatch(copy, /deletes \d+ agent/i);
+  }
 });
 
-test("cascade delete discloses member-list removal (singular)", () => {
-  const copy = personaDeleteDescription(persona, 1);
-  assert.match(copy, /deletes 1 agent instance, so/);
-  assert.match(copy, /no longer appears in member lists/);
-});
-
-test("no instances → no archival claim (nothing is archived)", () => {
+test("no agents made from the preset keeps the plain copy", () => {
   const copy = personaDeleteDescription(persona, 0);
   assert.equal(copy, "Delete Scout.");
-  assert.doesNotMatch(copy, /archiv/i);
 });
 
 test("null persona keeps the generic fallback", () => {

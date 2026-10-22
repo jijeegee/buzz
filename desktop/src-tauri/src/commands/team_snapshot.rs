@@ -279,7 +279,7 @@ fn build_team_export_snapshot(
             // Find the team instance for this persona (if any).
             let instance = records.iter().find(|r| {
                 r.team_id.as_deref() == Some(&team.id)
-                    && r.persona_id.as_deref() == Some(&persona.id)
+                    && r.source_preset_id.as_deref() == Some(&persona.id)
             });
 
             // Use memory only when we have a live instance and a non-None level.
@@ -295,7 +295,7 @@ fn build_team_export_snapshot(
             };
 
             Ok(build_snapshot(
-                &persona.clone().into_agent_record(),
+                persona,
                 effective_level,
                 entries,
                 None,
@@ -338,7 +338,7 @@ async fn materialize_team_snapshot_bytes(
         for persona_id in &team.persona_ids {
             let instance = records.iter().find(|r| {
                 r.team_id.as_deref() == Some(&team.id)
-                    && r.persona_id.as_deref() == Some(persona_id.as_str())
+                    && r.source_preset_id.as_deref() == Some(persona_id.as_str())
             });
             if let Some(instance) = instance {
                 let listing = crate::commands::engrams::get_agent_memory(
@@ -546,13 +546,10 @@ pub async fn confirm_team_snapshot_import(
         let record = ManagedAgentRecord {
             pubkey: pubkey.clone(),
             name: display_name.clone(),
-            display_name: None,
-            // Linked definitions remain the sole description authority. Do
-            // not persist a second instance copy that can go stale after an
-            // edit or survive a later definition deletion.
-            description: None,
-            slug: None,
-            persona_id: Some(definition.id.clone()),
+            // The agent owns copies of its preset's and team's settings.
+            description: definition.description.clone(),
+            source_preset_id: Some(definition.id.clone()),
+            legacy_persona_id: None,
             private_key_nsec: private_key_nsec.clone(),
             auth_tag: auth_tag.clone(),
             relay_url: String::new(),
@@ -571,7 +568,7 @@ pub async fn confirm_team_snapshot_import(
             system_prompt: member.definition.system_prompt.clone(),
             model: member.definition.model.clone(),
             provider: member.definition.provider.clone(),
-            persona_source_version: None,
+            team_instructions: imported_team.instructions.clone(),
             env_vars: std::collections::BTreeMap::new(),
             start_on_app_launch: false,
             is_default_ai: false,
@@ -582,8 +579,6 @@ pub async fn confirm_team_snapshot_import(
             provider_policy_pending: false,
             provider_binary_path: None,
             team_id: Some(imported_team.id.clone()),
-            persona_team_dir: None,
-            persona_name_in_team: None,
             created_at: now.clone(),
             updated_at: now.clone(),
             last_started_at: None,
@@ -600,20 +595,9 @@ pub async fn confirm_team_snapshot_import(
                     .unwrap_or_default()
             },
             respond_to_allowlist: definition.respond_to_allowlist.clone(),
-            is_builtin: false,
-            is_active: true,
-            shared: false,
-            source_team: None,
-            source_team_persona_slug: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            definition_respond_to: respond_to_wire.clone(),
-            definition_respond_to_allowlist: definition.respond_to_allowlist.clone(),
-            definition_parallelism: minted_parallelism,
             relay_mesh: None,
             effort_level: None,
             runtime: member.definition.runtime.clone(),
-            name_pool: member.definition.name_pool.clone(),
             bot_origin: None,
         };
 
@@ -646,7 +630,7 @@ pub async fn confirm_team_snapshot_import(
             }
         }
 
-        // Snapshot both store files for rollback on partial write failure.
+        // Snapshot the store files for rollback on partial write failure.
         // Distinguish "file exists with content" from "file absent" so rollback
         // can delete a file created by the import rather than leaving orphaned
         // records.
@@ -655,6 +639,12 @@ pub async fn confirm_team_snapshot_import(
             Ok(bytes) => Some(bytes),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(format!("failed to snapshot agent store: {e}")),
+        };
+        let presets_store_path = crate::managed_agents::storage::presets_store_path(&app)?;
+        let presets_store_snapshot = match std::fs::read(&presets_store_path) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("failed to snapshot preset store: {e}")),
         };
         let teams_store_path = crate::managed_agents::teams_store_path(&app)?;
         let teams_store_snapshot = match std::fs::read(&teams_store_path) {
@@ -672,8 +662,9 @@ pub async fn confirm_team_snapshot_import(
         // Collect minted pubkeys for keyring cleanup on rollback.
         let minted_pubkeys: Vec<&str> = minted.iter().map(|m| m.pubkey.as_str()).collect();
 
-        // Restore the agent store to pre-import state and clean minted keyring
-        // entries. Returns the original error, extended with rollback details.
+        // Restore the agent and preset stores to pre-import state and clean
+        // minted keyring entries. Returns the original error, extended with
+        // rollback details.
         let rollback_agents = |original_err: String| -> String {
             let mut errors = vec![original_err];
             // Clean minted keyring entries.
@@ -682,19 +673,22 @@ pub async fn confirm_team_snapshot_import(
                     errors.push(format!("keyring cleanup {pubkey}: {e}"));
                 }
             }
-            // Restore agent store file.
-            let restore = match &agents_store_snapshot {
-                Some(bytes) => crate::managed_agents::storage::atomic_write_json_restricted(
-                    &agents_store_path,
-                    bytes,
-                ),
-                None => match std::fs::remove_file(&agents_store_path) {
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                    other => other.map_err(|e| e.to_string()),
-                },
-            };
-            if let Err(e) = restore {
-                errors.push(format!("agent store restore: {e}"));
+            for (label, path, snapshot) in [
+                ("agent", &agents_store_path, &agents_store_snapshot),
+                ("preset", &presets_store_path, &presets_store_snapshot),
+            ] {
+                let restore = match snapshot {
+                    Some(bytes) => {
+                        crate::managed_agents::storage::atomic_write_json_restricted(path, bytes)
+                    }
+                    None => match std::fs::remove_file(path) {
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                        other => other.map_err(|e| e.to_string()),
+                    },
+                };
+                if let Err(e) = restore {
+                    errors.push(format!("{label} store restore: {e}"));
+                }
             }
             if errors.len() == 1 {
                 errors.into_iter().next().unwrap()

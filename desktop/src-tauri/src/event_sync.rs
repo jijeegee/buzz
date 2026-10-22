@@ -1,6 +1,6 @@
 //! Boot-time disk→relay event reconcile ("event sync").
 //!
-//! Reconciles the on-disk JSON stores (`personas.json`, `teams.json`,
+//! Reconciles the on-disk JSON stores (`presets.json`, `teams.json`,
 //! `managed-agents.json`) into signed retention events queued for relay
 //! publish. Runs after identity resolution (event signing needs the owner
 //! keys), unlike the pre-identity migrations in [`crate::migration`].
@@ -9,7 +9,7 @@ use std::path::Path;
 
 /// Reconcile personas, teams, and managed agents into signed retention
 /// events. All readers consume the already-synced
-/// `personas.json`/`teams.json`/`managed-agents.json` that
+/// `presets.json`/`teams.json`/`managed-agents.json` that
 /// `sync_team_personas` wrote in [`crate::migration::run_boot_migrations`]
 /// (see its `# Ordering` guard). Event signing needs the resolved owner keys,
 /// so this runs after identity resolution, not in the boot migrations.
@@ -59,9 +59,9 @@ pub async fn run_event_sync_blocking(
         .map_err(|e| format!("event-sync: spawn_blocking failed: {e}"))?
 }
 
-/// Reconcile `personas.json` into the persona-event retention store.
+/// Reconcile `presets.json` into the persona-event retention store.
 ///
-/// Must run AFTER `fold_personas_into_agent_store` and
+/// Must run AFTER `move_presets_to_own_store` and
 /// `detach_directory_backed_teams` (depends on field renames and store
 /// unification being complete) and AFTER the persisted identity is resolved
 /// (it signs every retained event with the owner's keys).
@@ -123,11 +123,6 @@ fn migrate_personas_in_dir_at(
 
     let pubkey = keys.public_key().to_hex();
 
-    // Post-fold (Phase 1A.2): definitions live as key-less records in the
-    // unified agent store, presented in the legacy shape. Pre-fold boots
-    // (run_event_sync runs after run_boot_migrations, so the fold has
-    // already happened) never reach this path with personas.json present —
-    // but read it as a fallback for one release in case the fold errored.
     let records = read_persona_definitions(base_dir)?;
 
     if records.is_empty() {
@@ -760,28 +755,18 @@ pub(crate) fn read_json_store_pub<T: serde::de::DeserializeOwned>(
     read_json_store(path)
 }
 
-/// Read every persona definition in the legacy shape, from whichever store
-/// holds them.
+/// Read every preset from the preset store.
 ///
-/// Post-fold (Phase 1A.2) definitions are key-less records in the unified
-/// agent store; `personas.json` survives only on a boot where the fold
-/// errored. Both callers must read the same set — a reconcile that saw an
-/// empty persona list would conclude every team's members were deleted.
+/// Fails until `migration::preset_store` has copied the presets out of the
+/// agent store: every caller treats a preset missing from this list as
+/// deleted (and publishes that), so a partial list must never be returned.
 fn read_persona_definitions(
     base_dir: &Path,
 ) -> Result<Vec<crate::managed_agents::AgentDefinition>, String> {
-    let personas: Vec<crate::managed_agents::AgentDefinition> =
-        read_json_store(&base_dir.join("personas.json"))?;
-    if !personas.is_empty() {
-        return Ok(personas);
+    if !crate::migration::presets_moved(base_dir) {
+        return Err("presets are not in presets.json yet; skipping this sync".to_string());
     }
-    let all: Vec<crate::managed_agents::ManagedAgentRecord> =
-        read_json_store(&base_dir.join("managed-agents.json"))?;
-    Ok(all
-        .iter()
-        .filter(|record| record.pubkey.is_empty())
-        .filter_map(|record| record.to_definition_view())
-        .collect())
+    read_json_store(&base_dir.join(crate::managed_agents::PRESETS_FILE))
 }
 
 #[cfg(test)]

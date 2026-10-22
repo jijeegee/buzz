@@ -23,7 +23,7 @@ function makeAgent(overrides = {}) {
     pubkey: PUB_A,
     agentCommand: "goose",
     status: "running",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
     updatedAt: "2026-01-15T00:00:00Z",
     ...overrides,
@@ -166,22 +166,22 @@ test("pickPreferredManagedAgent: undefined updatedAt treated as epoch 0", () => 
   assert.equal(result.id, "ts");
 });
 
-test("findReusablePersonaAgent: finds agent with matching personaId", () => {
-  const agent = makeAgent({ personaId: "persona-1", pubkey: PUB_A });
+test("findReusablePersonaAgent: finds agent with matching sourcePresetId", () => {
+  const agent = makeAgent({ sourcePresetId: "persona-1", pubkey: PUB_A });
   const channelMembers = new Set([PUB_B]);
   const result = findReusablePersonaAgent([agent], "persona-1", channelMembers);
   assert.equal(result, agent);
 });
 
 test("findReusablePersonaAgent: excludes agent already in channel", () => {
-  const agent = makeAgent({ personaId: "persona-1", pubkey: PUB_A });
+  const agent = makeAgent({ sourcePresetId: "persona-1", pubkey: PUB_A });
   const channelMembers = new Set([PUB_A]);
   const result = findReusablePersonaAgent([agent], "persona-1", channelMembers);
   assert.equal(result, undefined);
 });
 
-test("findReusablePersonaAgent: excludes agent with different personaId", () => {
-  const agent = makeAgent({ personaId: "persona-2", pubkey: PUB_A });
+test("findReusablePersonaAgent: excludes agent with different sourcePresetId", () => {
+  const agent = makeAgent({ sourcePresetId: "persona-2", pubkey: PUB_A });
   const channelMembers = new Set([PUB_B]);
   const result = findReusablePersonaAgent([agent], "persona-1", channelMembers);
   assert.equal(result, undefined);
@@ -190,14 +190,14 @@ test("findReusablePersonaAgent: excludes agent with different personaId", () => 
 test("findReusablePersonaAgent: prefers running agent", () => {
   const stopped = makeAgent({
     id: "s",
-    personaId: "p1",
+    sourcePresetId: "p1",
     pubkey: PUB_A,
     status: "stopped",
     updatedAt: "2026-06-01T00:00:00Z",
   });
   const running = makeAgent({
     id: "r",
-    personaId: "p1",
+    sourcePresetId: "p1",
     pubkey: PUB_B,
     status: "running",
     updatedAt: "2025-01-01T00:00:00Z",
@@ -212,7 +212,10 @@ test("findReusablePersonaAgent: prefers running agent", () => {
 });
 
 test("findReusablePersonaAgent: pubkey comparison is case-insensitive", () => {
-  const agent = makeAgent({ personaId: "p1", pubkey: PUB_A.toUpperCase() });
+  const agent = makeAgent({
+    sourcePresetId: "p1",
+    pubkey: PUB_A.toUpperCase(),
+  });
   const channelMembers = new Set([PUB_A]);
   const result = findReusablePersonaAgent([agent], "p1", channelMembers);
   assert.equal(result, undefined);
@@ -221,7 +224,7 @@ test("findReusablePersonaAgent: pubkey comparison is case-insensitive", () => {
 test("findReusableGenericAgent: finds agent with matching command and no persona/prompt", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
   });
   const channelMembers = new Set([PUB_B]);
@@ -229,10 +232,10 @@ test("findReusableGenericAgent: finds agent with matching command and no persona
   assert.equal(result, agent);
 });
 
-test("findReusableGenericAgent: excludes agent with personaId", () => {
+test("findReusableGenericAgent: excludes agent with sourcePresetId", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: "some-persona",
+    sourcePresetId: "some-persona",
     systemPrompt: null,
   });
   const channelMembers = new Set([PUB_B]);
@@ -243,7 +246,7 @@ test("findReusableGenericAgent: excludes agent with personaId", () => {
 test("findReusableGenericAgent: excludes agent with non-empty systemPrompt", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: "Do stuff",
   });
   const channelMembers = new Set([PUB_B]);
@@ -254,7 +257,7 @@ test("findReusableGenericAgent: excludes agent with non-empty systemPrompt", () 
 test("findReusableGenericAgent: whitespace-only systemPrompt treated as empty (allowed)", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: "   \t\n  ",
   });
   const channelMembers = new Set([PUB_B]);
@@ -265,7 +268,7 @@ test("findReusableGenericAgent: whitespace-only systemPrompt treated as empty (a
 test("findReusableGenericAgent: undefined systemPrompt treated as empty (allowed)", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: undefined,
   });
   const channelMembers = new Set([PUB_B]);
@@ -276,7 +279,7 @@ test("findReusableGenericAgent: undefined systemPrompt treated as empty (allowed
 test("findReusableGenericAgent: empty string systemPrompt treated as empty (allowed)", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: "",
   });
   const channelMembers = new Set([PUB_B]);
@@ -287,7 +290,7 @@ test("findReusableGenericAgent: empty string systemPrompt treated as empty (allo
 test("findReusableGenericAgent: excludes agent already in channel", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
     pubkey: PUB_A,
   });
@@ -299,7 +302,7 @@ test("findReusableGenericAgent: excludes agent already in channel", () => {
 test("findReusableGenericAgent: command matching uses normalization", () => {
   const agent = makeAgent({
     agentCommand: "/usr/local/bin/claude-code-acp",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
   });
   const channelMembers = new Set([PUB_B]);
@@ -312,7 +315,7 @@ test("findReusableGenericAgent: command matching uses normalization", () => {
 });
 
 test("findReusableAgent: routes to persona search when personaId provided", () => {
-  const agent = makeAgent({ personaId: "p1", pubkey: PUB_A });
+  const agent = makeAgent({ sourcePresetId: "p1", pubkey: PUB_A });
   const channelMembers = new Set([PUB_B]);
   const result = findReusableAgent([agent], channelMembers, {
     personaId: "p1",
@@ -321,10 +324,10 @@ test("findReusableAgent: routes to persona search when personaId provided", () =
   assert.equal(result, agent);
 });
 
-test("findReusableAgent: routes to generic search when no personaId and no prompt", () => {
+test("findReusableAgent: routes to generic search when no sourcePresetId and no prompt", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
   });
   const channelMembers = new Set([PUB_B]);
@@ -337,7 +340,7 @@ test("findReusableAgent: routes to generic search when no personaId and no promp
 test("findReusableAgent: returns undefined when systemPrompt is non-empty (custom agent)", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
   });
   const channelMembers = new Set([PUB_B]);
@@ -351,7 +354,7 @@ test("findReusableAgent: returns undefined when systemPrompt is non-empty (custo
 test("findReusableAgent: whitespace-only systemPrompt in input still routes to generic", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
   });
   const channelMembers = new Set([PUB_B]);
@@ -365,7 +368,7 @@ test("findReusableAgent: whitespace-only systemPrompt in input still routes to g
 test("findReusableAgent: null personaId in input routes to generic", () => {
   const agent = makeAgent({
     agentCommand: "goose",
-    personaId: null,
+    sourcePresetId: null,
     systemPrompt: null,
   });
   const channelMembers = new Set([PUB_B]);
@@ -405,8 +408,8 @@ test("resolveReusableAgentAccessPolicy uses explicit, persona, then safe default
 test("a persona already represented by a channel member is detected case-insensitively", () => {
   const members = new Set([PUB_A]);
   const agents = [
-    makeAgent({ pubkey: PUB_A.toUpperCase(), personaId: "persona-p" }),
-    makeAgent({ pubkey: PUB_B, personaId: "persona-q" }),
+    makeAgent({ pubkey: PUB_A.toUpperCase(), sourcePresetId: "persona-p" }),
+    makeAgent({ pubkey: PUB_B, sourcePresetId: "persona-q" }),
   ];
   assert.equal(
     isPersonaRepresentedInChannel(agents, "persona-p", members),
@@ -425,10 +428,10 @@ test("a persona already represented by a channel member is detected case-insensi
 test("dropPersonasAlreadyInChannel skips persona inputs already in the channel but keeps forced and generic ones", () => {
   const members = new Set([PUB_A]);
   const agents = [
-    makeAgent({ pubkey: PUB_A, personaId: "persona-p" }),
+    makeAgent({ pubkey: PUB_A, sourcePresetId: "persona-p" }),
     // A second instance of P exists but is NOT in the channel: still satisfied.
-    makeAgent({ pubkey: PUB_C, personaId: "persona-p" }),
-    makeAgent({ pubkey: PUB_B, personaId: "persona-q" }),
+    makeAgent({ pubkey: PUB_C, sourcePresetId: "persona-p" }),
+    makeAgent({ pubkey: PUB_B, sourcePresetId: "persona-q" }),
   ];
   const inputs = [
     { name: "P", personaId: "persona-p" },

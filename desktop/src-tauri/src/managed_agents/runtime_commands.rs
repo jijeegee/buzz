@@ -4,7 +4,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::{
     agent_readiness, append_log_marker, current_instance_id, find_managed_agent_mut,
-    load_global_agent_config, load_managed_agents, load_personas, managed_agent_runtime_log_path,
+    load_global_agent_config, load_managed_agents, managed_agent_runtime_log_path,
     record_agent_command, resolve_effective_agent_env, save_managed_agents, spawn_agent_child,
     terminate_process, terminate_untracked_pair_runtime, write_agent_runtime_receipt,
     AgentReadiness, BackendKind, ManagedAgentPairRuntime, ManagedAgentRuntimeKey,
@@ -21,7 +21,6 @@ fn status_for<R: tauri::Runtime>(
     runtime: Option<&ManagedAgentPairRuntime>,
     requested_relay_url: Option<String>,
 ) -> ManagedAgentRuntimeStatus {
-    let personas = load_personas(app).unwrap_or_default();
     let global = load_global_agent_config(app).unwrap_or_default();
     status_for_with(
         app,
@@ -30,7 +29,6 @@ fn status_for<R: tauri::Runtime>(
         runtime,
         requested_relay_url,
         StatusInputs {
-            personas: &personas,
             global: &global,
         },
     )
@@ -39,7 +37,6 @@ fn status_for<R: tauri::Runtime>(
 /// Preloaded per-call-site inputs for [`status_for_with`], so multi-row
 /// callers (list, reconcile) hit disk once instead of once per row.
 struct StatusInputs<'a> {
-    personas: &'a [super::AgentDefinition],
     global: &'a super::GlobalAgentConfig,
 }
 
@@ -51,10 +48,10 @@ fn status_for_with<R: tauri::Runtime>(
     requested_relay_url: Option<String>,
     inputs: StatusInputs<'_>,
 ) -> ManagedAgentRuntimeStatus {
-    let StatusInputs { personas, global } = inputs;
-    let command = record_agent_command(record, personas);
+    let StatusInputs { global } = inputs;
+    let command = record_agent_command(record);
     let metadata = super::known_acp_runtime(&command);
-    let effective = resolve_effective_agent_env(record, personas, metadata, global);
+    let effective = resolve_effective_agent_env(record,metadata, global);
     let local_setup = matches!(agent_readiness(&effective), AgentReadiness::Ready);
     ManagedAgentRuntimeStatus {
         pubkey: key.pubkey.clone(),
@@ -144,7 +141,6 @@ pub async fn list_managed_agent_runtimes(
         // This command is polled whenever the members sidebar opens and refetched
         // on every status event — load the per-row status inputs once, outside
         // the locks, instead of hitting disk per row while holding them.
-        let personas = load_personas(&app).unwrap_or_default();
         let global = load_global_agent_config(&app).unwrap_or_default();
         let state = app.state::<AppState>();
         let _transition = state
@@ -186,7 +182,6 @@ pub async fn list_managed_agent_runtimes(
                     None,
                     None,
                     StatusInputs {
-                        personas: &personas,
                         global: &global,
                     },
                 );
@@ -205,7 +200,6 @@ pub async fn list_managed_agent_runtimes(
                 Some(runtime),
                 None,
                 StatusInputs {
-                    personas: &personas,
                     global: &global,
                 },
             ))
@@ -560,12 +554,11 @@ fn unkeyable_failed_status(
     record: &super::ManagedAgentRecord,
     requested: String,
     error: String,
-    personas: &[super::AgentDefinition],
     global: &super::GlobalAgentConfig,
 ) -> ManagedAgentRuntimeStatus {
-    let command = record_agent_command(record, personas);
+    let command = record_agent_command(record);
     let metadata = super::known_acp_runtime(&command);
-    let effective = resolve_effective_agent_env(record, personas, metadata, global);
+    let effective = resolve_effective_agent_env(record,metadata, global);
     ManagedAgentRuntimeStatus {
         pubkey: record.pubkey.clone(),
         relay_url: requested.clone(),
@@ -656,7 +649,6 @@ pub async fn reconcile_managed_agent_runtimes(
     // so run the post-probe start loop off the async workers, matching the
     // restart flows.
     tokio::task::spawn_blocking(move || {
-        let personas = load_personas(&app).unwrap_or_default();
         let global = load_global_agent_config(&app).unwrap_or_default();
         let mut rows = Vec::new();
         for probe in probes {
@@ -684,7 +676,6 @@ pub async fn reconcile_managed_agent_runtimes(
                                 None,
                                 Some(requested),
                                 StatusInputs {
-                                    personas: &personas,
                                     global: &global,
                                 },
                             );
@@ -709,7 +700,6 @@ pub async fn reconcile_managed_agent_runtimes(
                                     None,
                                     Some(requested),
                                     StatusInputs {
-                                        personas: &personas,
                                         global: &global,
                                     },
                                 );
@@ -718,7 +708,7 @@ pub async fn reconcile_managed_agent_runtimes(
                                 status
                             }
                             Err(_) => unkeyable_failed_status(
-                                &record, requested, error, &personas, &global,
+                                &record, requested, error, &global,
                             ),
                         };
                     rows.push(status);
@@ -840,7 +830,6 @@ mod tests {
             &record,
             "not a url".to_string(),
             "relay access probe timed out".to_string(),
-            &[],
             &super::super::GlobalAgentConfig::default(),
         );
         assert!(matches!(

@@ -40,7 +40,7 @@ class MyTeamPreset {
 
 /// The owner's team presets from their kind:30176 [teamEvents], with each member's
 /// name from its kind:30175 definition and its agents from kind:30177
-/// (`persona_id`). Built-in teams are never published, so they are not here.
+/// (`source_preset_id`, a label). Built-in teams are never published, so they are not here.
 /// Sorted by name.
 List<MyTeamPreset> myTeamPresetsFrom({
   required String owner,
@@ -65,7 +65,7 @@ List<MyTeamPreset> myTeamPresetsFrom({
     kind: EventKind.managedAgent,
     owner: owner,
   ).entries) {
-    final personaId = managedAgentPersonaId(value.content);
+    final personaId = managedAgentSourcePresetId(value.content);
     if (personaId == null) continue;
     (agentsByPersona[personaDTag(personaId)] ??= []).add(key.toLowerCase());
   }
@@ -139,7 +139,7 @@ List<MyAgentPreset> myAgentPresetsFrom({
     kind: EventKind.managedAgent,
     owner: owner,
   ).values) {
-    final personaId = managedAgentPersonaId(event.content);
+    final personaId = managedAgentSourcePresetId(event.content);
     if (personaId == null) continue;
     final d = personaDTag(personaId);
     agentCounts[d] = (agentCounts[d] ?? 0) + 1;

@@ -230,15 +230,9 @@ pub(crate) struct TrackedSpawnState<'a> {
 /// The final restart-diff for one agent — the single source of both the wire
 /// field and the badge, which is `!result.is_empty()`.
 ///
-/// Empty for an un-stamped agent (see [`TrackedSpawnState`]) and for an
-/// orphaned instance: `spawn_agent_child` refuses to spawn an orphan before
-/// any side effect, so "Restart required" would offer an action guaranteed to
-/// fail. The UI surfaces `persona_orphaned` instead.
-pub(crate) fn eligible_restart_diff(
-    persona_orphaned: bool,
-    tracked: Option<TrackedSpawnState<'_>>,
-) -> Vec<RestartDiffEntry> {
-    let Some(tracked) = tracked.filter(|_| !persona_orphaned) else {
+/// Empty for an un-stamped agent (see [`TrackedSpawnState`]).
+pub(crate) fn eligible_restart_diff(tracked: Option<TrackedSpawnState<'_>>) -> Vec<RestartDiffEntry> {
+    let Some(tracked) = tracked else {
         return Vec::new();
     };
     let mut entries = diff(tracked.stamped, tracked.current);

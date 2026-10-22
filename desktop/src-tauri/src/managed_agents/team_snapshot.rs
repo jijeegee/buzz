@@ -258,11 +258,12 @@ mod tests {
             description: None,
             pubkey: format!("{name}-pubkey"),
             name: name.to_string(),
-            display_name: Some(format!("{name} Display")),
-            persona_id: Some("SENTINEL_PERSONA_ID".to_string()), // MUST NOT appear
-            private_key_nsec: "nsec1secret".to_string(),         // MUST NOT appear
-            auth_tag: Some("auth-tag-secret".to_string()),       // MUST NOT appear
-            relay_url: "wss://relay.example.com".to_string(),    // MUST NOT appear
+            source_preset_id: Some("SENTINEL_PERSONA_ID".to_string()), // MUST NOT appear
+            legacy_persona_id: None,
+            team_instructions: None,
+            private_key_nsec: "nsec1secret".to_string(), // MUST NOT appear
+            auth_tag: Some("auth-tag-secret".to_string()), // MUST NOT appear
+            relay_url: "wss://relay.example.com".to_string(), // MUST NOT appear
             avatar_url: Some(format!("https://example.com/{name}.png")),
             acp_command: "/usr/local/bin/acp".to_string(), // MUST NOT appear
             agent_command: "goose".to_string(),            // MUST NOT appear
@@ -276,7 +277,6 @@ mod tests {
             system_prompt: Some(format!("You are {name}.")),
             model: Some("claude-opus-4".to_string()),
             provider: Some("anthropic".to_string()),
-            persona_source_version: None,
             env_vars: {
                 let mut m = BTreeMap::new();
                 m.insert("API_KEY".to_string(), "secret123".to_string()); // MUST NOT appear
@@ -291,8 +291,6 @@ mod tests {
             provider_policy_pending: false,
             provider_binary_path: None,
             team_id: None,
-            persona_team_dir: None,
-            persona_name_in_team: None,
             created_at: "2024-01-01T00:00:00Z".to_string(),
             updated_at: "2024-01-02T00:00:00Z".to_string(),
             last_started_at: None,
@@ -302,19 +300,7 @@ mod tests {
             last_error_code: None,
             respond_to: RespondTo::default(),
             respond_to_allowlist: vec![],
-            slug: Some(name.to_string()),
             runtime: Some("goose".to_string()),
-            name_pool: vec![],
-            is_builtin: false,
-            is_active: true,
-            shared: false,
-            source_team: Some("SENTINEL_SOURCE_TEAM".to_string()), // MUST NOT appear
-            source_team_persona_slug: Some("SENTINEL_SLUG".to_string()), // MUST NOT appear
-            definition_respond_to: None,
-            catalog_source: None,
-            team_catalog_source: None,
-            definition_respond_to_allowlist: vec![],
-            definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
             bot_origin: None,
@@ -346,8 +332,8 @@ mod tests {
         let parsed = decode_team_snapshot_png(&png_bytes).unwrap();
         assert_eq!(parsed.team.name, snapshot.team.name);
         assert_eq!(parsed.members.len(), 2);
-        assert_eq!(parsed.members[0].definition.name, "Alice Display");
-        assert_eq!(parsed.members[1].definition.name, "Bob Display");
+        assert_eq!(parsed.members[0].definition.name, "Alice");
+        assert_eq!(parsed.members[1].definition.name, "Bob");
     }
 
     // ── PNG memory guard ──────────────────────────────────────────────────────
@@ -482,16 +468,8 @@ mod tests {
             "relay_url must not appear"
         );
         assert!(
-            !json.contains("SENTINEL_SOURCE_TEAM"),
-            "source_team must not appear"
-        );
-        assert!(
-            !json.contains("SENTINEL_SLUG"),
-            "source_team_persona_slug must not appear"
-        );
-        assert!(
             !json.contains("SENTINEL_PERSONA_ID"),
-            "persona_id must not appear"
+            "source_preset_id must not appear"
         );
     }
 
@@ -506,9 +484,9 @@ mod tests {
 
         let bytes = encode_team_snapshot_json(&snapshot).unwrap();
         let parsed = decode_team_snapshot_json(&bytes).unwrap();
-        assert_eq!(parsed.members[0].definition.name, "Alice Display");
-        assert_eq!(parsed.members[1].definition.name, "Bob Display");
-        assert_eq!(parsed.members[2].definition.name, "Carol Display");
+        assert_eq!(parsed.members[0].definition.name, "Alice");
+        assert_eq!(parsed.members[1].definition.name, "Bob");
+        assert_eq!(parsed.members[2].definition.name, "Carol");
     }
 
     #[test]

@@ -9,24 +9,36 @@ use crate::managed_agents::{
         AgentSnapshot, AgentSnapshotDefinition, AgentSnapshotMemory, AgentSnapshotMemoryEntry,
         AgentSnapshotProfile, FORMAT_DISCRIMINATOR, FORMAT_VERSION,
     },
-    BackendKind, ManagedAgentRecord, RespondTo,
+    AgentDefinition, BackendKind, ManagedAgentRecord, RespondTo,
 };
 use std::collections::BTreeMap;
 
 // ── Shared fixtures ───────────────────────────────────────────────────────
 
-/// Build a minimal keyless definition record (matched by slug, no keypair).
-/// This is the shape stored in the definitions file — no pubkey, no
-/// persona_id.
-fn make_definition(slug: &str) -> ManagedAgentRecord {
+/// Build a minimal preset (matched by id, no keypair), as stored in
+/// `presets.json`.
+fn make_definition(id: &str) -> AgentDefinition {
+    serde_json::from_value(serde_json::json!({
+        "id": id,
+        "display_name": id,
+        "avatar_url": null,
+        "system_prompt": "",
+        "created_at": "",
+        "updated_at": ""
+    }))
+    .unwrap()
+}
+
+/// Build a minimal agent record with no keypair or preset label.
+fn make_record() -> ManagedAgentRecord {
     ManagedAgentRecord {
         session_policy: Default::default(),
         description: None,
         pubkey: String::new(),
-        slug: Some(slug.to_string()),
-        name: slug.to_string(),
-        display_name: None,
-        persona_id: None,
+        name: String::new(),
+        source_preset_id: None,
+        legacy_persona_id: None,
+        team_instructions: None,
         private_key_nsec: String::new(),
         auth_tag: None,
         relay_url: String::new(),
@@ -43,7 +55,6 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         system_prompt: None,
         model: None,
         provider: None,
-        persona_source_version: None,
         env_vars: BTreeMap::new(),
         start_on_app_launch: false,
         is_default_ai: false,
@@ -54,8 +65,6 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         provider_policy_pending: false,
         provider_binary_path: None,
         team_id: None,
-        persona_team_dir: None,
-        persona_name_in_team: None,
         created_at: String::new(),
         updated_at: String::new(),
         last_started_at: None,
@@ -66,44 +75,20 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         respond_to: RespondTo::default(),
         respond_to_allowlist: vec![],
         runtime: None,
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: false,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: vec![],
-        definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
         bot_origin: None,
     }
 }
 
-/// Build a minimal keyed instance. Real instances minted by `create_persona`
-/// have `slug: None` and link to their definition via `persona_id`.
-fn make_instance(pubkey: &str, persona_id: &str) -> ManagedAgentRecord {
+/// Build a minimal keyed agent carrying the preset it was made from as a
+/// `source_preset_id` label.
+fn make_instance(pubkey: &str, source_preset_id: &str) -> ManagedAgentRecord {
     ManagedAgentRecord {
-        session_policy: Default::default(),
         pubkey: pubkey.to_string(),
-        slug: None,
-        persona_id: Some(persona_id.to_string()),
-        ..make_definition("")
+        source_preset_id: Some(source_preset_id.to_string()),
+        ..make_record()
     }
-}
-
-#[test]
-fn linked_instance_snapshot_materializes_the_definition_description() {
-    let mut definition = make_definition("reviewer");
-    definition.description = Some("Reviews changes.".to_string());
-    let mut instance = make_instance("agent-pubkey", "reviewer");
-
-    materialize_snapshot_description(&mut instance, false, std::slice::from_ref(&definition));
-
-    assert_eq!(instance.description, definition.description);
 }
 
 /// Build a minimal valid AgentSnapshot for import tests.
@@ -143,14 +128,13 @@ fn make_snapshot(
 
 // ── Joint happy path ──────────────────────────────────────────────────────
 //
-// Production record shape: a keyless definition (slug = "my-agent") and
-// a keyed instance (slug = None, pubkey = "instance-pk", persona_id =
-// "my-agent") live in separate stores.
+// Production shape: a preset (id = "my-agent") in `presets.json` and an
+// agent (pubkey = "instance-pk", source_preset_id = "my-agent") in
+// `managed-agents.json`.
 //
 // This one test exercises the full resolver → validator composition:
-//   1. Resolving "my-agent" finds the *definition* (the instance has no
-//      slug so the instance search misses it).
-//   2. The linked instance pubkey validates as the memory source.
+//   1. Resolving "my-agent" finds the *preset* (no agent has that pubkey).
+//   2. The agent made from it validates as the memory source.
 
 #[test]
 fn definition_slug_resolves_to_definition_and_linked_instance_is_valid_memory_source() {
@@ -160,17 +144,17 @@ fn definition_slug_resolves_to_definition_and_linked_instance_is_valid_memory_so
     let defs = vec![def];
     let instances = vec![inst];
 
-    // Step 1 — resolution: slug finds the definition, not the instance.
+    // Step 1 — resolution: the id finds the preset, not the agent.
     let (record, is_def) = resolve_from_lists("my-agent", &instances, &defs).unwrap();
     assert!(
         is_def,
-        "slug 'my-agent' must resolve to the definition, not the instance"
+        "id 'my-agent' must resolve to the preset, not the agent"
     );
-    assert_eq!(record.slug.as_deref(), Some("my-agent"));
+    assert_eq!(record.name, "my-agent");
+    assert!(record.pubkey.is_empty(), "a preset has no keypair");
 
-    // Step 2 — memory source validation: instance-pk is persona_id-linked.
-    let def_slug = record.slug.as_deref().unwrap_or("");
-    let result = validate_memory_source("instance-pk", is_def, def_slug, &instances);
+    // Step 2 — memory source validation: instance-pk is labelled with it.
+    let result = validate_memory_source("instance-pk", is_def, "my-agent", &instances);
     assert_eq!(
         result.unwrap(),
         "instance-pk",
@@ -212,14 +196,14 @@ fn memory_export_without_pubkey_fails() {
 
 #[test]
 fn definition_export_with_instance_linked_to_other_definition_fails() {
-    // Instance persona_id points to "other-agent", not "my-agent".
+    // The agent was made from "other-agent", not "my-agent".
     let inst = make_instance("instance-pk", "other-agent");
     let instances = vec![inst];
     let result = validate_memory_source("instance-pk", true, "my-agent", &instances);
     assert!(result.is_err());
     assert!(
         result.unwrap_err().contains("is not linked to definition"),
-        "mismatched persona_id must fail closed"
+        "mismatched source_preset_id must fail closed"
     );
 }
 

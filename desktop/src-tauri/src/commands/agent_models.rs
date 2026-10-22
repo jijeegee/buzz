@@ -19,7 +19,7 @@ use crate::{
     app_state::AppState,
     managed_agents::{
         current_instance_id, discovery_env_with_baked_floor, find_managed_agent_mut,
-        known_acp_runtime, load_global_agent_config, load_managed_agents, load_personas,
+        known_acp_runtime, load_global_agent_config, load_managed_agents,
         managed_agent_avatar_url, missing_command_message, normalize_agent_args, resolve_command,
         save_managed_agents, sync_managed_agent_processes, try_regenerate_nest, AgentModelInfo,
         AgentModelsResponse, ManagedAgentRecord, UpdateManagedAgentRequest,
@@ -65,17 +65,14 @@ pub async fn get_agent_models(
         let resolved = resolve_command(&record.acp_command)
             .ok_or_else(|| missing_command_message(&record.acp_command, "ACP harness command"))?;
 
-        // Resolve the effective harness from the linked persona (mirrors spawn),
-        // so model discovery runs against the persona's current harness, not the
-        // frozen record snapshot. An explicit per-agent override wins.
-        let personas = load_personas(&app).unwrap_or_default();
+        // Resolve the effective harness exactly as spawn does.
         let global = load_global_agent_config(&app).unwrap_or_default();
 
         // Single pure helper — descriptor + authoritative model/provider
         // resolver, packaged so the linked-agent regression test binds the
         // exact values this command consumes. Returns Err on dangling harness
         // id, propagating it to the caller.
-        let discovery = agent_model_discovery_config(record, &personas, &global)
+        let discovery = agent_model_discovery_config(record, &global)
             .map_err(|e| model_discovery_error(&pubkey, &e))?;
 
         let resolved_agent = resolve_command(&discovery.command)

@@ -1,8 +1,7 @@
 use super::*;
-use crate::managed_agents::AgentDefinition;
 
 fn bare_agent_record(
-    persona_id: Option<&str>,
+    source_preset_id: Option<&str>,
     model: Option<&str>,
     provider: Option<&str>,
 ) -> ManagedAgentRecord {
@@ -13,7 +12,9 @@ fn bare_agent_record(
         description: None,
         pubkey: "agent".to_string(),
         name: "Agent".to_string(),
-        persona_id: persona_id.map(str::to_string),
+        source_preset_id: source_preset_id.map(str::to_string),
+        legacy_persona_id: None,
+        team_instructions: None,
         private_key_nsec: "".to_string(),
         auth_tag: None,
         relay_url: "ws://localhost:3000".to_string(),
@@ -30,7 +31,6 @@ fn bare_agent_record(
         system_prompt: None,
         model: model.map(str::to_string),
         provider: provider.map(str::to_string),
-        persona_source_version: None,
         env_vars: BTreeMap::new(),
         start_on_app_launch: false,
         is_default_ai: false,
@@ -40,8 +40,6 @@ fn bare_agent_record(
         provider_policy_pending: false,
         provider_binary_path: None,
         team_id: None,
-        persona_team_dir: None,
-        persona_name_in_team: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
         last_started_at: None,
@@ -51,57 +49,13 @@ fn bare_agent_record(
         last_error_code: None,
         respond_to: RespondTo::OwnerOnly,
         respond_to_allowlist: vec![],
-        display_name: None,
-        slug: None,
         runtime: None,
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
         relay_mesh: None,
         effort_level: None,
         auto_restart_on_config_change: false,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: vec![],
-        definition_parallelism: None,
         bot_origin: None,
     }
 }
-fn persona_record(id: &str, model: Option<&str>, provider: Option<&str>) -> AgentDefinition {
-    use std::collections::BTreeMap;
-    AgentDefinition {
-        effort_level: None,
-        session_policy: Default::default(),
-        description: None,
-        id: id.to_string(),
-        display_name: "Test Persona".to_string(),
-        avatar_url: None,
-        system_prompt: "".to_string(),
-        acp_command: None,
-        runtime: None,
-        model: model.map(str::to_string),
-        provider: provider.map(str::to_string),
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        env_vars: BTreeMap::new(),
-        respond_to: None,
-        respond_to_allowlist: vec![],
-        parallelism: None,
-        created_at: "".to_string(),
-        updated_at: "".to_string(),
-    }
-}
-
 /// Auto-archive uses the same NIP-IA wire builder as the explicit GUI action,
 /// attaches owner consent, and marks a deliberate delete as `retired`.
 #[test]
@@ -147,50 +101,28 @@ fn build_agent_archive_request_attaches_owner_auth_and_retired_reason() {
     }));
 }
 
-/// Deploy resolver uses definition model/provider, ignoring stale record.
+/// Deploy resolver uses the agent's own model/provider over global, even
+/// when the agent carries a preset label.
 #[test]
-fn deploy_resolver_uses_definition_over_stale_record() {
-    let record = bare_agent_record(Some("p1"), Some("old-model"), Some("old-prov"));
-    let personas = vec![persona_record("p1", Some("new-model"), Some("new-prov"))];
-    let global = crate::managed_agents::GlobalAgentConfig::default();
-
-    let (model, provider) = resolve_deploy_model_provider(&record, &personas, &global);
-
-    assert_eq!(
-        model.as_deref(),
-        Some("new-model"),
-        "deploy must use definition model, not stale record snapshot"
-    );
-    assert_eq!(
-        provider.as_deref(),
-        Some("new-prov"),
-        "deploy must use definition provider, not stale record snapshot"
-    );
-}
-
-/// When a linked definition has blank model/provider (inherit), the deploy
-/// resolver must fall through to global — stale record bytes are inert.
-#[test]
-fn deploy_resolver_inherits_global_when_definition_blank() {
-    let record = bare_agent_record(Some("p1"), Some("stale-model"), Some("stale-prov"));
-    let personas = vec![persona_record("p1", None, None)];
+fn deploy_resolver_uses_agent_own_model_provider() {
+    let record = bare_agent_record(Some("p1"), Some("agent-model"), Some("agent-prov"));
     let global = crate::managed_agents::GlobalAgentConfig {
         model: Some("global-model".to_string()),
         provider: Some("global-prov".to_string()),
         ..Default::default()
     };
 
-    let (model, provider) = resolve_deploy_model_provider(&record, &personas, &global);
+    let (model, provider) = resolve_deploy_model_provider(&record, &global);
 
     assert_eq!(
         model.as_deref(),
-        Some("global-model"),
-        "definition blank → global; stale record ignored"
+        Some("agent-model"),
+        "deploy must use the agent's own model"
     );
     assert_eq!(
         provider.as_deref(),
-        Some("global-prov"),
-        "definition blank → global; stale record ignored"
+        Some("agent-prov"),
+        "deploy must use the agent's own provider"
     );
 }
 
@@ -233,48 +165,20 @@ fn production_delete_orchestration_restores_bestie_when_agent_save_fails() {
     .unwrap_or_else(|error| panic!("read restored assignment: {error}")));
 }
 
-/// Deploy resolver falls back to global when both definition and record have none.
+/// Deploy resolver falls back to global when the agent has no model/provider.
 #[test]
-fn deploy_resolver_falls_back_to_global_when_definition_and_record_have_none() {
+fn deploy_resolver_falls_back_to_global_when_agent_has_none() {
     let record = bare_agent_record(Some("p1"), None, None);
-    let personas = vec![persona_record("p1", None, None)];
     let global = crate::managed_agents::GlobalAgentConfig {
         model: Some("global-model".to_string()),
         provider: Some("global-prov".to_string()),
         ..Default::default()
     };
 
-    let (model, provider) = resolve_deploy_model_provider(&record, &personas, &global);
+    let (model, provider) = resolve_deploy_model_provider(&record, &global);
 
     assert_eq!(model.as_deref(), Some("global-model"));
     assert_eq!(provider.as_deref(), Some("global-prov"));
-}
-
-/// Orphan: linked record with missing definition → the pure model/provider
-/// pair resolver returns `(None, None)`. This is NOT the deploy refusal
-/// boundary — `build_deploy_payload` refuses an orphan outright via
-/// `.require_resolved()?` before this pair is ever computed. This test pins
-/// the resolver's own orphan behavior, which readiness/hash also depend on.
-#[test]
-fn deploy_resolver_returns_none_for_orphaned_instance() {
-    let record = bare_agent_record(Some("missing-def"), Some("stale-model"), Some("stale-prov"));
-    let personas: Vec<AgentDefinition> = vec![];
-    let global = crate::managed_agents::GlobalAgentConfig {
-        model: Some("global-model".to_string()),
-        provider: Some("global-prov".to_string()),
-        ..Default::default()
-    };
-
-    let (model, provider) = resolve_deploy_model_provider(&record, &personas, &global);
-
-    assert!(
-        model.is_none(),
-        "orphaned instance must not resolve to any model"
-    );
-    assert!(
-        provider.is_none(),
-        "orphaned instance must not resolve to any provider"
-    );
 }
 
 #[test]
@@ -321,11 +225,10 @@ fn normalize_relay_mesh_trims_and_preserves_valid_config() {
 
 #[test]
 fn deploy_refuses_resolved_relay_mesh_provider_with_padding() {
-    let record = bare_agent_record(Some("p1"), None, None);
-    let personas = vec![persona_record("p1", None, Some("  relay-mesh  "))];
+    let record = bare_agent_record(Some("p1"), None, Some("  relay-mesh  "));
     let global = crate::managed_agents::GlobalAgentConfig::default();
 
-    let (_, provider) = resolve_deploy_model_provider(&record, &personas, &global);
+    let (_, provider) = resolve_deploy_model_provider(&record, &global);
     let error = ensure_remote_provider_supported(provider.as_deref())
         .expect_err("resolved shared-compute provider must not deploy remotely");
 
@@ -625,14 +528,12 @@ fn deploy_payload_matches_the_shared_full_launch_fixture() {
     .expect("fixture source record");
     let descriptor = crate::managed_agents::resolve_effective_harness_descriptor(
         &record,
-        &[],
         &crate::managed_agents::GlobalAgentConfig::default(),
     )
     .expect("resolve fixture source record descriptor");
     let launch = super::deploy::build_launch_block(
         &record,
         &descriptor,
-        &[],
         None,
         Some("gpt-5"),
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

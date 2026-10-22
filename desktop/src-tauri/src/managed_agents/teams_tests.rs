@@ -4,12 +4,10 @@
 //! `#[path]`-included from there.
 
 use super::{
-    agents_referencing_team, deactivate_catalog_member_copies_with_ref_check, load_teams_readonly,
-    merge_teams, merge_teams_impl, sort_teams, validate_team_deletion, BuiltInTeam,
+    deactivate_catalog_member_copies_with_ref_check, load_teams_readonly, merge_teams,
+    merge_teams_impl, sort_teams, validate_team_deletion, BuiltInTeam,
 };
-use crate::managed_agents::{
-    AgentDefinition, ManagedAgentRecord, TeamMemberCatalogSource, TeamRecord,
-};
+use crate::managed_agents::{AgentDefinition, TeamMemberCatalogSource, TeamRecord};
 
 fn team(id: &str, name: &str) -> TeamRecord {
     TeamRecord {
@@ -162,117 +160,6 @@ fn validate_team_deletion_rejects_built_ins() {
     let err = validate_team_deletion(&built_in).unwrap_err();
     assert_eq!(err, "Built-in teams cannot be deleted.");
 }
-
-// ── agents_referencing_team ─────────────────────────────────────────────
-
-fn managed_agent(name: &str) -> ManagedAgentRecord {
-    ManagedAgentRecord {
-        session_policy: Default::default(),
-        description: None,
-        pubkey: name.to_string(),
-        name: name.to_string(),
-        persona_id: None,
-        team_id: None,
-        private_key_nsec: String::new(),
-        auth_tag: None,
-        relay_url: "ws://localhost:3000".to_string(),
-        avatar_url: None,
-        acp_command: "kuzz-acp".to_string(),
-        agent_command: "kuzz-agent".to_string(),
-        agent_command_override: None,
-        agent_args: vec![],
-        mcp_command: String::new(),
-        turn_timeout_seconds: 300,
-        idle_timeout_seconds: None,
-        max_turn_duration_seconds: None,
-        parallelism: 1,
-        system_prompt: None,
-        model: None,
-        provider: None,
-        persona_source_version: None,
-        env_vars: std::collections::BTreeMap::new(),
-        start_on_app_launch: false,
-        is_default_ai: false,
-        auto_restart_on_config_change: false,
-        runtime_pid: None,
-        backend: crate::managed_agents::BackendKind::Local,
-        backend_agent_id: None,
-        provider_policy_pending: false,
-        provider_binary_path: None,
-        persona_team_dir: None,
-        persona_name_in_team: None,
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: "2026-01-01T00:00:00Z".to_string(),
-        last_started_at: None,
-        last_stopped_at: None,
-        last_exit_code: None,
-        last_error: None,
-        last_error_code: None,
-        respond_to: crate::managed_agents::RespondTo::OwnerOnly,
-        respond_to_allowlist: vec![],
-        display_name: None,
-        slug: None,
-        runtime: None,
-        name_pool: vec![],
-        is_builtin: false,
-        is_active: true,
-        shared: false,
-        source_team: None,
-        source_team_persona_slug: None,
-        catalog_source: None,
-        team_catalog_source: None,
-        relay_mesh: None,
-        effort_level: None,
-        definition_respond_to: None,
-        definition_respond_to_allowlist: vec![],
-        definition_parallelism: None,
-        bot_origin: None,
-    }
-}
-
-/// A new-style agent (created after the `team_id` seam landed) that links to
-/// a JSON-only team purely via `team_id` — the only kind of team that carries
-/// no `source_dir`/`persona_team_dir` at all — must still be caught, or the
-/// "team in use" delete guard silently never fires for it.
-#[test]
-fn agents_referencing_team_matches_on_team_id() {
-    let t = team("json-team-1", "Json Team");
-    let mut linked = managed_agent("Linked Agent");
-    linked.team_id = Some("json-team-1".to_string());
-    let unrelated = managed_agent("Unrelated Agent");
-
-    let agents = vec![linked, unrelated];
-    let referencing = agents_referencing_team(&agents, &t);
-
-    assert_eq!(referencing, vec!["Linked Agent"]);
-}
-
-/// Legacy pack-backed agents that predate the `team_id` field record their
-/// link solely via `persona_team_dir` (matched against the team's directory
-/// name) — this path must keep working after the `team_id` check was added.
-#[test]
-fn agents_referencing_team_matches_on_persona_team_dir() {
-    let mut t = team("uuid-1", "Dir Team");
-    t.source_dir = Some(std::path::PathBuf::from("/teams/com.example.pack"));
-    let mut legacy = managed_agent("Legacy Agent");
-    legacy.persona_team_dir = Some(std::path::PathBuf::from("/installed/com.example.pack"));
-    let unrelated = managed_agent("Unrelated Agent");
-
-    let agents = vec![legacy, unrelated];
-    let referencing = agents_referencing_team(&agents, &t);
-
-    assert_eq!(referencing, vec!["Legacy Agent"]);
-}
-
-#[test]
-fn agents_referencing_team_empty_when_no_matches() {
-    let t = team("json-team-2", "Json Team");
-    let agents = vec![managed_agent("Agent A"), managed_agent("Agent B")];
-
-    assert!(agents_referencing_team(&agents, &t).is_empty());
-}
-
-// Migration pins — exercise the real merge_teams wrapper (with production consts).
 
 #[test]
 fn migration_pristine_fizz_is_purged() {
@@ -502,8 +389,7 @@ fn test_deactivate_catalog_member_copies_deactivates_matching_copies() {
         catalog_copy("m1", OWNER, D_TAG),
         catalog_copy("m2", OWNER, D_TAG),
     ];
-    let changed =
-        deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[], &[]);
+    let changed = deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[]);
     assert!(changed);
     assert!(!personas[0].is_active, "m1 should be deactivated");
     assert!(!personas[1].is_active, "m2 should be deactivated");
@@ -513,8 +399,7 @@ fn test_deactivate_catalog_member_copies_deactivates_matching_copies() {
 fn test_deactivate_catalog_member_copies_skips_different_owner() {
     let other = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     let mut personas = vec![catalog_copy("m1", other, D_TAG)];
-    let changed =
-        deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[], &[]);
+    let changed = deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[]);
     assert!(!changed, "different owner must not be deactivated");
     assert!(personas[0].is_active);
 }
@@ -522,8 +407,7 @@ fn test_deactivate_catalog_member_copies_skips_different_owner() {
 #[test]
 fn test_deactivate_catalog_member_copies_skips_different_d_tag() {
     let mut personas = vec![catalog_copy("m1", OWNER, "other-team")];
-    let changed =
-        deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[], &[]);
+    let changed = deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[]);
     assert!(!changed, "different d-tag must not be deactivated");
     assert!(personas[0].is_active);
 }
@@ -533,8 +417,7 @@ fn test_deactivate_catalog_member_copies_skips_builtins() {
     // Built-in substitutions are local records, not copies — deleting the team
     // must never deactivate them.
     let mut personas = vec![builtin_copy("builtin:fizz")];
-    let changed =
-        deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[], &[]);
+    let changed = deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[]);
     assert!(!changed, "built-in should not be deactivated");
     assert!(personas[0].is_active);
 }
@@ -546,8 +429,7 @@ fn test_deactivate_catalog_member_copies_skips_already_inactive() {
         p.is_active = false;
         p
     }];
-    let changed =
-        deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[], &[]);
+    let changed = deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[]);
     assert!(
         !changed,
         "already-inactive record should not count as a change"
@@ -562,7 +444,7 @@ fn test_deactivate_catalog_member_copies_is_scoped_per_publication() {
         catalog_copy("m1", OWNER, D_TAG),
         catalog_copy("m2", OWNER, "other-team"),
     ];
-    deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[], &[]);
+    deactivate_catalog_member_copies_with_ref_check(&mut personas, OWNER, D_TAG, &[]);
     assert!(
         !personas[0].is_active,
         "m1 (matching) should be deactivated"
@@ -593,7 +475,6 @@ fn test_ref_check_preserves_copy_still_referenced_by_another_team() {
         OWNER,
         D_TAG,
         &remaining_teams,
-        &[], // no managed agents in this test
     );
 
     assert!(!changed, "a referenced copy must not be deactivated");
@@ -616,7 +497,6 @@ fn test_ref_check_deactivates_copy_not_referenced_by_any_remaining_team() {
         OWNER,
         D_TAG,
         &remaining_teams,
-        &[], // no managed agents in this test
     );
 
     assert!(changed, "unreferenced copy must be deactivated");
@@ -642,7 +522,6 @@ fn test_ref_check_deactivates_one_but_preserves_another_in_same_call() {
         OWNER,
         D_TAG,
         &remaining_teams,
-        &[], // no managed agents in this test
     );
 
     assert!(changed, "at least one copy was deactivated");
@@ -650,45 +529,6 @@ fn test_ref_check_deactivates_one_but_preserves_another_in_same_call() {
     assert!(
         !personas[1].is_active,
         "m2 is unreferenced — must be deactivated"
-    );
-}
-
-#[test]
-fn test_ref_check_preserves_copy_used_by_a_standalone_managed_agent() {
-    // Thufir finding 1: adopt a catalog team, build a standalone managed agent
-    // from one of its personas (persona_id = copy.id, no team_id), then delete
-    // the catalog team. The persona copy must NOT be archived because the agent
-    // still depends on it.
-    //
-    // Policy: preserve-not-block — deletion of the team succeeds, but copies
-    // linked to a live agent stay active so the agent keeps working.
-    let m1_id = "m1";
-    let m2_id = "m2";
-    let mut personas = vec![
-        catalog_copy(m1_id, OWNER, D_TAG),
-        catalog_copy(m2_id, OWNER, D_TAG),
-    ];
-
-    // A standalone managed agent whose persona_id points at the m1 copy.
-    let mut agent = managed_agent("my-agent");
-    agent.persona_id = Some(m1_id.to_string());
-
-    let changed = deactivate_catalog_member_copies_with_ref_check(
-        &mut personas,
-        OWNER,
-        D_TAG,
-        &[], // no remaining teams reference either copy
-        std::slice::from_ref(&agent),
-    );
-
-    assert!(changed, "m2 (unreferenced) must be deactivated");
-    assert!(
-        personas[0].is_active,
-        "m1 is used by a managed agent and must stay active"
-    );
-    assert!(
-        !personas[1].is_active,
-        "m2 is not used by any agent and must be deactivated"
     );
 }
 

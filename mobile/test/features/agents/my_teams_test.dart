@@ -55,7 +55,8 @@ void main() {
       ],
       agentEvents: [
         _event(EventKind.managedAgent, _honey, {'persona_id': 'fizz'}),
-        _event(EventKind.managedAgent, _fizz, {'persona_id': 'fizz'}),
+        // New computers label with source_preset_id; older ones persona_id.
+        _event(EventKind.managedAgent, _fizz, {'source_preset_id': 'fizz'}),
       ],
     );
     expect([for (final t in teams) t.name], ['Research', 'Writers']);
@@ -104,7 +105,8 @@ void main() {
         _event(EventKind.persona, 'x', {'display_name': 'X'}, author: _other),
       ],
       agentEvents: [
-        _event(EventKind.managedAgent, _fizz, {'persona_id': 'fizz'}),
+        // New computers label with source_preset_id; older ones persona_id.
+        _event(EventKind.managedAgent, _fizz, {'source_preset_id': 'fizz'}),
         _event(EventKind.managedAgent, _honey, {'persona_id': 'fizz'}),
       ],
     );

@@ -3,8 +3,8 @@ use super::{
     merge_personas, migrate_retired_personas, validate_persona_activation_change,
     validate_persona_deletion, BUILT_IN_PERSONAS, RETIRED_PERSONAS,
 };
-use crate::managed_agents::discovery::{default_agent_command, effective_agent_command};
-use crate::managed_agents::AgentDefinition;
+use crate::managed_agents::discovery::{default_agent_command, record_agent_command};
+use crate::managed_agents::{AgentDefinition, ManagedAgentRecord};
 
 fn custom_persona(id: &str, display_name: &str) -> AgentDefinition {
     AgentDefinition {
@@ -253,7 +253,7 @@ fn ensure_persona_ids_are_active_checks_each_requested_id() {
 fn validate_persona_activation_change_rejects_non_builtins() {
     let persona = custom_persona("custom:alpha", "Alpha");
 
-    let err = validate_persona_activation_change(&persona, false, false, false).unwrap_err();
+    let err = validate_persona_activation_change(&persona, false, false).unwrap_err();
 
     assert_eq!(
         err,
@@ -262,24 +262,11 @@ fn validate_persona_activation_change_rejects_non_builtins() {
 }
 
 #[test]
-fn validate_persona_activation_change_rejects_managed_agent_references() {
-    let mut persona = custom_persona("builtin:fizz", "Fizz");
-    persona.is_builtin = true;
-
-    let err = validate_persona_activation_change(&persona, false, true, false).unwrap_err();
-
-    assert_eq!(
-        err,
-        "Fizz is still assigned to a managed agent. Remove or reassign those agents first."
-    );
-}
-
-#[test]
 fn validate_persona_activation_change_rejects_team_references() {
     let mut persona = custom_persona("builtin:fizz", "Fizz");
     persona.is_builtin = true;
 
-    let err = validate_persona_activation_change(&persona, false, false, true).unwrap_err();
+    let err = validate_persona_activation_change(&persona, false, true).unwrap_err();
 
     assert_eq!(
         err,
@@ -292,8 +279,8 @@ fn validate_persona_activation_change_allows_safe_builtin_updates() {
     let mut persona = custom_persona("builtin:fizz", "Fizz");
     persona.is_builtin = true;
 
-    assert!(validate_persona_activation_change(&persona, true, false, false).is_ok());
-    assert!(validate_persona_activation_change(&persona, false, false, false).is_ok());
+    assert!(validate_persona_activation_change(&persona, true, false).is_ok());
+    assert!(validate_persona_activation_change(&persona, false, false).is_ok());
 }
 
 #[test]
@@ -462,29 +449,53 @@ fn fizz_builtin_has_no_pinned_runtime() {
 }
 
 #[test]
-fn fizz_builtin_resolves_to_kuzz_agent() {
-    // With no runtime pin, effective_agent_command must fall through to
-    // default_agent_command(), which resolves the bundled kuzz-agent.
-    let records = built_in_persona_records("2026-01-01T00:00:00Z");
+fn agent_made_from_fizz_resolves_to_kuzz_agent() {
+    // With no runtime pin on the preset, an agent made from Fizz copies no
+    // runtime and its command falls through to default_agent_command(),
+    // which resolves the bundled kuzz-agent.
+    let fizz = built_in_persona_records("2026-01-01T00:00:00Z")
+        .into_iter()
+        .find(|r| r.id == "builtin:fizz")
+        .expect("builtin:fizz must exist");
+    let mut record: ManagedAgentRecord = serde_json::from_value(serde_json::json!({
+        "pubkey": "abcd1234",
+        "name": "fizz",
+        "relay_url": "",
+        "acp_command": "kuzz-acp",
+        "agent_command": "",
+        "agent_args": [],
+        "mcp_command": "",
+        "turn_timeout_seconds": 320,
+        "system_prompt": null,
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "last_started_at": null,
+        "last_stopped_at": null,
+        "last_exit_code": null,
+        "last_error": null
+    }))
+    .expect("minimal agent record");
+    crate::managed_agents::persona_events::copy_preset_into_agent(&mut record, &fizz);
+
     assert_eq!(
-        effective_agent_command(Some("builtin:fizz"), &records, None),
+        record_agent_command(&record),
         default_agent_command(),
         "Fizz must resolve to the bundled default harness, not goose"
     );
     assert_eq!(
-        effective_agent_command(Some("builtin:fizz"), &records, None),
+        record_agent_command(&record),
         "kuzz-agent",
         "Fizz must resolve to kuzz-agent specifically"
     );
 }
 
-/// A persona store written before the definition effort existed must load with
-/// the field unset — no migration, no parse failure, and `into_agent_record`
-/// keeps it unset on the way back to disk.
+/// A preset store written before the preset effort existed must load with the
+/// field unset — no migration, no parse failure, and saving it back (presets
+/// are written to presets.json as-is) keeps it off the disk bytes.
 #[test]
 fn pre_effort_persona_store_loads_with_effort_unset() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("personas.json");
+    let path = dir.path().join("presets.json");
     std::fs::write(
         &path,
         r#"[{
@@ -507,9 +518,7 @@ fn pre_effort_persona_store_loads_with_effort_unset() {
     assert_eq!(personas[0].effort_level, None);
     assert_eq!(personas[0].model.as_deref(), Some("opus"));
 
-    let record = personas[0].clone().into_agent_record();
-    assert_eq!(record.effort_level, None);
-    let json = serde_json::to_string(&record).unwrap();
+    let json = serde_json::to_string(&personas).unwrap();
     assert!(
         !json.contains("effort_level"),
         "unset effort stays off the disk bytes: {json}"

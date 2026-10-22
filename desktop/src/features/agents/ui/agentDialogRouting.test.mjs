@@ -63,7 +63,6 @@ test("instance-edit routes to AgentInstanceEditDialog with its contract props", 
   assert.equal(form.type, AgentInstanceEditDialog);
   assert.deepEqual(form.props, {
     agent,
-    onEditLinkedPersona: undefined,
     onOpenChange,
     onUpdated,
     open: true,

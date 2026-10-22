@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use tauri::AppHandle;
 
 use crate::{
-    managed_agents::{managed_agents_base_dir, ManagedAgentRecord, TeamRecord},
+    managed_agents::{managed_agents_base_dir, TeamRecord},
     util::now_iso,
 };
 
@@ -215,29 +215,6 @@ pub fn save_teams<R: tauri::Runtime>(
     Ok(())
 }
 
-/// Names of managed agents that still reference `team` — either via the
-/// legacy `persona_team_dir` link (directory-backed teams only) or the
-/// `team_id` field (every team kind, all agents created after the team_id
-/// seam landed). Used to block team deletion while agents still depend on it.
-fn agents_referencing_team<'a>(
-    agents: &'a [ManagedAgentRecord],
-    team: &TeamRecord,
-) -> Vec<&'a str> {
-    let persona_key = team_persona_key(team);
-    agents
-        .iter()
-        .filter(|a| {
-            a.persona_team_dir
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                == Some(persona_key)
-                || a.team_id.as_deref() == Some(team.id.as_str())
-        })
-        .map(|a| a.name.as_str())
-        .collect()
-}
-
 /// Delete a team, cascading removal of its sourced personas and backing dir.
 ///
 /// Returns the d-tags of the personas removed by the cascade so the caller can
@@ -254,18 +231,9 @@ pub fn delete_team_with_cascade(app: &AppHandle, team_id: &str) -> Result<Vec<St
         .find(|record| record.id == team_id)
         .ok_or_else(|| format!("team {team_id} not found"))?;
 
+    // Agents never block a team delete: each keeps the team instructions it
+    // was made with.
     validate_team_deletion(team)?;
-
-    let agents = crate::managed_agents::load_managed_agents(app)?;
-    let referencing = agents_referencing_team(&agents, team);
-    if !referencing.is_empty() {
-        return Err(format!(
-            "Cannot delete team \"{team_id}\": {} agent(s) still reference it ({}). \
-             Delete or reconfigure them first.",
-            referencing.len(),
-            referencing.join(", ")
-        ));
-    }
 
     let mut cascaded_persona_d_tags = Vec::new();
 
@@ -304,11 +272,9 @@ pub fn delete_team_with_cascade(app: &AppHandle, team_id: &str) -> Result<Vec<St
         }
     } else if let Some(catalog_source) = &team.catalog_source.clone() {
         // Catalog-adopted team: deactivate member copies matching this
-        // publication that no remaining team references AND no standalone
-        // managed agent depends on — a copy backing an agent must stay active
-        // so the agent keeps working.
+        // publication that no remaining team references. Agents made from a
+        // copy own their settings, so they never keep one active.
         let mut personas = super::load_personas(app)?;
-        let managed_agents = crate::managed_agents::load_managed_agents(app)?;
 
         // The teams remaining AFTER this one is removed — used to check
         // whether any copy is still referenced before deactivating it.
@@ -319,13 +285,12 @@ pub fn delete_team_with_cascade(app: &AppHandle, team_id: &str) -> Result<Vec<St
             &catalog_source.owner_pubkey,
             &catalog_source.team_d_tag,
             &remaining_teams,
-            &managed_agents,
         );
 
         // Remove the team record from the working slice; save both atomically.
         teams.retain(|record| record.id != team_id);
 
-        let personas_path = super::managed_agents_store_path(app)?;
+        let personas_path = super::storage::presets_store_path(app)?;
         let teams_path = teams_store_path(app)?;
         let personas_to_write = personas.clone();
         let teams_to_write = teams.clone();
@@ -360,17 +325,12 @@ pub fn delete_team_with_cascade(app: &AppHandle, team_id: &str) -> Result<Vec<St
 
 /// Deactivate non-built-in personas whose provenance matches
 /// `(owner_pubkey, team_d_tag)` AND that are not referenced by any remaining
-/// team's `persona_ids` or any managed agent's `persona_id`.
-///
-/// The agent case is critical: deleting a catalog team must not archive a copy
-/// a standalone managed agent depends on, which would leave the agent pointing
-/// at a hidden inactive definition. Returns `true` when any record changed.
+/// team's `persona_ids`. Returns `true` when any record changed.
 pub(crate) fn deactivate_catalog_member_copies_with_ref_check(
     personas: &mut [super::AgentDefinition],
     owner_pubkey: &str,
     team_d_tag: &str,
     remaining_teams: &[&super::TeamRecord],
-    managed_agents: &[super::ManagedAgentRecord],
 ) -> bool {
     let mut changed = false;
     for persona in personas.iter_mut() {
@@ -388,11 +348,7 @@ pub(crate) fn deactivate_catalog_member_copies_with_ref_check(
         let still_in_team = remaining_teams
             .iter()
             .any(|t| t.persona_ids.iter().any(|id| id == &persona.id));
-        // Skip copies that a standalone managed agent was created from.
-        let still_in_agent = managed_agents
-            .iter()
-            .any(|a| a.persona_id.as_deref() == Some(persona.id.as_str()));
-        if still_in_team || still_in_agent {
+        if still_in_team {
             continue;
         }
         persona.is_active = false;
@@ -452,14 +408,11 @@ pub(crate) fn delete_catalog_team_at(
     let mut personas_mut = personas;
     let remaining_teams: Vec<&TeamRecord> = teams.iter().filter(|t| t.id != team_id).collect();
 
-    // No managed agents in the test seam — pass an empty slice. Test coverage
-    // for the agent-reference preservation path lives in teams_tests.rs.
     deactivate_catalog_member_copies_with_ref_check(
         &mut personas_mut,
         &catalog_source.owner_pubkey,
         &catalog_source.team_d_tag,
         &remaining_teams,
-        &[],
     );
 
     let new_teams: Vec<TeamRecord> = teams.into_iter().filter(|t| t.id != team_id).collect();

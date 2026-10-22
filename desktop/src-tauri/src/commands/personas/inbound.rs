@@ -23,8 +23,8 @@ mod inbound_tests;
 mod catalog_reconcile_tests;
 
 /// Follow-up work of an applied inbound event, run after the store lock is
-/// released: a runtime restart and the kind:0 profiles of agents renamed by
-/// another device's persona edit.
+/// released: a runtime restart and the kind:0 profile of an agent renamed or
+/// re-described on another device.
 #[derive(Default)]
 struct InboundFollowUp {
     runtime_refresh: Option<InboundRuntimeRefresh>,
@@ -99,9 +99,9 @@ pub async fn reconcile_inbound_persona_event(
     .await
     .map_err(|e| format!("spawn_blocking failed: {e}"))??;
 
-    // A rename made on another device renamed this computer's agents too;
-    // their relay profiles follow, like after a local edit.
-    super::update::publish_linked_profiles(&app, profile_syncs, "inbound persona edit").await;
+    // An agent renamed or re-described on another device: its relay profile
+    // follows, like after a local edit.
+    super::update::publish_agent_profiles(&app, profile_syncs, "inbound agent edit").await;
 
     match runtime_refresh {
         Some(InboundRuntimeRefresh::Local { pubkey, relay_urls }) => {
@@ -291,14 +291,19 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
     let mut profile_syncs = Vec::new();
     match kind {
         KIND_PERSONA => {
-            let mut identity_change = None;
             let outcome = commit_inbound_with_store(&conn, &inbound_retained_event, || {
+                // An older desktop manufactures a preset per agent, at the
+                // agent's own pubkey (its standalone backfill). Those are not
+                // presets anyone made: never add them here.
+                if load_managed_agents(&app)?
+                    .iter()
+                    .any(|agent| agent.pubkey == d_tag)
+                {
+                    return Ok(());
+                }
                 let mut personas = load_personas(&app)?;
                 // `inbound_persona` is `Some` for KIND_PERSONA (set above).
-                identity_change = apply_inbound_persona(
-                    &mut personas,
-                    inbound_persona.expect("persona parsed above"),
-                );
+                apply_inbound_persona(&mut personas, inbound_persona.expect("persona parsed above"));
                 save_personas(&app, &personas)
             })?;
             if outcome == InboundOutcome::Skipped {
@@ -318,24 +323,6 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
                 .find(|record| persona_d_tag(record) == d_tag)
                 .map(|record| record.id.clone())
             {
-                // A rename, avatar or description edit from another device
-                // reaches this computer's agents of the persona, as a local
-                // edit does (`update_persona`).
-                if let Some(change) = identity_change {
-                    if let Some(persona) = personas.iter().find(|record| record.id == persona_id) {
-                        // Best-effort, like the catalog refresh below: the
-                        // definition is already saved, and a failure here
-                        // must not skip the refresh and UI notification.
-                        match super::update::sync_linked_agents_after_persona_edit(
-                            &app, &state, persona, change,
-                        ) {
-                            Ok(syncs) => profile_syncs = syncs,
-                            Err(error) => eprintln!(
-                                "kuzz-desktop: linked agents not updated after inbound persona edit: {error}"
-                            ),
-                        }
-                    }
-                }
                 drop(personas);
                 super::super::teams::refresh_team_catalog_heads_for_persona(
                     &app,
@@ -347,15 +334,11 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
         KIND_TEAM => {
             let team_id = d_tag.clone();
             let outcome = commit_inbound_with_store(&conn, &inbound_retained_event, || {
+                // A team edit never touches agents: each agent keeps the team
+                // instructions it was made with.
                 let mut teams = load_teams(&app)?;
-                commit_inbound_team(
-                    &mut teams,
-                    d_tag,
-                    team_content_from_event(&event)?,
-                    |teams| save_teams(&app, teams),
-                    || load_managed_agents(&app),
-                    |records| save_managed_agents(&app, records),
-                )
+                apply_inbound_team(&mut teams, d_tag, team_content_from_event(&event)?);
+                save_teams(&app, &teams)
             })?;
             if outcome == InboundOutcome::Skipped {
                 return Ok(InboundFollowUp::default());
@@ -382,7 +365,15 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
             let managed_agent = inbound_managed_agent.ok_or_else(|| {
                 "managed-agent content was not parsed before retention".to_string()
             })?;
-            let access_changed = apply_inbound_managed_agent(&mut agents, &d_tag, managed_agent);
+            let InboundAgentChange {
+                access_changed,
+                profile_changed,
+            } = apply_inbound_managed_agent(&mut agents, &d_tag, managed_agent);
+            if profile_changed {
+                if let Some(record) = agents.iter().find(|record| record.pubkey == d_tag) {
+                    profile_syncs.extend(super::update::agent_profile_sync(&state, record));
+                }
+            }
             if access_changed {
                 let record = agents
                     .iter_mut()
@@ -505,8 +496,9 @@ fn validate_inbound_persona_definition(persona: &AgentDefinition) -> Result<(), 
     .map_err(|error| format!("Inbound persona definition is unsafe: {error}"))?;
     crate::managed_agents::validate_agent_description_text(persona.description.as_deref())
         .map_err(|error| format!("Inbound persona definition is unsafe: {error}"))?;
-    // The definition effort is emitted verbatim into every linked instance's
-    // env (`KUZZ_ACP_EFFORT_LEVEL`) and bypasses the env-var sanitizer, so a
+    // The preset effort is copied into agents made from it and emitted
+    // verbatim into their env (`KUZZ_ACP_EFFORT_LEVEL`), bypassing the env-var
+    // sanitizer, so a
     // relay-supplied control character or oversize value rejects the event.
     crate::managed_agents::validate_effort_level_text(persona.effort_level.as_deref())
         .map_err(|error| format!("Inbound persona definition is unsafe: {error}"))
@@ -517,10 +509,11 @@ fn validate_inbound_managed_agent_definition(
 ) -> Result<(), String> {
     crate::managed_agents::validate_managed_agent_definition_text(
         &managed_agent.name,
-        managed_agent.persona_id.as_deref(),
         managed_agent.system_prompt.as_deref(),
     )
-    .map_err(|error| format!("Inbound managed-agent definition is unsafe: {error}"))
+    .map_err(|error| format!("Inbound managed-agent definition is unsafe: {error}"))?;
+    crate::managed_agents::validate_agent_description_text(managed_agent.description.as_deref())
+        .map_err(|error| format!("Inbound managed-agent definition is unsafe: {error}"))
 }
 
 /// Parse an inbound wire event and enforce the signature gate. Everything
@@ -736,28 +729,14 @@ fn event_d_tag(event: &nostr::Event) -> Result<String, String> {
 /// `persona_from_event` sets `id = d_tag`, an in-app persona reuses its d-tag as
 /// the id and a re-received event stays idempotent (no duplicate row).
 ///
-/// Returns what changed in the matched record's identity (name, avatar,
-/// description) for its linked agents; `None` for an insert, which has none.
-fn apply_inbound_persona(
-    personas: &mut Vec<AgentDefinition>,
-    inbound: AgentDefinition,
-) -> Option<super::update::LinkedIdentityChange> {
+/// Agents made from the preset are never touched: they own their settings.
+fn apply_inbound_persona(personas: &mut Vec<AgentDefinition>, inbound: AgentDefinition) {
     let d_tag = persona_d_tag(&inbound);
     match personas
         .iter_mut()
         .find(|record| persona_d_tag(record) == d_tag)
     {
         Some(local) => {
-            let about = |description: Option<&str>| {
-                crate::managed_agents::effective_agent_description(description)
-            };
-            let change = super::update::LinkedIdentityChange {
-                old_display_name: (local.display_name != inbound.display_name)
-                    .then(|| local.display_name.clone()),
-                avatar_changed: local.avatar_url != inbound.avatar_url,
-                about_changed: about(local.description.as_deref())
-                    != about(inbound.description.as_deref()),
-            };
             local.display_name = inbound.display_name;
             local.avatar_url = inbound.avatar_url;
             local.description = inbound.description;
@@ -788,7 +767,6 @@ fn apply_inbound_persona(
             local.session_policy = inbound.session_policy;
             local.shared = inbound.shared;
             local.updated_at = inbound.updated_at;
-            Some(change)
         }
         None => {
             let mut inbound = inbound;
@@ -797,20 +775,35 @@ fn apply_inbound_persona(
                 inbound.respond_to_allowlist = Vec::new();
             }
             personas.push(inbound);
-            None
         }
     }
+}
+
+/// What an inbound kind:30177 changed on the local agent.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct InboundAgentChange {
+    /// The inbound author gate changed: the running agent must restart.
+    access_changed: bool,
+    /// The name or description changed: its kind:0 profile must follow.
+    profile_changed: bool,
 }
 
 /// Merge an inbound kind:30177 managed-agent projection into the local set.
 ///
 /// Matches the local record whose `pubkey` equals the event's d-tag (the d-tag
 /// IS the agent pubkey — see `build_agent_event`). On match, overwrite ONLY the
-/// 10 projected fields; every secret (`private_key_nsec`, `auth_tag`,
+/// projected fields; every secret (`private_key_nsec`, `auth_tag`,
 /// `env_vars`, `backend`), the harness pins (`agent_command`,
 /// `agent_command_override`), and all runtime/local fields are preserved
 /// untouched. The projection type carries none of them, so they cannot be
 /// reached here even if a foreign event tried to inject them.
+///
+/// An event never links the agent to a preset: the preset it names is a label.
+/// An older desktop's event for an agent it still linked carries `persona_id`
+/// without the agent's prompt/model/provider (they lived on the preset) —
+/// absent there means "not carried", never "clear", so such an event cannot
+/// wipe this computer's copy. Every other event carries the agent's own
+/// settings and applies them unconditionally (including clears).
 ///
 /// No match is a no-op: managed agents carry device-local secrets and are never
 /// minted from a relay event — an agent that does not already exist locally has
@@ -821,83 +814,42 @@ fn apply_inbound_managed_agent(
     agents: &mut [ManagedAgentRecord],
     d_tag: &str,
     inbound: ManagedAgentEventContent,
-) -> bool {
-    if let Some(local) = agents.iter_mut().find(|record| record.pubkey == d_tag) {
-        let previous_mode = local.respond_to;
-        let previous_allowlist = local.respond_to_allowlist.clone();
-        local.name = inbound.name;
-        // Mirror of the slimmed writer (agent_event_content): a
-        // definition-linked event omits the definition quad because those
-        // fields resolve through the kind:30175 definition — absent means
-        // "not carried", never "clear". Definition-less events still carry
-        // the quad and apply it unconditionally (including clears).
-        let definition_linked = inbound.persona_id.is_some();
-        local.persona_id = inbound.persona_id;
-        if !definition_linked {
-            local.system_prompt = inbound.system_prompt;
-            local.model = inbound.model;
-            local.provider = inbound.provider;
-            local.persona_source_version = inbound.persona_source_version;
-        }
-        local.parallelism = inbound.parallelism;
-        local.respond_to = inbound.respond_to;
-        local.respond_to_allowlist = inbound.respond_to_allowlist;
-        return super::super::agent_models::managed_agent_access_policy_changed(
+) -> InboundAgentChange {
+    let Some(local) = agents.iter_mut().find(|record| record.pubkey == d_tag) else {
+        return InboundAgentChange::default();
+    };
+    let previous_mode = local.respond_to;
+    let previous_allowlist = local.respond_to_allowlist.clone();
+    let previous_name = local.name.clone();
+    let previous_description = local.description.clone();
+    let legacy_linked_event = inbound.source_preset_id.is_none() && inbound.persona_id.is_some();
+    local.name = inbound.name;
+    if let Some(label) = inbound
+        .source_preset_id
+        .or(inbound.persona_id)
+        .filter(|label| label.as_str() != d_tag)
+    {
+        local.source_preset_id = Some(label);
+    }
+    if !legacy_linked_event {
+        local.system_prompt = inbound.system_prompt;
+        local.model = inbound.model;
+        local.provider = inbound.provider;
+        local.description = inbound.description;
+    }
+    local.parallelism = inbound.parallelism;
+    local.respond_to = inbound.respond_to;
+    local.respond_to_allowlist = inbound.respond_to_allowlist;
+    InboundAgentChange {
+        access_changed: super::super::agent_models::managed_agent_access_policy_changed(
             previous_mode,
             &previous_allowlist,
             local.respond_to,
             &local.respond_to_allowlist,
             crate::managed_agents::owner_only_access_build(),
-        );
+        ),
+        profile_changed: local.name != previous_name || local.description != previous_description,
     }
-    false
-}
-
-/// In-memory core of the inbound `KIND_TEAM` reconcile: capture the matched
-/// team's roster *before* applying the inbound projection, apply it, persist
-/// teams authoritatively, then propagate the prior→current membership delta to
-/// live instances best-effort — the same binding semantics the local
-/// create/update commands use. Without this, a 30176 team edit from another
-/// device lands on `teams.json` but never touches `ManagedAgentRecord.team_id`:
-/// an added persona's running instances stay unbound (member in roster, not in
-/// behavior) and a removed persona's instances keep drawing the old team's
-/// instructions at spawn until restart.
-///
-/// A no-match insert has no prior roster, so its whole roster is the added
-/// delta — symmetric with `commit_team_create`. Injected persistence keeps it
-/// `AppHandle`-free so the prior-roster capture and delta direction are
-/// unit-testable; a `persist_teams` error propagates, agent IO is best-effort
-/// (mirrors the local command path: the authoritative team write already
-/// landed, and boot repair is the designed retry for a stale binding).
-fn commit_inbound_team(
-    teams: &mut Vec<TeamRecord>,
-    d_tag: String,
-    inbound: TeamEventContent,
-    persist_teams: impl FnOnce(&[TeamRecord]) -> Result<(), String>,
-    load_agents: impl FnOnce() -> Result<Vec<ManagedAgentRecord>, String>,
-    save_agents: impl FnOnce(&[ManagedAgentRecord]) -> Result<(), String>,
-) -> Result<(), String> {
-    let team_id = d_tag.clone();
-    let previous_persona_ids = teams
-        .iter()
-        .find(|record| record.id == team_id)
-        .map(|record| record.persona_ids.clone())
-        .unwrap_or_default();
-    apply_inbound_team(teams, d_tag, inbound);
-    let current_persona_ids = teams
-        .iter()
-        .find(|record| record.id == team_id)
-        .map(|record| record.persona_ids.clone())
-        .unwrap_or_default();
-    persist_teams(teams)?;
-    crate::commands::teams::propagate_membership_best_effort(
-        &team_id,
-        &previous_persona_ids,
-        &current_persona_ids,
-        load_agents,
-        save_agents,
-    );
-    Ok(())
 }
 
 /// Merge an inbound kind:30176 team projection into the local set.

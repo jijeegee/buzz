@@ -29,8 +29,11 @@ export function useInChannelPersonaIds(
 
     const ids = new Set<string>();
     for (const agent of managedAgents) {
-      if (agent.personaId && memberPubkeys.has(normalizePubkey(agent.pubkey))) {
-        ids.add(agent.personaId);
+      if (
+        agent.sourcePresetId &&
+        memberPubkeys.has(normalizePubkey(agent.pubkey))
+      ) {
+        ids.add(agent.sourcePresetId);
       }
     }
     return ids;

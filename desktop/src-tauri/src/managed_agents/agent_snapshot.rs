@@ -45,7 +45,11 @@ use png::{BitDepth, ColorType, Decoder, Encoder};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 
-use crate::managed_agents::{types::ManagedAgentRecord, AcpSessionPolicy};
+use std::collections::BTreeMap;
+
+use crate::managed_agents::{
+    types::ManagedAgentRecord, AcpSessionPolicy, AgentDefinition, DEFAULT_ACP_COMMAND,
+};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -184,9 +188,96 @@ pub struct AgentSnapshot {
     pub memory: AgentSnapshotMemory,
 }
 
+// ── Export source ────────────────────────────────────────────────────────────
+
+/// What an export (snapshot or card) reads: an agent or a preset, each from
+/// its own store. `pubkey` and `relay_url` are empty for a preset.
+#[derive(Debug, Clone)]
+pub struct SnapshotSource {
+    pub pubkey: String,
+    pub relay_url: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub avatar_url: Option<String>,
+    pub system_prompt: Option<String>,
+    pub runtime: Option<String>,
+    pub acp_command: String,
+    pub model: Option<String>,
+    pub provider: Option<String>,
+    pub parallelism: Option<u32>,
+    pub session_policy: AcpSessionPolicy,
+    pub name_pool: Vec<String>,
+    pub idle_timeout_seconds: Option<u64>,
+    pub max_turn_duration_seconds: Option<u64>,
+    pub is_builtin: bool,
+    /// Never exported; read only to find a card-minting API key.
+    pub env_vars: BTreeMap<String, String>,
+}
+
+impl From<&ManagedAgentRecord> for SnapshotSource {
+    fn from(record: &ManagedAgentRecord) -> Self {
+        Self {
+            pubkey: record.pubkey.clone(),
+            relay_url: record.relay_url.clone(),
+            name: record.name.clone(),
+            description: record.description.clone(),
+            avatar_url: record.avatar_url.clone(),
+            system_prompt: record.system_prompt.clone(),
+            runtime: record.runtime.clone(),
+            acp_command: record.acp_command.clone(),
+            model: record.model.clone(),
+            provider: record.provider.clone(),
+            parallelism: Some(record.parallelism),
+            session_policy: record.session_policy,
+            name_pool: Vec::new(),
+            idle_timeout_seconds: record.idle_timeout_seconds,
+            max_turn_duration_seconds: record.max_turn_duration_seconds,
+            is_builtin: record
+                .source_preset_id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("builtin:")),
+            env_vars: record.env_vars.clone(),
+        }
+    }
+}
+
+impl From<&AgentDefinition> for SnapshotSource {
+    fn from(preset: &AgentDefinition) -> Self {
+        Self {
+            pubkey: String::new(),
+            relay_url: String::new(),
+            name: preset.display_name.clone(),
+            description: preset.description.clone(),
+            avatar_url: preset.avatar_url.clone(),
+            system_prompt: (!preset.system_prompt.is_empty())
+                .then(|| preset.system_prompt.clone()),
+            runtime: preset.runtime.clone(),
+            acp_command: preset
+                .acp_command
+                .clone()
+                .unwrap_or_else(|| DEFAULT_ACP_COMMAND.to_string()),
+            model: preset.model.clone(),
+            provider: preset.provider.clone(),
+            parallelism: preset.parallelism,
+            session_policy: preset.session_policy,
+            name_pool: preset.name_pool.clone(),
+            idle_timeout_seconds: None,
+            max_turn_duration_seconds: None,
+            is_builtin: preset.is_builtin,
+            env_vars: preset.env_vars.clone(),
+        }
+    }
+}
+
+impl From<&SnapshotSource> for SnapshotSource {
+    fn from(source: &SnapshotSource) -> Self {
+        source.clone()
+    }
+}
+
 // ── Builder / encoder ────────────────────────────────────────────────────────
 
-/// Materialize a snapshot manifest from a `ManagedAgentRecord`.
+/// Materialize a snapshot manifest from an agent or a preset.
 ///
 /// `memory_entries` is the pre-fetched, owner-decrypted set from
 /// `get_agent_memory`; this function does NOT call the Tauri command — that
@@ -194,43 +285,35 @@ pub struct AgentSnapshot {
 ///
 /// `memory_level` controls what ends up in the `memory` section. `avatar_bytes`
 /// is the raw image for the agent (loaded from disk or fetched); when `None`
-/// or too large, falls back to the `avatar_url` string on the record.
+/// or too large, falls back to the `avatar_url` string on the source.
 pub fn build_snapshot(
-    record: &ManagedAgentRecord,
+    source: impl Into<SnapshotSource>,
     memory_level: MemoryLevel,
     memory_entries: Vec<AgentSnapshotMemoryEntry>,
     avatar_bytes: Option<&[u8]>,
 ) -> AgentSnapshot {
-    // ── Definition ─────────────────────────────────────────────────────
-    // Use the definition-level parallelism for portability — the instance
-    // value is a spawn-time snapshot and would be stale.
+    let source: SnapshotSource = source.into();
     let definition = AgentSnapshotDefinition {
-        name: record
-            .display_name
-            .clone()
-            .unwrap_or_else(|| record.name.clone()),
-        source_is_builtin: record.is_builtin,
-        system_prompt: record.system_prompt.clone(),
-        runtime: record.runtime.clone(),
-        acp_command: super::is_portable_acp_command(&record.acp_command)
-            .then(|| record.acp_command.clone()),
-        model: record.model.clone(),
-        provider: record.provider.clone(),
-        parallelism: record.definition_parallelism.or(Some(record.parallelism)),
-        session_policy: record.session_policy,
-        name_pool: record.name_pool.clone(),
-        idle_timeout_seconds: record.idle_timeout_seconds,
-        max_turn_duration_seconds: record.max_turn_duration_seconds,
+        name: source.name.clone(),
+        source_is_builtin: source.is_builtin,
+        system_prompt: source.system_prompt.clone(),
+        runtime: source.runtime.clone(),
+        acp_command: super::is_portable_acp_command(&source.acp_command)
+            .then(|| source.acp_command.clone()),
+        model: source.model.clone(),
+        provider: source.provider.clone(),
+        parallelism: source.parallelism,
+        session_policy: source.session_policy,
+        name_pool: source.name_pool.clone(),
+        idle_timeout_seconds: source.idle_timeout_seconds,
+        max_turn_duration_seconds: source.max_turn_duration_seconds,
     };
 
     // ── Profile ─────────────────────────────────────────────────────────
-    let (avatar_data_url, avatar_url_ref) = resolve_avatar(record, avatar_bytes);
+    let (avatar_data_url, avatar_url_ref) = resolve_avatar(&source, avatar_bytes);
     let profile = AgentSnapshotProfile {
-        display_name: record
-            .display_name
-            .clone()
-            .unwrap_or_else(|| record.name.clone()),
-        about: super::effective_agent_description(record.description.as_deref()),
+        display_name: source.name.clone(),
+        about: super::effective_agent_description(source.description.as_deref()),
         avatar_data_url,
         avatar_url: avatar_url_ref,
     };
@@ -256,7 +339,7 @@ pub fn build_snapshot(
 ///   - `data_url` is set when the avatar fits within `MAX_AVATAR_INLINE_BYTES`.
 ///   - `url_ref` is set when we can only record a URL (too large / no bytes).
 fn resolve_avatar(
-    record: &ManagedAgentRecord,
+    record: &SnapshotSource,
     avatar_bytes: Option<&[u8]>,
 ) -> (Option<String>, Option<String>) {
     if let Some(bytes) = avatar_bytes {
