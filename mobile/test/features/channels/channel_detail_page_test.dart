@@ -9478,6 +9478,50 @@ void main() {
       expect(find.text('Bob left the group'), findsOneWidget);
     });
 
+    testWidgets('calls a chat a chat in system rows', (tester) async {
+      final chat = Channel(
+        id: _channelId,
+        name: '',
+        channelType: 'stream',
+        visibility: 'private',
+        description: '',
+        createdBy: 'self',
+        createdAt: DateTime(2025),
+        memberCount: 3,
+        isMember: true,
+        groupChat: true,
+      );
+
+      await tester.pumpWidget(
+        _buildTestable(
+          channel: chat,
+          messages: [
+            _systemMsg(
+              id: 'sys1',
+              payload: {'type': 'member_left', 'actor': 'bob'},
+            ),
+            _systemMsg(
+              id: 'sys2',
+              payload: {
+                'type': 'member_joined',
+                'actor': 'alice',
+                'target': 'alice',
+              },
+            ),
+          ],
+          users: {
+            'alice': const UserProfile(pubkey: 'alice', displayName: 'Alice'),
+            'bob': const UserProfile(pubkey: 'bob', displayName: 'Bob'),
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bob left the chat'), findsOneWidget);
+      expect(findRichText('joined the chat'), findsOneWidget);
+      expect(find.textContaining('the group'), findsNothing);
+    });
+
     testWidgets(
       'constrains generic system timestamps at accessibility text sizes',
       (tester) async {

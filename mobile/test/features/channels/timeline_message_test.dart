@@ -283,6 +283,31 @@ void main() {
       expect(event.describe(resolve), 'Alice removed Bob from the group');
     });
 
+    test('a chat is called a chat, never a group', () {
+      String chat(SystemEventType type, {String? target, String? picture}) =>
+          SystemEvent(
+            type: type,
+            actorPubkey: 'pk1',
+            targetPubkey: target,
+            picture: picture,
+          ).describe(resolve, roomNoun: 'chat');
+
+      expect(
+        chat(SystemEventType.memberJoined, target: 'pk1'),
+        'Alice joined the chat',
+      );
+      expect(chat(SystemEventType.memberLeft), 'Alice left the chat');
+      expect(
+        chat(SystemEventType.memberRemoved, target: 'pk2'),
+        'Alice removed Bob from the chat',
+      );
+      expect(chat(SystemEventType.channelCreated), 'Alice created this chat');
+      expect(
+        chat(SystemEventType.pictureChanged, picture: 'https://x/p.png'),
+        'Alice changed the chat photo',
+      );
+    });
+
     test('topic_changed', () {
       final event = SystemEvent(
         type: SystemEventType.topicChanged,

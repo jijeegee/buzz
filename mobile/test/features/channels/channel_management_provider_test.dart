@@ -765,6 +765,40 @@ void main() {
       },
     );
 
+    test(
+      'refetches members when the live member list changes (join/accept)',
+      () async {
+        final session = _LiveMembershipRelaySession();
+        final container = ProviderContainer(
+          retry: (_, _) => null,
+          overrides: [relaySessionProvider.overrideWith(() => session)],
+        );
+        addTearDown(container.dispose);
+        final subscription = container.listen(
+          channelMembersProvider(_channelId),
+          (_, _) {},
+        );
+        addTearDown(subscription.close);
+
+        session.connect();
+        await container.pump();
+        final before = await container.read(
+          channelMembersProvider(_channelId).future,
+        );
+        expect(before.map((m) => m.pubkey), [_memberPubkey]);
+        expect(session.membershipFilter?.kinds, const [39002]);
+
+        // Someone accepts an invitation: the relay publishes a new list.
+        session.memberPubkeys = [_memberPubkey, 'cc' * 32];
+        session.emitMembership();
+        await container.pump();
+        final after = await container.read(
+          channelMembersProvider(_channelId).future,
+        );
+        expect(after.map((m) => m.pubkey), [_memberPubkey, 'cc' * 32]);
+      },
+    );
+
     test('keeps the member snapshot available during reconnect', () {
       final cachedMembers = [
         ChannelMember(
@@ -1003,6 +1037,53 @@ class _ConnectionAwareRelaySession extends RelaySessionNotifier {
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
   }) async => () {};
+}
+
+/// Serves a mutable kind:39002 member list and lets a test push a live
+/// membership update, as the relay does after a join or invitation accept.
+class _LiveMembershipRelaySession extends _ConnectionAwareRelaySession {
+  List<String> memberPubkeys = [_memberPubkey];
+  NostrFilter? membershipFilter;
+  void Function(NostrEvent)? _membershipListener;
+
+  NostrEvent _membersEvent() => NostrEvent(
+    id: 'members-${memberPubkeys.length}',
+    pubkey: 'relay',
+    createdAt: memberPubkeys.length,
+    kind: 39002,
+    tags: [
+      ['d', _channelId],
+      for (final pubkey in memberPubkeys) ['p', pubkey],
+    ],
+    content: '',
+    sig: 'sig',
+  );
+
+  @override
+  Future<List<NostrEvent>> fetchHistory(
+    NostrFilter filter, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    historyQueryCount++;
+    return [_membersEvent()];
+  }
+
+  @override
+  Future<void Function()> subscribeWithStatus(
+    NostrFilter filter,
+    void Function(NostrEvent) onEvent, {
+    void Function(String message)? onClosed,
+    required void Function(RelaySubscriptionStatus status) onStatusChanged,
+  }) async {
+    if (filter.kinds.contains(39002)) {
+      membershipFilter = filter;
+      _membershipListener = onEvent;
+    }
+    onStatusChanged(RelaySubscriptionStatus.ready);
+    return () {};
+  }
+
+  void emitMembership() => _membershipListener?.call(_membersEvent());
 }
 
 /// Fake [RelaySessionNotifier] that serves canned kind:0 profile events from
