@@ -14,14 +14,11 @@ use windows_sys::Win32::Foundation::{
     TBS_E_TPM_NOT_FOUND, TPM_E_DEACTIVATED, TPM_E_DISABLED,
 };
 use windows_sys::Win32::Security::Cryptography::{
-    NCryptCreatePersistedKey, NCryptExportKey, NCryptFinalizeKey, NCryptFreeObject, NCryptOpenKey,
-    NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash, BCRYPT_ECCPUBLIC_BLOB,
-    MS_PLATFORM_CRYPTO_PROVIDER, NCRYPT_ECDSA_P256_ALGORITHM, NCRYPT_EXPORT_POLICY_PROPERTY,
-    NCRYPT_SILENT_FLAG,
+    NCryptCreatePersistedKey, NCryptDeleteKey, NCryptExportKey, NCryptFinalizeKey,
+    NCryptFreeObject, NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash,
+    BCRYPT_ECCPUBLIC_BLOB, BCRYPT_ECDSA_PUBLIC_P256_MAGIC, MS_PLATFORM_CRYPTO_PROVIDER,
+    NCRYPT_ECDSA_P256_ALGORITHM, NCRYPT_EXPORT_POLICY_PROPERTY, NCRYPT_SILENT_FLAG,
 };
-
-#[cfg(test)]
-use windows_sys::Win32::Security::Cryptography::NCryptDeleteKey;
 
 use crate::{DeviceKeyError, Result};
 
@@ -50,14 +47,14 @@ impl Drop for Handle {
 pub(crate) struct TpmKey {
     key: Handle,
     _provider: Handle,
-    #[cfg(test)]
     name: String,
 }
 
 /// A failed TPM call, split by whether a software key may stand in.
 #[derive(Debug)]
 pub(crate) enum TpmError {
-    /// This machine has no usable TPM for P-256 keys ([`UNAVAILABLE`]).
+    /// This machine has no usable TPM for P-256 keys
+    /// ([`PROVIDER_UNAVAILABLE`], [`CREATE_UNAVAILABLE`]).
     Unavailable(DeviceKeyError),
     /// Anything else (busy, not ready, access denied, lockout, ...): the
     /// caller retries later; no software key is made.
@@ -72,22 +69,35 @@ impl TpmError {
     }
 }
 
-/// Status codes of `NCryptOpenStorageProvider`, `NCryptCreatePersistedKey`
-/// and `NCryptFinalizeKey` meaning "no usable TPM here", the only ones on
-/// which a software key replaces the TPM:
+/// Status codes of `NCryptOpenStorageProvider` meaning "no usable TPM
+/// here", on which a software key may replace the TPM:
 ///
 /// - `NTE_PROV_DLL_NOT_FOUND`, `NTE_PROVIDER_DLL_FAIL`, `NTE_BAD_PROVIDER`:
 ///   the Platform Crypto Provider is not installed or does not load.
 /// - `NTE_DEVICE_NOT_FOUND`, `TBS_E_TPM_NOT_FOUND`: no TPM.
 /// - `TBS_E_SERVICE_DISABLED`: the TPM Base Services are disabled.
 /// - `TPM_E_DISABLED`, `TPM_E_DEACTIVATED`: the TPM is off in firmware.
-/// - `NTE_NOT_SUPPORTED`, `NTE_BAD_ALGID`: the TPM cannot make ECDSA P-256
-///   keys (TPM 1.2).
 ///
 /// Not in the list, so an error: for example `NTE_DEVICE_NOT_READY`,
 /// `TBS_E_SERVICE_NOT_RUNNING`, `TPM_E_PCP_DEVICE_NOT_READY`,
-/// `E_ACCESSDENIED`, `NTE_PERM` and TPM lockout codes.
-pub(crate) const UNAVAILABLE: [HRESULT; 10] = [
+/// `E_ACCESSDENIED`, `NTE_PERM`, TPM lockout codes, and (from the provider)
+/// `NTE_NOT_SUPPORTED` / `NTE_BAD_ALGID`.
+pub(crate) const PROVIDER_UNAVAILABLE: [HRESULT; 8] = [
+    NTE_PROV_DLL_NOT_FOUND,
+    NTE_PROVIDER_DLL_FAIL,
+    NTE_BAD_PROVIDER,
+    NTE_DEVICE_NOT_FOUND,
+    TBS_E_TPM_NOT_FOUND,
+    TBS_E_SERVICE_DISABLED,
+    TPM_E_DISABLED,
+    TPM_E_DEACTIVATED,
+];
+
+/// Status codes of `NCryptCreatePersistedKey` and `NCryptFinalizeKey`
+/// meaning "no usable TPM here": [`PROVIDER_UNAVAILABLE`] plus
+/// `NTE_NOT_SUPPORTED` and `NTE_BAD_ALGID` (the TPM cannot make ECDSA P-256
+/// keys, e.g. TPM 1.2).
+pub(crate) const CREATE_UNAVAILABLE: [HRESULT; 10] = [
     NTE_PROV_DLL_NOT_FOUND,
     NTE_PROVIDER_DLL_FAIL,
     NTE_BAD_PROVIDER,
@@ -115,10 +125,14 @@ fn check(op: &'static str, status: HRESULT) -> Result<()> {
     }
 }
 
-/// [`check`], classifying a failure by [`UNAVAILABLE`].
-fn classify(op: &'static str, status: HRESULT) -> std::result::Result<(), TpmError> {
+/// [`check`], classifying a failure by `unavailable`.
+fn classify(
+    op: &'static str,
+    status: HRESULT,
+    unavailable: &[HRESULT],
+) -> std::result::Result<(), TpmError> {
     check(op, status).map_err(|error| {
-        if UNAVAILABLE.contains(&status) {
+        if unavailable.contains(&status) {
             TpmError::Unavailable(error)
         } else {
             TpmError::Failed(error)
@@ -133,7 +147,7 @@ fn provider() -> std::result::Result<Handle, TpmError> {
     let status = unsafe { NCryptOpenStorageProvider(&mut handle, MS_PLATFORM_CRYPTO_PROVIDER, 0) };
     // Wrap first so a handle is freed even on an unexpected error status.
     let handle = Handle(handle);
-    classify("NCryptOpenStorageProvider", status)?;
+    classify("NCryptOpenStorageProvider", status, &PROVIDER_UNAVAILABLE)?;
     Ok(handle)
 }
 
@@ -156,9 +170,20 @@ pub(crate) fn open(name_text: &str) -> std::result::Result<Option<TpmKey>, TpmEr
     Ok(Some(TpmKey {
         key,
         _provider: provider,
-        #[cfg(test)]
         name: name_text.to_owned(),
     }))
+}
+
+/// Open the key a racing creator made after `op` reported `NTE_EXISTS`.
+fn open_winner(name: &str, op: &'static str) -> std::result::Result<TpmKey, TpmError> {
+    match open(name) {
+        Ok(Some(existing)) => Ok(existing),
+        Ok(None) => Err(TpmError::Failed(DeviceKeyError::Tpm {
+            op,
+            code: NTE_EXISTS as u32,
+        })),
+        Err(error) => Err(TpmError::Failed(error.into_error())),
+    }
 }
 
 /// Create the TPM key `name` (non-exportable, per Windows user). When
@@ -182,7 +207,12 @@ pub(crate) fn create(name: &str) -> std::result::Result<TpmKey, TpmError> {
         )
     };
     let key = Handle(key);
-    classify("NCryptCreatePersistedKey", status)?;
+    if status == NTE_EXISTS {
+        drop(key);
+        drop(provider);
+        return open_winner(name, "NCryptCreatePersistedKey");
+    }
+    classify("NCryptCreatePersistedKey", status, &CREATE_UNAVAILABLE)?;
     // No export of any kind.
     let policy: u32 = 0;
     // SAFETY: `key.0` is a live, not yet finalized key handle; the property
@@ -203,20 +233,12 @@ pub(crate) fn create(name: &str) -> std::result::Result<TpmKey, TpmError> {
     if status == NTE_EXISTS {
         drop(key);
         drop(provider);
-        return match open(name) {
-            Ok(Some(existing)) => Ok(existing),
-            Ok(None) => Err(TpmError::Failed(DeviceKeyError::Tpm {
-                op: "NCryptFinalizeKey",
-                code: NTE_EXISTS as u32,
-            })),
-            Err(error) => Err(TpmError::Failed(error.into_error())),
-        };
+        return open_winner(name, "NCryptFinalizeKey");
     }
-    classify("NCryptFinalizeKey", status)?;
+    classify("NCryptFinalizeKey", status, &CREATE_UNAVAILABLE)?;
     Ok(TpmKey {
         key,
         _provider: provider,
-        #[cfg(test)]
         name: name.to_owned(),
     })
 }
@@ -243,8 +265,12 @@ impl TpmKey {
             )
         };
         check("NCryptExportKey", status)?;
+        let magic = u32::from_le_bytes([blob[0], blob[1], blob[2], blob[3]]);
         let key_len = u32::from_le_bytes([blob[4], blob[5], blob[6], blob[7]]);
-        if written as usize != blob.len() || key_len as usize != COORD_LEN {
+        if written as usize != blob.len()
+            || magic != BCRYPT_ECDSA_PUBLIC_P256_MAGIC
+            || key_len as usize != COORD_LEN
+        {
             return Err(DeviceKeyError::CorruptKey);
         }
         let mut sec1 = [0u8; 1 + 2 * COORD_LEN];
@@ -280,14 +306,12 @@ impl TpmKey {
         Ok(signature)
     }
 
-    /// Delete this key from the TPM. Only for keys tests made: the name must
-    /// start with `Kuzz-Device-test-`.
-    #[cfg(test)]
+    /// Delete this key from the TPM. Only Kuzz device keys
+    /// (`Kuzz-Device-*`): never another program's key.
     pub(crate) fn delete(mut self) -> Result<()> {
-        assert!(
-            self.name.starts_with("Kuzz-Device-test-"),
-            "refusing to delete a non-test key"
-        );
+        if !self.name.starts_with("Kuzz-Device-") {
+            return Err(DeviceKeyError::InvalidScope);
+        }
         // SAFETY: `self.key.0` is a live key handle. On success the call
         // frees it, so it is zeroed below before `Drop` runs. The Platform
         // Crypto Provider rejects NCRYPT_SILENT_FLAG here (NTE_BAD_FLAGS).

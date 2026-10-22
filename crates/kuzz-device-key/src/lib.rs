@@ -26,6 +26,12 @@
 //!   on a machine without a usable TPM): an existing key is never replaced.
 //! - [`DeviceKey::open_or_create_file`], always.
 //!
+//! Never after a TPM key was used: opening or creating a TPM key records a
+//! marker (scope `<scope>#tpm`, the SHA-256 of the TPM public key) in the
+//! store, and with a marker present an unavailable TPM is an error, not a
+//! software key. [`DeviceKey::reset`] (with the user's consent, e.g. after
+//! the TPM was cleared) removes the TPM key, the store key and the marker.
+//!
 //! # Cost
 //!
 //! TPM calls block for a TPM round trip: about 7 ms to open, about 13 ms
@@ -133,8 +139,62 @@ impl std::fmt::Debug for DeviceKey {
     }
 }
 
+/// The scope every Kuzz app and CLI on a machine uses for its device key.
+pub const DEVICE_KEY_SCOPE: &str = "kuzz-device-v1";
+
 /// Longest accepted scope.
 const MAX_SCOPE_LEN: usize = 64;
+
+/// Suffix of the store scope recording that `<scope>` has a TPM key.
+const TPM_MARKER_SUFFIX: &str = "#tpm";
+
+/// The store scope of `scope`'s TPM marker.
+fn tpm_marker_scope(scope: &str) -> String {
+    format!("{scope}{TPM_MARKER_SUFFIX}")
+}
+
+/// Validate a store scope: a device key scope, or its TPM marker scope.
+fn validate_store_scope(scope: &str) -> Result<()> {
+    validate_scope(scope.strip_suffix(TPM_MARKER_SUFFIX).unwrap_or(scope))
+}
+
+/// Record that `scope` has the TPM key `pubkey` (create-if-absent).
+#[cfg(any(windows, test))]
+fn record_tpm_marker(
+    store: &dyn SoftwareKeyStore,
+    scope: &str,
+    pubkey: &DevicePubkey,
+) -> Result<()> {
+    let marker = tpm_marker_scope(scope);
+    if store.load(&marker)?.is_none() {
+        let digest: [u8; 32] = sha2::Sha256::digest(pubkey.as_bytes()).into();
+        store.store_new(&marker, &SoftwareSecret::new(digest))?;
+    }
+    Ok(())
+}
+
+/// The software key standing in for an unavailable TPM (`error`): the
+/// store key of `scope` (created when `create`), unless the scope's TPM
+/// marker says a TPM key was used here, in which case `error`.
+#[cfg(any(windows, test))]
+fn software_fallback(
+    store: &dyn SoftwareKeyStore,
+    scope: &str,
+    error: DeviceKeyError,
+    create: bool,
+) -> Result<Option<p256::ecdsa::SigningKey>> {
+    if store.load(&tpm_marker_scope(scope))?.is_some() {
+        return Err(error);
+    }
+    if create {
+        software::open_or_create(store, scope).map(Some)
+    } else {
+        store
+            .load(scope)?
+            .map(|secret| software::signing_key(&secret))
+            .transpose()
+    }
+}
 
 fn validate_scope(scope: &str) -> Result<()> {
     let ok = (1..=MAX_SCOPE_LEN).contains(&scope.len())
@@ -156,20 +216,23 @@ fn tpm_key_name(scope: &str) -> String {
 
 impl DeviceKey {
     /// Open the device key of `scope` (ASCII letters, digits, `-`, `_`,
-    /// `.`; at most 64 bytes), creating it when there is none.
+    /// `.`; at most 64 bytes; normally [`DEVICE_KEY_SCOPE`]), creating it
+    /// when there is none.
     ///
     /// On Windows, in order: an existing TPM key; an existing key of `scope`
-    /// in `store`; a new TPM key. Only when the TPM is unavailable does a
-    /// software key from `store` (loaded, or created there) take its place.
-    /// Unavailable means `NCryptOpenStorageProvider`,
-    /// `NCryptCreatePersistedKey` or `NCryptFinalizeKey` returned one of:
-    /// `NTE_PROV_DLL_NOT_FOUND` (0x8009001E), `NTE_PROVIDER_DLL_FAIL`
-    /// (0x8009001D), `NTE_BAD_PROVIDER` (0x80090013), `NTE_DEVICE_NOT_FOUND`
-    /// (0x80090035), `TBS_E_TPM_NOT_FOUND` (0x8028400F),
-    /// `TBS_E_SERVICE_DISABLED` (0x80284010), `TPM_E_DISABLED` (0x80280007),
-    /// `TPM_E_DEACTIVATED` (0x80280006), `NTE_NOT_SUPPORTED` (0x80090029),
+    /// in `store`; a new TPM key. Only when the TPM is unavailable, and no
+    /// TPM marker is in `store`, does a software key from `store` (loaded,
+    /// or created there) take its place. Unavailable means
+    /// `NCryptOpenStorageProvider` returned one of `NTE_PROV_DLL_NOT_FOUND`
+    /// (0x8009001E), `NTE_PROVIDER_DLL_FAIL` (0x8009001D), `NTE_BAD_PROVIDER`
+    /// (0x80090013), `NTE_DEVICE_NOT_FOUND` (0x80090035),
+    /// `TBS_E_TPM_NOT_FOUND` (0x8028400F), `TBS_E_SERVICE_DISABLED`
+    /// (0x80284010), `TPM_E_DISABLED` (0x80280007), `TPM_E_DEACTIVATED`
+    /// (0x80280006); or `NCryptCreatePersistedKey` / `NCryptFinalizeKey`
+    /// returned one of those or `NTE_NOT_SUPPORTED` (0x80090029),
     /// `NTE_BAD_ALGID` (0x80090008). Every other failure, including any
     /// failure to open an existing TPM key, is [`DeviceKeyError::Tpm`].
+    /// Using a TPM key records its marker in `store`.
     ///
     /// Elsewhere: the key of `scope` in `store`, created when absent.
     pub fn open_or_create(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Self> {
@@ -178,10 +241,10 @@ impl DeviceKey {
         {
             let name = tpm_key_name(scope);
             match tpm::open(&name) {
-                Ok(Some(key)) => return Self::from_tpm(key),
+                Ok(Some(key)) => return Self::from_tpm(key, scope, store),
                 Ok(None) => {}
-                Err(tpm::TpmError::Unavailable(_)) => {
-                    return Self::software(software::open_or_create(store, scope)?)
+                Err(tpm::TpmError::Unavailable(error)) => {
+                    return Self::from_fallback(software_fallback(store, scope, error, true)?)
                 }
                 Err(tpm::TpmError::Failed(error)) => return Err(error),
             }
@@ -189,11 +252,11 @@ impl DeviceKey {
                 return Self::software(software::signing_key(&secret)?);
             }
             match tpm::create(&name) {
-                Ok(key) => Self::from_tpm(key),
+                Ok(key) => Self::from_tpm(key, scope, store),
                 // No key exists yet, so the software key replaces nothing;
                 // the relay sees `software` from `kind()`.
-                Err(tpm::TpmError::Unavailable(_)) => {
-                    Self::software(software::open_or_create(store, scope)?)
+                Err(tpm::TpmError::Unavailable(error)) => {
+                    Self::from_fallback(software_fallback(store, scope, error, true)?)
                 }
                 Err(tpm::TpmError::Failed(error)) => Err(error),
             }
@@ -202,6 +265,56 @@ impl DeviceKey {
         {
             Self::software(software::open_or_create(store, scope)?)
         }
+    }
+
+    /// Open the existing device key of `scope` (TPM, else `store`) without
+    /// ever creating one: for child processes of the app that made it.
+    /// `Ok(None)` when there is none. An unavailable TPM with a TPM marker
+    /// in `store` is an error, as in [`Self::open_or_create`].
+    pub fn open(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Option<Self>> {
+        validate_scope(scope)?;
+        #[cfg(windows)]
+        {
+            match tpm::open(&tpm_key_name(scope)) {
+                Ok(Some(key)) => Self::from_tpm(key, scope, store).map(Some),
+                Ok(None) => store
+                    .load(scope)?
+                    .map(|secret| Self::software(software::signing_key(&secret)?))
+                    .transpose(),
+                Err(tpm::TpmError::Unavailable(error)) => {
+                    software_fallback(store, scope, error, false)?
+                        .map(Self::software)
+                        .transpose()
+                }
+                Err(tpm::TpmError::Failed(error)) => Err(error),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            store
+                .load(scope)?
+                .map(|secret| Self::software(software::signing_key(&secret)?))
+                .transpose()
+        }
+    }
+
+    /// Delete the device key of `scope` everywhere: the TPM key (Windows),
+    /// the store key and the TPM marker. Only with the user's consent, e.g.
+    /// to recover after the TPM was cleared; the next
+    /// [`Self::open_or_create`] makes a new key, which the relay sees as a
+    /// new device. Missing pieces are fine; an unavailable TPM has no key.
+    pub fn reset(scope: &str, store: &dyn SoftwareKeyStore) -> Result<()> {
+        validate_scope(scope)?;
+        #[cfg(windows)]
+        match tpm::open(&tpm_key_name(scope)) {
+            Ok(Some(key)) => key.delete()?,
+            Ok(None) | Err(tpm::TpmError::Unavailable(_)) => {}
+            Err(tpm::TpmError::Failed(error)) => return Err(error),
+        }
+        store.delete(scope)?;
+        // The marker goes last: while any key piece may remain, it keeps
+        // blocking a silent software fallback.
+        store.delete(&tpm_marker_scope(scope))
     }
 
     /// Open the software key stored in `path`, creating it (and its parent
@@ -222,9 +335,16 @@ impl DeviceKey {
     }
 
     #[cfg(windows)]
-    fn from_tpm(key: tpm::TpmKey) -> Result<Self> {
+    fn from_fallback(key: Option<p256::ecdsa::SigningKey>) -> Result<Self> {
+        // `create` fallbacks always yield a key.
+        Self::software(key.ok_or(DeviceKeyError::CorruptKey)?)
+    }
+
+    #[cfg(windows)]
+    fn from_tpm(key: tpm::TpmKey, scope: &str, store: &dyn SoftwareKeyStore) -> Result<Self> {
         let pubkey =
             DevicePubkey::from_sec1(&key.public_sec1()?).map_err(|_| DeviceKeyError::CorruptKey)?;
+        record_tpm_marker(store, scope, &pubkey)?;
         Ok(Self {
             backend: Arc::new(Backend::Tpm(Mutex::new(key))),
             pubkey,
