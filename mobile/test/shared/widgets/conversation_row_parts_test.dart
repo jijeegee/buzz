@@ -56,7 +56,7 @@ void main() {
     int at(DateTime date) => date.millisecondsSinceEpoch ~/ 1000;
     expect(
       conversationTimestamp(at(DateTime(2026, 10, 18, 9, 5)), now: now),
-      '9:05 AM',
+      '9:05 AM', // CLDR: narrow no-break space
     );
     expect(
       conversationTimestamp(at(DateTime(2026, 10, 17, 23)), now: now),

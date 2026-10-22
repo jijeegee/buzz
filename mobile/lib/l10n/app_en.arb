@@ -28,5 +28,107 @@
         "type": "String"
       }
     }
+  },
+  "timeToday": "Today",
+  "@timeToday": {
+    "description": "Date label on a chat day divider, Inbox section or chat list row. Capitalized label. Short."
+  },
+  "timeYesterday": "Yesterday",
+  "@timeYesterday": {
+    "description": "Date label on a chat day divider, Inbox section or chat list row. Capitalized label. Short."
+  },
+  "timeJustNow": "just now",
+  "@timeJustNow": {
+    "description": "Time label for something that happened under a minute ago, e.g. in a list row or after 'last reply'. Lowercase. Short."
+  },
+  "timeOnDate": "on {date}",
+  "@timeOnDate": {
+    "description": "When the last reply in a thread was, after the words 'last reply'; {date} is a short month and day (May 19). Lowercase. Short.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "timeMinutesAgo": "{count, plural, one{{count} minute ago} other{{count} minutes ago}}",
+  "@timeMinutesAgo": {
+    "description": "How long ago the last reply in a thread was, after the words 'last reply'. Lowercase.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeHoursAgo": "{count, plural, one{{count} hour ago} other{{count} hours ago}}",
+  "@timeHoursAgo": {
+    "description": "How long ago the last reply in a thread was, after the words 'last reply'. Lowercase.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeDaysAgo": "{count, plural, one{{count} day ago} other{{count} days ago}}",
+  "@timeDaysAgo": {
+    "description": "How long ago the last reply in a thread was, after the words 'last reply'. Lowercase.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeMinutesAgoShort": "{count}m ago",
+  "@timeMinutesAgoShort": {
+    "description": "Compact age of a post in a list row: minutes. Abbreviate like the language's messengers do. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeHoursAgoShort": "{count}h ago",
+  "@timeHoursAgoShort": {
+    "description": "Compact age of a post in a list row: hours. Abbreviate like the language's messengers do. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeDaysAgoShort": "{count}d ago",
+  "@timeDaysAgoShort": {
+    "description": "Compact age of a post in a list row: days. Abbreviate like the language's messengers do. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeMinutesShort": "{count}m",
+  "@timeMinutesShort": {
+    "description": "Tiny age of a post next to the author's name: minutes, no 'ago'. Abbreviate like the language's messengers do. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeHoursShort": "{count}h",
+  "@timeHoursShort": {
+    "description": "Tiny age of a post next to the author's name: hours, no 'ago'. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeDaysShort": "{count}d",
+  "@timeDaysShort": {
+    "description": "Tiny age of a post next to the author's name: days, no 'ago'. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

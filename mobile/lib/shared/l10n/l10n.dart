@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:intl/intl.dart';
 
 import '../../l10n/app_localizations.dart';
 
@@ -51,6 +52,16 @@ Locale resolveAppLocale(
   return sourceLocale;
 }
 
+/// The `intl` locale for dates and numbers in [locale]. `intl` has no
+/// script-only Chinese data, so Traditional uses Taiwan's and Simplified
+/// China's.
+String intlLocaleFor(Locale locale) {
+  if (locale.languageCode == 'zh') {
+    return locale.scriptCode == 'Hant' ? 'zh_TW' : 'zh_CN';
+  }
+  return Intl.canonicalizedLocale(locale.toString());
+}
+
 AppLocalizations? _current;
 
 /// The app-wide strings for code without a [BuildContext] (services,
@@ -66,8 +77,8 @@ extension AppLocalizationsContext on BuildContext {
       lookupAppLocalizations(sourceLocale);
 }
 
-/// Keeps [appL10n] in step with the language the app is showing. Place it
-/// inside `MaterialApp.builder`.
+/// Keeps [appL10n] and `Intl.defaultLocale` in step with the language the
+/// app is showing. Place it inside `MaterialApp.builder`.
 class AppL10nScope extends StatelessWidget {
   const AppL10nScope({super.key, required this.child});
 
@@ -76,6 +87,10 @@ class AppL10nScope extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     _current = context.l10n;
+    final locale = Localizations.maybeLocaleOf(context);
+    // DateFormat / NumberFormat without an explicit locale use the app
+    // language, not the device's.
+    if (locale != null) Intl.defaultLocale = intlLocaleFor(locale);
     return child;
   }
 }

@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:intl/intl.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../../shared/clipboard_utils.dart';
 import '../../shared/devices/agent_badge_widgets.dart';
 import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -366,23 +368,10 @@ String _replyTargetLabel(UserNote note, IdentityNames names) {
 String formatPulseRelativeTime(int createdAt) {
   final date = DateTime.fromMillisecondsSinceEpoch(createdAt * 1000);
   final diff = DateTime.now().difference(date);
-  if (diff.inMinutes < 1) return 'just now';
-  if (diff.inHours < 1) return '${diff.inMinutes}m';
-  if (diff.inDays < 1) return '${diff.inHours}h';
-  if (diff.inDays < 7) return '${diff.inDays}d';
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return '${months[date.month - 1]} ${date.day}';
+  final l10n = appL10n;
+  if (diff.inMinutes < 1) return l10n.timeJustNow;
+  if (diff.inHours < 1) return l10n.timeMinutesShort(diff.inMinutes);
+  if (diff.inDays < 1) return l10n.timeHoursShort(diff.inHours);
+  if (diff.inDays < 7) return l10n.timeDaysShort(diff.inDays);
+  return DateFormat.MMMd().format(date);
 }
