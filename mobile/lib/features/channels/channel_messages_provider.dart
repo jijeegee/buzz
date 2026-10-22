@@ -156,6 +156,19 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
     }
 
+    final localSends = splitLocalSendsBySigner(
+      ref.read(pendingLocalMessagesProvider(channelId)),
+      ref.watch(myPubkeyProvider),
+    );
+    if (localSends.foreignIds.isNotEmpty) {
+      bool own(NostrEvent event) => !localSends.foreignIds.contains(event.id);
+      _lastKnownMessages = _lastKnownMessages?.where(own).toList();
+      _windowStore = _windowStore.copyWith(
+        liveOverlay: _windowStore.liveOverlay.where(own).toList(),
+        heldLive: _windowStore.heldLive.where(own).toList(),
+      );
+    }
+
     if (sessionState.status != SessionStatus.connected) {
       _initVersion++;
       _initInFlight = false;
@@ -179,10 +192,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
           _mergeWindowEventIntoStore(event);
         }
       }
-      // Unconfirmed own sends (in flight or failed) are not in any relay
-      // page yet: keep them as live rows so the reset can't drop them.
-      for (final event
-          in ref.read(pendingLocalMessagesProvider(channelId)).values) {
+      // Unconfirmed own sends (in flight or failed) are in no relay page yet.
+      for (final event in localSends.own) {
         if (event.threadReference.parentId == null &&
             EventKind.channelTimelineContentKinds.contains(event.kind)) {
           _windowStore = mergeLiveChannelWindowEvent(

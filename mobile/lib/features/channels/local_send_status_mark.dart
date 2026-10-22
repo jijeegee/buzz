@@ -116,15 +116,11 @@ void showFailedLocalMessageSheet({
                   sendMessage
                       .retry(channelId: channelId, eventId: eventId)
                       .catchError((Object error) {
-                        // Only a changed account or community gets here; a
-                        // failed publish just marks the row failed again.
+                        // Only errors before the row returns to pending get
+                        // here; a failed publish just marks it failed again.
                         debugPrint('[LocalSendStatusMark] retry: $error');
                         messenger?.showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Message not sent: the community changed',
-                            ),
-                          ),
+                          SnackBar(content: Text(retryFailureMessage(error))),
                         );
                       }),
                 );
@@ -151,4 +147,22 @@ void showFailedLocalMessageSheet({
       ),
     ),
   );
+}
+
+/// The reason shown when a retry fails before the message is sent again.
+@visibleForTesting
+String retryFailureMessage(Object error) {
+  final text = error.toString();
+  if (text.contains('another account')) {
+    return 'Message not sent: it was written by another account';
+  }
+  if (text.contains('no signing key') ||
+      text.contains('Invalid nsec') ||
+      text.contains('no principal id')) {
+    return 'Message not sent: no signing key for this account';
+  }
+  if (text.contains('community changed')) {
+    return 'Message not sent: the community changed';
+  }
+  return 'Message not sent: ${text.replaceFirst(RegExp(r'^(Exception|Bad state): '), '')}';
 }

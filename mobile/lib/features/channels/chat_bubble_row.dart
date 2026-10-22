@@ -79,7 +79,8 @@ class ChatBubbleColors {
 /// on its outer side, level with its bottom edge, and only when [showTime] is
 /// set (the last message of a group). [ownLeading] (the speaker control) sits in the free space left
 /// of an own bubble so it never narrows the bubble. [status] (an own send's
-/// pending or failed mark) leads the meta and shows even without the time.
+/// pending or failed mark) hangs left of the meta, or of the bubble without
+/// one, and takes no layout space: the bubble never rewraps when it clears.
 class ChatBubbleRow extends StatelessWidget {
   final bool isOwn;
   final Widget leading;
@@ -134,14 +135,10 @@ class ChatBubbleRow extends StatelessWidget {
       ),
     );
 
-    final meta = showTime || edited || status != null
+    final meta = showTime || edited
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (status != null) ...[
-                status!,
-                if (edited || showTime) const SizedBox(width: Grid.half),
-              ],
               if (edited)
                 Text(
                   '(edited)',
@@ -168,7 +165,11 @@ class ChatBubbleRow extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (isOwn && meta != null) ...[meta, const SizedBox(width: Grid.half)],
+        if (isOwn && status != null)
+          _OverhangingStatus(status: status!, child: meta)
+        else if (isOwn && meta != null)
+          meta,
+        if (isOwn && meta != null) const SizedBox(width: Grid.half),
         Flexible(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxBubbleWidth),
@@ -214,6 +215,36 @@ class ChatBubbleRow extends StatelessWidget {
                   constraints.maxWidth * chatOtherBubbleWidthFactor,
                 ),
               ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Paints [status] just left of [child] (or of an empty anchor) without
+/// adding to the row's width. Taps on it reach the row underneath.
+class _OverhangingStatus extends StatelessWidget {
+  final Widget status;
+  final Widget? child;
+
+  const _OverhangingStatus({required this.status, this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child ?? const SizedBox.shrink(),
+        Positioned(
+          left: 0,
+          bottom: 0,
+          child: FractionalTranslation(
+            translation: const Offset(-1, 0),
+            child: Padding(
+              padding: const EdgeInsets.only(right: Grid.half),
+              child: status,
             ),
           ),
         ),

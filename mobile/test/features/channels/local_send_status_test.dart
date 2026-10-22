@@ -13,6 +13,7 @@ import 'package:kuzz/features/channels/failed_local_messages_provider.dart';
 import 'package:kuzz/features/channels/local_send_status_mark.dart';
 import 'package:kuzz/features/channels/pending_local_messages_provider.dart';
 import 'package:kuzz/features/channels/send_message_provider.dart';
+import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 const _channelId = '11111111-1111-4111-8111-111111111111';
@@ -27,6 +28,8 @@ void main() {
     self = keys.public;
   });
 
+  late _FixedConfig config;
+
   Future<(ProviderContainer, _ControlledSession)> openChannel({
     Future<List<ChannelMember>> Function(int build)? members,
   }) async {
@@ -35,7 +38,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => session),
-        relayConfigProvider.overrideWith(() => _FixedConfig(nsec)),
+        relayConfigProvider.overrideWith(() => config = _FixedConfig(nsec)),
         if (members != null)
           channelMembersProvider(
             _channelId,
@@ -251,6 +254,116 @@ void main() {
     expect(statusOf(container, event.id), LocalSendStatus.failed);
   });
 
+  test('failed sends stay with the account that wrote them', () async {
+    final (container, session) = await openChannel();
+    final send = container
+        .read(sendMessageProvider)
+        .call(
+          channelId: _channelId,
+          content: 'mine',
+          mentionPubkeys: const [],
+          keepFailedMessage: true,
+        );
+    final event = await session.nextPublish;
+    session.reject();
+    await send;
+    expect(rowIds(container), [event.id]);
+
+    config.switchTo(nostr.Keys.generate().nsec);
+    await _pumpEventQueue();
+    expect(rowIds(container), isEmpty);
+    await expectLater(
+      container
+          .read(sendMessageProvider)
+          .retry(channelId: _channelId, eventId: event.id),
+      throwsA(isA<StateError>()),
+    );
+
+    config.switchTo(nsec);
+    await _pumpEventQueue();
+    expect(rowIds(container), [event.id]);
+    expect(statusOf(container, event.id), LocalSendStatus.failed);
+  });
+
+  test('unconfirmed thread replies show only for their author', () async {
+    const args = ThreadRepliesArgs(channelId: _channelId, rootId: 'root');
+    final config = _FixedConfig(nsec);
+    final container = ProviderContainer(
+      overrides: [
+        relaySessionProvider.overrideWith(_ControlledSession.new),
+        relayConfigProvider.overrideWith(() => config),
+        threadRepliesProvider(args).overrideWith((ref) async => const []),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(threadRepliesWithLocalProvider(args), (_, _) {});
+    final reply = _reply(self);
+    container.read(threadLocalRepliesProvider(args).notifier).add(reply);
+    await _pumpEventQueue();
+    List<String> shown() => [
+      for (final event
+          in container.read(threadRepliesWithLocalProvider(args)).value ??
+              const <NostrEvent>[])
+        event.id,
+    ];
+    expect(shown(), [reply.id]);
+
+    config.switchTo(nostr.Keys.generate().nsec);
+    await _pumpEventQueue();
+    expect(shown(), isEmpty);
+  });
+
+  test('a retry that cannot start names the reason', () {
+    expect(
+      retryFailureMessage(StateError('Message was written by another account')),
+      'Message not sent: it was written by another account',
+    );
+    expect(
+      retryFailureMessage(
+        Exception('Cannot submit event: no signing key available'),
+      ),
+      'Message not sent: no signing key for this account',
+    );
+    expect(
+      retryFailureMessage(
+        StateError(
+          'Message delivery cancelled because the active community changed',
+        ),
+      ),
+      'Message not sent: the community changed',
+    );
+  });
+
+  testWidgets('the bubble keeps its size and place when the clock clears', (
+    tester,
+  ) async {
+    final (container, session) =
+        await tester.runAsync(openChannel) ?? (null, null);
+    await tester.pumpWidget(_StatusHarness(container: container!));
+    final long = List.filled(40, 'word').join(' ');
+
+    final send = container
+        .read(sendMessageProvider)
+        .call(
+          channelId: _channelId,
+          content: long,
+          mentionPubkeys: const [],
+          keepFailedMessage: true,
+        );
+    await session!.nextPublish;
+    await tester.pump();
+    expect(find.byIcon(Icons.schedule), findsOne);
+    final pending = tester.getRect(find.text(long));
+    final pendingTime = tester.getRect(find.byKey(const ValueKey('time')));
+
+    session.accept();
+    await send;
+    await tester.pump();
+    expect(find.byIcon(Icons.schedule), findsNothing);
+    expect(tester.getRect(find.text(long)), pending);
+    expect(tester.getRect(find.byKey(const ValueKey('time'))), pendingTime);
+  });
+
   testWidgets('own bubble shows a clock while sending, then nothing', (
     tester,
   ) async {
@@ -301,7 +414,9 @@ void main() {
     expect(find.text('Not sent'), findsOne);
     expect(find.byIcon(Icons.error_outline), findsOne);
 
-    await tester.tap(find.byKey(ValueKey('local-send-failed-${event.id}')));
+    await tester.tapAt(
+      tester.getCenter(find.byKey(ValueKey('local-send-failed-${event.id}'))),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Retry'), findsOne);
     await tester.tap(find.text('Retry'));
@@ -315,7 +430,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Not sent'), findsOne);
 
-    await tester.tap(find.byKey(ValueKey('local-send-failed-${event.id}')));
+    await tester.tapAt(
+      tester.getCenter(find.byKey(ValueKey('local-send-failed-${event.id}'))),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
@@ -351,19 +468,32 @@ class _StatusHarness extends StatelessWidget {
                           _channelId,
                           event.id,
                         );
-                        return ChatBubbleRow(
-                          isOwn: true,
-                          leading: const SizedBox.shrink(),
-                          showTime: true,
-                          createdAt: event.createdAt,
-                          status: status == LocalSendStatus.sent
-                              ? null
-                              : LocalSendStatusMark(
-                                  status: status,
+                        // The row, not the overhanging mark, takes the tap.
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: status == LocalSendStatus.failed
+                              ? () => showFailedLocalMessageSheet(
+                                  context: context,
+                                  ref: ref,
                                   channelId: _channelId,
                                   eventId: event.id,
-                                ),
-                          child: Text(event.content),
+                                )
+                              : null,
+                          child: ChatBubbleRow(
+                            isOwn: true,
+                            leading: const SizedBox.shrink(),
+                            showTime: true,
+                            createdAt: event.createdAt,
+                            timestampKey: const ValueKey('time'),
+                            status: status == LocalSendStatus.sent
+                                ? null
+                                : LocalSendStatusMark(
+                                    status: status,
+                                    channelId: _channelId,
+                                    eventId: event.id,
+                                  ),
+                            child: Text(event.content),
+                          ),
                         );
                       },
                     ),
@@ -385,6 +515,10 @@ class _FixedConfig extends RelayConfigNotifier {
   @override
   RelayConfig build() =>
       RelayConfig(baseUrl: 'https://relay.example', nsec: nsec);
+
+  /// Signs in as another account (or back), as the account switcher does.
+  void switchTo(String nsec) =>
+      state = RelayConfig(baseUrl: 'https://relay.example', nsec: nsec);
 }
 
 /// A connected session whose channel window is empty and whose publishes the
@@ -490,6 +624,19 @@ NostrEvent _otherMessage({required int createdAt}) => NostrEvent(
     ['h', _channelId],
   ],
   content: 'from someone else',
+  sig: 'sig',
+);
+
+NostrEvent _reply(String author) => NostrEvent(
+  id: 'reply',
+  pubkey: author,
+  createdAt: 1,
+  kind: EventKind.streamMessage,
+  tags: const [
+    ['h', _channelId],
+    ['e', 'root', '', 'root'],
+  ],
+  content: 'reply',
   sig: 'sig',
 );
 

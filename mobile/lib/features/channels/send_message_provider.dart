@@ -159,8 +159,9 @@ class SendMessage {
   /// The row returns to pending first. A recent message is rebuilt with its
   /// original timestamp, which reproduces the same event id: if an earlier
   /// attempt did land, the relay dedupes it and its echo replaces the row. An
-  /// older one is re-signed now and takes the failed row's place. A new
-  /// failure marks the row failed again; nothing is thrown for it.
+  /// older one is re-signed now: the failed row is removed and the new one
+  /// is added at the bottom of the timeline. A new publish failure marks the
+  /// row failed again; nothing is thrown for it.
   Future<void> retry({
     required String channelId,
     required String eventId,

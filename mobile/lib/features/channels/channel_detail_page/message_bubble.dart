@@ -45,7 +45,9 @@ class _MessageBubble extends HookConsumerWidget {
       ).select(
         (replies) => replies.any((reply) {
           final thread = reply.threadReference;
-          return thread.parentId == message.id || thread.rootId == message.id;
+          return (currentPubkey == null ||
+                  reply.pubkey.toLowerCase() == currentPubkey!.toLowerCase()) &&
+              (thread.parentId == message.id || thread.rootId == message.id);
         }),
       ),
     );

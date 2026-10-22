@@ -34,6 +34,27 @@ class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
   }
 }
 
+/// Splits [pending] sends by signer. The map is per channel, not per account,
+/// so another account's unconfirmed (e.g. failed) sends must never be shown
+/// as [author]'s timeline rows; they come back when that account does.
+/// Without a signed-in [author] there is nothing to hide them from.
+({List<NostrEvent> own, Set<String> foreignIds}) splitLocalSendsBySigner(
+  Map<String, NostrEvent> pending,
+  String? author,
+) {
+  final signer = author?.toLowerCase();
+  final own = <NostrEvent>[];
+  final foreignIds = <String>{};
+  for (final event in pending.values) {
+    if (signer == null || event.pubkey.toLowerCase() == signer) {
+      own.add(event);
+    } else {
+      foreignIds.add(event.id);
+    }
+  }
+  return (own: own, foreignIds: foreignIds);
+}
+
 final pendingLocalMessagesProvider =
     NotifierProvider.family<
       PendingLocalMessagesNotifier,
