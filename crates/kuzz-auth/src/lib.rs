@@ -19,6 +19,8 @@
 
 /// Channel access checking trait and helpers.
 pub mod access;
+/// Device keys: proof that a message key or token is used from its own device.
+pub mod device_proof;
 /// Authentication error types.
 pub mod error;
 /// Custodial encryption and account-bound proof verification for key recovery.

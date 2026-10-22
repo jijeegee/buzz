@@ -1,0 +1,67 @@
+{
+  "_comment": "Device proof test vectors (device-bound keys plan \u00a72.1). Every client (Rust, TS, Dart) must reproduce these messages and verify these signatures. Device key: P-256 secret 0x07 repeated 32 times. Signatures are raw r||s, ECDSA P-256 SHA-256 (RFC 6979).",
+  "device_secret_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "device_pubkey_hex": "031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e",
+  "header_proof": {
+    "purpose": "auth",
+    "binding": "POST https://relay.example/auth/me",
+    "token_sha256_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+    "body_sha256_hex": "0202020202020202020202020202020202020202020202020202020202020202",
+    "ts": 1700000000,
+    "nonce": "nonce-0123456789ab",
+    "message": "kuzz-device-proof/v1\nauth\nPOST https://relay.example/auth/me\n0101010101010101010101010101010101010101010101010101010101010101\n0202020202020202020202020202020202020202020202020202020202020202\n1700000000\nnonce-0123456789ab",
+    "signature_hex": "5e8c6e8b3c9b40b8c4840fcf7b7f78b0e01f9f8d95af32e71dc011771cd638cf372625fa36bd9169fb6087bcb5f6f71a185521cc204cc76bc94df513617603da",
+    "header": "1700000000.nonce-0123456789ab.5e8c6e8b3c9b40b8c4840fcf7b7f78b0e01f9f8d95af32e71dc011771cd638cf372625fa36bd9169fb6087bcb5f6f71a185521cc204cc76bc94df513617603da"
+  },
+  "event_serialization": "The event message is NIP-01 serialization: JSON with no whitespace; strings escape only \\\" \\\\ \\b \\f \\n \\r \\t and other characters below U+0020 as lowercase \\u00xx; \"/\", U+007F, U+2028 and all non-ASCII stay raw UTF-8 (JS JSON.stringify behaviour; Swift needs .withoutEscapingSlashes). This file is ASCII-escaped; compare the parsed strings.",
+  "event_tags": [
+    {
+      "event": {
+        "id": "0391e6e998ab4b4054b416cb04b5f077187b8104b8b47f8743fde97554c187e1",
+        "pubkey": "62c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7",
+        "created_at": 1700000000,
+        "kind": 22242,
+        "tags": [
+          [
+            "challenge",
+            "c1"
+          ],
+          [
+            "device",
+            "031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e",
+            "66544aeefd1028f31a9d4053498605c12b033f3d90461fea777cc644195b09aeb87d897a3f6479ebec1782591df4701453940dce0f01c3bd31bfbd66b00d2672"
+          ]
+        ],
+        "content": "hello",
+        "sig": "a0e9aaa454b5ce0845e06ad67369b5844c7669d33b28a2af6b3162742d87fe200798f178dcac626b270c94acd69d7ffce74b1d96a760788f26a9711f71b3bcfe"
+      },
+      "message": "kuzz-device-event/v1\n[0,\"62c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7\",1700000000,22242,[[\"challenge\",\"c1\"],[\"device\",\"031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e\",\"\"]],\"hello\"]"
+    },
+    {
+      "event": {
+        "content": "quote \" backslash \\ newline \n tab \t cr \r bell \u0007 del \u007f slash / \ud55c\uae00 \ud83d\ude00 ls \u2028",
+        "created_at": 1700000000,
+        "id": "e588b793a8669405557950177209ba58abf50459a4f4bd2826b443b47c8a056d",
+        "kind": 27235,
+        "pubkey": "62c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7",
+        "sig": "81388ff9d1c3383754fa16d62975fbd696f1aa65a01d80f0a3b4b2a190eb4e1587f6d2f9e3f6033ebe5bfeadcf984a626baa2e52a1fa13119696d5414e5e30fc",
+        "tags": [
+          [
+            "u",
+            "https://relay.example/api/v1/upload?a=1&b=/x"
+          ],
+          [
+            "method",
+            "POST"
+          ],
+          [
+            "device",
+            "031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e",
+            "34945c690f55d42c6c8ff38a75081ad0e173a5ce033f586f90f8fa178f6f835b5b1c607d33901cddc3a071e5f9141d0212757a685b99b0af2f397a85c409f845"
+          ]
+        ]
+      },
+      "message": "kuzz-device-event/v1\n[0,\"62c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7\",1700000000,27235,[[\"u\",\"https://relay.example/api/v1/upload?a=1&b=/x\"],[\"method\",\"POST\"],[\"device\",\"031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e\",\"\"]],\"quote \\\" backslash \\\\ newline \\n tab \\t cr \\r bell \\u0007 del \u007f slash / \ud55c\uae00 \ud83d\ude00 ls \u2028\"]"
+    }
+  ]
+}
