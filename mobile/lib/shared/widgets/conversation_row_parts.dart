@@ -3,6 +3,8 @@ import 'dart:math' show max, min;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../l10n/l10n.dart';
+import '../l10n/time_format.dart';
 import '../mentions/mention_bindings.dart';
 import '../mentions/mention_tags.dart';
 import '../profile/user_profile.dart';
@@ -38,29 +40,9 @@ String conversationTimestamp(int unixSeconds, {DateTime? now}) {
   final day = DateTime(date.year, date.month, date.day);
   final dayDiff = today.difference(day).inDays;
 
-  if (dayDiff == 0) {
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute ${date.hour < 12 ? 'AM' : 'PM'}';
-  }
-  if (dayDiff == 1) return 'Yesterday';
-
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final label = '${months[date.month - 1]} ${date.day}';
-  return date.year == current.year ? label : '$label, ${date.year}';
+  if (dayDiff == 0) return clockTime(date);
+  if (dayDiff == 1) return appL10n.timeYesterday;
+  return shortMonthDay(date, now: current);
 }
 
 /// First letter of [label], upper-cased; `?` when blank.

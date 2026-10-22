@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../shared/l10n/time_format.dart';
 import 'feed_item.dart';
 
 /// Inbox filters, mirroring desktop's `InboxFilter` in
@@ -325,34 +326,5 @@ String inboxDayLabel(int unixSeconds, {DateTime? now}) {
   final day = DateTime(date.year, date.month, date.day);
   final dayDiff = today.difference(day).inDays;
 
-  if (dayDiff == 0) return 'Today';
-  if (dayDiff == 1) return 'Yesterday';
-  if (dayDiff < 7 && dayDiff > 0) {
-    const weekdays = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    return weekdays[date.weekday - 1];
-  }
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final label = '${months[date.month - 1]} ${date.day}';
-  return date.year == current.year ? label : '$label, ${date.year}';
+  return recentDayLabel(dayDiff, date) ?? shortMonthDay(date, now: current);
 }

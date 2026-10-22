@@ -1,13 +1,18 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
+import '../../shared/l10n/l10n.dart';
+import '../../shared/l10n/time_format.dart';
+
 // Re-export shortPubkey so existing callers continue to compile.
 export '../../shared/utils/string_utils.dart' show shortPubkey;
 
-final _weekdayFormat = DateFormat('EEEE');
-final _weekdayMonthDayFormat = DateFormat('EEEE, MMMM d');
-final _monthDayYearFormat = DateFormat('MMMM d, y');
-final _shortMonthDayFormat = DateFormat('MMM d');
+// Getters, not finals: each call follows the current app language
+// (`Intl.defaultLocale`). Skeletons, so each language orders the parts its way.
+DateFormat get _weekdayFormat => DateFormat.EEEE();
+DateFormat get _weekdayMonthDayFormat => DateFormat.MMMMEEEEd();
+DateFormat get _monthDayYearFormat => DateFormat.yMMMMd();
+DateFormat get _shortMonthDayFormat => DateFormat.MMMd();
 final _messageTimeFormat = DateFormat('HH:mm', 'en_US');
 
 /// Days in a week, past which the weekday name stops being unambiguous.
@@ -44,8 +49,8 @@ String formatDayHeading(int unixSeconds, {@visibleForTesting DateTime? now}) {
   now ??= DateTime.now();
   final dayDiff = _calendarDaysBetween(now, date);
 
-  if (dayDiff == 0) return 'Today';
-  if (dayDiff == 1) return 'Yesterday';
+  if (dayDiff == 0) return appL10n.timeToday;
+  if (dayDiff == 1) return appL10n.timeYesterday;
   // Bounded below as well as above: a timestamp in the future (clock skew, or a
   // relay ahead of this device) must not be labelled with a weekday that reads
   // as the recent past.
@@ -89,11 +94,7 @@ String relativeTime(int unixSeconds) {
   ).toLocal();
   final diff = now.difference(time);
 
-  if (diff.inMinutes < 1) return 'just now';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-  if (diff.inHours < 24) return '${diff.inHours}h ago';
-  if (diff.inDays < 7) return '${diff.inDays}d ago';
-  return '${time.month}/${time.day}/${time.year}';
+  return compactAgo(diff.inSeconds, time);
 }
 
 /// Returns desktop-parity thread activity copy such as "just now",
@@ -106,21 +107,19 @@ String formatThreadSummaryLastReplyTime(
   var diff = nowSeconds - unixSeconds;
   if (diff < 0) diff = 0;
 
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return _formatAgo(diff ~/ 60, 'minute');
-  if (diff < 86400) return _formatAgo(diff ~/ 3600, 'hour');
-  if (diff < 604800) return _formatAgo(diff ~/ 86400, 'day');
+  final l10n = appL10n;
+  if (diff < 60) return l10n.timeJustNow;
+  if (diff < 3600) return l10n.timeMinutesAgo(diff ~/ 60);
+  if (diff < 86400) return l10n.timeHoursAgo(diff ~/ 3600);
+  if (diff < 604800) return l10n.timeDaysAgo(diff ~/ 86400);
 
   final date = DateTime.fromMillisecondsSinceEpoch(
     unixSeconds * 1000,
     isUtc: true,
   ).toLocal();
   // No ordinal suffix, per the writing standard.
-  return 'on ${_shortMonthDayFormat.format(date)}';
+  return l10n.timeOnDate(_shortMonthDayFormat.format(date));
 }
-
-String _formatAgo(int value, String unit) =>
-    '$value $unit${value == 1 ? '' : 's'} ago';
 
 /// Desktop-parity message clock time, e.g. "2:34 PM".
 ///
