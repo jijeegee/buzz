@@ -243,10 +243,14 @@ CREATE TABLE events (
     -- Privacy: encrypted/private routing wrappers and p-gated membership notices
     -- must never be discoverable through NIP-50 full-text search. NULL tsvector
     -- never matches `@@`.
-    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033 + 0062).
+    -- URL/path punctuation is also split into words (migration 0077), so
+    -- `callback` finds `https://x.org/auth/oidc/google/callback`; the original
+    -- tokens stay for exact URL searches.
+    -- Keep in sync with migrations (final state: 0001 + 0005 + 0014 + 0033 + 0062 + 0077).
     search_tsv  TSVECTOR GENERATED ALWAYS AS (
         CASE WHEN kind IN (1059, 30179, 30180, 30181, 30300, 30350, 30622, 44100, 44101, 44200) THEN NULL::tsvector
              ELSE to_tsvector('simple', content)
+                  || to_tsvector('simple', regexp_replace(content, '[-/:._?=&#]+', ' ', 'g'))
         END
     ) STORED,
     -- Nullable since migration 0057: token-authenticated events are server
