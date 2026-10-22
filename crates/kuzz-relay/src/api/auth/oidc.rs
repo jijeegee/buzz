@@ -657,6 +657,7 @@ pub(super) async fn complete(
     };
     finish_login(
         &state,
+        &headers,
         &principal,
         &record.identity_mode,
         &record.client,
@@ -815,6 +816,7 @@ pub(super) async fn signup(
     }
     finish_login(
         &state,
+        &headers,
         &login.principal,
         &ticket.identity_mode,
         &ticket.client,
@@ -827,10 +829,12 @@ pub(super) async fn signup(
 }
 
 /// Open the session for `principal` and answer with its tokens (the end of
-/// `complete` and `signup`).
+/// `complete` and `signup`). A login that created a new device row also
+/// sends the account a "New sign-in" notice (`headers` name its community).
 #[allow(clippy::too_many_arguments)]
 async fn finish_login(
-    state: &AppState,
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
     principal: &PrincipalId,
     identity_mode: &str,
     client: &str,
@@ -891,6 +895,9 @@ async fn finish_login(
             .and_then(|key| key.try_into().ok()),
         device_key.map(|device| *device.key.as_bytes()),
     );
+    if session.new_device {
+        spawn_new_signin_notice(state, headers, *principal, device_name, session.device_id);
+    }
     let expires_in = state.identity.config().access_ttl.as_secs();
     if client == "web" {
         let cookie = refresh_cookie(
@@ -923,6 +930,56 @@ async fn finish_login(
         "email": email,
     }))
     .into_response()
+}
+
+/// Send the "New sign-in: <device name>" notice (device-bound keys plan §5,
+/// PR A4b) to the account's own message key in the community `headers`
+/// name. Informational only, no approval step: it runs on its own task, so
+/// it never delays or fails the login, and errors are only logged. An
+/// account without a message key gets none.
+fn spawn_new_signin_notice(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+    principal: PrincipalId,
+    device_name: &str,
+    device_id: uuid::Uuid,
+) {
+    let state = Arc::clone(state);
+    let host = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_owned();
+    let device_name = device_name.to_owned();
+    tokio::spawn(async move {
+        let tenant = match crate::tenant::bind_community(&state.db, &host).await {
+            Ok(tenant) => tenant,
+            Err(crate::tenant::BindError::UnmappedHost) => return,
+            Err(crate::tenant::BindError::Lookup(error)) => {
+                tracing::warn!(%error, "new sign-in notice: community lookup failed");
+                return;
+            }
+        };
+        let pubkey = match state.db.principal_messaging_pubkey(&principal).await {
+            Ok(Some(pubkey)) => pubkey,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%error, "new sign-in notice: account key lookup failed");
+                return;
+            }
+        };
+        if let Err(error) = crate::handlers::side_effects::publish_new_signin_notice(
+            &tenant,
+            &state,
+            &pubkey,
+            &device_name,
+            device_id,
+        )
+        .await
+        {
+            tracing::warn!(%error, "new sign-in notice failed");
+        }
+    });
 }
 
 #[cfg(test)]

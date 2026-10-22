@@ -783,6 +783,7 @@ async fn handle_active_connection(
     crate::handlers::close::release_connection_subscriptions(&conn, &state).await;
     state.conn_manager.deregister(conn.conn_id);
     state.identity.sessions.remove(conn.conn_id);
+    state.identity.key_sockets.remove(conn.conn_id);
     if let Some(auth_ctx) = authenticated {
         if !state.conn_manager.has_admitted_connection(
             conn.tenant.community(),

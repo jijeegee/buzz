@@ -15,7 +15,7 @@ use axum::extract::ws::Message as WsMessage;
 use tracing::{debug, info, warn};
 
 use crate::connection::{AuthState, ConnectionState};
-use crate::identity::admission::{admit_key_with_owner, KeyRefused};
+use crate::identity::admission::{admit_key_socket, KeyRefused};
 use crate::identity::config::DeviceAdmissionMode;
 use crate::identity::device::Surface;
 use crate::metrics::{AuthOutcome, AuthPostTerminalState};
@@ -405,15 +405,28 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             // (signed in there, or an external agent's paired device), and a
             // registered key's NIP-OA tag must name its registry owner. After
             // pairing and before the policy gates; refuses only in enforce.
+            // The socket is registered before the admission, which records
+            // the device it admitted, so a later sign-out closes it (A4b).
             if let Some(device_tag) = device_tag {
                 let claimed_owner = crate::api::relay_members::extract_nip_oa_owner(
                     pubkey.as_bytes(),
                     auth_tag_json.as_deref(),
                     Some(signed_auth_created_at),
                 );
+                let socket = Arc::new(crate::identity::key_sockets::KeySocket::new(
+                    &pubkey,
+                    device_tag.as_ref().ok().copied().flatten(),
+                    Surface::Ws,
+                    conn.cancel.clone(),
+                    conn.ctrl_tx.clone(),
+                    crate::identity::ws::notice_frame,
+                ));
+                state
+                    .identity
+                    .key_sockets
+                    .insert(conn_id, Arc::clone(&socket));
                 if let Err(refused) =
-                    admit_key_with_owner(&state, &pubkey, device_tag, claimed_owner, Surface::Ws)
-                        .await
+                    admit_key_socket(&state, &pubkey, device_tag, claimed_owner, &socket).await
                 {
                     // `report` already logged it once an hour; a supervisor
                     // retrying must not flood the log.

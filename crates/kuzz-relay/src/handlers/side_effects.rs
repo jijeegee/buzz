@@ -10,8 +10,8 @@ use kuzz_core::kind::{
     event_kind_u32, is_parameterized_replaceable, KIND_AGENT_PROFILE, KIND_CHAT_STATE_PING,
     KIND_DM_VISIBILITY, KIND_GIT_REPO_ANNOUNCEMENT, KIND_IA_ARCHIVED, KIND_IA_ARCHIVED_LIST,
     KIND_IA_UNARCHIVED, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
-    KIND_NIP29_GROUP_ADMINS, KIND_NIP29_GROUP_MEMBERS, KIND_NIP29_GROUP_METADATA,
-    KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION, KIND_THREAD_SUMMARY,
+    KIND_NEW_SIGNIN_NOTICE, KIND_NIP29_GROUP_ADMINS, KIND_NIP29_GROUP_MEMBERS,
+    KIND_NIP29_GROUP_METADATA, KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION, KIND_THREAD_SUMMARY,
 };
 use kuzz_core::StoredEvent;
 use kuzz_db::channel::{MemberRecord, MemberRole};
@@ -4046,6 +4046,50 @@ pub async fn publish_chat_state_ping(
             .local_event_ids
             .invalidate(&(tenant.community(), event.id.to_bytes()));
         warn!("chat-state ping Redis publish failed: {e}");
+    }
+    super::event::fan_out_event_to_local_subscribers(
+        state,
+        tenant.community(),
+        &StoredEvent::new(event, None),
+    )
+    .await;
+    Ok(())
+}
+
+/// Publish the relay-signed "New sign-in: <device name>" notice
+/// ([`KIND_NEW_SIGNIN_NOTICE`]) to `user`, the account's own message key,
+/// after a login created the device row `device_id`. Ephemeral and
+/// `#p`-gated like [`publish_chat_state_ping`]: only the account's own
+/// connections see it, and only while connected. No IP, no token data.
+pub async fn publish_new_signin_notice(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    user: &[u8],
+    device_name: &str,
+    device_id: Uuid,
+) -> anyhow::Result<()> {
+    let user_hex = hex::encode(user);
+    let event = EventBuilder::new(
+        Kind::Custom(KIND_NEW_SIGNIN_NOTICE as u16),
+        format!("New sign-in: {device_name}"),
+    )
+    .tags([
+        Tag::parse(["p", &user_hex]).map_err(|e| anyhow::anyhow!("failed to build p tag: {e}"))?,
+        Tag::parse(["device", &device_id.to_string()])
+            .map_err(|e| anyhow::anyhow!("failed to build device tag: {e}"))?,
+    ])
+    .sign_with_keys(&state.relay_keypair)
+    .map_err(|e| anyhow::anyhow!("failed to sign kind:{KIND_NEW_SIGNIN_NOTICE}: {e}"))?;
+    state.mark_local_event(tenant.community(), &event.id);
+    if let Err(e) = state
+        .pubsub
+        .publish_event(tenant, EventTopic::Global, &event)
+        .await
+    {
+        state
+            .local_event_ids
+            .invalidate(&(tenant.community(), event.id.to_bytes()));
+        warn!("new sign-in notice Redis publish failed: {e}");
     }
     super::event::fan_out_event_to_local_subscribers(
         state,

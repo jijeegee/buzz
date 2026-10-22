@@ -12,13 +12,14 @@ pub fn filters_match(filters: &[Filter], event: &StoredEvent) -> bool {
 }
 
 /// Kinds readable only by the pubkey named in their `p` tag (DM visibility,
-/// agent turn metrics, chat-state pings).
+/// agent turn metrics, chat-state pings, new sign-in notices).
 pub fn is_owner_only_kind(kind: u32) -> bool {
     matches!(
         kind,
         crate::kind::KIND_DM_VISIBILITY
             | crate::kind::KIND_AGENT_TURN_METRIC
             | crate::kind::KIND_CHAT_STATE_PING
+            | crate::kind::KIND_NEW_SIGNIN_NOTICE
     )
 }
 
