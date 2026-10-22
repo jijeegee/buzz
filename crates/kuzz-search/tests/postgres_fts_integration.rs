@@ -1586,3 +1586,68 @@ async fn artifact_search_uses_only_live_current_head() {
     assert!(result.hits.is_empty());
     teardown(pool, &schema).await;
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn search_budget_is_scoped_to_the_search_and_cancels_as_timeout() {
+    let (pool, schema) = setup().await;
+    // One connection, so the check below reuses the search's connection.
+    let single = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with(pool.connect_options().as_ref().clone())
+        .await
+        .expect("connect single-connection pool");
+
+    let c = mk_community(&pool, "budget.example").await;
+    insert_event(
+        &pool,
+        c,
+        rand_bytes32(),
+        rand_bytes32(),
+        9,
+        "budget probe",
+        None,
+        1700000000,
+    )
+    .await;
+    let result = SearchService::new(single.clone())
+        .search(&SearchQuery {
+            community: c,
+            q: "budget".into(),
+            channel_scope: ChannelScope::Any,
+            kinds: None,
+            authors: None,
+            since: None,
+            until: None,
+            page: 1,
+            per_page: 10,
+            mode: kuzz_search::SearchMode::Prefix,
+        })
+        .await
+        .expect("search ok");
+    assert_eq!(result.hits.len(), 1);
+
+    // The budget is `SET LOCAL`: the pooled connection goes back without it.
+    let timeout: String = sqlx::query_scalar("SHOW statement_timeout")
+        .fetch_one(&single)
+        .await
+        .expect("show statement_timeout");
+    assert_eq!(timeout, "0");
+
+    // A statement cancelled by its budget reads as a timeout, not a failure.
+    let mut tx = single.begin().await.expect("begin");
+    sqlx::query("SET LOCAL statement_timeout = 10")
+        .execute(&mut *tx)
+        .await
+        .expect("set timeout");
+    let err: kuzz_search::SearchError = sqlx::query("SELECT pg_sleep(1)")
+        .execute(&mut *tx)
+        .await
+        .expect_err("statement must be cancelled")
+        .into();
+    assert!(err.is_statement_cancelled());
+    drop(tx);
+
+    single.close().await;
+    teardown(pool, &schema).await;
+}

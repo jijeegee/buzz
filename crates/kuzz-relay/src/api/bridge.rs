@@ -24,7 +24,9 @@ use crate::handlers::ingest::{IngestAuth, IngestError};
 use crate::nip_fi_http::{admit_nip_fi_http_on_state, Nip98Proof};
 use crate::state::AppState;
 
-use super::{api_error, db_read_error, internal_error, not_found, parse_query_or_400};
+use super::{
+    api_error, db_read_error, internal_error, not_found, parse_query_or_400, QUERY_TIMED_OUT,
+};
 
 mod thread_roots;
 mod thread_window;
@@ -2600,7 +2602,14 @@ async fn handle_bridge_search(
             .search
             .search(&search_query)
             .await
-            .map_err(|e| internal_error(&format!("search error: {e}")))?;
+            .map_err(|e| {
+                if e.is_statement_cancelled() {
+                    tracing::warn!("search exceeded its execution budget: {e}");
+                    api_error(StatusCode::SERVICE_UNAVAILABLE, QUERY_TIMED_OUT)
+                } else {
+                    internal_error(&format!("search error: {e}"))
+                }
+            })?;
 
         // Fetch full events from DB by ID. Hit ids are already raw 32-byte
         // arrays from the FTS layer — no hex decode.
