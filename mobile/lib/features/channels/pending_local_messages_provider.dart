@@ -6,8 +6,9 @@ import 'local_send_store.dart';
 /// Signed local messages whose publish has not yet been corroborated by an
 /// authoritative relay EVENT or query result.
 ///
-/// Each one is also kept in [LocalSendStore] until it is confirmed, accepted
-/// or dropped, so an app restart can show it again.
+/// One added with `persist` (a composer send) is also kept in
+/// [LocalSendStore] until it is confirmed, accepted or dropped, so an app
+/// restart can show it again.
 class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
   final String channelId;
   final _storeKeys = <String, String>{};
@@ -18,9 +19,9 @@ class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
   @override
   Map<String, NostrEvent> build() => const {};
 
-  void add(NostrEvent event) {
+  void add(NostrEvent event, {bool persist = false}) {
     state = {...state, event.id: event};
-    final store = ref.read(localSendStoreProvider);
+    final store = persist ? ref.read(localSendStoreProvider) : null;
     if (store == null) return;
     // Removal uses the key it was stored under, even after a switch.
     final key = _storeKeys[event.id] = store.keyFor(event.pubkey, channelId);

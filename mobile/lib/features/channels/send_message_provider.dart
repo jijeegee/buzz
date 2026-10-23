@@ -25,6 +25,8 @@ class SendMessage {
   final List<ChannelMember>? Function(String channelId) _readCachedMembers;
   final Map<String, UserProfile> Function() _readUserCache;
   final void Function(String channelId, NostrEvent event) _addLocalMessage;
+  final void Function(String channelId, NostrEvent event)
+  _addPersistedLocalMessage;
   final void Function(String channelId, String eventId)
   _markLocalMessageForAnimation;
   final void Function(String channelId, String eventId) _completeLocalMessage;
@@ -43,6 +45,7 @@ class SendMessage {
     List<ChannelMember>? Function(String channelId)? readCachedMembers,
     required Map<String, UserProfile> Function() readUserCache,
     required void Function(String channelId, NostrEvent event) addLocalMessage,
+    void Function(String channelId, NostrEvent event)? addPersistedLocalMessage,
     void Function(String channelId, String eventId)?
     markLocalMessageForAnimation,
     required void Function(String channelId, String eventId)
@@ -57,6 +60,7 @@ class SendMessage {
        _readCachedMembers = readCachedMembers ?? ((_) => null),
        _readUserCache = readUserCache,
        _addLocalMessage = addLocalMessage,
+       _addPersistedLocalMessage = addPersistedLocalMessage ?? addLocalMessage,
        _markLocalMessageForAnimation =
            markLocalMessageForAnimation ?? ((_, _) {}),
        _completeLocalMessage = completeLocalMessage,
@@ -81,7 +85,8 @@ class SendMessage {
   /// [extraTags] are appended as given (e.g. a thread close marker).
   ///
   /// With [keepFailedMessage], a publish that fails after the message was
-  /// shown marks the row failed (for retry or delete) and completes normally.
+  /// shown marks the row failed (for retry or delete) and completes normally,
+  /// and the row is kept on the device until the relay has it.
   /// Otherwise the row is rolled back and the error rethrown. Failures before
   /// the row is shown always throw.
   Future<void> call({
@@ -149,7 +154,10 @@ class SendMessage {
       keepFailedMessage: keepFailedMessage,
       onSigned: (event) {
         _markLocalMessageForAnimation(channelId, event.id);
-        _addLocalMessage(channelId, event);
+        (keepFailedMessage ? _addPersistedLocalMessage : _addLocalMessage)(
+          channelId,
+          event,
+        );
       },
     );
   }
@@ -190,7 +198,7 @@ class SendMessage {
           return;
         }
         _removeLocalMessage(channelId, failed.id);
-        _addLocalMessage(channelId, event);
+        _addPersistedLocalMessage(channelId, event);
       },
     );
   }
@@ -376,6 +384,9 @@ final sendMessageProvider = Provider<SendMessage>((ref) {
     addLocalMessage: (channelId, event) => ref
         .read(channelMessagesProvider(channelId).notifier)
         .addLocalMessage(event),
+    addPersistedLocalMessage: (channelId, event) => ref
+        .read(channelMessagesProvider(channelId).notifier)
+        .addLocalMessage(event, persist: true),
     markLocalMessageForAnimation: (channelId, eventId) => ref
         .read(localMessageSendAnimationProvider(channelId).notifier)
         .mark(eventId),
