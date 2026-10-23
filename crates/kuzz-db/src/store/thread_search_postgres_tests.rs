@@ -357,3 +357,36 @@ async fn limits_and_rejects_bad_requests() {
     assert!(f.search(&reader, "%").await.is_empty());
     assert!(f.search(&reader, "_").await.is_empty());
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn threads_from_before_the_join_are_not_found_in_since_join_rooms() {
+    let f = Fixture::new().await;
+    let (owner, late) = (Keys::generate(), Keys::generate());
+    let room = f.room(&owner, &[], ChannelVisibility::Private).await;
+    let old = f.thread(room, &owner, 100, "budget before").await;
+    channel_members::add_member(
+        &f.pool,
+        f.scope,
+        room,
+        &pk(&late),
+        MemberRole::Member,
+        Some(&pk(&owner)),
+    )
+    .await
+    .expect("late member");
+    let new = f.thread(room, &owner, 200, "budget after").await;
+
+    let rows = f.search(&late, "budget").await;
+    assert!(found(&rows, &old).is_none(), "pre-join thread is cut");
+    assert!(found(&rows, &new).is_some(), "post-join thread is found");
+
+    sqlx::query("UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(room)
+        .execute(&f.pool)
+        .await
+        .expect("full history room");
+    let rows = f.search(&late, "budget").await;
+    assert!(found(&rows, &old).is_some(), "full-history room shows it");
+}

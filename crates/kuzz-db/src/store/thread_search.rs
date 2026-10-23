@@ -116,13 +116,16 @@ ranked AS (
     FROM hits h
     CROSS JOIN q
     LEFT JOIN LATERAL (
-        SELECT e.created_at, e.received_at, e.pubkey FROM events e
+        SELECT e.created_at, e.received_at, e.pubkey, e.channel_sequence FROM events e
         WHERE e.community_id = $1 AND e.id = h.root_event_id
         ORDER BY e.created_at DESC LIMIT 1
     ) root ON TRUE
+    -- since_join rooms: a thread whose root predates the reader's join is
+    -- cut whole (a missing root counts as old).
+    WHERE NOT channel_event_before_join($1, h.channel_id, COALESCE(root.channel_sequence, 0), $2)
     -- In a 1:1 DM with someone the reader blocked: never surface a root or a
     -- name the reader did not receive.
-    WHERE NOT (h.dm_blocked AND (
+      AND NOT (h.dm_blocked AND (
         "#,
     crate::blocks::hidden_by_block_period!("$1", "$2", "root"),
     r#"
