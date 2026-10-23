@@ -23,6 +23,10 @@ import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
+import '../agents/owner_view/owner_view.dart';
+import '../agents/owner_view/owner_view_seen.dart';
+import '../agents/owner_view/owner_view_widgets.dart';
+import '../chats/chats_page.dart' show AgentConversationsList;
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
 import '../groups/group_preview.dart' show GroupJoinBar;
@@ -34,6 +38,7 @@ import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/flapping_bee.dart';
 import '../../shared/widgets/keyboard_dismiss_on_drag.dart';
+import '../../shared/widgets/kuzz_view_switch.dart';
 import '../../shared/widgets/load_error_view.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/masked_avatar_badge.dart';
@@ -366,6 +371,10 @@ class ChannelDetailPage extends HookConsumerWidget {
   /// jump (goal message links).
   final bool highlightInitialMessage;
 
+  /// Set when the owner of an agent reads one of its chats without being in
+  /// it: read-only, the agent's messages on the right, nothing marked read.
+  final OwnerView? ownerView;
+
   const ChannelDetailPage({
     super.key,
     required this.channel,
@@ -373,6 +382,7 @@ class ChannelDetailPage extends HookConsumerWidget {
     this.initialThreadRootId,
     this.initialThreadRouteBehavior = InitialThreadRouteBehavior.push,
     this.highlightInitialMessage = false,
+    this.ownerView,
   });
 
   @override
@@ -472,8 +482,13 @@ class ChannelDetailPage extends HookConsumerWidget {
             )
             .value ??
         channel;
-    final resolvedChannel =
+    final shownOwnerView = this.ownerView;
+    final mergedChannel =
         detailsAsync.whenData(baseChannel.mergeDetails).value ?? baseChannel;
+    // The owner view is never a member: no composer, join or huddle.
+    final resolvedChannel = shownOwnerView == null
+        ? mergedChannel
+        : mergedChannel.copyWith(isMember: false);
     final participantCount = resolvedChannel.participantPubkeys
         .map((pubkey) => pubkey.trim().toLowerCase())
         .where((pubkey) => pubkey.isNotEmpty)
@@ -495,7 +510,64 @@ class ChannelDetailPage extends HookConsumerWidget {
       ],
     );
     final memberProfilesPreloadState = useFuture(memberProfilesPreload);
+    // The DM with one of my agents also lists the agent's chats without me.
+    final dmAgentPubkey = shownOwnerView == null
+        ? oneToOneDmCounterpart(resolvedChannel, currentPubkey)
+        : null;
+    final isMyAgentDm =
+        dmAgentPubkey != null && ref.watch(isMyAgentProvider(dmAgentPubkey));
+    final showsAgentConversations =
+        isMyAgentDm &&
+        ref.watch(agentDmTabProvider(channel.id)) == AgentDmTab.conversations;
+    final dmAgentName = isMyAgentDm
+        ? ref.watch(
+            identityNameSourcesProvider.select(
+              (names) => resolveDmChannelDisplayLabel(
+                resolvedChannel,
+                currentPubkey: currentPubkey,
+                names: names,
+              ),
+            ),
+          )
+        : '';
+    final ownerView = shownOwnerView?.withChatLabel(
+      resolvedChannel.isGroupChat
+          ? watchChannelTitle(ref, resolvedChannel)
+          : resolvedChannel.isDm
+          ? ref.watch(
+              identityNameSourcesProvider.select(
+                (names) => resolveDmChannelDisplayLabel(
+                  resolvedChannel,
+                  currentPubkey: shownOwnerView.agentPubkey,
+                  names: names,
+                ),
+              ),
+            )
+          : resolvedChannel.name,
+    );
+    // Chats with something new since the owner last looked: the tab's count.
+    final agentDots = isMyAgentDm
+        ? ref.watch(
+            agentChatRowsProvider(
+              dmAgentPubkey,
+            ).select((rows) => ownerViewDotCount(rows.value ?? const [])),
+          )
+        : 0;
+    // The open chat's dot stays clear while it is read here.
+    useMarkOwnerViewSeen(
+      ref,
+      ownerView,
+      (row) => !row.isThread && row.channelId == resolvedChannel.id,
+    );
+    // People here are told when an agent's owner can read along.
+    final ownerReaders = ownerView == null
+        ? watchOwnerReaders(ref, resolvedChannel)
+        : const <OwnerReader>[];
+    final appBarBottomHeight =
+        ownerReaders.length * OwnerCanReadNotice.lineHeight +
+        (isMyAgentDm ? _agentTabsHeight + Grid.xs : 0);
     final showsComposer =
+        !showsAgentConversations &&
         !resolvedChannel.isForum &&
         resolvedChannel.isMember &&
         !resolvedChannel.isArchived;
@@ -896,6 +968,7 @@ class ChannelDetailPage extends HookConsumerWidget {
               isArchived: resolvedChannel.isArchived,
               initialMessageId: initialMessageId,
               channelBelow: false,
+              ownerView: ownerView,
             ),
           ),
         );
@@ -904,7 +977,8 @@ class ChannelDetailPage extends HookConsumerWidget {
     }, [directThreadHead]);
 
     useEffect(() {
-      if (!readState.isReady || readTimestamp == null) {
+      // The owner view reads someone else's chat: nothing is marked read.
+      if (ownerView != null || !readState.isReady || readTimestamp == null) {
         return null;
       }
       return deferReadStateUpdate(context, () {
@@ -924,10 +998,66 @@ class ChannelDetailPage extends HookConsumerWidget {
       );
     }
 
-    return FrostedScaffold(
+    final scaffold = FrostedScaffold(
       resizeToAvoidBottomInset:
           !usesFixedAndroidImeViewport || resolvedChannel.isForum,
       appBar: FrostedAppBar(
+        gradient: ownerView == null
+            ? null
+            : LinearGradient(
+                colors: [
+                  ownerViewBackground(context),
+                  ownerViewBackground(context),
+                ],
+              ),
+        bottomHeight: appBarBottomHeight,
+        bottom: appBarBottomHeight == 0
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (ownerReaders.isNotEmpty)
+                    OwnerCanReadNotice(readers: ownerReaders),
+                  if (isMyAgentDm)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        Grid.gutter,
+                        0,
+                        Grid.gutter,
+                        Grid.xs,
+                      ),
+                      child: SizedBox(
+                        height: _agentTabsHeight,
+                        child: KuzzViewSwitch<AgentDmTab>(
+                          semanticsLabel: context.l10n.ownerViewTabsLabel,
+                          options: [
+                            KuzzViewOption(
+                              value: AgentDmTab.chat,
+                              label: context.l10n.ownerViewTabChat(dmAgentName),
+                              key: const ValueKey('agent-dm-tab-chat'),
+                            ),
+                            KuzzViewOption(
+                              value: AgentDmTab.conversations,
+                              label: [
+                                context.l10n.ownerViewTabConversations(
+                                  dmAgentName,
+                                ),
+                                if (agentDots > 0) '$agentDots',
+                              ].join(' '),
+                              key: const ValueKey('agent-dm-tab-conversations'),
+                            ),
+                          ],
+                          selected: showsAgentConversations
+                              ? AgentDmTab.conversations
+                              : AgentDmTab.chat,
+                          onChanged: (tab) => ref
+                              .read(agentDmTabProvider(channel.id).notifier)
+                              .set(tab),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
         leading: usesNativeIosGlassBackButton
             ? IosGlassNavigationButton(
                 key: const ValueKey('channel-ios-glass-back'),
@@ -951,10 +1081,20 @@ class ChannelDetailPage extends HookConsumerWidget {
           child: resolvedChannel.isDm
               ? _DmAppBarTitle(
                   channel: resolvedChannel,
-                  currentPubkey: currentPubkey,
+                  currentPubkey: ownerView?.agentPubkey ?? currentPubkey,
+                  ownerViewSubtitle: ownerView == null
+                      ? null
+                      : context.l10n.ownerViewReadOnlySubtitle(
+                          ownerView.agentName,
+                        ),
                 )
               : _ChannelAppBarTitle(
                   channel: resolvedChannel,
+                  ownerViewSubtitle: ownerView == null
+                      ? null
+                      : context.l10n.ownerViewReadOnlySubtitle(
+                          ownerView.agentName,
+                        ),
                   onTap: () async {
                     final shouldClose = await showChannelDetailsPage(
                       context: context,
@@ -976,7 +1116,9 @@ class ChannelDetailPage extends HookConsumerWidget {
                   },
                 ),
         ),
-        actions: resolvedChannel.isDm
+        actions: ownerView != null
+            ? const []
+            : resolvedChannel.isDm
             ? [
                 if (goalsEnabled) _GoalsButton(channel: resolvedChannel),
                 if (showsHuddleAction)
@@ -1026,237 +1168,294 @@ class ChannelDetailPage extends HookConsumerWidget {
                   ),
               ],
       ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Column(
-            children: [
-              Expanded(
-                child: resolvedChannel.isForum
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          ForumPostsView(
-                            channel: resolvedChannel,
-                            currentPubkey: currentPubkey,
-                          ),
-                          if (showConnectionSkeleton.value)
-                            Positioned(
-                              top:
-                                  frostedAppBarHeight(
-                                    context,
-                                    titleContentHeight:
-                                        appBarTitleContentHeight,
-                                  ) +
-                                  Grid.xs,
-                              left: Grid.gutter,
-                              right: Grid.gutter,
-                              child: _ForumConnectionSkeleton(
-                                status: sessionStatus,
-                              ),
-                            ),
-                        ],
-                      )
-                    : SkeletonReveal(
-                        loading:
-                            showInitialConnectionSkeleton ||
-                            showConnectionSkeleton.value ||
-                            messagesState.isLoading ||
-                            openPhase.value == _OpenPhase.opening ||
-                            openPhase.value == _OpenPhase.positioning,
-                        shimmerEnabled:
-                            sessionStatus != SessionStatus.disconnected,
-                        skeleton: _MessageTimelineSkeleton(
-                          appBarTitleContentHeight: appBarTitleContentHeight,
-                          status: sessionStatus,
-                        ),
-                        content: messagesState.when(
-                          loading: SizedBox.shrink,
-                          error: (e, _) => Padding(
-                            padding: EdgeInsets.only(
-                              top: frostedAppBarHeight(
-                                context,
-                                titleContentHeight: appBarTitleContentHeight,
-                              ),
-                            ),
-                            child: LoadErrorView(
-                              message: context.l10n.channelLoadMessagesError,
-                              onRetry: () => ref.invalidate(
-                                channelMessagesProvider(channel.id),
-                              ),
-                            ),
-                          ),
-                          data: (events) {
-                            if (openPhase.value == _OpenPhase.opening) {
-                              return const SizedBox.shrink();
-                            }
-                            final messages = formatTimeline(
-                              events,
-                              currentPubkey: currentPubkey,
-                            );
-                            final summaries = ref
-                                .read(
-                                  channelMessagesProvider(channel.id).notifier,
-                                )
-                                .threadSummaries;
-                            final entries = buildMainTimelineEntries(
-                              messages,
-                              relaySummaries: summaries,
-                            );
-                            return _MessageList(
-                              entries: entries,
-                              allMessages: messages,
-                              initialMessageId: initialMessageId,
-                              initialThreadRootId: initialThreadRootId,
-                              initialThreadRouteBehavior:
-                                  initialThreadRouteBehavior,
-                              highlightInitialMessage: highlightInitialMessage,
-                              initialOrdinaryUnreadMessageIds:
-                                  initialOrdinaryUnreadMessageIds,
-                              initialOldestOrdinaryUnreadMessageId:
-                                  initialOldestOrdinaryUnreadMessageId,
-                              initialForcedUnreadMessageIds:
-                                  initialForcedUnreadMessageIds,
-                              openedAt: isOpenedAtMessage
-                                  ? openedAt.value
-                                  : null,
-                              isPositioning:
-                                  openPhase.value == _OpenPhase.positioning,
-                              onPositioned: () {
-                                if (openPhase.value == _OpenPhase.positioning) {
-                                  openPhase.value = _OpenPhase.opened;
-                                }
-                              },
-                              roomPositions: roomPositions,
-                              hasInitialUnread:
-                                  !isOpenedAtMessage &&
-                                  readState.isReady &&
-                                  (readState.isForcedUnread(channel.id) ||
-                                      initialForcedUnreadMessageIds
-                                          .isNotEmpty ||
-                                      initialOldestOrdinaryUnreadMessageId !=
-                                          null),
-                              channelId: channel.id,
-                              currentPubkey: currentPubkey,
-                              isMember: resolvedChannel.isMember,
-                              isArchived: resolvedChannel.isArchived,
-                              appBarTitleContentHeight:
-                                  appBarTitleContentHeight,
-                              composerBottomInset: showsComposer
-                                  ? composerDockHeight.value
-                                  : 0,
-                              composerFocusNode: showsComposeBar
-                                  ? composerFocusNode
-                                  : null,
-                              restoreComposerFocus: showsComposeBar
-                                  ? () => restoreComposerFocus.value?.call()
-                                  : null,
-                              quoteScope: showsComposeBar ? quoteScope : null,
-                            );
-                          },
-                        ),
-                      ),
-              ),
-              if (!resolvedChannel.isForum &&
-                  (!resolvedChannel.isMember ||
-                      resolvedChannel.isArchived)) ...[
-                AnimatedSize(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.bottomCenter,
-                  child: visibleTypingEntries.isEmpty
-                      ? const SizedBox.shrink()
-                      : ChannelTypingIndicator(
-                          channelId: resolvedChannel.id,
-                          entries: visibleTypingEntries,
-                        ),
+      body: _withTopInset(
+        context,
+        appBarBottomHeight,
+        showsAgentConversations
+            ? AgentConversationsList(
+                agentPubkey: dmAgentPubkey,
+                agentName: dmAgentName,
+                dmChannelId: channel.id,
+                topInset: frostedAppBarHeight(
+                  context,
+                  titleContentHeight: appBarTitleContentHeight,
+                  bottomHeight: appBarBottomHeight,
                 ),
-                if (resolvedChannel.canJoin)
-                  GroupJoinBar(channel: resolvedChannel)
-                else if (!resolvedChannel.isPersonChat)
-                  _ReadOnlyNotice(channel: resolvedChannel),
-              ],
-            ],
-          ),
-          if (showsComposer)
-            AndroidImeLift(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: ComposerDockSizeReporter(
-                  key: const ValueKey('channel-composer-dock'),
-                  onHeightChanged: (height) {
-                    if ((composerDockHeight.value - height).abs() < 0.5) return;
-                    composerDockHeight.value = height;
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  Column(
                     children: [
-                      AnimatedSize(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : const Duration(milliseconds: 180),
-                        curve: Curves.easeOutCubic,
-                        alignment: Alignment.bottomCenter,
-                        child: visibleTypingEntries.isEmpty
-                            ? const SizedBox.shrink()
-                            : ChannelTypingIndicator(
-                                channelId: resolvedChannel.id,
-                                entries: visibleTypingEntries,
+                      Expanded(
+                        child: resolvedChannel.isForum
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  ForumPostsView(
+                                    channel: resolvedChannel,
+                                    currentPubkey: currentPubkey,
+                                  ),
+                                  if (showConnectionSkeleton.value)
+                                    Positioned(
+                                      top:
+                                          frostedAppBarHeight(
+                                            context,
+                                            titleContentHeight:
+                                                appBarTitleContentHeight,
+                                          ) +
+                                          Grid.xs,
+                                      left: Grid.gutter,
+                                      right: Grid.gutter,
+                                      child: _ForumConnectionSkeleton(
+                                        status: sessionStatus,
+                                      ),
+                                    ),
+                                ],
+                              )
+                            : SkeletonReveal(
+                                loading:
+                                    showInitialConnectionSkeleton ||
+                                    showConnectionSkeleton.value ||
+                                    messagesState.isLoading ||
+                                    openPhase.value == _OpenPhase.opening ||
+                                    openPhase.value == _OpenPhase.positioning,
+                                shimmerEnabled:
+                                    sessionStatus != SessionStatus.disconnected,
+                                skeleton: _MessageTimelineSkeleton(
+                                  appBarTitleContentHeight:
+                                      appBarTitleContentHeight,
+                                  status: sessionStatus,
+                                ),
+                                content: messagesState.when(
+                                  loading: SizedBox.shrink,
+                                  error: (e, _) => Padding(
+                                    padding: EdgeInsets.only(
+                                      top: frostedAppBarHeight(
+                                        context,
+                                        titleContentHeight:
+                                            appBarTitleContentHeight,
+                                      ),
+                                    ),
+                                    child: LoadErrorView(
+                                      message:
+                                          context.l10n.channelLoadMessagesError,
+                                      onRetry: () => ref.invalidate(
+                                        channelMessagesProvider(channel.id),
+                                      ),
+                                    ),
+                                  ),
+                                  data: (events) {
+                                    if (openPhase.value == _OpenPhase.opening) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    final messages = formatTimeline(
+                                      events,
+                                      currentPubkey: currentPubkey,
+                                    );
+                                    final summaries = ref
+                                        .read(
+                                          channelMessagesProvider(
+                                            channel.id,
+                                          ).notifier,
+                                        )
+                                        .threadSummaries;
+                                    final entries = buildMainTimelineEntries(
+                                      messages,
+                                      relaySummaries: summaries,
+                                    );
+                                    return _MessageList(
+                                      entries: entries,
+                                      allMessages: messages,
+                                      initialMessageId: initialMessageId,
+                                      initialThreadRootId: initialThreadRootId,
+                                      initialThreadRouteBehavior:
+                                          initialThreadRouteBehavior,
+                                      highlightInitialMessage:
+                                          highlightInitialMessage,
+                                      initialOrdinaryUnreadMessageIds:
+                                          initialOrdinaryUnreadMessageIds,
+                                      initialOldestOrdinaryUnreadMessageId:
+                                          initialOldestOrdinaryUnreadMessageId,
+                                      initialForcedUnreadMessageIds:
+                                          initialForcedUnreadMessageIds,
+                                      openedAt: isOpenedAtMessage
+                                          ? openedAt.value
+                                          : null,
+                                      isPositioning:
+                                          openPhase.value ==
+                                          _OpenPhase.positioning,
+                                      onPositioned: () {
+                                        if (openPhase.value ==
+                                            _OpenPhase.positioning) {
+                                          openPhase.value = _OpenPhase.opened;
+                                        }
+                                      },
+                                      roomPositions: roomPositions,
+                                      hasInitialUnread:
+                                          !isOpenedAtMessage &&
+                                          readState.isReady &&
+                                          (readState.isForcedUnread(
+                                                channel.id,
+                                              ) ||
+                                              initialForcedUnreadMessageIds
+                                                  .isNotEmpty ||
+                                              initialOldestOrdinaryUnreadMessageId !=
+                                                  null),
+                                      channelId: channel.id,
+                                      currentPubkey: currentPubkey,
+                                      isMember: resolvedChannel.isMember,
+                                      isArchived: resolvedChannel.isArchived,
+                                      appBarTitleContentHeight:
+                                          appBarTitleContentHeight,
+                                      composerBottomInset: showsComposer
+                                          ? composerDockHeight.value
+                                          : 0,
+                                      composerFocusNode: showsComposeBar
+                                          ? composerFocusNode
+                                          : null,
+                                      restoreComposerFocus: showsComposeBar
+                                          ? () => restoreComposerFocus.value
+                                                ?.call()
+                                          : null,
+                                      quoteScope: showsComposeBar
+                                          ? quoteScope
+                                          : null,
+                                    );
+                                  },
+                                ),
                               ),
                       ),
-                      if (blockedCounterpart != null)
-                        BlockedDmBar(pubkey: blockedCounterpart)
-                      else ...[
-                        ComposerQuoteChip(scope: quoteScope),
-                        ComposeBar(
-                          channelId: channel.id,
-                          channelMainAgentAudience: !resolvedChannel.isDm,
-                          focusNode: composerFocusNode,
-                          onFocusRestorerChanged: (restoreFocus) =>
-                              restoreComposerFocus.value = restoreFocus,
-                          channelName: resolvedChannel.isPersonChat
-                              ? ''
-                              : resolvedChannel.name,
-                          onSend:
-                              (
-                                content,
-                                mentionPubkeys, {
-                                mediaTags = const <List<String>>[],
-                              }) async {
-                                // Sending returns the reader to the newest row.
-                                roomPositions?.clear(channel.id);
-                                // Main timeline: top-level message (no thread
-                                // tags) plus the optional quote reference.
-                                await sendMessage.call(
-                                  channelId: channel.id,
-                                  content: content,
-                                  mentionPubkeys: mentionPubkeys,
-                                  channel: resolvedChannel,
-                                  mediaTags: mediaTags,
-                                  quote: pendingQuote,
-                                  keepFailedMessage: true,
-                                );
-                                if (pendingQuote != null && context.mounted) {
-                                  ref
-                                      .read(
-                                        composerQuoteProvider(
-                                          quoteScope,
-                                        ).notifier,
-                                      )
-                                      .clearIf(pendingQuote);
-                                }
-                              },
+                      if (!resolvedChannel.isForum &&
+                          (!resolvedChannel.isMember ||
+                              resolvedChannel.isArchived)) ...[
+                        AnimatedSize(
+                          duration: MediaQuery.disableAnimationsOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.bottomCenter,
+                          child: visibleTypingEntries.isEmpty
+                              ? const SizedBox.shrink()
+                              : ChannelTypingIndicator(
+                                  channelId: resolvedChannel.id,
+                                  entries: visibleTypingEntries,
+                                ),
                         ),
+                        if (ownerView != null)
+                          OwnerViewBar(
+                            view: ownerView,
+                            channelId: resolvedChannel.id,
+                          )
+                        else if (resolvedChannel.canJoin)
+                          GroupJoinBar(channel: resolvedChannel)
+                        else if (!resolvedChannel.isPersonChat)
+                          _ReadOnlyNotice(channel: resolvedChannel),
                       ],
                     ],
                   ),
-                ),
+                  if (showsComposer)
+                    AndroidImeLift(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: ComposerDockSizeReporter(
+                          key: const ValueKey('channel-composer-dock'),
+                          onHeightChanged: (height) {
+                            if ((composerDockHeight.value - height).abs() <
+                                0.5) {
+                              return;
+                            }
+                            composerDockHeight.value = height;
+                          },
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSize(
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 180),
+                                curve: Curves.easeOutCubic,
+                                alignment: Alignment.bottomCenter,
+                                child: visibleTypingEntries.isEmpty
+                                    ? const SizedBox.shrink()
+                                    : ChannelTypingIndicator(
+                                        channelId: resolvedChannel.id,
+                                        entries: visibleTypingEntries,
+                                      ),
+                              ),
+                              if (blockedCounterpart != null)
+                                BlockedDmBar(pubkey: blockedCounterpart)
+                              else ...[
+                                ComposerQuoteChip(scope: quoteScope),
+                                ComposeBar(
+                                  channelId: channel.id,
+                                  channelMainAgentAudience:
+                                      !resolvedChannel.isDm,
+                                  focusNode: composerFocusNode,
+                                  onFocusRestorerChanged: (restoreFocus) =>
+                                      restoreComposerFocus.value = restoreFocus,
+                                  channelName: resolvedChannel.isPersonChat
+                                      ? ''
+                                      : resolvedChannel.name,
+                                  onSend:
+                                      (
+                                        content,
+                                        mentionPubkeys, {
+                                        mediaTags = const <List<String>>[],
+                                      }) async {
+                                        // Sending returns the reader to the newest row.
+                                        roomPositions?.clear(channel.id);
+                                        // Main timeline: top-level message (no thread
+                                        // tags) plus the optional quote reference.
+                                        await sendMessage.call(
+                                          channelId: channel.id,
+                                          content: content,
+                                          mentionPubkeys: mentionPubkeys,
+                                          channel: resolvedChannel,
+                                          mediaTags: mediaTags,
+                                          quote: pendingQuote,
+                                          keepFailedMessage: true,
+                                        );
+                                        if (pendingQuote != null &&
+                                            context.mounted) {
+                                          ref
+                                              .read(
+                                                composerQuoteProvider(
+                                                  quoteScope,
+                                                ).notifier,
+                                              )
+                                              .clearIf(pendingQuote);
+                                        }
+                                      },
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
-        ],
       ),
     );
+    return ownerView == null
+        ? scaffold
+        : OwnerViewScope(view: ownerView, child: scaffold);
   }
+}
+
+const _agentTabsHeight = 36.0;
+
+/// [child] laid out as if the header were [extra] taller: the timeline's
+/// spacing under the header follows the safe area's top.
+Widget _withTopInset(BuildContext context, double extra, Widget child) {
+  if (extra == 0) return child;
+  final media = MediaQuery.of(context);
+  return MediaQuery(
+    data: media.copyWith(
+      padding: media.padding.copyWith(top: media.padding.top + extra),
+    ),
+    child: child,
+  );
 }

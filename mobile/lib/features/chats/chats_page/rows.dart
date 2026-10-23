@@ -29,6 +29,9 @@ class _ChatRow extends HookConsumerWidget {
     this.working,
     required this.onTap,
     this.onLongPress,
+    this.compact = false,
+    this.tag,
+    this.background,
   });
 
   final ChatListRow row;
@@ -54,6 +57,15 @@ class _ChatRow extends HookConsumerWidget {
   /// A thread row's menu (pin, read, unfollow, close).
   final VoidCallback? onLongPress;
 
+  /// Tighter rows (an agent's conversations list).
+  final bool compact;
+
+  /// A small label after the title (`Agent`, `Person`, `3 people`).
+  final String? tag;
+
+  /// The list's colour behind the row, when not the Chats list's.
+  final Color? background;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rowUnread = watchChatRowUnread(ref, row);
@@ -71,7 +83,7 @@ class _ChatRow extends HookConsumerWidget {
     final latest = row.latest;
     final preview = latest == null ? '' : _watchPreview(ref, latest);
     final mutedColor = context.colors.onSurfaceVariant;
-    final background = conversationListBackground(context);
+    final background = this.background ?? conversationListBackground(context);
     final hasUnread = unread.isUnread;
     // Desktop: a room dims when muted with nothing unread; a thread when
     // closed, or muted without a mention for me.
@@ -164,13 +176,17 @@ class _ChatRow extends HookConsumerWidget {
     final content = ConversationRowLayout(
       startInset: indent ? _threadIndent : 0,
       // Telegram/KakaoTalk density: one preview line, tight rows.
-      verticalPadding: Grid.xxs,
+      verticalPadding: compact ? Grid.half : Grid.xxs,
       avatar: avatar,
       title: SizedBox(
         height: titleLineHeight,
         child: Row(
           children: [
             Flexible(child: title),
+            if (tag case final tag?) ...[
+              const SizedBox(width: Grid.half),
+              _RowTag(key: ValueKey('chat-row-tag-${row.key}'), label: tag),
+            ],
             if (row.isThread && row.closed) ...[
               const SizedBox(width: Grid.quarter),
               Icon(
@@ -501,6 +517,29 @@ class _WorkingBadge extends HookWidget {
       ),
     );
   }
+}
+
+/// A muted label after a row's title.
+class _RowTag extends StatelessWidget {
+  const _RowTag({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+    decoration: BoxDecoration(
+      color: context.colors.onSurface.withValues(alpha: 0.07),
+      borderRadius: BorderRadius.circular(Radii.full),
+    ),
+    child: Text(
+      label,
+      maxLines: 1,
+      style: context.textTheme.labelSmall?.copyWith(
+        color: context.colors.onSurfaceVariant,
+      ),
+    ),
+  );
 }
 
 class _Pill extends StatelessWidget {

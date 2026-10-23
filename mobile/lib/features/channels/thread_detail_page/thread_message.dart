@@ -52,10 +52,17 @@ class _ThreadMessage extends HookConsumerWidget {
     // Only the signed-in account's own messages sit on the right; agents the
     // user owns stay on the left with everyone else.
     final isOwnMessage = currentPubkey?.toLowerCase() == pk;
+    // The owner view draws the agent's messages as its own, and nothing
+    // there can be managed.
+    final ownerView = OwnerViewScope.maybeOf(context);
+    final isOwnSide = ownerView == null
+        ? isOwnMessage
+        : ownerView.agentPubkey == pk;
     final canManageMessage =
-        currentPubkey?.toLowerCase() == pk ||
-        (profile?.ownerPubkey != null &&
-            profile?.ownerPubkey == currentPubkey?.toLowerCase());
+        ownerView == null &&
+        (currentPubkey?.toLowerCase() == pk ||
+            (profile?.ownerPubkey != null &&
+                profile?.ownerPubkey == currentPubkey?.toLowerCase()));
     // An own send the relay doesn't have yet has no real event to act on:
     // no thread, reactions or menu; a failed one offers retry or delete.
     final sendStatus = watchLocalSendStatus(ref, channelId, message.id);
@@ -193,7 +200,7 @@ class _ThreadMessage extends HookConsumerWidget {
                     messageId: message.id,
                     content: message.content,
                     builder: (context, readAloud) => ChatBubbleRow(
-                      isOwn: isOwnMessage,
+                      isOwn: isOwnSide,
                       showTime: showTime,
                       createdAt: message.createdAt,
                       edited: message.edited,
@@ -301,6 +308,9 @@ class _ThreadMessage extends HookConsumerWidget {
                                       Navigator.of(context).push(
                                         MaterialPageRoute<void>(
                                           builder: (_) => ThreadDetailPage(
+                                            ownerView: OwnerViewScope.maybeOf(
+                                              context,
+                                            ),
                                             threadHead: message,
                                             allMessages: allMessages!,
                                             channelId: channelId,
@@ -349,12 +359,12 @@ class _ThreadMessage extends HookConsumerWidget {
                 if (isThreadHead || message.reactions.isNotEmpty)
                   Padding(
                     padding: EdgeInsetsDirectional.only(
-                      start: isOwnMessage
+                      start: isOwnSide
                           ? 0
                           : messageAvatarSize + messageAvatarContentGap,
                     ),
                     child: Align(
-                      alignment: isOwnMessage
+                      alignment: isOwnSide
                           ? AlignmentDirectional.centerEnd
                           : AlignmentDirectional.centerStart,
                       child: ReactionRow(

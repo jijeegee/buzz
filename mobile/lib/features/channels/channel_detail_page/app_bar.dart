@@ -38,10 +38,17 @@ double _twoLineAppBarTitleContentHeight(
 }
 
 class _ChannelAppBarTitle extends ConsumerWidget {
-  const _ChannelAppBarTitle({required this.channel, required this.onTap});
+  const _ChannelAppBarTitle({
+    required this.channel,
+    required this.onTap,
+    this.ownerViewSubtitle,
+  });
 
   final Channel channel;
   final VoidCallback onTap;
+
+  /// Owner view: shown instead of the member count; the title opens nothing.
+  final String? ownerViewSubtitle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -78,7 +85,11 @@ class _ChannelAppBarTitle extends ConsumerWidget {
         child: InkWell(
           key: const ValueKey('channel-header-settings-trigger'),
           borderRadius: BorderRadius.circular(Radii.md),
-          onTap: isChat ? openChatInfo : onTap,
+          onTap: ownerViewSubtitle != null
+              ? null
+              : isChat
+              ? openChatInfo
+              : onTap,
           child: Row(
             children: [
               Container(
@@ -141,7 +152,7 @@ class _ChannelAppBarTitle extends ConsumerWidget {
                         ],
                       ),
                       Text(
-                        memberLabel,
+                        ownerViewSubtitle ?? memberLabel,
                         key: const ValueKey('channel-header-member-count'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -252,7 +263,14 @@ class _DmAppBarTitle extends ConsumerWidget {
   final Channel channel;
   final String? currentPubkey;
 
-  const _DmAppBarTitle({required this.channel, required this.currentPubkey});
+  /// Owner view: shown instead of the presence.
+  final String? ownerViewSubtitle;
+
+  const _DmAppBarTitle({
+    required this.channel,
+    required this.currentPubkey,
+    this.ownerViewSubtitle,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -385,7 +403,7 @@ class _DmAppBarTitle extends ConsumerWidget {
                 ],
               ),
               Text(
-                presenceLabel,
+                ownerViewSubtitle ?? presenceLabel,
                 key: const ValueKey('dm-header-presence'),
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
