@@ -11822,6 +11822,47 @@ function disconnectMockSocket(id: number) {
   sendWsClose(socket.handler);
 }
 
+/** Chat-state seed a spec may set before the bridge loads. */
+type E2eChatStateSeed = {
+  /** `chat_list` rows (one page, no cursor). */
+  rows?: unknown[];
+  /** Rows `thread_search` matches against by `thread_name`. */
+  threads?: Array<{ thread_name?: string | null }>;
+};
+
+function handleMockChatStateCommand(command: string, rawPayload: unknown) {
+  const payload = rawPayload as Record<string, unknown> | null | undefined;
+  const seed = (window as { __KUZZ_E2E_CHAT_STATE__?: E2eChatStateSeed })
+    .__KUZZ_E2E_CHAT_STATE__;
+  if (!seed) throw new Error("chat_state_unavailable");
+  switch (command) {
+    case "get_chat_list":
+      return { chat_list: 1, rows: seed.rows ?? [], next: null };
+    case "chat_mark_read":
+      return { mark_read: 1, items: [] };
+    case "chat_thread_follow":
+      return {
+        thread_follow: 1,
+        root: payload?.root,
+        channel_id: "",
+        state: payload?.followState,
+      };
+    case "chat_import":
+      return { chat_import: 1, reads: [], follows: [] };
+    default: {
+      const query = String(payload?.query ?? "")
+        .trim()
+        .toLowerCase();
+      return {
+        thread_search: 1,
+        rows: (seed.threads ?? []).filter((row) =>
+          (row.thread_name ?? "").toLowerCase().includes(query),
+        ),
+      };
+    }
+  }
+}
+
 export function maybeInstallE2eTauriMocks() {
   if (installed) {
     return;
@@ -15835,12 +15876,14 @@ export function maybeInstallE2eTauriMocks() {
         return null;
       }
       // Chats server state: the mock relay keeps none, so the app keeps
-      // today's device-local Chats list (`chat_state_unavailable`).
+      // today's device-local Chats list (`chat_state_unavailable`), unless
+      // a spec seeds `window.__KUZZ_E2E_CHAT_STATE__` before the bridge.
       case "get_chat_list":
       case "chat_mark_read":
       case "chat_thread_follow":
       case "chat_import":
-        throw new Error("chat_state_unavailable");
+      case "search_thread_names":
+        return handleMockChatStateCommand(command, payload);
       default: {
         const goals = handleGoalsMockCommand(command, payload);
         if (goals) return goals.value;

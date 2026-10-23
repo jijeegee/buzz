@@ -16015,6 +16015,10 @@
   "@search.result.threadSeparator": {
     "description": "Search dialog, screen-reader word between a group name and a thread name in a result row (shown as ›). Lowercase. Short."
   },
+  "search.result.threadDone": "Done",
+  "@search.result.threadDone": {
+    "description": "Search dialog, small grey tag after a thread name in a result row, shown when the thread is completed (closed). Short."
+  },
   "search.result.group": "Group",
   "@search.result.group": {
     "description": "Search result card, small grey label saying the result is a group. Short."

@@ -67,7 +67,7 @@ pub use store::{
     deletion, dm, event, feed, git_repo, groups, identity, inbox_summary, media_access, moderation,
     operator_listener, partition, people, product_feedback, push, reaction, read_state,
     relay_admin_actions, relay_invite, relay_members, relay_operators, reminder, replaceable,
-    storage_accounting, thread, thread_window, usage, user, workflow,
+    storage_accounting, thread, thread_search, thread_window, usage, user, workflow,
 };
 
 pub use allowlist::AllowlistEntry;

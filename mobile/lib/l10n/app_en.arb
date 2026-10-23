@@ -4802,6 +4802,10 @@
       }
     }
   },
+  "searchThreadDone": "Done",
+  "@searchThreadDone": {
+    "description": "Search results, small grey tag on a thread row when the thread is completed (closed). Short."
+  },
   "searchDirectMessage": "Direct message",
   "@searchDirectMessage": {
     "description": "Search results, stands in for the place of a direct message. Short."

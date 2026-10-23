@@ -223,6 +223,51 @@ void main() {
     );
   });
 
+  testWidgets('a completed thread found by the relay shows Done', (
+    tester,
+  ) async {
+    const closed = ChatListRow(
+      isThread: true,
+      key: 'closed-root',
+      at: 150,
+      atUs: 150000000,
+      channelId: 'general',
+      channelType: 'stream',
+      channelName: 'general',
+      rootId: 'closed-root',
+      threadName: '검색 개선 완료',
+      closed: true,
+    );
+    // The relay also returns the live thread the Chats list already has.
+    final live = ChatListRow.fromJson({
+      ..._threadRow.toJson(),
+      'closed': true,
+    })!;
+    await _pump(
+      tester,
+      const SearchState(query: '검색').copyWith(threadResults: [live, closed]),
+    );
+
+    expect(
+      find.byKey(const ValueKey('search-thread-row-closed-root')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('search-thread-done-closed-root')),
+      findsOneWidget,
+    );
+    expect(find.text('Done'), findsOneWidget);
+    // Listed once, as its Chats row (not closed there).
+    expect(
+      find.byKey(const ValueKey('search-thread-row-$_threadRoot')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('search-thread-done-$_threadRoot')),
+      findsNothing,
+    );
+  });
+
   /// Taps [rowKey] and returns the page it opens, without building it.
   Future<ChannelDetailPage> tapAndCapture(
     WidgetTester tester,

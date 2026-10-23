@@ -391,6 +391,7 @@ export function AppSidebar({
             scopeSearchFocusRequest={searchFocusRequests[1]}
             suggestionChannels={channels}
             threadRows={serverChats?.rows}
+            threadSearchBinding={serverChats?.threadSearchBinding}
           />
           {serverChats ? (
             <ChatsViewToggle onChange={setChatsView} value={chatsView} />

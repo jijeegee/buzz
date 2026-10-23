@@ -7,6 +7,8 @@ import '../../shared/relay/relay.dart';
 import '../channels/channel.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
+import '../chats/chat_list.dart';
+import 'thread_name_search.dart';
 
 @immutable
 class SearchHit {
@@ -54,6 +56,10 @@ class SearchState {
   final String query;
   final List<SearchHit> messageResults;
   final List<DirectoryUser> userResults;
+
+  /// Threads the relay found by name for [query], closed and quiet ones
+  /// included (the Chats list leaves those out).
+  final List<ChatListRow> threadResults;
   final bool isLoading;
   final String? error;
 
@@ -61,6 +67,7 @@ class SearchState {
     this.query = '',
     this.messageResults = const [],
     this.userResults = const [],
+    this.threadResults = const [],
     this.isLoading = false,
     this.error,
   });
@@ -69,6 +76,7 @@ class SearchState {
     : query = '',
       messageResults = const [],
       userResults = const [],
+      threadResults = const [],
       isLoading = false,
       error = null;
 
@@ -76,12 +84,14 @@ class SearchState {
     String? query,
     List<SearchHit>? messageResults,
     List<DirectoryUser>? userResults,
+    List<ChatListRow>? threadResults,
     bool? isLoading,
     String? error,
   }) => SearchState(
     query: query ?? this.query,
     messageResults: messageResults ?? this.messageResults,
     userResults: userResults ?? this.userResults,
+    threadResults: threadResults ?? this.threadResults,
     isLoading: isLoading ?? this.isLoading,
     error: error ?? this.error,
   );
@@ -120,9 +130,30 @@ class SearchNotifier extends Notifier<SearchState> {
     // If the query changed while debouncing, bail out.
     if (state.query != query) return;
 
-    // Chats by name come from searchChatResultsProvider, on this device.
+    // Chats by name come from searchChatResultsProvider: this device's
+    // Chats rows plus the relay's thread-name search.
     _searchMessages(query);
     _searchUsers(query);
+    _searchThreadNames(query);
+  }
+
+  Future<void> _searchThreadNames(String query) async {
+    final filter = buildThreadSearchFilter(query);
+    if (filter == null) return;
+    try {
+      final response = await ref
+          .read(relaySessionProvider.notifier)
+          .queryRelayJson([filter]);
+      final rows = parseThreadSearchResponse(response);
+      if (state.query != query) return;
+      state = state.copyWith(threadResults: rows);
+    } catch (error) {
+      // A relay without chat state has no name search; the Chats rows on
+      // this device still match. Other failures keep the earlier results.
+      if (!isChatStateDisabledError(error)) {
+        debugPrint('[Search] thread name search failed: $error');
+      }
+    }
   }
 
   Future<void> _searchMessages(String query) async {

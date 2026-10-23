@@ -2,6 +2,7 @@ import { invokeTauri } from "@/shared/api/tauri";
 import type {
   ChatListCursor,
   ChatListPage,
+  ChatListRow,
 } from "@/features/chats/chatListState";
 
 /** Error text the Tauri commands use when the relay keeps no chat state. */
@@ -98,6 +99,47 @@ export function getChatListPage(
     limit,
     pinnedThreads,
   });
+}
+
+/** Most threads one name search returns. */
+export const THREAD_NAME_SEARCH_LIMIT = 20;
+
+/**
+ * A `thread_search` row: the `chat_list` thread row fields without counts
+ * or events, plus how well the name matched (0 exact .. 3 middle).
+ */
+export type ThreadNameSearchRow = Pick<
+  ChatListRow,
+  | "type"
+  | "key"
+  | "at"
+  | "at_us"
+  | "channel_id"
+  | "channel_type"
+  | "channel_name"
+  | "archived"
+  | "dm_members"
+  | "group_chat"
+  | "member_count"
+  | "root_id"
+  | "thread_name"
+  | "closed"
+> & { match: number };
+
+/**
+ * Threads in the user's rooms whose name contains `query`, closed and quiet
+ * ones included (the Chats list leaves those out). Best match first.
+ */
+export async function searchThreadNames(
+  binding: ChatStateBinding,
+  query: string,
+  limit = THREAD_NAME_SEARCH_LIMIT,
+): Promise<ThreadNameSearchRow[]> {
+  const response = await invokeTauri<{ rows: ThreadNameSearchRow[] }>(
+    "search_thread_names",
+    { binding, limit, query },
+  );
+  return response.rows;
 }
 
 /**

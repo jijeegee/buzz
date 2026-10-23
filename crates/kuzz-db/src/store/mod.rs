@@ -77,6 +77,8 @@ pub mod replaceable;
 pub mod storage_accounting;
 /// Thread metadata persistence.
 pub mod thread;
+/// Thread search by name over the reader's rooms (closed and quiet included).
+pub mod thread_search;
 /// Strict newest-first thread windows and auxiliary scans.
 pub mod thread_window;
 /// Per-community usage rollup queries for Prometheus gauges.
@@ -111,6 +113,9 @@ mod chat_import_postgres_tests;
 
 #[cfg(test)]
 mod chat_list_postgres_tests;
+
+#[cfg(test)]
+mod thread_search_postgres_tests;
 
 #[cfg(test)]
 mod chat_state_postgres_tests;
