@@ -67,6 +67,10 @@ import {
 } from "@/shared/api/relayClientTimings";
 import { closeWebSocket } from "@/shared/api/relayWebSocketClose";
 import {
+  checkRemoteSignOut,
+  isSignedOutRefusal,
+} from "@/shared/api/remoteSignOut";
+import {
   armRelayAuthentication,
   AuthOkTracker,
   type RelayAuthRequest,
@@ -950,6 +954,7 @@ export class RelayClient {
     if (type === "NOTICE" && typeof rest[0] === "string") {
       // Connection-scoped back-pressure — arm the gate until it expires.
       activateRateLimitIfSignalled(rest[0]);
+      if (isSignedOutRefusal(rest[0])) checkRemoteSignOut();
     }
   }
 
@@ -1017,6 +1022,8 @@ export class RelayClient {
       const authRequest = this.authRequest;
       this.authRequest = null;
 
+      // Signed out from another device: the app confirms with the server.
+      if (!success && isSignedOutRefusal(message)) checkRemoteSignOut();
       // Decision table lives in relayAuthPolicy.ts.
       const decision = this.authOkTracker.record(success, message);
       if (decision === "authenticated") {

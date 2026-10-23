@@ -326,10 +326,10 @@ pub(crate) fn sign_blossom_get_auth_header(
             .map_err(|e| e.to_string())?,
         Tag::parse(vec!["server".to_string(), server]).map_err(|e| e.to_string())?,
     ];
-    let event = EventBuilder::new(Kind::from(24242), "Get kuzz-media")
-        .tags(tags)
-        .sign_with_keys(keys)
-        .map_err(|e| e.to_string())?;
+    let event = crate::device_key::sign_auth_event(
+        EventBuilder::new(Kind::from(24242), "Get kuzz-media").tags(tags),
+        keys,
+    )?;
     Ok(format!(
         "Nostr {}",
         URL_SAFE_NO_PAD.encode(event.as_json().as_bytes())
@@ -417,10 +417,10 @@ pub(crate) fn sign_blossom_upload_auth(
             .map_err(|e| e.to_string())?,
         Tag::parse(vec!["server".to_string(), server]).map_err(|e| e.to_string())?,
     ];
-    EventBuilder::new(Kind::from(24242), "Upload kuzz-media")
-        .tags(tags)
-        .sign_with_keys(keys)
-        .map_err(|e| e.to_string())
+    crate::device_key::sign_auth_event(
+        EventBuilder::new(Kind::from(24242), "Upload kuzz-media").tags(tags),
+        keys,
+    )
 }
 
 /// Execute the upload HTTP request. Shared by all upload entry points.

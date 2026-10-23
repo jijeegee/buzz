@@ -21,6 +21,7 @@
 
 pub(crate) mod account_profiles;
 pub(crate) mod accounts;
+pub(crate) mod agent_hosting;
 pub(crate) mod api;
 pub(crate) mod bots;
 pub(crate) mod commands;

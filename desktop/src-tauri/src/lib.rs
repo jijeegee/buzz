@@ -8,6 +8,7 @@ mod builderlab;
 mod channel_head_cache;
 mod commands;
 mod deep_link;
+mod device_key;
 mod device_robot;
 mod egress_guard;
 mod event_sync;
@@ -295,6 +296,8 @@ pub fn run() {
             // that will be lost on restart, as that silently breaks channel
             // memberships, DMs, and relay identity.
             let state = app_handle.state::<AppState>();
+            // This install's device key, opened (or made) in the background.
+            crate::device_key::init(app_handle.path().app_data_dir().ok());
             // Accounts on this computer: rebuild or migrate the list and refill
             // the active-account copy before the identity is read from it.
             if let Ok(data_dir) = app_handle.path().app_data_dir() {
@@ -679,6 +682,7 @@ pub fn run() {
             auth::accounts::nip44_decrypt_as,
             auth::commands::cancel_google_login,
             auth::commands::logout,
+            auth::commands::check_remote_sign_out,
             auth::commands::logout_on_this_device,
             auth::commands::get_ws_auth_frame,
             auth::commands::list_devices,

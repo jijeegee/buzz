@@ -145,10 +145,10 @@ pub fn build_nip98_auth_header_for_keys(
             .map_err(|error| format!("nonce tag failed: {error}"))?,
     ];
 
-    let event = EventBuilder::new(Kind::HttpAuth, "")
-        .tags(tags)
-        .sign_with_keys(keys)
-        .map_err(|error| format!("sign failed: {error}"))?;
+    // With this device's `device` tag when it has a device key.
+    let event =
+        crate::device_key::sign_auth_event(EventBuilder::new(Kind::HttpAuth, "").tags(tags), keys)
+            .map_err(|error| format!("sign failed: {error}"))?;
 
     Ok(format!(
         "Nostr {}",

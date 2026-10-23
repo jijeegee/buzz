@@ -254,11 +254,13 @@ pub async fn confirm_signup(app: AppHandle) -> Result<TokenAuthStatus, String> {
         .token_auth
         .login
         .begin(uuid::Uuid::new_v4().to_string())?;
+    let device = crate::device_key::ensure_async().await;
     let tokens = api::signup(
         &state.http_client,
         &origin,
         &pending.ticket,
         &pending.verifier,
+        device.as_ref(),
     )
     .await
     .map_err(|e| format!("your account could not be created: {e}"))?;
@@ -296,79 +298,104 @@ async fn login_inner(
 ) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let (providers, pkce, backup, code) = attempt
-        .wait(async {
-            let providers = support_for(&state, &origin)
-                .await
-                .ok_or("this community does not offer Google sign-in")?;
-            if !providers.iter().any(|p| p == "google") {
-                return Err("this community does not offer Google sign-in".into());
-            }
-            let pkce = super::pkce::pkce_pair()?;
-            let oauth_state = super::pkce::new_state()?;
-            let listener = LoopbackListener::bind().await.map_err(|e| e.to_string())?;
-            let mut url = api::start_url(
-                &origin,
-                "google",
-                &oauth_state,
-                &pkce.challenge,
-                &listener.redirect_uri(),
-                &device_name(),
-                super::install_id::load_or_create(&app).as_deref(),
-            );
-            let backup = requested_login_mode(
-                &state.token_auth,
-                &origin,
-                &KeyringRefreshStore,
-                existing_token_account,
-            )?;
-            if existing_token_account {
-                let _guard = state
-                    .managed_agents_store_lock
-                    .lock()
-                    .map_err(|_| "agent storage is busy")?;
-                ensure_existing_token_agents(
-                    &origin,
-                    &crate::managed_agents::load_managed_agents(app)?,
-                )?;
-            }
-            if backup {
-                url.push_str("&identity_mode=key_backup");
-                // Ask before an unknown Google account becomes an account.
-                // Connecting a key-only account is that account: no prompt.
-                if !connect {
-                    url.push_str("&signup=confirm");
+    // The device key named at start and bound at completion; none: as before.
+    let device = crate::device_key::ensure_async().await;
+    let mut restarted = false;
+    let (providers, pkce, backup, completed) = loop {
+        let (providers, pkce, backup, code) = attempt
+            .wait(async {
+                let providers = support_for(&state, &origin)
+                    .await
+                    .ok_or("this community does not offer Google sign-in")?;
+                if !providers.iter().any(|p| p == "google") {
+                    return Err("this community does not offer Google sign-in".into());
                 }
-            } else {
-                url.push_str("&identity_mode=token");
+                let pkce = super::pkce::pkce_pair()?;
+                let oauth_state = super::pkce::new_state()?;
+                let listener = LoopbackListener::bind().await.map_err(|e| e.to_string())?;
+                let mut url = api::start_url(
+                    &origin,
+                    "google",
+                    &oauth_state,
+                    &pkce.challenge,
+                    &listener.redirect_uri(),
+                    &device_name(),
+                    super::install_id::load_or_create(&app).as_deref(),
+                    device.as_ref(),
+                );
+                let backup = requested_login_mode(
+                    &state.token_auth,
+                    &origin,
+                    &KeyringRefreshStore,
+                    existing_token_account,
+                )?;
+                if existing_token_account {
+                    let _guard = state
+                        .managed_agents_store_lock
+                        .lock()
+                        .map_err(|_| "agent storage is busy")?;
+                    ensure_existing_token_agents(
+                        &origin,
+                        &crate::managed_agents::load_managed_agents(app)?,
+                    )?;
+                }
+                if backup {
+                    url.push_str("&identity_mode=key_backup");
+                    // Ask before an unknown Google account becomes an account.
+                    // Connecting a key-only account is that account: no prompt.
+                    if !connect {
+                        url.push_str("&signup=confirm");
+                    }
+                } else {
+                    url.push_str("&identity_mode=token");
+                }
+                app.opener()
+                    .open_url(url.as_str(), None::<&str>)
+                    .map_err(|e| format!("could not open the browser: {e}"))?;
+                let code = listener
+                    .wait_for_code(&oauth_state, LOGIN_TIMEOUT)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok((providers, pkce, backup, code))
+            })
+            .await?;
+        let _ = app.emit(
+            "google-login-progress",
+            serde_json::json!({"attemptId": attempt_id, "phase": "completing"}),
+        );
+        if let Some(window) = app.get_webview_window("main") {
+            if let Err(error) = window
+                .unminimize()
+                .and_then(|_| window.show())
+                .and_then(|_| window.set_focus())
+            {
+                eprintln!("kuzz-desktop: could not activate sign-in window: {error}");
             }
-            app.opener()
-                .open_url(url.as_str(), None::<&str>)
-                .map_err(|e| format!("could not open the browser: {e}"))?;
-            let code = listener
-                .wait_for_code(&oauth_state, LOGIN_TIMEOUT)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok((providers, pkce, backup, code))
-        })
-        .await?;
-    let _ = app.emit(
-        "google-login-progress",
-        serde_json::json!({"attemptId": attempt_id, "phase": "completing"}),
-    );
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(error) = window
-            .unminimize()
-            .and_then(|_| window.show())
-            .and_then(|_| window.set_focus())
-        {
-            eprintln!("kuzz-desktop: could not activate sign-in window: {error}");
         }
-    }
-    let tokens = match api::complete_login(&state.http_client, &origin, &code, &pkce.verifier)
-        .await
-        .map_err(|e| format!("sign-in could not be completed: {e}"))?
-    {
+        let completed = api::complete_login(
+            &state.http_client,
+            &origin,
+            &code,
+            &pkce.verifier,
+            device.as_ref(),
+        )
+        .await;
+        // The relay refused the device proof's time (the login code is spent):
+        // its clock is now known, so sign in once more from the start.
+        if let Err(error) = &completed {
+            if !restarted && error.code.as_deref() == Some("device_proof_stale") && attempt.reopen()
+            {
+                restarted = true;
+                let _ = app.emit(
+                    "google-login-progress",
+                    serde_json::json!({"attemptId": attempt_id, "phase": "waiting"}),
+                );
+                continue;
+            }
+        }
+        break (providers, pkce, backup, completed);
+    };
+    let tokens = match completed.map_err(|e| format!("sign-in could not be completed: {e}"))? {
         api::CompleteResponse::Tokens(tokens) => tokens,
         api::CompleteResponse::NeedsSignup(signup) => {
             if !backup || connect {
@@ -510,6 +537,11 @@ async fn finish_sign_in(
         remember_signed_in_profile(app, &origin, account, &tokens);
     }
     emit_changed(app, &origin);
+    // This device's agent keys that left at the last sign-out come back
+    // first (the sign-in is fresh, as the relay requires).
+    if backup {
+        super::agent_hosting::restore_keys(app, &origin, &tokens.access).await;
+    }
     // Signed in here again: like an app launch for this account, its agents
     // start (outside every sign-in lock; each start takes its own).
     start_owner_agents(app, owner, resume);
@@ -794,8 +826,9 @@ fn api_error(error: ApiError) -> String {
 }
 
 /// Sign `account` (default: the active account) out of the current community
-/// on this computer: revoke its session server-side, durably mark it signed
-/// out, stop its agents, and when it was the active account switch to another
+/// on this computer: stop its agents, revoke its session server-side, durably
+/// mark it signed out, remove the agent keys the relay holds a copy of for
+/// this device, and when it was the active account switch to another
 /// account still signed in here (`switchedTo`), else the signed-out screen.
 /// The account's key leaves this computer (the server backup restores it on
 /// the next sign-in); communities and history stay. A network failure keeps
@@ -814,6 +847,102 @@ pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuth
     status.switched_to = signed_out.switched_to.map(|key| key.to_hex());
     status.agents_not_stopped = signed_out.agents_not_stopped;
     Ok(status)
+}
+
+/// Accounts with a remote sign-out check in flight (origin, account).
+static REMOTE_SIGN_OUT_CHECKS: std::sync::Mutex<Vec<(String, PublicKey)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// The relay refused `account`'s socket as signed out (`restricted:
+/// signed_out`, e.g. this device was signed out from another one). Ask
+/// `/auth/me` with the account's session: only a 401 saying the session
+/// ended (`token_revoked`, `principal_disabled`, `invalid_token`) signs that
+/// one account out here; other accounts stay signed in. Returns whether it
+/// signed out. `account` defaults to the active account, `relay_url` to the
+/// current community.
+#[tauri::command]
+pub async fn check_remote_sign_out(
+    app: AppHandle,
+    account: Option<String>,
+    relay_url: Option<String>,
+) -> Result<bool, String> {
+    let state = app.state::<AppState>();
+    let origin = match relay_url {
+        Some(relay_url) => super::origin_for(&relay_url),
+        None => state.current_auth_origin(),
+    };
+    let account = match account {
+        Some(hex) => PublicKey::from_hex(&hex).map_err(|_| "invalid account".to_string())?,
+        None => match state.token_auth.signing_pubkey(&origin) {
+            Some(account) => account,
+            None => return Ok(false),
+        },
+    };
+    let slot = (origin.clone(), account);
+    {
+        let mut checks = REMOTE_SIGN_OUT_CHECKS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if checks.contains(&slot) {
+            return Ok(false);
+        }
+        checks.push(slot.clone());
+    }
+    let result = remote_sign_out(&app, &origin, account).await;
+    REMOTE_SIGN_OUT_CHECKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .retain(|check| *check != slot);
+    result
+}
+
+async fn remote_sign_out(
+    app: &AppHandle,
+    origin: &str,
+    account: PublicKey,
+) -> Result<bool, String> {
+    let state = app.state::<AppState>();
+    let session = if state.token_auth.signing_pubkey(origin) == Some(account) {
+        match state.token_auth.get(origin) {
+            Some((_, OriginAuth::Active(session))) => Some(session),
+            _ => None,
+        }
+    } else {
+        state
+            .token_auth
+            .inactive
+            .on_origin(origin)
+            .into_iter()
+            .find(|(key, _)| *key == account)
+            .and_then(|(_, auth)| match auth.get(origin) {
+                Some((_, OriginAuth::Active(session))) => Some(session),
+                _ => None,
+            })
+    };
+    // No session here (a key-only account): nothing the relay could confirm.
+    let Some(session) = session else {
+        return Ok(false);
+    };
+    match api::me(&state.http_client, origin, &session.access).await {
+        Err(error) if session_ended_remotely(&error) => {
+            eprintln!(
+                "kuzz-desktop: auth: signed out from another device ({})",
+                error.code.as_deref().unwrap_or_default()
+            );
+            sign_out_account(app, origin, Some(account), false).await?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// Whether `/auth/me` says the session ended for good (mobile PR #198). Pure.
+fn session_ended_remotely(error: &api::ApiError) -> bool {
+    error.status == Some(401)
+        && matches!(
+            error.code.as_deref(),
+            Some("token_revoked" | "principal_disabled" | "invalid_token")
+        )
 }
 
 /// Sign the active account out on this computer only, for the startup error
@@ -945,25 +1074,54 @@ async fn sign_out_account_now(
     let mut pairs = Vec::new();
     running(&mut pairs);
     let stopping: Vec<String> = pairs.iter().map(|key| key.pubkey.clone()).collect();
+    // A user sign-out stops the agents (and their relay sockets) before the
+    // relay ends the session; a logout that fails starts them again.
+    let stopped_first = revoke && !pairs.is_empty();
+    if stopped_first {
+        let first = std::mem::take(&mut pairs);
+        let attempted = first.len();
+        let stop_app = app.clone();
+        let stopping = tauri::async_runtime::spawn_blocking(move || {
+            crate::managed_agents::stop_pairs(&stop_app, first)
+        });
+        await_agent_stops(
+            async { stopping.await.map_err(|error| error.to_string()) },
+            attempted,
+            SIGN_OUT_STOP_LIMIT,
+        )
+        .await;
+    }
+    let restart_stopped = || {
+        if stopped_first {
+            for owner in &owners {
+                start_owner_agents(app, *owner, stopping.clone());
+            }
+        }
+    };
     if is_active {
         // Let an in-flight restore or refresh settle first (sign-out is
         // offered while restoring, Rule 6), so a session it just activated is
         // revoked server-side rather than only forgotten locally.
         drop(state.token_auth.refresh_lock(origin).lock_owned().await);
         if revoke {
-            match state.token_auth.get(origin) {
+            let revoked = match state.token_auth.get(origin) {
                 Some((_, OriginAuth::Active(session))) => {
-                    revoke_session(&state.http_client, origin, &session.access).await?;
+                    revoke_session(&state.http_client, origin, &session.access).await
                 }
                 // Restoring or retrying: revoke with the stored token.
-                _ => {
-                    if let Ok(Some(token)) = KeyringRefreshStore.load(origin) {
+                _ => match KeyringRefreshStore.load(origin) {
+                    Ok(Some(token)) => {
                         revoke_stored(&state.http_client, origin, &token, |rotated| {
                             KeyringRefreshStore.store(origin, rotated)
                         })
-                        .await?;
+                        .await
                     }
-                }
+                    _ => Ok(()),
+                },
+            };
+            if let Err(error) = revoked {
+                restart_stopped();
+                return Err(error);
             }
         }
         sign_out_device(&state.token_auth, origin, &KeyringRefreshStore, &stopping).await?;
@@ -991,6 +1149,7 @@ async fn sign_out_account_now(
             {
                 if let Err(error) = revoked {
                     // Nothing changed locally: keep it alive for a retry.
+                    restart_stopped();
                     state.token_auth.inactive.start(
                         &state.http_client,
                         data_dir.clone(),
@@ -1031,6 +1190,9 @@ async fn sign_out_account_now(
         SIGN_OUT_STOP_LIMIT,
     )
     .await;
+    // Agent keys whose copy the relay holds for this device leave with the
+    // sign-out (restored at the next sign-in); the device key always stays.
+    forget_owner_agent_keys(app, origin, &owners);
     let next = match (is_active, data_dir.as_deref()) {
         (true, Some(data_dir)) => {
             super::accounts::next_signed_in(data_dir, origin, account.or(active))
@@ -1066,6 +1228,27 @@ async fn sign_out_account_now(
         switched_to: None,
         agents_not_stopped,
     })
+}
+
+/// Remove the confirmed-copy agent keys of `owners` on `origin` (see
+/// [`super::agent_hosting::forget_confirmed_keys`]). Best effort.
+fn forget_owner_agent_keys(app: &AppHandle, origin: &str, owners: &[PublicKey]) {
+    let owned: Vec<String> = crate::managed_agents::load_managed_agents_without_keys(app)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|record| record.bot_origin.is_none())
+        .filter(|record| {
+            let owner = crate::managed_agents::agent_owner_hex(app, record);
+            owners
+                .iter()
+                .any(|o| owner.as_deref() == Some(o.to_hex().as_str()))
+        })
+        .map(|record| record.pubkey)
+        .collect();
+    let removed = super::agent_hosting::forget_confirmed_keys(app, origin, &owned);
+    if removed > 0 {
+        eprintln!("kuzz-desktop: auth: {removed} agent key(s) left this computer at sign-out");
+    }
 }
 
 /// The signed-out account's key leaves this computer (after any switch, so
@@ -1499,6 +1682,31 @@ pub(crate) async fn logout_all_best_effort(state: &AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_ended_sessions_sign_out_remotely() {
+        let error = |status: Option<u16>, code: Option<&str>| api::ApiError {
+            status,
+            code: code.map(str::to_owned),
+            message: String::new(),
+        };
+        for code in ["token_revoked", "principal_disabled", "invalid_token"] {
+            assert!(
+                session_ended_remotely(&error(Some(401), Some(code))),
+                "{code}"
+            );
+        }
+        assert!(!session_ended_remotely(&error(
+            Some(401),
+            Some("token_expired")
+        )));
+        assert!(!session_ended_remotely(&error(
+            Some(403),
+            Some("token_revoked")
+        )));
+        assert!(!session_ended_remotely(&error(Some(401), None)));
+        assert!(!session_ended_remotely(&error(None, None)));
+    }
 
     #[tokio::test(start_paused = true)]
     async fn a_sign_out_does_not_wait_forever_for_its_agents() {

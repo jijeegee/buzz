@@ -41,6 +41,9 @@ pub(crate) fn classify(error: &ApiError) -> RefreshFailure {
     match error.status {
         None => RefreshFailure::Transient,
         Some(status) if status == 429 || status >= 500 => RefreshFailure::Transient,
+        // A device proof the relay could not accept yet (no key, clock off):
+        // the session itself still stands, so retry rather than sign out.
+        Some(_) if is_device_proof_retry(error.code.as_deref()) => RefreshFailure::Transient,
         Some(status) if (400..500).contains(&status) => RefreshFailure::Terminal(
             error
                 .code
@@ -49,6 +52,11 @@ pub(crate) fn classify(error: &ApiError) -> RefreshFailure {
         ),
         Some(_) => RefreshFailure::Transient,
     }
+}
+
+/// Device proof refusals that a later attempt can pass (mobile PR #198).
+fn is_device_proof_retry(code: Option<&str>) -> bool {
+    matches!(code, Some("device_proof_required" | "device_proof_stale"))
 }
 
 /// Classify a `/auth/me` failure right after a refresh. A terminal code is
@@ -459,6 +467,21 @@ mod tests {
         };
         assert!(!ends_sign_in(&code), "{code}");
         assert_eq!(classify_me(&err(None, None)), RefreshFailure::Transient);
+    }
+
+    #[test]
+    fn device_proof_refusals_are_retried_not_signed_out() {
+        for code in ["device_proof_required", "device_proof_stale"] {
+            assert_eq!(
+                classify(&err(Some(401), Some(code))),
+                RefreshFailure::Transient
+            );
+        }
+        assert_eq!(
+            classify(&err(Some(401), Some("device_proof_invalid"))),
+            RefreshFailure::Terminal("device_proof_invalid".into())
+        );
+        assert!(!ends_sign_in("device_proof_invalid"));
     }
 
     #[test]

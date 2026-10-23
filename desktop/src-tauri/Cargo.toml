@@ -115,6 +115,8 @@ kuzz_agent_pkg = { package = "kuzz-agent", path = "../../crates/kuzz-agent" }
 kuzz_voice_pkg = { package = "kuzz-voice", path = "../../crates/kuzz-voice" }
 kuzz_terminal = { package = "kuzz-terminal", path = "crates/kuzz-terminal" }
 kuzz_ws_client_pkg = { package = "kuzz-ws-client", path = "../../crates/kuzz-ws-client" }
+kuzz_device_key_pkg = { package = "kuzz-device-key", path = "../../crates/kuzz-device-key" }
+kuzz_auth_pkg = { package = "kuzz-auth", path = "../../crates/kuzz-auth" }
 portable-pty = "0.9"
 iroh = { version = "1.0.3", optional = true }
 mesh-llm-sdk = { git = "https://github.com/Mesh-LLM/mesh-llm.git", tag = "v0.76.2", package = "mesh-llm-sdk", default-features = false, features = ["client", "serving"], optional = true }

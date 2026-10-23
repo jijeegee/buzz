@@ -409,6 +409,14 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
         respond_to: record.respond_to,
         respond_to_allowlist: record.respond_to_allowlist.clone(),
         effort_level: record.effort_level.clone(),
+        hosted_elsewhere: record.bot_origin.is_none()
+            && crate::auth::agent_hosting::hosted_elsewhere(
+                app,
+                pair_key
+                    .as_ref()
+                    .map_or(record.relay_url.as_str(), |key| key.relay_url.as_str()),
+                &record.pubkey,
+            ),
     })
 }
 
@@ -574,6 +582,9 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     let record_owner = super::spawn_owner_hex(app, record)?;
     // ...and only while that owner is signed in on this computer.
     super::ensure_owner_signed_in(app, record, relay_url, &record_owner)?;
+    // ...and not registered to another of the owner's devices; this device
+    // registers it (and hands the relay its key copy) in the background.
+    crate::auth::agent_hosting::start_gate(app, record, relay_url, &record_owner)?;
     let owner_hex = Some(record_owner.as_str());
     let runtime_key = ManagedAgentRuntimeKey::new(record.pubkey.clone(), relay_url)?;
     // Resolve the effective harness (agent command) from the linked persona, so
