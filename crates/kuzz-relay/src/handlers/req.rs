@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use tracing::{debug, warn};
 
+use hex;
 use kuzz_core::filter::filters_match;
 use kuzz_core::kind::{
     is_unshared_gated_event, AUTHOR_ONLY_KINDS, KIND_AGENT_ENGRAM, KIND_HUDDLE_LIVENESS,
@@ -13,7 +14,6 @@ use kuzz_core::kind::{
 use kuzz_core::tenant::TenantContext;
 use kuzz_db::EventQuery;
 use kuzz_pubsub::EventTopic;
-use hex;
 use nostr::Filter;
 
 use kuzz_auth::Scope;
@@ -154,7 +154,7 @@ pub async fn handle_req(
             } else {
                 match state
                     .db
-                    .is_member(conn.tenant.community(), ch_id, &pubkey_bytes)
+                    .can_read_requested_channel(conn.tenant.community(), ch_id, &pubkey_bytes)
                     .await
                 {
                     Ok(member) => {

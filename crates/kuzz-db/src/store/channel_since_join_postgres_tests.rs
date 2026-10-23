@@ -1329,3 +1329,38 @@ async fn share_a_room_needs_both_current_members() {
         .await
         .unwrap());
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn an_agents_owner_outside_the_chat_sees_what_the_agent_sees() {
+    // Read-only owner view: the owner reads their agent's group chat from the
+    // agent's join, like the agent. Anyone else outside it still sees nothing.
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    f.set("UPDATE channels SET group_chat = true WHERE community_id = $1 AND id = $2")
+        .await;
+    let agent_owner = Keys::generate();
+    let stranger = Keys::generate();
+    for keys in [&f.member, &agent_owner] {
+        crate::user::ensure_user(&f.pool, f.scope, &keys.public_key().to_bytes())
+            .await
+            .expect("ensure user");
+    }
+    crate::user::set_agent_owner(
+        &f.pool,
+        f.scope,
+        &f.member.public_key().to_bytes(),
+        &agent_owner.public_key().to_bytes(),
+    )
+    .await
+    .expect("set agent owner");
+    f.send("before the agent joined").await;
+    f.join().await;
+    let after = f.send("after the agent joined").await;
+
+    assert_eq!(f.read(Some(&f.member)).await, (vec![after.clone()], 1));
+    assert_eq!(f.read(Some(&agent_owner)).await, (vec![after], 1));
+    assert_eq!(f.read(Some(&stranger)).await, (vec![], 0));
+    // Once the agent leaves, the owner is an outsider again.
+    f.leave().await;
+    assert_eq!(f.read(Some(&agent_owner)).await, (vec![], 0));
+}

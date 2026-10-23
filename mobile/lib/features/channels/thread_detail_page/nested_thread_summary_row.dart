@@ -36,6 +36,7 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ThreadDetailPage(
+              ownerView: OwnerViewScope.maybeOf(context),
               threadHead: replyMessage,
               allMessages: allMessages,
               channelId: channelId,

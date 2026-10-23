@@ -54,6 +54,9 @@ import '../people/blocked_dm_bar.dart';
 import '../people/blocked_message_gate.dart';
 import '../people/blocked_users_provider.dart';
 import '../profile/user_profile_sheet.dart';
+import '../agents/owner_view/owner_view.dart';
+import '../agents/owner_view/owner_view_seen.dart';
+import '../agents/owner_view/owner_view_widgets.dart';
 import '../goals/thread_goal_chip.dart';
 import 'message_actions.dart';
 import 'message_action_backdrop_state.dart';
@@ -99,7 +102,6 @@ class ThreadDetailPage extends HookConsumerWidget {
   final List<TimelineMessage> allMessages;
   final String channelId;
   final String? currentPubkey;
-  final bool isMember;
   final bool isArchived;
   final String? initialMessageId;
 
@@ -108,17 +110,27 @@ class ThreadDetailPage extends HookConsumerWidget {
   /// page (opened from Chats) or sits on another thread.
   final bool channelBelow;
 
+  /// Set when an agent's owner reads this thread without being in its chat:
+  /// read-only, the agent's messages on the right, nothing marked read.
+  final OwnerView? ownerView;
+
   const ThreadDetailPage({
     super.key,
     required this.threadHead,
     required this.allMessages,
     required this.channelId,
     required this.currentPubkey,
-    required this.isMember,
+    required bool isMember,
     required this.isArchived,
     this.initialMessageId,
     this.channelBelow = true,
-  });
+    this.ownerView,
+  }) : _isMember = isMember;
+
+  final bool _isMember;
+
+  /// The owner view is never a member: no composer, rename or close.
+  bool get isMember => _isMember && ownerView == null;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -127,6 +139,13 @@ class ThreadDetailPage extends HookConsumerWidget {
     final currentPubkey =
         this.currentPubkey ?? ref.watch(currentPubkeyProvider);
     final nameKey = (channelId: channelId, headId: threadHead.id);
+    // The open thread's dot stays clear while it is read here.
+    useMarkOwnerViewSeen(
+      ref,
+      this.ownerView,
+      (row) =>
+          row.isThread && row.rootId == (threadHead.rootId ?? threadHead.id),
+    );
     final threadName = ref.watch(threadNameProvider(nameKey)).value?.content;
     final appView = View.of(context);
     final composerDockHeight = useState(0.0);
@@ -1200,7 +1219,10 @@ class ThreadDetailPage extends HookConsumerWidget {
         .join(',');
 
     useEffect(() {
-      if (!readState.isReady || replies.isEmpty) return null;
+      // The owner view reads someone else's chat: nothing is marked read.
+      if (this.ownerView != null || !readState.isReady || replies.isEmpty) {
+        return null;
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         for (final reply in replies) {
           ref
@@ -1317,9 +1339,18 @@ class ThreadDetailPage extends HookConsumerWidget {
       },
     );
 
-    return FrostedScaffold(
+    final ownerView = this.ownerView;
+    final scaffold = FrostedScaffold(
       resizeToAvoidBottomInset: !usesFixedAndroidImeViewport,
       appBar: FrostedAppBar(
+        gradient: ownerView == null
+            ? null
+            : LinearGradient(
+                colors: [
+                  ownerViewBackground(context),
+                  ownerViewBackground(context),
+                ],
+              ),
         leading: usesNativeIosGlassBackButton
             ? IosGlassNavigationButton(
                 key: const ValueKey('thread-ios-glass-back'),
@@ -1350,36 +1381,37 @@ class ThreadDetailPage extends HookConsumerWidget {
         actions: [
           // Smaller buttons set closer together, so the thread name keeps
           // more of the header.
-          IconButtonTheme(
-            data: IconButtonThemeData(style: threadHeaderButtonStyle),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ThreadGroupButton(
-                  channelId: channelId,
-                  channelBelow: channelBelow,
-                ),
-                if (goalsEnabled)
-                  ThreadGoalsButton(
+          if (ownerView == null)
+            IconButtonTheme(
+              data: IconButtonThemeData(style: threadHeaderButtonStyle),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ThreadGroupButton(
                     channelId: channelId,
-                    threadRootId: effectiveRootId,
+                    channelBelow: channelBelow,
                   ),
-                ThreadMoreMenu(
-                  channelId: channelId,
-                  rootId: effectiveRootId,
-                  closed: isThreadClosed(allReplies),
-                  canClose:
-                      isMember &&
-                      !isArchived &&
-                      !liveDeletionHidesHead &&
-                      threadHead.rootId == null,
-                  onRename: isMember && !isArchived && !liveDeletionHidesHead
-                      ? () => showThreadNameEditor(context, nameKey)
-                      : null,
-                ),
-              ],
+                  if (goalsEnabled)
+                    ThreadGoalsButton(
+                      channelId: channelId,
+                      threadRootId: effectiveRootId,
+                    ),
+                  ThreadMoreMenu(
+                    channelId: channelId,
+                    rootId: effectiveRootId,
+                    closed: isThreadClosed(allReplies),
+                    canClose:
+                        isMember &&
+                        !isArchived &&
+                        !liveDeletionHidesHead &&
+                        threadHead.rootId == null,
+                    onRename: isMember && !isArchived && !liveDeletionHidesHead
+                        ? () => showThreadNameEditor(context, nameKey)
+                        : null,
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
         titleStyle: channelTitleTextStyle,
       ),
@@ -1478,10 +1510,17 @@ class ThreadDetailPage extends HookConsumerWidget {
               child: ComposerDockSizeReporter(
                 key: const ValueKey('thread-typing-dock'),
                 onHeightChanged: updateComposerDockHeight,
-                child: _ThreadTypingIndicator(
-                  channelId: channelId,
-                  entries: visibleThreadTyping,
-                  animated: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _ThreadTypingIndicator(
+                      channelId: channelId,
+                      entries: visibleThreadTyping,
+                      animated: false,
+                    ),
+                    if (ownerView != null)
+                      OwnerViewBar(view: ownerView, channelId: channelId),
+                  ],
                 ),
               ),
             ),
@@ -1583,5 +1622,8 @@ class ThreadDetailPage extends HookConsumerWidget {
         ],
       ),
     );
+    return ownerView == null
+        ? scaffold
+        : OwnerViewScope(view: ownerView, child: scaffold);
   }
 }

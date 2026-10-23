@@ -82,6 +82,8 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
    * for Projects conversations, which keep their own header.
    */
   threadHeaderActions?: boolean;
+  /** Read only (an agent's owner looking in): no composer. */
+  readOnly?: boolean;
   editTarget?: MessageComposerEditTarget | null;
   isSending: boolean;
   onCancelEdit?: () => void;
@@ -190,6 +192,7 @@ export function MessageThreadPanel({
   huddleMemberPubkeysPending = false,
   isHuddleTranscript = false,
   threadHeaderActions = true,
+  readOnly = false,
   layout = "standalone",
   editTarget,
   enterMotion,
@@ -984,96 +987,98 @@ export function MessageThreadPanel({
         </div>
       ) : null}
 
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-40 isolate before:absolute before:inset-x-0 before:bottom-0 before:-z-10 before:h-24 before:bg-gradient-to-b before:from-transparent before:to-background before:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:-z-10 after:h-12 after:bg-background after:content-['']"
-        data-testid="thread-composer-overlay"
-        ref={threadComposerWrapperRef}
-      >
+      {readOnly ? null : (
         <div
-          className={cn(hasConstrainedColumn && THREAD_PANEL_COLUMN_CLASS)}
-          style={
-            hasConstrainedColumn ? { maxWidth: columnMaxWidthPx } : undefined
-          }
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-40 isolate before:absolute before:inset-x-0 before:bottom-0 before:-z-10 before:h-24 before:bg-gradient-to-b before:from-transparent before:to-background before:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:-z-10 after:h-12 after:bg-background after:content-['']"
+          data-testid="thread-composer-overlay"
+          ref={threadComposerWrapperRef}
         >
           <div
-            className={cn(
-              "composer-dock composer-overlay-corner-masks relative pointer-events-auto",
-              hasComposerBottomActivity && "composer-dock--with-activity",
-            )}
+            className={cn(hasConstrainedColumn && THREAD_PANEL_COLUMN_CLASS)}
+            style={
+              hasConstrainedColumn ? { maxWidth: columnMaxWidthPx } : undefined
+            }
           >
-            <ComposerDockBackdrop gutterClassName="inset-x-5" />
-            <MessageComposer
-              audienceContext={{
-                type: "thread",
-                rootContent: threadHead.body,
-                rootTags: threadHead.tags,
-              }}
-              channelId={channelId}
-              channelName={channelName}
-              channelType={channel?.channelType ?? null}
-              containerClassName={cn(
-                THREAD_PANEL_COMPOSER_GUTTER_CLASS,
-                "pb-0",
+            <div
+              className={cn(
+                "composer-dock composer-overlay-corner-masks relative pointer-events-auto",
+                hasComposerBottomActivity && "composer-dock--with-activity",
               )}
-              layoutMode="dock"
-              disabled={disabled || isSending || !channelId}
-              draftKey={`thread:${threadHead.id}`}
-              autoSubmitDraftKey={autoSendDraftKey}
-              onAutoSubmitComplete={onAutoSubmitComplete}
-              editTarget={editTarget}
-              isSending={isSending}
-              onCancelEdit={onCancelEdit}
-              onCancelReply={composerReplyTarget ? onCancelReply : undefined}
-              onCaptureSendContext={onCaptureSendContext}
-              onEditLastOwnMessage={onEditLastOwnMessage}
-              onEditSave={onEditSave}
-              onSend={onSend}
-              onPreviewSend={onPreviewSend}
-              placeholder={
-                isHuddleTranscript
-                  ? t("messages.thread.huddlePlaceholder")
-                  : isClosedTaskThread
-                    ? threadHeaderActions
-                      ? t("messages.thread.reopenPlaceholder")
-                      : t("messages.thread.taskClosedPlaceholder")
-                    : t("messages.thread.replyPlaceholder", {
-                        author: threadHead.author,
-                      })
-              }
-              profiles={profiles}
-              recentMentionPubkeys={recentMentionPubkeys}
-              replyTarget={composerReplyTarget}
-              typingParentEventId={threadHead.id}
-              typingRootEventId={threadHead.rootId}
-            />
-            {/* The activity accessory is anchored in the dock's reserved bottom
+            >
+              <ComposerDockBackdrop gutterClassName="inset-x-5" />
+              <MessageComposer
+                audienceContext={{
+                  type: "thread",
+                  rootContent: threadHead.body,
+                  rootTags: threadHead.tags,
+                }}
+                channelId={channelId}
+                channelName={channelName}
+                channelType={channel?.channelType ?? null}
+                containerClassName={cn(
+                  THREAD_PANEL_COMPOSER_GUTTER_CLASS,
+                  "pb-0",
+                )}
+                layoutMode="dock"
+                disabled={disabled || isSending || !channelId}
+                draftKey={`thread:${threadHead.id}`}
+                autoSubmitDraftKey={autoSendDraftKey}
+                onAutoSubmitComplete={onAutoSubmitComplete}
+                editTarget={editTarget}
+                isSending={isSending}
+                onCancelEdit={onCancelEdit}
+                onCancelReply={composerReplyTarget ? onCancelReply : undefined}
+                onCaptureSendContext={onCaptureSendContext}
+                onEditLastOwnMessage={onEditLastOwnMessage}
+                onEditSave={onEditSave}
+                onSend={onSend}
+                onPreviewSend={onPreviewSend}
+                placeholder={
+                  isHuddleTranscript
+                    ? t("messages.thread.huddlePlaceholder")
+                    : isClosedTaskThread
+                      ? threadHeaderActions
+                        ? t("messages.thread.reopenPlaceholder")
+                        : t("messages.thread.taskClosedPlaceholder")
+                      : t("messages.thread.replyPlaceholder", {
+                          author: threadHead.author,
+                        })
+                }
+                profiles={profiles}
+                recentMentionPubkeys={recentMentionPubkeys}
+                replyTarget={composerReplyTarget}
+                typingParentEventId={threadHead.id}
+                typingRootEventId={threadHead.rootId}
+              />
+              {/* The activity accessory is anchored in the dock's reserved bottom
               rail, so fading it cannot change the observed overlay height or
               move the conversation. Its natural content height remains responsive. */}
-            <ComposerActivityAccessory
-              className={THREAD_PANEL_COMPOSER_GUTTER_CLASS}
-              visible={hasComposerBottomActivity}
-            >
-              <div className="mx-auto flex w-full max-w-4xl items-center gap-2 overflow-visible pl-2">
-                {activityAccessoryVisible && activityAccessoryContent ? (
-                  <div className="flex min-w-0 flex-1 overflow-visible">
-                    {activityAccessoryContent}
-                  </div>
-                ) : null}
-                {threadTypingPubkeys.length > 0 ? (
-                  <TypingIndicatorRow
-                    channel={channel}
-                    className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
-                    currentPubkey={currentPubkey}
-                    profiles={profiles}
-                    typingPubkeys={threadTypingPubkeys}
-                    variant="activity"
-                  />
-                ) : null}
-              </div>
-            </ComposerActivityAccessory>
+              <ComposerActivityAccessory
+                className={THREAD_PANEL_COMPOSER_GUTTER_CLASS}
+                visible={hasComposerBottomActivity}
+              >
+                <div className="mx-auto flex w-full max-w-4xl items-center gap-2 overflow-visible pl-2">
+                  {activityAccessoryVisible && activityAccessoryContent ? (
+                    <div className="flex min-w-0 flex-1 overflow-visible">
+                      {activityAccessoryContent}
+                    </div>
+                  ) : null}
+                  {threadTypingPubkeys.length > 0 ? (
+                    <TypingIndicatorRow
+                      channel={channel}
+                      className="min-w-0 flex-1 py-0 pl-[calc(0.75rem+1px)] pr-0 sm:pl-[calc(1rem+1px)]"
+                      currentPubkey={currentPubkey}
+                      profiles={profiles}
+                      typingPubkeys={threadTypingPubkeys}
+                      variant="activity"
+                    />
+                  ) : null}
+                </div>
+              </ComposerActivityAccessory>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 

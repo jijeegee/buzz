@@ -19,6 +19,7 @@ import 'package:flutter/rendering.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:hooks_riverpod/misc.dart' show Override;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -26,6 +27,8 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:kuzz/features/channels/channel_hash_links.dart';
+import 'package:kuzz/features/agents/owner_view/owner_view.dart';
+import 'package:kuzz/features/chats/chat_list.dart';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/channels/chat_bubble_row.dart';
@@ -94,6 +97,7 @@ part 'channel_detail_page_test/presence_tests.dart';
 part 'channel_detail_page_test/quote_tests.dart';
 part 'channel_detail_page_test/open_at_tests.dart';
 part 'channel_detail_page_test/thread_open_at_tests.dart';
+part 'channel_detail_page_test/owner_view_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
 const _huddleChannelId = '8d764100-fd8f-44cf-9c98-6d8fbd739b8c';
@@ -282,6 +286,7 @@ Widget _buildTestable({
   http.Client? mediaClient,
   Set<String>? blocked,
   Widget? home,
+  List<Override> overrides = const [],
 }) {
   final resolvedChannel = channel ?? _testChannel;
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -428,6 +433,7 @@ Widget _buildTestable({
         ),
       // Compose bar drafts persist through SharedPreferences.
       savedPrefsProvider.overrideWithValue(_testPrefs),
+      ...overrides,
     ],
     child: MaterialApp(
       navigatorKey: navigatorKey,
@@ -533,6 +539,7 @@ void main() {
   quoteTests();
   openAtTests();
   threadOpenAtTests();
+  ownerViewTests();
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _testPrefs = await SharedPreferences.getInstance();

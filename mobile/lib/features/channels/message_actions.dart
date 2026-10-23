@@ -29,6 +29,7 @@ import '../../shared/widgets/sheet_divider.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../../shared/reminders/remind_me_later_sheet.dart';
 import '../../shared/reminders/reminder_service.dart';
+import '../agents/owner_view/owner_view.dart';
 import '../goals/thread_goals_page.dart';
 import '../people/person_actions.dart';
 import '../people/person_row.dart';
@@ -647,6 +648,7 @@ class _FastActionsRow extends ConsumerWidget {
             Navigator.of(pageContext).push(
               MaterialPageRoute<void>(
                 builder: (_) => ThreadDetailPage(
+                  ownerView: OwnerViewScope.maybeOf(pageContext),
                   threadHead: message,
                   allMessages: messages,
                   channelId: channelId,
