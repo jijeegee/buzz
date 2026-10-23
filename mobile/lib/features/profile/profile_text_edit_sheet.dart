@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_sheet_header.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
@@ -38,6 +39,7 @@ class ProfileTextEditSheet extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final controller = useTextEditingController(text: initialValue);
     useListenable(controller);
     final isSaving = useState(false);
@@ -61,7 +63,7 @@ class ProfileTextEditSheet extends HookWidget {
         if (context.mounted) await closeAfterSave();
       } catch (_) {
         if (context.mounted) {
-          error.value = "We couldn't save this change. Try again.";
+          error.value = l10n.profileSaveChangeFailed;
         }
       } finally {
         if (context.mounted) isSaving.value = false;
@@ -72,7 +74,7 @@ class ProfileTextEditSheet extends HookWidget {
         ? IosGlassNavigationButton(
             key: const ValueKey('profile-field-close'),
             icon: IosGlassNavigationIcon.close,
-            semanticLabel: 'Close sheet',
+            semanticLabel: l10n.profileCloseSheet,
             onPressed: isSaving.value
                 ? null
                 : () => Navigator.of(context).pop(),
@@ -84,7 +86,7 @@ class ProfileTextEditSheet extends HookWidget {
             dimension: 44,
             child: IconButton(
               key: const ValueKey('profile-field-close'),
-              tooltip: 'Close sheet',
+              tooltip: l10n.profileCloseSheet,
               onPressed: isSaving.value
                   ? null
                   : () => Navigator.of(context).pop(),
@@ -151,7 +153,11 @@ class ProfileTextEditSheet extends HookWidget {
                     FilledButton(
                       key: const ValueKey('profile-field-save'),
                       onPressed: hasChanges && !isSaving.value ? save : null,
-                      child: Text(isSaving.value ? 'Saving…' : 'Save'),
+                      child: Text(
+                        isSaving.value
+                            ? l10n.commonSavingEllipsis
+                            : l10n.commonSave,
+                      ),
                     ),
                   ],
                 ),

@@ -19,16 +19,14 @@ class _ProtectAccountSection extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     return AppListCard(
-      label: 'Protect your account',
+      label: context.l10n.settingsProtectAccountSection,
       verticalPadding: Grid.twelve,
       children: [
         AppListRow(
           key: const Key('settings-protect-account'),
           icon: LucideIcons.shield,
-          title: 'Continue with Google',
-          subtitle:
-              'Sign in on your other devices, and get your account back '
-              'if this phone is lost',
+          title: context.l10n.settingsContinueWithGoogle,
+          subtitle: context.l10n.settingsContinueWithGoogleSubtitle,
           trailing: const _RowChevron(),
           onTap: () => unawaited(_connectGoogle(context, config.baseUrl)),
         ),
@@ -47,9 +45,9 @@ Future<void> _connectGoogle(BuildContext context, String baseUrl) async {
     ),
   );
   if (connected != true || !context.mounted) return;
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(const SnackBar(content: Text('Signed in with Google')));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(context.l10n.settingsSignedInWithGoogle)),
+  );
 }
 
 class _SignOutSection extends HookConsumerWidget {
@@ -76,8 +74,7 @@ class _SignOutSection extends HookConsumerWidget {
         }
       } catch (_) {
         if (context.mounted) {
-          error.value =
-              'Couldn’t sign out. Check your connection and try again.';
+          error.value = context.l10n.settingsSignOutFailed;
         }
       } finally {
         if (context.mounted) busy.value = false;
@@ -90,10 +87,12 @@ class _SignOutSection extends HookConsumerWidget {
         AppListRow(
           key: const Key('settings-sign-out'),
           icon: LucideIcons.logOut,
-          title: busy.value ? 'Signing out…' : 'Sign out',
+          title: busy.value
+              ? context.l10n.settingsSigningOut
+              : context.l10n.settingsSignOut,
           subtitle: hasBuiltInServer
               ? null
-              : 'Your communities stay on this device',
+              : context.l10n.settingsSignOutSubtitle,
           onTap: busy.value ? null : () => unawaited(signOut()),
         ),
         if (error.value != null)
@@ -114,13 +113,13 @@ class _RemoveCommunitySection extends ConsumerWidget {
       children: [
         ExpansionTile(
           key: const Key('settings-removal-management'),
-          title: const Text('Remove community'),
+          title: Text(context.l10n.settingsRemoveCommunity),
           children: [
             AppListRow(
               key: const Key('settings-remove-community'),
               icon: LucideIcons.trash2,
-              title: 'Remove from this device',
-              subtitle: 'Also removes its sign-in from this device',
+              title: context.l10n.settingsRemoveFromDevice,
+              subtitle: context.l10n.settingsRemoveFromDeviceSubtitle,
               onTap: () => _confirmRemoveCommunity(context, ref),
             ),
           ],
@@ -135,19 +134,21 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
   showKuzzDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Remove community from this device?'),
+      title: Text(context.l10n.settingsRemoveCommunityTitle),
       content: Text(
-        'This removes the community and its sign-in from this device. '
-        'Your account and memberships on the server aren’t deleted.'
-        '${usesPrivateKey ? '\n\nIf this community isn’t connected to a Google account, you won’t be able to sign back in to it.' : ''}',
+        usesPrivateKey
+            ? '${context.l10n.settingsRemoveCommunityBody}\n\n'
+                  '${context.l10n.settingsRemoveCommunityNoGoogleWarning}'
+            : context.l10n.settingsRemoveCommunityBody,
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           onPressed: () async {
+            final failedMessage = context.l10n.settingsRemoveCommunityFailed;
             Navigator.of(ctx).pop(); // close dialog
             try {
               final removed = await removeCommunityWithRelaySignOut(
@@ -160,11 +161,9 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
             } catch (error) {
               debugPrint('[Settings] remove community failed: $error');
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Couldn’t remove the community. Try again.'),
-                ),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(failedMessage)));
               return;
             }
             if (!context.mounted) return;
@@ -172,7 +171,7 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
             // to onboarding when auth state changes.
             Navigator.of(context).popUntil((route) => route.isFirst);
           },
-          child: const Text('Remove'),
+          child: Text(context.l10n.settingsRemove),
         ),
       ],
     ),
@@ -189,25 +188,22 @@ Future<bool?> _confirmSignOut(
     context: context,
     builder: (dialogContext) => AlertDialog(
       key: const Key('settings-sign-out-dialog'),
-      title: const Text('Sign out?'),
+      title: Text(context.l10n.settingsSignOutTitle),
       content: Text(
         hasBuiltInServer
-            ? 'You’ll be signed out on this device. Sign in with Google to '
-                  'come back — your messages stay here.'
-            : 'You’ll be signed out of all your communities on this device. '
-                  'Sign in with Google to come back — your communities and '
-                  'messages stay here.',
+            ? context.l10n.settingsSignOutBody
+            : context.l10n.settingsSignOutBodyCommunities,
       ),
       actions: [
         TextButton(
           key: const Key('settings-sign-out-cancel'),
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           key: const Key('settings-sign-out-confirm'),
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('Sign out'),
+          child: Text(context.l10n.settingsSignOut),
         ),
       ],
     ),

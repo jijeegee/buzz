@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
@@ -22,9 +23,9 @@ class AccentPickerPage extends ConsumerWidget {
 
     return FrostedScaffold(
       useUtilitySurfaceTheme: true,
-      appBar: const FrostedAppBar(
+      appBar: FrostedAppBar(
         centerTitle: true,
-        title: Text('Accent Color'),
+        title: Text(context.l10n.settingsAccentColorTitle),
       ),
       body: ListView(
         padding: EdgeInsets.only(

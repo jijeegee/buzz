@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/animated_avatar.dart';
 import '../../shared/custom_emoji/custom_emoji_provider.dart';
 import '../../shared/custom_emoji/custom_emoji_render.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/media_image.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -143,7 +144,7 @@ class SettingsProfileHeader extends HookConsumerWidget {
           ),
           const SizedBox(height: Grid.twelve),
           Text(
-            profile?.label ?? 'Your profile',
+            profile?.label ?? context.l10n.profileYourProfile,
             style: context.textTheme.titleMedium,
             textAlign: TextAlign.center,
           ),
@@ -224,12 +225,12 @@ class _PresencePill extends StatelessWidget {
         context.colors.onSurfaceVariant,
       ),
     };
-    final label = _presenceLabel(effectivePresence);
+    final label = _presenceLabel(context.l10n, effectivePresence);
 
     return Builder(
       builder: (buttonContext) => Semantics(
         button: true,
-        label: 'Presence: $label',
+        label: context.l10n.profilePresenceLabel(label),
         child: SizedBox(
           key: const ValueKey('settings-presence-target'),
           height: Grid.xl,
@@ -268,7 +269,7 @@ class _PresencePill extends StatelessWidget {
                             const SizedBox(width: Grid.xxs),
                             Expanded(
                               child: Text(
-                                _presenceLabel(option),
+                                _presenceLabel(context.l10n, option),
                                 style: filterChipTextStyle.copyWith(
                                   color: context.colors.onSurface,
                                   fontWeight: option == effectivePresence
@@ -321,11 +322,12 @@ class _PresencePill extends StatelessWidget {
   }
 }
 
-String _presenceLabel(String presence) => switch (presence) {
-  'online' => 'Online',
-  'away' => 'Away',
-  _ => 'Offline',
-};
+String _presenceLabel(AppLocalizations l10n, String presence) =>
+    switch (presence) {
+      'online' => l10n.profilePresenceOnline,
+      'away' => l10n.profilePresenceAway,
+      _ => l10n.profilePresenceOffline,
+    };
 
 Color _presenceColor(BuildContext context, String presence) =>
     switch (presence) {
@@ -346,7 +348,7 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Set a status',
+      label: context.l10n.profileStatusSetTitle,
       child: GestureDetector(
         onTap: onTap,
         child: DecoratedBox(

@@ -109,7 +109,7 @@ class _ThemePreviewExperience extends HookConsumerWidget {
         centerTitle: true,
         showBottomDivider: false,
         leading: _ThemePreviewCloseButton(onPressed: close),
-        title: const Text('Theme'),
+        title: Text(context.l10n.settingsTheme),
         actions: [_ThemePreviewSetButton(onPressed: applySelection)],
       ),
       body: Column(
@@ -198,7 +198,7 @@ class _ThemePreviewExperience extends HookConsumerWidget {
                                 key: const ValueKey(
                                   'theme-preview-accent-action-button',
                                 ),
-                                semanticLabel: 'Accent color',
+                                semanticLabel: context.l10n.settingsAccentColor,
                                 color: accentColorForScheme(
                                   selectedBaseScheme,
                                   draftAccent.value,
@@ -380,14 +380,14 @@ class _ThemeDevicePairPreview extends StatelessWidget {
         _PreviewDeviceFrame(
           key: ValueKey('theme-full-home-${theme.name}'),
           theme: previewTheme,
-          semanticLabel: 'Home preview',
+          semanticLabel: context.l10n.settingsThemeHomePreview,
           child: const _FigmaHomeScreen(),
         ),
         const SizedBox(width: 72),
         _PreviewDeviceFrame(
           key: ValueKey('theme-full-chat-${theme.name}'),
           theme: previewTheme,
-          semanticLabel: 'Chat preview',
+          semanticLabel: context.l10n.settingsThemeChatPreview,
           child: const _FigmaChatScreen(),
         ),
       ],
@@ -406,7 +406,7 @@ class _ThemePreviewCloseButton extends StatelessWidget {
       return IosGlassNavigationButton(
         key: const ValueKey('theme-preview-close'),
         icon: IosGlassNavigationIcon.close,
-        semanticLabel: 'Close preview',
+        semanticLabel: context.l10n.settingsThemeClosePreview,
         onPressed: onPressed,
         width: 44,
         height: 44,
@@ -417,7 +417,7 @@ class _ThemePreviewCloseButton extends StatelessWidget {
       dimension: 44,
       child: IconButton(
         key: const ValueKey('theme-preview-close'),
-        tooltip: 'Close preview',
+        tooltip: context.l10n.settingsThemeClosePreview,
         onPressed: onPressed,
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
@@ -444,7 +444,7 @@ class _ThemePreviewSetButton extends StatelessWidget {
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return IosGlassNavigationAction(
         key: const ValueKey('theme-preview-set'),
-        label: 'Set',
+        label: context.l10n.settingsThemeSet,
         width: 64,
         height: 44,
         foregroundColor: foreground,
@@ -464,7 +464,7 @@ class _ThemePreviewSetButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
             child: Center(
               child: Text(
-                'Set',
+                context.l10n.settingsThemeSet,
                 style: context.textTheme.labelLarge?.copyWith(
                   color: foreground,
                   fontWeight: FontWeight.w600,
@@ -561,8 +561,9 @@ class _AppearanceCycleAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final semanticLabel =
-        '${appearanceModeLabel(mode)} appearance. Double tap to change.';
+    final semanticLabel = context.l10n.settingsAppearanceChangeLabel(
+      appearanceModeLabel(context.l10n, mode),
+    );
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return IosGlassNavigationButton(
         key: const ValueKey('theme-preview-appearance-action-button'),
@@ -642,7 +643,7 @@ class _ThemeScrubber extends StatelessWidget {
     }
 
     return Semantics(
-      label: 'Theme ${selected + 1} of $count',
+      label: context.l10n.settingsThemePosition(selected + 1, count),
       slider: true,
       value: '${selected + 1}',
       increasedValue: selected < count - 1 ? '${selected + 2}' : null,

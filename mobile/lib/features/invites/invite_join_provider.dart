@@ -14,6 +14,7 @@ import '../../shared/auth/token/token_auth_descriptor.dart';
 import '../../shared/auth/token/token_session.dart';
 import '../../shared/auth/token/token_session_provider.dart';
 import '../../shared/deeplink/deep_link.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay_access_tokens.dart';
 import '../../shared/relay/relay_provider.dart';
 import '../../shared/relay/relay_session.dart';
@@ -191,8 +192,8 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
   /// Invite copy names the server only when there is no built-in one.
   String _signInToUseInvite(String communityName) =>
       ref.read(hasBuiltInServerProvider)
-      ? 'Sign in to use this invite.'
-      : 'Sign in to $communityName to use this invite.';
+      ? appL10n.inviteSignInToUse
+      : appL10n.inviteSignInToCommunityToUse(communityName);
 
   Future<void> prepare(InviteDeepLink invite) async {
     validateInviteRelayUri(Uri.parse(invite.relayUrl));
@@ -210,7 +211,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         invite: invite,
         host: _hostFromRelay(invite.relayUrl),
         communityName: existing!.name,
-        errorMessage: 'Sign in to this community again first.',
+        errorMessage: appL10n.inviteSignInAgainFirst,
       );
       return;
     }
@@ -302,8 +303,9 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       final communities = await ref.read(communityListProvider.future);
       final existing = _existingCommunity(communities, invite.relayUrl);
       if (existing?.signedOut == true) {
-        throw const InviteClaimException(
-          'Sign in to this community again first.',
+        throw InviteClaimException(
+          appL10n.inviteSignInAgainFirst,
+          userFacing: true,
         );
       }
       if (existing != null && existing.tokenAuth) {
@@ -332,9 +334,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         if (existing.googleBackupAccountId != null) {
           final nsec = existing.nsec;
           if (nsec == null || pubkeyFromNsec(nsec) != existing.pubkey) {
-            throw const InviteClaimException(
-              'Recover your original signing key before joining.',
-            );
+            throw InviteClaimException(appL10n.inviteRecoverKeyFirst);
           }
           await _claimWithSigningKey(invite, nsec);
         }
@@ -358,8 +358,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       if (state.isStarterSetupRecovery) {
         state = state.copyWith(
           status: InviteJoinStatus.error,
-          errorMessage:
-              'This community is no longer available. Re-open the invite link to try again.',
+          errorMessage: appL10n.inviteCommunityUnavailable,
         );
         return;
       }
@@ -457,7 +456,10 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     if (token == null) {
       if (controller.state.status != TokenSessionStatus.signedOut) {
         // Stalled/retrying: a stored session exists but cannot rotate now.
-        throw const InviteClaimException(_relayUnreachable);
+        throw InviteClaimException(
+          appL10n.inviteRelayUnreachable,
+          userFacing: true,
+        );
       }
       if (await controller.signIn()) {
         token = await controller.ensureFreshAccessToken();
@@ -465,7 +467,10 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     }
     final principalId = controller.state.principalId;
     if (token == null || principalId == null) {
-      throw InviteClaimException(_signInToUseInvite(displayName));
+      throw InviteClaimException(
+        _signInToUseInvite(displayName),
+        userFacing: true,
+      );
     }
     final claim = await _claimWithBearer(
       invite,
@@ -525,7 +530,10 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
         return http.Response.fromStream(await client.send(request));
       });
     } on RelayTokenUnavailableException {
-      throw InviteClaimException(_signInToUseInvite(communityName));
+      throw InviteClaimException(
+        _signInToUseInvite(communityName),
+        userFacing: true,
+      );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final decoded = _tryDecode(response.body);
@@ -620,8 +628,9 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       if (current == null ||
           current.signedOut ||
           current.pubkey != community.pubkey) {
-        throw const InviteClaimException(
-          'Sign in to this community again first.',
+        throw InviteClaimException(
+          appL10n.inviteSignInAgainFirst,
+          userFacing: true,
         );
       }
       final updated = current.copyWith(starterSetupIncomplete: incomplete);
@@ -646,7 +655,10 @@ final inviteJoinProvider =
 class InviteClaimException implements Exception {
   final String message;
 
-  const InviteClaimException(this.message);
+  /// [message] is a translated sentence shown to the user as is.
+  final bool userFacing;
+
+  const InviteClaimException(this.message, {this.userFacing = false});
 
   @override
   String toString() => message;
@@ -730,30 +742,30 @@ bool _requiresFreshInvite(Object error) {
       message.contains('invite_exhausted');
 }
 
-const _relayUnreachable =
-    'Could not reach the relay. Check your connection and try again.';
-
 String _friendlyInviteError(Object error) {
   final message = error.toString();
-  if (message.startsWith('Sign in to ') || message == _relayUnreachable) {
+  if (error is InviteClaimException && error.userFacing ||
+      message.startsWith('Sign in to ')) {
     return message;
   }
-  if (error is TokenAuthDetectionException) return _relayUnreachable;
-  if (message.contains('invite_expired')) return 'This invite has expired.';
-  if (message.contains('invite_exhausted')) {
-    return 'This invite has reached its use limit. Ask for a new invite.';
+  if (error is TokenAuthDetectionException) {
+    return appL10n.inviteRelayUnreachable;
   }
-  if (message.contains('invite_invalid')) return 'This invite is not valid.';
+  if (message.contains('invite_expired')) return appL10n.inviteExpired;
+  if (message.contains('invite_exhausted')) {
+    return appL10n.inviteExhausted;
+  }
+  if (message.contains('invite_invalid')) return appL10n.inviteInvalid;
   if (message.contains('join_policy_required')) {
-    return 'This invite approval has expired. Re-open the invite link to try again.';
+    return appL10n.inviteApprovalExpired;
   }
   if (message.contains('SocketException') ||
       message.contains('Connection refused') ||
       message.contains('Network is unreachable') ||
       message.contains('No route to host')) {
-    return _relayUnreachable;
+    return appL10n.inviteRelayUnreachable;
   }
-  return 'Could not join this community: $message';
+  return appL10n.inviteJoinFailed(message);
 }
 
 String _friendlyStarterSetupError(Object error) {
@@ -762,7 +774,7 @@ String _friendlyStarterSetupError(Object error) {
       message.contains('Connection refused') ||
       message.contains('Network is unreachable') ||
       message.contains('No route to host')) {
-    return 'Starter groups could not reach the relay. Check your connection and retry setup.';
+    return appL10n.inviteStarterSetupUnreachable;
   }
-  return 'Starter groups could not be set up. Retry setup to try again.';
+  return appL10n.inviteStarterSetupFailed;
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/read_aloud/read_aloud_preferences.dart';
 import 'read_aloud_engine_settings.dart';
 
@@ -25,10 +26,8 @@ class ReadAloudToggle extends HookConsumerWidget {
     final saving = useState(false);
     return SwitchListTile.adaptive(
       key: const ValueKey('read-aloud-enabled'),
-      title: const Text('Read aloud'),
-      subtitle: const Text(
-        'Show a play button on messages · uses this phone\'s built-in voice',
-      ),
+      title: Text(context.l10n.settingsReadAloud),
+      subtitle: Text(context.l10n.settingsReadAloudSubtitle),
       value: enabled,
       onChanged: saving.value
           ? null
@@ -41,7 +40,7 @@ class ReadAloudToggle extends HookConsumerWidget {
               } catch (_) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Couldn't save. Try again.")),
+                    SnackBar(content: Text(context.l10n.settingsSaveFailed)),
                   );
                 }
               } finally {
