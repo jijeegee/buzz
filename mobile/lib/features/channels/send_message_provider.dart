@@ -8,6 +8,7 @@ import '../../shared/profile/user_profile.dart';
 import 'channel.dart';
 import 'channel_messages_provider.dart';
 import 'failed_local_messages_provider.dart';
+import 'local_send_store.dart';
 import 'message_mention_pubkeys.dart';
 import 'message_quote.dart';
 import 'local_message_send_animation_provider.dart';
@@ -25,6 +26,8 @@ class SendMessage {
   final List<ChannelMember>? Function(String channelId) _readCachedMembers;
   final Map<String, UserProfile> Function() _readUserCache;
   final void Function(String channelId, NostrEvent event) _addLocalMessage;
+  final void Function(String channelId, NostrEvent event)
+  _addPersistedLocalMessage;
   final void Function(String channelId, String eventId)
   _markLocalMessageForAnimation;
   final void Function(String channelId, String eventId) _completeLocalMessage;
@@ -34,6 +37,8 @@ class SendMessage {
   _clearLocalMessageFailed;
   final NostrEvent? Function(String channelId, String eventId)
   _readLocalMessage;
+  final Future<bool> Function(String channelId, NostrEvent event)
+  _relayHasUnverifiedMessage;
   final bool Function()? _isDeliveryValid;
 
   SendMessage({
@@ -43,6 +48,7 @@ class SendMessage {
     List<ChannelMember>? Function(String channelId)? readCachedMembers,
     required Map<String, UserProfile> Function() readUserCache,
     required void Function(String channelId, NostrEvent event) addLocalMessage,
+    void Function(String channelId, NostrEvent event)? addPersistedLocalMessage,
     void Function(String channelId, String eventId)?
     markLocalMessageForAnimation,
     required void Function(String channelId, String eventId)
@@ -51,12 +57,15 @@ class SendMessage {
     void Function(String channelId, String eventId)? markLocalMessageFailed,
     void Function(String channelId, String eventId)? clearLocalMessageFailed,
     NostrEvent? Function(String channelId, String eventId)? readLocalMessage,
+    Future<bool> Function(String channelId, NostrEvent event)?
+    relayHasUnverifiedMessage,
     bool Function()? isDeliveryValid,
   }) : _signedEventRelay = signedEventRelay,
        _fetchMembers = fetchMembers,
        _readCachedMembers = readCachedMembers ?? ((_) => null),
        _readUserCache = readUserCache,
        _addLocalMessage = addLocalMessage,
+       _addPersistedLocalMessage = addPersistedLocalMessage ?? addLocalMessage,
        _markLocalMessageForAnimation =
            markLocalMessageForAnimation ?? ((_, _) {}),
        _completeLocalMessage = completeLocalMessage,
@@ -64,6 +73,8 @@ class SendMessage {
        _markLocalMessageFailed = markLocalMessageFailed ?? ((_, _) {}),
        _clearLocalMessageFailed = clearLocalMessageFailed ?? ((_, _) {}),
        _readLocalMessage = readLocalMessage ?? ((_, _) => null),
+       _relayHasUnverifiedMessage =
+           relayHasUnverifiedMessage ?? ((_, _) async => false),
        _isDeliveryValid = isDeliveryValid;
 
   /// Send a text message to a channel.
@@ -81,7 +92,8 @@ class SendMessage {
   /// [extraTags] are appended as given (e.g. a thread close marker).
   ///
   /// With [keepFailedMessage], a publish that fails after the message was
-  /// shown marks the row failed (for retry or delete) and completes normally.
+  /// shown marks the row failed (for retry or delete) and completes normally,
+  /// and the row is kept on the device until the relay has it.
   /// Otherwise the row is rolled back and the error rethrown. Failures before
   /// the row is shown always throw.
   Future<void> call({
@@ -149,7 +161,10 @@ class SendMessage {
       keepFailedMessage: keepFailedMessage,
       onSigned: (event) {
         _markLocalMessageForAnimation(channelId, event.id);
-        _addLocalMessage(channelId, event);
+        (keepFailedMessage ? _addPersistedLocalMessage : _addLocalMessage)(
+          channelId,
+          event,
+        );
       },
     );
   }
@@ -161,7 +176,9 @@ class SendMessage {
   /// attempt did land, the relay dedupes it and its echo replaces the row. An
   /// older one is re-signed now: the failed row is removed and the new one
   /// is added at the bottom of the timeline. A new publish failure marks the
-  /// row failed again; nothing is thrown for it.
+  /// row failed again; nothing is thrown for it. A restored message the relay
+  /// could not be asked about is looked up first, and confirmed instead of
+  /// sent again when the relay already has it.
   Future<void> retry({
     required String channelId,
     required String eventId,
@@ -173,6 +190,11 @@ class SendMessage {
     if (author == null || failed.pubkey.toLowerCase() != author) {
       throw StateError('Message was written by another account');
     }
+    if (await _relayHasUnverifiedMessage(channelId, failed)) {
+      _completeLocalMessage(channelId, failed.id);
+      return;
+    }
+    _ensureDeliveryValid();
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final reuse = (now - failed.createdAt).abs() < _retryReuseWindowSeconds;
     await _submitLocal(
@@ -190,7 +212,7 @@ class SendMessage {
           return;
         }
         _removeLocalMessage(channelId, failed.id);
-        _addLocalMessage(channelId, event);
+        _addPersistedLocalMessage(channelId, event);
       },
     );
   }
@@ -376,6 +398,9 @@ final sendMessageProvider = Provider<SendMessage>((ref) {
     addLocalMessage: (channelId, event) => ref
         .read(channelMessagesProvider(channelId).notifier)
         .addLocalMessage(event),
+    addPersistedLocalMessage: (channelId, event) => ref
+        .read(channelMessagesProvider(channelId).notifier)
+        .addLocalMessage(event, persist: true),
     markLocalMessageForAnimation: (channelId, eventId) => ref
         .read(localMessageSendAnimationProvider(channelId).notifier)
         .mark(eventId),
@@ -393,6 +418,20 @@ final sendMessageProvider = Provider<SendMessage>((ref) {
         .clear(eventId),
     readLocalMessage: (channelId, eventId) =>
         ref.read(pendingLocalMessagesProvider(channelId))[eventId],
+    relayHasUnverifiedMessage: (channelId, event) async {
+      final pending = ref.read(
+        pendingLocalMessagesProvider(channelId).notifier,
+      );
+      if (!pending.isUnverified(event.id)) return false;
+      try {
+        final found = await findLocalSendsOnRelay(ref, channelId, [event]);
+        pending.markVerified(event.id);
+        return found.contains(event.id);
+      } catch (error) {
+        debugPrint('[SendMessage] retry lookup failed for ${event.id}: $error');
+        return false;
+      }
+    },
     isDeliveryValid: () {
       final currentConfig = ref.read(relayConfigProvider);
       return currentConfig.baseUrl == config.baseUrl &&

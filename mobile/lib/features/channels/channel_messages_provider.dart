@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
+import 'local_send_store.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
@@ -156,9 +157,12 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
     }
 
+    final me = ref.watch(myPubkeyProvider);
+    // [me] is this build's signer; a switch rebuilds and restores its own.
+    Future.microtask(() => restoreLocalSends(ref, this, me));
     final localSends = splitLocalSendsBySigner(
       ref.read(pendingLocalMessagesProvider(channelId)),
-      ref.watch(myPubkeyProvider),
+      me,
     );
     if (localSends.foreignIds.isNotEmpty) {
       bool own(NostrEvent event) => !localSends.foreignIds.contains(event.id);
@@ -907,8 +911,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
   /// Adds a just-signed outgoing message before the relay acknowledges it.
   /// The live relay echo is deduplicated by event id.
-  void addLocalMessage(NostrEvent event) {
-    ref.read(pendingLocalMessagesProvider(channelId).notifier).add(event);
+  void addLocalMessage(NostrEvent event, {bool persist = false}) {
+    final pending = pendingLocalMessagesProvider(channelId);
+    ref.read(pending.notifier).add(event, persist: persist);
     final thread = event.threadReference;
     if (thread.parentId != null) {
       final rootId = thread.rootId;
