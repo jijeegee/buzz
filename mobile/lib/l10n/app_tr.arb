@@ -1433,5 +1433,8 @@
   "composeMentionNotInGroup": "grupta değil",
   "composeMentionManagedByNotInGroup": "yöneten: {owner} · grupta değil",
   "composeMentionManagedByYouNotInGroup": "sizin yönettiğiniz · grupta değil",
-  "composeMentionAdminTag": "yönetici"
+  "composeMentionAdminTag": "yönetici",
+  "languageNativeName": "Türkçe",
+  "settingsLanguage": "Dil",
+  "settingsLanguageDevice": "Telefonla aynı ({language})"
 }

@@ -4281,5 +4281,9 @@
   "agents.snapshotSend.sendFailed": "Gagal mengirim.",
   "agents.apiKey.inheritedFromBuild": "Diwarisi dari build",
   "agents.statusBadge.starting": "Memulai…",
-  "agents.statusBadge.status": "{status, select, running {berjalan} stopped {berhenti} deployed {sudah di-deploy} not_deployed {belum di-deploy} other {{raw}}}"
+  "agents.statusBadge.status": "{status, select, running {berjalan} stopped {berhenti} deployed {sudah di-deploy} not_deployed {belum di-deploy} other {{raw}}}",
+  "settings.language.title": "Bahasa",
+  "settings.language.label": "Bahasa aplikasi",
+  "settings.language.hint": "Kuzz memakai bahasa komputer Anda kecuali Anda memilih bahasa di sini.",
+  "settings.language.device": "Sama dengan perangkat ({language})"
 }

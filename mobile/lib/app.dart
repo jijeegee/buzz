@@ -208,7 +208,7 @@ class App extends HookConsumerWidget {
       navigatorObservers: [voiceNoteRouteObserver, readAloudRouteObserver],
       title: 'Kuzz',
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: shippedLocales,
       locale: ref.watch(localePreferenceProvider),
       localeListResolutionCallback: (locales, _) => resolveAppLocale(locales),
       theme: AppTheme.light(

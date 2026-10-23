@@ -4,6 +4,9 @@ English is the source. Every other language is a file an AI agent writes and
 a script checks. Nothing here calls an API: translation happens when a release
 is prepared, not at runtime.
 
+To run a round with AI sub-agents (rules, commands, costs, lessons), follow
+[`agents/RUNBOOK.md`](agents/RUNBOOK.md).
+
 ## Files
 
 | Path | What |

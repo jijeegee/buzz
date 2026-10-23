@@ -1433,5 +1433,8 @@
   "composeMentionNotInGroup": "不在群組中",
   "composeMentionManagedByNotInGroup": "由 {owner} 管理 · 不在群組中",
   "composeMentionManagedByYouNotInGroup": "由你管理 · 不在群組中",
-  "composeMentionAdminTag": "管理員"
+  "composeMentionAdminTag": "管理員",
+  "languageNativeName": "繁體中文",
+  "settingsLanguage": "語言",
+  "settingsLanguageDevice": "與手機相同（{language}）"
 }

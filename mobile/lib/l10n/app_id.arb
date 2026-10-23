@@ -1433,5 +1433,8 @@
   "composeMentionNotInGroup": "tidak di grup",
   "composeMentionManagedByNotInGroup": "dikelola oleh {owner} · tidak di grup",
   "composeMentionManagedByYouNotInGroup": "dikelola Anda · tidak di grup",
-  "composeMentionAdminTag": "admin"
+  "composeMentionAdminTag": "admin",
+  "languageNativeName": "Bahasa Indonesia",
+  "settingsLanguage": "Bahasa",
+  "settingsLanguageDevice": "Sama dengan ponsel ({language})"
 }

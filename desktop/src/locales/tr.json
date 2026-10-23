@@ -4281,5 +4281,9 @@
   "agents.snapshotSend.sendFailed": "Gönderilemedi.",
   "agents.apiKey.inheritedFromBuild": "Derlemeden devralındı",
   "agents.statusBadge.starting": "Başlatılıyor…",
-  "agents.statusBadge.status": "{status, select, running {çalışıyor} stopped {durduruldu} deployed {dağıtıldı} not_deployed {dağıtılmadı} other {{raw}}}"
+  "agents.statusBadge.status": "{status, select, running {çalışıyor} stopped {durduruldu} deployed {dağıtıldı} not_deployed {dağıtılmadı} other {{raw}}}",
+  "settings.language.title": "Dil",
+  "settings.language.label": "Uygulama dili",
+  "settings.language.hint": "Burada bir dil seçmezsen Kuzz bilgisayarının dilini kullanır.",
+  "settings.language.device": "Cihazla aynı ({language})"
 }

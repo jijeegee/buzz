@@ -1433,5 +1433,8 @@
   "composeMentionNotInGroup": "không ở trong nhóm",
   "composeMentionManagedByNotInGroup": "do {owner} quản lý · không ở trong nhóm",
   "composeMentionManagedByYouNotInGroup": "do bạn quản lý · không trong nhóm",
-  "composeMentionAdminTag": "quản trị viên"
+  "composeMentionAdminTag": "quản trị viên",
+  "languageNativeName": "Tiếng Việt",
+  "settingsLanguage": "Ngôn ngữ",
+  "settingsLanguageDevice": "Giống điện thoại ({language})"
 }

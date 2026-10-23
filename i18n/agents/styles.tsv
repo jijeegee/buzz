@@ -1,0 +1,24 @@
+ar	Language style: Modern Standard Arabic as WhatsApp/Telegram Arabic say it; RTL text, keep placeholders as-is.
+bn	Language style: Bengali as WhatsApp Bengali says it (আপনি).
+de	Language style: German with 'du' as WhatsApp/Telegram German do; keep compounds readable; short labels.
+es	Language style: Neutral international Spanish (tú form), as WhatsApp/Telegram Spanish say it.
+fa	Language style: Persian as Telegram Persian says it (شما); RTL; use Persian digits only if the English has none (keep placeholders).
+fil	Language style: Filipino (Tagalog) as Facebook Messenger Filipino says it; common English tech loanwords are fine (i-tap, i-save).
+fr	Language style: French as WhatsApp/Telegram French say it (vous); non-breaking space before : ; ? ! as French UIs do.
+hi	Language style: Everyday Hindi as WhatsApp Hindi uses it, common English loanwords in Devanagari where natural (चैट, मैसेज).
+id	Language style: Indonesian as WhatsApp/Telegram Indonesia say it (Anda).
+it	Language style: Italian as WhatsApp/Telegram Italian say it (tu).
+ja	
+ko	
+mr	Language style: Marathi as WhatsApp Marathi says it (तुम्ही).
+ms	Language style: Malay as WhatsApp Bahasa Melayu says it (anda).
+pt-BR	Language style: Brazilian Portuguese (você), as WhatsApp/Telegram pt-BR say it.
+ru	Language style: Russian as Telegram Russian says it (вы lowercase); short labels.
+ta	Language style: Tamil as WhatsApp Tamil says it (நீங்கள்).
+te	Language style: Telugu as WhatsApp Telugu says it (మీరు).
+th	Language style: Thai as LINE Thai says it; polite but short, no ending particles on buttons.
+tr	Language style: Turkish as WhatsApp/Telegram Turkish say it (siz politely in sentences).
+ur	Language style: Urdu as WhatsApp Urdu says it (آپ); RTL.
+vi	Language style: Vietnamese as Zalo/Messenger Vietnamese say it (bạn).
+zh-Hans	Language style: Simplified Chinese as WeChat/Telegram 简体中文 say it; concise labels.
+zh-Hant	Language style: Traditional Chinese with Taiwan usage, as LINE/Telegram 繁體中文(台灣) say it (e.g. 訊息, 設定, 檔案).

@@ -18,7 +18,7 @@ Future<void> showLanguagePickerSheet({
   required ValueChanged<Locale?> onSelected,
 }) {
   final l10n = context.l10n;
-  final options = <Locale?>[null, ...AppLocalizations.supportedLocales];
+  final options = <Locale?>[null, ...shippedLocales];
   return showKuzzModalBottomSheet<void>(
     context: context,
     title: l10n.settingsLanguage,

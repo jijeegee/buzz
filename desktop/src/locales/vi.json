@@ -4281,5 +4281,9 @@
   "agents.snapshotSend.sendFailed": "Gửi thất bại.",
   "agents.apiKey.inheritedFromBuild": "Kế thừa từ bản dựng",
   "agents.statusBadge.starting": "Đang khởi động…",
-  "agents.statusBadge.status": "{status, select, running {đang chạy} stopped {đã dừng} deployed {đã triển khai} not_deployed {chưa triển khai} other {{raw}}}"
+  "agents.statusBadge.status": "{status, select, running {đang chạy} stopped {đã dừng} deployed {đã triển khai} not_deployed {chưa triển khai} other {{raw}}}",
+  "settings.language.title": "Ngôn ngữ",
+  "settings.language.label": "Ngôn ngữ ứng dụng",
+  "settings.language.hint": "Kuzz dùng ngôn ngữ của máy tính trừ khi bạn chọn một ngôn ngữ ở đây.",
+  "settings.language.device": "Giống thiết bị ({language})"
 }

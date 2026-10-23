@@ -15,7 +15,7 @@ const _localePreferenceKey = 'kuzz.locale';
 /// `null` when this build has no such language.
 Locale? shippedLocaleForTag(String? tag) {
   if (tag == null) return null;
-  for (final locale in AppLocalizations.supportedLocales) {
+  for (final locale in shippedLocales) {
     if (locale.toLanguageTag() == tag) return locale;
   }
   return null;

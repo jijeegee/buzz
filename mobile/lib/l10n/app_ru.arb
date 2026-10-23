@@ -1433,5 +1433,8 @@
   "composeMentionNotInGroup": "не в группе",
   "composeMentionManagedByNotInGroup": "владелец: {owner} · не в группе",
   "composeMentionManagedByYouNotInGroup": "ваш агент · не в группе",
-  "composeMentionAdminTag": "админ"
+  "composeMentionAdminTag": "админ",
+  "languageNativeName": "Русский",
+  "settingsLanguage": "Язык",
+  "settingsLanguageDevice": "Как на телефоне ({language})"
 }

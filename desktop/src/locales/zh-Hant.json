@@ -4277,5 +4277,9 @@
   "agents.snapshotSend.sendFailed": "傳送失敗。",
   "agents.apiKey.inheritedFromBuild": "繼承自此版本",
   "agents.statusBadge.starting": "啟動中…",
-  "agents.statusBadge.status": "{status, select, running {執行中} stopped {已停止} deployed {已部署} not_deployed {未部署} other {{raw}}}"
+  "agents.statusBadge.status": "{status, select, running {執行中} stopped {已停止} deployed {已部署} not_deployed {未部署} other {{raw}}}",
+  "settings.language.title": "語言",
+  "settings.language.label": "應用程式語言",
+  "settings.language.hint": "除非你在這裡選擇，否則 Kuzz 會使用電腦的語言。",
+  "settings.language.device": "與裝置相同（{language}）"
 }
