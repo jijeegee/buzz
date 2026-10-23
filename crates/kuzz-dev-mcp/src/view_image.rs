@@ -249,7 +249,13 @@ fn is_relay_media_url(target: &reqwest::Url, relay: &reqwest::Url) -> bool {
 /// `authority` (`host[:port]`), and return the full `Authorization` header
 /// value. Mirrors the desktop client's signer: kind 24242, `t=get`,
 /// `expiration`, `server` tag — no `x` tag (BUD-01 allows x OR server).
-fn sign_media_get_auth(keys: &nostr::Keys, authority: &str) -> Result<String, String> {
+/// `device` adds this machine's `device` tag (device-bound keys plan §6);
+/// without it, or when tagging fails, the event is what it was before.
+async fn sign_media_get_auth(
+    keys: &nostr::Keys,
+    device: Option<&kuzz_token_broker::device::DeviceSigner>,
+    authority: &str,
+) -> Result<String, String> {
     use nostr::{EventBuilder, JsonUtil, Kind, Tag, Timestamp};
     let now = Timestamp::now().as_secs();
     let tags = vec![
@@ -261,8 +267,11 @@ fn sign_media_get_auth(keys: &nostr::Keys, authority: &str) -> Result<String, St
         .map_err(|e| e.to_string())?,
         Tag::parse(["server", authority]).map_err(|e| e.to_string())?,
     ];
-    let event = EventBuilder::new(Kind::from(24242), "Get kuzz-media")
+    let unsigned = EventBuilder::new(Kind::from(24242), "Get kuzz-media")
         .tags(tags)
+        .build(keys.public_key());
+    let event = kuzz_cli::device::tag_event(device, unsigned)
+        .await
         .sign_with_keys(keys)
         .map_err(|e| e.to_string())?;
     Ok(format!(
@@ -290,7 +299,7 @@ fn server_authority(url: &reqwest::Url) -> Option<String> {
 /// unauthenticated request still succeeds, so a missing/invalid key degrades
 /// to an unsigned fetch instead of an error. Once the flag is on, the fetch
 /// 403s and the error path below names the missing key.
-fn relay_media_get_auth(url: &reqwest::Url) -> Option<String> {
+async fn relay_media_get_auth(url: &reqwest::Url) -> Option<String> {
     let relay = std::env::var("KUZZ_RELAY_URL").ok()?;
     let relay = reqwest::Url::parse(&relay).ok()?;
     if !is_relay_media_url(url, &relay) {
@@ -305,7 +314,8 @@ fn relay_media_get_auth(url: &reqwest::Url) -> Option<String> {
         }
     };
     let authority = server_authority(url)?;
-    match sign_media_get_auth(&keys, &authority) {
+    let device = kuzz_cli::device::process_signer().await;
+    match sign_media_get_auth(&keys, device.as_ref(), &authority).await {
         Ok(header) => Some(header),
         Err(e) => {
             tracing::warn!("media get auth signing failed; fetching unauthenticated: {e}");
@@ -321,7 +331,7 @@ fn relay_media_get_auth(url: &reqwest::Url) -> Option<String> {
 async fn fetch_url(url: &str) -> Result<Vec<u8>, ErrorData> {
     let parsed = reqwest::Url::parse(url)
         .map_err(|e| invalid_params(format!("invalid URL: {url} ({e})")))?;
-    let auth = relay_media_get_auth(&parsed);
+    let auth = relay_media_get_auth(&parsed).await;
     let mut client_builder = reqwest::Client::builder()
         .connect_timeout(FETCH_TIMEOUT)
         .timeout(FETCH_TIMEOUT);
@@ -1105,11 +1115,13 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn media_get_auth_header_shape() {
+    #[tokio::test]
+    async fn media_get_auth_header_shape() {
         use nostr::JsonUtil;
         let keys = nostr::Keys::generate();
-        let header = sign_media_get_auth(&keys, "localhost:3000").unwrap();
+        let header = sign_media_get_auth(&keys, None, "localhost:3000")
+            .await
+            .unwrap();
         let b64 = header.strip_prefix("Nostr ").expect("Nostr scheme prefix");
         let json = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(b64)
@@ -1132,5 +1144,30 @@ mod tests {
         let expiration: u64 = tag("expiration").unwrap().parse().unwrap();
         let now = nostr::Timestamp::now().as_secs();
         assert!(expiration > now && expiration <= now + MEDIA_GET_AUTH_EXPIRY_SECS);
+        assert!(tag("device").is_none());
+    }
+
+    #[tokio::test]
+    async fn media_get_auth_carries_a_verifiable_device_tag() {
+        use kuzz_token_broker::device::{DeviceKey, DeviceSigner};
+        use nostr::JsonUtil;
+        let dir = tempfile::tempdir().unwrap();
+        let key = DeviceKey::open_or_create_file(&dir.path().join("device.key")).unwrap();
+        let keys = nostr::Keys::generate();
+        let header = sign_media_get_auth(
+            &keys,
+            Some(&DeviceSigner::Key(key.clone())),
+            "localhost:3000",
+        )
+        .await
+        .unwrap();
+        let b64 = header.strip_prefix("Nostr ").unwrap();
+        let json = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(b64)
+            .unwrap();
+        let event = nostr::Event::from_json(std::str::from_utf8(&json).unwrap()).unwrap();
+        event.verify().expect("valid signature");
+        let device = kuzz_auth::device_proof::verify_event_device_tag(&event).unwrap();
+        assert_eq!(device, Some(key.pubkey()));
     }
 }

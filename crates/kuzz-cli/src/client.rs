@@ -7,6 +7,7 @@ use nostr::{EventBuilder, JsonUtil, Keys, Kind, Tag};
 use sha2::{Digest, Sha256};
 
 use kuzz_sdk::signer::EventSigner;
+use kuzz_token_broker::device::DeviceSigner;
 use kuzz_token_broker::{Secret, TokenSource};
 
 use crate::error::CliError;
@@ -84,8 +85,10 @@ const MAX_VIDEO_BYTES: u64 = 500 * 1024 * 1024;
 /// - `u` tag: the full request URL
 /// - `method` tag: HTTP method (GET, POST, PUT, DELETE)
 /// - `payload` tag: SHA-256 hex of the request body (if present)
-fn sign_nip98(
+/// - `device` tag: this machine's device signature, when `device` can sign
+async fn sign_nip98(
     keys: &Keys,
+    device: Option<&DeviceSigner>,
     method: &str,
     url: &str,
     body: Option<&[u8]>,
@@ -104,8 +107,11 @@ fn sign_nip98(
                 .map_err(|e| CliError::Other(format!("tag error: {e}")))?,
         );
     }
-    let event = EventBuilder::new(Kind::Custom(27235), "")
+    let unsigned = EventBuilder::new(Kind::Custom(27235), "")
         .tags(tags)
+        .build(keys.public_key());
+    let event = crate::device::tag_event(device, unsigned)
+        .await
         .sign_with_keys(keys)
         .map_err(|e| CliError::Other(format!("NIP-98 signing failed: {e}")))?;
     let json = event.as_json();
@@ -325,7 +331,11 @@ fn media_url_from_input(relay_url: &str, input: &str) -> Result<String, CliError
     ))
 }
 
-fn sign_blossom_get(keys: &Keys, media_url: &str) -> Result<String, CliError> {
+async fn sign_blossom_get(
+    keys: &Keys,
+    device: Option<&DeviceSigner>,
+    media_url: &str,
+) -> Result<String, CliError> {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use nostr::Timestamp;
 
@@ -339,8 +349,11 @@ fn sign_blossom_get(keys: &Keys, media_url: &str) -> Result<String, CliError> {
         Tag::parse(["server", &domain]).map_err(|e| CliError::Other(e.to_string()))?,
     ];
 
-    let auth_event = EventBuilder::new(Kind::from(24242), "Get media")
+    let unsigned = EventBuilder::new(Kind::from(24242), "Get media")
         .tags(tags)
+        .build(keys.public_key());
+    let auth_event = crate::device::tag_event(device, unsigned)
+        .await
         .sign_with_keys(keys)
         .map_err(|e| CliError::Other(format!("signing failed: {e}")))?;
 
@@ -350,8 +363,9 @@ fn sign_blossom_get(keys: &Keys, media_url: &str) -> Result<String, CliError> {
     ))
 }
 
-fn sign_blossom_upload(
+async fn sign_blossom_upload(
     keys: &Keys,
+    device: Option<&DeviceSigner>,
     sha256: &str,
     _mime: &str,
     relay_url: &str,
@@ -371,8 +385,11 @@ fn sign_blossom_upload(
         Tag::parse(["server", &domain]).map_err(|e| CliError::Other(e.to_string()))?,
     ];
 
-    let auth_event = EventBuilder::new(Kind::from(24242), "Upload file")
+    let unsigned = EventBuilder::new(Kind::from(24242), "Upload file")
         .tags(tags)
+        .build(keys.public_key());
+    let auth_event = crate::device::tag_event(device, unsigned)
+        .await
         .sign_with_keys(keys)
         .map_err(|e| CliError::Other(format!("signing failed: {e}")))?;
 
@@ -451,14 +468,16 @@ mod media_download_tests {
         }
     }
 
-    #[test]
-    fn media_get_auth_header_is_server_scoped() {
+    #[tokio::test]
+    async fn media_get_auth_header_is_server_scoped() {
         let keys = Keys::generate();
         let hash = "a".repeat(64);
         let header = sign_blossom_get(
             &keys,
+            None,
             &format!("https://relay.example:443/media/{hash}.jpg"),
         )
+        .await
         .unwrap();
         let encoded = header.strip_prefix("Nostr ").unwrap();
         let json = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -654,13 +673,20 @@ impl KuzzClient {
     pub async fn with_token(relay_url: String, token: Secret) -> Result<Self, CliError> {
         let http = build_http()?;
         let url = format!("{relay_url}/auth/me");
-        let resp = http
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", token.expose()))
-            .send()
-            .await?;
-        let status = resp.status().as_u16();
-        let body = resp.text().await?;
+        let device = crate::device::account_signer(token.expose()).await;
+        let (status, body) = crate::device::send_proved(
+            device.as_ref(),
+            crate::device::PURPOSE_AUTH,
+            "GET",
+            &url,
+            token.expose(),
+            b"",
+            || {
+                http.get(&url)
+                    .header("Authorization", format!("Bearer {}", token.expose()))
+            },
+        )
+        .await?;
         if !(200..300).contains(&status) {
             return Err(match relay_error(status, body) {
                 CliError::Relay { status, body } if status == 401 || status == 403 => {
@@ -768,7 +794,7 @@ impl KuzzClient {
 
     /// `Authorization` header value for a bridge/API request: `Bearer` in
     /// token mode, a fresh NIP-98 event in key mode.
-    fn auth_header(
+    async fn auth_header(
         &self,
         method: &str,
         url: &str,
@@ -776,7 +802,10 @@ impl KuzzClient {
     ) -> Result<String, CliError> {
         match (&self.bearer, &self.signer) {
             (Some(token), _) => Ok(format!("Bearer {}", token.expose())),
-            (None, EventSigner::Keys(keys)) => sign_nip98(keys, method, url, body),
+            (None, EventSigner::Keys(keys)) => {
+                let device = crate::device::process_signer().await;
+                sign_nip98(keys, device.as_ref(), method, url, body).await
+            }
             (None, EventSigner::Principal(_)) => {
                 Err(CliError::Auth("token-mode client has no token".into()))
             }
@@ -786,11 +815,12 @@ impl KuzzClient {
     /// `Authorization` for a Blossom upload of `sha256`: `Bearer` in token
     /// mode (the relay binds the body to `X-SHA-256`), a fresh kind-24242
     /// event in key mode.
-    fn media_upload_auth(&self, sha256: &str, mime: &str) -> Result<String, CliError> {
+    async fn media_upload_auth(&self, sha256: &str, mime: &str) -> Result<String, CliError> {
         match (&self.bearer, &self.signer) {
             (Some(token), _) => Ok(format!("Bearer {}", token.expose())),
             (None, EventSigner::Keys(keys)) => {
-                sign_blossom_upload(keys, sha256, mime, &self.relay_url)
+                let device = crate::device::process_signer().await;
+                sign_blossom_upload(keys, device.as_ref(), sha256, mime, &self.relay_url).await
             }
             (None, EventSigner::Principal(_)) => {
                 Err(CliError::Auth("token-mode client has no token".into()))
@@ -800,10 +830,13 @@ impl KuzzClient {
 
     /// `Authorization` for a Blossom read of `media_url`, which callers have
     /// already pinned to the relay origin (`media_url_from_input`).
-    fn media_get_auth(&self, media_url: &str) -> Result<String, CliError> {
+    async fn media_get_auth(&self, media_url: &str) -> Result<String, CliError> {
         match (&self.bearer, &self.signer) {
             (Some(token), _) => Ok(format!("Bearer {}", token.expose())),
-            (None, EventSigner::Keys(keys)) => sign_blossom_get(keys, media_url),
+            (None, EventSigner::Keys(keys)) => {
+                let device = crate::device::process_signer().await;
+                sign_blossom_get(keys, device.as_ref(), media_url).await
+            }
             (None, EventSigner::Principal(_)) => {
                 Err(CliError::Auth("token-mode client has no token".into()))
             }
@@ -999,7 +1032,7 @@ impl KuzzClient {
             let body = body.clone();
             let url = url.clone();
             async move {
-                let auth = self.auth_header("POST", &url, Some(&body))?;
+                let auth = self.auth_header("POST", &url, Some(&body)).await?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -1029,7 +1062,7 @@ impl KuzzClient {
             let body = body.clone();
             let url = url.clone();
             async move {
-                let auth = self.auth_header("POST", &url, Some(&body))?;
+                let auth = self.auth_header("POST", &url, Some(&body)).await?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -1057,7 +1090,7 @@ impl KuzzClient {
         self.with_retry_body(|| {
             let url = url.clone();
             async move {
-                let auth = self.auth_header("GET", &url, None)?;
+                let auth = self.auth_header("GET", &url, None).await?;
                 let resp = self
                     .with_auth_tag(self.http.get(&url).header("Authorization", auth))
                     .send()
@@ -1087,7 +1120,7 @@ impl KuzzClient {
             let body_bytes = body_bytes.clone();
             let url = url.clone();
             async move {
-                let auth = self.auth_header("POST", &url, Some(&body_bytes))?;
+                let auth = self.auth_header("POST", &url, Some(&body_bytes)).await?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -1118,7 +1151,7 @@ impl KuzzClient {
     ) -> Result<String, CliError> {
         let url = format!("{}{path}", self.relay_url);
         let body = serde_json::to_vec(body).map_err(|e| CliError::Other(e.to_string()))?;
-        let auth = self.auth_header("POST", &url, Some(&body))?;
+        let auth = self.auth_header("POST", &url, Some(&body)).await?;
         let unknown = |detail: String| CliError::DeliveryUnknown(detail);
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -1192,7 +1225,7 @@ impl KuzzClient {
 
             // Re-sign NIP-98 each attempt: the nonce tag generates a fresh
             // event ID, keeping retries safe against the relay's replay guard.
-            let auth = self.auth_header("POST", &url, Some(&body))?;
+            let auth = self.auth_header("POST", &url, Some(&body)).await?;
             let send_result: Result<reqwest::Response, CliError> = self
                 .with_auth_tag(
                     self.http
@@ -1344,7 +1377,7 @@ impl KuzzClient {
                 async move {
                     // Re-sign NIP-98 each attempt: the nonce tag generates a fresh
                     // event ID, keeping retries safe against the relay's replay guard.
-                    let auth = self.auth_header("POST", &url, Some(&body))?;
+                    let auth = self.auth_header("POST", &url, Some(&body)).await?;
                     let resp = self
                         .with_auth_tag(
                             self.http
@@ -1391,8 +1424,16 @@ impl KuzzClient {
                 kuzz_ws_client::publish_event_with_token(&ws_url, event, token.expose(), 75).await
             }
             (None, EventSigner::Keys(keys)) => {
-                kuzz_ws_client::publish_event(&ws_url, event, keys, self.auth_tag.as_ref(), 75)
-                    .await
+                let device = crate::device::ws_tagger(crate::device::process_signer().await);
+                kuzz_ws_client::publish_event_with_device(
+                    &ws_url,
+                    event,
+                    keys,
+                    self.auth_tag.as_ref(),
+                    device.as_ref(),
+                    75,
+                )
+                .await
             }
             (None, EventSigner::Principal(_)) => {
                 return Err(CliError::Auth("token-mode client has no token".into()))
@@ -1478,7 +1519,7 @@ impl KuzzClient {
                 let mime = mime.clone();
                 let sha256 = sha256.clone();
                 async move {
-                    let auth_header = self.media_upload_auth(&sha256, &mime)?;
+                    let auth_header = self.media_upload_auth(&sha256, &mime).await?;
                     let resp = self
                         .with_auth_tag(
                             self.http
@@ -1524,7 +1565,7 @@ impl KuzzClient {
             let mime = mime.clone();
             let sha256 = sha256.clone();
             async move {
-                let auth_header = self.media_upload_auth(&sha256, &mime)?;
+                let auth_header = self.media_upload_auth(&sha256, &mime).await?;
                 let resp = self
                     .with_auth_tag(
                         self.http
@@ -1562,7 +1603,7 @@ impl KuzzClient {
             let url = url.clone();
             let client = client.clone();
             async move {
-                let auth_header = self.media_get_auth(&url)?;
+                let auth_header = self.media_get_auth(&url).await?;
                 let resp = self
                     .with_auth_tag(client.get(&url).header("Authorization", auth_header))
                     .send()
@@ -2833,5 +2874,47 @@ mod tests {
             built.headers().get("x-auth-tag").is_none(),
             "x-auth-tag header must not be present when no auth tag is configured"
         );
+    }
+
+    #[tokio::test]
+    async fn nip98_and_blossom_auth_carry_a_verifiable_device_tag() {
+        use base64::Engine as _;
+        let dir = tempfile::tempdir().unwrap();
+        let (signer, key) = crate::device::test_support::file_signer(&dir);
+        crate::device::set_test_signer(Some(signer));
+        let client =
+            KuzzClient::new("https://test.relay".into(), Keys::generate(), None, None).unwrap();
+        let nip98 = client
+            .auth_header("GET", "https://test.relay/api/x", None)
+            .await
+            .unwrap();
+        let hash = "a".repeat(64);
+        let blossom = client
+            .media_get_auth(&format!("https://test.relay/media/{hash}.jpg"))
+            .await
+            .unwrap();
+        crate::device::set_test_signer(None);
+        for header in [nip98, blossom] {
+            let encoded = header.split_once(' ').unwrap().1;
+            let raw = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded))
+                .unwrap();
+            let event: nostr::Event = serde_json::from_slice(&raw).unwrap();
+            event.verify().unwrap();
+            let device = kuzz_auth::device_proof::verify_event_device_tag(&event)
+                .unwrap()
+                .expect("device tag");
+            assert_eq!(device, key.pubkey());
+        }
+        let plain = client
+            .auth_header("GET", "https://test.relay/api/x", None)
+            .await
+            .unwrap();
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(plain.split_once(' ').unwrap().1)
+            .unwrap();
+        let event: nostr::Event = serde_json::from_slice(&raw).unwrap();
+        assert!(event.tags.iter().all(|t| t.as_slice()[0] != "device"));
     }
 }

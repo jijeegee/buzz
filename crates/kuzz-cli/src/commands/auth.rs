@@ -9,8 +9,8 @@
 
 use std::time::Duration;
 
-use kuzz_token_broker::{Secret, TokenSource};
 use clap::Subcommand;
+use kuzz_token_broker::{Secret, TokenSource};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -507,15 +507,20 @@ pub fn start_url(
     challenge: &str,
     redirect_uri: &str,
     device_name: &str,
+    device_pubkey: Option<&str>,
 ) -> String {
-    let query = url::form_urlencoded::Serializer::new(String::new())
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    query
         .append_pair("state", state)
         .append_pair("code_challenge", challenge)
         .append_pair("client", "cli")
         .append_pair("identity_mode", "token")
         .append_pair("redirect_uri", redirect_uri)
-        .append_pair("device_name", device_name)
-        .finish();
+        .append_pair("device_name", device_name);
+    if let Some(device_pubkey) = device_pubkey {
+        query.append_pair("device_pubkey", device_pubkey);
+    }
+    let query = query.finish();
     let provider: String = url::form_urlencoded::byte_serialize(provider.as_bytes()).collect();
     format!("{relay_url}/auth/oidc/{provider}/start?{query}")
 }
@@ -537,6 +542,9 @@ pub async fn login(
         .map_err(|e| CliError::Other(e.to_string()))?;
     let state = new_state();
     let pkce = pkce_pair();
+    // The one place outside the desktop app that may create the device key.
+    let device = login_device_key().await;
+    let device_pubkey = device.as_ref().map(|key| key.pubkey().to_hex());
     let url = start_url(
         relay_url,
         provider,
@@ -544,6 +552,7 @@ pub async fn login(
         &pkce.challenge,
         &listener.redirect_uri(),
         device_name,
+        device_pubkey.as_deref(),
     );
     let opened = open_browser(&url);
     if opened {
@@ -557,9 +566,19 @@ pub async fn login(
         .map_err(|e| CliError::Auth(format!("login failed: {e}")))?;
 
     let http = build_http()?;
+    if device.is_some() {
+        // Stamp the bind proof in relay time (a login code is single use).
+        crate::device::sync_server_time(&http, relay_url).await;
+    }
+    let mut body = json!({ "login_code": code.as_str(), "code_verifier": pkce.verifier.as_str() });
+    if let Some(fields) = login_device_fields(device.as_ref(), code.as_str()).await {
+        if let Value::Object(map) = &mut body {
+            map.extend(fields);
+        }
+    }
     let resp = http
         .post(format!("{relay_url}/auth/oidc/complete"))
-        .json(&json!({ "login_code": code.as_str(), "code_verifier": pkce.verifier.as_str() }))
+        .json(&body)
         .send()
         .await?;
     let status = resp.status().as_u16();
@@ -617,6 +636,62 @@ pub async fn login(
     }))
 }
 
+/// This machine's device key for a login, created when it has none yet.
+/// `None` (with a warning) when it cannot be opened: the login then goes on
+/// without one, as before.
+async fn login_device_key() -> Option<kuzz_token_broker::device::DeviceKey> {
+    #[cfg(not(test))]
+    use kuzz_token_broker::device::{open_shared, OpenMode};
+    #[cfg(test)]
+    {
+        crate::device::process_signer()
+            .await
+            .and_then(|signer| signer.key().cloned())
+    }
+    #[cfg(not(test))]
+    match tokio::task::spawn_blocking(|| open_shared(OpenMode::CreateIfMissing)).await {
+        Ok(Ok(key)) => key,
+        Ok(Err(error)) => {
+            crate::device::warn(&format!("device key unavailable: {error}"));
+            None
+        }
+        Err(error) => {
+            crate::device::warn(&format!("device key task failed: {error}"));
+            None
+        }
+    }
+}
+
+/// The login body's device fields (`device_pubkey`, `device_key_kind`,
+/// `device_proof`): a `bind` proof over `login:<sha256(code) hex>`. `None`
+/// without a key or when signing fails (the relay then records the device
+/// without a key).
+async fn login_device_fields(
+    device: Option<&kuzz_token_broker::device::DeviceKey>,
+    login_code: &str,
+) -> Option<serde_json::Map<String, Value>> {
+    use sha2::Digest as _;
+    let key = device?;
+    let binding = format!(
+        "login:{}",
+        hex::encode(sha2::Sha256::digest(login_code.as_bytes()))
+    );
+    let signer = kuzz_token_broker::device::DeviceSigner::Key(key.clone());
+    let proof = crate::device::header_proof(
+        Some(&signer),
+        crate::device::PURPOSE_BIND,
+        binding,
+        None,
+        b"",
+    )
+    .await?;
+    let mut fields = serde_json::Map::new();
+    fields.insert("device_pubkey".into(), json!(key.pubkey().to_hex()));
+    fields.insert("device_key_kind".into(), json!(key.kind().as_wire()));
+    fields.insert("device_proof".into(), json!(proof));
+    Some(fields)
+}
+
 /// Sign out the stored session: `POST /auth/logout`, then forget it locally.
 /// Expired access is refreshed and retried once; only successful revocation
 /// or a terminal refresh rejection forgets locally. Other failures preserve
@@ -645,14 +720,24 @@ pub async fn logout(
     let remote = loop {
         match session_access_token_detailed(&http, relay_url, store, force_refresh).await {
             Ok(Some((token, _))) => {
-                let resp = http
-                    .post(format!("{relay_url}/auth/logout"))
-                    .bearer_auth(token.expose())
-                    .json(&json!({}))
-                    .send()
-                    .await?;
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
+                let url = format!("{relay_url}/auth/logout");
+                let body = b"{}".to_vec();
+                let device = crate::device::account_signer(token.expose()).await;
+                let (status, body) = crate::device::send_proved(
+                    device.as_ref(),
+                    crate::device::PURPOSE_AUTH,
+                    "POST",
+                    &url,
+                    token.expose(),
+                    &body,
+                    || {
+                        http.post(&url)
+                            .bearer_auth(token.expose())
+                            .header("Content-Type", "application/json")
+                            .body(body.clone())
+                    },
+                )
+                .await?;
                 if (200..300).contains(&status) {
                     break "revoked";
                 }
@@ -728,18 +813,42 @@ impl AuthApi {
         body: Option<Value>,
     ) -> Result<Value, CliError> {
         let mut force_refresh = false;
+        let mut proof_retried = false;
+        let url = format!("{}{path}", self.relay_url);
+        let body_bytes = match &body {
+            Some(body) => serde_json::to_vec(body).map_err(|e| CliError::Other(e.to_string()))?,
+            None => Vec::new(),
+        };
         loop {
             let token = self.token(force_refresh).await?;
+            let device = crate::device::account_signer(token.expose()).await;
+            let proof = crate::device::request_proof(
+                device.as_ref(),
+                crate::device::PURPOSE_AUTH,
+                method.as_str(),
+                &url,
+                token.expose(),
+                &body_bytes,
+            )
+            .await;
             let mut req = self
                 .http
-                .request(method.clone(), format!("{}{path}", self.relay_url))
+                .request(method.clone(), &url)
                 .bearer_auth(token.expose());
-            if let Some(body) = &body {
-                req = req.json(body);
+            if body.is_some() {
+                req = req
+                    .header("Content-Type", "application/json")
+                    .body(body_bytes.clone());
             }
-            let resp = req.send().await?;
+            let resp = crate::device::with_proof(req, proof).send().await?;
+            crate::device::note_server_time(resp.headers());
             let status = resp.status().as_u16();
             let text = resp.text().await?;
+            // A proof stamped off the relay clock: re-sign in relay time once.
+            if crate::device::is_stale_proof(status, &text) && !proof_retried {
+                proof_retried = true;
+                continue;
+            }
             if (200..300).contains(&status) {
                 if text.trim().is_empty() {
                     return Ok(Value::Null);

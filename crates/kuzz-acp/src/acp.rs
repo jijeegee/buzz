@@ -393,6 +393,9 @@ pub struct AcpClient {
     /// Token mode: this agent process's broker secret. Its MCP servers reuse
     /// it; dropping the client (child exit, respawn, shutdown) unregisters it.
     broker_lease: Option<crate::token_broker::BrokerLease>,
+    /// Key mode with a device broker: this agent process's device broker
+    /// secret, shared with its MCP servers and dropped with the child.
+    device_lease: Option<crate::device::DeviceLease>,
 }
 
 /// Recursively merge `overlay` into `base`, with `overlay` winning on scalar/shape
@@ -627,8 +630,9 @@ impl AcpClient {
             Ok(Err(e)) => tracing::debug!("child wait error after kill: {e}"),
             Err(_) => tracing::warn!("child did not exit within 5s after SIGKILL — abandoning"),
         }
-        // The child is gone: its broker secret must stop working now.
+        // The child is gone: its broker secrets must stop working now.
         self.broker_lease = None;
+        self.device_lease = None;
     }
 
     /// Spawn the agent binary as a subprocess and connect to its stdio pipes.
@@ -795,6 +799,10 @@ impl AcpClient {
         // mode it gets per-spawn broker credentials instead.
         let broker_lease = crate::token_broker::apply_child_credentials(&mut cmd, broker)
             .map_err(|error| AcpError::Protocol(error.to_string()))?;
+        // Device tags for children that cannot open the device key
+        // themselves; never the key itself.
+        let device_lease = crate::device::apply_child_device(&mut cmd, crate::device::global())
+            .map_err(|error| AcpError::Protocol(error.to_string()))?;
         let mut child = cmd.spawn().map_err(|error| {
             std::io::Error::new(
                 error.kind(),
@@ -845,6 +853,7 @@ impl AcpClient {
             standard_usage: StandardUsageTracker::default(),
             standard_adapter,
             broker_lease,
+            device_lease,
         })
     }
 
@@ -1022,6 +1031,7 @@ impl AcpClient {
     ) -> Result<SessionNewResponse, AcpError> {
         let mut mcp_servers = mcp_servers;
         crate::token_broker::apply_mcp_credentials(&mut mcp_servers, self.broker_lease.as_ref());
+        crate::device::apply_mcp_device(&mut mcp_servers, self.device_lease.as_ref());
         let mut params = serde_json::json!({
             "cwd": cwd,
             "mcpServers": mcp_servers,
@@ -1327,6 +1337,7 @@ impl AcpClient {
                 &mut mcp_servers,
                 self.broker_lease.as_ref(),
             );
+            crate::device::apply_mcp_device(&mut mcp_servers, self.device_lease.as_ref());
         }
         let mut params = serde_json::json!({
             "sessionId": session_id,

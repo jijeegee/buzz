@@ -11,6 +11,9 @@ mod acp;
 mod base_prompt_trim;
 mod config;
 mod context_history;
+mod device;
+/// Exit code when the relay binds this agent to another device (`enforce`).
+pub use device::EXIT_WRONG_HOST;
 mod dispatcher;
 mod edit_routing;
 mod engram_fetch;
@@ -3147,6 +3150,9 @@ pub fn run() -> Result<()> {
     if token_refresh::auth_terminal_requested() {
         std::process::exit(identity::EXIT_AUTH_TERMINAL);
     }
+    if device::wrong_host_exit_requested() {
+        std::process::exit(device::EXIT_WRONG_HOST);
+    }
     result
 }
 
@@ -3287,6 +3293,42 @@ pub(crate) async fn load_config(args: config::CliArgs) -> Result<Config> {
         .map_err(|e| anyhow::anyhow!("configuration error: {e}"))
 }
 
+/// Key mode: open this machine's device key, check the agent's admission
+/// and start the device broker for agent children. `false`: the relay binds
+/// this agent to another device under `enforce`, so the harness must not
+/// start here; the process then exits with [`device::EXIT_WRONG_HOST`]. Every
+/// other outcome (token mode, no key, admission off, an older relay, an
+/// unreachable status route) starts as before.
+async fn start_device_signing(config: &Config) -> bool {
+    let Ok(keys) = config.keys.secret_keys("device admission") else {
+        return true;
+    };
+    let Some(key) = device::init().await else {
+        return true;
+    };
+    let http = reqwest::Client::new();
+    let http_base = relay::relay_ws_to_http(&config.relay_url);
+    if let device::Admission::OtherDevice(message) =
+        device::check_status(&http, &http_base, keys, Some(key)).await
+    {
+        tracing::error!(
+            agent = %keys.public_key().to_hex(),
+            exit_code = device::EXIT_WRONG_HOST,
+            "not starting: this agent is bound to another device ({message})"
+        );
+        eprintln!("kuzz-acp: not starting: this agent is bound to another device");
+        device::request_wrong_host_exit();
+        return false;
+    }
+    match device::start_global(key.clone(), keys.public_key(), &config.relay_url).await {
+        Ok(broker) => tracing::info!(url = %broker.url(), "device broker listening"),
+        Err(error) => {
+            tracing::warn!("device broker failed to start; agent children sign without it: {error}")
+        }
+    }
+    true
+}
+
 async fn run_harness(
     config: Config,
     shutdown_tx: watch::Sender<()>,
@@ -3300,6 +3342,12 @@ async fn run_harness(
             .await
             .context("token broker failed to start")?;
         tracing::info!(url = %broker.url(), "token broker listening");
+    }
+    // Device-bound keys (plan §6): key mode signs with this machine's device
+    // key, and does not start where the relay binds the agent to another
+    // device.
+    if !start_device_signing(&config).await {
+        return Ok(());
     }
     let runtime = AgentRuntime::prepare(config)?;
     let config = runtime.config();

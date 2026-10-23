@@ -12,3 +12,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 zeroize = { workspace = true }
+# Device-bound keys: the shared device key and the device broker protocol.
+kuzz-device-key = { workspace = true }
+nostr = { workspace = true }
+
+[dev-dependencies]
+kuzz-auth = { workspace = true }
+tempfile = "3"

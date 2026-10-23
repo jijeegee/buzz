@@ -2897,8 +2897,11 @@ name = "git-credential-nostr"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "kuzz-auth",
+ "kuzz-token-broker",
  "nostr 0.44.7",
  "serde_json",
+ "tempfile",
  "zeroize",
 ]
 
@@ -4332,6 +4335,7 @@ dependencies = [
  "git-sign-nostr",
  "hex",
  "httparse",
+ "kuzz-auth",
  "kuzz-core",
  "kuzz-persona",
  "kuzz-sdk",
@@ -4497,6 +4501,7 @@ dependencies = [
  "hex",
  "infer",
  "keyring",
+ "kuzz-auth",
  "kuzz-core",
  "kuzz-persona",
  "kuzz-sdk",
@@ -4619,8 +4624,10 @@ dependencies = [
  "base64 0.22.1",
  "ignore",
  "image",
+ "kuzz-auth",
  "kuzz-cli",
  "kuzz-core",
+ "kuzz-token-broker",
  "nix 0.31.3",
  "nostr 0.44.7",
  "reqwest 0.13.4",
@@ -4977,8 +4984,12 @@ dependencies = [
 name = "kuzz-token-broker"
 version = "0.1.0"
 dependencies = [
+ "kuzz-auth",
+ "kuzz-device-key",
+ "nostr 0.44.7",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "zeroize",
 ]

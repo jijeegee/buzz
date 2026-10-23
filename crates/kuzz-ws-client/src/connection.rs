@@ -9,7 +9,10 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, Web
 use tracing::debug;
 
 use crate::error::WsClientError;
-use crate::message::{build_auth_event, parse_relay_message, OkResponse, RelayMessage};
+use crate::message::{
+    apply_device_tag, parse_relay_message, unsigned_auth_event, DeviceTagger, OkResponse,
+    RelayMessage,
+};
 
 type WsStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -75,11 +78,28 @@ impl NostrWsConnection {
         keys: &Keys,
         auth_tag: Option<&Tag>,
     ) -> Result<(), WsClientError> {
+        self.authenticate_with_device(keys, auth_tag, None).await
+    }
+
+    /// [`Self::authenticate`] whose AUTH event also carries this device's
+    /// tag from `device` (device-bound keys). A tagger that cannot sign
+    /// leaves the event as it was.
+    pub async fn authenticate_with_device(
+        &mut self,
+        keys: &Keys,
+        auth_tag: Option<&Tag>,
+        device: Option<&DeviceTagger>,
+    ) -> Result<(), WsClientError> {
         let challenge = self
             .wait_for_auth_challenge(Duration::from_secs(AUTH_CHALLENGE_TIMEOUT_SECS))
             .await?;
 
-        let auth_event = build_auth_event(&challenge, &self.relay_url, keys, auth_tag)?;
+        let unsigned =
+            unsigned_auth_event(&challenge, &self.relay_url, keys.public_key(), auth_tag)?;
+        let auth_event = apply_device_tag(device, unsigned)
+            .await
+            .sign_with_keys(keys)
+            .map_err(|e| WsClientError::EventBuilder(e.to_string()))?;
         let event_id = auth_event.id.to_hex();
 
         self.send_raw(&json!(["AUTH", auth_event])).await?;
@@ -310,9 +330,23 @@ pub async fn publish_event(
     auth_tag: Option<&Tag>,
     timeout_secs: u64,
 ) -> Result<OkResponse, WsClientError> {
+    publish_event_with_device(relay_url, event, keys, auth_tag, None, timeout_secs).await
+}
+
+/// [`publish_event`] whose AUTH event carries this device's tag from
+/// `device` (device-bound keys).
+pub async fn publish_event_with_device(
+    relay_url: &str,
+    event: Event,
+    keys: &Keys,
+    auth_tag: Option<&Tag>,
+    device: Option<&DeviceTagger>,
+    timeout_secs: u64,
+) -> Result<OkResponse, WsClientError> {
     let result = tokio::time::timeout(Duration::from_secs(timeout_secs), async {
         let mut conn = NostrWsConnection::connect(relay_url).await?;
-        conn.authenticate(keys, auth_tag).await?;
+        conn.authenticate_with_device(keys, auth_tag, device)
+            .await?;
         let ok = conn.send_event(event).await?;
         let _ = conn.disconnect().await;
         Ok::<_, WsClientError>(ok)

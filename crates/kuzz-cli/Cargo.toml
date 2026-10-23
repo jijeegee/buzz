@@ -96,6 +96,8 @@ webbrowser = "1"
 zeroize = { workspace = true }
 
 [dev-dependencies]
+# Verifies device proofs the way the relay does
+kuzz-auth = { workspace = true }
 # Scratch files for channel-templates.json fixtures in tests
 tempfile = "3"
 # Minimal HTTP test server for retry/policy integration tests

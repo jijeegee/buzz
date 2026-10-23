@@ -684,6 +684,11 @@ async fn a_registered_agent_runs_on_its_host_and_status_reports_it() {
     let single = format!("/agents/{}/status", agent.public_key().to_hex());
     let (status, body) = status_call(&inst, &agent, &laptop.device, &single).await;
     assert_eq!((status, body["code"].clone()), (403, json!("not_admitted")));
+    assert!(
+        body["error"].as_str().unwrap().ends_with("(wrong_host)"),
+        "{body}"
+    );
+    assert_eq!(body["admission"], "enforce");
     let (status, _) = status_call(&inst, &nostr::Keys::generate(), &pc.device, &single).await;
     assert_eq!(status, 403);
 
@@ -705,4 +710,29 @@ async fn a_registered_agent_runs_on_its_host_and_status_reports_it() {
     let (status, body) = status_call(&off, &agent, &pc.device, &single).await;
     assert_eq!(status, 200, "{body}");
     assert_eq!(body, json!({"admission": "off", "keys": []}));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn status_names_log_mode_on_a_wrong_host_refusal() {
+    // Under `log` the relay still admits the agent elsewhere: the refusal
+    // says so, and kuzz-acp keeps running (it stops only under `enforce`).
+    let inst = agents_instance(DeviceAdmissionMode::Log).await;
+    let (pc, subject) = owner(&inst).await;
+    let laptop = other_device(&inst, &pc, &subject).await;
+    let agent = nostr::Keys::generate();
+    assert_eq!(register(&inst, &pc, &agent, false).await.0, 200);
+
+    let single = format!("/agents/{}/status", agent.public_key().to_hex());
+    let (status, body) = status_call(&inst, &agent, &laptop.device, &single).await;
+    assert_eq!((status, body["code"].clone()), (403, json!("not_admitted")));
+    assert!(
+        body["error"].as_str().unwrap().ends_with("(wrong_host)"),
+        "{body}"
+    );
+    assert_eq!(body["admission"], "log");
+
+    let (status, body) = status_call(&inst, &agent, &pc.device, &single).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["admission"], "log");
 }
