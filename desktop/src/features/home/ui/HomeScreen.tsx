@@ -19,10 +19,8 @@ import {
 import { HomeView } from "@/features/home/ui/HomeView";
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import type { HomeFeedResponse } from "@/shared/api/types";
-import {
-  isRelayUnreachableError,
-  RELAY_UNREACHABLE_MESSAGE,
-} from "@/shared/lib/relayError";
+import { useT } from "@/shared/i18n";
+import { isRelayUnreachableError } from "@/shared/lib/relayError";
 
 type HomeScreenProps = {
   availableChannelIds: ReadonlySet<string>;
@@ -42,6 +40,7 @@ export function HomeScreen({
   onOpenContext,
   variant = "page",
 }: HomeScreenProps) {
+  const t = useT();
   const homeFeedQuery = useHomeFeedQuery();
   const { getReadContexts, readStateVersion, threadActivityFeedItems } =
     useAppShell();
@@ -142,7 +141,7 @@ export function HomeScreen({
         errorMessage={
           homeFeedQuery.error !== null && homeFeedQuery.error !== undefined
             ? isRelayUnreachableError(homeFeedQuery.error)
-              ? RELAY_UNREACHABLE_MESSAGE
+              ? t("common.relayUnreachable.message")
               : homeFeedQuery.error instanceof Error
                 ? homeFeedQuery.error.message
                 : undefined

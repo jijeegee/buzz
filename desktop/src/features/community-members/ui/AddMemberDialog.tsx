@@ -14,7 +14,7 @@ import { SelectedRecipientChip } from "@/features/profile/ui/SelectedRecipientCh
 import type { RelayMemberRole, UserSearchResult } from "@/shared/api/types";
 import { type MessageKey, useT } from "@/shared/i18n";
 import { parsePubkeyInput } from "@/shared/lib/nostrUtils";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -49,7 +49,7 @@ const ROLE_OPTIONS: Array<{
 
 function formatSearchUserName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
+    user.displayName?.trim() || user.nip05Handle?.trim() || unknownUserLabel()
   );
 }
 

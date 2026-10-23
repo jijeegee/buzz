@@ -18,7 +18,6 @@ import {
 } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
-import { personaCatalogCopy } from "./personaLibraryCopy";
 import { RemoveMembersConfirmDialog } from "./RemoveMembersConfirmDialog";
 import {
   copySelectedPersonaIds,
@@ -196,7 +195,7 @@ export function TeamDialog({
                   disabled={isPending}
                   id="team-name"
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Engineering Squad"
+                  placeholder={t("agents.teamDialog.namePlaceholder")}
                   value={name}
                 />
               </div>
@@ -251,7 +250,7 @@ export function TeamDialog({
                 ) : null}
                 {personas.length === 0 ? (
                   <p className="py-4 text-center text-sm text-muted-foreground">
-                    {personaCatalogCopy.teamEmptyState}
+                    {t("agents.libraryCopy.teamEmptyState")}
                   </p>
                 ) : (
                   <div

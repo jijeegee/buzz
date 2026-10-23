@@ -12,10 +12,10 @@ import type {
 import {
   normalizePubkey,
   truncateNpub,
-  UNKNOWN_USER_LABEL,
+  unknownUserLabel,
 } from "@/shared/lib/pubkey";
 
-export { truncateNpub, UNKNOWN_USER_LABEL };
+export { truncateNpub, unknownUserLabel };
 
 export type ProfileChannelLink = {
   id: string;
@@ -242,7 +242,7 @@ export function resolveProfileDisplayName({
   return (
     profile?.displayName ??
     persona?.displayName ??
-    (pubkey ? UNKNOWN_USER_LABEL : t("profile.panel.agentFallbackName"))
+    (pubkey ? unknownUserLabel() : t("profile.panel.agentFallbackName"))
   );
 }
 
@@ -257,7 +257,7 @@ export function resolveOwnerHandle(
   return (
     profile?.nip05Handle?.trim() ||
     profile?.displayName?.trim() ||
-    UNKNOWN_USER_LABEL
+    unknownUserLabel()
   );
 }
 

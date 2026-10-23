@@ -1,5 +1,7 @@
 import { decode, npubEncode } from "nostr-tools/nip19";
 
+import { t } from "@/shared/i18n";
+
 import { safeNpub } from "./nostrUtils";
 
 /**
@@ -13,14 +15,25 @@ export function normalizePubkey(pubkey: string): string {
 }
 
 /** Neutral identity label for keys that cannot be encoded for display. */
-export const UNAVAILABLE_KEY_LABEL = "Unavailable";
+export function unavailableKeyLabel(): string {
+  return t("common.keyUnavailable");
+}
+
+/**
+ * English source of the label for a person or agent with no resolvable name.
+ * Kept for tests and for text that goes into a message draft (mentions);
+ * screens show {@link unknownUserLabel} instead.
+ */
+export const UNKNOWN_USER_LABEL = "Unknown user";
 
 /**
  * Visible label for a person or agent with no resolvable name. Kuzz accounts
  * are Google-backed and always carry a display name, so end users never see
  * key fragments as identity text; an unnamed identity renders this instead.
  */
-export const UNKNOWN_USER_LABEL = "Unknown user";
+export function unknownUserLabel(): string {
+  return t("common.unknownUser");
+}
 
 const HEX_64_REGEX = /^[0-9a-f]{64}$/;
 
@@ -84,9 +97,9 @@ export function canonicalNpub(pubkey: string): string | null {
  * shaped; the underlying hex never leaks as the identity display. A
  * truncated key is a recognition aid, never an identity proof — trust
  * decisions use `<PubKey variant="full">` or the full npub directly. Invalid
- * keys render `UNAVAILABLE_KEY_LABEL`, never raw hex or raw input.
+ * keys render `unavailableKeyLabel()`, never raw hex or raw input.
  */
 export function truncateNpub(pubkey: string): string {
   const npub = canonicalNpub(pubkey);
-  return npub === null ? UNAVAILABLE_KEY_LABEL : truncatePubkey(npub);
+  return npub === null ? unavailableKeyLabel() : truncatePubkey(npub);
 }

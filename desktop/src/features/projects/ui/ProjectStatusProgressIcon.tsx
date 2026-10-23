@@ -1,5 +1,6 @@
 import type * as React from "react";
 
+import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 
 export type ProjectStatusProgressState =
@@ -8,6 +9,14 @@ export type ProjectStatusProgressState =
   | "review"
   | "completed"
   | "canceled";
+
+const STATE_LABEL_KEYS: Record<ProjectStatusProgressState, MessageKey> = {
+  queued: "projects.statusIcon.queued",
+  started: "projects.statusIcon.started",
+  review: "projects.statusIcon.review",
+  completed: "projects.statusIcon.completed",
+  canceled: "projects.statusIcon.canceled",
+};
 
 /** Linear-style circular indicator showing a work item's workflow progress. */
 export function ProjectStatusProgressIcon({
@@ -18,9 +27,10 @@ export function ProjectStatusProgressIcon({
 }: React.SVGProps<SVGSVGElement> & {
   state: ProjectStatusProgressState;
 }) {
+  const t = useT();
   return (
     <svg
-      aria-label={ariaLabel ?? `${state} status`}
+      aria-label={ariaLabel ?? t(STATE_LABEL_KEYS[state])}
       className={cn("shrink-0", className)}
       data-project-status-progress={state}
       fill="none"

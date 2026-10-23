@@ -37,10 +37,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
-import {
-  OLDER_ACCOUNT_SIGN_IN_LABEL,
-  OLDER_ACCOUNT_SIGN_IN_TITLE,
-} from "@/features/onboarding/ui/GoogleSignInButton";
 import { listOwnRunningLocalAgents } from "@/features/agents/lib/runningLocalAgents";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
@@ -247,9 +243,9 @@ export function AccountSettingsCard({
                 onClick={() => void signIn(true)}
                 type="button"
                 variant="outline"
-                title={OLDER_ACCOUNT_SIGN_IN_TITLE}
+                title={t("onboarding.googleSignIn.olderAccountTitle")}
               >
-                {OLDER_ACCOUNT_SIGN_IN_LABEL}
+                {t("onboarding.googleSignIn.olderAccount")}
               </Button>
             ) : null}
             {status.state === "restoring" ? (

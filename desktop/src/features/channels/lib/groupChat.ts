@@ -3,7 +3,7 @@ import {
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
 import type { Channel } from "@/shared/api/types";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
 
 /** Title of a chat with nobody else in it. */
@@ -71,7 +71,7 @@ export function formatChatMemberTitle(
   if (labels.length === 0) return emptyChatTitle();
   const shown = labels
     .slice(0, CHAT_TITLE_NAME_LIMIT)
-    .map((label) => label?.trim() || UNKNOWN_USER_LABEL);
+    .map((label) => label?.trim() || unknownUserLabel());
   const hidden = labels.length - shown.length;
   return hidden > 0 ? `${shown.join(", ")} +${hidden}` : shown.join(", ");
 }

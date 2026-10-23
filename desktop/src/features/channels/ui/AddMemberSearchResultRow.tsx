@@ -3,7 +3,7 @@ import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import type { UserSearchResult } from "@/shared/api/types";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { useT } from "@/shared/i18n";
 
@@ -12,7 +12,7 @@ const MEMBER_ROW_INSET_DIVIDER_CLASS =
 
 export function formatAddCandidateName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
+    user.displayName?.trim() || user.nip05Handle?.trim() || unknownUserLabel()
   );
 }
 

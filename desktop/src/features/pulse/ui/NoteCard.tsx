@@ -18,7 +18,7 @@ import { AnimatedCount } from "@/shared/ui/AnimatedCount";
 import { Markdown } from "@/shared/ui/markdown";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { formatLocale, type Translate, useT } from "@/shared/i18n";
 
 export type NoteCardActions = {
@@ -69,7 +69,7 @@ function ReplyParentContext({
   const parentDisplayName = parentNote
     ? (cachedProfile?.displayName ??
       fetchedProfile?.displayName ??
-      UNKNOWN_USER_LABEL)
+      unknownUserLabel())
     : null;
   const isParentNameLoading =
     !cachedProfile && !fetchedProfile && parentProfileQuery.isLoading;
@@ -168,7 +168,7 @@ export function NoteCard({
 }: NoteCardProps) {
   const t = useT();
   const replyAuthorName = currentUserDisplayName ?? t("common.you");
-  const displayName = profile?.displayName ?? UNKNOWN_USER_LABEL;
+  const displayName = profile?.displayName ?? unknownUserLabel();
   const avatarUrl = profile?.avatarUrl ?? null;
   const [isReplyComposerOpen, setIsReplyComposerOpen] = React.useState(false);
   const actionButtonClass =

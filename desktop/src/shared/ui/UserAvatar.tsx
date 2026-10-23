@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useT } from "@/shared/i18n";
 import { avatarSourceUrlForShape } from "@/features/profile/ui/ProfileAvatarEditor.utils";
 import { parseAnimatedAvatarUrl } from "@/shared/lib/animatedAvatar";
 import { cn } from "@/shared/lib/cn";
@@ -69,6 +70,7 @@ export function UserAvatar({
   imageDraggable,
   testId,
 }: UserAvatarProps) {
+  const t = useT();
   const initials = getInitials(initialsLabel ?? displayName);
   const resolvedShape = shape ?? "circle";
   const shapedAvatarUrl = avatarSourceUrlForShape(avatarUrl, resolvedShape);
@@ -107,7 +109,7 @@ export function UserAvatar({
     >
       {src ? (
         <AvatarImage
-          alt={`${displayName} avatar`}
+          alt={t("ui.userAvatar.alt", { name: displayName })}
           className={cn("object-cover", !animated && "bg-secondary")}
           data-testid={testId ? `${testId}-image` : undefined}
           draggable={imageDraggable}

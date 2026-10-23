@@ -23,7 +23,7 @@ import { HighlightedSearchText } from "@/features/search/ui/HighlightedSearchTex
 import { useSearchMenuKeyboardNavigation } from "@/features/search/ui/useSearchMenuKeyboardNavigation";
 import type { Channel, SearchHit, UserSearchResult } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/ui/dialog";
 import { useDeferredModalOpen } from "@/shared/ui/deferredModalOpen";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -138,7 +138,7 @@ function getChannelPreview(channel: Channel) {
 
 function getUserDisplayName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
+    user.displayName?.trim() || user.nip05Handle?.trim() || unknownUserLabel()
   );
 }
 

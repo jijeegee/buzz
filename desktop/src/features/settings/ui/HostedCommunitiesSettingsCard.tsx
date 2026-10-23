@@ -34,7 +34,7 @@ import { CommunityIconSettingsCard } from "@/features/communities/ui/CommunityIc
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
 import { safeNpub } from "@/shared/lib/nostrUtils";
-import { UNAVAILABLE_KEY_LABEL } from "@/shared/lib/pubkey";
+import { unavailableKeyLabel } from "@/shared/lib/pubkey";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -550,7 +550,7 @@ export function HostedCommunitiesSettingsCard() {
                         {t("settings.hostedCommunities.accountUses")}
                       </dt>
                       <dd className="font-mono">
-                        {boundNpub ?? UNAVAILABLE_KEY_LABEL}
+                        {boundNpub ?? unavailableKeyLabel()}
                       </dd>
                     </div>
                     <div className="flex flex-wrap gap-x-2">
@@ -558,7 +558,7 @@ export function HostedCommunitiesSettingsCard() {
                         {t("settings.hostedCommunities.thisDevice")}
                       </dt>
                       <dd className="font-mono">
-                        {localNpub ?? UNAVAILABLE_KEY_LABEL}
+                        {localNpub ?? unavailableKeyLabel()}
                       </dd>
                     </div>
                   </dl>

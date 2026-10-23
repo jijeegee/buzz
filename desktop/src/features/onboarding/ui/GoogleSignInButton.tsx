@@ -14,15 +14,6 @@ import { Spinner } from "@/shared/ui/spinner";
 import { TermsAgreementLine } from "./TermsAgreementLine";
 
 /**
- * Secondary Google sign-in for accounts created by an earlier Kuzz version
- * (legacy token accounts). Plain Google sign-in cannot reach those accounts
- * on a new device, so the route stays, in plain words.
- */
-export const OLDER_ACCOUNT_SIGN_IN_LABEL = "Sign in to an older Kuzz account";
-export const OLDER_ACCOUNT_SIGN_IN_TITLE =
-  "Use this only if your Kuzz account was created with an earlier version of Kuzz.";
-
-/**
  * "Sign in with Google" for onboarding. Rendered only when the community's
  * relay offers Google onboarding and this device is not signed in yet.
  * Native code restores the same signing key or links the existing key.

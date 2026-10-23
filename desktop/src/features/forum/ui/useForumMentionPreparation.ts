@@ -1,11 +1,10 @@
 import * as React from "react";
 import { useAddChannelMembersMutation } from "@/features/channels/hooks";
-import { PRIVATE_CHANNEL_ADD_DENIED_MESSAGE } from "@/features/channels/lib/channelMemberAdmission";
 import { useCanAddChannelMembers } from "@/features/channels/useCanAddChannelMembers";
 import type { UseMentionsResult } from "@/features/messages/lib/useMentions";
 import type { ChannelType } from "@/shared/api/types";
 import { t } from "@/shared/i18n";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey } from "@/shared/lib/pubkey";
 
 type PendingInvite = {
   channelId: string;
@@ -123,7 +122,7 @@ export function useForumMentionPreparation(
     const draft = pendingRef.current;
     if (!draft || invitingRef.current) return;
     if (!canInvite) {
-      setError(PRIVATE_CHANNEL_ADD_DENIED_MESSAGE);
+      setError(t("channels.members.addDenied"));
       return;
     }
     const isCurrent = () =>
@@ -177,7 +176,7 @@ export function useForumMentionPreparation(
       isInvitePending: isInviting,
       names: (pending?.nonMemberPubkeys ?? []).map(
         (pubkey) =>
-          mentions.getMentionDisplayName(pubkey) ?? UNKNOWN_USER_LABEL,
+          mentions.getMentionDisplayName(pubkey) ?? t("common.unknownUser"),
       ),
       onDismiss: dismiss,
       onInvite: () => void invite(),

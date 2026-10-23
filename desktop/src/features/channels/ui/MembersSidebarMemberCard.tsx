@@ -23,8 +23,9 @@ import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { PresenceDot } from "@/features/presence/ui/PresenceBadge";
 import {
+  AGENT_COMMUNITY_AVAILABILITY_LABEL_KEYS,
   agentCommunityAvailability,
-  MANAGED_AGENT_PAIR_ACTION_LABELS,
+  MANAGED_AGENT_PAIR_ACTION_LABEL_KEYS,
   type ManagedAgentPairAction,
 } from "@/features/agents/managedAgentRuntimeStatus";
 import type {
@@ -240,7 +241,11 @@ export function MembersSidebarMemberCard({
               }
             >
               {managedAgentRuntime
-                ? agentCommunityAvailability(managedAgentRuntime)
+                ? t(
+                    AGENT_COMMUNITY_AVAILABILITY_LABEL_KEYS[
+                      agentCommunityAvailability(managedAgentRuntime)
+                    ],
+                  )
                 : managedAgent && isManagedAgentActive(managedAgent)
                   ? t("channels.members.running")
                   : t("channels.members.stopped")}
@@ -405,7 +410,7 @@ function MemberActionsMenu({
                 ? getPairActionIcon(pairAction)
                 : getManagedAgentActionIcon(managedAgent)}
               {pairAction
-                ? MANAGED_AGENT_PAIR_ACTION_LABELS[pairAction]
+                ? t(MANAGED_AGENT_PAIR_ACTION_LABEL_KEYS[pairAction])
                 : getManagedAgentPrimaryActionLabel(managedAgent)}
             </DropdownMenuItem>
             {onEditRespondTo ? (
