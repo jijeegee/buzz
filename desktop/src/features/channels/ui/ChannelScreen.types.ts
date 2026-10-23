@@ -8,6 +8,18 @@ import type {
 } from "@/shared/api/types";
 import type { IdleAuxiliaryHeaderControls } from "./IdleAuxiliaryPanel";
 
+/**
+ * Owner view: the owner reads a chat of their agent that they are not in.
+ * The agent's messages sit on the right and nothing can be sent.
+ */
+export type ChannelScreenOwnerView = {
+  agentName: string;
+  agentPubkey: string;
+  /** Shown in place of the composer (ask the agent, remove it). */
+  footer: (chatLabel: string) => ReactNode;
+  subtitle: string;
+};
+
 export type ChannelScreenProps = {
   activeChannel: Channel | null;
   /**
@@ -24,6 +36,7 @@ export type ChannelScreenProps = {
   idleAuxiliaryOverridesThread?: boolean;
   idleAuxiliaryTitle?: string;
   headerEndActions?: ReactNode;
+  ownerView?: ChannelScreenOwnerView;
   onAddFiles?: () => void;
   onCloseIdleAuxiliaryPanel?: () => void;
   onCloseForumPost: () => void;

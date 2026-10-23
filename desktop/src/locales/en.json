@@ -25650,5 +25650,117 @@
   "settings.language.device": "Same as device ({language})",
   "@settings.language.device": {
     "description": "Settings > Appearance > Language: first choice in the language list, follows the computer's language. {language} is that language's own name, e.g. 'Deutsch'. Short."
+  },
+  "ownerView.tabs.label": "Agent views",
+  "@ownerView.tabs.label": {
+    "description": "Accessible label for the two tabs at the top of a DM with your own AI agent."
+  },
+  "ownerView.tabs.chat": "Chat with {name}",
+  "@ownerView.tabs.chat": {
+    "description": "Tab in a DM with your own AI agent: your own chat with it. {name} is the agent's name. Short."
+  },
+  "ownerView.tabs.conversations": "{name}'s conversations",
+  "@ownerView.tabs.conversations": {
+    "description": "Tab in a DM with your own AI agent: the chats it has with other people without you. {name} is the agent's name. Short."
+  },
+  "ownerView.readOnly": "Read-only",
+  "@ownerView.readOnly": {
+    "description": "Chip in the header of a chat you can read but not write in. Owner view: the owner of an AI agent reads chats the agent has with other people, which the owner is not in. Read-only."
+  },
+  "ownerView.header.title": "{name}'s conversation · with {chat}",
+  "@ownerView.header.title": {
+    "description": "Header title of a chat your AI agent has without you. {name} is the agent, {chat} the other person or the chat's name. Owner view: the owner of an AI agent reads chats the agent has with other people, which the owner is not in. Read-only."
+  },
+  "ownerView.header.dm": "Direct message",
+  "@ownerView.header.dm": {
+    "description": "Header subtitle: the chat is a 1:1 conversation. Owner view: the owner of an AI agent reads chats the agent has with other people, which the owner is not in. Read-only."
+  },
+  "ownerView.header.groupChat": "{count, plural, one {Group chat · # person} other {Group chat · # people}}",
+  "@ownerView.header.groupChat": {
+    "description": "Header subtitle: the chat is a group chat with this many members. Owner view: the owner of an AI agent reads chats the agent has with other people, which the owner is not in. Read-only."
+  },
+  "ownerView.tag.agent": "agent",
+  "@ownerView.tag.agent": {
+    "description": "Small tag after a chat's name: the other side is an AI agent. Lowercase, one short word."
+  },
+  "ownerView.tag.person": "person",
+  "@ownerView.tag.person": {
+    "description": "Small tag after a chat's name: the other side is a person. Lowercase, one short word."
+  },
+  "ownerView.tag.people": "{count, plural, one {# person} other {# people}}",
+  "@ownerView.tag.people": {
+    "description": "Small tag after a group chat's name: how many members it has. Short."
+  },
+  "ownerView.list.title": "{name}'s view",
+  "@ownerView.list.title": {
+    "description": "Title above the list of your AI agent's chats without you. {name} is the agent's name. Short."
+  },
+  "ownerView.list.subtitle": "chats without you",
+  "@ownerView.list.subtitle": {
+    "description": "Next to the list title: these are the agent's chats you are not in. Lowercase, short."
+  },
+  "ownerView.list.empty": "{name} has no chats without you.",
+  "@ownerView.list.empty": {
+    "description": "Shown when your AI agent has no chats that you are not part of."
+  },
+  "ownerView.agentFallback": "Agent",
+  "@ownerView.agentFallback": {
+    "description": "Name used for an AI agent whose name has not loaded yet."
+  },
+  "ownerView.loadFailed": "Couldn't load these chats. Try again in a moment.",
+  "@ownerView.loadFailed": {
+    "description": "Shown when the list of your agent's chats could not be loaded."
+  },
+  "ownerView.loading": "Loading chats…",
+  "@ownerView.loading": {
+    "description": "Shown while the list of your agent's chats loads."
+  },
+  "ownerView.pickChat": "Pick a chat on the left to read it.",
+  "@ownerView.pickChat": {
+    "description": "Shown in the empty right pane before a chat is chosen. Owner view: the owner of an AI agent reads chats the agent has with other people, which the owner is not in. Read-only."
+  },
+  "ownerView.bar.notice": "Viewing as {name}'s owner. You can't write here.",
+  "@ownerView.bar.notice": {
+    "description": "Shown instead of the message box when reading your agent's chat. {name} is the agent. Owner view: the owner of an AI agent reads chats the agent has with other people, which the owner is not in. Read-only."
+  },
+  "ownerView.bar.ask": "Ask {name} about this chat",
+  "@ownerView.bar.ask": {
+    "description": "Button: open your own chat with the agent with a question about this chat ready to send. Short."
+  },
+  "ownerView.bar.remove": "Remove {name} from chat",
+  "@ownerView.bar.remove": {
+    "description": "Button: take your AI agent out of this chat. Short."
+  },
+  "ownerView.askDraft": "About your chat \"{chat}\" (chat id {channelId}): ",
+  "@ownerView.askDraft": {
+    "description": "Draft message the owner sends to their AI agent, pre-filled; the owner types the question after it. {chat} is the chat's name, {channelId} its id for the agent."
+  },
+  "ownerView.removed": "{name} left the chat.",
+  "@ownerView.removed": {
+    "description": "Toast after removing your AI agent from a chat."
+  },
+  "ownerView.removeFailed": "Couldn't remove {name} from the chat.",
+  "@ownerView.removeFailed": {
+    "description": "Error toast when removing your AI agent from a chat failed."
+  },
+  "ownerView.removeConfirm.title": "Remove {name} from {chat}?",
+  "@ownerView.removeConfirm.title": {
+    "description": "Confirm dialog title before removing your AI agent from a chat."
+  },
+  "ownerView.removeConfirm.body": "{name} stops getting messages from this chat. People in the chat can add it back.",
+  "@ownerView.removeConfirm.body": {
+    "description": "Confirm dialog body before removing your AI agent from a chat."
+  },
+  "ownerView.removeConfirm.action": "Remove",
+  "@ownerView.removeConfirm.action": {
+    "description": "Confirm button that removes your AI agent from a chat. Short."
+  },
+  "ownerView.notice": "{owner} ({agent}'s owner) can read this chat",
+  "@ownerView.notice": {
+    "description": "Line under a chat's header for everyone in it: the owner of an AI agent in this chat can read it even though they are not in it. {owner} is a person, {agent} their AI agent."
+  },
+  "ownerView.ownerFallback": "The owner",
+  "@ownerView.ownerFallback": {
+    "description": "Stands in for an AI agent owner's name that has not loaded yet."
   }
 }

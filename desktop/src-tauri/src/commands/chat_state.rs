@@ -150,6 +150,21 @@ fn build_chat_list_filter(
     filter
 }
 
+/// Owner view: one page of `agent`'s DMs and group chats the owner is not
+/// in. The relay checks that the signer owns the agent.
+fn build_agent_chat_list_filter(
+    agent: &str,
+    limit: u32,
+    before: Option<&ChatListCursor>,
+) -> Result<serde_json::Value, String> {
+    if agent.len() != 64 || !agent.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("agent must be a 64-hex pubkey".to_string());
+    }
+    let mut filter = build_chat_list_filter(limit, before, &[]);
+    filter["as_agent"] = serde_json::json!(agent.to_ascii_lowercase());
+    Ok(filter)
+}
+
 /// The wire shape of one `mark_read` item. Kept in one place: the relay
 /// takes `{"channel": uuid, "at": secs}` / `{"thread": root, "at": secs}`,
 /// and no position when only the unread mark changes.
@@ -292,6 +307,20 @@ pub async fn get_chat_list(
         before.as_ref(),
         &pinned_threads.unwrap_or_default(),
     );
+    query_envelope(&state, &binding, filter, "chat_list", Some("rows")).await
+}
+
+/// Owner view: one page of an agent's DMs and group chats that the signed-in
+/// owner is not in, read-only (no read state).
+#[tauri::command]
+pub async fn get_agent_chat_list(
+    binding: ChatStateBinding,
+    agent: String,
+    limit: Option<u32>,
+    before: Option<ChatListCursor>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let filter = build_agent_chat_list_filter(&agent, limit.unwrap_or(100), before.as_ref())?;
     query_envelope(&state, &binding, filter, "chat_list", Some("rows")).await
 }
 
@@ -460,6 +489,18 @@ mod tests {
             capped["pinned_threads"].as_array().map(Vec::len),
             Some(MAX_PINNED_THREADS)
         );
+    }
+
+    #[test]
+    fn agent_chat_list_filter_names_the_agent_without_pins() {
+        let agent = "AB".repeat(32);
+        let filter = build_agent_chat_list_filter(&agent, 50, None).expect("filter");
+        assert_eq!(filter["chat_list"], 1);
+        assert_eq!(filter["as_agent"], "ab".repeat(32));
+        assert_eq!(filter["limit"], 50);
+        assert!(filter.get("pinned_threads").is_none());
+        assert!(build_agent_chat_list_filter("zz", 50, None).is_err());
+        assert!(build_agent_chat_list_filter(&"g".repeat(64), 50, None).is_err());
     }
 
     #[test]

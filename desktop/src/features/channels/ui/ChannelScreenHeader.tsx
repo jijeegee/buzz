@@ -1,4 +1,4 @@
-import { LogIn, SquareTerminal } from "lucide-react";
+import { Eye, Lock, LogIn, SquareTerminal } from "lucide-react";
 import type * as React from "react";
 
 import { ChatHeader } from "@/features/chat/ui/ChatHeader";
@@ -16,6 +16,8 @@ import {
   scaleProfileAvatarStatusGeometry,
 } from "@/features/profile/ui/ProfileAvatarWithStatus";
 import { AgentManagementMarker } from "@/features/agents/ui/OtherSetupAgentMarker";
+import { AgentViewTabs } from "@/features/agents/ownerView/AgentViewTabs";
+import type { ChannelScreenOwnerView } from "@/features/channels/ui/ChannelScreen.types";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { UserNameIndicators } from "@/features/user-status/ui/UserNameIndicators";
 import { Button } from "@/shared/ui/button";
@@ -53,6 +55,9 @@ type ChannelScreenHeaderProps = {
   onManageChannel: () => void;
   onOpenGoals?: () => void;
   onToggleMembers: () => void;
+  ownerView?: ChannelScreenOwnerView;
+  /** "akak (Fizz's owner) can read this chat", for the other people here. */
+  ownerNotice?: React.ReactNode;
 };
 
 export function ChannelScreenHeader({
@@ -75,6 +80,8 @@ export function ChannelScreenHeader({
   onManageChannel,
   onOpenGoals,
   onToggleMembers,
+  ownerView,
+  ownerNotice,
 }: ChannelScreenHeaderProps) {
   const t = useT();
   const isGroupDm =
@@ -160,6 +167,46 @@ export function ChannelScreenHeader({
     return null;
   }
 
+  if (ownerView) {
+    // Owner view: a grey header, no channel actions, just "Read-only".
+    return (
+      <ChatHeader
+        actions={
+          <span
+            className="flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground"
+            data-testid="owner-view-read-only"
+          >
+            <Lock aria-hidden="true" className="h-3 w-3" />
+            {t("ownerView.readOnly")}
+          </span>
+        }
+        belowSystemChrome
+        chromeWrapperRef={chromeWrapperRef}
+        className="bg-muted/70"
+        description={ownerView.subtitle}
+        leadingContent={
+          <Eye
+            aria-hidden="true"
+            className="mr-1.5 h-4 w-4 text-muted-foreground"
+          />
+        }
+        statusBadge={
+          <span
+            className="truncate text-xs text-muted-foreground"
+            data-testid="owner-view-subtitle"
+          >
+            · {ownerView.subtitle}
+          </span>
+        }
+        title={t("ownerView.header.title", {
+          chat: activeChannelTitle,
+          name: ownerView.agentName,
+        })}
+        transparentChrome={false}
+      />
+    );
+  }
+
   return (
     <ChatHeader
       belowSystemChrome
@@ -231,6 +278,14 @@ export function ChannelScreenHeader({
               testId="chat-header-agent-provenance"
             />
           ) : null}
+          {!isGroupDm && activeDmParticipant?.isAgent ? (
+            <AgentViewTabs
+              active="chat"
+              agentName={activeChannelTitle}
+              agentPubkey={activeDmParticipant.pubkey}
+            />
+          ) : null}
+          {ownerNotice}
         </>
       }
       title={activeChannelTitle}

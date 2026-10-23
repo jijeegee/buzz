@@ -172,6 +172,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   onTargetReached,
   onToggleReaction,
   onUnfollowThread,
+  readOnlyFooter,
   unfollowThreadById,
   personaLookup,
   profiles,
@@ -232,11 +233,12 @@ export const ChannelPane = React.memo(function ChannelPane({
   const [acceptsMainAttachments, setAcceptsMainAttachments] =
     React.useState(true);
   const isNonMemberView =
+    !readOnlyFooter &&
     activeChannel !== null &&
     !activeChannel.isMember &&
     activeChannel.visibility === "open" &&
     !activeChannel.archivedAt;
-  const hasMainComposerOverlay = !isNonMemberView;
+  const hasMainComposerOverlay = !isNonMemberView && !readOnlyFooter;
   const activeChannelId = activeChannel?.id ?? null;
   const activeChannelIdRef = React.useRef(activeChannelId);
   const channelPaneMountedRef = React.useRef(false);
@@ -771,7 +773,14 @@ export const ChannelPane = React.memo(function ChannelPane({
                 }
                 threadUnreadCounts={threadUnreadCounts}
               />
-              {isNonMemberView ? (
+              {readOnlyFooter ? (
+                <div
+                  className="border-t border-border/80 bg-muted/60"
+                  data-testid="owner-view-footer"
+                >
+                  {readOnlyFooter}
+                </div>
+              ) : isNonMemberView ? (
                 // Public group preview: read-only timeline, and one
                 // full-width Join group in place of the composer.
                 <div
@@ -938,13 +947,15 @@ export const ChannelPane = React.memo(function ChannelPane({
                     activeChannel?.name ?? t("channels.pane.groupFallback")
                   }
                   currentPubkey={currentPubkey}
-                  disabled={isComposerDisabled}
+                  disabled={isComposerDisabled || Boolean(readOnlyFooter)}
                   editTarget={threadEditTarget}
                   firstUnreadReplyId={threadFirstUnreadReplyId}
                   huddleMemberPubkeys={huddleMemberPubkeys}
                   huddleMemberPubkeysPending={huddleMemberPubkeysPending}
                   isHuddleTranscript={isHuddleTranscript}
                   isFollowingThread={isFollowingThread}
+                  readOnly={Boolean(readOnlyFooter)}
+                  threadHeaderActions={!readOnlyFooter}
                   isMessageUnreadById={isMessageUnreadById}
                   isSending={isSending}
                   {...threadLayoutProps}

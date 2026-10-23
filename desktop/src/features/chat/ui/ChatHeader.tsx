@@ -26,6 +26,8 @@ type ChatHeaderProps = {
   belowSystemChrome?: boolean;
   /** Ref to the outer chrome wrapper when `belowSystemChrome` is true. */
   chromeWrapperRef?: React.Ref<HTMLDivElement>;
+  /** Extra classes on the header bar (the owner view's grey). */
+  className?: string;
   title: string;
   description?: string;
   channelType?: ChannelType;
@@ -91,6 +93,7 @@ export function ChatHeader({
   actions,
   belowSystemChrome = false,
   chromeWrapperRef,
+  className,
   title,
   description,
   channelType,
@@ -129,6 +132,7 @@ export function ChatHeader({
       className={cn(
         "pointer-events-auto relative z-30 min-w-0 shrink-0 cursor-default select-none bg-transparent px-5 py-2 transition-[margin,padding] duration-200 ease-linear",
         overlaysContent && !belowSystemChrome && "-mb-14",
+        className,
       )}
       data-testid="chat-header"
       data-tauri-drag-region

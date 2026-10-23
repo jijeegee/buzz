@@ -41,6 +41,7 @@ import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterA
 import { isGroupChat } from "@/features/channels/lib/groupChat";
 import { ChannelChatAvatar } from "@/features/channels/ui/ChannelChatAvatar";
 import { ChatConversationRow } from "@/features/sidebar/ui/ChatRowLines";
+import { useChatRowDisplay } from "@/features/sidebar/ui/chatRowDisplay";
 
 const SECTION_LABEL_BUTTON_CLASS =
   "group/section-label flex w-fit max-w-[calc(100%-3rem)] cursor-pointer appearance-none items-center gap-1 text-left transition-colors hover:text-sidebar-foreground focus-visible:text-sidebar-foreground";
@@ -334,6 +335,8 @@ export function ChannelMenuButton({
   onSelectChannel: (channelId: string) => void;
 }) {
   const t = useT();
+  const { tagOf } = useChatRowDisplay();
+  const tag = preview ? (tagOf?.(channel.id) ?? null) : null;
   const resolvedLabel = label ?? channel.name;
   const ephemeralDisplay = getEphemeralChannelDisplay(channel);
   const { hasSidebarUnreadProjections, unreadThreadChannelIds } = useAppShell();
@@ -405,6 +408,14 @@ export function ChannelMenuButton({
       }
       titleExtras={
         <>
+          {tag ? (
+            <span
+              className="shrink-0 rounded-full border border-border px-1.5 text-2xs font-normal leading-4 text-muted-foreground"
+              data-testid={`chat-row-tag-${channel.id}`}
+            >
+              {tag}
+            </span>
+          ) : null}
           {isPinned ? (
             <span
               className="shrink-0"

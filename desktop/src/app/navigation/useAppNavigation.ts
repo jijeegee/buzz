@@ -297,6 +297,8 @@ export function useAppNavigation() {
         /** Open this thread panel directly without waiting for a timeline row. */
         thread?: string;
         threadRootId?: string | null;
+        /** Owner view: read this chat as the owner of this agent. */
+        viewAs?: string;
       },
     ) => {
       return commitNavigation(
@@ -320,6 +322,7 @@ export function useAppNavigation() {
               : {}),
             ...(options?.thread ? { thread: options.thread } : {}),
             ...(options?.autoSend ? { autoSend: options.autoSend } : {}),
+            ...(options?.viewAs ? { viewAs: options.viewAs } : {}),
           },
           state: options?.preserveSearchHighlight
             ? undefined

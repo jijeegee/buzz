@@ -4,6 +4,9 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlightNavigation";
 import { getCachedSearchHitEvent } from "@/app/navigation/searchHitEventCache";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
+import { channelFromAgentChatRow } from "@/features/agents/ownerView/agentChatList";
+import type { OwnerViewChat } from "@/features/agents/ownerView/OwnerViewLayout";
+import { OwnerViewBar } from "@/features/agents/ownerView/OwnerViewBar";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import {
   isChannelReferenceOpenable,
@@ -32,11 +35,14 @@ import { ProjectChannelHome } from "@/features/projects/ui/ProjectChannelHome";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { getEventById } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
+import { useT } from "@/shared/i18n";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 type ChannelRouteScreenProps = {
   autoSendDraftKey: string | null;
   channelId: string;
+  /** Owner view: read this chat of my agent, without being in it. */
+  ownerView?: OwnerViewChat | null;
   searchHighlight: SearchHighlightNavigation | null | undefined;
   selectedPostId: string | null;
   targetMessageId: string | null;
@@ -129,12 +135,14 @@ async function fetchRouteTargetEvents(
 export function ChannelRouteScreen({
   autoSendDraftKey,
   channelId,
+  ownerView = null,
   searchHighlight,
   selectedPostId,
   targetMessageId,
   targetReplyId,
   targetThreadRootId,
 }: ChannelRouteScreenProps) {
+  const t = useT();
   const isHuddleTranscript = huddleWindowChannelId() !== null;
   const queryClient = useQueryClient();
   const { closeForumPost, goForumPost } = useAppNavigation();
@@ -143,18 +151,44 @@ export function ChannelRouteScreen({
   const identityQuery = useIdentityQuery();
   const profileQuery = useProfileQuery();
   const channels = channelsQuery.data ?? [];
-  const memberChannel =
-    channels.find((channel) => channel.id === channelId) ?? null;
+  const ownerViewRow = ownerView?.row ?? null;
+  const ownerViewAgent = ownerView?.agentPubkey ?? null;
+  // Rebuilt only when who is in the chat changes, not on every list refresh.
+  const ownerViewKey = ownerViewRow
+    ? [
+        ownerViewRow.channel_id,
+        ownerViewRow.channel_type,
+        ownerViewRow.channel_name,
+        ownerViewRow.group_chat === true,
+        ownerViewRow.member_count ?? 0,
+        ownerViewRow.dm_members.join(","),
+      ].join("|")
+    : null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the chat's people, see ownerViewKey
+  const ownerViewChannel = React.useMemo(
+    () =>
+      ownerViewRow && ownerViewAgent
+        ? channelFromAgentChatRow(ownerViewRow, ownerViewAgent)
+        : null,
+    [ownerViewAgent, ownerViewKey],
+  );
+  const memberChannel = ownerViewChannel
+    ? null
+    : (channels.find((channel) => channel.id === channelId) ?? null);
   // A non-member public group (a Find groups preview or a deep link) is not in
   // the member-only poll list. Resolve just that one group by id — never the
   // all-open directory — and only when it is openable (open, or a member).
   const reference = useChannelReferenceStatus(
-    !memberChannel && channelsQuery.isSuccess && !isHuddleTranscript
+    !memberChannel &&
+      !ownerViewChannel &&
+      channelsQuery.isSuccess &&
+      !isHuddleTranscript
       ? channelId
       : null,
   );
   const referencedChannel = reference.channel;
   const activeChannel =
+    ownerViewChannel ??
     memberChannel ??
     (isChannelReferenceOpenable(referencedChannel) ? referencedChannel : null);
   const enumeratedProjectHome = findProjectHomeByChannelId(
@@ -168,11 +202,12 @@ export function ChannelRouteScreen({
     shouldUseScopedProjectHomeLookup({
       collectionIsAuthoritative: projectCollectionIsAuthoritative,
       hasEnumeratedProjectHome: Boolean(enumeratedProjectHome),
-      isHuddleTranscript,
+      isHuddleTranscript: isHuddleTranscript || ownerViewChannel !== null,
     }),
   );
-  const projectHome =
-    enumeratedProjectHome ?? projectHomeLookupQuery.data ?? null;
+  const projectHome = ownerViewChannel
+    ? null
+    : (enumeratedProjectHome ?? projectHomeLookupQuery.data ?? null);
   const [targetMessageEvents, setTargetMessageEvents] = React.useState<
     RelayEvent[]
   >(() => {
@@ -322,6 +357,32 @@ export function ChannelRouteScreen({
     };
   }, [queryClient, selectedPostId, targetMessageId, targetThreadRootId]);
 
+  const screenOwnerView = React.useMemo(
+    () =>
+      ownerView && ownerViewChannel
+        ? {
+            agentName: ownerView.agentName,
+            agentPubkey: ownerView.agentPubkey,
+            footer: (chatLabel: string) => (
+              <OwnerViewBar
+                agentName={ownerView.agentName}
+                agentPubkey={ownerView.agentPubkey}
+                channelId={ownerViewChannel.id}
+                chatLabel={chatLabel}
+                onRemoved={ownerView.onRemoved}
+              />
+            ),
+            subtitle:
+              ownerViewChannel.channelType === "dm"
+                ? t("ownerView.header.dm")
+                : t("ownerView.header.groupChat", {
+                    count: ownerViewChannel.memberCount,
+                  }),
+          }
+        : undefined,
+    [ownerView, ownerViewChannel, t],
+  );
+
   if (!activeChannel && (channelsQuery.isPending || reference.isResolving)) {
     if (isHuddleTranscript) {
       return <HuddleStartingView />;
@@ -350,6 +411,7 @@ export function ChannelRouteScreen({
   return (
     <ChannelScreen
       activeChannel={activeChannel}
+      ownerView={screenOwnerView}
       autoSendDraftKey={autoSendDraftKey}
       currentIdentity={identityQuery.data}
       currentProfile={profileQuery.data}

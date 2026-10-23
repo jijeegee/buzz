@@ -62,6 +62,8 @@ export type ChannelPaneProps = {
   /** A companion huddle window presents the channel only as a transcript. */
   isHuddleTranscript?: boolean;
   isJoining?: boolean;
+  /** Owner view: shown instead of the composer; nothing can be sent. */
+  readOnlyFooter?: React.ReactNode;
   isSinglePanelView?: boolean;
   isSending: boolean;
   /** Terminal channel-history failure. Cached messages remain visible when present. */

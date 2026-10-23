@@ -7,6 +7,7 @@ import {
 } from "@/features/home/ui/ConversationRowFrame";
 import { cn } from "@/shared/lib/cn";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
+import { useChatRowDisplay } from "./chatRowDisplay";
 
 /**
  * A Chats row with the Inbox row's look: avatar, name with the working
@@ -52,6 +53,7 @@ export function ChatConversationRow({
   /** Lets an anchor (the activity popover) attach to the row. */
   ref?: React.Ref<HTMLDivElement>;
 }) {
+  const { compact } = useChatRowDisplay();
   return (
     <ConversationRowFrame
       {...rest}
@@ -63,7 +65,7 @@ export function ChatConversationRow({
         rest.className,
         dimmed && "sidebar-muted-content opacity-50 dark:opacity-45",
       )}
-      contentClassName={cn("py-2.5", indent && "pl-6")}
+      contentClassName={cn(compact ? "py-1" : "py-2.5", indent && "pl-6")}
       isSelected={isActive}
       meta={
         <>

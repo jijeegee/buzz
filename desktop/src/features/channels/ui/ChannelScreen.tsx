@@ -97,6 +97,7 @@ import {
 import { useThreadOpenServerRead } from "./useThreadOpenServerRead";
 import { useChannelUnreadState } from "./useChannelUnreadState";
 import type { ChannelScreenProps } from "./ChannelScreen.types";
+import { OwnerCanReadNotice } from "@/features/agents/ownerView/OwnerCanReadNotice";
 import { GuardedChannelPane } from "./GuardedChannelPane"; import { useNavigationGuard } from "./useNavigationGuard"; import * as searchForwarding from "./searchTargetForwarding";
 const EMPTY_RELAY_EVENTS: RelayEvent[] = [];
 export function ChannelScreen({
@@ -104,7 +105,7 @@ export function ChannelScreen({
   autoSendDraftKey,
   currentIdentity,
   currentProfile,
-  headerEndActions, idleAuxiliaryPanel,
+  headerEndActions, idleAuxiliaryPanel, ownerView,
   idleAuxiliaryHeaderActions, idleAuxiliaryOverridesThread,
   idleAuxiliaryTitle,
   onAddFiles, onCloseIdleAuxiliaryPanel,
@@ -186,6 +187,9 @@ export function ChannelScreen({
   }, []);
   const mainInsetRef = useMainInsetRef();
   const currentPubkey = currentIdentity?.pubkey;
+  // Whose messages sit on the right: in the owner view, the agent's.
+  const sidePubkey = ownerView?.agentPubkey ?? currentPubkey;
+  const sideAvatarUrl = ownerView ? null : (currentProfile?.avatarUrl ?? null);
   const activeChannelId = activeChannel?.id ?? null;
   const isHuddleTranscript = useIsHuddleTranscript(activeChannelId);
   const relaySelfPubkey = useRelaySelfQuery(activeChannel !== null).data;
@@ -268,7 +272,7 @@ export function ChannelScreen({
     activeDmHeaderParticipants,
     activeDmPresenceStatus,
     activeChannelEphemeralDisplay,
-  } = useActiveChannelHeader(activeChannel, currentPubkey);
+  } = useActiveChannelHeader(activeChannel, sidePubkey);
   const sendMessageMutation = useSendMessageMutation(
     activeChannel,
     currentIdentity,
@@ -434,8 +438,8 @@ export function ChannelScreen({
       formatTimelineMessages(
         resolvedMessages,
         activeChannel,
-        currentPubkey,
-        currentProfile?.avatarUrl ?? null,
+        sidePubkey,
+        sideAvatarUrl,
         messageProfiles,
         channelMembers,
         personaLookup,
@@ -446,8 +450,8 @@ export function ChannelScreen({
     [
       activeChannel,
       channelMembers,
-      currentProfile?.avatarUrl,
-      currentPubkey,
+      sideAvatarUrl,
+      sidePubkey,
       messageProfiles,
       messageOwnerProfiles,
       personaLookup,
@@ -463,8 +467,8 @@ export function ChannelScreen({
     rootId: effectiveOpenThreadHeadId,
     replyTargetId: threadReplyTargetId,
     expandedReplyIds: expandedThreadReplyIds,
-    currentPubkey,
-    currentAvatarUrl: currentProfile?.avatarUrl ?? null,
+    currentPubkey: sidePubkey,
+    currentAvatarUrl: sideAvatarUrl,
     profiles: messageProfiles,
     ownerProfiles: messageOwnerProfiles,
     members: channelMembers,
@@ -848,6 +852,16 @@ export function ChannelScreen({
         onManageChannel={handleManageChannel}
         onOpenGoals={handleOpenGoals}
         onToggleMembers={handleToggleMembers}
+        ownerNotice={
+          ownerView ? null : (
+            <OwnerCanReadNotice
+              channel={activeChannel}
+              currentPubkey={currentPubkey}
+              members={channelMembers}
+            />
+          )
+        }
+        ownerView={ownerView}
         showHeaderContent={!isSinglePanelView && !isHuddleTranscript}
         transparentChrome={activeChannel?.channelType !== "forum"}
       />
@@ -871,6 +885,8 @@ export function ChannelScreen({
       handleToggleMembers,
       isSinglePanelView,
       isHuddleTranscript,
+      channelMembers,
+      ownerView,
     ],
   );
   return (
@@ -985,12 +1001,14 @@ export function ChannelScreen({
                   onCancelThreadReply={handleCancelThreadReply}
                   onChannelManagementDeleted={handleChannelManagementDeleted}
                   onFollowThread={
+                    !ownerView &&
                     effectiveOpenThreadHeadId != null &&
                     !isNotifiedForEffectiveThread
                       ? () => followThread(effectiveOpenThreadHeadId)
                       : undefined
                   }
                   onUnfollowThread={
+                    !ownerView &&
                     effectiveOpenThreadHeadId != null &&
                     isNotifiedForEffectiveThread
                       ? () => unfollowThread(effectiveOpenThreadHeadId)
@@ -1007,9 +1025,15 @@ export function ChannelScreen({
                   onOpenGoalLink={handleOpenGoalLink}
                   onCloseThread={handleCloseThread}
                   onDelete={
-                    activeChannel?.archivedAt ? undefined : handleDelete
+                    activeChannel?.archivedAt || ownerView
+                      ? undefined
+                      : handleDelete
                   }
-                  onEdit={activeChannel?.archivedAt ? undefined : handleEdit}
+                  onEdit={
+                    activeChannel?.archivedAt || ownerView
+                      ? undefined
+                      : handleEdit
+                  }
                   onEditSave={
                     activeChannel?.archivedAt ? undefined : handleEditSave
                   }
@@ -1035,7 +1059,10 @@ export function ChannelScreen({
                   onTargetReached={() =>
                     clearMessageRouteTarget({ replace: true })
                   }
-                  onToggleReaction={effectiveToggleReaction}
+                  onToggleReaction={
+                    ownerView ? undefined : effectiveToggleReaction
+                  }
+                  readOnlyFooter={ownerView?.footer(activeChannelTitle)}
                   openAgentSessionChannelId={openAgentSessionChannelId}
                   openAgentSessionPubkey={openAgentSessionPubkey}
                   openThreadHeadId={effectiveOpenThreadHeadId}
