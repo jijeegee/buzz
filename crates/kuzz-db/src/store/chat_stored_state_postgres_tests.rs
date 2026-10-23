@@ -81,6 +81,7 @@ macro_rules! room_from {
             " FROM events e WHERE e.community_id = cm.community_id \
                AND e.channel_id = cm.channel_id \
                AND e.channel_sequence > COALESCE(cm.read_seq, 0) \
+               AND e.channel_sequence > channel_history_floor(cm.community_id, cm.channel_id, cm.pubkey) \
                AND e.kind IN (9, 40002, 45001, 45003) AND e.deleted_at IS NULL \
                AND e.pubkey <> cm.pubkey AND ",
             main_only!(),
@@ -234,6 +235,15 @@ impl Fixture {
         .await
         .expect("channel")
         .id;
+        // New members here count the messages already there.
+        sqlx::query(
+            "UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2",
+        )
+        .bind(self.scope.as_uuid())
+        .bind(room)
+        .execute(&self.pool)
+        .await
+        .expect("full history room");
         for member in members {
             self.join(room, member).await;
         }

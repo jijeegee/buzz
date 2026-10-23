@@ -198,6 +198,13 @@ async fn open_channels_community_events_and_icon_are_readable_by_members() {
     let (author, anyone) = (Keys::generate(), Keys::generate());
 
     let room = f.room(ChannelVisibility::Open, &author, &[]).await;
+    // Full-history room: earlier files are open to everyone.
+    sqlx::query("UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(room)
+        .execute(&f.pool)
+        .await
+        .expect("full history room");
     f.reference(Some(room), &author).await;
     assert!(
         f.readable(&anyone).await,

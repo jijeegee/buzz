@@ -34,7 +34,7 @@ impl Fixture {
         let private = Uuid::new_v4();
         let owner = Keys::generate();
         for (id, visibility) in [(home, "open"), (private, "private")] {
-            sqlx::query("INSERT INTO channels(community_id,id,name,visibility,channel_type,created_by) VALUES($1,$2,$2::text,$3::channel_visibility,'stream',$4)")
+            sqlx::query("INSERT INTO channels(community_id,id,name,visibility,channel_type,created_by,history_policy) VALUES($1,$2,$2::text,$3::channel_visibility,'stream',$4,'all')")
                 .bind(community.as_uuid()).bind(id).bind(visibility).bind(owner.public_key().as_bytes().as_slice()).execute(&pool).await.unwrap();
             sqlx::query("INSERT INTO channel_members(community_id,channel_id,pubkey,role) VALUES($1,$2,$3,'owner')")
                 .bind(community.as_uuid()).bind(id).bind(owner.public_key().as_bytes().as_slice()).execute(&pool).await.unwrap();

@@ -839,6 +839,13 @@ async fn seed_community_channel(
     )
     .await
     .expect("create channel");
+    // Routing tests read as non-members; keep the whole history visible.
+    sqlx::query("UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2")
+        .bind(community)
+        .bind(channel)
+        .execute(pool)
+        .await
+        .expect("history policy");
 }
 
 fn signed_event_at(keys: &nostr::Keys, content: &str, secs: u64) -> nostr::Event {

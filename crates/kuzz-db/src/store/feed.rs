@@ -652,8 +652,8 @@ mod postgres_tests {
         let id = Uuid::new_v4();
         let creator = [0x11u8; 32];
         sqlx::query(
-            "INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by) \
-             VALUES ($1, $2, $3, 'stream'::channel_type, 'open'::channel_visibility, $4)",
+            "INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by, history_policy) \
+             VALUES ($1, $2, $3, 'stream'::channel_type, 'open'::channel_visibility, $4, 'all')",
         )
         .bind(id)
         .bind(community.as_uuid())

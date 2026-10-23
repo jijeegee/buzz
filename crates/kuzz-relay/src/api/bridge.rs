@@ -8119,6 +8119,15 @@ mod postgres_tests {
             )
             .await
             .expect("create channel");
+            // Readers here are not members; keep the whole history visible.
+            sqlx::query(
+                "UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2",
+            )
+            .bind(community)
+            .bind(channel)
+            .execute(&pool)
+            .await
+            .expect("history policy");
             kuzz_db::Db::from_pool(pool.clone())
                 .insert_event(cid, &root, Some(channel))
                 .await
