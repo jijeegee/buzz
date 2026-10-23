@@ -519,7 +519,7 @@ class ChannelDetailsPage extends HookConsumerWidget {
               children: [
                 if (canJoin)
                   AppListRow(
-                    icon: LucideIcons.logIn,
+                    icon: LucideIcons.logInDir,
                     title: isJoining.value
                         ? context.l10n.channelJoiningGroup
                         : context.l10n.channelJoinGroup,
@@ -527,7 +527,7 @@ class ChannelDetailsPage extends HookConsumerWidget {
                   ),
                 if (resolvedChannel.isMember && !resolvedChannel.isArchived)
                   AppListRow(
-                    icon: LucideIcons.logOut,
+                    icon: LucideIcons.logOutDir,
                     title: context.l10n.channelLeaveGroup,
                     titleColor: context.colors.error,
                     onTap: () => _confirmAndRun(
@@ -777,7 +777,7 @@ class _ChannelDetailsChevron extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Icon(
-    LucideIcons.chevronRight,
+    LucideIcons.chevronRightDir,
     size: 18,
     color: context.colors.onSurfaceVariant,
   );

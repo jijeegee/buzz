@@ -177,8 +177,8 @@ class OwnerAvatarMark extends ConsumerWidget {
               clipBehavior: Clip.none,
               children: [
                 avatar,
-                Positioned(
-                  right: -size * 0.18,
+                PositionedDirectional(
+                  end: -size * 0.18,
                   bottom: -size * 0.18,
                   child: Container(
                     width: size * 0.6,
@@ -243,8 +243,8 @@ class AgentAvatarBadge extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           child,
-          Positioned(
-            right: -badgeSize * 0.25,
+          PositionedDirectional(
+            end: -badgeSize * 0.25,
             bottom: -badgeSize * 0.25,
             child: Container(
               width: badgeSize,

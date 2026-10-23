@@ -48,7 +48,7 @@ class _ChannelTile extends ConsumerWidget {
             SizedBox(
               width: _kChannelLeadingWidth,
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: channel.isDm
                     ? _DmAvatar(channel: channel, currentPubkey: currentPubkey)
                     : GroupAvatar(
@@ -115,7 +115,7 @@ class _ChannelTile extends ConsumerWidget {
             ],
             if (!channel.isMember && !channel.isDm)
               Padding(
-                padding: const EdgeInsets.only(right: Grid.xxs),
+                padding: const EdgeInsetsDirectional.only(end: Grid.xxs),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: Grid.half + 2,
@@ -240,8 +240,8 @@ class _DmAvatar extends ConsumerWidget {
             isAgent: profile?.isAgent == true,
           ),
           if (presence != null)
-            Positioned(
-              right: -1,
+            PositionedDirectional(
+              end: -1,
               bottom: -1,
               child: Container(
                 width: 8,

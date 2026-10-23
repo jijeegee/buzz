@@ -212,8 +212,8 @@ class _QuoteHeaderFrame extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: context.colors.surfaceContainerHighest.withValues(alpha: 0.6),
-          border: Border(
-            left: BorderSide(color: context.colors.outlineVariant, width: 2),
+          border: BorderDirectional(
+            start: BorderSide(color: context.colors.outlineVariant, width: 2),
           ),
         ),
         child: Padding(

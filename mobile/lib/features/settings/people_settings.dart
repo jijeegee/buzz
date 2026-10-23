@@ -87,7 +87,7 @@ class PeopleSettings extends HookConsumerWidget {
           icon: LucideIcons.ban,
           title: context.l10n.settingsBlockedTitle,
           trailing: Icon(
-            LucideIcons.chevronRight,
+            LucideIcons.chevronRightDir,
             size: 18,
             color: context.colors.onSurfaceVariant,
           ),
@@ -125,7 +125,7 @@ class KuzzIdSettings extends ConsumerWidget {
               ? context.l10n.settingsKuzzIdNotSet
               : '@$username',
           trailing: Icon(
-            LucideIcons.chevronRight,
+            LucideIcons.chevronRightDir,
             size: 18,
             color: context.colors.onSurfaceVariant,
           ),

@@ -790,11 +790,11 @@ class _WindowedThemePagination extends StatelessWidget {
         : _dotSize;
     final centerX = trackOrigin + _dotSize / 2 + slot * pitch;
 
-    return AnimatedPositioned(
+    return AnimatedPositionedDirectional(
       key: ValueKey('theme-pagination-dot-$page'),
       duration: duration,
       curve: Curves.easeInOutCubic,
-      left: centerX - diameter / 2,
+      start: centerX - diameter / 2,
       top: (30 - diameter) / 2,
       width: diameter,
       height: diameter,

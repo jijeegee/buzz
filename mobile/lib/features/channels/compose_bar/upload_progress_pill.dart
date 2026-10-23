@@ -93,7 +93,7 @@ class _UploadProgressPill extends HookConsumerWidget {
               fit: StackFit.expand,
               children: [
                 Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: AnimatedFractionallySizedBox(
                     key: const ValueKey('compose-upload-progress-fill'),
                     duration: reducedMotion
@@ -112,9 +112,9 @@ class _UploadProgressPill extends HookConsumerWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.only(
-                    left: Grid.twelve,
-                    right: Grid.half,
+                  padding: const EdgeInsetsDirectional.only(
+                    start: Grid.twelve,
+                    end: Grid.half,
                   ),
                   child: Row(
                     children: [
@@ -132,7 +132,7 @@ class _UploadProgressPill extends HookConsumerWidget {
                       SizedBox(
                         width: 36,
                         child: FittedBox(
-                          alignment: Alignment.centerRight,
+                          alignment: AlignmentDirectional.centerEnd,
                           fit: BoxFit.scaleDown,
                           child: Text(
                             '$percentage%',

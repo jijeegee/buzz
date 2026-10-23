@@ -86,7 +86,7 @@ class _SignOutSection extends HookConsumerWidget {
       children: [
         AppListRow(
           key: const Key('settings-sign-out'),
-          icon: LucideIcons.logOut,
+          icon: LucideIcons.logOutDir,
           title: busy.value
               ? context.l10n.settingsSigningOut
               : context.l10n.settingsSignOut,

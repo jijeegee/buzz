@@ -47,8 +47,8 @@ class _DirectThreadPlaceholder extends ConsumerWidget {
             : null,
         iconColor: context.colors.primary,
         title: Padding(
-          padding: EdgeInsets.only(
-            left: usesNativeIosGlassBackButton
+          padding: EdgeInsetsDirectional.only(
+            start: usesNativeIosGlassBackButton
                 ? iosGlassChannelHeaderTitleSpacing
                 : 0,
           ),
@@ -63,11 +63,11 @@ class _DirectThreadPlaceholder extends ConsumerWidget {
         titleStyle: channelTitleTextStyle,
       ),
       body: Align(
-        alignment: Alignment.bottomLeft,
+        alignment: AlignmentDirectional.bottomStart,
         child: Padding(
-          padding: EdgeInsets.only(
-            left: chatListLeftInset,
-            right: chatListRightInset,
+          padding: EdgeInsetsDirectional.only(
+            start: chatListLeftInset,
+            end: chatListRightInset,
             bottom: Grid.xs + MediaQuery.paddingOf(context).bottom,
           ),
           child: Text(

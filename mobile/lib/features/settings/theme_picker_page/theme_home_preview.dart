@@ -171,9 +171,9 @@ class _FigmaHomeScreen extends ConsumerWidget {
         decoration: BoxDecoration(gradient: backgroundGradient),
         child: Stack(
           children: [
-            Positioned(
+            PositionedDirectional(
               key: const ValueKey('theme-preview-community-identity'),
-              left: 12,
+              start: 12,
               top: 38,
               child: Row(
                 children: [
@@ -220,8 +220,8 @@ class _FigmaHomeScreen extends ConsumerWidget {
               ),
             ),
             for (var index = 0; index < _rowTops.length; index++)
-              Positioned(
-                left: index % 4 == 0 ? 22 : 38,
+              PositionedDirectional(
+                start: index % 4 == 0 ? 22 : 38,
                 top: _rowTops[index],
                 child: _PreviewChannelSkeletonRow(
                   key: index % 4 == 0
@@ -382,9 +382,9 @@ class _FigmaChatScreen extends StatelessWidget {
                     height: 12,
                     color: muted,
                   ),
-                  Positioned(
+                  PositionedDirectional(
                     key: const ValueKey('theme-chat-send-action'),
-                    right: Grid.xxs,
+                    end: Grid.xxs,
                     top: 8,
                     width: 36,
                     height: 36,
@@ -502,8 +502,8 @@ class _PreviewPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: left,
+    return PositionedDirectional(
+      start: left,
       top: top,
       width: width,
       height: height,

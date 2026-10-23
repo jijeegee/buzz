@@ -177,7 +177,7 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
                         : () => _runComposerAction(onBack),
                     tooltip: context.l10n.composeBackToAttachments,
                     visualDensity: VisualDensity.compact,
-                    icon: const Icon(LucideIcons.arrowLeft, size: 20),
+                    icon: const Icon(LucideIcons.arrowLeftDir, size: 20),
                   ),
                 const SizedBox(width: Grid.quarter),
                 Expanded(
@@ -191,7 +191,7 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
                 ),
                 if (selectedCount > 0)
                   Padding(
-                    padding: const EdgeInsets.only(right: Grid.half),
+                    padding: const EdgeInsetsDirectional.only(end: Grid.half),
                     child: Text(
                       context.l10n.composeGallerySelectedCount(selectedCount),
                       style: context.textTheme.labelMedium?.copyWith(

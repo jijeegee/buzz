@@ -817,8 +817,8 @@ class _MessageCodeBlock extends HookWidget {
         children: [
           if (name.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(
-                left: Grid.twelve,
+              padding: const EdgeInsetsDirectional.only(
+                start: Grid.twelve,
                 top: Grid.half + Grid.quarter,
               ),
               child: Text(
@@ -831,7 +831,7 @@ class _MessageCodeBlock extends HookWidget {
           Stack(
             children: [
               Padding(
-                padding: EdgeInsets.fromLTRB(
+                padding: EdgeInsetsDirectional.fromSTEB(
                   Grid.twelve,
                   name.isEmpty ? Grid.half + Grid.quarter : Grid.quarter,
                   44,
@@ -845,9 +845,9 @@ class _MessageCodeBlock extends HookWidget {
                   ),
                 ),
               ),
-              Positioned(
+              PositionedDirectional(
                 top: 0,
-                right: Grid.quarter,
+                end: Grid.quarter,
                 child: SizedBox(
                   width: 28,
                   height: 28,

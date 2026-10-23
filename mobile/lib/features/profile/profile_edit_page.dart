@@ -311,7 +311,7 @@ class ProfileEditPage extends HookConsumerWidget {
                         onPressed: isClosingAvatar.value
                             ? null
                             : () => unawaited(closeAvatarEditor()),
-                        icon: const Icon(LucideIcons.arrowLeft),
+                        icon: const Icon(LucideIcons.arrowLeftDir),
                       )
               : null,
           actions: isEditingAvatar.value
@@ -334,7 +334,7 @@ class ProfileEditPage extends HookConsumerWidget {
                     )
                   else
                     Padding(
-                      padding: const EdgeInsets.only(right: Grid.xs),
+                      padding: const EdgeInsetsDirectional.only(end: Grid.xs),
                       child: _ProfileActionPill(
                         key: const ValueKey('avatar-save'),
                         label: l10n.commonSave,
@@ -628,7 +628,7 @@ class _EditChevron extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Icon(
-    LucideIcons.chevronRight,
+    LucideIcons.chevronRightDir,
     size: 18,
     color: context.colors.onSurfaceVariant,
   );

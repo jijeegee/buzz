@@ -55,8 +55,8 @@ class AgentActivityCard extends HookConsumerWidget {
                       fallback: const Icon(LucideIcons.bot, size: 18),
                       isAgent: true,
                     ),
-                    Positioned(
-                      right: 0,
+                    PositionedDirectional(
+                      end: 0,
                       bottom: 0,
                       child: Container(
                         width: 10,
@@ -138,7 +138,7 @@ class AgentActivityCard extends HookConsumerWidget {
         ),
         if (expanded.value)
           Padding(
-            padding: const EdgeInsets.only(left: Grid.xl),
+            padding: const EdgeInsetsDirectional.only(start: Grid.xl),
             child: Column(
               children: [
                 for (final note in group.notes) ...[
@@ -168,9 +168,12 @@ class AgentActivityCard extends HookConsumerWidget {
           )
         else
           Padding(
-            padding: const EdgeInsets.only(left: Grid.xl, bottom: Grid.xxs),
+            padding: const EdgeInsetsDirectional.only(
+              start: Grid.xl,
+              bottom: Grid.xxs,
+            ),
             child: Align(
-              alignment: Alignment.centerLeft,
+              alignment: AlignmentDirectional.centerStart,
               child: Text(
                 group.notes.first.content,
                 maxLines: 2,

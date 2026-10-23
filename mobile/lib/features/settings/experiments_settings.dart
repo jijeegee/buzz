@@ -34,7 +34,7 @@ class ExperimentsSettings extends ConsumerWidget {
           icon: LucideIcons.flaskConical,
           title: context.l10n.settingsExperimentsTitle,
           trailing: Icon(
-            LucideIcons.chevronRight,
+            LucideIcons.chevronRightDir,
             size: 18,
             color: context.colors.onSurfaceVariant,
           ),

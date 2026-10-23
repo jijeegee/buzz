@@ -69,14 +69,24 @@ Future<T?> showAnchoredPopover<T>({
   );
   final overlayRect = Offset.zero & overlayRenderObject.size;
   final mediaQuery = MediaQuery.of(context);
+  // The route lays out in physical pixels, so resolve the leading/trailing
+  // edge (and the offset's inward direction) against the reading direction.
+  final rtl = Directionality.of(context) == TextDirection.rtl;
+  final physicalAlignment = !rtl
+      ? alignment
+      : switch (alignment) {
+          AnchoredPopoverAlignment.start => AnchoredPopoverAlignment.end,
+          AnchoredPopoverAlignment.center => AnchoredPopoverAlignment.center,
+          AnchoredPopoverAlignment.end => AnchoredPopoverAlignment.start,
+        };
 
   return navigator.push<T>(
     _AnchoredPopoverRoute<T>(
       position: RelativeRect.fromRect(triggerRect, overlayRect),
       items: items,
       width: width,
-      alignment: alignment,
-      offset: offset,
+      alignment: physicalAlignment,
+      offset: rtl ? Offset(-offset.dx, offset.dy) : offset,
       color: color ?? appPopoverColor(context),
       shape: shape ?? appPopoverShape(context),
       elevation: elevation,

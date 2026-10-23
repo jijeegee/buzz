@@ -37,8 +37,8 @@ class _GoalLinkList extends StatelessWidget {
                     key: ValueKey('thread-goal-link-${row.node.id}'),
                     onTap: _canLink(row) ? () => onLink(row.node.id) : null,
                     child: Padding(
-                      padding: EdgeInsets.only(
-                        left: (row.layer - 1) * Grid.xs,
+                      padding: EdgeInsetsDirectional.only(
+                        start: (row.layer - 1) * Grid.xs,
                         top: Grid.xxs,
                         bottom: Grid.xxs,
                       ),

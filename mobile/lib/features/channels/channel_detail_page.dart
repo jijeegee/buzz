@@ -943,8 +943,8 @@ class ChannelDetailPage extends HookConsumerWidget {
         titleContentHeight: appBarTitleContentHeight,
         titleStyle: channelTitleTextStyle,
         title: Padding(
-          padding: EdgeInsets.only(
-            left: usesNativeIosGlassBackButton
+          padding: EdgeInsetsDirectional.only(
+            start: usesNativeIosGlassBackButton
                 ? iosGlassChannelHeaderTitleSpacing
                 : 0,
           ),

@@ -2381,7 +2381,7 @@ void main() {
         expect(
           find.descendant(
             of: aliceRow,
-            matching: find.byIcon(LucideIcons.chevronRight),
+            matching: find.byIcon(LucideIcons.chevronRightDir),
           ),
           findsOneWidget,
         );
@@ -4010,7 +4010,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.byIcon(LucideIcons.chevronRight), findsNothing);
+      expect(find.byIcon(LucideIcons.chevronRightDir), findsNothing);
       final replyAvatars = find.byType(SmallAvatar);
       expect(replyAvatars, findsNWidgets(2));
       for (final avatar in replyAvatars.evaluate()) {
@@ -4024,8 +4024,8 @@ void main() {
       );
       expect(
         summaryPadding.padding,
-        const EdgeInsets.only(
-          left: messageAvatarSize + messageAvatarContentGap,
+        const EdgeInsetsDirectional.only(
+          start: messageAvatarSize + messageAvatarContentGap,
           top: Grid.half,
           bottom: Grid.xs,
         ),

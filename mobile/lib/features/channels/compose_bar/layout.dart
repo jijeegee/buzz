@@ -109,7 +109,7 @@ class _ComposeBarLayout extends HookWidget {
         ],
         if (uploadError case final error?) ...[
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: Text(
               error,
               style: context.textTheme.bodySmall?.copyWith(
@@ -153,7 +153,7 @@ class _ComposeBarLayout extends HookWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: Grid.half),
                       child: Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: AlignmentDirectional.centerStart,
                         child: Text(
                           collapsedText,
                           maxLines: 1,
@@ -203,7 +203,7 @@ class _ComposeBarLayout extends HookWidget {
                       switchInCurve: Curves.easeOutCubic,
                       switchOutCurve: Curves.easeInCubic,
                       layoutBuilder: (currentChild, previousChildren) => Stack(
-                        alignment: Alignment.centerLeft,
+                        alignment: AlignmentDirectional.centerStart,
                         children: [...previousChildren, ?currentChild],
                       ),
                       child: formattingOpen

@@ -247,7 +247,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
         _PopoverMessageAction(
           id: 'reply',
           title: context.l10n.messageReplyInThread,
-          icon: LucideIcons.messageSquareReply,
+          icon: LucideIcons.messageSquareReplyDir,
           group: _PopoverMessageActionGroup.primary,
           onSelected: () {
             if (!context.mounted) return;

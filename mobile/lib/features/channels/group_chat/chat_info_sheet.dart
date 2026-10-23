@@ -193,7 +193,7 @@ class ChatInfoSheet extends HookConsumerWidget {
             ListTile(
               key: const ValueKey('chat-info-restore-name'),
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(LucideIcons.undo2),
+              leading: const Icon(LucideIcons.undo2Dir),
               title: Text(context.l10n.chatInfoRestoreName),
               onTap: () => ref
                   .read(channelNamesProvider.notifier)
@@ -247,7 +247,7 @@ class ChatInfoSheet extends HookConsumerWidget {
             ListTile(
               key: const ValueKey('chat-info-leave'),
               contentPadding: EdgeInsets.zero,
-              leading: Icon(LucideIcons.logOut, color: context.colors.error),
+              leading: Icon(LucideIcons.logOutDir, color: context.colors.error),
               title: Text(
                 context.l10n.channelLeaveChat,
                 style: TextStyle(color: context.colors.error),

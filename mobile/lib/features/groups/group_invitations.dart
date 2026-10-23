@@ -134,7 +134,7 @@ class GroupInvitationsRow extends ConsumerWidget {
                 ),
               ),
               Icon(
-                LucideIcons.chevronRight,
+                LucideIcons.chevronRightDir,
                 size: 18,
                 color: context.colors.onSurfaceVariant,
               ),

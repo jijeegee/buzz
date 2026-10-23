@@ -47,9 +47,9 @@ class BlockedDmBar extends HookConsumerWidget {
     return Container(
       key: const Key('blocked-dm-bar'),
       width: double.infinity,
-      padding: EdgeInsets.only(
-        left: Grid.gutter,
-        right: Grid.xs,
+      padding: EdgeInsetsDirectional.only(
+        start: Grid.gutter,
+        end: Grid.xs,
         top: Grid.xxs,
         bottom: MediaQuery.viewPaddingOf(context).bottom + Grid.xxs,
       ),

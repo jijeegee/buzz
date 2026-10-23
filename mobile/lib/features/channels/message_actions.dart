@@ -640,7 +640,7 @@ class _FastActionsRow extends ConsumerWidget {
       if (messages != null &&
           canReplyInThread(threadDepthOf(message, messages)))
         _FastActionTile(
-          icon: LucideIcons.messageSquareReply,
+          icon: LucideIcons.messageSquareReplyDir,
           label: context.l10n.messageReplyInThread,
           onTap: () {
             Navigator.of(context).pop();

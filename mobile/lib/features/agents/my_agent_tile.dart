@@ -69,7 +69,7 @@ class MyAgentTile extends ConsumerWidget {
         unawaited(showMyAgentSheet(context, ref, agent: agent, name: name));
       },
       child: Padding(
-        padding: EdgeInsets.fromLTRB(
+        padding: EdgeInsetsDirectional.fromSTEB(
           Grid.gutter + indent,
           Grid.half,
           Grid.xxs,
@@ -94,8 +94,8 @@ class MyAgentTile extends ConsumerWidget {
                   ),
                   isAgent: true,
                 ),
-                Positioned(
-                  right: -1,
+                PositionedDirectional(
+                  end: -1,
                   bottom: -1,
                   child: DecoratedBox(
                     decoration: BoxDecoration(

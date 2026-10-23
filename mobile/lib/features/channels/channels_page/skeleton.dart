@@ -85,7 +85,7 @@ class _ChannelSkeletonSection extends StatelessWidget {
               SizedBox(
                 width: _kChannelLeadingWidth,
                 child: Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: SkeletonBar(width: 18, height: 18),
                 ),
               ),
@@ -108,7 +108,7 @@ class _ChannelSkeletonSection extends StatelessWidget {
                 SizedBox(
                   width: _kChannelLeadingWidth,
                   child: Align(
-                    alignment: Alignment.centerLeft,
+                    alignment: AlignmentDirectional.centerStart,
                     child: SkeletonBar(
                       width: _kChannelIconSize,
                       height: _kChannelIconSize,

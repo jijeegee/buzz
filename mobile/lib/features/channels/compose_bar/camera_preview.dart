@@ -149,10 +149,10 @@ class _InlineCameraPreview extends HookConsumerWidget {
                 ),
               ),
             ),
-          Positioned(
+          PositionedDirectional(
             top: usesAndroidCameraLayout ? null : Grid.xxs,
-            left: usesAndroidCameraLayout ? Grid.twelve : null,
-            right: usesAndroidCameraLayout ? null : Grid.xxs,
+            start: usesAndroidCameraLayout ? Grid.twelve : null,
+            end: usesAndroidCameraLayout ? null : Grid.xxs,
             bottom: usesAndroidCameraLayout
                 ? Grid.twelve + ((_cameraCaptureSize - _cameraBackSize) / 2)
                 : null,
@@ -309,7 +309,7 @@ class _CameraCloseButton extends StatelessWidget {
           ),
           foregroundColor: Colors.white,
         ),
-        icon: Icon(LucideIcons.arrowLeft, size: emphasized ? 24 : 18),
+        icon: Icon(LucideIcons.arrowLeftDir, size: emphasized ? 24 : 18),
       ),
     );
   }

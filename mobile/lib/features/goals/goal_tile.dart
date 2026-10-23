@@ -46,8 +46,8 @@ class GoalTile extends StatelessWidget {
     final tile = InkWell(
       onTap: onTap,
       child: Padding(
-        padding: EdgeInsets.only(
-          left: indent * Grid.gutter,
+        padding: EdgeInsetsDirectional.only(
+          start: indent * Grid.gutter,
           top: Grid.xxs,
           bottom: Grid.xxs,
         ),

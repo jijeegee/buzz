@@ -308,9 +308,9 @@ class _StatusInput extends ConsumerWidget {
                   ),
                 ),
                 if (emoji.isNotEmpty)
-                  Positioned(
+                  PositionedDirectional(
                     top: -Grid.half,
-                    right: -Grid.half,
+                    end: -Grid.half,
                     child: SizedBox.square(
                       dimension: Grid.sm,
                       child: IconButton(
@@ -350,9 +350,9 @@ class _StatusInput extends ConsumerWidget {
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 isDense: true,
-                contentPadding: const EdgeInsets.only(
-                  left: Grid.xxs,
-                  right: Grid.xs,
+                contentPadding: const EdgeInsetsDirectional.only(
+                  start: Grid.xxs,
+                  end: Grid.xs,
                 ),
               ),
               textInputAction: TextInputAction.done,
@@ -446,7 +446,7 @@ Future<DateTime?> _showNativeDateTimePicker(
             child: Column(
               children: [
                 Align(
-                  alignment: Alignment.centerRight,
+                  alignment: AlignmentDirectional.centerEnd,
                   child: TextButton(
                     onPressed: () => Navigator.of(pickerContext).pop(selected),
                     child: Text(context.l10n.profileStatusPickerDone),

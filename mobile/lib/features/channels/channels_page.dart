@@ -348,7 +348,7 @@ class ChannelsPage extends HookConsumerWidget {
             ? IconButton(
                 key: const Key('channels-header-back'),
                 onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(LucideIcons.chevronLeft),
+                icon: const Icon(LucideIcons.chevronLeftDir),
                 tooltip: context.l10n.commonBack,
               )
             : hasBuiltInServer

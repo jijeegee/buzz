@@ -30,7 +30,7 @@ class _MediaViewerBottomControls extends StatelessWidget {
         children: [
           _MediaViewerCircleButton(
             key: const ValueKey('message-media-image-viewer-reply-thread'),
-            icon: LucideIcons.messageSquareReply,
+            icon: LucideIcons.messageSquareReplyDir,
             tooltip: context.l10n.messageReplyInThread,
             onPressed: onReply,
           ),

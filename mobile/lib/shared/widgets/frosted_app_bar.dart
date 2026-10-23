@@ -208,7 +208,7 @@ class FrostedAppBar extends StatelessWidget {
                       child: IconButton(
                         onPressed: () => Navigator.of(context).pop(),
                         color: effectiveIconColor,
-                        icon: const Icon(LucideIcons.chevronLeft),
+                        icon: const Icon(LucideIcons.chevronLeftDir),
                         tooltip: context.l10n.appBarBack,
                       ),
                     )
@@ -232,15 +232,15 @@ class FrostedAppBar extends StatelessWidget {
                     child: centerTitle
                         ? title!
                         : Padding(
-                            padding: EdgeInsets.only(
-                              left: effectiveLeading != null
+                            padding: EdgeInsetsDirectional.only(
+                              start: effectiveLeading != null
                                   ? usesAutomaticIosGlassBackButton
                                         ? iosGlassChannelHeaderTitleSpacing
                                         : 0
                                   : horizontalInset < Grid.gutter
                                   ? Grid.gutter - horizontalInset
                                   : 0,
-                              right:
+                              end:
                                   actions.isEmpty &&
                                       horizontalInset < Grid.gutter
                                   ? Grid.gutter - horizontalInset

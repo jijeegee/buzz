@@ -74,7 +74,7 @@ class GroupAddPolicyRow extends HookConsumerWidget {
         _ => null,
       },
       trailing: Icon(
-        LucideIcons.chevronRight,
+        LucideIcons.chevronRightDir,
         size: 18,
         color: context.colors.onSurfaceVariant,
       ),

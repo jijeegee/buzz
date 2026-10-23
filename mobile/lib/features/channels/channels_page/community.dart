@@ -156,7 +156,7 @@ class _CommunitySwitcherTile extends StatelessWidget {
       key: Key('community-switcher-row-${community.id}'),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
+        padding: const EdgeInsetsDirectional.fromSTEB(
           Grid.xs,
           Grid.twelve,
           Grid.xxs,
@@ -465,9 +465,9 @@ class _CommunityHeaderTitle extends ConsumerWidget {
       onTap: onTap,
       child: SizedBox.expand(
         child: Align(
-          alignment: Alignment.centerLeft,
+          alignment: AlignmentDirectional.centerStart,
           child: Padding(
-            padding: const EdgeInsets.only(left: Grid.xxs),
+            padding: const EdgeInsetsDirectional.only(start: Grid.xxs),
             child: Text(
               title == null || title.isEmpty
                   ? context.l10n.channelCommunityFallbackTitle
@@ -492,9 +492,9 @@ class _BrandHeaderTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox.expand(
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: AlignmentDirectional.centerStart,
         child: Padding(
-          padding: const EdgeInsets.only(left: Grid.xxs),
+          padding: const EdgeInsetsDirectional.only(start: Grid.xxs),
           child: Text(
             appBrandName,
             key: const Key('channels-header-brand-name'),
