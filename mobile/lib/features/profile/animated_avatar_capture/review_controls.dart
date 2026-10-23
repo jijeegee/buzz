@@ -15,22 +15,23 @@ class _RepositionablePreviewSemantics extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Avatar position',
-    value:
-        '${(offset.dx * 100).round()} horizontal, '
-        '${(offset.dy * 100).round()} vertical',
+    label: context.l10n.profileAvatarPosition,
+    value: context.l10n.profileAvatarPositionValue(
+      (offset.dx * 100).round(),
+      (offset.dy * 100).round(),
+    ),
     customSemanticsActions: {
       if (offset.dx > -1)
-        const CustomSemanticsAction(label: 'Move left'): () =>
+        CustomSemanticsAction(label: context.l10n.profileMoveLeft): () =>
             onMove(const Offset(-0.1, 0)),
       if (offset.dx < 1)
-        const CustomSemanticsAction(label: 'Move right'): () =>
+        CustomSemanticsAction(label: context.l10n.profileMoveRight): () =>
             onMove(const Offset(0.1, 0)),
       if (offset.dy > -1)
-        const CustomSemanticsAction(label: 'Move up'): () =>
+        CustomSemanticsAction(label: context.l10n.profileMoveUp): () =>
             onMove(const Offset(0, -0.1)),
       if (offset.dy < 1)
-        const CustomSemanticsAction(label: 'Move down'): () =>
+        CustomSemanticsAction(label: context.l10n.profileMoveDown): () =>
             onMove(const Offset(0, 0.1)),
     },
     child: ExcludeSemantics(child: child),
@@ -56,7 +57,7 @@ class _AnimatedReviewNav extends StatelessWidget {
         child: AvatarEditorOptionButton(
           icon: LucideIcons.userRound,
           iosIcon: IosGlassNavigationIcon.person,
-          label: 'You',
+          label: context.l10n.profileAnimatedYou,
           selected: selected == _AnimatedReviewSection.person,
           onTap: () => onSelected(_AnimatedReviewSection.person),
         ),
@@ -66,7 +67,7 @@ class _AnimatedReviewNav extends StatelessWidget {
         child: AvatarEditorOptionButton(
           icon: LucideIcons.palette,
           iosIcon: IosGlassNavigationIcon.palette,
-          label: 'Background',
+          label: context.l10n.profileAvatarBackground,
           selected: selected == _AnimatedReviewSection.color,
           onTap: () => onSelected(_AnimatedReviewSection.color),
         ),
@@ -76,7 +77,7 @@ class _AnimatedReviewNav extends StatelessWidget {
         child: AvatarEditorOptionButton(
           icon: LucideIcons.galleryThumbnails,
           iosIcon: IosGlassNavigationIcon.frame,
-          label: 'Frame',
+          label: context.l10n.profileAnimatedFrame,
           selected: selected == _AnimatedReviewSection.poster,
           onTap: () => onSelected(_AnimatedReviewSection.poster),
         ),
@@ -88,7 +89,7 @@ class _AnimatedReviewNav extends StatelessWidget {
         child: AvatarEditorOptionButton(
           icon: LucideIcons.camera,
           iosIcon: IosGlassNavigationIcon.camera,
-          label: 'Retake',
+          label: context.l10n.profileAnimatedRetake,
           selected: false,
           onTap: onRetake,
         ),
@@ -135,7 +136,9 @@ class _AnimatedFramingControl extends HookWidget {
               ),
               child: IconButton(
                 key: const ValueKey('animated-avatar-outline'),
-                tooltip: outline ? 'Turn outline off' : 'Turn outline on',
+                tooltip: outline
+                    ? context.l10n.profileAnimatedOutlineOff
+                    : context.l10n.profileAnimatedOutlineOn,
                 onPressed: () {
                   unawaited(HapticFeedback.selectionClick());
                   onOutlineChanged(!outline);
@@ -154,7 +157,7 @@ class _AnimatedFramingControl extends HookWidget {
         ),
         const SizedBox(height: Grid.xxs),
         Text(
-          'Drag the preview to reposition',
+          context.l10n.profileAnimatedDragHint,
           style: context.textTheme.bodySmall,
         ),
       ],
@@ -195,7 +198,7 @@ class _DesktopStyleFramingSlider extends HookWidget {
         .toDouble();
     return Semantics(
       slider: true,
-      label: 'Avatar size',
+      label: context.l10n.profileAvatarSize,
       value: '${(value * 100).round()}%',
       increasedValue: value < _max
           ? '${((value + 0.05).clamp(_min, _max) * 100).round()}%'
@@ -339,13 +342,22 @@ class _AnimatedFrameControl extends HookWidget {
                   : selectedIndex / (frames.length - 1);
               return Semantics(
                 slider: true,
-                label: 'Choose still frame',
-                value: '${selectedIndex + 1} of ${frames.length}',
+                label: context.l10n.profileAnimatedChooseFrameLabel,
+                value: context.l10n.profileAnimatedFramePosition(
+                  selectedIndex + 1,
+                  frames.length,
+                ),
                 increasedValue: selectedIndex < frames.length - 1
-                    ? '${selectedIndex + 2} of ${frames.length}'
+                    ? context.l10n.profileAnimatedFramePosition(
+                        selectedIndex + 2,
+                        frames.length,
+                      )
                     : null,
                 decreasedValue: selectedIndex > 0
-                    ? '$selectedIndex of ${frames.length}'
+                    ? context.l10n.profileAnimatedFramePosition(
+                        selectedIndex,
+                        frames.length,
+                      )
                     : null,
                 onIncrease: selectedIndex < frames.length - 1
                     ? () => selectIndex(selectedIndex + 1)
@@ -416,7 +428,10 @@ class _AnimatedFrameControl extends HookWidget {
           ),
         ),
         const SizedBox(height: Grid.xxs),
-        Text('Choose the still frame', style: context.textTheme.bodySmall),
+        Text(
+          context.l10n.profileAnimatedChooseFrame,
+          style: context.textTheme.bodySmall,
+        ),
       ],
     );
   }

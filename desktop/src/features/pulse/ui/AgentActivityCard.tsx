@@ -7,7 +7,7 @@ import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { UserProfileSummary } from "@/shared/api/types";
 import { Markdown } from "@/shared/ui/markdown";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { formatLocale, type Translate, useT } from "@/shared/i18n";
 
 type AgentActivityCardProps = {
@@ -64,7 +64,7 @@ export function AgentActivityCard({
 }: AgentActivityCardProps) {
   const t = useT();
   const [expanded, setExpanded] = React.useState(false);
-  const displayName = profile?.displayName ?? UNKNOWN_USER_LABEL;
+  const displayName = profile?.displayName ?? unknownUserLabel();
   const avatarUrl = profile?.avatarUrl ?? null;
   const isSingleNote = group.notes.length === 1;
 

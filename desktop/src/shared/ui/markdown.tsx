@@ -777,8 +777,7 @@ function ImageZoomOverlay({
       tabIndex={-1}
     >
       <p className="sr-only" id={descriptionId}>
-        Full-size image preview. Press Escape or click outside the image to
-        close. Click the image to zoom.
+        {t("ui.imageZoom.description")}
       </p>
       <div
         className={cn(

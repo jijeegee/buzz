@@ -12,11 +12,7 @@ import {
 
 import type { IdentityArchiveActions } from "@/features/identity-archive/hooks";
 import type { ManagedAgent, RestartDiffEntry } from "@/shared/api/types";
-import {
-  AUTO_RESTART_OFF_BLURB,
-  AUTO_RESTART_ON_BLURB,
-  RestartDiffList,
-} from "@/features/agents/ui/RestartDiffBadge";
+import { RestartDiffList } from "@/features/agents/ui/RestartDiffBadge";
 import type { ActiveTurnSummary } from "@/features/agents/activeAgentTurnsStore";
 import { ManagedAgentSessionPanel } from "@/features/agents/ui/ManagedAgentSessionPanel";
 import type { ProfileActivityAgent } from "@/features/profile/lib/profileActivityAgent";
@@ -794,8 +790,8 @@ export function ProfileRuntimeTabContent({
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {autoRestartEnabled
-                ? AUTO_RESTART_ON_BLURB
-                : AUTO_RESTART_OFF_BLURB}
+                ? t("agents.restartDiff.autoOn")
+                : t("agents.restartDiff.autoOff")}
             </p>
             {/* Full uncapped diff list — Runtime banner is the only surface
                 where all entries show without truncation. */}

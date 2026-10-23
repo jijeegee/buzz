@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../shared/emoji/emoji_avatar.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 
 /// Vertical preview shift shared by background editors.
@@ -45,7 +46,7 @@ class AvatarBackgroundGrid extends StatelessWidget {
       return Center(
         child: Semantics(
           selected: isSelected,
-          label: 'Avatar color ${index + 1}',
+          label: context.l10n.profileAvatarColorOption(index + 1),
           child: InkWell(
             key: ValueKey('$colorKeyPrefix-$index'),
             borderRadius: BorderRadius.circular(Radii.full),

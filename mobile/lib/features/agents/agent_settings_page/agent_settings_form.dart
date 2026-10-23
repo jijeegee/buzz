@@ -35,6 +35,7 @@ class _AgentSettingsForm extends HookConsumerWidget {
       error.value = null;
       final messenger = ScaffoldMessenger.of(context);
       final navigator = Navigator.of(context);
+      final l10n = context.l10n;
       try {
         await saveAgentSettings(
           ref.read(agentSettingsRelayProvider),
@@ -45,18 +46,15 @@ class _AgentSettingsForm extends HookConsumerWidget {
             ? draft.name.trim()
             : loaded.agentName.trim();
         messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Saved. $savedName picks up the change on its '
-              'computer.',
-            ),
-          ),
+          SnackBar(content: Text(l10n.agentsSettingsSaved(savedName))),
         );
         navigator.pop();
       } on AgentSettingsException catch (failure) {
         if (context.mounted) error.value = failure.message;
       } catch (failure) {
-        if (context.mounted) error.value = 'Couldn’t save: $failure';
+        if (context.mounted) {
+          error.value = l10n.agentsSettingsSaveError('$failure');
+        }
       } finally {
         if (context.mounted) saving.value = false;
       }
@@ -67,14 +65,18 @@ class _AgentSettingsForm extends HookConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Agent settings'),
+        title: Text(context.l10n.agentsSettingsTitle),
         actions: [
           TextButton(
             key: const Key('agent-settings-save'),
             onPressed: changed && !saving.value
                 ? () => unawaited(save())
                 : null,
-            child: Text(saving.value ? 'Saving…' : 'Save'),
+            child: Text(
+              saving.value
+                  ? context.l10n.agentsSaving
+                  : context.l10n.agentsSave,
+            ),
           ),
         ],
       ),
@@ -103,7 +105,7 @@ class _AgentSettingsForm extends HookConsumerWidget {
                 controller: name,
                 enabled: !saving.value,
                 textInputAction: TextInputAction.next,
-                decoration: decoration('Name'),
+                decoration: decoration(context.l10n.agentsFieldName),
               )
             else
               TextField(
@@ -111,7 +113,7 @@ class _AgentSettingsForm extends HookConsumerWidget {
                 controller: lockedName,
                 enabled: false,
                 decoration: decoration(
-                  'Name',
+                  context.l10n.agentsFieldName,
                 ).copyWith(helperText: agentSettingsNameLockedMessage),
               ),
             const SizedBox(height: Grid.xs),
@@ -124,8 +126,8 @@ class _AgentSettingsForm extends HookConsumerWidget {
               keyboardType: TextInputType.text,
               textInputAction: TextInputAction.next,
               decoration: decoration(
-                'Description',
-                hint: 'A short public description',
+                context.l10n.agentsFieldDescription,
+                hint: context.l10n.agentsFieldDescriptionHint,
               ),
             ),
             const SizedBox(height: Grid.xs),
@@ -137,8 +139,8 @@ class _AgentSettingsForm extends HookConsumerWidget {
               maxLines: 16,
               keyboardType: TextInputType.multiline,
               decoration: decoration(
-                'Instructions',
-                hint: 'How this agent should work',
+                context.l10n.agentsFieldInstructions,
+                hint: context.l10n.agentsFieldInstructionsHint,
               ).copyWith(alignLabelWithHint: true),
             ),
             const SizedBox(height: Grid.xs),
@@ -147,12 +149,14 @@ class _AgentSettingsForm extends HookConsumerWidget {
               controller: model,
               enabled: !saving.value,
               autocorrect: false,
-              decoration: decoration('Model', hint: 'Default'),
+              decoration: decoration(
+                context.l10n.agentsFieldModel,
+                hint: context.l10n.agentsFieldModelHint,
+              ),
             ),
             const SizedBox(height: Grid.xs),
             Text(
-              'Your agent’s computer applies the change. A running agent '
-              'restarts when it is idle.',
+              context.l10n.agentsSettingsApplyNote,
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),

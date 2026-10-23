@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../channels/thread_follows/thread_follows_provider.dart';
@@ -24,6 +25,7 @@ Future<void> showChatThreadRowMenu(
   final rootId = row.rootId;
   if (!row.isThread || rootId == null) return;
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final l10n = context.l10n;
   final action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
@@ -39,15 +41,23 @@ Future<void> showChatThreadRowMenu(
           mainAxisSize: MainAxisSize.min,
           children: [
             pinned
-                ? item('unpin', LucideIcons.pinOff, 'Unpin')
-                : item('pin', LucideIcons.pin, 'Pin'),
+                ? item('unpin', LucideIcons.pinOff, l10n.chatsUnpin)
+                : item('pin', LucideIcons.pin, l10n.chatsPin),
             hasUnread
-                ? item('mark-read', LucideIcons.circleCheckBig, 'Mark as read')
-                : item('mark-unread', LucideIcons.circleDot, 'Mark as unread'),
-            item('unfollow', LucideIcons.bellOff, 'Unfollow thread'),
+                ? item(
+                    'mark-read',
+                    LucideIcons.circleCheckBig,
+                    l10n.chatsMarkRead,
+                  )
+                : item(
+                    'mark-unread',
+                    LucideIcons.circleDot,
+                    l10n.chatsMarkUnread,
+                  ),
+            item('unfollow', LucideIcons.bellOff, l10n.chatsUnfollowThread),
             row.closed
-                ? item('reopen', LucideIcons.rotateCcw, 'Reopen thread')
-                : item('close', LucideIcons.circleCheck, 'Close thread'),
+                ? item('reopen', LucideIcons.rotateCcw, l10n.chatsReopenThread)
+                : item('close', LucideIcons.circleCheck, l10n.chatsCloseThread),
           ],
         ),
       );
@@ -61,9 +71,7 @@ Future<void> showChatThreadRowMenu(
           .read(threadPinsProvider.notifier)
           .setPinned(rootId, action == 'pin');
       if (!done && action == 'pin') {
-        messenger?.showSnackBar(
-          const SnackBar(content: Text('You can pin up to 200 threads.')),
-        );
+        messenger?.showSnackBar(SnackBar(content: Text(l10n.chatsPinLimit)));
       }
     case 'mark-read':
       readState.markContextRead(

@@ -7,6 +7,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/emoji/emoji_data_provider.dart';
@@ -50,6 +51,7 @@ class ProfileEditPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final profileAsync = ref.watch(profileProvider);
     final profile = profileAsync.asData?.value;
@@ -133,9 +135,7 @@ class ProfileEditPage extends HookConsumerWidget {
                 return;
               }
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("We couldn't save this change. Try again."),
-                ),
+                SnackBar(content: Text(l10n.profileSaveChangeFailed)),
               );
             },
           );
@@ -256,8 +256,7 @@ class ProfileEditPage extends HookConsumerWidget {
           await discardStaleEditor();
           return;
         }
-        avatarSaveError.value =
-            "We couldn't save your profile photo. Try again.";
+        avatarSaveError.value = l10n.profileSavePhotoFailed;
       } finally {
         if (context.mounted) isSavingAvatar.value = false;
       }
@@ -292,7 +291,7 @@ class ProfileEditPage extends HookConsumerWidget {
                 ? const Duration(milliseconds: 120)
                 : const Duration(milliseconds: 220),
             child: Text(
-              isEditingAvatar.value ? 'Edit Photo' : 'Profile',
+              isEditingAvatar.value ? l10n.profileEditPhoto : l10n.navProfile,
               key: ValueKey(isEditingAvatar.value),
             ),
           ),
@@ -301,14 +300,14 @@ class ProfileEditPage extends HookConsumerWidget {
                     ? IosGlassNavigationButton(
                         key: const ValueKey('avatar-editor-back'),
                         icon: IosGlassNavigationIcon.back,
-                        semanticLabel: 'Back to profile',
+                        semanticLabel: l10n.profileBackToProfile,
                         onPressed: isClosingAvatar.value
                             ? null
                             : () => unawaited(closeAvatarEditor()),
                       )
                     : IconButton(
                         key: const ValueKey('avatar-editor-back'),
-                        tooltip: 'Back to profile',
+                        tooltip: l10n.profileBackToProfile,
                         onPressed: isClosingAvatar.value
                             ? null
                             : () => unawaited(closeAvatarEditor()),
@@ -320,7 +319,7 @@ class ProfileEditPage extends HookConsumerWidget {
                   if (defaultTargetPlatform == TargetPlatform.iOS)
                     IosGlassNavigationAction(
                       key: const ValueKey('avatar-save'),
-                      label: 'Save',
+                      label: l10n.commonSave,
                       width: 72,
                       isBusy: isSavingAvatar.value,
                       onPressed:
@@ -338,7 +337,7 @@ class ProfileEditPage extends HookConsumerWidget {
                       padding: const EdgeInsets.only(right: Grid.xs),
                       child: _ProfileActionPill(
                         key: const ValueKey('avatar-save'),
-                        label: 'Save',
+                        label: l10n.commonSave,
                         isBusy: isSavingAvatar.value,
                         onTap:
                             canSaveAvatar &&
@@ -414,8 +413,8 @@ class ProfileEditPage extends HookConsumerWidget {
                         child: Text(
                           avatarSaveError.value ??
                               (profileAsync.hasError
-                                  ? "We couldn't load your profile. Go back and try again."
-                                  : 'Loading your profile…'),
+                                  ? l10n.profileLoadFailed
+                                  : l10n.profileLoading),
                           textAlign: TextAlign.center,
                           style: context.textTheme.bodyMedium?.copyWith(
                             color:
@@ -448,8 +447,8 @@ class ProfileEditPage extends HookConsumerWidget {
                     children: [
                       AppListRow(
                         key: const ValueKey('profile-display-name-row'),
-                        title: 'Display name',
-                        subtitle: _fieldValue(profile?.displayName),
+                        title: l10n.settingsEditProfileDisplayName,
+                        subtitle: _fieldValue(l10n, profile?.displayName),
                         subtitleMaxLines: 1,
                         trailing: const _EditChevron(),
                         onTap: !profileHydrated
@@ -461,9 +460,10 @@ class ProfileEditPage extends HookConsumerWidget {
                                 );
                                 unawaited(
                                   editField(
-                                    title: 'Display name',
+                                    title: l10n.settingsEditProfileDisplayName,
                                     initialValue: profile?.displayName ?? '',
-                                    hintText: 'Display name',
+                                    hintText:
+                                        l10n.settingsEditProfileDisplayName,
                                     onSave: bindProfileSaveToOpeningContext(
                                       container,
                                       container
@@ -476,8 +476,8 @@ class ProfileEditPage extends HookConsumerWidget {
                       ),
                       AppListRow(
                         key: const ValueKey('profile-description-row'),
-                        title: 'Profile description',
-                        subtitle: _fieldValue(profile?.about),
+                        title: l10n.settingsEditProfileDescription,
+                        subtitle: _fieldValue(l10n, profile?.about),
                         subtitleMaxLines: 3,
                         trailing: const _EditChevron(),
                         onTap: !profileHydrated
@@ -489,9 +489,10 @@ class ProfileEditPage extends HookConsumerWidget {
                                 );
                                 unawaited(
                                   editField(
-                                    title: 'Profile description',
+                                    title: l10n.settingsEditProfileDescription,
                                     initialValue: profile?.about ?? '',
-                                    hintText: 'Profile description',
+                                    hintText:
+                                        l10n.settingsEditProfileDescription,
                                     multiline: true,
                                     onSave: bindProfileSaveToOpeningContext(
                                       container,
@@ -512,9 +513,9 @@ class ProfileEditPage extends HookConsumerWidget {
   }
 }
 
-String _fieldValue(String? value) {
+String _fieldValue(AppLocalizations l10n, String? value) {
   final trimmed = value?.trim() ?? '';
-  return trimmed.isEmpty ? 'Not set' : trimmed;
+  return trimmed.isEmpty ? l10n.settingsKuzzIdNotSet : trimmed;
 }
 
 class _ProfilePhotoEditor extends ConsumerWidget {
@@ -561,8 +562,8 @@ class _ProfilePhotoEditor extends ConsumerWidget {
         const SizedBox(height: Grid.twelve),
         _ProfileActionPill(
           key: const ValueKey('profile-edit-photo-pill'),
-          semanticLabel: 'Edit profile photo',
-          label: 'Edit Photo',
+          semanticLabel: context.l10n.profileEditPhotoLabel,
+          label: context.l10n.profileEditPhoto,
           onTap: onEditPhoto,
         ),
       ],
@@ -603,9 +604,9 @@ class _ProfileActionPill extends StatelessWidget {
             vertical: Grid.xxs,
           ),
           child: isBusy
-              ? const KuzzLoadingIndicator(
+              ? KuzzLoadingIndicator(
                   size: 18,
-                  semanticLabel: 'Saving profile photo',
+                  semanticLabel: context.l10n.profileSavingPhoto,
                 )
               : Text(
                   label,
@@ -648,6 +649,7 @@ class _ProfileTextEditSheet extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final controller = useTextEditingController(text: initialValue);
     useListenable(controller);
     final isSaving = useState(false);
@@ -664,7 +666,7 @@ class _ProfileTextEditSheet extends HookWidget {
       } on ProfileCommunityChangedException {
         if (context.mounted) Navigator.of(context).pop();
       } catch (_) {
-        error.value = "We couldn't save this change. Try again.";
+        error.value = l10n.profileSaveChangeFailed;
       } finally {
         if (context.mounted) isSaving.value = false;
       }
@@ -710,7 +712,9 @@ class _ProfileTextEditSheet extends HookWidget {
             FilledButton(
               key: const ValueKey('profile-field-save'),
               onPressed: hasChanges && !isSaving.value ? save : null,
-              child: Text(isSaving.value ? 'Saving…' : 'Save'),
+              child: Text(
+                isSaving.value ? l10n.commonSavingEllipsis : l10n.commonSave,
+              ),
             ),
           ],
         ),

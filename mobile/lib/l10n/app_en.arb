@@ -131,13 +131,4464 @@
       }
     }
   },
+  "appStartingLabel": "Starting Kuzz",
+  "@appStartingLabel": {
+    "description": "Screen-reader label of the loading spinner on the splash screen while the app starts."
+  },
+  "appBarBack": "Back",
+  "@appBarBack": {
+    "description": "Tooltip and screen-reader label of the back arrow in a screen's top bar. Short."
+  },
+  "sheetCloseLabel": "Close sheet",
+  "@sheetCloseLabel": {
+    "description": "Tooltip and screen-reader label of the close button in the header of a bottom sheet. Short."
+  },
+  "refreshPullLabel": "Pull to refresh",
+  "@refreshPullLabel": {
+    "description": "Screen-reader label of the pull-to-refresh control at the top of a list."
+  },
+  "loadingLabel": "Loading",
+  "@loadingLabel": {
+    "description": "Screen-reader announcement of the loading spinner while a screen or list is loading. Short."
+  },
+  "loadErrorRetry": "Retry",
+  "@loadErrorRetry": {
+    "description": "Button under an error message when a list or screen failed to load; loads it again. Short."
+  },
+  "beeLabel": "Kuzz bee",
+  "@beeLabel": {
+    "description": "Screen-reader label of the animated bee mascot picture (empty states, splash). 'Kuzz' is the app name."
+  },
+  "beeHint": "Tap to make its wings flutter",
+  "@beeHint": {
+    "description": "Screen-reader hint on the animated bee mascot: what tapping it does."
+  },
+  "clipboardCopied": "Copied to clipboard",
+  "@clipboardCopied": {
+    "description": "Short pop-up message at the bottom of the screen after text was copied."
+  },
+  "identityUnknown": "Unknown identity",
+  "@identityUnknown": {
+    "description": "Shown in place of a person's name or ID when their account ID cannot be read."
+  },
+  "accentNeutral": "Neutral",
+  "@accentNeutral": {
+    "description": "Name of an accent color in Settings > Appearance (black/grey). Short."
+  },
+  "accentBlue": "Blue",
+  "@accentBlue": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentCyan": "Cyan",
+  "@accentCyan": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentGreen": "Green",
+  "@accentGreen": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentOrange": "Orange",
+  "@accentOrange": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentRed": "Red",
+  "@accentRed": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentPink": "Pink",
+  "@accentPink": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentLilac": "Lilac",
+  "@accentLilac": {
+    "description": "Name of an accent color in Settings > Appearance (light purple). Short."
+  },
+  "accentPurple": "Purple",
+  "@accentPurple": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "accentIndigo": "Indigo",
+  "@accentIndigo": {
+    "description": "Name of an accent color in Settings > Appearance. Short."
+  },
+  "emojiCategoryPeople": "Smileys & People",
+  "@emojiCategoryPeople": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryNature": "Animals & Nature",
+  "@emojiCategoryNature": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryFoods": "Food & Drink",
+  "@emojiCategoryFoods": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryActivity": "Activity",
+  "@emojiCategoryActivity": {
+    "description": "Emoji picker, category name in the category bar (sports, games). Short."
+  },
+  "emojiCategoryPlaces": "Travel & Places",
+  "@emojiCategoryPlaces": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryObjects": "Objects",
+  "@emojiCategoryObjects": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategorySymbols": "Symbols",
+  "@emojiCategorySymbols": {
+    "description": "Emoji picker, category name in the category bar. Short."
+  },
+  "emojiCategoryFlags": "Flags",
+  "@emojiCategoryFlags": {
+    "description": "Emoji picker, category name in the category bar (country flags). Short."
+  },
+  "reminderSheetTitle": "Remind me about this message",
+  "@reminderSheetTitle": {
+    "description": "Title of the bottom sheet opened from a message's 'Remind me later' action."
+  },
+  "reminderPresetIn30Minutes": "In 30 minutes",
+  "@reminderPresetIn30Minutes": {
+    "description": "Option in the 'Remind me about this message' sheet. Short."
+  },
+  "reminderPresetIn1Hour": "In 1 hour",
+  "@reminderPresetIn1Hour": {
+    "description": "Option in the 'Remind me about this message' sheet. Short."
+  },
+  "reminderPresetIn3Hours": "In 3 hours",
+  "@reminderPresetIn3Hours": {
+    "description": "Option in the 'Remind me about this message' sheet. Short."
+  },
+  "reminderPresetTomorrow": "Tomorrow at 9am",
+  "@reminderPresetTomorrow": {
+    "description": "Option in the 'Remind me about this message' sheet: tomorrow at 9 in the morning. Short."
+  },
+  "reminderPresetNextMonday": "Next Monday at 9am",
+  "@reminderPresetNextMonday": {
+    "description": "Option in the 'Remind me about this message' sheet: next Monday at 9 in the morning. Short."
+  },
+  "reminderPickDateTime": "Pick a date & time",
+  "@reminderPickDateTime": {
+    "description": "Last option in the 'Remind me about this message' sheet; opens date and time pickers. Short."
+  },
+  "reminderSignInRequired": "Sign in to set reminders",
+  "@reminderSignInRequired": {
+    "description": "Short pop-up message when the user tries to set a reminder while signed out."
+  },
+  "reminderSet": "Reminder set",
+  "@reminderSet": {
+    "description": "Short pop-up message after a message reminder was saved."
+  },
+  "reminderSetFailed": "Couldn’t set reminder. Try again.",
+  "@reminderSetFailed": {
+    "description": "Short pop-up message when saving a message reminder failed."
+  },
+  "reminderPickFutureTime": "Pick a time in the future",
+  "@reminderPickFutureTime": {
+    "description": "Short pop-up message when the picked reminder date and time has already passed."
+  },
+  "communityRemovalSignOutFailedTitle": "Couldn’t sign out on the relay",
+  "@communityRemovalSignOutFailedTitle": {
+    "description": "Title of the dialog shown when removing a community could not sign this device out on the server. 'Relay' means the server."
+  },
+  "communityRemovalSignOutFailedBody": "{message}\n\nRemoving it from this device only forgets the sign-in here. This device stays listed on your account until you sign it out from another device.",
+  "@communityRemovalSignOutFailedBody": {
+    "description": "Body of the dialog shown when removing a community could not sign this device out on the server; {message} is the error, shown first.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "communityRemovalKeep": "Keep",
+  "@communityRemovalKeep": {
+    "description": "Dialog button: cancel removing the community and keep it. Short."
+  },
+  "communityRemovalDeviceOnly": "Remove from this device only",
+  "@communityRemovalDeviceOnly": {
+    "description": "Dialog button: remove the community from this phone without signing out on the server. Destructive, red."
+  },
+  "communityRemovalTryAgain": "Try again",
+  "@communityRemovalTryAgain": {
+    "description": "Dialog button: retry signing this device out on the server, then remove the community. Short."
+  },
+  "authSignOutFinishing": "Finishing sign-out…",
+  "@authSignOutFinishing": {
+    "description": "Status text on the signed-out screen while sign-out is still being completed."
+  },
+  "authNotificationsOffFailed": "Couldn’t finish turning off notifications. Try again.",
+  "@authNotificationsOffFailed": {
+    "description": "Error on the signed-out screen when notifications could not be turned off during sign-out."
+  },
+  "authDifferentServer": "This app only connects to its own service.",
+  "@authDifferentServer": {
+    "description": "Error when the user tries to add, open or sign in to a different server than the app's own."
+  },
+  "authCommunitySignInFailed": "Couldn’t sign in to this community. Check your connection or that you’re still a member, then try again.",
+  "@authCommunitySignInFailed": {
+    "description": "Sign-in error when the server refused this account."
+  },
+  "authCommunityConnectFailed": "Couldn’t connect to this community. Check your connection, then try again.",
+  "@authCommunityConnectFailed": {
+    "description": "Sign-in error when the server could not be reached."
+  },
+  "googleBackupConnectFailed": "Couldn’t connect your Google account. Try again.",
+  "@googleBackupConnectFailed": {
+    "description": "Google sign-in error, general failure."
+  },
+  "googleBackupAccountLinkedElsewhere": "This Google account is linked to a different Kuzz account. Try a different Google account.",
+  "@googleBackupAccountLinkedElsewhere": {
+    "description": "Google sign-in error when the chosen Google account belongs to another Kuzz account."
+  },
+  "googleBackupReadSignInFailed": "Couldn’t read your sign-in on this device. Try again.",
+  "@googleBackupReadSignInFailed": {
+    "description": "Google sign-in error when the saved sign-in on the phone could not be read."
+  },
+  "googleBackupDifferentSignIn": "This community already has a different sign-in on this device. Nothing was changed.",
+  "@googleBackupDifferentSignIn": {
+    "description": "Google sign-in error when another kind of sign-in already exists for this community on the phone."
+  },
+  "googleBackupSignInChanged": "Sign-in changed or was cancelled. Try again.",
+  "@googleBackupSignInChanged": {
+    "description": "Google sign-in error when the sign-in was interrupted."
+  },
+  "googleBackupSignInWithGoogleFirst": "Sign in with Google first.",
+  "@googleBackupSignInWithGoogleFirst": {
+    "description": "Google sign-in error when the account was not signed in with Google."
+  },
+  "googleBackupSignInAgain": "Sign in again.",
+  "@googleBackupSignInAgain": {
+    "description": "Google sign-in error when the session is missing its account. Short."
+  },
+  "googleBackupCommunitySignInFailed": "Couldn’t sign in to this community on this device. Nothing was changed.",
+  "@googleBackupCommunitySignInFailed": {
+    "description": "Google sign-in error when the account on the phone does not match the account on the server."
+  },
+  "googleBackupRestoreFailed": "Couldn’t restore this account. Try again later.",
+  "@googleBackupRestoreFailed": {
+    "description": "Google sign-in error when the account could not be restored from the server."
+  },
+  "googleBackupAccountNotConnected": "This Google account isn’t connected to this community. Try a different Google account.",
+  "@googleBackupAccountNotConnected": {
+    "description": "Google sign-in error when the chosen Google account has no account in this community."
+  },
+  "googleBackupAccountChanged": "The Google account changed. Sign in again.",
+  "@googleBackupAccountChanged": {
+    "description": "Google sign-in error when the Google account changed during sign-in."
+  },
+  "googleBackupCommunityChanged": "This community changed during sign-in. Try again.",
+  "@googleBackupCommunityChanged": {
+    "description": "Google sign-in error when the community data changed while signing in."
+  },
+  "googleBackupSignInWithGoogleAgain": "Sign in with Google again.",
+  "@googleBackupSignInWithGoogleAgain": {
+    "description": "Google sign-in error when the Google sign-in expired."
+  },
+  "googleBackupCommunityLinkedElsewhere": "This community is linked to a different Google account. Try a different Google account.",
+  "@googleBackupCommunityLinkedElsewhere": {
+    "description": "Google sign-in error when this community account uses another Google account."
+  },
+  "googleBackupAccountModeConflict": "This Google account can’t be used with this community. Try a different Google account.",
+  "@googleBackupAccountModeConflict": {
+    "description": "Google sign-in error when the Google account uses a different kind of account."
+  },
+  "googleBackupSecureConnectionRequired": "Signing in with Google needs a secure connection to this community.",
+  "@googleBackupSecureConnectionRequired": {
+    "description": "Google sign-in error when the server address is not secure (not https)."
+  },
+  "tokenSessionSignOutUnreachable": "Could not reach the relay to sign out. Try again.",
+  "@tokenSessionSignOutUnreachable": {
+    "description": "Error when signing out failed because the server could not be reached. 'Relay' means the server."
+  },
+  "tokenSessionIdentityModeMismatch": "This Google account uses a different identity mode. Existing account data has been preserved.",
+  "@tokenSessionIdentityModeMismatch": {
+    "description": "Sign-in error when the Google account uses a different kind of account than this community."
+  },
+  "tokenSessionReadFailed": "Could not read the saved sign-in. Try again.",
+  "@tokenSessionReadFailed": {
+    "description": "Error when the saved sign-in on the phone could not be read."
+  },
+  "tokenSessionSaveFailed": "Could not save the sign-in on this device. Sign in again.",
+  "@tokenSessionSaveFailed": {
+    "description": "Error when the sign-in could not be saved on the phone."
+  },
+  "tokenSessionRelayUnreachableDetails": "Could not reach the relay. {details}",
+  "@tokenSessionRelayUnreachableDetails": {
+    "description": "Error when the server could not be reached after several tries; {details} is the technical reason. 'Relay' means the server.",
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "tokenSessionAccountDisabled": "This account has been disabled.",
+  "@tokenSessionAccountDisabled": {
+    "description": "Error when the server says the account was disabled."
+  },
+  "tokenSessionEnded": "Your session has ended. Sign in again.",
+  "@tokenSessionEnded": {
+    "description": "Error when the sign-in expired or was revoked."
+  },
+  "tokenSessionSignInExpired": "The sign-in expired. Try again.",
+  "@tokenSessionSignInExpired": {
+    "description": "Sign-in error when the sign-in attempt took too long."
+  },
+  "tokenSessionDeviceLimit": "Too many devices are signed in. Remove one first.",
+  "@tokenSessionDeviceLimit": {
+    "description": "Sign-in error when the account has reached its device limit."
+  },
+  "tokenSessionSignInRejected": "Sign-in was rejected ({reason}).",
+  "@tokenSessionSignInRejected": {
+    "description": "Sign-in error when the server refused; {reason} is the server's technical reason.",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "tokenSessionRelayUnreachable": "Could not reach the relay. Try again.",
+  "@tokenSessionRelayUnreachable": {
+    "description": "Sign-in error when the server could not be reached. 'Relay' means the server."
+  },
+  "accountUnnamedDevice": "Unnamed device",
+  "@accountUnnamedDevice": {
+    "description": "Settings > Devices, name shown for a signed-in device that has no name."
+  },
+  "accountRelayUnreachable": "Could not reach the relay: {error}",
+  "@accountRelayUnreachable": {
+    "description": "Error when an account request could not reach the server; {error} is the technical reason. 'Relay' means the server.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSignedOut": "You are signed out of this relay.",
+  "@accountSignedOut": {
+    "description": "Error when an account action needs sign-in but the user is signed out. 'Relay' means the server."
+  },
+  "agentOwnerLabel": "Agent owner",
+  "@agentOwnerLabel": {
+    "description": "Screen-reader label of the small owner picture on an AI agent's avatar when the owner's name is unknown."
+  },
+  "agentOwnedBy": "Agent owned by {name}",
+  "@agentOwnedBy": {
+    "description": "Screen-reader label of the small owner picture on an AI agent's avatar; {name} is the owner.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentHostThisDevice": "Running on this device",
+  "@agentHostThisDevice": {
+    "description": "Long-press text on an AI agent: the agent runs on the phone in the user's hand."
+  },
+  "agentHostThisDeviceNamed": "Running on this device ({name})",
+  "@agentHostThisDeviceNamed": {
+    "description": "Long-press text on an AI agent: the agent runs on this phone; {name} is the device name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentHostOtherDevice": "Running on another device",
+  "@agentHostOtherDevice": {
+    "description": "Long-press text on an AI agent: the agent runs on one of the user's other devices."
+  },
+  "agentHostNamedDevice": "Running on {name}",
+  "@agentHostNamedDevice": {
+    "description": "Long-press text on an AI agent; {name} is the name of the device it runs on.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "huddleLeaveCurrentFirst": "Leave the current Huddle before joining another one.",
+  "@huddleLeaveCurrentFirst": {
+    "description": "Huddle (voice call) error when the user is already in another call."
+  },
+  "huddleAudioFailed": "Native Huddle audio failed.",
+  "@huddleAudioFailed": {
+    "description": "Huddle (voice call) error when the phone's audio failed."
+  },
+  "huddleAudioUnavailableHere": "Full-duplex mobile Huddle audio is unavailable here.",
+  "@huddleAudioUnavailableHere": {
+    "description": "Huddle (voice call) error when this phone does not support two-way call audio."
+  },
+  "huddleMicrophoneRequired": "Microphone permission is required to join a Huddle.",
+  "@huddleMicrophoneRequired": {
+    "description": "Huddle (voice call) error when microphone access was denied."
+  },
+  "huddleConnectionFailed": "Huddle connection failed.",
+  "@huddleConnectionFailed": {
+    "description": "Huddle (voice call) error when the call connection failed."
+  },
+  "huddleConnectionNotRestored": "Huddle connection could not be restored.",
+  "@huddleConnectionNotRestored": {
+    "description": "Huddle (voice call) error after reconnecting failed several times."
+  },
+  "huddleJoinFailed": "Unable to join the Huddle.",
+  "@huddleJoinFailed": {
+    "description": "Huddle (voice call) error, general join failure."
+  },
+  "huddleSignInRequired": "Sign in to this community to join the Huddle.",
+  "@huddleSignInRequired": {
+    "description": "Huddle (voice call) error when the user is not signed in to the community."
+  },
+  "huddleAdmissionTimedOut": "Timed out waiting for Huddle room admission.",
+  "@huddleAdmissionTimedOut": {
+    "description": "Huddle (voice call) error when the server did not let the user in quickly enough."
+  },
+  "huddleRelayConnectFailed": "Unable to connect to the Huddle audio relay.",
+  "@huddleRelayConnectFailed": {
+    "description": "Huddle (voice call) error when the call audio server could not be reached."
+  },
+  "huddleSendAudioFailed": "Unable to send Huddle audio.",
+  "@huddleSendAudioFailed": {
+    "description": "Huddle (voice call) error when the user's audio could not be sent."
+  },
+  "huddleConnectionClosed": "Huddle connection was closed.",
+  "@huddleConnectionClosed": {
+    "description": "Huddle (voice call) error when the call connection was closed."
+  },
+  "huddleAuthSignFailed": "Unable to sign Huddle authentication.",
+  "@huddleAuthSignFailed": {
+    "description": "Huddle (voice call) error when the app could not prove the user's identity to the call server."
+  },
+  "huddleSignedOut": "Signed out of this community.",
+  "@huddleSignedOut": {
+    "description": "Huddle (voice call) error when the user signed out during the call."
+  },
+  "huddleSocketFailed": "Huddle audio socket failed.",
+  "@huddleSocketFailed": {
+    "description": "Huddle (voice call) error when the audio connection broke."
+  },
+  "huddleSocketClosed": "Huddle audio socket closed unexpectedly.",
+  "@huddleSocketClosed": {
+    "description": "Huddle (voice call) error when the audio connection closed unexpectedly."
+  },
+  "mediaUploadPrepareFailed": "We couldn't prepare this image for upload.",
+  "@mediaUploadPrepareFailed": {
+    "description": "Error when a picked or pasted image could not be converted for sending."
+  },
+  "mediaUploadPastedImageUnreadable": "Unable to read pasted image",
+  "@mediaUploadPastedImageUnreadable": {
+    "description": "Error in the message box when a pasted image could not be read."
+  },
+  "mediaUploadVideoTooLarge": "Video is too large ({size}MB). Maximum is 100MB.",
+  "@mediaUploadVideoTooLarge": {
+    "description": "Error in the message box when a picked video is over the size limit; {size} is its size in megabytes.",
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaUploadTranscodedVideoTooLarge": "Transcoded video is too large ({size}MB). Maximum is 100MB.",
+  "@mediaUploadTranscodedVideoTooLarge": {
+    "description": "Error in the message box when a video is still over the size limit after converting it; {size} is its size in megabytes.",
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaUploadVideoConvertFailed": "Failed to convert video to MP4.",
+  "@mediaUploadVideoConvertFailed": {
+    "description": "Error in the message box when a video could not be converted for sending."
+  },
+  "mediaUploadVoiceNoteEmpty": "Voice note is empty.",
+  "@mediaUploadVoiceNoteEmpty": {
+    "description": "Error in the message box when a recorded voice message has no audio."
+  },
+  "mediaUploadVoiceNoteTooLarge": "Voice note is too large. Maximum is 100MB.",
+  "@mediaUploadVoiceNoteTooLarge": {
+    "description": "Error in the message box when a recorded voice message is over the size limit."
+  },
+  "mediaUploadVoiceNotePrepareFailed": "Failed to prepare voice note for upload.",
+  "@mediaUploadVoiceNotePrepareFailed": {
+    "description": "Error in the message box when a recorded voice message could not be prepared for sending."
+  },
+  "mediaUploadFilesUnavailable": "File attachments aren't available on this device.",
+  "@mediaUploadFilesUnavailable": {
+    "description": "Error in the message box when this phone cannot attach files."
+  },
+  "mediaUploadFileEmpty": "File is empty.",
+  "@mediaUploadFileEmpty": {
+    "description": "Error in the message box when a picked file has no content."
+  },
+  "mediaUploadFileTooLarge": "File is too large ({size}MB). Maximum is 100MB.",
+  "@mediaUploadFileTooLarge": {
+    "description": "Error in the message box when a picked file is over the size limit; {size} is its size in megabytes.",
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricConfirmIdentityTransfer": "Confirm sending your Kuzz identity to desktop",
+  "@biometricConfirmIdentityTransfer": {
+    "description": "System Face ID / fingerprint prompt reason when sending the account to the desktop app."
+  },
+  "biometricEnableReason": "Enable biometrics for secure actions",
+  "@biometricEnableReason": {
+    "description": "System Face ID / fingerprint prompt reason when turning on biometric protection in Settings."
+  },
+  "biometricUseFaceId": "Use Face ID",
+  "@biometricUseFaceId": {
+    "description": "Settings switch label for biometric protection on iPhones with Face ID. Short."
+  },
+  "biometricUseTouchId": "Use Touch ID",
+  "@biometricUseTouchId": {
+    "description": "Settings switch label for biometric protection on iPhones with Touch ID. Short."
+  },
+  "biometricUseBiometrics": "Use biometrics",
+  "@biometricUseBiometrics": {
+    "description": "Settings switch label for biometric protection (fingerprint or face). Short."
+  },
   "commonCancel": "Cancel",
   "@commonCancel": {
-    "description": "Generic Cancel button in dialogs and sheets. Short."
+    "description": "Plain Cancel button in a dialog or sheet. Short."
   },
   "commonSave": "Save",
   "@commonSave": {
-    "description": "Generic Save button in dialogs. Short."
+    "description": "Plain Save button in a form or dialog. Short."
+  },
+  "commonSaving": "Saving",
+  "@commonSaving": {
+    "description": "Screen-reader label of the spinner shown on a Save button while saving. Short."
+  },
+  "commonTryAgain": "Try again",
+  "@commonTryAgain": {
+    "description": "Retry button shown after something failed to load or save. Short."
+  },
+  "settingsAccentColorTitle": "Accent Color",
+  "@settingsAccentColorTitle": {
+    "description": "Accent color picker page, title in the top bar. Short."
+  },
+  "settingsAccountTitle": "Account",
+  "@settingsAccountTitle": {
+    "description": "Account page (name, username, photo shared by a server), title in the top bar. Short."
+  },
+  "settingsAccountLoading": "Loading account",
+  "@settingsAccountLoading": {
+    "description": "Account page, screen-reader label of the loading spinner."
+  },
+  "settingsAccountLoadFailed": "Couldn’t load your account: {error}",
+  "@settingsAccountLoadFailed": {
+    "description": "Account page, error when the account failed to load; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccountPhotoUploadFailed": "Couldn’t upload the photo: {error}",
+  "@settingsAccountPhotoUploadFailed": {
+    "description": "Account page, error under the form when the profile photo upload failed; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccountDisplayNameInvalid": "Display name must be 1–64 characters.",
+  "@settingsAccountDisplayNameInvalid": {
+    "description": "Account page, error when the display name is empty or too long."
+  },
+  "settingsAccountUsernameInvalid": "Username must be 3–32 lowercase letters, digits or underscores.",
+  "@settingsAccountUsernameInvalid": {
+    "description": "Account page, error when the username has the wrong length or characters."
+  },
+  "settingsAccountUsernameTaken": "That username is already taken.",
+  "@settingsAccountUsernameTaken": {
+    "description": "Account page, error when someone else already uses the username."
+  },
+  "settingsAccountSaveFailed": "Couldn’t save your profile: {error}",
+  "@settingsAccountSaveFailed": {
+    "description": "Account page, error when saving failed; {error} is a message from the server.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccountProfileSaved": "Profile saved",
+  "@settingsAccountProfileSaved": {
+    "description": "Account page, snackbar after the profile was saved. Short."
+  },
+  "settingsAccountNoPhoto": "No profile photo",
+  "@settingsAccountNoPhoto": {
+    "description": "Account page, screen-reader label of the avatar when there is no photo."
+  },
+  "settingsAccountPhoto": "Profile photo",
+  "@settingsAccountPhoto": {
+    "description": "Account page, screen-reader label of the avatar photo."
+  },
+  "settingsAccountChangePhoto": "Change photo",
+  "@settingsAccountChangePhoto": {
+    "description": "Account page, button under the avatar to pick a new photo. Short."
+  },
+  "settingsAccountRemovePhoto": "Remove photo",
+  "@settingsAccountRemovePhoto": {
+    "description": "Account page, button under the avatar to remove the photo. Short."
+  },
+  "settingsAccountDisplayNameLabel": "Display name",
+  "@settingsAccountDisplayNameLabel": {
+    "description": "Account page, label of the display name text field. Short."
+  },
+  "settingsAccountUsernameLabel": "Username",
+  "@settingsAccountUsernameLabel": {
+    "description": "Account page, label of the username text field. Short."
+  },
+  "settingsAccountUsernameHelper": "Optional. Lowercase letters, digits and _",
+  "@settingsAccountUsernameHelper": {
+    "description": "Account page, hint under the username field. Keep the _ character."
+  },
+  "settingsAccountSharedNote": "Your name, username and photo are shared by every community on this relay.",
+  "@settingsAccountSharedNote": {
+    "description": "Account page, small grey note at the bottom of the form."
+  },
+  "settingsAgentsSection": "Agents",
+  "@settingsAgentsSection": {
+    "description": "Settings page, heading of the AI agents section. Short."
+  },
+  "settingsAgentsAutoMention": "Automatically mention agents",
+  "@settingsAgentsAutoMention": {
+    "description": "Settings page, Agents section, title of an on/off switch row."
+  },
+  "settingsAgentsAutoMentionSubtitle": "Address selected agents in group and thread replies",
+  "@settingsAgentsAutoMentionSubtitle": {
+    "description": "Settings page, Agents section, grey text under 'Automatically mention agents'."
+  },
+  "settingsBlockedTitle": "Blocked users",
+  "@settingsBlockedTitle": {
+    "description": "Blocked users page, title in the top bar; also the row in Friends & privacy settings that opens it. Short."
+  },
+  "settingsBlockedLoading": "Loading blocked users",
+  "@settingsBlockedLoading": {
+    "description": "Blocked users page, screen-reader label of the loading spinner."
+  },
+  "settingsBlockedLoadFailed": "Couldn’t load blocked users",
+  "@settingsBlockedLoadFailed": {
+    "description": "Blocked users page, error when the list failed to load."
+  },
+  "settingsBlockedEmpty": "You haven’t blocked anyone",
+  "@settingsBlockedEmpty": {
+    "description": "Blocked users page, empty state text."
+  },
+  "settingsBlockedUnblock": "Unblock",
+  "@settingsBlockedUnblock": {
+    "description": "Blocked users page, button on each person's row. Short."
+  },
+  "settingsBlockedUnblockLabel": "Unblock {name}",
+  "@settingsBlockedUnblockLabel": {
+    "description": "Blocked users page, screen-reader label of the Unblock button; {name} is the person's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesTitle": "Devices",
+  "@settingsDevicesTitle": {
+    "description": "Devices page (signed-in devices), title in the top bar; also its settings section heading. Short."
+  },
+  "settingsSecurityTitle": "Security",
+  "@settingsSecurityTitle": {
+    "description": "Account security page, title in the top bar; also the Settings row that opens it. Short."
+  },
+  "settingsDevicesSignOutDeviceTitle": "Sign out {device}?",
+  "@settingsDevicesSignOutDeviceTitle": {
+    "description": "Devices page, title of the confirmation dialog for signing out one device; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesSignOutDeviceBody": "That device will need to sign in again.",
+  "@settingsDevicesSignOutDeviceBody": {
+    "description": "Devices page, body of the confirmation dialog for signing out one device."
+  },
+  "settingsDevicesSignOut": "Sign out",
+  "@settingsDevicesSignOut": {
+    "description": "Devices page, button on a device row and in its confirmation dialog that signs that device out. Short."
+  },
+  "settingsDevicesSignOutLabel": "Sign out {device}",
+  "@settingsDevicesSignOutLabel": {
+    "description": "Devices page, screen-reader label of the Sign out button on a device row; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotSaveFailed": "Couldn’t save the robot: {error}",
+  "@settingsDevicesRobotSaveFailed": {
+    "description": "Devices page, error when the device's robot icon could not be saved; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesSignOutOthers": "Sign out all other devices",
+  "@settingsDevicesSignOutOthers": {
+    "description": "Devices page, row that signs out every device except this one."
+  },
+  "settingsDevicesSignOutOthersTitle": "Sign out all other devices?",
+  "@settingsDevicesSignOutOthersTitle": {
+    "description": "Devices page, title of the confirmation dialog for signing out all other devices."
+  },
+  "settingsDevicesSignOutOthersBody": "Every device except this one will need to sign in again. Bots keep working.",
+  "@settingsDevicesSignOutOthersBody": {
+    "description": "Devices page, body of the confirmation dialog for signing out all other devices."
+  },
+  "settingsDevicesSignOutOthersAction": "Sign out others",
+  "@settingsDevicesSignOutOthersAction": {
+    "description": "Devices page, confirm button of the 'sign out all other devices' dialog. Short."
+  },
+  "settingsDevicesRevokeBots": "Revoke all bot tokens",
+  "@settingsDevicesRevokeBots": {
+    "description": "Security page, row that invalidates the access tokens of every bot the user owns."
+  },
+  "settingsDevicesRevokeBotsTitle": "Revoke all bot tokens?",
+  "@settingsDevicesRevokeBotsTitle": {
+    "description": "Security page, title of the confirmation dialog for revoking all bot tokens."
+  },
+  "settingsDevicesRevokeBotsBody": "Every bot you own stops working until it gets a new token.",
+  "@settingsDevicesRevokeBotsBody": {
+    "description": "Security page, body of the confirmation dialog for revoking all bot tokens."
+  },
+  "settingsDevicesRevokeBotsAction": "Revoke",
+  "@settingsDevicesRevokeBotsAction": {
+    "description": "Security page, confirm button of the 'revoke all bot tokens' dialog. Short."
+  },
+  "settingsDevicesRevokeBotsDone": "All bot tokens revoked",
+  "@settingsDevicesRevokeBotsDone": {
+    "description": "Security page, snackbar after all bot tokens were revoked. Short."
+  },
+  "settingsDevicesAccountDeletion": "Account deletion",
+  "@settingsDevicesAccountDeletion": {
+    "description": "Security page, title of the expandable section that holds Delete account. Short."
+  },
+  "settingsDevicesDeleteAccount": "Delete account",
+  "@settingsDevicesDeleteAccount": {
+    "description": "Security page, red row that deletes the account, and the confirm button of its dialog. Short."
+  },
+  "settingsDevicesDeleteAccountTitle": "Delete your account?",
+  "@settingsDevicesDeleteAccountTitle": {
+    "description": "Security page, title of the account deletion confirmation dialog."
+  },
+  "settingsDevicesDeleteAccountBody": "Your account is disabled now and permanently deleted after 30 days. Signing in again before then restores it. Every device, including this one, is signed out.",
+  "@settingsDevicesDeleteAccountBody": {
+    "description": "Security page, body of the account deletion confirmation dialog."
+  },
+  "settingsDevicesLocalCleanupFailed": "Your account was deleted, but this device couldn’t finish signing out: {error}",
+  "@settingsDevicesLocalCleanupFailed": {
+    "description": "Security page, error after deleting the account when this device failed to sign out locally; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesFinishSignOut": "Finish signing out",
+  "@settingsDevicesFinishSignOut": {
+    "description": "Security page, retry button shown after the local sign-out failed following account deletion. Short."
+  },
+  "settingsDevicesSignedIn": "Signed-in devices",
+  "@settingsDevicesSignedIn": {
+    "description": "Devices page, heading of the list of devices signed in to the account; also the Settings row that opens the page. Short."
+  },
+  "settingsDevicesLoadFailed": "Couldn’t load devices: {error}",
+  "@settingsDevicesLoadFailed": {
+    "description": "Devices page, error when the device list failed to load; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesLoading": "Loading devices",
+  "@settingsDevicesLoading": {
+    "description": "Devices page, screen-reader label of the loading spinner."
+  },
+  "settingsDevicesThisDevice": "This device",
+  "@settingsDevicesThisDevice": {
+    "description": "Devices page, grey detail on the row of the device the user is holding. Short."
+  },
+  "settingsDevicesLastActive": "Last active {date}",
+  "@settingsDevicesLastActive": {
+    "description": "Devices page, grey detail on a device row; {date} is a date like 2026-05-19. Short.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesPlatformMobile": "Mobile",
+  "@settingsDevicesPlatformMobile": {
+    "description": "Devices page, grey detail on a device row: the device is a phone app. Short."
+  },
+  "settingsDevicesPlatformDesktop": "Desktop",
+  "@settingsDevicesPlatformDesktop": {
+    "description": "Devices page, grey detail on a device row: the device is a desktop app. Short."
+  },
+  "settingsDevicesPlatformWeb": "Web",
+  "@settingsDevicesPlatformWeb": {
+    "description": "Devices page, grey detail on a device row: the device is a web browser. Short."
+  },
+  "settingsDevicesChangeRobot": "Change robot for {device}",
+  "@settingsDevicesChangeRobot": {
+    "description": "Devices page, tooltip of the robot icon on a device row; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRenameTooltip": "Rename {device}",
+  "@settingsDevicesRenameTooltip": {
+    "description": "Devices page, tooltip of the pencil button on a device row; {device} is the device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotTitle": "Robot for {device}",
+  "@settingsDevicesRobotTitle": {
+    "description": "Robot picker dialog, title; {device} is the device name. The robot is the small icon that marks the device.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotSelected": "Selected robot",
+  "@settingsDevicesRobotSelected": {
+    "description": "Robot picker dialog, screen-reader label of the big preview of the chosen robot icon."
+  },
+  "settingsDevicesRobotShape": "Shape",
+  "@settingsDevicesRobotShape": {
+    "description": "Robot picker dialog, small heading above the robot shape options. Short."
+  },
+  "settingsDevicesRobotShapeOption": "Shape {shape}",
+  "@settingsDevicesRobotShapeOption": {
+    "description": "Robot picker dialog, screen-reader label of one shape option; {shape} is the shape's code name.",
+    "placeholders": {
+      "shape": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesRobotColour": "Colour",
+  "@settingsDevicesRobotColour": {
+    "description": "Robot picker dialog, small heading above the robot colour options. Short."
+  },
+  "settingsDevicesRobotColourOption": "Colour {number}",
+  "@settingsDevicesRobotColourOption": {
+    "description": "Robot picker dialog, screen-reader label of one colour option; {number} is its position (1, 2, …).",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsDevicesRenameTitle": "Rename device",
+  "@settingsDevicesRenameTitle": {
+    "description": "Rename device dialog, title."
+  },
+  "settingsDevicesNameLabel": "Device name",
+  "@settingsDevicesNameLabel": {
+    "description": "Rename device dialog, label of the name text field. Short."
+  },
+  "settingsExperimentsTitle": "Experiments",
+  "@settingsExperimentsTitle": {
+    "description": "Settings row that opens the Experiments page, and that page's title in the top bar. Short."
+  },
+  "settingsExperimentsDescription": "Features that are still being refined. They may change or be removed.",
+  "@settingsExperimentsDescription": {
+    "description": "Experiments page, grey note under the list of experimental features."
+  },
+  "settingsKuzzIdTitle": "Kuzz ID",
+  "@settingsKuzzIdTitle": {
+    "description": "The user's ID that friends type to find them: Kuzz ID page title, its text field label, and the profile row. 'Kuzz' is the app name. Short."
+  },
+  "settingsKuzzIdLengthError": "Use 3 to 32 characters.",
+  "@settingsKuzzIdLengthError": {
+    "description": "Kuzz ID page, error under the field when the ID is too short or too long."
+  },
+  "settingsKuzzIdCharactersError": "Use only lowercase letters, digits and _.",
+  "@settingsKuzzIdCharactersError": {
+    "description": "Kuzz ID page, error under the field when the ID has other characters. Keep the _ character."
+  },
+  "settingsKuzzIdSaveFailed": "Couldn’t save your ID. Try again.",
+  "@settingsKuzzIdSaveFailed": {
+    "description": "Kuzz ID page, error under the field when saving failed."
+  },
+  "settingsKuzzIdSaved": "Kuzz ID saved",
+  "@settingsKuzzIdSaved": {
+    "description": "Kuzz ID page, snackbar after the ID was saved. Short."
+  },
+  "settingsKuzzIdExplanation": "Friends can add you by typing your Kuzz ID exactly.",
+  "@settingsKuzzIdExplanation": {
+    "description": "Kuzz ID page, grey explanation above the field."
+  },
+  "settingsKuzzIdHelper": "Lowercase letters, digits and _",
+  "@settingsKuzzIdHelper": {
+    "description": "Kuzz ID page, hint under the field. Keep the _ character."
+  },
+  "settingsMessagesSection": "Messages",
+  "@settingsMessagesSection": {
+    "description": "Settings page, heading of the section about how messages show. Short."
+  },
+  "settingsPeopleSection": "Friends & privacy",
+  "@settingsPeopleSection": {
+    "description": "Settings page, heading of the section about who can find and add you. Short."
+  },
+  "settingsPeopleChangeFailed": "Couldn’t change this setting. Try again.",
+  "@settingsPeopleChangeFailed": {
+    "description": "Settings page, Friends & privacy section, snackbar when saving a switch failed."
+  },
+  "settingsPeopleDiscoverable": "Let people find me by ID or email",
+  "@settingsPeopleDiscoverable": {
+    "description": "Settings page, Friends & privacy section, title of an on/off switch row."
+  },
+  "settingsPeopleDiscoverableSubtitle": "Only someone who types your exact ID or email",
+  "@settingsPeopleDiscoverableSubtitle": {
+    "description": "Settings page, grey text under 'Let people find me by ID or email'."
+  },
+  "settingsKuzzIdNotSet": "Not set",
+  "@settingsKuzzIdNotSet": {
+    "description": "Profile page, value shown on the Kuzz ID row when the user has no ID yet. Short."
+  },
+  "settingsHelpSection": "Help",
+  "@settingsHelpSection": {
+    "description": "Settings page, heading of the help/contact section. Short."
+  },
+  "settingsHelpContactUs": "Contact us",
+  "@settingsHelpContactUs": {
+    "description": "Settings page, Help section, row that opens an email to the Kuzz team. Short."
+  },
+  "settingsHelpNoEmailApp": "No email app found. Write to {email}",
+  "@settingsHelpNoEmailApp": {
+    "description": "Settings page, snackbar when no email app could open; {email} is the support email address.",
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsReadAloud": "Read aloud",
+  "@settingsReadAloud": {
+    "description": "Settings page, Messages section, title of the on/off switch for reading messages out loud. Short."
+  },
+  "settingsReadAloudSubtitle": "Show a play button on messages · uses this phone's built-in voice",
+  "@settingsReadAloudSubtitle": {
+    "description": "Settings page, grey text under the Read aloud switch."
+  },
+  "settingsSaveFailed": "Couldn't save. Try again.",
+  "@settingsSaveFailed": {
+    "description": "Settings page, snackbar when saving a setting failed."
+  },
+  "settingsSignedInWithGoogle": "Signed in with Google",
+  "@settingsSignedInWithGoogle": {
+    "description": "Settings page, Account section: label of the account row before the name or email loads; also a snackbar after connecting Google."
+  },
+  "settingsAppearanceSection": "Appearance",
+  "@settingsAppearanceSection": {
+    "description": "Settings page, heading of the section with the theme row. Short."
+  },
+  "settingsCommunitySection": "Community",
+  "@settingsCommunitySection": {
+    "description": "Settings page, heading of the community section (invite, theme). Short."
+  },
+  "settingsInvitePeople": "Invite people",
+  "@settingsInvitePeople": {
+    "description": "Settings page, row that opens the invite page. Short."
+  },
+  "settingsInviteToCommunity": "Invite to community",
+  "@settingsInviteToCommunity": {
+    "description": "Settings page, row that opens the invite page for the current community. Short."
+  },
+  "settingsTheme": "Theme",
+  "@settingsTheme": {
+    "description": "Settings page, row that opens the theme picker; also the theme picker page title. Short."
+  },
+  "settingsProtectAccountSection": "Protect your account",
+  "@settingsProtectAccountSection": {
+    "description": "Settings page, heading of the section asking an older account to connect Google. Short."
+  },
+  "settingsContinueWithGoogle": "Continue with Google",
+  "@settingsContinueWithGoogle": {
+    "description": "Settings page, Protect your account section, row that connects the account to Google. Short."
+  },
+  "settingsContinueWithGoogleSubtitle": "Sign in on your other devices, and get your account back if this phone is lost",
+  "@settingsContinueWithGoogleSubtitle": {
+    "description": "Settings page, grey text under 'Continue with Google'."
+  },
+  "settingsSignOutFailed": "Couldn’t sign out. Check your connection and try again.",
+  "@settingsSignOutFailed": {
+    "description": "Settings page, error under the Sign out row when signing out failed."
+  },
+  "settingsSigningOut": "Signing out…",
+  "@settingsSigningOut": {
+    "description": "Settings page, Sign out row title while signing out. Short."
+  },
+  "settingsSignOut": "Sign out",
+  "@settingsSignOut": {
+    "description": "Settings page, Sign out row and the confirm button of its dialog. Short."
+  },
+  "settingsSignOutSubtitle": "Your communities stay on this device",
+  "@settingsSignOutSubtitle": {
+    "description": "Settings page, grey text under the Sign out row."
+  },
+  "settingsSignOutTitle": "Sign out?",
+  "@settingsSignOutTitle": {
+    "description": "Sign out confirmation dialog, title. Short."
+  },
+  "settingsSignOutBody": "You’ll be signed out on this device. Sign in with Google to come back — your messages stay here.",
+  "@settingsSignOutBody": {
+    "description": "Sign out confirmation dialog, body."
+  },
+  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Sign in with Google to come back — your communities and messages stay here.",
+  "@settingsSignOutBodyCommunities": {
+    "description": "Sign out confirmation dialog, body when the user has several communities."
+  },
+  "settingsRemoveCommunity": "Remove community",
+  "@settingsRemoveCommunity": {
+    "description": "Settings page, title of the expandable section that removes the community from this device. Short."
+  },
+  "settingsRemoveFromDevice": "Remove from this device",
+  "@settingsRemoveFromDevice": {
+    "description": "Settings page, Remove community section, red row that removes the community. Short."
+  },
+  "settingsRemoveFromDeviceSubtitle": "Also removes its sign-in from this device",
+  "@settingsRemoveFromDeviceSubtitle": {
+    "description": "Settings page, grey text under 'Remove from this device'."
+  },
+  "settingsRemoveCommunityTitle": "Remove community from this device?",
+  "@settingsRemoveCommunityTitle": {
+    "description": "Remove community confirmation dialog, title."
+  },
+  "settingsRemoveCommunityBody": "This removes the community and its sign-in from this device. Your account and memberships on the server aren’t deleted.",
+  "@settingsRemoveCommunityBody": {
+    "description": "Remove community confirmation dialog, body."
+  },
+  "settingsRemoveCommunityNoGoogleWarning": "If this community isn’t connected to a Google account, you won’t be able to sign back in to it.",
+  "@settingsRemoveCommunityNoGoogleWarning": {
+    "description": "Remove community confirmation dialog, extra paragraph after the body for accounts not linked to Google."
+  },
+  "settingsRemoveCommunityFailed": "Couldn’t remove the community. Try again.",
+  "@settingsRemoveCommunityFailed": {
+    "description": "Settings page, snackbar when removing the community failed."
+  },
+  "settingsRemove": "Remove",
+  "@settingsRemove": {
+    "description": "Remove community confirmation dialog, confirm button. Short."
+  },
+  "settingsNotificationsSection": "Notifications",
+  "@settingsNotificationsSection": {
+    "description": "Settings page, heading of the notifications section. Short."
+  },
+  "settingsPushNotifications": "Push notifications",
+  "@settingsPushNotifications": {
+    "description": "Settings page, Notifications section, title of the on/off switch row. Short."
+  },
+  "settingsPushOptOutPending": "Waiting for relay confirmation; notifications may continue",
+  "@settingsPushOptOutPending": {
+    "description": "Settings page, grey text under Push notifications while turning off is not yet confirmed by the server."
+  },
+  "settingsPushOff": "Off",
+  "@settingsPushOff": {
+    "description": "Settings page, grey text under Push notifications when they are off. Short."
+  },
+  "settingsPushOffCommunity": "Off for this community",
+  "@settingsPushOffCommunity": {
+    "description": "Settings page, grey text under Push notifications when they are off for the current community. Short."
+  },
+  "settingsPushUnsupported": "Push support unavailable; you can still turn notifications off",
+  "@settingsPushUnsupported": {
+    "description": "Settings page, grey text under Push notifications when the server has no push support."
+  },
+  "settingsPushWaitingPermission": "Waiting for iOS notification permission",
+  "@settingsPushWaitingPermission": {
+    "description": "Settings page, grey text under Push notifications while iOS has not yet asked the user."
+  },
+  "settingsPushDeniedInIos": "Enabled in Kuzz, but disabled in iOS Settings",
+  "@settingsPushDeniedInIos": {
+    "description": "Settings page, red text under Push notifications when iOS blocks them. 'Kuzz' is the app name."
+  },
+  "settingsPushOn": "Receive message notifications",
+  "@settingsPushOn": {
+    "description": "Settings page, grey text under Push notifications when they are on."
+  },
+  "settingsPushOnCommunity": "Receive message notifications from this community",
+  "@settingsPushOnCommunity": {
+    "description": "Settings page, grey text under Push notifications when they are on for the current community."
+  },
+  "settingsPushCheckingPermission": "Checking iOS notification permission",
+  "@settingsPushCheckingPermission": {
+    "description": "Settings page, grey text under Push notifications while checking iOS permission."
+  },
+  "settingsPushPermissionUnknown": "Enabled in Kuzz; iOS permission status unavailable",
+  "@settingsPushPermissionUnknown": {
+    "description": "Settings page, red text under Push notifications when the iOS permission could not be read. 'Kuzz' is the app name."
+  },
+  "settingsPushOpenIosSettings": "Open iOS Notification Settings",
+  "@settingsPushOpenIosSettings": {
+    "description": "Settings page, row that opens the iOS notification settings for the app."
+  },
+  "settingsCloseProfile": "Close profile",
+  "@settingsCloseProfile": {
+    "description": "Profile screen, tooltip and screen-reader label of the close (X) button in the top bar."
+  },
+  "settingsCloseSettings": "Close settings",
+  "@settingsCloseSettings": {
+    "description": "Settings screen, tooltip and screen-reader label of the close (X) button in the top bar."
+  },
+  "settingsEditProfileAction": "Edit",
+  "@settingsEditProfileAction": {
+    "description": "Profile screen, button in the top bar that opens the profile editor. Short."
+  },
+  "settingsEditProfileTitle": "Edit profile",
+  "@settingsEditProfileTitle": {
+    "description": "Profile screen, title of the sheet listing what to edit. Short."
+  },
+  "settingsEditProfileDisplayName": "Display name",
+  "@settingsEditProfileDisplayName": {
+    "description": "Edit profile sheet, row that edits the display name. Short."
+  },
+  "settingsEditProfileDescription": "Profile description",
+  "@settingsEditProfileDescription": {
+    "description": "Edit profile sheet, row that edits the profile description (about text). Short."
+  },
+  "settingsEditProfilePhoto": "Photo",
+  "@settingsEditProfilePhoto": {
+    "description": "Edit profile sheet, row that edits the profile photo. Short."
+  },
+  "settingsAppearanceLight": "Light",
+  "@settingsAppearanceLight": {
+    "description": "Theme picker, appearance option: always light colors. Short."
+  },
+  "settingsAppearanceDark": "Dark",
+  "@settingsAppearanceDark": {
+    "description": "Theme picker, appearance option: always dark colors. Short."
+  },
+  "settingsAppearanceSystem": "System",
+  "@settingsAppearanceSystem": {
+    "description": "Theme picker, appearance option: follow the phone's light/dark setting. Short."
+  },
+  "settingsAppearanceOption": "{mode} appearance",
+  "@settingsAppearanceOption": {
+    "description": "Appearance sheet, screen-reader label of an option; {mode} is Light, Dark or System.",
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAppearanceChangeLabel": "{mode} appearance. Double tap to change.",
+  "@settingsAppearanceChangeLabel": {
+    "description": "Theme picker, screen-reader label of the appearance button; {mode} is Light, Dark or System.",
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsAccentColor": "Accent color",
+  "@settingsAccentColor": {
+    "description": "Theme picker, title of the accent color sheet and screen-reader label of the accent color button. Short."
+  },
+  "settingsAccentColorOption": "{color} accent color",
+  "@settingsAccentColorOption": {
+    "description": "Accent color sheet, screen-reader label of one color; {color} is the color's name (Green, Blue, …).",
+    "placeholders": {
+      "color": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsThemeHomePreview": "Home preview",
+  "@settingsThemeHomePreview": {
+    "description": "Theme picker, screen-reader label of the small picture of the home screen in the chosen theme."
+  },
+  "settingsThemeChatPreview": "Chat preview",
+  "@settingsThemeChatPreview": {
+    "description": "Theme picker, screen-reader label of the small picture of a chat in the chosen theme."
+  },
+  "settingsThemePreviewCommunity": "Community",
+  "@settingsThemePreviewCommunity": {
+    "description": "Theme picker, placeholder community name in the home screen preview when the community has no name. Short."
+  },
+  "settingsThemeClosePreview": "Close preview",
+  "@settingsThemeClosePreview": {
+    "description": "Theme picker, tooltip and screen-reader label of the close button that leaves without applying."
+  },
+  "settingsThemeSet": "Set",
+  "@settingsThemeSet": {
+    "description": "Theme picker, top bar button that applies the chosen theme. Very short."
+  },
+  "settingsThemePosition": "Theme {position} of {count}",
+  "@settingsThemePosition": {
+    "description": "Theme picker, screen-reader label of the slider that scrolls through themes.",
+    "placeholders": {
+      "position": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "commonSavingEllipsis": "Saving…",
+  "@commonSavingEllipsis": {
+    "description": "Save button text while saving. Short."
+  },
+  "profileYourProfile": "Your profile",
+  "@profileYourProfile": {
+    "description": "Profile screen header, shown in place of the name before the profile loads. Short."
+  },
+  "profilePresenceOnline": "Online",
+  "@profilePresenceOnline": {
+    "description": "Presence status: the person is active now. Shown on the profile and in its menu. Short."
+  },
+  "profilePresenceAway": "Away",
+  "@profilePresenceAway": {
+    "description": "Presence status: the person is away. Shown on the profile and in its menu. Short."
+  },
+  "profilePresenceOffline": "Offline",
+  "@profilePresenceOffline": {
+    "description": "Presence status: the person is offline. Shown on the profile and in its menu. Short."
+  },
+  "profilePresenceUnknown": "Unknown",
+  "@profilePresenceUnknown": {
+    "description": "Presence status on someone's profile sheet when it is not known. Short."
+  },
+  "profilePresenceLabel": "Presence: {status}",
+  "@profilePresenceLabel": {
+    "description": "Screen-reader label of the presence pill on a profile; {status} is Online, Away, Offline or Unknown.",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "profileUnnamedUser": "Kuzz user",
+  "@profileUnnamedUser": {
+    "description": "Profile sheet heading for someone whose name has not loaded yet. 'Kuzz' is the app name. Short."
+  },
+  "profileAgentDeviceRobot": "Robot of the device this agent runs on",
+  "@profileAgentDeviceRobot": {
+    "description": "Profile sheet of an AI agent, screen-reader label of the small robot icon of the computer the agent runs on."
+  },
+  "profileSheetMessage": "Message",
+  "@profileSheetMessage": {
+    "description": "Profile sheet, button that opens a direct message with the person. Short."
+  },
+  "profileSheetOpening": "Opening…",
+  "@profileSheetOpening": {
+    "description": "Profile sheet, Message button text while the direct message opens. Short."
+  },
+  "profileSheetOpeningLabel": "Opening direct message",
+  "@profileSheetOpeningLabel": {
+    "description": "Profile sheet, screen-reader label of the spinner while the direct message opens."
+  },
+  "profileSheetBlock": "Block",
+  "@profileSheetBlock": {
+    "description": "Profile sheet, button that blocks the person. Short."
+  },
+  "profileSheetUnblock": "Unblock",
+  "@profileSheetUnblock": {
+    "description": "Profile sheet, button that unblocks the person. Short."
+  },
+  "profileSheetReport": "Report",
+  "@profileSheetReport": {
+    "description": "Profile sheet, button that reports the person. Short."
+  },
+  "profileSheetAbout": "About",
+  "@profileSheetAbout": {
+    "description": "Profile sheet, small heading above the person's profile description. Short."
+  },
+  "profileStatusSetTitle": "Set a status",
+  "@profileStatusSetTitle": {
+    "description": "Set status sheet title; also screen-reader label of the status badge on your profile picture. Short."
+  },
+  "profileStatusSave": "Save status",
+  "@profileStatusSave": {
+    "description": "Set status sheet, tooltip of the check button that saves the status."
+  },
+  "profileStatusDuration": "Duration",
+  "@profileStatusDuration": {
+    "description": "Set status sheet: heading and row for how long the status lasts; also the title of the duration picker. Short."
+  },
+  "profileStatusDurationHours": "{count, plural, one{{count} hour} other{{count} hours}}",
+  "@profileStatusDurationHours": {
+    "description": "Set status sheet, duration option: the status clears after this many hours. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileStatusDurationDays": "{count, plural, one{{count} day} other{{count} days}}",
+  "@profileStatusDurationDays": {
+    "description": "Set status sheet, duration option: the status clears after this many days. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileStatusDurationWeeks": "{count, plural, one{{count} week} other{{count} weeks}}",
+  "@profileStatusDurationWeeks": {
+    "description": "Set status sheet, duration option: the status clears after this many weeks. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileStatusDurationCustom": "Custom",
+  "@profileStatusDurationCustom": {
+    "description": "Set status sheet, duration option that lets you pick a date and time. Short."
+  },
+  "profileStatusUntil": "Until",
+  "@profileStatusUntil": {
+    "description": "Set status sheet, row showing the chosen end date and time of the status. Short."
+  },
+  "profileStatusQuick": "Quick statuses",
+  "@profileStatusQuick": {
+    "description": "Set status sheet, heading above the list of ready-made statuses. Short."
+  },
+  "profileStatusClear": "Clear status",
+  "@profileStatusClear": {
+    "description": "Set status sheet, red row that removes the current status. Short."
+  },
+  "profileStatusChooseEmoji": "Choose a status emoji",
+  "@profileStatusChooseEmoji": {
+    "description": "Set status sheet, screen-reader label of the emoji button next to the status text."
+  },
+  "profileStatusRemoveEmoji": "Remove status emoji",
+  "@profileStatusRemoveEmoji": {
+    "description": "Set status sheet, tooltip of the small X on the status emoji."
+  },
+  "profileStatusHint": "What’s your status?",
+  "@profileStatusHint": {
+    "description": "Set status sheet, placeholder in the status text field."
+  },
+  "profileStatusPickerDone": "Done",
+  "@profileStatusPickerDone": {
+    "description": "Set status sheet, iOS date picker button that confirms the chosen end time. Short."
+  },
+  "profileEditPhoto": "Edit Photo",
+  "@profileEditPhoto": {
+    "description": "Profile editor: title while editing the photo, and the button under the photo. Short."
+  },
+  "profileEditPhotoLabel": "Edit profile photo",
+  "@profileEditPhotoLabel": {
+    "description": "Profile editor, screen-reader label of the Edit Photo button."
+  },
+  "profileBackToProfile": "Back to profile",
+  "@profileBackToProfile": {
+    "description": "Photo editor, tooltip and screen-reader label of the back button."
+  },
+  "profileSaveChangeFailed": "We couldn't save this change. Try again.",
+  "@profileSaveChangeFailed": {
+    "description": "Profile editor, error when saving the name or description failed."
+  },
+  "profileSavePhotoFailed": "We couldn't save your profile photo. Try again.",
+  "@profileSavePhotoFailed": {
+    "description": "Photo editor, error when saving the profile photo failed."
+  },
+  "profileLoadFailed": "We couldn't load your profile. Go back and try again.",
+  "@profileLoadFailed": {
+    "description": "Profile editor, error when the profile failed to load."
+  },
+  "profileLoading": "Loading your profile…",
+  "@profileLoading": {
+    "description": "Profile editor, text while the profile loads."
+  },
+  "profileSavingPhoto": "Saving photo",
+  "@profileSavingPhoto": {
+    "description": "Photo editor, screen-reader label of the spinner on the Save button while the photo is saved."
+  },
+  "profileCloseSheet": "Close sheet",
+  "@profileCloseSheet": {
+    "description": "Profile text editor sheet, tooltip and screen-reader label of the close (X) button."
+  },
+  "profilePreparePhotoFailed": "We couldn't prepare that photo. Try again.",
+  "@profilePreparePhotoFailed": {
+    "description": "Photo editor, error when a picked photo could not be opened."
+  },
+  "profilePreparingPhoto": "Preparing photo",
+  "@profilePreparingPhoto": {
+    "description": "Photo editor, screen-reader label of the spinner while a photo is being prepared."
+  },
+  "profileAvatarModeImage": "Image",
+  "@profileAvatarModeImage": {
+    "description": "Photo editor, tab for a photo avatar. Short."
+  },
+  "profileAvatarModeEmoji": "Emoji",
+  "@profileAvatarModeEmoji": {
+    "description": "Photo editor, tab for an emoji avatar; also the emoji section button. Short."
+  },
+  "profileAvatarModeAnimated": "Animated",
+  "@profileAvatarModeAnimated": {
+    "description": "Photo editor, tab for an animated (short video) avatar. Short."
+  },
+  "profileAvatarBackground": "Background",
+  "@profileAvatarBackground": {
+    "description": "Photo editor, button that shows background colors for the avatar. Short."
+  },
+  "profileAvatarColorOption": "Avatar color {number}",
+  "@profileAvatarColorOption": {
+    "description": "Photo editor, screen-reader label of one background color; {number} is its position (1, 2, …).",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "profileEmojiSearch": "Search emoji",
+  "@profileEmojiSearch": {
+    "description": "Emoji avatar editor, placeholder in the emoji search field."
+  },
+  "profileEmojiClearSearch": "Clear search",
+  "@profileEmojiClearSearch": {
+    "description": "Emoji avatar editor, tooltip of the X button that clears the search."
+  },
+  "profileEmojiNoResults": "No emoji found",
+  "@profileEmojiNoResults": {
+    "description": "Emoji avatar editor, text when the search finds no emoji."
+  },
+  "profileSkinTone": "Skin tone",
+  "@profileSkinTone": {
+    "description": "Emoji avatar editor, tooltip of the skin tone picker. Short."
+  },
+  "profileSkinToneDefault": "Default",
+  "@profileSkinToneDefault": {
+    "description": "Emoji avatar editor, skin tone option: the default yellow. Short."
+  },
+  "profileSkinToneLight": "Light",
+  "@profileSkinToneLight": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneMediumLight": "Medium-light",
+  "@profileSkinToneMediumLight": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneMedium": "Medium",
+  "@profileSkinToneMedium": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneMediumDark": "Medium-dark",
+  "@profileSkinToneMediumDark": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileSkinToneDark": "Dark",
+  "@profileSkinToneDark": {
+    "description": "Emoji avatar editor, skin tone option. Short."
+  },
+  "profileCamera": "Camera",
+  "@profileCamera": {
+    "description": "Photo editor, button that opens the camera to take a profile photo. Short."
+  },
+  "profilePhotoLibrary": "Photo Library",
+  "@profilePhotoLibrary": {
+    "description": "Photo editor, button that opens the phone's photo library. Short."
+  },
+  "profileCameraAccessFailed": "Could not access the camera.",
+  "@profileCameraAccessFailed": {
+    "description": "Camera screen of the photo editor, error when the camera could not start."
+  },
+  "profileCameraSwitchFailed": "Could not switch cameras.",
+  "@profileCameraSwitchFailed": {
+    "description": "Camera screen of the photo editor, error when flipping between front and back camera failed."
+  },
+  "profileCameraStarting": "Starting camera",
+  "@profileCameraStarting": {
+    "description": "Camera screen of the photo editor, screen-reader label of the spinner while the camera starts."
+  },
+  "profileCameraRetry": "Retry",
+  "@profileCameraRetry": {
+    "description": "Camera screen of the photo editor, button that discards the photo just taken. Short."
+  },
+  "profileCameraClose": "Close camera",
+  "@profileCameraClose": {
+    "description": "Camera screen of the photo editor, screen-reader label of the close button."
+  },
+  "profileCameraUsePhoto": "Use Photo",
+  "@profileCameraUsePhoto": {
+    "description": "Camera screen of the photo editor, button that keeps the photo just taken. Short."
+  },
+  "profileCameraFlip": "Flip camera",
+  "@profileCameraFlip": {
+    "description": "Camera screen of the photo editor, screen-reader label of the front/back camera button."
+  },
+  "profileTakePhoto": "Take photo",
+  "@profileTakePhoto": {
+    "description": "Camera screen of the photo editor, screen-reader label of the shutter button."
+  },
+  "profileTakingPhoto": "Taking photo",
+  "@profileTakingPhoto": {
+    "description": "Camera screen of the photo editor, screen-reader label of the spinner on the shutter button."
+  },
+  "profileTakePhotoFailed": "We couldn't take that photo. Try again.",
+  "@profileTakePhotoFailed": {
+    "description": "Camera screen of the photo editor, error when taking the photo failed."
+  },
+  "profileCropTitle": "Position Photo",
+  "@profileCropTitle": {
+    "description": "Photo crop screen, title in the top bar. Short."
+  },
+  "profileCropPrepareFailed": "We couldn't prepare that photo.",
+  "@profileCropPrepareFailed": {
+    "description": "Photo crop screen, error when the photo could not be opened."
+  },
+  "profileCropLabel": "Photo crop",
+  "@profileCropLabel": {
+    "description": "Photo crop screen, screen-reader label of the area where you move and zoom the photo."
+  },
+  "profileCropZoomValue": "{percent}% zoom",
+  "@profileCropZoomValue": {
+    "description": "Photo crop screen, screen-reader value of the crop area; {percent} is the zoom level (100, 150, …).",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "profileCropHint": "Move and scale",
+  "@profileCropHint": {
+    "description": "Photo crop screen, hint under the circle. Short."
+  },
+  "profileMoveLeft": "Move left",
+  "@profileMoveLeft": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture left. Short."
+  },
+  "profileMoveRight": "Move right",
+  "@profileMoveRight": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture right. Short."
+  },
+  "profileMoveUp": "Move up",
+  "@profileMoveUp": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture up. Short."
+  },
+  "profileMoveDown": "Move down",
+  "@profileMoveDown": {
+    "description": "Photo crop and animated avatar screens, screen-reader action that moves the picture down. Short."
+  },
+  "profileZoomIn": "Zoom in",
+  "@profileZoomIn": {
+    "description": "Photo crop screen, screen-reader action that enlarges the photo. Short."
+  },
+  "profileZoomOut": "Zoom out",
+  "@profileZoomOut": {
+    "description": "Photo crop screen, screen-reader action that shrinks the photo. Short."
+  },
+  "profileAvatarPosition": "Avatar position",
+  "@profileAvatarPosition": {
+    "description": "Animated avatar editor, screen-reader label of the preview you can drag."
+  },
+  "profileAvatarPositionValue": "{x} horizontal, {y} vertical",
+  "@profileAvatarPositionValue": {
+    "description": "Animated avatar editor, screen-reader value of the preview position; {x} and {y} are numbers from -100 to 100.",
+    "placeholders": {
+      "x": {
+        "type": "int"
+      },
+      "y": {
+        "type": "int"
+      }
+    }
+  },
+  "profileAvatarSize": "Avatar size",
+  "@profileAvatarSize": {
+    "description": "Animated avatar editor, screen-reader label of the size slider."
+  },
+  "profileAnimatedYou": "You",
+  "@profileAnimatedYou": {
+    "description": "Animated avatar editor, button that shows the controls for your own cut-out picture. Short."
+  },
+  "profileAnimatedFrame": "Frame",
+  "@profileAnimatedFrame": {
+    "description": "Animated avatar editor, button that shows the still frame picker. Short."
+  },
+  "profileAnimatedRetake": "Retake",
+  "@profileAnimatedRetake": {
+    "description": "Animated avatar editor, button that records again. Short."
+  },
+  "profileAnimatedOutlineOn": "Turn outline on",
+  "@profileAnimatedOutlineOn": {
+    "description": "Animated avatar editor, tooltip of the button that adds an outline around you."
+  },
+  "profileAnimatedOutlineOff": "Turn outline off",
+  "@profileAnimatedOutlineOff": {
+    "description": "Animated avatar editor, tooltip of the button that removes the outline around you."
+  },
+  "profileAnimatedDragHint": "Drag the preview to reposition",
+  "@profileAnimatedDragHint": {
+    "description": "Animated avatar editor, hint under the size controls."
+  },
+  "profileAnimatedChooseFrame": "Choose the still frame",
+  "@profileAnimatedChooseFrame": {
+    "description": "Animated avatar editor, hint under the frame picker: the frame shown when the avatar is not playing."
+  },
+  "profileAnimatedChooseFrameLabel": "Choose still frame",
+  "@profileAnimatedChooseFrameLabel": {
+    "description": "Animated avatar editor, screen-reader label of the frame picker slider."
+  },
+  "profileAnimatedFramePosition": "{position} of {count}",
+  "@profileAnimatedFramePosition": {
+    "description": "Animated avatar editor, screen-reader value of the frame picker slider, e.g. '3 of 12'.",
+    "placeholders": {
+      "position": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "profileAnimatedRecord": "Record",
+  "@profileAnimatedRecord": {
+    "description": "Animated avatar camera, button that starts recording. Short."
+  },
+  "profileAnimatedRecordLabel": "Record animated avatar",
+  "@profileAnimatedRecordLabel": {
+    "description": "Animated avatar camera, screen-reader label of the Record button."
+  },
+  "profileAnimatedCapturing": "Capturing animated avatar",
+  "@profileAnimatedCapturing": {
+    "description": "Animated avatar camera, screen-reader label of the spinner while recording."
+  },
+  "profileAnimatedPreparing": "Preparing animated avatar",
+  "@profileAnimatedPreparing": {
+    "description": "Animated avatar camera, screen-reader label of the spinner after recording."
+  },
+  "profileAnimatedRecording": "Recording…",
+  "@profileAnimatedRecording": {
+    "description": "Animated avatar camera, text under the preview while recording. Short."
+  },
+  "profileAnimatedCuttingOut": "Cutting you out of the background…",
+  "@profileAnimatedCuttingOut": {
+    "description": "Animated avatar camera, text under the preview while the app removes the background."
+  },
+  "profileAnimatedLineUp": "Line up your shot.",
+  "@profileAnimatedLineUp": {
+    "description": "Animated avatar camera, text under the preview before recording."
+  },
+  "profileAnimatedCreateFailed": "We couldn't create that animation. Try again.",
+  "@profileAnimatedCreateFailed": {
+    "description": "Animated avatar editor, error when building the animation failed."
+  },
+  "profileAnimatedRecordingFailed": "Recording failed. Try again.",
+  "@profileAnimatedRecordingFailed": {
+    "description": "Animated avatar camera, error when recording failed."
+  },
+  "signInTitle": "Sign in",
+  "@signInTitle": {
+    "description": "Sign-in page, title in the top bar. Short."
+  },
+  "signInGoogleAccountTitle": "Google account",
+  "@signInGoogleAccountTitle": {
+    "description": "Page that connects an older account to Google, title in the top bar. Short."
+  },
+  "signInSignInAgain": "Sign in again",
+  "@signInSignInAgain": {
+    "description": "Sign-in page heading after being signed out; also a button when the server session could not be restored. Short."
+  },
+  "signInWelcome": "Welcome to Kuzz",
+  "@signInWelcome": {
+    "description": "Sign-in page, big heading for a new user. 'Kuzz' is the app name."
+  },
+  "signInExistingAccountTitle": "Existing account sign-in",
+  "@signInExistingAccountTitle": {
+    "description": "Sign-in page, heading when signing in to an older account."
+  },
+  "signInToRelayTitle": "Sign in to a relay",
+  "@signInToRelayTitle": {
+    "description": "Sign-in page, heading when the user types a server address. A relay is a chat server."
+  },
+  "signInSignedOutTitle": "Signed out",
+  "@signInSignedOutTitle": {
+    "description": "Sign-in page, heading when the session for a server ended. Short."
+  },
+  "signInResumeBody": "Your messages are still on this device. Sign in to pick up where you left off.",
+  "@signInResumeBody": {
+    "description": "Sign-in page, text under 'Sign in again'."
+  },
+  "signInResumeBodyCommunities": "Your communities and messages are still on this device. Sign in to pick up where you left off.",
+  "@signInResumeBodyCommunities": {
+    "description": "Sign-in page, text under 'Sign in again' when the user has communities."
+  },
+  "signInConnectGoogleBody": "Sign in with Google so you can use this account on your other devices. Your profile and conversations stay the same. Kuzz keeps a protected copy of your account for this.",
+  "@signInConnectGoogleBody": {
+    "description": "Connect Google page, explanation under 'Protect your account'. 'Kuzz' is the app name."
+  },
+  "signInWelcomeBody": "Sign in with Google to get started. Kuzz keeps a protected copy of your account so the same Google account signs you in on your other devices.",
+  "@signInWelcomeBody": {
+    "description": "Sign-in page, text under 'Welcome to Kuzz'. 'Kuzz' is the app name."
+  },
+  "signInExistingAccountBody": "Return to an account created before key recovery was added. Its existing identity and history are kept. New accounts use Google key recovery.",
+  "@signInExistingAccountBody": {
+    "description": "Sign-in page, text under 'Existing account sign-in'."
+  },
+  "signInToRelayBody": "Relays with Kuzz accounts let you sign in with Google.",
+  "@signInToRelayBody": {
+    "description": "Sign-in page, text under 'Sign in to a relay'. A relay is a chat server; 'Kuzz' is the app name."
+  },
+  "signInSessionEndedBody": "Your session ended. Sign in again to continue.",
+  "@signInSessionEndedBody": {
+    "description": "Sign-in page, text under 'Signed out'."
+  },
+  "signInSessionEndedOnRelayBody": "Your session on {server} ended. Sign in again to continue.",
+  "@signInSessionEndedOnRelayBody": {
+    "description": "Sign-in page, text under 'Signed out'; {server} is the server address.",
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "signInRelayAddressLabel": "Relay address",
+  "@signInRelayAddressLabel": {
+    "description": "Sign-in page, label of the server address field. A relay is a chat server. Short."
+  },
+  "signInRelayAddressInvalid": "Enter a relay address, like relay.example.com.",
+  "@signInRelayAddressInvalid": {
+    "description": "Sign-in page, error when the server address is not valid. Keep relay.example.com as is."
+  },
+  "signInRelayNoGoogleSupport": "This relay does not support Google sign-in. Join it with an invite link from a member instead.",
+  "@signInRelayNoGoogleSupport": {
+    "description": "Sign-in page, error when the server has no Google sign-in."
+  },
+  "signInRelayNoGoogleConfigured": "This relay has no Google sign-in configured.",
+  "@signInRelayNoGoogleConfigured": {
+    "description": "Sign-in page, error when the server has Google sign-in turned off."
+  },
+  "signInExistingIdentityConflict": "This device has a signing identity on this relay. An existing token account cannot replace it. Use Google key recovery.",
+  "@signInExistingIdentityConflict": {
+    "description": "Sign-in page, error when choosing an older account on a server this device already uses another way."
+  },
+  "signInIdentityCheckFailed": "Could not check the saved identity. Try again.",
+  "@signInIdentityCheckFailed": {
+    "description": "Sign-in page, error when the saved accounts on this device could not be read."
+  },
+  "signInFinishFailed": "Couldn’t finish signing in. Nothing was changed; try again.",
+  "@signInFinishFailed": {
+    "description": "Sign-in page, error when the last step of signing in failed."
+  },
+  "signInContinue": "Continue",
+  "@signInContinue": {
+    "description": "Sign-in page, button that checks the server address. Short."
+  },
+  "signInContinueSaved": "Continue with saved sign-in",
+  "@signInContinueSaved": {
+    "description": "Sign-in page, button that reuses a sign-in already stored on this device."
+  },
+  "signInUseDifferentGoogle": "Use a different Google account",
+  "@signInUseDifferentGoogle": {
+    "description": "Sign-in page, button shown after signing in with the wrong Google account."
+  },
+  "signInWithGoogle": "Sign in with Google",
+  "@signInWithGoogle": {
+    "description": "Sign-in page, main Google sign-in button. Short."
+  },
+  "signInUseExistingTokenAccount": "Use an existing token account",
+  "@signInUseExistingTokenAccount": {
+    "description": "Sign-in page, link button to sign in to an older account instead."
+  },
+  "signInUseGoogleKeyRecovery": "Use Google key recovery",
+  "@signInUseGoogleKeyRecovery": {
+    "description": "Sign-in page, link button to go back to the normal Google sign-in."
+  },
+  "signInSigningIn": "Signing in",
+  "@signInSigningIn": {
+    "description": "Screen-reader label of the spinner while signing in."
+  },
+  "signInTermsAgreement": "By continuing you agree to the {terms}",
+  "@signInTermsAgreement": {
+    "description": "Sign-in page, small text under the Google button; {terms} is the underlined 'Terms of Service' link.",
+    "placeholders": {
+      "terms": {
+        "type": "String"
+      }
+    }
+  },
+  "signInTermsOfService": "Terms of Service",
+  "@signInTermsOfService": {
+    "description": "Sign-in page, the underlined link text inside 'By continuing you agree to the …'."
+  },
+  "signInUpdatingAccount": "Updating your account",
+  "@signInUpdatingAccount": {
+    "description": "Screen-reader label of the full-screen spinner while the app switches to another signed-in account."
+  },
+  "signInSwitchAccountFailedTitle": "Couldn’t switch accounts",
+  "@signInSwitchAccountFailedTitle": {
+    "description": "Full-screen error heading when the app could not switch to the account just signed in."
+  },
+  "signInSwitchAccountFailedBody": "You signed in with a different account, but this device could not save it: {error}",
+  "@signInSwitchAccountFailedBody": {
+    "description": "Full-screen error text under 'Couldn’t switch accounts'; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "signInReconnectingBanner": "Reconnecting to your relay…",
+  "@signInReconnectingBanner": {
+    "description": "Banner at the top of the app while reconnecting to the chat server."
+  },
+  "signInUnreachableBanner": "Can’t reach your relay. Your sign-in is saved.",
+  "@signInUnreachableBanner": {
+    "description": "Banner at the top of the app when the chat server cannot be reached."
+  },
+  "signInRetryNow": "Retry now",
+  "@signInRetryNow": {
+    "description": "Button that retries connecting to the chat server right away. Short."
+  },
+  "signInReconnecting": "Reconnecting…",
+  "@signInReconnecting": {
+    "description": "Full-screen heading while reconnecting to the chat server. Short."
+  },
+  "signInUnreachableTitle": "Can’t reach your relay",
+  "@signInUnreachableTitle": {
+    "description": "Full-screen heading when the chat server cannot be reached."
+  },
+  "signInUnreachableBody": "Your sign-in is saved. Kuzz will keep it until you retry or sign in again.",
+  "@signInUnreachableBody": {
+    "description": "Full-screen text under 'Can’t reach your relay'. 'Kuzz' is the app name."
+  },
+  "signInRecoveryRemoveTitle": "Remove {community}?",
+  "@signInRecoveryRemoveTitle": {
+    "description": "Dialog title when removing a community from this device; {community} is its name.",
+    "placeholders": {
+      "community": {
+        "type": "String"
+      }
+    }
+  },
+  "signInRecoveryRemoveBody": "This community and its sign-in are removed from this device.",
+  "@signInRecoveryRemoveBody": {
+    "description": "Dialog body when removing a community from this device."
+  },
+  "signInRecoveryRemove": "Remove",
+  "@signInRecoveryRemove": {
+    "description": "Confirm button of the remove community dialog. Short."
+  },
+  "signInRecoverySwitchCommunity": "Switch community",
+  "@signInRecoverySwitchCommunity": {
+    "description": "Recovery options on a sign-in problem screen, heading above the list of other communities. Short."
+  },
+  "signInRecoveryRemoveThis": "Remove this community",
+  "@signInRecoveryRemoveThis": {
+    "description": "Recovery options on a sign-in problem screen, red button that removes the community from this device."
+  },
+  "signInRecoveryFailed": "Could not complete that: {error}",
+  "@signInRecoveryFailed": {
+    "description": "Recovery options on a sign-in problem screen, error after switching or removing failed; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "signInRecoverySignOutFailed": "Couldn’t sign out on this device. Try again.",
+  "@signInRecoverySignOutFailed": {
+    "description": "Recovery options on a sign-in problem screen, error when signing out failed."
+  },
+  "signInSwitchCommunityFailed": "Couldn’t switch communities. Try again.",
+  "@signInSwitchCommunityFailed": {
+    "description": "Signed-out page, error when switching to another community failed."
+  },
+  "signInFinishSignOutFailed": "Couldn’t finish signing out. Try again.",
+  "@signInFinishSignOutFailed": {
+    "description": "Signed-out page, error when finishing the sign-out failed."
+  },
+  "signInFinishingSignOut": "Finishing sign-out",
+  "@signInFinishingSignOut": {
+    "description": "Signed-out page, heading when the sign-out did not fully finish."
+  },
+  "ageGateTitle": "Kuzz is for people 18 and older",
+  "@ageGateTitle": {
+    "description": "Age restriction screen, big heading. 'Kuzz' is the app name."
+  },
+  "ageGateBody": "You must be 18 or older to use Kuzz under Kuzz's Terms.",
+  "@ageGateBody": {
+    "description": "Age restriction screen, text under the heading. 'Kuzz' is the app name."
+  },
+  "inviteSignInToUse": "Sign in to use this invite.",
+  "@inviteSignInToUse": {
+    "description": "Invite join sheet, error when the user must sign in before using the invite link."
+  },
+  "inviteSignInToCommunityToUse": "Sign in to {community} to use this invite.",
+  "@inviteSignInToCommunityToUse": {
+    "description": "Invite join sheet, error when the user must sign in to a community before using the invite link; {community} is the community name.",
+    "placeholders": {
+      "community": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteSignInAgainFirst": "Sign in to this community again first.",
+  "@inviteSignInAgainFirst": {
+    "description": "Invite join sheet, error when the saved sign-in for the community is no longer valid."
+  },
+  "inviteRecoverKeyFirst": "Recover your original signing key before joining.",
+  "@inviteRecoverKeyFirst": {
+    "description": "Invite join sheet, error when this device does not have the account's original key."
+  },
+  "inviteCommunityUnavailable": "This community is no longer available. Re-open the invite link to try again.",
+  "@inviteCommunityUnavailable": {
+    "description": "Invite join sheet, error when the invited community is gone."
+  },
+  "inviteRelayUnreachable": "Could not reach the relay. Check your connection and try again.",
+  "@inviteRelayUnreachable": {
+    "description": "Invite join sheet, error when the chat server (relay) cannot be reached."
+  },
+  "inviteExpired": "This invite has expired.",
+  "@inviteExpired": {
+    "description": "Invite join sheet, error when the invite link is too old."
+  },
+  "inviteExhausted": "This invite has reached its use limit. Ask for a new invite.",
+  "@inviteExhausted": {
+    "description": "Invite join sheet, error when the invite link was used too many times."
+  },
+  "inviteInvalid": "This invite is not valid.",
+  "@inviteInvalid": {
+    "description": "Invite join sheet, error when the invite link is wrong."
+  },
+  "inviteApprovalExpired": "This invite approval has expired. Re-open the invite link to try again.",
+  "@inviteApprovalExpired": {
+    "description": "Invite join sheet, error when the join approval timed out."
+  },
+  "inviteJoinFailed": "Could not join this community: {error}",
+  "@inviteJoinFailed": {
+    "description": "Invite join sheet, general join error; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteStarterSetupUnreachable": "Starter groups could not reach the relay. Check your connection and retry setup.",
+  "@inviteStarterSetupUnreachable": {
+    "description": "Invite join sheet, error when the first groups of a new member could not be created because the server was unreachable."
+  },
+  "inviteStarterSetupFailed": "Starter groups could not be set up. Retry setup to try again.",
+  "@inviteStarterSetupFailed": {
+    "description": "Invite join sheet, error when the first groups of a new member could not be created."
+  },
+  "inviteUnknownHost": "unknown host",
+  "@inviteUnknownHost": {
+    "description": "Invite join sheet, shown instead of the server address when it is missing. Lowercase, used inside sentences."
+  },
+  "inviteFinishingSetup": "Finishing setup…",
+  "@inviteFinishingSetup": {
+    "description": "Invite join sheet, main button text while setup finishes. Short."
+  },
+  "inviteJoining": "Joining…",
+  "@inviteJoining": {
+    "description": "Invite join sheet, main button text while joining. Short."
+  },
+  "inviteRetrySetup": "Retry setup",
+  "@inviteRetrySetup": {
+    "description": "Invite join sheet, main button after setup failed. Short."
+  },
+  "inviteFinishSettingUp": "Finish setting up",
+  "@inviteFinishSettingUp": {
+    "description": "Invite join sheet, main button and title when membership exists but setup is not done. Short."
+  },
+  "inviteSignInWithGoogleToJoin": "Sign in with Google to join",
+  "@inviteSignInWithGoogleToJoin": {
+    "description": "Invite join sheet, main button when the user is not signed in."
+  },
+  "inviteJoin": "Join",
+  "@inviteJoin": {
+    "description": "Invite join sheet, main button. Short."
+  },
+  "inviteJoinTitle": "Join?",
+  "@inviteJoinTitle": {
+    "description": "Invite join sheet, title. Short."
+  },
+  "inviteJoinCommunityTitle": "Join this Kuzz community?",
+  "@inviteJoinCommunityTitle": {
+    "description": "Invite join sheet, title when the invite is for another server. 'Kuzz' is the app name."
+  },
+  "inviteCheckHost": "Check the relay host before you join:",
+  "@inviteCheckHost": {
+    "description": "Invite join sheet, text above the server address. A relay is a chat server."
+  },
+  "inviteDisplayName": "Display name: {name}",
+  "@inviteDisplayName": {
+    "description": "Invite join sheet, the name the user will have in the community; {name} is that name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteStarterSetupPending": "Your membership is ready, but starter groups still need to be set up. You can safely retry without claiming the invite again.",
+  "@inviteStarterSetupPending": {
+    "description": "Invite join sheet, text when joining worked but the first groups are not created yet."
+  },
+  "inviteGoogleMembership": "Joining uses your Google sign-in. Your membership belongs to your account, not this phone.",
+  "@inviteGoogleMembership": {
+    "description": "Invite join sheet, explanation of Google sign-in."
+  },
+  "inviteGoogleMembershipCommunity": "This community uses your Google sign-in. Your membership belongs to your account, not this phone.",
+  "@inviteGoogleMembershipCommunity": {
+    "description": "Invite join sheet, explanation of Google sign-in for a community on another server."
+  },
+  "inviteSessionSignedIn": "Signed in",
+  "@inviteSessionSignedIn": {
+    "description": "Invite join sheet, sign-in status. Short."
+  },
+  "inviteSessionSigningIn": "Signing in…",
+  "@inviteSessionSigningIn": {
+    "description": "Invite join sheet, sign-in status. Short."
+  },
+  "inviteSessionChecking": "Checking sign-in…",
+  "@inviteSessionChecking": {
+    "description": "Invite join sheet, sign-in status while the saved sign-in is checked. Short."
+  },
+  "inviteSessionNeedsConnection": "Sign-in needs a connection",
+  "@inviteSessionNeedsConnection": {
+    "description": "Invite join sheet, sign-in status when offline. Short."
+  },
+  "inviteSessionSignedOut": "Not signed in",
+  "@inviteSessionSignedOut": {
+    "description": "Invite join sheet, sign-in status. Short."
+  },
+  "inviteOnlyCopyWarning": "This phone is the only copy of this identity. If you lose it, you’ll lose access as this member.",
+  "@inviteOnlyCopyWarning": {
+    "description": "Invite join sheet and success screen, warning that the account key exists only on this phone."
+  },
+  "inviteFinishingSetupLabel": "Finishing setup",
+  "@inviteFinishingSetupLabel": {
+    "description": "Screen-reader label of the spinner while setup finishes."
+  },
+  "inviteJoiningLabel": "Joining",
+  "@inviteJoiningLabel": {
+    "description": "Screen-reader label of the spinner while joining."
+  },
+  "inviteJoiningCommunityLabel": "Joining community",
+  "@inviteJoiningCommunityLabel": {
+    "description": "Screen-reader label of the spinner while joining a community."
+  },
+  "inviteJoinedTitle": "You’re in",
+  "@inviteJoinedTitle": {
+    "description": "Invite success screen, big heading. Short."
+  },
+  "inviteJoinedCommunity": "You joined {community}",
+  "@inviteJoinedCommunity": {
+    "description": "Invite success screen, big heading; {community} is the community name or server address.",
+    "placeholders": {
+      "community": {
+        "type": "String"
+      }
+    }
+  },
+  "inviteJoinedContinue": "Continue",
+  "@inviteJoinedContinue": {
+    "description": "Invite success screen, button that opens the community. Short."
+  },
+  "inviteJoinedDone": "Done",
+  "@inviteJoinedDone": {
+    "description": "Invite success screen, button that closes the screen. Short."
+  },
+  "inviteCreateTitle": "Invite to community",
+  "@inviteCreateTitle": {
+    "description": "Invite page, title in the top bar."
+  },
+  "inviteCheckingPermissions": "Checking community permissions",
+  "@inviteCheckingPermissions": {
+    "description": "Screen-reader label of the spinner while checking if the user may invite."
+  },
+  "inviteOrUseNpub": "Or use npub",
+  "@inviteOrUseNpub": {
+    "description": "Invite page, divider text between the link and the invite-by-id field. 'npub' is a user id format; keep it. Short."
+  },
+  "invitePermissionCheckFailedTitle": "Could not check permissions",
+  "@invitePermissionCheckFailedTitle": {
+    "description": "Invite page, error heading when the user's role could not be loaded."
+  },
+  "invitePermissionCheckFailedBody": "Reconnect to this community and try again.",
+  "@invitePermissionCheckFailedBody": {
+    "description": "Invite page, error text under 'Could not check permissions'."
+  },
+  "inviteRetry": "Retry",
+  "@inviteRetry": {
+    "description": "Invite page, retry button. Short."
+  },
+  "invitePermissionDeniedTitle": "Invite access required",
+  "@invitePermissionDeniedTitle": {
+    "description": "Invite page, heading when the user may not invite."
+  },
+  "invitePermissionDeniedBody": "Only community owners and admins can invite people.",
+  "@invitePermissionDeniedBody": {
+    "description": "Invite page, text under 'Invite access required'."
+  },
+  "inviteShareFailed": "Could not share invite link",
+  "@inviteShareFailed": {
+    "description": "Invite page, snack bar when sharing the link failed."
+  },
+  "inviteShare": "Share",
+  "@inviteShare": {
+    "description": "Invite page, button that shares the invite link. Short."
+  },
+  "inviteCopy": "Copy",
+  "@inviteCopy": {
+    "description": "Invite page, button that copies the invite link. Short."
+  },
+  "inviteLinkCopied": "Invite link copied",
+  "@inviteLinkCopied": {
+    "description": "Invite page, message after copying the invite link."
+  },
+  "inviteExpiresAfter": "Expires after",
+  "@inviteExpiresAfter": {
+    "description": "Invite page, setting row and sheet title for how long the link works. Short."
+  },
+  "inviteLimitUses": "Limit number of uses",
+  "@inviteLimitUses": {
+    "description": "Invite page, setting row and sheet title for how many people can use the link."
+  },
+  "inviteExpiryDays": "{count, plural, =1{1 day} other{{count} days}}",
+  "@inviteExpiryDays": {
+    "description": "Invite page, how long the invite link works; {count} is the number of days. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inviteNoUseLimit": "No limit",
+  "@inviteNoUseLimit": {
+    "description": "Invite page, option meaning the link can be used any number of times. Short."
+  },
+  "inviteUseCount": "{count, plural, =1{1 use} other{{count} uses}}",
+  "@inviteUseCount": {
+    "description": "Invite page, how many times the link can be used; {count} is the number. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inviteCannotInviteSelf": "You cannot invite yourself.",
+  "@inviteCannotInviteSelf": {
+    "description": "Invite page, error when the user enters their own id."
+  },
+  "inviteAlreadyMember": "This person is already in the community.",
+  "@inviteAlreadyMember": {
+    "description": "Invite page, error when the person is already a member."
+  },
+  "inviteInvitedToCommunity": "Invited to the community",
+  "@inviteInvitedToCommunity": {
+    "description": "Invite page, snack bar after inviting a person."
+  },
+  "inviteSearchNpub": "Search npub",
+  "@inviteSearchNpub": {
+    "description": "Invite page, hint in the search field for a user id. 'npub' is a user id format; keep it. Short."
+  },
+  "invitePasteValidNpub": "Paste a valid npub.",
+  "@invitePasteValidNpub": {
+    "description": "Invite page, error when the typed user id is not valid. 'npub' is a user id format; keep it."
+  },
+  "inviteResolvingProfile": "Resolving profile",
+  "@inviteResolvingProfile": {
+    "description": "Invite page, row text and spinner label while looking up the person. Short."
+  },
+  "inviteResolveProfileFailed": "Could not resolve profile",
+  "@inviteResolveProfileFailed": {
+    "description": "Invite page, row text when looking up the person failed."
+  },
+  "inviteInvalidNpub": "Invalid npub",
+  "@inviteInvalidNpub": {
+    "description": "Invite page, row text when the user id is not valid. 'npub' is a user id format; keep it. Short."
+  },
+  "inviteInvitingPerson": "Inviting person",
+  "@inviteInvitingPerson": {
+    "description": "Screen-reader label of the spinner while inviting a person."
+  },
+  "inviteInvite": "Invite",
+  "@inviteInvite": {
+    "description": "Invite page, button that invites the person. Short."
+  },
+  "inviteRole": "Role",
+  "@inviteRole": {
+    "description": "Invite page, row and sheet title for the role the person gets. Short."
+  },
+  "inviteRoleMember": "Member",
+  "@inviteRoleMember": {
+    "description": "Invite page, community role name. Short."
+  },
+  "inviteRoleAdmin": "Admin",
+  "@inviteRoleAdmin": {
+    "description": "Invite page, community role name. Short."
+  },
+  "inviteRoleOwner": "Owner",
+  "@inviteRoleOwner": {
+    "description": "Invite page, community role name. Short."
+  },
+  "friendsTitle": "Friends",
+  "@friendsTitle": {
+    "description": "Friends tab, page title in the top bar. Short."
+  },
+  "friendsSearchHint": "Search friends",
+  "@friendsSearchHint": {
+    "description": "Friends tab, placeholder in the search field at the top. Short."
+  },
+  "friendsSectionFriends": "Friends",
+  "@friendsSectionFriends": {
+    "description": "Friends tab, section header above the friends list (while searching or when the count is not known yet). Short."
+  },
+  "friendsSectionFriendsCount": "Friends · {count}",
+  "@friendsSectionFriendsCount": {
+    "description": "Friends tab, section header above the friends list with the number of friends. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "friendsSectionFavorites": "Favorites",
+  "@friendsSectionFavorites": {
+    "description": "Friends tab, section header above favorite people. Short."
+  },
+  "friendsSectionInYourGroups": "In your groups",
+  "@friendsSectionInYourGroups": {
+    "description": "Friends tab search results, section header above people found in groups you share. Short."
+  },
+  "friendsNoMatch": "No friends match",
+  "@friendsNoMatch": {
+    "description": "Friends tab search results, shown when no friend matches the search."
+  },
+  "friendsNoOtherMatch": "No one else matches",
+  "@friendsNoOtherMatch": {
+    "description": "Friends tab search results, under 'In your groups' when no one else matches the search."
+  },
+  "friendsLoading": "Loading friends",
+  "@friendsLoading": {
+    "description": "Friends tab, screen-reader label of the loading spinner for the friends list."
+  },
+  "friendsLoadError": "Couldn’t load your friends",
+  "@friendsLoadError": {
+    "description": "Friends tab, error line when the friends list failed to load."
+  },
+  "friendsRetry": "Retry",
+  "@friendsRetry": {
+    "description": "Friends tab and add-friend screens, button to try loading again. Short."
+  },
+  "friendsEmpty": "No friends yet. Tap Add friend to find someone.",
+  "@friendsEmpty": {
+    "description": "Friends tab, empty state when you have no friends. 'Add friend' is the button in the top bar."
+  },
+  "friendsAddFriend": "Add friend",
+  "@friendsAddFriend": {
+    "description": "Friends tab top bar button tooltip, add-friend sheet title, and profile button. Short."
+  },
+  "friendsSearching": "Searching",
+  "@friendsSearching": {
+    "description": "Friends tab and add-friend sheet, screen-reader label of the search spinner."
+  },
+  "friendsTooManySearches": "Too many searches. Wait a minute and try again.",
+  "@friendsTooManySearches": {
+    "description": "Friends search and add-friend sheet, error when searching too often."
+  },
+  "friendsSearchGroupsError": "Couldn’t search your groups",
+  "@friendsSearchGroupsError": {
+    "description": "Friends tab search results, error under 'In your groups'."
+  },
+  "friendsAddIdLabel": "Kuzz ID or email",
+  "@friendsAddIdLabel": {
+    "description": "Add-friend sheet, label of the text field where you type someone's ID or email."
+  },
+  "friendsAddIdHelper": "Enter it exactly as they gave it to you",
+  "@friendsAddIdHelper": {
+    "description": "Add-friend sheet, helper text under the ID or email field."
+  },
+  "friendsAddFind": "Find",
+  "@friendsAddFind": {
+    "description": "Add-friend sheet, button that looks up the typed ID or email. Short."
+  },
+  "friendsAddSearchError": "Couldn’t search. Try again.",
+  "@friendsAddSearchError": {
+    "description": "Add-friend sheet, error when the lookup failed."
+  },
+  "friendsAddNotFound": "No one found with that ID or email",
+  "@friendsAddNotFound": {
+    "description": "Add-friend sheet, message when nobody matches the typed ID or email."
+  },
+  "friendsAddError": "Couldn’t add friend. Try again.",
+  "@friendsAddError": {
+    "description": "Add-friend sheet and profile, error when adding a friend failed."
+  },
+  "friendsRemoveError": "Couldn’t remove friend. Try again.",
+  "@friendsRemoveError": {
+    "description": "Profile page, error when removing a friend failed."
+  },
+  "friendsOpenChatError": "Couldn’t open the conversation. Try again.",
+  "@friendsOpenChatError": {
+    "description": "Add-friend sheet and profile, error when opening a direct message failed."
+  },
+  "friendsAdded": "Added",
+  "@friendsAdded": {
+    "description": "Add-friend sheet, status next to the person you just added. Short."
+  },
+  "friendsMessage": "Message",
+  "@friendsMessage": {
+    "description": "Add-friend sheet and profile page, button that opens a direct message with the person. Short."
+  },
+  "friendsIsFriend": "Friend",
+  "@friendsIsFriend": {
+    "description": "Add-friend sheet, status shown when the found person is already your friend. Short."
+  },
+  "friendsAdd": "Add",
+  "@friendsAdd": {
+    "description": "Add-friend sheet, button that adds the found person as a friend. Short."
+  },
+  "friendsYouBlocked": "You blocked {name}.",
+  "@friendsYouBlocked": {
+    "description": "Bar at the bottom of a direct message with someone you blocked.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsUnblock": "Unblock",
+  "@friendsUnblock": {
+    "description": "Button that unblocks a person (blocked direct-message bar, profile page). Short."
+  },
+  "friendsBlock": "Block",
+  "@friendsBlock": {
+    "description": "Profile page row and block confirmation dialog button. Short."
+  },
+  "friendsBlockedMessageLabel": "Message from a blocked user. Double tap to show.",
+  "@friendsBlockedMessageLabel": {
+    "description": "Screen-reader label of a hidden message from a blocked user in a chat."
+  },
+  "friendsBlockedMessage": "Message from a blocked user",
+  "@friendsBlockedMessage": {
+    "description": "Chat, placeholder line in place of a hidden message from a blocked user."
+  },
+  "friendsBlockedMessageShow": "Show",
+  "@friendsBlockedMessageShow": {
+    "description": "Chat, button on a hidden blocked-user message that reveals it. Short."
+  },
+  "friendsErrorCouldNotConnect": "Couldn’t connect. Try again.",
+  "@friendsErrorCouldNotConnect": {
+    "description": "Error shown when a friends, block or report request got no answer from the server."
+  },
+  "friendsErrorBlockLimit": "You’ve blocked the most people you can.",
+  "@friendsErrorBlockLimit": {
+    "description": "Error when blocking someone fails because you reached the block limit."
+  },
+  "friendsErrorIdTaken": "That ID is taken",
+  "@friendsErrorIdTaken": {
+    "description": "Error when the chosen Kuzz ID is already used by someone else."
+  },
+  "friendsErrorTooManyTries": "Too many tries. Wait a minute and try again.",
+  "@friendsErrorTooManyTries": {
+    "description": "Error when the server rejects a request because of too many attempts."
+  },
+  "friendsErrorNoPermission": "You don’t have permission to do that.",
+  "@friendsErrorNoPermission": {
+    "description": "Error when the server refuses an action for lack of permission."
+  },
+  "friendsErrorSignInExpired": "Your sign-in expired. Sign in again.",
+  "@friendsErrorSignInExpired": {
+    "description": "Error when the server says the sign-in is no longer valid."
+  },
+  "friendsFavoritesFull": "You can favorite up to 200 people.",
+  "@friendsFavoritesFull": {
+    "description": "Profile page, error when you try to add a favorite but the favorites list is full."
+  },
+  "friendsUnknownPerson": "Unknown",
+  "@friendsUnknownPerson": {
+    "description": "Name shown for a person whose name is not known yet (friends list, profile). Short."
+  },
+  "friendsUnnamedPerson": "this user",
+  "@friendsUnnamedPerson": {
+    "description": "Stands in for a person's name mid-sentence when it is not known, e.g. 'Block this user?'. Lowercase."
+  },
+  "friendsUnnamedPersonSubject": "This user",
+  "@friendsUnnamedPersonSubject": {
+    "description": "Stands in for a person's name at the start of a sentence when it is not known, e.g. 'This user is blocked.'."
+  },
+  "friendsFavoriteRowLabel": "{name}, favorite",
+  "@friendsFavoriteRowLabel": {
+    "description": "Screen-reader label of a person row in the friends list that is a favorite.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsBlockConfirmTitle": "Block {name}?",
+  "@friendsBlockConfirmTitle": {
+    "description": "Block confirmation dialog, title.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsBlockConfirmBody": "They won’t be told. You won’t get their direct messages, their messages in shared groups are hidden, and they are removed from your friends. You can unblock them in Settings.",
+  "@friendsBlockConfirmBody": {
+    "description": "Block confirmation dialog, body text."
+  },
+  "friendsCancel": "Cancel",
+  "@friendsCancel": {
+    "description": "Block, remove-friend confirmation dialogs, button that closes without doing anything. Short."
+  },
+  "friendsRemoveConfirmTitle": "Remove {name} from friends?",
+  "@friendsRemoveConfirmTitle": {
+    "description": "Remove-friend confirmation dialog, title.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsRemoveConfirmBody": "They won’t be told. You can add them again at any time.",
+  "@friendsRemoveConfirmBody": {
+    "description": "Remove-friend confirmation dialog, body text."
+  },
+  "friendsRemove": "Remove",
+  "@friendsRemove": {
+    "description": "Remove-friend confirmation dialog, button that removes the friend. Short."
+  },
+  "friendsBlockedButStillFriend": "Blocked, but couldn’t remove them from your friends.",
+  "@friendsBlockedButStillFriend": {
+    "description": "Snack bar after blocking someone when removing them from your friends failed."
+  },
+  "friendsBlockError": "Couldn’t block {name}. Try again.",
+  "@friendsBlockError": {
+    "description": "Snack bar when blocking a person failed.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsBlocked": "Blocked {name}",
+  "@friendsBlocked": {
+    "description": "Snack bar after blocking a person.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsUnblockError": "Couldn’t unblock {name}. Try again.",
+  "@friendsUnblockError": {
+    "description": "Snack bar when unblocking a person failed.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsUnblocked": "Unblocked {name}",
+  "@friendsUnblocked": {
+    "description": "Snack bar after unblocking a person.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsReportPersonTitle": "Report {name}",
+  "@friendsReportPersonTitle": {
+    "description": "Report sheet title when reporting a person.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsReportMessageTitle": "Report message",
+  "@friendsReportMessageTitle": {
+    "description": "Report sheet title when reporting one message."
+  },
+  "friendsReportSendError": "Couldn’t send the report. Try again.",
+  "@friendsReportSendError": {
+    "description": "Report sheet, error when sending the report failed."
+  },
+  "friendsReportSent": "Report sent to the moderators",
+  "@friendsReportSent": {
+    "description": "Snack bar after a report was sent."
+  },
+  "friendsReportSentBlocked": "Report sent. {name} is blocked.",
+  "@friendsReportSentBlocked": {
+    "description": "Snack bar after a report was sent and the person was also blocked. {name} starts the sentence.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsReportSentBlockedStillFriend": "Report sent. {name} is blocked, but is still in your friends.",
+  "@friendsReportSentBlockedStillFriend": {
+    "description": "Snack bar after a report was sent and the person was blocked, but removing them from friends failed.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsReportSentBlockFailed": "Report sent, but couldn’t block {name}. {reason}",
+  "@friendsReportSentBlockFailed": {
+    "description": "Snack bar after a report was sent but blocking failed. {reason} is a full sentence explaining the failure.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsReportBlockRetry": "Try again from their profile.",
+  "@friendsReportBlockRetry": {
+    "description": "Report sheet, end of the message when blocking after a report failed for an unknown reason."
+  },
+  "friendsReportNotice": "Reports go to this community’s moderators. {name} isn’t told who reported them.",
+  "@friendsReportNotice": {
+    "description": "Report sheet, explanation at the top. {name} is the reported person or 'This user'.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsReportAlsoBlock": "Also block {name}",
+  "@friendsReportAlsoBlock": {
+    "description": "Report sheet, checkbox to block the person as well.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsReportSending": "Sending report",
+  "@friendsReportSending": {
+    "description": "Report sheet, screen-reader label of the spinner on the Report button while sending."
+  },
+  "friendsReport": "Report",
+  "@friendsReport": {
+    "description": "Report sheet submit button and profile page row that opens the report sheet. Short."
+  },
+  "friendsReportReasonSpam": "Spam",
+  "@friendsReportReasonSpam": {
+    "description": "Report sheet, reason option. Short."
+  },
+  "friendsReportReasonProfanity": "Profanity or hate speech",
+  "@friendsReportReasonProfanity": {
+    "description": "Report sheet, reason option."
+  },
+  "friendsReportReasonNudity": "Nudity or sexual content",
+  "@friendsReportReasonNudity": {
+    "description": "Report sheet, reason option."
+  },
+  "friendsReportReasonImpersonation": "Impersonation",
+  "@friendsReportReasonImpersonation": {
+    "description": "Report sheet, reason option. Short."
+  },
+  "friendsReportReasonMalware": "Malware or scam",
+  "@friendsReportReasonMalware": {
+    "description": "Report sheet, reason option."
+  },
+  "friendsReportReasonIllegal": "Illegal content",
+  "@friendsReportReasonIllegal": {
+    "description": "Report sheet, reason option."
+  },
+  "friendsReportReasonOther": "Other",
+  "@friendsReportReasonOther": {
+    "description": "Report sheet, reason option, last in the list. Short."
+  },
+  "friendsProfileTitle": "Profile",
+  "@friendsProfileTitle": {
+    "description": "Person profile page, title in the top bar. Short."
+  },
+  "friendsRemovedFriend": "Removed {name} from friends",
+  "@friendsRemovedFriend": {
+    "description": "Snack bar on a person's profile after removing them from friends.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsAddedFriend": "Added {name} to friends",
+  "@friendsAddedFriend": {
+    "description": "Snack bar on a person's profile after adding them as a friend.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "friendsRemoveFromFavorites": "Remove from favorites",
+  "@friendsRemoveFromFavorites": {
+    "description": "Person profile page, tooltip of the star button when the person is a favorite."
+  },
+  "friendsAddToFavorites": "Add to favorites",
+  "@friendsAddToFavorites": {
+    "description": "Person profile page, tooltip of the star button when the person is not a favorite."
+  },
+  "friendsRemoveFriend": "Remove friend",
+  "@friendsRemoveFriend": {
+    "description": "Person profile page, button that removes the person from your friends. Short."
+  },
+  "goalsPageTitle": "Goals · {channel}",
+  "@goalsPageTitle": {
+    "description": "Goals page title in the top bar; {channel} is the conversation name.",
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "goalsLoadError": "Could not load goals: {error}",
+  "@goalsLoadError": {
+    "description": "Goals pages and message goal link, error when the goals failed to load; {error} is the technical reason.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "goalsEmptyIntro": "Give this conversation one top goal. Split it into smaller goals, and agents working here will see where their work fits.",
+  "@goalsEmptyIntro": {
+    "description": "Goals page, explanation shown when the conversation has no goal yet."
+  },
+  "goalsSetGoal": "Set the goal",
+  "@goalsSetGoal": {
+    "description": "Goals page, button that sets the conversation's top goal. Short."
+  },
+  "goalsLayer1Goal": "Layer 1 goal",
+  "@goalsLayer1Goal": {
+    "description": "Goals page, label above the top goal and title of the dialog that edits it. Short."
+  },
+  "goalsLayerGoal": "Layer {layer} goal",
+  "@goalsLayerGoal": {
+    "description": "Thread goal page, small label above the linked goal; {layer} is its depth (1 = top goal). Short.",
+    "placeholders": {
+      "layer": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsGoal": "Goal",
+  "@goalsGoal": {
+    "description": "Title of the dialog that edits a goal below the top layer. Short."
+  },
+  "goalsNewLayerGoal": "New layer {layer} goal",
+  "@goalsNewLayerGoal": {
+    "description": "Title of the dialog that adds a new goal; {layer} is its depth. Short.",
+    "placeholders": {
+      "layer": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsProgress": "{done} of {total} goals done",
+  "@goalsProgress": {
+    "description": "Goals page, progress under the top goal.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsSubProgress": "{done} of {total} sub-goals done",
+  "@goalsSubProgress": {
+    "description": "Thread goal page, progress under the linked goal.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsAddLayerGoal": "Add a layer {layer} goal",
+  "@goalsAddLayerGoal": {
+    "description": "Goals pages and goal actions sheet, button that adds a sub-goal; {layer} is the new goal's depth. Short.",
+    "placeholders": {
+      "layer": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsEdit": "Edit",
+  "@goalsEdit": {
+    "description": "Goal actions sheet, menu item that edits the goal. Short."
+  },
+  "goalsMarkOpen": "Mark to do",
+  "@goalsMarkOpen": {
+    "description": "Goal actions sheet, menu item that sets the goal status to 'To do'. Short."
+  },
+  "goalsMarkInProgress": "Mark in progress",
+  "@goalsMarkInProgress": {
+    "description": "Goal actions sheet, menu item that sets the goal status to 'In progress'. Short."
+  },
+  "goalsMarkDone": "Mark done",
+  "@goalsMarkDone": {
+    "description": "Goal actions sheet, menu item that sets the goal status to 'Done'. Short."
+  },
+  "goalsMarkDropped": "Mark dropped",
+  "@goalsMarkDropped": {
+    "description": "Goal actions sheet, menu item that sets the goal status to 'Dropped'. Short."
+  },
+  "goalsStatusOpen": "To do",
+  "@goalsStatusOpen": {
+    "description": "Goal status, tooltip of the status button on a goal. Short."
+  },
+  "goalsStatusInProgress": "In progress",
+  "@goalsStatusInProgress": {
+    "description": "Goal status, tooltip of the status button on a goal. Short."
+  },
+  "goalsStatusDone": "Done",
+  "@goalsStatusDone": {
+    "description": "Goal status, tooltip of the status button on a goal. Short."
+  },
+  "goalsStatusDropped": "Dropped",
+  "@goalsStatusDropped": {
+    "description": "Goal status, tooltip of the status button on a goal. Short."
+  },
+  "goalsRemoveWithSubGoals": "Remove with {count} sub-goals",
+  "@goalsRemoveWithSubGoals": {
+    "description": "Goal actions sheet, menu item that removes the goal and its sub-goals. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsRemove": "Remove",
+  "@goalsRemove": {
+    "description": "Goal actions sheet menu item and remove-goal dialog button. Short."
+  },
+  "goalsRemoveConfirmTitle": "Remove goal?",
+  "@goalsRemoveConfirmTitle": {
+    "description": "Remove-goal confirmation dialog, title."
+  },
+  "goalsRemoveConfirmSubGoals": "This also removes its {count} sub-goals. History keeps them.",
+  "@goalsRemoveConfirmSubGoals": {
+    "description": "Remove-goal confirmation dialog, body when the goal has sub-goals.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsRemoveConfirmBody": "History keeps it.",
+  "@goalsRemoveConfirmBody": {
+    "description": "Remove-goal confirmation dialog, body when the goal has no sub-goals."
+  },
+  "goalsCancel": "Cancel",
+  "@goalsCancel": {
+    "description": "Goal dialogs, button that closes without saving. Short."
+  },
+  "goalsSave": "Save",
+  "@goalsSave": {
+    "description": "Goal editor dialog, save button. Short."
+  },
+  "goalsAddAndLink": "Add and link",
+  "@goalsAddAndLink": {
+    "description": "Goal editor dialog, save button when adding a goal and linking the thread or message to it. Short."
+  },
+  "goalsTitleLabel": "Goal (one sentence)",
+  "@goalsTitleLabel": {
+    "description": "Goal editor dialog, label of the goal text field."
+  },
+  "goalsNoteLabel": "Key information (optional)",
+  "@goalsNoteLabel": {
+    "description": "Goal editor dialog, label of the note field."
+  },
+  "goalsSignInToEdit": "Sign in to edit goals.",
+  "@goalsSignInToEdit": {
+    "description": "Error when editing goals while not signed in."
+  },
+  "goalsSaveConflict": "The goals kept changing while saving. Try again.",
+  "@goalsSaveConflict": {
+    "description": "Error when saving goals failed because others kept editing them."
+  },
+  "goalsTooLarge": "The goals are too large to save.",
+  "@goalsTooLarge": {
+    "description": "Error when the goals of a conversation exceed the size limit."
+  },
+  "goalsTooMany": "Too many goals.",
+  "@goalsTooMany": {
+    "description": "Error when a conversation has more goals than allowed."
+  },
+  "goalsNoteTooLong": "Keep the note shorter.",
+  "@goalsNoteTooLong": {
+    "description": "Error when a goal's note is too long."
+  },
+  "goalsThreadOneGoal": "A thread can work on only one goal.",
+  "@goalsThreadOneGoal": {
+    "description": "Error when linking a thread that is already linked to another goal."
+  },
+  "goalsOneRoot": "There must be exactly one layer 1 goal.",
+  "@goalsOneRoot": {
+    "description": "Error when the goals would not have exactly one top goal."
+  },
+  "goalsTooDeep": "Goals are nested too deeply.",
+  "@goalsTooDeep": {
+    "description": "Error when sub-goals go too many layers deep."
+  },
+  "goalsRemoveSubGoalsToo": "Remove its sub-goals too.",
+  "@goalsRemoveSubGoalsToo": {
+    "description": "Error when removing a goal that still has sub-goals."
+  },
+  "goalsTitleEmpty": "Write the goal in one sentence.",
+  "@goalsTitleEmpty": {
+    "description": "Goal editor, error under the goal field when it is empty."
+  },
+  "goalsTitleOneLine": "Keep the goal on one line.",
+  "@goalsTitleOneLine": {
+    "description": "Goal editor, error under the goal field when it has line breaks."
+  },
+  "goalsTitleTooLong": "Keep the goal under {max} characters.",
+  "@goalsTitleTooLong": {
+    "description": "Goal editor, error under the goal field when it is too long.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "goalsOpenThreadError": "Could not open the thread",
+  "@goalsOpenThreadError": {
+    "description": "Snack bar when a goal's linked thread can't be opened."
+  },
+  "goalsOpenMessageError": "Could not open the message",
+  "@goalsOpenMessageError": {
+    "description": "Snack bar when a goal's linked message can't be opened."
+  },
+  "goalsLayerTitle": "L{layer}  {title}",
+  "@goalsLayerTitle": {
+    "description": "Goal row: 'L' plus the goal's layer number (L2 = layer 2), two spaces, then the goal text. Very short.",
+    "placeholders": {
+      "layer": {
+        "type": "int"
+      },
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "goalsThisThread": "This thread",
+  "@goalsThisThread": {
+    "description": "Goal row, tooltip of the link to the thread you are in now. Short."
+  },
+  "goalsGoToMessage": "Go to message",
+  "@goalsGoToMessage": {
+    "description": "Goal row, tooltip of a link that opens a linked message. Short."
+  },
+  "goalsOpenThread": "Open thread",
+  "@goalsOpenThread": {
+    "description": "Goal row, tooltip of a link that opens a linked thread. Short."
+  },
+  "goalsHideNote": "Hide note",
+  "@goalsHideNote": {
+    "description": "Goal, tooltip of the note button when the note is shown. Short."
+  },
+  "goalsShowNote": "Show note",
+  "@goalsShowNote": {
+    "description": "Goal, tooltip of the note button when the note is hidden. Short."
+  },
+  "goalsAddUnderLinkThread": "Add a goal under this and link the thread",
+  "@goalsAddUnderLinkThread": {
+    "description": "Goal picker, tooltip of the + button next to a goal when linking a thread."
+  },
+  "goalsAddUnderLinkMessage": "Add a goal under this and link the message",
+  "@goalsAddUnderLinkMessage": {
+    "description": "Goal picker, tooltip of the + button next to a goal when linking a message."
+  },
+  "goalsLinkDifferent": "Link to a different goal",
+  "@goalsLinkDifferent": {
+    "description": "Thread goal page, button that links the thread to another goal."
+  },
+  "goalsUnlinkThread": "Unlink this thread",
+  "@goalsUnlinkThread": {
+    "description": "Thread goal page, button that removes the thread's goal link."
+  },
+  "goalsLinkToAGoal": "Link to a goal",
+  "@goalsLinkToAGoal": {
+    "description": "Title of the sheet that picks a goal for a thread. Short."
+  },
+  "goalsNoGoalsYet": "This conversation has no goals yet.",
+  "@goalsNoGoalsYet": {
+    "description": "Snack bar when linking a message to a goal but the conversation has no goals."
+  },
+  "goalsLinkToGoal": "Link to goal",
+  "@goalsLinkToGoal": {
+    "description": "Title of the sheet that picks a goal for a message. Short."
+  },
+  "goalsUnlinkFromGoal": "Unlink from goal",
+  "@goalsUnlinkFromGoal": {
+    "description": "Message goal sheet, button that removes the message's goal link."
+  },
+  "goalsThreadGoalTitle": "Thread goal",
+  "@goalsThreadGoalTitle": {
+    "description": "Thread goal page, title in the top bar. Short."
+  },
+  "goalsThreadNoGoals": "This conversation has no goals yet. Set its goal from the group first.",
+  "@goalsThreadNoGoals": {
+    "description": "Thread goal page, shown when the conversation has no goals."
+  },
+  "goalsThreadLinkIntro": "Link this thread to the goal it works on, or add a new goal for it with +.",
+  "@goalsThreadLinkIntro": {
+    "description": "Thread goal page, explanation above the goal list when the thread has no goal. '+' is the add button next to each goal."
+  },
+  "goalsTooltip": "Goals",
+  "@goalsTooltip": {
+    "description": "Thread top bar, tooltip of the goals button when no goal is set. Short."
+  },
+  "activityTitle": "Activity",
+  "@activityTitle": {
+    "description": "Activity tab, page title in the top bar. Short."
+  },
+  "activityFilterAll": "All",
+  "@activityFilterAll": {
+    "description": "Activity tab, filter menu option showing everything. Short."
+  },
+  "activityFilterMentions": "Mentions",
+  "@activityFilterMentions": {
+    "description": "Activity tab, filter menu option for mentions. Short."
+  },
+  "activityFilterThreads": "Threads",
+  "@activityFilterThreads": {
+    "description": "Activity tab, filter menu option for thread replies. Short."
+  },
+  "activityFilterConversations": "Groups + Threads",
+  "@activityFilterConversations": {
+    "description": "Activity tab, filter menu option for recent group and thread conversations. Short."
+  },
+  "activityFilterNeedsAction": "Needs Action",
+  "@activityFilterNeedsAction": {
+    "description": "Activity tab, filter menu option for items that need your action. Title case. Short."
+  },
+  "activityFilterActivity": "Activity",
+  "@activityFilterActivity": {
+    "description": "Activity tab, filter menu option for group activity. Short."
+  },
+  "activityFilterAgents": "Agents",
+  "@activityFilterAgents": {
+    "description": "Activity tab, filter menu option for agent updates. Short."
+  },
+  "activityFilterReminders": "Reminders",
+  "@activityFilterReminders": {
+    "description": "Activity tab, filter menu option for your reminders. Short."
+  },
+  "activityFilterDrafts": "Drafts",
+  "@activityFilterDrafts": {
+    "description": "Activity tab, filter menu option for unsent drafts. Short."
+  },
+  "activityOptions": "Activity options",
+  "@activityOptions": {
+    "description": "Activity tab, tooltip of the options (…) button in the top bar."
+  },
+  "activityShowAll": "Show all",
+  "@activityShowAll": {
+    "description": "Activity options menu item that turns off the unread filter. Short."
+  },
+  "activityShowUnread": "Show unread",
+  "@activityShowUnread": {
+    "description": "Activity options menu item that shows only unread items. Short."
+  },
+  "activityMarkAllRead": "Mark all as read",
+  "@activityMarkAllRead": {
+    "description": "Activity options menu item. Short."
+  },
+  "activityNewDivider": "New",
+  "@activityNewDivider": {
+    "description": "Activity list, label on the divider above new items. Very short."
+  },
+  "activityThreadFallback": "Thread",
+  "@activityThreadFallback": {
+    "description": "Activity row, stands in for a thread's name when it is not known, after the group name ('Design › Thread'). Short."
+  },
+  "activityRoomThread": "{channel} › {thread}",
+  "@activityRoomThread": {
+    "description": "Activity row, group name followed by the thread name. Keep the arrow.",
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      },
+      "thread": {
+        "type": "String"
+      }
+    }
+  },
+  "activityUnreadCount": "{count} unread",
+  "@activityUnreadCount": {
+    "description": "Activity row, number of unread messages in the conversation. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "activityUnreadCountCapped": "{count}+ unread",
+  "@activityUnreadCountCapped": {
+    "description": "Activity row, unread count when there are more than {count}. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "activityMarkUnread": "Mark unread",
+  "@activityMarkUnread": {
+    "description": "Activity row swipe action and long-press menu item. Short."
+  },
+  "activityMarkRead": "Mark as read",
+  "@activityMarkRead": {
+    "description": "Activity row swipe action and long-press menu item. Short."
+  },
+  "activityOpenConversation": "Open conversation",
+  "@activityOpenConversation": {
+    "description": "Activity row long-press menu item. Short."
+  },
+  "activityLoadingReminders": "Loading reminders",
+  "@activityLoadingReminders": {
+    "description": "Activity reminders list, screen-reader label of the loading spinner."
+  },
+  "activityNoReminders": "No reminders",
+  "@activityNoReminders": {
+    "description": "Activity reminders list, empty state title."
+  },
+  "activityNoRemindersDetail": "Reminders you set will show up here.",
+  "@activityNoRemindersDetail": {
+    "description": "Activity reminders list, empty state text under the title."
+  },
+  "activityReminderFallback": "Reminder",
+  "@activityReminderFallback": {
+    "description": "Activity reminders list, row title when the reminder has no note or message preview. Short."
+  },
+  "activityReminderDueNow": "Due now",
+  "@activityReminderDueNow": {
+    "description": "Activity reminders list, row subtitle when the reminder is due. Short."
+  },
+  "activityReminderDue": "Due {time}",
+  "@activityReminderDue": {
+    "description": "Activity reminders list, row subtitle with when the reminder is due; {time} is a short time or date. Short.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoDrafts": "No drafts",
+  "@activityNoDrafts": {
+    "description": "Activity drafts list, empty state title."
+  },
+  "activityNoDraftsDetail": "Unsent messages you start composing will show up here.",
+  "@activityNoDraftsDetail": {
+    "description": "Activity drafts list, empty state text under the title."
+  },
+  "activityUnavailableGroup": "Unavailable group",
+  "@activityUnavailableGroup": {
+    "description": "Activity drafts list, stands in for the group name when the group is gone. Short."
+  },
+  "activityDraftThreadIn": "Thread in {group}",
+  "@activityDraftThreadIn": {
+    "description": "Activity drafts list, subtitle of a draft reply in a thread of {group}.",
+    "placeholders": {
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "activityDeleteDraft": "Delete draft",
+  "@activityDeleteDraft": {
+    "description": "Activity drafts list, tooltip of the delete button on a draft. Short."
+  },
+  "activityNoUnread": "No unread messages",
+  "@activityNoUnread": {
+    "description": "Activity tab, empty state when the unread filter is on."
+  },
+  "activityNoUnreadDetail": "Turn off the unread filter to see read messages.",
+  "@activityNoUnreadDetail": {
+    "description": "Activity tab, empty state text when the unread filter is on."
+  },
+  "activityNoMentions": "No mentions yet",
+  "@activityNoMentions": {
+    "description": "Activity tab, empty state for the Mentions filter."
+  },
+  "activityNoThreadReplies": "No thread replies yet",
+  "@activityNoThreadReplies": {
+    "description": "Activity tab, empty state for the Threads filter."
+  },
+  "activityNoConversations": "No recent conversations",
+  "@activityNoConversations": {
+    "description": "Activity tab, empty state for the Groups + Threads filter."
+  },
+  "activityNothingNeedsAction": "Nothing needs your action",
+  "@activityNothingNeedsAction": {
+    "description": "Activity tab, empty state for the Needs Action filter."
+  },
+  "activityNoGroupActivity": "No recent group activity",
+  "@activityNoGroupActivity": {
+    "description": "Activity tab, empty state for the Activity filter."
+  },
+  "activityNoAgentUpdates": "No agent updates",
+  "@activityNoAgentUpdates": {
+    "description": "Activity tab, empty state for the Agents filter."
+  },
+  "activityNoActivity": "No activity yet",
+  "@activityNoActivity": {
+    "description": "Activity tab, empty state when nothing has happened yet."
+  },
+  "activityLoadError": "Failed to load activity",
+  "@activityLoadError": {
+    "description": "Activity tab, error when the list failed to load."
+  },
+  "activityRetry": "Retry",
+  "@activityRetry": {
+    "description": "Activity tab, button that tries loading again. Short."
+  },
+  "activityItemNotLinked": "This item isn't linked to a group.",
+  "@activityItemNotLinked": {
+    "description": "Snack bar when tapping an activity item that has no group."
+  },
+  "activityReopenError": "Could not reopen conversation: {error}",
+  "@activityReopenError": {
+    "description": "Snack bar when a hidden direct message could not be reopened; {error} is the technical reason.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "activityGroupNotFound": "Group not found in this workspace.",
+  "@activityGroupNotFound": {
+    "description": "Snack bar when the group of an activity item is not found."
+  },
+  "activityDraftGroupGone": "Group for this draft is no longer available.",
+  "@activityDraftGroupGone": {
+    "description": "Snack bar when opening a draft whose group is gone."
+  },
+  "activityReminderNotLinked": "This reminder isn't linked to a message.",
+  "@activityReminderNotLinked": {
+    "description": "Snack bar when opening a reminder that has no message."
+  },
+  "activityReminderGroupGone": "Group for this reminder is no longer available.",
+  "@activityReminderGroupGone": {
+    "description": "Snack bar when opening a reminder whose group is gone."
+  },
+  "activityHeadlineForumPost": "Forum post",
+  "@activityHeadlineForumPost": {
+    "description": "Activity row label for a new forum post. Short."
+  },
+  "activityHeadlineForumReply": "Forum reply",
+  "@activityHeadlineForumReply": {
+    "description": "Activity row label for a forum reply. Short."
+  },
+  "activityHeadlineApprovalRequested": "Approval requested",
+  "@activityHeadlineApprovalRequested": {
+    "description": "Activity row label when a workflow asks for approval. Short."
+  },
+  "activityHeadlineJobRequested": "Job requested",
+  "@activityHeadlineJobRequested": {
+    "description": "Activity row label when an agent job was requested. Short."
+  },
+  "activityHeadlineJobAccepted": "Job accepted",
+  "@activityHeadlineJobAccepted": {
+    "description": "Activity row label when an agent accepted a job. Short."
+  },
+  "activityHeadlineProgressUpdate": "Progress update",
+  "@activityHeadlineProgressUpdate": {
+    "description": "Activity row label for an agent job progress update. Short."
+  },
+  "activityHeadlineJobResult": "Job result",
+  "@activityHeadlineJobResult": {
+    "description": "Activity row label when an agent job finished with a result. Short."
+  },
+  "activityHeadlineJobCancelled": "Job cancelled",
+  "@activityHeadlineJobCancelled": {
+    "description": "Activity row label when an agent job was cancelled. Short."
+  },
+  "activityHeadlineJobFailed": "Job failed",
+  "@activityHeadlineJobFailed": {
+    "description": "Activity row label when an agent job failed. Short."
+  },
+  "activityHeadlineMention": "Mention",
+  "@activityHeadlineMention": {
+    "description": "Activity row label for a mention. Short."
+  },
+  "activityHeadlineAgentUpdate": "Agent update",
+  "@activityHeadlineAgentUpdate": {
+    "description": "Activity row label for an agent update. Short."
+  },
+  "activityHeadlineGroupUpdate": "Group update",
+  "@activityHeadlineGroupUpdate": {
+    "description": "Activity row label for other group activity. Short."
+  },
+  "activityApprovalWaiting": "A workflow is waiting for approval.",
+  "@activityApprovalWaiting": {
+    "description": "Activity row text of an empty approval request."
+  },
+  "activityNoDetails": "No additional details.",
+  "@activityNoDetails": {
+    "description": "Activity row text when the event has no content."
+  },
+  "activityDmFrom": "DM from {name}",
+  "@activityDmFrom": {
+    "description": "Activity row label for a direct message from {name}. Short.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "activityDm": "DM",
+  "@activityDm": {
+    "description": "Activity row label for a direct message whose sender is unknown. Very short."
+  },
+  "activityMentionedIn": "Mentioned in",
+  "@activityMentionedIn": {
+    "description": "Activity row label; the group name follows as a chip. Short."
+  },
+  "activityMentioned": "Mentioned",
+  "@activityMentioned": {
+    "description": "Activity row label when the group is not known. Short."
+  },
+  "activityNeedsActionIn": "Needs action in",
+  "@activityNeedsActionIn": {
+    "description": "Activity row label; the group name follows as a chip. Short."
+  },
+  "activityNeedsAction": "Needs action",
+  "@activityNeedsAction": {
+    "description": "Activity row label when the group is not known. Short."
+  },
+  "activityThreadIn": "Thread in",
+  "@activityThreadIn": {
+    "description": "Activity row label for a thread reply; the group name follows as a chip. Short."
+  },
+  "activityThread": "Thread",
+  "@activityThread": {
+    "description": "Activity row label for a thread reply when the group is not known. Short."
+  },
+  "activityHeadlineIn": "{headline} in",
+  "@activityHeadlineIn": {
+    "description": "Activity row label: an event type (e.g. 'Forum post') followed by 'in'; the group name follows as a chip. Short.",
+    "placeholders": {
+      "headline": {
+        "type": "String"
+      }
+    }
+  },
+  "groupsAddPolicyTitle": "Who can add me to groups",
+  "@groupsAddPolicyTitle": {
+    "description": "Settings row and choice sheet title: who may add you to groups without asking."
+  },
+  "groupsAddPolicyFriends": "Friends",
+  "@groupsAddPolicyFriends": {
+    "description": "'Who can add me to groups' option and row value: only friends. Short."
+  },
+  "groupsAddPolicyEveryone": "Everyone",
+  "@groupsAddPolicyEveryone": {
+    "description": "'Who can add me to groups' option and row value: anyone. Short."
+  },
+  "groupsSettingChangeError": "Couldn’t change this setting. Try again.",
+  "@groupsSettingChangeError": {
+    "description": "Snack bar when changing a group setting failed."
+  },
+  "groupsInvitationNoLongerValid": "This invitation is no longer valid.",
+  "@groupsInvitationNoLongerValid": {
+    "description": "Snack bar when accepting a group invitation that expired or was withdrawn."
+  },
+  "groupsInvitationsCount": "Invitations · {count}",
+  "@groupsInvitationsCount": {
+    "description": "Chats tab, row that opens your pending group invitations, with their number. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupsTryAgain": "Try again",
+  "@groupsTryAgain": {
+    "description": "Group invitations and invite link sheet, button that retries loading. Short."
+  },
+  "groupsNoInvitations": "No invitations",
+  "@groupsNoInvitations": {
+    "description": "Group invitations page, empty state."
+  },
+  "groupsInvitationsTitle": "Invitations",
+  "@groupsInvitationsTitle": {
+    "description": "Group invitations page, title in the top bar. Short."
+  },
+  "groupsJoinChatError": "Couldn’t join the chat. Try again.",
+  "@groupsJoinChatError": {
+    "description": "Snack bar when joining a group chat from an invitation failed."
+  },
+  "groupsJoinError": "Couldn’t join group. Try again.",
+  "@groupsJoinError": {
+    "description": "Snack bar or error when joining a group failed."
+  },
+  "groupsChatFull": "This chat is full.",
+  "@groupsChatFull": {
+    "description": "Snack bar when joining a group chat that has no room left."
+  },
+  "groupsDeclineError": "Couldn’t decline. Try again.",
+  "@groupsDeclineError": {
+    "description": "Snack bar when declining a group invitation failed."
+  },
+  "groupsSomeone": "Someone",
+  "@groupsSomeone": {
+    "description": "Group invitation row, stands in for the inviter's name when it is not known yet. Short."
+  },
+  "groupsInvitedYou": "{name} invited you · {members}",
+  "@groupsInvitedYou": {
+    "description": "Group invitation row, subtitle: who invited you, then the member count ('5 members').",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "members": {
+        "type": "String"
+      }
+    }
+  },
+  "groupsDecline": "Decline",
+  "@groupsDecline": {
+    "description": "Group invitation row, button that declines the invitation. Short."
+  },
+  "groupsJoin": "Join",
+  "@groupsJoin": {
+    "description": "Group invitation row, button that joins the group. Short."
+  },
+  "groupsMemberCount": "{count, plural, one{{count} member} other{{count} members}}",
+  "@groupsMemberCount": {
+    "description": "Number of members of a group (preview card, invitation row, group list).",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupsLinkNotFound": "No group found for this link.",
+  "@groupsLinkNotFound": {
+    "description": "Join with link sheet, error when the link or address matches no group."
+  },
+  "groupsCantJoin": "You can’t join this group.",
+  "@groupsCantJoin": {
+    "description": "Join with link sheet, error when joining is not allowed."
+  },
+  "groupsJoining": "Joining…",
+  "@groupsJoining": {
+    "description": "Join group button while joining. Short."
+  },
+  "groupsJoinGroup": "Join group",
+  "@groupsJoinGroup": {
+    "description": "Button that joins a group (preview card, bar at the bottom of a public group). Short."
+  },
+  "groupsOpen": "Open",
+  "@groupsOpen": {
+    "description": "Group preview card, button that opens a group you are already in. Short."
+  },
+  "groupsJoinWithLinkTitle": "Join with link",
+  "@groupsJoinWithLinkTitle": {
+    "description": "Join with link sheet, title. Short."
+  },
+  "groupsNotAGroupLink": "This doesn’t look like a group link.",
+  "@groupsNotAGroupLink": {
+    "description": "Join with link sheet, error when the pasted text is not a group link or address."
+  },
+  "groupsLookupError": "Couldn’t look up this link. Try again.",
+  "@groupsLookupError": {
+    "description": "Join with link sheet, error when the lookup failed."
+  },
+  "groupsLinkHint": "Paste an invite link or @address",
+  "@groupsLinkHint": {
+    "description": "Join with link sheet, placeholder in the text field. Keep '@address' as the form of a group address."
+  },
+  "groupsContinue": "Continue",
+  "@groupsContinue": {
+    "description": "Join with link sheet, button that looks up the pasted link. Short."
+  },
+  "groupsAddressTaken": "This address is taken.",
+  "@groupsAddressTaken": {
+    "description": "Public address sheet, error when another group uses the address."
+  },
+  "groupsAddressReserved": "This address is reserved.",
+  "@groupsAddressReserved": {
+    "description": "Public address sheet, error when the address is reserved."
+  },
+  "groupsAddressRules": "Use 3-32 characters: a-z, 0-9 and _.",
+  "@groupsAddressRules": {
+    "description": "Public address sheet, error when the address has the wrong length or characters."
+  },
+  "groupsSaveError": "Couldn’t save. Try again.",
+  "@groupsSaveError": {
+    "description": "Public address sheet, error when saving failed."
+  },
+  "groupsToPublicBody": "Anyone on Kuzz will be able to find this group and read its past messages.",
+  "@groupsToPublicBody": {
+    "description": "Confirm dialog body when making a group public."
+  },
+  "groupsToPrivateBody": "The public address will be removed and the group will disappear from search. Members stay.",
+  "@groupsToPrivateBody": {
+    "description": "Confirm dialog body when making a group private."
+  },
+  "groupsVisibility": "Visibility",
+  "@groupsVisibility": {
+    "description": "Group settings row and choice sheet title: whether the group is public or private. Short."
+  },
+  "groupsPublicGroup": "Public group",
+  "@groupsPublicGroup": {
+    "description": "Group visibility option and row value. Short."
+  },
+  "groupsPrivateGroup": "Private group",
+  "@groupsPrivateGroup": {
+    "description": "Group visibility option and row value. Short."
+  },
+  "groupsMakePublicTitle": "Make this group public?",
+  "@groupsMakePublicTitle": {
+    "description": "Confirm dialog title when making a group public."
+  },
+  "groupsMakePrivateTitle": "Make this group private?",
+  "@groupsMakePrivateTitle": {
+    "description": "Confirm dialog title when making a group private."
+  },
+  "groupsMakePublic": "Make public",
+  "@groupsMakePublic": {
+    "description": "Confirm dialog button that makes a group public. Short."
+  },
+  "groupsMakePrivate": "Make private",
+  "@groupsMakePrivate": {
+    "description": "Confirm dialog button that makes a group private. Short."
+  },
+  "groupsWhoCanInvite": "Who can invite",
+  "@groupsWhoCanInvite": {
+    "description": "Group settings row and choice sheet title: who may invite people. Short."
+  },
+  "groupsAllMembers": "All members",
+  "@groupsAllMembers": {
+    "description": "'Who can invite' option and row value. Short."
+  },
+  "groupsAdminsOnly": "Admins only",
+  "@groupsAdminsOnly": {
+    "description": "'Who can invite' option and row value. Short."
+  },
+  "groupsPublicAddress": "Public address",
+  "@groupsPublicAddress": {
+    "description": "Group settings row and sheet title: the group's public @address. Short."
+  },
+  "groupsNotSet": "Not set",
+  "@groupsNotSet": {
+    "description": "Group settings, Public address row value when no address is set. Short."
+  },
+  "groupsInviteLink": "Invite link",
+  "@groupsInviteLink": {
+    "description": "Group settings row and sheet title. Short."
+  },
+  "groupsCancel": "Cancel",
+  "@groupsCancel": {
+    "description": "Group confirm dialog, button that closes without changing anything. Short."
+  },
+  "groupsAddressHint": "address",
+  "@groupsAddressHint": {
+    "description": "Public address sheet, placeholder in the text field after the fixed part of the address. Lowercase. Short."
+  },
+  "groupsSaving": "Saving…",
+  "@groupsSaving": {
+    "description": "Public address sheet, Save button while saving. Short."
+  },
+  "groupsSave": "Save",
+  "@groupsSave": {
+    "description": "Public address sheet, save button. Short."
+  },
+  "groupsResetLinkTitle": "Reset link?",
+  "@groupsResetLinkTitle": {
+    "description": "Confirm dialog title before resetting a group's invite link."
+  },
+  "groupsResetLinkBody": "The old link will stop working.",
+  "@groupsResetLinkBody": {
+    "description": "Confirm dialog body before resetting a group's invite link."
+  },
+  "groupsResetLink": "Reset link",
+  "@groupsResetLink": {
+    "description": "Invite link sheet button and confirm dialog button. Short."
+  },
+  "groupsResetLinkError": "Couldn’t reset the link. Try again.",
+  "@groupsResetLinkError": {
+    "description": "Snack bar when resetting the invite link failed."
+  },
+  "groupsInviteLinkLoadError": "Couldn’t load the invite link.",
+  "@groupsInviteLinkLoadError": {
+    "description": "Invite link sheet, error when the link failed to load."
+  },
+  "groupsCopyLink": "Copy link",
+  "@groupsCopyLink": {
+    "description": "Invite link sheet button. Short."
+  },
+  "groupsLinkCopied": "Link copied",
+  "@groupsLinkCopied": {
+    "description": "Toast after copying the invite link. Short."
+  },
+  "groupsShareLink": "Share link",
+  "@groupsShareLink": {
+    "description": "Invite link sheet button. Short."
+  },
+  "groupsResetting": "Resetting…",
+  "@groupsResetting": {
+    "description": "Invite link sheet, Reset link button while resetting. Short."
+  },
+  "agentsTitle": "Agents",
+  "@agentsTitle": {
+    "description": "Agents tab, page title in the top bar. Short."
+  },
+  "agentsViewLabel": "Agents view",
+  "@agentsViewLabel": {
+    "description": "Agents tab, screen-reader label of the My agents / Presets switch."
+  },
+  "agentsTabMyAgents": "My agents",
+  "@agentsTabMyAgents": {
+    "description": "Agents tab, switch option showing your agents. Short."
+  },
+  "agentsTabPresets": "Presets",
+  "@agentsTabPresets": {
+    "description": "Agents tab, switch option showing agent and team presets. Short."
+  },
+  "agentsFindPresets": "Find presets",
+  "@agentsFindPresets": {
+    "description": "Agents tab, placeholder in the filter field on Presets. Short."
+  },
+  "agentsFindAgents": "Find agents",
+  "@agentsFindAgents": {
+    "description": "Agents tab, placeholder in the filter field on My agents. Short."
+  },
+  "agentsEmpty": "No agents yet. Agents run on your computers: create one in the Kuzz app on your computer.",
+  "@agentsEmpty": {
+    "description": "Agents tab, empty state when you have no agents."
+  },
+  "agentsNoMatch": "No agents match that name.",
+  "@agentsNoMatch": {
+    "description": "Agents tab, shown when no agent matches the filter."
+  },
+  "agentsSectionTeams": "Teams",
+  "@agentsSectionTeams": {
+    "description": "Agents tab, section title above your teams. Short."
+  },
+  "agentsPresetsNote": "Presets are templates. Create agents in the Kuzz app on your computer.",
+  "@agentsPresetsNote": {
+    "description": "Agents tab, Presets, note at the top."
+  },
+  "agentsNoPresetsMatch": "No presets match that name.",
+  "@agentsNoPresetsMatch": {
+    "description": "Agents tab, Presets, shown when no preset matches the filter."
+  },
+  "agentsNoPresets": "No presets yet.",
+  "@agentsNoPresets": {
+    "description": "Agents tab, Presets, empty state."
+  },
+  "agentsSectionAgentPresets": "Agent presets",
+  "@agentsSectionAgentPresets": {
+    "description": "Agents tab, Presets, section title. Short."
+  },
+  "agentsSectionTeamPresets": "Team presets",
+  "@agentsSectionTeamPresets": {
+    "description": "Agents tab, Presets, section title. Short."
+  },
+  "agentsMissingAgent": "Missing agent",
+  "@agentsMissingAgent": {
+    "description": "Agents tab, team preset row, stands in for a member agent that no longer exists. Short."
+  },
+  "agentsTeamNoAgents": "No agents yet",
+  "@agentsTeamNoAgents": {
+    "description": "Agents tab, team row subtitle when the team has no agents. Short."
+  },
+  "agentsTeamRemoved": "{count} removed",
+  "@agentsTeamRemoved": {
+    "description": "Agents tab, team row subtitle part: how many of the team's agents were removed. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentsTeamNoPresets": "No presets",
+  "@agentsTeamNoPresets": {
+    "description": "Agents tab, team preset row subtitle when it has no members. Short."
+  },
+  "agentsPresetUsage": "{count, plural, =0{not used yet} one{used by {count} agent} other{used by {count} agents}}",
+  "@agentsPresetUsage": {
+    "description": "Agents tab, preset row: how many agents use the preset. Lowercase, follows the description after a dot.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentsNameRequired": "Name is required.",
+  "@agentsNameRequired": {
+    "description": "Agent settings, error when the name is empty."
+  },
+  "agentsNameTooLong": "Name is too long ({count} characters, max {max}).",
+  "@agentsNameTooLong": {
+    "description": "Agent settings, error when the name is too long.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "agentsDescriptionTooLong": "Description is too long ({count} characters, max {max}).",
+  "@agentsDescriptionTooLong": {
+    "description": "Agent settings, error when the description is too long.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "agentsInstructionsTooLong": "Instructions are too long ({count} bytes, max {max}).",
+  "@agentsInstructionsTooLong": {
+    "description": "Agent settings, error when the instructions are too long.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "agentsNameInvisibleChar": "Name contains an invisible or formatting character (U+{code}).",
+  "@agentsNameInvisibleChar": {
+    "description": "Agent settings, error when the name has a hidden character; {code} is its hex code.",
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsDescriptionInvisibleChar": "Description contains an invisible or formatting character (U+{code}).",
+  "@agentsDescriptionInvisibleChar": {
+    "description": "Agent settings, error when the description has a hidden character; {code} is its hex code.",
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsInstructionsInvisibleChar": "Instructions contains an invisible or formatting character (U+{code}).",
+  "@agentsInstructionsInvisibleChar": {
+    "description": "Agent settings, error when the instructions have a hidden character; {code} is its hex code.",
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsModelInvisibleChar": "Model contains an invisible or formatting character.",
+  "@agentsModelInvisibleChar": {
+    "description": "Agent settings, error when the model name has a hidden character."
+  },
+  "agentsNameConflict": "You already have an agent named \"{name}\". Choose a different name.",
+  "@agentsNameConflict": {
+    "description": "Agent settings, error when another of your agents has the same name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsSettingsReadOnly": "This agent's settings can only be changed on the computer it runs on.",
+  "@agentsSettingsReadOnly": {
+    "description": "Agent settings, note when the agent can't be edited from the phone."
+  },
+  "agentsSettingsNameLocked": "This agent’s name can only be changed on the computer it runs on.",
+  "@agentsSettingsNameLocked": {
+    "description": "Agent settings, helper text under a name field that can't be edited."
+  },
+  "agentsSettingsChanged": "Settings changed on another device. Reopen to see the latest.",
+  "@agentsSettingsChanged": {
+    "description": "Agent settings, error when saving conflicts with a change made elsewhere."
+  },
+  "agentsSettingsTitle": "Agent settings",
+  "@agentsSettingsTitle": {
+    "description": "Agent settings page, title in the top bar. Short."
+  },
+  "agentsSettingsLoadError": "Couldn’t load this agent’s settings.",
+  "@agentsSettingsLoadError": {
+    "description": "Agent settings page, error when loading failed."
+  },
+  "agentsSettingsSaved": "Saved. {name} picks up the change on its computer.",
+  "@agentsSettingsSaved": {
+    "description": "Snack bar after saving an agent's settings.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsSettingsSaveError": "Couldn’t save: {error}",
+  "@agentsSettingsSaveError": {
+    "description": "Agent settings, error when saving failed; {error} is the technical reason.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsSaving": "Saving…",
+  "@agentsSaving": {
+    "description": "Agent settings, Save button while saving. Short."
+  },
+  "agentsSave": "Save",
+  "@agentsSave": {
+    "description": "Agent settings, save button in the top bar. Short."
+  },
+  "agentsFieldName": "Name",
+  "@agentsFieldName": {
+    "description": "Agent settings, label of the name field. Short."
+  },
+  "agentsFieldDescription": "Description",
+  "@agentsFieldDescription": {
+    "description": "Agent settings, label of the description field. Short."
+  },
+  "agentsFieldDescriptionHint": "A short public description",
+  "@agentsFieldDescriptionHint": {
+    "description": "Agent settings, placeholder in the description field."
+  },
+  "agentsFieldInstructions": "Instructions",
+  "@agentsFieldInstructions": {
+    "description": "Agent settings, label of the instructions field. Short."
+  },
+  "agentsFieldInstructionsHint": "How this agent should work",
+  "@agentsFieldInstructionsHint": {
+    "description": "Agent settings, placeholder in the instructions field."
+  },
+  "agentsFieldModel": "Model",
+  "@agentsFieldModel": {
+    "description": "Agent settings, label of the AI model field. Short."
+  },
+  "agentsFieldModelHint": "Default",
+  "@agentsFieldModelHint": {
+    "description": "Agent settings, placeholder in the model field when the default model is used. Short."
+  },
+  "agentsSettingsApplyNote": "Your agent’s computer applies the change. A running agent restarts when it is idle.",
+  "@agentsSettingsApplyNote": {
+    "description": "Agent settings, note under the fields."
+  },
+  "agentsTeamSectionAgents": "Agents",
+  "@agentsTeamSectionAgents": {
+    "description": "Agent team page, section title above the team's agents. Short."
+  },
+  "agentsTeamEmpty": "This team has no agents yet.",
+  "@agentsTeamEmpty": {
+    "description": "Agent team page, shown when the team has no agents."
+  },
+  "agentsTeamAgentsRemoved": "{count, plural, one{{count} agent was removed} other{{count} agents were removed}}",
+  "@agentsTeamAgentsRemoved": {
+    "description": "Agent team page, row about agents that left the team.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "agentsTeamRemovedDetail": "No longer on any of your computers",
+  "@agentsTeamRemovedDetail": {
+    "description": "Agent team page, subtitle under the removed-agents row."
+  },
+  "agentsTeamDesktopNote": "Change teams and add them to groups in the Kuzz app on your computer.",
+  "@agentsTeamDesktopNote": {
+    "description": "Agent team page, note at the bottom."
+  },
+  "agentsStatusOnline": "Online",
+  "@agentsStatusOnline": {
+    "description": "Agent status. Short."
+  },
+  "agentsStatusBusy": "Busy",
+  "@agentsStatusBusy": {
+    "description": "Agent status. Short."
+  },
+  "agentsStatusStopped": "Stopped",
+  "@agentsStatusStopped": {
+    "description": "Agent status. Short."
+  },
+  "agentsStatusChecking": "Checking…",
+  "@agentsStatusChecking": {
+    "description": "Agent status while it is not known yet. Short."
+  },
+  "agentsStatusOnComputer": "{status} · {computer}",
+  "@agentsStatusOnComputer": {
+    "description": "Agent row and sheet: the agent's status, then the computer it runs on. Short.",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "computer": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsComputerThisDevice": "this device",
+  "@agentsComputerThisDevice": {
+    "description": "Mid-sentence name of the phone itself as the computer an agent runs on, e.g. 'starts only if Kuzz is open on this device now'. Lowercase."
+  },
+  "agentsComputerThisDeviceNamed": "this device ({name})",
+  "@agentsComputerThisDeviceNamed": {
+    "description": "Mid-sentence name of the phone itself with its device name. Lowercase.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsComputerUnknown": "its computer",
+  "@agentsComputerUnknown": {
+    "description": "Mid-sentence stand-in for the computer an agent runs on when its name is unknown. Lowercase."
+  },
+  "agentsComputerThisDeviceTitle": "This device",
+  "@agentsComputerThisDeviceTitle": {
+    "description": "Agents tab, heading for agents running on this phone. Short."
+  },
+  "agentsComputerAnother": "Another computer",
+  "@agentsComputerAnother": {
+    "description": "Agents tab, heading for agents on a computer whose name is unknown. Short."
+  },
+  "agentsOpenDmError": "Couldn’t open the DM with {name}: {error}",
+  "@agentsOpenDmError": {
+    "description": "Snack bar when opening a direct message with an agent failed; {error} is the technical reason.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsStopRequested": "Stop requested. The agent stops on the computer it runs on.",
+  "@agentsStopRequested": {
+    "description": "Snack bar after asking an agent to stop."
+  },
+  "agentsStopError": "Couldn’t stop {name}: {error}",
+  "@agentsStopError": {
+    "description": "Snack bar when asking an agent to stop failed.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsStartRequested": "Start requested. {name} starts only if Kuzz is open on {computer} now.",
+  "@agentsStartRequested": {
+    "description": "Snack bar after asking an agent to start; {computer} is e.g. 'this device' or a computer name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "computer": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsStartError": "Couldn’t start {name}: {error}",
+  "@agentsStartError": {
+    "description": "Snack bar when asking an agent to start failed.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsStopConfirmTitle": "Stop {name}?",
+  "@agentsStopConfirmTitle": {
+    "description": "Stop-agent confirmation dialog, title.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentsStopConfirmBody": "It stops on the computer it runs on and stays stopped until it is started there again.",
+  "@agentsStopConfirmBody": {
+    "description": "Stop-agent confirmation dialog, body."
+  },
+  "agentsCancel": "Cancel",
+  "@agentsCancel": {
+    "description": "Stop-agent confirmation dialog, button that closes without stopping. Short."
+  },
+  "agentsStop": "Stop",
+  "@agentsStop": {
+    "description": "Button that stops an agent (dialog, agent sheet, status card). Short."
+  },
+  "agentsStart": "Start",
+  "@agentsStart": {
+    "description": "Button that starts an agent (agent sheet, status card). Short."
+  },
+  "agentsStopping": "Stopping…",
+  "@agentsStopping": {
+    "description": "Agent status card, Stop button while stopping. Short."
+  },
+  "agentsStarting": "Starting…",
+  "@agentsStarting": {
+    "description": "Agent status card, Start button while starting. Short."
+  },
+  "agentsActions": "Agent actions",
+  "@agentsActions": {
+    "description": "Agents tab, tooltip of the … button on an agent. Short."
+  },
+  "agentsMessage": "Message",
+  "@agentsMessage": {
+    "description": "Agent sheet, button that opens a direct message with the agent. Short."
+  },
+  "agentsEdit": "Edit",
+  "@agentsEdit": {
+    "description": "Agent sheet, menu item that opens the agent's settings. Short."
+  },
+  "agentsViewProfile": "View profile",
+  "@agentsViewProfile": {
+    "description": "Agent sheet, menu item that opens the agent's profile. Short."
+  },
+  "forumNewPost": "New post",
+  "@forumNewPost": {
+    "description": "Forum, tooltip of the + button that starts a new post. Short."
+  },
+  "forumLoadingPosts": "Loading posts",
+  "@forumLoadingPosts": {
+    "description": "Forum, screen-reader label of the loading spinner."
+  },
+  "forumLoadPostsError": "Failed to load posts",
+  "@forumLoadPostsError": {
+    "description": "Forum, error when the posts failed to load."
+  },
+  "forumDismiss": "Dismiss",
+  "@forumDismiss": {
+    "description": "Forum, tooltip of the button that closes the new-post composer. Short."
+  },
+  "forumPostHint": "Write your post…",
+  "@forumPostHint": {
+    "description": "Forum, placeholder in the new-post composer."
+  },
+  "forumNoPosts": "No posts yet",
+  "@forumNoPosts": {
+    "description": "Forum, empty state title."
+  },
+  "forumArchived": "This forum is archived.",
+  "@forumArchived": {
+    "description": "Forum, empty state text when the forum is archived."
+  },
+  "forumStartDiscussion": "Start a discussion by creating the first post.",
+  "@forumStartDiscussion": {
+    "description": "Forum, empty state text for members."
+  },
+  "forumJoinToPost": "Join this forum to create posts.",
+  "@forumJoinToPost": {
+    "description": "Forum, empty state text for people who are not members."
+  },
+  "forumReplyCount": "{count, plural, one{{count} reply} other{{count} replies}}",
+  "@forumReplyCount": {
+    "description": "Forum post card and thread page: number of replies. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "forumLastReply": "last {time}",
+  "@forumLastReply": {
+    "description": "Forum post card, when the last reply was, after the reply count; {time} is e.g. '5 minutes ago' or 'on May 19'. Lowercase. Short.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "forumCopyText": "Copy text",
+  "@forumCopyText": {
+    "description": "Forum post or reply actions sheet, menu item. Short."
+  },
+  "forumDeletePost": "Delete post",
+  "@forumDeletePost": {
+    "description": "Forum post actions menu item and delete confirmation dialog title. Short."
+  },
+  "forumDeleteReply": "Delete reply",
+  "@forumDeleteReply": {
+    "description": "Forum reply actions menu item and delete confirmation dialog title. Short."
+  },
+  "forumDeleteConfirmBody": "This cannot be undone.",
+  "@forumDeleteConfirmBody": {
+    "description": "Forum delete confirmation dialog, body."
+  },
+  "forumCancel": "Cancel",
+  "@forumCancel": {
+    "description": "Forum delete confirmation dialog, button that closes without deleting. Short."
+  },
+  "forumDelete": "Delete",
+  "@forumDelete": {
+    "description": "Forum delete confirmation dialog, button that deletes. Short."
+  },
+  "forumThreadTitle": "Thread",
+  "@forumThreadTitle": {
+    "description": "Forum thread page, title in the top bar. Short."
+  },
+  "forumPostActions": "Post actions",
+  "@forumPostActions": {
+    "description": "Forum thread page, tooltip of the … button for your own post. Short."
+  },
+  "forumLoadingThread": "Loading thread",
+  "@forumLoadingThread": {
+    "description": "Forum thread page, screen-reader label of the loading spinner."
+  },
+  "forumLoadThreadError": "Failed to load thread",
+  "@forumLoadThreadError": {
+    "description": "Forum thread page, error when the thread failed to load."
+  },
+  "forumNoReplies": "No replies yet. Be the first to respond.",
+  "@forumNoReplies": {
+    "description": "Forum thread page, shown when the post has no replies."
+  },
+  "forumReplyHint": "Reply to this post…",
+  "@forumReplyHint": {
+    "description": "Forum thread page, placeholder in the reply composer."
+  },
+  "chatsTitle": "Chats",
+  "@chatsTitle": {
+    "description": "Chats tab, page title in the top bar. Short."
+  },
+  "chatsFindGroups": "Find groups",
+  "@chatsFindGroups": {
+    "description": "Chats tab, tooltip of the top-bar button and empty-state button that open the group finder. Short."
+  },
+  "chatsSearch": "Search",
+  "@chatsSearch": {
+    "description": "Chats tab, tooltip of the search button in the top bar. Short."
+  },
+  "chatsViewLabel": "Chats view",
+  "@chatsViewLabel": {
+    "description": "Chats tab, screen-reader label of the All chats / By group switch."
+  },
+  "chatsViewAll": "All chats",
+  "@chatsViewAll": {
+    "description": "Chats tab, switch option listing all chats by time. Short."
+  },
+  "chatsViewByGroup": "By group",
+  "@chatsViewByGroup": {
+    "description": "Chats tab, switch option listing chats under their group. Short."
+  },
+  "chatsStillLoading": "This chat is still loading.",
+  "@chatsStillLoading": {
+    "description": "Snack bar when tapping a chat whose details have not loaded yet."
+  },
+  "chatsGroupFallback": "Group",
+  "@chatsGroupFallback": {
+    "description": "Chats list, stands in for a group's name when it has none. Short."
+  },
+  "chatsMoreThreads": "{count, plural, one{+ {count} more thread} other{+ {count} more threads}}",
+  "@chatsMoreThreads": {
+    "description": "Chats list By group, line under a group that shows its hidden threads. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsMoreStep": "+ {step} more · {left} left",
+  "@chatsMoreStep": {
+    "description": "Chats list By group, line that shows the next {step} threads; {left} are still hidden. Short.",
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "left": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsMore": "+ {count} more",
+  "@chatsMore": {
+    "description": "Chats list By group, line that shows the remaining {count} threads. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsShowLess": "Show less",
+  "@chatsShowLess": {
+    "description": "Chats list By group, line that hides a group's extra threads again. Short."
+  },
+  "chatsEmpty": "No chats yet",
+  "@chatsEmpty": {
+    "description": "Chats tab, empty state title."
+  },
+  "chatsMessageSomeone": "Message someone",
+  "@chatsMessageSomeone": {
+    "description": "Chats tab, empty-state button that starts a direct message. Short."
+  },
+  "chatsThreadFallback": "Thread",
+  "@chatsThreadFallback": {
+    "description": "Chats list, stands in for a thread's title when its first message has no text. Short."
+  },
+  "chatsPreviewBlocked": "Message from a blocked user",
+  "@chatsPreviewBlocked": {
+    "description": "Chats list row, preview text in place of a blocked person's latest message."
+  },
+  "chatsPreviewNoText": "No message text",
+  "@chatsPreviewNoText": {
+    "description": "Chats list row, preview text for a message with no text."
+  },
+  "chatsPreviewPhoto": "Photo",
+  "@chatsPreviewPhoto": {
+    "description": "Chats list row, preview text for a message with only a photo or attachment. Short."
+  },
+  "chatsElapsedSeconds": "{seconds}s",
+  "@chatsElapsedSeconds": {
+    "description": "Chats list, badge showing how long an agent has been working: seconds. Abbreviate like a timer. Very short.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsElapsedMinutes": "{minutes}m {seconds}s",
+  "@chatsElapsedMinutes": {
+    "description": "Chats list, badge showing how long an agent has been working: minutes and seconds. Very short.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsElapsedHours": "{hours}h {minutes}m {seconds}s",
+  "@chatsElapsedHours": {
+    "description": "Chats list, badge showing how long an agent has been working: hours, minutes and seconds. Very short.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsWorkingAgents": "{elapsed} ({count})",
+  "@chatsWorkingAgents": {
+    "description": "Chats list, working badge when several agents work: elapsed time, then the number of agents in brackets. Very short.",
+    "placeholders": {
+      "elapsed": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsUnpin": "Unpin",
+  "@chatsUnpin": {
+    "description": "Chats list, thread row menu item. Short."
+  },
+  "chatsPin": "Pin",
+  "@chatsPin": {
+    "description": "Chats list, thread row menu item. Short."
+  },
+  "chatsMarkRead": "Mark as read",
+  "@chatsMarkRead": {
+    "description": "Chats list, thread row menu item. Short."
+  },
+  "chatsMarkUnread": "Mark as unread",
+  "@chatsMarkUnread": {
+    "description": "Chats list, thread row menu item. Short."
+  },
+  "chatsUnfollowThread": "Unfollow thread",
+  "@chatsUnfollowThread": {
+    "description": "Chats list, thread row menu item. Short."
+  },
+  "chatsReopenThread": "Reopen thread",
+  "@chatsReopenThread": {
+    "description": "Chats list, thread row menu item. Short."
+  },
+  "chatsCloseThread": "Close thread",
+  "@chatsCloseThread": {
+    "description": "Chats list, thread row menu item that marks the thread as done. Short."
+  },
+  "chatsPinLimit": "You can pin up to 200 threads.",
+  "@chatsPinLimit": {
+    "description": "Snack bar when pinning a thread while already at the pin limit."
+  },
+  "pulseTitle": "Pulse",
+  "@pulseTitle": {
+    "description": "Pulse page (public notes timeline), title in the top bar. Short."
+  },
+  "pulseNewNote": "New note",
+  "@pulseNewNote": {
+    "description": "Pulse page, tooltip of the + button that writes a new note. Short."
+  },
+  "pulseTabEveryone": "Everyone",
+  "@pulseTabEveryone": {
+    "description": "Pulse page, filter chip: notes from everyone. Short."
+  },
+  "pulseTabFollowing": "Following",
+  "@pulseTabFollowing": {
+    "description": "Pulse page, filter chip: notes from people you follow. Short."
+  },
+  "pulseTabLiked": "Liked",
+  "@pulseTabLiked": {
+    "description": "Pulse page, filter chip: notes you liked. Short."
+  },
+  "pulseTabAgents": "Agents",
+  "@pulseTabAgents": {
+    "description": "Pulse page, filter chip: notes from agents. Short."
+  },
+  "pulseTabMine": "Mine",
+  "@pulseTabMine": {
+    "description": "Pulse page, filter chip: your own notes. Short."
+  },
+  "pulseLoadError": "Could not load Pulse. Pull to try again.",
+  "@pulseLoadError": {
+    "description": "Pulse page, error when the timeline failed to load."
+  },
+  "pulseEmptyEveryone": "No notes yet. Be the first pulse.",
+  "@pulseEmptyEveryone": {
+    "description": "Pulse page, empty state for Everyone."
+  },
+  "pulseEmptyFollowing": "Follow people to build your Pulse timeline.",
+  "@pulseEmptyFollowing": {
+    "description": "Pulse page, empty state for Following."
+  },
+  "pulseEmptyLiked": "Heart notes to save them here.",
+  "@pulseEmptyLiked": {
+    "description": "Pulse page, empty state for Liked. 'Heart' means tapping the heart (like) button."
+  },
+  "pulseEmptyAgents": "No agent notes yet. Agents post here when they publish.",
+  "@pulseEmptyAgents": {
+    "description": "Pulse page, empty state for Agents."
+  },
+  "pulseEmptyMine": "Your notes will show up here.",
+  "@pulseEmptyMine": {
+    "description": "Pulse page, empty state for Mine."
+  },
+  "pulseBotBadge": "BOT",
+  "@pulseBotBadge": {
+    "description": "Pulse, small badge next to an agent's name. Uppercase. Very short."
+  },
+  "pulseAgentUpdates": "{count, plural, one{{count} update} other{{count} updates}} · {time}",
+  "@pulseAgentUpdates": {
+    "description": "Pulse, agent activity card: number of notes from the agent, then how long ago the latest was (e.g. '5m').",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pulseCancel": "Cancel",
+  "@pulseCancel": {
+    "description": "Compose note page, top-left button that closes without posting. Short."
+  },
+  "pulseSendingReply": "Sending reply",
+  "@pulseSendingReply": {
+    "description": "Compose note page, screen-reader label of the spinner while sending a reply."
+  },
+  "pulsePublishingPost": "Publishing post",
+  "@pulsePublishingPost": {
+    "description": "Compose note page, screen-reader label of the spinner while publishing a note."
+  },
+  "pulseReply": "Reply",
+  "@pulseReply": {
+    "description": "Compose note page, button that sends a reply. Short."
+  },
+  "pulsePost": "Post",
+  "@pulsePost": {
+    "description": "Compose note page, button that publishes a note. Short."
+  },
+  "pulseReplyHint": "Post your reply",
+  "@pulseReplyHint": {
+    "description": "Compose note page, placeholder when replying."
+  },
+  "pulsePostHint": "What’s on your mind?",
+  "@pulsePostHint": {
+    "description": "Compose note page, placeholder when writing a new note."
+  },
+  "pulseReplyingTo": "Replying to {name}",
+  "@pulseReplyingTo": {
+    "description": "Pulse, small line above a reply or in the reply composer: who is being replied to.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pulseCopiedUri": "Copied note URI",
+  "@pulseCopiedUri": {
+    "description": "Toast after copying a note's share link. Short."
+  },
+  "pulseFollowing": "Following",
+  "@pulseFollowing": {
+    "description": "Pulse note card, button state when you follow the author. Short."
+  },
+  "pulseFollow": "Follow",
+  "@pulseFollow": {
+    "description": "Pulse note card, button that follows the author. Short."
+  },
+  "searchTitle": "Search",
+  "@searchTitle": {
+    "description": "Search page, title in the top bar. Short."
+  },
+  "searchCancel": "Cancel",
+  "@searchCancel": {
+    "description": "Search page, button next to the search field that ends searching. Short."
+  },
+  "searchCancelLabel": "Cancel search",
+  "@searchCancelLabel": {
+    "description": "Search page, screen-reader label of the Cancel button next to the search field."
+  },
+  "searchHint": "Search messages, groups, and people",
+  "@searchHint": {
+    "description": "Search page, placeholder in the search field and text of the empty state."
+  },
+  "searchNoResults": "No results for '{query}'",
+  "@searchNoResults": {
+    "description": "Search page, shown when nothing matches; {query} is what you typed.",
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "searchSectionGroups": "Groups",
+  "@searchSectionGroups": {
+    "description": "Search results, section title above matching groups. Short."
+  },
+  "searchSectionDirectMessages": "Direct messages",
+  "@searchSectionDirectMessages": {
+    "description": "Search results, section title above matching direct messages. Short."
+  },
+  "searchSectionPeople": "People",
+  "@searchSectionPeople": {
+    "description": "Search results, section title above matching people. Short."
+  },
+  "searchSectionMessages": "Messages",
+  "@searchSectionMessages": {
+    "description": "Search results, section title above matching messages. Short."
+  },
+  "searchLoadingMore": "Loading more search results",
+  "@searchLoadingMore": {
+    "description": "Search results, screen-reader label of the spinner at the bottom."
+  },
+  "searchRecent": "Recent searches",
+  "@searchRecent": {
+    "description": "Search page, heading above your recent searches. Short."
+  },
+  "searchClear": "Clear",
+  "@searchClear": {
+    "description": "Search page, button that clears recent searches. Short."
+  },
+  "searchFilterAll": "All",
+  "@searchFilterAll": {
+    "description": "Search page, filter chip showing all result types. Short."
+  },
+  "searchFilterMessages": "Messages",
+  "@searchFilterMessages": {
+    "description": "Search page, filter chip showing only messages. Short."
+  },
+  "searchFilterGroups": "Groups",
+  "@searchFilterGroups": {
+    "description": "Search page, filter chip showing only groups. Short."
+  },
+  "searchFilterPeople": "People",
+  "@searchFilterPeople": {
+    "description": "Search page, filter chip showing only people. Short."
+  },
+  "searchStillLoading": "This chat is still loading.",
+  "@searchStillLoading": {
+    "description": "Snack bar when opening a search result whose chat has not loaded yet."
+  },
+  "searchMemberCount": "{count, plural, one{{count} member} other{{count} members}}",
+  "@searchMemberCount": {
+    "description": "Search results, group row subtitle: number of members.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchPublic": "Public",
+  "@searchPublic": {
+    "description": "Search results, badge on a public group you have not joined. Short."
+  },
+  "searchThreadIn": "Thread in {group}",
+  "@searchThreadIn": {
+    "description": "Search results, thread row subtitle: the group the thread is in.",
+    "placeholders": {
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "searchDirectMessage": "Direct message",
+  "@searchDirectMessage": {
+    "description": "Search results, stands in for the place of a direct message. Short."
+  },
+  "searchMessage": "Message",
+  "@searchMessage": {
+    "description": "Search results, stands in for the place of a message when its group is not known. Short."
+  },
+  "searchGroup": "Group",
+  "@searchGroup": {
+    "description": "Search results, stands in for a group's name when it has none. Short."
+  },
+  "searchThread": "Thread",
+  "@searchThread": {
+    "description": "Search results, stands in for a thread's title when it is not known. Short."
+  },
+  "searchAuthorPrefix": "{name}: ",
+  "@searchAuthorPrefix": {
+    "description": "Search results, message row: the author's name before the message text. Keep the trailing space if your language uses one.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "commonDelete": "Delete",
   "@commonDelete": {
@@ -150,10 +4601,6 @@
   "commonRetry": "Retry",
   "@commonRetry": {
     "description": "Generic Retry button or menu item after something failed to load or send. Short."
-  },
-  "commonTryAgain": "Try again",
-  "@commonTryAgain": {
-    "description": "Generic Try again button after an error. Short."
   },
   "commonClose": "Close",
   "@commonClose": {
@@ -174,10 +4621,6 @@
   "commonYou": "You",
   "@commonYou": {
     "description": "Shown instead of your own name in member lists and call tiles. Short."
-  },
-  "commonSavingEllipsis": "Saving…",
-  "@commonSavingEllipsis": {
-    "description": "Button label while a change is being saved. Short."
   },
   "channelAddPeople": "Add people",
   "@channelAddPeople": {

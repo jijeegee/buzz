@@ -1,11 +1,22 @@
 import type { ManagedAgentRuntimeStatus } from "@/shared/api/types";
-import { t } from "@/shared/i18n";
+import { type MessageKey, t } from "@/shared/i18n";
 
 export type AgentCommunityAvailability =
   | "Here"
   | "Waking"
   | "Needs setup on this device"
   | "Unavailable";
+
+/** Language-file keys for each availability value; the values stay English for comparisons. */
+export const AGENT_COMMUNITY_AVAILABILITY_LABEL_KEYS: Record<
+  AgentCommunityAvailability,
+  MessageKey
+> = {
+  Here: "agents.communityAvailability.here",
+  Waking: "agents.communityAvailability.waking",
+  "Needs setup on this device": "agents.communityAvailability.needsSetup",
+  Unavailable: "agents.communityAvailability.unavailable",
+};
 
 export function agentCommunityAvailability(
   runtime: ManagedAgentRuntimeStatus,
@@ -54,13 +65,13 @@ export function managedAgentPairAction(
   return "stop";
 }
 
-export const MANAGED_AGENT_PAIR_ACTION_LABELS: Record<
+export const MANAGED_AGENT_PAIR_ACTION_LABEL_KEYS: Record<
   ManagedAgentPairAction,
-  string
+  MessageKey
 > = {
-  start: "Start Agent",
-  stop: "Stop Agent",
-  restart: "Restart Agent",
+  start: "agents.pairAction.start",
+  stop: "agents.pairAction.stop",
+  restart: "agents.pairAction.restart",
 };
 
 /**

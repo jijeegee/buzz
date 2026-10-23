@@ -10,6 +10,7 @@ import 'huddle_auth.dart';
 import 'huddle_media.dart';
 import 'huddle_transport.dart';
 import 'huddle_wire.dart';
+import '../l10n/l10n.dart';
 
 enum HuddleSessionPhase {
   idle,
@@ -225,9 +226,7 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
     }
     if (state.isInSession) {
       if (state.ephemeralChannelId == parameters.ephemeralChannelId) return;
-      state = state.copyWith(
-        error: 'Leave the current Huddle before joining another one.',
-      );
+      state = state.copyWith(error: appL10n.huddleLeaveCurrentFirst);
       return;
     }
 
@@ -258,7 +257,7 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
         if (mediaState.phase == HuddleMediaPhase.failed) {
           unawaited(
             _fail(
-              mediaState.error?.message ?? 'Native Huddle audio failed.',
+              mediaState.error?.message ?? appL10n.huddleAudioFailed,
               generation,
               microphonePermissionRequired:
                   mediaState.error?.code ==
@@ -279,9 +278,9 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
       final capabilities = await media.discoverCapabilities();
       _ensureCurrent(generation);
       if (!capabilities.supportsFullDuplexOpus) {
-        throw const HuddleMediaError(
+        throw HuddleMediaError(
           code: HuddleMediaErrorCode.unsupported,
-          message: 'Full-duplex mobile Huddle audio is unavailable here.',
+          message: appL10n.huddleAudioUnavailableHere,
         );
       }
 
@@ -289,9 +288,9 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
       final permission = await media.requestMicrophonePermission();
       _ensureCurrent(generation);
       if (permission != HuddleMicrophonePermission.granted) {
-        throw const HuddleMediaError(
+        throw HuddleMediaError(
           code: HuddleMediaErrorCode.permissionDenied,
-          message: 'Microphone permission is required to join a Huddle.',
+          message: appL10n.huddleMicrophoneRequired,
         );
       }
 
@@ -466,7 +465,7 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
         );
       } else if (transportState.phase == HuddleTransportPhase.failed) {
         final message =
-            transportState.error?.message ?? 'Huddle connection failed.';
+            transportState.error?.message ?? appL10n.huddleConnectionFailed;
         if (_wasConnected) {
           _scheduleReconnect(transport, generation, message);
         } else {
@@ -635,7 +634,7 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
     }
     final delays = ref.read(huddleReconnectDelaysProvider);
     if (_reconnectAttempt >= delays.length) {
-      unawaited(_fail('Huddle connection could not be restored.', generation));
+      unawaited(_fail(appL10n.huddleConnectionNotRestored, generation));
       return;
     }
     final attempt = ++_reconnectAttempt;
@@ -771,7 +770,7 @@ final class HuddleSessionNotifier extends Notifier<HuddleSessionState> {
   String _messageFor(Object error) => switch (error) {
     HuddleMediaError() => error.message,
     HuddleTransportError() => error.message,
-    _ => 'Unable to join the Huddle.',
+    _ => appL10n.huddleJoinFailed,
   };
 
   bool _isPermissionDenied(Object error) =>

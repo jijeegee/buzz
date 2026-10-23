@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
@@ -9,7 +10,7 @@ import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/lucide_star_icon.dart';
 
 /// What People surfaces call someone with no name yet — never a key.
-const unknownPersonLabel = 'Unknown';
+String get unknownPersonLabel => appL10n.friendsUnknownPerson;
 
 /// A person's name for People surfaces: display name, then handle, then
 /// [unknownPersonLabel] — never a key.
@@ -27,7 +28,7 @@ String personName(UserProfile? profile, [PersonSummary? summary]) {
 
 /// What friends, block and report prompts call someone whose name is not
 /// known (yet): never "Unknown" and never a fragment of their key.
-const unnamedPersonLabel = 'this user';
+String get unnamedPersonLabel => appL10n.friendsUnnamedPerson;
 
 /// [name] as friends, block and report prompts show it mid-sentence:
 /// [unnamedPersonLabel] when blank or "Unknown".
@@ -42,7 +43,7 @@ String personActionName(String? name) {
 /// [personActionName] at the start of a sentence.
 String personActionSubject(String? name) {
   final who = personActionName(name);
-  return who == unnamedPersonLabel ? 'This user' : who;
+  return who == unnamedPersonLabel ? appL10n.friendsUnnamedPersonSubject : who;
 }
 
 /// The cached profile of [pubkey], watched alone.
@@ -63,7 +64,8 @@ class PersonAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = name.isEmpty || name == 'Unknown'
+    final initial =
+        name.isEmpty || name == 'Unknown' || name == unknownPersonLabel
         ? '?'
         : name.characters.first.toUpperCase();
     return ExcludeSemantics(
@@ -111,7 +113,7 @@ class PersonRow extends ConsumerWidget {
     final avatarUrl = profile?.avatarUrl ?? summary?.avatarUrl;
     return Semantics(
       button: true,
-      label: isFavorite ? '$name, favorite' : name,
+      label: isFavorite ? context.l10n.friendsFavoriteRowLabel(name) : name,
       excludeSemantics: true,
       onTap: onTap,
       child: ListTile(

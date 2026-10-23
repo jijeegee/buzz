@@ -10,6 +10,7 @@ import '../../shared/auth/google_key_backup.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/kuzz_links.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
@@ -50,6 +51,7 @@ class TokenSignInPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final urlController = useTextEditingController();
     // The built-in server replaces manual address entry everywhere.
     final configuredOrigin = ref.watch(defaultCommunityOriginProvider);
@@ -95,7 +97,7 @@ class TokenSignInPage extends HookConsumerWidget {
       try {
         candidate = normalizeRelayOrigin(urlController.text);
       } on FormatException {
-        message.value = 'Enter a relay address, like relay.example.com.';
+        message.value = l10n.signInRelayAddressInvalid;
         return;
       }
       origin.value = null;
@@ -116,11 +118,9 @@ class TokenSignInPage extends HookConsumerWidget {
       if (failure != null) {
         message.value = failure;
       } else if (descriptor == null) {
-        message.value =
-            'This relay does not support Google sign-in. Join it with an '
-            'invite link from a member instead.';
+        message.value = l10n.signInRelayNoGoogleSupport;
       } else if (!descriptor.supportsGoogle) {
-        message.value = 'This relay has no Google sign-in configured.';
+        message.value = l10n.signInRelayNoGoogleConfigured;
       } else {
         keyBackup.value = descriptor.keyBackup;
         dualMode.value =
@@ -142,15 +142,13 @@ class TokenSignInPage extends HookConsumerWidget {
               !community.tokenAuth &&
               normalizeRelayOrigin(community.relayUrl) == sessionOrigin,
         )) {
-          message.value =
-              'This device has a signing identity on this relay. '
-              'An existing token account cannot replace it. Use Google key recovery.';
+          message.value = l10n.signInExistingIdentityConflict;
           return;
         }
         keyBackup.value = false;
       } catch (_) {
         if (context.mounted) {
-          message.value = 'Could not check the saved identity. Try again.';
+          message.value = l10n.signInIdentityCheckFailed;
         }
       } finally {
         if (context.mounted) checking.value = false;
@@ -212,7 +210,7 @@ class TokenSignInPage extends HookConsumerWidget {
               error is KeyBackupException && error.isAccountMismatch;
           message.value = error is KeyBackupException
               ? error.message
-              : 'Couldn’t finish signing in. Nothing was changed; try again.';
+              : l10n.signInFinishFailed;
         }
         return;
       }
@@ -282,7 +280,13 @@ class TokenSignInPage extends HookConsumerWidget {
 
     return Scaffold(
       appBar: lockedOrigin == null && Navigator.of(context).canPop()
-          ? AppBar(title: Text(connectGoogle ? 'Google account' : 'Sign in'))
+          ? AppBar(
+              title: Text(
+                connectGoogle
+                    ? l10n.signInGoogleAccountTitle
+                    : l10n.signInTitle,
+              ),
+            )
           : null,
       body: SafeArea(
         child: ListView(
@@ -291,44 +295,35 @@ class TokenSignInPage extends HookConsumerWidget {
             const SizedBox(height: Grid.lg),
             Text(
               resumeSignedOut
-                  ? 'Sign in again'
+                  ? l10n.signInSignInAgain
                   : connectGoogle
-                  ? 'Protect your account'
+                  ? l10n.settingsProtectAccountSection
                   : keyBackup.value
-                  ? 'Welcome to Kuzz'
+                  ? l10n.signInWelcome
                   : dualMode.value
-                  ? 'Existing account sign-in'
+                  ? l10n.signInExistingAccountTitle
                   : lockedOrigin == null
-                  ? 'Sign in to a relay'
-                  : 'Signed out',
+                  ? l10n.signInToRelayTitle
+                  : l10n.signInSignedOutTitle,
               style: context.textTheme.headlineSmall,
             ),
             const SizedBox(height: Grid.xxs),
             Text(
               resumeSignedOut
                   ? hasBuiltInServer
-                        ? 'Your messages are still on this device. '
-                              'Sign in to pick up where you left off.'
-                        : 'Your communities and messages are still on this device. '
-                              'Sign in to pick up where you left off.'
+                        ? l10n.signInResumeBody
+                        : l10n.signInResumeBodyCommunities
                   : connectGoogle
-                  ? 'Sign in with Google so you can use this account on your '
-                        'other devices. Your profile and conversations stay the '
-                        'same. Kuzz keeps a protected copy of your account for this.'
+                  ? l10n.signInConnectGoogleBody
                   : keyBackup.value
-                  ? 'Sign in with Google to get started. Kuzz keeps a protected '
-                        'copy of your account so the same Google account signs you '
-                        'in on your other devices.'
+                  ? l10n.signInWelcomeBody
                   : lockedOrigin == null
                   ? dualMode.value
-                        ? 'Return to an account created before key recovery was added. '
-                              'Its existing identity and history are kept. '
-                              'New accounts use Google key recovery.'
-                        : 'Relays with Kuzz accounts let you sign in with Google.'
+                        ? l10n.signInExistingAccountBody
+                        : l10n.signInToRelayBody
                   : hasBuiltInServer
-                  ? 'Your session ended. Sign in again to continue.'
-                  : 'Your session on $lockedOrigin ended. Sign in again '
-                        'to continue.',
+                  ? l10n.signInSessionEndedBody
+                  : l10n.signInSessionEndedOnRelayBody(lockedOrigin!),
               style: context.textTheme.bodyMedium?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -350,8 +345,8 @@ class TokenSignInPage extends HookConsumerWidget {
                   dualMode.value = false;
                 },
                 onSubmitted: (_) => unawaited(checkRelay()),
-                decoration: const InputDecoration(
-                  labelText: 'Relay address',
+                decoration: InputDecoration(
+                  labelText: l10n.signInRelayAddressLabel,
                   hintText: 'relay.example.com',
                 ),
               ),
@@ -360,7 +355,7 @@ class TokenSignInPage extends HookConsumerWidget {
                 OutlinedButton(
                   key: const Key('token-sign-in-check'),
                   onPressed: busy ? null : () => unawaited(checkRelay()),
-                  child: const Text('Continue'),
+                  child: Text(l10n.signInContinue),
                 ),
             ],
             if (restoredPrincipal != null)
@@ -371,7 +366,7 @@ class TokenSignInPage extends HookConsumerWidget {
                     : () => unawaited(
                         enterCommunity(origin.value!, restoredPrincipal),
                       ),
-                child: const Text('Continue with saved sign-in'),
+                child: Text(l10n.signInContinueSaved),
               )
             else if (origin.value != null)
               FilledButton(
@@ -379,10 +374,10 @@ class TokenSignInPage extends HookConsumerWidget {
                 onPressed: busy ? null : () => unawaited(signIn()),
                 child: Text(
                   accountMismatch.value
-                      ? 'Use a different Google account'
+                      ? l10n.signInUseDifferentGoogle
                       : resumeSignedOut || connectGoogle
-                      ? 'Continue with Google'
-                      : 'Sign in with Google',
+                      ? l10n.settingsContinueWithGoogle
+                      : l10n.signInWithGoogle,
                 ),
               ),
             if (restoredPrincipal == null && origin.value != null)
@@ -402,16 +397,16 @@ class TokenSignInPage extends HookConsumerWidget {
                       },
                 child: Text(
                   keyBackup.value
-                      ? 'Use an existing token account'
-                      : 'Use Google key recovery',
+                      ? l10n.signInUseExistingTokenAccount
+                      : l10n.signInUseGoogleKeyRecovery,
                 ),
               ),
             if (busy) ...[
               const SizedBox(height: Grid.sm),
-              const Center(
+              Center(
                 child: KuzzLoadingIndicator(
                   size: 32,
-                  semanticLabel: 'Signing in',
+                  semanticLabel: l10n.signInSigningIn,
                 ),
               ),
             ],
@@ -451,6 +446,14 @@ class _TermsLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = context.colors.onSurfaceVariant;
+    // One sentence with the link text inside it, so languages can move it.
+    final terms = context.l10n.signInTermsOfService;
+    final sentence = context.l10n.signInTermsAgreement(terms);
+    final linkStart = sentence.indexOf(terms);
+    final before = linkStart < 0 ? sentence : sentence.substring(0, linkStart);
+    final after = linkStart < 0
+        ? ''
+        : sentence.substring(linkStart + terms.length);
     return Semantics(
       link: true,
       child: TextButton(
@@ -463,12 +466,14 @@ class _TermsLine extends StatelessWidget {
         ),
         child: Text.rich(
           TextSpan(
-            text: 'By continuing you agree to the ',
+            text: before,
             children: [
-              TextSpan(
-                text: 'Terms of Service',
-                style: const TextStyle(decoration: TextDecoration.underline),
-              ),
+              if (linkStart >= 0)
+                TextSpan(
+                  text: terms,
+                  style: const TextStyle(decoration: TextDecoration.underline),
+                ),
+              if (after.isNotEmpty) TextSpan(text: after),
             ],
           ),
           textAlign: TextAlign.center,

@@ -31,7 +31,7 @@ import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { useProfileInteractionActions } from "@/features/profile/ui/useProfileInteractionActions";
 
@@ -305,7 +305,7 @@ function UserProfilePopoverBody({
       relayAgentsQuery.isPending ||
       managedAgentsQuery.isPending ||
       usersBatchQuery.isPending);
-  const displayName = profile?.displayName ?? UNKNOWN_USER_LABEL;
+  const displayName = profile?.displayName ?? unknownUserLabel();
   const isNameLoading = !profile && profileQuery.isLoading;
   // Owner signal mirrors UserProfilePanel: a declared NIP-OA owner whose agent
   // runs elsewhere holds no local seckey, so key custody (`isOwner`) alone

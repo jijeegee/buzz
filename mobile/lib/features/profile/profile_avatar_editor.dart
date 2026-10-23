@@ -13,6 +13,7 @@ import '../../shared/emoji/emoji_data.dart';
 import '../../shared/emoji/emoji_data_provider.dart';
 import '../../shared/emoji/emoji_search.dart';
 import '../../shared/emoji/native_emoji_glyph.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -124,6 +125,7 @@ class ProfileAvatarEditor extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final currentEmojiAvatar = useMemoized(
       () => parseEmojiAvatarDataUrl(currentAvatarUrl),
@@ -228,7 +230,7 @@ class ProfileAvatarEditor extends HookConsumerWidget {
         onDraftChanged(ProfileImageAvatarDraft(cropped));
       } catch (_) {
         if (isCurrentOperation()) {
-          error.value = "We couldn't prepare that photo. Try again.";
+          error.value = l10n.profilePreparePhotoFailed;
         }
       } finally {
         if (isCurrentOperation()) isPickingImage.value = false;
@@ -297,9 +299,9 @@ class ProfileAvatarEditor extends HookConsumerWidget {
                     color: context.colors.surface.withValues(alpha: 0.72),
                     shape: BoxShape.circle,
                   ),
-                  child: const Center(
+                  child: Center(
                     child: KuzzLoadingIndicator(
-                      semanticLabel: 'Preparing photo',
+                      semanticLabel: l10n.profilePreparingPhoto,
                     ),
                   ),
                 ),
@@ -475,7 +477,10 @@ class ProfileAvatarEditor extends HookConsumerWidget {
                       if (defaultTargetPlatform == TargetPlatform.iOS) {
                         return IosNativeSegmentedControl(
                           key: const ValueKey('avatar-mode-control'),
-                          items: const ['Image', 'Emoji', 'Animated'],
+                          items: [
+                            for (final mode in ProfileAvatarMode.values)
+                              _avatarModeLabel(context.l10n, mode),
+                          ],
                           selectedIndex: mode.index,
                           onChanged: (index) {
                             if (index < 0 ||
@@ -639,11 +644,7 @@ class _AvatarModeControl extends StatelessWidget {
                   for (final mode in ProfileAvatarMode.values)
                     Expanded(
                       child: Semantics(
-                        label: switch (mode) {
-                          ProfileAvatarMode.image => 'Image',
-                          ProfileAvatarMode.emoji => 'Emoji',
-                          ProfileAvatarMode.animated => 'Animated',
-                        },
+                        label: _avatarModeLabel(context.l10n, mode),
                         button: true,
                         selected: mode == selected,
                         onTap: () => onSelected(mode),
@@ -656,11 +657,7 @@ class _AvatarModeControl extends StatelessWidget {
                               height: 36,
                               child: Center(
                                 child: Text(
-                                  switch (mode) {
-                                    ProfileAvatarMode.image => 'Image',
-                                    ProfileAvatarMode.emoji => 'Emoji',
-                                    ProfileAvatarMode.animated => 'Animated',
-                                  },
+                                  _avatarModeLabel(context.l10n, mode),
                                   style: context.textTheme.labelLarge?.copyWith(
                                     fontWeight: mode == selected
                                         ? FontWeight.w600
@@ -711,7 +708,7 @@ class _ImageMode extends StatelessWidget {
                 key: const ValueKey('image-source-camera'),
                 icon: LucideIcons.camera,
                 iosIcon: IosGlassNavigationIcon.camera,
-                label: 'Camera',
+                label: context.l10n.profileCamera,
                 onTap: isPicking ? null : onCamera,
                 labelMaxWidth: 96,
               ),
@@ -722,7 +719,7 @@ class _ImageMode extends StatelessWidget {
                 key: const ValueKey('image-source-library'),
                 icon: LucideIcons.images,
                 iosIcon: IosGlassNavigationIcon.photoLibrary,
-                label: 'Photo Library',
+                label: context.l10n.profilePhotoLibrary,
                 onTap: isPicking ? null : onLibrary,
                 labelMaxWidth: 104,
               ),

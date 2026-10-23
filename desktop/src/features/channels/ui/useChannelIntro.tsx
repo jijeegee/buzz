@@ -10,7 +10,7 @@ import {
 
 import {
   getChannelIntroDescription,
-  getChannelIntroKind,
+  getChannelIntroKindId,
 } from "@/features/channels/ui/ChannelPane.helpers";
 import {
   isWelcomeChannel,
@@ -84,7 +84,7 @@ export function useChannelIntro({
           />
         ),
         channelId: activeChannel.id,
-        channelKindLabel: t("channels.intro.kindChat"),
+        channelKind: "chat" as const,
         channelName: chatTitle,
         description: null,
       };
@@ -121,9 +121,9 @@ export function useChannelIntro({
 
       return {
         actions,
-        channelKindLabel: isWelcomeChannel(activeChannel)
-          ? t("channels.intro.kindWelcome")
-          : getChannelIntroKind(activeChannel, projectHome),
+        channelKind: isWelcomeChannel(activeChannel)
+          ? ("welcome" as const)
+          : getChannelIntroKindId(activeChannel, projectHome),
         channelName: activeChannel.name,
         description: isWelcomeChannel(activeChannel)
           ? null
@@ -167,7 +167,7 @@ export function useChannelIntro({
     return {
       actions,
       channelId: activeChannel.id,
-      channelKindLabel: getChannelIntroKind(activeChannel, projectHome),
+      channelKind: getChannelIntroKindId(activeChannel, projectHome),
       channelName: activeChannel.name,
       description: getChannelIntroDescription(activeChannel),
       hideBeginning: projectHome,

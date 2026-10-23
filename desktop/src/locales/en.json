@@ -159,6 +159,22 @@
   "@common.you": {
     "description": "Refers to the current user, e.g. in a member list or as a message author. Short."
   },
+  "common.unknownUser": "Unknown user",
+  "@common.unknownUser": {
+    "description": "Name shown for a person or agent whose name is not known, e.g. in member lists, message authors, typing lines and search results."
+  },
+  "common.keyUnavailable": "Unavailable",
+  "@common.keyUnavailable": {
+    "description": "Shown instead of an account ID that cannot be displayed, e.g. in profile and server settings. Short."
+  },
+  "common.relayUnreachable.short": "Couldn't connect.",
+  "@common.relayUnreachable.short": {
+    "description": "Error in the group canvas and canvas history when the server cannot be reached. Short."
+  },
+  "common.relayUnreachable.message": "Couldn't connect. Check your internet connection.",
+  "@common.relayUnreachable.message": {
+    "description": "Error on the Home screen when the server cannot be reached."
+  },
   "communities.addDialog.title": "Add community",
   "@communities.addDialog.title": {
     "description": "Add community dialog, title on the first page. Short."
@@ -821,7 +837,7 @@
   },
   "communities.builtInServer.differentServiceInvite": "This invite is for a different service.",
   "@communities.builtInServer.differentServiceInvite": {
-    "description": "Error when an invite link points to a server other than the app's built-in one."
+    "description": "Error when an invite or link points to another server than the one this app is for: shown on the invite screen, as a toast, and in the join progress."
   },
   "communities.leave.timedOut": "Timed out while leaving the community. Try again.",
   "@communities.leave.timedOut": {
@@ -3839,6 +3855,10 @@
   "@ui.pubkey.showFull": {
     "description": "Screen-reader label of a shortened public key that opens a popover with the full key."
   },
+  "ui.userAvatar.alt": "{name} avatar",
+  "@ui.userAvatar.alt": {
+    "description": "Image description (alt text) of a person or agent picture, used across the app. {name} is the display name."
+  },
   "ui.sidebar.title": "Sidebar",
   "@ui.sidebar.title": {
     "description": "Screen-reader title of the sidebar when it opens as a drawer on narrow windows. Short."
@@ -3862,6 +3882,10 @@
   "ui.simpleLightbox.description": "Full-size image preview. Press Escape or click outside the image to close.",
   "@ui.simpleLightbox.description": {
     "description": "Screen-reader description of the full-size image popup."
+  },
+  "ui.imageZoom.description": "Full-size image preview. Press Escape or click outside the image to close. Click the image to zoom.",
+  "@ui.imageZoom.description": {
+    "description": "Image viewer opened from a message, screen-reader description of the dialog."
   },
   "ui.simpleLightbox.close": "Close lightbox",
   "@ui.simpleLightbox.close": {
@@ -5537,11 +5561,11 @@
   },
   "onboarding.googleSignIn.olderAccount": "Sign in to an older Kuzz account",
   "@onboarding.googleSignIn.olderAccount": {
-    "description": "Onboarding, button for accounts made with an earlier Kuzz version. Short."
+    "description": "Onboarding sign-in and Settings > Account: button for accounts made with an earlier Kuzz version. Short."
   },
   "onboarding.googleSignIn.olderAccountTitle": "Use this only if your Kuzz account was created with an earlier version of Kuzz.",
   "@onboarding.googleSignIn.olderAccountTitle": {
-    "description": "Onboarding, tooltip on the older account sign-in button."
+    "description": "Onboarding sign-in and Settings > Account: tooltip on the older account sign-in button."
   },
   "onboarding.defaultConfig.selectHarness": "Select a harness",
   "@onboarding.defaultConfig.selectHarness": {
@@ -10859,6 +10883,46 @@
   "@settings.appearance.useAccent": {
     "description": "Settings > Appearance, screen-reader label of a color swatch. {name} is the color name."
   },
+  "settings.appearance.accentNeutral": "Neutral",
+  "@settings.appearance.accentNeutral": {
+    "description": "Settings > Appearance, name of the neutral accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentBlue": "Blue",
+  "@settings.appearance.accentBlue": {
+    "description": "Settings > Appearance, name of the blue accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentCyan": "Cyan",
+  "@settings.appearance.accentCyan": {
+    "description": "Settings > Appearance, name of the cyan accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentGreen": "Green",
+  "@settings.appearance.accentGreen": {
+    "description": "Settings > Appearance, name of the green accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentOrange": "Orange",
+  "@settings.appearance.accentOrange": {
+    "description": "Settings > Appearance, name of the orange accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentRed": "Red",
+  "@settings.appearance.accentRed": {
+    "description": "Settings > Appearance, name of the red accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentPink": "Pink",
+  "@settings.appearance.accentPink": {
+    "description": "Settings > Appearance, name of the pink accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentLilac": "Lilac",
+  "@settings.appearance.accentLilac": {
+    "description": "Settings > Appearance, name of the lilac accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentPurple": "Purple",
+  "@settings.appearance.accentPurple": {
+    "description": "Settings > Appearance, name of the purple accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
+  "settings.appearance.accentIndigo": "Indigo",
+  "@settings.appearance.accentIndigo": {
+    "description": "Settings > Appearance, name of the indigo accent color (swatch tooltip; also fills {name} in 'Use {name} accent'). Short."
+  },
   "settings.peoplePrivacy.help": "Help",
   "@settings.peoplePrivacy.help": {
     "description": "Settings > Profile, title of the help card. Short."
@@ -15167,33 +15231,25 @@
   "@channels.header.groupsFallback": {
     "description": "Header title when no group is open. Short."
   },
-  "channels.intro.kindChat": "chat",
-  "@channels.intro.kindChat": {
-    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
-  },
-  "channels.intro.kindWelcome": "private welcome group",
-  "@channels.intro.kindWelcome": {
-    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
-  },
   "channels.intro.kindProject": "project group",
   "@channels.intro.kindProject": {
-    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+    "description": "Kind name of a group on its own, e.g. \"private group\". Lowercase. Short."
   },
   "channels.intro.kindPrivateEphemeral": "private ephemeral group",
   "@channels.intro.kindPrivateEphemeral": {
-    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+    "description": "Kind name of a group on its own, e.g. \"private group\". Lowercase. Short."
   },
   "channels.intro.kindPrivate": "private group",
   "@channels.intro.kindPrivate": {
-    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+    "description": "Kind name of a group on its own, e.g. \"private group\". Lowercase. Short."
   },
   "channels.intro.kindEphemeral": "ephemeral group",
   "@channels.intro.kindEphemeral": {
-    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+    "description": "Kind name of a group on its own, e.g. \"private group\". Lowercase. Short."
   },
   "channels.intro.kindRegular": "regular group",
   "@channels.intro.kindRegular": {
-    "description": "Kind name in the conversation intro line \"This is the beginning of the …\". Lowercase. Short."
+    "description": "Kind name of a group on its own, e.g. \"private group\". Lowercase. Short."
   },
   "channels.intro.newGroup": "New group",
   "@channels.intro.newGroup": {
@@ -15270,6 +15326,10 @@
   "channels.members.searchPlaceholder": "Search people and agents",
   "@channels.members.searchPlaceholder": {
     "description": "Placeholder of the members dialog search."
+  },
+  "channels.members.addDenied": "Only group members can add people to a private group.",
+  "@channels.members.addDenied": {
+    "description": "Shown when someone who is not a member of a private group tries to add people: in the group's members panel, in the mention-outside-group dialog, and as an error after trying to invite."
   },
   "channels.members.sectionCount": "Members · {count}",
   "@channels.members.sectionCount": {
@@ -15470,6 +15530,10 @@
   "channels.quickBots.add": "Add {name}",
   "@channels.quickBots.add": {
     "description": "Accessible label of a quick add agent button."
+  },
+  "channels.quickBots.addTooltip": "Add {name} ({persona})",
+  "@channels.quickBots.addTooltip": {
+    "description": "Tooltip of a quick add agent button above the composer. {name} is the new agent name, {persona} the agent it is based on."
   },
   "channels.quickBots.noRuntime": "No agent runtime available.",
   "@channels.quickBots.noRuntime": {
@@ -16411,9 +16475,33 @@
   "@messages.timeline.loadFailedBody": {
     "description": "Chat timeline, text of the error card when the message history failed to load. A Retry button follows."
   },
-  "messages.intro.beginningOf": "This is the beginning of the <b>{kind}</b>.",
-  "@messages.intro.beginningOf": {
-    "description": "Empty chat or group, line under its name at the top of the timeline; {kind} is a word like 'group' or 'chat', shown bold."
+  "messages.intro.beginningOfChat": "This is the beginning of the <b>chat</b>.",
+  "@messages.intro.beginningOfChat": {
+    "description": "Empty chat, line under its name at the top of the timeline. <b> marks the bold part."
+  },
+  "messages.intro.beginningOfWelcome": "This is the beginning of the <b>private welcome group</b>.",
+  "@messages.intro.beginningOfWelcome": {
+    "description": "Empty welcome group (the first group a new user gets), line under its name at the top of the timeline. <b> marks the bold part."
+  },
+  "messages.intro.beginningOfProject": "This is the beginning of the <b>project group</b>.",
+  "@messages.intro.beginningOfProject": {
+    "description": "Empty project group, line under its name at the top of the timeline. <b> marks the bold part."
+  },
+  "messages.intro.beginningOfPrivateEphemeral": "This is the beginning of the <b>private ephemeral group</b>.",
+  "@messages.intro.beginningOfPrivateEphemeral": {
+    "description": "Empty private group whose messages disappear after a while, line under its name at the top of the timeline. <b> marks the bold part."
+  },
+  "messages.intro.beginningOfPrivate": "This is the beginning of the <b>private group</b>.",
+  "@messages.intro.beginningOfPrivate": {
+    "description": "Empty private group, line under its name at the top of the timeline. <b> marks the bold part."
+  },
+  "messages.intro.beginningOfEphemeral": "This is the beginning of the <b>ephemeral group</b>.",
+  "@messages.intro.beginningOfEphemeral": {
+    "description": "Empty group whose messages disappear after a while, line under its name at the top of the timeline. <b> marks the bold part."
+  },
+  "messages.intro.beginningOfRegular": "This is the beginning of the <b>regular group</b>.",
+  "@messages.intro.beginningOfRegular": {
+    "description": "Empty regular group, line under its name at the top of the timeline. <b> marks the bold part."
   },
   "messages.voiceNote.retry": "Retry voice note",
   "@messages.voiceNote.retry": {
@@ -17206,6 +17294,10 @@
   "messages.newMessage.sendFailed": "Failed to send message.",
   "@messages.newMessage.sendFailed": {
     "description": "New message screen, error when the first message failed to send."
+  },
+  "messages.newMessage.chooseRecipientFirst": "Choose at least one recipient first.",
+  "@messages.newMessage.chooseRecipientFirst": {
+    "description": "New message screen: error when sending the first message before any recipient is chosen."
   },
   "messages.newMessage.chooseRecipient": "Choose a recipient to start a message",
   "@messages.newMessage.chooseRecipient": {
@@ -19527,6 +19619,10 @@
   "@projects.assignees.unassign": {
     "description": "Screen-reader label of the button on an assignee avatar that removes them from the task."
   },
+  "projects.assignees.assignedTooltip": "{name} — assigned",
+  "@projects.assignees.assignedTooltip": {
+    "description": "Projects task, tooltip on an assignee avatar the viewer cannot remove. {name} is the person."
+  },
   "projects.merge.merge": "Merge",
   "@projects.merge.merge": {
     "description": "Button on a code review (pull request) that merges it. Short."
@@ -19914,6 +20010,34 @@
   "projects.cards.defaultDescription": "A shared space for internal git work.",
   "@projects.cards.defaultDescription": {
     "description": "Text on a project card when the project has no description."
+  },
+  "projects.cards.repositoryCount": "{count, plural, one {# repository} other {# repositories}}",
+  "@projects.cards.repositoryCount": {
+    "description": "Projects list, project card: how many code repositories the project has. Short."
+  },
+  "projects.overviewPeople.more": "{count} more",
+  "@projects.overviewPeople.more": {
+    "description": "Projects overview, tooltip on the +N bubble after the people avatars: how many more people. Short."
+  },
+  "projects.statusIcon.queued": "queued status",
+  "@projects.statusIcon.queued": {
+    "description": "Projects, screen-reader label of the progress circle icon for queued items (group headers)."
+  },
+  "projects.statusIcon.started": "started status",
+  "@projects.statusIcon.started": {
+    "description": "Projects, screen-reader label of the progress circle icon for started items (group headers)."
+  },
+  "projects.statusIcon.review": "review status",
+  "@projects.statusIcon.review": {
+    "description": "Projects, screen-reader label of the progress circle icon for review items (group headers)."
+  },
+  "projects.statusIcon.completed": "completed status",
+  "@projects.statusIcon.completed": {
+    "description": "Projects, screen-reader label of the progress circle icon for completed items (group headers)."
+  },
+  "projects.statusIcon.canceled": "canceled status",
+  "@projects.statusIcon.canceled": {
+    "description": "Projects, screen-reader label of the progress circle icon for canceled items (group headers)."
   },
   "projects.contributors.unknown": "Unknown contributor",
   "@projects.contributors.unknown": {
@@ -20538,6 +20662,10 @@
   "projects.agentPrompt.noAgents": "No agents available yet — create or start one from the Agents view to ask about your repositories.",
   "@projects.agentPrompt.noAgents": {
     "description": "Projects agent page when there is no AI agent. 'Agents view' is the app's Agents screen."
+  },
+  "projects.agentPrompt.working": "{name} is working…",
+  "@projects.agentPrompt.working": {
+    "description": "Projects agent conversation, line under the messages while the agent prepares a reply. {name} is the agent."
   },
   "projects.groupsList.unavailableName": "Group unavailable",
   "@projects.groupsList.unavailableName": {
@@ -21883,6 +22011,26 @@
   "@agents.runtime.missing": {
     "description": "Agent runtime (the program that runs the agent) warning; configured is a runtime id."
   },
+  "agents.runtimeWarning.adapterMissing": "{runtime} CLI is installed but the ACP adapter is missing.",
+  "@agents.runtimeWarning.adapterMissing": {
+    "description": "Agent definition dialog, warning under the runtime picker. {runtime} is a runtime name like Claude Code. An install hint from the runtime may follow."
+  },
+  "agents.runtimeWarning.adapterOutdated": "{runtime} ACP adapter is outdated — reinstall to continue.",
+  "@agents.runtimeWarning.adapterOutdated": {
+    "description": "Agent definition dialog, warning under the runtime picker. {runtime} is a runtime name like Claude Code."
+  },
+  "agents.runtimeWarning.cliMissing": "{runtime} CLI is missing.",
+  "@agents.runtimeWarning.cliMissing": {
+    "description": "Agent definition dialog, warning under the runtime picker. {runtime} is a runtime name like Codex. An install hint from the runtime may follow."
+  },
+  "agents.runtimeWarning.notInstalled": "{runtime} is not installed.",
+  "@agents.runtimeWarning.notInstalled": {
+    "description": "Agent definition dialog, warning under the runtime picker. {runtime} is a runtime name like Goose. An install hint from the runtime may follow."
+  },
+  "agents.runtimeWarning.visitSettings": "Visit Settings > Agents to set it up.",
+  "@agents.runtimeWarning.visitSettings": {
+    "description": "Agent definition dialog, sentence after a runtime warning, pointing to the Agents page in Settings."
+  },
   "agents.respondTo.mode.ownerOnly": "Only me",
   "@agents.respondTo.mode.ownerOnly": {
     "description": "Agent settings, who can command the agent: option. Short."
@@ -21918,6 +22066,34 @@
   "agents.communityStatus.couldNotConnect": "Could not connect",
   "@agents.communityStatus.couldNotConnect": {
     "description": "Agent status detail in a community when it failed. Short."
+  },
+  "agents.communityAvailability.here": "Here",
+  "@agents.communityAvailability.here": {
+    "description": "Group members panel, status badge of an agent: it is running and ready. Short."
+  },
+  "agents.communityAvailability.waking": "Waking",
+  "@agents.communityAvailability.waking": {
+    "description": "Group members panel, status badge of an agent: it is starting up. Short."
+  },
+  "agents.communityAvailability.needsSetup": "Needs setup on this device",
+  "@agents.communityAvailability.needsSetup": {
+    "description": "Group members panel, status badge of an agent that has not been set up on this computer yet. Short."
+  },
+  "agents.communityAvailability.unavailable": "Unavailable",
+  "@agents.communityAvailability.unavailable": {
+    "description": "Group members panel, status badge of an agent that is stopped or failed. Short."
+  },
+  "agents.pairAction.start": "Start Agent",
+  "@agents.pairAction.start": {
+    "description": "Group members panel, agent card menu: starts the agent in this community. Short."
+  },
+  "agents.pairAction.stop": "Stop Agent",
+  "@agents.pairAction.stop": {
+    "description": "Group members panel, agent card menu: stops the agent in this community. Short."
+  },
+  "agents.pairAction.restart": "Restart Agent",
+  "@agents.pairAction.restart": {
+    "description": "Group members panel, agent card menu: restarts an agent that failed. Short."
   },
   "agents.observer.decryptFailedDetail": "Observer event decrypt failed: {error}",
   "@agents.observer.decryptFailedDetail": {
@@ -22374,6 +22550,10 @@
   "agents.cardMint.mint": "Mint card",
   "@agents.cardMint.mint": {
     "description": "Create agent card dialog: main button that starts making the card. Short."
+  },
+  "agents.cardMint.keyCue": "Card-minting key <mono>{key}</mono> is set under Advanced → Environment variables.",
+  "@agents.cardMint.keyCue": {
+    "description": "Agent Defaults, small note when the card-minting key is set. {key} is the variable name OPENAI_API_KEY, shown in monospace; keep it unchanged."
   },
   "agents.cardViewer.saved": "Saved {name}'s card. Share it — the card IS the agent.",
   "@agents.cardViewer.saved": {
@@ -23278,6 +23458,14 @@
   "agents.import.noMemory": "No memory included — config only.",
   "@agents.import.noMemory": {
     "description": "Import agent dialog: note when there is no memory."
+  },
+  "agents.import.agentFailed": "Failed to import agent snapshot.",
+  "@agents.import.agentFailed": {
+    "description": "Import agent snapshot dialog: error when the import fails without a specific reason."
+  },
+  "agents.import.teamFailed": "Failed to import team snapshot.",
+  "@agents.import.teamFailed": {
+    "description": "Import team snapshot dialog: error when the import fails without a specific reason."
   },
   "agents.import.manifest": "Full embedded manifest",
   "@agents.import.manifest": {
@@ -24561,7 +24749,7 @@
   },
   "agents.respondTo.ownerOnlyLocked": "This build disallows changing this setting.",
   "@agents.respondTo.ownerOnlyLocked": {
-    "description": "Who can send instructions field (create/edit agent): note when the app build locks this to Only me."
+    "description": "Who can send instructions field (create/edit agent, and the group members panel dialog): note when the app build locks this to Only me."
   },
   "agents.respondTo.label": "Who can send instructions",
   "@agents.respondTo.label": {
@@ -24617,11 +24805,11 @@
   },
   "agents.restartDiff.autoOn": "Configuration changed since this agent started. Kuzz can restart it automatically after ~3 minutes idle, or stop and respawn it to apply now.",
   "@agents.restartDiff.autoOn": {
-    "description": "Restart required badge tooltip: note when automatic restart is on."
+    "description": "Restart required badge tooltip and the agent profile Runtime tab banner: note when automatic restart is on."
   },
   "agents.restartDiff.autoOff": "Configuration changed since this agent started. Automatic restart is off for this agent — stop and respawn it to apply the changes.",
   "@agents.restartDiff.autoOff": {
-    "description": "Restart required badge tooltip: note when automatic restart is off."
+    "description": "Restart required badge tooltip and the agent profile Runtime tab banner: note when automatic restart is off."
   },
   "agents.runOn.label": "Run on",
   "@agents.runOn.label": {
@@ -24646,6 +24834,10 @@
   "agents.teamDelete.description": "Delete \"{name}\". Already-deployed agents are not affected, but this team template will no longer be available.",
   "@agents.teamDelete.description": {
     "description": "Delete team preset confirm: description; name is the team."
+  },
+  "agents.teamDialog.namePlaceholder": "Engineering Squad",
+  "@agents.teamDialog.namePlaceholder": {
+    "description": "Team preset dialog (create/edit): example team name shown in the empty name field."
   },
   "agents.teamDialog.descriptionPlaceholder": "Optional description for this team.",
   "@agents.teamDialog.descriptionPlaceholder": {

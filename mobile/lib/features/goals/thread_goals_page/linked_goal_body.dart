@@ -73,7 +73,7 @@ class _LinkedGoalBody extends ConsumerWidget {
                 children: [
                   IconButton(
                     key: ValueKey('goal-status-${goal.id}'),
-                    tooltip: goal.status.label,
+                    tooltip: goal.status.label(context.l10n),
                     onPressed: () => toggle(goal),
                     icon: Icon(goalStatusIcon(goal.status), size: 22),
                   ),
@@ -83,7 +83,7 @@ class _LinkedGoalBody extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Layer $layer goal',
+                          context.l10n.goalsLayerGoal(layer),
                           style: context.textTheme.labelSmall,
                         ),
                         Text(goal.title, style: context.textTheme.titleMedium),
@@ -96,7 +96,10 @@ class _LinkedGoalBody extends ConsumerWidget {
                           ),
                           const SizedBox(height: Grid.half),
                           Text(
-                            '${progress.done} of ${progress.total} sub-goals done',
+                            context.l10n.goalsSubProgress(
+                              progress.done,
+                              progress.total,
+                            ),
                             style: context.textTheme.bodySmall,
                           ),
                         ],
@@ -171,7 +174,7 @@ class _LinkedGoalBody extends ConsumerWidget {
         TextButton.icon(
           key: const ValueKey('thread-goal-add'),
           icon: const Icon(LucideIcons.plus, size: 18),
-          label: Text('Add a layer ${layer + 1} goal'),
+          label: Text(context.l10n.goalsAddLayerGoal(layer + 1)),
           onPressed: () => addChildGoal(
             context,
             ref,
@@ -184,13 +187,13 @@ class _LinkedGoalBody extends ConsumerWidget {
         TextButton.icon(
           key: const ValueKey('thread-goal-change'),
           icon: const Icon(LucideIcons.link, size: 18),
-          label: const Text('Link to a different goal'),
+          label: Text(context.l10n.goalsLinkDifferent),
           onPressed: () => _relink(context, ref),
         ),
         TextButton.icon(
           key: const ValueKey('thread-goal-unlink'),
           icon: const Icon(LucideIcons.unlink, size: 18),
-          label: const Text('Unlink this thread'),
+          label: Text(context.l10n.goalsUnlinkThread),
           onPressed: () => links.unlink(context, ref),
         ),
       ],
@@ -200,7 +203,7 @@ class _LinkedGoalBody extends ConsumerWidget {
   Future<void> _relink(BuildContext context, WidgetRef ref) async {
     final choice = await showKuzzModalBottomSheet<({GoalRow row, bool create})>(
       context: context,
-      title: 'Link to a goal',
+      title: context.l10n.goalsLinkToAGoal,
       isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
         child: SingleChildScrollView(

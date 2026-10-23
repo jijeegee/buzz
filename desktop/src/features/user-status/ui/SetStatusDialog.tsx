@@ -25,7 +25,12 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
-import { formatLocale, type MessageKey, useT } from "@/shared/i18n";
+import {
+  formatLocale,
+  localeDateTimeFormat,
+  type MessageKey,
+  useT,
+} from "@/shared/i18n";
 
 const PRESETS = [
   {
@@ -80,13 +85,32 @@ const DURATION_LABEL_KEYS: Record<DurationLabel, MessageKey> = {
 const HALF_HOUR_TIMES = Array.from({ length: 48 }, (_, index) => {
   const hour = Math.floor(index / 2);
   const minute = index % 2 === 0 ? 0 : 30;
-  const period = hour < 12 ? "AM" : "PM";
-  const displayHour = hour % 12 || 12;
   return {
-    label: `${displayHour}:${minute.toString().padStart(2, "0")} ${period}`,
+    hour,
+    minute,
     value: `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`,
   };
 });
+
+const halfHourTimeFormat = localeDateTimeFormat({
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** "9:30 AM" in English; the app language decides the clock style. */
+function halfHourTimeLabel(time: { hour: number; minute: number }): string {
+  return halfHourTimeFormat.format(
+    new Date(2000, 0, 1, time.hour, time.minute),
+  );
+}
+
+/** Menu label of a custom expiry time; off-grid times use the 24-hour form. */
+function customTimeLabel(date: Date): string {
+  const time = HALF_HOUR_TIMES.find(
+    (entry) => entry.value === toLocalTimeValue(date),
+  );
+  return time ? halfHourTimeLabel(time) : formattedTime(date);
+}
 
 type SetStatusDialogProps = {
   open: boolean;
@@ -525,11 +549,7 @@ export function SetStatusDialog({
                     className="flex h-9 w-28 shrink-0 items-center rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                     type="button"
                   >
-                    <span>
-                      {HALF_HOUR_TIMES.find(
-                        (time) => time.value === toLocalTimeValue(customUntil),
-                      )?.label ?? formattedTime(customUntil)}
-                    </span>
+                    <span>{customTimeLabel(customUntil)}</span>
                     <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
                   </button>
                 </DropdownMenuTrigger>
@@ -553,7 +573,7 @@ export function SetStatusDialog({
                         );
                       }}
                     >
-                      {time.label}
+                      {halfHourTimeLabel(time)}
                       {time.value === toLocalTimeValue(customUntil) ? (
                         <Check className="h-4 w-4" />
                       ) : null}

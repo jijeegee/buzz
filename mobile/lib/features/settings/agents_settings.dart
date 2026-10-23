@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/grid.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -21,14 +22,14 @@ class AgentsSettings extends ConsumerWidget {
     );
     return AppListCard(
       key: const ValueKey('settings-agents'),
-      label: 'Agents',
+      label: context.l10n.settingsAgentsSection,
       verticalPadding: Grid.twelve,
       children: [
         AppListRow(
           key: const ValueKey('settings-automatic-agent-mentions'),
           icon: LucideIcons.atSign,
-          title: 'Automatically mention agents',
-          subtitle: 'Address selected agents in group and thread replies',
+          title: context.l10n.settingsAgentsAutoMention,
+          subtitle: context.l10n.settingsAgentsAutoMentionSubtitle,
           trailing: Switch.adaptive(value: enabled, onChanged: setEnabled),
           onTap: () => setEnabled(!enabled),
         ),

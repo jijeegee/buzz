@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../auth/token/token_session.dart';
 import '../theme/theme.dart';
 import '../widgets/modal_presentation.dart';
+import '../l10n/l10n.dart';
 
 /// One attempt to remove a community; [deviceOnly] skips the relay sign-out.
 typedef CommunityRemovalAttempt =
@@ -54,28 +55,24 @@ class _RelaySignOutFailedDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Couldn’t sign out on the relay'),
-      content: Text(
-        '$message\n\nRemoving it from this device only forgets the sign-in '
-        'here. This device stays listed on your account until you sign it '
-        'out from another device.',
-      ),
+      title: Text(context.l10n.communityRemovalSignOutFailedTitle),
+      content: Text(context.l10n.communityRemovalSignOutFailedBody(message)),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Keep'),
+          child: Text(context.l10n.communityRemovalKeep),
         ),
         TextButton(
           key: const Key('remove-community-device-only'),
           onPressed: () =>
               Navigator.of(context).pop(_RelaySignOutChoice.deviceOnly),
           style: TextButton.styleFrom(foregroundColor: context.colors.error),
-          child: const Text('Remove from this device only'),
+          child: Text(context.l10n.communityRemovalDeviceOnly),
         ),
         FilledButton(
           key: const Key('remove-community-retry'),
           onPressed: () => Navigator.of(context).pop(_RelaySignOutChoice.retry),
-          child: const Text('Try again'),
+          child: Text(context.l10n.communityRemovalTryAgain),
         ),
       ],
     );

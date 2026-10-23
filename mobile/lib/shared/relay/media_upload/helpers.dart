@@ -50,7 +50,7 @@ Future<String> _transcodePickedVideoToMp4(String filePath) async {
     filePath,
   );
   if (result == null || result.isEmpty) {
-    throw Exception('Failed to convert video to MP4.');
+    throw Exception(appL10n.mediaUploadVideoConvertFailed);
   }
   if (defaultTargetPlatform == TargetPlatform.android) {
     final source = File(result);
@@ -79,7 +79,7 @@ Future<String> _packagePickedVoiceNoteForUpload(String filePath) async {
     filePath,
   );
   if (result == null || result.isEmpty) {
-    throw Exception('Failed to prepare voice note for upload.');
+    throw Exception(appL10n.mediaUploadVoiceNotePrepareFailed);
   }
   if (defaultTargetPlatform == TargetPlatform.android) {
     final source = File(result);

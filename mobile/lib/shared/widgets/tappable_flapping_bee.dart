@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'flapping_bee.dart';
+import '../l10n/l10n.dart';
 
 /// The Kuzz mark with wings that flutter twice when the user taps it.
 ///
@@ -37,8 +38,8 @@ class TappableFlappingBee extends HookConsumerWidget {
 
     return Semantics(
       button: true,
-      label: 'Kuzz bee',
-      hint: 'Tap to make its wings flutter',
+      label: context.l10n.beeLabel,
+      hint: context.l10n.beeHint,
       onTap: flutterWings,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,

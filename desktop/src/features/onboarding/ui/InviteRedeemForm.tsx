@@ -13,7 +13,6 @@ import {
   type JoinPolicy,
 } from "@/shared/api/invites";
 import {
-  DIFFERENT_SERVICE_INVITE_MESSAGE,
   isAllowedServer,
   useBuiltInServer,
 } from "@/features/communities/builtInServer";
@@ -163,7 +162,7 @@ export function InviteRedeemForm({
           ? parsedInvite.relayWsUrl
           : null;
       if (target && !isAllowedServer(target, builtInServer)) {
-        setPolicyError(DIFFERENT_SERVICE_INVITE_MESSAGE);
+        setPolicyError(t("communities.builtInServer.differentServiceInvite"));
         return;
       }
       if (normalizedRelayUrl) {

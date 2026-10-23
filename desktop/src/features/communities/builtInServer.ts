@@ -33,9 +33,6 @@ import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
  * never falls back to the multi-community controls.
  */
 
-export const DIFFERENT_SERVICE_INVITE_MESSAGE =
-  "This invite is for a different service.";
-
 export type BuiltInServerState =
   | { status: "loading" }
   | { status: "error" }
@@ -89,7 +86,7 @@ export function isAllowedServer(
 }
 
 /**
- * Refuse, with {@link DIFFERENT_SERVICE_INVITE_MESSAGE}, any request the
+ * Refuse, with the "different service" message, any request the
  * webview would send to `relayUrl` unless it is the built-in server. Fails
  * closed: before the built-in server is known, or when reading it failed,
  * nothing is allowed. Only E2E mock builds (no built-in server) allow every

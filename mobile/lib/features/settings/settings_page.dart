@@ -14,6 +14,7 @@ import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
 import '../../shared/community/community_membership_provider.dart';
 import '../../shared/community/community_removal.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/push/push_bridge.dart';
 import '../../shared/push/push_relay_capability_provider.dart';
 import '../../shared/relay/relay.dart';
@@ -95,7 +96,12 @@ class SettingsPage extends HookConsumerWidget {
     final tokenOrigin = ref.watch(activeTokenOriginProvider);
     final googleKeyOrigin = ref.watch(activeGoogleKeyOriginProvider);
     final isProfile = mode == SettingsPageMode.profile;
-    final title = isProfile ? 'Profile' : 'Settings';
+    final title = isProfile
+        ? context.l10n.navProfile
+        : context.l10n.navSettings;
+    final closeLabel = isProfile
+        ? context.l10n.settingsCloseProfile
+        : context.l10n.settingsCloseSettings;
 
     Future<void> showEditProfileSheet() async {
       // A token account has one global profile; the relay rejects client
@@ -106,7 +112,7 @@ class SettingsPage extends HookConsumerWidget {
       }
       final action = await showKuzzModalBottomSheet<_ProfileEditAction>(
         context: context,
-        title: 'Edit profile',
+        title: context.l10n.settingsEditProfileTitle,
         builder: (sheetContext) => SafeArea(
           top: false,
           child: Padding(
@@ -125,7 +131,7 @@ class SettingsPage extends HookConsumerWidget {
                   children: [
                     AppListRow(
                       key: const ValueKey('edit-profile-display-name'),
-                      title: 'Display name',
+                      title: context.l10n.settingsEditProfileDisplayName,
                       trailing: const _RowChevron(),
                       onTap: () => Navigator.pop(
                         sheetContext,
@@ -134,7 +140,7 @@ class SettingsPage extends HookConsumerWidget {
                     ),
                     AppListRow(
                       key: const ValueKey('edit-profile-description'),
-                      title: 'Profile description',
+                      title: context.l10n.settingsEditProfileDescription,
                       trailing: const _RowChevron(),
                       onTap: () => Navigator.pop(
                         sheetContext,
@@ -143,7 +149,7 @@ class SettingsPage extends HookConsumerWidget {
                     ),
                     AppListRow(
                       key: const ValueKey('edit-profile-photo'),
-                      title: 'Photo',
+                      title: context.l10n.settingsEditProfilePhoto,
                       trailing: const _RowChevron(),
                       onTap: () =>
                           Navigator.pop(sheetContext, _ProfileEditAction.photo),
@@ -183,7 +189,7 @@ class SettingsPage extends HookConsumerWidget {
             ? IosGlassNavigationButton(
                 key: const ValueKey('settings-ios-glass-close'),
                 icon: IosGlassNavigationIcon.close,
-                semanticLabel: 'Close ${title.toLowerCase()}',
+                semanticLabel: closeLabel,
                 onPressed: () {
                   unawaited(HapticFeedback.lightImpact());
                   Navigator.of(context).pop();
@@ -194,7 +200,7 @@ class SettingsPage extends HookConsumerWidget {
                 width: Grid.xl,
                 height: Grid.xl,
                 child: IconButton(
-                  tooltip: 'Close ${title.toLowerCase()}',
+                  tooltip: closeLabel,
                   onPressed: () {
                     unawaited(HapticFeedback.lightImpact());
                     Navigator.of(context).pop();
@@ -209,7 +215,7 @@ class SettingsPage extends HookConsumerWidget {
           else if (Theme.of(context).platform == TargetPlatform.iOS)
             IosGlassNavigationAction(
               key: const ValueKey('settings-edit-profile'),
-              label: 'Edit',
+              label: context.l10n.settingsEditProfileAction,
               foregroundColor: navigationPrimaryForeground(context),
               onPressed: () => unawaited(showEditProfileSheet()),
             )
@@ -227,7 +233,7 @@ class SettingsPage extends HookConsumerWidget {
                     vertical: Grid.xxs,
                   ),
                   child: Text(
-                    'Edit',
+                    context.l10n.settingsEditProfileAction,
                     style: context.textTheme.labelLarge?.copyWith(
                       color: context.colors.onSurface,
                       fontWeight: FontWeight.w600,

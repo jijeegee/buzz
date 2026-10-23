@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../people/people_errors.dart';
@@ -15,10 +16,10 @@ final kuzzIdPattern = RegExp(r'^[a-z0-9_]{3,32}$');
 /// Why [value] is not a valid Kuzz ID, or null when it is.
 String? kuzzIdError(String value) {
   if (value.length < 3 || value.length > 32) {
-    return 'Use 3 to 32 characters.';
+    return appL10n.settingsKuzzIdLengthError;
   }
   if (!kuzzIdPattern.hasMatch(value)) {
-    return 'Use only lowercase letters, digits and _.';
+    return appL10n.settingsKuzzIdCharactersError;
   }
   return null;
 }
@@ -65,26 +66,26 @@ class KuzzIdPage extends HookConsumerWidget {
         saving.value = false;
         error.value = friendlyError(
           failure,
-          fallback: 'Couldn’t save your ID. Try again.',
+          fallback: context.l10n.settingsKuzzIdSaveFailed,
         );
         return;
       }
       container.invalidate(accountProfileProvider(origin));
       if (!context.mounted) return;
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(const SnackBar(content: Text('Kuzz ID saved')));
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(context.l10n.settingsKuzzIdSaved)),
+      );
       Navigator.of(context).pop();
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Kuzz ID')),
+      appBar: AppBar(title: Text(context.l10n.settingsKuzzIdTitle)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(Grid.sm),
           children: [
             Text(
-              'Friends can add you by typing your Kuzz ID exactly.',
+              context.l10n.settingsKuzzIdExplanation,
               style: context.textTheme.bodyMedium?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -104,9 +105,9 @@ class KuzzIdPage extends HookConsumerWidget {
               },
               onSubmitted: (_) => unawaited(save()),
               decoration: InputDecoration(
-                labelText: 'Kuzz ID',
+                labelText: context.l10n.settingsKuzzIdTitle,
                 prefixText: '@',
-                helperText: 'Lowercase letters, digits and _',
+                helperText: context.l10n.settingsKuzzIdHelper,
                 errorText: error.value,
               ),
             ),
@@ -115,11 +116,11 @@ class KuzzIdPage extends HookConsumerWidget {
               key: const Key('kuzz-id-save'),
               onPressed: saving.value ? null : () => unawaited(save()),
               child: saving.value
-                  ? const KuzzLoadingIndicator(
+                  ? KuzzLoadingIndicator(
                       size: 20,
-                      semanticLabel: 'Saving',
+                      semanticLabel: context.l10n.commonSaving,
                     )
-                  : const Text('Save'),
+                  : Text(context.l10n.commonSave),
             ),
           ],
         ),

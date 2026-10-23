@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../channels/agent_activity/observer_models.dart';
 import '../channels/agent_activity/observer_subscription.dart';
@@ -398,17 +399,25 @@ ChatWorking splitChatWorking(
 /// "45s", "3m 12s", "1h 2m 3s" (desktop `formatElapsed`).
 String formatWorkingElapsed(int ms) {
   final totalSeconds = ms < 0 ? 0 : ms ~/ 1000;
-  if (totalSeconds < 60) return '${totalSeconds}s';
+  if (totalSeconds < 60) return appL10n.chatsElapsedSeconds(totalSeconds);
   final seconds = totalSeconds % 60;
   final totalMinutes = totalSeconds ~/ 60;
-  if (totalMinutes < 60) return '${totalMinutes}m ${seconds}s';
-  return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m ${seconds}s';
+  if (totalMinutes < 60) {
+    return appL10n.chatsElapsedMinutes(totalMinutes, seconds);
+  }
+  return appL10n.chatsElapsedHours(
+    totalMinutes ~/ 60,
+    totalMinutes % 60,
+    seconds,
+  );
 }
 
 /// The badge text: elapsed, with "(N)" when several agents work.
 String chatWorkingLabel(ChatWorkingSummary summary, int nowMs) {
   final elapsed = formatWorkingElapsed(nowMs - summary.anchorAtMs);
-  return summary.agentCount > 1 ? '$elapsed (${summary.agentCount})' : elapsed;
+  return summary.agentCount > 1
+      ? appL10n.chatsWorkingAgents(elapsed, summary.agentCount)
+      : elapsed;
 }
 
 /// My agents' active turns by channel, from the observer stream the app

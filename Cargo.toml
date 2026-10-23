@@ -35,6 +35,7 @@ members = [
     "crates/kuzz-voice",
     "crates/kuzz-backend-kubernetes",
     "crates/kuzz-datastore-tracing",
+    "crates/kuzz-device-key",
     "examples/countdown-bot",
 ]
 exclude = ["desktop/src-tauri"]
@@ -157,6 +158,7 @@ kuzz-ws-client = { path = "crates/kuzz-ws-client" }
 kuzz-token-broker = { path = "crates/kuzz-token-broker" }
 kuzz-relay-mesh = { path = "crates/kuzz-relay-mesh" }
 kuzz-datastore-tracing = { path = "crates/kuzz-datastore-tracing" }
+kuzz-device-key = { path = "crates/kuzz-device-key" }
 
 # CI profile — builds the relay for desktop e2e. Dependencies keep full
 # release optimization (warm from main's cache; they carry the runtime hot

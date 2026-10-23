@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:image/image.dart' as image;
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'avatar_upload_image.dart';
@@ -102,7 +103,7 @@ class ProfileAvatarCropPage extends HookWidget {
         centerTitle: true,
         titleSpacing: 0,
         title: Text(
-          'Position Photo',
+          context.l10n.profileCropTitle,
           maxLines: 1,
           style: context.textTheme.titleSmall?.copyWith(
             color: Colors.white,
@@ -115,7 +116,7 @@ class ProfileAvatarCropPage extends HookWidget {
           child: Align(
             alignment: Alignment.centerLeft,
             child: _CropHeaderButton(
-              label: 'Cancel',
+              label: context.l10n.commonCancel,
               onPressed: isCropping.value ? null : () => Navigator.pop(context),
             ),
           ),
@@ -125,7 +126,7 @@ class ProfileAvatarCropPage extends HookWidget {
             padding: const EdgeInsets.only(right: Grid.gutter),
             child: _CropHeaderButton(
               key: const ValueKey('avatar-crop-use-photo'),
-              label: 'Save',
+              label: context.l10n.commonSave,
               loading: isCropping.value,
               onPressed:
                   isCropping.value ||
@@ -163,17 +164,17 @@ class ProfileAvatarCropPage extends HookWidget {
         ],
       ),
       body: loadError.value || dimensionsSnapshot.hasError
-          ? const Center(
+          ? Center(
               child: Text(
-                "We couldn't prepare that photo.",
-                style: TextStyle(color: Colors.white),
+                context.l10n.profileCropPrepareFailed,
+                style: const TextStyle(color: Colors.white),
               ),
             )
           : preparedBytes.value == null || dimensions == null
-          ? const Center(
+          ? Center(
               child: KuzzLoadingIndicator(
                 color: Colors.white,
-                semanticLabel: 'Preparing photo',
+                semanticLabel: context.l10n.profilePreparingPhoto,
               ),
             )
           : LayoutBuilder(
@@ -247,33 +248,35 @@ class ProfileAvatarCropPage extends HookWidget {
                         children: [
                           ClipRect(
                             child: Semantics(
-                              label: 'Photo crop',
-                              value: '${(currentScale * 100).round()}% zoom',
+                              label: context.l10n.profileCropLabel,
+                              value: context.l10n.profileCropZoomValue(
+                                (currentScale * 100).round(),
+                              ),
                               customSemanticsActions: {
-                                const CustomSemanticsAction(
-                                  label: 'Move left',
+                                CustomSemanticsAction(
+                                  label: context.l10n.profileMoveLeft,
                                 ): () =>
                                     movePhoto(const Offset(-24, 0)),
-                                const CustomSemanticsAction(
-                                  label: 'Move right',
+                                CustomSemanticsAction(
+                                  label: context.l10n.profileMoveRight,
                                 ): () =>
                                     movePhoto(const Offset(24, 0)),
-                                const CustomSemanticsAction(
-                                  label: 'Move up',
+                                CustomSemanticsAction(
+                                  label: context.l10n.profileMoveUp,
                                 ): () =>
                                     movePhoto(const Offset(0, -24)),
-                                const CustomSemanticsAction(
-                                  label: 'Move down',
+                                CustomSemanticsAction(
+                                  label: context.l10n.profileMoveDown,
                                 ): () =>
                                     movePhoto(const Offset(0, 24)),
                                 if (currentScale < 5)
-                                  const CustomSemanticsAction(
-                                    label: 'Zoom in',
+                                  CustomSemanticsAction(
+                                    label: context.l10n.profileZoomIn,
                                   ): () =>
                                       zoomPhoto(1.1),
                                 if (currentScale > 1)
-                                  const CustomSemanticsAction(
-                                    label: 'Zoom out',
+                                  CustomSemanticsAction(
+                                    label: context.l10n.profileZoomOut,
                                   ): () =>
                                       zoomPhoto(1 / 1.1),
                               },
@@ -323,10 +326,10 @@ class ProfileAvatarCropPage extends HookWidget {
                         maskBottom + Grid.twelve,
                         canvasHeight - 24,
                       ),
-                      child: const Center(
+                      child: Center(
                         child: Text(
-                          'Move and scale',
-                          style: TextStyle(color: Colors.white70),
+                          context.l10n.profileCropHint,
+                          style: const TextStyle(color: Colors.white70),
                         ),
                       ),
                     ),
@@ -367,10 +370,10 @@ class _CropHeaderButton extends StatelessWidget {
         ),
         onPressed: onPressed,
         child: loading
-            ? const KuzzLoadingIndicator(
+            ? KuzzLoadingIndicator(
                 size: 18,
                 color: Colors.white,
-                semanticLabel: 'Saving photo',
+                semanticLabel: context.l10n.profileSavingPhoto,
               )
             : Text(label, maxLines: 1, softWrap: false),
       ),

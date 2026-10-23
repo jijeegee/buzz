@@ -9,7 +9,7 @@ import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import type { Channel } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { Shimmer } from "@/shared/ui/Shimmer";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 
 type TypingIndicatorRowProps = {
   channel: Channel | null;
@@ -106,7 +106,7 @@ export function TypingIndicatorRow({
           <div className="flex shrink-0 items-center">
             {typingPubkeys.map((pubkey, index) => {
               const profile = profiles?.[pubkey.toLowerCase()];
-              const label = labels[index] ?? UNKNOWN_USER_LABEL;
+              const label = labels[index] ?? unknownUserLabel();
               return (
                 <div
                   key={pubkey}

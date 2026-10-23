@@ -308,7 +308,8 @@ export function NewMessageScreen() {
           : await openDirectMessage();
       if (!directMessage) {
         throw new Error(
-          submitErrorMessage ?? "Choose at least one recipient first.",
+          submitErrorMessage ??
+            translate("messages.newMessage.chooseRecipientFirst"),
         );
       }
 

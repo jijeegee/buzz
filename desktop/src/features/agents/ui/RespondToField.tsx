@@ -1,7 +1,7 @@
 import * as React from "react";
 import { AlertTriangle, Search, X } from "lucide-react";
 import { mergeAllowlist } from "@/features/agents/lib/respondToAllowlist";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import {
@@ -57,7 +57,7 @@ import { t, useT } from "@/shared/i18n";
 
 function formatSearchUserName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
+    user.displayName?.trim() || user.nip05Handle?.trim() || unknownUserLabel()
   );
 }
 
@@ -75,9 +75,6 @@ const RESPOND_TO_OPTIONS: PersonaDropdownOption[] = [
   { label: "Anyone", value: "anyone" },
   { label: "Selected people", value: "allowlist" },
 ];
-
-export const OWNER_ONLY_ACCESS_DISABLED_REASON =
-  "This build disallows changing this setting.";
 
 /** Localized option label; RESPOND_TO_OPTIONS keeps the English source. */
 function respondToOptionLabel(value: string): string {

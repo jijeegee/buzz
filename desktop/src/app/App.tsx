@@ -51,7 +51,6 @@ import { SignedOutGate } from "@/features/onboarding/ui/SignedOutScreen";
 import { loadCommunityDiscoveryAfterLeave } from "@/features/communities/communityStorage";
 import {
   screenCommunityLink,
-  DIFFERENT_SERVICE_INVITE_MESSAGE,
   getBuiltInServer,
   isAllowedServer,
   loadBuiltInServer,
@@ -509,7 +508,7 @@ function CommunityApp({
     // with a built-in server nothing for another host is added or switched.
     if (!isAllowedServer(transaction.relayUrl, getBuiltInServer())) {
       communityOnboarding.update(
-        { error: DIFFERENT_SERVICE_INVITE_MESSAGE },
+        { error: t("communities.builtInServer.differentServiceInvite") },
         transaction.id,
       );
       return;
@@ -907,7 +906,7 @@ function MachineBootstrap({ sharedIdentity }: { sharedIdentity: boolean }) {
       onAddCommunityAvailable: onAddCommunityPrefillAvailable,
       shouldFollowCommunityLink: (link) =>
         screenCommunityLink(link, getBuiltInServer(), () =>
-          toast.error(DIFFERENT_SERVICE_INVITE_MESSAGE),
+          toast.error(t("communities.builtInServer.differentServiceInvite")),
         ),
     });
     return () => {

@@ -7,6 +7,7 @@ import '../widgets/sheet_divider.dart';
 import '../widgets/modal_presentation.dart';
 import 'reminder_service.dart';
 import 'reminder_time_presets.dart';
+import '../l10n/l10n.dart';
 
 /// Bottom sheet for "Remind me later": desktop-parity presets plus a native
 /// date/time picker, publishing the same author-private kind-30300 reminder
@@ -18,9 +19,10 @@ void showRemindMeLaterSheet({
 }) {
   final service = ref.read(reminderServiceProvider);
   final messenger = ScaffoldMessenger.of(context);
+  final l10n = context.l10n;
   if (service == null) {
     messenger.showSnackBar(
-      const SnackBar(content: Text('Sign in to set reminders')),
+      SnackBar(content: Text(l10n.reminderSignInRequired)),
     );
     return;
   }
@@ -28,19 +30,17 @@ void showRemindMeLaterSheet({
   Future<void> submit(int notBefore) async {
     try {
       await service.createReminder(target: target, notBefore: notBefore);
-      messenger.showSnackBar(const SnackBar(content: Text('Reminder set')));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.reminderSet)));
     } catch (error) {
       // Stable user-facing copy; the relay/crypto detail goes to the log.
       debugPrint('[RemindMeLater] createReminder failed: $error');
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Couldn’t set reminder. Try again.')),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l10n.reminderSetFailed)));
     }
   }
 
   showKuzzModalBottomSheet<void>(
     context: context,
-    title: 'Remind me about this message',
+    title: l10n.reminderSheetTitle,
     showDragHandle: true,
     builder: (sheetContext) => SafeArea(
       child: IconTheme.merge(
@@ -60,7 +60,7 @@ void showRemindMeLaterSheet({
                 for (final preset in reminderTimePresets)
                   ListTile(
                     leading: const Icon(LucideIcons.clock),
-                    title: Text(preset.label),
+                    title: Text(preset.labelFor(l10n)),
                     onTap: () {
                       Navigator.of(sheetContext).pop();
                       submit(preset.getTimestamp());
@@ -69,7 +69,7 @@ void showRemindMeLaterSheet({
                 const SheetDivider(),
                 ListTile(
                   leading: const Icon(LucideIcons.calendarClock),
-                  title: const Text('Pick a date & time'),
+                  title: Text(l10n.reminderPickDateTime),
                   onTap: () async {
                     final navigator = Navigator.of(sheetContext);
                     final timestamp = await _pickCustomDateTime(context);
@@ -112,9 +112,9 @@ Future<int?> _pickCustomDateTime(BuildContext context) async {
 
   final timestamp = combineCustomDateTime(date, time.hour, time.minute);
   if (timestamp == null && context.mounted) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Pick a time in the future')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.reminderPickFutureTime)),
+    );
   }
   return timestamp;
 }

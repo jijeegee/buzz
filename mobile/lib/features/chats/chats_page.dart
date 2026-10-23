@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/profile/user_cache_provider.dart';
@@ -246,7 +247,7 @@ class ChatsPage extends HookConsumerWidget {
       final channel = channelById[row.channelId];
       if (channel == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(content: Text('This chat is still loading.')),
+          SnackBar(content: Text(context.l10n.chatsStillLoading)),
         );
         return;
       }
@@ -465,18 +466,18 @@ class ChatsPage extends HookConsumerWidget {
         horizontalInset: Grid.gutter,
         showBottomDivider: true,
         bottomDividerOpacity: 0.07,
-        title: Text('Chats', style: headerTitleStyle),
+        title: Text(context.l10n.chatsTitle, style: headerTitleStyle),
         titleStyle: headerTitleStyle,
         actions: [
           IconButton(
             key: const ValueKey('chats-browse-channels'),
-            tooltip: 'Find groups',
+            tooltip: context.l10n.chatsFindGroups,
             icon: const Icon(LucideIcons.usersRound, size: 20),
             onPressed: () => unawaited(showBrowseChannelsSheet(context)),
           ),
           IconButton(
             key: const ValueKey('chats-search'),
-            tooltip: 'Search',
+            tooltip: context.l10n.chatsSearch,
             icon: const Icon(LucideIcons.search, size: 20),
             onPressed: () => Navigator.of(
               context,
@@ -494,17 +495,17 @@ class ChatsPage extends HookConsumerWidget {
           child: SizedBox(
             height: switchHeight,
             child: KuzzViewSwitch<ChatsViewMode>(
-              semanticsLabel: 'Chats view',
-              options: const [
+              semanticsLabel: context.l10n.chatsViewLabel,
+              options: [
                 KuzzViewOption(
                   value: ChatsViewMode.all,
-                  label: 'All chats',
-                  key: ValueKey('chats-view-all'),
+                  label: context.l10n.chatsViewAll,
+                  key: const ValueKey('chats-view-all'),
                 ),
                 KuzzViewOption(
                   value: ChatsViewMode.byChannel,
-                  label: 'By group',
-                  key: ValueKey('chats-view-byChannel'),
+                  label: context.l10n.chatsViewByGroup,
+                  key: const ValueKey('chats-view-byChannel'),
                 ),
               ],
               selected: mode,

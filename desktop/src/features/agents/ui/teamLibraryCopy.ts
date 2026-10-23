@@ -1,13 +1,5 @@
 import { t } from "@/shared/i18n";
 export const teamCatalogCopy = {
-  chooseFromCatalog: "Choose from catalog",
-  dialogTitle: "Team Catalog",
-  dialogDescription: "Browse teams shared in this community.",
-  emptyCatalogTitle: "No teams are being shared",
-  emptyCatalogDescription: "Shared teams will appear here.",
-  addAction: "Add team",
-  addedAction: "Added to my teams",
-  addingAction: "Adding…",
   get shareTitle() {
     return t("agents.share.toCatalog");
   },
