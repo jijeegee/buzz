@@ -21,7 +21,9 @@ import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
+import '../../shared/widgets/load_error_view.dart';
 import '../../shared/widgets/kuzz_view_switch.dart';
+import '../agents/owner_view/owner_view.dart';
 import '../channels/channel.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';
@@ -43,6 +45,7 @@ import 'chat_working.dart';
 import 'thread_pins_provider.dart';
 
 part 'chats_page/rows.dart';
+part 'chats_page/agent_conversations.dart';
 
 /// All chats (every room and live thread, newest first) or By channel
 /// (threads under their channel).

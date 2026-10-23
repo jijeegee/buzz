@@ -283,15 +283,18 @@ class ChatListState {
   );
 }
 
+/// [asAgent] asks for that agent's chats its owner is not in (owner view).
 Map<String, dynamic> buildChatListFilter({
   required int limit,
   ChatListCursor? before,
   List<String> pinnedThreads = const [],
+  String? asAgent,
 }) => {
   'chat_list': 1,
   'limit': limit.clamp(1, 100),
   if (before != null) 'before': before.toJson(),
   if (pinnedThreads.isNotEmpty) 'pinned_threads': pinnedThreads,
+  if (asAgent != null) 'as_agent': asAgent.toLowerCase(),
 };
 
 /// Parses a `chat_list` response; anything but the version-1 envelope

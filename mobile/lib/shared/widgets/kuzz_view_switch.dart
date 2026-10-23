@@ -67,6 +67,8 @@ class KuzzViewSwitch<T> extends StatelessWidget {
             ),
             child: Text(
               option.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: context.textTheme.labelLarge?.copyWith(
                 color: isSelected
                     ? context.colors.onSurface

@@ -873,6 +873,7 @@ class _MessageList extends HookConsumerWidget {
         }
         final route = MaterialPageRoute<void>(
           builder: (_) => ThreadDetailPage(
+            ownerView: OwnerViewScope.maybeOf(context),
             threadHead: threadHead,
             allMessages: allMessages,
             channelId: channelId,

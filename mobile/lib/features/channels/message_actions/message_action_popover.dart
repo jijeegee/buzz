@@ -254,6 +254,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
             Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => ThreadDetailPage(
+                  ownerView: OwnerViewScope.maybeOf(context),
                   threadHead: message,
                   allMessages: messages,
                   channelId: channelId,

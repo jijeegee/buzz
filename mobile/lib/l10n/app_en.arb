@@ -7854,5 +7854,139 @@
   "appUpdateFailed": "Couldn’t update. Check your connection and try again.",
   "@appUpdateFailed": {
     "description": "Error shown when downloading or opening the update failed."
+  },
+  "ownerViewTabsLabel": "Agent views",
+  "@ownerViewTabsLabel": {
+    "description": "DM with my own agent, label of the switch between the chat and the agent's conversations (screen readers)."
+  },
+  "ownerViewTabChat": "Chat with {name}",
+  "@ownerViewTabChat": {
+    "description": "DM with my own agent, switch option showing the chat with the agent. Short.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewTabConversations": "{name}’s conversations",
+  "@ownerViewTabConversations": {
+    "description": "DM with my own agent, switch option listing the agent's chats I'm not in. Short.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewTagAgent": "Agent",
+  "@ownerViewTagAgent": {
+    "description": "Agent's conversations list, small tag on a DM with an agent. Short."
+  },
+  "ownerViewTagPerson": "Person",
+  "@ownerViewTagPerson": {
+    "description": "Agent's conversations list, small tag on a DM with a person. Short."
+  },
+  "ownerViewEmpty": "{name} has no other conversations yet",
+  "@ownerViewEmpty": {
+    "description": "Agent's conversations list, shown when the agent has no chats without me.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewLoadFailed": "Couldn’t load these chats. Try again in a moment.",
+  "@ownerViewLoadFailed": {
+    "description": "Agent's conversations list, error when the list could not load."
+  },
+  "ownerViewReadOnlySubtitle": "Read only · {name}’s chat",
+  "@ownerViewReadOnlySubtitle": {
+    "description": "Header subtitle of an agent's chat its owner reads without being in it.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewAsk": "Ask {name} about this chat",
+  "@ownerViewAsk": {
+    "description": "Bottom bar of an agent's chat read by its owner: button opening the DM with the agent. Short.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewRemove": "Remove {name} from chat",
+  "@ownerViewRemove": {
+    "description": "Bottom bar of an agent's chat read by its owner: button removing the agent from the chat. Short.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewAskDraft": "About the chat “{chat}”: ",
+  "@ownerViewAskDraft": {
+    "description": "Draft put in the DM with my agent after tapping Ask; {chat} is the chat's name. Ends with a space.",
+    "placeholders": {
+      "chat": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewRemoveConfirmTitle": "Remove {name} from {chat}?",
+  "@ownerViewRemoveConfirmTitle": {
+    "description": "Confirm dialog title before removing my agent from a chat I read.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "chat": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewRemoveConfirmBody": "{name} stops getting messages from this chat. People in the chat can add it back.",
+  "@ownerViewRemoveConfirmBody": {
+    "description": "Confirm dialog text before removing my agent from a chat I read.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewRemoveConfirmAction": "Remove",
+  "@ownerViewRemoveConfirmAction": {
+    "description": "Confirm dialog button removing my agent from a chat. Short."
+  },
+  "ownerViewRemoved": "{name} left the chat.",
+  "@ownerViewRemoved": {
+    "description": "Snack bar after my agent was removed from a chat.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewRemoveFailed": "Couldn’t remove {name} from the chat.",
+  "@ownerViewRemoveFailed": {
+    "description": "Snack bar when removing my agent from a chat failed.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ownerViewNotice": "{owner} ({agent}’s owner) can read this chat",
+  "@ownerViewNotice": {
+    "description": "Chat header notice for people in a chat with someone else's agent whose owner is not in the chat.",
+    "placeholders": {
+      "owner": {
+        "type": "String"
+      },
+      "agent": {
+        "type": "String"
+      }
+    }
   }
 }
