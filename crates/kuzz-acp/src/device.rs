@@ -34,11 +34,31 @@ use crate::token_broker::{BrokerFull, MAX_CONCURRENT, MAX_SECRETS, REQUEST_TIMEO
 /// Name of the event tag carrying the device signature.
 const DEVICE_TAG: &str = "device";
 /// How far a brokered event's `created_at` may be from now.
-const BROKER_MAX_SKEW_SECS: u64 = 120;
+const BROKER_MAX_SKEW_SECS: u64 = 60;
 /// Time allowed for the start-up status check.
-const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
+const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 /// The relay's reason for a key bound to another device.
 const WRONG_HOST: &str = "(wrong_host)";
+/// The relay mode under which a refusal is binding.
+const ENFORCE: &str = "enforce";
+
+/// Process exit code when the relay binds this agent to another device
+/// under `enforce` (`EX_NOPERM`). Kuzz Desktop shows "Runs on another
+/// device" and must not restart the agent on it; nothing in kuzz-acp
+/// restarts it either (the harness stops before any agent child spawns).
+pub const EXIT_WRONG_HOST: i32 = 77;
+
+static WRONG_HOST_STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Ask the process to exit with [`EXIT_WRONG_HOST`] once the harness returns.
+pub fn request_wrong_host_exit() {
+    WRONG_HOST_STOP.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Whether [`request_wrong_host_exit`] was called.
+pub fn wrong_host_exit_requested() -> bool {
+    WRONG_HOST_STOP.load(std::sync::atomic::Ordering::SeqCst)
+}
 
 static DEVICE: OnceLock<DeviceKey> = OnceLock::new();
 
@@ -90,14 +110,19 @@ pub async fn tag_with(key: Option<&DeviceKey>, unsigned: UnsignedEvent) -> Unsig
         return unsigned;
     };
     let original = unsigned.clone();
-    match tokio::task::spawn_blocking(move || key.add_event_tag(unsigned)).await {
-        Ok(Ok(tagged)) => tagged,
-        Ok(Err(error)) => {
+    let task = tokio::task::spawn_blocking(move || key.add_event_tag(unsigned));
+    match tokio::time::timeout(kuzz_token_broker::device::DEVICE_SIGN_TIMEOUT, task).await {
+        Ok(Ok(Ok(tagged))) => tagged,
+        Ok(Ok(Err(error))) => {
             tracing::warn!("device tag failed; sending without it: {error}");
             original
         }
-        Err(error) => {
+        Ok(Err(error)) => {
             tracing::warn!("device tag task failed; sending without it: {error}");
+            original
+        }
+        Err(_) => {
+            tracing::warn!("device tag timed out; sending without it");
             original
         }
     }
@@ -155,17 +180,31 @@ pub async fn check_status(
 }
 
 /// [`Admission`] for a status answer.
+/// Only a binding refusal stops the start: `403`, reason `wrong_host`, and
+/// `"admission": "enforce"`. Under `log` (or a relay that does not name its
+/// mode) the relay still admits the agent, so it starts as before.
 fn admission_of(status: u16, body: &str) -> Admission {
     if status == 403 && body.contains(WRONG_HOST) {
-        let message = serde_json::from_str::<serde_json::Value>(body)
-            .ok()
-            .and_then(|value| {
-                ["message", "error"]
-                    .iter()
-                    .find_map(|field| value.get(field)?.as_str().map(str::to_owned))
-            })
-            .unwrap_or_else(|| "the agent key is bound to another device".to_owned());
-        return Admission::OtherDevice(message);
+        let value = serde_json::from_str::<serde_json::Value>(body).ok();
+        let mode = value
+            .as_ref()
+            .and_then(|value| value.get("admission")?.as_str());
+        if mode == Some(ENFORCE) {
+            let message = value
+                .as_ref()
+                .and_then(|value| {
+                    ["message", "error"]
+                        .iter()
+                        .find_map(|field| value.get(field)?.as_str().map(str::to_owned))
+                })
+                .unwrap_or_else(|| "the agent key is bound to another device".to_owned());
+            return Admission::OtherDevice(message);
+        }
+        tracing::warn!(
+            mode = mode.unwrap_or("unnamed"),
+            "the relay reports this agent bound to another device; starting anyway (not enforced)"
+        );
+        return Admission::Start;
     }
     if !(200..300).contains(&status) {
         tracing::warn!(
@@ -723,12 +762,19 @@ mod tests {
 
     #[test]
     fn only_a_wrong_host_refusal_stops_the_start() {
-        let wrong_host = r#"{"error":"forbidden","code":"not_admitted","message":"the signing key is not admitted from this device (wrong_host)"}"#;
+        let wrong_host = r#"{"error":"the signing key is not admitted from this device (wrong_host)","code":"not_admitted","admission":"enforce"}"#;
         assert!(matches!(
             admission_of(403, wrong_host),
             Admission::OtherDevice(message) if message.contains("wrong_host")
         ));
         for (status, body) in [
+            // `log`: the relay still admits the agent elsewhere.
+            (
+                403,
+                r#"{"error":"... (wrong_host)","code":"not_admitted","admission":"log"}"#,
+            ),
+            // An older relay that does not name its mode.
+            (403, r#"{"error":"... (wrong_host)","code":"not_admitted"}"#),
             (200, r#"{"admission":"off","keys":[]}"#),
             (
                 403,
@@ -764,7 +810,7 @@ mod tests {
                         .map(str::to_owned);
                     (
                         axum::http::StatusCode::FORBIDDEN,
-                        r#"{"code":"not_admitted","message":"the signing key is not admitted from this device (wrong_host)"}"#,
+                        r#"{"code":"not_admitted","error":"the signing key is not admitted from this device (wrong_host)","admission":"enforce"}"#,
                     )
                 }
             }),

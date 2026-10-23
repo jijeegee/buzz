@@ -14,7 +14,7 @@
 
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use kuzz_token_broker::device::{tag_or_unchanged, DeviceSigner};
+use kuzz_token_broker::device::{tag_or_unchanged, DeviceSigner, DEVICE_SIGN_TIMEOUT};
 use kuzz_ws_client::DeviceTagger;
 use nostr::UnsignedEvent;
 use zeroize::Zeroizing;
@@ -29,6 +29,10 @@ pub const PURPOSE_AUTH: &str = "auth";
 pub const PURPOSE_REFRESH: &str = "refresh";
 /// Proof purpose of a login (`complete`).
 pub const PURPOSE_BIND: &str = "bind";
+/// Bot access tokens (`KUZZ_BOT_TOKEN`): agents, never a device session.
+const BOT_TOKEN_PREFIX: &str = "bzb_";
+/// Time allowed for the login's server-clock probe.
+const CLOCK_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 /// Clock differences below this are ignored.
 const SKEW_TOLERANCE_SECS: i64 = 5;
 
@@ -83,21 +87,40 @@ pub async fn process_signer() -> Option<DeviceSigner> {
     }
 }
 
-/// `unsigned` with `signer`'s device tag (on a blocking thread), or
-/// unchanged with a warning when it cannot be tagged.
+/// The device signer for an account call made with `token`: none for bot
+/// tokens and managed-agent processes, which hold no device session (their
+/// `/auth/*` calls never needed a proof, and opening the TPM for every
+/// command would only cost time).
+pub async fn account_signer(token: &str) -> Option<DeviceSigner> {
+    if token.starts_with(BOT_TOKEN_PREFIX)
+        || kuzz_token_broker::stored_session_disabled(|name| std::env::var(name).ok())
+    {
+        return None;
+    }
+    process_signer().await
+}
+
+/// `unsigned` with `signer`'s device tag (on a blocking thread, at most
+/// [`DEVICE_SIGN_TIMEOUT`]), or unchanged with a warning when it cannot be
+/// tagged in time.
 pub async fn tag_event(signer: Option<&DeviceSigner>, unsigned: UnsignedEvent) -> UnsignedEvent {
     let Some(signer) = signer.cloned() else {
         return unsigned;
     };
     let fallback = unsigned.clone();
-    match tokio::task::spawn_blocking(move || tag_or_unchanged(Some(&signer), unsigned)).await {
-        Ok((tagged, None)) => tagged,
-        Ok((unchanged, Some(error))) => {
+    let task = tokio::task::spawn_blocking(move || tag_or_unchanged(Some(&signer), unsigned));
+    match tokio::time::timeout(DEVICE_SIGN_TIMEOUT, task).await {
+        Ok(Ok((tagged, None))) => tagged,
+        Ok(Ok((unchanged, Some(error)))) => {
             warn(&error.to_string());
             unchanged
         }
-        Err(error) => {
+        Ok(Err(error)) => {
             warn(&format!("device tag task failed: {error}"));
+            fallback
+        }
+        Err(_) => {
+            warn("device tag timed out");
             fallback
         }
     }
@@ -164,7 +187,7 @@ pub async fn header_proof(
     let token = token.map(|token| Zeroizing::new(token.to_owned()));
     let body = body.to_vec();
     let ts = unix_now() + CLOCK_OFFSET.load(Ordering::Relaxed);
-    let signed = tokio::task::spawn_blocking(move || {
+    let task = tokio::task::spawn_blocking(move || {
         key.header_proof_at(
             ts,
             purpose,
@@ -172,18 +195,65 @@ pub async fn header_proof(
             token.as_ref().map(|token| token.as_str()),
             &body,
         )
-    })
-    .await;
-    match signed {
-        Ok(Ok(proof)) => Some(proof),
-        Ok(Err(error)) => {
+    });
+    match tokio::time::timeout(DEVICE_SIGN_TIMEOUT, task).await {
+        Ok(Ok(Ok(proof))) => Some(proof),
+        Ok(Ok(Err(error))) => {
             warn(&format!("device proof failed: {error}"));
             None
         }
-        Err(error) => {
+        Ok(Err(error)) => {
             warn(&format!("device proof task failed: {error}"));
             None
         }
+        Err(_) => {
+            warn("device proof timed out");
+            None
+        }
+    }
+}
+
+/// Send an account call with a `purpose` proof over `method url`, `token`
+/// and `body`, built fresh by `request` for each attempt. A proof refused as
+/// stale (`device_proof_stale`) is signed again once in relay time, read
+/// from the refusal. Returns the final status and body.
+#[allow(clippy::too_many_arguments)]
+pub async fn send_proved(
+    signer: Option<&DeviceSigner>,
+    purpose: &'static str,
+    method: &str,
+    url: &str,
+    token: &str,
+    body: &[u8],
+    request: impl Fn() -> reqwest::RequestBuilder,
+) -> Result<(u16, String), reqwest::Error> {
+    let mut retried = false;
+    loop {
+        let proof = request_proof(signer, purpose, method, url, token, body).await;
+        let proved = proof.is_some();
+        let resp = with_proof(request(), proof).send().await?;
+        note_server_time(resp.headers());
+        let status = resp.status().as_u16();
+        let text = resp.text().await?;
+        if proved && !retried && is_stale_proof(status, &text) {
+            retried = true;
+            continue;
+        }
+        return Ok((status, text));
+    }
+}
+
+/// Read the relay clock before signing a login proof: any `/auth/*` answer
+/// carries it (an unauthenticated `GET /auth/me` is a cheap 401). Failures
+/// are ignored; the proof is then stamped in local time, as before.
+pub async fn sync_server_time(http: &reqwest::Client, relay_url: &str) {
+    if let Ok(resp) = http
+        .get(format!("{relay_url}/auth/me"))
+        .timeout(CLOCK_PROBE_TIMEOUT)
+        .send()
+        .await
+    {
+        note_server_time(resp.headers());
     }
 }
 

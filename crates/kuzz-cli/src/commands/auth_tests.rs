@@ -1300,3 +1300,120 @@ async fn a_stale_proof_answer_is_retried_once() {
     assert_eq!(relay.seen_path("/auth/devices").len(), 2);
     assert!(relay.seen_path("/auth/refresh").is_empty());
 }
+
+#[tokio::test]
+async fn bot_tokens_never_open_the_device_key_or_send_a_proof() {
+    use crate::device::test_support::file_signer;
+    let key_dir = tempfile::tempdir().unwrap();
+    let (signer, _) = file_signer(&key_dir);
+    crate::device::set_test_signer(Some(signer));
+    let relay = FakeRelay::default();
+    relay.route("GET /auth/me", 200, &me_body(&principal_hex()));
+    let relay_url = serve(relay.clone()).await;
+    crate::client::KuzzClient::with_token(relay_url.clone(), Secret::new("bzb_bot".into()))
+        .await
+        .unwrap();
+    crate::client::KuzzClient::with_token(relay_url, Secret::new("bzs_user".into()))
+        .await
+        .unwrap();
+    crate::device::set_test_signer(None);
+    let calls = relay.seen_path("/auth/me");
+    assert!(calls[0].device_proof.is_none(), "bot token got a proof");
+    assert!(
+        calls[1].device_proof.is_some(),
+        "user session lost its proof"
+    );
+}
+
+#[tokio::test]
+async fn logout_and_refresh_retry_a_stale_proof_once() {
+    use crate::device::test_support::file_signer;
+    let key_dir = tempfile::tempdir().unwrap();
+    let (signer, _) = file_signer(&key_dir);
+    crate::device::set_test_signer(Some(signer));
+    let stale = r#"{"error":"x","code":"device_proof_stale"}"#;
+    let relay = FakeRelay::default();
+    relay.route("POST /auth/refresh", 401, stale);
+    relay.route(
+        "POST /auth/refresh",
+        200,
+        r#"{"access":"bzs_new","refresh":"bzr_r2","expires_in":3600}"#,
+    );
+    relay.route("POST /auth/logout", 401, stale);
+    relay.route("POST /auth/logout", 204, "");
+    let relay_url = serve(relay.clone()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = test_store(&dir);
+    seed(
+        &store,
+        &relay_url,
+        &principal_hex(),
+        "bzs_old",
+        "bzr_r1",
+        30,
+    )
+    .await;
+
+    let http = reqwest::Client::new();
+    let (token, _) = session_access_token(&http, &relay_url, &store, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(token.expose(), "bzs_new");
+    let out = logout(&relay_url, &store, false).await.unwrap();
+    crate::device::set_test_signer(None);
+    assert_eq!(out["relay_session"], "revoked");
+    assert_eq!(relay.seen_path("/auth/refresh").len(), 2);
+    assert_eq!(relay.seen_path("/auth/logout").len(), 2);
+}
+
+#[tokio::test]
+async fn login_reads_the_relay_clock_before_signing_the_bind_proof() {
+    use crate::device::test_support::file_signer;
+    let key_dir = tempfile::tempdir().unwrap();
+    let (signer, _) = file_signer(&key_dir);
+    crate::device::set_test_signer(Some(signer));
+    let relay = FakeRelay::default();
+    relay.route(
+        "POST /auth/oidc/complete",
+        200,
+        &serde_json::json!({
+            "principal_id": principal_hex(),
+            "device_id": "11111111-1111-1111-1111-111111111111",
+            "access": "bzs_access1",
+            "refresh": "bzr_refresh1",
+            "expires_in": 3600,
+        })
+        .to_string(),
+    );
+    let relay_url = serve(relay.clone()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = test_store(&dir);
+    let started = Arc::new(Mutex::new(None));
+    let browser = fake_browser(started.clone(), None);
+    login(
+        &relay_url,
+        &store,
+        "google",
+        "laptop (CLI)",
+        &browser,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap();
+    crate::device::set_test_signer(None);
+    let order: Vec<String> = relay
+        .seen()
+        .into_iter()
+        .map(|seen| format!("{} {}", seen.method, seen.path))
+        .collect();
+    let probe = order
+        .iter()
+        .position(|call| call == "GET /auth/me")
+        .expect("clock probe");
+    let complete = order
+        .iter()
+        .position(|call| call == "POST /auth/oidc/complete")
+        .unwrap();
+    assert!(probe < complete, "{order:?}");
+}

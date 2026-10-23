@@ -448,7 +448,8 @@ fn nip98_event(headers: &HeaderMap) -> Option<nostr::Event> {
 /// be an admitted key (person, agent or external) of that owner, presented
 /// from its device. Under admission `off` for WebSocket keys nothing is
 /// evaluated: the answer is `{"admission": "off", "keys": []}`, and callers
-/// keep their previous rules.
+/// keep their previous rules. Every answer, `403 not_admitted` included,
+/// names the effective `admission` mode (`off`, `log` or `enforce`).
 async fn status(
     state: &AppState,
     headers: &HeaderMap,
@@ -511,12 +512,18 @@ async fn status(
     if mode == DeviceAdmissionMode::Off {
         return axum::Json(json!({"admission": mode.as_str(), "keys": []})).into_response();
     }
+    // `admission` carries the effective mode: under `log` the relay still
+    // admits the caller elsewhere, so clients must not act on the refusal.
     let not_admitted = |reason: &str| {
-        auth_error(
+        (
             StatusCode::FORBIDDEN,
-            "not_admitted",
-            &format!("the signing key is not admitted from this device ({reason})"),
+            axum::Json(json!({
+                "error": format!("the signing key is not admitted from this device ({reason})"),
+                "code": "not_admitted",
+                "admission": mode.as_str(),
+            })),
         )
+            .into_response()
     };
     let caller_device = match nip98_event(headers).map(|event| verify_event_device_tag(&event)) {
         Some(Ok(Some(device))) => device,

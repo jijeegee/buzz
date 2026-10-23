@@ -190,6 +190,9 @@ pub fn unsigned_auth_event(
     Ok(builder.build(pubkey))
 }
 
+/// Longest wait for a device tag before AUTH goes out without one.
+const DEVICE_TAG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// `unsigned` with `device`'s tag, run on a blocking thread. Without a
 /// tagger, or when the tagging task fails, `unsigned` comes back unchanged.
 pub async fn apply_device_tag(
@@ -201,14 +204,19 @@ pub async fn apply_device_tag(
     };
     let tagger = std::sync::Arc::clone(device);
     let fallback = unsigned.clone();
-    match tokio::task::spawn_blocking(move || tagger(unsigned)).await {
-        Ok(mut tagged) => {
+    let task = tokio::task::spawn_blocking(move || tagger(unsigned));
+    match tokio::time::timeout(DEVICE_TAG_TIMEOUT, task).await {
+        Ok(Ok(mut tagged)) => {
             // The id covers the tags: let the signer recompute it.
             tagged.id = None;
             tagged
         }
-        Err(error) => {
+        Ok(Err(error)) => {
             tracing::warn!("device tag task failed: {error}; sending without it");
+            fallback
+        }
+        Err(_) => {
+            tracing::warn!("device tag timed out; sending without it");
             fallback
         }
     }

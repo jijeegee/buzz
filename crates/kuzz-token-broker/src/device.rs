@@ -44,6 +44,9 @@ pub const DEVICE_TAG_PATH: &str = "/device-tag";
 /// Event kinds that carry a device tag: NIP-42 AUTH, NIP-98 HTTP auth and
 /// Blossom auth.
 pub const DEVICE_TAGGED_KINDS: [u16; 3] = [22242, 27235, 24242];
+/// Longest wait for one device signature (TPM or broker) in async callers;
+/// past it the request goes out without one, with a warning.
+pub const DEVICE_SIGN_TIMEOUT: Duration = Duration::from_secs(2);
 /// Largest device broker request (head and body).
 pub const MAX_DEVICE_REQUEST_BYTES: usize = 8 * 1024;
 

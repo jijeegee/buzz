@@ -12,6 +12,8 @@ mod base_prompt_trim;
 mod config;
 mod context_history;
 mod device;
+/// Exit code when the relay binds this agent to another device (`enforce`).
+pub use device::EXIT_WRONG_HOST;
 mod dispatcher;
 mod edit_routing;
 mod engram_fetch;
@@ -3132,6 +3134,9 @@ pub fn run() -> Result<()> {
     if token_refresh::auth_terminal_requested() {
         std::process::exit(identity::EXIT_AUTH_TERMINAL);
     }
+    if device::wrong_host_exit_requested() {
+        std::process::exit(device::EXIT_WRONG_HOST);
+    }
     result
 }
 
@@ -3274,7 +3279,8 @@ pub(crate) async fn load_config(args: config::CliArgs) -> Result<Config> {
 
 /// Key mode: open this machine's device key, check the agent's admission
 /// and start the device broker for agent children. `false`: the relay binds
-/// this agent to another device, so the harness must not start here. Every
+/// this agent to another device under `enforce`, so the harness must not
+/// start here; the process then exits with [`device::EXIT_WRONG_HOST`]. Every
 /// other outcome (token mode, no key, admission off, an older relay, an
 /// unreachable status route) starts as before.
 async fn start_device_signing(config: &Config) -> bool {
@@ -3291,8 +3297,11 @@ async fn start_device_signing(config: &Config) -> bool {
     {
         tracing::error!(
             agent = %keys.public_key().to_hex(),
+            exit_code = device::EXIT_WRONG_HOST,
             "not starting: this agent is bound to another device ({message})"
         );
+        eprintln!("kuzz-acp: not starting: this agent is bound to another device");
+        device::request_wrong_host_exit();
         return false;
     }
     match device::start_global(key.clone(), keys.public_key(), &config.relay_url).await {

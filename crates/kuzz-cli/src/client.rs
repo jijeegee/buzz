@@ -673,26 +673,20 @@ impl KuzzClient {
     pub async fn with_token(relay_url: String, token: Secret) -> Result<Self, CliError> {
         let http = build_http()?;
         let url = format!("{relay_url}/auth/me");
-        let device = crate::device::process_signer().await;
-        let proof = crate::device::request_proof(
+        let device = crate::device::account_signer(token.expose()).await;
+        let (status, body) = crate::device::send_proved(
             device.as_ref(),
             crate::device::PURPOSE_AUTH,
             "GET",
             &url,
             token.expose(),
             b"",
+            || {
+                http.get(&url)
+                    .header("Authorization", format!("Bearer {}", token.expose()))
+            },
         )
-        .await;
-        let resp = crate::device::with_proof(
-            http.get(&url)
-                .header("Authorization", format!("Bearer {}", token.expose())),
-            proof,
-        )
-        .send()
         .await?;
-        crate::device::note_server_time(resp.headers());
-        let status = resp.status().as_u16();
-        let body = resp.text().await?;
         if !(200..300).contains(&status) {
             return Err(match relay_error(status, body) {
                 CliError::Relay { status, body } if status == 401 || status == 403 => {

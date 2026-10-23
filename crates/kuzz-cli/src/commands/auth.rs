@@ -566,6 +566,10 @@ pub async fn login(
         .map_err(|e| CliError::Auth(format!("login failed: {e}")))?;
 
     let http = build_http()?;
+    if device.is_some() {
+        // Stamp the bind proof in relay time (a login code is single use).
+        crate::device::sync_server_time(&http, relay_url).await;
+    }
     let mut body = json!({ "login_code": code.as_str(), "code_verifier": pkce.verifier.as_str() });
     if let Some(fields) = login_device_fields(device.as_ref(), code.as_str()).await {
         if let Value::Object(map) = &mut body {
@@ -718,28 +722,22 @@ pub async fn logout(
             Ok(Some((token, _))) => {
                 let url = format!("{relay_url}/auth/logout");
                 let body = b"{}".to_vec();
-                let device = crate::device::process_signer().await;
-                let proof = crate::device::request_proof(
+                let device = crate::device::account_signer(token.expose()).await;
+                let (status, body) = crate::device::send_proved(
                     device.as_ref(),
                     crate::device::PURPOSE_AUTH,
                     "POST",
                     &url,
                     token.expose(),
                     &body,
+                    || {
+                        http.post(&url)
+                            .bearer_auth(token.expose())
+                            .header("Content-Type", "application/json")
+                            .body(body.clone())
+                    },
                 )
-                .await;
-                let resp = crate::device::with_proof(
-                    http.post(&url)
-                        .bearer_auth(token.expose())
-                        .header("Content-Type", "application/json")
-                        .body(body),
-                    proof,
-                )
-                .send()
                 .await?;
-                crate::device::note_server_time(resp.headers());
-                let status = resp.status().as_u16();
-                let body = resp.text().await?;
                 if (200..300).contains(&status) {
                     break "revoked";
                 }
@@ -821,9 +819,9 @@ impl AuthApi {
             Some(body) => serde_json::to_vec(body).map_err(|e| CliError::Other(e.to_string()))?,
             None => Vec::new(),
         };
-        let device = crate::device::process_signer().await;
         loop {
             let token = self.token(force_refresh).await?;
+            let device = crate::device::account_signer(token.expose()).await;
             let proof = crate::device::request_proof(
                 device.as_ref(),
                 crate::device::PURPOSE_AUTH,

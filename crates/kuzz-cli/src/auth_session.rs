@@ -455,31 +455,22 @@ pub async fn post_refresh(
     let body = serde_json::to_vec(&serde_json::json!({ "refresh": refresh.expose() }))
         .map_err(|e| RefreshError::Transient(CliError::Other(e.to_string())))?;
     // The refresh proof binds the refresh token and the body (A1b).
-    let device = crate::device::process_signer().await;
-    let proof = crate::device::request_proof(
+    let device = crate::device::account_signer(refresh.expose()).await;
+    let (status, body) = crate::device::send_proved(
         device.as_ref(),
         crate::device::PURPOSE_REFRESH,
         "POST",
         &url,
         refresh.expose(),
         &body,
+        || {
+            http.post(&url)
+                .header("Content-Type", "application/json")
+                .body(body.clone())
+        },
     )
-    .await;
-    let resp = crate::device::with_proof(
-        http.post(&url)
-            .header("Content-Type", "application/json")
-            .body(body),
-        proof,
-    )
-    .send()
     .await
     .map_err(|e| RefreshError::Transient(CliError::Network(e)))?;
-    crate::device::note_server_time(resp.headers());
-    let status = resp.status().as_u16();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| RefreshError::Transient(CliError::Network(e)))?;
     let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
     if status == 401 {
         let code = parsed
