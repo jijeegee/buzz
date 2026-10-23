@@ -163,7 +163,8 @@ impl Db {
         row.as_ref().map(person_from_row).transpose()
     }
 
-    /// Whether `a` and `b` are both current members of some live room.
+    /// Whether `a` and `b` are both current members of some live private
+    /// room. Open rooms don't count: anyone can join them.
     #[datastore_span(name = "share_a_room", system = "postgresql")]
     pub async fn share_a_room(&self, community: CommunityId, a: &[u8], b: &[u8]) -> Result<bool> {
         let shared: bool = sqlx::query_scalar(
@@ -174,7 +175,7 @@ impl Db {
                       AND mb.removed_at IS NULL \
                  JOIN channels c ON c.community_id = ma.community_id AND c.id = ma.channel_id \
                 WHERE ma.community_id = $1 AND ma.pubkey = $2 AND ma.removed_at IS NULL \
-                  AND c.deleted_at IS NULL)",
+                  AND c.deleted_at IS NULL AND c.visibility = 'private')",
         )
         .bind(community.as_uuid())
         .bind(a)

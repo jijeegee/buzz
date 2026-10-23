@@ -9,9 +9,9 @@
 
 -- Channel sequence of the thread root of a reply in the same channel; 0 for
 -- everything else. Visibility uses the smaller of the two (see
--- event_history_sequence).
-ALTER TABLE events ADD COLUMN thread_root_sequence BIGINT NOT NULL DEFAULT 0
-    CHECK (thread_root_sequence >= 0);
+-- event_history_sequence). No CHECK: validating one would scan every events
+-- partition under the table lock; only the trigger and backfill write it.
+ALTER TABLE events ADD COLUMN thread_root_sequence BIGINT NOT NULL DEFAULT 0;
 
 -- The order number that decides whether a reader sees an event: its own, or
 -- its thread root's when that is earlier.
@@ -54,7 +54,7 @@ FOR EACH ROW EXECUTE FUNCTION stamp_thread_root_sequence();
 UPDATE events e SET thread_root_sequence = r.channel_sequence
   FROM thread_metadata tm
   JOIN events r ON r.community_id = tm.community_id AND r.id = tm.root_event_id
-               AND r.created_at = tm.root_event_created_at
+               AND (tm.root_event_created_at IS NULL OR r.created_at = tm.root_event_created_at)
   JOIN communities co ON co.id = tm.community_id AND co.deletion_state = 'active'
  WHERE tm.depth > 0 AND r.channel_id = tm.channel_id AND r.channel_sequence > 0
    AND e.community_id = tm.community_id AND e.id = tm.event_id
@@ -95,6 +95,16 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
     SELECT CASE
         WHEN p_kind <> ALL (ARRAY[5, 7, 9005, 40003, 39005]) THEN false
         WHEN p_chid IS NOT NULL AND channel_history_floor(p_cid, p_chid, p_reader) = 0 THEN false
+        -- A deletion is hidden only when everything it deletes is: it also
+        -- removes visible messages from the reader's view.
+        WHEN p_kind IN (5, 9005) THEN COALESCE((
+            SELECT bool_and(channel_event_before_join(te.community_id, te.channel_id,
+                    event_history_sequence(te.channel_sequence, te.thread_root_sequence),
+                    p_reader))
+              FROM jsonb_array_elements(p_tags) t
+              JOIN events te ON te.community_id = p_cid
+               AND te.id = CASE WHEN t->>1 ~ '^[0-9a-fA-F]{64}$' THEN decode(t->>1, 'hex') END
+             WHERE t->>0 = 'e'), false)
         ELSE EXISTS (
             SELECT 1 FROM jsonb_array_elements(p_tags) t
             JOIN events te ON te.community_id = p_cid

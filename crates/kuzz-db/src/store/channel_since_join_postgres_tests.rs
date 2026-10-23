@@ -1144,10 +1144,44 @@ async fn replies_in_an_old_thread_are_cut_with_their_root() {
             f.channel,
             &[id_bytes(&late), id_bytes(&reaction)],
             &[member.clone(), owner.clone()],
+            false,
         )
         .await
         .unwrap();
     assert_eq!(blind, [member.clone()]);
+    // A deletion of an old and a new message still reaches the member.
+    for (targets, expected) in [
+        (vec![id_bytes(&late), id_bytes(&fresh)], vec![]),
+        (vec![id_bytes(&late)], vec![member.clone()]),
+    ] {
+        let blind = db
+            .readers_blind_to_targets(f.scope, f.channel, &targets, &[member.clone()], true)
+            .await
+            .unwrap();
+        assert_eq!(blind, expected);
+    }
+    let deletion = |targets: &[&str]| {
+        let tags: Vec<Vec<String>> = targets
+            .iter()
+            .map(|t| vec!["e".to_string(), t.to_string()])
+            .collect();
+        serde_json::json!(tags)
+    };
+    for (targets, hidden) in [
+        (deletion(&[&late, &fresh]), false),
+        (deletion(&[&late]), true),
+    ] {
+        let before: bool =
+            sqlx::query_scalar("SELECT channel_event_targets_before_join($1, $2, 5, $3, $4)")
+                .bind(f.scope.as_uuid())
+                .bind(f.channel)
+                .bind(targets)
+                .bind(&member)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+        assert_eq!(before, hidden);
+    }
     let pairs = db
         .history_hidden_pairs(
             f.scope,
@@ -1282,4 +1316,16 @@ async fn share_a_room_needs_both_current_members() {
     assert!(db.share_a_room(f.scope, &member, &owner).await.unwrap());
     f.leave().await;
     assert!(!db.share_a_room(f.scope, &owner, &member).await.unwrap());
+
+    // Open rooms don't count.
+    let open = Fixture::new(ChannelVisibility::Open).await;
+    open.join().await;
+    let (owner, member) = (
+        open.owner.public_key().to_bytes().to_vec(),
+        open.member.public_key().to_bytes().to_vec(),
+    );
+    assert!(!Db::from_pool(open.pool.clone())
+        .share_a_room(open.scope, &owner, &member)
+        .await
+        .unwrap());
 }

@@ -265,7 +265,7 @@ CREATE TABLE events (
     d_tag       TEXT,
     not_before  BIGINT,
     delivered_at BIGINT,
-    thread_root_sequence BIGINT NOT NULL DEFAULT 0 CHECK (thread_root_sequence >= 0),
+    thread_root_sequence BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (community_id, created_at, id)
 ) PARTITION BY RANGE (created_at);
 
@@ -2560,6 +2560,16 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
     SELECT CASE
         WHEN p_kind <> ALL (ARRAY[5, 7, 9005, 40003, 39005]) THEN false
         WHEN p_chid IS NOT NULL AND channel_history_floor(p_cid, p_chid, p_reader) = 0 THEN false
+        -- A deletion is hidden only when everything it deletes is: it also
+        -- removes visible messages from the reader's view.
+        WHEN p_kind IN (5, 9005) THEN COALESCE((
+            SELECT bool_and(channel_event_before_join(te.community_id, te.channel_id,
+                    event_history_sequence(te.channel_sequence, te.thread_root_sequence),
+                    p_reader))
+              FROM jsonb_array_elements(p_tags) t
+              JOIN events te ON te.community_id = p_cid
+               AND te.id = CASE WHEN t->>1 ~ '^[0-9a-fA-F]{64}$' THEN decode(t->>1, 'hex') END
+             WHERE t->>0 = 'e'), false)
         ELSE EXISTS (
             SELECT 1 FROM jsonb_array_elements(p_tags) t
             JOIN events te ON te.community_id = p_cid

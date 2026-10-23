@@ -165,7 +165,7 @@ async fn select_window(
     // PK uniqueness makes the inner LIMIT 1 exact. All eligibility predicates
     // still precede the *outer* limit+1 that establishes page bounds.
     q.push(order).push(" OFFSET 0) tm \
-        JOIN LATERAL (SELECT e.id, e.pubkey, e.created_at, e.kind, e.tags, e.content, e.sig, e.received_at, e.channel_id, e.deleted_at, e.channel_sequence \
+        JOIN LATERAL (SELECT e.id, e.pubkey, e.created_at, e.kind, e.tags, e.content, e.sig, e.received_at, e.channel_id, e.deleted_at, e.channel_sequence, e.thread_root_sequence \
         FROM events e WHERE e.community_id = tm.community_id \
         AND e.created_at = tm.event_created_at AND e.id = tm.event_id LIMIT 1) e ON true \
         WHERE e.channel_id = ")

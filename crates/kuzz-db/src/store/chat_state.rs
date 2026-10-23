@@ -140,8 +140,11 @@ pub(crate) async fn apply_message_write(
     let author = event.pubkey.to_bytes();
     let author = author.as_slice();
 
-    let seq: Option<i64> = sqlx::query_scalar(
-        "SELECT channel_sequence FROM events \
+    // The thread root's sequence is stamped by the thread metadata insert
+    // earlier in this transaction (migration 0082); members who joined after
+    // the root never count the reply.
+    let seqs: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT channel_sequence, thread_root_sequence FROM events \
          WHERE community_id = $1 AND created_at = $2 AND id = $3",
     )
     .bind(community)
@@ -149,7 +152,7 @@ pub(crate) async fn apply_message_write(
     .bind(event_id)
     .fetch_optional(&mut **tx)
     .await?;
-    let Some(seq) = seq.filter(|s| *s > 0) else {
+    let Some((seq, root_seq)) = seqs.filter(|(s, _)| *s > 0) else {
         return Ok(outcome);
     };
 
@@ -189,7 +192,7 @@ pub(crate) async fn apply_message_write(
             .execute(&mut **tx)
             .await?;
 
-            add_room_unread(tx, community, channel_id, event_id, author, seq).await?;
+            add_room_unread(tx, community, channel_id, event_id, author, seq, root_seq).await?;
 
             // The author has read the room up to their own message. That is
             // the reader's own read: a later first-run upload must not move it.
@@ -221,6 +224,7 @@ pub(crate) async fn apply_message_write(
             event,
             author,
             seq,
+            root_seq,
             received_at,
             marker,
         )
@@ -242,6 +246,7 @@ async fn apply_reply(
     event: &Event,
     author: &[u8],
     seq: i64,
+    root_seq: i64,
     received_at: DateTime<Utc>,
     marker: Option<ThreadMarker>,
 ) -> Result<bool> {
@@ -249,7 +254,16 @@ async fn apply_reply(
     // root check (the old count did not look at the root) and before new
     // rows below, whose insert trigger counts it already.
     if marker.is_none() {
-        add_thread_unread(tx, community, root, event.id.as_bytes(), author, seq).await?;
+        add_thread_unread(
+            tx,
+            community,
+            root,
+            event.id.as_bytes(),
+            author,
+            seq,
+            root_seq,
+        )
+        .await?;
     }
 
     // The root must be a live event in this same channel. Its author and
@@ -385,6 +399,7 @@ async fn apply_reply(
            FROM channel_members cm \
           WHERE cm.community_id = $1 AND cm.channel_id = $3 AND cm.pubkey = ANY($4) \
             AND cm.removed_at IS NULL \
+            AND NOT ($7 > 0 AND $7 <= channel_history_floor($1, $3, cm.pubkey)) \
             AND NOT EXISTS (SELECT 1 FROM thread_follows tf \
                              WHERE tf.community_id = $1 AND tf.root_event_id = $2 \
                                AND tf.pubkey = cm.pubkey) \
@@ -396,6 +411,7 @@ async fn apply_reply(
     .bind(&candidates)
     .bind(received_at)
     .bind(seq - 1)
+    .bind(root_seq)
     .execute(&mut **tx)
     .await?;
     Ok(true)
@@ -408,7 +424,8 @@ async fn apply_reply(
 /// cap are still updated (a no-op value change) so the row lock is always
 /// taken: a concurrent mark-read then waits for this transaction and recounts
 /// with the message visible, instead of resetting to 0 while the message is
-/// in flight.
+/// in flight. A channel copy of a reply skips members who joined after its
+/// thread root (`root_seq`, 0 for a top-level message).
 async fn add_room_unread(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -416,6 +433,7 @@ async fn add_room_unread(
     event_id: &[u8],
     author: &[u8],
     seq: i64,
+    root_seq: i64,
 ) -> Result<()> {
     sqlx::query(
         "UPDATE channel_members cm \
@@ -427,6 +445,7 @@ async fn add_room_unread(
                     THEN LEAST(cm.unread_mentions + 1, $6) ELSE cm.unread_mentions END \
           WHERE cm.community_id = $1 AND cm.channel_id = $2 AND cm.removed_at IS NULL \
             AND cm.pubkey <> $4 AND COALESCE(cm.read_seq, 0) < $5 \
+            AND NOT ($7 > 0 AND $7 <= channel_history_floor($1, $2, cm.pubkey)) \
             AND NOT (EXISTS ( \
                 SELECT 1 FROM user_blocks ub \
                  WHERE ub.community_id = $1 AND ub.blocker = cm.pubkey AND ub.blocked = $4) \
@@ -438,13 +457,15 @@ async fn add_room_unread(
     .bind(author)
     .bind(seq)
     .bind(STORED_UNREAD_CAP)
+    .bind(root_seq)
     .execute(&mut **tx)
     .await?;
     Ok(())
 }
 
 /// [`add_room_unread`] for every follow row of thread `root` (any follow
-/// state; the row's own room decides the 1:1 DM block rule).
+/// state; the row's own room decides the 1:1 DM block rule). A follow left
+/// from before the member's current join does not count it.
 async fn add_thread_unread(
     tx: &mut Transaction<'_, Postgres>,
     community: Uuid,
@@ -452,6 +473,7 @@ async fn add_thread_unread(
     event_id: &[u8],
     author: &[u8],
     seq: i64,
+    root_seq: i64,
 ) -> Result<()> {
     sqlx::query(
         "UPDATE thread_follows tf \
@@ -463,6 +485,7 @@ async fn add_thread_unread(
                     THEN LEAST(tf.unread_mentions + 1, $6) ELSE tf.unread_mentions END \
           WHERE tf.community_id = $1 AND tf.root_event_id = $2 \
             AND tf.pubkey <> $4 AND COALESCE(tf.read_seq, 0) < $5 \
+            AND NOT ($7 > 0 AND $7 <= channel_history_floor($1, tf.channel_id, tf.pubkey)) \
             AND NOT (EXISTS ( \
                 SELECT 1 FROM user_blocks ub \
                  WHERE ub.community_id = $1 AND ub.blocker = tf.pubkey AND ub.blocked = $4) \
@@ -474,6 +497,7 @@ async fn add_thread_unread(
     .bind(author)
     .bind(seq)
     .bind(STORED_UNREAD_CAP)
+    .bind(root_seq)
     .execute(&mut **tx)
     .await?;
     Ok(())

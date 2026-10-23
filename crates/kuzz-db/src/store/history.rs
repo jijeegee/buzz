@@ -76,6 +76,23 @@ impl Db {
         Ok(policy)
     }
 
+    /// Whether the room hides history from before a member's join
+    /// (`since_join` policy or a group chat). A missing room counts as
+    /// cutting.
+    #[datastore_span(name = "channel_cuts_history", system = "postgresql")]
+    pub async fn channel_cuts_history(
+        &self,
+        community: CommunityId,
+        channel: Uuid,
+    ) -> Result<bool> {
+        let cuts: Option<bool> = sqlx::query_scalar("SELECT channel_cuts_history($1, $2)")
+            .bind(community.as_uuid())
+            .bind(channel)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(cuts.unwrap_or(true))
+    }
+
     /// Switch a room's history policy (`all` / `since_join`). Switching to
     /// `since_join` keeps what current members can already read (their
     /// memberships become legacy: full history); only later joins are cut.
@@ -113,7 +130,8 @@ impl Db {
             .execute(&mut *tx)
             .await?;
         if policy == "since_join" {
-            // The membership trigger recounts each promoted row.
+            // Their counts already include full history (they were counted
+            // under `all`), so nothing needs recounting.
             sqlx::query(
                 "UPDATE channel_members SET join_cutoff_is_legacy = true \
                   WHERE community_id = $1 AND channel_id = $2 AND removed_at IS NULL \
@@ -144,7 +162,8 @@ impl Db {
     /// box (plan §9: a pre-join original shows only there). `None` unless
     /// `quoting` is a live message in `channel` the reader can read, it
     /// carries `["q", quoted]`, and `quoted` is an earlier live message in
-    /// the same channel. Content is the latest edit by its author.
+    /// the same channel, and neither falls in a 1:1 DM block period of the
+    /// reader. Content is the latest edit by its author.
     #[datastore_span(name = "quote_preview", system = "postgresql")]
     pub async fn quote_preview(
         &self,
@@ -154,7 +173,7 @@ impl Db {
         quoting: &[u8],
         quoted: &[u8],
     ) -> Result<Option<QuotePreview>> {
-        let row = sqlx::query(
+        let row = sqlx::query(concat!(
             "SELECT q.pubkey, q.kind, q.created_at, q.tags, \
                     COALESCE((SELECT ed.content FROM events ed \
                                WHERE ed.community_id = q.community_id \
@@ -174,8 +193,12 @@ impl Db {
                 AND q.channel_id = m.channel_id AND q.deleted_at IS NULL \
                 AND q.kind IN (9, 40002, 45001, 45003) \
                 AND q.channel_sequence < m.channel_sequence \
-              LIMIT 1",
-        )
+                AND NOT (dm_is_one_to_one(m.community_id, m.channel_id) AND (",
+            crate::blocks::hidden_by_block_period!("$1", "$3", "m"),
+            " OR ",
+            crate::blocks::hidden_by_block_period!("$1", "$3", "q"),
+            ")) LIMIT 1",
+        ))
         .bind(community.as_uuid())
         .bind(channel)
         .bind(reader)
@@ -287,6 +310,7 @@ impl Db {
         channel: Uuid,
         targets: &[Vec<u8>],
         readers: &[Vec<u8>],
+        all_targets: bool,
     ) -> Result<Vec<Vec<u8>>> {
         if targets.is_empty() || readers.is_empty() {
             return Ok(Vec::new());
@@ -297,8 +321,10 @@ impl Db {
             )));
         }
         let rows = sqlx::query(
-            "WITH t AS (SELECT min(event_history_sequence(e.channel_sequence, e.thread_root_sequence)) AS seq FROM events e \
-                         WHERE e.community_id = $1 AND e.channel_id = $2 AND e.id = ANY($3)) \
+            "WITH t AS (SELECT CASE WHEN $5 THEN max(s) ELSE min(s) END AS seq FROM ( \
+                         SELECT event_history_sequence(e.channel_sequence, e.thread_root_sequence) AS s \
+                           FROM events e \
+                          WHERE e.community_id = $1 AND e.channel_id = $2 AND e.id = ANY($3)) x) \
              SELECT r.pk FROM unnest($4::bytea[]) AS r(pk), t \
               WHERE t.seq IS NOT NULL AND t.seq <= channel_history_floor($1, $2, r.pk)",
         )
@@ -306,6 +332,7 @@ impl Db {
         .bind(channel)
         .bind(targets)
         .bind(readers)
+        .bind(all_targets)
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter()

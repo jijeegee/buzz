@@ -410,8 +410,23 @@ async fn drop_readers_blind_to_history(
     open_room: bool,
 ) -> Vec<(crate::subscription::ConnId, crate::subscription::SubId)> {
     let kind = event_kind_u32(&stored_event.event);
-    if matches.is_empty() || kuzz_db::history::is_room_state_kind(kind as i32) {
+    // Room state always reaches every reader, except thread summaries (39005),
+    // which are about a thread.
+    if matches.is_empty()
+        || (kuzz_db::history::is_room_state_kind(kind as i32) && !TARGETING_KINDS.contains(&kind))
+    {
         return matches;
+    }
+    match state
+        .channel_cuts_history_cached(community_id, channel_id)
+        .await
+    {
+        Ok(false) => return matches,
+        Ok(true) => {}
+        Err(e) => {
+            warn!(%channel_id, "fan-out history filter: policy lookup failed: {e}");
+            return Vec::new();
+        }
     }
     let mut named: Vec<Vec<u8>> = stored_event
         .event
@@ -450,13 +465,20 @@ async fn drop_readers_blind_to_history(
         return matches;
     }
     // The event's own history sequence carries its thread root's (stored
-    // by ingest, migration 0082), so its id stands for the reply case.
+    // by ingest, migration 0082), so its id stands for the reply case. A
+    // deletion is blind only when everything it deletes is.
+    let deletion = matches!(
+        kind,
+        kuzz_core::kind::KIND_DELETION | kuzz_core::kind::KIND_NIP29_DELETE_EVENT
+    );
     let mut targets = if TARGETING_KINDS.contains(&kind) {
         std::mem::take(&mut named)
     } else {
         Vec::new()
     };
-    targets.push(stored_event.event.id.as_bytes().to_vec());
+    if !deletion {
+        targets.push(stored_event.event.id.as_bytes().to_vec());
+    }
     targets.sort_unstable();
     targets.dedup();
     let mut readers: Vec<Vec<u8>> = matches
@@ -467,21 +489,24 @@ async fn drop_readers_blind_to_history(
     readers.sort_unstable();
     readers.dedup();
     let limit = kuzz_db::history::MAX_HISTORY_EVENT_LOOKUP;
-    if targets.len() > limit || readers.len() > limit {
-        warn!(%channel_id, "fan-out history filter: too many targets or readers");
+    if targets.len() > limit {
+        warn!(%channel_id, "fan-out history filter: too many targets");
         return Vec::new();
     }
-    let blind = match state
-        .db
-        .readers_blind_to_targets(community_id, channel_id, &targets, &readers)
-        .await
-    {
-        Ok(blind) => blind,
-        Err(e) => {
-            warn!(%channel_id, "fan-out history filter: lookup failed: {e}");
-            return Vec::new();
+    let mut blind = Vec::new();
+    for chunk in readers.chunks(limit) {
+        match state
+            .db
+            .readers_blind_to_targets(community_id, channel_id, &targets, chunk, deletion)
+            .await
+        {
+            Ok(found) => blind.extend(found),
+            Err(e) => {
+                warn!(%channel_id, "fan-out history filter: lookup failed: {e}");
+                return Vec::new();
+            }
         }
-    };
+    }
     if blind.is_empty() {
         return matches;
     }
