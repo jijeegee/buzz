@@ -28,29 +28,40 @@ export type StoredSend = {
 };
 
 const STORE_KEY_PREFIX = "kuzz-failed-sends.v1";
+/** Unsent messages older than this are let go, like an abandoned draft. */
+const MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+/** Newest unsent messages kept per account. */
+const MAX_ENTRIES = 50;
 
-/** Keys saved by this app session; anything else on disk is from before. */
-const sessionKeys = new Set<string>();
+/**
+ * Where each send of this app session was saved. Removal uses it, so a send
+ * that settles after a community or account switch still clears its own
+ * entry rather than reading whatever scope is current.
+ */
+const savedKeys = new Map<string, string>();
+/** Sends awaiting the relay; never drawn as failed while still in flight. */
+const inFlightKeys = new Set<string>();
 
 function storeKey(): string | null {
   const scope = getDraftStorePersistScope();
   return scope ? `${STORE_KEY_PREFIX}:${scope}` : null;
 }
 
-function readAll(): StoredSend[] {
-  const key = storeKey();
+function readAll(key: string | null): StoredSend[] {
   if (!key) return [];
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
-    return Array.isArray(parsed) ? (parsed as StoredSend[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    const oldest = Math.floor(Date.now() / 1000) - MAX_AGE_SECONDS;
+    return (parsed as StoredSend[]).filter(
+      (stored) => stored.event?.created_at >= oldest,
+    );
   } catch {
     return [];
   }
 }
 
-function writeAll(entries: StoredSend[]) {
-  const key = storeKey();
-  if (!key) return;
+function writeAll(key: string, entries: StoredSend[]) {
   if (entries.length === 0) {
     localStorage.removeItem(key);
     return;
@@ -58,29 +69,53 @@ function writeAll(entries: StoredSend[]) {
   setLocalStorageItemWithRecovery(key, JSON.stringify(entries));
 }
 
+/** Save a send as it leaves; it counts as in flight until settled. */
 export function saveStoredSend(entry: StoredSend) {
-  sessionKeys.add(entry.localKey);
-  writeAll([
-    ...readAll().filter((stored) => stored.localKey !== entry.localKey),
-    entry,
-  ]);
-}
-
-export function removeStoredSend(localKey: string) {
-  sessionKeys.delete(localKey);
-  const entries = readAll();
-  const next = entries.filter((stored) => stored.localKey !== localKey);
-  if (next.length !== entries.length) writeAll(next);
-}
-
-/** Sends stored by an earlier app session for this channel. */
-export function earlierStoredSends(channelId: string): StoredSend[] {
-  return readAll().filter(
-    (stored) =>
-      stored.channelId === channelId && !sessionKeys.has(stored.localKey),
+  const key = storeKey();
+  if (!key) return;
+  savedKeys.set(entry.localKey, key);
+  inFlightKeys.add(entry.localKey);
+  writeAll(
+    key,
+    [
+      ...readAll(key).filter((stored) => stored.localKey !== entry.localKey),
+      entry,
+    ].slice(-MAX_ENTRIES),
   );
 }
 
+/** Mark a send as on its way again (Retry), before its mutation starts. */
+export function markStoredSendInFlight(localKey: string) {
+  inFlightKeys.add(localKey);
+}
+
+/** The send failed: keep it stored, but it is no longer in flight. */
+export function settleStoredSend(localKey: string) {
+  inFlightKeys.delete(localKey);
+}
+
+/** The send was delivered or deleted: forget it. */
+export function removeStoredSend(localKey: string) {
+  inFlightKeys.delete(localKey);
+  const key = savedKeys.get(localKey) ?? storeKey();
+  savedKeys.delete(localKey);
+  if (!key) return;
+  const entries = readAll(key);
+  const next = entries.filter((stored) => stored.localKey !== localKey);
+  if (next.length !== entries.length) writeAll(key, next);
+}
+
+/** Stored sends for a channel in the current scope, in flight or not. */
+export function storedSends(channelId: string): StoredSend[] {
+  return readAll(storeKey()).filter((stored) => stored.channelId === channelId);
+}
+
+export function isStoredSendInFlight(localKey: string): boolean {
+  return inFlightKeys.has(localKey);
+}
+
+/** Forget in-memory send state, as a fresh app start would (tests). */
 export function resetStoredSendSession() {
-  sessionKeys.clear();
+  savedKeys.clear();
+  inFlightKeys.clear();
 }

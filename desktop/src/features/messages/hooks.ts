@@ -79,9 +79,13 @@ import {
   registerFailedSend,
 } from "@/features/messages/lib/failedSends";
 import {
-  earlierStoredSends,
+  type StoredSend,
+  isStoredSendInFlight,
+  markStoredSendInFlight,
   removeStoredSend,
   saveStoredSend,
+  settleStoredSend,
+  storedSends,
 } from "@/features/messages/lib/failedSendStore";
 import {
   emptyChannelWindowStore,
@@ -324,24 +328,64 @@ export function removeOptimisticMessage(
   updateOptimisticMessage(queryClient, channelId, localKey, () => null);
 }
 
+/** How far apart a stored send and a relay copy of it can be signed. */
+const STORED_SEND_MATCH_WINDOW_SECONDS = 120;
+
 /**
- * Put back own sends an earlier app session stored but the relay never
- * acknowledged: marked failed, with Retry / Delete, where they were drawn.
- * A stored send whose relay copy is already here was delivered; it is dropped.
- * `attempted` keeps each write to once per cache, so cache updates this
- * causes cannot loop.
+ * Asks the relay whether a stored send landed after all (the app quit
+ * between the relay storing it and its acknowledgement). Until it answers,
+ * the send is not drawn, so a delivered message never shows as failed and
+ * Retry can never post it twice.
+ */
+export type StoredSendRelayCheck = {
+  state: Map<string, "checking" | "absent">;
+  lookup: (stored: StoredSend) => Promise<RelayEvent[]>;
+  onSettled: () => void;
+};
+
+function isStoredSendCopy(stored: StoredSend, event: RelayEvent): boolean {
+  const row: RelayEvent = { ...stored.event, pending: true };
+  return (
+    !event.pending &&
+    Math.abs(event.created_at - row.created_at) <=
+      STORED_SEND_MATCH_WINDOW_SECONDS &&
+    isMatchingPendingMessage(row, event)
+  );
+}
+
+/** Own messages in this channel signed around the stored send's time. */
+export function lookupStoredSendOnRelay(
+  stored: StoredSend,
+): Promise<RelayEvent[]> {
+  return relayClient.fetchEvents({
+    kinds: [stored.event.kind],
+    authors: [stored.event.pubkey],
+    "#h": [stored.channelId],
+    since: stored.event.created_at - STORED_SEND_MATCH_WINDOW_SECONDS,
+    until: stored.event.created_at + STORED_SEND_MATCH_WINDOW_SECONDS,
+    limit: 50,
+  });
+}
+
+/**
+ * Put back own sends the relay never acknowledged (from an earlier app
+ * session, or from before a community switch): marked failed, with Retry /
+ * Delete, where they were drawn. A stored send whose relay copy is here was
+ * delivered; it is dropped. `attempted` keeps each write to once per cache,
+ * so cache updates this causes cannot loop.
  */
 export function restoreStoredSends(
   queryClient: QueryClient,
   channelId: string,
   retry: (variables: SendMessageVariables) => Promise<unknown>,
   attempted: Set<string>,
+  relayCheck?: StoredSendRelayCheck,
 ) {
   const messages = queryClient.getQueryData<RelayEvent[]>(
     channelMessagesKey(channelId),
   );
   if (!messages) return;
-  for (const stored of earlierStoredSends(channelId)) {
+  for (const stored of storedSends(channelId)) {
     const { localKey, rootId } = stored;
     const row: RelayEvent = { ...stored.event, pending: true, failed: true };
     const loaded = [messages, ...channelThreadCaches(queryClient, channelId)];
@@ -349,21 +393,58 @@ export function restoreStoredSends(
       .flat()
       .some(
         (event) =>
-          !event.pending &&
-          (event.localKey === localKey ||
-            (event.created_at >= row.created_at &&
-              isMatchingPendingMessage(row, event))),
+          (!event.pending && event.localKey === localKey) ||
+          isStoredSendCopy(stored, event),
       );
     if (delivered) {
+      // Also covers a late echo adopting a failed row in this session; once
+      // adopted, an edit or delete of the message must not revive it.
       removeStoredSend(localKey);
       continue;
     }
-    const isShown = (events: RelayEvent[]) =>
-      events.some((event) => (event.localKey ?? event.id) === localKey);
+    if (isStoredSendInFlight(localKey)) continue;
+    const isShown = (events: RelayEvent[] | undefined) =>
+      events?.some((event) => (event.localKey ?? event.id) === localKey) ??
+      false;
+    if (relayCheck && !isShown(messages)) {
+      const checked = relayCheck.state.get(localKey);
+      if (checked === undefined) {
+        relayCheck.state.set(localKey, "checking");
+        relayCheck
+          .lookup(stored)
+          .then((events) => {
+            if (events.some((event) => isStoredSendCopy(stored, event))) {
+              removeStoredSend(localKey);
+            }
+          })
+          // Unreachable relay: show it failed so Retry / Delete stay possible.
+          .catch(() => {})
+          .finally(() => {
+            relayCheck.state.set(localKey, "absent");
+            relayCheck.onSettled();
+          });
+      }
+      if (checked !== "absent") continue;
+    }
     if (!attempted.has(`timeline:${localKey}`)) {
       attempted.add(`timeline:${localKey}`);
-      if (!isShown(messages))
+      if (!isShown(messages)) {
         writeOptimisticMessage(queryClient, channelId, row);
+        if (
+          !isShown(
+            queryClient.getQueryData<RelayEvent[]>(
+              channelMessagesKey(channelId),
+            ),
+          )
+        ) {
+          // Older than the loaded window: the timeline drops it there, so
+          // draw it at the bottom rather than lose the text.
+          writeOptimisticMessage(queryClient, channelId, {
+            ...row,
+            created_at: Math.floor(Date.now() / 1000),
+          });
+        }
+      }
     }
     const repliesKey = rootId ? threadRepliesKey(channelId, rootId) : null;
     const replies = repliesKey
@@ -378,6 +459,9 @@ export function restoreStoredSends(
     if (!hasFailedSend(localKey)) {
       registerFailedSend(localKey, {
         retry: () => {
+          // In flight before the registry entry goes, so a cache update in
+          // between cannot arm a second Retry.
+          markStoredSendInFlight(localKey);
           retry({
             ...stored.send,
             channelId,
@@ -404,6 +488,14 @@ export function useRestoreStoredSends(
   useEffect(() => {
     if (!channelId) return;
     const attempted = new Set<string>();
+    let disposed = false;
+    const relayCheck: StoredSendRelayCheck = {
+      state: new Map(),
+      lookup: lookupStoredSendOnRelay,
+      onSettled: () => {
+        if (!disposed) sync();
+      },
+    };
     let syncing = false;
     const sync = () => {
       if (syncing) return;
@@ -414,13 +506,14 @@ export function useRestoreStoredSends(
           channelId,
           (variables) => retryRef.current(variables),
           attempted,
+          relayCheck,
         );
       } finally {
         syncing = false;
       }
     };
     sync();
-    return queryClient.getQueryCache().subscribe((event) => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       const [scope, eventChannelId] = event.query.queryKey as unknown[];
       if (
         eventChannelId === channelId &&
@@ -429,6 +522,10 @@ export function useRestoreStoredSends(
         sync();
       }
     });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }, [channelId, queryClient]);
 }
 
@@ -1125,6 +1222,7 @@ export function useSendMessageMutation(
             removeStoredSend(localKey);
           },
         });
+        settleStoredSend(localKey);
         return;
       }
       if (!context) {
