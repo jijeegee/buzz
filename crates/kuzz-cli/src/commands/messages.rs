@@ -1215,7 +1215,7 @@ pub async fn dispatch(
         MessagesCmd::Vote { event, direction } => {
             cmd_vote_on_post(client, &event, &direction).await
         }
-        MessagesCmd::Watch { since } => super::watch::cmd_watch(client, since).await,
+        MessagesCmd::Watch { since } => super::watch::cmd_watch(client, since, None).await,
     }
 }
 

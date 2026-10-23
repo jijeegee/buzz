@@ -421,3 +421,99 @@ async fn an_owner_in_the_claim_answer_is_kept() {
     let pairing = pair(request(&relay, None), &device, &store).await.unwrap();
     assert_eq!(pairing.owner.as_deref(), Some(OWNER));
 }
+
+#[tokio::test]
+async fn server_errors_keep_the_key_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, device) = file_signer(&dir);
+    for (status, code) in [
+        (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+        (StatusCode::SERVICE_UNAVAILABLE, "rate_limited"),
+        (StatusCode::BAD_REQUEST, "something_new"),
+    ] {
+        let store = PairingStore::new(dir.path().join(format!("pairings-{}", status.as_u16())));
+        let (relay, _) = fake_relay(refused(status, code)).await;
+        let error = pair(request(&relay, None), &device, &store)
+            .await
+            .expect_err(code);
+        assert!(
+            matches!(error, CliError::DeliveryUnknown(_)),
+            "{code}: {error}"
+        );
+        let saved = store.list();
+        assert_eq!(saved.len(), 1, "{code}: the key may have connected");
+        assert_eq!(saved[0].state, "pending");
+    }
+    assert!(is_definite_refusal(409, r#"{"code":"code_used"}"#));
+    assert!(!is_definite_refusal(500, r#"{"code":"code_used"}"#));
+    assert!(!is_definite_refusal(400, "not json"));
+}
+
+#[test]
+fn a_connected_pairing_wins_over_a_newer_pending_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = PairingStore::new(dir.path());
+    let relay = "https://relay.example";
+    let connected = pairing_at(relay, "Connected", 100, true);
+    let mut pending = pairing_at(relay, "Pending", 200, true);
+    pending.state = "pending".into();
+    store.save(&connected).unwrap();
+    store.save(&pending).unwrap();
+    let pick = || store.for_relay(relay, None).map(|p| p.agent_pubkey);
+    assert_eq!(pick(), Some(connected.agent_pubkey.clone()));
+    // With nothing connected, the pending one (it may have landed) is used.
+    store.remove(&connected.agent_pubkey);
+    assert_eq!(pick(), Some(pending.agent_pubkey.clone()));
+}
+
+#[test]
+fn the_hermes_installer_is_looked_for_only_in_install_roots() {
+    let exe = std::path::Path::new("/opt/kuzz/bin/kuzz");
+    let roots = hermes_installer_roots(exe);
+    assert_eq!(roots[0], std::path::Path::new("/opt/kuzz/bin"));
+    assert_eq!(roots[1], std::path::Path::new("/opt/kuzz/share/kuzz"));
+    assert!(roots.len() <= 3);
+    assert!(!roots
+        .iter()
+        .any(|root| root == std::path::Path::new("/opt/kuzz")
+            || root == std::path::Path::new("/opt")
+            || root == std::path::Path::new("/")));
+    // Not under a `bin` directory: just the binary's own directory.
+    let roots = hermes_installer_roots(std::path::Path::new("/home/me/repo/target/release/kuzz"));
+    assert_eq!(
+        roots[0],
+        std::path::Path::new("/home/me/repo/target/release")
+    );
+    assert!(!roots.iter().any(|root| root.starts_with("/home/me/repo")
+        && root != std::path::Path::new("/home/me/repo/target/release")));
+}
+
+#[test]
+fn pair_needs_a_named_relay_never_the_localhost_default() {
+    let default = "http://localhost:3000";
+    let error = pair_relay(None, default, true).expect_err("no relay");
+    assert!(matches!(error, CliError::Usage(_)), "{error}");
+    assert!(error.to_string().contains("--relay"), "{error}");
+    assert_eq!(
+        pair_relay(None, "https://env.example", false).unwrap(),
+        "https://env.example"
+    );
+    assert_eq!(
+        pair_relay(Some("https://code.example"), "https://env.example", false).unwrap(),
+        "https://code.example"
+    );
+    assert!(pair_relay(Some(" "), default, true).is_err());
+}
+
+#[test]
+fn the_relay_can_follow_the_code_in_the_apps_command() {
+    for flag in ["--relay", "--relay-url"] {
+        let cli = crate::parse_args(["kuzz", "pair", CODE, flag, "https://relay.example"])
+            .expect("parses");
+        let crate::Cmd::Pair { pair_relay, .. } = cli.command else {
+            panic!("pair");
+        };
+        assert_eq!(pair_relay.as_deref(), Some("https://relay.example"));
+        assert!(cli.relay_from_default);
+    }
+}

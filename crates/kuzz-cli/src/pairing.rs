@@ -12,9 +12,9 @@
 //!   `pair` creates it when there is none yet.
 //! - **Agent key:** by default a new key per pairing, generated here and
 //!   written only to `<local data dir>/kuzz/pairings/<agent pubkey>.json`
-//!   ([`PAIRING_DIR_ENV`] overrides the directory). The file is owner-only:
-//!   mode 0600 in a 0700 directory on Unix, and the per-user `%LOCALAPPDATA%`
-//!   on Windows. It is never printed. An agent that already has a key passes
+//!   ([`PAIRING_DIR_ENV`] overrides the directory). The file is owner-only
+//!   ([`crate::private_file`]): mode 0600 in a 0700 directory on Unix, a
+//!   protected current-user-only DACL on Windows. It is never printed. An agent that already has a key passes
 //!   it with `--private-key`/`KUZZ_PRIVATE_KEY`; the file then records only
 //!   the public key and the secret stays where the agent keeps it.
 //!
@@ -32,6 +32,7 @@ use zeroize::Zeroizing;
 
 use crate::auth_session::{relay_origin, SessionStore};
 use crate::error::CliError;
+use crate::private_file::{create_private_dir, write_owner_only};
 
 /// Overrides the pairing directory (default `<local data dir>/kuzz/pairings`).
 pub const PAIRING_DIR_ENV: &str = "KUZZ_PAIRING_DIR";
@@ -42,6 +43,20 @@ pub const PAIRED_AGENT_ENV: &str = "KUZZ_PAIRED_AGENT";
 const PAIRING_FILE_VERSION: u8 = 1;
 /// Longest device or agent name the relay accepts.
 const MAX_NAME_CHARS: usize = 64;
+/// [`Pairing::state`] once the relay accepted the claim.
+const STATE_CONNECTED: &str = "connected";
+/// [`Pairing::state`] while the claim's answer is unknown.
+const STATE_PENDING: &str = "pending";
+/// Refusal codes of `POST /pair/claim` after which the claim certainly did
+/// not land, so the saved key can go.
+const DEFINITE_REFUSALS: [&str; 6] = [
+    "invalid_code",
+    "code_used",
+    "key_in_use",
+    "device_limit",
+    "invalid_signature",
+    "rate_limited",
+];
 
 /// One pairing of an agent key with this computer, as stored.
 #[derive(Clone, Serialize, Deserialize)]
@@ -141,13 +156,7 @@ impl PairingStore {
             serde_json::to_vec_pretty(pairing)
                 .map_err(|e| CliError::Other(format!("pairing serialization failed: {e}")))?,
         );
-        let path = self.path(&pairing.agent_pubkey);
-        let tmp = path.with_extension("json.tmp");
-        write_private_file(&tmp, &bytes).map_err(fail)?;
-        std::fs::rename(&tmp, &path).map_err(|error| {
-            let _ = std::fs::remove_file(&tmp);
-            fail(error)
-        })
+        write_owner_only(&self.path(&pairing.agent_pubkey), &bytes).map_err(fail)
     }
 
     /// Forget the pairing of `agent_pubkey` (missing is fine).
@@ -174,7 +183,8 @@ impl PairingStore {
 
     /// The pairing to act as on `origin`: among pairings that hold their
     /// agent's secret, the one `selector` names (agent name or pubkey), else
-    /// the most recent.
+    /// the most recent connected one. A pending pairing (its claim's answer
+    /// was lost) is used only when none is connected.
     pub fn for_relay(&self, origin: &str, selector: Option<&str>) -> Option<Pairing> {
         let mut candidates: Vec<Pairing> = self
             .list()
@@ -189,7 +199,7 @@ impl PairingStore {
         }
         candidates
             .into_iter()
-            .max_by_key(|pairing| pairing.paired_at)
+            .max_by_key(|pairing| (pairing.state == STATE_CONNECTED, pairing.paired_at))
     }
 
     /// The only relay this computer's pairings use, if they all use one.
@@ -207,40 +217,6 @@ impl PairingStore {
             _ => None,
         }
     }
-}
-
-fn create_private_dir(dir: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt as _;
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(dir)
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::create_dir_all(dir)
-    }
-}
-
-fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write as _;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o600);
-    }
-    let mut out = options.open(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        out.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
-    out.write_all(bytes)?;
-    out.sync_all()
 }
 
 /// The paired agent to act as on `relay_url`, when this process has no other
@@ -367,25 +343,49 @@ fn claim_error(status: u16, body: &str) -> CliError {
     }
 }
 
-/// `POST /pair/claim` for `body`: Ok(answer) on 2xx, the mapped error
-/// otherwise. `Err(None)`: no answer (the claim may or may not have landed).
-async fn post_claim(
-    http: &reqwest::Client,
-    relay_url: &str,
-    body: &Value,
-) -> Result<Value, Option<CliError>> {
-    let response = http
+/// Whether a non-2xx answer certainly means the claim did not land: a 4xx
+/// with one of the [`DEFINITE_REFUSALS`] codes. A 5xx (or an unknown code)
+/// may come after the relay stored the claim.
+pub(crate) fn is_definite_refusal(status: u16, body: &str) -> bool {
+    (400..500).contains(&status)
+        && serde_json::from_str::<Value>(body)
+            .ok()
+            .and_then(|v| v.get("code").and_then(Value::as_str).map(str::to_owned))
+            .is_some_and(|code| DEFINITE_REFUSALS.contains(&code.as_str()))
+}
+
+/// How `POST /pair/claim` ended.
+enum ClaimOutcome {
+    /// 2xx: the answer.
+    Connected(Value),
+    /// The claim certainly did not land.
+    Refused(CliError),
+    /// No answer, a 5xx, or an unknown refusal: it may have landed.
+    Unknown(Option<CliError>),
+}
+
+/// `POST /pair/claim` for `body`.
+async fn post_claim(http: &reqwest::Client, relay_url: &str, body: &Value) -> ClaimOutcome {
+    let Ok(response) = http
         .post(format!("{relay_url}/pair/claim"))
         .json(body)
         .send()
         .await
-        .map_err(|_| None)?;
+    else {
+        return ClaimOutcome::Unknown(None);
+    };
     let status = response.status().as_u16();
-    let text = response.text().await.map_err(|_| None)?;
-    if !(200..300).contains(&status) {
-        return Err(Some(claim_error(status, &text)));
+    let Ok(text) = response.text().await else {
+        return ClaimOutcome::Unknown(None);
+    };
+    if (200..300).contains(&status) {
+        return ClaimOutcome::Connected(serde_json::from_str(&text).unwrap_or(Value::Null));
     }
-    Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
+    if is_definite_refusal(status, &text) {
+        ClaimOutcome::Refused(claim_error(status, &text))
+    } else {
+        ClaimOutcome::Unknown(Some(claim_error(status, &text)))
+    }
 }
 
 /// Inputs of one `kuzz pair`.
@@ -400,7 +400,8 @@ pub(crate) struct PairRequest<'a> {
 
 /// Claim `request.code` with `device` and save the pairing in `store`.
 /// The pairing is written before the claim (so a lost answer never loses a
-/// connected key) and removed again when the relay refuses.
+/// connected key) and removed again only when the relay certainly refused
+/// ([`is_definite_refusal`]); otherwise it stays `pending`.
 pub(crate) async fn pair(
     request: PairRequest<'_>,
     device: &DeviceKey,
@@ -417,7 +418,7 @@ pub(crate) async fn pair(
         agent_pubkey: keys.public_key().to_hex(),
         agent_name: request.agent_name.map(str::to_owned),
         device_name: request.device_name.to_owned(),
-        state: "pending".to_owned(),
+        state: STATE_PENDING.to_owned(),
         pairing_id: None,
         device_id: None,
         paired_at: chrono::Utc::now().timestamp(),
@@ -438,8 +439,8 @@ pub(crate) async fn pair(
     store.save(&pairing)?;
     let http = crate::client::build_http()?;
     match post_claim(&http, request.relay_url, &body).await {
-        Ok(answer) => {
-            pairing.state = "connected".to_owned();
+        ClaimOutcome::Connected(answer) => {
+            pairing.state = STATE_CONNECTED.to_owned();
             pairing.pairing_id = answer["pairing_id"].as_str().map(str::to_owned);
             pairing.device_id = answer["device_id"].as_str().map(str::to_owned);
             pairing.owner = ["owner_pubkey", "owner"]
@@ -450,16 +451,22 @@ pub(crate) async fn pair(
             store.save(&pairing)?;
             Ok(pairing)
         }
-        Err(Some(error)) => {
+        ClaimOutcome::Refused(error) => {
             store.remove(&pairing.agent_pubkey);
             Err(error)
         }
-        Err(None) => Err(CliError::DeliveryUnknown(format!(
-            "the relay at {} did not answer the pairing claim; the agent key is saved in case \
-             it connected (check the app). If the app does not show this computer, ask for a \
-             new code and run `kuzz pair` again",
-            request.relay_url
-        ))),
+        ClaimOutcome::Unknown(error) => {
+            let what = match error {
+                Some(error) => format!("answered the pairing claim with an error ({error})"),
+                None => "did not answer the pairing claim".to_owned(),
+            };
+            Err(CliError::DeliveryUnknown(format!(
+                "the relay at {} {what}; the agent key is saved in case it connected (check \
+                 the app). If the app does not show this computer, ask for a new code and run \
+                 `kuzz pair` again",
+                request.relay_url
+            )))
+        }
     }
 }
 
@@ -517,9 +524,8 @@ pub(crate) async fn whoami(
     })
 }
 
-/// Where `kuzz pair --hermes` looks for the Hermes plugin installer, relative
-/// to the `kuzz` binary's directory or any directory above it (a repo
-/// checkout's `target/release`, or an install that ships `plugins/`).
+/// The Hermes plugin installer, relative to an install root
+/// ([`hermes_installer_roots`]).
 pub const HERMES_INSTALLER: &str = "plugins/platforms/kuzz/install.py";
 
 /// The Hermes home the installer uses: `$HERMES_HOME`, else
@@ -541,11 +547,29 @@ fn hermes_home() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".hermes"))
 }
 
+/// Where an installed `kuzz` ships `plugins/`: the binary's own directory,
+/// `<prefix>/share/kuzz` next to a `<prefix>/bin/kuzz` (Unix packages), and
+/// this user's `<local data dir>/kuzz`. Never other ancestors: a `plugins/`
+/// folder anywhere above the binary is not trusted to run.
+pub(crate) fn hermes_installer_roots(exe: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(dir) = exe.parent() {
+        roots.push(dir.to_path_buf());
+        if let Some(prefix) = dir.parent().filter(|_| dir.ends_with("bin")) {
+            roots.push(prefix.join("share").join("kuzz"));
+        }
+    }
+    if let Some(data) = dirs::data_local_dir() {
+        roots.push(data.join("kuzz"));
+    }
+    roots
+}
+
 fn find_hermes_installer() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    exe.ancestors()
-        .skip(1)
-        .map(|dir| dir.join(HERMES_INSTALLER))
+    hermes_installer_roots(&exe)
+        .into_iter()
+        .map(|root| root.join(HERMES_INSTALLER))
         .find(|path| path.is_file())
 }
 
@@ -639,6 +663,29 @@ async fn publish_name(relay_url: &str, keys: &Keys, name: &str) {
     if let Err(error) = result {
         eprintln!("warning: connected, but the agent name was not published: {error}");
     }
+}
+
+/// The relay `kuzz pair` claims on: `kuzz pair <code> --relay <url>` (the
+/// form the app's command will carry), else the global `--relay` /
+/// `KUZZ_RELAY_URL`. The CLI has no built-in server address (only the
+/// desktop bakes one at build time), so with neither it refuses rather than
+/// claim on the `localhost` default.
+pub(crate) fn pair_relay(
+    pair_flag: Option<&str>,
+    global: &str,
+    global_from_default: bool,
+) -> Result<String, CliError> {
+    if let Some(relay) = pair_flag.map(str::trim).filter(|relay| !relay.is_empty()) {
+        return Ok(relay.to_owned());
+    }
+    if !global_from_default {
+        return Ok(global.to_owned());
+    }
+    Err(CliError::Usage(
+        "no relay: this pairing code does not say which server made it; run the full command \
+         from the app, or add --relay <url> (kuzz pair <code> --relay https://...)"
+            .into(),
+    ))
 }
 
 /// `kuzz pair <code>`.

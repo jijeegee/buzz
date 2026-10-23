@@ -14,12 +14,18 @@
 //! - mentions: messages anywhere that `#p`-tag this identity.
 //!
 //! A lost connection is reopened with exponential backoff and resumes from
-//! the newest message printed (minus [`SINCE_SKEW_SECS`], deduplicated by
-//! id). An idle connection is probed every [`IDLE_PING`]. Status goes to
-//! stderr; stdout holds only messages.
+//! when the last message arrived here, by this computer's clock (minus
+//! [`SINCE_SKEW_SECS`], never later than now; deduplicated by id). Authors'
+//! `created_at` is not trusted for this: a sender whose clock runs ahead
+//! would otherwise move the cursor past messages not yet received. An idle
+//! connection is probed every [`IDLE_PING`]. In token mode the token is
+//! renewed before every reconnect. Status goes to stderr; stdout holds only
+//! messages.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::io::Write as _;
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use kuzz_core::kind::{
@@ -175,13 +181,26 @@ pub fn backoff_delay(attempt: u32) -> Duration {
     half + half.mul_f64(rand::random::<f64>())
 }
 
+/// Relay refusals that end this identity's access to the relay for good
+/// (`handlers/auth.rs`): parked as `revoked`.
+const REVOKED_REFUSALS: [&str; 3] = [
+    "not a relay member",
+    "removed from this relay",
+    "account was deleted",
+];
+
 /// The word a supervisor parks on (`signed_out`, `revoked`, `not_paired`)
 /// for a refused AUTH that retrying cannot fix: the relay's
-/// `restricted: signed_out` / `revoked`, and refusals of this key from this
-/// computer (`device`, `unbound`, `owner`). `None`: worth retrying.
+/// `restricted: signed_out` / `revoked`, a membership that ended (not a
+/// member, removed, account deleted: `revoked`), and refusals of this key
+/// from this computer (`device`, `unbound`, `owner`). `None`: worth retrying.
 pub fn parked_reason(refusal: &str) -> Option<&'static str> {
+    let refusal = refusal.trim();
+    let lower = refusal.to_ascii_lowercase();
+    if REVOKED_REFUSALS.iter().any(|phrase| lower.contains(phrase)) {
+        return Some("revoked");
+    }
     let reason = refusal
-        .trim()
         .strip_prefix("restricted:")?
         .trim()
         .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
@@ -194,10 +213,41 @@ pub fn parked_reason(refusal: &str) -> Option<&'static str> {
     }
 }
 
+/// The start of the "no credential at all" error (`missing_credential`).
+pub const NO_CREDENTIAL: &str = "no credential:";
+
+/// The word a supervisor parks on for an auth error while setting up the
+/// watch's identity: no credential at all is `not_paired`; an ended login or
+/// a token the relay calls invalid, expired, revoked or disabled is
+/// `signed_out`. `None` for anything else (an unreadable `/auth/me` answer,
+/// a broker hiccup): not a reason to park, the supervisor retries.
+pub fn credential_word(message: &str) -> Option<&'static str> {
+    let message = message.trim();
+    if message.starts_with(NO_CREDENTIAL) {
+        return Some("not_paired");
+    }
+    let terminal_token = crate::client::TERMINAL_TOKEN_CODES
+        .iter()
+        .any(|code| message.starts_with(&format!("{code}:")));
+    if terminal_token
+        || message.contains("the stored login has ended")
+        || message.starts_with("access token rejected")
+    {
+        return Some("signed_out");
+    }
+    None
+}
+
+/// A fresh token-mode client (a renewed token), being made.
+pub type ReauthFuture = Pin<Box<dyn Future<Output = Result<KuzzClient, CliError>>>>;
+/// Makes a [`ReauthFuture`] before each reconnect.
+pub type Reauth = Box<dyn Fn() -> ReauthFuture>;
+
 /// What survives reconnects.
 struct Watch {
     me: String,
-    /// Newest `created_at` printed; resubscriptions start here (minus skew).
+    /// Where resubscriptions start: the local time the newest message
+    /// arrived, minus [`SINCE_SKEW_SECS`] (or `--since`).
     cursor: i64,
     channels: BTreeSet<String>,
     seen: HashSet<String>,
@@ -207,7 +257,12 @@ struct Watch {
 
 impl Watch {
     fn since(&self) -> i64 {
-        self.cursor.saturating_sub(SINCE_SKEW_SECS).max(0)
+        self.cursor.min(now_secs()).max(0)
+    }
+
+    /// A message arrived now: everything up to now (minus skew) was seen.
+    fn received(&mut self) {
+        self.cursor = self.cursor.max(now_secs().saturating_sub(SINCE_SKEW_SECS));
     }
 
     /// Record `id`; false when it was seen already.
@@ -353,8 +408,7 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
                     {
                         continue;
                     }
-                    let created_at = i64::try_from(event.created_at.as_secs()).unwrap_or(0);
-                    watch.cursor = watch.cursor.max(created_at);
+                    watch.received();
                     let author = event.pubkey.to_hex();
                     // Our own messages are not news to us.
                     if author == watch.me {
@@ -405,23 +459,42 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
     end
 }
 
-/// `kuzz messages watch`.
-pub async fn cmd_watch(client: &KuzzClient, since: Option<i64>) -> Result<(), CliError> {
+/// `kuzz messages watch`. `reauth` (token mode) renews the client before
+/// every reconnect, so a watch outlives its access token.
+pub async fn cmd_watch(
+    client: &KuzzClient,
+    since: Option<i64>,
+    reauth: Option<Reauth>,
+) -> Result<(), CliError> {
     let mut watch = Watch {
         me: client.pubkey().to_hex(),
-        cursor: since
-            .unwrap_or_else(now_secs)
-            .saturating_add(SINCE_SKEW_SECS),
+        cursor: since.unwrap_or_else(now_secs),
         channels: BTreeSet::new(),
         seen: HashSet::new(),
         seen_order: VecDeque::new(),
         names: HashMap::new(),
     };
+    let mut renewed: Option<KuzzClient> = None;
     let mut attempt: u32 = 0;
     let mut refusals: u32 = 0;
+    let mut first = true;
     loop {
+        if let (false, Some(reauth)) = (first, &reauth) {
+            match reauth().await {
+                Ok(fresh) => renewed = Some(fresh),
+                Err(CliError::Auth(message)) if credential_word(&message).is_some() => {
+                    let word = credential_word(&message).unwrap_or("signed_out");
+                    return Err(CliError::Auth(format!("{word}: {message}")));
+                }
+                // Transient (network, relay, an odd answer): keep the old
+                // client and try again after the backoff.
+                Err(error) => eprintln!("kuzz watch: could not renew the login: {error}"),
+            }
+        }
+        first = false;
+        let current = renewed.as_ref().unwrap_or(client);
         let started = Instant::now();
-        let reason = match run_connection(client, &mut watch).await {
+        let reason = match run_connection(current, &mut watch).await {
             End::Fatal(error) => return Err(error),
             End::Refused(message) => {
                 if let Some(word) = parked_reason(&message) {
@@ -431,8 +504,10 @@ pub async fn cmd_watch(client: &KuzzClient, since: Option<i64>) -> Result<(), Cl
                 }
                 refusals += 1;
                 if refusals >= MAX_AUTH_REFUSALS {
+                    // Refused even with a renewed token: the login is over.
+                    let prefix = if reauth.is_some() { "signed_out: " } else { "" };
                     return Err(CliError::Auth(format!(
-                        "relay rejected WebSocket auth: {message}"
+                        "{prefix}relay rejected WebSocket auth: {message}"
                     )));
                 }
                 format!("auth refused: {message}")
@@ -598,6 +673,65 @@ mod tests {
         assert_eq!(parked_reason("error: internal error checking device"), None);
         assert_eq!(parked_reason("auth-required: stale challenge"), None);
         assert_eq!(parked_reason("restricted: rate limited"), None);
+        assert_eq!(
+            parked_reason("restricted: not a relay member"),
+            Some("revoked")
+        );
+        assert_eq!(
+            parked_reason("restricted: you were removed from this relay"),
+            Some("revoked")
+        );
+        assert_eq!(
+            parked_reason("restricted: this account was deleted"),
+            Some("revoked")
+        );
+    }
+
+    #[test]
+    fn credential_errors_park_only_when_final() {
+        assert_eq!(
+            credential_word("no credential: run `kuzz auth login`"),
+            Some("not_paired")
+        );
+        assert_eq!(
+            credential_word("refresh_revoked: the stored login has ended; run `kuzz auth login`"),
+            Some("signed_out")
+        );
+        assert_eq!(
+            credential_word("access token rejected: {}"),
+            Some("signed_out")
+        );
+        assert_eq!(
+            credential_word("token_revoked: token was revoked"),
+            Some("signed_out")
+        );
+        assert_eq!(
+            credential_word("invalid /auth/me response: EOF while parsing"),
+            None
+        );
+        assert_eq!(
+            credential_word("/auth/me returned no valid principal_id"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_resume_point_is_local_time_never_the_future() {
+        let mut watch = Watch {
+            me: ALICE.into(),
+            cursor: now_secs() + 3600,
+            channels: BTreeSet::new(),
+            seen: HashSet::new(),
+            seen_order: VecDeque::new(),
+            names: HashMap::new(),
+        };
+        // A `--since` (or any cursor) in the future is clamped to now.
+        assert!(watch.since() <= now_secs());
+        watch.cursor = 100;
+        let before = now_secs();
+        watch.received();
+        assert!(watch.since() >= before - SINCE_SKEW_SECS);
+        assert!(watch.since() <= now_secs());
     }
 
     #[test]
@@ -632,6 +766,6 @@ mod tests {
         }
         assert_eq!(watch.seen.len(), SEEN_CAP);
         assert!(watch.first_sighting("a".into()), "evicted ids may repeat");
-        assert_eq!(watch.since(), 100 - SINCE_SKEW_SECS);
+        assert_eq!(watch.since(), 100);
     }
 }

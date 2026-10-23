@@ -98,6 +98,11 @@ keyring = "4"
 webbrowser = "1"
 zeroize = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+# Owner-only pairing files (a current-user-only DACL). Same windows-sys
+# version kuzz-device-key and kuzz-dev-mcp use.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
 [dev-dependencies]
 # Scratch files for channel-templates.json fixtures in tests
 tempfile = "3"
