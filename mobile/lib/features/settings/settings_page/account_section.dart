@@ -1,8 +1,9 @@
 part of '../settings_page.dart';
 
-/// The signed-in account of the active community: who is signed in and its
-/// security actions, then its devices in a card of their own. A token
-/// account also edits its global profile here.
+/// The signed-in account of the active community, as on desktop: who is
+/// signed in, then Devices & security in a card of its own. A token account
+/// also edits its global profile here. Account deletion sits folded at the
+/// bottom of Settings.
 class _AccountSection extends ConsumerWidget {
   const _AccountSection({required this.origin, this.googleKey = false});
 
@@ -19,11 +20,10 @@ class _AccountSection extends ConsumerWidget {
     final username = profile?.username;
     final email = profile?.email;
     final hasName = name != null && name.isNotEmpty;
-    void openPage(DevicesPagePart part) => unawaited(
+    void openDevices() => unawaited(
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              DevicesPage(origin: origin, botTokens: !googleKey, part: part),
+          builder: (_) => DevicesPage(origin: origin, agents: !googleKey),
         ),
       ),
     );
@@ -60,13 +60,6 @@ class _AccountSection extends ConsumerWidget {
                 trailing: const _RowChevron(),
                 onTap: () => unawaited(_openAccountPage(context, origin)),
               ),
-            AppListRow(
-              key: const Key('settings-security-row'),
-              icon: LucideIcons.shield,
-              title: context.l10n.settingsSecurityTitle,
-              trailing: const _RowChevron(),
-              onTap: () => openPage(DevicesPagePart.account),
-            ),
           ],
         ),
         AppListCard(
@@ -77,7 +70,7 @@ class _AccountSection extends ConsumerWidget {
               icon: LucideIcons.monitorSmartphone,
               title: context.l10n.settingsDevicesSignedIn,
               trailing: const _RowChevron(),
-              onTap: () => openPage(DevicesPagePart.devices),
+              onTap: openDevices,
             ),
           ],
         ),

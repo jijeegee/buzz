@@ -35,7 +35,6 @@ import {
   SettingsOptionGroupList,
 } from "./SettingsOptionGroup";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
-import { SignOutSection } from "./SignOutSection";
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { canonicalNpub, unavailableKeyLabel } from "@/shared/lib/pubkey";
 
@@ -514,7 +513,6 @@ export function ProfileSettingsCard({
     return (
       <section className="min-w-0" data-testid="settings-account">
         {accountCard}
-        <SignOutSection showKeyBackupGate={showKeySettings} />
       </section>
     );
   }
@@ -926,9 +924,6 @@ export function ProfileSettingsCard({
       </div>
 
       {withAccount && !accountCardFirst ? accountCard : null}
-      {withAccount ? (
-        <SignOutSection showKeyBackupGate={showKeySettings} />
-      ) : null}
     </section>
   );
 }

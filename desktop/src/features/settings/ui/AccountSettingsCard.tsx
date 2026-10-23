@@ -41,11 +41,15 @@ import { listOwnRunningLocalAgents } from "@/features/agents/lib/runningLocalAge
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
 import { GoogleLoginProgress } from "@/shared/ui/GoogleLoginProgress";
 import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
 import { needsGoogleProtection } from "@/shared/lib/signingKeyUi";
 import { Spinner } from "@/shared/ui/spinner";
 import { AccountDeviceRow } from "./AccountDeviceRow";
 import { SettingsConfirmDialog } from "./SettingsConfirmDialog";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
+
+/** The word typed in the second step of account deletion. */
+export const ACCOUNT_DELETE_CONFIRM_WORD = "delete";
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error
@@ -309,10 +313,19 @@ function ActiveAccount({
   onStatus: (status: TokenAuthStatus) => void;
 }) {
   const t = useT();
-  const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const [confirming, setConfirming] = React.useState<
-    "sign-out" | "disconnect-agents" | null
-  >(null);
+  // Deletion takes two steps: what happens, then typing the word.
+  const [deleteStep, setDeleteStep] = React.useState<"explain" | "type" | null>(
+    null,
+  );
+  const [deleteWord, setDeleteWord] = React.useState("");
+  const closeDelete = (open: boolean) => {
+    if (open) return;
+    setDeleteStep(null);
+    setDeleteWord("");
+  };
+  const deleteWordTyped =
+    deleteWord.trim().toLowerCase() === ACCOUNT_DELETE_CONFIRM_WORD;
+  const [confirming, setConfirming] = React.useState<"sign-out" | null>(null);
   // Counted fresh each time the sign-out dialog opens.
   const [runningCount, setRunningCount] = React.useState(0);
   const openSignOut = () => {
@@ -386,37 +399,9 @@ function ActiveAccount({
           </p>
         ) : null}
       </SettingsConfirmDialog>
+      {/* The relay does not yet delete Google key accounts. */}
       {!status.keyBackup ? (
         <>
-          <SettingsOptionRow>
-            <p className="min-w-0 text-sm text-muted-foreground/70">
-              {t("settings.account.disconnectHint")}
-            </p>
-            <Button
-              data-testid="account-disconnect-agents"
-              disabled={disabled}
-              onClick={() => setConfirming("disconnect-agents")}
-              type="button"
-              variant="outline"
-            >
-              {t("settings.account.disconnectAll")}
-            </Button>
-          </SettingsOptionRow>
-          <SettingsConfirmDialog
-            confirmLabel={t("settings.account.disconnectConfirm")}
-            description={t("settings.account.disconnectDescription")}
-            destructive
-            onConfirm={() =>
-              void run("settings.account.disconnectFailed", async () => {
-                await revokeAllBotTokens();
-                toast.success(t("settings.account.disconnected"));
-              })
-            }
-            onOpenChange={closeConfirm}
-            open={confirming === "disconnect-agents"}
-            testId="account-disconnect-agents-dialog"
-            title={t("settings.account.disconnectTitle")}
-          />
           <details className="px-4 py-3">
             <summary className="cursor-pointer text-sm text-muted-foreground">
               {t("settings.account.deletionSummary")}
@@ -426,8 +411,9 @@ function ActiveAccount({
                 {t("settings.account.deleteHint")}
               </p>
               <Button
+                data-testid="account-delete-open"
                 disabled={disabled}
-                onClick={() => setConfirmDelete(true)}
+                onClick={() => setDeleteStep("explain")}
                 type="button"
                 variant="destructive"
               >
@@ -435,8 +421,8 @@ function ActiveAccount({
               </Button>
             </SettingsOptionRow>
           </details>
-          <AlertDialog onOpenChange={setConfirmDelete} open={confirmDelete}>
-            <AlertDialogContent>
+          <AlertDialog onOpenChange={closeDelete} open={deleteStep !== null}>
+            <AlertDialogContent data-testid="account-delete-dialog">
               <AlertDialogHeader>
                 <AlertDialogTitle>
                   {t("settings.account.deleteTitle")}
@@ -445,23 +431,58 @@ function ActiveAccount({
                   {t("settings.account.deleteDescription")}
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              {deleteStep === "type" ? (
+                <div className="space-y-2">
+                  <label
+                    className="text-sm font-medium"
+                    htmlFor="account-delete-word"
+                  >
+                    {t("settings.account.deleteTypeLabel", {
+                      word: ACCOUNT_DELETE_CONFIRM_WORD,
+                    })}
+                  </label>
+                  <Input
+                    autoComplete="off"
+                    autoFocus
+                    data-testid="account-delete-word"
+                    disabled={disabled}
+                    id="account-delete-word"
+                    onChange={(event) => setDeleteWord(event.target.value)}
+                    placeholder={ACCOUNT_DELETE_CONFIRM_WORD}
+                    spellCheck={false}
+                    value={deleteWord}
+                  />
+                </div>
+              ) : null}
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={disabled}>
                   {t("common.cancel")}
                 </AlertDialogCancel>
-                <Button
-                  disabled={disabled}
-                  onClick={() =>
-                    void run("settings.account.deleteFailed", async () => {
-                      await deleteTokenAccount();
-                      identityReload.reload();
-                    })
-                  }
-                  type="button"
-                  variant="destructive"
-                >
-                  {t("settings.account.deleteAccount")}
-                </Button>
+                {deleteStep === "explain" ? (
+                  <Button
+                    data-testid="account-delete-continue"
+                    onClick={() => setDeleteStep("type")}
+                    type="button"
+                    variant="destructive"
+                  >
+                    {t("settings.account.deleteContinue")}
+                  </Button>
+                ) : (
+                  <Button
+                    data-testid="account-delete-confirm"
+                    disabled={disabled || !deleteWordTyped}
+                    onClick={() =>
+                      void run("settings.account.deleteFailed", async () => {
+                        await deleteTokenAccount();
+                        identityReload.reload();
+                      })
+                    }
+                    type="button"
+                    variant="destructive"
+                  >
+                    {t("settings.account.deleteAccount")}
+                  </Button>
+                )}
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -519,10 +540,10 @@ export function DevicesSettingsCard() {
     <div data-testid="settings-devices">
       <SettingsOptionGroup
         description={t("settings.device.description")}
-        title={t("settings.device.title")}
+        title={t("settings.device.cardTitle")}
       >
         {status.state === "active" ? (
-          <SignedInDevices busy={busy} run={run} />
+          <SignedInDevices agents={!status.keyBackup} busy={busy} run={run} />
         ) : (
           <SettingsOptionRow>
             <p className="min-w-0 text-sm text-muted-foreground/70">
@@ -536,17 +557,20 @@ export function DevicesSettingsCard() {
 }
 
 function SignedInDevices({
+  agents,
   busy,
   run,
 }: {
+  /** Offer disconnecting every agent. */
+  agents: boolean;
   busy: MessageKey | null;
   run: (label: MessageKey, action: () => Promise<unknown>) => Promise<void>;
 }) {
   const t = useT();
   const [devices, setDevices] = React.useState<AuthDevice[] | null>(null);
-  const [confirming, setConfirming] = React.useState<"sign-out-others" | null>(
-    null,
-  );
+  const [confirming, setConfirming] = React.useState<
+    "sign-out-others" | "disconnect-agents" | null
+  >(null);
   const closeConfirm = (open: boolean) => {
     if (!open) setConfirming(null);
   };
@@ -631,6 +655,40 @@ function SignedInDevices({
         testId="account-sign-out-others-dialog"
         title={t("settings.device.signOutOthersTitle")}
       />
+      {/* The relay cannot yet cut off a Google key account's agents. */}
+      {agents ? (
+        <>
+          <SettingsOptionRow>
+            <p className="min-w-0 text-sm text-muted-foreground/70">
+              {t("settings.account.disconnectHint")}
+            </p>
+            <Button
+              data-testid="account-disconnect-agents"
+              disabled={disabled}
+              onClick={() => setConfirming("disconnect-agents")}
+              type="button"
+              variant="outline"
+            >
+              {t("settings.account.disconnectAll")}
+            </Button>
+          </SettingsOptionRow>
+          <SettingsConfirmDialog
+            confirmLabel={t("settings.account.disconnectConfirm")}
+            description={t("settings.account.disconnectDescription")}
+            destructive
+            onConfirm={() =>
+              void run("settings.account.disconnectFailed", async () => {
+                await revokeAllBotTokens();
+                toast.success(t("settings.account.disconnected"));
+              })
+            }
+            onOpenChange={closeConfirm}
+            open={confirming === "disconnect-agents"}
+            testId="account-disconnect-agents-dialog"
+            title={t("settings.account.disconnectTitle")}
+          />
+        </>
+      ) : null}
     </>
   );
 }

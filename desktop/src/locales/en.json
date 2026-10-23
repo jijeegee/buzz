@@ -9979,7 +9979,7 @@
   "@settings.nav.account": {
     "description": "Settings sidebar, section link and tooltip. Short."
   },
-  "settings.nav.devices": "Devices",
+  "settings.nav.devices": "Devices & security",
   "@settings.nav.devices": {
     "description": "Settings sidebar, section link and tooltip. Short."
   },
@@ -11135,7 +11135,7 @@
   "@settings.account.agentsNewIdentity": {
     "description": "Notification (toast) shown in Settings > Account after agents were given new identities."
   },
-  "settings.account.disconnectHint": "Disconnect every agent right away. Agents on this computer reconnect the next time they start.",
+  "settings.account.disconnectHint": "Disconnect every agent right away. Agents on a computer reconnect the next time they start.",
   "@settings.account.disconnectHint": {
     "description": "Settings > Account, grey text next to the 'Disconnect all agents' button."
   },
@@ -11179,6 +11179,14 @@
   "@settings.account.deleteDescription": {
     "description": "Settings > Account, delete-account confirm dialog text."
   },
+  "settings.account.deleteContinue": "Continue",
+  "@settings.account.deleteContinue": {
+    "description": "Account deletion dialog, first step: button that moves on to typing the confirmation word."
+  },
+  "settings.account.deleteTypeLabel": "Type \"{word}\" to confirm",
+  "@settings.account.deleteTypeLabel": {
+    "description": "Account deletion dialog, second step: label over the field. {word} is the English word the user types (delete)."
+  },
   "settings.account.signInFailed": "Sign in failed.",
   "@settings.account.signInFailed": {
     "description": "Error notification (toast) when signing in fails without a more specific reason."
@@ -11199,9 +11207,13 @@
   "@settings.device.title": {
     "description": "Settings > Devices, section title and list heading. Short."
   },
-  "settings.device.description": "Computers and phones signed in to your account.",
+  "settings.device.description": "Computers and phones signed in to your account, and your agents' access.",
   "@settings.device.description": {
     "description": "Settings > Devices, text under the section title."
+  },
+  "settings.device.cardTitle": "Devices & security",
+  "@settings.device.cardTitle": {
+    "description": "Settings > Devices & security, card title over the device list, agent access and this computer's data."
   },
   "settings.device.signInHint": "Sign in with Google under Account to see your devices.",
   "@settings.device.signInHint": {
@@ -11467,11 +11479,11 @@
   "@settings.mobilePairing.copyCode": {
     "description": "Settings > Mobile, button under the QR code that copies the pairing link. Short."
   },
-  "settings.signOut.deletionSummary": "Local data deletion",
+  "settings.signOut.deletionSummary": "Delete data on this computer",
   "@settings.signOut.deletionSummary": {
     "description": "Settings, collapsible section label that hides the delete-local-data button. Short."
   },
-  "settings.signOut.title": "Delete local data",
+  "settings.signOut.title": "Delete all data",
   "@settings.signOut.title": {
     "description": "Settings, section title inside 'Local data deletion'. Short."
   },
@@ -11479,7 +11491,7 @@
   "@settings.signOut.hintKeyBackup": {
     "description": "Settings > Delete local data, text next to the button (test-only key mode)."
   },
-  "settings.signOut.hint": "Removes all Kuzz data from this computer. Your account is not deleted — sign in with Google again to get back in.",
+  "settings.signOut.hint": "Signs out every account on this computer, stops all agents, and deletes their settings and work folders. No account is deleted — sign in with Google again to get back in.",
   "@settings.signOut.hint": {
     "description": "Settings > Delete local data, text next to the button."
   },
@@ -11495,7 +11507,7 @@
   "@settings.signOut.deleteMyData": {
     "description": "Settings > Delete local data, button and confirm-dialog button. Short."
   },
-  "settings.signOut.dialogTitle": "Delete all local data?",
+  "settings.signOut.dialogTitle": "Delete all data on this computer?",
   "@settings.signOut.dialogTitle": {
     "description": "Delete local data confirm dialog title."
   },
@@ -11503,7 +11515,7 @@
   "@settings.signOut.dialogDescriptionKeyBackup": {
     "description": "Delete local data confirm dialog text (test-only key mode)."
   },
-  "settings.signOut.dialogDescription": "This deletes all agent settings and saved data from this computer, then restarts Kuzz. Your account is not deleted — sign in with Google again to get back in.",
+  "settings.signOut.dialogDescription": "Every account on this computer is signed out and every agent stops. Agent settings, agent work folders and saved data are deleted, then Kuzz restarts. No account is deleted — sign in with Google again to get back in.",
   "@settings.signOut.dialogDescription": {
     "description": "Delete local data confirm dialog text."
   },

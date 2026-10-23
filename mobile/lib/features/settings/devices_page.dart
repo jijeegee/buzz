@@ -6,7 +6,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
-import '../../shared/auth/auth.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
@@ -16,40 +15,26 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import 'account_actions.dart';
 
-/// Signed-in devices and account security for a token relay: remote
-/// sign-out, sign out everywhere else, bot token revocation and account
-/// deletion.
-/// Which half of the page to show: the signed-in devices (Settings ›
-/// Devices) or the account's own actions (Settings › Account › Security).
-enum DevicesPagePart { devices, account }
-
+/// Settings › Devices & security for a token relay, as on desktop: the
+/// signed-in devices — rename, pick each one's robot, sign one out —
+/// signing out every other device, and disconnecting every agent.
 class DevicesPage extends HookConsumerWidget {
-  const DevicesPage({
-    super.key,
-    required this.origin,
-    this.botTokens = true,
-    this.part = DevicesPagePart.devices,
-  });
-
-  final DevicesPagePart part;
+  const DevicesPage({super.key, required this.origin, this.agents = true});
 
   /// Canonical origin of the token relay.
   final String origin;
 
-  /// Offer "Revoke all bot tokens". Off for an account signed in with
-  /// Google holding its key, whose desktop Account page has no such action.
-  final bool botTokens;
+  /// Offer disconnecting every agent. Off for a Google key account, whose
+  /// agents the relay cannot cut off yet (desktop leaves it out too).
+  final bool agents;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final devices = ref.watch(accountDevicesProvider(origin));
     final busy = useState(false);
     final error = useState<String?>(null);
-    // Set once the relay has deleted the account: from then on only the
-    // local sign-out remains and is retried on its own.
-    final accountDeleted = useState(false);
-    final cleanupError = useState<String?>(null);
 
     /// Run [action] after a confirmation; refresh the list when it changed
     /// devices. Failures are shown and leave the list as it was.
@@ -79,7 +64,7 @@ class DevicesPage extends HookConsumerWidget {
     }
 
     Future<void> signOutDevice(AccountDevice device) async {
-      final ok = await _confirm(
+      final ok = await confirmDestructive(
         context,
         title: context.l10n.settingsDevicesSignOutDeviceTitle(device.name),
         body: context.l10n.settingsDevicesSignOutDeviceBody,
@@ -124,7 +109,7 @@ class DevicesPage extends HookConsumerWidget {
     }
 
     Future<void> signOutOthers() async {
-      final ok = await _confirm(
+      final ok = await confirmDestructive(
         context,
         title: context.l10n.settingsDevicesSignOutOthersTitle,
         body: context.l10n.settingsDevicesSignOutOthersBody,
@@ -134,103 +119,13 @@ class DevicesPage extends HookConsumerWidget {
       await run((api) => api.revokeOtherSessions());
     }
 
-    Future<void> revokeBots() async {
-      final doneMessage = context.l10n.settingsDevicesRevokeBotsDone;
-      final ok = await _confirm(
-        context,
-        title: context.l10n.settingsDevicesRevokeBotsTitle,
-        body: context.l10n.settingsDevicesRevokeBotsBody,
-        action: context.l10n.settingsDevicesRevokeBotsAction,
-      );
-      if (!ok) return;
-      await run(
-        (api) => api.revokeAllBotTokens(),
-        done: doneMessage,
-        refresh: false,
-      );
-    }
-
-    /// The relay already deleted the account and ended this session:
-    /// forget it on this device only. A failure here is not a failed
-    /// deletion, so it is shown on its own with a local-only retry.
-    Future<void> finishLocalCleanup() async {
-      cleanupError.value = null;
-      busy.value = true;
-      try {
-        await ref
-            .read(authProvider.notifier)
-            .removeActiveCommunity(deviceOnly: true);
-      } catch (failure) {
-        if (context.mounted) cleanupError.value = '$failure';
-        return;
-      } finally {
-        if (context.mounted) busy.value = false;
-      }
-      if (context.mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-    }
-
-    Future<void> deleteAccount() async {
-      final ok = await _confirm(
-        context,
-        title: context.l10n.settingsDevicesDeleteAccountTitle,
-        body: context.l10n.settingsDevicesDeleteAccountBody,
-        action: context.l10n.settingsDevicesDeleteAccount,
-      );
-      if (!ok) return;
-      final deleted = await run((api) => api.deleteAccount(), refresh: false);
-      if (!deleted || !context.mounted) return;
-      accountDeleted.value = true;
-      await finishLocalCleanup();
-    }
-
     final list = devices.value;
-    final showDevices = part == DevicesPagePart.devices;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          showDevices
-              ? context.l10n.settingsDevicesTitle
-              : context.l10n.settingsSecurityTitle,
-        ),
-      ),
+      appBar: AppBar(title: Text(context.l10n.settingsDevicesTitle)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: Grid.xs),
           children: [
-            if (accountDeleted.value && cleanupError.value != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Grid.gutter,
-                  vertical: Grid.xxs,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        context.l10n.settingsDevicesLocalCleanupFailed(
-                          cleanupError.value!,
-                        ),
-                        key: const Key('devices-local-cleanup-error'),
-                        style: context.textTheme.bodySmall?.copyWith(
-                          color: context.colors.error,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: Grid.xxs),
-                    FilledButton(
-                      key: const Key('devices-local-cleanup-retry'),
-                      onPressed: busy.value
-                          ? null
-                          : () => unawaited(finishLocalCleanup()),
-                      child: Text(context.l10n.settingsDevicesFinishSignOut),
-                    ),
-                  ],
-                ),
-              ),
             if (error.value != null)
               Padding(
                 padding: const EdgeInsets.symmetric(
@@ -248,102 +143,70 @@ class DevicesPage extends HookConsumerWidget {
                   ),
                 ),
               ),
-            if (showDevices) ...[
-              if (list != null)
-                AppListCard(
-                  label: context.l10n.settingsDevicesSignedIn,
-                  children: [
-                    for (final device in list)
-                      _DeviceRow(
-                        device: device,
-                        onRename: busy.value
-                            ? null
-                            : () => unawaited(renameDevice(device)),
-                        onChooseRobot: busy.value
-                            ? null
-                            : () => unawaited(chooseRobot(device)),
-                        onSignOut: busy.value || device.current
-                            ? null
-                            : () => unawaited(signOutDevice(device)),
-                      ),
-                  ],
-                )
-              else if (devices.hasError)
-                Padding(
-                  padding: const EdgeInsets.all(Grid.sm),
-                  child: Column(
-                    children: [
-                      Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          context.l10n.settingsDevicesLoadFailed(
-                            '${devices.error}',
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(height: Grid.xs),
-                      FilledButton(
-                        key: const Key('devices-load-retry'),
-                        onPressed: () =>
-                            ref.invalidate(accountDevicesProvider(origin)),
-                        child: Text(context.l10n.commonTryAgain),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.all(Grid.sm),
-                  child: Center(
-                    child: KuzzLoadingIndicator(
-                      size: 32,
-                      semanticLabel: context.l10n.settingsDevicesLoading,
+            if (list != null)
+              AppListCard(
+                label: context.l10n.settingsDevicesSignedIn,
+                children: [
+                  for (final device in list)
+                    _DeviceRow(
+                      device: device,
+                      onRename: busy.value
+                          ? null
+                          : () => unawaited(renameDevice(device)),
+                      onChooseRobot: busy.value
+                          ? null
+                          : () => unawaited(chooseRobot(device)),
+                      onSignOut: busy.value || device.current
+                          ? null
+                          : () => unawaited(signOutDevice(device)),
                     ),
+                ],
+              )
+            else if (devices.hasError)
+              Padding(
+                padding: const EdgeInsets.all(Grid.sm),
+                child: Column(
+                  children: [
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        context.l10n.settingsDevicesLoadFailed(
+                          '${devices.error}',
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: Grid.xs),
+                    FilledButton(
+                      key: const Key('devices-load-retry'),
+                      onPressed: () =>
+                          ref.invalidate(accountDevicesProvider(origin)),
+                      child: Text(context.l10n.commonTryAgain),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.all(Grid.sm),
+                child: Center(
+                  child: KuzzLoadingIndicator(
+                    size: 32,
+                    semanticLabel: context.l10n.settingsDevicesLoading,
                   ),
                 ),
-              AppListCard(
-                children: [
-                  AppListRow(
-                    key: const Key('devices-sign-out-others'),
-                    icon: LucideIcons.monitorSmartphone,
-                    title: context.l10n.settingsDevicesSignOutOthers,
-                    onTap: busy.value ? null : () => unawaited(signOutOthers()),
-                  ),
-                ],
               ),
-            ],
-            if (!showDevices && botTokens)
-              AppListCard(
-                children: [
-                  AppListRow(
-                    key: const Key('devices-revoke-bots'),
-                    icon: LucideIcons.bot,
-                    title: context.l10n.settingsDevicesRevokeBots,
-                    onTap: busy.value ? null : () => unawaited(revokeBots()),
-                  ),
-                ],
-              ),
-            if (!showDevices && !accountDeleted.value)
-              AppListCard(
-                children: [
-                  ExpansionTile(
-                    key: const Key('devices-account-deletion'),
-                    title: Text(context.l10n.settingsDevicesAccountDeletion),
-                    children: [
-                      AppListRow(
-                        key: const Key('devices-delete-account'),
-                        icon: LucideIcons.trash2,
-                        title: context.l10n.settingsDevicesDeleteAccount,
-                        titleColor: context.colors.error,
-                        onTap: busy.value
-                            ? null
-                            : () => unawaited(deleteAccount()),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            AppListCard(
+              children: [
+                AppListRow(
+                  key: const Key('devices-sign-out-others'),
+                  icon: LucideIcons.monitorSmartphone,
+                  title: context.l10n.settingsDevicesSignOutOthers,
+                  onTap: busy.value ? null : () => unawaited(signOutOthers()),
+                ),
+                if (agents) DisconnectAgentsRow(origin: origin),
+              ],
+            ),
           ],
         ),
       ),
@@ -649,34 +512,4 @@ class _DeviceNameDialogState extends State<_DeviceNameDialog> {
       ],
     );
   }
-}
-
-Future<bool> _confirm(
-  BuildContext context, {
-  required String title,
-  required String body,
-  required String action,
-}) async {
-  final confirmed = await showKuzzDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(title),
-      content: Text(body),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(context.l10n.commonCancel),
-        ),
-        FilledButton(
-          key: const Key('devices-confirm'),
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-          style: FilledButton.styleFrom(
-            backgroundColor: dialogContext.colors.error,
-          ),
-          child: Text(action),
-        ),
-      ],
-    ),
-  );
-  return confirmed ?? false;
 }
