@@ -164,6 +164,19 @@ impl Db {
         Ok(())
     }
 
+    /// Make `region` the home of an account that signed up through it while
+    /// the primary created the account (S5-2: sign-up is forwarded to the
+    /// primary, whose insert default names the primary).
+    #[datastore_span(name = "set_principal_home", system = "postgresql")]
+    pub async fn set_principal_home(&self, principal: &PrincipalId, region: &str) -> Result<()> {
+        sqlx::query("UPDATE principals SET home_region = $2 WHERE id = $1")
+            .bind(principal.as_bytes().as_slice())
+            .bind(region)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// The account's home region and sign-up country.
     #[datastore_span(name = "principal_home", system = "postgresql")]
     pub async fn principal_home(

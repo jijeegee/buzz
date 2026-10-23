@@ -30,6 +30,8 @@ JP_LINK_KEY="$(openssl rand -hex 32)"
 # One service: the same relay key and community id in both regions.
 RELAY_KEY="$(openssl rand -hex 32)"
 COMMUNITY_ID="$(openssl rand -hex 16 | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')"
+# Sign-in through the dev-only fake Google provider (S5-2 forwards it to kr).
+INVITE_SECRET="$(openssl rand -hex 32)"
 PIDS=()
 
 log() { printf '[regions] %s\n' "$*"; }
@@ -50,7 +52,7 @@ log "starting stack"
 "${COMPOSE[@]}" up -d --wait postgres-kr postgres-jp redis-kr redis-jp minio
 
 log "building relay"
-cargo build -p kuzz-relay
+cargo build -p kuzz-relay --features dev
 BIN="${TARGET}/debug/kuzz-relay"
 [[ -x "${BIN}" || -x "${BIN}.exe" ]] || { log "no relay binary at ${BIN}"; exit 1; }
 mkdir -p "${LOG_DIR}"
@@ -78,6 +80,9 @@ start_relay() {
     KUZZ_S3_BUCKET=kuzz-media \
     KUZZ_RELAY_PRIVATE_KEY="${RELAY_KEY}" \
     KUZZ_REQUIRE_AUTH_TOKEN=false \
+    AUTH_TOKEN_ENABLED=true \
+    AUTH_OIDC_FAKE=true \
+    INVITE_SIGNING_SECRET="${INVITE_SECRET}" \
     KUZZ_CHAT_STATE_WRITES=on \
     KUZZ_PUBSUB_SEQ_ENVELOPE=true \
     "${BIN}" >"${LOG_DIR}/relay-${region}.log" 2>&1 &
