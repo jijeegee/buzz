@@ -403,3 +403,49 @@ test("a relay copy arriving later takes away the failed row and its Retry", () =
   assert.equal(hasFailedSend("local-1"), false);
   assert.deepEqual(storedSends(CHANNEL), []);
 });
+
+test("Retry after an unreachable relay asks again and skips a landed send", async () => {
+  const preview = store("local-1", "hi");
+  restart();
+  const queryClient = client();
+  let online = false;
+  const { check } = relayCheck(async () => {
+    if (!online) throw new Error("offline");
+    return [relayEvent("landed", preview.created_at, "hi")];
+  });
+  const calls = [];
+  const retry = async (variables) => calls.push(variables);
+  restoreStoredSends(queryClient, CHANNEL, retry, new Set(), check);
+  await new Promise((resolve) => setImmediate(resolve));
+  restoreStoredSends(queryClient, CHANNEL, retry, new Set(), check);
+  assert.equal(hasFailedSend("local-1"), true);
+  online = true;
+  retryFailedSend("local-1");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 0);
+  assert.equal(
+    rows(queryClient).some((event) => event.id === "local-1"),
+    false,
+  );
+  assert.deepEqual(storedSends(CHANNEL), []);
+});
+
+test("Retry after an unreachable relay sends when the relay lacks it", async () => {
+  store("local-1", "hi");
+  restart();
+  const queryClient = client();
+  let online = false;
+  const { check } = relayCheck(async () => {
+    if (!online) throw new Error("offline");
+    return [];
+  });
+  const calls = [];
+  const retry = async (variables) => calls.push(variables);
+  restoreStoredSends(queryClient, CHANNEL, retry, new Set(), check);
+  await new Promise((resolve) => setImmediate(resolve));
+  restoreStoredSends(queryClient, CHANNEL, retry, new Set(), check);
+  online = true;
+  retryFailedSend("local-1");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 1);
+});

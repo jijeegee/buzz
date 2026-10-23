@@ -340,7 +340,8 @@ const STORED_SEND_MATCH_WINDOW_SECONDS = 120;
  * Retry can never post it twice.
  */
 export type StoredSendRelayCheck = {
-  state: Map<string, "checking" | "absent">;
+  /** "unverified": the relay could not be asked; Retry asks again first. */
+  state: Map<string, "checking" | "absent" | "unverified">;
   lookup: (stored: StoredSend) => Promise<RelayEvent[]>;
   onSettled: () => void;
   isDisposed: () => boolean;
@@ -428,6 +429,7 @@ export function restoreStoredSends(
         relayCheck
           .lookup(stored)
           .then((events) => {
+            relayCheck.state.set(localKey, "absent");
             if (
               !relayCheck.isDisposed() &&
               !isStoredSendInFlight(localKey) &&
@@ -437,13 +439,12 @@ export function restoreStoredSends(
             }
           })
           // Unreachable relay: show it failed so Retry / Delete stay possible.
-          .catch(() => {})
-          .finally(() => {
-            relayCheck.state.set(localKey, "absent");
-            relayCheck.onSettled();
-          });
+          .catch(() => {
+            relayCheck.state.set(localKey, "unverified");
+          })
+          .finally(() => relayCheck.onSettled());
       }
-      if (checked !== "absent") continue;
+      if (checked === undefined || checked === "checking") continue;
     }
     if (!attempted.has(`timeline:${localKey}`)) {
       attempted.add(`timeline:${localKey}`);
@@ -481,11 +482,28 @@ export function restoreStoredSends(
           // In flight before the registry entry goes, so a cache update in
           // between cannot arm a second Retry.
           markStoredSendInFlight(localKey);
-          retry({
-            ...stored.send,
-            channelId,
-            optimisticLocalKey: localKey,
-          }).catch(() => {});
+          const send = () =>
+            retry({
+              ...stored.send,
+              channelId,
+              optimisticLocalKey: localKey,
+            }).catch(() => {});
+          if (relayCheck?.state.get(localKey) !== "unverified") {
+            send();
+            return;
+          }
+          // The relay could not be asked at restore: ask now, so a message
+          // that landed before the app quit is not posted twice.
+          relayCheck
+            .lookup(stored)
+            .then((events) => {
+              if (!events.some((event) => isStoredSendCopy(match, event))) {
+                return send();
+              }
+              removeOptimisticMessage(queryClient, channelId, localKey);
+              removeStoredSend(localKey);
+            })
+            .catch(send);
         },
         discard: () => {
           removeOptimisticMessage(queryClient, channelId, localKey);
