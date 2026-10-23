@@ -2057,7 +2057,7 @@ CREATE TABLE devices (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     principal_id  BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
     name          TEXT NOT NULL,
-    platform      TEXT NOT NULL CHECK (platform IN ('desktop', 'mobile', 'web', 'cli')),
+    platform      TEXT NOT NULL CHECK (platform IN ('desktop', 'mobile', 'web', 'cli', 'external')),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at    TIMESTAMPTZ,
@@ -2066,14 +2066,19 @@ CREATE TABLE devices (
     -- Device key (P-256, SEC1 compressed) proving use from this device (0078).
     device_pubkey BYTEA CHECK (device_pubkey IS NULL OR octet_length(device_pubkey) = 33),
     device_key_kind TEXT CHECK (device_key_kind IS NULL OR device_key_kind IN ('hardware', 'software')),
-    CONSTRAINT devices_key_kind_with_key CHECK ((device_pubkey IS NULL) = (device_key_kind IS NULL))
+    CONSTRAINT devices_key_kind_with_key CHECK ((device_pubkey IS NULL) = (device_key_kind IS NULL)),
+    -- `login` (signed in with the identity provider) or `external` (an
+    -- external agent's computer paired by the owner, 0090).
+    kind          TEXT NOT NULL DEFAULT 'login' CHECK (kind IN ('login', 'external')),
+    CONSTRAINT devices_external_shape CHECK ((kind = 'external') = (platform = 'external')
+           AND (kind = 'login' OR (device_pubkey IS NOT NULL AND install_id IS NULL)))
 );
 CREATE INDEX devices_principal ON devices (principal_id);
 CREATE UNIQUE INDEX devices_principal_install
     ON devices (principal_id, install_id)
     WHERE install_id IS NOT NULL;
 CREATE UNIQUE INDEX devices_principal_key
-    ON devices (principal_id, device_pubkey)
+    ON devices (principal_id, kind, device_pubkey)
     WHERE device_pubkey IS NOT NULL AND revoked_at IS NULL;
 
 CREATE TABLE sessions (
@@ -2187,6 +2192,32 @@ CREATE INDEX agent_key_backups_owner_host ON agent_key_backups (owner_id, host_d
 
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('agent_key_backups', 'deployment-global encrypted Kuzz agent key copies of owner accounts');
+
+-- External agent pairing requests (migration 0090).
+CREATE TABLE pairing_requests (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    principal_id      BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    started_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+    code_hash         BYTEA NOT NULL UNIQUE CHECK (length(code_hash) = 32),
+    state             TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'connected')),
+    agent_pubkey      BYTEA CHECK (agent_pubkey IS NULL OR length(agent_pubkey) = 32),
+    device_pubkey     BYTEA CHECK (device_pubkey IS NULL OR octet_length(device_pubkey) = 33),
+    device_name       TEXT CHECK (device_name IS NULL OR char_length(device_name) BETWEEN 1 AND 64),
+    device_id         UUID REFERENCES devices(id) ON DELETE SET NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at        TIMESTAMPTZ NOT NULL,
+    claimed_at        TIMESTAMPTZ,
+    CONSTRAINT pairing_requests_claim_shape CHECK (
+        (state = 'open') = (claimed_at IS NULL)
+        AND (claimed_at IS NULL) = (agent_pubkey IS NULL)
+        AND (claimed_at IS NULL) = (device_pubkey IS NULL)
+        AND (state = 'connected' OR (device_name IS NULL AND device_id IS NULL)))
+);
+CREATE INDEX pairing_requests_principal ON pairing_requests (principal_id, created_at);
+CREATE INDEX pairing_requests_expires ON pairing_requests (expires_at);
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('pairing_requests', 'deployment-global external agent pairing requests of owner accounts');
 
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable

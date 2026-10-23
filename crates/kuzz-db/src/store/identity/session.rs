@@ -92,7 +92,9 @@ pub enum RefreshOutcome {
 /// app was upgraded), or a new device is made (the old key was lost). The
 /// install id then moves to that device, so later logins from the install
 /// find it; other devices keep their sessions until they are signed out.
-/// Nothing is revoked here.
+/// Nothing is revoked here. External devices (paired agents' computers,
+/// migration 0090) are never reused, un-revoked or counted: a login on such
+/// a computer gets its own login row.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn complete_login(
     pool: &PgPool,
@@ -113,7 +115,7 @@ pub(super) async fn complete_login(
         Some(install_id) => {
             sqlx::query_as(
                 "SELECT id, device_pubkey IS NULL FROM devices \
-                 WHERE principal_id = $1 AND install_id = $2 FOR UPDATE",
+                 WHERE principal_id = $1 AND install_id = $2 AND kind = 'login' FOR UPDATE",
             )
             .bind(principal.as_bytes().as_slice())
             .bind(install_id)
@@ -126,6 +128,7 @@ pub(super) async fn complete_login(
         Some(key) => {
             sqlx::query_scalar(
                 "SELECT id FROM devices WHERE principal_id = $1 AND device_pubkey = $2 \
+                 AND kind = 'login' \
                  ORDER BY revoked_at IS NULL DESC, last_seen_at DESC LIMIT 1 FOR UPDATE",
             )
             .bind(principal.as_bytes().as_slice())
@@ -156,7 +159,8 @@ pub(super) async fn complete_login(
     }
     let live_devices: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM devices \
-         WHERE principal_id = $1 AND revoked_at IS NULL AND id IS DISTINCT FROM $2",
+         WHERE principal_id = $1 AND kind = 'login' AND revoked_at IS NULL \
+           AND id IS DISTINCT FROM $2",
     )
     .bind(principal.as_bytes().as_slice())
     .bind(known)

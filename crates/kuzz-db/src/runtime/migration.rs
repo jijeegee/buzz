@@ -511,6 +511,7 @@ mod postgres_tests {
             "access_tokens",
             "key_registry",
             "agent_key_backups",
+            "pairing_requests",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -725,7 +726,16 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0081-0086 are taken by the regions branches.
-        assert_eq!(migrations.len(), 83);
+        assert_eq!(migrations[83].version, 90);
+        let pairing = migrations[83].sql.as_str();
+        assert!(pairing.contains("CREATE TABLE pairing_requests"));
+        assert!(pairing.contains("ADD COLUMN kind TEXT NOT NULL DEFAULT 'login'"));
+        assert!(
+            include_str!("../../../../schema/schema.sql").contains("CREATE TABLE pairing_requests")
+        );
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("ON devices (principal_id, kind, device_pubkey)"));
+        assert_eq!(migrations.len(), 84);
         assert_eq!(migrations[82].version, 89);
         assert!(migrations[82]
             .sql
