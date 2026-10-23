@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Danke für deine Meldung an {community}. Deine Meldung wurde geprüft und es wurden Maßnahmen ergriffen.",
+  "moderation.reportResolved.dismissed": "Danke für deine Meldung an {community}. Deine Meldung wurde geprüft; es wurden keine Maßnahmen ergriffen.",
+  "moderation.reportResolved.escalated": "Danke für deine Meldung an {community}. Deine Meldung wurde zur weiteren Prüfung weitergeleitet.",
+  "moderation.reportResolved.other": "Danke für deine Meldung an {community}. Deine Meldung wurde geprüft.",
+  "moderation.contentActioned": "Ein Moderator in {community} hat Maßnahmen gegen deinen Inhalt ergriffen.",
+  "moderation.banned": "Du wurdest aus {community} gesperrt.",
+  "moderation.timedOut": "Du bist in {community} bis {until} vorübergehend gesperrt.",
+  "moderation.timedOutNoEnd": "Du bist in {community} vorübergehend gesperrt.",
+  "moderation.reason": "Grund: {reason}",
+  "groups.landing.title": "{name} auf Kuzz",
+  "groups.landing.members": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
+  "groups.landing.open": "In Kuzz öffnen",
+  "groups.landing.noApp": "Du hast Kuzz noch nicht? Frag die Person, die diesen Link geteilt hat.",
+  "groups.landing.notFoundTitle": "Link nicht gefunden",
+  "groups.landing.notFoundHeading": "Dieser Link funktioniert nicht",
+  "groups.landing.notFoundHint": "Er wurde vielleicht zurückgesetzt oder die Gruppe existiert nicht mehr. Frag die Person, die ihn geteilt hat, nach einem neuen Link.",
+  "groups.landing.rateLimitedTitle": "Versuch es gleich noch mal",
+  "groups.landing.rateLimitedHeading": "Zu viele Anfragen",
+  "groups.landing.rateLimitedHint": "Versuch es in einer Minute erneut."
+}

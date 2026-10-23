@@ -1,0 +1,49 @@
+{
+  "Chat": "チャット",
+  "Group": "グループ",
+  "Channel": "グループ",
+  "Thread": "スレッド",
+  "Agent": "エージェント",
+  "Friend": "友だち",
+  "Community": "コミュニティ",
+  "Member": "メンバー",
+  "Owner": "オーナー",
+  "Admin": "管理者",
+  "Moderator": "モデレーター",
+  "Message": "メッセージ",
+  "Direct message": [
+    "ダイレクトメッセージ",
+    "DM"
+  ],
+  "Goal": "目標",
+  "Project": "プロジェクト",
+  "Workflow": "ワークフロー",
+  "Task": "タスク",
+  "Team": "チーム",
+  "Huddle": [
+    "音声通話",
+    "通話"
+  ],
+  "Forum": "フォーラム",
+  "Post": "投稿",
+  "Inbox": "通知",
+  "Reminder": [
+    "リマインダー",
+    "リマインド"
+  ],
+  "Mention": "メンション",
+  "Reply": "返信",
+  "Reaction": "リアクション",
+  "Pin": "ピン留め",
+  "Mute": "ミュート",
+  "Invite": "招待",
+  "Invite link": "招待リンク",
+  "Profile": "プロフィール",
+  "Account": "アカウント",
+  "Device": "デバイス",
+  "Notification": "通知",
+  "Draft": "下書き",
+  "Archive": "アーカイブ",
+  "Settings": "設定",
+  "Voice message": "ボイスメッセージ"
+}

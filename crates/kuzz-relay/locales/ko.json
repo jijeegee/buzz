@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "{community}에 신고해 주셔서 감사해요. 신고 내용을 검토하고 조치했어요.",
+  "moderation.reportResolved.dismissed": "{community}에 신고해 주셔서 감사해요. 신고 내용을 검토했지만 별도로 조치하지 않았어요.",
+  "moderation.reportResolved.escalated": "{community}에 신고해 주셔서 감사해요. 추가 검토를 위해 신고 내용을 전달했어요.",
+  "moderation.reportResolved.other": "{community}에 신고해 주셔서 감사해요. 신고 내용을 검토했어요.",
+  "moderation.contentActioned": "{community}의 운영자가 내 콘텐츠에 조치를 취했어요.",
+  "moderation.banned": "{community}에서 차단됐어요.",
+  "moderation.timedOut": "{community}에서 {until}까지 활동이 일시 정지됐어요.",
+  "moderation.timedOutNoEnd": "{community}에서 활동이 일시 정지됐어요.",
+  "moderation.reason": "사유: {reason}",
+  "groups.landing.title": "Kuzz의 {name}",
+  "groups.landing.members": "{count, plural, other {멤버 #명}}",
+  "groups.landing.open": "Kuzz에서 열기",
+  "groups.landing.noApp": "아직 Kuzz가 없나요? 이 링크를 공유한 사람에게 물어보세요.",
+  "groups.landing.notFoundTitle": "링크를 찾을 수 없음",
+  "groups.landing.notFoundHeading": "이 링크는 작동하지 않아요",
+  "groups.landing.notFoundHint": "링크가 재설정됐거나 그룹이 더 이상 없을 수 있어요. 공유한 사람에게 새 링크를 요청해 주세요.",
+  "groups.landing.rateLimitedTitle": "잠시 후 다시 시도",
+  "groups.landing.rateLimitedHeading": "요청이 너무 많아요",
+  "groups.landing.rateLimitedHint": "1분 후에 다시 시도해 주세요."
+}

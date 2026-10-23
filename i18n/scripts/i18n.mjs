@@ -5,6 +5,8 @@
 //   node i18n/scripts/i18n.mjs prepare [lang...]  new/changed English -> i18n/work/<lang>.json
 //   node i18n/scripts/i18n.mjs apply [lang...]    i18n/work/<lang>.out.json -> language files
 //   node i18n/scripts/i18n.mjs check              validate every language file (CI)
+//   node i18n/scripts/i18n.mjs status [lang...]   per language and tier: texts translated / total
+//   node i18n/scripts/i18n.mjs park [lang...]     move translations above the current tier to i18n/later/
 //   node i18n/scripts/i18n.mjs pseudo             write the en-XA pseudo language (dev only)
 
 import { createHash } from "node:crypto";
@@ -80,6 +82,18 @@ function writeTarget(config, src, lang, english, messages) {
     if (key in messages) out[key] = messages[key];
   }
   writeJson(sourcePath(config, src, lang), out);
+  // Flutter gen-l10n needs a plain-language file (app_zh, app_pt) beside
+  // zh_Hans or pt_BR; it copies the first listed variant.
+  const base = baseFallback(config, src, lang);
+  if (base) writeJson(sourcePath(config, src, base), { ...out, "@@locale": base });
+}
+
+function baseFallback(config, src, lang) {
+  if (!src.localeHeader || !lang.includes("-")) return null;
+  const base = lang.split("-")[0];
+  const codes = config.languages.map((l) => l.code);
+  if (codes.includes(base)) return null;
+  return codes.find((code) => code.split("-")[0] === base) === lang ? base : null;
 }
 
 export function hash(text) {
@@ -88,6 +102,97 @@ export function hash(text) {
 
 const statePath = (config, lang) =>
   path.join(config.root, "i18n", "state", `${lang}.json`);
+const laterPath = (config, lang) =>
+  path.join(config.root, "i18n", "later", `${lang}.json`);
+const glossaryPath = (config, lang) =>
+  path.join(config.root, "i18n", "glossary", `${lang}.json`);
+
+// ---------- glossary and tiers ----------
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Matches `term` as a plain word in English, singular or plural, any case;
+ * not inside code-like tokens (`@mention`, kuzz-agent, URLs) or the product
+ * name "Kuzz Agent".
+ */
+function termPattern(term) {
+  const word = escapeRegExp(term);
+  const plural = term.endsWith("y")
+    ? `${escapeRegExp(term.slice(0, -1))}(?:y|ies)`
+    : `${word}(?:s|es)?`;
+  return new RegExp(
+    `(?<![\\w@./:-])(?<!Kuzz )${plural}(?![\\w./:-]*\\w)`,
+    "i",
+  );
+}
+
+/** English text with code spans and URLs removed, for term matching. */
+const plainEnglish = (text) =>
+  text.replace(/`[^`]*`/g, " ").replace(/\b\w+:\/\/\S+/g, " ");
+
+/**
+ * Product words that must always be said the same way in `lang`:
+ * [{ term, forms }]. Terms marked `fixed` in glossary/terms.json; the language
+ * glossary gives one word or a list of accepted forms (first is preferred).
+ */
+export function fixedTerms(config, lang) {
+  const terms =
+    readJson(path.join(config.root, "i18n", "glossary", "terms.json")) ?? {};
+  const words = readJson(glossaryPath(config, lang)) ?? {};
+  return Object.entries(words)
+    .filter(([term]) => terms[term]?.fixed)
+    .map(([term, value]) => ({
+      term,
+      pattern: termPattern(term),
+      forms: [value].flat(),
+    }));
+}
+
+const wordCount = (text) =>
+  text.trim().split(/\s+/).filter(Boolean).length;
+
+function ruleMatches(rule, id, text, words) {
+  if (rule.keys && !rule.keys.some((prefix) => id.startsWith(prefix)))
+    return false;
+  if (rule.text && !new RegExp(rule.text, "i").test(text)) return false;
+  if (rule.maxWords !== undefined && words > rule.maxWords) return false;
+  return true;
+}
+
+/**
+ * Release tiers from i18n/tiers.json: `current` is the highest tier being
+ * translated, `of(text)` the tier of an English text (a number, or "skip" for
+ * text that stays English). The first matching rule wins; one text has one
+ * tier, the earliest any of its uses needs. Without tiers.json all is tier 1.
+ */
+export function readTiers(config, english) {
+  const rules = readJson(path.join(config.root, "i18n", "tiers.json"));
+  const rank = (tier) => (tier === "skip" ? Infinity : tier);
+  const byText = new Map();
+  for (const src of config.sources) {
+    for (const [key, { text }] of Object.entries(english[src.id] ?? {})) {
+      let tier = 1;
+      if (rules) {
+        const id = `${src.id}:${key}`;
+        const words = wordCount(visibleText(parse(text)));
+        const rule = rules.rules.find((r) => ruleMatches(r, id, text, words));
+        tier = rule ? rule.tier : rules.default;
+      }
+      const prev = byText.get(text);
+      if (prev === undefined || rank(tier) < rank(prev)) byText.set(text, tier);
+    }
+  }
+  const current = rules?.current ?? 1;
+  return {
+    current,
+    of: (text) => byText.get(text) ?? 1,
+    open: (text) => rank(byText.get(text) ?? 1) <= current,
+    all: [...new Set(byText.values())]
+      .filter((tier) => tier !== "skip")
+      .sort((a, b) => a - b),
+  };
+}
 const workPath = (config, lang, suffix = "") =>
   path.join(config.root, "i18n", "work", `${lang}${suffix}.json`);
 
@@ -153,7 +258,7 @@ function pluralCategories(lang, ordinal) {
  * Checks one translation against its English source.
  * Returns { errors: string[], warnings: string[] }.
  */
-export function validate({ en, tr, lang, note = "", script = [] }) {
+export function validate({ en, tr, lang, note = "", script = [], terms = [] }) {
   const errors = [];
   const warnings = [];
   if (typeof tr !== "string" || tr.trim() === "")
@@ -217,6 +322,16 @@ export function validate({ en, tr, lang, note = "", script = [] }) {
     warnings.push("same as English");
   }
 
+  const lowered = trText.toLowerCase();
+  const plain = plainEnglish(enText);
+  for (const { term, pattern, forms } of terms) {
+    if (
+      pattern.test(plain) &&
+      !forms.some((form) => lowered.includes(form.toLowerCase()))
+    )
+      errors.push(`say "${term}" as the glossary does: ${forms.join(" / ")}`);
+  }
+
   if (
     SHORT_NOTE.test(note) &&
     [...trText].length > MAX_SHORT_RATIO * [...enText].length + 2
@@ -264,24 +379,37 @@ export function prepare(config, requested = [], log = console.log) {
     path.join(config.root, "i18n", "glossary", "terms.json"),
   );
   const results = {};
+  const tiers = readTiers(config, english);
   for (const lang of targetLanguages(config, requested)) {
     const state = readJson(statePath(config, lang.code)) ?? {};
+    const later = readJson(laterPath(config, lang.code)) ?? {};
     const tm = memory(config, english, lang.code, state);
-    const items = [];
+    // One item per English text; its other uses ride along in `also`.
+    const byText = new Map();
     for (const src of config.sources) {
       const source = english[src.id];
       if (!source) continue;
       const target = readTarget(config, src, lang.code);
       for (const [key, { text, note }] of Object.entries(source)) {
+        if (!tiers.open(text)) continue;
         const current = target[key];
         if (current !== undefined && state[src.id]?.[key] === hash(text))
           continue;
-        const item = { id: `${src.id}:${key}`, en: text, note };
+        const id = `${src.id}:${key}`;
+        const same = byText.get(text);
+        if (same) {
+          (same.also ??= []).push(id);
+          continue;
+        }
+        const item = { id, en: text, note };
+        const parked = later[src.id]?.[key];
         if (current !== undefined) item.previous = current;
         if (tm.has(text)) item.suggestion = tm.get(text);
-        items.push(item);
+        else if (parked?.from === hash(text)) item.suggestion = parked.text;
+        byText.set(text, item);
       }
     }
+    const items = [...byText.values()];
     const work = workPath(config, lang.code);
     if (!items.length) {
       fs.rmSync(work, { force: true });
@@ -317,6 +445,7 @@ export function apply(config, requested = [], log = console.log) {
     const out = readJson(workPath(config, lang.code, ".out"));
     if (!work || !out) continue;
     const state = readJson(statePath(config, lang.code)) ?? {};
+    const terms = fixedTerms(config, lang.code);
     const bySource = new Map();
     const remaining = [];
     let applied = 0;
@@ -332,6 +461,7 @@ export function apply(config, requested = [], log = console.log) {
         lang: lang.code,
         note: item.note,
         script: lang.script,
+        terms,
       });
       if (errors.length) {
         remaining.push({ ...item, rejected: tr, problems: errors });
@@ -339,12 +469,14 @@ export function apply(config, requested = [], log = console.log) {
       }
       for (const warning of warnings)
         log(`  warn ${lang.code} ${item.id}: ${warning}`);
-      const [srcId, ...rest] = item.id.split(":");
-      const key = rest.join(":");
-      if (!bySource.has(srcId)) bySource.set(srcId, {});
-      bySource.get(srcId)[key] = tr;
-      state[srcId] = { ...state[srcId], [key]: hash(item.en) };
-      applied += 1;
+      for (const id of [item.id, ...(item.also ?? [])]) {
+        const [srcId, ...rest] = id.split(":");
+        const key = rest.join(":");
+        if (!bySource.has(srcId)) bySource.set(srcId, {});
+        bySource.get(srcId)[key] = tr;
+        state[srcId] = { ...state[srcId], [key]: hash(item.en) };
+        applied += 1;
+      }
     }
     for (const src of config.sources) {
       const english = readSource(config, src);
@@ -418,6 +550,7 @@ export function check(config, log = console.log) {
       const file = sourcePath(config, src, lang.code);
       if (!fs.existsSync(file)) continue;
       const target = readTarget(config, src, lang.code);
+      const terms = fixedTerms(config, lang.code);
       let missing = 0;
       for (const key of Object.keys(target)) {
         if (!(key in english))
@@ -436,6 +569,7 @@ export function check(config, log = console.log) {
           lang: lang.code,
           note,
           script: lang.script,
+          terms,
         });
         for (const error of errors)
           problems.push(`${src.id} ${lang.code} ${key}: ${error}`);
@@ -454,6 +588,88 @@ export function check(config, log = console.log) {
     }
   }
   return problems;
+}
+
+/**
+ * Per language and tier, how many English texts are translated and up to
+ * date: { lang: { tier: { done, total } } }. A text used in several places
+ * counts once, and is done when every use is.
+ */
+export function status(config, requested = [], log = console.log) {
+  const english = Object.fromEntries(
+    config.sources.map((src) => [src.id, readSource(config, src)]),
+  );
+  const tiers = readTiers(config, english);
+  const result = {};
+  for (const lang of targetLanguages(config, requested)) {
+    const state = readJson(statePath(config, lang.code)) ?? {};
+    const done = new Map();
+    for (const src of config.sources) {
+      const target = readTarget(config, src, lang.code);
+      for (const [key, { text }] of Object.entries(english[src.id] ?? {})) {
+        const ok =
+          key in target && state[src.id]?.[key] === hash(text);
+        done.set(text, (done.get(text) ?? true) && ok);
+      }
+    }
+    const row = {};
+    for (const tier of tiers.all) row[tier] = { done: 0, total: 0 };
+    for (const [text, ok] of done) {
+      const tier = tiers.of(text);
+      if (tier === "skip") continue;
+      row[tier].total += 1;
+      if (ok) row[tier].done += 1;
+    }
+    result[lang.code] = row;
+    log(
+      `${lang.code.padEnd(8)}${tiers.all
+        .map((tier) => `  tier ${tier}: ${row[tier].done}/${row[tier].total}`)
+        .join("")}`,
+    );
+  }
+  log(`(current tier: ${tiers.current})`);
+  return result;
+}
+
+/**
+ * Moves translations of text above the current tier (or marked "skip") out
+ * of the language files into i18n/later/<lang>.json, so every language shows
+ * the same English. prepare offers them again when their tier opens.
+ */
+export function park(config, requested = [], log = console.log) {
+  const english = Object.fromEntries(
+    config.sources.map((src) => [src.id, readSource(config, src)]),
+  );
+  const tiers = readTiers(config, english);
+  const summary = {};
+  for (const lang of targetLanguages(config, requested)) {
+    const state = readJson(statePath(config, lang.code)) ?? {};
+    const later = readJson(laterPath(config, lang.code)) ?? {};
+    let moved = 0;
+    for (const src of config.sources) {
+      const source = english[src.id];
+      if (!source) continue;
+      const target = readTarget(config, src, lang.code);
+      for (const [key, { text }] of Object.entries(source)) {
+        if (!(key in target) || tiers.open(text)) continue;
+        later[src.id] = {
+          ...later[src.id],
+          [key]: { text: target[key], from: state[src.id]?.[key] ?? "" },
+        };
+        delete target[key];
+        if (state[src.id]) delete state[src.id][key];
+        moved += 1;
+      }
+      if (fs.existsSync(sourcePath(config, src, lang.code)))
+        writeTarget(config, src, lang.code, source, target);
+    }
+    if (!moved) continue;
+    writeJson(statePath(config, lang.code), sortKeys(state));
+    writeJson(laterPath(config, lang.code), sortKeys(later));
+    summary[lang.code] = moved;
+    log(`${lang.code}: parked ${moved} translations in i18n/later/`);
+  }
+  return summary;
 }
 
 const ACCENTS = Object.fromEntries(
@@ -519,11 +735,19 @@ function main(argv) {
       console.log("language packs ok");
       return 0;
     }
+    case "status":
+      status(config, args);
+      return 0;
+    case "park":
+      park(config, args);
+      return 0;
     case "pseudo":
       pseudo(config);
       return 0;
     default:
-      console.error("usage: i18n.mjs prepare|apply|check|pseudo [lang...]");
+      console.error(
+        "usage: i18n.mjs prepare|apply|check|status|park|pseudo [lang...]",
+      );
       return 1;
   }
 }

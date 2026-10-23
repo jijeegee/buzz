@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Merci pour votre signalement à {community}. Votre signalement a été examiné et des mesures ont été prises.",
+  "moderation.reportResolved.dismissed": "Merci pour votre signalement à {community}. Votre signalement a été examiné ; aucune mesure n'a été prise.",
+  "moderation.reportResolved.escalated": "Merci pour votre signalement à {community}. Votre signalement a été transmis pour un examen approfondi.",
+  "moderation.reportResolved.other": "Merci pour votre signalement à {community}. Votre signalement a été examiné.",
+  "moderation.contentActioned": "Un modérateur de {community} a pris des mesures concernant votre contenu.",
+  "moderation.banned": "Vous avez été banni de {community}.",
+  "moderation.timedOut": "Vous avez été temporairement exclu de {community} jusqu'à {until}.",
+  "moderation.timedOutNoEnd": "Vous avez été temporairement exclu de {community}.",
+  "moderation.reason": "Raison : {reason}",
+  "groups.landing.title": "{name} sur Kuzz",
+  "groups.landing.members": "{count, plural, one {# membre} many {# membres} other {# membres}}",
+  "groups.landing.open": "Ouvrir dans Kuzz",
+  "groups.landing.noApp": "Vous n'avez pas encore Kuzz ? Demandez à la personne qui a partagé ce lien.",
+  "groups.landing.notFoundTitle": "Lien introuvable",
+  "groups.landing.notFoundHeading": "Ce lien ne fonctionne pas",
+  "groups.landing.notFoundHint": "Il a peut-être été réinitialisé, ou le groupe n'existe plus. Demandez un nouveau lien à la personne qui l'a partagé.",
+  "groups.landing.rateLimitedTitle": "Réessayez bientôt",
+  "groups.landing.rateLimitedHeading": "Trop de requêtes",
+  "groups.landing.rateLimitedHint": "Réessayez dans une minute."
+}

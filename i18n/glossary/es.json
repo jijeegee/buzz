@@ -1,0 +1,73 @@
+{
+  "Chat": "Chat",
+  "Group": "Grupo",
+  "Channel": "Grupo",
+  "Thread": "Hilo",
+  "Agent": "Agente",
+  "Friend": [
+    "Amigo",
+    "amig"
+  ],
+  "Community": "Comunidad",
+  "Member": "Miembro",
+  "Owner": [
+    "Propietario",
+    "propietari"
+  ],
+  "Admin": [
+    "Administrador",
+    "admin"
+  ],
+  "Moderator": "Moderador",
+  "Message": "Mensaje",
+  "Direct message": [
+    "Mensaje directo",
+    "mensajes directos"
+  ],
+  "Goal": "Objetivo",
+  "Project": "Proyecto",
+  "Workflow": [
+    "Flujo de trabajo",
+    "flujo"
+  ],
+  "Task": "Tarea",
+  "Team": "Equipo",
+  "Huddle": [
+    "Llamada de voz",
+    "llamadas de voz"
+  ],
+  "Forum": "Foro",
+  "Post": "Publicación",
+  "Inbox": "Bandeja de entrada",
+  "Reminder": "Recordatorio",
+  "Mention": [
+    "Mención",
+    "mencion"
+  ],
+  "Reply": "Responder",
+  "Reaction": [
+    "Reacción",
+    "reaccion"
+  ],
+  "Pin": "Fijar",
+  "Mute": "Silenciar",
+  "Invite": "Invitar",
+  "Invite link": [
+    "Enlace de invitación",
+    "enlaces de invitación"
+  ],
+  "Profile": "Perfil",
+  "Account": "Cuenta",
+  "Device": "Dispositivo",
+  "Notification": [
+    "Notificación",
+    "notificacion"
+  ],
+  "Draft": "Borrador",
+  "Archive": "Archivar",
+  "Settings": "Ajustes",
+  "Voice message": [
+    "Mensaje de voz",
+    "mensajes de voz"
+  ]
+}

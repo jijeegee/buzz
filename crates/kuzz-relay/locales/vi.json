@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Cảm ơn bạn đã báo cáo cho {community}. Báo cáo của bạn đã được xem xét và xử lý.",
+  "moderation.reportResolved.dismissed": "Cảm ơn bạn đã báo cáo cho {community}. Báo cáo của bạn đã được xem xét; không có hành động nào được thực hiện.",
+  "moderation.reportResolved.escalated": "Cảm ơn bạn đã báo cáo cho {community}. Báo cáo của bạn đã được chuyển lên để xem xét thêm.",
+  "moderation.reportResolved.other": "Cảm ơn bạn đã báo cáo cho {community}. Báo cáo của bạn đã được xem xét.",
+  "moderation.contentActioned": "Một người kiểm duyệt trong {community} đã xử lý nội dung của bạn.",
+  "moderation.banned": "Bạn đã bị cấm khỏi {community}.",
+  "moderation.timedOut": "Bạn đã bị tạm khóa đăng bài trong {community} đến {until}.",
+  "moderation.timedOutNoEnd": "Bạn đã bị tạm khóa đăng bài trong {community}.",
+  "moderation.reason": "Lý do: {reason}",
+  "groups.landing.title": "{name} trên Kuzz",
+  "groups.landing.members": "{count, plural, other {# thành viên}}",
+  "groups.landing.open": "Mở trong Kuzz",
+  "groups.landing.noApp": "Chưa có Kuzz? Hãy hỏi người đã chia sẻ liên kết này.",
+  "groups.landing.notFoundTitle": "Không tìm thấy liên kết",
+  "groups.landing.notFoundHeading": "Liên kết này không hoạt động",
+  "groups.landing.notFoundHint": "Liên kết có thể đã được đặt lại hoặc nhóm không còn tồn tại. Hãy xin người đã chia sẻ một liên kết mới.",
+  "groups.landing.rateLimitedTitle": "Hãy thử lại sau",
+  "groups.landing.rateLimitedHeading": "Quá nhiều yêu cầu",
+  "groups.landing.rateLimitedHint": "Hãy thử lại sau một phút."
+}

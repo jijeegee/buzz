@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "{community} topluluğuna yaptığınız şikayet için teşekkürler. Şikayetiniz incelendi ve gereği yapıldı.",
+  "moderation.reportResolved.dismissed": "{community} topluluğuna yaptığınız şikayet için teşekkürler. Şikayetiniz incelendi; herhangi bir işlem yapılmadı.",
+  "moderation.reportResolved.escalated": "{community} topluluğuna yaptığınız şikayet için teşekkürler. Şikayetiniz daha ayrıntılı incelenmek üzere iletildi.",
+  "moderation.reportResolved.other": "{community} topluluğuna yaptığınız şikayet için teşekkürler. Şikayetiniz incelendi.",
+  "moderation.contentActioned": "{community} topluluğundaki bir moderatör içeriğinizle ilgili işlem yaptı.",
+  "moderation.banned": "{community} topluluğundan yasaklandınız.",
+  "moderation.timedOut": "{community} topluluğunda {until} tarihine kadar geçici olarak susturuldunuz.",
+  "moderation.timedOutNoEnd": "{community} topluluğunda geçici olarak susturuldunuz.",
+  "moderation.reason": "Neden: {reason}",
+  "groups.landing.title": "Kuzz'da {name}",
+  "groups.landing.members": "{count, plural, one {# üye} other {# üye}}",
+  "groups.landing.open": "Kuzz'da aç",
+  "groups.landing.noApp": "Henüz Kuzz yok mu? Bu bağlantıyı paylaşan kişiye sorun.",
+  "groups.landing.notFoundTitle": "Bağlantı bulunamadı",
+  "groups.landing.notFoundHeading": "Bu bağlantı çalışmıyor",
+  "groups.landing.notFoundHint": "Bağlantı sıfırlanmış ya da grup artık mevcut olmayabilir. Paylaşan kişiden yeni bir bağlantı isteyin.",
+  "groups.landing.rateLimitedTitle": "Birazdan tekrar deneyin",
+  "groups.landing.rateLimitedHeading": "Çok fazla istek",
+  "groups.landing.rateLimitedHint": "Bir dakika sonra tekrar deneyin."
+}
