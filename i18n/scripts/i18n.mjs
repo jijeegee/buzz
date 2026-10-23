@@ -113,8 +113,8 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Matches `term` as a plain word in English, singular or plural, any case;
- * not inside code-like tokens (`@mention`, kuzz-agent, URLs) or the product
- * name "Kuzz Agent".
+ * not inside code-like tokens (`@mention`, kuzz-agent, URLs), the product
+ * name "Kuzz Agent", or the browser term "user agent".
  */
 function termPattern(term) {
   const word = escapeRegExp(term);
@@ -122,7 +122,7 @@ function termPattern(term) {
     ? `${escapeRegExp(term.slice(0, -1))}(?:y|ies)`
     : `${word}(?:s|es)?`;
   return new RegExp(
-    `(?<![\\w@./:-])(?<!Kuzz )${plural}(?![\\w./:-]*\\w)`,
+    `(?<![\\w@./:-])(?<!Kuzz )(?<!user )${plural}(?![\\w./:-]*\\w)`,
     "i",
   );
 }
@@ -162,8 +162,9 @@ function ruleMatches(rule, id, text, words) {
 
 /**
  * Release tiers from i18n/tiers.json: `current` is the highest tier being
- * translated, `of(text)` the tier of an English text (a number, or "skip" for
- * text that stays English). The first matching rule wins; one text has one
+ * translated (`languages` may raise it for single languages, e.g. when old
+ * translations can be reused), `of(text)` the tier of an English text (a
+ * number, or "skip" for text that stays English). The first matching rule wins; one text has one
  * tier, the earliest any of its uses needs. Without tiers.json all is tier 1.
  */
 export function readTiers(config, english) {
@@ -184,10 +185,13 @@ export function readTiers(config, english) {
     }
   }
   const current = rules?.current ?? 1;
+  const currentFor = (lang) => rules?.languages?.[lang] ?? current;
   return {
     current,
+    currentFor,
     of: (text) => byText.get(text) ?? 1,
-    open: (text) => rank(byText.get(text) ?? 1) <= current,
+    open: (text, lang) =>
+      rank(byText.get(text) ?? 1) <= (lang ? currentFor(lang) : current),
     all: [...new Set(byText.values())]
       .filter((tier) => tier !== "skip")
       .sort((a, b) => a - b),
@@ -391,7 +395,7 @@ export function prepare(config, requested = [], log = console.log) {
       if (!source) continue;
       const target = readTarget(config, src, lang.code);
       for (const [key, { text, note }] of Object.entries(source)) {
-        if (!tiers.open(text)) continue;
+        if (!tiers.open(text, lang.code)) continue;
         const current = target[key];
         if (current !== undefined && state[src.id]?.[key] === hash(text))
           continue;
@@ -624,7 +628,11 @@ export function status(config, requested = [], log = console.log) {
     log(
       `${lang.code.padEnd(8)}${tiers.all
         .map((tier) => `  tier ${tier}: ${row[tier].done}/${row[tier].total}`)
-        .join("")}`,
+        .join("")}${
+        tiers.currentFor(lang.code) === tiers.current
+          ? ""
+          : `  (open to tier ${tiers.currentFor(lang.code)})`
+      }`,
     );
   }
   log(`(current tier: ${tiers.current})`);
@@ -651,7 +659,7 @@ export function park(config, requested = [], log = console.log) {
       if (!source) continue;
       const target = readTarget(config, src, lang.code);
       for (const [key, { text }] of Object.entries(source)) {
-        if (!(key in target) || tiers.open(text)) continue;
+        if (!(key in target) || tiers.open(text, lang.code)) continue;
         later[src.id] = {
           ...later[src.id],
           [key]: { text: target[key], from: state[src.id]?.[key] ?? "" },

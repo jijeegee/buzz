@@ -2259,7 +2259,6 @@
   "forum.thread.replyCount": "{count, plural, one {# Antwort} other {# Antworten}}",
   "forum.view.postPlaceholder": "Schreib deinen Beitrag...",
   "forum.view.emptyTitle": "Noch keine Beiträge",
-  "forum.mentions.inviteFailed": "Mitglieder konnten nicht eingeladen werden.",
   "groups.genericError": "Etwas ist schiefgelaufen. Versuch es noch einmal.",
   "groups.publicAddress.taken": "Diese Adresse ist schon vergeben.",
   "groups.publicAddress.invalid": "Verwende 3–32 Zeichen: a-z, 0-9 und _.",

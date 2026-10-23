@@ -302,17 +302,22 @@ test("tiers limit prepare, status counts per tier, park moves the rest", () => {
     ko["agents.help"],
   );
 
-  // When tier 3 opens, the parked translation comes back as a suggestion.
+  // When tier 3 opens for Korean only, the parked translation comes back as
+  // a suggestion and other languages stay at tier 1.
   const tiers = readJson(config, "i18n/tiers.json");
   fs.writeFileSync(
     path.join(config.root, "i18n", "tiers.json"),
-    JSON.stringify({ ...tiers, current: 3 }),
+    JSON.stringify({ ...tiers, languages: { ko: 3 } }),
   );
-  prepare(config, ["ko"], quiet);
+  prepare(config, ["ko", "ja"], quiet);
   const items = readJson(config, "i18n/work/ko.json").items;
   assert.deepEqual(
     items.map((item) => [item.id, item.suggestion]),
     [["desktop:agents.help", ko["agents.help"]]],
+  );
+  assert.deepEqual(
+    readJson(config, "i18n/work/ja.json").items.map((item) => item.id),
+    ["desktop:nav.chats", "desktop:chats.leave"],
   );
 });
 

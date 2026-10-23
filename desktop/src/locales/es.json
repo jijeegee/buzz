@@ -2259,7 +2259,6 @@
   "forum.thread.replyCount": "{count, plural, one {# respuesta} many {# respuestas} other {# respuestas}}",
   "forum.view.postPlaceholder": "Escribe tu publicación...",
   "forum.view.emptyTitle": "Aún no hay publicaciones",
-  "forum.mentions.inviteFailed": "No se pudo invitar a los miembros.",
   "groups.genericError": "Algo salió mal. Inténtalo de nuevo.",
   "groups.publicAddress.taken": "Esta dirección ya está en uso.",
   "groups.publicAddress.invalid": "Usa de 3 a 32 caracteres: a-z, 0-9 y _.",

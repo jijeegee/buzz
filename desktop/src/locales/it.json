@@ -2259,7 +2259,6 @@
   "forum.thread.replyCount": "{count, plural, one {# risposta} many {# risposte} other {# risposte}}",
   "forum.view.postPlaceholder": "Scrivi il tuo post...",
   "forum.view.emptyTitle": "Ancora nessun post",
-  "forum.mentions.inviteFailed": "Impossibile invitare i membri.",
   "groups.genericError": "Qualcosa è andato storto. Riprova.",
   "groups.publicAddress.taken": "Questo indirizzo è già in uso.",
   "groups.publicAddress.invalid": "Usa 3-32 caratteri: a-z, 0-9 e _.",
