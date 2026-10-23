@@ -147,6 +147,10 @@ pub(crate) struct MeInfo {
     /// without the setting omit it; their accounts are findable.
     #[serde(default)]
     pub discoverable: Option<bool>,
+    /// The app language saved on the account (`ko`, `zh-Hant`, …), for text
+    /// the server writes. Relays without the setting omit it.
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 /// One person from `GET /auth/people/lookup` or `/auth/people/shared`.

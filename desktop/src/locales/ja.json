@@ -4276,5 +4276,9 @@
   "agents.snapshotSend.sendFailed": "送信に失敗しました。",
   "agents.apiKey.inheritedFromBuild": "ビルドから継承",
   "agents.statusBadge.starting": "起動中…",
-  "agents.statusBadge.status": "{status, select, running {実行中} stopped {停止中} deployed {配置済み} not_deployed {未配置} other {{raw}}}"
+  "agents.statusBadge.status": "{status, select, running {実行中} stopped {停止中} deployed {配置済み} not_deployed {未配置} other {{raw}}}",
+  "settings.language.title": "言語",
+  "settings.language.label": "アプリの言語",
+  "settings.language.hint": "ここで選ばない場合、Kuzz はコンピューターの言語を使います。",
+  "settings.language.device": "デバイスと同じ ({language})"
 }

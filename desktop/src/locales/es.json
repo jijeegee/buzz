@@ -4281,5 +4281,9 @@
   "agents.snapshotSend.sendFailed": "Error al enviar.",
   "agents.apiKey.inheritedFromBuild": "Heredada de la compilación",
   "agents.statusBadge.starting": "Iniciando…",
-  "agents.statusBadge.status": "{status, select, running {activo} stopped {detenido} deployed {desplegado} not_deployed {sin desplegar} other {{raw}}}"
+  "agents.statusBadge.status": "{status, select, running {activo} stopped {detenido} deployed {desplegado} not_deployed {sin desplegar} other {{raw}}}",
+  "settings.language.title": "Idioma",
+  "settings.language.label": "Idioma de la app",
+  "settings.language.hint": "Kuzz usa el idioma de tu computadora a menos que elijas uno aquí.",
+  "settings.language.device": "Igual que el dispositivo ({language})"
 }

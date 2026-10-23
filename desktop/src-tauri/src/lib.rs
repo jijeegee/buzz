@@ -691,6 +691,7 @@ pub fn run() {
             auth::people::get_people_settings,
             auth::people::set_kuzz_id,
             auth::people::set_discoverable,
+            auth::people::sync_account_locale,
             auth::people::list_blocked_people,
             auth::people::set_person_blocked,
             auth::people::lookup_person,

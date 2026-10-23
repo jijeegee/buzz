@@ -35,6 +35,7 @@ class AccountProfile {
     this.username,
     this.email,
     this.discoverable = true,
+    this.locale,
   });
 
   factory AccountProfile.fromJson(Map<String, Object?> json) {
@@ -49,6 +50,7 @@ class AccountProfile {
     final username = json['username'];
     final email = json['email'];
     final discoverable = json['discoverable'];
+    final locale = json['locale'];
     return AccountProfile(
       principalId: principal,
       displayName: name is String ? name : '',
@@ -57,6 +59,7 @@ class AccountProfile {
       email: email is String && email.isNotEmpty ? email : null,
       // Relays before people lookup send none; the account default is on.
       discoverable: discoverable is bool ? discoverable : true,
+      locale: locale is String && locale.isNotEmpty ? locale : null,
     );
   }
 
@@ -72,6 +75,10 @@ class AccountProfile {
   /// Whether other people can find this account by its exact Kuzz ID or
   /// email (`GET /auth/people/lookup`).
   final bool discoverable;
+
+  /// The app language saved on the account (`ko`, `zh-Hans`); server text
+  /// such as moderation notices uses it. Older relays send none.
+  final String? locale;
 }
 
 /// Another person as the people endpoints return them
@@ -223,6 +230,10 @@ class AccountApi {
   /// Whether people can find this account by exact Kuzz ID or email.
   Future<void> setDiscoverable(bool discoverable) =>
       _send('PATCH', '/auth/profile', body: {'discoverable': discoverable});
+
+  /// Save the app language (`ko`, `zh-Hans`) on the account.
+  Future<void> setLocale(String locale) =>
+      _send('PATCH', '/auth/profile', body: {'locale': locale});
 
   /// The people this account blocked; only the account itself can read it.
   Future<List<BlockedPerson>> listBlocks() async {

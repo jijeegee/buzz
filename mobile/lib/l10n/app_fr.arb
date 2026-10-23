@@ -1433,5 +1433,8 @@
   "composeMentionNotInGroup": "pas dans le groupe",
   "composeMentionManagedByNotInGroup": "géré par {owner} · pas dans le groupe",
   "composeMentionManagedByYouNotInGroup": "géré par vous · pas dans le groupe",
-  "composeMentionAdminTag": "admin"
+  "composeMentionAdminTag": "admin",
+  "languageNativeName": "Français",
+  "settingsLanguage": "Langue",
+  "settingsLanguageDevice": "Comme le téléphone ({language})"
 }

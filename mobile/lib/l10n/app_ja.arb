@@ -1430,5 +1430,8 @@
   "composeMentionNotInGroup": "グループ外",
   "composeMentionManagedByNotInGroup": "管理: {owner} · グループ外",
   "composeMentionManagedByYouNotInGroup": "管理: あなた · グループ外",
-  "composeMentionAdminTag": "管理者"
+  "composeMentionAdminTag": "管理者",
+  "languageNativeName": "日本語",
+  "settingsLanguage": "言語",
+  "settingsLanguageDevice": "スマートフォンと同じ ({language})"
 }

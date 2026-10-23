@@ -22,6 +22,20 @@ const _aliases = <String, Locale>{
   'in': Locale('id'),
 };
 
+/// The languages users can see and pick. gen-l10n also needs plain `zh` and
+/// `pt` files beside `zh_Hans` and `pt_BR`; those copies are left out.
+final List<Locale> shippedLocales = [
+  for (final locale in AppLocalizations.supportedLocales)
+    if (locale.scriptCode != null ||
+        locale.countryCode != null ||
+        !AppLocalizations.supportedLocales.any(
+          (other) =>
+              other.languageCode == locale.languageCode &&
+              (other.scriptCode != null || other.countryCode != null),
+        ))
+      locale,
+];
+
 String _tag(Locale locale) => [
   locale.languageCode,
   if (locale.scriptCode != null) locale.scriptCode!,
@@ -34,9 +48,11 @@ String _tag(Locale locale) => [
 /// `pt_PT` → `pt_BR`. Same rules as desktop `matchLocale`.
 Locale resolveAppLocale(
   List<Locale>? preferred, [
-  Iterable<Locale> supported = AppLocalizations.supportedLocales,
+  Iterable<Locale>? supported,
 ]) {
-  final byTag = {for (final locale in supported) _tag(locale): locale};
+  final byTag = {
+    for (final locale in supported ?? shippedLocales) _tag(locale): locale,
+  };
   for (final locale in preferred ?? const <Locale>[]) {
     final parts = _tag(locale).split('_');
     final candidates = [parts.join('_'), parts.take(2).join('_'), parts.first];

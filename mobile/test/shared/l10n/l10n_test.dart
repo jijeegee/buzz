@@ -50,6 +50,15 @@ void main() {
     expect(resolveAppLocale(null, supported), const Locale('en'));
   });
 
+  test('plain zh and pt copies are not offered or resolved', () {
+    expect(shippedLocales, isNot(contains(const Locale('zh'))));
+    expect(shippedLocales, isNot(contains(const Locale('pt'))));
+    expect(shippedLocales, contains(hans));
+    expect(shippedLocales, contains(const Locale('pt', 'BR')));
+    expect(resolveAppLocale(const [Locale('zh')]), hans);
+    expect(resolveAppLocale(const [Locale('pt')]), const Locale('pt', 'BR'));
+  });
+
   test('English strings are available without localizations installed', () {
     expect(appL10n.navFriends, 'Friends');
   });

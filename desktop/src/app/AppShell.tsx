@@ -120,6 +120,7 @@ import { LazySettingsScreen } from "@/app/LazySettingsScreen";
 import { ChatStateSync } from "@/app/ChatStateSync";
 import { useChatStateWiring } from "@/app/useChatStateWiring";
 import { useChatThreadRowActions } from "@/app/useChatThreadRowActions";
+import { useAccountLocaleSync } from "@/shared/i18n/accountLocale";
 import {
   isFreshStartLandingPending,
   useChatsRailNavigation,
@@ -786,6 +787,7 @@ export function AppShell() {
     },
     [openSearchHit],
   );
+  useAccountLocaleSync();
   useAppShellLifecycleEffects({
     desktopBadgeEnabled: !isHuddleRoom,
     homeBadgeCountExcludingHighPriority,

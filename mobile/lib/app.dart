@@ -34,6 +34,7 @@ import 'shared/community/add_community_route.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
 import 'shared/devices/agent_host_devices.dart';
 import 'shared/emoji/emoji_burst.dart';
+import 'shared/l10n/locale_preference.dart';
 import 'shared/push/push_subscription_provider.dart';
 import 'shared/push/push_relay_capability_provider.dart';
 import 'shared/relay/relay.dart';
@@ -207,7 +208,8 @@ class App extends HookConsumerWidget {
       navigatorObservers: [voiceNoteRouteObserver, readAloudRouteObserver],
       title: 'Kuzz',
       localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+      supportedLocales: shippedLocales,
+      locale: ref.watch(localePreferenceProvider),
       localeListResolutionCallback: (locales, _) => resolveAppLocale(locales),
       theme: AppTheme.light(
         colorScheme: lightScheme,
@@ -222,15 +224,19 @@ class App extends HookConsumerWidget {
       // Above the navigator, so an age restriction cannot be bypassed by a
       // route that was pushed while the store signal request was in flight.
       builder: (context, child) => AppL10nScope(
-        child: switch (ageSignalState) {
-          AgeSignalState.restricted => const AgeRestrictionPage(),
-          _ => AppMarkdownTheme(
-            child: MobileHuddleShell(
-              navigatorKey: _mobileRootNavigatorKey,
-              child: EmojiBurstOverlay(child: child ?? const SizedBox.shrink()),
+        child: AccountLocaleSync(
+          child: switch (ageSignalState) {
+            AgeSignalState.restricted => const AgeRestrictionPage(),
+            _ => AppMarkdownTheme(
+              child: MobileHuddleShell(
+                navigatorKey: _mobileRootNavigatorKey,
+                child: EmojiBurstOverlay(
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
             ),
-          ),
-        },
+          },
+        ),
       ),
       home: authState.when(
         loading: () => const _SplashScreen(),

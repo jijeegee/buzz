@@ -4280,5 +4280,9 @@
   "agents.snapshotSend.sendFailed": "Ошибка отправки.",
   "agents.apiKey.inheritedFromBuild": "Из сборки",
   "agents.statusBadge.starting": "Запуск…",
-  "agents.statusBadge.status": "{status, select, running {запущен} stopped {остановлен} deployed {развёрнут} not_deployed {не развёрнут} other {{raw}}}"
+  "agents.statusBadge.status": "{status, select, running {запущен} stopped {остановлен} deployed {развёрнут} not_deployed {не развёрнут} other {{raw}}}",
+  "settings.language.title": "Язык",
+  "settings.language.label": "Язык приложения",
+  "settings.language.hint": "Kuzz использует язык вашего компьютера, если вы не выберете другой здесь.",
+  "settings.language.device": "Как на устройстве ({language})"
 }

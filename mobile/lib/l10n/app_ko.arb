@@ -1433,5 +1433,8 @@
   "composeMentionNotInGroup": "그룹에 없음",
   "composeMentionManagedByNotInGroup": "관리자: {owner} · 그룹에 없음",
   "composeMentionManagedByYouNotInGroup": "내가 관리 · 그룹에 없음",
-  "composeMentionAdminTag": "관리자"
+  "composeMentionAdminTag": "관리자",
+  "languageNativeName": "한국어",
+  "settingsLanguage": "언어",
+  "settingsLanguageDevice": "휴대폰과 같게 ({language})"
 }

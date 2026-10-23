@@ -25406,5 +25406,21 @@
   "agents.modelPicker.meshAuto": "Auto (collective when available)",
   "@agents.modelPicker.meshAuto": {
     "description": "Model picker for shared compute (Mesh): the automatic option. Short."
+  },
+  "settings.language.title": "Language",
+  "@settings.language.title": {
+    "description": "Settings > Appearance: heading of the language section. Short."
+  },
+  "settings.language.label": "App language",
+  "@settings.language.label": {
+    "description": "Settings > Appearance > Language: label of the language picker. Short."
+  },
+  "settings.language.hint": "Kuzz uses your computer's language unless you pick one here.",
+  "@settings.language.hint": {
+    "description": "Settings > Appearance > Language: grey hint under 'App language'."
+  },
+  "settings.language.device": "Same as device ({language})",
+  "@settings.language.device": {
+    "description": "Settings > Appearance > Language: first choice in the language list, follows the computer's language. {language} is that language's own name, e.g. 'Deutsch'. Short."
   }
 }

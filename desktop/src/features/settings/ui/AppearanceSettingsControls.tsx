@@ -17,6 +17,16 @@ import {
   type LinkPreviewStyle,
 } from "@/shared/lib/linkPreviewStylePreference";
 import { type MessageKey, useT } from "@/shared/i18n";
+import {
+  type LocalePreference,
+  readLocalePreference,
+} from "@/shared/i18n/localePreference";
+import {
+  availableLocales,
+  resolveLocale,
+  setLocalePreference,
+} from "@/shared/i18n/localeRuntime";
+import { LANGUAGES } from "@/shared/i18n/locales";
 import { isLinuxPlatform } from "@/shared/lib/platform";
 import type { ResolvedLinkPreview } from "@/shared/lib/useResolvedLinkPreviews";
 import { LinkPreviewAttachmentPresentation } from "@/shared/ui/link-preview-attachment";
@@ -771,4 +781,56 @@ export function AccentPickerContent({
       </div>
     </SettingsOptionRow>
   );
+}
+
+const LANGUAGE_SELECT_CLASS =
+  "flex h-9 w-56 min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs";
+
+/** App language: the device's (default) or one the user picks. */
+export function LanguageSetting() {
+  const t = useT();
+  const [preference, setPreference] =
+    React.useState<LocalePreference>(readLocalePreference);
+  const deviceLanguage = languageName(resolveLocale("system"));
+
+  return (
+    <SettingsOptionRow data-testid="language-row">
+      <div className="min-w-0">
+        <label className="text-sm font-medium" htmlFor="language-select">
+          {t("settings.language.label")}
+        </label>
+        <p
+          className="text-sm font-normal text-muted-foreground/70"
+          data-settings-subcopy
+        >
+          {t("settings.language.hint")}
+        </p>
+      </div>
+      <select
+        className={LANGUAGE_SELECT_CLASS}
+        data-testid="language-select"
+        id="language-select"
+        onChange={(event) => {
+          const next = event.target.value;
+          setPreference(next);
+          void setLocalePreference(next);
+        }}
+        value={preference}
+      >
+        <option value="system">
+          {t("settings.language.device", { language: deviceLanguage })}
+        </option>
+        {availableLocales().map((code) => (
+          <option key={code} lang={code} value={code}>
+            {languageName(code)}
+          </option>
+        ))}
+      </select>
+    </SettingsOptionRow>
+  );
+}
+
+/** A language's own name, e.g. "한국어" for `ko`. */
+function languageName(code: string): string {
+  return LANGUAGES.find((language) => language.code === code)?.name ?? code;
 }
