@@ -33,7 +33,6 @@ pub(crate) mod loopback;
 pub(crate) mod pairing;
 pub(crate) mod people;
 pub(crate) mod pkce;
-pub(crate) mod private_file;
 pub(crate) mod redact;
 pub(crate) mod refresh;
 pub(crate) mod restore;

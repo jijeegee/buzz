@@ -9,6 +9,7 @@ import { useUserProfileQuery } from "@/features/profile/hooks";
 import {
   connectHermes,
   disconnectExternalDevice,
+  listAgentPairings,
 } from "@/shared/api/agentPairing";
 import { useT } from "@/shared/i18n";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
@@ -32,10 +33,15 @@ import {
   type AgentTileStatus,
   DeviceHeading,
 } from "../ui/AgentTile";
-import type { ExternalAgent, ExternalAgentGroup } from "./pairingLogic";
+import {
+  connectedClaim,
+  type ExternalAgent,
+  type ExternalAgentGroup,
+} from "./pairingLogic";
 import {
   formatConnectedAt,
   refreshExternalAgents,
+  rememberConnection,
   useExternalAgentGroups,
   useExternalAgentName,
   useExternalConnectAvailable,
@@ -253,23 +259,22 @@ function ExternalAgentTile({
 }
 
 /**
- * "Hermes found on this computer": shown when Hermes is installed here
- * (`$HERMES_HOME` or `%LOCALAPPDATA%\hermes`), its `kuzz pair --hermes`
- * installer is too, the device list has loaded, and no Hermes agent of this
- * account is connected; Connect pairs it in one step.
+ * "Hermes found on this computer": shown when Hermes is installed here, the
+ * bundled `kuzz` offers `pair --hermes` with its plugin files, the device
+ * list has loaded, and no Hermes agent this card connected is still
+ * connected. Connect makes a code, has `kuzz pair --hermes` claim it and
+ * install the plugin, then reads the pairing list for the result.
  */
 export function HermesFoundCard() {
   const t = useT();
   const queryClient = useQueryClient();
   const available = useExternalConnectAvailable();
   const hermes = useHermesStatusQuery(available);
-  const { groups, devicesLoaded } = useExternalAgentGroups();
+  const { groups, devicesLoaded, hermesDeviceIds, owner } =
+    useExternalAgentGroups();
   const [connecting, setConnecting] = React.useState(false);
 
-  const liveDevices = new Set(groups.map((group) => group.deviceId));
-  const connected = (hermes.data?.agents ?? []).some(
-    (agent) => agent.deviceId !== null && liveDevices.has(agent.deviceId),
-  );
+  const connected = groups.some((group) => hermesDeviceIds.has(group.deviceId));
   if (
     !available ||
     !hermes.data?.found ||
@@ -283,11 +288,14 @@ export function HermesFoundCard() {
   async function connect() {
     setConnecting(true);
     try {
-      const result = await connectHermes();
+      const run = await connectHermes();
+      const claim = connectedClaim(await listAgentPairings(), run.pairingId);
+      if (!claim) throw new Error(t("agents.external.hermesFailed"));
+      rememberConnection(owner, claim, { hermes: true });
       toast.success(
         t("agents.external.connectedToast", {
           agent: "Hermes",
-          device: result.deviceName ?? t("agents.external.thisComputer"),
+          device: claim.deviceName ?? t("agents.external.thisComputer"),
         }),
       );
     } catch (error) {

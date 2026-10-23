@@ -131,10 +131,27 @@ function writeRemembered(owner: string, entries: RememberedPairing[]) {
   }
 }
 
-/** Remember a connection seen now (the relay lists claims for one day). */
-export function rememberConnection(owner: string, pairing: AgentPairing) {
+/**
+ * Remember a connection seen now (the relay lists claims for one day);
+ * `hermes` when the Hermes card made it, so it is named Hermes.
+ */
+export function rememberConnection(
+  owner: string,
+  pairing: AgentPairing,
+  { hermes = false }: { hermes?: boolean } = {},
+) {
   const merged = mergeRemembered(readRemembered(owner), [pairing]);
-  writeRemembered(owner, merged);
+  const agent = pairing.agentPubkey?.toLowerCase();
+  writeRemembered(
+    owner,
+    hermes
+      ? merged.map((entry) =>
+          entry.agentPubkey === agent && entry.deviceId === pairing.deviceId
+            ? { ...entry, hermes: true as const }
+            : entry,
+        )
+      : merged,
+  );
 }
 
 function sameEntries(a: RememberedPairing[], b: RememberedPairing[]) {
@@ -143,12 +160,14 @@ function sameEntries(a: RememberedPairing[], b: RememberedPairing[]) {
 
 /**
  * The account's paired computers, each with its connected agents, and the
- * Hermes agents this app paired (so they can be named). Empty when external
- * connect is unavailable.
+ * Hermes agents this app's Hermes card connected (so they can be named).
+ * Empty when external connect is unavailable.
  */
 export function useExternalAgentGroups(): {
   groups: ExternalAgentGroup[];
   hermesPubkeys: ReadonlySet<string>;
+  /** The computers those Hermes agents run on. */
+  hermesDeviceIds: ReadonlySet<string>;
   owner: string;
   /** The device list loaded (it holds this computer). */
   devicesLoaded: boolean;
@@ -157,7 +176,6 @@ export function useExternalAgentGroups(): {
   const owner = useIdentityQuery().data?.pubkey?.toLowerCase() ?? "";
   const devices = useAuthDevicesQuery(available);
   const pairings = useAgentPairingsQuery(available);
-  const hermes = useHermesStatusQuery(available);
   const [remembered, setRemembered] = React.useState<RememberedPairing[]>(() =>
     readRemembered(owner),
   );
@@ -198,16 +216,19 @@ export function useExternalAgentGroups(): {
         : [],
     [available, devices.data, pairings.data, remembered],
   );
-  const hermesPubkeys = React.useMemo(
-    () =>
-      new Set(
-        (hermes.data?.agents ?? []).map((agent) =>
-          agent.agentPubkey.toLowerCase(),
-        ),
-      ),
-    [hermes.data],
+  const hermesEntries = React.useMemo(
+    () => remembered.filter((entry) => entry.hermes),
+    [remembered],
   );
-  return { groups, hermesPubkeys, owner, devicesLoaded };
+  const hermesPubkeys = React.useMemo(
+    () => new Set(hermesEntries.map((entry) => entry.agentPubkey)),
+    [hermesEntries],
+  );
+  const hermesDeviceIds = React.useMemo(
+    () => new Set(hermesEntries.map((entry) => entry.deviceId)),
+    [hermesEntries],
+  );
+  return { groups, hermesPubkeys, hermesDeviceIds, owner, devicesLoaded };
 }
 
 /** An external agent's name: its profile, "Hermes", or a fallback. */

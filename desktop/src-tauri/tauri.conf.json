@@ -60,6 +60,13 @@
       "binaries/git-credential-nostr",
       "binaries/kuzz"
     ],
+    "resources": {
+      "../../plugins/platforms/kuzz/__init__.py": "plugins/platforms/kuzz/__init__.py",
+      "../../plugins/platforms/kuzz/adapter.py": "plugins/platforms/kuzz/adapter.py",
+      "../../plugins/platforms/kuzz/install.py": "plugins/platforms/kuzz/install.py",
+      "../../plugins/platforms/kuzz/kuzz_cli.py": "plugins/platforms/kuzz/kuzz_cli.py",
+      "../../plugins/platforms/kuzz/plugin.yaml": "plugins/platforms/kuzz/plugin.yaml"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

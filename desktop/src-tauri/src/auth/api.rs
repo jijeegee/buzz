@@ -614,6 +614,9 @@ pub(crate) struct PairingStarted {
     pub pairing_id: String,
     pub command: SecretField,
     pub code: SecretField,
+    /// The relay the command names (`kuzz pair --relay <url> <code>`).
+    #[serde(default)]
+    pub relay_url: Option<String>,
     pub expires_at: String,
     pub expires_in: i64,
 }
@@ -668,21 +671,6 @@ pub(crate) async fn pairing_list(
     )
     .await?;
     Ok(list.pairings)
-}
-
-/// `POST /pair/claim` (no account session). Returns the paired device id.
-pub(crate) async fn pair_claim(
-    client: &reqwest::Client,
-    origin: &str,
-    body: &serde_json::Value,
-) -> Result<String, ApiError> {
-    #[derive(Deserialize)]
-    struct Claimed {
-        device_id: String,
-    }
-    let claimed: Claimed =
-        send_json(client.post(format!("{origin}/pair/claim")).json(body)).await?;
-    Ok(claimed.device_id)
 }
 
 /// One agent key copy of `GET /auth/agents/keys` (hex secret).
