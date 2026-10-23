@@ -8,7 +8,6 @@ import {
 } from "./useMentionSendFlow.test-support.mjs";
 
 async function ordinary(s, gate) {
-  s.options.mentions.memberPubkeys = new Set([KEY]);
   s.control.publish = gate;
   s.rerender();
   let promise;
@@ -37,7 +36,6 @@ for (const outcome of ["failure", "success"]) {
     for (const exit of ["B", "unmount"]) {
       test(`ordinary cross-visit ${outcome}, newer ${intent}, exit ${exit}`, async () => {
         const s = await setup({ lifecycle: true });
-        s.dismiss();
         const gate = deferred();
         const { promise } = await ordinary(s, gate);
         assert.equal(s.events("publish").length, 1);
@@ -87,7 +85,6 @@ for (const outcome of ["failure", "success"]) {
 for (const first of ["old", "new"]) {
   test(`new same-key send supersedes old recovery, ${first} completes first`, async () => {
     const s = await setup({ lifecycle: true });
-    s.dismiss();
     const oldGate = deferred();
     const old = await ordinary(s, oldGate);
     s.navigate("thread:b");
@@ -128,8 +125,6 @@ for (const first of ["old", "new"]) {
 // Media error reaches the same recovery guard as final-validation failure.
 test("cross-visit author clear prevents old media error restoring text, refs or files", async () => {
   const s = await setup({ lifecycle: true });
-  s.dismiss();
-  s.options.mentions.memberPubkeys = new Set([KEY]);
   s.rerender();
   let promise;
   await s.act(async () => {
@@ -165,7 +160,6 @@ for (const replacement of ["delete", "same-text", "new-text"]) {
       "../lib/useDrafts.ts"
     );
     const s = await setup({ lifecycle: true });
-    s.dismiss();
     const before = s.store.get("thread:a");
     s.act(() => {
       if (replacement === "delete") deleteDraftEntry("thread:a");
@@ -183,8 +177,6 @@ for (const replacement of ["delete", "same-text", "new-text"]) {
 
 test("automatic addressed prefix is programmatic optimistic empty, not new authored intent", async () => {
   const s = await setup({ lifecycle: true });
-  s.dismiss();
-  s.options.mentions.memberPubkeys = new Set([KEY]);
   s.options.onAddressedAgentsComposerCleared = () => {
     s.options.richText.setContent("@RemoteScout ");
     return "@RemoteScout ";

@@ -871,9 +871,6 @@ export function useMentionSendFlow({
           return;
         }
         const createdPersonaAgentPubkeys = personaMentionResult.pubkeys;
-        const createdPersonaAgentPubkeySet = new Set(
-          createdPersonaAgentPubkeys.map(normalizePubkey),
-        );
         savedMentionRefs.push(...personaMentionResult.mentionRefs);
         // Preparation resolves the captured persona, never the editor's new
         // selection. Only this unchanged visit may receive its resolved binding.
@@ -897,28 +894,6 @@ export function useMentionSendFlow({
           ...buildCustomEmojiTags(trimmed, customEmoji),
           ...linkPreviewTags,
         ];
-        const nonMemberPubkeys =
-          channelType === null ||
-          channelType === "dm" ||
-          !mentions.hasResolvedMembers
-            ? []
-            : uniqueNormalizedPubkeys(pubkeys).filter(
-                (pubkey) => !mentions.memberPubkeys.has(pubkey),
-              );
-        let promptNonMemberPubkeys = nonMemberPubkeys.filter(
-          (pubkey) =>
-            !mentions.isManagedAgentPubkey(pubkey) &&
-            !createdPersonaAgentPubkeySet.has(normalizePubkey(pubkey)),
-        );
-        if (promptNonMemberPubkeys.length > 0) {
-          try {
-            const managedAgentsByPubkey = await getManagedAgentsByPubkey();
-            if (isSendCancelled()) return;
-            promptNonMemberPubkeys = promptNonMemberPubkeys.filter(
-              (pubkey) => !managedAgentsByPubkey.has(normalizePubkey(pubkey)),
-            );
-          } catch {}
-        }
         const pendingDraft: PendingNonMemberMentionSend = {
           sourceOwner,
           composerRevision,
@@ -934,7 +909,10 @@ export function useMentionSendFlow({
           capturedThreadContext,
           trimmed,
           mentionPubkeys: pubkeys,
-          nonMemberPubkeys: promptNonMemberPubkeys,
+          // Mentions go out as written: Kuzz never asks to add anyone to the
+          // room on send, and a mention of a non-member simply doesn't reach
+          // them.
+          nonMemberPubkeys: [],
           outgoingTags,
           preparedLinkPreviews,
           preparedManagedAgents: personaMentionResult.agents,
@@ -951,12 +929,6 @@ export function useMentionSendFlow({
           recoveryDraftKey,
           savedMentionRefs,
         };
-        if (promptNonMemberPubkeys.length > 0) {
-          if (sourceOwnerRef.current !== sourceOwner) return;
-          setNonMemberPromptError(null);
-          setPendingNonMemberSend(pendingDraft);
-          return;
-        }
         sendPromoted = true;
         await completeSend(pendingDraft, pubkeys);
       } catch (error) {
@@ -982,12 +954,10 @@ export function useMentionSendFlow({
       channelType,
       createMentionedPersonaAgents,
       customEmoji,
-      getManagedAgentsByPubkey,
       mentions.extractMentionPersonas,
       mentions.extractMentionPubkeys,
       mentions.hasResolvedMembers,
       mentions.isAgentPubkey,
-      mentions.isManagedAgentPubkey,
       mentions.memberPubkeys,
       mentions.getDraftMentionRefs,
       mentions.settlePendingMentionBindings,

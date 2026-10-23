@@ -388,11 +388,6 @@ export async function setup({ lifecycle = false } = {}) {
         queuedAttachments: control.attachments ?? [],
       });
     });
-  await prompt();
-  const invite = async () =>
-    act(async () => hook.result.current.nonMemberPromptProps.onInvite());
-  const dismiss = () =>
-    act(() => hook.result.current.nonMemberPromptProps.onDismiss());
   const finish = async (gate) => {
     gate.resolve();
     await flush();
@@ -416,8 +411,6 @@ export async function setup({ lifecycle = false } = {}) {
     query,
     refs,
     prompt,
-    invite,
-    dismiss,
     finish,
     flush,
     events,
