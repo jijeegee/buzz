@@ -1,9 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
 import '../channels/channel_management_provider.dart';
+import '../channels/channel_messages_provider.dart';
+import '../channels/failed_local_messages_provider.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
 import '../../shared/custom_emoji/custom_emoji_provider.dart';
+import 'forum_local_sends.dart';
 import 'forum_models.dart';
 
 /// Fetches forum posts (kind:45001) for a channel from the relay.
@@ -97,43 +101,42 @@ class ForumEventDelivery {
   }
 
   /// Creates a new forum post (kind:45001).
+  ///
+  /// The post is shown as soon as it is signed ([onShown] then runs) and
+  /// sends like a channel message: a publish failure marks it failed for
+  /// retry or delete and completes normally. Only failures before it is
+  /// shown throw.
   Future<void> createPost({
     required String channelId,
     required String content,
     List<String> mentionPubkeys = const [],
     List<List<String>> mediaTags = const [],
-  }) async {
-    await _submit(
-      kind: EventKind.forumPost,
-      channelId: channelId,
-      content: content,
-      mentionPubkeys: mentionPubkeys,
-      mediaTags: mediaTags,
-    );
-    _container.invalidate(forumPostsProvider(channelId));
-  }
+    void Function()? onShown,
+  }) => _submit(
+    kind: EventKind.forumPost,
+    channelId: channelId,
+    content: content,
+    mentionPubkeys: mentionPubkeys,
+    mediaTags: mediaTags,
+    onShown: onShown,
+  );
 
-  /// Creates a reply to a forum post (kind:45003).
+  /// Creates a reply to a forum post (kind:45003), shown and sent like
+  /// [createPost].
   Future<void> createReply({
     required String channelId,
     required String parentEventId,
     required String content,
     List<String> mentionPubkeys = const [],
     List<List<String>> mediaTags = const [],
-  }) async {
-    await _submit(
-      kind: EventKind.forumComment,
-      channelId: channelId,
-      parentEventId: parentEventId,
-      content: content,
-      mentionPubkeys: mentionPubkeys,
-      mediaTags: mediaTags,
-    );
-    _container.invalidate(forumPostsProvider(channelId));
-    _container.invalidate(
-      forumThreadProvider((channelId: channelId, eventId: parentEventId)),
-    );
-  }
+  }) => _submit(
+    kind: EventKind.forumComment,
+    channelId: channelId,
+    parentEventId: parentEventId,
+    content: content,
+    mentionPubkeys: mentionPubkeys,
+    mediaTags: mediaTags,
+  );
 
   Future<void> _submit({
     required int kind,
@@ -142,6 +145,7 @@ class ForumEventDelivery {
     String? parentEventId,
     required List<String> mentionPubkeys,
     required List<List<String>> mediaTags,
+    void Function()? onShown,
   }) async {
     final currentConfig = _container.read(relayConfigProvider);
     if (currentConfig.baseUrl != _relayUrl ||
@@ -159,17 +163,40 @@ class ForumEventDelivery {
         if (seen.add(pk.toLowerCase())) pk,
     ];
 
-    await _relay.submit(
-      kind: kind,
-      content: content,
-      tags: [
-        ['h', channelId],
-        if (parentEventId != null) ['e', parentEventId, '', 'reply'],
-        for (final pk in normalizedMentions) ['p', pk],
-        ...mediaTags,
-        ...buildCustomEmojiTags(content, _customEmoji),
-      ],
-    );
+    // Started before the row exists, so its acceptance is never missed.
+    _container.read(forumAcceptedSendsProvider(channelId));
+    ChannelMessagesNotifier messages() =>
+        _container.read(channelMessagesProvider(channelId).notifier);
+    NostrEvent? shown;
+    try {
+      await _relay.submit(
+        kind: kind,
+        content: content,
+        tags: [
+          ['h', channelId],
+          if (parentEventId != null) ['e', parentEventId, '', 'reply'],
+          for (final pk in normalizedMentions) ['p', pk],
+          ...mediaTags,
+          ...buildCustomEmojiTags(content, _customEmoji),
+        ],
+        onSigned: (event) {
+          shown = event;
+          // Persisted, so a send that fails or is cut off survives a restart.
+          messages().addLocalMessage(event, persist: true);
+          onShown?.call();
+        },
+      );
+    } catch (error) {
+      final event = shown;
+      if (event == null) rethrow;
+      debugPrint('[ForumEventDelivery] publish failed for ${event.id}: $error');
+      _container
+          .read(failedLocalMessagesProvider(channelId).notifier)
+          .markFailed(event.id);
+      return;
+    }
+    // [forumAcceptedSendsProvider] keeps the row until its list refetches.
+    if (shown case final event?) messages().completeLocalMessage(event.id);
   }
 }
 
@@ -182,6 +209,8 @@ Future<void> deleteForumEvent(
 }) async {
   final actions = ref.read(channelActionsProvider);
   await actions.deleteMessage(channelId: channelId, eventId: eventId);
+  // A deleted send no fetched list will contain is no longer held.
+  ref.read(forumAcceptedSendsProvider(channelId).notifier).release({eventId});
   ref.invalidate(forumPostsProvider(channelId));
   if (rootEventId != null) {
     ref.invalidate(

@@ -10,6 +10,8 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../channels/channel_identity_names_provider.dart';
+import '../channels/failed_local_messages_provider.dart';
+import '../channels/local_send_status_mark.dart';
 import '../channels/message_content.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../profile/user_profile_sheet.dart';
@@ -99,10 +101,21 @@ class ForumPostCard extends HookConsumerWidget {
         ? '${post.content.substring(0, 200)}...'
         : post.content;
     final summary = post.threadSummary;
+    final status = watchLocalSendStatus(ref, post.channelId, post.eventId);
 
     return GestureDetector(
-      onTap: onTap,
-      onLongPress: () => _showActions(context),
+      // An unsent post has no thread to open yet; a failed one offers retry.
+      onTap: switch (status) {
+        LocalSendStatus.sent => onTap,
+        LocalSendStatus.pending => null,
+        LocalSendStatus.failed => () => showFailedLocalMessageSheet(
+          context: context,
+          ref: ref,
+          channelId: post.channelId,
+          eventId: post.eventId,
+        ),
+      },
+      onLongPress: () => _showActions(context, status),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(Grid.twelve),
@@ -161,12 +174,20 @@ class ForumPostCard extends HookConsumerWidget {
                     ),
                   ),
                 ),
+                if (status != LocalSendStatus.sent) ...[
+                  const SizedBox(width: Grid.half),
+                  LocalSendStatusMark(
+                    status: status,
+                    channelId: post.channelId,
+                    eventId: post.eventId,
+                  ),
+                ],
                 const SizedBox(width: Grid.half),
                 SizedBox(
                   width: 24,
                   height: 24,
                   child: IconButton(
-                    onPressed: () => _showActions(context),
+                    onPressed: () => _showActions(context, status),
                     icon: Icon(
                       LucideIcons.ellipsis,
                       size: 16,
@@ -251,8 +272,10 @@ class ForumPostCard extends HookConsumerWidget {
     );
   }
 
-  void _showActions(BuildContext context) {
+  void _showActions(BuildContext context, LocalSendStatus status) {
+    // An unsent post is deleted from its "Not sent" mark, not the relay.
     final isOwn =
+        status == LocalSendStatus.sent &&
         currentPubkey != null &&
         post.pubkey.toLowerCase() == currentPubkey!.toLowerCase();
 

@@ -965,7 +965,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   void removeLocalMessage(String eventId) {
     final pending = ref
         .read(pendingLocalMessagesProvider(channelId).notifier)
-        .take(eventId);
+        .take(eventId, dropped: true);
     if (pending == null) return;
 
     _localReplyRoots.remove(eventId);

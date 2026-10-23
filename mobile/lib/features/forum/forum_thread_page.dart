@@ -18,10 +18,14 @@ import '../../shared/widgets/load_error_view.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../channels/compose_bar.dart';
 import '../channels/channel_identity_names_provider.dart';
+import '../channels/failed_local_messages_provider.dart';
+import '../channels/local_send_status_mark.dart';
+import '../channels/pending_local_messages_provider.dart';
 import '../channels/message_content.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../profile/user_profile_sheet.dart';
+import 'forum_local_sends.dart';
 import 'forum_models.dart';
 import 'forum_provider.dart';
 
@@ -44,9 +48,23 @@ class ForumThreadPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final threadAsync = ref.watch(
-      forumThreadProvider((channelId: channelId, eventId: postEventId)),
-    );
+    final threadProvider = forumThreadProvider((
+      channelId: channelId,
+      eventId: postEventId,
+    ));
+    final threadAsync = ref.watch(threadProvider);
+    // A fetched thread confirms the own sends it contains.
+    ref.listen(threadProvider, (_, next) {
+      if (next case AsyncData(:final value)) {
+        ref.read(forumAcceptedSendsProvider(channelId).notifier).confirmFetched(
+          [
+            value.post.eventId,
+            for (final reply in value.replies) reply.eventId,
+          ],
+        );
+      }
+    });
+    void retry() => ref.invalidate(threadProvider);
 
     // Periodic refresh (every 10s, matching desktop). A settled deadline
     // pauses polling; reopening the thread is the explicit retry.
@@ -94,35 +112,47 @@ class ForumThreadPage extends HookConsumerWidget {
             ),
         ],
       ),
-      body: threadAsync.when(
-        // A retry from an error shows loading, not the stale error and its Retry.
-        skipLoadingOnRefresh: !threadAsync.hasError,
-        loading: () => Padding(
-          padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-          child: Center(
-            child: KuzzLoadingIndicator(
-              size: 44,
-              semanticLabel: context.l10n.forumLoadingThread,
-            ),
-          ),
-        ),
-        error: (e, _) => Padding(
-          padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-          child: LoadErrorView(
-            message: context.l10n.forumLoadThreadError,
-            onRetry: () => ref.invalidate(
-              forumThreadProvider((channelId: channelId, eventId: postEventId)),
-            ),
-          ),
-        ),
-        data: (thread) => _ThreadContent(
+      // A thread loaded earlier and own replies (with their Retry and
+      // Delete) stay through a failed or retrying refresh, under a line
+      // saying so.
+      body: switch (threadAsync) {
+        AsyncValue(hasError: true, value: final thread?) => _ThreadContent(
           thread: thread,
           channelId: channelId,
           currentPubkey: currentPubkey,
           isMember: isMember,
           isArchived: isArchived,
+          onLoadRetry: retry,
         ),
-      ),
+        _ => threadAsync.when(
+          // A retry from an error shows loading, not the stale error and its
+          // Retry.
+          skipLoadingOnRefresh: !threadAsync.hasError,
+          loading: () => Padding(
+            padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
+            child: Center(
+              child: KuzzLoadingIndicator(
+                size: 44,
+                semanticLabel: context.l10n.forumLoadingThread,
+              ),
+            ),
+          ),
+          error: (e, _) => Padding(
+            padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
+            child: LoadErrorView(
+              message: context.l10n.forumLoadThreadError,
+              onRetry: retry,
+            ),
+          ),
+          data: (thread) => _ThreadContent(
+            thread: thread,
+            channelId: channelId,
+            currentPubkey: currentPubkey,
+            isMember: isMember,
+            isArchived: isArchived,
+          ),
+        ),
+      },
     );
   }
 
@@ -218,12 +248,16 @@ class _ThreadContent extends HookConsumerWidget {
   final bool isMember;
   final bool isArchived;
 
+  /// Set when the latest refresh failed: shows its error above the thread.
+  final VoidCallback? onLoadRetry;
+
   const _ThreadContent({
     required this.thread,
     required this.channelId,
     required this.currentPubkey,
     required this.isMember,
     required this.isArchived,
+    this.onLoadRetry,
   });
 
   @override
@@ -232,7 +266,11 @@ class _ThreadContent extends HookConsumerWidget {
     final providerContainer = ProviderScope.containerOf(context, listen: false);
     final forumDelivery = ForumEventDelivery.capture(providerContainer);
     final post = thread.post;
-    final replies = thread.replies;
+    final replies = withLocalForumReplies(
+      thread.replies,
+      watchOwnForumSends(ref, channelId, currentPubkey),
+      post.eventId,
+    );
 
     // Preload profiles for all participants and tagged mentions.
     final allPubkeys = useMemoized(() {
@@ -265,6 +303,11 @@ class _ThreadContent extends HookConsumerWidget {
               bottom: Grid.xs,
             ),
             children: [
+              if (onLoadRetry case final retry?)
+                LoadErrorBanner(
+                  message: context.l10n.forumLoadThreadError,
+                  onRetry: retry,
+                ),
               _OriginalPost(post: post),
 
               Padding(
@@ -423,6 +466,10 @@ class _OriginalPost extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    _SendStatus(
+                      channelId: post.channelId,
+                      eventId: post.eventId,
+                    ),
                   ],
                 ),
               ),
@@ -546,6 +593,7 @@ class _ReplyRow extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    _SendStatus(channelId: channelId, eventId: reply.eventId),
                   ],
                 ),
               ),
@@ -592,7 +640,11 @@ class _ReplyRow extends ConsumerWidget {
   }
 
   void _showActions(BuildContext context, WidgetRef ref) {
+    // An unsent reply is deleted from its "Not sent" mark, not the relay.
     final isOwn =
+        !ref
+            .read(pendingLocalMessagesProvider(channelId))
+            .containsKey(reply.eventId) &&
         currentPubkey != null &&
         reply.pubkey.toLowerCase() == currentPubkey!.toLowerCase();
 
@@ -670,6 +722,28 @@ class _ReplyRow extends ConsumerWidget {
             child: Text(context.l10n.forumDelete),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The clock or "Not sent" mark after an own post or reply's time.
+class _SendStatus extends ConsumerWidget {
+  final String channelId;
+  final String eventId;
+
+  const _SendStatus({required this.channelId, required this.eventId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = watchLocalSendStatus(ref, channelId, eventId);
+    if (status == LocalSendStatus.sent) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: Grid.half),
+      child: LocalSendStatusMark(
+        status: status,
+        channelId: channelId,
+        eventId: eventId,
       ),
     );
   }
