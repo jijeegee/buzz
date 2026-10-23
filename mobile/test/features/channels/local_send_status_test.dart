@@ -540,6 +540,71 @@ void main() {
       },
     );
 
+    test('retrying an unverified row the relay has sends nothing', () async {
+      final (container, session, event) = await failThenRestart(
+        lookup: (_) async => throw Exception('offline'),
+      );
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+      final prefs = container.read(savedPrefsProvider);
+
+      session.lookup = (filter) async => [
+        if (filter.ids!.contains(event.id)) event,
+      ];
+      await container
+          .read(sendMessageProvider)
+          .retry(channelId: _channelId, eventId: event.id);
+
+      expect(session._publishCount, 0);
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.sent);
+      expect(stored(prefs), isEmpty);
+    });
+
+    for (final relayAnswers in [true, false]) {
+      test('retrying an unverified row sends it when the relay '
+          '${relayAnswers ? 'lacks it' : 'cannot say'}', () async {
+        final (container, session, event) = await failThenRestart(
+          lookup: (_) async => throw Exception('offline'),
+        );
+        final prefs = container.read(savedPrefsProvider);
+        var lookups = 0;
+        session.lookup = (_) async {
+          lookups++;
+          if (relayAnswers) return const [];
+          throw Exception('still offline');
+        };
+        final retry = container
+            .read(sendMessageProvider)
+            .retry(channelId: _channelId, eventId: event.id);
+        final republished = await session.nextPublish;
+        expect(lookups, 1);
+        expect(republished.id, event.id);
+        session.accept();
+        await retry;
+
+        expect(statusOf(container, event.id), LocalSendStatus.sent);
+        expect(stored(prefs), isEmpty);
+      });
+    }
+
+    test('a verified row is retried without another lookup', () async {
+      var lookups = 0;
+      final (container, session, event) = await failThenRestart(
+        lookup: (_) async {
+          lookups++;
+          return const [];
+        },
+      );
+      expect(lookups, 1);
+      final retry = container
+          .read(sendMessageProvider)
+          .retry(channelId: _channelId, eventId: event.id);
+      await session.nextPublish;
+      session.accept();
+      await retry;
+      expect(lookups, 1);
+    });
+
     test('a send without a kept failed row is never stored', () async {
       SharedPreferences.setMockInitialValues({});
       var prefs = await SharedPreferences.getInstance();

@@ -13,6 +13,7 @@ class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
   final String channelId;
   final _storeKeys = <String, String>{};
   final _readStoreKeys = <String>{};
+  final _unverified = <String>{};
 
   PendingLocalMessagesNotifier(this.channelId);
 
@@ -47,21 +48,35 @@ class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
     _forget(confirmed);
   }
 
-  /// [signer]'s stored sends for this channel that are not pending here yet.
+  /// [signer]'s stored sends for this channel that are not pending here yet,
+  /// already tied to their store entry: add them without `persist`.
   /// Each store entry is read once; after that this map is its live copy.
   List<NostrEvent> storedSends(String signer) {
     final store = ref.read(localSendStoreProvider);
     final key = store?.keyFor(signer, channelId);
     if (store == null || !_readStoreKeys.add(key!)) return const [];
-    return [
+    final sends = [
       for (final event in store.read(key))
         if (!state.containsKey(event.id) &&
             event.pubkey.toLowerCase() == signer.toLowerCase())
           event,
     ];
+    for (final event in sends) {
+      _storeKeys[event.id] = key;
+    }
+    return sends;
   }
 
+  /// Restored sends the relay could not be asked about: they may have landed.
+  void markUnverified(Iterable<String> eventIds) =>
+      _unverified.addAll(eventIds.where(state.containsKey));
+
+  bool isUnverified(String eventId) => _unverified.contains(eventId);
+
+  void markVerified(String eventId) => _unverified.remove(eventId);
+
   void _forget(Set<String> eventIds) {
+    _unverified.removeAll(eventIds);
     final store = ref.read(localSendStoreProvider);
     for (final key in {for (final id in eventIds) ?_storeKeys.remove(id)}) {
       store?.remove(key, eventIds);

@@ -102,7 +102,8 @@ final localSendStoreProvider = Provider<LocalSendStore?>((ref) {
 /// The app may have closed after the relay stored a send but before it said
 /// so, so the rows wait as pending for one lookup by id: the relay's copy
 /// confirms a row, and a row it lacks, or a lookup that fails, is marked
-/// failed for retry or delete.
+/// failed for retry or delete. After a failed lookup the rows stay
+/// unverified, so a retry asks the relay again before sending.
 Future<void> restoreLocalSends(
   Ref ref,
   ChannelMessagesNotifier messages,
@@ -110,40 +111,54 @@ Future<void> restoreLocalSends(
 ) async {
   if (!ref.mounted || signer == null) return;
   final channelId = messages.channelId;
-  final stored = ref
-      .read(pendingLocalMessagesProvider(channelId).notifier)
-      .storedSends(signer);
+  final pending = ref.read(pendingLocalMessagesProvider(channelId).notifier);
+  final stored = pending.storedSends(signer);
   if (stored.isEmpty) return;
   for (final event in stored) {
-    messages.addLocalMessage(event, persist: true);
+    messages.addLocalMessage(event);
   }
   final ids = [for (final event in stored) event.id];
-  var delivered = const <String>{};
+  Set<String>? delivered;
   try {
-    final found = await ref
-        .read(relaySessionProvider.notifier)
-        .queryRelay([
-          NostrFilter(
-            ids: ids,
-            kinds: {for (final event in stored) event.kind}.toList(),
-            tags: {
-              '#h': [channelId],
-            },
-            limit: ids.length,
-          ),
-        ], timeout: _restoreLookupTimeout)
-        .timeout(_restoreLookupTimeout);
-    delivered = {for (final event in found) event.id};
+    delivered = await findLocalSendsOnRelay(ref, channelId, stored);
   } catch (error) {
     debugPrint('[restoreLocalSends] lookup failed for $channelId: $error');
   }
   if (!ref.mounted) return;
+  if (delivered == null) pending.markUnverified(ids);
   final failed = ref.read(failedLocalMessagesProvider(channelId).notifier);
   for (final id in ids) {
-    if (delivered.contains(id)) {
+    if (delivered?.contains(id) ?? false) {
       messages.completeLocalMessage(id);
     } else {
       failed.markFailed(id);
     }
   }
+}
+
+/// Ids of [events] the relay already has in [channelId]. Throws when the
+/// relay cannot say, including after [_restoreLookupTimeout].
+Future<Set<String>> findLocalSendsOnRelay(
+  Ref ref,
+  String channelId,
+  List<NostrEvent> events,
+) async {
+  final ids = [for (final event in events) event.id];
+  final found = await ref
+      .read(relaySessionProvider.notifier)
+      .queryRelay([
+        NostrFilter(
+          ids: ids,
+          kinds: {for (final event in events) event.kind}.toList(),
+          tags: {
+            '#h': [channelId],
+          },
+          limit: ids.length,
+        ),
+      ], timeout: _restoreLookupTimeout)
+      .timeout(_restoreLookupTimeout);
+  return {
+    for (final event in found)
+      if (ids.contains(event.id)) event.id,
+  };
 }
