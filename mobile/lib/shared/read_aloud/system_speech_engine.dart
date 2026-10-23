@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../l10n/l10n.dart';
+
 import 'read_aloud_preferences.dart';
 import 'speech_audio_session.dart';
 import 'speech_engine.dart';
@@ -16,12 +18,13 @@ final systemSpeechEngineProvider = Provider<SystemSpeechEngine>(
 );
 
 /// Friendly names for common engines; other installed packages remain usable.
-String speechEngineLabel(String engine) => switch (engine) {
-  '' => '휴대폰 기본 설정 따르기',
-  'com.google.android.tts' => 'Google 음성 인식 및 합성',
-  'com.samsung.SMT' => '삼성 TTS',
-  _ => engine,
-};
+String speechEngineLabel(AppLocalizations l10n, String engine) =>
+    switch (engine) {
+      '' => l10n.readAloudEnginePhoneDefault,
+      'com.google.android.tts' => l10n.readAloudEngineGoogle,
+      'com.samsung.SMT' => l10n.readAloudEngineSamsung,
+      _ => engine,
+    };
 
 /// Free system TTS adapter. Speech text never goes to a Kuzz/cloud endpoint.
 class SystemSpeechEngine implements SpeechEngine {
@@ -51,7 +54,7 @@ class SystemSpeechEngine implements SpeechEngine {
 
   void _checkAvailable() {
     if (_unavailable) {
-      throw const SpeechFailure('음성 엔진이 응답하지 않습니다. 앱을 다시 열어 주세요.');
+      throw SpeechFailure(appL10n.readAloudEngineNotResponding);
     }
   }
 
@@ -61,12 +64,7 @@ class SystemSpeechEngine implements SpeechEngine {
       ..setCompletionHandler(() => _finish(true))
       ..setCancelHandler(() => _finish(false))
       ..setErrorHandler(
-        (_) => _finish(
-          false,
-          error: const SpeechFailure(
-            '읽어주기에 실패했습니다. 휴대폰의 음성 설정을 확인하고 다시 시도해 주세요.',
-          ),
-        ),
+        (_) => _finish(false, error: SpeechFailure(appL10n.readAloudFailed)),
       )
       ..setProgressHandler((text, start, end, _) {
         if (!_stopping &&
@@ -98,7 +96,7 @@ class SystemSpeechEngine implements SpeechEngine {
     final result = await _client.getEngines.timeout(setupTimeout);
     _checkAvailable();
     if (result is! List) {
-      throw const SpeechFailure('설치된 음성 엔진 목록을 불러오지 못했습니다.');
+      throw SpeechFailure(appL10n.readAloudEngineListUnavailable);
     }
     return result
         .whereType<String>()
@@ -115,15 +113,13 @@ class SystemSpeechEngine implements SpeechEngine {
       final systemDefault = await client.getDefaultEngine;
       _checkAvailable();
       if (systemDefault is! String || systemDefault.isEmpty) {
-        throw const SpeechFailure('휴대폰 기본 음성 엔진이 없습니다. 읽어주기 설정에서 엔진을 선택해 주세요.');
+        throw SpeechFailure(appL10n.readAloudNoDefaultEngine);
       }
       requested = systemDefault;
     }
     // Recheck even when cached: the user may have removed an engine externally.
     if (!(await installedEngines()).contains(requested)) {
-      throw const SpeechFailure(
-        '선택한 음성 엔진이 설치되어 있지 않습니다. 앱의 읽어주기 설정에서 다른 엔진을 선택해 주세요.',
-      );
+      throw SpeechFailure(appL10n.readAloudEngineNotInstalled);
     }
     if (_activeEngine == requested) return;
     _activeEngine = null;
@@ -160,13 +156,13 @@ class SystemSpeechEngine implements SpeechEngine {
       throw SpeechFailure(
         language == 'ko'
             ? (_android
-                  ? '이 엔진에 한국어 오프라인 음성이 없습니다. 다른 엔진을 선택하거나 휴대폰의 글자 읽어주기 설정에서 한국어 음성을 설치해 주세요.'
-                  : '한국어 음성이 없습니다. iPhone 설정의 손쉬운 사용에서 한국어 음성을 다운로드해 주세요.')
-            : '이 언어의 오프라인 음성이 없습니다. 휴대폰 음성 설정에서 음성을 설치한 뒤 다시 눌러 주세요.',
+                  ? appL10n.readAloudNoKoreanVoiceAndroid
+                  : appL10n.readAloudNoKoreanVoiceIos)
+            : appL10n.readAloudNoOfflineVoice,
       );
     }
     if (await client.setVoice(voice) != 1) {
-      throw const SpeechFailure('선택한 음성을 사용할 수 없습니다. 휴대폰 음성 설정을 확인해 주세요.');
+      throw SpeechFailure(appL10n.readAloudVoiceUnavailable);
     }
     _checkAvailable();
     await client.setSpeechRate(0.5);
@@ -197,10 +193,7 @@ class SystemSpeechEngine implements SpeechEngine {
     );
     final watchdog = Timer(speechTimeout, () {
       _unavailable = true;
-      _finish(
-        false,
-        error: const SpeechFailure('음성 엔진의 응답 시간이 초과되었습니다. 앱을 다시 열어 주세요.'),
-      );
+      _finish(false, error: SpeechFailure(appL10n.readAloudEngineTimeout));
     });
     try {
       _activation = _audio.activate(() {
@@ -221,9 +214,7 @@ class SystemSpeechEngine implements SpeechEngine {
                   if (identical(_utterance, done) && started != 1) {
                     _finish(
                       false,
-                      error: const SpeechFailure(
-                        '읽어주기를 시작하지 못했습니다. 다시 시도해 주세요.',
-                      ),
+                      error: SpeechFailure(appL10n.readAloudStartFailed),
                     );
                   }
                 },
@@ -267,7 +258,7 @@ class SystemSpeechEngine implements SpeechEngine {
       } on TimeoutException {
         _unavailable = true;
         _finish(false);
-        throw const SpeechFailure('음성 중지를 확인하지 못했습니다. 앱을 다시 열어 주세요.');
+        throw SpeechFailure(appL10n.readAloudStopFailed);
       }
     }
     await _releaseAudio();

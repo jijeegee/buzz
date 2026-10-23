@@ -58,8 +58,8 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('read-aloud-engine')));
       await tester.pumpAndSettle();
-      expect(find.text('삼성 TTS'), findsOneWidget);
-      await tester.tap(find.text('Google 음성 인식 및 합성'));
+      expect(find.text('Samsung text-to-speech'), findsOneWidget);
+      await tester.tap(find.text('Speech Services by Google'));
       await tester.pumpAndSettle();
       expect(
         prefs.getString(ReadAloudEnginePreference.key),
@@ -108,13 +108,16 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('read-aloud-engine')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('설치된 엔진 목록을 불러오지 못했습니다'), findsOneWidget);
+    expect(
+      find.textContaining('Couldn’t load your voice engines'),
+      findsOneWidget,
+    );
     Navigator.of(tester.element(find.byType(SimpleDialog))).pop();
     await tester.pumpAndSettle();
     fail = false;
     await tester.tap(find.byKey(const ValueKey('read-aloud-engine')));
     await tester.pumpAndSettle();
-    expect(find.text('삼성 TTS'), findsOneWidget);
+    expect(find.text('Samsung text-to-speech'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -156,8 +159,8 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('read-aloud-engine')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('앱을 다시 열어 주세요'), findsOneWidget);
-      await tester.tap(find.text('휴대폰 기본 설정 따르기'));
+      expect(find.textContaining('Please reopen the app'), findsOneWidget);
+      await tester.tap(find.text('Use phone default'));
       await tester.pumpAndSettle();
       expect(prefs.getString(ReadAloudEnginePreference.key), '');
       await tester.pumpWidget(const SizedBox.shrink());

@@ -1168,6 +1168,144 @@
   "@settingsReadAloudSubtitle": {
     "description": "Settings page, grey text under the Read aloud switch."
   },
+  "readAloudEngineTitle": "Voice engine",
+  "@readAloudEngineTitle": {
+    "description": "Settings page, Messages section, Read aloud: title of the voice engine row (Android) and of the engine picker dialog. Short."
+  },
+  "readAloudEngineSubtitle": "{engine}\nOnly for this app · changing it stops playback",
+  "@readAloudEngineSubtitle": {
+    "description": "Settings page, Messages section, Read aloud: grey text under the Voice engine row. First line is the chosen engine's name, second line explains the setting.",
+    "placeholders": {
+      "engine": {
+        "type": "String",
+        "example": "Speech Services by Google"
+      }
+    }
+  },
+  "readAloudEnginePhoneDefault": "Use phone default",
+  "@readAloudEnginePhoneDefault": {
+    "description": "Settings page, Messages section, Read aloud engine picker: option that uses the phone's default text-to-speech engine. Short."
+  },
+  "readAloudEngineGoogle": "Speech Services by Google",
+  "@readAloudEngineGoogle": {
+    "description": "Settings page, Messages section, Read aloud engine picker: name of Google's text-to-speech engine. Use the name Google uses in this language."
+  },
+  "readAloudEngineSamsung": "Samsung text-to-speech",
+  "@readAloudEngineSamsung": {
+    "description": "Settings page, Messages section, Read aloud engine picker: name of Samsung's text-to-speech engine. Use the name Samsung uses in this language."
+  },
+  "readAloudEngineSelected": "Selected",
+  "@readAloudEngineSelected": {
+    "description": "Settings page, Messages section, Read aloud engine picker: screen reader label of the check mark next to the chosen engine."
+  },
+  "readAloudEngineListFailed": "Couldn’t load your voice engines. Switch back to the phone default or open this again.",
+  "@readAloudEngineListFailed": {
+    "description": "Settings page, Messages section, Read aloud engine picker: message at the top when the installed engines couldn't be listed."
+  },
+  "readAloudEngineGone": "The engine you picked before isn’t here anymore. Please pick another one.",
+  "@readAloudEngineGone": {
+    "description": "Settings page, Messages section, Read aloud engine picker: note when the previously chosen engine was uninstalled."
+  },
+  "readAloudEngineNoneFound": "No voice engines found. Install one, then open this again.",
+  "@readAloudEngineNoneFound": {
+    "description": "Settings page, Messages section, Read aloud engine picker: note when the phone has no text-to-speech engines."
+  },
+  "readAloudEngineSaveFailed": "Couldn’t change the voice engine. Tap to try again.",
+  "@readAloudEngineSaveFailed": {
+    "description": "Settings page, Messages section, Read aloud: snackbar when switching the voice engine failed."
+  },
+  "readAloudPlay": "Read message aloud",
+  "@readAloudPlay": {
+    "description": "Message row, tooltip of the speaker button that starts reading the message out loud."
+  },
+  "readAloudStop": "Stop reading",
+  "@readAloudStop": {
+    "description": "Message row, tooltip of the button that stops reading the message out loud."
+  },
+  "readAloudPause": "Pause",
+  "@readAloudPause": {
+    "description": "Message being read aloud, tooltip of the pause button."
+  },
+  "readAloudResume": "Resume",
+  "@readAloudResume": {
+    "description": "Message being read aloud, tooltip of the button that continues reading after a pause."
+  },
+  "readAloudPreparing": "Getting the voice ready…",
+  "@readAloudPreparing": {
+    "description": "Message being read aloud, small status text under the message while the voice loads. Short."
+  },
+  "readAloudReading": "Reading",
+  "@readAloudReading": {
+    "description": "Message being read aloud, small status text under the message. Short."
+  },
+  "readAloudReadingNoHighlight": "Reading · word highlight not available yet",
+  "@readAloudReadingNoHighlight": {
+    "description": "Message being read aloud, small status text when the phone hasn't reported which word is being read yet. Short."
+  },
+  "readAloudPaused": "Paused",
+  "@readAloudPaused": {
+    "description": "Message being read aloud, small status text while paused. Short."
+  },
+  "readAloudPausedResumesHere": "Paused · will resume from this part",
+  "@readAloudPausedResumesHere": {
+    "description": "Message being read aloud, small status text while paused before any word was highlighted; resuming restarts the current part. Short."
+  },
+  "readAloudBusyWithAudio": "Finish your call or recording, then try reading aloud.",
+  "@readAloudBusyWithAudio": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android). Shown when a call or voice recording is using the audio."
+  },
+  "readAloudUnavailable": "Read aloud isn’t available right now. Check your phone’s voice settings and try again.",
+  "@readAloudUnavailable": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android). General fallback."
+  },
+  "readAloudEngineNotResponding": "The voice engine isn’t responding. Please reopen the app.",
+  "@readAloudEngineNotResponding": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
+  "readAloudFailed": "Couldn’t read this aloud. Check your phone’s voice settings and try again.",
+  "@readAloudFailed": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
+  "readAloudEngineListUnavailable": "Couldn’t load the installed voice engines.",
+  "@readAloudEngineListUnavailable": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
+  "readAloudNoDefaultEngine": "Your phone has no default voice engine. Pick one in Read aloud settings.",
+  "@readAloudNoDefaultEngine": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android). Android only."
+  },
+  "readAloudEngineNotInstalled": "The voice engine you picked isn’t installed. Pick another one in the app’s Read aloud settings.",
+  "@readAloudEngineNotInstalled": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android). Android only."
+  },
+  "readAloudNoKoreanVoiceAndroid": "This engine has no offline Korean voice. Pick another engine, or install a Korean voice in your phone’s text-to-speech settings.",
+  "@readAloudNoKoreanVoiceAndroid": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android). Android, when a Korean message can't be read."
+  },
+  "readAloudNoKoreanVoiceIos": "No Korean voice found. Download one in iPhone Settings › Accessibility.",
+  "@readAloudNoKoreanVoiceIos": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android). iPhone, when a Korean message can't be read. Use the iPhone Settings and Accessibility names as they appear in this language."
+  },
+  "readAloudNoOfflineVoice": "There’s no offline voice for this language. Install one in your phone’s voice settings, then tap again.",
+  "@readAloudNoOfflineVoice": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
+  "readAloudVoiceUnavailable": "Couldn’t use this voice. Check your phone’s voice settings.",
+  "@readAloudVoiceUnavailable": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
+  "readAloudEngineTimeout": "The voice engine took too long to answer. Please reopen the app.",
+  "@readAloudEngineTimeout": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
+  "readAloudStartFailed": "Couldn’t start reading. Please try again.",
+  "@readAloudStartFailed": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
+  "readAloudStopFailed": "Couldn’t confirm reading stopped. Please reopen the app.",
+  "@readAloudStopFailed": {
+    "description": "Read aloud error under a message (or in the voice engine picker on Android)."
+  },
   "settingsSaveFailed": "Couldn't save. Try again.",
   "@settingsSaveFailed": {
     "description": "Settings page, snackbar when saving a setting failed."

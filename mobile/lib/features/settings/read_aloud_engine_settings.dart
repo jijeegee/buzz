@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/read_aloud/read_aloud_preferences.dart';
 import '../../shared/read_aloud/speech_engine.dart';
 import '../../shared/read_aloud/system_speech_engine.dart';
@@ -16,10 +17,13 @@ class ReadAloudEngineSettings extends HookConsumerWidget {
     final selected = ref.watch(readAloudEngineProvider);
     final busy = useState(false);
     final loading = useState(false);
+    final l10n = context.l10n;
     return ListTile(
       key: const ValueKey('read-aloud-engine'),
-      title: const Text('읽어주기 음성 엔진'),
-      subtitle: Text('${speechEngineLabel(selected)}\n이 앱에만 적용 · 변경하면 재생 중지'),
+      title: Text(l10n.readAloudEngineTitle),
+      subtitle: Text(
+        l10n.readAloudEngineSubtitle(speechEngineLabel(l10n, selected)),
+      ),
       trailing: loading.value
           ? const SizedBox.square(
               dimension: Grid.sm,
@@ -41,14 +45,14 @@ class ReadAloudEngineSettings extends HookConsumerWidget {
                 } catch (error) {
                   discoveryError = error is SpeechFailure
                       ? error.message
-                      : '설치된 엔진 목록을 불러오지 못했습니다. 기본 설정으로 되돌리거나 이 창을 다시 열어 주세요.';
+                      : l10n.readAloudEngineListFailed;
                 }
                 if (!context.mounted) return;
                 loading.value = false;
                 final choice = await showDialog<String>(
                   context: context,
                   builder: (context) => SimpleDialog(
-                    title: const Text('읽어주기 음성 엔진'),
+                    title: Text(context.l10n.readAloudEngineTitle),
                     children: [
                       if (discoveryError != null)
                         Padding(
@@ -60,25 +64,31 @@ class ReadAloudEngineSettings extends HookConsumerWidget {
                           onPressed: () => Navigator.pop(context, engine),
                           child: Row(
                             children: [
-                              Expanded(child: Text(speechEngineLabel(engine))),
+                              Expanded(
+                                child: Text(
+                                  speechEngineLabel(context.l10n, engine),
+                                ),
+                              ),
                               if (engine == selected)
-                                const Icon(Icons.check, semanticLabel: '선택됨'),
+                                Icon(
+                                  Icons.check,
+                                  semanticLabel:
+                                      context.l10n.readAloudEngineSelected,
+                                ),
                             ],
                           ),
                         ),
                       if (discoveryError == null &&
                           selected.isNotEmpty &&
                           !engines.contains(selected))
-                        const Padding(
-                          padding: EdgeInsets.all(Grid.xs),
-                          child: Text('이전에 선택한 엔진이 없습니다. 다른 엔진을 선택해 주세요.'),
+                        Padding(
+                          padding: const EdgeInsets.all(Grid.xs),
+                          child: Text(context.l10n.readAloudEngineGone),
                         ),
                       if (discoveryError == null && engines.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.all(Grid.xs),
-                          child: Text(
-                            '설치된 엔진을 찾지 못했습니다. 음성 엔진을 설치한 뒤 다시 열어 주세요.',
-                          ),
+                        Padding(
+                          padding: const EdgeInsets.all(Grid.xs),
+                          child: Text(context.l10n.readAloudEngineNoneFound),
                         ),
                     ],
                   ),
@@ -93,8 +103,8 @@ class ReadAloudEngineSettings extends HookConsumerWidget {
               } catch (_) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('음성 엔진 설정을 완료하지 못했습니다. 다시 눌러 시도해 주세요.'),
+                    SnackBar(
+                      content: Text(context.l10n.readAloudEngineSaveFailed),
                     ),
                   );
                 }

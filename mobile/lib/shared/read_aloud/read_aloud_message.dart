@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/theme.dart';
 import 'read_aloud_controller.dart';
 import 'read_aloud_preferences.dart';
@@ -129,7 +130,7 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
     final paused = session?.phase == ReadAloudPhase.paused;
     final button = _ReadAloudIconButton(
       key: ValueKey('read-aloud-play-$messageId'),
-      tooltip: active ? '읽어주기 중지' : '메시지 읽어주기',
+      tooltip: active ? context.l10n.readAloudStop : context.l10n.readAloudPlay,
       icon: active ? LucideIcons.square : LucideIcons.volume2,
       onPressed: active ? () => unawaited(controller.stop()) : play,
     );
@@ -163,14 +164,14 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
                     Expanded(
                       child: Text(
                         session?.phase == ReadAloudPhase.preparing
-                            ? '음성 준비 중…'
+                            ? context.l10n.readAloudPreparing
                             : paused
                             ? (session!.hasProgress
-                                  ? '일시정지됨'
-                                  : '일시정지 · 이 구간부터 이어읽기')
+                                  ? context.l10n.readAloudPaused
+                                  : context.l10n.readAloudPausedResumesHere)
                             : (session!.hasProgress
-                                  ? '읽는 중'
-                                  : '읽는 중 · 단어 위치 정보 대기'),
+                                  ? context.l10n.readAloudReading
+                                  : context.l10n.readAloudReadingNoHighlight),
                         style: context.textTheme.labelSmall?.copyWith(
                           color: context.colors.primary,
                         ),
@@ -178,7 +179,9 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
                     ),
                     _ReadAloudIconButton(
                       key: ValueKey('read-aloud-pause-$messageId'),
-                      tooltip: paused ? '이어 읽기' : '일시정지',
+                      tooltip: paused
+                          ? context.l10n.readAloudResume
+                          : context.l10n.readAloudPause,
                       icon: paused ? LucideIcons.play : LucideIcons.pause,
                       onPressed: () => unawaited(
                         paused ? controller.resume() : controller.pause(),
