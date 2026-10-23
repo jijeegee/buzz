@@ -324,15 +324,30 @@ async fn reserve_dm(
     }
 }
 
-/// Global regions (S5-3b): where a command acting on `room` is stored. A
-/// room-less row is global data, written only in the primary region; in a
-/// region holding the global copy the command is stored in the room it acts
-/// on, which is this region's own.
-fn command_row_room(state: &AppState, room: Option<Uuid>) -> Option<Uuid> {
-    if state.config.global_copy {
-        room
-    } else {
-        None
+/// Open the DM, as the room `dm_id` when it is new. A reserved DM can race
+/// with its own region creating it (a forwarded open, S4-6): the loser takes
+/// the winner's room.
+async fn open_dm_reserved(
+    tenant: &TenantContext,
+    state: &AppState,
+    all_refs: &[&[u8]],
+    self_bytes: &[u8],
+    dm_id: Option<Uuid>,
+) -> Result<(kuzz_db::channel::ChannelRecord, bool), IngestError> {
+    let opened = state
+        .db
+        .open_dm_with_id(tenant.community(), all_refs, self_bytes, dm_id)
+        .await;
+    match opened {
+        Ok(opened) => Ok(opened),
+        Err(e) => match dm_id {
+            Some(_) => state
+                .db
+                .open_dm_with_id(tenant.community(), all_refs, self_bytes, dm_id)
+                .await
+                .map_err(|_| IngestError::Internal(format!("error: db open_dm: {e}"))),
+            None => Err(IngestError::Internal(format!("error: db open_dm: {e}"))),
+        },
     }
 }
 
@@ -382,20 +397,19 @@ async fn handle_dm_open(
         Err(home) => return Err(IngestError::WrongRegion(home)),
     };
 
-    // Persist the command event (idempotency) — returns open transaction
-    let row_room = match dm_id {
-        Some(id) => command_row_room(state, Some(id)),
-        None if state.config.global_copy => state
-            .db
-            .find_dm_by_participants(
-                tenant.community(),
-                &kuzz_db::dm::compute_participant_hash(&all_refs),
-            )
-            .await
-            .map_err(|e| IngestError::Internal(format!("error: db find_dm: {e}")))?
-            .map(|dm| dm.id),
-        None => None,
+    // In a copy region the command's row goes in the DM's room (a room-less
+    // row is global data, S5-3b), so the room is made first: the row's
+    // insert holds the room's lock until commit, and adding the room's
+    // members takes the same lock. Opening again is idempotent, so a resend
+    // finds the room and then its duplicate row.
+    let opened_first = if state.config.global_copy {
+        Some(open_dm_reserved(tenant, state, &all_refs, &self_bytes, dm_id).await?)
+    } else {
+        None
     };
+    let row_room = opened_first.as_ref().map(|(channel, _)| channel.id);
+
+    // Persist the command event (idempotency) — returns open transaction
     let tx = match persist_command_event(&state.db, tenant, event, row_room).await? {
         PersistResult::Duplicate => {
             return Ok(IngestResult {
@@ -408,22 +422,10 @@ async fn handle_dm_open(
         PersistResult::Inserted(tx) => tx,
     };
 
-    // 4. Execute: open_dm. A reserved DM can race with its own region
-    // creating it (a forwarded open, S4-6): the loser takes the winner's room.
-    let opened = state
-        .db
-        .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
-        .await;
-    let (channel, was_created) = match opened {
-        Ok(opened) => opened,
-        Err(e) => match dm_id {
-            Some(_) => state
-                .db
-                .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
-                .await
-                .map_err(|_| IngestError::Internal(format!("error: db open_dm: {e}")))?,
-            None => return Err(IngestError::Internal(format!("error: db open_dm: {e}"))),
-        },
+    // 4. Execute: open_dm.
+    let (channel, was_created) = match opened_first {
+        Some(opened) => opened,
+        None => open_dm_reserved(tenant, state, &all_refs, &self_bytes, dm_id).await?,
     };
 
     // Finalize the idempotency record after the separate mutation succeeds.
@@ -1177,9 +1179,11 @@ fn check_approver_spec(approver_spec: &str, requester_hex: &str) -> Result<(), I
     )))
 }
 
-/// [`command_row_room`] for an approval: its workflow's room. A workflow
-/// outside any room has nowhere local to keep the row in a copy region, so
-/// its approvals are refused there.
+/// Global regions (S5-3b): where an approval's command row is stored. A
+/// room-less row is global data, written only in the primary region; in a
+/// region holding the global copy the row goes in the workflow's room, which
+/// is this region's own. A workflow outside any room has nowhere local to
+/// keep the row there, so its approvals are refused.
 async fn approval_row_room(
     tenant: &TenantContext,
     state: &AppState,
