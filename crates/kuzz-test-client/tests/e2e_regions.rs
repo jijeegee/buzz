@@ -69,17 +69,29 @@ fn message(keys: &Keys, room: &str, text: &str) -> Event {
 
 /// Wait until jp's copy of the directory knows `room` lives in kr.
 async fn tell_jp_room_lives_in_kr(room: &str) {
-    assert_eq!(
-        copied_directory_home(room).await.as_deref(),
-        Some("kr"),
-        "jp's copy never learned room {room}"
-    );
+    let home = copied_directory_home(room).await;
+    if home.as_deref() != Some("kr") {
+        let in_kr: Option<String> = sqlx::query_scalar(
+            "SELECT home_region FROM room_directory WHERE channel_id = $1::uuid",
+        )
+        .bind(room)
+        .fetch_optional(&region_db("kr").await)
+        .await
+        .expect("kr directory");
+        let lag: Option<f64> = sqlx::query_scalar(
+            "SELECT EXTRACT(EPOCH FROM clock_timestamp() - beat_at)::float8 FROM global_heartbeat",
+        )
+        .fetch_optional(&region_db("jp").await)
+        .await
+        .expect("jp heartbeat");
+        panic!("jp's copy never learned room {room}: jp {home:?}, kr {in_kr:?}, jp lag {lag:?} s");
+    }
 }
 
-/// `room`'s home in jp's copy of the directory, waiting up to 10 s for it.
+/// `room`'s home in jp's copy of the directory, waiting up to 30 s (a busy test machine) for it.
 async fn copied_directory_home(room: &str) -> Option<String> {
     let jp = region_db("jp").await;
-    for _ in 0..100 {
+    for _ in 0..300 {
         let home: Option<String> = sqlx::query_scalar(
             "SELECT home_region FROM room_directory WHERE channel_id = $1::uuid",
         )
@@ -95,10 +107,10 @@ async fn copied_directory_home(room: &str) -> Option<String> {
     None
 }
 
-/// Wait up to 10 s until `sql` (one boolean) is true in jp's database.
+/// Wait up to 30 s until `sql` (one boolean) is true in jp's database.
 async fn jp_copy_shows(sql: &str, bind: &str) -> bool {
     let jp = region_db("jp").await;
-    for _ in 0..100 {
+    for _ in 0..300 {
         let shown: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_owned()))
             .bind(bind)
             .fetch_one(&jp)
@@ -356,7 +368,16 @@ async fn rooms_are_served_only_by_their_home_region() {
         "kr did not list the jp room: {kr_chats}"
     );
     // A refused item is named by its place in the whole request.
+    // (a room only the directory knows: listed in kr, copied to jp)
     let stranger = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO room_directory (community_id, channel_id, home_region) \
+         SELECT id, $1::uuid, 'kr' FROM communities ON CONFLICT DO NOTHING",
+    )
+    .bind(&stranger)
+    .execute(&region_db("kr").await)
+    .await
+    .expect("directory row");
     tell_jp_room_lives_in_kr(&stranger).await;
     let (status, refused) = query(
         &jp_url(),

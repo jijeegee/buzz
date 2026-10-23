@@ -344,6 +344,45 @@ pub(crate) async fn publish_global_copy_on(connection: &mut PgConnection) -> Res
     Ok(())
 }
 
+/// Whether this database is a copy, on a connection; `false` before
+/// migration 0087 (startup probes also run against older schemas in tests).
+pub(crate) async fn is_global_copy_on(connection: &mut PgConnection) -> Result<bool> {
+    let known: bool =
+        sqlx::query_scalar("SELECT to_regprocedure('kuzz_is_global_copy()') IS NOT NULL")
+            .fetch_one(&mut *connection)
+            .await?;
+    if !known {
+        return Ok(false);
+    }
+    Ok(sqlx::query_scalar("SELECT kuzz_is_global_copy()")
+        .fetch_one(&mut *connection)
+        .await?)
+}
+
+/// A community for a startup probe that runs in a transaction it rolls
+/// back. The primary (or a single region) makes a scratch community; a copy
+/// may not write `communities`, so it borrows a copied one. `None` when a
+/// copy holds no community yet.
+pub(crate) async fn probe_community_on(
+    connection: &mut PgConnection,
+    host_prefix: &str,
+) -> Result<Option<uuid::Uuid>> {
+    if is_global_copy_on(connection).await? {
+        return Ok(sqlx::query_scalar(
+            "SELECT id FROM communities ORDER BY created_at, id LIMIT 1",
+        )
+        .fetch_optional(&mut *connection)
+        .await?);
+    }
+    let community = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
+        .bind(community)
+        .bind(format!("{host_prefix}-{}.invalid", community.simple()))
+        .execute(&mut *connection)
+        .await?;
+    Ok(Some(community))
+}
+
 pub(crate) async fn guard_global_copy_on(connection: &mut PgConnection) -> Result<()> {
     for table in COPIED_TABLES {
         for sql in [
