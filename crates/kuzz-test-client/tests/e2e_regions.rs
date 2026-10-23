@@ -1744,3 +1744,52 @@ async fn a_sign_up_in_jp_is_made_in_kr_and_lives_in_jp() {
         .expect("me");
     assert_eq!(me.status(), 200, "{:?}", me.text().await);
 }
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_profile_saved_in_jp_is_stored_in_kr_and_copied_back() {
+    // A signed HTTP write, so jp can vouch for the author at kr.
+    let keys = Keys::generate();
+    let profile = EventBuilder::new(Kind::Metadata, r#"{"name":"from jp"}"#)
+        .sign_with_keys(&keys)
+        .unwrap();
+    let url = format!("{}/events", http(&jp_url()));
+    let body = serde_json::to_vec(&profile).unwrap();
+    let (_, header) = nip98_post(&keys, &url, &body);
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Authorization", header)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("profile write");
+    let status = response.status().as_u16();
+    let answer: Value = response.json().await.unwrap_or(Value::Null);
+    assert_eq!(
+        (status, &answer["accepted"]),
+        (200, &Value::Bool(true)),
+        "{answer}"
+    );
+
+    // Stored and projected in kr, then copied to jp.
+    let kr = region_db("kr").await;
+    let stored: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM events WHERE id = decode($1, 'hex') \
+           AND channel_id IS NULL)",
+    )
+    .bind(profile.id.to_hex())
+    .fetch_one(&kr)
+    .await
+    .expect("kr event");
+    assert!(stored, "the profile was not stored in kr");
+    assert!(
+        jp_copy_shows(
+            "SELECT EXISTS (SELECT 1 FROM users WHERE pubkey = decode($1, 'hex') \
+               AND display_name = 'from jp')",
+            &keys.public_key().to_hex(),
+        )
+        .await,
+        "the profile row was not copied back to jp"
+    );
+}
