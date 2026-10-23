@@ -12,6 +12,10 @@ class _CommunitySection extends ConsumerWidget {
         roleAsync.hasError || canManageCommunityInvites(roleAsync.value);
     final preference = ref.watch(communityThemeProvider);
     final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
+    final language = ref.watch(localePreferenceProvider);
+    final deviceLanguage = resolveAppLocale(
+      View.of(context).platformDispatcher.locales,
+    );
 
     return AppListCard(
       label: hasBuiltInServer
@@ -39,6 +43,18 @@ class _CommunitySection extends ConsumerWidget {
           trailing: const _RowChevron(),
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const ThemePickerPage()),
+          ),
+        ),
+        AppListRow(
+          key: const ValueKey('settings-language-row'),
+          icon: LucideIcons.languages,
+          title: context.l10n.settingsLanguage,
+          trailing: const _RowChevron(),
+          onTap: () => showLanguagePickerSheet(
+            context: context,
+            selected: language,
+            deviceLocale: deviceLanguage,
+            onSelected: ref.read(localePreferenceProvider.notifier).select,
           ),
         ),
       ],

@@ -33,7 +33,7 @@ export function availableLocales(): string[] {
       language.enabled &&
       (language.code === SOURCE_LOCALE || fileByLocale.has(language.code)),
   ).map((language) => language.code);
-  return import.meta.env.DEV && fileByLocale.has(PSEUDO_LOCALE)
+  return import.meta.env?.DEV && fileByLocale.has(PSEUDO_LOCALE)
     ? [...shipped, PSEUDO_LOCALE]
     : shipped;
 }

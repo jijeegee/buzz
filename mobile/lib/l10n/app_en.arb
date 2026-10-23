@@ -7711,5 +7711,23 @@
   "composeMentionAdminTag": "admin",
   "@composeMentionAdminTag": {
     "description": "Mention picker, small lowercase tag next to a group administrator. Very short."
+  },
+  "languageNativeName": "English",
+  "@languageNativeName": {
+    "description": "The name of THIS language, written in this language itself (e.g. 한국어, Deutsch, 日本語). Shown in the language list in Settings."
+  },
+  "settingsLanguage": "Language",
+  "@settingsLanguage": {
+    "description": "Settings page, row that opens the app language list; also that list's title. Short."
+  },
+  "settingsLanguageDevice": "Same as phone ({language})",
+  "@settingsLanguageDevice": {
+    "description": "Language list option: follow the phone's language. {language} is that language's own name, e.g. 'Same as phone (English)'.",
+    "placeholders": {
+      "language": {
+        "type": "String",
+        "example": "English"
+      }
+    }
   }
 }

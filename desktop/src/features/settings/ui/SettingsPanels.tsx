@@ -64,6 +64,7 @@ import {
   ConversationDisplaySettings,
   GlassBackgroundSetting,
   LinkPreviewStyleSetting,
+  LanguageSetting,
   ProminentActiveTabSetting,
   ThreadLayoutSetting,
 } from "./AppearanceSettingsControls";
@@ -701,6 +702,13 @@ function ThemeSettingsCard() {
       />
 
       <SettingsOptionGroupList>
+        <SettingsOptionGroup
+          data-testid="appearance-language-card"
+          title={t("settings.language.title")}
+        >
+          <LanguageSetting />
+        </SettingsOptionGroup>
+
         <SettingsOptionGroup
           data-testid="appearance-theme-card"
           headerAction={

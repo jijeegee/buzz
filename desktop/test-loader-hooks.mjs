@@ -184,6 +184,19 @@ export async function load(url, context, nextLoad) {
     };
   }
 
+  // Vite's `import.meta.glob` (lazy language files) does not exist in node.
+  // Under tests it finds no files, so only the bundled English loads.
+  if (url.endsWith(".ts") && url.startsWith("file:")) {
+    const source = fs.readFileSync(fileURLToPath(url), "utf8");
+    if (source.includes("import.meta.glob")) {
+      return {
+        format: "module-typescript",
+        shortCircuit: true,
+        source: source.replaceAll("import.meta.glob", "(() => ({}))"),
+      };
+    }
+  }
+
   if (url.endsWith(".tsx")) {
     const source = fs.readFileSync(fileURLToPath(url), "utf8");
     const transpiled = ts.transpileModule(source, {

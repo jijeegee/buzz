@@ -115,6 +115,29 @@ pub async fn set_discoverable(app: AppHandle, discoverable: bool) -> Result<(), 
     patch_profile(&app, serde_json::json!({ "discoverable": discoverable })).await
 }
 
+/// Saves the app language on the account, so text the server writes (such
+/// as moderation notices) uses it. Skips the write when it is already saved.
+#[tauri::command]
+pub async fn sync_account_locale(app: AppHandle, locale: String) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let origin = state.current_auth_origin();
+    let session = signed_in_session(&state, &origin).await?;
+    let me = api::me(&state.http_client, &origin, &session.access)
+        .await
+        .map_err(people_error)?;
+    if me.locale.as_deref() == Some(locale.as_str()) {
+        return Ok(());
+    }
+    api::update_profile(
+        &state.http_client,
+        &origin,
+        &session.access,
+        serde_json::json!({ "locale": locale }),
+    )
+    .await
+    .map_err(people_error)
+}
+
 async fn patch_profile(app: &AppHandle, body: serde_json::Value) -> Result<(), String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
