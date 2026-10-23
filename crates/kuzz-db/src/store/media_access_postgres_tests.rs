@@ -139,6 +139,14 @@ async fn private_channel_attachment_follows_current_membership() {
     let message = f.reference(Some(room), &uploader).await;
     assert!(f.readable(&member).await, "a member can open it once sent");
     assert!(!f.readable(&outsider).await, "a non-member cannot");
+    // Full-history room: a later joiner sees earlier files. (since_join rooms
+    // hide them: channel_since_join_postgres_tests.)
+    sqlx::query("UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(room)
+        .execute(&f.pool)
+        .await
+        .expect("full history room");
 
     channel_members::add_member(
         &f.pool,
@@ -190,6 +198,13 @@ async fn open_channels_community_events_and_icon_are_readable_by_members() {
     let (author, anyone) = (Keys::generate(), Keys::generate());
 
     let room = f.room(ChannelVisibility::Open, &author, &[]).await;
+    // Full-history room: earlier files are open to everyone.
+    sqlx::query("UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(room)
+        .execute(&f.pool)
+        .await
+        .expect("full history room");
     f.reference(Some(room), &author).await;
     assert!(
         f.readable(&anyone).await,

@@ -511,6 +511,7 @@ mod postgres_tests {
             "access_tokens",
             "key_registry",
             "agent_key_backups",
+            "pairing_requests",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -724,7 +725,33 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 80);
+        // 0081-0086 are taken by the regions branches.
+        assert_eq!(migrations[83].version, 90);
+        let pairing = migrations[83].sql.as_str();
+        assert!(pairing.contains("CREATE TABLE pairing_requests"));
+        assert!(pairing.contains("ADD COLUMN kind TEXT NOT NULL DEFAULT 'login'"));
+        assert!(
+            include_str!("../../../../schema/schema.sql").contains("CREATE TABLE pairing_requests")
+        );
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("ON devices (principal_id, kind, device_pubkey)"));
+        assert_eq!(migrations.len(), 84);
+        assert_eq!(migrations[82].version, 89);
+        assert!(migrations[82]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN thread_root_sequence"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("FUNCTION stamp_thread_root_sequence"));
+        assert_eq!(migrations[81].version, 88);
+        assert!(migrations[81]
+            .sql
+            .as_str()
+            .contains("FUNCTION channel_history_floor"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("FUNCTION channel_history_floor"));
+        assert_eq!(migrations[80].version, 87);
+        assert!(migrations[80].sql.as_str().contains("ADD COLUMN locale"));
         assert_eq!(migrations[79].version, 80);
         let agent_keys = migrations[79].sql.as_str();
         assert!(agent_keys.contains("CREATE TABLE agent_key_backups"));

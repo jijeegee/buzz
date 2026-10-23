@@ -479,8 +479,8 @@ fn print_json(value: &Value) {
     println!("{value}");
 }
 
-/// The host name, bounded to what the relay accepts (64 printable chars).
-pub fn default_device_name() -> String {
+/// The host name (at most 48 printable chars; empty when unknown).
+pub fn host_name() -> String {
     let raw = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .ok()
@@ -491,7 +491,12 @@ pub fn default_device_name() -> String {
         })
         .unwrap_or_default();
     let name: String = raw.chars().filter(|c| !c.is_control()).take(48).collect();
-    let name = name.trim();
+    name.trim().to_owned()
+}
+
+/// The host name, bounded to what the relay accepts (64 printable chars).
+pub fn default_device_name() -> String {
+    let name = host_name();
     if name.is_empty() {
         "kuzz CLI".to_owned()
     } else {

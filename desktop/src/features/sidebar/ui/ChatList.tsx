@@ -16,6 +16,7 @@ import {
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { foldsBlockedAuthors } from "@/features/people/lib/blockedDm";
 import { isJoinedChat, sortChatList } from "@/features/sidebar/lib/chatList";
+import type { ChatStateBinding } from "@/shared/api/chatState";
 import type { Channel } from "@/shared/api/types";
 import { useT } from "@/shared/i18n";
 import {
@@ -44,6 +45,8 @@ export type ServerChats = {
   mutedRootIds?: ReadonlySet<string>;
   /** A thread row's menu; without it thread rows have no menu. */
   threadActions?: ChatThreadRowActions;
+  /** The account for the relay's thread-name search. */
+  threadSearchBinding?: ChatStateBinding;
 };
 
 type ChatListProps = Omit<

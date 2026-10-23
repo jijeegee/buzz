@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
+import {
+  type ChatStateBinding,
+  isChatStateUnavailable,
+  searchThreadNames,
+} from "@/shared/api/chatState";
 import { searchMessages } from "@/shared/api/tauri";
 
 export const MIN_SEARCH_QUERY_LENGTH = 2;
@@ -56,6 +61,38 @@ export function useSearchMessagesQuery(
     // Call sites own the "when to search" floor (FTS length / unresolved
     // operators). Keep a single threshold here so it cannot drift.
     enabled: enabled && trimmedQuery.length >= minimumQueryLength,
+    staleTime: 30_000,
+    gcTime: 5 * 60 * 1_000,
+  });
+}
+
+/**
+ * The relay's thread-name search for `query` (already debounced and
+ * trimmed by the caller). Off without a chat-state binding, for scoped
+ * search, and below the global minimum length. A relay that keeps no chat
+ * state answers `chat_state_unavailable`; that is not retried.
+ */
+export function useThreadNameSearchQuery(
+  query: string,
+  binding: ChatStateBinding | null | undefined,
+  enabled: boolean,
+) {
+  const trimmedQuery = query.trim();
+  return useQuery({
+    queryKey: [
+      "search-thread-names",
+      binding?.relayUrl ?? "",
+      binding?.pubkey.toLowerCase() ?? "",
+      trimmedQuery,
+    ],
+    queryFn: () => {
+      if (!binding) throw new Error("no chat-state binding");
+      return searchThreadNames(binding, trimmedQuery);
+    },
+    enabled:
+      enabled && !!binding && trimmedQuery.length >= MIN_SEARCH_QUERY_LENGTH,
+    retry: (failureCount, error) =>
+      !isChatStateUnavailable(error) && failureCount < 1,
     staleTime: 30_000,
     gcTime: 5 * 60 * 1_000,
   });

@@ -728,6 +728,7 @@ export const MessageRow = React.memo(
           {getQuoteReference(message.tags) ? (
             <MessageQuoteHeader
               channelId={channelId}
+              messageId={message.id}
               profiles={profiles}
               tags={message.tags}
             />

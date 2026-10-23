@@ -1460,6 +1460,31 @@ impl KuzzClient {
         .to_string())
     }
 
+    /// Open a WebSocket to the relay authenticated as this client: token
+    /// AUTH in token mode, otherwise NIP-42 with this machine's device tag
+    /// (a paired agent is admitted only with it). For long-lived readers
+    /// such as `kuzz messages watch`.
+    pub async fn ws_connect(
+        &self,
+    ) -> Result<kuzz_ws_client::NostrWsConnection, kuzz_ws_client::WsClientError> {
+        let ws_url = to_ws_url(&self.relay_url);
+        match (&self.bearer, &self.signer) {
+            (Some(token), _) => {
+                kuzz_ws_client::NostrWsConnection::connect_with_token(&ws_url, token.expose()).await
+            }
+            (None, EventSigner::Keys(keys)) => {
+                let device = crate::device::ws_tagger(crate::device::process_signer().await);
+                let mut conn = kuzz_ws_client::NostrWsConnection::connect(&ws_url).await?;
+                conn.authenticate_with_device(keys, self.auth_tag.as_ref(), device.as_ref())
+                    .await?;
+                Ok(conn)
+            }
+            (None, EventSigner::Principal(_)) => Err(kuzz_ws_client::WsClientError::AuthFailed(
+                "token-mode client has no token".into(),
+            )),
+        }
+    }
+
     /// Upload a file to the relay's Blossom endpoint.
     /// Returns a BlobDescriptor on success.
     pub async fn upload_file(&self, file_path: &str) -> Result<BlobDescriptor, CliError> {

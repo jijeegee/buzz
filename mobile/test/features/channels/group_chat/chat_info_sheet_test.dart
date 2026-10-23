@@ -14,6 +14,73 @@ import 'package:kuzz/shared/theme/theme.dart';
 final _me = 'a' * 64;
 final _ann = 'b' * 64;
 final _bob = 'c' * 64;
+final _myAgent = 'd' * 64;
+final _bobsAgent = 'e' * 64;
+
+class _RecordingActions extends ChannelActions {
+  _RecordingActions(Ref ref)
+    : super(
+        ref: ref,
+        session: ref.read(relaySessionProvider.notifier),
+        signedEventRelay: SignedEventRelay(
+          session: ref.read(relaySessionProvider.notifier),
+          nsec: null,
+        ),
+        currentPubkey: _me,
+      );
+
+  final removed = <String>[];
+  final left = <String>[];
+  final removedBeforeLeave = <List<String>>[];
+
+  @override
+  Future<void> removeMember({
+    required String channelId,
+    required String pubkey,
+  }) async => removed.add(pubkey);
+
+  @override
+  Future<void> leaveChannel(String channelId) async => left.add(channelId);
+
+  @override
+  Future<void> removeAgentsAndLeave({
+    required String channelId,
+    required Iterable<String> agentPubkeys,
+  }) async {
+    removedBeforeLeave.add(agentPubkeys.toList());
+    left.add(channelId);
+  }
+}
+
+Widget _agentsApp(void Function(_RecordingActions) onActions) => ProviderScope(
+  overrides: [
+    myPubkeyProvider.overrideWithValue(_me),
+    currentPubkeyProvider.overrideWith((ref) => _me),
+    channelMembersProvider('chat-1').overrideWith(
+      (ref) async => [
+        for (final pubkey in [_me, _ann, _myAgent, _bobsAgent])
+          ChannelMember(
+            pubkey: pubkey,
+            role: pubkey == _myAgent || pubkey == _bobsAgent ? 'bot' : 'member',
+            joinedAt: DateTime(2026),
+          ),
+      ],
+    ),
+    agentOwnersProvider.overrideWithValue(
+      AsyncValue.data({_myAgent: _me, _bobsAgent: _bob}),
+    ),
+    channelNamesProvider.overrideWith(_FakeNames.new),
+    channelActionsProvider.overrideWith((ref) {
+      final actions = _RecordingActions(ref);
+      onActions(actions);
+      return actions;
+    }),
+  ],
+  child: MaterialApp(
+    theme: AppTheme.light(),
+    home: Scaffold(body: ChatInfoSheet(channel: _chat())),
+  ),
+);
 
 Channel _chat({String name = ''}) => Channel(
   id: 'chat-1',
@@ -202,6 +269,50 @@ void main() {
     for (final pubkey in many) {
       expect(find.byKey(ValueKey('chat-info-member-$pubkey')), findsNothing);
     }
+  });
+
+  testWidgets('I can remove my own agent, and nobody else\'s', (tester) async {
+    late _RecordingActions actions;
+    await tester.pumpWidget(_agentsApp((value) => actions = value));
+    await tester.pumpAndSettle();
+
+    final remove = find.byKey(ValueKey('chat-info-remove-$_myAgent'));
+    await tester.scrollUntilVisible(
+      remove,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.byKey(ValueKey('chat-info-remove-$_bobsAgent')), findsNothing);
+    expect(find.byKey(ValueKey('chat-info-remove-$_ann')), findsNothing);
+    expect(find.byKey(ValueKey('chat-info-remove-$_me')), findsNothing);
+
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('chat-info-remove-confirm')));
+    await tester.pumpAndSettle();
+    expect(actions.removed, [_myAgent]);
+  });
+
+  testWidgets('leaving a chat can remove my agents first', (tester) async {
+    late _RecordingActions actions;
+    await tester.pumpWidget(_agentsApp((value) => actions = value));
+    await tester.pumpAndSettle();
+
+    final leave = find.byKey(const ValueKey('chat-info-leave'));
+    await tester.scrollUntilVisible(
+      leave,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(leave);
+    await tester.pumpAndSettle();
+    expect(find.text('Leave and remove my agent'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('leave-remove-agents')));
+    await tester.pumpAndSettle();
+    expect(actions.removedBeforeLeave, [
+      [_myAgent],
+    ]);
+    expect(actions.left, ['chat-1']);
   });
 
   testWidgets('a chat menu offers Chat info and Leave chat only', (

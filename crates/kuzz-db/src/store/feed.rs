@@ -28,8 +28,8 @@
 /// before the query is issued so the SQL `LIMIT` clause always reflects this cap.
 pub const FEED_MAX_LIMIT: i64 = 100;
 
-use kuzz_datastore_tracing::datastore_span;
 use chrono::{DateTime, Utc};
+use kuzz_datastore_tracing::datastore_span;
 use sqlx::postgres::PgRow;
 use sqlx::{PgPool, QueryBuilder};
 use uuid::Uuid;
@@ -83,6 +83,22 @@ fn collect_stored_events(rows: Vec<PgRow>) -> Result<Vec<StoredEvent>> {
     Ok(out)
 }
 
+/// Drop rows from before `reader` joined a `since_join` room
+/// (`channel_event_before_join`), before ORDER/LIMIT.
+fn push_history_filter(qb: &mut QueryBuilder<sqlx::Postgres>, prefix: &str, reader: &[u8]) {
+    qb.push(format!(
+        " AND NOT channel_event_before_join({prefix}community_id, {prefix}channel_id, \
+         event_history_sequence({prefix}channel_sequence, {prefix}thread_root_sequence), "
+    ));
+    qb.push_bind(reader.to_vec());
+    qb.push(format!(
+        ") AND NOT channel_event_targets_before_join({prefix}community_id, {prefix}channel_id, \
+         {prefix}kind, {prefix}tags, "
+    ));
+    qb.push_bind(reader.to_vec());
+    qb.push(")");
+}
+
 fn build_mentions_query(
     community: CommunityId,
     pubkey_bytes: &[u8],
@@ -110,6 +126,7 @@ fn build_mentions_query(
          {KIND_GIT_STATUS_MERGED}, {KIND_GIT_STATUS_CLOSED}, {KIND_GIT_STATUS_DRAFT})"
     ));
     push_visible_channel_filter(&mut qb, "e.channel_id", accessible_channel_ids);
+    push_history_filter(&mut qb, "e.", pubkey_bytes);
     if let Some(s) = since {
         qb.push(" AND m.event_created_at >= ").push_bind(s);
     }
@@ -196,6 +213,7 @@ fn build_needs_action_query(
         " AND e.kind IN ({KIND_WORKFLOW_APPROVAL_REQUESTED}, {KIND_STREAM_REMINDER})"
     ));
     push_visible_channel_filter(&mut qb, "e.channel_id", accessible_channel_ids);
+    push_history_filter(&mut qb, "e.", pubkey_bytes);
     if let Some(s) = since {
         qb.push(" AND m.event_created_at >= ").push_bind(s);
     }
@@ -263,6 +281,7 @@ fn build_activity_query(
     accessible_channel_ids: &[Uuid],
     since: Option<DateTime<Utc>>,
     limit: i64,
+    history_reader: Option<&[u8]>,
 ) -> QueryBuilder<sqlx::Postgres> {
     let limit = limit.min(FEED_MAX_LIMIT);
     let mut qb: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(format!(
@@ -275,6 +294,9 @@ fn build_activity_query(
          {KIND_JOB_REQUEST}, {KIND_JOB_PROGRESS}, {KIND_JOB_RESULT})"
     ));
     push_visible_channel_filter(&mut qb, "channel_id", accessible_channel_ids);
+    if let Some(reader) = history_reader {
+        push_history_filter(&mut qb, "", reader);
+    }
     if let Some(s) = since {
         qb.push(" AND created_at >= ").push_bind(s);
     }
@@ -294,13 +316,22 @@ pub async fn query_activity(
     accessible_channel_ids: &[Uuid],
     since: Option<DateTime<Utc>>,
     limit: i64,
+    history_reader: Option<&[u8]>,
 ) -> Result<Vec<StoredEvent>> {
     let mut conn = crate::observability::acquire_writer(
         pool,
         crate::observability::WriterOperation::SubscriptionHistory,
     )
     .await?;
-    query_activity_on(&mut conn, community, accessible_channel_ids, since, limit).await
+    query_activity_on(
+        &mut conn,
+        community,
+        accessible_channel_ids,
+        since,
+        limit,
+        history_reader,
+    )
+    .await
 }
 
 /// [`query_activity`] on a specific session — see [`query_mentions_on`].
@@ -310,8 +341,15 @@ pub(crate) async fn query_activity_on(
     accessible_channel_ids: &[Uuid],
     since: Option<DateTime<Utc>>,
     limit: i64,
+    history_reader: Option<&[u8]>,
 ) -> Result<Vec<StoredEvent>> {
-    let mut qb = build_activity_query(community, accessible_channel_ids, since, limit);
+    let mut qb = build_activity_query(
+        community,
+        accessible_channel_ids,
+        since,
+        limit,
+        history_reader,
+    );
     let rows = qb.build().fetch_all(&mut *conn).await?;
     collect_stored_events(rows)
 }
@@ -501,9 +539,17 @@ impl Db {
         accessible_channel_ids: &[Uuid],
         since: Option<DateTime<Utc>>,
         limit: i64,
+        history_reader: Option<&[u8]>,
     ) -> Result<Vec<StoredEvent>> {
-        crate::feed::query_activity(&self.pool, community, accessible_channel_ids, since, limit)
-            .await
+        crate::feed::query_activity(
+            &self.pool,
+            community,
+            accessible_channel_ids,
+            since,
+            limit,
+            history_reader,
+        )
+        .await
     }
 
     /// [`Db::query_feed_activity`] with replica routing — BOUNDED arm only;
@@ -517,6 +563,7 @@ impl Db {
         accessible_channel_ids: &[Uuid],
         since: Option<DateTime<Utc>>,
         limit: i64,
+        history_reader: Option<&[u8]>,
     ) -> Result<Vec<StoredEvent>> {
         match self
             .route_read(
@@ -532,6 +579,7 @@ impl Db {
                 accessible_channel_ids,
                 since,
                 limit,
+                history_reader,
             )
             .await
             {
@@ -548,6 +596,7 @@ impl Db {
                         accessible_channel_ids,
                         since,
                         limit,
+                        history_reader,
                     )
                     .await
                 }
@@ -559,6 +608,7 @@ impl Db {
                     accessible_channel_ids,
                     since,
                     limit,
+                    history_reader,
                 )
                 .await
             }
@@ -602,8 +652,8 @@ mod postgres_tests {
         let id = Uuid::new_v4();
         let creator = [0x11u8; 32];
         sqlx::query(
-            "INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by) \
-             VALUES ($1, $2, $3, 'stream'::channel_type, 'open'::channel_visibility, $4)",
+            "INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by, history_policy) \
+             VALUES ($1, $2, $3, 'stream'::channel_type, 'open'::channel_visibility, $4, 'all')",
         )
         .bind(id)
         .bind(community.as_uuid())
@@ -781,7 +831,7 @@ mod postgres_tests {
         )
         .await;
 
-        let global_only = query_activity(&pool, community_a, &[], None, 10)
+        let global_only = query_activity(&pool, community_a, &[], None, 10, None)
             .await
             .expect("query activity global only");
         assert!(global_only.iter().any(|row| row.event.id == a_global.id));
@@ -792,7 +842,7 @@ mod postgres_tests {
         assert!(global_only.iter().all(|row| row.event.id != b_global.id));
         assert!(global_only.iter().all(|row| row.event.id != b_channel.id));
 
-        let visible = query_activity(&pool, community_a, &[channel_a, channel_b], None, 10)
+        let visible = query_activity(&pool, community_a, &[channel_a, channel_b], None, 10, None)
             .await
             .expect("query visible activity");
         assert!(visible.iter().any(|row| row.event.id == a_global.id));
@@ -1043,7 +1093,7 @@ mod postgres_tests {
     #[test]
     fn empty_channel_list_means_global_only() {
         let community = kuzz_core::CommunityId::from_uuid(Uuid::new_v4());
-        let mut qb = build_activity_query(community, &[], None, 10);
+        let mut qb = build_activity_query(community, &[], None, 10, None);
         let query = qb.build();
         let sql_str = sqlx::Execute::sql(query);
         let sql = sql_str.as_str();
@@ -1066,7 +1116,7 @@ mod postgres_tests {
     fn non_empty_channel_list_includes_global_and_accessible_channels() {
         let community = kuzz_core::CommunityId::from_uuid(Uuid::new_v4());
         let channel_id = Uuid::new_v4();
-        let mut qb = build_activity_query(community, &[channel_id], None, 10);
+        let mut qb = build_activity_query(community, &[channel_id], None, 10, None);
         let query = qb.build();
         let sql_str = sqlx::Execute::sql(query);
         let sql = sql_str.as_str();

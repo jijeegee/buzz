@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { isAutoUpdateSupported } from "@/shared/api/tauri";
+import { getIdentity } from "@/shared/api/tauriIdentity";
 
 export type UpdateStatus =
   | { state: "idle" }
@@ -16,7 +18,7 @@ export type UpdateStatus =
   | {
       state: "manual-required";
       version: string;
-      /** GitHub releases page for the update. */
+      /** Direct download of the update's installer. */
       releaseUrl: string;
     };
 
@@ -30,7 +32,29 @@ const BACKGROUND_BLOCKED_STATES = new Set<UpdateStatus["state"]>([
   "manual-required",
 ]);
 
-const GITHUB_RELEASES_URL = "https://github.com/block/buzz/releases/latest";
+/**
+ * Emitted by the native websocket when the relay refuses this build as below
+ * the minimum supported version (`426 update-required`).
+ */
+const UPDATE_REQUIRED_EVENT = "update-required";
+
+/** Extra fields the Kuzz update manifest adds to the Tauri updater answer. */
+type KuzzManifestFields = { required?: unknown; url?: unknown };
+
+function manifestFields(update: Update): KuzzManifestFields {
+  return (update.rawJson ?? {}) as KuzzManifestFields;
+}
+
+/** The signed-in account, so testers are offered beta builds first. */
+async function updateCheckHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { "Cache-Control": "no-cache" };
+  try {
+    headers["X-Kuzz-Pubkey"] = (await getIdentity()).pubkey;
+  } catch {
+    // Signed out or identity unavailable: everyone gets the stable build.
+  }
+  return headers;
+}
 
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -53,6 +77,9 @@ function initialUpdateStatus(): UpdateStatus {
 
 export function useUpdater() {
   const [status, setStatusState] = useState<UpdateStatus>(initialUpdateStatus);
+  /** This build is below the minimum supported version: the app is blocked
+   *  until it updates. */
+  const [required, setRequired] = useState(false);
   const statusRef = useRef<UpdateStatus>(initialUpdateStatus());
   const updateRef = useRef<Update | null>(null);
   const checkInFlightRef = useRef(false);
@@ -145,13 +172,15 @@ export function useUpdater() {
           setStatus({ state: "checking" });
         }
 
-        const update = await check({
-          headers: { "Cache-Control": "no-cache" },
-        });
+        const update = await check({ headers: await updateCheckHeaders() });
         const shouldShowQuietResult =
           !background || manualResultRequestedRef.current;
 
         if (update) {
+          // The manifest decides; a relay refusal (UPDATE_REQUIRED_EVENT)
+          // with no update on offer stays blocked, since this build cannot
+          // connect anyway.
+          setRequired(manifestFields(update).required === true);
           // Check support BEFORE exposing any actionable state — on a Linux
           // .deb, the window between "available" and "manual-required" would
           // let a click reach an un-updatable install.
@@ -165,10 +194,11 @@ export function useUpdater() {
             // updateRef is intentionally NOT retained — no install handle
             // should be kept when we will never install in-app.
             updateRef.current = null;
+            const { url } = manifestFields(update);
             setStatus({
               state: "manual-required",
               version: update.version,
-              releaseUrl: GITHUB_RELEASES_URL,
+              releaseUrl: typeof url === "string" ? url : "",
             });
           }
         } else if (shouldShowQuietResult) {
@@ -222,7 +252,18 @@ export function useUpdater() {
     };
   }, [checkForUpdateInBackground, closeUpdate]);
 
+  useEffect(() => {
+    const unlisten = listen(UPDATE_REQUIRED_EVENT, () => {
+      setRequired(true);
+      void runUpdateCheck({ background: false });
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
+  }, [runUpdateCheck]);
+
   return {
+    required,
     status,
     checkForUpdate,
     installAndRelaunch,

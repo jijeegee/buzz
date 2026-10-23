@@ -120,6 +120,9 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/api/invites/accept-policy",
     // Public policy documents — exact path + subtree
     "/api/join-policy",
+    // App update manifest — public; apps check before signing in. Subtree
+    // for /api/app-update/{platform}.
+    "/api/app-update/",
     // Webhook trigger — secret-header auth; subtree for /hooks/{id}
     "/hooks/",
     // Huddle audio WebSocket — WS-NIP-FI governs WebSocket; subtree
@@ -362,6 +365,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Relay invites: mint (owner/admin) + claim (membership-gate exempt)
         .route("/api/invites", post(api::invites::mint_invite))
         .route("/api/join-policy", get(api::invites::join_policy))
+        // App update manifest (public, no auth)
+        .route(
+            "/api/app-update/{platform}",
+            get(api::app_update::app_update),
+        )
         // Policy documents as standalone pages — desktop opens these in the
         // system browser instead of rendering the Markdown in-app.
         .route(
@@ -746,6 +754,14 @@ async fn nip11_or_ws_handler(
                         .into_response();
                 }
             }
+        }
+    }
+
+    // An app below the minimum supported version is told to update before it
+    // costs a socket or a DB query. Apps that do not announce a version pass.
+    if is_websocket_upgrade_request(&req, &headers) {
+        if let Some(refusal) = api::app_update::connect_gate(&headers).await {
+            return refusal;
         }
     }
 
@@ -1329,6 +1345,78 @@ mod tests {
             media_storage,
         );
         Arc::new(state)
+    }
+
+    /// App update manifest end to end through the real router: the public
+    /// endpoint answers from the operator file, and an announced app below
+    /// `min_version` is refused at WebSocket upgrade. One test owns `KUZZ_APP_UPDATE_FILE` so nothing races it.
+    #[tokio::test]
+    async fn app_update_endpoint_and_connect_gate() {
+        use tower::ServiceExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("app-update.json");
+        std::fs::write(
+            &path,
+            r#"{"enforce_on_connect":true,"platforms":{"windows-x86_64":{
+                "min_version":"0.6.2",
+                "stable":{"version":"0.6.3","url":"https://example.test/a.exe","signature":"sig"}}}}"#,
+        )
+        .expect("write manifest");
+        std::env::set_var(api::app_update::MANIFEST_ENV, &path);
+        let router = build_router(unreachable_dependency_state().await);
+
+        let response = router
+            .clone()
+            .oneshot(
+                Request::get("/api/app-update/windows-x86_64?current=0.6.1")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(json["version"], "0.6.3");
+        assert_eq!(json["required"], true);
+
+        let unknown = router
+            .clone()
+            .oneshot(
+                Request::get("/api/app-update/android")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(unknown.status(), StatusCode::NO_CONTENT);
+
+        let upgrade = |app: Option<&str>| {
+            let mut req = Request::get("/")
+                .header(axum::http::header::HOST, "relay.example")
+                .header("Upgrade", "websocket")
+                .header("Connection", "Upgrade")
+                .header("Sec-WebSocket-Version", "13")
+                .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+            if let Some(app) = app {
+                req = req.header(api::app_update::APP_HEADER, app);
+            }
+            req.body(Body::empty()).expect("request")
+        };
+        let old = router
+            .clone()
+            .oneshot(upgrade(Some("windows-x86_64/0.6.1")))
+            .await
+            .expect("response");
+        assert_eq!(old.status(), StatusCode::UPGRADE_REQUIRED);
+        // Admitted upgrades go on to the community lookup, which this
+        // DB-less state cannot answer quickly; `refuses_connection` unit tests
+        // cover the pass cases.
+
+        std::env::remove_var(api::app_update::MANIFEST_ENV);
     }
 
     async fn readiness_request(router: Router) -> (StatusCode, serde_json::Value) {

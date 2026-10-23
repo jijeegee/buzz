@@ -8503,6 +8503,14 @@
   "@sidebar.leaveDialog.confirm": {
     "description": "Leave confirmation, red confirm button. Short."
   },
+  "sidebar.leaveDialog.leaveOnly": "Leave only",
+  "@sidebar.leaveDialog.leaveOnly": {
+    "description": "Leave confirmation when I have agents in the room: button that leaves but keeps my agents in it. Short."
+  },
+  "sidebar.leaveDialog.leaveWithAgents": "{count, plural, one {Leave and remove my agent} other {Leave and remove my # agents}}",
+  "@sidebar.leaveDialog.leaveWithAgents": {
+    "description": "Leave confirmation when I have agents in the room: red button that removes my agents, then leaves. count is how many of my agents are in the room. Short."
+  },
   "sidebar.menu.markRead": "Mark as read",
   "@sidebar.menu.markRead": {
     "description": "Sidebar row menus (group, chat, thread) and activity popover, item/button that marks it read. Short."
@@ -11271,6 +11279,10 @@
   "@settings.device.rename": {
     "description": "Settings > Devices, screen-reader label of the pencil button; {name} is the device name."
   },
+  "settings.device.new": "New",
+  "@settings.device.new": {
+    "description": "Settings > Devices: badge on the device a new sign-in notice was about. Short."
+  },
   "settings.device.newName": "New name for {name}",
   "@settings.device.newName": {
     "description": "Settings > Devices, screen-reader label of the rename text field; {name} is the current device name."
@@ -11282,6 +11294,22 @@
   "settings.device.signOut": "Sign out",
   "@settings.device.signOut": {
     "description": "Settings > Devices, button that signs out one device. Short."
+  },
+  "settings.device.hermesOn": "Hermes on {device}",
+  "@settings.device.hermesOn": {
+    "description": "Settings > Devices: name of the row for the Hermes agent connected on a computer; {device} is the computer name. Hermes is a product name."
+  },
+  "settings.device.disconnect": "Disconnect",
+  "@settings.device.disconnect": {
+    "description": "Settings > Devices, button that disconnects an external agent's computer (signs it out). Short."
+  },
+  "settings.device.disconnectNamed": "Disconnect {name}",
+  "@settings.device.disconnectNamed": {
+    "description": "Settings > Devices, screen-reader label of an external agent row's Disconnect button; {name} is the row name."
+  },
+  "settings.device.disconnectFailed": "Disconnect failed.",
+  "@settings.device.disconnectFailed": {
+    "description": "Settings > Devices: error when disconnecting an external agent's computer fails."
   },
   "settings.robotPicker.change": "Change robot for {name}",
   "@settings.robotPicker.change": {
@@ -11974,6 +12002,18 @@
   "meshCompute.usage.idleYet": "Idle · no one using it yet",
   "@meshCompute.usage.idleYet": {
     "description": "Settings > Share compute status: sharing is on and nobody has used it yet."
+  },
+  "accounts.newSignIn.title": "New sign-in: {device}",
+  "@accounts.newSignIn.title": {
+    "description": "Sidebar card title when the account was just signed in on another device. {device} is that device's name. Short."
+  },
+  "accounts.newSignIn.action": "Not you? Sign out that device",
+  "@accounts.newSignIn.action": {
+    "description": "Sidebar new sign-in card: link to the devices settings where the user can sign that device out. Short."
+  },
+  "accounts.newSignIn.dismiss": "Dismiss new sign-in notice",
+  "@accounts.newSignIn.dismiss": {
+    "description": "Sidebar new sign-in card: accessible label of the close button."
   },
   "accounts.switcher.label": "Accounts",
   "@accounts.switcher.label": {
@@ -13050,6 +13090,34 @@
   "settings.updateCard.availableTitle": "Update available",
   "@settings.updateCard.availableTitle": {
     "description": "Sidebar update card (Linux manual update), title. Short."
+  },
+  "settings.requiredUpdate.title": "Update required",
+  "@settings.requiredUpdate.title": {
+    "description": "Full-screen forced update, title. Short."
+  },
+  "settings.requiredUpdate.description": "This version of Kuzz is no longer supported. Update to keep using it.",
+  "@settings.requiredUpdate.description": {
+    "description": "Full-screen forced update, body text shown under the title."
+  },
+  "settings.requiredUpdate.install": "Update and restart",
+  "@settings.requiredUpdate.install": {
+    "description": "Full-screen forced update, button once the update is downloaded. Short."
+  },
+  "settings.requiredUpdate.downloading": "Downloading update…",
+  "@settings.requiredUpdate.downloading": {
+    "description": "Full-screen forced update, disabled button while downloading. Short."
+  },
+  "settings.requiredUpdate.installing": "Installing update…",
+  "@settings.requiredUpdate.installing": {
+    "description": "Full-screen forced update, disabled button while installing. Short."
+  },
+  "settings.requiredUpdate.download": "Download update",
+  "@settings.requiredUpdate.download": {
+    "description": "Full-screen forced update, button that opens the installer download when in-app install is unavailable. Short."
+  },
+  "settings.requiredUpdate.retry": "Try again",
+  "@settings.requiredUpdate.retry": {
+    "description": "Full-screen forced update, button to check for the update again after a failure. Short."
   },
   "settings.updateIndicator.available": "Update available",
   "@settings.updateIndicator.available": {
@@ -15691,6 +15759,18 @@
   "@channels.settings.leave": {
     "description": "Action that leaves a group. Short."
   },
+  "channels.settings.historyLabel": "New members can see earlier messages",
+  "@channels.settings.historyLabel": {
+    "description": "Group settings, switch label: whether people who join later can read messages sent before they joined."
+  },
+  "channels.settings.historyHint": "When off, people who join see only messages sent after they joined.",
+  "@channels.settings.historyHint": {
+    "description": "Group settings, grey hint under the earlier-messages switch."
+  },
+  "channels.leave.agentsNotRemoved": "{count, plural, one {Left, but one of your agents could not be removed.} other {Left, but # of your agents could not be removed.}}",
+  "@channels.leave.agentsNotRemoved": {
+    "description": "Error toast after leaving a group: some of my agents could not be removed from it. count is how many."
+  },
   "channels.settings.restoring": "Restoring group...",
   "@channels.settings.restoring": {
     "description": "Unarchive action label while restoring. Short."
@@ -16003,6 +16083,10 @@
   "@search.result.threadSeparator": {
     "description": "Search dialog, screen-reader word between a group name and a thread name in a result row (shown as ›). Lowercase. Short."
   },
+  "search.result.threadDone": "Done",
+  "@search.result.threadDone": {
+    "description": "Search dialog, small grey tag after a thread name in a result row, shown when the thread is completed (closed). Short."
+  },
   "search.result.group": "Group",
   "@search.result.group": {
     "description": "Search result card, small grey label saying the result is a group. Short."
@@ -16190,6 +16274,14 @@
   "messages.system.goalsOff": "turned goals off",
   "@messages.system.goalsOff": {
     "description": "Chat timeline system line after a person's name: they switched off the group's goals feature."
+  },
+  "messages.system.historyAll": "let new members see earlier messages",
+  "@messages.system.historyAll": {
+    "description": "Chat timeline system line after a person's name: they let people who join later read earlier messages."
+  },
+  "messages.system.historySinceJoin": "hid earlier messages from new members",
+  "@messages.system.historySinceJoin": {
+    "description": "Chat timeline system line after a person's name: people who join later now see only messages sent after they joined."
   },
   "messages.system.changedPhoto": "{room, select, chat {changed the chat photo} other {changed the group photo}}",
   "@messages.system.changedPhoto": {
@@ -17114,6 +17206,10 @@
   "messages.quote.unavailable": "Original message unavailable",
   "@messages.quote.unavailable": {
     "description": "Chat timeline, header of a quoting message when the quoted message is deleted or cannot be loaded."
+  },
+  "messages.quote.beforeJoin": "Sent before you joined",
+  "@messages.quote.beforeJoin": {
+    "description": "Tooltip on a quoted message that was sent before I joined the room, so it cannot be opened."
   },
   "messages.quote.jumpTo": "Jump to quoted message from {author}",
   "@messages.quote.jumpTo": {
@@ -23527,6 +23623,10 @@
   "@agents.tile.error": {
     "description": "Agents page, agent card: status pill. Short."
   },
+  "agents.tile.offline": "Offline",
+  "@agents.tile.offline": {
+    "description": "Agents page, agent card: status pill of an agent running on another computer that is not online now. Short."
+  },
   "agents.edit.customCommand": "Custom command",
   "@agents.edit.customCommand": {
     "description": "Edit agent dialog (one running agent): harness option to type a command. Short."
@@ -24063,6 +24163,10 @@
   "@agents.row.managedRemotely": {
     "description": "Agent row (agent details list): process status. Short."
   },
+  "agents.row.hostedElsewhere": "Runs on another device",
+  "@agents.row.hostedElsewhere": {
+    "description": "Agent row (agent details list): process status when the agent runs on another of the user's devices and is not started here. Short."
+  },
   "agents.row.manage": "Manage",
   "@agents.row.manage": {
     "description": "Agent row (agent details list): button. Short."
@@ -24266,6 +24370,134 @@
   "agents.modelPicker.restartToApply": "restart to apply",
   "@agents.modelPicker.restartToApply": {
     "description": "Model picker on the agent profile: small note next to the picker. Short, lowercase."
+  },
+  "agents.external.connectButton": "Connect external agent",
+  "@agents.external.connectButton": {
+    "description": "Agents page header: button that opens the screen to connect an agent running on another computer. Short."
+  },
+  "agents.external.title": "Connect external agent",
+  "@agents.external.title": {
+    "description": "Connect external agent screen: title. Short."
+  },
+  "agents.external.description": "Use an agent that runs on another computer as one of your agents.",
+  "@agents.external.description": {
+    "description": "Connect external agent screen: one-line explanation under the title."
+  },
+  "agents.external.pasteLabel": "Paste this on the other computer",
+  "@agents.external.pasteLabel": {
+    "description": "Connect external agent screen: label above the one-line command to copy. Short."
+  },
+  "agents.external.copyLabel": "Copy command",
+  "@agents.external.copyLabel": {
+    "description": "Connect external agent screen: accessible label of the copy button next to the command. Short."
+  },
+  "agents.external.expiresIn": "Works once. Expires in {time}",
+  "@agents.external.expiresIn": {
+    "description": "Connect external agent screen: under the command. {time} is a countdown like 9:42 (minutes:seconds). Short."
+  },
+  "agents.external.waiting": "Waiting for the other computer…",
+  "@agents.external.waiting": {
+    "description": "Connect external agent screen: shown while nobody has used the command yet. Short."
+  },
+  "agents.external.making": "Making a code…",
+  "@agents.external.making": {
+    "description": "Connect external agent screen: shown while the command is being created. Short."
+  },
+  "agents.external.newCode": "New code",
+  "@agents.external.newCode": {
+    "description": "Connect external agent screen: button that replaces the command with a new one. Short."
+  },
+  "agents.external.tryAgain": "Try again",
+  "@agents.external.tryAgain": {
+    "description": "Connect external agent screen: button after making the command failed. Short."
+  },
+  "agents.external.startFailed": "Couldn't make a code. Try again.",
+  "@agents.external.startFailed": {
+    "description": "Connect external agent screen: error when the command could not be created."
+  },
+  "agents.external.connected": "{agent} on {device} connected",
+  "@agents.external.connected": {
+    "description": "Connect external agent screen: notice when an agent used the command. {agent} is the agent's name, {device} the other computer's name. Short."
+  },
+  "agents.external.connectedAt": "Connected at {time}",
+  "@agents.external.connectedAt": {
+    "description": "Connect external agent screen: time the agent connected, under the connected notice. {time} is a date and time. Short."
+  },
+  "agents.external.usedLabel": "Used code",
+  "@agents.external.usedLabel": {
+    "description": "Connect external agent screen: label above the struck-through command after it was used or expired. Short."
+  },
+  "agents.external.used": "This code was already used. Make a new code to connect another agent.",
+  "@agents.external.used": {
+    "description": "Connect external agent screen: under the used command; a command works only once."
+  },
+  "agents.external.expired": "This code expired. Make a new code.",
+  "@agents.external.expired": {
+    "description": "Connect external agent screen: notice when the 10 minutes passed before anyone used the command."
+  },
+  "agents.external.otherComputer": "another computer",
+  "@agents.external.otherComputer": {
+    "description": "Connect external agent screen: stands in for {device} when the other computer has no name. Lowercase, short."
+  },
+  "agents.external.thisComputer": "this computer",
+  "@agents.external.thisComputer": {
+    "description": "Hermes connected message: stands in for {device} when this computer's name is unknown. Lowercase, short."
+  },
+  "agents.external.agentFallback": "External agent",
+  "@agents.external.agentFallback": {
+    "description": "Agents page: name of a connected external agent whose name is unknown. Short."
+  },
+  "agents.external.agentCount": "{count, plural, one {# connected agent} other {# connected agents}}",
+  "@agents.external.agentCount": {
+    "description": "Agents page: count next to another computer's name, for agents connected with a command. Short."
+  },
+  "agents.external.connectedOn": "Connected {time}",
+  "@agents.external.connectedOn": {
+    "description": "Agents page: external agent card line. {time} is a date and time like Oct 23, 14:32. Short."
+  },
+  "agents.external.connectedToast": "{agent} on {device} is connected.",
+  "@agents.external.connectedToast": {
+    "description": "Agents page: toast after an external agent connected. {agent} is the agent's name, {device} the computer's name."
+  },
+  "agents.external.disconnect": "Disconnect",
+  "@agents.external.disconnect": {
+    "description": "Agents page: button on an external agent card that cuts off that computer. Short."
+  },
+  "agents.external.disconnectNamed": "Disconnect {name}",
+  "@agents.external.disconnectNamed": {
+    "description": "Agents page: accessible label of an external agent card. {name} is the agent's name. Short."
+  },
+  "agents.external.disconnectTitle": "Disconnect {device}?",
+  "@agents.external.disconnectTitle": {
+    "description": "Disconnect confirmation title. {device} is the other computer's name. Short."
+  },
+  "agents.external.disconnectDescription": "Agents on {device} stop working with your account. To use them again, connect them with a new code.",
+  "@agents.external.disconnectDescription": {
+    "description": "Disconnect confirmation text. {device} is the other computer's name."
+  },
+  "agents.external.disconnected": "{device} is disconnected.",
+  "@agents.external.disconnected": {
+    "description": "Toast after disconnecting another computer's agents. {device} is that computer's name."
+  },
+  "agents.external.disconnectFailed": "Couldn't disconnect. Try again.",
+  "@agents.external.disconnectFailed": {
+    "description": "Toast when disconnecting another computer's agents failed."
+  },
+  "agents.external.hermesFound": "Hermes found on this computer",
+  "@agents.external.hermesFound": {
+    "description": "Agents page: card shown when the Hermes agent app is installed on this computer. Hermes is a product name. Short."
+  },
+  "agents.external.hermesConnect": "Connect",
+  "@agents.external.hermesConnect": {
+    "description": "Agents page Hermes card: button that connects Hermes in one step. Short."
+  },
+  "agents.external.hermesConnecting": "Connecting…",
+  "@agents.external.hermesConnecting": {
+    "description": "Agents page Hermes card: button text while connecting. Short."
+  },
+  "agents.external.hermesFailed": "Couldn't connect Hermes. Try again.",
+  "@agents.external.hermesFailed": {
+    "description": "Agents page Hermes card: error toast. Hermes is a product name."
   },
   "agents.myAgents.agentCount": "{count, plural, one {# agent} other {# agents}}",
   "@agents.myAgents.agentCount": {

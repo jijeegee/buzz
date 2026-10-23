@@ -14,6 +14,7 @@ mod admission;
 mod agent_keys;
 mod bot;
 mod key_backup;
+mod pairing;
 mod principal;
 mod session;
 
@@ -22,6 +23,9 @@ mod agent_keys_postgres_tests;
 
 #[cfg(test)]
 mod key_backup_postgres_tests;
+
+#[cfg(test)]
+mod pairing_postgres_tests;
 
 #[cfg(test)]
 mod postgres_tests;
@@ -41,6 +45,10 @@ pub use bot::{BotRecord, ExchangeOutcome};
 pub use key_backup::{
     InitializeKeyBackup, KeyBackupRecord, KeyBackupReencryption, KEY_BACKUP_VERSION,
     LEGACY_KEY_BACKUP_VERSION,
+};
+pub use pairing::{
+    ClaimPairing, PairingClaim, PairingRecord, PairingState, StartPairing, MAX_OPEN_PAIRINGS,
+    PAIRING_TTL_SECS,
 };
 pub use principal::{
     LoginPrincipal, PrincipalRecord, ProfileCommunity, ProfileEventState, ProfilePublishLock,

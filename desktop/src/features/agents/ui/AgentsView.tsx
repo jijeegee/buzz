@@ -1,5 +1,11 @@
 import * as React from "react";
-import { EllipsisVertical, OctagonX, Plus, Settings2 } from "lucide-react";
+import {
+  EllipsisVertical,
+  Link2,
+  OctagonX,
+  Plus,
+  Settings2,
+} from "lucide-react";
 import {
   consumePendingSnapshotImport,
   subscribeSnapshotImport,
@@ -18,6 +24,9 @@ import { TeamShareDialog } from "./TeamShareDialog";
 import { TeamDeleteDialog } from "./TeamDeleteDialog";
 import { TeamDialog } from "./TeamDialog";
 import { MyAgentsSection } from "./MyAgentsSection";
+import { ConnectExternalAgentDialog } from "@/features/agents/externalConnect/ConnectExternalAgentDialog";
+import { useExternalConnectAvailable } from "@/features/agents/externalConnect/useExternalAgents";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import { PresetsSection } from "./PresetsSection";
 import { useTeamPresetMigration } from "@/features/agents/lib/teamPresetMigration";
 import { useFeedbackToasts } from "@/shared/hooks/useToastEffect";
@@ -89,6 +98,11 @@ export function AgentsView() {
   const fullAiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const compactActionsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [isAiDefaultsOpen, setIsAiDefaultsOpen] = React.useState(false);
+  // External agents (`kuzz pair`): only for accounts signed in with Google.
+  const canConnectExternal = useExternalConnectAvailable();
+  const ownerPubkey = useIdentityQuery().data?.pubkey ?? "";
+  const [isConnectExternalOpen, setIsConnectExternalOpen] =
+    React.useState(false);
 
   function openAiDefaults(trigger: HTMLButtonElement | null) {
     aiDefaultsTriggerRef.current = trigger;
@@ -198,6 +212,17 @@ export function AgentsView() {
                 {t("agents.page.newAgent")}
               </Button>
               <div className="flex flex-wrap justify-end gap-2 [@container(max-width:40rem)]:hidden">
+                {canConnectExternal ? (
+                  <Button
+                    data-testid="agents-connect-external"
+                    onClick={() => setIsConnectExternalOpen(true)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Link2 />
+                    {t("agents.external.connectButton")}
+                  </Button>
+                ) : null}
                 <Button
                   data-testid="agent-defaults-button"
                   ref={fullAiDefaultsTriggerRef}
@@ -240,6 +265,14 @@ export function AgentsView() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  {canConnectExternal ? (
+                    <DropdownMenuItem
+                      onSelect={() => setIsConnectExternalOpen(true)}
+                    >
+                      <Link2 />
+                      {t("agents.external.connectButton")}
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem
                     onSelect={() => {
                       openAiDefaults(compactActionsTriggerRef.current);
@@ -367,6 +400,13 @@ export function AgentsView() {
         </div>
       </div>
 
+      {canConnectExternal ? (
+        <ConnectExternalAgentDialog
+          onOpenChange={setIsConnectExternalOpen}
+          open={isConnectExternalOpen}
+          owner={ownerPubkey}
+        />
+      ) : null}
       <AgentDefaultsDialog
         onOpenChange={setAiDefaultsDialogOpen}
         open={isAiDefaultsOpen}

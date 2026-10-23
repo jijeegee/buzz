@@ -49,6 +49,7 @@ import {
 } from "@/features/sidebar/ui/sidebarLoadingSkeleton";
 import { useDeferredModalOpen } from "@/shared/ui/deferredModalOpen";
 import { SidebarUpdateCard } from "@/features/settings/SidebarUpdateCard";
+import { NewSignInNoticeCard } from "@/features/accounts/newSignIn/NewSignInNoticeCard";
 import { useUpdaterContext } from "@/features/settings/hooks/UpdaterProvider";
 import { shouldShowSidebarUpdateCard } from "@/features/settings/sidebarUpdateCardVisibility";
 import type { ChannelVisibility } from "@/shared/api/types";
@@ -390,6 +391,7 @@ export function AppSidebar({
             scopeSearchFocusRequest={searchFocusRequests[1]}
             suggestionChannels={channels}
             threadRows={serverChats?.rows}
+            threadSearchBinding={serverChats?.threadSearchBinding}
           />
           {serverChats ? (
             <ChatsViewToggle onChange={setChatsView} value={chatsView} />
@@ -542,6 +544,7 @@ export function AppSidebar({
                 />
               </div>
             ) : null}
+            <NewSignInNoticeCard pubkey={currentPubkey} />
             <HuddleProfileControl
               channels={channels}
               onHuddleEnded={onHuddleEnded}

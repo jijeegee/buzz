@@ -21,6 +21,7 @@
 
 pub(crate) mod account_profiles;
 pub(crate) mod accounts;
+pub(crate) mod agent_hosting;
 pub(crate) mod api;
 pub(crate) mod bots;
 pub(crate) mod commands;
@@ -29,6 +30,7 @@ pub(crate) mod install_id;
 pub(crate) mod key_recovery;
 pub(crate) mod login_attempt;
 pub(crate) mod loopback;
+pub(crate) mod pairing;
 pub(crate) mod people;
 pub(crate) mod pkce;
 pub(crate) mod redact;

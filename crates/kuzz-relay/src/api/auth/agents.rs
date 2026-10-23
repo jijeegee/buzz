@@ -123,6 +123,32 @@ async fn authorize(
     if state.identity.config().key_backup_master.is_none() {
         return Err(super::not_found("agent key copies are not enabled"));
     }
+    let (binding, device, key) = authorize_device_call(state, headers, scope, per_minute).await?;
+    if fresh {
+        let session = binding.session_id.ok_or_else(reauth_required)?;
+        match state
+            .db
+            .key_backup_session_fresh(&binding.principal, session)
+            .await
+        {
+            Ok(true) => {}
+            Ok(false) => return Err(reauth_required()),
+            Err(_) => return Err(unavailable()),
+        }
+    }
+    Ok((binding, device, key))
+}
+
+/// A user session of a key-backup account on a device with a device key,
+/// proven by that key in every auth surface mode, rate limited per account
+/// under `scope`: the binding, its device id and device key. Shared by the
+/// calls that bind keys to devices (`/auth/agents/*`, `/auth/pairing/*`).
+pub(super) async fn authorize_device_call(
+    state: &AppState,
+    headers: &HeaderMap,
+    scope: &str,
+    per_minute: u64,
+) -> Result<(TokenBinding, Uuid, DevicePubkey), Response> {
     let binding = authenticate_user_token(state, headers).await?;
     // A stored key that no longer parses counts as keyless (fails closed).
     let key = binding
@@ -147,10 +173,10 @@ async fn authorize(
         Ok(false) => {
             return Err(conflict(
                 "account_mode_conflict",
-                "only key-backup accounts own Kuzz agents",
+                "only key-backup accounts own agents",
             ))
         }
-        Err(_) => return Err(unavailable()),
+        Err(_) => return Err(super::unavailable()),
     }
     rate_limit(
         state,
@@ -159,18 +185,6 @@ async fn authorize(
         per_minute,
     )
     .await?;
-    if fresh {
-        let session = binding.session_id.ok_or_else(reauth_required)?;
-        match state
-            .db
-            .key_backup_session_fresh(&binding.principal, session)
-            .await
-        {
-            Ok(true) => {}
-            Ok(false) => return Err(reauth_required()),
-            Err(_) => return Err(unavailable()),
-        }
-    }
     Ok((binding, device, key))
 }
 

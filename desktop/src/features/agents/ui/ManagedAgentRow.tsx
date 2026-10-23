@@ -76,11 +76,13 @@ export function ManagedAgentRow({
   const processDetail =
     agent.pid !== null
       ? t("agents.row.pid", { pid: agent.pid })
-      : agent.lastExitCode !== null
-        ? t("agents.row.exitCode", { code: agent.lastExitCode })
-        : isLocal
-          ? t("agents.row.readyToLaunch")
-          : t("agents.row.managedRemotely");
+      : agent.hostedElsewhere
+        ? t("agents.row.hostedElsewhere")
+        : agent.lastExitCode !== null
+          ? t("agents.row.exitCode", { code: agent.lastExitCode })
+          : isLocal
+            ? t("agents.row.readyToLaunch")
+            : t("agents.row.managedRemotely");
   // When the harness recovered a meaningful error string from the agent's
   // log tail (Max's seam in `managed_agents/storage.rs`), promote it to
   // user-visible copy below the process detail. Specifically renders the

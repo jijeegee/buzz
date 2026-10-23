@@ -332,7 +332,18 @@ pub async fn filter_fanout_by_access(
         }
     };
     match visibility {
-        Ok(v) if v != "private" => return matches,
+        // Open rooms: members and visitors see history by the room's policy.
+        Ok(v) if v != "private" => {
+            return drop_readers_blind_to_history(
+                state,
+                community_id,
+                stored_event,
+                channel_id,
+                matches,
+                true,
+            )
+            .await;
+        }
         Ok(_) => {}
         Err(e) => {
             // Fail closed: if we cannot determine visibility, do not leak a
@@ -377,7 +388,150 @@ pub async fn filter_fanout_by_access(
             }
         }
     }
-    allowed
+    drop_readers_blind_to_history(
+        state,
+        community_id,
+        stored_event,
+        channel_id,
+        allowed,
+        false,
+    )
+    .await
+}
+
+/// Kinds that are about other events (named in `e` tags) rather than new
+/// messages: reactions, edits, deletions and relay thread summaries.
+const TARGETING_KINDS: [u32; 5] = [
+    kuzz_core::kind::KIND_DELETION,
+    kuzz_core::kind::KIND_REACTION,
+    kuzz_core::kind::KIND_NIP29_DELETE_EVENT,
+    kuzz_core::kind::KIND_STREAM_MESSAGE_EDIT,
+    KIND_THREAD_SUMMARY,
+];
+
+/// since_join rooms (and group chats): an event does not reach a recipient
+/// who cannot read it in the stored history: a reply in a thread whose root
+/// came before their join, a reaction, edit, deletion or summary about such
+/// an event, or, in an open room that cuts history, anything but room state
+/// for a visitor. Fails closed.
+async fn drop_readers_blind_to_history(
+    state: &AppState,
+    community_id: CommunityId,
+    stored_event: &StoredEvent,
+    channel_id: uuid::Uuid,
+    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
+    open_room: bool,
+) -> Vec<(crate::subscription::ConnId, crate::subscription::SubId)> {
+    let kind = event_kind_u32(&stored_event.event);
+    // Room state always reaches every reader, except thread summaries (39005),
+    // which are about a thread.
+    if matches.is_empty()
+        || (kuzz_db::history::is_room_state_kind(kind as i32) && !TARGETING_KINDS.contains(&kind))
+    {
+        return matches;
+    }
+    match state
+        .channel_cuts_history_cached(community_id, channel_id)
+        .await
+    {
+        Ok(false) => return matches,
+        Ok(true) => {}
+        Err(e) => {
+            warn!(%channel_id, "fan-out history filter: policy lookup failed: {e}");
+            return Vec::new();
+        }
+    }
+    let mut named: Vec<Vec<u8>> = stored_event
+        .event
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let tag = tag.as_slice();
+            (tag.first().map(String::as_str) == Some("e"))
+                .then(|| tag.get(1).and_then(|id| hex::decode(id).ok()))
+                .flatten()
+                .filter(|id| id.len() == 32)
+        })
+        .collect();
+    // Members always see a new event itself; only a thread reply (it names
+    // its root) or a targeting kind can be about hidden history. Visitors of
+    // an open room are checked for everything.
+    let mut visitor = false;
+    if open_room {
+        for (conn_id, _) in &matches {
+            let Some(pubkey) = state.conn_manager.pubkey_for_conn(*conn_id) else {
+                visitor = true;
+                break;
+            };
+            if !matches!(
+                state
+                    .is_member_cached(community_id, channel_id, &pubkey)
+                    .await,
+                Ok(true)
+            ) {
+                visitor = true;
+                break;
+            }
+        }
+    }
+    if named.is_empty() && !visitor {
+        return matches;
+    }
+    // The event's own history sequence carries its thread root's (stored
+    // by ingest, migration 0089), so its id stands for the reply case. A
+    // deletion is blind only when everything it deletes is.
+    let deletion = matches!(
+        kind,
+        kuzz_core::kind::KIND_DELETION | kuzz_core::kind::KIND_NIP29_DELETE_EVENT
+    );
+    let mut targets = if TARGETING_KINDS.contains(&kind) {
+        std::mem::take(&mut named)
+    } else {
+        Vec::new()
+    };
+    if !deletion {
+        targets.push(stored_event.event.id.as_bytes().to_vec());
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    let mut readers: Vec<Vec<u8>> = matches
+        .iter()
+        .filter_map(|(conn_id, _)| state.conn_manager.pubkey_for_conn(*conn_id))
+        .map(|pk| pk.to_vec())
+        .collect();
+    readers.sort_unstable();
+    readers.dedup();
+    let limit = kuzz_db::history::MAX_HISTORY_EVENT_LOOKUP;
+    if targets.len() > limit {
+        warn!(%channel_id, "fan-out history filter: too many targets");
+        return Vec::new();
+    }
+    let mut blind = Vec::new();
+    for chunk in readers.chunks(limit) {
+        match state
+            .db
+            .readers_blind_to_targets(community_id, channel_id, &targets, chunk, deletion)
+            .await
+        {
+            Ok(found) => blind.extend(found),
+            Err(e) => {
+                warn!(%channel_id, "fan-out history filter: lookup failed: {e}");
+                return Vec::new();
+            }
+        }
+    }
+    if blind.is_empty() {
+        return matches;
+    }
+    matches
+        .into_iter()
+        .filter(|(conn_id, _)| {
+            state
+                .conn_manager
+                .pubkey_for_conn(*conn_id)
+                .is_some_and(|pk| !blind.iter().any(|b| b.as_slice() == pk.as_slice()))
+        })
+        .collect()
 }
 
 /// Deliver one event to this relay's local subscribers through the access gate.

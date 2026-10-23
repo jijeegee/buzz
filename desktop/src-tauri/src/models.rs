@@ -141,6 +141,10 @@ pub struct ChannelInfo {
     /// Ownerless multi-person chat: kind:39000 carries `["group_chat"]`.
     #[serde(default)]
     pub group_chat: bool,
+    /// Earlier-message visibility for new members, from kind:39000
+    /// `["history", "all" | "since_join"]`. Absent for DMs and group chats.
+    #[serde(default)]
+    pub history: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -176,6 +180,10 @@ pub struct ChannelDetailInfo {
     /// Ownerless multi-person chat: kind:39000 carries `["group_chat"]`.
     #[serde(default)]
     pub group_chat: bool,
+    /// Earlier-message visibility for new members, from kind:39000
+    /// `["history", "all" | "since_join"]`. Absent for DMs and group chats.
+    #[serde(default)]
+    pub history: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

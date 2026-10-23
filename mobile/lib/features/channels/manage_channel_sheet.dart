@@ -11,6 +11,7 @@ import 'channel.dart';
 import '../profile/avatar_upload_image.dart';
 import '../profile/profile_avatar_crop_page.dart';
 import 'channel_management_provider.dart';
+import 'group_history_switch.dart';
 import 'group_photo_field.dart';
 
 class ManageChannelSheet extends HookConsumerWidget {
@@ -40,6 +41,7 @@ class ManageChannelSheet extends HookConsumerWidget {
     final isSavingDetails = useState(false);
     final actionError = useState<String?>(null);
     final picture = useState<String?>(channel.picture);
+    final historyAll = useState(channel.historyAll);
     final isSavingPhoto = useState(false);
 
     useEffect(() {
@@ -80,6 +82,7 @@ class ManageChannelSheet extends HookConsumerWidget {
           name: canonicalName,
           description: description,
           picture: picture.value,
+          historyAll: historyAll.value,
         );
         onChannelUpdated?.call(updated);
         if (context.mounted) Navigator.of(context).pop(false);
@@ -102,6 +105,7 @@ class ManageChannelSheet extends HookConsumerWidget {
           name: canonicalName.isEmpty ? channel.name : canonicalName,
           description: description,
           picture: next,
+          historyAll: historyAll.value,
         ),
       );
     }
@@ -235,6 +239,23 @@ class ManageChannelSheet extends HookConsumerWidget {
                 ),
               ),
             ),
+            // Owners and admins only; DMs and group chats always hide
+            // earlier messages.
+            if (canEditDetails && !channel.isPersonChat) ...[
+              const SizedBox(height: Grid.xs),
+              GroupHistorySwitch(
+                channel: channel.copyWith(historyAll: historyAll.value),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: Grid.half,
+                ),
+                onSaved: (next) {
+                  historyAll.value = next;
+                  onChannelUpdated?.call(
+                    channel.copyWith(picture: picture.value, historyAll: next),
+                  );
+                },
+              ),
+            ],
             const SizedBox(height: Grid.sm),
             _ManageChannelSection(
               label: context.l10n.channelManageCanvas,

@@ -162,6 +162,8 @@ export type RawManagedAgent = {
   respond_to_allowlist?: string[];
   // Stored `effort_level` column; Rust omits it when None, fixtures may omit it.
   effort_level?: string | null;
+  // Rust omits it when false.
+  hosted_elsewhere?: boolean;
 };
 
 type RawCreateManagedAgentResponse = {
@@ -670,6 +672,7 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
     respondTo: agent.respond_to ?? "owner-only",
     respondToAllowlist: agent.respond_to_allowlist ?? [],
     effortLevel: agent.effort_level ?? null,
+    hostedElsewhere: agent.hosted_elsewhere ?? false,
   };
 }
 

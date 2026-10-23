@@ -2,6 +2,7 @@ import * as React from "react";
 
 import {
   type AttachManagedAgentToChannelResult,
+  useAddAgentsToChannelMutation,
   useAttachManagedAgentToChannelMutation,
 } from "@/features/agents/hooks";
 import {
@@ -21,27 +22,52 @@ import {
 } from "@/shared/ui/dialog";
 import { useT } from "@/shared/i18n";
 
+/** An agent running on a paired computer: added as a channel member. */
+export type ExternalChannelAgent = {
+  kind: "external";
+  pubkey: string;
+  name: string;
+};
+
+function isExternal(
+  agent: ManagedAgent | ExternalChannelAgent | null,
+): agent is ExternalChannelAgent {
+  return (agent as ExternalChannelAgent | null)?.kind === "external";
+}
+
 export function AddAgentToChannelDialog({
   agent,
   open,
   onAdded,
+  onAddedExternal,
   onOpenChange,
 }: {
-  agent: ManagedAgent | null;
+  agent: ManagedAgent | ExternalChannelAgent | null;
   open: boolean;
-  onAdded: (
+  onAdded?: (
     channel: Channel,
     result: AttachManagedAgentToChannelResult,
   ) => void;
+  /** After adding an external agent. */
+  onAddedExternal?: (channel: Channel) => void;
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useT();
   const channelsQuery = useChannelsQuery();
   const [channelId, setChannelId] = React.useState("");
   const [role, setRole] = React.useState<Exclude<ChannelRole, "owner">>("bot");
-  const attachAgentMutation = useAttachManagedAgentToChannelMutation(
+  const attachMutation = useAttachManagedAgentToChannelMutation(
     channelId || null,
   );
+  const addMutation = useAddAgentsToChannelMutation();
+  const [addFailure, setAddFailure] = React.useState<string | null>(null);
+  const attachAgentMutation = {
+    isPending: attachMutation.isPending || addMutation.isPending,
+    error:
+      attachMutation.error ??
+      addMutation.error ??
+      (addFailure ? new Error(addFailure) : null),
+  };
   const channels = React.useMemo(
     () =>
       (channelsQuery.data ?? []).filter(
@@ -53,7 +79,9 @@ export function AddAgentToChannelDialog({
   function reset() {
     setChannelId("");
     setRole("bot");
-    attachAgentMutation.reset();
+    attachMutation.reset();
+    addMutation.reset();
+    setAddFailure(null);
   }
 
   function handleOpenChange(next: boolean) {
@@ -98,12 +126,28 @@ export function AddAgentToChannelDialog({
     }
 
     try {
-      const result = await attachAgentMutation.mutateAsync({
+      if (isExternal(agent)) {
+        setAddFailure(null);
+        const result = await addMutation.mutateAsync({
+          channelId: selectedChannel.id,
+          pubkeys: [agent.pubkey],
+          role,
+        });
+        const failure = result.failures[0];
+        if (failure) {
+          setAddFailure(failure.error);
+          return;
+        }
+        onAddedExternal?.(selectedChannel);
+        handleOpenChange(false);
+        return;
+      }
+      const result = await attachMutation.mutateAsync({
         agent,
         role,
       });
 
-      onAdded(selectedChannel, result);
+      onAdded?.(selectedChannel, result);
       handleOpenChange(false);
     } catch {
       // React Query stores the error; keep the dialog open and render it inline.

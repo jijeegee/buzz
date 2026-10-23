@@ -53,6 +53,10 @@ class Channel {
   /// it a chat, like a 1:1; its members are [participantPubkeys].
   final bool groupChat;
 
+  /// Whether new members see earlier messages (kind 39000
+  /// `["history","all"]`). Absent means `since_join`: they don't.
+  final bool historyAll;
+
   const Channel({
     required this.id,
     required this.name,
@@ -74,6 +78,7 @@ class Channel {
     this.goalsEnabled = true,
     this.picture,
     this.groupChat = false,
+    this.historyAll = false,
   });
 
   factory Channel.fromJson(Map<String, dynamic> json) => Channel(
@@ -183,6 +188,7 @@ class Channel {
     goalsEnabled: details.goalsEnabled,
     picture: details.picture,
     groupChat: groupChat || details.groupChat,
+    historyAll: details.historyAll,
   );
 
   Channel copyWith({
@@ -195,6 +201,7 @@ class Channel {
     bool? goalsEnabled,
     Object? picture = _sentinel,
     List<String>? participantPubkeys,
+    bool? historyAll,
   }) => Channel(
     id: id,
     name: name ?? this.name,
@@ -220,6 +227,7 @@ class Channel {
     goalsEnabled: goalsEnabled ?? this.goalsEnabled,
     picture: identical(picture, _sentinel) ? this.picture : picture as String?,
     groupChat: groupChat,
+    historyAll: historyAll ?? this.historyAll,
   );
 }
 
@@ -249,6 +257,9 @@ class ChannelDetails {
   /// Kind 39000 `["group_chat"]`: an ownerless chat of people.
   final bool groupChat;
 
+  /// Kind 39000 `["history","all"]`: new members see earlier messages.
+  final bool historyAll;
+
   const ChannelDetails({
     required this.id,
     required this.name,
@@ -266,6 +277,7 @@ class ChannelDetails {
     this.goalsEnabled = true,
     this.picture,
     this.groupChat = false,
+    this.historyAll = false,
   });
 
   factory ChannelDetails.fromJson(Map<String, dynamic> json) => ChannelDetails(
@@ -307,5 +319,6 @@ class ChannelDetails {
     goalsEnabled: channel.goalsEnabled,
     picture: channel.picture,
     groupChat: channel.groupChat,
+    historyAll: channel.historyAll,
   );
 }

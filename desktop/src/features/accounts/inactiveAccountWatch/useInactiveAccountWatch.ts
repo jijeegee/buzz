@@ -21,6 +21,7 @@ import { buildEventNotificationTarget } from "@/features/notifications/lib/targe
 import { t } from "@/shared/i18n";
 import { readCachedUserLabels } from "@/features/profile/lib/userLabelStorage";
 import { ReadOnlyRelayClient } from "@/shared/api/readOnlyRelayClient";
+import { checkRemoteSignOut } from "@/shared/api/remoteSignOut";
 import { accountAuthFrame } from "@/shared/api/relayAuthFrame";
 import { nip44DecryptAs } from "@/shared/api/tauri";
 import { getIdentity } from "@/shared/api/tauriIdentity";
@@ -48,7 +49,11 @@ function watcherDeps(target: WatchTarget): WatcherDeps {
   const label = accountLabel(target.account);
   return {
     createClient: (relayUrl, options) =>
-      new ReadOnlyRelayClient(relayUrl, options),
+      new ReadOnlyRelayClient(relayUrl, {
+        ...options,
+        // Signed out from another device: confirm, and sign out this one only.
+        onSignedOutRefusal: () => checkRemoteSignOut(pubkey, relayUrl),
+      }),
     authFrame: accountAuthFrame(pubkey),
     decrypt: (ciphertext) => nip44DecryptAs(pubkey, ciphertext),
     readContext: (account) => ({

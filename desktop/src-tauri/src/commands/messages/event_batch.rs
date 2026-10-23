@@ -44,6 +44,44 @@ pub async fn get_event(event_id: String, state: State<'_, AppState>) -> Result<S
     serde_json::to_string(event).map_err(|error| format!("serialize event: {error}"))
 }
 
+/// Relay-signed excerpt of a quoted message the reader joined too late to
+/// fetch (the room hides messages sent before they joined).
+const KIND_QUOTE_PREVIEW: u16 = 39008;
+
+fn build_quote_preview_filter(
+    channel_id: &str,
+    quoted_id: &str,
+    quoting_id: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "quote_preview": true,
+        "#h": [channel_id],
+        "ids": [quoted_id],
+        "#e": [quoting_id],
+    })
+}
+
+/// Ask the relay for the quote preview of `quoted_id`, as seen from the
+/// visible message `quoting_id` in `channel_id`. `None` when the relay has
+/// no preview to give; the caller validates the event's tags and content.
+#[tauri::command]
+pub async fn get_quote_preview(
+    channel_id: String,
+    quoted_id: String,
+    quoting_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<serde_json::Value>, String> {
+    let filter = build_quote_preview_filter(&channel_id, &quoted_id, &quoting_id);
+    let events = query_relay(&state, &[filter]).await?;
+    events
+        .into_iter()
+        .find(|event| event.kind.as_u16() == KIND_QUOTE_PREVIEW)
+        .map(|event| {
+            serde_json::to_value(event).map_err(|error| format!("serialize event: {error}"))
+        })
+        .transpose()
+}
+
 /// Resolve many exact event IDs in relay-sized chunks. Callers still validate
 /// event kind, channel scope, and requested ID before using presentation data.
 fn normalized_event_id_chunks(event_ids: Vec<String>) -> Vec<Vec<String>> {
@@ -97,6 +135,15 @@ pub async fn get_events(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quote_preview_filter_carries_extension_and_both_ids() {
+        let filter = build_quote_preview_filter("chan", "quoted", "quoting");
+        assert_eq!(filter["quote_preview"], serde_json::json!(true));
+        assert_eq!(filter["#h"], serde_json::json!(["chan"]));
+        assert_eq!(filter["ids"], serde_json::json!(["quoted"]));
+        assert_eq!(filter["#e"], serde_json::json!(["quoting"]));
+    }
 
     #[test]
     fn keeps_exact_relay_ceiling_in_one_chunk() {

@@ -39,6 +39,8 @@ export type RawChannel = {
   picture?: string | null;
   /** Ownerless multi-person chat marker; absent from older backends. */
   group_chat?: boolean;
+  /** Earlier-message visibility; absent for DMs, chats and older backends. */
+  history?: Channel["history"];
 };
 
 /**
@@ -104,6 +106,7 @@ export function fromRawChannel(channel: RawChannel): Channel {
     goalsEnabled: channel.goals_enabled ?? true,
     picture: channel.picture ?? null,
     groupChat: channel.group_chat === true,
+    history: channel.history ?? null,
   };
 }
 

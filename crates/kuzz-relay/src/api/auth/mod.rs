@@ -19,6 +19,7 @@ mod bots;
 mod key_backup;
 mod oidc;
 mod operators;
+mod pairing;
 mod people;
 mod session;
 
@@ -62,6 +63,10 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .route("/auth/agents/challenge", post(agents::challenge))
         .route("/auth/agents/register", post(agents::register))
         .route("/auth/agents/keys", get(agents::keys))
+        .route("/auth/pairing/start", post(pairing::start))
+        .route("/auth/pairing", get(pairing::list))
+        // An external agent claims a pairing code (no account session).
+        .route("/pair/claim", post(pairing::claim))
         .route("/auth/oidc/{provider}/start", get(oidc::start))
         .route("/auth/oidc/{provider}/callback", get(oidc::callback))
         .route("/auth/oidc/complete", post(oidc::complete))

@@ -28,6 +28,7 @@ use super::{
     api_error, db_read_error, internal_error, not_found, parse_query_or_400, QUERY_TIMED_OUT,
 };
 
+mod quote_preview;
 mod thread_roots;
 mod thread_window;
 
@@ -866,6 +867,7 @@ async fn handle_channel_window_filter(
                     limit,
                     cursor.clone(),
                     kind_filter.as_deref(),
+                    Some(reader),
                 )
                 .await
         }
@@ -878,6 +880,7 @@ async fn handle_channel_window_filter(
                     limit,
                     cursor.clone(),
                     kind_filter.as_deref(),
+                    Some(reader),
                 )
                 .await
         }
@@ -907,8 +910,9 @@ async fn handle_channel_window_filter(
             std::collections::HashSet::new();
         let mut hop_ids = row_ids_hex.clone();
         for hop_kinds in [&WINDOW_AUX_KINDS[..], &WINDOW_AUX_DELETE_KINDS[..]] {
-            let aux_query =
+            let mut aux_query =
                 build_aux_query(tenant.community(), std::mem::take(&mut hop_ids), hop_kinds);
+            aux_query.history_reader = Some(reader.to_vec());
             let aux_events = query_all_pages(
                 aux_query,
                 AUX_PAGE_LIMIT,
@@ -1703,6 +1707,25 @@ async fn query_events_authed(
             "resolve_thread_roots permits at most 100 targets per request",
         ));
     }
+    let quote_previews = raw_filters
+        .iter()
+        .filter(|raw| extension_flag(raw, quote_preview::FLAG))
+        .count();
+    if quote_previews > quote_preview::MAX_PER_REQUEST {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "quote_preview permits at most 50 filters per request",
+        ));
+    }
+    for (idx, (raw, filter)) in raw_filters.iter().zip(filters.iter()).enumerate() {
+        if extension_flag(raw, quote_preview::FLAG) {
+            events.extend(
+                quote_preview::query(state, tenant, filter, &accessible_channels, &pubkey_bytes)
+                    .await?,
+            );
+            handled.insert(idx);
+        }
+    }
     // Resolve reply owners from retained thread metadata, including tombstones.
     for (idx, (raw, filter)) in raw_filters.iter().zip(filters.iter()).enumerate() {
         if extension_flag(raw, "resolve_thread_roots") {
@@ -1799,6 +1822,7 @@ async fn query_events_authed(
                         &accessible_channels,
                         since,
                         remaining,
+                        Some(&pubkey_bytes),
                     )
                     .await
                     .map_err(|e| internal_error(&format!("feed activity error: {e}")))?,
@@ -1862,12 +1886,13 @@ async fn query_events_authed(
         let thread_cursor = extract_thread_cursor(raw);
         let thread_replies = state
             .db
-            .get_thread_replies(
+            .get_thread_replies_for_reader(
                 tenant.community(),
                 &root_bytes,
                 Some(depth),
                 limit,
                 thread_cursor.as_deref(),
+                Some(&pubkey_bytes),
             )
             .await
             .map_err(|e| internal_error(&format!("thread query error: {e}")))?;
@@ -1895,8 +1920,9 @@ async fn query_events_authed(
             let mut seen_aux = std::collections::HashSet::new();
             let mut hop_ids = thread_row_ids;
             for hop_kinds in [&WINDOW_AUX_KINDS[..], &WINDOW_AUX_DELETE_KINDS[..]] {
-                let aux_query =
+                let mut aux_query =
                     build_aux_query(tenant.community(), std::mem::take(&mut hop_ids), hop_kinds);
+                aux_query.history_reader = Some(pubkey_bytes.clone());
                 let aux_events = query_all_pages(
                     aux_query,
                     AUX_PAGE_LIMIT,
@@ -2648,6 +2674,7 @@ async fn handle_bridge_search(
             page: search_page,
             per_page: limit,
             mode: search_mode,
+            history_reader: Some(pubkey_bytes.to_vec()),
         };
 
         let search_result = state.search.search(&search_query).await.map_err(|e| {
@@ -8092,6 +8119,15 @@ mod postgres_tests {
             )
             .await
             .expect("create channel");
+            // Readers here are not members; keep the whole history visible.
+            sqlx::query(
+                "UPDATE channels SET history_policy = 'all' WHERE community_id = $1 AND id = $2",
+            )
+            .bind(community)
+            .bind(channel)
+            .execute(&pool)
+            .await
+            .expect("history policy");
             kuzz_db::Db::from_pool(pool.clone())
                 .insert_event(cid, &root, Some(channel))
                 .await

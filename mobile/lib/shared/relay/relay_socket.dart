@@ -6,6 +6,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../app_update/app_update.dart';
 import '../auth/default_community.dart';
 import '../device_key/device_proof.dart';
 import 'nostr_models.dart';
@@ -126,13 +127,19 @@ class RelaySocket {
     _state = SocketState.connecting;
 
     try {
+      final epoch = _epoch;
+      final identity = await appIdentityHeader();
+      // Reset or disposed while the version was read.
+      if (epoch != _epoch) return;
       _channel = IOWebSocketChannel.connect(
         Uri.parse(_wsUrl),
+        headers: {appUpdateHeader: ?identity},
         pingInterval: debugPingInterval,
       );
       await _channel!.ready;
     } catch (e) {
       _state = SocketState.disconnected;
+      if (isUpdateRequiredRefusal(e)) updateRequiredSignal.value++;
       _onDisconnected(e);
       return;
     }

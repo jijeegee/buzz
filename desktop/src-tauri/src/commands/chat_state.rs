@@ -1,5 +1,5 @@
 //! Chats server state (`chat_list`, `mark_read`, `thread_follow`,
-//! `chat_import`) over the relay's `/query` bridge.
+//! `chat_import`, `thread_search`) over the relay's `/query` bridge.
 //!
 //! A relay with the chat-state switch off answers
 //! `404 {"error": "chat_state_disabled"}`; a relay without the envelopes
@@ -38,6 +38,10 @@ const MAX_MARK_READ_ITEMS: usize = 100;
 const MAX_PINNED_THREADS: usize = 200;
 /// Most reads plus follows one `chat_import` request may carry.
 const MAX_CHAT_IMPORT_ITEMS: usize = 500;
+/// Most threads one `thread_search` request may ask for.
+const MAX_THREAD_SEARCH_LIMIT: u32 = 50;
+/// Longest `thread_search` query the relay accepts, in characters.
+const MAX_THREAD_SEARCH_QUERY_CHARS: usize = 100;
 
 /// The account a chat-state request belongs to: the community relay and the
 /// user pubkey the caller captured when it queued the request.
@@ -227,6 +231,22 @@ fn build_chat_import_filter(
     Ok(serde_json::json!({ "chat_import": 1, "reads": reads, "follows": follows }))
 }
 
+/// `{"thread_search": 1, "q": query, "limit": n}`. The query is trimmed and
+/// must be 1..=100 characters.
+fn build_thread_search_filter(query: &str, limit: u32) -> Result<serde_json::Value, String> {
+    let query = query.trim();
+    if query.is_empty() || query.chars().count() > MAX_THREAD_SEARCH_QUERY_CHARS {
+        return Err(format!(
+            "thread_search query must be 1..={MAX_THREAD_SEARCH_QUERY_CHARS} characters"
+        ));
+    }
+    Ok(serde_json::json!({
+        "thread_search": 1,
+        "q": query,
+        "limit": limit.clamp(1, MAX_THREAD_SEARCH_LIMIT),
+    }))
+}
+
 /// `404 chat_state_disabled` means the switch is off: no chat state here.
 fn map_query_error(error: String) -> String {
     if error.starts_with("relay returned 404") && error.contains("chat_state_disabled") {
@@ -342,9 +362,38 @@ pub async fn chat_import(
     query_envelope(&state, &binding, filter, "chat_import", Some("reads")).await
 }
 
+/// Threads in the user's rooms whose name contains `query`, closed and
+/// quiet ones included, best match first. Rows use the `chat_list` thread
+/// row fields without counts or events.
+#[tauri::command]
+pub async fn search_thread_names(
+    binding: ChatStateBinding,
+    query: String,
+    limit: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let filter = build_thread_search_filter(&query, limit.unwrap_or(20))?;
+    query_envelope(&state, &binding, filter, "thread_search", Some("rows")).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thread_search_filter_trims_and_bounds() {
+        assert_eq!(
+            build_thread_search_filter("  launch ", 500).expect("ok"),
+            serde_json::json!({"thread_search": 1, "q": "launch", "limit": 50})
+        );
+        assert_eq!(
+            build_thread_search_filter("검색", 0).expect("ok")["limit"],
+            1
+        );
+        assert!(build_thread_search_filter("   ", 20).is_err());
+        assert!(build_thread_search_filter(&"x".repeat(101), 20).is_err());
+        assert!(build_thread_search_filter(&"가".repeat(100), 20).is_ok());
+    }
 
     const SIGNER: &str = "8cf9a7e7deebdc7d1fe172b9af4c6796b224e43e8f03e80dbd357f6c61fdeff9";
 

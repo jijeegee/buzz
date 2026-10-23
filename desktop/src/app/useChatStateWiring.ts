@@ -299,6 +299,10 @@ export function useChatStateWiring({
 
   const on = capability === "on";
   const shownRows = on ? rows : undefined;
+  const threadSearchBinding = React.useMemo(
+    () => (pubkey && relayUrl ? { pubkey, relayUrl } : undefined),
+    [pubkey, relayUrl],
+  );
   const serverChats = React.useMemo<ServerChats | undefined>(
     () =>
       shownRows
@@ -310,6 +314,7 @@ export function useChatStateWiring({
             pinnedThreadIds,
             readStateVersion,
             rows: shownRows,
+            threadSearchBinding,
           }
         : undefined,
     [
@@ -320,6 +325,7 @@ export function useChatStateWiring({
       pinnedThreadIds,
       readStateVersion,
       shownRows,
+      threadSearchBinding,
     ],
   );
   const syncProps = React.useMemo<ChatStateSyncProps>(

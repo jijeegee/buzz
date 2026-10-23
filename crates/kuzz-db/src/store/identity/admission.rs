@@ -206,7 +206,7 @@ pub(super) async fn key_admission(
            LEFT JOIN LATERAL ( \
              SELECT d.id, d.device_pubkey, d.revoked_at FROM devices d \
               WHERE d.principal_id = k.principal_id \
-                AND CASE WHEN k.role = 'person' THEN d.device_pubkey = $2 \
+                AND CASE WHEN k.role = 'person' THEN d.device_pubkey = $2 AND d.kind = 'login' \
                          ELSE d.id = k.host_device_id END \
               ORDER BY d.revoked_at IS NULL DESC, d.last_seen_at DESC LIMIT 1 \
            ) d ON true \

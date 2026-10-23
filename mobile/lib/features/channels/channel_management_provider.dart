@@ -532,6 +532,7 @@ ChannelDetails channelDetailsFromEvent(NostrEvent event) {
     goalsEnabled: data.goalsEnabled,
     picture: data.picture,
     groupChat: data.groupChat,
+    historyAll: data.historyAll,
   );
 }
 

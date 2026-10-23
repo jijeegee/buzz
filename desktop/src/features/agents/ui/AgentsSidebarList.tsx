@@ -31,6 +31,7 @@ import {
 } from "@/features/agents/lib/myAgentDevices";
 import { useAgentAvailabilityLookup } from "@/features/agents/lib/useAgentAvailability";
 import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
+import { useExternalAgentGroups } from "@/features/agents/externalConnect/useExternalAgents";
 import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
 import { useChannelsQuery, useOpenDmMutation } from "@/features/channels/hooks";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
@@ -84,6 +85,10 @@ type AgentListItem = {
   hostName: string | null;
   /** Its status is not known yet (another computer, presence loading). */
   statusUnknown?: boolean;
+  /** Connected from a paired computer (`kuzz pair`): no start or stop here. */
+  external?: boolean;
+  /** The name when its profile has none. */
+  fallbackName?: string;
 };
 
 /** What a row's menu does; the row's own click is `message`. */
@@ -152,10 +157,16 @@ export function AgentsSidebarList({
   const currentDeviceId =
     useAuthDevicesQuery().data?.find((device) => device.current)?.id ?? null;
   const { agents: remoteAgents } = useRemoteOwnedAgents();
+  const { groups: externalGroups, hermesPubkeys } = useExternalAgentGroups();
   const { getAvailability: getRemoteAvailability } = useAgentAvailabilityLookup(
     React.useMemo(
-      () => remoteAgents.map((agent) => agent.pubkey),
-      [remoteAgents],
+      () => [
+        ...remoteAgents.map((agent) => agent.pubkey),
+        ...externalGroups.flatMap((group) =>
+          group.agents.map((agent) => agent.pubkey),
+        ),
+      ],
+      [externalGroups, remoteAgents],
     ),
   );
   const deviceLabels = useAuthDeviceLabels(remoteAgents.length > 0);
@@ -204,11 +215,39 @@ export function AgentsSidebarList({
           }),
         }),
       ),
+      // Agents connected from paired computers, one group per computer.
+      ...externalGroups.map(
+        (group): AgentListSection => ({
+          key: `external-${group.deviceId}`,
+          title: group.deviceName,
+          deviceId: group.deviceId,
+          items: group.agents.map((agent): AgentListItem => {
+            const availability = getRemoteAvailability(agent.pubkey);
+            const pubkey = agent.pubkey.toLowerCase();
+            return {
+              avatarUrl: null,
+              external: true,
+              fallbackName: hermesPubkeys.has(pubkey)
+                ? "Hermes"
+                : t("agents.external.agentFallback"),
+              hostName: group.deviceName,
+              key: `external:${pubkey}`,
+              managed: null,
+              name: "",
+              pubkey,
+              running: availability === "online" || availability === "away",
+              statusUnknown: availability === undefined,
+            };
+          }),
+        }),
+      ),
     ];
   }, [
     currentDeviceId,
     deviceLabels,
+    externalGroups,
     getRemoteAvailability,
+    hermesPubkeys,
     isArchived,
     managedQuery.data,
     personasQuery.data,
@@ -433,7 +472,7 @@ function AgentRowMenuItems({
         <MessageSquare className={iconClass} />
         {t("agents.list.message")}
       </Item>
-      {item.running ? (
+      {item.external ? null : item.running ? (
         <Item
           data-testid={testId("stop")}
           disabled={isBusy}
@@ -452,7 +491,7 @@ function AgentRowMenuItems({
           {t("agents.runtimeBadge.start")}
         </Item>
       )}
-      {item.running && item.managed?.needsRestart ? (
+      {!item.external && item.running && item.managed?.needsRestart ? (
         <Item
           data-testid={testId("restart")}
           disabled={isBusy}
@@ -463,10 +502,12 @@ function AgentRowMenuItems({
         </Item>
       ) : null}
       <Separator />
-      <Item data-testid={testId("edit")} onSelect={run("edit")}>
-        <Pencil className={iconClass} />
-        {t("common.edit")}
-      </Item>
+      {item.external ? null : (
+        <Item data-testid={testId("edit")} onSelect={run("edit")}>
+          <Pencil className={iconClass} />
+          {t("common.edit")}
+        </Item>
+      )}
       <Item data-testid={testId("profile")} onSelect={run("profile")}>
         <UserRound className={iconClass} />
         {t("agents.list.viewProfile")}
@@ -497,9 +538,21 @@ function AgentRow({
   const avatarUrl =
     item.avatarUrl ?? profile?.avatarUrl ?? item.fallbackAvatarUrl ?? null;
   const name =
-    item.name || profile?.displayName?.trim() || t("agents.list.agentFallback");
+    item.name ||
+    profile?.displayName?.trim() ||
+    item.fallbackName ||
+    t("agents.list.agentFallback");
   const working = useAgentWorking(item.running ? item.pubkey : null).working;
-  const status = !item.running ? "Stopped" : working ? "Working" : "Running";
+  // An external agent with no presence yet shows no status.
+  const status = item.running
+    ? working
+      ? "Working"
+      : "Running"
+    : !item.external
+      ? "Stopped"
+      : item.statusUnknown
+        ? null
+        : "Offline";
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -533,32 +586,36 @@ function AgentRow({
               />
               <span className="min-w-0 truncate font-medium">{name}</span>
             </span>
-            <span
-              className={cn(
-                "flex shrink-0 items-center gap-1.5 text-2xs text-sidebar-foreground/60",
-                // The "⋯" button takes this place while the row is hovered.
-                "group-focus-within:invisible group-hover:invisible",
-                menuOpen && "invisible",
-              )}
-              data-testid={`agents-row-status-${item.key}`}
-            >
+            {status ? (
               <span
-                aria-hidden
                 className={cn(
-                  "h-2 w-2 rounded-full",
-                  status === "Working"
-                    ? "bg-amber-500"
-                    : status === "Running"
-                      ? "bg-emerald-500"
-                      : "bg-muted-foreground/40",
+                  "flex shrink-0 items-center gap-1.5 text-2xs text-sidebar-foreground/60",
+                  // The "⋯" button takes this place while the row is hovered.
+                  "group-focus-within:invisible group-hover:invisible",
+                  menuOpen && "invisible",
                 )}
-              />
-              {status === "Working"
-                ? t("agents.tile.working")
-                : status === "Running"
-                  ? t("agents.tile.running")
-                  : t("agents.tile.stopped")}
-            </span>
+                data-testid={`agents-row-status-${item.key}`}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    status === "Working"
+                      ? "bg-amber-500"
+                      : status === "Running"
+                        ? "bg-emerald-500"
+                        : "bg-muted-foreground/40",
+                  )}
+                />
+                {status === "Working"
+                  ? t("agents.tile.working")
+                  : status === "Running"
+                    ? t("agents.tile.running")
+                    : status === "Offline"
+                      ? t("agents.tile.offline")
+                      : t("agents.tile.stopped")}
+              </span>
+            ) : null}
           </button>
           <DropdownMenu onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>

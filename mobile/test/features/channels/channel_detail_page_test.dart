@@ -36,6 +36,7 @@ import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart'
 import 'package:kuzz/features/channels/channel_stars/channel_stars_provider.dart';
 import 'package:kuzz/features/channels/channel_stars/channel_stars_storage.dart';
 import 'package:kuzz/features/channels/channel_typing_provider.dart';
+import 'package:kuzz/features/channels/manage_channel_sheet.dart';
 import 'package:kuzz/features/channels/members_sheet.dart';
 import 'package:kuzz/features/channels/composer_dock_size_reporter.dart';
 import 'package:kuzz/features/channels/compose_bar.dart';
@@ -3194,7 +3195,26 @@ void main() {
       expect(find.text('Leave group'), findsNothing);
       expect(find.text('Topic'), findsNothing);
       expect(find.text('Purpose'), findsNothing);
+      // The earlier-messages switch sits above the canvas.
+      expect(
+        find.byKey(const ValueKey('group-history-switch')),
+        findsOneWidget,
+      );
+      final sheetScrollable = find.descendant(
+        of: find.byType(ManageChannelSheet),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Canvas'),
+        100,
+        scrollable: sheetScrollable.first,
+      );
       expect(find.text('Canvas'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('manage-channel-name')),
+        -100,
+        scrollable: sheetScrollable.first,
+      );
 
       final nameField = tester.widget<TextField>(
         find.byKey(const ValueKey('manage-channel-name')),
@@ -16237,6 +16257,7 @@ class _FakeChannelActions extends ChannelActions {
     bool? goalsEnabled,
     String? visibility,
     String? picture,
+    bool? historyAll,
   }) async {
     if (goalsEnabled != null) {
       await onUpdateGoals?.call(channelId, goalsEnabled);

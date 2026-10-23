@@ -47,8 +47,8 @@ impl UserCredential {
     /// principal in token mode (the relay stamps it and recomputes the id).
     pub(crate) fn sign(&self, builder: EventBuilder) -> Result<Event, String> {
         match self {
-            Self::Keys(keys) => builder
-                .sign_with_keys(keys)
+            // Auth events (NIP-42, NIP-98, Blossom) carry this device's tag.
+            Self::Keys(keys) => crate::device_key::sign_auth_event(builder, keys)
                 .map_err(|e| format!("sign failed: {e}")),
             Self::Token { principal, .. } => {
                 kuzz_sdk_pkg::signer::draft_event(builder, *principal).map_err(|e| e.to_string())

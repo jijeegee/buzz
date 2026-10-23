@@ -441,6 +441,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       if (prev != null &&
           (prev.isArchived != channel.isArchived ||
               prev.goalsEnabled != channel.goalsEnabled ||
+              prev.historyAll != channel.historyAll ||
               prev.picture != channel.picture ||
               prev.name != channel.name ||
               prev.description != channel.description ||
@@ -592,6 +593,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       goalsEnabled: data.goalsEnabled,
       picture: data.picture,
       groupChat: data.groupChat,
+      historyAll: data.historyAll,
     );
   }
 
@@ -806,11 +808,12 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   }
 
   /// Whether [event] is a system message announcing a change to the group's
-  /// kind:39000 metadata (photo, topic or purpose).
+  /// kind:39000 metadata (photo, topic, purpose or earlier-messages setting).
   static bool _changesChannelMetadata(NostrEvent event) {
     if (event.kind != EventKind.systemMessage) return false;
     return switch (SystemEvent.fromContent(event.content)?.type) {
       SystemEventType.pictureChanged ||
+      SystemEventType.historyChanged ||
       SystemEventType.topicChanged ||
       SystemEventType.purposeChanged => true,
       _ => false,

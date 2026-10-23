@@ -232,6 +232,26 @@ fn channel_goals_enabled_by_explicit_goals_on_tag() {
 }
 
 #[test]
+fn channel_history_parsed_from_known_tag_values_only() {
+    let plain = ev(39000, "", vec![vec!["d", "u"], vec!["name", "n"]]);
+    assert!(channel_detail_from_event(&plain).unwrap().history.is_none());
+    let all = ev(39000, "", vec![vec!["d", "u"], vec!["history", "all"]]);
+    assert_eq!(
+        channel_info_from_event(&all, None, None)
+            .unwrap()
+            .history
+            .as_deref(),
+        Some("all")
+    );
+    assert_eq!(
+        channel_detail_from_event(&all).unwrap().history.as_deref(),
+        Some("all")
+    );
+    let odd = ev(39000, "", vec![vec!["d", "u"], vec!["history", "some"]]);
+    assert!(channel_detail_from_event(&odd).unwrap().history.is_none());
+}
+
+#[test]
 fn channel_info_missing_d_errors() {
     let e = ev(39000, "", vec![vec!["name", "n"]]);
     assert!(channel_info_from_event(&e, None, None).is_err());

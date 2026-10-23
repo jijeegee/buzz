@@ -691,6 +691,10 @@ pub struct ManagedAgentSummary {
     /// `resolveEffortSubmission` can diff an explicit pick against it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort_level: Option<String>,
+    /// The relay says this agent runs on another of the owner's devices; it
+    /// is listed here but not started.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hosted_elsewhere: bool,
 }
 
 #[derive(Debug, Serialize)]

@@ -186,6 +186,9 @@ pub fn build_leave(channel_id: Uuid) -> Result<EventBuilder, String> {
 /// `Some(on)` emits `["goals", "on" | "off"]`.
 /// `picture`: `None` leaves the group photo unchanged; `Some(url)` sets it;
 /// `Some("")` removes it (emits `["picture", ""]`).
+/// `history`: `None` leaves earlier-message visibility unchanged;
+/// `Some("all" | "since_join")` emits `["history", value]`.
+#[allow(clippy::too_many_arguments)]
 pub fn build_update_channel(
     channel_id: Uuid,
     name: Option<&str>,
@@ -194,6 +197,7 @@ pub fn build_update_channel(
     ttl: Option<Option<i32>>,
     goals_enabled: Option<bool>,
     picture: Option<&str>,
+    history: Option<&str>,
 ) -> Result<EventBuilder, String> {
     if name.is_none()
         && about.is_none()
@@ -201,11 +205,15 @@ pub fn build_update_channel(
         && ttl.is_none()
         && goals_enabled.is_none()
         && picture.is_none()
+        && history.is_none()
     {
         return Err(
-            "at least one of name, about, visibility, ttl, goals, or picture must be provided"
+            "at least one of name, about, visibility, ttl, goals, picture, or history must be provided"
                 .into(),
         );
+    }
+    if history.is_some_and(|h| h != "all" && h != "since_join") {
+        return Err("history must be \"all\" or \"since_join\"".into());
     }
     let picture = picture.map(str::trim);
     if picture.is_some_and(|p| !p.is_empty() && !p.starts_with("https://")) {
@@ -244,6 +252,9 @@ pub fn build_update_channel(
     }
     if let Some(p) = picture {
         tags.push(tag(vec!["picture", p])?);
+    }
+    if let Some(h) = history {
+        tags.push(tag(vec!["history", h])?);
     }
     Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
 }
@@ -964,7 +975,8 @@ mod tests {
         let channel_id = Uuid::new_v4();
         assert!(build_create_channel(channel_id, "###", "open", "stream", None, None).is_err());
         assert!(
-            build_update_channel(channel_id, Some("###"), None, None, None, None, None).is_err()
+            build_update_channel(channel_id, Some("###"), None, None, None, None, None, None)
+                .is_err()
         );
     }
 
@@ -1012,17 +1024,65 @@ mod tests {
     }
 
     fn update_channel_tags(goals_enabled: Option<bool>) -> Result<Vec<Vec<String>>, String> {
-        let builder =
-            build_update_channel(Uuid::nil(), None, None, None, None, goals_enabled, None)?;
+        let builder = build_update_channel(
+            Uuid::nil(),
+            None,
+            None,
+            None,
+            None,
+            goals_enabled,
+            None,
+            None,
+        )?;
         let event = builder.sign_with_keys(&Keys::generate()).unwrap();
         Ok(event.tags.iter().map(|t| t.as_slice().to_vec()).collect())
     }
 
     fn update_channel_picture_tags(picture: &str) -> Result<Vec<Vec<String>>, String> {
-        let builder =
-            build_update_channel(Uuid::nil(), None, None, None, None, None, Some(picture))?;
+        let builder = build_update_channel(
+            Uuid::nil(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(picture),
+            None,
+        )?;
         let event = builder.sign_with_keys(&Keys::generate()).unwrap();
         Ok(event.tags.iter().map(|t| t.as_slice().to_vec()).collect())
+    }
+
+    #[test]
+    fn update_channel_sets_history_tag_and_rejects_unknown_values() {
+        let builder =
+            build_update_channel(Uuid::nil(), None, None, None, None, None, None, Some("all"))
+                .expect("history-only edit is valid");
+        let event = builder.sign_with_keys(&Keys::generate()).unwrap();
+        let tags: Vec<Vec<String>> = event.tags.iter().map(|t| t.as_slice().to_vec()).collect();
+        assert!(tags.contains(&vec!["history".to_string(), "all".to_string()]));
+        assert!(build_update_channel(
+            Uuid::nil(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("since_join")
+        )
+        .is_ok());
+        assert!(build_update_channel(
+            Uuid::nil(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("some")
+        )
+        .is_err());
     }
 
     #[test]

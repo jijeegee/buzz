@@ -33,9 +33,31 @@ test("a Korean word in the middle of a thread name matches", () => {
     at: 100,
     channelId: "kuzz-id",
     channelName: "kuzz",
+    closed: false,
     name: "채널 검색 및 초대",
     rootId: "root-1",
   });
+});
+
+test("relay search rows add closed threads the Chats list left out", () => {
+  const chats = [threadRow("live", "Launch plan")];
+  const searched = [
+    threadRow("live", "Launch plan", { closed: true, match: 1 }),
+    threadRow("done", "Old launch notes", { closed: true, match: 2 }),
+  ];
+  const matches = findThreadNameMatches(
+    [...chats, ...searched],
+    "launch",
+    anyChannel,
+  );
+  assert.deepEqual(
+    matches.map((m) => [m.thread.rootId, m.thread.closed]),
+    [
+      // The Chats row is listed first and wins.
+      ["live", false],
+      ["done", true],
+    ],
+  );
 });
 
 test("a substring inside a word matches, fuzzy-only hits do not", () => {

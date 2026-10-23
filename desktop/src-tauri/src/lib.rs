@@ -8,6 +8,7 @@ mod builderlab;
 mod channel_head_cache;
 mod commands;
 mod deep_link;
+mod device_key;
 mod device_robot;
 mod egress_guard;
 mod event_sync;
@@ -295,6 +296,19 @@ pub fn run() {
             // that will be lost on restart, as that silently breaks channel
             // memberships, DMs, and relay identity.
             let state = app_handle.state::<AppState>();
+            // This install's device key, opened (or made) in the background.
+            {
+                // Once the device key is open (now or after a retry), keys
+                // of this device's agents still away may come back.
+                let ready_app = app_handle.clone();
+                crate::device_key::init(move || {
+                    tauri::async_runtime::spawn(async move {
+                        // Let the saved sign-ins come back first.
+                        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                        crate::auth::agent_hosting::spawn_restore_pending(&ready_app);
+                    });
+                });
+            }
             // Accounts on this computer: rebuild or migrate the list and refill
             // the active-account copy before the identity is read from it.
             if let Ok(data_dir) = app_handle.path().app_data_dir() {
@@ -373,6 +387,7 @@ pub fn run() {
             // Centralized identity: restart agents whose bot token became
             // unusable (exit 78), within the restart cap. Inert in key mode.
             tauri::async_runtime::spawn(crate::auth::watchdog::run(app_handle.clone()));
+            crate::auth::pairing::remove_legacy_hermes_keys(&app_handle);
 
             let (tts_settings, tts_settings_load_error) =
                 huddle::tts_settings::load_for_app(&app_handle);
@@ -679,10 +694,16 @@ pub fn run() {
             auth::accounts::nip44_decrypt_as,
             auth::commands::cancel_google_login,
             auth::commands::logout,
+            auth::commands::check_remote_sign_out,
             auth::commands::logout_on_this_device,
             auth::commands::get_ws_auth_frame,
             auth::commands::list_devices,
             auth::commands::revoke_device,
+            auth::pairing::start_agent_pairing,
+            auth::pairing::list_agent_pairings,
+            auth::pairing::get_hermes_status,
+            auth::pairing::connect_hermes,
+            auth::pairing::disconnect_external_device,
             auth::commands::rename_device,
             auth::commands::revoke_other_sessions,
             auth::commands::revoke_all_bot_tokens,
@@ -748,6 +769,7 @@ pub fn run() {
             get_inbox_summary,
             get_chat_list,
             get_agent_chat_list,
+            search_thread_names,
             chat_mark_read,
             chat_thread_follow,
             chat_import,
@@ -758,6 +780,7 @@ pub fn run() {
             remove_reaction,
             get_event,
             get_events,
+            get_quote_preview,
             show_native_notification,
             #[cfg(target_os = "macos")]
             macos_notifications::take_pending_activations,

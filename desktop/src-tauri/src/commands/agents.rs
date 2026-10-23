@@ -859,6 +859,16 @@ pub async fn create_managed_agent(
         // before any .await — owner-authored, every agent (Will's ruling: no
         // is_builtin/persona-membership gate).
         retain_managed_agent_pending(&app, &state, record);
+        // Created here: registered to this device (background, best effort).
+        if let Some(owner) = crate::managed_agents::attested_owner_hex(record) {
+            crate::auth::agent_hosting::spawn_register(
+                &app,
+                record,
+                &state.current_auth_origin(),
+                &owner,
+                false,
+            );
+        }
         // Effective owner-authored description for the kind:0 `about`.
         let profile_about = crate::managed_agents::record_effective_description(record, &personas);
         Ok((

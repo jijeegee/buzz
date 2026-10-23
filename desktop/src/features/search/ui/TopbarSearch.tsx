@@ -21,6 +21,7 @@ import {
 } from "@/features/search/ui/SearchScopeControls";
 import { HighlightedSearchText } from "@/features/search/ui/HighlightedSearchText";
 import { useSearchMenuKeyboardNavigation } from "@/features/search/ui/useSearchMenuKeyboardNavigation";
+import type { ChatStateBinding } from "@/shared/api/chatState";
 import type { Channel, SearchHit, UserSearchResult } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
@@ -48,6 +49,8 @@ type TopbarSearchProps = {
   scopeFocusRequest?: number;
   /** The relay's Chats list rows; their thread names are searched. */
   threadRows?: readonly ChatListRow[];
+  /** The account for the relay's thread-name search (closed threads too). */
+  threadSearchBinding?: ChatStateBinding | null;
   variant?: "bar" | "icon";
 };
 const MAX_SEARCH_SUGGESTIONS = 4;
@@ -345,6 +348,7 @@ export function TopbarSearch({
   scopeFocusRequest = 0,
   suggestionChannels,
   threadRows,
+  threadSearchBinding,
   variant = "bar",
 }: TopbarSearchProps) {
   const t = useT();
@@ -376,6 +380,7 @@ export function TopbarSearch({
     limit: SEARCH_RESULT_LIMIT,
     scopeChannelId,
     threadRows,
+    threadSearchBinding,
   });
   const trimmedQuery = query.trim();
   // Bind highlights to the debounced result source so stale results can never
@@ -836,6 +841,14 @@ export function TopbarSearch({
                 {t("search.result.threadSeparator")}
               </span>
               <span className="min-w-0 truncate">{title}</span>
+              {result.thread.closed ? (
+                <span
+                  className="shrink-0 rounded bg-muted px-1.5 py-px text-2xs font-medium text-muted-foreground"
+                  data-testid={`search-result-thread-done-${result.thread.rootId}`}
+                >
+                  {t("search.result.threadDone")}
+                </span>
+              ) : null}
             </span>
           ) : (
             <span className="block space-y-0.5">

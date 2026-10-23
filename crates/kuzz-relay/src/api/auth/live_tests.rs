@@ -31,6 +31,7 @@ mod invites;
 mod key_backup;
 mod key_sockets;
 mod operators;
+mod pairing;
 mod profile;
 
 type Ws =

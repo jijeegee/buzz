@@ -1,0 +1,49 @@
+name: buzz-platform
+label: Buzz
+kind: platform
+version: 2.0.0-kuzz
+description: >
+  Kuzz build of Hermes' bundled Buzz gateway adapter. Same platform name
+  (buzz), settings and cursor file; it receives through a supervised
+  `kuzz messages watch` (every channel and DM) and replies through
+  `kuzz messages send`, signing with the identity paired to this computer
+  by `kuzz pair`. Its manifest name matches the bundled plugin's, so a copy
+  in $HERMES_HOME/plugins replaces the bundled one.
+author: Kuzz (based on the Hermes Agent Buzz plugin by Nous Research, MIT)
+optional_env:
+  - name: KUZZ_OWNER_PUBKEY
+    description: "Owner pubkey (hex or npub); overrides the owner reported by `kuzz auth whoami` after pairing"
+    prompt: "Owner pubkey (or empty)"
+    password: false
+  - name: KUZZ_CLI_PATH
+    description: "Path to the kuzz CLI; outranks BUZZ_CLI_PATH (default: buzz on PATH, ~/bin/buzz, kuzz on PATH, the Kuzz app's copy)"
+    prompt: "kuzz CLI path (or empty)"
+    password: false
+  - name: BUZZ_CHANNELS
+    description: "Comma-separated channel UUIDs to answer in (default: every channel and DM)"
+    prompt: "Channel UUIDs (comma-separated)"
+    password: false
+  - name: BUZZ_HOME_CHANNEL
+    description: "Channel UUID for cron / notification delivery (defaults to the first listed channel)"
+    prompt: "Home channel UUID (or empty)"
+    password: false
+  - name: BUZZ_ALLOWED_USERS
+    description: "Extra people (npub or hex, comma-separated) who may talk to the agent; the owner is always allowed"
+    prompt: "Allowed users (comma-separated)"
+    password: false
+  - name: BUZZ_REQUIRE_MENTION
+    description: "Channel messages must @mention the agent or continue its thread (true/false, default true)"
+    prompt: "Require a mention in channels? (true/false)"
+    password: false
+  - name: BUZZ_REPLY_IN_THREAD
+    description: "Thread replies under the triggering message (true/false, default true)"
+    prompt: "Reply in thread? (true/false)"
+    password: false
+  - name: BUZZ_REACTION_ONLY_USERS
+    description: "People (npub or hex) who get only a seen reaction when they mention the agent"
+    prompt: "Reaction-only users (comma-separated)"
+    password: false
+  - name: BUZZ_PRIVATE_KEY
+    description: "Legacy only: used until this computer is paired with `kuzz pair`; remove it after pairing"
+    prompt: "Legacy Nostr private key (leave empty when paired)"
+    password: true
