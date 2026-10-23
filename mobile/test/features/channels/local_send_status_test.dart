@@ -11,10 +11,13 @@ import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/chat_bubble_row.dart';
 import 'package:kuzz/features/channels/failed_local_messages_provider.dart';
 import 'package:kuzz/features/channels/local_send_status_mark.dart';
+import 'package:kuzz/features/channels/local_send_store.dart';
 import 'package:kuzz/features/channels/pending_local_messages_provider.dart';
 import 'package:kuzz/features/channels/send_message_provider.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _channelId = '11111111-1111-4111-8111-111111111111';
 
@@ -32,13 +35,19 @@ void main() {
 
   Future<(ProviderContainer, _ControlledSession)> openChannel({
     Future<List<ChannelMember>> Function(int build)? members,
+    SharedPreferences? prefs,
+    String? signer,
+    Future<List<NostrEvent>> Function(NostrFilter filter)? lookup,
   }) async {
-    final session = _ControlledSession();
+    final session = _ControlledSession()..lookup = lookup;
     var memberBuilds = 0;
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => session),
-        relayConfigProvider.overrideWith(() => config = _FixedConfig(nsec)),
+        relayConfigProvider.overrideWith(
+          () => config = _FixedConfig(signer ?? nsec),
+        ),
+        if (prefs != null) savedPrefsProvider.overrideWithValue(prefs),
         if (members != null)
           channelMembersProvider(
             _channelId,
@@ -313,6 +322,375 @@ void main() {
     expect(shown(), isEmpty);
   });
 
+  group('stored unsent messages', () {
+    /// Ids of the local sends kept on the device, by signer.
+    Map<String, List<String>> stored(SharedPreferences prefs) => {
+      for (final key in prefs.getKeys())
+        if (key.startsWith('local_sends_v1:'))
+          key.split(':').reversed.elementAt(1): [
+            for (final entry
+                in jsonDecode(prefs.getString(key)!) as List<dynamic>)
+              (entry as Map<String, dynamic>)['id'] as String,
+          ],
+    };
+
+    /// Closes [container] and reopens the preferences as a new app run does.
+    Future<SharedPreferences> restart(
+      ProviderContainer container,
+      SharedPreferences prefs,
+    ) async {
+      container.dispose();
+      final values = {
+        for (final key in prefs.getKeys()) key: prefs.getString(key) as Object,
+      };
+      SharedPreferences.resetStatic();
+      SharedPreferences.setMockInitialValues(values);
+      return SharedPreferences.getInstance();
+    }
+
+    /// Sends one message that fails, then restarts the app. [lookup] answers
+    /// the restart's relay lookup by id.
+    Future<(ProviderContainer, _ControlledSession, NostrEvent)>
+    failThenRestart({
+      Future<List<NostrEvent>> Function(NostrFilter filter)? lookup,
+      String? parentEventId,
+    }) async {
+      SharedPreferences.setMockInitialValues({});
+      var prefs = await SharedPreferences.getInstance();
+      final (first, session) = await openChannel(prefs: prefs);
+      final send = first
+          .read(sendMessageProvider)
+          .call(
+            channelId: _channelId,
+            content: 'offline',
+            parentEventId: parentEventId,
+            mentionPubkeys: const [],
+            keepFailedMessage: true,
+          );
+      final event = await session.nextPublish;
+      session.reject();
+      await send;
+      expect(stored(prefs), {
+        self: [event.id],
+      });
+
+      prefs = await restart(first, prefs);
+      final (container, next) = await openChannel(prefs: prefs, lookup: lookup);
+      await _pumpEventQueue();
+      return (container, next, event);
+    }
+
+    tearDown(SharedPreferences.resetStatic);
+
+    test('a failed row comes back after a restart, still failed', () async {
+      final (container, _, event) = await failThenRestart();
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+    });
+
+    test('retrying a restored row resends it and clears the store', () async {
+      final (container, session, event) = await failThenRestart();
+      final prefs = container.read(savedPrefsProvider);
+      final retry = container
+          .read(sendMessageProvider)
+          .retry(channelId: _channelId, eventId: event.id);
+      final republished = await session.nextPublish;
+      expect(republished.id, event.id);
+      session.accept();
+      await retry;
+
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.sent);
+      expect(stored(prefs), isEmpty);
+    });
+
+    test('deleting a restored row clears the store', () async {
+      final (container, _, event) = await failThenRestart();
+      final prefs = container.read(savedPrefsProvider);
+      container
+          .read(sendMessageProvider)
+          .discard(channelId: _channelId, eventId: event.id);
+
+      expect(rowIds(container), isEmpty);
+      expect(container.read(failedLocalMessagesProvider(_channelId)), isEmpty);
+      expect(stored(prefs), isEmpty);
+    });
+
+    test('the echo of a restored row replaces it once', () async {
+      final (container, session, event) = await failThenRestart();
+      final prefs = container.read(savedPrefsProvider);
+      session.emit(event);
+      await _pumpEventQueue();
+
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.sent);
+      expect(stored(prefs), isEmpty);
+    });
+
+    test('another account never sees the stored row', () async {
+      final (container, _, event) = await failThenRestart();
+      final prefs = await restart(
+        container,
+        container.read(savedPrefsProvider),
+      );
+      final (other, _) = await openChannel(
+        prefs: prefs,
+        signer: nostr.Keys.generate().nsec,
+      );
+      await _pumpEventQueue();
+
+      expect(rowIds(other), isEmpty);
+      expect(other.read(pendingLocalMessagesProvider(_channelId)), isEmpty);
+      expect(stored(prefs), {
+        self: [event.id],
+      });
+    });
+
+    test('a send cut off by the app closing comes back failed', () async {
+      SharedPreferences.setMockInitialValues({});
+      var prefs = await SharedPreferences.getInstance();
+      final (first, session) = await openChannel(prefs: prefs);
+      unawaited(
+        first
+            .read(sendMessageProvider)
+            .call(
+              channelId: _channelId,
+              content: 'in flight',
+              mentionPubkeys: const [],
+              keepFailedMessage: true,
+            ),
+      );
+      final event = await session.nextPublish;
+      expect(statusOf(first, event.id), LocalSendStatus.pending);
+
+      prefs = await restart(first, prefs);
+      final (container, _) = await openChannel(prefs: prefs);
+      await _pumpEventQueue();
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+    });
+
+    test('a restored row the relay has is confirmed and forgotten', () async {
+      NostrEvent? delivered;
+      final lookups = <NostrFilter>[];
+      final (container, _, event) = await failThenRestart(
+        lookup: (filter) async {
+          lookups.add(filter);
+          return [?delivered];
+        },
+      );
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+
+      // Restart once more, now with the relay holding the event.
+      delivered = event;
+      final prefs = await restart(
+        container,
+        container.read(savedPrefsProvider),
+      );
+      final (reopened, _) = await openChannel(
+        prefs: prefs,
+        lookup: (filter) async {
+          lookups.add(filter);
+          return [?delivered];
+        },
+      );
+      await _pumpEventQueue();
+
+      expect(lookups.last.ids, [event.id]);
+      expect(lookups.last.tags['#h'], [_channelId]);
+      expect(rowIds(reopened), [event.id]);
+      expect(statusOf(reopened, event.id), LocalSendStatus.sent);
+      expect(stored(prefs), isEmpty);
+    });
+
+    test(
+      'a restored row waits for the lookup; a failed one marks it',
+      () async {
+        final answer = Completer<List<NostrEvent>>();
+        SharedPreferences.setMockInitialValues({});
+        var prefs = await SharedPreferences.getInstance();
+        final (first, session) = await openChannel(prefs: prefs);
+        final send = first
+            .read(sendMessageProvider)
+            .call(
+              channelId: _channelId,
+              content: 'unknown',
+              mentionPubkeys: const [],
+              keepFailedMessage: true,
+            );
+        final event = await session.nextPublish;
+        session.reject();
+        await send;
+
+        prefs = await restart(first, prefs);
+        final (container, _) = await openChannel(
+          prefs: prefs,
+          lookup: (_) => answer.future,
+        );
+        await _pumpEventQueue();
+        expect(rowIds(container), [event.id]);
+        expect(statusOf(container, event.id), LocalSendStatus.pending);
+
+        answer.completeError(Exception('offline'));
+        await _pumpEventQueue();
+        expect(statusOf(container, event.id), LocalSendStatus.failed);
+        expect(stored(prefs), {
+          self: [event.id],
+        });
+      },
+    );
+
+    test('retrying an unverified row the relay has sends nothing', () async {
+      final (container, session, event) = await failThenRestart(
+        lookup: (_) async => throw Exception('offline'),
+      );
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+      final prefs = container.read(savedPrefsProvider);
+
+      session.lookup = (filter) async => [
+        if (filter.ids!.contains(event.id)) event,
+      ];
+      await container
+          .read(sendMessageProvider)
+          .retry(channelId: _channelId, eventId: event.id);
+
+      expect(session._publishCount, 0);
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.sent);
+      expect(stored(prefs), isEmpty);
+    });
+
+    for (final relayAnswers in [true, false]) {
+      test('retrying an unverified row sends it when the relay '
+          '${relayAnswers ? 'lacks it' : 'cannot say'}', () async {
+        final (container, session, event) = await failThenRestart(
+          lookup: (_) async => throw Exception('offline'),
+        );
+        final prefs = container.read(savedPrefsProvider);
+        var lookups = 0;
+        session.lookup = (_) async {
+          lookups++;
+          if (relayAnswers) return const [];
+          throw Exception('still offline');
+        };
+        final retry = container
+            .read(sendMessageProvider)
+            .retry(channelId: _channelId, eventId: event.id);
+        final republished = await session.nextPublish;
+        expect(lookups, 1);
+        expect(republished.id, event.id);
+        session.accept();
+        await retry;
+
+        expect(statusOf(container, event.id), LocalSendStatus.sent);
+        expect(stored(prefs), isEmpty);
+      });
+    }
+
+    test('a verified row is retried without another lookup', () async {
+      var lookups = 0;
+      final (container, session, event) = await failThenRestart(
+        lookup: (_) async {
+          lookups++;
+          return const [];
+        },
+      );
+      expect(lookups, 1);
+      final retry = container
+          .read(sendMessageProvider)
+          .retry(channelId: _channelId, eventId: event.id);
+      await session.nextPublish;
+      session.accept();
+      await retry;
+      expect(lookups, 1);
+    });
+
+    test('a send without a kept failed row is never stored', () async {
+      SharedPreferences.setMockInitialValues({});
+      var prefs = await SharedPreferences.getInstance();
+      final (first, session) = await openChannel(prefs: prefs);
+      // Agent commands and thread-close markers send this way.
+      unawaited(
+        first
+            .read(sendMessageProvider)
+            .call(
+              channelId: _channelId,
+              content: '/agent do it',
+              mentionPubkeys: const [],
+            )
+            .catchError((Object _) {}),
+      );
+      final event = await session.nextPublish;
+      expect(statusOf(first, event.id), LocalSendStatus.pending);
+      expect(stored(prefs), isEmpty);
+
+      prefs = await restart(first, prefs);
+      final (container, _) = await openChannel(prefs: prefs);
+      await _pumpEventQueue();
+      expect(rowIds(container), isEmpty);
+      expect(container.read(pendingLocalMessagesProvider(_channelId)), isEmpty);
+    });
+
+    test('a failed thread reply comes back in its thread', () async {
+      const args = ThreadRepliesArgs(channelId: _channelId, rootId: 'root');
+      final (container, _, event) = await failThenRestart(
+        parentEventId: 'root',
+      );
+      expect(
+        container.read(threadLocalRepliesProvider(args)).map((e) => e.id),
+        [event.id],
+      );
+      expect(rowIds(container), isEmpty);
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+
+      container
+          .read(sendMessageProvider)
+          .discard(channelId: _channelId, eventId: event.id);
+      expect(container.read(threadLocalRepliesProvider(args)), isEmpty);
+      expect(stored(container.read(savedPrefsProvider)), isEmpty);
+    });
+
+    test('the store keeps the newest 50 sends of the last 7 days', () async {
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      NostrEvent sent(String id, int createdAt) => NostrEvent(
+        id: id,
+        pubkey: self,
+        createdAt: createdAt,
+        kind: EventKind.streamMessage,
+        tags: const [
+          ['h', _channelId],
+        ],
+        content: id,
+        sig: 'sig',
+      );
+      final expired = sent('expired', now - const Duration(days: 8).inSeconds);
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final store = LocalSendStore(prefs, 'https://relay.example');
+      final key = store.keyFor(self, _channelId);
+      await prefs.setString(key, jsonEncode([expired.toJson()]));
+      expect(store.read(key), isEmpty);
+      expect(prefs.containsKey(key), isFalse);
+
+      for (var i = 0; i < 55; i++) {
+        store.put(key, sent('m$i', now - 100 + i));
+      }
+      store.put(key, expired);
+      expect(store.read(key).map((e) => e.id), [
+        for (var i = 5; i < 55; i++) 'm$i',
+      ]);
+    });
+
+    testWidgets('a restored row shows Not sent', (tester) async {
+      final (container, _, event) =
+          await tester.runAsync(failThenRestart) ?? (null, null, null);
+      await tester.pumpWidget(_StatusHarness(container: container!));
+      expect(find.text('offline'), findsOne);
+      expect(find.byKey(ValueKey('local-send-failed-${event!.id}')), findsOne);
+      expect(find.text('Not sent'), findsOne);
+    });
+  });
+
   test('a retry that cannot start names the reason', () {
     expect(
       retryFailureMessage(StateError('Message was written by another account')),
@@ -524,6 +902,8 @@ class _FixedConfig extends RelayConfigNotifier {
 /// A connected session whose channel window is empty and whose publishes the
 /// test answers one at a time.
 class _ControlledSession extends RelaySessionNotifier {
+  /// Answers a lookup by event id; none finds nothing.
+  Future<List<NostrEvent>> Function(NostrFilter filter)? lookup;
   final _listeners = <void Function(NostrEvent)>[];
   final _subscribed = Completer<void>();
   final _announced = <Completer<NostrEvent>>[];
@@ -557,7 +937,11 @@ class _ControlledSession extends RelaySessionNotifier {
   Future<List<NostrEvent>> queryRelay(
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 8),
-  }) async => [_bounds()];
+  }) async {
+    final filter = filters.single;
+    if (filter.ids != null) return await lookup?.call(filter) ?? const [];
+    return [_bounds()];
+  }
 
   @override
   Future<List<NostrEvent>> fetchHistory(
