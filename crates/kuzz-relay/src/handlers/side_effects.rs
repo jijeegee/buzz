@@ -730,9 +730,18 @@ pub async fn validate_admin_event(
                             Err(ChannelAuthzError::ActorNotAuthorized.into())
                         }
                     }
-                    // Non-members fall here. We intentionally do NOT check
-                    // is_agent_owner for non-members — you must be in the channel
-                    // to remove anyone, even your own bot.
+                    // Non-members fall here. Only in a DM or group chat may the
+                    // owner remove their own agent without being in it (the
+                    // read-only owner view); elsewhere you must be in the channel.
+                    RemoveOtherDecision::Deny
+                        if (channel.channel_type == "dm" || channel.group_chat)
+                            && state
+                                .db
+                                .is_agent_owner(tenant.community(), &target_pubkey, &actor_bytes)
+                                .await? =>
+                    {
+                        Ok(())
+                    }
                     RemoveOtherDecision::Deny => Err(ChannelAuthzError::ActorNotAuthorized.into()),
                 }
             }

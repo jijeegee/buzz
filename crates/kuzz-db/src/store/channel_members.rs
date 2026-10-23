@@ -785,16 +785,35 @@ pub async fn remove_member(
     acquire_channel_membership_lock(&mut tx, community_id, channel_id).await?;
 
     if !is_self_remove {
-        let actor_role_str = get_active_role_tx(&mut tx, community_id, channel_id, actor_pubkey)
-            .await?
-            .ok_or_else(|| DbError::AccessDenied("actor is not an active member".to_string()))?;
-        let actor_role: MemberRole = actor_role_str.parse().map_err(|_| {
-            DbError::InvalidData(format!("invalid role in database: {actor_role_str}"))
-        })?;
-        if !actor_role.is_elevated() && !actor_is_agent_owner {
-            return Err(DbError::AccessDenied(
-                "only owners/admins or the agent's owner may remove other members".to_string(),
-            ));
+        match get_active_role_tx(&mut tx, community_id, channel_id, actor_pubkey).await? {
+            Some(actor_role_str) => {
+                let actor_role: MemberRole = actor_role_str.parse().map_err(|_| {
+                    DbError::InvalidData(format!("invalid role in database: {actor_role_str}"))
+                })?;
+                if !actor_role.is_elevated() && !actor_is_agent_owner {
+                    return Err(DbError::AccessDenied(
+                        "only owners/admins or the agent's owner may remove other members"
+                            .to_string(),
+                    ));
+                }
+            }
+            // Read-only owner view: only in a DM or group chat may the owner
+            // remove their own agent without being in it.
+            None => {
+                let dm_or_group_chat: Option<bool> = sqlx::query_scalar(
+                    "SELECT channel_type = 'dm' OR group_chat FROM channels \
+                     WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL",
+                )
+                .bind(community_id.as_uuid())
+                .bind(channel_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if !(actor_is_agent_owner && dm_or_group_chat == Some(true)) {
+                    return Err(DbError::AccessDenied(
+                        "actor is not an active member".to_string(),
+                    ));
+                }
+            }
         }
     }
 
@@ -865,6 +884,53 @@ pub async fn is_member(
     .await?;
     let cnt: i64 = row.try_get("cnt")?;
     Ok(cnt > 0)
+}
+
+/// Returns `true` when `reader` may read the channel as the owner of an agent
+/// in it: the channel is a live DM or group chat and an active member's
+/// `users.agent_owner_pubkey` is `reader`.
+///
+/// Read-only owner view. Never use this for writes, membership, or the
+/// accessible-channel set; callers add the channel request-locally only when
+/// it was explicitly requested.
+pub async fn can_read_via_owned_agent(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    reader: &[u8],
+) -> Result<bool> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let row = sqlx::query(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM channel_members cm
+            JOIN channels c
+              ON c.community_id = cm.community_id
+             AND c.id = cm.channel_id
+             AND c.deleted_at IS NULL
+             AND (c.channel_type = 'dm' OR c.group_chat)
+            JOIN users u
+              ON u.community_id = cm.community_id
+             AND u.pubkey = cm.pubkey
+            WHERE cm.community_id = $1
+              AND cm.channel_id = $2
+              AND cm.removed_at IS NULL
+              AND u.agent_owner_pubkey = $3
+              AND cm.pubkey <> $3
+        ) AS ok
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .bind(reader)
+    .fetch_one(&mut *connection)
+    .await?;
+    Ok(row.try_get("ok")?)
 }
 
 /// Verify that a member is still removed under the channel-membership lock,
@@ -1737,6 +1803,30 @@ impl Db {
         pubkey: &[u8],
     ) -> Result<bool> {
         is_member(&self.pool, community_id, channel_id, pubkey).await
+    }
+
+    /// Read-only owner view; see [`can_read_via_owned_agent`].
+    pub async fn can_read_via_owned_agent(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        reader: &[u8],
+    ) -> Result<bool> {
+        can_read_via_owned_agent(&self.pool, community_id, channel_id, reader).await
+    }
+
+    /// Whether `reader` may read an explicitly requested channel: an active
+    /// member, or the owner of an agent in a DM or group chat.
+    pub async fn can_read_requested_channel(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        reader: &[u8],
+    ) -> Result<bool> {
+        if is_member(&self.pool, community_id, channel_id, reader).await? {
+            return Ok(true);
+        }
+        can_read_via_owned_agent(&self.pool, community_id, channel_id, reader).await
     }
 
     /// Returns `true` when the member row still has `removed_at IS NOT NULL`,
@@ -3622,5 +3712,167 @@ mod postgres_tests {
         assert_eq!(live_id, fresh.id.as_bytes().to_vec());
 
         drop_scratch_db(&admin, pool, &scratch_name).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn owner_reads_only_dm_and_group_chats_of_active_agents() {
+        let pool = setup_pool().await;
+        let community_id = make_test_community(&pool).await;
+        let community = CommunityId::from_uuid(community_id);
+        let owner = random_pubkey();
+        let other_owner = random_pubkey();
+        let agent = random_pubkey();
+        let person = random_pubkey();
+        for pk in [&owner, &other_owner, &agent, &person] {
+            ensure_user(&pool, community, pk)
+                .await
+                .expect("ensure user");
+        }
+        set_agent_owner(&pool, community, &agent, &owner)
+            .await
+            .expect("set agent owner");
+
+        let can_read = |channel_id: Uuid, reader: Vec<u8>| {
+            let pool = pool.clone();
+            async move {
+                can_read_via_owned_agent(&pool, community, channel_id, &reader)
+                    .await
+                    .expect("owner view check")
+            }
+        };
+
+        // DM between a person and the agent: only the agent's owner.
+        let dm = create_test_channel(
+            &pool,
+            community_id,
+            "dm",
+            ChannelType::Dm,
+            ChannelVisibility::Private,
+            None,
+            &person,
+            None,
+        )
+        .await
+        .expect("create dm");
+        add_member(
+            &pool,
+            community,
+            dm.id,
+            &agent,
+            MemberRole::Member,
+            Some(&person),
+        )
+        .await
+        .expect("add agent to dm");
+        assert!(can_read(dm.id, owner.clone()).await);
+        assert!(!can_read(dm.id, other_owner.clone()).await);
+        assert!(!can_read(dm.id, person.clone()).await);
+
+        // Group chat: same rule.
+        let group = create_test_channel(
+            &pool,
+            community_id,
+            "group",
+            ChannelType::Stream,
+            ChannelVisibility::Private,
+            None,
+            &person,
+            None,
+        )
+        .await
+        .expect("create group chat");
+        sqlx::query("UPDATE channels SET group_chat = true WHERE id = $1")
+            .bind(group.id)
+            .execute(&pool)
+            .await
+            .expect("mark group chat");
+        add_member(
+            &pool,
+            community,
+            group.id,
+            &agent,
+            MemberRole::Member,
+            Some(&person),
+        )
+        .await
+        .expect("add agent to group chat");
+        assert!(can_read(group.id, owner.clone()).await);
+
+        // A regular channel never opens to the owner.
+        let stream = create_test_channel(
+            &pool,
+            community_id,
+            "stream",
+            ChannelType::Stream,
+            ChannelVisibility::Private,
+            None,
+            &person,
+            None,
+        )
+        .await
+        .expect("create stream");
+        add_member(
+            &pool,
+            community,
+            stream.id,
+            &agent,
+            MemberRole::Member,
+            Some(&person),
+        )
+        .await
+        .expect("add agent to stream");
+        assert!(!can_read(stream.id, owner.clone()).await);
+
+        // Removing the agent closes the view.
+        remove_member(&pool, community, dm.id, &agent, &agent)
+            .await
+            .expect("agent leaves dm");
+        assert!(!can_read(dm.id, owner.clone()).await);
+
+        // The owner may remove the agent from a group chat without being in
+        // it, but not from a regular channel, and nobody else may.
+        assert!(remove_member(&pool, community, stream.id, &agent, &owner)
+            .await
+            .is_err());
+        assert!(
+            remove_member(&pool, community, group.id, &agent, &other_owner)
+                .await
+                .is_err()
+        );
+        remove_member(&pool, community, group.id, &agent, &owner)
+            .await
+            .expect("owner removes agent from group chat");
+        assert!(!can_read(group.id, owner.clone()).await);
+        add_member(
+            &pool,
+            community,
+            group.id,
+            &agent,
+            MemberRole::Member,
+            Some(&person),
+        )
+        .await
+        .expect("agent rejoins group chat");
+        assert!(can_read(group.id, owner.clone()).await);
+
+        // A deleted group chat closes the view.
+        sqlx::query("UPDATE channels SET deleted_at = NOW() WHERE id = $1")
+            .bind(group.id)
+            .execute(&pool)
+            .await
+            .expect("delete group chat");
+        assert!(!can_read(group.id, owner.clone()).await);
+
+        // Members still read through the requested-channel check.
+        let db = Db::from_pool(pool.clone());
+        assert!(db
+            .can_read_requested_channel(community, stream.id, &person)
+            .await
+            .expect("member check"));
+        assert!(!db
+            .can_read_requested_channel(community, stream.id, &owner)
+            .await
+            .expect("owner check"));
     }
 }

@@ -127,11 +127,28 @@ fn event_id(value: &Value) -> Option<Vec<u8>> {
     (bytes.len() == 32).then_some(bytes)
 }
 
+/// The optional `as_agent` pubkey: list that agent's chats for its owner.
+fn parse_as_agent(filters: &[Value]) -> Result<Option<nostr::PublicKey>, QueryError> {
+    let object = envelope_object(
+        filters,
+        Envelope::ChatList,
+        &["limit", "before", "pinned_threads", "as_agent"],
+    )?;
+    match object.get("as_agent") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_str()
+            .and_then(|hex| nostr::PublicKey::from_hex(hex).ok())
+            .map(Some)
+            .ok_or_else(|| bad("chat_list as_agent must be a 64-hex pubkey")),
+    }
+}
+
 fn parse_chat_list(filters: &[Value], now: DateTime<Utc>) -> Result<ChatListQuery, QueryError> {
     let object = envelope_object(
         filters,
         Envelope::ChatList,
-        &["limit", "before", "pinned_threads"],
+        &["limit", "before", "pinned_threads", "as_agent"],
     )?;
     let limit = match object.get("limit") {
         None => DEFAULT_LIMIT,
@@ -432,6 +449,9 @@ async fn chat_list(
     filters: &[Value],
 ) -> Result<Json<Value>, QueryError> {
     let query = parse_chat_list(filters, Utc::now())?;
+    if let Some(agent) = parse_as_agent(filters)? {
+        return agent_chat_list(state, tenant, reader, &agent, query).await;
+    }
     let reader_bytes = reader.to_bytes();
     let accessible = state
         .get_accessible_channel_ids_cached(tenant.community(), &reader_bytes)
@@ -459,6 +479,76 @@ async fn chat_list(
         "rows": rows,
         "next": next,
     })))
+}
+
+/// Read-only owner view: the DMs and group chats of `agent` that `owner` is
+/// not in. Only the agent's owner may ask. The agent's own read state is
+/// stripped; the owner has none for these rooms.
+async fn agent_chat_list(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    owner: &nostr::PublicKey,
+    agent: &nostr::PublicKey,
+    mut query: ChatListQuery,
+) -> Result<Json<Value>, QueryError> {
+    let owner_bytes = owner.to_bytes();
+    let owns = state
+        .db
+        .is_agent_owner(tenant.community(), &agent.to_bytes(), &owner_bytes)
+        .await
+        .map_err(|e| internal_error(&format!("agent owner lookup: {e}")))?;
+    if !owns {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "chat_list as_agent: not your agent",
+        ));
+    }
+    query.pinned_threads.clear();
+    let owner_rooms = state
+        .get_accessible_channel_ids_cached(tenant.community(), &owner_bytes)
+        .await
+        .map_err(|e| internal_error(&format!("channel access lookup: {e}")))?;
+    let page = state
+        .db
+        .chat_list(tenant.community(), agent, &query)
+        .await
+        .map_err(|e| internal_error(&format!("chat list: {e}")))?;
+    let next = page
+        .rows
+        .last()
+        .filter(|_| page.has_more)
+        .map(|row| json!({ "at_us": row.at.timestamp_micros(), "key": row.key }));
+    let rows: Vec<Value> = page
+        .rows
+        .into_iter()
+        .filter(|row| owner_view_row(row, &owner_rooms))
+        .map(|row| owner_view_json(row_json(row, &owner_bytes)))
+        .collect();
+    Ok(Json(json!({
+        "chat_list": 1,
+        "as_agent": agent.to_hex(),
+        "rows": rows,
+        "next": next,
+    })))
+}
+
+/// A DM or group chat the owner is not already in (those are in Chats).
+fn owner_view_row(row: &ChatListRow, owner_rooms: &[Uuid]) -> bool {
+    (row.channel_type == "dm" || row.group_chat) && !owner_rooms.contains(&row.channel_id)
+}
+
+/// Drop the agent's read position; the owner sees new activity by `last_seq`.
+fn owner_view_json(mut value: Value) -> Value {
+    for key in ["read_seq", "unread_mark"] {
+        value[key] = Value::Null;
+    }
+    for key in ["unread", "unread_mentions"] {
+        value[key] = json!(0);
+    }
+    for key in ["unread_overflow", "unread_mentions_overflow"] {
+        value[key] = json!(false);
+    }
+    value
 }
 
 #[cfg(test)]
@@ -1129,5 +1219,132 @@ mod postgres_tests {
             .query(&reader, json!({"chat_import": 1, "reads": []}))
             .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    /// Signed NIP-29 remove-user (9001) of `target` from `room`.
+    fn remove_user(room: Uuid, actor: &Keys, target: &Keys) -> nostr::Event {
+        EventBuilder::new(Kind::Custom(9001), "")
+            .tags(vec![
+                Tag::parse(["h", &room.to_string()]).expect("h"),
+                Tag::parse(["p", &target.public_key().to_hex()]).expect("p"),
+            ])
+            .sign_with_keys(actor)
+            .expect("sign")
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn owner_reads_and_leaves_agent_chats_read_only() {
+        let f = Fixture::new(true).await;
+        let (owner, agent, person, stranger) = (
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+        );
+        for key in [&owner, &agent, &person, &stranger] {
+            f.state
+                .db
+                .ensure_user(f.community, &key.public_key().to_bytes())
+                .await
+                .expect("user");
+        }
+        f.state
+            .db
+            .set_agent_owner(
+                f.community,
+                &agent.public_key().to_bytes(),
+                &owner.public_key().to_bytes(),
+            )
+            .await
+            .expect("agent owner");
+
+        // Group chat of the agent and a person (owner not in it), a group chat
+        // the owner is also in, and a regular channel.
+        let watched = f.room(&person, &[&agent]).await;
+        let shared = f.room(&person, &[&agent, &owner]).await;
+        let channel = f.room(&person, &[&agent]).await;
+        for room in [watched, shared] {
+            sqlx::query("UPDATE channels SET group_chat = true WHERE id = $1")
+                .bind(room)
+                .execute(f.state.db.pool())
+                .await
+                .expect("group chat");
+        }
+        let said = f.sign(watched, &agent, 100, Vec::new());
+        f.publish(&said, &agent).await;
+        f.publish(&f.sign(watched, &person, 101, Vec::new()), &person)
+            .await;
+        let hidden = f.sign(channel, &agent, 102, Vec::new());
+        f.publish(&hidden, &agent).await;
+
+        // The list holds only the watched chat, without the agent's read state.
+        let as_agent = json!({"chat_list": 1, "as_agent": agent.public_key().to_hex()});
+        let (status, body) = f.query(&owner, as_agent.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["as_agent"], agent.public_key().to_hex());
+        let rows = body["rows"].as_array().expect("rows");
+        assert_eq!(rows.len(), 1, "{body}");
+        assert_eq!(rows[0]["channel_id"], watched.to_string());
+        assert_eq!(rows[0]["unread"], 0);
+        assert!(rows[0]["read_seq"].is_null());
+        let (status, _) = f.query(&stranger, as_agent.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = f.query(&agent, as_agent.clone()).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "an agent is not its own owner"
+        );
+
+        // Explicitly requested history: the owner reads the watched chat only.
+        let history = |room: Uuid| json!({"kinds": [9], "#h": [room]});
+        let (_, body) = f.query(&owner, history(watched)).await;
+        assert!(body.to_string().contains(&said.id.to_hex()), "{body}");
+        for (key, room, event) in [(&stranger, watched, &said), (&owner, channel, &hidden)] {
+            let (_, body) = f.query(key, history(room)).await;
+            assert!(!body.to_string().contains(&event.id.to_hex()), "{body}");
+        }
+        // Nothing leaks into the owner's own unscoped reads.
+        let (_, body) = f.query(&owner, json!({"kinds": [9]})).await;
+        assert!(!body.to_string().contains(&said.id.to_hex()), "{body}");
+        let (_, body) = f.query(&owner, json!({"chat_list": 1})).await;
+        assert!(row(&body, &watched.to_string()).is_none(), "{body}");
+        // The owner cannot write there.
+        let (_, body) = f
+            .send(
+                "/events",
+                &owner,
+                &serde_json::to_value(f.sign(watched, &owner, 103, Vec::new())).expect("event"),
+            )
+            .await;
+        assert_ne!(body["accepted"], true, "{body}");
+
+        // The owner may remove the agent from the chat, not from a channel,
+        // and nobody else's agent.
+        let (_, body) = f
+            .send(
+                "/events",
+                &owner,
+                &serde_json::to_value(remove_user(channel, &owner, &agent)).expect("event"),
+            )
+            .await;
+        assert_ne!(body["accepted"], true, "{body}");
+        let (_, body) = f
+            .send(
+                "/events",
+                &stranger,
+                &serde_json::to_value(remove_user(watched, &stranger, &agent)).expect("event"),
+            )
+            .await;
+        assert_ne!(body["accepted"], true, "{body}");
+        f.publish(&remove_user(watched, &owner, &agent), &owner)
+            .await;
+
+        // With the agent gone the owner loses the chat too.
+        let (_, body) = f.query(&owner, as_agent).await;
+        assert!(body["rows"].as_array().expect("rows").is_empty(), "{body}");
+        let (_, body) = f.query(&owner, history(watched)).await;
+        assert!(!body.to_string().contains(&said.id.to_hex()), "{body}");
     }
 }

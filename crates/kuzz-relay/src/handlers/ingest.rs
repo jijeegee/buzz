@@ -3026,7 +3026,7 @@ async fn ingest_event_inner(
     if let Some(ch_id) = channel_id {
         // kind:9021 (join) doesn't require prior membership.
         // kind:9007 (create) — channel doesn't exist yet; creator becomes owner in step 16.
-        // kind:40003/9002/9005/9008 — per-kind validators are the authority; they
+        // kind:40003/9001/9002/9005/9008 — per-kind validators are the authority; they
         // individually enforce authorization and fail closed. Bypassing the generic
         // member/open gate here lets the owning human act on private agent channels
         // without being a member (OQ1 decision; see validate_edit_ownership /
@@ -3035,6 +3035,7 @@ async fn ingest_event_inner(
             || kind_u32 == KIND_NIP29_CREATE_GROUP
             || kind_u32 == KIND_STREAM_MESSAGE_EDIT
             || kind_u32 == KIND_NIP29_EDIT_METADATA
+            || kind_u32 == KIND_NIP29_REMOVE_USER
             || kind_u32 == KIND_NIP29_DELETE_EVENT
             || kind_u32 == KIND_NIP29_DELETE_GROUP;
         if !skip_membership {

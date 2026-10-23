@@ -358,7 +358,20 @@ pub async fn filter_fanout_by_access(
             .await
         {
             Ok(true) => allowed.push((conn_id, sub_id)),
-            Ok(false) => {}
+            // Read-only owner view: a non-member only reaches here through a
+            // subscription that explicitly named this channel. Checked fresh,
+            // so removing the agent stops delivery on the next event.
+            Ok(false) => match state
+                .db
+                .can_read_via_owned_agent(community_id, channel_id, &pubkey)
+                .await
+            {
+                Ok(true) => allowed.push((conn_id, sub_id)),
+                Ok(false) => {}
+                Err(e) => {
+                    warn!(%channel_id, "fan-out access filter: owner view lookup failed: {e}");
+                }
+            },
             Err(e) => {
                 warn!(%channel_id, "fan-out access filter: membership lookup failed: {e}");
             }

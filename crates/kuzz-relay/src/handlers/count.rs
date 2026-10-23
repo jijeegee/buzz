@@ -154,7 +154,7 @@ pub async fn handle_count(
                 let db_is_member = if token_allows {
                     match state
                         .db
-                        .is_member(conn.tenant.community(), ch_id, &pubkey_bytes)
+                        .can_read_requested_channel(conn.tenant.community(), ch_id, &pubkey_bytes)
                         .await
                     {
                         Ok(member) => Some(member),

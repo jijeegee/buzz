@@ -144,7 +144,19 @@ impl Db {
                                         WHERE cm.community_id = $1
                                           AND cm.channel_id = r.channel_id
                                           AND cm.pubkey = $3
-                                          AND cm.removed_at IS NULL)))))
+                                          AND cm.removed_at IS NULL)
+                                    -- Read-only owner view: the owner of an
+                                    -- agent in a DM or group chat.
+                                    OR ((c.channel_type = 'dm' OR c.group_chat)
+                                        AND EXISTS (
+                                        SELECT 1 FROM channel_members cm
+                                        JOIN users au
+                                          ON au.community_id = cm.community_id
+                                         AND au.pubkey = cm.pubkey
+                                        WHERE cm.community_id = $1
+                                          AND cm.channel_id = r.channel_id
+                                          AND cm.removed_at IS NULL
+                                          AND au.agent_owner_pubkey = $3))))))
                OR EXISTS (
                     SELECT 1 FROM communities co
                     WHERE co.id = $1 AND co.icon LIKE '%/media/' || h.sha || '%')

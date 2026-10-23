@@ -2148,7 +2148,7 @@ async fn repair_requested_channel_access(
             }
             let is_member = state
                 .db
-                .is_member(tenant.community(), channel_id, pubkey_bytes)
+                .can_read_requested_channel(tenant.community(), channel_id, pubkey_bytes)
                 .await
                 .map_err(|e| internal_error(&format!("channel membership confirmation: {e}")))?;
             crate::handlers::req::resolve_request_local_access(
