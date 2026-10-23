@@ -7720,5 +7720,53 @@
         "example": "English"
       }
     }
+  },
+  "appUpdateRequiredTitle": "Update required",
+  "@appUpdateRequiredTitle": {
+    "description": "Title of the full-screen page shown when this app version is too old to use."
+  },
+  "appUpdateRequiredBody": "This version of Kuzz is no longer supported. Update to keep using it.",
+  "@appUpdateRequiredBody": {
+    "description": "Body of the full-screen required-update page."
+  },
+  "appUpdateAvailable": "Kuzz {version} is available.",
+  "@appUpdateAvailable": {
+    "description": "Bottom bar text when an optional app update exists.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "0.6.2"
+      }
+    }
+  },
+  "appUpdateInstall": "Update",
+  "@appUpdateInstall": {
+    "description": "Button that downloads and installs the app update."
+  },
+  "appUpdateLater": "Later",
+  "@appUpdateLater": {
+    "description": "Button that postpones an optional app update."
+  },
+  "appUpdateDownloading": "Downloading…",
+  "@appUpdateDownloading": {
+    "description": "Update button label while the update downloads and its size is unknown."
+  },
+  "appUpdateDownloadingPercent": "Downloading {percent}%",
+  "@appUpdateDownloadingPercent": {
+    "description": "Update button label with download progress.",
+    "placeholders": {
+      "percent": {
+        "type": "int",
+        "example": "42"
+      }
+    }
+  },
+  "appUpdateRetry": "Try again",
+  "@appUpdateRetry": {
+    "description": "Button that checks for the update again after the check failed."
+  },
+  "appUpdateFailed": "Couldn’t update. Check your connection and try again.",
+  "@appUpdateFailed": {
+    "description": "Error shown when downloading or opening the update failed."
   }
 }

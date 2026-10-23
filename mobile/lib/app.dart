@@ -30,6 +30,7 @@ import 'features/sign_in/token_sign_in_page.dart';
 import 'features/sign_in/signed_out_page.dart';
 import 'shared/auth/auth.dart';
 import 'shared/auth/token/token.dart';
+import 'shared/app_update/app_update_gate.dart';
 import 'shared/community/add_community_route.dart';
 import 'shared/deeplink/pending_deep_link_provider.dart';
 import 'shared/devices/agent_host_devices.dart';
@@ -225,17 +226,19 @@ class App extends HookConsumerWidget {
       // route that was pushed while the store signal request was in flight.
       builder: (context, child) => AppL10nScope(
         child: AccountLocaleSync(
-          child: switch (ageSignalState) {
-            AgeSignalState.restricted => const AgeRestrictionPage(),
-            _ => AppMarkdownTheme(
-              child: MobileHuddleShell(
-                navigatorKey: _mobileRootNavigatorKey,
-                child: EmojiBurstOverlay(
-                  child: child ?? const SizedBox.shrink(),
+          child: AppUpdateGate(
+            child: switch (ageSignalState) {
+              AgeSignalState.restricted => const AgeRestrictionPage(),
+              _ => AppMarkdownTheme(
+                child: MobileHuddleShell(
+                  navigatorKey: _mobileRootNavigatorKey,
+                  child: EmojiBurstOverlay(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
-            ),
-          },
+            },
+          ),
         ),
       ),
       home: authState.when(
