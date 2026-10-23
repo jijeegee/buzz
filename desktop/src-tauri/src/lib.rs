@@ -21,6 +21,7 @@ mod identity_storage;
 mod initial_window;
 mod key_backup;
 mod link_preview_tags;
+mod launch_at_login;
 mod linux_media;
 #[cfg(target_os = "macos")]
 mod macos_notifications;
@@ -169,6 +170,13 @@ pub fn run() {
                     // commit the startup surface before revealing it.
                     let window = webview.window();
 
+                    // Started by the login item: stay in the tray until the
+                    // user opens Kuzz.
+                    #[cfg(any(target_os = "macos", windows))]
+                    if launch_at_login::launched_at_login() {
+                        return;
+                    }
+
                     #[cfg(target_os = "macos")]
                     {
                         set_initial_window_backing(&window);
@@ -209,7 +217,8 @@ pub fn run() {
         )
         .plugin(native_websocket::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .plugin(launch_at_login::plugin());
 
     // The push-to-talk global-shortcut plugin lives in `ptt_shortcut`, next to
     // the registration lifecycle it drives. Installing it is a no-op in test
@@ -1014,6 +1023,8 @@ pub fn run() {
             archive::sync::start_archive_sync,
             archive::sync::stop_archive_sync,
             is_auto_update_supported,
+            launch_at_login::get_launch_at_login,
+            launch_at_login::set_launch_at_login,
             set_window_vibrancy,
             #[cfg(any(target_os = "macos", windows))]
             tray_menu::clear_tray_agent_activity,

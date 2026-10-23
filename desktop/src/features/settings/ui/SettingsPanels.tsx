@@ -20,6 +20,7 @@ import {
   Sun,
   SunMoon,
   KeyRound,
+  Settings2,
   MonitorSmartphone,
   ShieldCheck,
   Ticket,
@@ -64,12 +65,12 @@ import {
   ConversationDisplaySettings,
   GlassBackgroundSetting,
   LinkPreviewStyleSetting,
-  LanguageSetting,
   ProminentActiveTabSetting,
   ThreadLayoutSetting,
 } from "./AppearanceSettingsControls";
 import { ChannelTemplatesSettingsCard } from "./ChannelTemplatesSettingsCard";
 import { ExperimentalFeaturesCard } from "./ExperimentalFeaturesCard";
+import { GeneralSettingsCard } from "./GeneralSettingsCard";
 import { KeyboardShortcutsCard } from "./KeyboardShortcutsCard";
 import { MeshComputeSettingsCard } from "@/features/mesh-compute/ui/MeshComputeSettingsCard";
 import { MobilePairingCard } from "./MobilePairingCard";
@@ -96,6 +97,7 @@ import { Layer0GoalCard } from "@/features/goals/ui/Layer0GoalCard";
 import { type MessageKey, useT } from "@/shared/i18n";
 
 export type SettingsSection =
+  | "general"
   | "profile"
   | "account"
   | "devices"
@@ -117,9 +119,10 @@ export type SettingsSection =
   | "mobile"
   | "updates";
 
-export const DEFAULT_SETTINGS_SECTION: SettingsSection = "account";
+export const DEFAULT_SETTINGS_SECTION: SettingsSection = "general";
 
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
+  "general",
   "profile",
   "account",
   "devices",
@@ -173,6 +176,11 @@ export type SettingsPanelProps = {
 };
 
 export const settingsSections: SettingsSectionDescriptor[] = [
+  {
+    value: "general",
+    labelKey: "settings.nav.general",
+    icon: Settings2,
+  },
   {
     value: "appearance",
     labelKey: "settings.nav.appearance",
@@ -703,13 +711,6 @@ function ThemeSettingsCard() {
 
       <SettingsOptionGroupList>
         <SettingsOptionGroup
-          data-testid="appearance-language-card"
-          title={t("settings.language.title")}
-        >
-          <LanguageSetting />
-        </SettingsOptionGroup>
-
-        <SettingsOptionGroup
           data-testid="appearance-theme-card"
           headerAction={
             showCommunityScope && activeCommunity ? (
@@ -879,6 +880,8 @@ export function renderSettingsSection(
   props: SettingsPanelProps,
 ): React.ReactNode {
   switch (section) {
+    case "general":
+      return <GeneralSettingsCard />;
     case "profile":
       return (
         <>

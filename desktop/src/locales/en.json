@@ -9987,6 +9987,10 @@
   "@reminders.detail.openMessage": {
     "description": "Reminder detail pane, button that jumps to the reminded message. Short."
   },
+  "settings.nav.general": "General",
+  "@settings.nav.general": {
+    "description": "Settings sidebar, section link and tooltip for general app settings (language, starting with the computer). Short."
+  },
   "settings.nav.appearance": "Appearance",
   "@settings.nav.appearance": {
     "description": "Settings sidebar, section link and tooltip. Short."
@@ -10118,6 +10122,34 @@
   "settings.appearanceTheme.description": "Choose how Kuzz looks and feels.",
   "@settings.appearanceTheme.description": {
     "description": "Settings › Appearance, text under the page title."
+  },
+  "settings.general.title": "General",
+  "@settings.general.title": {
+    "description": "Settings › General, page title."
+  },
+  "settings.general.description": "Language and how Kuzz starts.",
+  "@settings.general.description": {
+    "description": "Settings › General, text under the page title."
+  },
+  "settings.general.startupTitle": "Startup",
+  "@settings.general.startupTitle": {
+    "description": "Settings › General, title of the group about starting Kuzz with the computer. Short."
+  },
+  "settings.general.launchAtLogin": "Open Kuzz when your computer starts",
+  "@settings.general.launchAtLogin": {
+    "description": "Settings › General, switch label: start Kuzz automatically when the user signs in to the computer."
+  },
+  "settings.general.launchAtLoginHint": "Kuzz starts in the tray, so your agents keep running without opening the window.",
+  "@settings.general.launchAtLoginHint": {
+    "description": "Settings › General, hint under the start-with-computer switch on Windows; the tray is the notification area of the taskbar."
+  },
+  "settings.general.launchAtLoginHintMac": "Kuzz starts in the menu bar, so your agents keep running without opening the window.",
+  "@settings.general.launchAtLoginHintMac": {
+    "description": "Settings › General, hint under the start-with-computer switch on macOS."
+  },
+  "settings.general.launchAtLoginFailed": "Couldn’t change this setting: {error}",
+  "@settings.general.launchAtLoginFailed": {
+    "description": "Settings › General, error under the start-with-computer switch; {error} is a technical error message."
   },
   "settings.appearanceTheme.theme": "Theme",
   "@settings.appearanceTheme.theme": {
@@ -25657,15 +25689,15 @@
   },
   "settings.language.label": "App language",
   "@settings.language.label": {
-    "description": "Settings > Appearance > Language: label of the language picker. Short."
+    "description": "Settings > General > Language: label of the language picker. Short."
   },
   "settings.language.hint": "Kuzz uses your computer's language unless you pick one here.",
   "@settings.language.hint": {
-    "description": "Settings > Appearance > Language: grey hint under 'App language'."
+    "description": "Settings > General > Language: grey hint under 'App language'."
   },
   "settings.language.device": "Same as device ({language})",
   "@settings.language.device": {
-    "description": "Settings > Appearance > Language: first choice in the language list, follows the computer's language. {language} is that language's own name, e.g. 'Deutsch'. Short."
+    "description": "Settings > General > Language: first choice in the language list, follows the computer's language. {language} is that language's own name, e.g. 'Deutsch'. Short."
   },
   "ownerView.tabs.label": "Agent views",
   "@ownerView.tabs.label": {
