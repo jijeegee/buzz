@@ -119,18 +119,15 @@ test("a forum post mentioning an agent outside the group sends as written", asyn
 }) => {
   await install(page);
   await page.getByRole("button", { name: "Start a new post..." }).click();
-  await page.getByTestId("message-input").fill("@Remote");
-  const row = page.getByTestId(`mention-suggestion-${REMOTE}`);
-  await expect(row).toContainText("RemoteScout");
-  await row.locator("button").first().click();
-  await page.keyboard.type("hello");
+  // The @ list offers room members only, so an outside agent is typed out.
+  await page.getByTestId("message-input").fill("@RemoteScout hello");
+  await expect(page.getByTestId(`mention-suggestion-${REMOTE}`)).toHaveCount(0);
   await page.getByTestId("send-message").click();
 
   await expect.poll(async () => (await forumSends(page, 45001)).length).toBe(1);
   expect((await forumSends(page, 45001))[0].payload).toEqual(
     expect.objectContaining({
       channelId: FORUM,
-      mentionPubkeys: [REMOTE],
       content: "@RemoteScout hello",
     }),
   );
