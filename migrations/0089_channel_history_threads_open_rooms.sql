@@ -1,4 +1,4 @@
--- since_join, second step (0081 first):
+-- since_join, second step (0088 first):
 --  * a thread reply is cut together with its root, even when the reply came
 --    after the reader's join (events.thread_root_sequence);
 --  * open rooms follow the policy too: members get their floor, non-members
@@ -49,7 +49,7 @@ CREATE TRIGGER stamp_thread_root_sequence
 AFTER INSERT ON thread_metadata
 FOR EACH ROW EXECUTE FUNCTION stamp_thread_root_sequence();
 
--- Write-fenced (deleting or deleted) communities are skipped, as in 0081:
+-- Write-fenced (deleting or deleted) communities are skipped, as in 0088:
 -- their rows are not served and cannot be written.
 UPDATE events e SET thread_root_sequence = r.channel_sequence
   FROM thread_metadata tm
@@ -71,7 +71,7 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
            AND (hc.history_policy = 'since_join' OR hc.group_chat))
 $$;
 
--- Redefines 0081. Non-members of a cutting room (open rooms included) get the
+-- Redefines 0088. Non-members of a cutting room (open rooms included) get the
 -- largest sequence: they read no history, only room state.
 CREATE OR REPLACE FUNCTION channel_history_floor(p_cid UUID, p_chid UUID, p_reader BYTEA)
 RETURNS BIGINT
@@ -86,7 +86,7 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
     END
 $$;
 
--- Redefines 0081: targets are judged by their history sequence, so a
+-- Redefines 0088: targets are judged by their history sequence, so a
 -- reaction, edit or deletion of a reply in an old thread is cut too.
 CREATE OR REPLACE FUNCTION channel_event_targets_before_join(
     p_cid UUID, p_chid UUID, p_kind INTEGER, p_tags JSONB, p_reader BYTEA)
@@ -116,7 +116,7 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
     END
 $$;
 
--- Redefines 0081: "also send to channel" copies of replies in old threads
+-- Redefines 0088: "also send to channel" copies of replies in old threads
 -- never count.
 CREATE OR REPLACE FUNCTION chat_room_unread(
     p_cid UUID, p_chid UUID, p_reader BYTEA, p_after BIGINT,
@@ -175,7 +175,7 @@ BEGIN
 END
 $$;
 
--- Redefines 0081 (open rooms and group chats cut too).
+-- Redefines 0088 (open rooms and group chats cut too).
 CREATE OR REPLACE FUNCTION tally_channel_member_unread() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 DECLARE

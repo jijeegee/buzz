@@ -641,7 +641,7 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
     });
     qb.push(" AND (");
     // A reply in a thread whose root is before the join is cut with it
-    // (thread_root_sequence, migration 0082).
+    // (thread_root_sequence, migration 0089).
     if let Some(channel) = q.channel_id {
         for column in ["channel_sequence", "thread_root_sequence"] {
             if column == "channel_sequence" {

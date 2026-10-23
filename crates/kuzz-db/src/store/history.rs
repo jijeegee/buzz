@@ -4,7 +4,7 @@
 //! events after their current join (`channel_members.join_sequence`). Open
 //! rooms and legacy-stamped memberships keep full history. The rule lives in
 //! SQL (`channel_history_floor`, `channel_event_before_join`, migration
-//! 0081); these lookups serve read paths that cannot fold it into their own
+//! 0088); these lookups serve read paths that cannot fold it into their own
 //! query (lookups by id, stored summary counters).
 
 use kuzz_core::CommunityId;
@@ -19,7 +19,7 @@ use crate::Db;
 pub const MAX_HISTORY_EVENT_LOOKUP: usize = 5000;
 
 /// Current room state (never cut). Mirrors SQL `channel_kind_is_room_state`
-/// (migration 0081).
+/// (migration 0088).
 pub fn is_room_state_kind(kind: i32) -> bool {
     matches!(kind, 9007 | 40100 | 40110 | 10_000..=19_999 | 30_000..=39_999)
 }
@@ -298,7 +298,7 @@ impl Db {
 
     /// Of `readers`, those for whom any of `targets` that lives in `channel`
     /// is hidden: written before their join, or a reply in a thread whose
-    /// root was (migration 0082). Non-members of an open room that cuts
+    /// root was (migration 0089). Non-members of an open room that cuts
     /// history are hidden from everything. Live delivery uses it with the
     /// event itself and, for a reaction, edit, deletion or summary, what it
     /// is about. Targets outside `channel` are ignored; none in it hides

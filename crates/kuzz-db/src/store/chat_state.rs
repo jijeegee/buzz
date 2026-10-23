@@ -141,7 +141,7 @@ pub(crate) async fn apply_message_write(
     let author = author.as_slice();
 
     // The thread root's sequence is stamped by the thread metadata insert
-    // earlier in this transaction (migration 0082); members who joined after
+    // earlier in this transaction (migration 0089); members who joined after
     // the root never count the reply.
     let seqs: Option<(i64, i64)> = sqlx::query_as(
         "SELECT channel_sequence, thread_root_sequence FROM events \

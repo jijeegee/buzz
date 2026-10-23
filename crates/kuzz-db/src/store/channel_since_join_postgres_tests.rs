@@ -1107,7 +1107,7 @@ async fn replies_in_an_old_thread_are_cut_with_their_root() {
     let member = f.member.public_key().to_bytes().to_vec();
     let owner = f.owner.public_key().to_bytes().to_vec();
 
-    // Stored on the reply rows (migration 0082 trigger).
+    // Stored on the reply rows (migration 0089 trigger).
     let stamped: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM events WHERE community_id = $1 AND channel_id = $2 \
           AND thread_root_sequence > 0",

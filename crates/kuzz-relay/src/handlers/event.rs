@@ -465,7 +465,7 @@ async fn drop_readers_blind_to_history(
         return matches;
     }
     // The event's own history sequence carries its thread root's (stored
-    // by ingest, migration 0082), so its id stands for the reply case. A
+    // by ingest, migration 0089), so its id stands for the reply case. A
     // deletion is blind only when everything it deletes is.
     let deletion = matches!(
         kind,
