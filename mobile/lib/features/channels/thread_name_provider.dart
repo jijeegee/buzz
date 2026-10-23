@@ -12,6 +12,9 @@ import '../../shared/theme/theme_provider.dart';
 
 typedef ThreadNameKey = ({String channelId, String headId});
 
+/// Maximum name weight: ASCII characters cost one, other characters two.
+const maxThreadNameWeight = 40;
+
 int threadNameWeight(String name) =>
     name.runes.fold(0, (weight, rune) => weight + (rune < 128 ? 1 : 2));
 
@@ -21,7 +24,7 @@ String? threadNameError(String name) {
   )) {
     return appL10n.threadNameControlCharsError;
   }
-  if (threadNameWeight(name) > 40) {
+  if (threadNameWeight(name) > maxThreadNameWeight) {
     return appL10n.threadNameTooLongError;
   }
   return null;

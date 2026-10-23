@@ -2910,7 +2910,6 @@
   "messages.threadName.retry": "Name neu laden",
   "messages.threadName.title": "Thread-Name",
   "messages.threadName.description": "Für alle in dieser Gruppe sichtbar. Bis zu 40 englische oder 20 koreanische Zeichen. Leer lassen, um den Namen zu entfernen.",
-  "messages.threadName.count": "{count} / 40 · Englisch 1, Koreanisch 2",
   "messages.threadName.saving": "Speichert…",
   "messages.send.notSent": "Nicht gesendet",
   "messages.send.sending": "Wird gesendet",

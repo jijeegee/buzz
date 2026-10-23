@@ -2909,7 +2909,6 @@
   "messages.threadName.retry": "Повторить",
   "messages.threadName.title": "Название ветки",
   "messages.threadName.description": "Видно всем в этой группе. До 40 английских или 20 корейских символов. Оставьте пустым, чтобы убрать название.",
-  "messages.threadName.count": "{count} / 40 · английский 1, корейский 2",
   "messages.threadName.saving": "Сохранение…",
   "messages.send.notSent": "Не отправлено",
   "messages.send.sending": "Отправка",

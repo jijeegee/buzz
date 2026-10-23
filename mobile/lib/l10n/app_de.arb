@@ -1381,7 +1381,6 @@
   "threadNameTitle": "Thread-Name",
   "threadNameBody": "Für alle in dieser Gruppe sichtbar. Bis zu 40 englische oder 20 koreanische Zeichen. Leer lassen, um den Namen zu entfernen.",
   "threadNameLabel": "Name",
-  "threadNameCounter": "{weight} / 40 · Englisch 1, Koreanisch 2",
   "threadNameControlCharsError": "Nur eine Zeile ohne Steuerzeichen verwenden.",
   "threadNameTooLongError": "Bis zu 40 englische oder 20 koreanische Zeichen.",
   "threadNameConnectionChanged": "Verbindung geändert. Öffne den Thread erneut, um den gespeicherten Namen zu prüfen.",

@@ -2910,7 +2910,6 @@
   "messages.threadName.retry": "Coba lagi",
   "messages.threadName.title": "Nama utas",
   "messages.threadName.description": "Terlihat oleh semua orang di grup ini. Maksimal 40 karakter Latin atau 20 karakter Korea. Kosongkan untuk menghapus nama.",
-  "messages.threadName.count": "{count} / 40 · Latin 1, Korea 2",
   "messages.threadName.saving": "Menyimpan…",
   "messages.send.notSent": "Tidak terkirim",
   "messages.send.sending": "Mengirim",

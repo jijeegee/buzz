@@ -1381,7 +1381,6 @@
   "threadNameTitle": "Nome del thread",
   "threadNameBody": "Visibile a tutti in questo gruppo. Fino a 40 caratteri in inglese o 20 in coreano. Lascia vuoto per rimuovere il nome.",
   "threadNameLabel": "Nome",
-  "threadNameCounter": "{weight} / 40 · inglese 1, coreano 2",
   "threadNameControlCharsError": "Usa una sola riga senza caratteri di controllo.",
   "threadNameTooLongError": "Massimo 40 caratteri inglesi o 20 coreani.",
   "threadNameConnectionChanged": "Connessione cambiata. Riapri il thread per controllare il nome salvato.",

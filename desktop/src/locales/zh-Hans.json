@@ -3602,7 +3602,6 @@
   "messages.threadName.retry": "重试",
   "messages.threadName.title": "话题名称",
   "messages.threadName.description": "群内所有人可见。最多 40 个英文字符或 20 个韩文字符。留空即可移除名称。",
-  "messages.threadName.count": "{count} / 40 · 英文算 1，韩文算 2",
   "messages.threadName.saving": "保存中…",
   "messages.send.notSent": "未发送",
   "messages.send.sending": "发送中",

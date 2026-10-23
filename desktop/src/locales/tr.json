@@ -2910,7 +2910,6 @@
   "messages.threadName.retry": "Adı yeniden dene",
   "messages.threadName.title": "Mesaj dizisi adı",
   "messages.threadName.description": "Bu gruptaki herkes görebilir. En fazla 40 İngilizce veya 20 Korece karakter. Adı kaldırmak için boş bırakın.",
-  "messages.threadName.count": "{count} / 40 · İngilizce 1, Korece 2",
   "messages.threadName.saving": "Kaydediliyor…",
   "messages.send.notSent": "Gönderilmedi",
   "messages.send.sending": "Gönderiliyor",

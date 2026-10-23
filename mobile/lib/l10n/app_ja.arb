@@ -1450,7 +1450,6 @@
   "threadNameTitle": "スレッド名",
   "threadNameBody": "このグループの全員に表示されます。英字40文字または韓国語20文字まで。空欄にすると名前が削除されます。",
   "threadNameLabel": "名前",
-  "threadNameCounter": "{weight} / 40 · 英字1、韓国語2",
   "threadNameControlCharsError": "制御文字を含まない1行で入力してください。",
   "threadNameTooLongError": "英字40文字または韓国語20文字までです。",
   "threadNameConnectionChanged": "接続が変わりました。スレッドを開き直して、保存された名前を確認してください。",

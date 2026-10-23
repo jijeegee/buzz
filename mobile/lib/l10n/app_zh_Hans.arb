@@ -1451,7 +1451,6 @@
   "threadNameTitle": "话题名称",
   "threadNameBody": "此群组所有人可见。最多 40 个英文字符或 20 个韩文字符。留空可移除名称。",
   "threadNameLabel": "名称",
-  "threadNameCounter": "{weight} / 40 · 英文计 1，韩文计 2",
   "threadNameControlCharsError": "请使用单行文字，不要包含控制字符。",
   "threadNameTooLongError": "最多 40 个英文字符或 20 个韩文字符。",
   "threadNameConnectionChanged": "连接已变化，请重新打开话题查看已保存的名称。",

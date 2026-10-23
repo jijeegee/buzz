@@ -7323,15 +7323,6 @@
   "@threadNameLabel": {
     "description": "Thread name dialog, label of the name field. Short."
   },
-  "threadNameCounter": "{weight} / 40 · English 1, Korean 2",
-  "@threadNameCounter": {
-    "description": "Thread name dialog, length counter; {weight} is the used length, where a Korean character counts 2. Short.",
-    "placeholders": {
-      "weight": {
-        "type": "int"
-      }
-    }
-  },
   "threadNameControlCharsError": "Use a single line without control characters.",
   "@threadNameControlCharsError": {
     "description": "Thread name dialog, error for line breaks or control characters in the name."

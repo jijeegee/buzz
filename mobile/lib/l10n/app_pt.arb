@@ -1381,7 +1381,6 @@
   "threadNameTitle": "Nome do tópico",
   "threadNameBody": "Visível para todos neste grupo. Até 40 caracteres latinos ou 20 coreanos. Deixe em branco para remover o nome.",
   "threadNameLabel": "Nome",
-  "threadNameCounter": "{weight} / 40 · Inglês 1, Coreano 2",
   "threadNameControlCharsError": "Use uma única linha sem caracteres de controle.",
   "threadNameTooLongError": "Até 40 caracteres em inglês ou 20 em coreano.",
   "threadNameConnectionChanged": "A conexão mudou. Reabra o tópico para verificar o nome salvo.",

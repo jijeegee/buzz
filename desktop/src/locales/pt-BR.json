@@ -2910,7 +2910,6 @@
   "messages.threadName.retry": "Tentar de novo",
   "messages.threadName.title": "Nome do tópico",
   "messages.threadName.description": "Visível para todos neste grupo. Até 40 caracteres latinos ou 20 coreanos. Deixe em branco para remover o nome.",
-  "messages.threadName.count": "{count} / 40 · latino 1, coreano 2",
   "messages.threadName.saving": "Salvando…",
   "messages.send.notSent": "Não enviada",
   "messages.send.sending": "Enviando",

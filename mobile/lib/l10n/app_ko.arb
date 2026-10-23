@@ -1453,7 +1453,6 @@
   "threadNameTitle": "스레드 이름",
   "threadNameBody": "이 그룹의 모든 사람에게 보여요. 영문 40자 또는 한글 20자까지 쓸 수 있어요. 비워 두면 이름이 삭제돼요.",
   "threadNameLabel": "이름",
-  "threadNameCounter": "{weight} / 40 · 영문 1, 한글 2",
   "threadNameControlCharsError": "줄바꿈이나 제어 문자 없이 한 줄로 입력해 주세요.",
   "threadNameTooLongError": "영문 40자 또는 한글 20자까지 쓸 수 있어요.",
   "threadNameConnectionChanged": "연결이 바뀌었어요. 스레드를 다시 열어 저장된 이름을 확인해 주세요.",
