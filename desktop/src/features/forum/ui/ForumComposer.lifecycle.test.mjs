@@ -75,9 +75,9 @@ async function setup(options = {}) {
   localStorage.clear();
   draftStore.initDraftStore("forum-test", "wss://forum.test");
   const calls = [];
-  const control = { add: null, publish: null, prepare: null };
+  const control = { settle: null };
   const noop = () => {};
-  let editor, media, mentionState, prompt;
+  let editor, media, mentionState;
   const stubs = {
     react: React,
     "@/shared/i18n": i18n,
@@ -91,21 +91,6 @@ async function setup(options = {}) {
       // Compact-identity seam stubbed alongside its sibling: this suite
       // renders display names, never key-form labels.
       truncateNpub: (s) => s,
-    },
-    "@/features/channels/hooks": {
-      useAddChannelMembersMutation: () => ({
-        mutateAsync: async () => {
-          calls.push(["add"]);
-          if (control.add) await control.add.promise;
-          return { errors: [] };
-        },
-      }),
-    },
-    "@/features/channels/useCanAddChannelMembers": {
-      useCanAddChannelMembers: () => true,
-    },
-    "@/features/channels/lib/channelMemberAdmission": {
-      PRIVATE_CHANNEL_ADD_DENIED_MESSAGE: "denied",
     },
     "@/features/messages/lib/useDrafts": draftStore,
     "@/features/messages/lib/stripImplicitAgentMentions": {
@@ -158,9 +143,9 @@ async function setup(options = {}) {
           hasResolvedMembers: true,
           memberPubkeys: new Set(),
           getMentionDisplayName: () => "RemoteScout",
-          revalidateMentionPubkeys: async (keys, _channel, { phase }) => {
-            calls.push([phase]);
-            if (control[phase]) await control[phase].promise;
+          // The send never waits on a server re-check of its mentions.
+          revalidateMentionPubkeys: async (keys) => {
+            calls.push(["revalidate"]);
             return keys;
           },
         };
@@ -203,12 +188,6 @@ async function setup(options = {}) {
     "@/features/messages/lib/imetaMediaMarkdown": {
       buildOutgoingMessage: (content, imeta) => ({ content, mediaTags: imeta }),
     },
-    "@/features/messages/ui/NonMemberMentionDialog": {
-      NonMemberMentionDialog: (props) => {
-        prompt = props;
-        return null;
-      },
-    },
   };
   for (const [path, names] of [
     ["@/shared/ui/button", ["Button"]],
@@ -236,10 +215,6 @@ async function setup(options = {}) {
     "../../messages/ui/useDraftPersistSnapshot.ts",
     stubs,
   );
-  stubs["./useForumMentionPreparation"] = load(
-    "./useForumMentionPreparation.ts",
-    stubs,
-  );
   stubs["./useForumDraftRecovery"] = load("./useForumDraftRecovery.ts", stubs);
   const { ForumComposer } = load("./ForumComposer.tsx", stubs);
   let source = "a";
@@ -251,10 +226,17 @@ async function setup(options = {}) {
       ? `${options.keyPrefix ?? "thread"}:${source}`
       : undefined,
     placeholder: "Reply",
-    onSubmit: async (...args) => {
-      calls.push(["send", source, ...args]);
-      if (transport) await transport.promise;
-    },
+    onSubmit: options.drawsRow
+      ? // The forum's submitter: it draws its row and returns at once, or
+        // throws when it cannot draw one.
+        (...args) => {
+          calls.push(["send", source, ...args]);
+          if (options.drawsRow === "throws") throw new Error("not drawn");
+        }
+      : async (...args) => {
+          calls.push(["send", source, ...args]);
+          if (transport) await transport.promise;
+        },
   });
   const view = render(
     React.createElement(
@@ -267,9 +249,6 @@ async function setup(options = {}) {
   return {
     calls,
     control,
-    get prompt() {
-      return prompt;
-    },
     get text() {
       return editor.getMarkdown();
     },
@@ -302,14 +281,6 @@ async function setup(options = {}) {
       act(() => fireEvent.submit(view.container.querySelector("form")));
       await flush();
     },
-    async invite() {
-      act(() => prompt.onInvite());
-      await flush();
-    },
-    async dismiss() {
-      act(() => prompt.onDismiss());
-      await flush();
-    },
     navigate(value) {
       source = value;
       view.rerender(
@@ -326,58 +297,49 @@ async function setup(options = {}) {
     unmount: view.unmount,
   };
 }
-for (const stage of ["prepare", "add", "publish"]) {
-  test(`production composer ${stage}: source visit retains refs/media, no late publication or error`, async () => {
-    const s = await setup();
-    s.edit();
-    s.attach();
-    await s.submit();
-    const gate = deferred();
-    s.control[stage] = gate;
-    await s.invite();
-    s.navigate("b");
-    assert.equal(s.text, "");
-    s.edit("B draft", []);
-    s.navigate("a");
-    assert.equal(s.text, TEXT);
-    assert.deepEqual(s.refs, REFS);
-    assert.deepEqual(Array.from(s.imeta), MEDIA);
-    s.edit("", []);
-    s.navigate("b");
-    await s.finish(gate, new Error("obsolete failure"));
-    assert.equal(s.text, "B draft");
-    assert.equal(
-      s.calls.filter((c) => c[0] === "send" || c[0] === "error").length,
-      0,
-    );
-    assert.equal(
-      s.calls.filter((c) => c[0] === "add").length,
-      stage === "prepare" ? 0 : 1,
-    );
-    s.navigate("a");
-    assert.equal(s.text, "");
-    assert.deepEqual(s.refs, []);
-  });
-}
-test("cancel/retry owns its latch: old add cannot release or fail a new pending invitation", async () => {
+test("mentions go out as written: no prompt, no add, no server re-check", async () => {
   const s = await setup();
   s.edit();
+  s.attach();
   await s.submit();
-  const old = deferred();
-  s.control.add = old;
-  await s.invite();
-  await s.dismiss();
-  await s.submit();
-  const current = deferred();
-  s.control.add = current;
-  await s.invite();
-  await s.finish(old, new Error("old error"));
-  assert.equal(s.prompt.isInvitePending, true);
-  assert.equal(s.prompt.error, null);
-  await s.finish(current);
-  assert.equal(s.calls.filter((c) => c[0] === "send").length, 1);
+  const sends = s.calls.filter((c) => c[0] === "send");
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0][2], TEXT);
+  assert.deepEqual(Array.from(sends[0][3]), [KEY]);
+  assert.deepEqual(Array.from(sends[0][4]), MEDIA);
+  assert.equal(s.calls.filter((c) => c[0] === "revalidate").length, 0);
   assert.equal(s.text, "");
 });
+
+test("a submitter that draws its row leaves the composer free at once", async () => {
+  const s = await setup({ drawsRow: true });
+  s.edit("first", []);
+  await s.submit();
+  assert.equal(s.text, "");
+  s.edit("second", []);
+  assert.equal(s.text, "second");
+  await s.submit();
+  assert.deepEqual(
+    s.calls.filter((c) => c[0] === "send").map((c) => c[2]),
+    ["first", "second"],
+  );
+  assert.equal(s.calls.filter((c) => c[0] === "error").length, 0);
+});
+
+test("a submitter that could not draw its row gives the text back", async () => {
+  const s = await setup({ drawsRow: "throws" });
+  s.edit();
+  s.attach();
+  await s.submit();
+  assert.equal(s.text, TEXT);
+  assert.deepEqual(Array.from(s.refs), REFS);
+  assert.deepEqual(Array.from(s.imeta), MEDIA);
+  assert.deepEqual(
+    s.calls.filter((c) => c[0] === "error"),
+    [["error", "not drawn"]],
+  );
+});
+
 for (const channelType of [null, undefined]) {
   test(`shared channel-less consumer ${channelType}: failed transport retains content/media/refs for exact retry`, async () => {
     const s = await setup({ channelType, persistent: false });
@@ -386,7 +348,6 @@ for (const channelType of [null, undefined]) {
     const transport = deferred();
     s.transport = transport;
     await s.submit();
-    assert.equal(s.prompt.open, false);
     assert.equal(s.text, "");
     await s.finish(transport, new Error("transport failed"));
     assert.equal(s.text, TEXT);
@@ -395,7 +356,6 @@ for (const channelType of [null, undefined]) {
     s.transport = null;
     await s.submit();
     assert.equal(s.text, "");
-    assert.equal(s.calls.filter((c) => c[0] === "add").length, 0);
     assert.deepEqual(
       Array.from(s.calls.filter((c) => c[0] === "send").at(-1)[3]),
       [KEY],
@@ -403,30 +363,12 @@ for (const channelType of [null, undefined]) {
   });
 }
 
-test("dismiss during final validation invalidates publication but retains the source draft", async () => {
-  const s = await setup();
-  s.edit();
-  s.attach();
-  await s.submit();
-  const gate = deferred();
-  s.control.publish = gate;
-  await s.invite();
-  assert.equal(s.prompt.open, false);
-  await s.dismiss();
-  await s.finish(gate);
-  assert.equal(s.text, TEXT);
-  assert.deepEqual(s.refs, REFS);
-  assert.deepEqual(Array.from(s.imeta), MEDIA);
-  assert.equal(s.calls.filter((c) => c[0] === "send").length, 0);
-});
-
 test("late transport failure never restores into a later source visit", async () => {
   const s = await setup();
   s.edit();
-  await s.submit();
   const transport = deferred();
   s.transport = transport;
-  await s.invite();
+  await s.submit();
   assert.equal(s.text, "");
   s.navigate("b");
   s.edit("B stays", []);
@@ -439,28 +381,27 @@ test("late transport failure never restores into a later source visit", async ()
 });
 
 for (const keyPrefix of ["thread", "forum-post"]) {
-  for (const invited of [false, true]) {
-    test(`${keyPrefix} failed transport A-B-A without new intent restores exact payload (${invited ? "invited" : "ordinary"})`, async () => {
+  for (const mentioned of [false, true]) {
+    test(`${keyPrefix} failed transport A-B-A without new intent restores exact payload (${mentioned ? "mention" : "ordinary"})`, async () => {
       const s = await setup({ keyPrefix });
-      s.edit(invited ? TEXT : "original A body", invited ? REFS : []);
+      s.edit(mentioned ? TEXT : "original A body", mentioned ? REFS : []);
       s.attach();
       const transport = deferred();
       s.transport = transport;
       await s.submit();
-      if (invited) await s.invite();
       assert.equal(s.text, "");
       s.navigate("b");
       s.edit("B stays", []);
       s.navigate("a");
       assert.equal(s.text, "");
       await s.finish(transport, new Error("relay unavailable"));
-      const text = invited ? TEXT : "original A body";
+      const text = mentioned ? TEXT : "original A body";
       assert.equal(s.text, text);
-      assert.deepEqual(Array.from(s.refs), invited ? REFS : []);
+      assert.deepEqual(Array.from(s.refs), mentioned ? REFS : []);
       assert.deepEqual(Array.from(s.imeta), MEDIA);
       const saved = draftStore.loadDraftEntry(`${keyPrefix}:a`);
       assert.equal(saved.content, text);
-      assert.deepEqual(Array.from(saved.mentionRefs), invited ? REFS : []);
+      assert.deepEqual(Array.from(saved.mentionRefs), mentioned ? REFS : []);
       assert.deepEqual(Array.from(saved.pendingImeta), MEDIA);
       assert.equal(saved.channelId, "forum");
       assert.equal(s.calls.filter((c) => c[0] === "send").length, 1);
@@ -489,7 +430,6 @@ for (const intent of [
     const old = deferred();
     s.transport = old;
     await s.submit();
-    await s.invite();
     s.navigate("b");
     s.navigate("a");
     if (intent === "text-clear") {
@@ -540,7 +480,6 @@ for (const result of ["failure", "success"]) {
     const transport = deferred();
     s.transport = transport;
     await s.submit();
-    await s.invite();
     s.navigate("b");
     s.edit("B untouched", []);
     await s.finish(
@@ -552,7 +491,6 @@ for (const result of ["failure", "success"]) {
     assert.equal(s.text, result === "failure" ? TEXT : "");
     assert.deepEqual(Array.from(s.imeta), result === "failure" ? MEDIA : []);
     assert.equal(s.calls.filter((c) => c[0] === "send").length, 1);
-    assert.equal(s.calls.filter((c) => c[0] === "add").length, 1);
   });
 }
 
@@ -572,7 +510,6 @@ for (const action of ["navigation", "return", "edit", "unmount"]) {
     if (action === "unmount") s.unmount();
     await s.finish(gate);
     assert.equal(s.calls.length, 0);
-    assert.equal(s.prompt.open, false);
     if (action === "navigation") assert.equal(s.text, "B draft");
     if (action === "return") assert.equal(s.text, TEXT);
     if (action === "edit") assert.equal(s.text, "new authored draft");

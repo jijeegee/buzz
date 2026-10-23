@@ -13559,6 +13559,10 @@
   "@forum.postCard.replyCount": {
     "description": "Forum post card footer, number of replies. Short."
   },
+  "forum.postCard.repliesNotSent": "{count, plural, one {# reply not sent} other {# replies not sent}}",
+  "@forum.postCard.repliesNotSent": {
+    "description": "Forum post card footer, number of your own replies to the post the server did not accept; they show with Retry / Delete inside the post. Short."
+  },
   "forum.postCard.lastReply": "last {time}",
   "@forum.postCard.lastReply": {
     "description": "Forum post card footer, when the last reply was; {time} is like '5m ago' or 'just now'. Lowercase. Short."
@@ -13602,10 +13606,6 @@
   "forum.view.emptyBody": "Start a discussion by creating the first post.",
   "@forum.view.emptyBody": {
     "description": "Forum, empty state text under the title."
-  },
-  "forum.mentions.inviteFailed": "Could not invite members.",
-  "@forum.mentions.inviteFailed": {
-    "description": "Forum composer, error when adding mentioned people to the forum fails."
   },
   "groups.genericError": "Something went wrong. Try again.",
   "@groups.genericError": {

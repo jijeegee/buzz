@@ -22,7 +22,6 @@ import { useLinkEditor } from "@/features/messages/lib/useLinkEditor";
 import { DropZoneOverlay } from "@/features/messages/ui/ComposerAttachments";
 import type { MentionSuggestion } from "@/features/messages/ui/MentionAutocomplete";
 import { MessageComposerToolbar } from "@/features/messages/ui/MessageComposerToolbar";
-import { NonMemberMentionDialog } from "@/features/messages/ui/NonMemberMentionDialog";
 import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
@@ -38,7 +37,6 @@ import { ForumComposerAutocompletes } from "./ForumComposerAutocompletes";
 import { ForumComposerCompactLayout } from "./ForumComposerCompactLayout";
 import { ForumComposerMediaStatus } from "./ForumComposerMediaStatus";
 import { useCompactComposerInteractions } from "./useCompactComposerInteractions";
-import { useForumMentionPreparation } from "./useForumMentionPreparation";
 import { useForumDraftRecovery } from "./useForumDraftRecovery";
 
 export function ForumComposer(props: ForumComposerProps) {
@@ -98,8 +96,6 @@ function ForumComposerVisit({
   }, [compact]);
 
   const mentions = useMentions(channelId, members, profiles, { channelType });
-  const { prepareMentionPubkeys, nonMemberPromptProps } =
-    useForumMentionPreparation(channelId, channelType, mentions);
   const channelLinks = useChannelLinks();
   const media = useMediaUpload();
   const expectedMediaRef = React.useRef(media.pendingImeta);
@@ -108,9 +104,12 @@ function ForumComposerVisit({
     (imeta: typeof media.pendingImeta) => {
       expectedMediaRef.current = imeta;
       pendingMediaRestoreRef.current = true;
+      // Read before the next render too: a submitter that fails at once
+      // restores the draft only into an empty composer.
+      media.pendingImetaRef.current = imeta;
       media.setPendingImeta(imeta);
     },
-    [media.setPendingImeta],
+    [media.pendingImetaRef, media.setPendingImeta],
   );
   const { handlePaperclipClick, handleToolbarMouseDown, shouldIgnoreBlur } =
     useCompactComposerInteractions({
@@ -352,17 +351,14 @@ function ForumComposerVisit({
         // A pasted mention's identity check can still be in flight; extracting
         // first would publish the label with no `p` tag. Bounded internally.
         await mentions.settlePendingMentionBindings();
-        // This await precedes the preparation adapter's own visit fence.
         if (
           !mountedRef.current ||
           draftLifecycle.getComposerRevision() !== composerRevision
         )
           return;
-        const pubkeys = await prepareMentionPubkeys(
-          mentions.extractMentionPubkeys(trimmed),
-          trimmed,
-        );
-        if (pubkeys === null || !mountedRef.current) return;
+        // Mentions go out as written: nobody is added to the group and
+        // nothing is re-checked before the send, as in the channel composer.
+        const pubkeys = mentions.extractMentionPubkeys(trimmed);
 
         // Reuse the shared send-path builder so forum/notes posts emit the same
         // body + imeta as chat: generic files become `[filename](url)` links with a
@@ -373,8 +369,9 @@ function ForumComposerVisit({
           currentPendingImeta,
         );
 
-        // Publication has been authorized for this visit. Preserve the exact
-        // snapshot before the existing optimistic clear, including selected refs.
+        // Preserve the exact snapshot before the optimistic clear, including
+        // selected refs. A submitter that draws its own row (the forum)
+        // returns once it is drawn; only a failure before that restores here.
         const recoverDraft = captureRecovery({
           content: contentRef.current,
           pendingImeta: [...currentPendingImeta],
@@ -401,8 +398,8 @@ function ForumComposerVisit({
           throw failure;
         }
       } catch (error) {
-        // Authorization, ambiguous-name and transport failures remain visible
-        // only in the originating visit; draft recovery is handled above.
+        // Ambiguous-name and transport failures remain visible only in the
+        // originating visit; draft recovery is handled above.
         if (mountedRef.current)
           toast.error(error instanceof Error ? error.message : String(error));
       } finally {
@@ -423,7 +420,6 @@ function ForumComposerVisit({
       mentions.cancelMentionAutocomplete,
       mentions.extractMentionPubkeys,
       mentions.settlePendingMentionBindings,
-      prepareMentionPubkeys,
       mentions.clearMentions,
       channelLinks.clearChannels,
       richText.clearContent,
@@ -774,13 +770,6 @@ function ForumComposerVisit({
           </>
         )}
       </form>
-      <NonMemberMentionDialog
-        {...nonMemberPromptProps}
-        onRestoreFocus={() => {
-          if (mountedRef.current && !isSubmissionPendingRef.current)
-            richText.focus();
-        }}
-      />
       {!isSubmissionPending && linkEditor.card}
       {!isSubmissionPending && linkEditor.dialog}
     </>
