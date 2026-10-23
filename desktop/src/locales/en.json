@@ -13063,6 +13063,34 @@
   "@settings.updateCard.availableTitle": {
     "description": "Sidebar update card (Linux manual update), title. Short."
   },
+  "settings.requiredUpdate.title": "Update required",
+  "@settings.requiredUpdate.title": {
+    "description": "Full-screen forced update, title. Short."
+  },
+  "settings.requiredUpdate.description": "This version of Kuzz is no longer supported. Update to keep using it.",
+  "@settings.requiredUpdate.description": {
+    "description": "Full-screen forced update, body text shown under the title."
+  },
+  "settings.requiredUpdate.install": "Update and restart",
+  "@settings.requiredUpdate.install": {
+    "description": "Full-screen forced update, button once the update is downloaded. Short."
+  },
+  "settings.requiredUpdate.downloading": "Downloading update…",
+  "@settings.requiredUpdate.downloading": {
+    "description": "Full-screen forced update, disabled button while downloading. Short."
+  },
+  "settings.requiredUpdate.installing": "Installing update…",
+  "@settings.requiredUpdate.installing": {
+    "description": "Full-screen forced update, disabled button while installing. Short."
+  },
+  "settings.requiredUpdate.download": "Download update",
+  "@settings.requiredUpdate.download": {
+    "description": "Full-screen forced update, button that opens the installer download when in-app install is unavailable. Short."
+  },
+  "settings.requiredUpdate.retry": "Try again",
+  "@settings.requiredUpdate.retry": {
+    "description": "Full-screen forced update, button to check for the update again after a failure. Short."
+  },
   "settings.updateIndicator.available": "Update available",
   "@settings.updateIndicator.available": {
     "description": "Top bar update icon, tooltip and screen-reader label. Short."
