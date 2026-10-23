@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../community/community_provider.dart';
+import '../l10n/l10n.dart';
 import 'speech_audio_gate.dart';
 import 'read_aloud_preferences.dart';
 import 'speech_engine.dart';
@@ -136,7 +137,7 @@ class ReadAloudController extends Notifier<ReadAloudState> {
       state = ReadAloudState(
         owner: owner,
         phase: ReadAloudPhase.failed,
-        error: '통화나 녹음을 마친 뒤 읽어주기를 사용해 주세요.',
+        error: appL10n.readAloudBusyWithAudio,
       );
       return;
     }
@@ -290,7 +291,6 @@ class ReadAloudController extends Notifier<ReadAloudState> {
     );
   }
 
-  String _errorText(Object error) => error is SpeechFailure
-      ? error.message
-      : '읽어주기를 사용할 수 없습니다. 휴대폰 음성 설정을 확인하고 다시 시도해 주세요.';
+  String _errorText(Object error) =>
+      error is SpeechFailure ? error.message : appL10n.readAloudUnavailable;
 }

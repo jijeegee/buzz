@@ -287,11 +287,11 @@ void main() {
           ),
         ),
       );
-      expect(find.byTooltip('메시지 읽어주기'), findsNothing);
+      expect(find.byTooltip('Read message aloud'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('read-aloud-enabled')));
       await tester.pumpAndSettle();
       expect(prefs.getBool(ReadAloudPreference.key), true);
-      expect(find.byTooltip('메시지 읽어주기'), findsOneWidget);
+      expect(find.byTooltip('Read message aloud'), findsOneWidget);
       // Idle controls sit beside the body and add no rows beneath it.
       final bodyBox = tester.getRect(
         find.byKey(const ValueKey('read-aloud-test-body')),
@@ -304,21 +304,21 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('read-aloud-play-one'))).left,
         greaterThanOrEqualTo(bodyBox.right),
       );
-      await tester.tap(find.byTooltip('메시지 읽어주기'));
+      await tester.tap(find.byTooltip('Read message aloud'));
       await tester.pump();
       expect(engine.chunks.single, '하나 둘\n');
       engine.callbacks.last(3, 4);
       await tester.pump();
-      expect(find.byTooltip('읽어주기 중지'), findsOneWidget);
-      await tester.tap(find.byTooltip('일시정지'));
+      expect(find.byTooltip('Stop reading'), findsOneWidget);
+      await tester.tap(find.byTooltip('Pause'));
       await tester.pump();
-      expect(find.byTooltip('이어 읽기'), findsOneWidget);
-      await tester.tap(find.byTooltip('이어 읽기'));
+      expect(find.byTooltip('Resume'), findsOneWidget);
+      await tester.tap(find.byTooltip('Resume'));
       await tester.pump();
       expect(engine.chunks.last, '둘\n');
-      await tester.tap(find.byTooltip('읽어주기 중지'));
+      await tester.tap(find.byTooltip('Stop reading'));
       await tester.pump();
-      expect(find.byTooltip('메시지 읽어주기'), findsOneWidget);
+      expect(find.byTooltip('Read message aloud'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     },
@@ -394,7 +394,7 @@ void main() {
         ),
       ),
     );
-    expect(find.byTooltip('메시지 읽어주기'), findsOneWidget);
+    expect(find.byTooltip('Read message aloud'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('short-bubble'))).width,
       lessThan(412 * chatOwnBubbleWidthFactor / 2),
