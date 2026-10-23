@@ -36,7 +36,7 @@ pub(super) fn device_key() -> SigningKey {
     }
 }
 
-fn device_hex(key: &SigningKey) -> String {
+pub(super) fn device_hex(key: &SigningKey) -> String {
     hex::encode(key.verifying_key().to_encoded_point(true).as_bytes())
 }
 
@@ -179,7 +179,7 @@ pub(super) async fn call(
 
 /// An `/auth/*` call with `who`'s Bearer and a header proof by `signer`
 /// (none: no proof header).
-async fn call_proven_by(
+pub(super) async fn call_proven_by(
     inst: &Instance,
     who: &Owner,
     signer: Option<&SigningKey>,
@@ -593,7 +593,11 @@ async fn status_call(
 }
 
 /// NIP-42 AUTH of `keys` from `device`: (accepted, reason).
-async fn ws_auth(inst: &Instance, keys: &nostr::Keys, device: &SigningKey) -> (bool, String) {
+pub(super) async fn ws_auth(
+    inst: &Instance,
+    keys: &nostr::Keys,
+    device: &SigningKey,
+) -> (bool, String) {
     let mut request = format!("ws://{}/", inst.addr)
         .into_client_request()
         .expect("ws request");

@@ -92,7 +92,9 @@ pub enum RefreshOutcome {
 /// app was upgraded), or a new device is made (the old key was lost). The
 /// install id then moves to that device, so later logins from the install
 /// find it; other devices keep their sessions until they are signed out.
-/// Nothing is revoked here.
+/// Nothing is revoked here. External devices (paired agents' computers,
+/// migration 0090) are never reused, un-revoked or counted: a login on such
+/// a computer gets its own login row.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn complete_login(
     pool: &PgPool,
@@ -113,7 +115,7 @@ pub(super) async fn complete_login(
         Some(install_id) => {
             sqlx::query_as(
                 "SELECT id, device_pubkey IS NULL FROM devices \
-                 WHERE principal_id = $1 AND install_id = $2 FOR UPDATE",
+                 WHERE principal_id = $1 AND install_id = $2 AND kind = 'login' FOR UPDATE",
             )
             .bind(principal.as_bytes().as_slice())
             .bind(install_id)
@@ -126,6 +128,7 @@ pub(super) async fn complete_login(
         Some(key) => {
             sqlx::query_scalar(
                 "SELECT id FROM devices WHERE principal_id = $1 AND device_pubkey = $2 \
+                 AND kind = 'login' \
                  ORDER BY revoked_at IS NULL DESC, last_seen_at DESC LIMIT 1 FOR UPDATE",
             )
             .bind(principal.as_bytes().as_slice())
@@ -156,7 +159,8 @@ pub(super) async fn complete_login(
     }
     let live_devices: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM devices \
-         WHERE principal_id = $1 AND revoked_at IS NULL AND id IS DISTINCT FROM $2",
+         WHERE principal_id = $1 AND kind = 'login' AND revoked_at IS NULL \
+           AND id IS DISTINCT FROM $2",
     )
     .bind(principal.as_bytes().as_slice())
     .bind(known)
@@ -427,6 +431,7 @@ pub(super) async fn revoke_device(
     .fetch_all(&mut *tx)
     .await?;
     let mut revoked = revoke_session_tokens(&mut tx, &sessions, reason).await?;
+    expire_open_pairings(&mut tx, &[device_id]).await?;
     let bot_rows: Vec<Vec<u8>> = sqlx::query_scalar(
         "UPDATE access_tokens SET revoked_at = now(), revoked_reason = 'device_revoked' \
          WHERE kind = 'bot' AND revoked_at IS NULL AND bot_id IN \
@@ -442,7 +447,8 @@ pub(super) async fn revoke_device(
 }
 
 /// Revoke every human session of `principal` except `keep_session`. Bot
-/// tokens are untouched (Telegram "terminate other sessions"). Returns the
+/// tokens are untouched (Telegram "terminate other sessions"), and so are
+/// external devices: paired agents keep running. Returns the
 /// revoked token hashes and device ids.
 pub(super) async fn revoke_other_sessions(
     pool: &PgPool,
@@ -454,23 +460,44 @@ pub(super) async fn revoke_other_sessions(
     let sessions: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE sessions SET revoked_at = now(), revoked_reason = 'revoke_all' \
          WHERE revoked_at IS NULL AND id <> $2 AND device_id IN \
-           (SELECT id FROM devices WHERE principal_id = $1) RETURNING id",
+           (SELECT id FROM devices WHERE principal_id = $1 AND kind = 'login') RETURNING id",
     )
     .bind(principal.as_bytes().as_slice())
     .bind(keep_session)
     .fetch_all(&mut *tx)
     .await?;
     let devices: Vec<Uuid> = sqlx::query_scalar(
-        "UPDATE devices SET revoked_at = now() WHERE principal_id = $1 AND revoked_at IS NULL \
-         AND id <> (SELECT device_id FROM sessions WHERE id = $2) RETURNING id",
+        "UPDATE devices SET revoked_at = now() WHERE principal_id = $1 AND kind = 'login' \
+         AND revoked_at IS NULL AND id <> (SELECT device_id FROM sessions WHERE id = $2) \
+         RETURNING id",
     )
     .bind(principal.as_bytes().as_slice())
     .bind(keep_session)
     .fetch_all(&mut *tx)
     .await?;
     let revoked = revoke_session_tokens(&mut tx, &sessions, RevokeReason::RevokeAll).await?;
+    expire_open_pairings(&mut tx, &devices).await?;
     tx.commit().await?;
     Ok((revoked, devices))
+}
+
+/// End the open pairings started by `devices` (being revoked): their codes
+/// stop working and the owner's list shows them expired.
+async fn expire_open_pairings(
+    tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+    devices: &[Uuid],
+) -> Result<()> {
+    if devices.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        "UPDATE pairing_requests SET expires_at = LEAST(expires_at, now()) \
+         WHERE state = 'open' AND started_device_id = ANY($1)",
+    )
+    .bind(devices)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 pub(super) async fn list_devices(

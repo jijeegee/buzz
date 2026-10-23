@@ -35,6 +35,8 @@ pub mod nip98_replay;
 pub mod nip_fi;
 /// OpenID Connect relying-party support (centralized identity login).
 pub mod oidc;
+/// External agent pairing codes and claim signatures.
+pub mod pairing;
 /// Per-connection rate limiting.
 pub mod rate_limit;
 /// OAuth scope parsing and enforcement.

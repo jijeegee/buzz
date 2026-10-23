@@ -85,7 +85,7 @@ impl DevicePubkey {
         hex::encode(self.0)
     }
 
-    fn verifying_key(&self) -> Result<VerifyingKey, DeviceProofError> {
+    pub(crate) fn verifying_key(&self) -> Result<VerifyingKey, DeviceProofError> {
         VerifyingKey::from_sec1_bytes(&self.0).map_err(|_| DeviceProofError::InvalidKey)
     }
 }

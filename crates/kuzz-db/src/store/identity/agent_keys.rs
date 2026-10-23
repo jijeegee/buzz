@@ -99,7 +99,7 @@ impl Db {
         lock_subject(&mut tx, owner).await?;
         let live_device: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM devices WHERE id = $1 AND principal_id = $2 \
-             AND revoked_at IS NULL)",
+             AND kind = 'login' AND revoked_at IS NULL)",
         )
         .bind(device)
         .bind(owner_bytes)
