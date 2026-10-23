@@ -7,7 +7,7 @@ members = ["crates/kuzz-terminal"]
 
 [package]
 name = "kuzz-desktop"
-version = "0.5.26"
+version = "0.6.1"
 description = "Kuzz desktop app"
 authors = ["you"]
 edition = "2021"
