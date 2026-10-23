@@ -3,6 +3,7 @@ import { MonitorSmartphone } from "lucide-react";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useT } from "@/shared/i18n";
 import { SidebarCompactActionCard } from "@/shared/ui/sidebar-action-card";
+import { markNewSignInDevice } from "./newSignInHighlight";
 import { useNewSignInNotice } from "./useNewSignInNotice";
 
 /** Sidebar card shown when the account was just signed in on another device. */
@@ -23,10 +24,12 @@ export function NewSignInNoticeCard({
         actionAriaLabel={t("accounts.newSignIn.action")}
         actionTestId="new-signin-notice-action"
         description={t("accounts.newSignIn.action")}
+        descriptionClassName="underline underline-offset-2"
         dismissLabel={t("accounts.newSignIn.dismiss")}
         icon={<MonitorSmartphone aria-hidden="true" className="h-5 w-5" />}
         iconKey="new-signin"
         onAction={() => {
+          markNewSignInDevice(notice.deviceName);
           dismiss();
           void goSettings("devices");
         }}

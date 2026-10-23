@@ -44,6 +44,10 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { needsGoogleProtection } from "@/shared/lib/signingKeyUi";
 import { Spinner } from "@/shared/ui/spinner";
+import {
+  newSignInDeviceId,
+  newSignInDeviceName,
+} from "@/features/accounts/newSignIn/newSignInHighlight";
 import { AccountDeviceRow } from "./AccountDeviceRow";
 import { SettingsConfirmDialog } from "./SettingsConfirmDialog";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
@@ -587,6 +591,8 @@ function SignedInDevices({
   }, [loadDevices]);
 
   const disabled = busy !== null;
+  // Reached from a "New sign-in" notice: mark that device.
+  const newDeviceId = newSignInDeviceId(devices ?? [], newSignInDeviceName());
 
   return (
     <>
@@ -608,6 +614,7 @@ function SignedInDevices({
                 <AccountDeviceRow
                   device={device}
                   disabled={disabled}
+                  isNew={device.id === newDeviceId}
                   key={device.id}
                   onChanged={loadDevices}
                   onSignOut={() =>

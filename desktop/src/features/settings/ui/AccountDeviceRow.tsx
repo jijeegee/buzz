@@ -27,6 +27,7 @@ const DEVICE_NAME_MAX = 64;
 export function AccountDeviceRow({
   device,
   disabled,
+  isNew = false,
   run,
   onChanged,
   onSignOut,
@@ -34,6 +35,8 @@ export function AccountDeviceRow({
 }: {
   device: AuthDevice;
   disabled: boolean;
+  /** The device a "New sign-in" notice was about. */
+  isNew?: boolean;
   /** `label` is the message shown if the action fails without its own error. */
   run: (label: MessageKey, action: () => Promise<unknown>) => Promise<void>;
   onChanged: () => Promise<void>;
@@ -67,7 +70,14 @@ export function AccountDeviceRow({
   };
 
   return (
-    <li className="flex items-center justify-between gap-3">
+    <li
+      className={
+        isNew
+          ? "-mx-2 flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-muted/40 px-2 py-1"
+          : "flex items-center justify-between gap-3"
+      }
+      data-new-sign-in={isNew ? "true" : undefined}
+    >
       <span className="flex min-w-0 flex-1 items-center gap-2 text-sm">
         <DeviceRobotPicker
           deviceId={device.id}
@@ -89,6 +99,14 @@ export function AccountDeviceRow({
           <>
             <span className="min-w-0 truncate">
               {device.name}
+              {isNew ? (
+                <span
+                  className="ml-1.5 rounded-full bg-foreground px-1.5 py-0.5 align-middle text-2xs font-semibold text-background"
+                  data-testid="device-new-badge"
+                >
+                  {t("settings.device.new")}
+                </span>
+              ) : null}
               <span className="text-muted-foreground/70">
                 {" "}
                 {t(

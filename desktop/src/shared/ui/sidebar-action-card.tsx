@@ -25,6 +25,8 @@ type SidebarCompactActionCardProps = {
   actionTestId?: string;
   className?: string;
   description?: string;
+  /** Extra classes for the description line (e.g. a link look). */
+  descriptionClassName?: string;
   dismissClassName?: string;
   dismissLabel?: string;
   iconKey?: string;
@@ -192,6 +194,7 @@ export function SidebarCompactActionCard({
   actionTestId,
   className,
   description,
+  descriptionClassName,
   dismissClassName,
   dismissLabel,
   icon,
@@ -289,7 +292,10 @@ export function SidebarCompactActionCard({
             {description ? (
               <motion.span
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-1 block text-xs leading-snug text-muted-foreground"
+                className={cn(
+                  "mt-1 block text-xs leading-snug text-muted-foreground",
+                  descriptionClassName,
+                )}
                 exit={contentExit}
                 initial={contentInitial}
                 key="description"

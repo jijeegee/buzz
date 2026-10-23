@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { newSignInDeviceId } from "./newSignInHighlight.ts";
 import { parseNewSignInNotice } from "./newSignInNotice.ts";
 
 const ME = "a".repeat(64);
@@ -45,4 +46,24 @@ test("strips control characters and caps the name", () => {
   );
   assert.equal(parsed?.deviceName.startsWith("Laptop"), true);
   assert.equal(parsed?.deviceName.length, 64);
+});
+
+test("the followed notice marks the newest other device with that name", () => {
+  const device = (id, name, current = false) => ({
+    id,
+    name,
+    platform: "android",
+    lastSeenAt: null,
+    current,
+  });
+  const devices = [
+    device("me", "Galaxy S24", true),
+    device("old", "Galaxy S24"),
+    device("pixel", "Pixel 8"),
+    device("new", "Galaxy S24"),
+  ];
+  assert.equal(newSignInDeviceId(devices, "Galaxy S24"), "new");
+  assert.equal(newSignInDeviceId(devices, "Pixel 8"), "pixel");
+  assert.equal(newSignInDeviceId(devices.slice(0, 1), "Galaxy S24"), null);
+  assert.equal(newSignInDeviceId(devices, null), null);
 });

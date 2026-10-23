@@ -22,6 +22,10 @@ import {
   useAgentAvailabilityLookup,
 } from "@/features/agents/lib/useAgentAvailability";
 import { useRemoteOwnedAgents } from "@/features/agents/useRemoteOwnedAgents";
+import {
+  ExternalAgentsSection,
+  HermesFoundCard,
+} from "@/features/agents/externalConnect/ExternalAgentsSection";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -186,6 +190,7 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
 
   return (
     <section className="space-y-6" data-testid="agents-my-agents">
+      <HermesFoundCard />
       <div className="space-y-3" data-testid="agents-device-this">
         <DeviceHeading
           detail={[currentDevice?.name, agentCountLabel(localAgents.length)]
@@ -251,6 +256,10 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
           </div>
         ))
       )}
+
+      <ExternalAgentsSection
+        robot={(deviceId) => <DeviceRobot deviceId={deviceId} />}
+      />
 
       <MyTeams agents={teamAgents} />
 
