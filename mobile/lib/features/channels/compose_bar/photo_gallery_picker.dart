@@ -86,8 +86,8 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
       } catch (_) {
         if (context.mounted) {
           actionError.value = selection.value.isEmpty
-              ? 'Unable to open your photo library.'
-              : 'Unable to prepare the selected photos.';
+              ? context.l10n.composePhotoLibraryOpenError
+              : context.l10n.composePhotosPrepareError;
         }
       } finally {
         if (context.mounted) isResolving.value = false;
@@ -96,34 +96,32 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
 
     final selectedCount = selection.value.length;
     final actionLabel = selectedCount == 0
-        ? 'All photos'
-        : selectedCount == 1
-        ? 'Add 1 photo'
-        : 'Add $selectedCount photos';
+        ? context.l10n.composeAllPhotos
+        : context.l10n.composeAddPhotos(selectedCount);
 
     Widget buildGalleryBody() {
       if (recentSnapshot.connectionState != ConnectionState.done) {
-        return const Center(
+        return Center(
           child: KuzzLoadingIndicator(
             size: 44,
-            semanticLabel: 'Loading recent photos',
+            semanticLabel: context.l10n.composeRecentPhotosLoading,
           ),
         );
       }
       if (recentSnapshot.hasError) {
-        return const _PhotoGalleryMessage(
+        return _PhotoGalleryMessage(
           icon: LucideIcons.images,
-          title: 'Recent photos aren’t available',
-          message: 'Use All photos to choose with the system photo picker.',
+          title: context.l10n.composeRecentPhotosUnavailable,
+          message: context.l10n.composeRecentPhotosUnavailableBody,
         );
       }
 
       final photos = recentSnapshot.data ?? const <RecentPhoto>[];
       if (photos.isEmpty) {
-        return const _PhotoGalleryMessage(
+        return _PhotoGalleryMessage(
           icon: LucideIcons.images,
-          title: 'No recent photos',
-          message: 'Use All photos to browse your photo library.',
+          title: context.l10n.composeRecentPhotosEmpty,
+          message: context.l10n.composeRecentPhotosEmptyBody,
         );
       }
       return GridView.builder(
@@ -164,7 +162,7 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
                   IosGlassNavigationButton(
                     key: const ValueKey('photo-gallery-back'),
                     icon: IosGlassNavigationIcon.back,
-                    semanticLabel: 'Back to attachment options',
+                    semanticLabel: context.l10n.composeBackToAttachments,
                     onPressed: isResolving.value
                         ? null
                         : () => _runComposerAction(onBack),
@@ -177,14 +175,14 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
                     onPressed: isResolving.value
                         ? null
                         : () => _runComposerAction(onBack),
-                    tooltip: 'Back to attachment options',
+                    tooltip: context.l10n.composeBackToAttachments,
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(LucideIcons.arrowLeft, size: 20),
                   ),
                 const SizedBox(width: Grid.quarter),
                 Expanded(
                   child: Text(
-                    'Recent photos',
+                    context.l10n.composeRecentPhotos,
                     style: context.textTheme.titleSmall?.copyWith(
                       color: context.colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -243,7 +241,7 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
                         ? KuzzLoadingIndicator(
                             size: 22,
                             color: context.colors.primary,
-                            semanticLabel: 'Opening all photos',
+                            semanticLabel: context.l10n.composeOpeningAllPhotos,
                           )
                         : const Icon(LucideIcons.images, size: 18),
                     label: Text(actionLabel),
@@ -256,10 +254,10 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
                             () => unawaited(choosePhotos()),
                           ),
                     icon: isResolving.value
-                        ? const KuzzLoadingIndicator(
+                        ? KuzzLoadingIndicator(
                             size: 22,
                             color: Colors.white,
-                            semanticLabel: 'Preparing selected photos',
+                            semanticLabel: context.l10n.composePhotosPreparing,
                           )
                         : const Icon(LucideIcons.plus, size: 18),
                     label: Text(actionLabel),
@@ -291,8 +289,8 @@ class _RecentPhotoTile extends StatelessWidget {
       button: true,
       selected: isSelected,
       label: isSelected
-          ? 'Photo ${selectionIndex + 1} selected'
-          : 'Select photo',
+          ? context.l10n.composePhotoSelected(selectionIndex + 1)
+          : context.l10n.composeSelectPhoto,
       child: GestureDetector(
         key: ValueKey('recent-photo-${photo.id}'),
         behavior: HitTestBehavior.opaque,

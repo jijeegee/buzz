@@ -207,10 +207,8 @@ _ThreadAgentPins _useThreadAgentPins({
         ? agentCandidate(promoted.single).displayName?.trim()
         : null;
     final title = name != null && name.isNotEmpty
-        ? '$name will be mentioned automatically'
-        : promoted.length == 1
-        ? 'Agent will be mentioned automatically'
-        : '${promoted.length} agents will be mentioned automatically';
+        ? appL10n.composeAutoMentionNamed(name)
+        : appL10n.composeAutoMentionCount(promoted.length);
     if (scope != null) confirmation.value = (scope: scope, title: title);
   }
 
@@ -355,7 +353,7 @@ class _AutoMentionConfirmation extends StatelessWidget {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               onPressed: onTurnOff,
-              child: const Text('Turn off'),
+              child: Text(context.l10n.composeTurnOff),
             ),
           ],
         ),

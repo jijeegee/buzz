@@ -86,7 +86,7 @@ _TrailingImageGallery? _extractTrailingImageGallery(
             imeta?.alt ??
             (markdownLabel?.isNotEmpty == true
                 ? markdownLabel!
-                : 'Message image'),
+                : appL10n.messageImage),
         aspectRatio: imeta?.aspectRatio,
       ),
     );
@@ -213,7 +213,7 @@ class _MessageImageCarousel extends HookConsumerWidget {
                       child: Semantics(
                         button: true,
                         excludeSemantics: true,
-                        label: 'Open ${item.semanticLabel}',
+                        label: context.l10n.mediaOpenItem(item.semanticLabel),
                         child: GestureDetector(
                           key: ValueKey(
                             'message-media-carousel-item:${item.url}',
@@ -249,9 +249,10 @@ class _MessageImageCarousel extends HookConsumerWidget {
                                   fit: BoxFit.cover,
                                   semanticLabel: item.semanticLabel,
                                   errorBuilder: (_, _, _) =>
-                                      const _MediaPreviewFallback(
+                                      _MediaPreviewFallback(
                                         icon: LucideIcons.imageOff,
-                                        label: 'Image unavailable',
+                                        label:
+                                            context.l10n.mediaImageUnavailable,
                                       ),
                                 ),
                               ),

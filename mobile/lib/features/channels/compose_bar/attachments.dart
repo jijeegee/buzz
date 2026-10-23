@@ -13,8 +13,8 @@ bool _rejectsNonVoiceAttachment(
     return false;
   }
   uploadError.value = voiceNote.recorder != null || voiceNote.isPreparing
-      ? 'Finish or discard the voice note before attaching a file.'
-      : 'A voice note must be the only attachment.';
+      ? appL10n.composeVoiceNoteFinishFirst
+      : appL10n.composeVoiceNoteOnlyAttachment;
   return true;
 }
 
@@ -94,7 +94,10 @@ class _AttachmentMenuLayout {
 
   factory _AttachmentMenuLayout.from(BuildContext context) {
     final textPainter = TextPainter(
-      text: TextSpan(text: 'Camera', style: context.textTheme.titleMedium),
+      text: TextSpan(
+        text: context.l10n.composeCamera,
+        style: context.textTheme.titleMedium,
+      ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,
@@ -476,10 +479,12 @@ class _AttachmentTrigger extends StatelessWidget {
         child: IconButton(
           tooltip: switch (surface) {
             _AttachmentSurface.closed =>
-              formattingOpen ? 'Close formatting' : 'Add attachment',
-            _AttachmentSurface.menu => 'Close attachments',
+              formattingOpen
+                  ? context.l10n.composeCloseFormatting
+                  : context.l10n.composeAddAttachment,
+            _AttachmentSurface.menu => context.l10n.composeCloseAttachments,
             _AttachmentSurface.camera ||
-            _AttachmentSurface.photos => 'Back to attachment options',
+            _AttachmentSurface.photos => context.l10n.composeBackToAttachments,
           },
           onPressed: () => _runComposerAction(() => onTap(context)),
           padding: EdgeInsets.zero,
@@ -539,12 +544,14 @@ class _AttachmentMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = <(IconData, String, VoidCallback)>[
-      (LucideIcons.camera, 'Camera', onCamera),
-      (LucideIcons.images, 'Photos', onPhotos),
-      (LucideIcons.video, 'Video', onVideo),
-      (LucideIcons.mic, 'Voice note', onVoiceNote),
-      (LucideIcons.file, 'Files', onFiles),
+    final l10n = context.l10n;
+    // The id keeps widget keys the same in every language.
+    final items = <(String, IconData, String, VoidCallback)>[
+      ('camera', LucideIcons.camera, l10n.composeCamera, onCamera),
+      ('photos', LucideIcons.images, l10n.composePhotos, onPhotos),
+      ('video', LucideIcons.video, l10n.composeVideo, onVideo),
+      ('voice note', LucideIcons.mic, l10n.composeVoiceNote, onVoiceNote),
+      ('files', LucideIcons.file, l10n.composeFiles, onFiles),
     ];
     return SizedBox(
       key: const ValueKey('attachment-menu'),
@@ -560,8 +567,9 @@ class _AttachmentMenu extends StatelessWidget {
         separatorBuilder: (_, _) =>
             const SizedBox(height: _attachmentMenuItemSpacing),
         itemBuilder: (context, index) {
-          final (icon, label, onTap) = items[index];
+          final (id, icon, label, onTap) = items[index];
           return _AttachmentMenuItem(
+            id: id,
             height: layout.itemHeight,
             icon: icon,
             label: label,
@@ -574,12 +582,14 @@ class _AttachmentMenu extends StatelessWidget {
 }
 
 class _AttachmentMenuItem extends StatelessWidget {
+  final String id;
   final double height;
   final IconData icon;
   final String label;
   final VoidCallback onTap;
 
   const _AttachmentMenuItem({
+    required this.id,
     required this.height,
     required this.icon,
     required this.label,
@@ -589,7 +599,7 @@ class _AttachmentMenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      key: ValueKey('attachment-menu-item-${label.toLowerCase()}'),
+      key: ValueKey('attachment-menu-item-$id'),
       height: height,
       child: Tooltip(
         message: label,
@@ -600,7 +610,7 @@ class _AttachmentMenuItem extends StatelessWidget {
             child: Row(
               children: [
                 SizedBox(
-                  key: ValueKey('attachment-menu-icon-${label.toLowerCase()}'),
+                  key: ValueKey('attachment-menu-icon-$id'),
                   width: _attachmentMenuIconSlotWidth,
                   child: Center(
                     child: Icon(
@@ -614,9 +624,7 @@ class _AttachmentMenuItem extends StatelessWidget {
                 Expanded(
                   child: Text(
                     label,
-                    key: ValueKey(
-                      'attachment-menu-label-${label.toLowerCase()}',
-                    ),
+                    key: ValueKey('attachment-menu-label-$id'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: context.textTheme.titleMedium?.copyWith(
@@ -728,7 +736,7 @@ class _AttachmentStrip extends StatelessWidget {
                                   const SizedBox(height: Grid.quarter),
                                   Text(
                                     attachment.file.name.isEmpty
-                                        ? 'File'
+                                        ? context.l10n.composeFileFallback
                                         : attachment.file.name,
                                     maxLines: 2,
                                     textAlign: TextAlign.center,
@@ -753,7 +761,7 @@ class _AttachmentStrip extends StatelessWidget {
                       child: IconButton(
                         onPressed: () =>
                             _runComposerAction(() => onRemove(attachment.id)),
-                        tooltip: 'Remove attachment',
+                        tooltip: context.l10n.composeRemoveAttachment,
                         visualDensity: VisualDensity.compact,
                         style: IconButton.styleFrom(
                           backgroundColor: context.colors.surface.withValues(

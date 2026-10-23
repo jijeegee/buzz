@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import 'thread_name_provider.dart';
 
@@ -53,15 +54,13 @@ class ThreadNameEditor extends HookConsumerWidget {
     return PopScope(
       canPop: !saving.value,
       child: AlertDialog(
-        title: const Text('Thread name'),
+        title: Text(context.l10n.threadNameTitle),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Visible to everyone in this group. Up to 40 English or 20 Korean characters. Leave empty to remove the name.',
-              ),
+              Text(context.l10n.threadNameBody),
               const SizedBox(height: Grid.md),
               TextField(
                 key: const ValueKey('thread-name-input'),
@@ -71,10 +70,11 @@ class ThreadNameEditor extends HookConsumerWidget {
                 maxLines: 1,
                 textInputAction: TextInputAction.done,
                 decoration: InputDecoration(
-                  labelText: 'Name',
+                  labelText: context.l10n.threadNameLabel,
                   errorText: error,
-                  counterText:
-                      '${threadNameWeight(controller.text.trim())} / 40 · English 1, Korean 2',
+                  counterText: context.l10n.threadNameCounter(
+                    threadNameWeight(controller.text.trim()),
+                  ),
                 ),
                 onChanged: (text) {
                   writes.value = writes.value
@@ -96,12 +96,16 @@ class ThreadNameEditor extends HookConsumerWidget {
         actions: [
           TextButton(
             onPressed: saving.value ? null : () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+            child: Text(context.l10n.commonClose),
           ),
           FilledButton(
             key: const ValueKey('thread-name-save'),
             onPressed: saving.value || error != null ? null : save,
-            child: Text(saving.value ? 'Saving…' : 'Save'),
+            child: Text(
+              saving.value
+                  ? context.l10n.commonSaving
+                  : context.l10n.commonSave,
+            ),
           ),
         ],
       ),

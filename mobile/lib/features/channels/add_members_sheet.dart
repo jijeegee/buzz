@@ -9,6 +9,7 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import 'channel_management_provider.dart';
 
 /// Searchable multi-select used to add people or agents to a channel.
@@ -203,9 +204,9 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                 enableSuggestions: false,
                 enabled: !isSubmitting.value,
                 onChanged: (value) => query.value = value,
-                decoration: const InputDecoration(
-                  hintText: 'Search for people or agents',
-                  prefixIcon: Icon(LucideIcons.search),
+                decoration: InputDecoration(
+                  hintText: context.l10n.channelAddMembersSearchHint,
+                  prefixIcon: const Icon(LucideIcons.search),
                 ),
               ),
               if (selectedUsers.value.isNotEmpty) ...[
@@ -237,9 +238,12 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                       ? Center(
                           child: Text(
                             normalizedQuery.isEmpty
-                                ? 'Everyone available is already in this '
-                                      '${chat ? 'chat' : 'group'}.'
-                                : 'No matching people or agents.',
+                                ? (chat
+                                      ? context.l10n.channelAddMembersAllInChat
+                                      : context
+                                            .l10n
+                                            .channelAddMembersAllInGroup)
+                                : context.l10n.channelAddMembersNoMatches,
                             textAlign: TextAlign.center,
                           ),
                         )
@@ -258,7 +262,9 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                               button: true,
                               selected: selected,
                               label: selected
-                                  ? '${labelFor(user)}, selected'
+                                  ? context.l10n.channelAddMembersSelected(
+                                      labelFor(user),
+                                    )
                                   : labelFor(user),
                               child: ListTile(
                                 contentPadding: EdgeInsets.zero,
@@ -293,15 +299,15 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                             );
                           },
                         ),
-                  loading: () => const Center(
+                  loading: () => Center(
                     child: KuzzLoadingIndicator(
                       size: 44,
-                      semanticLabel: 'Loading people and agents',
+                      semanticLabel: context.l10n.channelAddMembersLoading,
                     ),
                   ),
                   error: (error, _) => Center(
                     child: Text(
-                      'Couldn’t load people or agents. Try again.',
+                      context.l10n.channelAddMembersLoadError,
                       style: context.textTheme.bodyMedium?.copyWith(
                         color: context.colors.error,
                       ),
@@ -329,14 +335,16 @@ class AddChannelMembersSheet extends HookConsumerWidget {
                       : addSelectedMembers,
                   child: Text(
                     startChat != null
-                        ? (isSubmitting.value ? 'Starting…' : 'Start chat')
+                        ? (isSubmitting.value
+                              ? context.l10n.channelAddMembersStarting
+                              : context.l10n.channelAddMembersStartChat)
                         : isSubmitting.value
-                        ? 'Adding…'
+                        ? context.l10n.channelAddMembersAdding
                         : chat
-                        ? 'Add people'
-                        : selectedUsers.value.length == 1
-                        ? 'Add member'
-                        : 'Add ${selectedUsers.value.length} members',
+                        ? context.l10n.channelAddPeople
+                        : context.l10n.channelAddMembersSubmit(
+                            selectedUsers.value.length,
+                          ),
                   ),
                 ),
               ),

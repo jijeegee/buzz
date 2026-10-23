@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../goals/goal_provider.dart';
 import 'channel.dart';
 import 'channel_management_provider.dart';
@@ -44,7 +45,7 @@ class RoomGoalsSwitch extends HookConsumerWidget {
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Couldn’t update goals. Try again.')),
+            SnackBar(content: Text(context.l10n.channelGoalsUpdateError)),
           );
         }
       } finally {
@@ -55,11 +56,8 @@ class RoomGoalsSwitch extends HookConsumerWidget {
     return SwitchListTile.adaptive(
       key: const ValueKey('room-goals-switch'),
       contentPadding: contentPadding,
-      title: const Text('Goals'),
-      subtitle: const Text(
-        'Track goals for this conversation. Agents get goal guidance only '
-        'when on.',
-      ),
+      title: Text(context.l10n.channelGoals),
+      subtitle: Text(context.l10n.channelGoalsBody),
       value: value,
       onChanged: canEdit && !saving ? save : null,
     );

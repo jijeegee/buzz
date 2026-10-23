@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/deeplink/pending_deep_link_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import 'channel_identity_names_provider.dart';
@@ -48,12 +49,12 @@ class MessageQuoteHeader extends ConsumerWidget {
     if (quoted == null) {
       final lookup = ref.watch(quotedMessageProvider(reference.eventId));
       if (lookup.isLoading && !lookup.hasValue) {
-        return const _QuoteHeaderPlaceholder(text: 'Loading quoted message…');
+        return _QuoteHeaderPlaceholder(text: context.l10n.messageQuoteLoading);
       }
       final fetched = lookup.value;
       if (fetched == null || fetched.message.isSystem) {
-        return const _QuoteHeaderPlaceholder(
-          text: 'Original message unavailable',
+        return _QuoteHeaderPlaceholder(
+          text: context.l10n.messageQuoteUnavailable,
         );
       }
       quoted = fetched.message;
@@ -70,7 +71,7 @@ class MessageQuoteHeader extends ConsumerWidget {
           blockedPubkeysProvider.select((ids) => ids.contains(authorPubkey)),
         ) &&
         ref.watch(foldsBlockedAuthorsProvider(quotedChannelId))) {
-      return const _QuoteHeaderPlaceholder(text: 'Message from a blocked user');
+      return _QuoteHeaderPlaceholder(text: context.l10n.messageQuoteBlocked);
     }
     if (ref.watch(userCacheProvider.select((cache) => cache[authorPubkey])) ==
         null) {
@@ -85,7 +86,7 @@ class MessageQuoteHeader extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: Grid.half),
       child: Semantics(
         button: true,
-        label: 'Jump to quoted message from $author',
+        label: context.l10n.messageQuoteJump(author),
         excludeSemantics: true,
         child: Material(
           color: Colors.transparent,

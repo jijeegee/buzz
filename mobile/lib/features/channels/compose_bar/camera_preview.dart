@@ -207,10 +207,10 @@ class _CameraPlaceholder extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(Grid.sm),
           child: isInitializing
-              ? const KuzzLoadingIndicator(
+              ? KuzzLoadingIndicator(
                   size: 44,
                   color: Colors.white,
-                  semanticLabel: 'Starting camera',
+                  semanticLabel: context.l10n.composeCameraStarting,
                 )
               : Column(
                   mainAxisSize: MainAxisSize.min,
@@ -222,7 +222,7 @@ class _CameraPlaceholder extends StatelessWidget {
                     ),
                     const SizedBox(height: Grid.xxs),
                     Text(
-                      message ?? 'Camera isn’t available here.',
+                      message ?? context.l10n.composeCameraUnavailableHere,
                       textAlign: TextAlign.center,
                       style: context.textTheme.bodyMedium?.copyWith(
                         color: Colors.white,
@@ -250,7 +250,7 @@ class _CameraCaptureButton extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: 'Take photo',
+      label: context.l10n.composeTakePhoto,
       child: GestureDetector(
         onTap: isPressed ? null : () => _runComposerAction(onTap),
         child: AnimatedScale(
@@ -290,7 +290,7 @@ class _CameraCloseButton extends StatelessWidget {
     if (Theme.of(context).platform == TargetPlatform.iOS) {
       return IosGlassNavigationButton(
         icon: IosGlassNavigationIcon.back,
-        semanticLabel: 'Back to attachment options',
+        semanticLabel: context.l10n.composeBackToAttachments,
         onPressed: () => _runComposerAction(onTap),
         width: emphasized ? _cameraBackSize : 40,
         height: emphasized ? _cameraBackSize : 40,
@@ -301,7 +301,7 @@ class _CameraCloseButton extends StatelessWidget {
       dimension: emphasized ? _cameraBackSize : 36,
       child: IconButton(
         onPressed: () => _runComposerAction(onTap),
-        tooltip: 'Back to attachment options',
+        tooltip: context.l10n.composeBackToAttachments,
         padding: EdgeInsets.zero,
         style: IconButton.styleFrom(
           backgroundColor: Colors.black.withValues(
@@ -323,10 +323,10 @@ String _cameraErrorMessage(Object error) {
     return switch (error.code) {
       'CameraAccessDenied' ||
       'CameraAccessDeniedWithoutPrompt' ||
-      'CameraAccessRestricted' => 'Camera access is turned off for Kuzz.',
-      'no-cameras' => 'Camera isn’t available on this device.',
-      _ => 'Camera couldn’t start. Try again.',
+      'CameraAccessRestricted' => appL10n.composeCameraAccessOff,
+      'no-cameras' => appL10n.composeCameraUnavailableDevice,
+      _ => appL10n.composeCameraStartError,
     };
   }
-  return 'Camera couldn’t start. Try again.';
+  return appL10n.composeCameraStartError;
 }

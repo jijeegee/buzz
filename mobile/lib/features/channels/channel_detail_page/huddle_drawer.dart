@@ -194,8 +194,8 @@ class _MobileHuddleDrawer extends ConsumerWidget {
         onTap: restoreFullScreen,
         child: Semantics(
           container: true,
-          label: 'Huddle controls',
-          hint: 'Tap outside a control to open the Huddle',
+          label: context.l10n.huddleDrawerLabel,
+          hint: context.l10n.huddleDrawerHint,
           child: Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
@@ -213,7 +213,7 @@ class _MobileHuddleDrawer extends ConsumerWidget {
                       children: [
                         _HuddleRoundControl(
                           key: const ValueKey('huddle-drawer-expand'),
-                          tooltip: 'Open Huddle',
+                          tooltip: context.l10n.huddleOpen,
                           showTooltip: false,
                           icon: LucideIcons.chevronUp,
                           foregroundColor: foreground,
@@ -225,8 +225,8 @@ class _MobileHuddleDrawer extends ConsumerWidget {
                         _HuddleRoundControl(
                           key: const ValueKey('huddle-drawer-speaker-toggle'),
                           tooltip: session.isSpeakerEnabled
-                              ? 'Use earpiece'
-                              : 'Use speaker',
+                              ? context.l10n.huddleUseEarpiece
+                              : context.l10n.huddleUseSpeaker,
                           showTooltip: false,
                           icon: LucideIcons.volume2,
                           foregroundColor: session.isSpeakerEnabled
@@ -246,7 +246,9 @@ class _MobileHuddleDrawer extends ConsumerWidget {
                         const SizedBox(width: Grid.twelve),
                         _HuddleRoundControl(
                           key: const ValueKey('huddle-drawer-mute-toggle'),
-                          tooltip: session.isMuted ? 'Unmute' : 'Mute',
+                          tooltip: session.isMuted
+                              ? context.l10n.huddleUnmute
+                              : context.l10n.huddleMute,
                           showTooltip: false,
                           icon: session.isMuted
                               ? LucideIcons.micOff
@@ -267,7 +269,7 @@ class _MobileHuddleDrawer extends ConsumerWidget {
                     ),
                     _HuddleRoundControl(
                       key: const ValueKey('huddle-drawer-leave'),
-                      tooltip: 'Leave Huddle',
+                      tooltip: context.l10n.huddleLeave,
                       showTooltip: false,
                       icon: LucideIcons.phoneOff,
                       foregroundColor: context.colors.error,

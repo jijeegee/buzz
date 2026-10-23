@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../shared/l10n/l10n.dart';
 import 'observer_models.dart';
 
 const _kuzzReadTools = <String>{
@@ -213,7 +214,7 @@ _parsePromptText(String text) {
     return (
       sections: <PromptSection>[],
       userText: text.trim(),
-      userTitle: 'Prompt',
+      userTitle: appL10n.channelAgentActivityPrompt,
     );
   }
 
@@ -234,7 +235,7 @@ _parsePromptText(String text) {
     userText: eventContent,
     userTitle: eventKind != null && eventKind.isNotEmpty
         ? _titleCase(eventKind)
-        : 'Kuzz event',
+        : appL10n.channelAgentActivityKuzzEvent,
   );
 }
 
@@ -258,7 +259,9 @@ List<PromptSection> _parsePromptSections(String text) {
       } else {
         final pre = preamble.join('\n').trim();
         if (pre.isNotEmpty) {
-          sections.add(PromptSection(title: 'Prompt', body: pre));
+          sections.add(
+            PromptSection(title: appL10n.channelAgentActivityPrompt, body: pre),
+          );
         }
       }
       currentTitle = header.group(1)!;
@@ -281,7 +284,9 @@ List<PromptSection> _parsePromptSections(String text) {
   } else {
     final pre = preamble.join('\n').trim();
     if (pre.isNotEmpty) {
-      sections.add(PromptSection(title: 'Prompt', body: pre));
+      sections.add(
+        PromptSection(title: appL10n.channelAgentActivityPrompt, body: pre),
+      );
     }
   }
 
@@ -326,7 +331,10 @@ Map<String, dynamic> _extractToolArgs(Map<String, dynamic> update) {
     }
   }
   final title =
-      _asString(update['title']) ?? knownName ?? firstSpecific ?? 'Tool call';
+      _asString(update['title']) ??
+      knownName ??
+      firstSpecific ??
+      appL10n.channelAgentActivityToolCall;
   return (
     title: title,
     toolName: knownName ?? _normalizeToolName(firstSpecific ?? title),
@@ -376,18 +384,22 @@ String _describeTurnStarted(dynamic payload) {
   if (ids is List) {
     final stringIds = ids.whereType<String>().toList();
     if (stringIds.isNotEmpty) {
-      return 'Triggered by ${stringIds.map(_shorten).join(', ')}.';
+      return appL10n.channelAgentActivityTriggeredBy(
+        stringIds.map(_shorten).join(', '),
+      );
     }
   }
-  return 'Heartbeat or internal turn.';
+  return appL10n.channelAgentActivityInternalTurn;
 }
 
 String _describeSessionResolved(dynamic payload) {
   final record = _asRecord(payload);
   final sessionId = _asString(record['sessionId']);
   final isNewSession = record['isNewSession'] == true;
-  if (sessionId == null) return 'Using existing ACP session.';
-  return '${isNewSession ? 'Created' : 'Using'} session ${_shorten(sessionId)}.';
+  if (sessionId == null) return appL10n.channelAgentActivityExistingSession;
+  return isNewSession
+      ? appL10n.channelAgentActivitySessionCreated(_shorten(sessionId))
+      : appL10n.channelAgentActivitySessionUsing(_shorten(sessionId));
 }
 
 String _safeJsonEncode(dynamic value) {
@@ -557,7 +569,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       upsertTextItem(
         'turn:${event.turnId ?? '${event.seq}'}',
         'lifecycle',
-        'Turn started',
+        appL10n.channelAgentActivityTurnStarted,
         _describeTurnStarted(event.payload),
         event.timestamp,
       );
@@ -568,7 +580,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       upsertTextItem(
         'session:${event.turnId ?? '${event.seq}'}',
         'lifecycle',
-        'Session ready',
+        appL10n.channelAgentActivitySessionReady,
         _describeSessionResolved(event.payload),
         event.timestamp,
       );
@@ -579,7 +591,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       upsertTextItem(
         'parse-error:${event.seq}',
         'lifecycle',
-        'Wire parse error',
+        appL10n.channelAgentActivityParseError,
         _extractBlockText(event.payload),
         event.timestamp,
       );
@@ -609,7 +621,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
         if (parsedPrompt.sections.isNotEmpty) {
           upsertMetadata(
             'prompt-context:${event.turnId ?? '${event.seq}'}',
-            'Prompt context',
+            appL10n.channelAgentActivityPromptContext,
             parsedPrompt.sections,
             event.timestamp,
           );
@@ -632,7 +644,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       upsertMessage(
         'assistant:${messageId ?? turnKey}',
         'assistant',
-        'Assistant',
+        appL10n.channelAgentActivityAssistant,
         _extractContentText(update['content']),
         event.timestamp,
       );
@@ -643,7 +655,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       upsertMessage(
         'user:${messageId ?? turnKey}',
         'user',
-        'User',
+        appL10n.channelAgentActivityUser,
         _extractContentText(update['content']),
         event.timestamp,
       );
@@ -654,7 +666,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       upsertTextItem(
         'thinking:${messageId ?? turnKey}',
         'thought',
-        'Thinking',
+        appL10n.channelAgentActivityThinking,
         _extractContentText(update['content']),
         event.timestamp,
       );
@@ -703,7 +715,7 @@ List<TranscriptItem> buildTranscript(List<ObserverFrame> events) {
       upsertTextItem(
         'plan:$turnKey',
         'thought',
-        'Plan',
+        appL10n.channelAgentActivityPlan,
         content.isNotEmpty ? content : _safeJsonEncode(update),
         event.timestamp,
       );

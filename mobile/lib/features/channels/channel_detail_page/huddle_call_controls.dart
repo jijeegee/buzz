@@ -25,7 +25,9 @@ class _HuddleCallControls extends StatelessWidget {
         children: [
           _HuddleRoundControl(
             key: const ValueKey('huddle-speaker-toggle'),
-            tooltip: isSpeakerEnabled ? 'Use earpiece' : 'Use speaker',
+            tooltip: isSpeakerEnabled
+                ? context.l10n.huddleUseEarpiece
+                : context.l10n.huddleUseSpeaker,
             icon: LucideIcons.volume2,
             foregroundColor: isSpeakerEnabled
                 ? context.colors.onPrimary
@@ -41,7 +43,9 @@ class _HuddleCallControls extends StatelessWidget {
           const SizedBox(width: Grid.sm),
           _HuddleRoundControl(
             key: const ValueKey('huddle-mute-toggle'),
-            tooltip: isMuted ? 'Unmute' : 'Mute',
+            tooltip: isMuted
+                ? context.l10n.huddleUnmute
+                : context.l10n.huddleMute,
             icon: isMuted ? LucideIcons.micOff : LucideIcons.mic,
             foregroundColor: isMuted
                 ? context.colors.onSurface
@@ -57,7 +61,7 @@ class _HuddleCallControls extends StatelessWidget {
           const SizedBox(width: Grid.sm),
           _HuddleRoundControl(
             key: const ValueKey('huddle-emoji-reactions'),
-            tooltip: 'Emoji reactions',
+            tooltip: context.l10n.huddleEmojiReactions,
             icon: LucideIcons.smilePlus,
             foregroundColor: context.colors.onSurface,
             backgroundColor: context.colors.surfaceContainerHighest,

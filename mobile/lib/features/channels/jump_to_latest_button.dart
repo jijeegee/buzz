@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import 'message_action_backdrop_state.dart';
 
@@ -93,10 +94,10 @@ class JumpToLatestButton extends HookWidget {
 
     return Semantics(
       button: true,
-      label: 'Jump to latest message',
+      label: context.l10n.messageJumpToLatest,
       child: Tooltip(
         excludeFromSemantics: true,
-        message: 'Jump to latest message',
+        message: context.l10n.messageJumpToLatest,
         child: SizedBox.square(
           dimension: Grid.xl,
           child: ValueListenableBuilder<bool>(

@@ -1009,14 +1009,14 @@ class _MessageList extends HookConsumerWidget {
             ),
             const SizedBox(height: Grid.xxs),
             Text(
-              'No messages yet',
+              context.l10n.channelNoMessages,
               style: context.textTheme.bodyLarge?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: Grid.half),
             Text(
-              'Be the first to say something!',
+              context.l10n.channelNoMessagesHint,
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -1117,12 +1117,12 @@ class _MessageList extends HookConsumerWidget {
                 itemBuilder: (context, index) {
                   // Loading indicator at the top (last index in reversed list).
                   if (index >= displayEntries.length) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: Grid.xs),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: Grid.xs),
                       child: Center(
                         child: KuzzLoadingIndicator(
                           size: 24,
-                          semanticLabel: 'Loading older messages',
+                          semanticLabel: context.l10n.channelLoadingOlder,
                         ),
                       ),
                     );
@@ -1281,7 +1281,7 @@ class _MessageList extends HookConsumerWidget {
                 child: IconButton.filled(
                   key: const ValueKey('channel-jump-to-oldest-unread'),
                   onPressed: scrollToOldestUnread,
-                  tooltip: 'Jump to oldest unread message',
+                  tooltip: context.l10n.channelJumpToOldestUnread,
                   style: IconButton.styleFrom(
                     backgroundColor: context.colors.primaryContainer,
                     foregroundColor: context.colors.onPrimaryContainer,

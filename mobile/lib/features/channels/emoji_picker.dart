@@ -14,6 +14,7 @@ import '../../shared/emoji/emoji_data.dart';
 import '../../shared/emoji/emoji_data_provider.dart';
 import '../../shared/emoji/emoji_search.dart';
 import '../../shared/emoji/native_emoji_glyph.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_sheet_header.dart';
@@ -280,7 +281,7 @@ List<_EmojiSection> _buildSections({
     sections.add(
       _EmojiSection(
         id: 'frequent',
-        label: 'Frequently used',
+        label: appL10n.emojiFrequentlyUsed,
         icon: LucideIcons.clock,
         itemCount: recentTiles.length,
         itemBuilder: (context, index) => recentTiles[index],
@@ -307,7 +308,7 @@ List<_EmojiSection> _buildSections({
     sections.add(
       _EmojiSection(
         id: 'custom',
-        label: 'Custom',
+        label: appL10n.emojiCustom,
         icon: LucideIcons.sparkles,
         itemCount: customEmoji.length,
         itemBuilder: (context, index) {

@@ -39,7 +39,7 @@ class _DirectThreadPlaceholder extends ConsumerWidget {
             ? IosGlassNavigationButton(
                 key: const ValueKey('thread-ios-glass-back'),
                 icon: IosGlassNavigationIcon.back,
-                semanticLabel: 'Back',
+                semanticLabel: context.l10n.commonBack,
                 onPressed: () => Navigator.of(context).maybePop(),
                 width: iosGlassChannelHeaderLeadingWidth,
                 buttonCenterX: iosGlassChannelHeaderButtonCenterX,
@@ -53,7 +53,9 @@ class _DirectThreadPlaceholder extends ConsumerWidget {
                 : 0,
           ),
           child: Text(
-            threadName == null || threadName.isEmpty ? 'Thread' : threadName,
+            threadName == null || threadName.isEmpty
+                ? context.l10n.threadTitleFallback
+                : threadName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -69,7 +71,7 @@ class _DirectThreadPlaceholder extends ConsumerWidget {
             bottom: Grid.xs + MediaQuery.paddingOf(context).bottom,
           ),
           child: Text(
-            'Loading replies…',
+            context.l10n.threadLoadingReplies,
             key: const ValueKey('thread-replies-loading'),
             style: context.textTheme.labelMedium?.copyWith(
               color: context.colors.onSurfaceVariant,

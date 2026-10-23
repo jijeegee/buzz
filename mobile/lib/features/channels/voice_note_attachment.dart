@@ -8,6 +8,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -175,17 +176,18 @@ class VoiceNoteAttachment extends HookConsumerWidget {
               }
             }
           };
+    final l10n = context.l10n;
     final playbackControlLabel = state.isLoading
         ? state.isPlaying
-              ? 'Pause voice note'
+              ? l10n.voiceNotePause
               : canCancelLoading
-              ? 'Cancel voice note loading'
-              : 'Loading voice note'
+              ? l10n.voiceNoteCancelLoading
+              : l10n.voiceNoteLoading
         : state.hasError && isRemote
-        ? 'Retry voice note'
+        ? l10n.voiceNoteRetry
         : state.isPlaying
-        ? 'Pause voice note'
-        : 'Play voice note';
+        ? l10n.voiceNotePause
+        : l10n.voiceNotePlay;
 
     return Container(
       key: ValueKey('voice-note-attachment:$source'),
@@ -272,7 +274,7 @@ class VoiceNoteAttachment extends HookConsumerWidget {
                 Text(
                   key: const ValueKey('voice-note-duration'),
                   state.hasError
-                      ? 'Voice note unavailable'
+                      ? l10n.voiceNoteUnavailable
                       : formatVoiceNoteDuration(
                           state.position > Duration.zero
                               ? state.position
@@ -303,7 +305,7 @@ class VoiceNoteAttachment extends HookConsumerWidget {
               dimension: 40,
               child: IconButton(
                 key: const ValueKey('composer-voice-note-remove'),
-                tooltip: 'Remove voice note',
+                tooltip: l10n.voiceNoteRemove,
                 onPressed: onRemove,
                 style: IconButton.styleFrom(
                   minimumSize: const Size.square(40),
@@ -334,11 +336,12 @@ class _VoiceNotePlaybackRateButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
-    label: 'Playback speed ${formatVoiceNotePlaybackRate(rate)}',
-    hint:
-        'Double tap to change to ${formatVoiceNotePlaybackRate(nextVoiceNotePlaybackRate(rate))}.',
+    label: context.l10n.voiceNoteSpeedLabel(formatVoiceNotePlaybackRate(rate)),
+    hint: context.l10n.voiceNoteSpeedHint(
+      formatVoiceNotePlaybackRate(nextVoiceNotePlaybackRate(rate)),
+    ),
     child: Tooltip(
-      message: 'Playback speed',
+      message: context.l10n.voiceNoteSpeed,
       child: Material(
         color: context.colors.primary,
         borderRadius: BorderRadius.circular(Radii.full),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/l10n/l10n.dart';
 import '../../../shared/widgets/modal_presentation.dart';
 import '../add_members_sheet.dart';
 import '../channel.dart';
@@ -31,7 +32,7 @@ Future<void> showAddPeopleToDm({
   Channel? created;
   await showKuzzModalBottomSheet<bool>(
     context: context,
-    title: 'Add people',
+    title: context.l10n.channelAddPeople,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) => AddChannelMembersSheet(

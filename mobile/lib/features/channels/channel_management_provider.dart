@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/auth/auth.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
 import '../../shared/custom_emoji/custom_emoji_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/crypto/nip_oa.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay.dart';
@@ -25,7 +26,7 @@ String _relayErrorMessage(Object error) =>
     error.toString().replaceFirst('Exception: ', '');
 
 /// Shown when the relay refuses an add because of the invitation cap.
-const tooManyInvitationsMessage = 'Too many invitations today';
+String get tooManyInvitationsMessage => appL10n.channelTooManyInvitations;
 
 /// How the relay answered one kind:9000 add that was not applied.
 enum AddMemberReply {
@@ -52,7 +53,7 @@ AddMemberReply classifyAddMemberReply(String reason) {
 
 /// "Invitation sent to A" / "Invitation sent to A, B".
 String invitationSentMessage(Iterable<String> names) =>
-    'Invitation sent to ${names.join(', ')}';
+    appL10n.channelInvitationSentTo(names.join(appL10n.systemListSeparator));
 
 /// What a kind:9000 batch did besides adding: who was sent an invitation.
 @immutable
@@ -108,7 +109,7 @@ class ChannelMember {
   String labelFor(String? currentPubkey) {
     if (currentPubkey != null &&
         currentPubkey.toLowerCase() == pubkey.toLowerCase()) {
-      return 'You';
+      return appL10n.commonYou;
     }
     if (displayName case final name? when name.trim().isNotEmpty) {
       return name.trim();

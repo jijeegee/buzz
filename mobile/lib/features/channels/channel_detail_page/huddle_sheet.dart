@@ -253,10 +253,10 @@ class _HuddleButton extends ConsumerWidget {
               }
             },
       tooltip: disabledByOtherHuddle
-          ? 'Leave your current Huddle first'
+          ? context.l10n.huddleLeaveCurrentFirst
           : activeStart != null || isCurrentParent
-          ? 'Open Huddle'
-          : 'Start Huddle',
+          ? context.l10n.huddleOpen
+          : context.l10n.huddleStart,
       icon: const Icon(LucideIcons.headphones, size: 22),
     );
   }
@@ -303,7 +303,9 @@ class _HuddleJoinSurface extends ConsumerWidget {
     final canJoin =
         isMember && !isArchived && !ended && !stale && !blockedByOtherHuddle;
 
-    final label = unavailable
+    final l10n = context.l10n;
+    // English state names keep the button key the same in every language.
+    final state = unavailable
         ? 'Start new'
         : switch ((isThisSession, session.phase, ended || stale)) {
             (true, HuddleSessionPhase.connected, _) => 'Open',
@@ -314,6 +316,15 @@ class _HuddleJoinSurface extends ConsumerWidget {
             (_, _, true) => 'Ended',
             _ => 'Join',
           };
+    final label = switch (state) {
+      'Start new' => l10n.huddleCardStartNew,
+      'Open' => l10n.huddleCardOpen,
+      'Reconnecting' => l10n.channelStatusReconnecting,
+      'Retry' => l10n.commonRetry,
+      'Joining' => l10n.huddleCardJoining,
+      'Ended' => l10n.huddleCardEnded,
+      _ => l10n.huddleCardJoin,
+    };
 
     return Padding(
       padding: const EdgeInsets.only(
@@ -343,8 +354,8 @@ class _HuddleJoinSurface extends ConsumerWidget {
                 children: [
                   Text(
                     ended || stale || unavailable
-                        ? 'Huddle ended'
-                        : 'Huddle in progress',
+                        ? l10n.huddleEnded
+                        : l10n.huddleInProgress,
                     style: context.textTheme.labelLarge?.copyWith(
                       color: context.colors.onSurface,
                       fontWeight: FontWeight.w600,
@@ -352,8 +363,8 @@ class _HuddleJoinSurface extends ConsumerWidget {
                   ),
                   Text(
                     isThisSession && session.isConnected
-                        ? '${session.participantCount} connected'
-                        : 'Foreground voice Huddle',
+                        ? l10n.huddleConnectedCount(session.participantCount)
+                        : l10n.huddleForegroundVoice,
                     style: context.textTheme.bodySmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -363,7 +374,7 @@ class _HuddleJoinSurface extends ConsumerWidget {
             ),
             const SizedBox(width: Grid.xxs),
             FilledButton.tonal(
-              key: ValueKey('huddle-$label-$ephemeralChannelId'),
+              key: ValueKey('huddle-$state-$ephemeralChannelId'),
               onPressed:
                   (canJoin || isThisSession) &&
                       session.phase != HuddleSessionPhase.leaving
@@ -450,7 +461,7 @@ void _openMobileHuddle({
   // A token community authenticates the audio socket with its bearer.
   if (!config.tokenAuth && (nsec == null || nsec.isEmpty)) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('A paired identity is required.')),
+      SnackBar(content: Text(context.l10n.huddleIdentityRequired)),
     );
     return;
   }
@@ -632,7 +643,7 @@ class _MobileHuddleCallPage extends ConsumerWidget {
 
     final (retryTooltip, retryIcon, onRetry) = switch (true) {
       _ when unavailable => (
-        'Start a new Huddle',
+        context.l10n.huddleStartNew,
         LucideIcons.headphones,
         () => unawaited(
           _startReplacementHuddle(
@@ -643,12 +654,12 @@ class _MobileHuddleCallPage extends ConsumerWidget {
         ),
       ),
       _ when needsMicrophoneSettings => (
-        'Open Settings',
+        context.l10n.huddleOpenSettings,
         LucideIcons.settings,
         () => unawaited(sessionController.openMicrophoneSettings()),
       ),
       _ => (
-        'Try again',
+        context.l10n.commonTryAgain,
         LucideIcons.refreshCw,
         () => unawaited(
           lifecycleController.join(
@@ -703,8 +714,8 @@ class _MobileHuddleCallPage extends ConsumerWidget {
                     connected: connected,
                     error: session.phase == HuddleSessionPhase.failed
                         ? unavailable
-                              ? 'This Huddle is no longer available.'
-                              : session.error ?? 'Huddle audio failed.'
+                              ? context.l10n.huddleUnavailable
+                              : session.error ?? context.l10n.huddleAudioFailed
                         : null,
                     profiles: profiles,
                     fallbackLabels: directoryDisplayNames,
@@ -764,8 +775,10 @@ class _MobileHuddleCallPage extends ConsumerWidget {
                               .catchError((Object error) {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Reaction failed'),
+                                  SnackBar(
+                                    content: Text(
+                                      context.l10n.huddleReactionFailed,
+                                    ),
                                   ),
                                 );
                               }),
@@ -815,7 +828,7 @@ class _HuddleCallHeader extends StatelessWidget {
         children: [
           IconButton(
             key: const ValueKey('huddle-minimize'),
-            tooltip: 'Minimize',
+            tooltip: context.l10n.huddleMinimize,
             onPressed: () {
               unawaited(HapticFeedback.selectionClick());
               onMinimize();
@@ -825,7 +838,7 @@ class _HuddleCallHeader extends StatelessWidget {
           const Spacer(),
           _HuddleRoundControl(
             key: const ValueKey('huddle-leave'),
-            tooltip: 'Leave Huddle',
+            tooltip: context.l10n.huddleLeave,
             icon: LucideIcons.phoneOff,
             foregroundColor: context.colors.error,
             backgroundColor: context.colors.surfaceContainerHighest,

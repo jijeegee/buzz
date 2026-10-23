@@ -330,8 +330,8 @@ class MediaVideoViewerPage extends HookConsumerWidget {
                         future: initializeFuture.value,
                         builder: (context, snapshot) {
                           if (error.value != null || snapshot.hasError) {
-                            return const _MediaLoadFailure(
-                              message: 'Failed to load video',
+                            return _MediaLoadFailure(
+                              message: context.l10n.mediaVideoLoadError,
                               icon: LucideIcons.videoOff,
                             );
                           }
@@ -362,7 +362,7 @@ class MediaVideoViewerPage extends HookConsumerWidget {
               child: SafeArea(
                 child: _MediaViewerCloseButton(
                   key: const ValueKey('message-media-video-viewer-close'),
-                  tooltip: 'Close video viewer',
+                  tooltip: context.l10n.mediaCloseVideoViewer,
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
               ),
@@ -425,11 +425,11 @@ class _VideoLoadingPoster extends StatelessWidget {
           else
             _videoPlaceholder(context),
           const ColoredBox(color: Color.fromRGBO(0, 0, 0, 0.24)),
-          const Center(
+          Center(
             child: KuzzLoadingIndicator(
               size: 44,
               color: Colors.white,
-              semanticLabel: 'Loading video',
+              semanticLabel: context.l10n.mediaVideoLoading,
             ),
           ),
         ],

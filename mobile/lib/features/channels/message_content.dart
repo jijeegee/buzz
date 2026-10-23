@@ -20,6 +20,7 @@ import '../../shared/mentions/mention_bindings.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/deeplink/pending_deep_link_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/syntax_highlight.dart';
 import '../../shared/theme/theme.dart';
@@ -402,7 +403,7 @@ class MessageContent extends HookConsumerWidget {
     return _MessageImagePreview(
       url: imageUrl,
       imeta: imeta,
-      semanticLabel: imeta?.alt ?? 'Message image',
+      semanticLabel: imeta?.alt ?? context.l10n.messageImage,
       onReply: onReply,
       onMore: onMore,
     );
@@ -447,16 +448,21 @@ class MessageContent extends HookConsumerWidget {
         label:
             _channelNameForId(resolvedChannelNames, channelId) ??
             channelId.substring(0, math.min(8, channelId.length)),
-        semanticLabel:
-            'Open group ${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))}',
+        semanticLabel: context.l10n.messageLinkOpenGroup(
+          _channelNameForId(resolvedChannelNames, channelId) ??
+              channelId.substring(0, math.min(8, channelId.length)),
+        ),
         interactive: true,
       ),
       MessageDeepLink(:final channelId, :final messageId) => (
         icon: LucideIcons.messageSquare,
         label:
             '${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))} · ${messageId.substring(0, math.min(8, messageId.length))}',
-        semanticLabel:
-            'Open message ${messageId.substring(0, math.min(8, messageId.length))} in group ${_channelNameForId(resolvedChannelNames, channelId) ?? channelId.substring(0, math.min(8, channelId.length))}',
+        semanticLabel: context.l10n.messageLinkOpenMessage(
+          messageId.substring(0, math.min(8, messageId.length)),
+          _channelNameForId(resolvedChannelNames, channelId) ??
+              channelId.substring(0, math.min(8, channelId.length)),
+        ),
         interactive: true,
       ),
       EntityDeepLink(:final type, :final repository, :final eventId) => (
@@ -469,10 +475,15 @@ class MessageContent extends HookConsumerWidget {
             ? repository
             : '$repository · ${eventId!.substring(0, 8)}',
         semanticLabel: switch (type) {
-          'repo' => 'Repository $repository',
-          'pr' =>
-            'Pull request ${eventId!.substring(0, 8)} in repository $repository',
-          _ => 'Issue ${eventId!.substring(0, 8)} in repository $repository',
+          'repo' => context.l10n.composeLinkRepoLabel(repository),
+          'pr' => context.l10n.composeLinkPullRequestLabel(
+            eventId!.substring(0, 8),
+            repository,
+          ),
+          _ => context.l10n.composeLinkIssueLabel(
+            eventId!.substring(0, 8),
+            repository,
+          ),
         },
         interactive: false,
       ),
@@ -548,7 +559,7 @@ class MessageContent extends HookConsumerWidget {
         } catch (_) {
           if (!context.mounted) return;
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            const SnackBar(content: Text('Could not open attachment')),
+            SnackBar(content: Text(context.l10n.messageAttachmentOpenError)),
           );
         }
       },
@@ -622,7 +633,7 @@ class _MessageImagePreview extends HookConsumerWidget {
                 semanticLabel: semanticLabel,
                 errorBuilder: (_, _, _) => _MediaPreviewFallback(
                   icon: LucideIcons.imageOff,
-                  label: 'Image unavailable',
+                  label: context.l10n.mediaImageUnavailable,
                 ),
               ),
             ),
@@ -769,7 +780,11 @@ class _MessageCodeBlock extends HookWidget {
     final isCopied = useState(false);
 
     Future<void> handleCopy() async {
-      await copyToClipboard(context, code, message: 'Copied code to clipboard');
+      await copyToClipboard(
+        context,
+        code,
+        message: context.l10n.messageCodeCopied,
+      );
       if (!context.mounted) return;
       isCopied.value = true;
       Future.delayed(const Duration(seconds: 2), () {

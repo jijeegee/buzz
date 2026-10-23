@@ -222,7 +222,7 @@ class _EmojiSearchResults extends StatelessWidget {
     if (entries.isEmpty && customEmoji.isEmpty) {
       return _EmojiEmptyState(
         icon: LucideIcons.searchX,
-        message: 'No emoji found.',
+        message: context.l10n.emojiNoneFound,
       );
     }
 
@@ -231,7 +231,7 @@ class _EmojiSearchResults extends StatelessWidget {
       controller: controller,
       slivers: [
         if (customEmoji.isNotEmpty) ...[
-          const _SectionHeader(label: 'Custom'),
+          _SectionHeader(label: context.l10n.emojiCustom),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
             sliver: SliverGrid.builder(
@@ -248,7 +248,8 @@ class _EmojiSearchResults extends StatelessWidget {
           ),
         ],
         if (entries.isNotEmpty) ...[
-          if (customEmoji.isNotEmpty) const _SectionHeader(label: 'Emoji'),
+          if (customEmoji.isNotEmpty)
+            _SectionHeader(label: context.l10n.emojiSection),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: Grid.gutter),
             sliver: SliverGrid.builder(

@@ -32,7 +32,7 @@ class _SendButton extends StatelessWidget {
             ? KuzzLoadingIndicator(
                 size: 18,
                 color: context.colors.onPrimary,
-                semanticLabel: 'Sending message',
+                semanticLabel: context.l10n.composeSending,
               )
             : Icon(
                 LucideIcons.arrowUp,

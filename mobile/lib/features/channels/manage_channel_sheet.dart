@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -113,7 +114,7 @@ class ManageChannelSheet extends HookConsumerWidget {
         await change();
       } catch (_) {
         if (context.mounted) {
-          actionError.value = "We couldn't update the group photo. Try again.";
+          actionError.value = context.l10n.channelGroupPhotoUpdateError;
         }
       } finally {
         if (context.mounted) isSavingPhoto.value = false;
@@ -198,7 +199,7 @@ class ManageChannelSheet extends HookConsumerWidget {
               outlineKey: const ValueKey('manage-channel-name-outline'),
               controller: nameController,
               enabled: canEditDetails && !isSavingDetails.value,
-              hintText: 'Group name',
+              hintText: context.l10n.channelManageGroupName,
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: Grid.xs),
@@ -207,7 +208,7 @@ class ManageChannelSheet extends HookConsumerWidget {
               outlineKey: const ValueKey('manage-channel-description-outline'),
               controller: descriptionController,
               enabled: canEditDetails && !isSavingDetails.value,
-              hintText: 'Description',
+              hintText: context.l10n.channelCreateDescription,
               minLines: 2,
               maxLines: 4,
               textInputAction: TextInputAction.newline,
@@ -215,7 +216,7 @@ class ManageChannelSheet extends HookConsumerWidget {
             if (canonicalName.isEmpty) ...[
               const SizedBox(height: Grid.half),
               Text(
-                'Group name is required.',
+                context.l10n.channelManageGroupNameRequired,
                 style: context.textTheme.bodySmall?.copyWith(
                   color: context.colors.error,
                 ),
@@ -227,12 +228,16 @@ class ManageChannelSheet extends HookConsumerWidget {
               child: FilledButton(
                 key: const ValueKey('manage-channel-save-details'),
                 onPressed: canSaveDetails ? saveDetails : null,
-                child: Text(isSavingDetails.value ? 'Saving…' : 'Save changes'),
+                child: Text(
+                  isSavingDetails.value
+                      ? context.l10n.commonSaving
+                      : context.l10n.channelManageSaveChanges,
+                ),
               ),
             ),
             const SizedBox(height: Grid.sm),
             _ManageChannelSection(
-              label: 'Canvas',
+              label: context.l10n.channelManageCanvas,
               child: canvasAsync.when(
                 data: (canvas) {
                   if (isEditingCanvas.value) {
@@ -244,8 +249,8 @@ class ManageChannelSheet extends HookConsumerWidget {
                           controller: canvasController,
                           maxLines: 8,
                           minLines: 6,
-                          decoration: const InputDecoration(
-                            hintText: 'Write your canvas content in Markdown…',
+                          decoration: InputDecoration(
+                            hintText: context.l10n.channelManageCanvasHint,
                           ),
                         ),
                         const SizedBox(height: Grid.xxs),
@@ -260,7 +265,7 @@ class ManageChannelSheet extends HookConsumerWidget {
                                       canvasController.text =
                                           canvas.content ?? '';
                                     },
-                              child: const Text('Cancel'),
+                              child: Text(context.l10n.commonCancel),
                             ),
                             const SizedBox(width: Grid.half),
                             FilledButton(
@@ -269,8 +274,8 @@ class ManageChannelSheet extends HookConsumerWidget {
                                   : saveCanvas,
                               child: Text(
                                 isSavingCanvas.value
-                                    ? 'Saving…'
-                                    : 'Save canvas',
+                                    ? context.l10n.commonSaving
+                                    : context.l10n.channelManageSaveCanvas,
                               ),
                             ),
                           ],
@@ -285,7 +290,7 @@ class ManageChannelSheet extends HookConsumerWidget {
                       Text(
                         canvas.content?.trim().isNotEmpty == true
                             ? canvas.content!
-                            : 'No canvas set for this group.',
+                            : context.l10n.channelManageCanvasEmpty,
                         style: context.textTheme.bodyMedium?.copyWith(
                           color: context.colors.onSurfaceVariant,
                         ),
@@ -299,22 +304,22 @@ class ManageChannelSheet extends HookConsumerWidget {
                               : null,
                           child: Text(
                             canvas.content?.trim().isNotEmpty == true
-                                ? 'Edit canvas'
-                                : 'Create canvas',
+                                ? context.l10n.channelManageEditCanvas
+                                : context.l10n.channelManageCreateCanvas,
                           ),
                         ),
                       ),
                     ],
                   );
                 },
-                loading: () => const Center(
+                loading: () => Center(
                   child: KuzzLoadingIndicator(
                     size: 40,
-                    semanticLabel: 'Loading group canvas',
+                    semanticLabel: context.l10n.channelManageCanvasLoading,
                   ),
                 ),
                 error: (error, _) => Text(
-                  'Couldn’t load the group canvas.',
+                  context.l10n.channelManageCanvasLoadError,
                   style: context.textTheme.bodySmall?.copyWith(
                     color: context.colors.error,
                   ),

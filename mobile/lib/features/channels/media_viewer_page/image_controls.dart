@@ -31,7 +31,7 @@ class _MediaViewerBottomControls extends StatelessWidget {
           _MediaViewerCircleButton(
             key: const ValueKey('message-media-image-viewer-reply-thread'),
             icon: LucideIcons.messageSquareReply,
-            tooltip: 'Reply in thread',
+            tooltip: context.l10n.messageReplyInThread,
             onPressed: onReply,
           ),
           const SizedBox(width: Grid.xxs),
@@ -52,7 +52,7 @@ class _MediaViewerBottomControls extends StatelessWidget {
           _MediaViewerCircleButton(
             key: const ValueKey('message-media-image-viewer-more-actions'),
             icon: LucideIcons.ellipsis,
-            tooltip: 'More image actions',
+            tooltip: context.l10n.mediaMoreImageActions,
             onPressed: onMore,
           ),
         ],
@@ -183,8 +183,8 @@ class _MediaViewerFilmstripImage extends StatelessWidget {
       button: true,
       selected: selected,
       label: selected
-          ? 'Image ${index + 1}, selected'
-          : 'Show image ${index + 1}',
+          ? context.l10n.mediaImageSelected(index + 1)
+          : context.l10n.mediaShowImage(index + 1),
       child: GestureDetector(
         key: ValueKey('message-media-image-viewer-thumbnail:$index'),
         onTap: () => onSelect(index),

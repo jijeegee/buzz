@@ -78,21 +78,20 @@ class _ThreadMessageList extends StatelessWidget {
     required this.quoteScope,
   });
 
-  String get _replySummary {
+  String _replySummary(AppLocalizations l10n) {
     if (hasOlderReplies) {
       return isLoadingOlderReplies
-          ? 'Loading earlier replies…'
-          : 'Earlier replies load as you scroll up';
+          ? l10n.threadLoadingEarlierReplies
+          : l10n.threadEarlierRepliesOnScroll;
     }
     if (!relayReplyState.hasValue && replies.isEmpty) {
       return relayReplyState.isLoading
-          ? 'Loading replies…'
-          : 'Couldn’t load replies';
+          ? l10n.threadLoadingReplies
+          : l10n.threadLoadRepliesError;
     }
-    final count =
-        '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}';
+    final count = l10n.threadSummaryReplyCount(replies.length);
     if (!relayReplyState.hasError) return count;
-    return '$count · ${relayReplyState.isLoading ? 'Retrying…' : 'Couldn’t refresh'}';
+    return '$count · ${relayReplyState.isLoading ? l10n.threadRepliesRetrying : l10n.threadRepliesRefreshError}';
   }
 
   @override
@@ -137,7 +136,7 @@ class _ThreadMessageList extends StatelessWidget {
           key: const ValueKey('thread-replies-loading'),
           padding: const EdgeInsets.symmetric(vertical: Grid.xs),
           child: Text(
-            'Loading replies…',
+            context.l10n.threadLoadingReplies,
             style: context.textTheme.labelMedium?.copyWith(
               color: context.colors.onSurfaceVariant,
               fontWeight: FontWeight.w600,
@@ -146,10 +145,10 @@ class _ThreadMessageList extends StatelessWidget {
         );
       }
       if (headIsDeleted) {
-        return const Padding(
-          key: ValueKey('thread-message-deleted'),
-          padding: EdgeInsets.only(bottom: Grid.xs),
-          child: Text('This message was deleted'),
+        return Padding(
+          key: const ValueKey('thread-message-deleted'),
+          padding: const EdgeInsets.only(bottom: Grid.xs),
+          child: Text(context.l10n.threadMessageDeleted),
         );
       }
       return Padding(
@@ -190,7 +189,7 @@ class _ThreadMessageList extends StatelessWidget {
                     child: Semantics(
                       liveRegion: true,
                       child: Text(
-                        _replySummary,
+                        _replySummary(context.l10n),
                         style: context.textTheme.labelMedium?.copyWith(
                           color: context.colors.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
@@ -202,7 +201,7 @@ class _ThreadMessageList extends StatelessWidget {
                     IconButton(
                       key: const ValueKey('thread-replies-retry'),
                       onPressed: onRetryReplies,
-                      tooltip: 'Retry',
+                      tooltip: context.l10n.commonRetry,
                       icon: const Icon(LucideIcons.refreshCcw, size: 16),
                     ),
                   const SizedBox(width: Grid.xxs),
