@@ -19,6 +19,7 @@ import {
   useChannelMembersQuery,
   useDeleteChannelMutation,
   useJoinChannelMutation,
+  type LeaveChannelArgs,
   useLeaveChannelMutation,
   useUnarchiveChannelMutation,
   useUpdateChannelMutation,
@@ -91,10 +92,12 @@ import {
 } from "./ChannelManagementModerationActions";
 import { ChannelMemberAvatarStack } from "./ChannelMemberAvatarStack";
 import { ChannelGoalsSwitchRow } from "./ChannelGoalsSwitchRow";
+import { ChannelHistorySwitchRow } from "./ChannelHistorySwitchRow";
 import { useChannelGoalsSwitch } from "./useChannelGoalsSwitch";
 import { isGroupChat } from "../lib/groupChat";
 import { ChatInfoSummary, MuteNotificationsRow } from "./ChatInfoSummary";
 import { useT } from "@/shared/i18n";
+import { LeaveChannelConfirmDialog } from "./LeaveChannelConfirmDialog";
 
 type ManagementView = "summary" | "canvas" | "workflows" | "goals";
 
@@ -751,7 +754,7 @@ type ChannelManagementPanelContentProps = {
   mode: AuxiliaryPanelMode;
   transparentChrome?: boolean;
   joinChannelMutation: ChannelMutation;
-  leaveChannelMutation: ChannelMutation;
+  leaveChannelMutation: ChannelMutation<LeaveChannelArgs>;
   memberCount: number;
   members: ChannelMember[];
   membersError: unknown;
@@ -810,6 +813,12 @@ function ChannelManagementPanelContent({
   const t = useT();
   const scrollRef = React.useRef<HTMLDivElement>(null);
   useScrollBoundaryLock(scrollRef);
+  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = React.useState(false);
+  const leave = (removeAgentPubkeys: readonly string[]) => {
+    void leaveChannelMutation
+      .mutateAsync({ removeAgentPubkeys })
+      .then(() => onOpenChange(false));
+  };
 
   return (
     <AuxiliaryPanelContext.Provider
@@ -889,11 +898,7 @@ function ChannelManagementPanelContent({
             memberCount={memberCount}
             members={members}
             membersError={membersError}
-            onLeave={() => {
-              void leaveChannelMutation.mutateAsync().then(() => {
-                onOpenChange(false);
-              });
-            }}
+            onLeave={leave}
             onOpenPeople={onOpenMembers}
           />
         ) : activeView === "summary" ? (
@@ -980,6 +985,10 @@ function ChannelManagementPanelContent({
               error={goalsSwitchError}
               isSaving={isSavingGoals}
               onCheckedChange={onGoalsEnabledChange}
+            />
+            <ChannelHistorySwitchRow
+              canManageChannel={canEditChannel}
+              channel={resolvedChannel}
             />
 
             {goalsEnabled ? (
@@ -1076,12 +1085,17 @@ function ChannelManagementPanelContent({
                         ? t("channels.settings.leaving")
                         : t("channels.settings.leave")
                     }
-                    onClick={() => {
-                      void leaveChannelMutation.mutateAsync().then(() => {
-                        onOpenChange(false);
-                      });
-                    }}
+                    onClick={() => setIsLeaveConfirmOpen(true)}
                     testId="channel-management-leave"
+                  />
+                ) : null}
+                {canLeave ? (
+                  <LeaveChannelConfirmDialog
+                    channelId={resolvedChannel.id}
+                    channelName={resolvedChannel.name}
+                    onLeave={leave}
+                    onOpenChange={setIsLeaveConfirmOpen}
+                    open={isLeaveConfirmOpen}
                   />
                 ) : null}
                 {canEditChannel ? (

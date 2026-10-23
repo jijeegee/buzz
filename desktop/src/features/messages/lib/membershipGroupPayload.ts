@@ -28,6 +28,8 @@ export type SystemMessagePayload = {
   goals?: string;
   /** `picture_changed`: the new group photo URL, `""` when removed. */
   picture?: string;
+  /** `history_changed`: earlier-message visibility, `"all"` or `"since_join"`. */
+  history?: string;
   // Moderation tombstone fields (kind:40099 "message_deleted"). All optional and
   // moderator-authored — present when a moderator removed the message, absent for
   // a plain member self-delete. Reporter identity/evidence never appears here.

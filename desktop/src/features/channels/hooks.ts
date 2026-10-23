@@ -1,4 +1,5 @@
 import * as React from "react";
+import { toast } from "sonner";
 import {
   useMutation,
   useQuery,
@@ -41,6 +42,7 @@ import {
   type OpenDmInput,
 } from "@/shared/api/tauriChannels";
 import { mergeConcurrentChannelRecency } from "@/features/channels/lib/channelRecencyMerge";
+import { leaveRemovingAgents } from "@/features/channels/lib/leaveWithAgents";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import { useCommunities } from "@/features/communities/useCommunities";
@@ -932,16 +934,31 @@ export function useJoinChannelMutation(channelId: string | null) {
   });
 }
 
+export type LeaveChannelArgs = {
+  /** My agents to remove from the room before leaving it. */
+  removeAgentPubkeys?: readonly string[];
+};
+
 export function useLeaveChannelMutation(channelId: string | null) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (args: LeaveChannelArgs) => {
       if (!channelId) {
         throw new Error(t("channels.noGroupSelected"));
       }
 
-      await leaveChannel(channelId);
+      return leaveRemovingAgents({
+        agentPubkeys: args.removeAgentPubkeys ?? [],
+        leave: () => leaveChannel(channelId),
+        removeMember: (pubkey) => removeChannelMember(channelId, pubkey),
+      });
+    },
+    onSuccess: ({ failedAgentRemovals }) => {
+      const count = failedAgentRemovals.length;
+      if (count > 0) {
+        toast.error(t("channels.leave.agentsNotRemoved", { count }));
+      }
     },
     onSettled: async () => {
       await invalidateChannelState(queryClient, channelId);

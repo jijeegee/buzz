@@ -8503,6 +8503,14 @@
   "@sidebar.leaveDialog.confirm": {
     "description": "Leave confirmation, red confirm button. Short."
   },
+  "sidebar.leaveDialog.leaveOnly": "Leave only",
+  "@sidebar.leaveDialog.leaveOnly": {
+    "description": "Leave confirmation when I have agents in the room: button that leaves but keeps my agents in it. Short."
+  },
+  "sidebar.leaveDialog.leaveWithAgents": "{count, plural, one {Leave and remove my agent} other {Leave and remove my # agents}}",
+  "@sidebar.leaveDialog.leaveWithAgents": {
+    "description": "Leave confirmation when I have agents in the room: red button that removes my agents, then leaves. count is how many of my agents are in the room. Short."
+  },
   "sidebar.menu.markRead": "Mark as read",
   "@sidebar.menu.markRead": {
     "description": "Sidebar row menus (group, chat, thread) and activity popover, item/button that marks it read. Short."
@@ -15703,6 +15711,18 @@
   "@channels.settings.leave": {
     "description": "Action that leaves a group. Short."
   },
+  "channels.settings.historyLabel": "New members can see earlier messages",
+  "@channels.settings.historyLabel": {
+    "description": "Group settings, switch label: whether people who join later can read messages sent before they joined."
+  },
+  "channels.settings.historyHint": "When off, people who join see only messages sent after they joined.",
+  "@channels.settings.historyHint": {
+    "description": "Group settings, grey hint under the earlier-messages switch."
+  },
+  "channels.leave.agentsNotRemoved": "{count, plural, one {Left, but one of your agents could not be removed.} other {Left, but # of your agents could not be removed.}}",
+  "@channels.leave.agentsNotRemoved": {
+    "description": "Error toast after leaving a group: some of my agents could not be removed from it. count is how many."
+  },
   "channels.settings.restoring": "Restoring group...",
   "@channels.settings.restoring": {
     "description": "Unarchive action label while restoring. Short."
@@ -16206,6 +16226,14 @@
   "messages.system.goalsOff": "turned goals off",
   "@messages.system.goalsOff": {
     "description": "Chat timeline system line after a person's name: they switched off the group's goals feature."
+  },
+  "messages.system.historyAll": "let new members see earlier messages",
+  "@messages.system.historyAll": {
+    "description": "Chat timeline system line after a person's name: they let people who join later read earlier messages."
+  },
+  "messages.system.historySinceJoin": "hid earlier messages from new members",
+  "@messages.system.historySinceJoin": {
+    "description": "Chat timeline system line after a person's name: people who join later now see only messages sent after they joined."
   },
   "messages.system.changedPhoto": "{room, select, chat {changed the chat photo} other {changed the group photo}}",
   "@messages.system.changedPhoto": {
@@ -17130,6 +17158,10 @@
   "messages.quote.unavailable": "Original message unavailable",
   "@messages.quote.unavailable": {
     "description": "Chat timeline, header of a quoting message when the quoted message is deleted or cannot be loaded."
+  },
+  "messages.quote.beforeJoin": "Sent before you joined",
+  "@messages.quote.beforeJoin": {
+    "description": "Tooltip on a quoted message that was sent before I joined the room, so it cannot be opened."
   },
   "messages.quote.jumpTo": "Jump to quoted message from {author}",
   "@messages.quote.jumpTo": {
