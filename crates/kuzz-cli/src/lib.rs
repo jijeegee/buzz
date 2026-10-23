@@ -7,6 +7,8 @@ pub mod device;
 mod error;
 mod help_tree;
 mod links;
+mod pairing;
+mod private_file;
 mod validate;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
@@ -99,6 +101,8 @@ where
     let mut cli = Cli::from_arg_matches(&matches)?;
     cli.private_key_from_argv =
         matches.value_source("private_key") == Some(clap::parser::ValueSource::CommandLine);
+    cli.relay_from_default =
+        matches.value_source("relay") == Some(clap::parser::ValueSource::DefaultValue);
     Ok(cli)
 }
 
@@ -136,6 +140,10 @@ Configuration (flags override env vars):
   KUZZ_AUTH_TAG      NIP-OA auth tag JSON  [key mode, optional]
   KUZZ_SESSION_FILE  Login stored by `kuzz auth login` [default: <config dir>/kuzz/session.json]
                      (used last: only when no token or private key is configured)
+  KUZZ_PAIRING_DIR   Agents paired by `kuzz pair` [default: <local data dir>/kuzz/pairings]
+                     (a paired agent is the identity when this relay has no stored login;
+                     its relay is the default relay when KUZZ_RELAY_URL is unset)
+  KUZZ_PAIRED_AGENT  Which paired agent to act as (name or pubkey) [default: newest]
 
 The 'pack' subcommand runs locally and does not require a relay connection.
 
@@ -154,6 +162,10 @@ struct Cli {
     /// `--private-key` came from argv rather than `KUZZ_PRIVATE_KEY`.
     #[arg(skip)]
     private_key_from_argv: bool,
+
+    /// Neither `--relay` nor `KUZZ_RELAY_URL` was given.
+    #[arg(skip)]
+    relay_from_default: bool,
 
     /// NIP-OA auth tag JSON (owner attestation). Injected into every signed event.
     #[arg(long, env = "KUZZ_AUTH_TAG", hide_env_values = true)]
@@ -254,6 +266,51 @@ enum Cmd {
     /// Sign in with Google, manage devices, sessions and bots
     #[command(subcommand)]
     Auth(commands::auth::AuthCmd),
+    /// Connect an agent on this computer to an owner (paste the app's command)
+    #[command(
+        long_about = "\
+Connect an agent on this computer to the owner whose app made the code.
+
+In the app the owner presses \"Connect external agent\" and copies the command
+`kuzz pair <code> --relay <url>`. Run it here: it connects at once, with no
+Google sign-in on this computer. A code works once and expires after 10
+minutes. The relay comes from --relay (after `pair` or before it) or
+KUZZ_RELAY_URL; without one, pair stops instead of guessing a server.
+
+Afterwards this agent is this computer's default identity for that relay
+(`kuzz messages send`, `kuzz messages watch`, ...), unless a person is signed
+in here with `kuzz auth login`. Its relay becomes the default relay.
+
+Keys: pair creates this computer's device key if there is none. It generates
+a new agent key and keeps it only in the pairing file under
+<local data dir>/kuzz/pairings (KUZZ_PAIRING_DIR), readable only by this OS
+user. An agent that already has a key passes it with --private-key or
+KUZZ_PRIVATE_KEY; then only its public key is recorded. Keys are never
+printed, and the agent key works only from this computer.
+
+Errors: invalid (not a code, unknown or expired), code_used (each code works
+once), key_in_use, device_limit, rate_limited.",
+        after_help = "Examples:\n  kuzz pair <CODE> --relay https://relay.example --name Hermes\n  kuzz --relay https://relay.example pair <CODE> --device-name \"studio mac\""
+    )]
+    Pair {
+        /// The pairing code shown by the app
+        code: String,
+        /// The server that made the code (as in the app's command). Without
+        /// it, the global --relay / KUZZ_RELAY_URL; never the localhost
+        /// default
+        #[arg(long = "relay", visible_alias = "relay-url", value_name = "URL")]
+        pair_relay: Option<String>,
+        /// The agent's display name (published as its profile name)
+        #[arg(long)]
+        name: Option<String>,
+        /// This computer's name as the owner sees it (default: host name)
+        #[arg(long)]
+        device_name: Option<String>,
+        /// Then install the Hermes plugin for the owner (needs Python and a
+        /// Hermes home; otherwise prints the manual step)
+        #[arg(long)]
+        hermes: bool,
+    },
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
     Agents(AgentsCmd),
@@ -639,6 +696,41 @@ pub enum MessagesCmd {
         /// Vote direction: "up" or "down"
         #[arg(long)]
         direction: String,
+    },
+    /// Stream new messages for this identity as JSON lines (runs until stopped)
+    #[command(
+        long_about = "\
+Stream new messages for this identity, one JSON object per line on stdout.
+
+Covers every channel and DM this identity is a member of (including ones it
+joins while watching) and messages anywhere that mention it. Its own messages
+are not printed. Runs until stopped; a lost connection is reopened with
+backoff (1 s doubling to 60 s) and resumes where it left off. A message may
+repeat across reconnects or restarts: deduplicate by id. Status lines go to
+stderr. When this identity can no longer act here it exits with code 3 and
+the error on stderr names `signed_out` (signed out), `revoked` (the owner
+disconnected it, or it is no longer a member of the relay) or `not_paired`
+(no pairing or credential on this computer); other failures are retried
+(three refused AUTHs in a row also exit with 3, as `signed_out` for a
+token login, whose token is renewed before every reconnect).
+
+Each line:
+  id           event id (64 hex)
+  channel      channel UUID, or null
+  author       author pubkey (64 hex)
+  author_name  author's display name, or null
+  content      message text
+  created_at   unix seconds
+  thread_root  event id of the thread root for a thread reply, else null
+  mentions     pubkeys the message mentions (array of 64 hex)
+
+To resume after a restart, pass the last created_at seen as --since.",
+        after_help = "Examples:\n  kuzz messages watch\n  kuzz messages watch --since 1783497600"
+    )]
+    Watch {
+        /// Unix seconds: also print messages from this time on (default: now)
+        #[arg(long)]
+        since: Option<i64>,
     },
 }
 
@@ -2588,8 +2680,67 @@ async fn client_from_session(
     }
 }
 
+/// `kuzz messages watch` with its identity: the paired agent, else the usual
+/// credential. A credential error that will not fix itself carries the word
+/// the supervisor parks on (`not_paired`, `signed_out`); in token mode the
+/// token is renewed before every reconnect.
+async fn watch_messages(
+    relay_url: String,
+    since: Option<i64>,
+    paired: Option<Keys>,
+    token_source: Option<kuzz_token_broker::TokenSource>,
+    private_key: Option<String>,
+    auth_tag: Option<String>,
+    session: Option<auth_session::SessionStore>,
+) -> Result<(), CliError> {
+    if let Some(keys) = paired {
+        let client = KuzzClient::new(relay_url, keys, None, None)?;
+        return commands::watch::cmd_watch(&client, since, None).await;
+    }
+    let key_mode = token_source.is_none() && private_key.is_some();
+    let uses_session = token_source.is_none() && private_key.is_none() && session.is_some();
+    let reauth: Option<commands::watch::Reauth> = if let Some(source) = token_source.clone() {
+        let relay_url = relay_url.clone();
+        Some(Box::new(move || -> commands::watch::ReauthFuture {
+            let (relay_url, source) = (relay_url.clone(), source.clone());
+            Box::pin(async move { KuzzClient::from_token_source(relay_url, source).await })
+        }))
+    } else if let (true, Some(store)) = (uses_session, session.clone()) {
+        let relay_url = relay_url.clone();
+        Some(Box::new(move || -> commands::watch::ReauthFuture {
+            let (relay_url, store) = (relay_url.clone(), store.clone());
+            Box::pin(async move { client_from_session(relay_url, &store).await })
+        }))
+    } else {
+        None
+    };
+    let client = build_client_with_session(
+        relay_url,
+        token_source,
+        private_key,
+        auth_tag,
+        session.as_ref(),
+    )
+    .await
+    .map_err(|error| match error {
+        CliError::Auth(message) if !key_mode => match commands::watch::credential_word(&message) {
+            Some(word) => CliError::Auth(format!("{word}: {message}")),
+            None => CliError::Auth(message),
+        },
+        other => other,
+    })?;
+    commands::watch::cmd_watch(&client, since, reauth).await
+}
+
 async fn run(cli: Cli) -> Result<(), CliError> {
-    let relay_url = client::normalize_relay_url(&cli.relay);
+    let env = |name: &str| std::env::var(name).ok();
+    let pairings = pairing::PairingStore::open_default();
+    let relay = if cli.relay_from_default {
+        pairing::paired_relay(pairings.as_ref(), env).unwrap_or_else(|| cli.relay.clone())
+    } else {
+        cli.relay.clone()
+    };
+    let relay_url = client::normalize_relay_url(&relay);
 
     // Pack commands are local-only — no relay connection needed.
     if let Cmd::Pack(ref sub) = cli.command {
@@ -2603,7 +2754,44 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         return commands::dms::cmd_add_dm_member();
     }
 
+    // `kuzz pair` makes the agent's identity; it needs no credential.
+    if let Cmd::Pair {
+        code,
+        pair_relay,
+        name,
+        device_name,
+        hermes,
+    } = cli.command
+    {
+        let relay = pairing::pair_relay(pair_relay.as_deref(), &cli.relay, cli.relay_from_default)?;
+        return pairing::cmd_pair(
+            &client::normalize_relay_url(&relay),
+            &code,
+            name,
+            device_name,
+            cli.private_key,
+            hermes,
+        )
+        .await;
+    }
+
     let token_source = token_source_for(&cli, kuzz_token_broker::TokenSource::from_env());
+    let session = stored_session_for(env);
+    // A paired agent acts when nothing else is configured and no person is
+    // signed in to this relay here.
+    let paired = if token_source.is_none() && cli.private_key.is_none() {
+        pairing::paired_identity(&relay_url, session.as_ref(), pairings.as_ref(), env)
+    } else {
+        None
+    };
+
+    if let (Cmd::Auth(commands::auth::AuthCmd::Whoami), Some((keys, pairing))) =
+        (&cli.command, &paired)
+    {
+        let me = pairing::whoami(&relay_url, keys, pairing.clone(), pairings.as_ref()).await;
+        println!("{me}");
+        return Ok(());
+    }
 
     // `kuzz auth` manages the stored login itself (login needs no credential).
     if let Cmd::Auth(sub) = cli.command {
@@ -2617,15 +2805,32 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await;
     }
 
-    let session = stored_session_for(|name| std::env::var(name).ok());
-    let client = build_client_with_session(
-        relay_url,
-        token_source,
-        cli.private_key,
-        cli.auth_tag,
-        session.as_ref(),
-    )
-    .await?;
+    if let Cmd::Messages(MessagesCmd::Watch { since }) = cli.command {
+        return watch_messages(
+            relay_url,
+            since,
+            paired.map(|(keys, _)| keys),
+            token_source,
+            cli.private_key,
+            cli.auth_tag,
+            session,
+        )
+        .await;
+    }
+
+    let client = match paired {
+        Some((keys, _)) => KuzzClient::new(relay_url, keys, None, None)?,
+        None => {
+            build_client_with_session(
+                relay_url,
+                token_source,
+                cli.private_key,
+                cli.auth_tag,
+                session.as_ref(),
+            )
+            .await?
+        }
+    };
 
     match cli.command {
         Cmd::Agents(sub) => commands::agents::dispatch(sub, &client).await,
@@ -2653,7 +2858,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Teams(sub) => commands::teams::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
-        Cmd::Pack(_) | Cmd::Auth(_) => unreachable!("handled above"),
+        Cmd::Pack(_) | Cmd::Auth(_) | Cmd::Pair { .. } => unreachable!("handled above"),
     }
 }
 
@@ -2964,6 +3169,7 @@ mod tests {
             "moderation",
             "notes",
             "pack",
+            "pair",
             "patches",
             "pr",
             "projects",
@@ -3037,7 +3243,8 @@ mod tests {
                 "send",
                 "send-diff",
                 "thread",
-                "vote"
+                "vote",
+                "watch"
             ]
         );
         assert_eq!(
@@ -3180,7 +3387,7 @@ mod tests {
             ("feed", 1),
             ("issues", 6),
             ("media", 1),
-            ("messages", 9),
+            ("messages", 10),
             ("pack", 2),
             ("patches", 4),
             ("pr", 5),
