@@ -123,7 +123,7 @@ async fn call_primary(
     crate::region_link::call(
         state,
         &state.config.primary_region,
-        community.as_uuid(),
+        *community.as_uuid(),
         path,
         body,
         None,
