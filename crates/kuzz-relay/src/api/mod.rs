@@ -320,6 +320,10 @@ pub mod relay_members {
                 StatusCode::FORBIDDEN,
                 "blocked: you are banned from this community",
             )),
+            crate::handlers::auth::BanOutcome::AccountDisabled => Err(super::api_error(
+                StatusCode::FORBIDDEN,
+                crate::handlers::auth::ACCOUNT_DISABLED_REASON,
+            )),
             crate::handlers::auth::BanOutcome::DbError => Err(super::api_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "error: internal error checking restriction state",

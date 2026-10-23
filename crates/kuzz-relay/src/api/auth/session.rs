@@ -16,9 +16,9 @@ use uuid::Uuid;
 
 use super::oidc::{issue_session_tokens, refresh_cookie};
 use super::{
-    auth_error, authenticate_session, authenticate_user, authenticate_user_session, bad_request,
-    internal, json_object, not_found, optional_string, rate_limit, unavailable,
-    validate_avatar_url, validate_device_name, validate_display_name,
+    auth_error, authenticate_session, authenticate_user_session, bad_request, internal,
+    json_object, not_found, optional_string, rate_limit, unavailable, validate_avatar_url,
+    validate_device_name, validate_display_name,
 };
 use crate::identity::{kv, publish_key_revocation, publish_revocations};
 use crate::state::AppState;
@@ -591,18 +591,57 @@ pub(super) async fn update_profile(
     }
 }
 
+/// Close the open sockets of a Google key account and of its agents in
+/// every community this relay serves. Best effort: the refusal at the
+/// next AUTH is the durable backstop.
+async fn close_key_account_sockets(
+    state: &AppState,
+    principal: &kuzz_core::principal::PrincipalId,
+) {
+    let pubkey = match state.db.account_pubkey(principal).await {
+        Ok(Some(pubkey)) => pubkey,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(%error, "account key lookup failed; open sockets close at their next AUTH");
+            return;
+        }
+    };
+    let communities = match state.db.usage_community_hosts().await {
+        Ok(communities) => communities,
+        Err(error) => {
+            tracing::warn!(%error, "community scan failed; open sockets close at their next AUTH");
+            return;
+        }
+    };
+    for community in communities {
+        let tenant = kuzz_core::TenantContext::resolved(
+            kuzz_core::CommunityId::from_uuid(community.id),
+            community.host,
+        );
+        if let Err(error) = state
+            .revoke_live_access(&tenant, &pubkey, "", "account deleted")
+            .await
+        {
+            tracing::warn!(%error, "closing a deleted account's agent sockets failed");
+        }
+    }
+}
+
 /// Shared by bot profile updates.
 pub(super) fn profile_response(record: &kuzz_db::identity::PrincipalRecord) -> Response {
     profile_json(record)
 }
 
 /// `DELETE /auth/account` — disable now, purge after 30 days; logging in
-/// again inside the window restores the account.
+/// again inside the window restores the account. Any account session may
+/// ask, a Google key account's included: its key and its agents' NIP-OA
+/// tags are refused from then on ([`crate::handlers::auth::community_ban_outcome`])
+/// and their open sockets are closed here.
 pub(super) async fn delete_account(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let binding = match authenticate_user(&state, &headers).await {
+    let binding = match authenticate_user_session(&state, &headers).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -643,6 +682,7 @@ pub(super) async fn delete_account(
                     tracing::warn!(%error, "account devices unreadable; key socket recheck backstops");
                 }
             }
+            close_key_account_sockets(&state, &binding.principal).await;
             tracing::info!(principal = %binding.principal, "auth.account_deleted");
             (StatusCode::NO_CONTENT, clear_cookie()).into_response()
         }

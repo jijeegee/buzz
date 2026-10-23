@@ -221,6 +221,44 @@ test("account deletion is collapsed and opening or cancelling never deletes", as
   await unmount();
 });
 
+test("account deletion takes two steps and unlocks only once delete is typed", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount();
+  const details = container.querySelector("details");
+  await act(async () => fireEvent.click(details.querySelector("summary")));
+  await act(async () =>
+    fireEvent.click(
+      container.querySelector("[data-testid='account-delete-open']"),
+    ),
+  );
+  // Step 1 explains; there is nothing to type yet.
+  assert.equal(
+    document.querySelector("[data-testid='account-delete-word']"),
+    null,
+  );
+  await act(async () =>
+    fireEvent.click(
+      document.querySelector("[data-testid='account-delete-continue']"),
+    ),
+  );
+  const confirm = () =>
+    document.querySelector("[data-testid='account-delete-confirm']");
+  const word = document.querySelector("[data-testid='account-delete-word']");
+  assert.ok(word);
+  assert.equal(confirm().disabled, true);
+  await act(async () => fireEvent.change(word, { target: { value: "delet" } }));
+  assert.equal(confirm().disabled, true);
+  await act(async () =>
+    fireEvent.change(word, { target: { value: " Delete " } }),
+  );
+  assert.equal(confirm().disabled, false);
+  assert.equal(
+    calls.some((c) => c.command === "delete_account"),
+    false,
+  );
+  await unmount();
+});
+
 test("a signed-out community offers Google sign-in through login_with_google", async () => {
   status = baseStatus();
   const { container, unmount } = await mount();
@@ -592,6 +630,32 @@ test("signing out other devices confirms first, in Settings › Devices", async 
   await unmount();
 });
 
+test("disconnecting every agent confirms first, in Devices & security", async () => {
+  status = baseStatus({ state: "active", principal: "ab".repeat(32) });
+  const { container, unmount } = await mount(DevicesSettingsCard);
+  await settle(() => container.querySelector("ul[aria-labelledby]") !== null);
+  const open = container.querySelector(
+    "[data-testid='account-disconnect-agents']",
+  );
+  await act(async () => fireEvent.click(open));
+  assert.ok(
+    document
+      .querySelector('[role="alertdialog"]')
+      .textContent.includes("Disconnect all agents?"),
+  );
+  assert.equal(
+    calls.some((c) => c.command === "revoke_all_bot_tokens"),
+    false,
+  );
+  await act(async () => fireEvent.click(dialogButton("Disconnect agents")));
+  await settle(() => calls.some((c) => c.command === "revoke_all_bot_tokens"));
+  assert.equal(
+    calls.filter((c) => c.command === "revoke_all_bot_tokens").length,
+    1,
+  );
+  await unmount();
+});
+
 test("Account has no device list; Devices is its own section", async () => {
   status = baseStatus({ state: "active", principal: "ab".repeat(32) });
   const { container, unmount } = await mount();
@@ -606,20 +670,19 @@ test("Account has no device list; Devices is its own section", async () => {
   await unmount();
 });
 
-test("signing out and disconnecting agents each confirm first", async () => {
+test("signing out confirms first; agents are not disconnected here", async () => {
   status = baseStatus({ state: "active", principal: "ab".repeat(32) });
   const { container, unmount } = await mount();
   await settle(
     () => container.querySelector("[data-testid='account-name']") !== null,
   );
   // Sign out last: the mocked logout never settles (the real one reloads).
+  // Disconnecting agents lives in Devices & security.
+  assert.equal(
+    container.querySelector("[data-testid='account-disconnect-agents']"),
+    null,
+  );
   const cases = [
-    [
-      "account-disconnect-agents",
-      "Disconnect all agents?",
-      "Disconnect agents",
-      "revoke_all_bot_tokens",
-    ],
     ["account-sign-out", "Sign out of Kuzz?", "Sign out", "logout"],
   ];
   for (const [testId, title, confirmLabel, command] of cases) {

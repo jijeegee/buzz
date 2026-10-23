@@ -846,13 +846,9 @@
       }
     }
   },
-  "settingsDevicesTitle": "Devices",
+  "settingsDevicesTitle": "Devices & security",
   "@settingsDevicesTitle": {
-    "description": "Devices page (signed-in devices), title in the top bar; also its settings section heading. Short."
-  },
-  "settingsSecurityTitle": "Security",
-  "@settingsSecurityTitle": {
-    "description": "Account security page, title in the top bar; also the Settings row that opens it. Short."
+    "description": "Devices & security page (signed-in devices, signing out other devices, disconnecting agents), title in the top bar; also its settings section heading. Short."
   },
   "settingsDevicesSignOutDeviceTitle": "Sign out {device}?",
   "@settingsDevicesSignOutDeviceTitle": {
@@ -889,57 +885,83 @@
       }
     }
   },
-  "settingsDevicesSignOutOthers": "Sign out all other devices",
+  "settingsDevicesSignOutOthers": "Sign out other devices",
   "@settingsDevicesSignOutOthers": {
     "description": "Devices page, row that signs out every device except this one."
   },
-  "settingsDevicesSignOutOthersTitle": "Sign out all other devices?",
+  "settingsDevicesSignOutOthersTitle": "Sign out other devices?",
   "@settingsDevicesSignOutOthersTitle": {
     "description": "Devices page, title of the confirmation dialog for signing out all other devices."
   },
-  "settingsDevicesSignOutOthersBody": "Every device except this one will need to sign in again. Bots keep working.",
+  "settingsDevicesSignOutOthersBody": "Every other computer and phone using your account is signed out and will need to sign in with Google again. This phone stays signed in, and your agents keep running.",
   "@settingsDevicesSignOutOthersBody": {
     "description": "Devices page, body of the confirmation dialog for signing out all other devices."
   },
-  "settingsDevicesSignOutOthersAction": "Sign out others",
+  "settingsDevicesSignOutOthersAction": "Sign out other devices",
   "@settingsDevicesSignOutOthersAction": {
     "description": "Devices page, confirm button of the 'sign out all other devices' dialog. Short."
   },
-  "settingsDevicesRevokeBots": "Revoke all bot tokens",
+  "settingsDevicesRevokeBots": "Disconnect all agents",
   "@settingsDevicesRevokeBots": {
-    "description": "Security page, row that invalidates the access tokens of every bot the user owns."
+    "description": "Devices & security page, row that disconnects every agent the user owns at once."
   },
-  "settingsDevicesRevokeBotsTitle": "Revoke all bot tokens?",
+  "settingsDevicesRevokeBotsTitle": "Disconnect all agents?",
   "@settingsDevicesRevokeBotsTitle": {
-    "description": "Security page, title of the confirmation dialog for revoking all bot tokens."
+    "description": "Devices & security page, title of the confirmation dialog for disconnecting all agents."
   },
-  "settingsDevicesRevokeBotsBody": "Every bot you own stops working until it gets a new token.",
+  "settingsDevicesRevokeBotsBody": "All of your agents are disconnected from this community right away. Agents on a computer reconnect on their own the next time they start.",
   "@settingsDevicesRevokeBotsBody": {
-    "description": "Security page, body of the confirmation dialog for revoking all bot tokens."
+    "description": "Devices & security page, body of the confirmation dialog for disconnecting all agents."
   },
-  "settingsDevicesRevokeBotsAction": "Revoke",
+  "settingsDevicesRevokeBotsAction": "Disconnect agents",
   "@settingsDevicesRevokeBotsAction": {
-    "description": "Security page, confirm button of the 'revoke all bot tokens' dialog. Short."
+    "description": "Devices & security page, confirm button of the 'disconnect all agents' dialog. Short."
   },
-  "settingsDevicesRevokeBotsDone": "All bot tokens revoked",
+  "settingsDevicesRevokeBotsDone": "All agents were disconnected.",
   "@settingsDevicesRevokeBotsDone": {
-    "description": "Security page, snackbar after all bot tokens were revoked. Short."
+    "description": "Devices & security page, snackbar after all agents were disconnected. Short."
+  },
+  "settingsDevicesRevokeBotsFailed": "Couldn’t disconnect agents: {error}",
+  "@settingsDevicesRevokeBotsFailed": {
+    "description": "Devices & security page, snackbar when disconnecting all agents failed; {error} is a technical error message.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "settingsDevicesAccountDeletion": "Account deletion",
   "@settingsDevicesAccountDeletion": {
-    "description": "Security page, title of the expandable section that holds Delete account. Short."
+    "description": "Settings, bottom: title of the folded section that holds Delete account. Short."
   },
   "settingsDevicesDeleteAccount": "Delete account",
   "@settingsDevicesDeleteAccount": {
-    "description": "Security page, red row that deletes the account, and the confirm button of its dialog. Short."
+    "description": "Settings, bottom: red row that deletes the account, and the final confirm button of the deletion. Short."
   },
   "settingsDevicesDeleteAccountTitle": "Delete your account?",
   "@settingsDevicesDeleteAccountTitle": {
-    "description": "Security page, title of the account deletion confirmation dialog."
+    "description": "Settings, bottom: title of the first account deletion dialog, which explains what happens."
   },
-  "settingsDevicesDeleteAccountBody": "Your account is disabled now and permanently deleted after 30 days. Signing in again before then restores it. Every device, including this one, is signed out.",
+  "settingsDevicesDeleteAccountBody": "Every device and agent is signed out now, including this phone. The account is removed after 30 days unless you sign in with Google again before then.",
   "@settingsDevicesDeleteAccountBody": {
-    "description": "Security page, body of the account deletion confirmation dialog."
+    "description": "Settings, bottom: body of the first account deletion dialog."
+  },
+  "settingsDevicesDeleteAccountHint": "Signing in again within 30 days restores it.",
+  "@settingsDevicesDeleteAccountHint": {
+    "description": "Settings, bottom: line under the Delete account row."
+  },
+  "settingsDevicesDeleteContinue": "Continue",
+  "@settingsDevicesDeleteContinue": {
+    "description": "Settings, bottom: button of the first account deletion dialog that goes on to the typing step. Short."
+  },
+  "settingsDevicesDeleteTypeTitle": "Type “{word}” to confirm",
+  "@settingsDevicesDeleteTypeTitle": {
+    "description": "Settings, bottom: title of the second account deletion dialog; {word} is the English word the user types, shown as is.",
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
   },
   "settingsDevicesLocalCleanupFailed": "Your account was deleted, but this device couldn’t finish signing out: {error}",
   "@settingsDevicesLocalCleanupFailed": {
@@ -6359,7 +6381,7 @@
   },
   "threadEditName": "Edit thread name",
   "@threadEditName": {
-    "description": "Thread page, tooltip of the button that renames the thread. Short."
+    "description": "Thread page, item of the header ⋯ menu that renames the thread. Short."
   },
   "threadComposerHint": "Reply in thread…",
   "@threadComposerHint": {

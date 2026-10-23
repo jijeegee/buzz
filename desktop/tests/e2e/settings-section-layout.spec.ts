@@ -98,6 +98,8 @@ test("Profile sections keep visible cards and aligned actions", async ({
   ).toBeVisible();
   await expect(page.getByTestId("profile-identity-details")).toBeHidden();
 
+  // Deleting this computer's data sits folded at the bottom of Devices.
+  await page.getByTestId("settings-nav-devices").click();
   const signOut = page.getByTestId("settings-signout");
   const signOutCard = signOut.locator('[data-slot="settings-section-card"]');
   await expect(signOutCard).not.toBeVisible();
@@ -107,7 +109,7 @@ test("Profile sections keep visible cards and aligned actions", async ({
     signOutCard.getByRole("button", { name: "Delete my data" }),
   ).toBeVisible();
   await expect(
-    signOut.getByText("Delete local data", { exact: true }),
+    signOut.getByText("Delete all data", { exact: true }),
   ).toHaveCount(1);
   await expect(
     signOut.getByText("Sign out of Kuzz", { exact: true }),

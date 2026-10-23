@@ -469,7 +469,25 @@ pub(super) async fn deny_banned_git_principal(
             "git: community ban denied request"
         );
         (status, "blocked: banned from this community").into_response()
-    })
+    })?;
+
+    // A deleted Google key account, or its agent, is refused like a ban.
+    let keys: Vec<[u8; 32]> = std::iter::once(*pubkey)
+        .chain(owner)
+        .map(|key| key.to_bytes())
+        .collect();
+    match db.key_account_disabled(&keys).await {
+        Ok(false) => Ok(()),
+        Ok(true) => Err((
+            StatusCode::FORBIDDEN,
+            crate::handlers::auth::ACCOUNT_DISABLED_REASON,
+        )
+            .into_response()),
+        Err(error) => {
+            warn!(pubkey = %pubkey.to_hex(), error = %error, "git: account-state lookup failed closed");
+            Err((StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable").into_response())
+        }
+    }
 }
 
 /// One restriction read, failing closed with 503.

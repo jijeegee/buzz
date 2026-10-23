@@ -1348,27 +1348,37 @@ class ThreadDetailPage extends HookConsumerWidget {
           ),
         ),
         actions: [
-          ThreadGroupButton(channelId: channelId, channelBelow: channelBelow),
-          if (goalsEnabled)
-            ThreadGoalsButton(
-              channelId: channelId,
-              threadRootId: effectiveRootId,
+          // Smaller buttons set closer together, so the thread name keeps
+          // more of the header.
+          IconButtonTheme(
+            data: IconButtonThemeData(style: threadHeaderButtonStyle),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ThreadGroupButton(
+                  channelId: channelId,
+                  channelBelow: channelBelow,
+                ),
+                if (goalsEnabled)
+                  ThreadGoalsButton(
+                    channelId: channelId,
+                    threadRootId: effectiveRootId,
+                  ),
+                ThreadMoreMenu(
+                  channelId: channelId,
+                  rootId: effectiveRootId,
+                  closed: isThreadClosed(allReplies),
+                  canClose:
+                      isMember &&
+                      !isArchived &&
+                      !liveDeletionHidesHead &&
+                      threadHead.rootId == null,
+                  onRename: isMember && !isArchived && !liveDeletionHidesHead
+                      ? () => showThreadNameEditor(context, nameKey)
+                      : null,
+                ),
+              ],
             ),
-          if (isMember && !isArchived && !liveDeletionHidesHead)
-            IconButton(
-              tooltip: context.l10n.threadEditName,
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => showThreadNameEditor(context, nameKey),
-            ),
-          ThreadMoreMenu(
-            channelId: channelId,
-            rootId: effectiveRootId,
-            closed: isThreadClosed(allReplies),
-            canClose:
-                isMember &&
-                !isArchived &&
-                !liveDeletionHidesHead &&
-                threadHead.rootId == null,
           ),
         ],
         titleStyle: channelTitleTextStyle,

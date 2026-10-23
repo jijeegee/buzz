@@ -86,6 +86,8 @@ import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { PeoplePrivacySettingsCard } from "./PeoplePrivacySettingsCard";
 import { ProfileSettingsCard } from "./ProfileSettingsCard";
 import { DevicesSettingsCard } from "./AccountSettingsCard";
+import { showSigningKeySettings } from "@/shared/lib/signingKeyUi";
+import { SignOutSection } from "./SignOutSection";
 import { UpdateChecker } from "../UpdateChecker";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { VoiceSettingsCard } from "./VoiceSettingsCard";
@@ -891,7 +893,14 @@ export function renderSettingsSection(
         />
       );
     case "devices":
-      return <DevicesSettingsCard />;
+      // Deleting this computer's data is about the device, not the
+      // account, so it sits folded at the bottom of Devices.
+      return (
+        <>
+          <DevicesSettingsCard />
+          <SignOutSection showKeyBackupGate={showSigningKeySettings(null)} />
+        </>
+      );
     case "privacy":
       return <PeoplePrivacySettingsCard />;
     case "notifications":

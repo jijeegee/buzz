@@ -126,7 +126,7 @@ async fn git_refs(
 
 /// NIP-42 AUTH with extra tags (a NIP-OA `auth` tag); retried like
 /// `device_ws::key_auth` because a refusal closes the socket.
-async fn ws_auth_with(
+pub(super) async fn ws_auth_with(
     inst: &Instance,
     keys: &nostr::Keys,
     extra: Vec<Vec<String>>,
