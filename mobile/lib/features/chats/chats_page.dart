@@ -24,6 +24,7 @@ import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/load_error_view.dart';
 import '../../shared/widgets/kuzz_view_switch.dart';
 import '../agents/owner_view/owner_view.dart';
+import '../agents/owner_view/owner_view_seen.dart';
 import '../channels/channel.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';

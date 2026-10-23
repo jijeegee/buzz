@@ -55,6 +55,7 @@ import '../people/blocked_message_gate.dart';
 import '../people/blocked_users_provider.dart';
 import '../profile/user_profile_sheet.dart';
 import '../agents/owner_view/owner_view.dart';
+import '../agents/owner_view/owner_view_seen.dart';
 import '../agents/owner_view/owner_view_widgets.dart';
 import '../goals/thread_goal_chip.dart';
 import 'message_actions.dart';
@@ -138,6 +139,13 @@ class ThreadDetailPage extends HookConsumerWidget {
     final currentPubkey =
         this.currentPubkey ?? ref.watch(currentPubkeyProvider);
     final nameKey = (channelId: channelId, headId: threadHead.id);
+    // The open thread's dot stays clear while it is read here.
+    useMarkOwnerViewSeen(
+      ref,
+      this.ownerView,
+      (row) =>
+          row.isThread && row.rootId == (threadHead.rootId ?? threadHead.id),
+    );
     final threadName = ref.watch(threadNameProvider(nameKey)).value?.content;
     final appView = View.of(context);
     final composerDockHeight = useState(0.0);

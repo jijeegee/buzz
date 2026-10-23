@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/agents/owner_view/owner_view.dart';
+import 'package:kuzz/features/agents/owner_view/owner_view_seen.dart';
+import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
@@ -25,6 +27,7 @@ ChatListRow _row(
   List<String> members = const [],
   bool groupChat = false,
   int? memberCount,
+  String? author,
 }) => ChatListRow(
   isThread: false,
   key: channelId,
@@ -38,7 +41,7 @@ ChatListRow _row(
   memberCount: memberCount,
   latest: NostrEvent(
     id: 'm-$channelId',
-    pubkey: _agent,
+    pubkey: author ?? _agent,
     createdAt: at,
     kind: 9,
     tags: const [],
@@ -61,6 +64,7 @@ Future<void> _pump(WidgetTester tester, List<ChatListRow> rows) async {
         savedPrefsProvider.overrideWithValue(prefs),
         channelMutesProvider.overrideWith(_NoMutes.new),
         knownAgentPubkeysProvider.overrideWithValue({_bot}),
+        currentPubkeyProvider.overrideWithValue('a' * 64),
         agentChatListProvider(_agent).overrideWith((ref) async => rows),
       ],
       child: MaterialApp(
@@ -116,5 +120,30 @@ void main() {
   testWidgets('no chats shows the empty line', (tester) async {
     await _pump(tester, const []);
     expect(find.text('Bo has no other conversations yet'), findsOneWidget);
+  });
+
+  testWidgets('a chat newer than the first look has a dot, no count', (
+    tester,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    await _pump(tester, [
+      _row(_dmPerson, now + 600, members: [_agent, _bob], author: _bob),
+      _row(_dmAgent, now - 600, members: [_bot, _agent], author: _bot),
+    ]);
+
+    expect(find.byKey(ValueKey('chat-row-marked-$_dmPerson')), findsOneWidget);
+    expect(find.byKey(ValueKey('chat-row-unread-$_dmPerson')), findsNothing);
+    // Older than the first look: no dot.
+    expect(find.byKey(ValueKey('chat-row-marked-$_dmAgent')), findsNothing);
+
+    // Opened up to its latest message: the dot goes.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(AgentConversationsList)),
+    );
+    container
+        .read(ownerViewSeenProvider(_agent).notifier)
+        .markSeen(_dmPerson, now + 600);
+    await tester.pumpAndSettle();
+    expect(find.byKey(ValueKey('chat-row-marked-$_dmPerson')), findsNothing);
   });
 }

@@ -25,7 +25,7 @@ class AgentConversationsList extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final agent = agentPubkey.toLowerCase();
-    final list = ref.watch(agentChatListProvider(agent));
+    final list = ref.watch(agentChatRowsProvider(agent));
     final mode = useState(ChatsViewMode.all);
     final expanded = useState(<String, int>{});
     final knownAgents = ref.watch(knownAgentPubkeysProvider);
@@ -100,6 +100,13 @@ class AgentConversationsList extends HookConsumerWidget {
         final channel = channels[row.channelId];
         if (channel == null) return;
         unawaited(HapticFeedback.selectionClick());
+        // Opening clears the dot; the page keeps it clear while open.
+        final latest = row.latest;
+        if (latest != null) {
+          ref
+              .read(ownerViewSeenProvider(agent).notifier)
+              .markSeen(chatRowContextId(row), latest.createdAt);
+        }
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ChannelDetailPage(

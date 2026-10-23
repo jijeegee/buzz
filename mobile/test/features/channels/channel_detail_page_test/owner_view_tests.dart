@@ -42,6 +42,49 @@ void ownerViewTests() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('the conversations tab counts chats with a dot', (tester) async {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    ChatListRow row(String id, int at) => ChatListRow(
+      isThread: false,
+      key: id,
+      at: at,
+      atUs: at * 1000000,
+      channelId: id,
+      channelType: 'dm',
+      channelName: 'DM',
+      dmMembers: [agent, other],
+      latest: NostrEvent(
+        id: 'm-$id',
+        pubkey: other,
+        createdAt: at,
+        kind: 9,
+        tags: const [],
+        content: 'hi',
+      ),
+    );
+    await tester.pumpWidget(
+      _buildTestable(
+        messages: const [],
+        channel: agentDm(),
+        users: agentProfile(me),
+        huddleCurrentPubkey: me,
+        overrides: [
+          agentChatListProvider(agent).overrideWith(
+            (ref) async => [
+              row('x1', now + 600),
+              row('x2', now + 300),
+              row('x3', now - 600),
+            ],
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bo’s conversations 2'), findsOneWidget);
+    expect(find.text('Chat with Bo'), findsOneWidget);
+  });
+
   testWidgets('DM with someone else\'s agent has no agent tabs', (
     tester,
   ) async {

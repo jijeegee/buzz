@@ -24,6 +24,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../agents/owner_view/owner_view.dart';
+import '../agents/owner_view/owner_view_seen.dart';
 import '../agents/owner_view/owner_view_widgets.dart';
 import '../chats/chats_page.dart' show AgentConversationsList;
 import '../goals/goal_provider.dart';
@@ -544,6 +545,20 @@ class ChannelDetailPage extends HookConsumerWidget {
             )
           : resolvedChannel.name,
     );
+    // Chats with something new since the owner last looked: the tab's count.
+    final agentDots = isMyAgentDm
+        ? ref.watch(
+            agentChatRowsProvider(
+              dmAgentPubkey,
+            ).select((rows) => ownerViewDotCount(rows.value ?? const [])),
+          )
+        : 0;
+    // The open chat's dot stays clear while it is read here.
+    useMarkOwnerViewSeen(
+      ref,
+      ownerView,
+      (row) => !row.isThread && row.channelId == resolvedChannel.id,
+    );
     // People here are told when an agent's owner can read along.
     final ownerReaders = ownerView == null
         ? watchOwnerReaders(ref, resolvedChannel)
@@ -1023,9 +1038,12 @@ class ChannelDetailPage extends HookConsumerWidget {
                             ),
                             KuzzViewOption(
                               value: AgentDmTab.conversations,
-                              label: context.l10n.ownerViewTabConversations(
-                                dmAgentName,
-                              ),
+                              label: [
+                                context.l10n.ownerViewTabConversations(
+                                  dmAgentName,
+                                ),
+                                if (agentDots > 0) '$agentDots',
+                              ].join(' '),
                               key: const ValueKey('agent-dm-tab-conversations'),
                             ),
                           ],
